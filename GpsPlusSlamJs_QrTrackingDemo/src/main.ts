@@ -28,7 +28,7 @@ import { applyChromiumProjectionLayerWorkaround } from "gps-plus-slam-app-framew
 import { getSeams } from "./seams.js";
 import { createQrDemoStore, type QrDemoStore } from "./demo-store.js";
 import { createQrDebugView, type QrDebugView } from "./qr-debug-view.js";
-import { createQrDemoController } from "./demo-controller.js";
+import { createQrDemoController, type SolvePoseFn } from "./demo-controller.js";
 import { toHudView, type DemoStatus } from "./hud-view.js";
 import { isDemoSupported, capabilityMessage } from "./capability.js";
 import {
@@ -136,9 +136,28 @@ async function startAr(): Promise<void> {
 
   view = createQrDebugView(group);
   const detect = seams.createDetect();
+
+  // Load the production PnP pose solver (opencv.js) in the background. The strict
+  // depth→size→PnP gate means the first lock is seconds away (size must converge
+  // first), which comfortably covers the WASM load; until it resolves `solvePose`
+  // returns null and the controller stays scanning (graceful degrade).
+  let pnpSolve: SolvePoseFn | null = null;
+  seams
+    .loadSolvePose()
+    .then((fn) => {
+      pnpSolve = fn;
+    })
+    .catch((err) => {
+      console.error(
+        "[qr-tracking-demo] PnP pose solver unavailable; cannot place the QR.",
+        err,
+      );
+    });
+
   const controller = createQrDemoController({
     detect,
     getDepthContext: () => seams.getDepthContext(),
+    solvePose: (input) => pnpSolve?.(input) ?? null,
     recordDetection: (event) => {
       activeText = event.text;
       store?.dispatch(recordQrDetection(event));

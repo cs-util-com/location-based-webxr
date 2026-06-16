@@ -3,22 +3,30 @@
  *
  * Per throttled/coalesced frame it: detects a QR (front-end), measures the size
  * from depth via the shared framework {@link createQrSizeMeasurer} (samples the
- * corners + an interior point, accumulates a per-marker running median), fits a
- * rigid pose ({@link poseFromWorldCorners}, no solvePnP / no size needed) from
- * the same sampled corners, and — once the N-consecutive-lock fires — records
- * the detection + size into the `qrDetected` store and glues the debug axis +
- * cube to the pose.
+ * corners + an interior point, accumulates a per-marker running median), and —
+ * once the size lifecycle has CONVERGED — solves the QR pose with the production
+ * PnP path (`solveQrPose`/`OpenCvPnpSquare`, injected as {@link solvePose}). On
+ * the N-consecutive-lock it records the detection into the `qrDetected` store and
+ * glues the debug axis + cube to the pose.
  *
- * Every device-specific dependency (detect, depth context, store dispatch,
- * scene update) is injected, so this whole flow is unit-testable without WebXR,
- * a camera, or depth hardware. It is geo-less: no GPS vote is ever cast.
+ * STRICT `depth → size → PnP` (maintainer decision 2026-06-16, see
+ * `GpsPlusSlamJs_Docs/docs/2026-06-16-qr-demo-pnp-conversion-plan.md`): the PnP
+ * solve needs a physical size, so no pose (hence no axis/cube) is produced until
+ * the measured size reaches `estimated` — deliberately mirroring production, whose
+ * controller blocks the solve on a `null` size. The size estimate is dispatched
+ * EVERY measured frame (not only on a lock) so the HUD shows convergence progress
+ * exactly as before; only the pose/lock waits for convergence.
+ *
+ * The pose math is fully delegated to the injected {@link solvePose} closure
+ * (production: `solveQrPose` backed by `OpenCvPnpSquare`; tests inject a fake), so
+ * this module needs no OpenCV and the whole flow is unit-testable without WebXR, a
+ * camera, or depth hardware. It is geo-less: no GPS vote is ever cast.
  */
 
 import {
   createDetectionScheduler,
   createQrSizeMeasurer,
-  composePose,
-  invertPose,
+  intrinsicsFromProjection,
   validateQuad,
   type DetectionScheduler,
   type RgbaImage,
@@ -28,10 +36,16 @@ import {
   type QrSizeEstimate,
   type QrSizeMeasurer,
   type QrDetectionEvent,
+  type QrSolvePoseInput,
+  type QrPoseSolution,
 } from "gps-plus-slam-app-framework/ar";
-import type { Vector3 } from "gps-plus-slam-app-framework/core";
-import { poseFromWorldCorners } from "./pose-from-corners.js";
+import type { Matrix4 } from "gps-plus-slam-app-framework/core";
 import type { DemoStatus } from "./hud-view.js";
+
+/** Solve the QR world pose from corners + size + intrinsics (production: wraps
+ * `solveQrPose` with an `OpenCvPnpSquare`). `null` when the solve is rejected
+ * (degenerate, behind camera, reprojection over threshold) or unavailable. */
+export type SolvePoseFn = (input: QrSolvePoseInput) => QrPoseSolution | null;
 
 /** Everything device-specific the controller needs to read one frame's depth. */
 export interface DepthContext {
@@ -39,8 +53,10 @@ export interface DepthContext {
   unprojector: DepthUnprojector;
   /** Depth (m) at a normalized screen point, or `null` if unavailable there. */
   depthAt: (screenX: number, screenY: number) => number | null;
-  /** Camera pose in raw-WebXR/odom space (for the camera-relative pose). */
+  /** Camera pose in raw-WebXR/odom space (for the PnP world composition). */
   cameraPose: Pose;
+  /** Column-major XRView projection of the detector buffer — for intrinsics. */
+  projectionMatrix: Matrix4;
 }
 
 export interface QrDemoControllerDeps {
@@ -48,9 +64,15 @@ export interface QrDemoControllerDeps {
   detect: (image: RgbaImage) => Promise<QrDetection | null>;
   /** The current frame's depth context, or `null` when depth is unavailable. */
   getDepthContext: () => DepthContext | null;
+  /**
+   * Solve the QR pose via the production PnP path. `undefined`/returns `null`
+   * while the solver is unavailable (e.g. OpenCV still loading) — the controller
+   * then stays `scanning` rather than placing anything (graceful degrade).
+   */
+  solvePose?: SolvePoseFn;
   /** Dispatch `recordQrDetection` (Note 3 slice). */
   recordDetection: (event: QrDetectionEvent) => void;
-  /** Dispatch `recordQrSizeEstimate` (Note 3 size lifecycle). */
+  /** Dispatch `recordQrSizeEstimate` (Note 3 size lifecycle) — every measured frame. */
   recordSize: (text: string, estimate: QrSizeEstimate) => void;
   /** Glue the debug axis + cube to the pose at the measured size (or `null`). */
   updateScene: (pose: Pose, sizeM: number | null) => void;
@@ -58,9 +80,9 @@ export interface QrDemoControllerDeps {
    * Resolve the STABLE (sliding-window filtered) world pose for the OVERLAY —
    * e.g. `selectStableQrPose(store.getState(), text)`. When wired, the rendered
    * axis/cube use the filtered pose so they stop swinging between throttled
-   * detections; a `null` (not yet converged) falls back to this frame's raw pose
-   * so the overlay still appears while the window fills. `recordDetection` runs
-   * first, so the window this reads already includes the current frame.
+   * detections; a `null` (not yet converged) falls back to this frame's raw PnP
+   * pose so the overlay still appears while the window fills. `recordDetection`
+   * runs first, so the window this reads already includes the current frame.
    */
   resolveStablePose?: (text: string) => Pose | null;
   /** Status-change notifications for the HUD. */
@@ -92,6 +114,7 @@ export function createQrDemoController(
   const {
     detect,
     getDepthContext,
+    solvePose,
     recordDetection,
     recordSize,
     updateScene,
@@ -120,19 +143,17 @@ export function createQrDemoController(
     const detection = await detect(image);
     if (!detection) return null;
 
-    // Guard the same failure modes the framework's `solveQrPose` rejects:
-    // a mirrored winding or a degenerate (tiny / collinear) quad. This keeps
-    // the demo's rigid-fit path consistent with the PnP path and prevents an
-    // inside-out basis from a bad read. (It does NOT reorder corners — the
-    // detector's order carries the QR's reading orientation; see the
-    // on-device follow-up §2.3.)
+    // Reject a mirrored winding or a degenerate quad up front (the same guards
+    // `solveQrPose` applies), so we never measure or solve a bad read. It does
+    // NOT reorder corners — the detector's order carries the QR's reading
+    // orientation (see the on-device follow-up §2.3).
     if (!validateQuad(detection.corners).ok) return null;
 
     const ctx = getDepthContext();
-    if (!ctx) return null; // no depth → cannot size/place (auto-size gate)
+    if (!ctx) return null; // no depth → cannot size (auto-size gate)
 
-    // Measure size + sample corner depth in one shared step; `null` means a
-    // corner lacked a depth read (cannot size/place this frame).
+    // Measure size from depth (samples the 4 corners + centroid). `null` means a
+    // corner lacked a depth read (cannot size this frame).
     const measurement = measurer.measure(
       detection.text,
       detection.corners,
@@ -141,28 +162,46 @@ export function createQrDemoController(
     );
     if (!measurement) return null;
 
-    // Depth-fit pose from the SAME sampled corners (no re-sampling).
-    const world: Vector3[] = [];
-    for (const dp of measurement.cornerSamples) {
-      const p = ctx.unprojector.unproject(dp);
-      if (!p) return null;
-      world.push(p);
-    }
-    const pose = poseFromWorldCorners(world);
-    if (!pose) return null;
-
     const estimate = measurement.estimate;
+    // Record the size EVERY measured frame, independent of the lock, so the HUD
+    // shows "measuring… N samples" progress (the strict gate below means a lock
+    // only happens after convergence — without this the HUD would freeze).
+    recordSize(detection.text, estimate);
+
+    // Strict `depth → size → PnP`: no pose until the size lifecycle reaches
+    // `estimated`, mirroring production (`selectResolvedQrSizeM` exposes a size
+    // only when estimated). `estimateM` is the running median from the first
+    // accepted sample, so gate on the lifecycle STATUS, not on `estimateM`.
+    if (estimate.status !== "estimated" || estimate.estimateM === null) {
+      return null;
+    }
+    const sizeM = estimate.estimateM;
+
+    // PnP requires a solver; absent (OpenCV unavailable / still loading) → we
+    // cannot place anything this frame, stay scanning.
+    if (!solvePose) return null;
+
+    const intrinsics = intrinsicsFromProjection(
+      ctx.projectionMatrix,
+      image.width,
+      image.height,
+    );
+    const solution = solvePose({
+      imagePoints: detection.corners,
+      sizeM,
+      intrinsics,
+      cameraPose: ctx.cameraPose,
+    });
+    if (!solution) return null;
 
     const event: QrDetectionEvent = {
       text: detection.text,
-      qrPoseWorld: pose,
-      // Depth-fit gives a world pose; derive the camera-relative pose for the
-      // slice entry. (Depth-fit has no PnP reprojection metric → 0.)
-      qrPoseInCamera: composePose(invertPose(ctx.cameraPose), pose),
-      reprojectionErrorPx: 0,
+      qrPoseWorld: solution.qrPoseWorld,
+      qrPoseInCamera: solution.qrPoseInCamera,
+      reprojectionErrorPx: solution.reprojectionErrorPx,
       timestamp: timestampNow(),
     };
-    return { event, pose, estimate };
+    return { event, pose: solution.qrPoseWorld, estimate };
   }
 
   const scheduler: DetectionScheduler =
@@ -173,9 +212,8 @@ export function createQrDemoController(
       ...(now ? { now } : {}),
       onLocked: (result) => {
         recordDetection(result.event);
-        recordSize(result.event.text, result.estimate);
         // Render the windowed stable pose when available (smooth overlay); fall
-        // back to the raw frame pose while the window is still converging.
+        // back to the raw PnP frame pose while the window is still converging.
         const renderPose =
           resolveStablePose?.(result.event.text) ?? result.pose;
         updateScene(renderPose, result.estimate.estimateM);

@@ -63,31 +63,33 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
 });
 
 /**
- * Regression: a QR can lock (detection + pose) while its depth-measured size is
- * still `unknown` (noisy/non-planar depth → quality below the accept threshold).
- * The HUD said "detected" but NOTHING appeared in 3D, because the scene update
- * was gated on a known size — so even the pose-only AXIS was withheld. The axis
- * needs only the pose; only the cube needs a size.
+ * Strict depth→size→PnP gate (Step-0 conversion): the PnP pose needs a physical
+ * size, so when the depth-measured size never converges (noisy/non-planar depth →
+ * quality below the accept threshold) NOTHING is placed — no lock, no axis, no
+ * cube. This deliberately mirrors production (which blocks the solve on a `null`
+ * size) and is the accepted reversal of the earlier §2.7 "axis appears before the
+ * size converges" behavior (that was a demo-only nicety on the size-free depth-fit
+ * pose). On a real device the lever is the size accumulator's quality threshold.
  */
-test.describe("QR-tracking demo — axis appears before the size converges", () => {
+test.describe("QR-tracking demo — strict size gate withholds the pose until size converges", () => {
   test.beforeEach(async ({ page }) => {
     await installQrDemoFakes(page, { planar: false });
   });
 
-  test("shows the axis on lock even while the size stays unknown (cube waits)", async ({
+  test("places nothing while the size stays unknown (no lock, no axis, no cube)", async ({
     page,
   }) => {
     await bootQrDemo(page);
     await feedFrames(page, 12);
 
-    // Detection locked, but the size never converged.
-    await expect(page.getByTestId("hud-status")).toContainText("Locked");
+    // Size never converged → strict gate never solves the pose → never locks.
+    await expect(page.getByTestId("hud-status")).toContainText("Scanning");
     await expect(page.getByTestId("hud-lifecycle")).toHaveText("unknown");
     await expect(page.getByTestId("hud-size")).toHaveText("—");
 
     const scene = await page.evaluate(() => {
-      // Objects hang off the internal basis node (single child of arWorldGroup);
-      // basis.children[0] = axis, [1] = cube (add order in createQrDebugView).
+      // The basis node + axis + cube are created at boot but start hidden; with
+      // no lock, update() is never called, so both stay hidden.
       const kids = window.__qrDemoTest.worldGroupChildren[0]?.children ?? [];
       return {
         count: kids.length,
@@ -96,9 +98,7 @@ test.describe("QR-tracking demo — axis appears before the size converges", () 
       };
     });
     expect(scene.count).toBe(2);
-    // The axis (pose only) MUST be visible so the user sees the detection is
-    // glued; the cube (needs a measured size) stays hidden until one arrives.
-    expect(scene.axisVisible).toBe(true);
+    expect(scene.axisVisible).toBe(false);
     expect(scene.cubeVisible).toBe(false);
   });
 });

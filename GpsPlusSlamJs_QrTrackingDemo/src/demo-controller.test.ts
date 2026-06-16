@@ -2,11 +2,14 @@
  * QR-tracking demo controller — unit tests.
  *
  * Why this matters: this pins the orchestration the whole demo rests on —
- * detect → sample depth → unproject → fit pose → measure size → (on lock)
- * record into the store + glue the scene. Every device dependency is faked, so
- * the flow is exercised without WebXR/camera/depth. The fake depth context maps
- * the corner screen points to a planar square in world space, so the measured
- * size is constant and converges.
+ * detect → measure size from depth → (once size CONVERGES) solve pose via the
+ * injected PnP closure → (on lock) record into the store + glue the scene. Every
+ * device dependency is faked (no WebXR/camera/depth/OpenCV), so the flow is
+ * exercised in isolation. The pose math itself lives in the framework's
+ * `solveQrPose`/`qr-pose` tests; here the solver is a fake that returns a fixed
+ * solution, so these tests assert ORCHESTRATION: the strict size gate, the
+ * intrinsics derivation, per-frame size recording, and which pose drives the
+ * scene.
  */
 
 import { describe, it, expect } from "vitest";
@@ -14,6 +17,9 @@ import type {
   RgbaImage,
   QrDetection,
   Pose,
+  QrSolvePoseInput,
+  QrPoseSolution,
+  CameraIntrinsics,
 } from "gps-plus-slam-app-framework/ar";
 import type { Vector3 } from "gps-plus-slam-app-framework/core";
 import { createQrDemoController, type DepthContext } from "./demo-controller";
@@ -25,30 +31,41 @@ const IMG: RgbaImage = {
   height: 100,
 };
 
-// A pixel square on a 100×100 frame → a planar world square (z = −1).
+// A 20-px square centered on the 100×100 frame, ordered TL, TR, BR, BL.
 const detection: QrDetection = {
   corners: [
-    { x: 20, y: 20 },
-    { x: 80, y: 20 },
-    { x: 80, y: 80 },
-    { x: 20, y: 80 },
+    { x: 40, y: 40 },
+    { x: 60, y: 40 },
+    { x: 60, y: 60 },
+    { x: 40, y: 60 },
   ],
   text: TEXT,
 };
 
-/** Linear screen→world map; a square frame keeps the world quad square. */
-const SCALE = 1 / 3;
+// Column-major XRView projection → intrinsics fx=fy=100, cx=cy=50 on a 100×100
+// frame (intrinsicsFromProjection reads P[0], P[5], P[8], P[9]).
+const PROJECTION = [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] as const;
+
+// Identity screen→world map (SCALE=1) so the unprojected corner square has side
+// 0.2 m → the depth-measured size converges to a constant 0.2.
 function fakeDepthContext(): DepthContext {
   return {
     unprojector: {
-      unproject: (dp): Vector3 | null => [
-        dp.screenX * SCALE,
-        dp.screenY * SCALE,
-        -1,
-      ],
+      unproject: (dp): Vector3 | null => [dp.screenX, dp.screenY, -1],
     },
     depthAt: () => 1,
     cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    projectionMatrix: [...PROJECTION],
+  };
+}
+
+/** Fixed PnP solution: QR centered 1 m in front, identity rotation. */
+const SOLVED_POSE: Pose = { position: [0, 0, -1], rotation: [0, 0, 0, 1] };
+function fakeSolution(): QrPoseSolution {
+  return {
+    qrPoseWorld: SOLVED_POSE,
+    qrPoseInCamera: SOLVED_POSE,
+    reprojectionErrorPx: 0.5,
   };
 }
 
@@ -58,14 +75,27 @@ const flush = async () => {
 
 function setup(
   overrides: Partial<Parameters<typeof createQrDemoController>[0]> = {},
+  opts: { omitSolver?: boolean } = {},
 ) {
   const detections: string[] = [];
   const sizes: { text: string; estimateM: number | null }[] = [];
   const sceneUpdates: { pose: Pose; sizeM: number | null }[] = [];
   const statuses: string[] = [];
+  const solveInputs: QrSolvePoseInput[] = [];
+  // `solvePose` is omitted entirely (not set to `undefined`) for the
+  // graceful-degrade test — `exactOptionalPropertyTypes` forbids `undefined`.
+  const solverDep = opts.omitSolver
+    ? {}
+    : {
+        solvePose: (input: QrSolvePoseInput) => {
+          solveInputs.push(input);
+          return fakeSolution();
+        },
+      };
   const controller = createQrDemoController({
     detect: () => Promise.resolve<QrDetection | null>(detection),
     getDepthContext: () => fakeDepthContext(),
+    ...solverDep,
     recordDetection: (e) => detections.push(e.text),
     recordSize: (text, est) => sizes.push({ text, estimateM: est.estimateM }),
     updateScene: (pose, sizeM) => sceneUpdates.push({ pose, sizeM }),
@@ -73,7 +103,7 @@ function setup(
     requiredLockCount: 2,
     ...overrides,
   });
-  return { controller, detections, sizes, sceneUpdates, statuses };
+  return { controller, detections, sizes, sceneUpdates, statuses, solveInputs };
 }
 
 async function feed(
@@ -87,59 +117,99 @@ async function feed(
 }
 
 describe("createQrDemoController", () => {
-  it("locks after N detections and records detection + size + scene update", async () => {
-    const { controller, detections, sizes, sceneUpdates, statuses } = setup();
-    await feed(controller, 4);
-
-    expect(detections).toContain(TEXT);
-    expect(sizes.length).toBeGreaterThan(0);
-    // The measured square has side 60/100 * SCALE = 0.2 m.
-    expect(sizes.at(-1)?.estimateM).toBeCloseTo(0.2, 3);
-    expect(sceneUpdates.length).toBeGreaterThan(0);
-    expect(sceneUpdates.at(-1)?.sizeM).toBeCloseTo(0.2, 3);
-    expect(controller.status).toBe("tracking");
-    expect(statuses).toContain("scanning");
-    expect(statuses).toContain("tracking");
-  });
-
-  it('converges the size to "estimated" after enough samples', async () => {
-    const { controller, sizes } = setup();
-    await feed(controller, 12);
-    // Constant square → spread 0 → estimated once minSamples is reached.
-    expect(sizes.at(-1)?.estimateM).toBeCloseTo(0.2, 3);
-    expect(controller.status).toBe("tracking");
-  });
-
-  it("does not record or lock when depth is unavailable", async () => {
-    const { controller, detections, sceneUpdates } = setup({
-      getDepthContext: () => null,
-    });
-    await feed(controller, 4);
+  it("records the size estimate every measured frame, before any lock (HUD progression + strict gate)", async () => {
+    const { controller, sizes, detections, sceneUpdates } = setup();
+    // Below the size accumulator's minSamples (8) → still 'measuring', so the
+    // strict gate withholds the pose: no lock, no scene update — but the size IS
+    // recorded each frame so the HUD can show convergence progress.
+    await feed(controller, 5);
+    expect(sizes).toHaveLength(5);
     expect(detections).toHaveLength(0);
     expect(sceneUpdates).toHaveLength(0);
     expect(controller.status).toBe("scanning");
   });
 
-  it("does not record when a corner has no depth read", async () => {
-    const ctx = fakeDepthContext();
-    const { controller, detections } = setup({
-      getDepthContext: () => ({ ...ctx, depthAt: () => null }),
-    });
-    await feed(controller, 4);
-    expect(detections).toHaveLength(0);
+  it("locks once the size converges and drives the scene with the PnP pose", async () => {
+    const { controller, detections, sceneUpdates, statuses } = setup();
+    await feed(controller, 12);
+
+    expect(detections).toContain(TEXT);
+    expect(controller.status).toBe("tracking");
+    expect(statuses).toContain("tracking");
+    // The scene is driven by the SOLVED PnP pose (z = −1), not a depth-fit fit.
+    expect(sceneUpdates.at(-1)?.pose.position).toEqual([0, 0, -1]);
+    // The cube size is the converged measured size (≈ 0.2 m).
+    expect(sceneUpdates.at(-1)?.sizeM).toBeCloseTo(0.2, 3);
   });
 
-  it("stays scanning when nothing is detected", async () => {
-    const { controller, detections } = setup({
-      detect: () => Promise.resolve(null),
+  it("passes intrinsics derived from the projection matrix + the measured size to solvePose", async () => {
+    const { controller, solveInputs } = setup();
+    await feed(controller, 12);
+    expect(solveInputs.length).toBeGreaterThan(0);
+    const last = solveInputs.at(-1) as QrSolvePoseInput;
+    expect(last.intrinsics).toEqual<CameraIntrinsics>({
+      fx: 100,
+      fy: 100,
+      cx: 50,
+      cy: 50,
     });
-    await feed(controller, 3);
+    expect(last.sizeM).toBeCloseTo(0.2, 3);
+    expect(last.cameraPose.position).toEqual([0, 0, 0]);
+  });
+
+  it("does not lock when no pose solver is available (OpenCV unavailable → graceful degrade)", async () => {
+    const { controller, detections, sceneUpdates, sizes } = setup(
+      {},
+      { omitSolver: true },
+    );
+    await feed(controller, 12);
+    // Size still measured (HUD works), but with no solver nothing is placed.
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(detections).toHaveLength(0);
+    expect(sceneUpdates).toHaveLength(0);
+    expect(controller.status).toBe("scanning");
+  });
+
+  it("does not lock when the solver rejects the detection (returns null)", async () => {
+    const { controller, detections } = setup({ solvePose: () => null });
+    await feed(controller, 12);
     expect(detections).toHaveLength(0);
     expect(controller.status).toBe("scanning");
   });
 
-  it("rejects a degenerate quad (matches solveQrPose's validateQuad guard)", async () => {
-    // Four collinear corners → zero area → degenerate → must not lock.
+  it("does not measure or lock when depth is unavailable", async () => {
+    const { controller, detections, sizes, sceneUpdates } = setup({
+      getDepthContext: () => null,
+    });
+    await feed(controller, 12);
+    expect(sizes).toHaveLength(0);
+    expect(detections).toHaveLength(0);
+    expect(sceneUpdates).toHaveLength(0);
+    expect(controller.status).toBe("scanning");
+  });
+
+  it("does not measure when a corner has no depth read", async () => {
+    const ctx = fakeDepthContext();
+    const { controller, detections, sizes } = setup({
+      getDepthContext: () => ({ ...ctx, depthAt: () => null }),
+    });
+    await feed(controller, 12);
+    expect(sizes).toHaveLength(0);
+    expect(detections).toHaveLength(0);
+  });
+
+  it("stays scanning when nothing is detected", async () => {
+    const { controller, detections, sizes } = setup({
+      detect: () => Promise.resolve(null),
+    });
+    await feed(controller, 12);
+    expect(detections).toHaveLength(0);
+    expect(sizes).toHaveLength(0);
+    expect(controller.status).toBe("scanning");
+  });
+
+  it("rejects a degenerate quad before measuring (matches solveQrPose's validateQuad guard)", async () => {
+    // Four collinear corners → zero area → degenerate → must not measure or lock.
     const degenerate: QrDetection = {
       corners: [
         { x: 0, y: 0 },
@@ -149,40 +219,38 @@ describe("createQrDemoController", () => {
       ],
       text: TEXT,
     };
-    const { controller, detections } = setup({
+    const { controller, detections, sizes } = setup({
       detect: () => Promise.resolve<QrDetection | null>(degenerate),
     });
-    await feed(controller, 4);
+    await feed(controller, 12);
     expect(detections).toHaveLength(0);
+    expect(sizes).toHaveLength(0);
     expect(controller.status).toBe("scanning");
   });
 
   it("renders the resolveStablePose filtered pose when available", async () => {
-    const stable: Pose = {
-      position: [9, 9, 9],
-      rotation: [0, 0, 0, 1],
-    };
+    const stable: Pose = { position: [9, 9, 9], rotation: [0, 0, 0, 1] };
     const { controller, sceneUpdates } = setup({
       resolveStablePose: () => stable,
     });
-    await feed(controller, 4);
-    // The overlay must use the FILTERED pose, not the raw depth-fit pose.
+    await feed(controller, 12);
+    // The overlay must use the FILTERED pose, not the raw PnP pose.
     expect(sceneUpdates.at(-1)?.pose.position).toEqual([9, 9, 9]);
   });
 
-  it("falls back to the raw pose while the stable pose is not yet converged", async () => {
+  it("falls back to the raw PnP pose while the stable pose is not yet converged", async () => {
     const { controller, sceneUpdates } = setup({
       resolveStablePose: () => null, // not converged
     });
-    await feed(controller, 4);
+    await feed(controller, 12);
     expect(sceneUpdates.length).toBeGreaterThan(0);
-    // Raw depth-fit pose centroid of the planar square is at z = −1.
-    expect(sceneUpdates.at(-1)?.pose.position[2]).toBeCloseTo(-1, 6);
+    // Raw PnP pose: QR centered 1 m in front (z = −1).
+    expect(sceneUpdates.at(-1)?.pose.position).toEqual([0, 0, -1]);
   });
 
   it("reset() clears accumulators and returns to idle", async () => {
     const { controller } = setup();
-    await feed(controller, 4);
+    await feed(controller, 12);
     controller.reset();
     expect(controller.status).toBe("idle");
   });

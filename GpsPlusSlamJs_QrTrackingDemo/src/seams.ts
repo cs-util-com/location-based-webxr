@@ -22,6 +22,11 @@
  * e2e do not depend on its runtime behaviour. `startFrameSource` stays as the
  * e2e frame-injection seam; in PROD its body just points the framework QR
  * callback at the controller.
+ *
+ * The PROD **pose solver** is likewise device-verified: `loadSolvePose` loads
+ * opencv.js (`opencv-loader.ts`) and wraps `solveQrPose`/`OpenCvPnpSquare` — the
+ * production PnP path (Step-0 conversion). The e2e fakes it with a fixed solution
+ * so the locked path runs without WASM.
  */
 
 import {
@@ -38,6 +43,8 @@ import {
 import {
   createBarcodeDetectorFrontEnd,
   createDepthUnprojector,
+  solveQrPose,
+  OpenCvPnpSquare,
   type RgbaImage,
   type QrDetection,
 } from "gps-plus-slam-app-framework/ar";
@@ -48,7 +55,8 @@ import type {
 } from "gps-plus-slam-app-framework/types";
 import type { Object3D } from "three";
 import type { DemoCapabilitySupport } from "./capability.js";
-import type { DepthContext } from "./demo-controller.js";
+import type { DepthContext, SolvePoseFn } from "./demo-controller.js";
+import { loadOpenCv } from "./opencv-loader.js";
 
 /** The device functions a Playwright e2e fake may override. */
 export interface QrDemoSeams {
@@ -58,8 +66,14 @@ export interface QrDemoSeams {
   getArWorldGroup(): Object3D | null;
   /** A detect+decode function (BarcodeDetector front-end), or always-null. */
   createDetect(): (image: RgbaImage) => Promise<QrDetection | null>;
-  /** Latest frame's depth context (unprojector + depth lookup + camera pose). */
+  /** Latest frame's depth context (unprojector + depth lookup + camera pose + intrinsics). */
   getDepthContext(): DepthContext | null;
+  /**
+   * Resolve the production PnP pose solver (loads OpenCV on first call). Resolves
+   * to a closure wrapping `solveQrPose` + `OpenCvPnpSquare`; the controller calls
+   * it once the size has converged. Rejects if OpenCV cannot load.
+   */
+  loadSolvePose(): Promise<SolvePoseFn>;
   /**
    * Start delivering frames to `onImage` at the given detection cadence
    * (`intervalMs`); returns a stop function. The frame source is the SINGLE
@@ -161,7 +175,16 @@ export const realSeams: QrDemoSeams = {
       unprojector,
       depthAt: (x, y) => nearestDepth(sample.points, x, y),
       cameraPose: { position: sample.cameraPos, rotation: sample.cameraRot },
+      projectionMatrix: sample.projectionMatrix,
     };
+  },
+  async loadSolvePose(): Promise<SolvePoseFn> {
+    // Load opencv.js once, build a reusable PnP solver, and wrap the production
+    // `solveQrPose`. The solver lives for the session (the demo never disposes
+    // it — acceptable for a debug tool; per-solve Mats are freed internally).
+    const cv = await loadOpenCv();
+    const solver = new OpenCvPnpSquare(cv);
+    return (input) => solveQrPose({ ...input, solver });
   },
   startFrameSource(
     onImage: (image: RgbaImage) => void,

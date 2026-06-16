@@ -71,11 +71,11 @@ export async function installQrDemoFakes(page, { planar = true } = {}) {
         getDepthContext: () => ({
           // Linear screen→world map; the square frame keeps the quad square.
           // When `planar` is false, the bottom-right corner (screenX,screenY
-          // both > 0.5) is pushed out of the plane so the quad is non-planar:
-          // `poseFromWorldCorners` still fits a valid pose (lock fires), but
-          // `estimateQrSizeFromDepth`'s planarity score drops below the accept
-          // threshold, so the size never leaves `unknown` (estimateM stays
-          // null) — the real-device "detected but size not yet measured" case.
+          // both > 0.5) is pushed out of the plane so `estimateQrSizeFromDepth`'s
+          // planarity score drops below the accept threshold and the size never
+          // leaves `unknown`. Under the STRICT depth→size→PnP gate that means the
+          // pose is never solved (no lock, nothing glued) — the accepted §2.7
+          // consequence of mirroring production's size gate.
           unprojector: {
             unproject: (dp) => [
               dp.screenX * unprojectScale,
@@ -85,7 +85,20 @@ export async function installQrDemoFakes(page, { planar = true } = {}) {
           },
           depthAt: () => 1,
           cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          // Column-major XRView projection → fx=fy=frameSize, cx=cy=frameSize/2.
+          // Only used to derive intrinsics for the (faked) solver; its exact
+          // value is irrelevant because the fake solvePose ignores it.
+          projectionMatrix: [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         }),
+        // Faked PnP solver: a fixed solution (QR centered 1 m in front), so the
+        // locked path runs end-to-end without opencv.js. Bypasses the real
+        // `solveQrPose` reprojection gate (covered by framework unit tests).
+        loadSolvePose: () =>
+          Promise.resolve(() => ({
+            qrPoseWorld: { position: [0, 0, -1], rotation: [0, 0, 0, 1] },
+            qrPoseInCamera: { position: [0, 0, -1], rotation: [0, 0, 0, 1] },
+            reprojectionErrorPx: 0.5,
+          })),
         startFrameSource: (onImage) => {
           control.pump = onImage;
           return () => {
