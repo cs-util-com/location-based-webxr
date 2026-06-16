@@ -1,8 +1,16 @@
 # pose-from-corners.ts
 
-**Purpose:** Fit a rigid 6-DoF pose to the 4 depth-unprojected QR corners — the
-demo's pose source (Note 4 "cleanest — a rigid fit to the depth-unprojected 3D
-corners, needs no size up front"). No `solvePnP`, no OpenCV.
+**Purpose:** Fit a rigid 6-DoF pose to the 4 depth-unprojected QR corners (Note 4
+"cleanest — a rigid fit to the depth-unprojected 3D corners, needs no size up
+front"). No `solvePnP`, no OpenCV.
+
+> **Status (2026-06-16): no longer wired into the demo.** The Step-0 conversion
+> switched `demo-controller` to the production PnP path
+> (`solveQrPose`/`OpenCvPnpSquare`), so this depth-fit pose is now used only by its
+> own test. It is kept (not deleted) as the subject of the §2.4 "promote
+> pose-from-corners to the framework" follow-up — when promoted, move it there
+> rather than re-deriving it. See the
+> [demo-PnP conversion plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-16-qr-demo-pnp-conversion-plan.md).
 
 ## Public API
 
