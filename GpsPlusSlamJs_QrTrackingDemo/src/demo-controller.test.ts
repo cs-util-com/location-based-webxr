@@ -22,7 +22,11 @@ import type {
   CameraIntrinsics,
 } from "gps-plus-slam-app-framework/ar";
 import type { Vector3 } from "gps-plus-slam-app-framework/core";
-import { createQrDemoController, type DepthContext } from "./demo-controller";
+import {
+  createQrDemoController,
+  type DepthContext,
+  type QrFrameDiagnostics,
+} from "./demo-controller";
 
 const TEXT = "https://demo/qr";
 const IMG: RgbaImage = {
@@ -83,6 +87,7 @@ function setup(
   const sceneUpdates: { pose: Pose; sizeM: number | null }[] = [];
   const statuses: string[] = [];
   const solveInputs: QrSolvePoseInput[] = [];
+  const diags: QrFrameDiagnostics[] = [];
   // `solvePose` is omitted entirely (not set to `undefined`) for the
   // graceful-degrade test — `exactOptionalPropertyTypes` forbids `undefined`.
   const solverDep = opts.omitSolver
@@ -102,10 +107,19 @@ function setup(
       sizes.push({ text, estimateM: est.estimateM, status: est.status }),
     updateScene: (pose, sizeM) => sceneUpdates.push({ pose, sizeM }),
     onStatus: (s) => statuses.push(s),
+    onFrameDiagnostics: (d) => diags.push(d),
     requiredLockCount: 2,
     ...overrides,
   });
-  return { controller, detections, sizes, sceneUpdates, statuses, solveInputs };
+  return {
+    controller,
+    detections,
+    sizes,
+    sceneUpdates,
+    statuses,
+    solveInputs,
+    diags,
+  };
 }
 
 async function feed(
@@ -275,5 +289,73 @@ describe("createQrDemoController", () => {
     await feed(controller, 12);
     controller.reset();
     expect(controller.status).toBe("idle");
+  });
+});
+
+// The on-device root-cause readout: each frame emits WHY it did/didn't accept a
+// sample or lock, so the "0 samples / nothing glued" failure can be diagnosed on
+// a phone instead of inferred. These pin the reason for each sub-cause.
+describe("createQrDemoController — frame diagnostics", () => {
+  it("reports depth coverage, quality and reprojection on a solved frame", async () => {
+    const { controller, diags } = setup();
+    await feed(controller, 3);
+    const solved = diags.find((d) => d.solved === true);
+    expect(solved).toBeDefined();
+    expect(solved?.detected).toBe(true);
+    expect(solved?.depthCornerHits).toBe(4);
+    expect(solved?.quality ?? 0).toBeGreaterThan(0.8);
+    expect(solved?.sizeM).toBeCloseTo(0.2, 3);
+    expect(solved?.reprojectionErrorPx).toBeCloseTo(0.5, 5);
+    expect(solved?.reason).toContain("solved");
+  });
+
+  it("emits 'no depth context' when depth is unavailable", async () => {
+    const { controller, diags } = setup({ getDepthContext: () => null });
+    await feed(controller, 2);
+    const d = diags.at(-1);
+    expect(d?.detected).toBe(true);
+    expect(d?.hasDepthContext).toBe(false);
+    expect(d?.reason).toContain("no depth context");
+  });
+
+  it("reports the corner depth-hit count (0/4) when corners lack a depth read", async () => {
+    const ctx = fakeDepthContext();
+    const { controller, diags } = setup({
+      getDepthContext: () => ({ ...ctx, depthAt: () => null }),
+    });
+    await feed(controller, 2);
+    const d = diags.at(-1);
+    expect(d?.depthCornerHits).toBe(0);
+    expect(d?.reason).toContain("corner depth missing");
+  });
+
+  it("reports 'low quality' (no sample accepted) for a non-planar quad with depth present", async () => {
+    const ctx = fakeDepthContext();
+    // Depth resolves at every corner (hits = 4) but the unprojected quad is
+    // non-planar (BR pushed off the plane) → quality < 0.8 → never accepted →
+    // sampleCount stays 0 → nothing glues. This is the C2 ("quality gate too
+    // strict for noisy depth") signal the on-device log must surface.
+    const nonPlanar: DepthContext = {
+      ...ctx,
+      unprojector: {
+        unproject: (dp): Vector3 | null => [
+          dp.screenX,
+          dp.screenY,
+          dp.screenX > 0.5 && dp.screenY > 0.5 ? -0.85 : -1,
+        ],
+      },
+    };
+    const { controller, diags, detections } = setup({
+      getDepthContext: () => nonPlanar,
+    });
+    await feed(controller, 4);
+    const d = diags.at(-1);
+    expect(d?.detected).toBe(true);
+    expect(d?.depthCornerHits).toBe(4); // depth present at all corners…
+    expect(d?.accepted).toBe(false); // …but quality too low to accept
+    expect(d?.sampleCount).toBe(0);
+    expect(d?.quality ?? 1).toBeLessThan(0.8);
+    expect(d?.reason).toContain("low quality");
+    expect(detections).toHaveLength(0); // never locks → nothing glued
   });
 });

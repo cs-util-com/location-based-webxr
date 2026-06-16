@@ -17,8 +17,16 @@ design in
   PnP solve (production: `solveQrPose` + `OpenCvPnpSquare`; tests inject a fake).
 - `QrDemoControllerDeps` — injected `detect`, `getDepthContext`, `solvePose`,
   `recordDetection`, `recordSize`, `updateScene`, optional `resolveStablePose`
-  (windowed filtered pose for the overlay — e.g. `selectStableQrPose`),
-  `onStatus`/`now`/ scheduler tuning.
+  (windowed filtered pose for the overlay — e.g. `selectStableQrPose`), optional
+  `onFrameDiagnostics`, `onStatus`/`now`/ scheduler tuning.
+- `QrFrameDiagnostics` — the per-frame on-device root-cause record emitted via
+  `onFrameDiagnostics` at every decision point: `{ detected, text, quadValid,
+  hasDepthContext, depthCornerHits (0–4), sizeM, quality, accepted, sampleCount,
+  status, solved, reprojectionErrorPx, reason }`. `null` fields = "not reached this
+  far". The `reason` is the single-line verdict (`no QR` / `degenerate quad` / `no
+  depth context` / `corner depth missing (N/4)` / `unproject failed …` / `low
+  quality X — no sample yet` / `no solver (OpenCV loading)` / `PnP rejected …` /
+  `solved (reproj Xpx)`).
 - `DepthContext = { unprojector, depthAt(sx,sy), cameraPose, projectionMatrix }`
   — `projectionMatrix` (column-major XRView projection) is the source for
   `intrinsicsFromProjection(projectionMatrix, image.width, image.height)`.
@@ -55,6 +63,15 @@ design in
   current frame. The ring buffer keeps the RAW poses — the filtered pose is never
   written back. See
   [2026-06-16-followup-qr-pose-stabilization-sliding-window.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-16-followup-qr-pose-stabilization-sliding-window.md).
+- **Per-frame diagnostics (on-device root-cause aid).** Each processed frame emits
+  one `QrFrameDiagnostics` (when `onFrameDiagnostics` is wired) reporting depth
+  coverage (`depthCornerHits`, computed independently of the measurer via
+  `countDepthHits`, since the measurer fails wholesale on the first missing corner),
+  this frame's RAW `sizeM`+`quality` (recomputed with `estimateQrSizeFromDepth` on
+  the returned samples — cheap, so the log shows quality even on rejected frames),
+  whether the accumulator `accepted` it (`sampleCount` grew vs the per-marker
+  `lastSampleCount`), and the verdict `reason`. This is what makes the "0 samples"
+  failure diagnosable on a phone (depth-absent vs quality-too-strict vs PnP-reject).
 - Pose math is fully delegated to `solvePose` → unit-testable without WebXR /
   camera / depth / OpenCV.
 
@@ -66,4 +83,8 @@ the lock fires as soon as a running-median size EXISTS (still `measuring`, not
 size (the gate-regression guard); intrinsics derived from `projectionMatrix` + the
 measured size are passed to `solvePose`; absent solver / null solve / no-depth /
 no-corner-depth / no-detection / degenerate quad → stay scanning; stable-pose
-override vs raw-PnP fallback; `reset` → idle.
+override vs raw-PnP fallback; `reset` → idle. **Frame diagnostics** (`createQrDemoController
+— frame diagnostics`): a solved frame reports `depthCornerHits 4` + `quality > 0.8`
++ `reprojectionErrorPx` + `reason "solved"`; no-depth-context, corner-depth-missing
+(`0/4`), and a non-planar quad (depth present but `quality < 0.8` → not accepted →
+`sampleCount 0` → never locks) each emit the right `reason`.

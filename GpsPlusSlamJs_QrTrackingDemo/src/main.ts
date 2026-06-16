@@ -33,7 +33,7 @@ import { toHudView, type DemoStatus } from "./hud-view.js";
 import { isDemoSupported, capabilityMessage } from "./capability.js";
 import {
   createDebugLog,
-  formatDetectionLine,
+  formatDiagnosticsLine,
   formatStatusLine,
 } from "./debug-log.js";
 
@@ -74,10 +74,10 @@ let status: DemoStatus = "idle";
 /** The most-recently detected payload — drives which marker the HUD shows. */
 let activeText: string | null = null;
 
-/** On-screen detection log (cadence/tuning aid — see debug-log.ts). */
+/** On-screen per-frame diagnostics log (the on-device root-cause aid). */
 const debugLog = createDebugLog();
-/** Clock of the previous lock, for the per-line Δt. */
-let lastLockMs: number | null = null;
+/** Clock of the previous logged frame, for the per-line Δt (cadence). */
+let lastFrameMs: number | null = null;
 
 function renderDebugLog(): void {
   dom.debugLog.textContent = debugLog.lines.join("\n");
@@ -169,20 +169,28 @@ async function startAr(): Promise<void> {
       // showing a stale "0 samples / unknown" while measurement is underway.
       activeText = text;
       store?.dispatch(recordQrSizeEstimate({ text, estimate }));
-      // Log every lock with the Δt since the previous one — the cadence signal
-      // for tuning the throttle + accumulator thresholds on a real device.
+    },
+    // Per-frame diagnostics → the on-screen log: depth coverage, raw size +
+    // quality, and the accept/reject reason. This is the on-device root-cause
+    // readout for "0 samples / nothing glued" (see the tuning-overlay plan). Only
+    // logged for frames where a QR was detected (skip the "no QR" spam).
+    onFrameDiagnostics: (d) => {
+      if (!d.detected) return;
       const nowMs = performance.now();
       debugLog.append(
-        formatDetectionLine({
+        formatDiagnosticsLine({
           clockMs: nowMs,
-          deltaMs: lastLockMs === null ? null : nowMs - lastLockMs,
-          text,
-          sizeStatus: estimate.status,
-          estimateM: estimate.estimateM,
-          sampleCount: estimate.sampleCount,
+          deltaMs: lastFrameMs === null ? null : nowMs - lastFrameMs,
+          text: d.text ?? "?",
+          depthCornerHits: d.depthCornerHits,
+          sizeM: d.sizeM,
+          quality: d.quality,
+          sampleCount: d.sampleCount,
+          status: d.status,
+          reason: d.reason,
         }),
       );
-      lastLockMs = nowMs;
+      lastFrameMs = nowMs;
       renderDebugLog();
     },
     updateScene: (pose, sizeM) => {
