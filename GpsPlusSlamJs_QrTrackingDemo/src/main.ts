@@ -163,6 +163,11 @@ async function startAr(): Promise<void> {
       store?.dispatch(recordQrDetection(event));
     },
     recordSize: (text, estimate) => {
+      // Track the marker being measured so the HUD shows live size/sample
+      // progress immediately — independently of (and before) any lock. Without
+      // this the HUD reads `undefined` until `recordDetection` fires on a lock,
+      // showing a stale "0 samples / unknown" while measurement is underway.
+      activeText = text;
       store?.dispatch(recordQrSizeEstimate({ text, estimate }));
       // Log every lock with the Δt since the previous one — the cadence signal
       // for tuning the throttle + accumulator thresholds on a real device.

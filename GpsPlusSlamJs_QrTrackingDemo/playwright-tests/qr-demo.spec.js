@@ -63,26 +63,27 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
 });
 
 /**
- * Strict depth→size→PnP gate (Step-0 conversion): the PnP pose needs a physical
- * size, so when the depth-measured size never converges (noisy/non-planar depth →
- * quality below the accept threshold) NOTHING is placed — no lock, no axis, no
- * cube. This deliberately mirrors production (which blocks the solve on a `null`
- * size) and is the accepted reversal of the earlier §2.7 "axis appears before the
- * size converges" behavior (that was a demo-only nicety on the size-free depth-fit
- * pose). On a real device the lever is the size accumulator's quality threshold.
+ * `depth → size → PnP` gate (Step-0 conversion): the PnP pose needs a physical
+ * size, so when NO size can be measured at all — noisy/non-planar depth keeps every
+ * observation's quality below the accept threshold, so the accumulator never takes
+ * a sample and `estimateM` stays `null` — NOTHING is placed: no lock, no axis, no
+ * cube. This mirrors production, which blocks the solve on a `null` size. Note the
+ * gate is "a size EXISTS", not "the size has converged to `estimated`": once even a
+ * single sample is accepted the overlay is placed with that provisional median (the
+ * `estimated` lifecycle gates only the high-weight GPS vote, never cast here).
  */
-test.describe("QR-tracking demo — strict size gate withholds the pose until size converges", () => {
+test.describe("QR-tracking demo — gate withholds the pose until a size can be measured", () => {
   test.beforeEach(async ({ page }) => {
     await installQrDemoFakes(page, { planar: false });
   });
 
-  test("places nothing while the size stays unknown (no lock, no axis, no cube)", async ({
+  test("places nothing while no size can be measured (no lock, no axis, no cube)", async ({
     page,
   }) => {
     await bootQrDemo(page);
     await feedFrames(page, 12);
 
-    // Size never converged → strict gate never solves the pose → never locks.
+    // No sample ever accepted → estimateM stays null → gate never solves → no lock.
     await expect(page.getByTestId("hud-status")).toContainText("Scanning");
     await expect(page.getByTestId("hud-lifecycle")).toHaveText("unknown");
     await expect(page.getByTestId("hud-size")).toHaveText("—");

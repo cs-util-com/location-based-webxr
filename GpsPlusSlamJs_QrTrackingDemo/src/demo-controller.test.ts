@@ -2,14 +2,14 @@
  * QR-tracking demo controller — unit tests.
  *
  * Why this matters: this pins the orchestration the whole demo rests on —
- * detect → measure size from depth → (once size CONVERGES) solve pose via the
+ * detect → measure size from depth → (as soon as a size EXISTS) solve pose via the
  * injected PnP closure → (on lock) record into the store + glue the scene. Every
  * device dependency is faked (no WebXR/camera/depth/OpenCV), so the flow is
  * exercised in isolation. The pose math itself lives in the framework's
  * `solveQrPose`/`qr-pose` tests; here the solver is a fake that returns a fixed
- * solution, so these tests assert ORCHESTRATION: the strict size gate, the
- * intrinsics derivation, per-frame size recording, and which pose drives the
- * scene.
+ * solution, so these tests assert ORCHESTRATION: the size gate (a size exists, NOT
+ * vote-grade convergence), the intrinsics derivation, per-frame size recording,
+ * and which pose drives the scene.
  */
 
 import { describe, it, expect } from "vitest";
@@ -78,7 +78,8 @@ function setup(
   opts: { omitSolver?: boolean } = {},
 ) {
   const detections: string[] = [];
-  const sizes: { text: string; estimateM: number | null }[] = [];
+  const sizes: { text: string; estimateM: number | null; status: string }[] =
+    [];
   const sceneUpdates: { pose: Pose; sizeM: number | null }[] = [];
   const statuses: string[] = [];
   const solveInputs: QrSolvePoseInput[] = [];
@@ -97,7 +98,8 @@ function setup(
     getDepthContext: () => fakeDepthContext(),
     ...solverDep,
     recordDetection: (e) => detections.push(e.text),
-    recordSize: (text, est) => sizes.push({ text, estimateM: est.estimateM }),
+    recordSize: (text, est) =>
+      sizes.push({ text, estimateM: est.estimateM, status: est.status }),
     updateScene: (pose, sizeM) => sceneUpdates.push({ pose, sizeM }),
     onStatus: (s) => statuses.push(s),
     requiredLockCount: 2,
@@ -117,19 +119,39 @@ async function feed(
 }
 
 describe("createQrDemoController", () => {
-  it("records the size estimate every measured frame, before any lock (HUD progression + strict gate)", async () => {
-    const { controller, sizes, detections, sceneUpdates } = setup();
-    // Below the size accumulator's minSamples (8) → still 'measuring', so the
-    // strict gate withholds the pose: no lock, no scene update — but the size IS
-    // recorded each frame so the HUD can show convergence progress.
+  it("records the size estimate every measured frame (HUD progression)", async () => {
+    const { controller, sizes } = setup();
     await feed(controller, 5);
+    // The size is recorded on EVERY measured frame so the HUD can show the
+    // running median + sample count even before (and independently of) a lock.
     expect(sizes).toHaveLength(5);
-    expect(detections).toHaveLength(0);
-    expect(sceneUpdates).toHaveLength(0);
-    expect(controller.status).toBe("scanning");
+    expect(sizes[0]?.estimateM).toBeCloseTo(0.2, 3);
   });
 
-  it("locks once the size converges and drives the scene with the PnP pose", async () => {
+  it("locks as soon as a running-median size exists — it does NOT wait for the 'estimated' lifecycle", async () => {
+    // REGRESSION: the controller previously gated the PnP solve on
+    // `estimate.status === 'estimated'` (8 quality-≥0.8 samples within a 1 cm
+    // spread). On noisy device depth that bar is essentially never met, so the
+    // overlay never appeared. The correct gate — matching the plan and the
+    // production controller — blocks the solve only while NO size exists
+    // (`estimateM === null`); `SOLVEPNP_IPPE_SQUARE` rotation is size-invariant,
+    // so the provisional median is a valid size that just refines as it converges.
+    const { controller, detections, sceneUpdates, sizes, solveInputs } =
+      setup();
+    // requiredLockCount=2 → two consecutive measured frames suffice once a size
+    // exists, which is from the very first accepted sample.
+    await feed(controller, 3);
+    // Far below minSamples (8): the size is still 'measuring', NOT 'estimated'…
+    expect(sizes.at(-1)?.status).toBe("measuring");
+    // …yet the detection has locked and the scene is glued with the PnP pose.
+    expect(detections).toContain(TEXT);
+    expect(controller.status).toBe("tracking");
+    expect(sceneUpdates.at(-1)?.pose.position).toEqual([0, 0, -1]);
+    // The solve ran with the provisional running-median size (≈ 0.2 m).
+    expect(solveInputs.at(-1)?.sizeM).toBeCloseTo(0.2, 3);
+  });
+
+  it("drives the scene with the PnP pose and the measured size", async () => {
     const { controller, detections, sceneUpdates, statuses } = setup();
     await feed(controller, 12);
 

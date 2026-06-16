@@ -4,18 +4,21 @@
  * Per throttled/coalesced frame it: detects a QR (front-end), measures the size
  * from depth via the shared framework {@link createQrSizeMeasurer} (samples the
  * corners + an interior point, accumulates a per-marker running median), and —
- * once the size lifecycle has CONVERGED — solves the QR pose with the production
- * PnP path (`solveQrPose`/`OpenCvPnpSquare`, injected as {@link solvePose}). On
- * the N-consecutive-lock it records the detection into the `qrDetected` store and
+ * once a size estimate EXISTS — solves the QR pose with the production PnP path
+ * (`solveQrPose`/`OpenCvPnpSquare`, injected as {@link solvePose}). On the
+ * N-consecutive-lock it records the detection into the `qrDetected` store and
  * glues the debug axis + cube to the pose.
  *
- * STRICT `depth → size → PnP` (maintainer decision 2026-06-16, see
+ * `depth → size → PnP` gate (see
  * `GpsPlusSlamJs_Docs/docs/2026-06-16-qr-demo-pnp-conversion-plan.md`): the PnP
- * solve needs a physical size, so no pose (hence no axis/cube) is produced until
- * the measured size reaches `estimated` — deliberately mirroring production, whose
- * controller blocks the solve on a `null` size. The size estimate is dispatched
- * EVERY measured frame (not only on a lock) so the HUD shows convergence progress
- * exactly as before; only the pose/lock waits for convergence.
+ * solve needs a physical size, so no pose (hence no axis/cube) is produced until a
+ * size estimate exists (`estimateM !== null`, i.e. the first accepted depth
+ * sample) — mirroring production, whose controller blocks the solve on a `null`
+ * size. It does NOT wait for the vote-grade `estimated` lifecycle: that bar gates
+ * the high-weight GPS vote (never cast here), and on noisy device depth it is
+ * rarely met, so gating the overlay on it left nothing ever glued. The size
+ * estimate is dispatched EVERY measured frame (not only on a lock) so the HUD
+ * shows the running median + convergence progress independently of the lock.
  *
  * The pose math is fully delegated to the injected {@link solvePose} closure
  * (production: `solveQrPose` backed by `OpenCvPnpSquare`; tests inject a fake), so
@@ -168,11 +171,17 @@ export function createQrDemoController(
     // only happens after convergence — without this the HUD would freeze).
     recordSize(detection.text, estimate);
 
-    // Strict `depth → size → PnP`: no pose until the size lifecycle reaches
-    // `estimated`, mirroring production (`selectResolvedQrSizeM` exposes a size
-    // only when estimated). `estimateM` is the running median from the first
-    // accepted sample, so gate on the lifecycle STATUS, not on `estimateM`.
-    if (estimate.status !== "estimated" || estimate.estimateM === null) {
+    // `depth → size → PnP` gate: block the solve only while NO size exists yet
+    // (`estimateM === null`), mirroring the production controller, which blocks on
+    // a `null` size (see `qr-tracking-controller`). `SOLVEPNP_IPPE_SQUARE` rotation
+    // is size-invariant and translation scales with size, so the provisional
+    // running median — available from the first accepted sample — is a valid size
+    // that simply refines as more samples land. We deliberately do NOT wait for
+    // the vote-grade `estimated` lifecycle: that bar (≥8 quality-≥0.8 samples
+    // within a 1 cm spread) gates the high-weight GPS *vote*, which this geo-less
+    // demo never casts, and on noisy on-device depth it is rarely met — so gating
+    // the overlay on it left nothing ever glued (the bug this fixes).
+    if (estimate.estimateM === null) {
       return null;
     }
     const sizeM = estimate.estimateM;
