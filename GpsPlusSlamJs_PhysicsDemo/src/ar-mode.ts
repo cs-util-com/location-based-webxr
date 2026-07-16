@@ -22,6 +22,10 @@ import {
   stopDepthCapture,
 } from "gps-plus-slam-app-framework/ar/webxr-session";
 import { registerXrFrameUpdate } from "gps-plus-slam-app-framework/ar/xr-frame-loop";
+import {
+  DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,
+  DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
+} from "gps-plus-slam-app-framework/ar/depth-sampler";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state/create-slam-app-store";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage/null-storage-backend";
 import { recordDepthSample } from "gps-plus-slam-app-framework/state/recording-slice";
@@ -84,8 +88,14 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
   }
 
   // Live room reconstruction from the depth stream — one occluder for occlusion
-  // AND physics, with the mesh mode + shader from the UI dropdowns.
-  startDepthCapture();
+  // AND physics, with the mesh mode + shader from the UI dropdowns. Depth runs
+  // at the framework RECONSTRUCTION cadence (recorder parity; the bare
+  // fallback 16×16 @ 1 Hz fed 8× fewer points/s and built the mesh visibly
+  // slower — 2026-07-16 field feedback + density/cadence sweep).
+  startDepthCapture({
+    intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
+    gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,
+  });
   const occupancy = createOccupancyView(arWorldGroup, store, {
     meshMode: deps.meshStyleSelect.value as MeshMode,
     debugStyle: deps.meshShaderSelect.value as OccluderDebugStyle,

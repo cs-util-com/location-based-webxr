@@ -102,10 +102,11 @@ test.describe('Settings Modal', () => {
 
     test('depth grid slider shows default value', async ({ page }) => {
       const valueDisplay = page.locator('#depth-grid-value');
-      // Default raised to 32 (max points/sample) in the 2026-07-01
-      // fast-reconstruction tuning — cells confirm fastest. The slider max was
-      // also raised to 64 for on-device experimentation with higher densities.
-      await expect(valueDisplay).toHaveText('32×32');
+      // Default raised 32 → 64 on 2026-07-16 (ground-truth density/cadence
+      // sweep + field decision): lattice density is the stronger
+      // reconstruction-speed lever; the value equals the framework
+      // DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE shared with the PhysicsDemo.
+      await expect(valueDisplay).toHaveText('64×64');
     });
 
     test('images interval slider shows default value', async ({ page }) => {

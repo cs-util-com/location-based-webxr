@@ -70,7 +70,7 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ```typescript
 {
-  depth: { enabled: true, intervalMs: 500, gridSize: 32, rgb: true },
+  depth: { enabled: true, intervalMs: 500, gridSize: 64, rgb: true },
   images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1,
             motionFilter: { enabled: true, maxAngularVelocity: 0.6, maxLinearVelocity: 2.5, maxWaitMs: 4000 },
             qualityFilter: { enabled: false, blurRelativeThreshold: 0.5, minMeanLuminance: 10, maxWaitMs: 4000 } },
@@ -90,7 +90,7 @@ builds up **as fast as possible** (param-sweep on a real recording — see
 [2026-06-30-0829-occluder-tuning-followups.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-0829-occluder-tuning-followups.md), Round 6):
 
 - `depth.intervalMs` **500** — the default cadence (2 samples/s). No longer the slider minimum: the floor was lowered 500 → **100** (2026-07-16, superset-capture strategy) so dense validation recordings (100–250 ms × gridSize 64) can be captured and DECIMATED in replay to simulate every slower configuration. The production default is untouched; expect ~200 KB per 64²-sample and large zips below 250 ms — the sampler emits at most once per XR frame, so an over-ambitious interval degrades gracefully.
-- `depth.gridSize` **32** — the previous slider max (1024 points/sample); more observations per sample confirm cells fastest. **The slider max was raised to 64** (4096 points/sample) for on-device experimentation with even higher densities — measure the per-sample depth-readback cost before adopting a value above 32.
+- `depth.gridSize` **64** — raised from 32 on 2026-07-16 (ground-truth density/cadence sweep + field decision): lattice DENSITY is the stronger, more point-efficient speed lever than temporal rate — 64×64 = 4096 points/sample reaches 80 % true-surface coverage in 0.28 orbit revolutions vs 0.38 at 32, at the best measured fidelity. Now the framework `DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE` (with `…_INTERVAL_MS`), shared with the PhysicsDemo so the two apps build at the same speed. The 4× per-sample depth-readback/carve cost is under explicit field test — if it janks on-device, this is the knob to lower.
 - `occupancy.minConfidence` **3** — the noise floor: a cell needs this many observations before it is rendered (≈ the _dwell time_ before a surface meshes, ≈1.5 s at 500 ms sampling). Kept at 3 (the [2026-07-16 sweep](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md): floaters = phantom colliders are set by the floor, not the voxel — mc 3 ≈ 1.9% floaters vs mc 2 ≈ 3.5%, so the floor is the fidelity lever). 1 = unfiltered/legacy. Now the framework `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS`, shared with the PhysicsDemo.
 - `occupancy.cellSizeM` **0.18** — raised from 0.15: coarser 18 cm voxels build the mesh/physics up faster (+18% early coverage at equal floater fidelity) — the sweep's clean speed lever. Now the framework `DEFAULT_OCCUPANCY_CELL_SIZE_M`, shared with the PhysicsDemo.
 

@@ -171,13 +171,38 @@ export function wrapXRDepthInfo(
   return wrapped;
 }
 
+/**
+ * Recommended depth-sampling cadence for apps that RECONSTRUCT-and-render an
+ * occupancy mesh (the Recorder, the PhysicsDemo) — the depth-side counterpart
+ * of `DEFAULT_OCCUPANCY_CELL_SIZE_M`/`DEFAULT_OCCUPANCY_MIN_OBSERVATIONS`
+ * (occupancy-grid.ts): one framework-level source of truth so both apps build
+ * the mesh at the same speed (2026-07-16 field feedback: the demo relied on
+ * the conservative fallback below — 16×16 @ 1 Hz, 8× fewer points/s than the
+ * recorder — and reconstructed visibly slower).
+ *
+ * Tuning (2026-07-16 ground-truth density/cadence sweep, measured noise —
+ * GpsPlusSlamJs_Investigation test-results/synthetic-density-cadence-sweep.txt):
+ * lattice DENSITY is the stronger and more point-efficient lever than
+ * temporal rate — gridSize 64 at the 500 ms cadence reaches 80 % true-surface
+ * coverage in 0.28 orbit revolutions (vs 0.38 at gridSize 32) with the BEST
+ * measured fidelity, while pushing the interval below 500 ms buys little and
+ * degrades accuracy per point. 64×64 = 4096 depth reads per sample is 4× the
+ * former per-sample cost — field-testing the on-device frame-time impact is
+ * the explicit next step of that sweep.
+ *
+ * Deliberately OPT-IN named constants, NOT a change to the fallback below:
+ * bumping the fallback would silently re-tune consumers that are not
+ * reconstruction apps (MinimalExample / AnchorStarter).
+ */
+export const DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS = 500;
+export const DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE = 64;
+
 // Library-level fallback used by consumers that do NOT supply a config
-// (MinimalExample / AnchorStarter). Intentionally NOT synced to the recorder's
-// 2026-06-30 re-tune (intervalMs 500 / gridSize 24) — those denser defaults are
-// a recorder-specific decision sourced from DEFAULT_RECORDING_OPTIONS; bumping
-// this library default would silently re-tune unrelated apps. See
-// the recorder's recording-options.ts.md (F1) for the rationale (the catalog
-// moved app-side on 2026-07-11: GpsPlusSlamJs_RecorderApp/src/state/).
+// (MinimalExample / AnchorStarter). Intentionally NOT synced to the
+// reconstruction constants above — bumping this default would silently
+// re-tune unrelated apps. See the recorder's recording-options.ts.md (F1)
+// for the tuning history (the catalog moved app-side on 2026-07-11:
+// GpsPlusSlamJs_RecorderApp/src/state/).
 const DEFAULT_CONFIG: DepthSamplerConfig = {
   intervalMs: 1000,
   gridSize: 16,

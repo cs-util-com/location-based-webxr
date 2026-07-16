@@ -10,6 +10,10 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,
+  DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
+} from 'gps-plus-slam-app-framework/ar/depth-sampler';
+import {
   loadRecordingOptions,
   saveRecordingOptions,
   resetRecordingOptions,
@@ -116,6 +120,23 @@ describe('recording-options', () => {
         validateDepthOptions({ rgb: 'on' as unknown as boolean }).rgb
       ).toBe(true);
       expect(validateDepthOptions({ rgb: false }).rgb).toBe(false);
+    });
+
+    it('defaults to the framework reconstruction cadence (500 ms × gridSize 64)', () => {
+      // Why this test matters (2026-07-16 density/cadence sweep + field
+      // decision): both reconstruction apps must share ONE depth tuning
+      // source or they visibly drift apart (the demo-vs-recorder speed gap).
+      // The sweep picked lattice density as the lever: gridSize 64 at the
+      // 500 ms cadence reaches 80% coverage in 0.28 orbit revolutions vs
+      // 0.38 at gridSize 32, at the best measured fidelity.
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(
+        DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS
+      );
+      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(
+        DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE
+      );
+      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(64);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(500);
     });
 
     it('clamps intervalMs below minimum to minimum', () => {
@@ -1543,7 +1564,10 @@ describe('recording-options', () => {
      */
     it('uses the fast-reconstruction depth/occupancy defaults', () => {
       expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(500);
-      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(32);
+      // 32 → 64 on 2026-07-16 (ground-truth density/cadence sweep + field
+      // decision): density is the stronger speed lever — see the dedicated
+      // reconstruction-cadence test above for the rationale.
+      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(64);
       expect(DEFAULT_RECORDING_OPTIONS.occupancy.minConfidence).toBe(3);
       expect(DEFAULT_RECORDING_OPTIONS.occupancy.cellSizeM).toBe(0.18);
     });
