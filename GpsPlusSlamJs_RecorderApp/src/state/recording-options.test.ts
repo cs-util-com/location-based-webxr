@@ -119,8 +119,20 @@ describe('recording-options', () => {
     });
 
     it('clamps intervalMs below minimum to minimum', () => {
-      const result = validateDepthOptions({ intervalMs: 100 });
+      const result = validateDepthOptions({ intervalMs: 30 });
       expect(result.intervalMs).toBe(DEPTH_CONSTRAINTS.intervalMs.min);
+    });
+
+    it('accepts dense-capture intervals down to 100 ms unclamped', () => {
+      // Why this test matters (2026-07-16 superset-capture strategy): dense
+      // validation recordings are captured at high rate + high gridSize and
+      // DECIMATED in replay to simulate every slower configuration — a
+      // recording can only ever be thinned, never densified. The old 500 ms
+      // floor made such supersets impossible; 100 and 250 must now pass
+      // through validation verbatim (the sampler emits at most once per XR
+      // frame, so an over-ambitious interval degrades gracefully on-device).
+      expect(validateDepthOptions({ intervalMs: 100 }).intervalMs).toBe(100);
+      expect(validateDepthOptions({ intervalMs: 250 }).intervalMs).toBe(250);
     });
 
     it('clamps intervalMs above maximum to maximum', () => {

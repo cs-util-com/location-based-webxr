@@ -535,7 +535,15 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
 
 /** Validation constraints for depth options */
 export const DEPTH_CONSTRAINTS = {
-  intervalMs: { min: 500, max: 5000, step: 100 },
+  // Min lowered 500 → 100 (2026-07-16, superset-capture strategy — mirrors
+  // the images 1000→250 change of 2026-07-10): dense validation recordings
+  // (high rate + gridSize 64) are decimated in replay to simulate every
+  // slower configuration, so the capture floor must sit below anything worth
+  // simulating. The sampler emits at most once per XR frame and skips frames
+  // while a sample is due, so an over-ambitious interval degrades gracefully;
+  // expect ~200 KB per 64²-sample — zips grow fast below 250 ms. The
+  // PRODUCTION default stays 500 ms (DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS).
+  intervalMs: { min: 100, max: 5000, step: 100 },
   // Max raised 32 → 64 (2026-07-01) for on-device experimentation with faster
   // mesh reconstruction: 64×64 = 4096 getDepthInMeters reads per sample (4× the
   // 32² default). High values trade per-sample depth-readback cost + grid growth
