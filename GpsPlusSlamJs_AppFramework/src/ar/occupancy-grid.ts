@@ -44,15 +44,18 @@ export interface OccupancyGridOptions {
   readonly carveStopCells?: number;
   /**
    * Confidence-guarded carving (2026-07-16 synthetic-scene investigation):
-   * when set, a carve ray STOPS at the first cell whose observation count
-   * has reached this threshold (the cell is kept and nothing behind it is
-   * carved) — an established surface can no longer be erased by a single
-   * deeper reading (silhouette-grazing churn under a perfect sensor, or a
-   * noisy/bled too-far endpoint sweeping through a confirmed wall into the
-   * occluded background). Trade-off: free-space phantoms that reach the
-   * threshold before being seen through become permanent until `clear()`.
-   * Default undefined = legacy unguarded carving. Must be a positive safe
-   * integer when set.
+   * when set, a carve ray reaching a cell whose observation count is at or
+   * above this threshold DECAYS the cell (count − 1, measured point/color
+   * means preserved) and stops the trace — an established surface can no
+   * longer be erased by a single deeper reading (silhouette-grazing churn
+   * under a perfect sensor, or a noisy/bled too-far endpoint sweeping
+   * through a confirmed wall into the occluded background), while REPEATED
+   * contradicting rays still drain and eventually delete confidently-wrong
+   * cells (the 2026-07-16-1547 fossilization field regression: a HARD block
+   * made noise meshes immortal — mesh built while the grid was uncertain
+   * could never be un-built by better data). Once below the threshold, the
+   * legacy delete applies. Default undefined = legacy unguarded carving.
+   * Must be a positive safe integer when set.
    */
   readonly carveConfidenceThreshold?: number;
 }
@@ -266,12 +269,15 @@ export class OccupancyGrid {
     //
     // Carve dedupe (Step 3.2 of the 2026-07-03 fps plan): many of a sample's
     // ≤1024 points quantize to the SAME endpoint cell (adjacent depth pixels
-    // a few metres out share a 15 cm voxel), and the carve is a pure function
-    // of (cameraCell, endpointCell) — within one sample, repeating it is an
+    // a few metres out share a 15 cm voxel). Without the confidence guard,
+    // repeating a (cameraCell, endpointCell) carve within one sample is an
     // exact no-op (all carving happens before any increment, and deleting an
-    // already-deleted key changes nothing, not even the revision). Carving
-    // once per UNIQUE endpoint cell is therefore byte-identical grid state at
-    // a fraction of the bresenham+Map work (~2–5× at gridSize 32).
+    // already-deleted key changes nothing, not even the revision), so carving
+    // once per UNIQUE endpoint cell is byte-identical grid state at a
+    // fraction of the bresenham+Map work (~2–5× at gridSize 32). WITH the
+    // guard the dedupe is additionally semantic: an established cell decays
+    // at most once per contradicting ray per sample, not once per duplicate
+    // depth pixel.
     const carvedEndpointKeys = new Set<number>();
     const endpoints: Array<{ cell: GridCell; world: Vector3; rgb?: RgbTuple }> =
       [];
@@ -638,9 +644,14 @@ export class OccupancyGrid {
    * protected so a current observation is never erased (relevant for
    * carveStopCells = 0 and for the unconditional start-cell visit).
    *
-   * With `carveConfidenceThreshold` set, the trace additionally STOPS at the
-   * first cell whose count has reached the threshold — the established cell
-   * survives and nothing behind it is carved (see the option docs).
+   * With `carveConfidenceThreshold` set, the trace additionally stops at the
+   * first cell whose count has reached the threshold, DECAYING it by one
+   * observation (means preserved) — soft contradiction instead of deletion,
+   * so nothing behind an established surface is carved but repeated
+   * contradictions still un-build it (see the option docs). Note this makes
+   * a repeated identical carve NOT a no-op — the per-sample unique-endpoint
+   * dedupe in `addSample` is therefore semantically load-bearing under the
+   * guard (one decay per contradicting ray per sample).
    */
   private carve(cameraCell: GridCell, pointCell: GridCell): void {
     const threshold = this.carveConfidenceThreshold;
@@ -656,7 +667,8 @@ export class OccupancyGrid {
               return true; // nothing to carve here, keep tracing
             }
             if (record.count >= threshold) {
-              return false; // established surface — stop, delete nothing
+              this.decayCell(cell, key, record);
+              return false; // established surface — contradict softly, stop
             }
           }
           // A carve removes a cell from the occupied set → a meaningful change.
@@ -669,6 +681,51 @@ export class OccupancyGrid {
       },
       this.carveStopCells
     );
+  }
+
+  /**
+   * Soft contradiction of an established cell (confidence-guarded carving):
+   * remove one observation while preserving the measured point/color MEANS
+   * (sums are scaled with the count — decrementing the divisor alone would
+   * silently shift `getCellPoint`/`getCellColor`). Deletes outright when the
+   * count would reach 0 (threshold 1). Bumps revisions like any mutation
+   * that can change a consumer's occupied set (counts above
+   * MAX_RELEVANT_COUNT cannot cross any selectable floor, so those decays
+   * stay revision-silent).
+   */
+  private decayCell(cell: GridCell, key: number, record: CellRecord): void {
+    const newCount = record.count - 1;
+    if (newCount <= 0) {
+      if (this.cells.delete(key)) {
+        this.revision++;
+        this.unindexCell(cell, key);
+      }
+      return;
+    }
+    const scale = newCount / record.count;
+    record.count = newCount;
+    record.posSumX *= scale;
+    record.posSumY *= scale;
+    record.posSumZ *= scale;
+    // Keep the colorCount ≤ count invariant; scaling sums and count by the
+    // same factor preserves the per-channel means exactly.
+    if (record.colorCount > newCount) {
+      const colorScale = newCount / record.colorCount;
+      record.colorSumR *= colorScale;
+      record.colorSumG *= colorScale;
+      record.colorSumB *= colorScale;
+      record.colorCount = newCount;
+    }
+    if (newCount <= MAX_RELEVANT_COUNT) {
+      this.revision++;
+      this.bumpChunkRevision(
+        chunkKeyOf(
+          Math.floor(cell[0] / CHUNK_EDGE_CELLS),
+          Math.floor(cell[1] / CHUNK_EDGE_CELLS),
+          Math.floor(cell[2] / CHUNK_EDGE_CELLS)
+        )
+      );
+    }
   }
 
   /** Add a newly-occupied cell to its chunk's index set. */
