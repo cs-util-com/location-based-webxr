@@ -309,6 +309,82 @@ describe('OccupancyGrid', () => {
     });
   });
 
+  describe('confidence-guarded carving (carveConfidenceThreshold)', () => {
+    // Why these tests matter: the 2026-07-16 synthetic-scene investigation
+    // proved that plain carving erodes ESTABLISHED silhouette cells under a
+    // perfect sensor (H1b churn) and that noisy/bled endpoints can sweep
+    // through confirmed surfaces. The guard stops a carve ray at the first
+    // cell whose observation count has reached the threshold — an
+    // established surface (and anything behind it) can no longer be erased
+    // by a single deeper reading. Default OFF (undefined) preserves the
+    // exact legacy behaviour.
+
+    it('default: a deeper reading erases nearer established cells (legacy baseline)', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1, carveStopCells: 2 });
+      for (let i = 0; i < 3; i++) grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [10]));
+      expect(grid.getOccupiedCells()).not.toContainEqual([0, 0, -5]);
+    });
+
+    it('stops the carve at an established cell and protects everything behind it', () => {
+      const grid = new OccupancyGrid({
+        cellSizeM: 1,
+        carveStopCells: 2,
+        carveConfidenceThreshold: 3,
+      });
+      // Establish the 5 m cell (count 3 = threshold)…
+      for (let i = 0; i < 3; i++) grid.addSample(makeSample([0, 0, 0], [5]));
+      // …and one observation of a 7 m cell behind it (the guarded carve of
+      // the 7 m ray stops AT the 5 m cell; the endpoint increment still runs).
+      grid.addSample(makeSample([0, 0, 0], [7]));
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -7]);
+      // A deeper reading to 10 m must erase NEITHER the established 5 m cell
+      // (guard) NOR the 7 m cell behind it (trace stopped).
+      grid.addSample(makeSample([0, 0, 0], [10]));
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -7]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -10]);
+    });
+
+    it('still carves cells below the threshold', () => {
+      const grid = new OccupancyGrid({
+        cellSizeM: 1,
+        carveStopCells: 2,
+        carveConfidenceThreshold: 3,
+      });
+      // Only 2 observations — not established, a deeper reading erases it.
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [10]));
+      expect(grid.getOccupiedCells()).not.toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -10]);
+    });
+
+    it('exposes the threshold for runtime feature detection', () => {
+      // Consumers in the closed-source Investigation repo probe this field
+      // to decide whether the installed framework supports the guard (see
+      // lessons-learned: types see source, runtime sees the published dist).
+      const guarded = new OccupancyGrid({ carveConfidenceThreshold: 5 });
+      expect(guarded.carveConfidenceThreshold).toBe(5);
+      const legacy = new OccupancyGrid();
+      expect(legacy.carveConfidenceThreshold).toBeUndefined();
+      expect(Object.hasOwn(legacy, 'carveConfidenceThreshold')).toBe(true);
+    });
+
+    it('rejects a non-positive or non-integer threshold', () => {
+      expect(() => new OccupancyGrid({ carveConfidenceThreshold: 0 })).toThrow(
+        RangeError
+      );
+      expect(() => new OccupancyGrid({ carveConfidenceThreshold: -3 })).toThrow(
+        RangeError
+      );
+      expect(
+        () => new OccupancyGrid({ carveConfidenceThreshold: 2.5 })
+      ).toThrow(RangeError);
+    });
+  });
+
   describe('getOccupiedCells / getCellCenter', () => {
     it('filters by minimum observation count', () => {
       const grid = new OccupancyGrid({ cellSizeM: 1 });

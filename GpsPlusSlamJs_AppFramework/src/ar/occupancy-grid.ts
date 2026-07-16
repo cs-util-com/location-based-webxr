@@ -42,6 +42,19 @@ export interface OccupancyGridOptions {
    * carving stops, to respect depth noise. Default 2 (Unity parity).
    */
   readonly carveStopCells?: number;
+  /**
+   * Confidence-guarded carving (2026-07-16 synthetic-scene investigation):
+   * when set, a carve ray STOPS at the first cell whose observation count
+   * has reached this threshold (the cell is kept and nothing behind it is
+   * carved) — an established surface can no longer be erased by a single
+   * deeper reading (silhouette-grazing churn under a perfect sensor, or a
+   * noisy/bled too-far endpoint sweeping through a confirmed wall into the
+   * occluded background). Trade-off: free-space phantoms that reach the
+   * threshold before being seen through become permanent until `clear()`.
+   * Default undefined = legacy unguarded carving. Must be a positive safe
+   * integer when set.
+   */
+  readonly carveConfidenceThreshold?: number;
 }
 
 /**
@@ -122,6 +135,13 @@ const MAX_RELEVANT_COUNT = 10;
 export class OccupancyGrid {
   readonly cellSizeM: number;
   readonly carveStopCells: number;
+  /**
+   * Carve-blocking observation-count threshold, or undefined for legacy
+   * unguarded carving (see {@link OccupancyGridOptions}). Public + always
+   * present on instances so consumers built against a newer source can
+   * feature-detect the guard on an installed build at runtime.
+   */
+  readonly carveConfidenceThreshold: number | undefined;
   private readonly cells = new Map<number, CellRecord>();
   /**
    * Chunk index (Step 2 of the 2026-07-03 long-session fps plan): cell keys
@@ -180,6 +200,9 @@ export class OccupancyGrid {
     }
     this.cellSizeM = cellSizeM;
     this.carveStopCells = carveStopCells;
+    this.carveConfidenceThreshold = validateCarveConfidenceThreshold(
+      options?.carveConfidenceThreshold
+    );
   }
 
   /** Number of occupied cells. */
@@ -614,15 +637,29 @@ export class OccupancyGrid {
    * steps before the endpoint. The endpoint cell itself is additionally
    * protected so a current observation is never erased (relevant for
    * carveStopCells = 0 and for the unconditional start-cell visit).
+   *
+   * With `carveConfidenceThreshold` set, the trace additionally STOPS at the
+   * first cell whose count has reached the threshold — the established cell
+   * survives and nothing behind it is carved (see the option docs).
    */
   private carve(cameraCell: GridCell, pointCell: GridCell): void {
+    const threshold = this.carveConfidenceThreshold;
     bresenham3d(
       cameraCell,
       pointCell,
       (cell) => {
         if (!cellsEqual(cell, pointCell)) {
-          // A carve removes a cell from the occupied set → a meaningful change.
           const key = cellKey(cell);
+          if (threshold !== undefined) {
+            const record = this.cells.get(key);
+            if (!record) {
+              return true; // nothing to carve here, keep tracing
+            }
+            if (record.count >= threshold) {
+              return false; // established surface — stop, delete nothing
+            }
+          }
+          // A carve removes a cell from the occupied set → a meaningful change.
           if (this.cells.delete(key)) {
             this.revision++;
             this.unindexCell(cell, key);
@@ -768,6 +805,21 @@ function unpackChunkCoord(key: number, axis: 0 | 1 | 2): number {
 
 function cellsEqual(a: GridCell, b: GridCell): boolean {
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+}
+
+/** Constructor guard for {@link OccupancyGridOptions.carveConfidenceThreshold}. */
+function validateCarveConfidenceThreshold(
+  threshold: number | undefined
+): number | undefined {
+  if (
+    threshold !== undefined &&
+    (!Number.isSafeInteger(threshold) || threshold < 1)
+  ) {
+    throw new RangeError(
+      `carveConfidenceThreshold must be a positive integer when set, got ${threshold}`
+    );
+  }
+  return threshold;
 }
 
 function isFiniteTriple(v: Vector3): boolean {
