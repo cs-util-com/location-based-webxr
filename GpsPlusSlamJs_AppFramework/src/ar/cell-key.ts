@@ -87,6 +87,18 @@ export function unpackCellKey(key: number): GridCell {
 }
 
 /**
+ * Per-axis key strides: stepping one cell along an axis moves the packed key
+ * by a constant (positional base-2^17 packing) — `packCellKey(x+1, y, z) ===
+ * packCellKey(x, y, z) + CELL_KEY_STRIDE_X`, and the z stride is 1. Hot walks
+ * (the occupancy grid's fused carve, the smooth mesher's dual-cell corners)
+ * maintain keys incrementally with these instead of repacking per cell.
+ * DERIVED from the packer itself so they can never drift from the encoding.
+ */
+export const CELL_KEY_STRIDE_X = packCellKey(1, 0, 0) - packCellKey(0, 0, 0);
+/** See {@link CELL_KEY_STRIDE_X}. */
+export const CELL_KEY_STRIDE_Y = packCellKey(0, 1, 0) - packCellKey(0, 0, 0);
+
+/**
  * True iff every coordinate is within ±`limit` — the aliasing guard callers
  * must apply before keying untrusted coordinates. Defaults to the full-field
  * {@link CELL_KEY_LIMIT}; the meshers pass {@link HALF_LATTICE_CELL_KEY_LIMIT}.

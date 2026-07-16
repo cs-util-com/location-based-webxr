@@ -28,6 +28,8 @@ import { createDepthUnprojector } from './depth-unprojection';
 import { bresenham3d, type GridCell } from './bresenham3d';
 import {
   CELL_KEY_LIMIT,
+  CELL_KEY_STRIDE_X,
+  CELL_KEY_STRIDE_Y,
   cellCoordsInKeyRange,
   cellKey,
   packCellKey,
@@ -915,14 +917,6 @@ export { cellKey, unpackCellKey } from './cell-key';
 function cellInKeyRange(cell: GridCell): boolean {
   return cellCoordsInKeyRange(cell, CELL_KEY_LIMIT);
 }
-
-// Per-axis strides of the packed cell key (base-2^17 positional packing):
-// stepping one cell along an axis moves the key by a constant. DERIVED from
-// the packer itself so they can never drift from cell-key.ts (z's stride is
-// 1 by the same derivation). Used by carve()'s fused walk to maintain the key
-// incrementally instead of repacking per visited cell.
-const CELL_KEY_STRIDE_X = packCellKey(1, 0, 0) - packCellKey(0, 0, 0);
-const CELL_KEY_STRIDE_Y = packCellKey(0, 1, 0) - packCellKey(0, 0, 0);
 
 // --- Chunk index (Step 2 of the 2026-07-03 long-session fps plan) ---
 // Chunks are CHUNK_EDGE_CELLS³ cell groups (16³ = 2.4 m at the 0.15 m default,

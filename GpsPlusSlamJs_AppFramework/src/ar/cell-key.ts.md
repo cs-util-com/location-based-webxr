@@ -24,6 +24,11 @@ findings lived in the gaps between the copies.
 - `HALF_LATTICE_CELL_KEY_LIMIT = 32 767` — mesher tier: the meshers also key DERIVED
   coordinates (neighbours `±1`, dual bases `−1`, corner-fit half-lattice `2·coord ± 1`),
   which must stay inside the same field, hence the 2× headroom (≈ ±4.9 km).
+- `CELL_KEY_STRIDE_X` / `CELL_KEY_STRIDE_Y` (2026-07-17 perf loop) — per-axis key strides
+  (the z stride is 1): stepping one cell along an axis moves the packed key by a constant,
+  so hot walks (the occupancy grid's fused carve, the smooth mesher's dual-cell corners)
+  maintain keys incrementally instead of repacking per cell. DERIVED from `packCellKey`
+  itself so they can never drift from the encoding.
 
 ## Invariants & assumptions
 

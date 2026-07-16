@@ -7,7 +7,7 @@ The **pure, transfer-friendly halves** of the occluder Web Worker offload (Phase
 ## Public API
 
 - `packMeshRequest(id, cells, cellSizeM, mode, getCellPoint?) → { request, transfer }` — **main thread.** Packs the occupied-cell snapshot into `MeshWorkerRequest` (a flat `Int32Array` of cells; for the surface-hugging modes a parallel `Float64Array` of centroids, `NaN` = a cell whose `getCellPoint` was `null`). `cells` may be the tuple array or an already-flat `Int32Array` (Step 1.3 of the 2026-07-03 fps plan — `OccupancyGrid.getOccupiedCellsFlat`); a flat snapshot is used zero-copy, its buffer is transferred/DETACHED after posting (pass a fresh array), and a length not divisible by 3 throws `RangeError`. `transfer` is the buffer list for `postMessage`'s 2nd arg (zero-copy).
-- `runMeshRequest(request) → { response, transfer }` — **worker.** Unpacks, rebuilds `getCellPoint` from the parallel centroid array, runs `meshOccupiedCells`, and returns `{ id, positions, indices }` + its transfer list.
+- `runMeshRequest(request) → { response, transfer }` — **worker.** Unpacks and runs `meshOccupiedCells` with `includeAabbs: false` (the response carries only geometry — the AABB list was ~2 discarded allocations per cell per re-mesh). For `'smooth'` the wire-format centroid array is handed to the mesher DIRECTLY (`options.centroids`, input-order aligned — the 2026-07-17 perf-loop fast path that deletes the per-cell key-map + callback + tuple plumbing); `'corner-fit'` still rebuilds the `getCellPoint` adapter from the parallel centroid array. Returns `{ id, positions, indices }` + its transfer list.
 - `MeshWorkerRequest` / `MeshWorkerResponse` — the message shapes.
 
 ## Invariants & assumptions
