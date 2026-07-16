@@ -70,7 +70,7 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ```typescript
 {
-  depth: { enabled: true, intervalMs: 2000, gridSize: 24, rgb: true },
+  depth: { enabled: true, intervalMs: 200, gridSize: 24, rgb: true },
   images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1,
             motionFilter: { enabled: true, maxAngularVelocity: 0.6, maxLinearVelocity: 2.5, maxWaitMs: 4000 },
             qualityFilter: { enabled: false, blurRelativeThreshold: 0.5, minMeanLuminance: 10, maxWaitMs: 4000 } },
@@ -89,7 +89,7 @@ The default `depth` + `occupancy` params are tuned so a usable occluder mesh
 builds up **as fast as possible** (param-sweep on a real recording — see
 [2026-06-30-0829-occluder-tuning-followups.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-0829-occluder-tuning-followups.md), Round 6):
 
-- `depth.intervalMs` **2000** — one sample per 2 s (2026-07-16 evening on-device framerate/mesh trade-off pass; the sweep-derived 500 ms hurt the framerate). The slider floor stays **100** (superset-capture strategy: dense validation recordings at 100–250 ms × gridSize 64 are DECIMATED in replay to simulate every slower configuration; ~200 KB per 64²-sample, the sampler degrades gracefully on over-ambitious intervals). Framework `DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS`, shared with the PhysicsDemo.
+- `depth.intervalMs` **200** — five samples per second (2026-07-16 evening on-device framerate/mesh trade-off passes; small 24² samples keep per-frame work low enough that a fast cadence does not hurt the framerate, unlike the sweep-derived 64² samples). The slider floor stays **100** (superset-capture strategy: dense validation recordings at 100–250 ms × gridSize 64 are DECIMATED in replay to simulate every slower configuration; ~200 KB per 64²-sample, the sampler degrades gracefully on over-ambitious intervals). Framework `DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS`, shared with the PhysicsDemo.
 - `depth.gridSize` **24** — the 2026-07-16 evening on-device trade-off (the same-day sweep-derived 64 built the mesh fastest on ground truth but visibly hurt the framerate — the sweep's flagged open question, answered in the field). The sweep still holds directionally: if devices get faster, gridSize (not the interval) is the knob to raise first. Framework `DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE`, shared with the PhysicsDemo so the two apps build at the same speed; slider max stays 64 for superset validation recordings.
 - `occupancy.minConfidence` **2** — the noise floor: a cell needs this many observations before it is rendered. Lowered 3 → 2 in the 2026-07-16 evening on-device pass: the [corpus sweep](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md)'s floater argument for 3 (mc 3 ≈ 1.9% vs mc 2 ≈ 3.5%) was measured under LEGACY carving; with the decay carve guard the gap largely disappears (real pillar-orbit A/B: guarded mc 2 isolates 2.12% vs guarded mc 3 2.19%), and the lower floor halves the dwell before a surface meshes. 1 = unfiltered/legacy. Framework `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS`, shared with the PhysicsDemo.
 - `occupancy.cellSizeM` **0.16** — the 2026-07-16 evening on-device trade-off between the sweep-tested 0.15 (fidelity) and 0.18 (speed). Framework `DEFAULT_OCCUPANCY_CELL_SIZE_M`, shared with the PhysicsDemo.

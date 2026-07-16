@@ -96,9 +96,9 @@ test.describe('Settings Modal', () => {
 
     test('depth interval slider shows default value', async ({ page }) => {
       const valueDisplay = page.locator('#depth-interval-value');
-      // 2.0s since the 2026-07-16 evening on-device framerate/mesh trade-off
-      // pass; equals the framework DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS.
-      await expect(valueDisplay).toHaveText('2.0s');
+      // 0.2s since the 2026-07-16 evening on-device framerate/mesh trade-off
+      // passes; equals the framework DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS.
+      await expect(valueDisplay).toHaveText('0.2s');
     });
 
     test('depth grid slider shows default value', async ({ page }) => {

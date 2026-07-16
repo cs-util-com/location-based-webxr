@@ -126,7 +126,7 @@ export interface LoopClosureDebugOptions {
 export interface DepthCaptureOptions {
   /** Whether to capture depth samples. Default: true */
   enabled: boolean;
-  /** Interval between samples in milliseconds. Default: 2000 (2026-07-16 on-device framerate/mesh trade-off). */
+  /** Interval between samples in milliseconds. Default: 200 (2026-07-16 on-device framerate/mesh trade-off). */
   intervalMs: number;
   /**
    * Grid size (N×N points per sample). Default: 24 (2026-07-16 on-device
@@ -137,7 +137,7 @@ export interface DepthCaptureOptions {
   /**
    * Whether to enrich each depth point with the camera color at its view
    * coordinates (RGB voxel coloring, occupancy-grid port plan Iter 8).
-   * Costs one small GPU blit+readback per sample (~1 Hz); when off, the
+   * Costs one small GPU blit+readback per sample (5 Hz at the default cadence); when off, the
    * occupancy cubes keep the height-based coloring. Default: true.
    */
   rgb: boolean;
@@ -476,7 +476,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     // sweep-derived 500 ms × 64 built the mesh fastest on ground truth but
     // visibly hurt the framerate — see the constants' doc in
     // ar/depth-sampler.ts for the history).
-    intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, // 2000 — one sample per 2 s
+    intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, // 200 — five samples per second
     gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE, // 24×24 = 576 points per sample
     rgb: true, // RGB voxel coloring (Iter 8)
   },
@@ -558,7 +558,7 @@ export const DEPTH_CONSTRAINTS = {
   // simulating. The sampler emits at most once per XR frame and skips frames
   // while a sample is due, so an over-ambitious interval degrades gracefully;
   // expect ~200 KB per 64²-sample — zips grow fast below 250 ms. The
-  // PRODUCTION default is DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS (2000 ms
+  // PRODUCTION default is DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS (200 ms
   // since the 2026-07-16 evening on-device trade-off pass).
   intervalMs: { min: 100, max: 5000, step: 100 },
   // Max 64 (raised 2026-07-01, kept for superset validation recordings):

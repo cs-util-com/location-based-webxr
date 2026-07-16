@@ -122,7 +122,7 @@ describe('recording-options', () => {
       expect(validateDepthOptions({ rgb: false }).rgb).toBe(false);
     });
 
-    it('defaults to the framework reconstruction cadence (2000 ms × gridSize 24)', () => {
+    it('defaults to the framework reconstruction cadence (200 ms × gridSize 24)', () => {
       // Why this test matters: both reconstruction apps must share ONE depth
       // tuning source or they visibly drift apart (the demo-vs-recorder speed
       // gap, 2026-07-16). Values from the maintainer's 2026-07-16 on-device
@@ -135,7 +135,7 @@ describe('recording-options', () => {
         DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE
       );
       expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(24);
-      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(2000);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(200);
     });
 
     it('clamps intervalMs below minimum to minimum', () => {
@@ -1546,7 +1546,7 @@ describe('recording-options', () => {
     });
 
     it('has reasonable default intervals', () => {
-      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(2000);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(200);
       expect(DEFAULT_RECORDING_OPTIONS.images.intervalMs).toBe(2000);
     });
 
@@ -1562,7 +1562,7 @@ describe('recording-options', () => {
      * them.
      */
     it('uses the fast-reconstruction depth/occupancy defaults', () => {
-      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(2000);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(200);
       expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(24);
       expect(DEFAULT_RECORDING_OPTIONS.occupancy.minConfidence).toBe(2);
       expect(DEFAULT_RECORDING_OPTIONS.occupancy.cellSizeM).toBe(0.16);

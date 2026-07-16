@@ -181,21 +181,22 @@ export function wrapXRDepthInfo(
  * recorder — and reconstructed visibly slower).
  *
  * Tuning (2026-07-16 EVENING, maintainer's on-device framerate/mesh trade-off
- * pass — supersedes the same-day sweep-derived 500 ms × 64): 2000 ms × 24×24.
+ * passes — supersedes the same-day sweep-derived 500 ms × 64): 200 ms × 24×24.
  * The ground-truth density/cadence sweep
  * (GpsPlusSlamJs_Investigation test-results/synthetic-density-cadence-sweep.txt)
  * showed density is the more point-efficient mesh-speed lever, but its
- * flagged open question — on-device frame-time cost — resolved against the
- * dense/fast end: 64² @ 2 Hz (8192 points/s) visibly hurt the framerate,
- * while 24² @ 0.5 Hz (~288 points/s) keeps rendering smooth at acceptable
- * mesh build-up. If devices get faster, the sweep says gridSize (not the
- * interval) is the knob to raise first.
+ * flagged open question — on-device frame-time cost — resolved against LARGE
+ * per-sample batches: 64² @ 2 Hz (8192 points/s) visibly hurt the framerate,
+ * while many SMALL samples (24² @ 5 Hz, ~2880 points/s) keep the per-frame
+ * work chunk tiny and rendering smooth at good mesh build-up. If devices get
+ * faster, the sweep says gridSize (not the interval) is the knob to raise
+ * first.
  *
  * Deliberately OPT-IN named constants, NOT a change to the fallback below:
  * bumping the fallback would silently re-tune consumers that are not
  * reconstruction apps (MinimalExample / AnchorStarter).
  */
-export const DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS = 2000;
+export const DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS = 200;
 export const DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE = 24;
 
 // Library-level fallback used by consumers that do NOT supply a config
