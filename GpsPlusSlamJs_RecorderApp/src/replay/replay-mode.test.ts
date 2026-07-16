@@ -182,6 +182,7 @@ import { createStatsOverlay } from '../ui/stats-overlay';
 import { loadRecording } from '../storage/recording-loader';
 import { wireStoreSubscribers } from 'gps-plus-slam-app-framework/state/store-subscribers';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
+import type { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
 import { createRecorderStore } from '../state/recorder-store';
 import {
   initReplayScene,
@@ -698,6 +699,24 @@ describe('replay-mode', () => {
     expect(wireOccupancyGridSubscribers).toHaveBeenCalledTimes(1);
     const opts = vi.mocked(wireOccupancyGridSubscribers).mock.calls[0]?.[0];
     expect(opts?.refreshIntervalMs).toBe(500);
+  });
+
+  it('builds the replay grid with confidence-guarded carving at the minConfidence floor', async () => {
+    // Why (2026-07-16 synthetic-scene investigation): replay must reconstruct
+    // with the same guard as live — a voxel solid enough to be rendered
+    // (count ≥ occupancy.minConfidence) can no longer be erased by a single
+    // deeper reading (silhouette churn / occluded-background destruction).
+    // The mocked options carry minConfidence 3, so the REAL grid instance
+    // handed to the subscriber wiring must expose that threshold.
+    const config = makeConfig();
+    await startReplayMode(fakeZipData, config);
+
+    const opts = vi.mocked(wireOccupancyGridSubscribers).mock.calls[0]?.[0];
+    // The wiring options type the grid as the narrow sink interface; the
+    // replay path constructs a real OccupancyGrid, whose threshold field is
+    // what this pins.
+    const grid = opts?.grid as OccupancyGrid;
+    expect(grid.carveConfidenceThreshold).toBe(3);
   });
 
   // --- Error handling (R7 wiring) ---

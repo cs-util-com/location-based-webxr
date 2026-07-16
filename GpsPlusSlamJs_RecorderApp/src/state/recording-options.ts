@@ -222,7 +222,14 @@ export interface OccupancyOptions {
    * shared with the PhysicsDemo). 1 = unfiltered/legacy. Higher = less noise but
    * briefly-glimpsed real surfaces may be dropped, so it is exposed for
    * on-device tuning. Read once when the visualizer is constructed (Enter-AR
-   * / replay load). See
+   * / replay load).
+   *
+   * Since 2026-07-16 this floor ALSO drives the grid's confidence-guarded
+   * carving (`OccupancyGrid.carveConfidenceThreshold`, live + replay): a voxel
+   * solid enough to be rendered can no longer be erased by a single deeper
+   * depth reading (synthetic-scene investigation — eliminates silhouette-edge
+   * churn and noisy occluded-background destruction). One knob, one meaning:
+   * "how many observations until the app trusts a voxel". See
    * `GpsPlusSlamJs_Docs/docs/2026-06-22-2146-occupancy-grid-behind-surface-noise-plan.md`.
    */
   minConfidence: number;

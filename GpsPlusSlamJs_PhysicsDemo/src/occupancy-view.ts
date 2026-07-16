@@ -66,7 +66,14 @@ export function createOccupancyView(
     options.debugStyle ?? "depth-shaded-wireframe";
   let meshMode: MeshMode = options.meshMode ?? "smooth";
 
-  const grid = new OccupancyGrid({ cellSizeM });
+  // Confidence-guarded carving at the noise floor (2026-07-16 synthetic-scene
+  // investigation): any cell solid enough to be meshed (≥ minObservations) can
+  // no longer be erased by a single deeper reading — eliminates silhouette
+  // churn and occluded-background destruction; the collider stays stable.
+  const grid = new OccupancyGrid({
+    cellSizeM,
+    carveConfidenceThreshold: minObservations,
+  });
 
   const buildOccluder = (mode: MeshMode): OcclusionMesh => {
     const mesh = new OcclusionMesh(arWorldGroup, { mode });

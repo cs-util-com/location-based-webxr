@@ -20,17 +20,14 @@ lives in the tested `mode-detection` / `replay-launch` modules; this file is glu
   on failure the message reverts to the error and the input re-enables.
 - Play/pause toggles `controller.pause()`/`resume()` and its label; the speed
   slider calls `controller.setSpeed()` and updates the `N×` readout.
-- On ready `setupReplayPhysics` builds a `createOccupancyView` over the session's
-  store (the composer's own occupancy is disabled), and wires the two mesh panel
-  dropdowns to it: Mesh (mesh mode — recreates the occluder) and Shader (live
-  `setDebugStyle`). The same occupancy view feeds the physics collider.
 - Once Rapier's WASM is ready (loaded lazily on first replay) it calls
-  `setupReplayPhysics`: a shared `createPhysicsRuntime` under `arWorldGroup`, an rAF
-  loop that steps it (which rebuilds the AABB collider from the growing mesh,
-  throttled), and click-to-shoot — a click computes the camera→pointer ray
-  (`THREE.Raycaster`) and `shootBallFromCamera` fires a ball from the camera along
-  it, so it flies into the reconstructed mesh and bounces. The stats line shows the
-  ball + collider-box counts.
+  `startReplayPhysics` (`replay-physics.ts`), which owns the occupancy view (occlusion
+  AND collider), the shared physics runtime, the rAF step loop, the mesh/shader
+  dropdown wiring and click-to-shoot — and returns a disposer. `main.ts` keeps that
+  disposer plus the controller in `disposePreviousReplay`, called on every `onReady`
+  so a **reload** tears the previous replay down first (no stacked rAF loops /
+  physics worlds / WebGL contexts — PR #197). A reload that races the WASM load is
+  guarded: physics only wires if the controller is still the active one.
 
 ## Invariants & assumptions
 

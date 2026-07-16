@@ -12,18 +12,12 @@
  * file is the DOM glue, covered by the Playwright smoke test.
  */
 
-import * as THREE from "three";
 import { detectArSupport, applyModeEntry } from "./mode-detection";
 import { loadAndStartReplay, type ReplayLaunchSink } from "./replay-launch";
-import { createOccupancyView } from "./occupancy-view";
 import { initRapier } from "./physics-world";
-import { createPhysicsRuntime } from "./physics-runtime";
 import { startArMode } from "./ar-mode";
 import { createPerfStats } from "./perf-stats";
-import { shootBallFromCamera } from "./shoot-ball";
-import { pointerToNdc } from "gps-plus-slam-app-framework/visualization";
-import type { OccluderDebugStyle } from "gps-plus-slam-app-framework/visualization/occlusion-mesh";
-import type { MeshMode } from "gps-plus-slam-app-framework/ar/occupancy-mesher";
+import { startReplayPhysics } from "./replay-physics";
 import type { ReplaySessionController } from "gps-plus-slam-app-framework/state/replay-session";
 
 function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -99,11 +93,22 @@ function main(): void {
   });
 
   let controller: ReplaySessionController | null = null;
+  let disposeReplayPhysics: (() => void) | null = null;
   let playing = false;
 
   const setPlaying = (next: boolean): void => {
     playing = next;
     playPauseButton.textContent = next ? "Pause" : "Play";
+  };
+
+  // Tear down the previous replay before a new one so a reload can never stack
+  // orphaned rAF loops / physics worlds / WebGL contexts (PR #197 review). Both
+  // teardowns are idempotent, so this is safe with no active replay.
+  const disposePreviousReplay = (): void => {
+    disposeReplayPhysics?.();
+    disposeReplayPhysics = null;
+    controller?.dispose();
+    controller = null;
   };
 
   const sink: ReplayLaunchSink = {
@@ -113,16 +118,27 @@ function main(): void {
       capabilityMessage.textContent = "Loading recording…";
     },
     onReady(readyController, actionCount) {
+      disposePreviousReplay();
       controller = readyController;
       modeScreen.hidden = true;
       replayPanel.hidden = false;
       replayStatus.textContent = `Replaying ${actionCount} recorded actions — the mesh reconstructs as the walk plays back.`;
 
       // Physics starts once Rapier's WASM is ready (loaded lazily on first replay).
-      void initRapier().then(() => setupReplayPhysics(readyController));
+      void initRapier().then(() => {
+        // A reload during the WASM load may have disposed this controller already;
+        // only wire physics if it is still the active one.
+        if (controller !== readyController) return;
+        disposeReplayPhysics = startReplayPhysics(readyController, {
+          meshStyleSelect,
+          meshShaderSelect,
+          statsEl,
+          onFrame: () => perfStats.update(),
+        });
+      });
 
       setPlaying(true);
-      void controller.play(Number(speedInput.value) || 1);
+      void readyController.play(Number(speedInput.value) || 1);
     },
     onError(message) {
       fileInput.disabled = false;
@@ -130,58 +146,6 @@ function main(): void {
       capabilityMessage.textContent = `⚠ ${message}`;
     },
   };
-
-  function setupReplayPhysics(session: ReplaySessionController): void {
-    const scene = session.getScene();
-    // The demo owns its occupancy view (one occluder for occlusion AND physics),
-    // fed by the replay store's depth stream. Mesh mode + shader come from the UI.
-    const occupancyView = createOccupancyView(
-      scene.arWorldGroup,
-      session.getStore(),
-      {
-        meshMode: meshStyleSelect.value as MeshMode,
-        debugStyle: meshShaderSelect.value as OccluderDebugStyle,
-      },
-    );
-    meshStyleSelect.addEventListener("change", () =>
-      occupancyView.setMeshMode(meshStyleSelect.value as MeshMode),
-    );
-    meshShaderSelect.addEventListener("change", () =>
-      occupancyView.setDebugStyle(meshShaderSelect.value as OccluderDebugStyle),
-    );
-
-    const runtime = createPhysicsRuntime(scene.arWorldGroup, occupancyView, {
-      onStats: (balls, tris) => {
-        statsEl.textContent = `balls ${balls} · collider ${tris} tris`;
-      },
-    });
-
-    // Desktop replay is driven by window rAF.
-    const tick = (t: number): void => {
-      runtime.step(t);
-      perfStats.update();
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-
-    // Placement (desktop): click → shoot a ball FROM the camera toward where you
-    // clicked, so it flies out, hits the reconstructed mesh and bounces.
-    const canvas = scene.renderer.domElement;
-    const raycaster = new THREE.Raycaster();
-    canvas.addEventListener("pointerdown", (e: PointerEvent) => {
-      const ndc = pointerToNdc(
-        e.clientX,
-        e.clientY,
-        canvas.getBoundingClientRect(),
-      );
-      raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), scene.camera);
-      shootBallFromCamera(
-        runtime,
-        scene.camera.getWorldPosition(new THREE.Vector3()),
-        raycaster.ray.direction,
-      );
-    });
-  }
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
