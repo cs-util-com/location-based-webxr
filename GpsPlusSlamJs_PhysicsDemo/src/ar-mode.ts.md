@@ -19,8 +19,11 @@ meshShaderSelect, onError, onStarted?, onFrame? }`. `onFrame` is called once per
 - Creates a framework store (`createSlamAppStore` + `NullStorageBackend`), then
   `initAR(container, {}, { requestDepthOcclusion }, { tracking: {store}, depth: {
 onCaptured → dispatch recordDepthSample } })`.
-- `startDepthCapture()` + `createOccupancyView(arWorldGroup, store)` reconstruct the
-  room from the live depth stream (same occupancy stack as replay).
+- `startDepthCapture({ intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE })`
+  - `createOccupancyView(arWorldGroup, store)` reconstruct the room from the live
+    depth stream (same occupancy stack as replay) at the framework reconstruction
+    cadence — recorder parity (32×32 @ 2 Hz; the bare fallback 16×16 @ 1 Hz built
+    the mesh 8× slower, 2026-07-16-1547 field feedback). Pinned by `ar-mode.test.ts`.
 - `createPhysicsRuntime(arWorldGroup, occlusionMesh)` runs the physics; it is
   stepped every XR frame via `registerXrFrameUpdate` (`performance.now()` drives the
   collider-rebuild throttle).

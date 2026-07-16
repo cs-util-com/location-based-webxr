@@ -128,8 +128,11 @@ describe("createOccupancyView", () => {
     // investigation showed legacy carving continuously deletes established
     // silhouette cells (churn) and, under sensor noise, destroys occluded
     // background. The demo — whose collider IS the reconstruction — wires
-    // carveConfidenceThreshold = its noise floor, so any cell solid enough to
-    // be meshed can no longer be erased by a single deeper reading.
+    // carveConfidenceThreshold = its noise floor. The guard DECAYS on
+    // contradiction (2026-07-16-1547 fossilization fix): a single deeper
+    // reading costs one observation instead of deleting the cell, so a
+    // well-observed cell stays meshed while persistent contradictions can
+    // still un-build it.
     //
     // Identity-projection closed form: with identity rotation + identity
     // projectionMatrix, a center-screen point at depth d unprojects to
@@ -156,8 +159,9 @@ describe("createOccupancyView", () => {
     const store = makeFakeStore();
     const view = createOccupancyView(new THREE.Group(), store);
 
-    // Establish the cell at world (0,0,0) exactly at the noise floor…
-    for (let i = 0; i < DEFAULT_OCCUPANCY_MIN_OBSERVATIONS; i++) {
+    // Establish the cell at world (0,0,0) ONE observation above the noise
+    // floor (a decay must not un-mesh it)…
+    for (let i = 0; i < DEFAULT_OCCUPANCY_MIN_OBSERVATIONS + 1; i++) {
       store.push(ray(0.9));
       vi.advanceTimersByTime(300);
     }
@@ -166,14 +170,25 @@ describe("createOccupancyView", () => {
     >;
     expect(established).toContainEqual([0, 0, 0]);
 
-    // …then a deeper reading straight through it. Legacy carving would delete
-    // the cell (the meshed set would go empty); the guard must keep it.
+    // …then a deeper reading straight through it. Legacy carving would DELETE
+    // the cell outright (the meshed set would go empty); the decay guard
+    // costs one observation and keeps it meshed.
     store.push(ray(2.7));
     vi.advanceTimersByTime(300);
     const afterDeeper = meshUpdate.mock.lastCall![0] as ReadonlyArray<
       readonly [number, number, number]
     >;
     expect(afterDeeper).toContainEqual([0, 0, 0]);
+
+    // Persistent contradictions drain it below the floor — the mesh un-builds
+    // (the fossilization fix: noise can never become immortal).
+    for (let i = 0; i < 2; i++) {
+      store.push(ray(2.7));
+      vi.advanceTimersByTime(300);
+    }
+    const afterPersistentContradiction = meshUpdate.mock
+      .lastCall![0] as ReadonlyArray<readonly [number, number, number]>;
+    expect(afterPersistentContradiction).not.toContainEqual([0, 0, 0]);
     view.dispose();
     vi.useRealTimers();
   });

@@ -6,6 +6,10 @@ Samples sparse depth points from the WebXR depth sensing API at a configurable i
 
 ## Public API
 
+### Reconstruction cadence constants (2026-07-16)
+
+- **`DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS = 500`** / **`DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE = 32`** — the recommended depth-sampling cadence for reconstruct-and-render apps (Recorder, PhysicsDemo), the depth-side counterpart of the `DEFAULT_OCCUPANCY_*` constants. Hoisted after field feedback that the demo, relying on the conservative library fallback (16×16 @ 1 Hz), reconstructed 8× slower than the recorder. Opt-in named constants — the fallback `DEFAULT_CONFIG` (16/1000) is deliberately unchanged so non-reconstruction consumers (MinimalExample/AnchorStarter) are not silently re-tuned.
+
 ### `DepthSampler` (class)
 
 - **`constructor(callbacks: DepthSamplerCallbacks, config?: Partial<DepthSamplerConfig>)`** — creates a sampler with event callbacks and optional config overrides. The initial config is routed through the same validation as `updateConfig`, so invalid overrides (non-finite/non-positive `intervalMs`, fractional `gridSize`) are ignored at construction exactly as at runtime — the constructor cannot seat a value `updateConfig` would refuse.

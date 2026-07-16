@@ -20,6 +20,10 @@
 
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
+  DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,
+  DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
+} from 'gps-plus-slam-app-framework/ar/depth-sampler';
+import {
   DEFAULT_MOTION_FILTER,
   type MotionFilterConfig,
 } from 'gps-plus-slam-app-framework/ar/capture-motion-gate';
@@ -466,9 +470,12 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   depth: {
     enabled: true,
     // Tuned for FAST mesh reconstruction (2026-07-01 param-sweep on a real
-    // recording; see recording-options.ts.md):
-    intervalMs: 500, // 2 samples per second — denser temporal sampling
-    gridSize: 32, // 32×32 = 1024 points per sample — confirms cells fastest (was 24; slider max raised to 64 for on-device experimentation)
+    // recording; see recording-options.ts.md). Hoisted to framework constants
+    // 2026-07-16 so the PhysicsDemo reconstructs at the same speed (field
+    // feedback: the demo relied on the conservative 16×16 @ 1 Hz library
+    // fallback — 8× fewer depth points/s, visibly slower mesh).
+    intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, // 500 — 2 samples per second
+    gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE, // 32×32 = 1024 points per sample (slider max 64 for on-device experimentation)
     rgb: true, // RGB voxel coloring (Iter 8)
   },
   images: {

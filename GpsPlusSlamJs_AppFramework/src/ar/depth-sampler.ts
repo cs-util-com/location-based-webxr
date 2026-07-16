@@ -171,13 +171,27 @@ export function wrapXRDepthInfo(
   return wrapped;
 }
 
+/**
+ * Recommended depth-sampling cadence for apps that RECONSTRUCT-and-render an
+ * occupancy mesh (the Recorder, the PhysicsDemo) — the depth-side counterpart
+ * of `DEFAULT_OCCUPANCY_CELL_SIZE_M`/`DEFAULT_OCCUPANCY_MIN_OBSERVATIONS`
+ * (occupancy-grid.ts): one framework-level source of truth so both apps build
+ * the mesh at the same speed. Hoisted 2026-07-16 after field feedback that
+ * the demo (which relied on the conservative library fallback below: 16×16 @
+ * 1 Hz ≈ 256 points/s) reconstructed visibly slower than the recorder
+ * (32×32 @ 2 Hz ≈ 2048 points/s — 8×). Deliberately OPT-IN named constants,
+ * NOT a change to the fallback: bumping the fallback would silently re-tune
+ * consumers that are not reconstruction apps (MinimalExample / AnchorStarter).
+ */
+export const DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS = 500;
+export const DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE = 32;
+
 // Library-level fallback used by consumers that do NOT supply a config
-// (MinimalExample / AnchorStarter). Intentionally NOT synced to the recorder's
-// 2026-06-30 re-tune (intervalMs 500 / gridSize 24) — those denser defaults are
-// a recorder-specific decision sourced from DEFAULT_RECORDING_OPTIONS; bumping
-// this library default would silently re-tune unrelated apps. See
-// the recorder's recording-options.ts.md (F1) for the rationale (the catalog
-// moved app-side on 2026-07-11: GpsPlusSlamJs_RecorderApp/src/state/).
+// (MinimalExample / AnchorStarter). Intentionally NOT synced to the
+// reconstruction constants above — bumping this default would silently
+// re-tune unrelated apps. See the recorder's recording-options.ts.md (F1)
+// for the tuning history (the catalog moved app-side on 2026-07-11:
+// GpsPlusSlamJs_RecorderApp/src/state/).
 const DEFAULT_CONFIG: DepthSamplerConfig = {
   intervalMs: 1000,
   gridSize: 16,
