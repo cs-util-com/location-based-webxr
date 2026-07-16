@@ -9,3 +9,4 @@ dist-site/
 # but in this repo we keep all auth in ~/.npmrc only and ignore project-level
 # .npmrc as defense-in-depth against accidental `npm config set ... --location=project`.
 .npmrc
+.DS_Store

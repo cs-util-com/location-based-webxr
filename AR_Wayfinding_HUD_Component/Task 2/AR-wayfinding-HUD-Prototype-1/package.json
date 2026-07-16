@@ -1,0 +1,18 @@
+{
+  "name": "ar-wayfinding-hud-prototype-1",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^8.0.12"
+  },
+  "dependencies": {
+    "three": "^0.184.0",
+    "three.js": "^0.77.1"
+  }
+}
