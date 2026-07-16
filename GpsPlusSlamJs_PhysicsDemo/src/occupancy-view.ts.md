@@ -11,8 +11,8 @@ physics collider (user feedback: same framework building block). Owns an
 ## Public API
 
 - **`createOccupancyView(arWorldGroup, store, options?): OccupancyView`** —
-  `options` = `{ cellSizeM=DEFAULT_OCCUPANCY_CELL_SIZE_M (0.18),
-minObservations=DEFAULT_OCCUPANCY_MIN_OBSERVATIONS (3), meshMode='smooth',
+  `options` = `{ cellSizeM=DEFAULT_OCCUPANCY_CELL_SIZE_M (0.16),
+minObservations=DEFAULT_OCCUPANCY_MIN_OBSERVATIONS (2), meshMode='smooth',
 debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from the
   framework constants so the demo shares the RecorderApp's tuning. The 18 cm voxel
   is the speed lever; the noise floor stays at 3 to keep floaters (= phantom

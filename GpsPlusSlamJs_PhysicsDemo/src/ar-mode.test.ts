@@ -5,10 +5,10 @@
  * (verified manually, per the header of ar-mode.ts), but its CONFIG wiring is
  * testable and drifted in the field: the demo relied on the framework's
  * conservative depth-sampling fallback (16×16 @ 1 Hz) and reconstructed
- * visibly slower than the RecorderApp — 8× fewer depth points per second
- * (2026-07-16 field feedback). This pins that the demo starts depth capture
- * at the shared framework reconstruction cadence (500 ms × gridSize 64 per
- * the 2026-07-16 density/cadence sweep).
+ * visibly slower than the RecorderApp (2026-07-16 field feedback). This pins
+ * that the demo starts depth capture at the shared framework reconstruction
+ * cadence — the same single tuning source the recorder defaults read, so the
+ * two apps can never drift apart again.
  */
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";

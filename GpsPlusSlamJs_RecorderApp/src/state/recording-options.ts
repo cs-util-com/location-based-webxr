@@ -126,12 +126,12 @@ export interface LoopClosureDebugOptions {
 export interface DepthCaptureOptions {
   /** Whether to capture depth samples. Default: true */
   enabled: boolean;
-  /** Interval between samples in milliseconds. Default: 500 (FAST-reconstruction tuning, 2026-07-01). */
+  /** Interval between samples in milliseconds. Default: 2000 (2026-07-16 on-device framerate/mesh trade-off). */
   intervalMs: number;
   /**
-   * Grid size (N×N points per sample). Default: 32 (FAST-reconstruction
-   * tuning, 2026-07-01) — dense enough to populate the AR-space occupancy
-   * grid (2026-06-11 port plan §1).
+   * Grid size (N×N points per sample). Default: 24 (2026-07-16 on-device
+   * framerate/mesh trade-off) — dense enough to populate the AR-space
+   * occupancy grid (2026-06-11 port plan §1) without hurting the framerate.
    */
   gridSize: number;
   /**
@@ -471,12 +471,13 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     enabled: true,
     // Framework reconstruction cadence — one tuning source shared with the
     // PhysicsDemo (2026-07-16: the demo used the conservative library
-    // fallback and reconstructed visibly slower). Values per the 2026-07-16
-    // ground-truth density/cadence sweep: 500 ms × gridSize 64 (density is
-    // the stronger lever — 80 % coverage in 0.28 orbit revolutions vs 0.38
-    // at gridSize 32, best fidelity; was 32 until 2026-07-16).
-    intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, // 500 — 2 samples per second
-    gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE, // 64×64 = 4096 points per sample
+    // fallback and reconstructed visibly slower). Values from the maintainer's
+    // 2026-07-16 evening on-device framerate/mesh trade-off pass (the
+    // sweep-derived 500 ms × 64 built the mesh fastest on ground truth but
+    // visibly hurt the framerate — see the constants' doc in
+    // ar/depth-sampler.ts for the history).
+    intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, // 2000 — one sample per 2 s
+    gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE, // 24×24 = 576 points per sample
     rgb: true, // RGB voxel coloring (Iter 8)
   },
   images: {
@@ -557,13 +558,15 @@ export const DEPTH_CONSTRAINTS = {
   // simulating. The sampler emits at most once per XR frame and skips frames
   // while a sample is due, so an over-ambitious interval degrades gracefully;
   // expect ~200 KB per 64²-sample — zips grow fast below 250 ms. The
-  // PRODUCTION default stays 500 ms (DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS).
+  // PRODUCTION default is DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS (2000 ms
+  // since the 2026-07-16 evening on-device trade-off pass).
   intervalMs: { min: 100, max: 5000, step: 100 },
-  // Max raised 32 → 64 (2026-07-01) for on-device experimentation with faster
-  // mesh reconstruction: 64×64 = 4096 getDepthInMeters reads per sample (4× the
-  // 32² default). High values trade per-sample depth-readback cost + grid growth
-  // for faster cell confirmation — measure the per-frame cost on-device before
-  // adopting a value above the 32 default.
+  // Max 64 (raised 2026-07-01, kept for superset validation recordings):
+  // 64×64 = 4096 getDepthInMeters reads per sample. High values trade
+  // per-sample depth-readback cost + grid growth for faster cell confirmation;
+  // the 2026-07-16 on-device pass settled the PRODUCTION default at 24
+  // (DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE) because 64 visibly hurt the
+  // framerate.
   gridSize: { min: 2, max: 64, step: 1 },
 } as const;
 

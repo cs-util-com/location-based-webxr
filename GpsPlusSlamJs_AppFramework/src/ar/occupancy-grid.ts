@@ -72,24 +72,27 @@ export interface OccupancyGridOptions {
  * quantization. Both apps always pass an explicit `cellSizeM`, so the app-facing
  * recommended default and the primitive fallback can differ without conflict.
  *
- * Tuning (2026-07-16 cellSize × noise corpus sweep — supersedes the 2026-07-15
- * device-impression change that briefly shipped noise 2): the SPEED comes from the
- * coarser 18 cm voxel (fewer, larger cells confirm sooner — +18% early coverage vs
- * the old 15 cm at equal fidelity), and the noise floor stays at 3 because isolation
- * (floaters = phantom colliders) is governed almost entirely by the noise floor, not
- * the voxel size — mc 3 ≈ 1.9% floaters vs mc 2 ≈ 3.5%. So raising the voxel is the
- * clean speed lever; lowering the floor is not. `0.18` stays within
- * `OCCUPANCY_CONSTRAINTS.cellSizeM.max` (0.20); `3` within `minConfidence` 1–10. See
- * GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md.
+ * Tuning (2026-07-16 EVENING, maintainer's on-device framerate/mesh trade-off
+ * pass — supersedes the same-day corpus-sweep values 0.18/3): voxel 16 cm,
+ * noise floor 2. The sweep's argument for floor 3 (floaters = phantom
+ * colliders: mc 3 ≈ 1.9% vs mc 2 ≈ 3.5%) was measured under LEGACY carving;
+ * with the decay carve guard the floater gap largely disappears (real
+ * pillar-orbit A/B: guarded mc 2 isolates 2.12% vs guarded mc 3 2.19%), so
+ * the faster floor is affordable now. `0.16` stays within
+ * `OCCUPANCY_CONSTRAINTS.cellSizeM.max` (0.20); `2` within `minConfidence`
+ * 1–10. History: 2026-07-16-0557 corpus sweep (0.18/3),
+ * 2026-07-15-1640 device-impression change (0.18/2). See the recorder's
+ * recording-options.ts.md for the full tuning timeline.
  */
-export const DEFAULT_OCCUPANCY_CELL_SIZE_M = 0.18;
+export const DEFAULT_OCCUPANCY_CELL_SIZE_M = 0.16;
 
 /**
  * Recommended occupancy noise floor — the minimum observation count before a cell
- * is rendered/meshed (the Recorder's `minConfidence`, the demo's `minObservations`).
+ * is rendered/meshed (the Recorder's `minConfidence`, the demo's `minObservations`,
+ * and — since the decay guard — both apps' `carveConfidenceThreshold`).
  * See {@link DEFAULT_OCCUPANCY_CELL_SIZE_M} for the rationale and the tuning note.
  */
-export const DEFAULT_OCCUPANCY_MIN_OBSERVATIONS = 3;
+export const DEFAULT_OCCUPANCY_MIN_OBSERVATIONS = 2;
 
 /**
  * Per-cell state, deliberately FLAT (Step 3.1 of the 2026-07-03 long-session

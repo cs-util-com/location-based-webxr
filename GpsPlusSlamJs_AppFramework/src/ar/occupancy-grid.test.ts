@@ -830,19 +830,21 @@ describe('OccupancyGrid', () => {
      * proves it is a valid (in-range, non-throwing) grid parameter — the app
      * defaults can never ship a value the grid rejects.
      */
-    it('pin the FAST-reconstruction voxel size (18 cm) and noise floor (3)', () => {
-      // 2026-07-16 sweep: speed comes from the 18 cm voxel; the noise floor stays
-      // at 3 because floaters (phantom colliders) are set by the floor, not the
-      // voxel size (mc 3 ≈ 1.9% vs mc 2 ≈ 3.5%).
-      expect(DEFAULT_OCCUPANCY_CELL_SIZE_M).toBe(0.18);
-      expect(DEFAULT_OCCUPANCY_MIN_OBSERVATIONS).toBe(3);
+    it('pin the FAST-reconstruction voxel size (16 cm) and noise floor (2)', () => {
+      // 2026-07-16 EVENING field tuning (maintainer's on-device framerate/mesh
+      // trade-off pass): voxel 16 cm, floor 2. The earlier corpus concern about
+      // mc 2 floaters (mc 3 ≈ 1.9% vs mc 2 ≈ 3.5% under LEGACY carving) is
+      // largely neutralized by the decay carve guard — on the real pillar-orbit
+      // A/B, guarded mc 2 isolates 2.12% vs guarded mc 3 2.19%.
+      expect(DEFAULT_OCCUPANCY_CELL_SIZE_M).toBe(0.16);
+      expect(DEFAULT_OCCUPANCY_MIN_OBSERVATIONS).toBe(2);
     });
 
     it('the recommended cell size constructs a valid grid', () => {
       const grid = new OccupancyGrid({
         cellSizeM: DEFAULT_OCCUPANCY_CELL_SIZE_M,
       });
-      expect(grid.cellSizeM).toBe(0.18);
+      expect(grid.cellSizeM).toBe(0.16);
     });
   });
 });

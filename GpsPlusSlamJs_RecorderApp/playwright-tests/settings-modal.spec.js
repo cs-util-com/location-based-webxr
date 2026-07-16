@@ -96,17 +96,18 @@ test.describe('Settings Modal', () => {
 
     test('depth interval slider shows default value', async ({ page }) => {
       const valueDisplay = page.locator('#depth-interval-value');
-      // 2026-06-30 occluder-tuning re-tune: depth sampling doubled to 0.5s.
-      await expect(valueDisplay).toHaveText('0.5s');
+      // 2.0s since the 2026-07-16 evening on-device framerate/mesh trade-off
+      // pass; equals the framework DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS.
+      await expect(valueDisplay).toHaveText('2.0s');
     });
 
     test('depth grid slider shows default value', async ({ page }) => {
       const valueDisplay = page.locator('#depth-grid-value');
-      // Default raised 32 → 64 on 2026-07-16 (ground-truth density/cadence
-      // sweep + field decision): lattice density is the stronger
-      // reconstruction-speed lever; the value equals the framework
-      // DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE shared with the PhysicsDemo.
-      await expect(valueDisplay).toHaveText('64×64');
+      // 24×24 since the 2026-07-16 evening on-device framerate/mesh
+      // trade-off pass (the sweep-derived 64 hurt the framerate); equals the
+      // framework DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE shared with the
+      // PhysicsDemo.
+      await expect(valueDisplay).toHaveText('24×24');
     });
 
     test('images interval slider shows default value', async ({ page }) => {

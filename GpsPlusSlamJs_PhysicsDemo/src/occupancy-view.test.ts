@@ -65,7 +65,7 @@ describe("createOccupancyView", () => {
   });
 
   it("inherits the framework voxel size + noise floor for the mesh (FAST reconstruction)", () => {
-    // The demo must use the same framework defaults as the recorder — 18 cm
+    // The demo must use the same framework defaults as the recorder — 16 cm
     // voxels (the speed lever) + a noise floor of 3 (keeps floaters/phantom
     // colliders low; 2026-07-16 sweep). The mesher is fed the cell size and the
     // grid is queried at the noise floor, so spy on both to prove the demo reads
@@ -80,7 +80,7 @@ describe("createOccupancyView", () => {
     expect(getOccupied).toHaveBeenLastCalledWith(
       DEFAULT_OCCUPANCY_MIN_OBSERVATIONS,
     );
-    // Voxel size: the mesher receives the framework default cell size (0.18 m).
+    // Voxel size: the mesher receives the framework default cell size (0.16 m).
     expect(meshUpdate).toHaveBeenLastCalledWith(
       expect.anything(),
       DEFAULT_OCCUPANCY_CELL_SIZE_M,

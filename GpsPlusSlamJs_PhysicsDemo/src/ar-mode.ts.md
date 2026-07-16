@@ -22,9 +22,9 @@ onCaptured → dispatch recordDepthSample } })`.
 - `startDepthCapture({ intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE })`
   - `createOccupancyView(arWorldGroup, store)` reconstruct the room from the live
     depth stream (same occupancy stack as replay) at the framework reconstruction
-    cadence — recorder parity, 500 ms × gridSize 64 (the bare fallback 16×16 @ 1 Hz
-    built the mesh 8× slower — 2026-07-16 field feedback + density/cadence sweep).
-    Pinned by `ar-mode.test.ts`.
+    cadence — the same single tuning source the recorder defaults read (2000 ms ×
+    gridSize 24 since the 2026-07-16 evening on-device framerate/mesh trade-off),
+    so the two apps can never drift apart again. Pinned by `ar-mode.test.ts`.
 - `createPhysicsRuntime(arWorldGroup, occlusionMesh)` runs the physics; it is
   stepped every XR frame via `registerXrFrameUpdate` (`performance.now()` drives the
   collider-rebuild throttle).

@@ -89,9 +89,10 @@ export async function startArMode(deps: ArModeDeps): Promise<() => void> {
 
   // Live room reconstruction from the depth stream — one occluder for occlusion
   // AND physics, with the mesh mode + shader from the UI dropdowns. Depth runs
-  // at the framework RECONSTRUCTION cadence (recorder parity; the bare
-  // fallback 16×16 @ 1 Hz fed 8× fewer points/s and built the mesh visibly
-  // slower — 2026-07-16 field feedback + density/cadence sweep).
+  // at the framework RECONSTRUCTION cadence — the same single tuning source
+  // the recorder defaults read, so the two apps can never drift apart again
+  // (2026-07-16 field feedback; values from the maintainer’s on-device
+  // framerate/mesh trade-off pass).
   startDepthCapture({
     intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
     gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,

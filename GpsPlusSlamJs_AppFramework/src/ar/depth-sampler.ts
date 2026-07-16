@@ -180,22 +180,23 @@ export function wrapXRDepthInfo(
  * the conservative fallback below — 16×16 @ 1 Hz, 8× fewer points/s than the
  * recorder — and reconstructed visibly slower).
  *
- * Tuning (2026-07-16 ground-truth density/cadence sweep, measured noise —
- * GpsPlusSlamJs_Investigation test-results/synthetic-density-cadence-sweep.txt):
- * lattice DENSITY is the stronger and more point-efficient lever than
- * temporal rate — gridSize 64 at the 500 ms cadence reaches 80 % true-surface
- * coverage in 0.28 orbit revolutions (vs 0.38 at gridSize 32) with the BEST
- * measured fidelity, while pushing the interval below 500 ms buys little and
- * degrades accuracy per point. 64×64 = 4096 depth reads per sample is 4× the
- * former per-sample cost — field-testing the on-device frame-time impact is
- * the explicit next step of that sweep.
+ * Tuning (2026-07-16 EVENING, maintainer's on-device framerate/mesh trade-off
+ * pass — supersedes the same-day sweep-derived 500 ms × 64): 2000 ms × 24×24.
+ * The ground-truth density/cadence sweep
+ * (GpsPlusSlamJs_Investigation test-results/synthetic-density-cadence-sweep.txt)
+ * showed density is the more point-efficient mesh-speed lever, but its
+ * flagged open question — on-device frame-time cost — resolved against the
+ * dense/fast end: 64² @ 2 Hz (8192 points/s) visibly hurt the framerate,
+ * while 24² @ 0.5 Hz (~288 points/s) keeps rendering smooth at acceptable
+ * mesh build-up. If devices get faster, the sweep says gridSize (not the
+ * interval) is the knob to raise first.
  *
  * Deliberately OPT-IN named constants, NOT a change to the fallback below:
  * bumping the fallback would silently re-tune consumers that are not
  * reconstruction apps (MinimalExample / AnchorStarter).
  */
-export const DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS = 500;
-export const DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE = 64;
+export const DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS = 2000;
+export const DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE = 24;
 
 // Library-level fallback used by consumers that do NOT supply a config
 // (MinimalExample / AnchorStarter). Intentionally NOT synced to the
