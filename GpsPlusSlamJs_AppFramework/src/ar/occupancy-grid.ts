@@ -30,6 +30,7 @@ import {
   CELL_KEY_LIMIT,
   cellCoordsInKeyRange,
   cellKey,
+  packCellKey,
   unpackCellCoord,
   unpackCellKey,
 } from './cell-key';
@@ -655,35 +656,118 @@ export class OccupancyGrid {
    * a repeated identical carve NOT a no-op — the per-sample unique-endpoint
    * dedupe in `addSample` is therefore semantically load-bearing under the
    * guard (one decay per contradicting ray per sample).
+   *
+   * PERFORMANCE — fused walk (2026-07-17 perf loop, iteration 1): this is
+   * the framework's hottest non-render loop (hundreds of rays per depth
+   * sample at the 200 ms reconstruction cadence), and the generic
+   * `bresenham3d(callback)` shape dominated the fold profile: a fresh
+   * `[x, y, z]` tuple + callback dispatch + full `cellKey` repack +
+   * `cellsEqual` per visited cell. The Bresenham walk (identical integer
+   * stepping, `bresenham3d` stays the reference — see the fold-oracle
+   * property test) is therefore fused in here with two key tricks:
+   *
+   * - The packed cell key is maintained INCREMENTALLY: stepping one cell
+   *   along an axis moves the key by that axis' constant field stride
+   *   (base-2^17 positional packing), replacing the 3-term repack.
+   * - The endpoint guard compares packed keys (`key === endpointKey`).
+   *   Every walked cell lies inside the camera→point AABB whose corners the
+   *   caller range-checked, so packing is bijective on the whole walk and
+   *   the compare is exactly `cellsEqual` — and key aliasing is impossible.
+   *
+   * The cell tuple is materialized only on an actual delete/decay hit (rare
+   * per trace, handled in {@link carveCellAt}). Measured on the
+   * occupancy-fold bench (devbox-win11, Node 24, 50 samples × 576 pts,
+   * production config): 37.05 → 25.71 ms median of 5, −30.6%.
+   * Input safety: cameraCell/pointCell are integer cells from
+   * `cellForPosition` (finite-checked upstream) and both range-checked by
+   * `addSample`, so dm ≤ 2·CELL_KEY_LIMIT « MAX_TRACE_STEPS and the generic
+   * tracer's integer/span guards are structurally satisfied here.
    */
   private carve(cameraCell: GridCell, pointCell: GridCell): void {
     const threshold = this.carveConfidenceThreshold;
-    bresenham3d(
-      cameraCell,
-      pointCell,
-      (cell) => {
-        if (!cellsEqual(cell, pointCell)) {
-          const key = cellKey(cell);
-          if (threshold !== undefined) {
-            const record = this.cells.get(key);
-            if (!record) {
-              return true; // nothing to carve here, keep tracing
-            }
-            if (record.count >= threshold) {
-              this.decayCell(cell, key, record);
-              return false; // established surface — contradict softly, stop
-            }
-          }
-          // A carve removes a cell from the occupied set → a meaningful change.
-          if (this.cells.delete(key)) {
-            this.revision++;
-            this.unindexCell(cell, key);
-          }
-        }
-        return true;
-      },
-      this.carveStopCells
-    );
+    const stopDistance = this.carveStopCells;
+    let x = cameraCell[0];
+    let y = cameraCell[1];
+    let z = cameraCell[2];
+    const ex = pointCell[0];
+    const ey = pointCell[1];
+    const ez = pointCell[2];
+    const dx = Math.abs(ex - x);
+    const dy = Math.abs(ey - y);
+    const dz = Math.abs(ez - z);
+    // Math.sign instead of the reference's `a < b ? 1 : -1`: a zero-delta
+    // axis has d· = 0, so its error term never goes negative and the step is
+    // never taken — sign 0 and −1 are indistinguishable there (oracle-tested).
+    const sx = Math.sign(ex - x);
+    const sy = Math.sign(ey - y);
+    const sz = Math.sign(ez - z);
+    const keyStepX = sx * CELL_KEY_STRIDE_X;
+    const keyStepY = sy * CELL_KEY_STRIDE_Y;
+    const keyStepZ = sz; // z is the least-significant field (stride 1)
+    const endpointKey = packCellKey(ex, ey, ez);
+    let key = packCellKey(x, y, z);
+    const dm = Math.max(dx, dy, dz);
+    let i = dm;
+    let errX = Math.floor(dm / 2);
+    let errY = errX;
+    let errZ = errX;
+    for (;;) {
+      if (key !== endpointKey && !this.carveCellAt(x, y, z, key, threshold)) {
+        return; // established surface — contradicted softly, trace stops
+      }
+      if (i-- <= stopDistance) {
+        return;
+      }
+      errX -= dx;
+      if (errX < 0) {
+        errX += dm;
+        x += sx;
+        key += keyStepX;
+      }
+      errY -= dy;
+      if (errY < 0) {
+        errY += dm;
+        y += sy;
+        key += keyStepY;
+      }
+      errZ -= dz;
+      if (errZ < 0) {
+        errZ += dm;
+        z += sz;
+        key += keyStepZ;
+      }
+    }
+  }
+
+  /**
+   * Per-cell action of the fused carve walk (extracted so both it and the
+   * walk stay under the lint complexity budget; a monomorphic private-method
+   * call per visited cell measured within noise of the fully-inlined form).
+   *
+   * @returns `false` when the trace must stop: the cell is an established
+   *   surface (count ≥ threshold) that was decayed instead of deleted.
+   */
+  private carveCellAt(
+    x: number,
+    y: number,
+    z: number,
+    key: number,
+    threshold: number | undefined
+  ): boolean {
+    const record = this.cells.get(key);
+    if (record === undefined) {
+      return true; // nothing to carve here, keep tracing
+    }
+    if (threshold !== undefined && record.count >= threshold) {
+      this.decayCell([x, y, z], key, record);
+      return false; // established surface — contradict softly, stop
+    }
+    // A carve removes a cell from the occupied set → a meaningful change
+    // (the record exists, so the delete always succeeds).
+    this.cells.delete(key);
+    this.revision++;
+    this.unindexCell([x, y, z], key);
+    return true;
   }
 
   /**
@@ -831,6 +915,14 @@ export { cellKey, unpackCellKey } from './cell-key';
 function cellInKeyRange(cell: GridCell): boolean {
   return cellCoordsInKeyRange(cell, CELL_KEY_LIMIT);
 }
+
+// Per-axis strides of the packed cell key (base-2^17 positional packing):
+// stepping one cell along an axis moves the key by a constant. DERIVED from
+// the packer itself so they can never drift from cell-key.ts (z's stride is
+// 1 by the same derivation). Used by carve()'s fused walk to maintain the key
+// incrementally instead of repacking per visited cell.
+const CELL_KEY_STRIDE_X = packCellKey(1, 0, 0) - packCellKey(0, 0, 0);
+const CELL_KEY_STRIDE_Y = packCellKey(0, 1, 0) - packCellKey(0, 0, 0);
 
 // --- Chunk index (Step 2 of the 2026-07-03 long-session fps plan) ---
 // Chunks are CHUNK_EDGE_CELLS³ cell groups (16³ = 2.4 m at the 0.15 m default,
