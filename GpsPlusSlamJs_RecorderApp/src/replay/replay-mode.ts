@@ -235,8 +235,12 @@ export async function startReplayMode(
     // validated default on any storage error), so this stays best-effort.
     const replayOptions = loadRecordingOptions();
     const occupancyOptions = replayOptions.occupancy;
+    // Confidence-guarded carving at the same minConfidence floor as live
+    // (main.ts): a voxel solid enough to be rendered can no longer be erased
+    // by a single deeper reading (2026-07-16 synthetic-scene investigation).
     const occupancyGrid = new OccupancyGrid({
       cellSizeM: occupancyOptions.cellSizeM,
+      carveConfidenceThreshold: occupancyOptions.minConfidence,
     });
     // Same noise filter as live (main.ts): render only voxels seen ≥
     // minConfidence times, re-quantizable per replay like cellSizeM.

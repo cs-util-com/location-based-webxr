@@ -123,6 +123,61 @@ describe("createOccupancyView", () => {
     view.dispose();
   });
 
+  it("guards established cells against deeper readings (confidence-guarded carve)", () => {
+    // Why this matters: the 2026-07-16 synthetic-scene ground-truth
+    // investigation showed legacy carving continuously deletes established
+    // silhouette cells (churn) and, under sensor noise, destroys occluded
+    // background. The demo — whose collider IS the reconstruction — wires
+    // carveConfidenceThreshold = its noise floor, so any cell solid enough to
+    // be meshed can no longer be erased by a single deeper reading.
+    //
+    // Identity-projection closed form: with identity rotation + identity
+    // projectionMatrix, a center-screen point at depth d unprojects to
+    // cameraPos + [0, 0, −d].
+    const identityProjection = [
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+    ] as unknown as NonNullable<DepthSample["projectionMatrix"]>;
+    let nextTimestamp = 1;
+    const ray = (depthM: number): DepthSample => ({
+      // Distinct timestamps — the replay subscriber skips a sample it has
+      // already folded (same-timestamp dedupe).
+      timestamp: nextTimestamp++,
+      cameraPos: [0, 0, 0.9],
+      cameraRot: [0, 0, 0, 1],
+      points: [{ screenX: 0.5, screenY: 0.5, depthM }],
+      projectionMatrix: identityProjection,
+    });
+
+    // Fake timers: the replay subscriber throttles refreshes (leading +
+    // 250 ms trailing), so synchronous pushes need the trailing refresh
+    // flushed before the mesh reflects the latest grid state.
+    vi.useFakeTimers();
+    const meshUpdate = vi.spyOn(OcclusionMesh.prototype, "update");
+    const store = makeFakeStore();
+    const view = createOccupancyView(new THREE.Group(), store);
+
+    // Establish the cell at world (0,0,0) exactly at the noise floor…
+    for (let i = 0; i < DEFAULT_OCCUPANCY_MIN_OBSERVATIONS; i++) {
+      store.push(ray(0.9));
+      vi.advanceTimersByTime(300);
+    }
+    const established = meshUpdate.mock.lastCall![0] as ReadonlyArray<
+      readonly [number, number, number]
+    >;
+    expect(established).toContainEqual([0, 0, 0]);
+
+    // …then a deeper reading straight through it. Legacy carving would delete
+    // the cell (the meshed set would go empty); the guard must keep it.
+    store.push(ray(2.7));
+    vi.advanceTimersByTime(300);
+    const afterDeeper = meshUpdate.mock.lastCall![0] as ReadonlyArray<
+      readonly [number, number, number]
+    >;
+    expect(afterDeeper).toContainEqual([0, 0, 0]);
+    view.dispose();
+    vi.useRealTimers();
+  });
+
   it("detaches the subscription on dispose", () => {
     const addSample = vi.spyOn(OccupancyGrid.prototype, "addSample");
     const store = makeFakeStore();
