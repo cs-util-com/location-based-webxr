@@ -75,6 +75,15 @@ export interface WayfindingHudOptions {
    * a procedural ring is used when omitted. Same ownership rule as
    * `arrowSprite`. */
   circleSprite?: THREE.Texture | string;
+  /**
+   * When `true` (default) the HUD self-registers with the framework frame
+   * loop and is ticked by the WebXR session. Set `false` for hosts that own
+   * their own render loop (desktop simulators, replay scenes — nothing
+   * ticks the frame loop outside a session) and drive the HUD via
+   * {@link WayfindingHud.update} instead. Either/or: do not combine
+   * auto-registration with manual `update` calls (double-tick).
+   */
+  autoRegisterFrameUpdate?: boolean;
 }
 
 /** Defaults for the optional {@link WayfindingHudOptions} fields. */
@@ -85,6 +94,12 @@ export const DEFAULT_WAYFINDING_HUD = {
 } as const;
 
 export interface WayfindingHud {
+  /**
+   * Explicit per-frame tick for hosts that own their render loop — only
+   * meaningful with `autoRegisterFrameUpdate: false` (see that option).
+   * No-op after dispose().
+   */
+  update(dt: number): void;
   /** Detach and release everything. Idempotent; also runs on session end. */
   dispose(): void;
 }
@@ -441,23 +456,37 @@ export function createWayfindingHud(
     });
   }
 
-  const unregister = registerFrameUpdate(update);
+  /** Release the target-shared procedural resources and any owned textures. */
+  function releaseSharedResources(): void {
+    arrowGeometry?.dispose();
+    circleGeometry?.dispose();
+    hudMaterial?.dispose();
+    if (arrowTexture?.owned) arrowTexture.texture.dispose();
+    if (circleTexture?.owned) circleTexture.texture.dispose();
+  }
+
+  const unregister =
+    (options.autoRegisterFrameUpdate ?? true)
+      ? registerFrameUpdate(update)
+      : null;
 
   let disposed = false;
   const handle: WayfindingHud = {
+    update(dt: number): void {
+      // Guard: an update after dispose would re-create per-target state
+      // from getTargets() and silently re-attach meshes to the camera.
+      if (disposed) return;
+      update(dt);
+    },
     dispose(): void {
       if (disposed) return;
       disposed = true;
-      unregister();
+      unregister?.();
       for (const state of states) {
         disposeState(state);
       }
       states.length = 0;
-      arrowGeometry?.dispose();
-      circleGeometry?.dispose();
-      hudMaterial?.dispose();
-      if (arrowTexture?.owned) arrowTexture.texture.dispose();
-      if (circleTexture?.owned) circleTexture.texture.dispose();
+      releaseSharedResources();
       // Remove ourselves from the session registry so the teardown flush
       // won't re-run this (and an early manual dispose leaves no dead entry).
       deregisterSessionDisposer();

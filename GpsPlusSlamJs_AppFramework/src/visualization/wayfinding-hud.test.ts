@@ -332,6 +332,57 @@ describe('createWayfindingHud — target-count sync (getter-API port of the prot
   });
 });
 
+describe('createWayfindingHud — explicit-tick mode (autoRegisterFrameUpdate: false)', () => {
+  // Why these tests matter: outside a WebXR session nothing ticks the
+  // framework frame loop (runFrameUpdates is session-internal), so
+  // desktop hosts (walk simulators, replay scenes) own their own rAF and
+  // must be able to drive the HUD directly via handle.update(dt).
+  it('is not driven by the frame loop; handle.update(dt) drives placement instead', () => {
+    const camera = makeCamera();
+    const targets = [new THREE.Vector3(0, 0, -5)];
+    const hud = createWayfindingHud({
+      camera,
+      getTargets: () => targets,
+      distanceMin: 1.5,
+      distanceMax: 3.0,
+      autoRegisterFrameUpdate: false,
+    });
+
+    // The framework frame loop must NOT tick this HUD…
+    tick();
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(0);
+
+    // …the host's explicit update does.
+    hud.update(1 / 60);
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(1);
+    hud.dispose();
+  });
+
+  it('update(dt) applies dt to the circle damping and dispose() stays complete', () => {
+    const camera = makeCamera();
+    const targets = [new THREE.Vector3(2, 0, -5)];
+    const hud = createWayfindingHud({
+      camera,
+      getTargets: () => targets,
+      distanceMin: 1.5,
+      distanceMax: 3.0,
+      autoRegisterFrameUpdate: false,
+    });
+    hud.update(1 / 60); // snap frame
+    camera.position.set(0.5, 0, 0);
+    camera.updateMatrixWorld(true);
+    const circle = childrenByName(camera, 'wayfinding-circle')[0]!;
+    const before = circle.position.x;
+    hud.update(1 / 60); // damped frame
+    expect(circle.position.x).not.toBe(before);
+
+    hud.dispose();
+    expect(camera.children.length).toBe(0);
+    expect(() => hud.update(1 / 60)).not.toThrow(); // post-dispose tick is a no-op
+    expect(camera.children.length).toBe(0);
+  });
+});
+
 describe('createWayfindingHud — lifecycle', () => {
   it('dispose detaches all HUD objects from the camera and unregisters the frame tick', () => {
     const { hud, camera } = makeHud([

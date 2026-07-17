@@ -15,6 +15,7 @@ Presenter of the wayfinding HUD: per-target frustum-locked indicators (edge arro
   - `distanceMin` / `distanceMax` (required) — the arrival/reactivation hysteresis deadband (meters).
   - `hudDistance?`, `indicatorScale?`, `labelScale?` — see defaults.
   - `arrowSprite?` / `circleSprite?` — `THREE.Texture | string` (URL). Procedural cone/ring fallbacks when omitted. Arrow assets must point **upward** and be centered.
+  - `autoRegisterFrameUpdate?` (default `true`) — set `false` for hosts that own their render loop (desktop simulators, replay scenes; nothing ticks the framework frame loop outside a WebXR session) and call `hud.update(dt)` per frame instead. Either/or — never combine auto-registration with manual `update` calls (double-tick). `update` is a no-op after `dispose()` (it would otherwise re-create per-target state from `getTargets()`).
 
 ## Invariants & assumptions
 
