@@ -59,10 +59,15 @@ export class ARWayfindingHUD {
 
     /**
      * Replace the entire waypoint list.
+     * All per-target states are discarded: waypoint identities change wholesale,
+     * so no new waypoint may inherit a previous target's hysteresis state or
+     * smoothed circle position.
      * @param {THREE.Vector3[]} positions
      */
     setWaypoints(positions) {
         this._waypoints = [...positions];
+        this.targetStates.forEach((state) => this._disposeTargetState(state));
+        this.targetStates = [];
     }
 
     /**
@@ -75,10 +80,16 @@ export class ARWayfindingHUD {
 
     /**
      * Remove the waypoint at the given index.
+     * The matching target state is spliced out too, so the states of all
+     * following waypoints stay aligned with their own waypoint index.
      * @param {number} index
      */
     removeWaypoint(index) {
         this._waypoints.splice(index, 1);
+        const [removedState] = this.targetStates.splice(index, 1);
+        if (removedState) {
+            this._disposeTargetState(removedState);
+        }
     }
 
     /**
@@ -298,30 +309,39 @@ export class ARWayfindingHUD {
     }
 
     /**
+     * Detaches a single target's HUD objects from the camera and disposes its
+     * per-target resources. Geometries and materials shared across targets
+     * (procedural indicator resources) are deliberately kept alive — they are
+     * only released in destroy().
+     * @param {object} state - The indicator state object to tear down.
+     */
+    _disposeTargetState(state) {
+        this.camera.remove(state.arrowMesh);
+        this.camera.remove(state.circleMesh);
+        this.camera.remove(state.distanceLabel.getMesh());
+
+        if (state.arrowMesh.geometry && state.arrowMesh.geometry !== this._arrowGeometry) {
+            state.arrowMesh.geometry.dispose();
+        }
+        if (state.arrowMesh.material && state.arrowMesh.material !== this._hudMaterial) {
+            state.arrowMesh.material.dispose();
+        }
+
+        if (state.circleMesh.geometry && state.circleMesh.geometry !== this._circleGeometry) {
+            state.circleMesh.geometry.dispose();
+        }
+        if (state.circleMesh.material && state.circleMesh.material !== this._hudMaterial) {
+            state.circleMesh.material.dispose();
+        }
+
+        state.distanceLabel.dispose();
+    }
+
+    /**
      * Cleans up all Three.js resources to prevent memory leaks when the AR session ends.
      */
     destroy() {
-        this.targetStates.forEach((state) => {
-            this.camera.remove(state.arrowMesh);
-            this.camera.remove(state.circleMesh);
-            this.camera.remove(state.distanceLabel.getMesh());
-
-            if (state.arrowMesh.geometry && state.arrowMesh.geometry !== this._arrowGeometry) {
-                state.arrowMesh.geometry.dispose();
-            }
-            if (state.arrowMesh.material) {
-                state.arrowMesh.material.dispose();
-            }
-
-            if (state.circleMesh.geometry && state.circleMesh.geometry !== this._circleGeometry) {
-                state.circleMesh.geometry.dispose();
-            }
-            if (state.circleMesh.material) {
-                state.circleMesh.material.dispose();
-            }
-
-            state.distanceLabel.dispose();
-        });
+        this.targetStates.forEach((state) => this._disposeTargetState(state));
 
         if (this._arrowGeometry) this._arrowGeometry.dispose();
         if (this._circleGeometry) this._circleGeometry.dispose();
