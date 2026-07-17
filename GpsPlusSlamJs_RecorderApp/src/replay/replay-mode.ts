@@ -58,9 +58,9 @@ import {
 import { wireOccupancyGridSubscribers } from '../visualization/wire-occupancy-grid-subscribers';
 import { createZipFrameBlobSource } from '../storage/zip-frame-blob-source';
 import {
-  createStatsOverlay,
-  type StatsOverlayHandle,
-} from '../ui/stats-overlay';
+  createPerfStatsOverlay,
+  type PerfStatsOverlayHandle,
+} from 'gps-plus-slam-app-framework/visualization/perf-stats-overlay';
 import * as THREE from 'three';
 
 const log = createLogger('ReplayMode');
@@ -301,11 +301,11 @@ export async function startReplayMode(
   // panels are advanced by their own rAF loop — rAF fires once per browser
   // frame, so the measured cadence equals the replay render cadence.
   // Best-effort like the visualizers above.
-  let statsOverlay: StatsOverlayHandle | null = null;
+  let statsOverlay: PerfStatsOverlayHandle | null = null;
   let statsRafId: number | null = null;
   try {
     if (loadRecordingOptions().visualization.statsOverlay) {
-      statsOverlay = createStatsOverlay(config.container);
+      statsOverlay = createPerfStatsOverlay(config.container);
       const statsTick = (): void => {
         statsOverlay?.update();
         statsRafId = requestAnimationFrame(statsTick);

@@ -181,9 +181,9 @@ import {
 } from './state/recording-options';
 import { initSettingsModal } from './ui/settings-modal';
 import {
-  createStatsOverlay,
-  type StatsOverlayHandle,
-} from './ui/stats-overlay';
+  createPerfStatsOverlay,
+  type PerfStatsOverlayHandle,
+} from 'gps-plus-slam-app-framework/visualization/perf-stats-overlay';
 import { wireQrRecording } from './qr/wire-qr-recording';
 import type { QrDetectionController } from 'gps-plus-slam-app-framework/ar';
 
@@ -273,7 +273,7 @@ let unsubscribeFrameTiles: (() => void) | null = null;
 // the 2026-07-03 long-session fps plan. Mounted into the #app dom-overlay root
 // at Enter-AR, advanced from the initAR `callbacks.onFrame` tick; teardown
 // registered in arSessionScope (same lifecycle as the frame-tile visualizer).
-let statsOverlay: StatsOverlayHandle | null = null;
+let statsOverlay: PerfStatsOverlayHandle | null = null;
 
 // Occupancy-grid cubes (2026-06-11 depth occupancy-grid port plan): the
 // grid is derived state fed from `recordDepthSample` actions via
@@ -1304,7 +1304,7 @@ async function handleEnterAR(): Promise<void> {
       // Mounted into the #app dom-overlay root so it composites over the AR
       // view; advanced once per XR frame in the `callbacks.onFrame` tick.
       arSessionScope.wire('Stats overlay', viz.statsOverlay, () => {
-        statsOverlay = createStatsOverlay(appContainer);
+        statsOverlay = createPerfStatsOverlay(appContainer);
         return () => {
           statsOverlay?.dispose();
           statsOverlay = null;

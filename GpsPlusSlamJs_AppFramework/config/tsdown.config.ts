@@ -175,6 +175,11 @@ const entryFiles = [
   // Engine-free desktop pointer raycast helper (2026-07-15 replay-harness Part B)
   // — deep-imported by consumer apps (PhysicsDemo) via `./visualization/*`.
   'src/visualization/pointer-picking.ts',
+  // Shared Stats.js perf overlay (2026-07-17 promotion of the recorder +
+  // PhysicsDemo copies) — deep-imported by both via `./visualization/*`, so it
+  // must be a per-file dist entry (a missing entry breaks Vite resolution at
+  // runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/visualization/perf-stats-overlay.ts',
   // Shared canvas-text sprite helper (2026-07-17 wayfinding graduation).
   'src/visualization/text-sprite.ts',
   'src/visualization/three-dispose.ts',

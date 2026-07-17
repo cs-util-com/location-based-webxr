@@ -107,6 +107,14 @@ export {
   pickWorldPoint,
 } from './pointer-picking.js';
 
+// --- perf-stats-overlay (shared Stats.js FPS/MS/MB panel row) ---
+export {
+  type PerfStatsInstance,
+  type PerfStatsOverlayOptions,
+  type PerfStatsOverlayHandle,
+  createPerfStatsOverlay,
+} from './perf-stats-overlay.js';
+
 // --- accuracy-circles (shared per-event GPS accuracy circles) ---
 export {
   type AccuracyCircleSample,

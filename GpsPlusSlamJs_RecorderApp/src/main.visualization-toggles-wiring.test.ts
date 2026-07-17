@@ -436,8 +436,8 @@ vi.mock('gps-plus-slam-app-framework', () => ({
 vi.mock('./ui/hud-tracking-quality-subscriber', () => ({
   subscribeHudToTrackingQuality: vi.fn(() => vi.fn()),
 }));
-vi.mock('./ui/stats-overlay', () => ({
-  createStatsOverlay: mockCreateStatsOverlay,
+vi.mock('gps-plus-slam-app-framework/visualization/perf-stats-overlay', () => ({
+  createPerfStatsOverlay: mockCreateStatsOverlay,
 }));
 vi.mock('./replay/replay-handlers', () => ({
   createReplayHandlers: vi.fn().mockReturnValue({

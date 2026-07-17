@@ -155,8 +155,8 @@ const { mockReplayRecordingOptions } = vi.hoisted(() => ({
 vi.mock('../state/recording-options', () => ({
   loadRecordingOptions: vi.fn(() => mockReplayRecordingOptions),
 }));
-vi.mock('../ui/stats-overlay', () => ({
-  createStatsOverlay: vi.fn(() => ({
+vi.mock('gps-plus-slam-app-framework/visualization/perf-stats-overlay', () => ({
+  createPerfStatsOverlay: vi.fn(() => ({
     dom: {} as HTMLElement,
     panelCount: 3,
     update: vi.fn(),
@@ -178,7 +178,7 @@ vi.mock('../visualization/wire-occupancy-grid-subscribers', () => ({
 
 import { startReplayMode } from './replay-mode.js';
 import { wireOccupancyGridSubscribers } from '../visualization/wire-occupancy-grid-subscribers';
-import { createStatsOverlay } from '../ui/stats-overlay';
+import { createPerfStatsOverlay } from 'gps-plus-slam-app-framework/visualization/perf-stats-overlay';
 import { loadRecording } from '../storage/recording-loader';
 import { wireStoreSubscribers } from 'gps-plus-slam-app-framework/state/store-subscribers';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
@@ -370,7 +370,7 @@ describe('replay-mode', () => {
     const config = makeConfig();
     await startReplayMode(fakeZipData, config);
 
-    expect(createStatsOverlay).not.toHaveBeenCalled();
+    expect(createPerfStatsOverlay).not.toHaveBeenCalled();
   });
 
   it('mounts the stats overlay into the replay container when enabled, and disposes it with the controller', async () => {
@@ -384,11 +384,11 @@ describe('replay-mode', () => {
     const config = makeConfig({ container });
     const controller = await startReplayMode(fakeZipData, config);
 
-    expect(createStatsOverlay).toHaveBeenCalledTimes(1);
-    expect(createStatsOverlay).toHaveBeenCalledWith(container);
+    expect(createPerfStatsOverlay).toHaveBeenCalledTimes(1);
+    expect(createPerfStatsOverlay).toHaveBeenCalledWith(container);
 
-    const overlay = vi.mocked(createStatsOverlay).mock.results[0]!
-      .value as ReturnType<typeof createStatsOverlay>;
+    const overlay = vi.mocked(createPerfStatsOverlay).mock.results[0]!
+      .value as ReturnType<typeof createPerfStatsOverlay>;
     expect(overlay.dispose).not.toHaveBeenCalled();
     controller.dispose();
     expect(overlay.dispose).toHaveBeenCalledTimes(1);
