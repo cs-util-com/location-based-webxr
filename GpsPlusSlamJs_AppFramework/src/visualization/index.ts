@@ -136,6 +136,15 @@ export {
   createTextSprite,
 } from './text-sprite.js';
 
+// --- wayfinding-hud (frustum-locked target indicators as camera children) ---
+export {
+  type WayfindingHud,
+  type WayfindingHudOptions,
+  DEFAULT_WAYFINDING_HUD,
+  createWayfindingHud,
+  validateWayfindingHudOptions,
+} from './wayfinding-hud.js';
+
 // --- wayfinding-placement (pure seam of the wayfinding HUD) ---
 export {
   type TargetPlacement,
