@@ -78,6 +78,16 @@
     [gps-anchor](../../GpsPlusSlamJs_AppFramework/src/visualization/gps-anchor.ts.md)).
     This makes `anchor.dispose()` a complete teardown for every caller
     (placement retry, `failStart` boot rollback, `beforeunload`).
+  - `spawnAnchor()` also starts the **F2 wayfinding HUD**
+    (`seams.createWayfindingHud`, deadband `HUD_DISTANCE_MIN_M`/`_MAX_M` =
+    1.5/3.0 m) for the spawned marker on both branches (cache-miss placement
+    and `?show=` cache-hit). The target feed is the pure
+    [hud-targets](hud-targets.ts.md) helper, which yields the marker's world
+    position only while `marker.visible` — so the hidden pre-alignment
+    cache-hit marker never produces a target at the AR origin. HUD creation
+    is wrapped in try/catch (auxiliary feature: a HUD failure must never
+    break the anchor flow), and the anchor `dispose()` wrapper also disposes
+    the HUD.
   - `failStart()` (async): unwinds a failed AR boot — calls
     `endARSession()` (via seam) to flush the framework session
     (`renderer`/`xrSession`/session-disposer registry) so `initAR()` can
@@ -112,6 +122,7 @@
   decision logic it composes is unit-tested in the sibling modules
   ([setup-state-machine](setup-state-machine.ts.md),
   [placement-decision](placement-decision.ts.md),
+  [hud-targets](hud-targets.ts.md),
   [url-anchor-state](url-anchor-state.ts.md),
   [guidance-view](guidance-view.ts.md), [placement-view](placement-view.ts.md),
   [marker](marker.ts.md)) and in the framework

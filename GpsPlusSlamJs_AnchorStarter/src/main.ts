@@ -40,7 +40,10 @@ import {
   stopOrientationWatch,
   type GpsPosition,
 } from "gps-plus-slam-app-framework/sensors";
-import { type GpsAnchor } from "gps-plus-slam-app-framework/visualization";
+import {
+  type GpsAnchor,
+  type WayfindingHud,
+} from "gps-plus-slam-app-framework/visualization";
 import type { LatLong, LatLongAlt } from "gps-plus-slam-app-framework/core";
 import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import { Vector3 } from "three";
@@ -62,6 +65,7 @@ import { toPlacementView } from "./placement-view.js";
 import { getSeams } from "./seams.js";
 import { decideAnchorPlacement } from "./placement-decision.js";
 import { coldStartOverrideEnabledFromSearch } from "./cold-start-override-flag.js";
+import { hudTargetsFromMarker, type HudTargetMarker } from "./hud-targets.js";
 import { type ReticleHandle } from "./reticle-hit-test.js";
 // --- your content here -----------------------------------------------------
 import { type MarkerOptions } from "./marker.js";
@@ -106,6 +110,17 @@ let anchor: GpsAnchor | null = null;
 let reticleHandle: ReticleHandle | null = null;
 let lastGps: LatLongAlt | null = null;
 let lastTrackingReady = false;
+let wayfindingHud: WayfindingHud | null = null;
+let hudMarker: HudTargetMarker | null = null;
+
+/**
+ * Wayfinding HUD deadband (F2, decision D2.2 "show when far"): the indicator
+ * activates once the anchor is at least HUD_DISTANCE_MAX_M away and hides
+ * again below HUD_DISTANCE_MIN_M ("arrived") — the gap is the anti-flicker
+ * hysteresis. Values carried over from the field-validated prototype.
+ */
+const HUD_DISTANCE_MIN_M = 1.5;
+const HUD_DISTANCE_MAX_M = 3.0;
 
 /** Idle label for the copy-link button; must match the text in index.html. */
 const COPY_LINK_IDLE_LABEL = "Copy link";
@@ -315,15 +330,40 @@ function spawnAnchor(
     }
   }
 
+  // F2 wayfinding HUD — guide the user to the (possibly off-screen / far)
+  // anchor. The target feed reuses the marker's visibility gate, so the
+  // hidden cache-hit marker yields no target until the first alignment.
+  // Auxiliary by design: a HUD failure must never break the anchor flow.
+  wayfindingHud?.dispose();
+  wayfindingHud = null;
+  hudMarker = marker;
+  try {
+    wayfindingHud = seams.createWayfindingHud({
+      camera,
+      getTargets: () => hudTargetsFromMarker(hudMarker),
+      distanceMin: HUD_DISTANCE_MIN_M,
+      distanceMax: HUD_DISTANCE_MAX_M,
+    });
+  } catch (err) {
+    console.error(
+      "[anchor-starter] wayfinding HUD failed to start; continuing without it.",
+      err,
+    );
+  }
+
   // The framework's `dispose()` only unregisters the anchor from the frame
   // loop; it deliberately does NOT detach the marker from the scene graph
   // (see gps-anchor.ts). Wrap it so disposing the anchor also removes its
-  // marker — making `anchor.dispose()` a complete teardown for every caller
-  // (placement retry, boot rollback, beforeunload).
+  // marker and the marker's wayfinding HUD — making `anchor.dispose()` a
+  // complete teardown for every caller (placement retry, boot rollback,
+  // beforeunload).
   const disposeAnchor = gpsAnchor.dispose.bind(gpsAnchor);
   gpsAnchor.dispose = (): void => {
     disposeAnchor();
     unsubReveal?.();
+    wayfindingHud?.dispose();
+    wayfindingHud = null;
+    hudMarker = null;
     arWorldGroup.remove(marker);
   };
   return gpsAnchor;

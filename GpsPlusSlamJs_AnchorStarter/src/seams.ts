@@ -38,6 +38,7 @@ import {
 } from "gps-plus-slam-app-framework/sensors";
 import {
   createGpsAnchor,
+  createWayfindingHud,
   enableArWorldGroupAlignment,
 } from "gps-plus-slam-app-framework/visualization";
 
@@ -65,6 +66,7 @@ export interface AnchorStarterSeams {
   startOrientationWatch: typeof startOrientationWatch;
   requestDeviceOrientationPermission: typeof requestDeviceOrientationPermission;
   createGpsAnchor: typeof createGpsAnchor;
+  createWayfindingHud: typeof createWayfindingHud;
   enableArWorldGroupAlignment: typeof enableArWorldGroupAlignment;
   selectTrackingQuality: typeof selectTrackingQuality;
   selectAlignmentMatrix: typeof selectAlignmentMatrix;
@@ -91,6 +93,7 @@ export const realSeams: AnchorStarterSeams = {
   startOrientationWatch,
   requestDeviceOrientationPermission,
   createGpsAnchor,
+  createWayfindingHud,
   enableArWorldGroupAlignment,
   selectTrackingQuality,
   selectAlignmentMatrix,

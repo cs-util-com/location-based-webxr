@@ -11,8 +11,9 @@
     `getArWorldGroup`, `endARSession`, `getCamera`,
     `startGpsWatch`, `startOrientationWatch`,
     `requestDeviceOrientationPermission`, `createGpsAnchor`,
-    `enableArWorldGroupAlignment`, `selectTrackingQuality`,
-    `selectAlignmentMatrix`, `startReticleHitTest`, `createAnchorMarker`).
+    `createWayfindingHud`, `enableArWorldGroupAlignment`,
+    `selectTrackingQuality`, `selectAlignmentMatrix`, `startReticleHitTest`,
+    `createAnchorMarker`).
     `selectAlignmentMatrix` lets the e2e fake drive the placement alignment gate
     (a desktop browser never computes a real alignment); `startReticleHitTest`
     lets it drive the hit-test reticle (surface present / absent) deterministically.

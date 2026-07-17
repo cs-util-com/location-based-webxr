@@ -175,6 +175,77 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     });
   });
 
+  test("starts the wayfinding HUD for the placed anchor (F2)", async ({
+    page,
+  }) => {
+    // Why this matters: the wayfinding HUD is the F2 "guide me to the anchor"
+    // feature. It must be wired for the freshly placed anchor with the
+    // camera, a target getter, and the distance deadband — dropping any of
+    // these silently disables the guidance on real devices.
+    await bootAnchorStarter(page);
+    await pushGpsFix(page, SAMPLE_FIX);
+
+    await page.getByTestId("place-button").click();
+    await expect(page.getByTestId("place-button")).toHaveText("Saved ✓");
+
+    const hudCalls = await page.evaluate(
+      () => window.__anchorStarterTest.wayfindingHudCalls,
+    );
+    expect(hudCalls.length).toBe(1);
+    expect(hudCalls[0]).toEqual({
+      hasCamera: true,
+      hasGetTargets: true,
+      distanceMin: 1.5,
+      distanceMax: 3.0,
+    });
+  });
+
+  test("starts the wayfinding HUD on the ?show= cache-hit boot (F2 user story)", async ({
+    page,
+  }) => {
+    // The F2 story: open a shared link and the HUD guides you to the anchor
+    // from afar. The cache-hit boot spawns the anchor from the URL — the HUD
+    // must ride along with the same deadband as the cache-miss path.
+    await bootAnchorStarter(page);
+    await pushGpsFix(page, SAMPLE_FIX);
+    await page.getByTestId("place-button").click();
+    await expect(page.getByTestId("place-button")).toHaveText("Saved ✓");
+
+    const savedUrl = page.url();
+    await page.goto(savedUrl); // addInitScript re-runs: hud calls reset
+    await page.getByTestId("start-button").click();
+    await expect(page.getByTestId("placement")).toBeVisible();
+    await expect(page.getByTestId("banner")).toContainText(
+      "Your saved anchor is shown",
+    );
+
+    const hudCalls = await page.evaluate(
+      () => window.__anchorStarterTest.wayfindingHudCalls,
+    );
+    expect(hudCalls.length).toBe(1);
+    expect(hudCalls[0].hasGetTargets).toBe(true);
+  });
+
+  test("does not start the wayfinding HUD when anchor creation fails", async ({
+    page,
+  }) => {
+    // The HUD belongs to a successfully spawned anchor; a failed placement
+    // must not leave a HUD polling a marker that was rolled back.
+    await bootAnchorStarter(page);
+    await pushGpsFix(page, SAMPLE_FIX);
+
+    await page.evaluate(() => {
+      window.__anchorStarterTest.failCreateAnchor = true;
+    });
+    await page.getByTestId("place-button").click();
+    await expect(page.getByTestId("error")).not.toBeEmpty();
+
+    const hudCalls = await page.evaluate(
+      () => window.__anchorStarterTest.wayfindingHudCalls,
+    );
+    expect(hudCalls.length).toBe(0);
+  });
+
   test("blocks placement with the point-at-the-ground hint when no surface is under the reticle", async ({
     page,
   }) => {
