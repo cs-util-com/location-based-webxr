@@ -74,6 +74,15 @@ export {
   OcclusionMesh,
 } from './occlusion-mesh.js';
 
+// --- occupancy-cubes-visualizer (instanced debug cubes of the occupancy grid) ---
+export {
+  type OccupancyGridSource,
+  type ViewerPose,
+  type OccupancyCubesVisualizerOptions,
+  OccupancyCubesVisualizer,
+  pickNearestSubset,
+} from './occupancy-cubes-visualizer.js';
+
 // --- leaflet-map-overlay ---
 export {
   DEFAULT_LEAFLET_MAP_SIZE_PX,
@@ -88,6 +97,15 @@ export { DEFAULT_LERP_RATE, clampedAlpha } from './lerp-utils.js';
 
 // --- map-data (shared trajectory model) ---
 export { type MapData, type MapDataInput, buildMapData } from './map-data.js';
+
+// --- pointer-picking (engine-free desktop raycast helper) ---
+export {
+  type Ndc,
+  type ElementRect,
+  pointerToNdc,
+  raycastPointer,
+  pickWorldPoint,
+} from './pointer-picking.js';
 
 // --- accuracy-circles (shared per-event GPS accuracy circles) ---
 export {

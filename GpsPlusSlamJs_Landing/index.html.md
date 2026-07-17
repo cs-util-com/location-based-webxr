@@ -42,14 +42,14 @@ the copy.
   carries the GitHub mark icon (round-9 R9-4 merged the former separate
   "Open source on GitHub" badge into it — the badge duplicated the
   button and was removed; still deliberately NO live star-count fetch),
-  the demos hub (four `.demo-card`s with inline-SVG vignettes keeping
+  the demos hub (five `.demo-card`s with inline-SVG vignettes keeping
   the proven one-line descriptions), and the external links row
   (`.links`, which carries the story's terminal bottom padding). ALL
   external (https) links — primary CTA, links row, FAQ license link —
   open a NEW TAB (`target="_blank" rel="noopener"`, round-9: the landing
   stays open in the background; this also removes the bfcache-return
   trigger of the firefly freeze, see R9-6). Since round-10 R10-1 the
-  four demo cards open new tabs as well (reversing the round-9 same-tab
+  five demo cards open new tabs as well (reversing the round-9 same-tab
   call): EVERY outbound click keeps the landing alive. Its lead sentence
   starts with `#cta-device-claim` (round-8 Z6): the static text is the
   universally-true Android+Chrome claim; `src/ar-support.ts` upgrades it
@@ -86,8 +86,8 @@ the copy.
   per `html[data-theme='dark'|'light']`; the accent `#ef4444` matches the
   3D palette's fused-anchor color.
 - **Demo links** are root-absolute with trailing slashes (`/starter/`,
-  `/minimal/`, `/qr-demo/`, `/recorder/`) — deployment URLs on the shared
-  origin, asserted by `scripts/build-site.mjs` after the production build.
+  `/minimal/`, `/qr-demo/`, `/recorder/`, `/physics/`) — deployment URLs on the
+  shared origin, asserted by `scripts/build-site.mjs` after the production build.
 - **Chapter sections** must exist for every id in `src/chapters.ts` (same
   order); `main.ts` warns on missing ones. Sections are min-height 130vh
   (hero 100vh) to give the scroll story room.

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>gps-plus-slam — physics demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #111;
+        color: #eee;
+        font-family: system-ui, sans-serif;
+        overflow: hidden;
+      }
+      /* The replay / AR scene mounts its canvas here. */
+      #app {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        pointer-events: none;
+      }
+      #overlay > * {
+        pointer-events: auto;
+      }
+      .panel {
+        margin: 12px;
+        padding: 12px 14px;
+        background: rgb(0 0 0 / 60%);
+        border: 1px solid #333;
+        border-radius: 10px;
+        /* stylelint-disable-next-line csstree/validator -- min() is valid CSS; the bundled css-tree grammar rejects math functions (false positive). */
+        max-width: min(86vw, 460px);
+      }
+      #mode-screen {
+        align-self: center;
+        margin-top: auto;
+        margin-bottom: auto;
+        text-align: center;
+      }
+      #mode-screen h1 {
+        font-size: 18px;
+        margin: 0 0 8px;
+      }
+      #mode-screen p {
+        font-size: 14px;
+        line-height: 1.5;
+        margin: 0 0 14px;
+      }
+      button {
+        font: inherit;
+        font-size: 15px;
+        padding: 10px 18px;
+        border-radius: 8px;
+        border: 1px solid #4f8cff;
+        background: #234;
+        color: #eee;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      #capability-message {
+        font-size: 14px;
+        line-height: 1.5;
+        color: #ffd27f;
+        margin-top: 10px;
+      }
+      .file-row {
+        margin-top: 12px;
+        font-size: 14px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      /* Replay controls (bottom) */
+      #replay-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #replay-status {
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      #replay-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      #replay-speed-label {
+        font-size: 13px;
+        color: #cfcfcf;
+      }
+      #mesh-controls {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 13px;
+      }
+      #mesh-controls select {
+        font: inherit;
+        font-size: 13px;
+        margin-left: 4px;
+      }
+      #physics-hint {
+        font-size: 13px;
+        color: #cfcfcf;
+      }
+      #stats {
+        font-size: 12px;
+        color: #9fdcff;
+        font-variant-numeric: tabular-nums;
+      }
+      #error {
+        color: #ff8a8a;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      #overlay is nested inside #app (the element the AR/replay scene mounts
+      into) so it composites over the AR camera feed under the WebXR DOM Overlay
+      feature. See the AppFramework README "DOM-Overlay / HUD stacking".
+    -->
+    <div id="app">
+      <div id="overlay">
+        <!-- Mode entry / capability screen -->
+        <section id="mode-screen" class="panel" data-testid="mode-screen">
+          <h1>Physics demo</h1>
+          <p>
+            Drop balls into the real world and watch them bounce off the
+            reconstructed surfaces. On a phone this runs in AR; on the desktop,
+            load a recorded walk and replay it — the developer harness.
+          </p>
+          <button id="start-ar-button" data-testid="start-ar-button" hidden>
+            Start AR
+          </button>
+          <div id="file-row" class="file-row" data-testid="file-row">
+            <label for="recording-input">Load a recording (.zip):</label>
+            <input
+              id="recording-input"
+              data-testid="recording-input"
+              type="file"
+              accept=".zip"
+            />
+          </div>
+          <div
+            id="capability-message"
+            data-testid="capability-message"
+            hidden
+          ></div>
+        </section>
+
+        <!-- Replay controls -->
+        <section
+          id="replay-panel"
+          class="panel"
+          data-testid="replay-panel"
+          hidden
+        >
+          <div id="replay-status" data-testid="replay-status"></div>
+          <div id="replay-controls">
+            <button id="play-pause-button" data-testid="play-pause-button">
+              Pause
+            </button>
+            <label id="replay-speed-label" for="replay-speed">
+              Speed
+              <input
+                id="replay-speed"
+                data-testid="replay-speed"
+                type="range"
+                min="0.25"
+                max="4"
+                step="0.25"
+                value="1"
+              />
+            </label>
+            <span id="replay-speed-value" data-testid="replay-speed-value"
+              >1×</span
+            >
+          </div>
+          <div id="mesh-controls">
+            <label>
+              Mesh
+              <select id="mesh-style" data-testid="mesh-style">
+                <option value="smooth" selected>Surface nets</option>
+                <option value="greedy">Cubes (blocky)</option>
+                <option value="corner-fit">Corner-fit (smoothed)</option>
+              </select>
+            </label>
+            <label>
+              Shader
+              <select id="mesh-shader" data-testid="mesh-shader">
+                <option value="depth-shaded-wireframe" selected>
+                  Depth-shaded + wireframe
+                </option>
+                <option value="depth-shaded">Depth-shaded</option>
+                <option value="matcap">Matcap</option>
+                <option value="wireframe">Wireframe</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
+          </div>
+          <div id="physics-hint">
+            Click / tap to shoot a ball into the scene.
+          </div>
+          <div id="stats" data-testid="stats"></div>
+          <div id="error" data-testid="error" hidden></div>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

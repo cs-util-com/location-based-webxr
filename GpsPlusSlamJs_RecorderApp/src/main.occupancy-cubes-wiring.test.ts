@@ -120,9 +120,12 @@ vi.mock('gps-plus-slam-app-framework/ar/xr-frame-loop', () => ({
 vi.mock('gps-plus-slam-app-framework/ar/occupancy-grid', () => ({
   OccupancyGrid: mockOccupancyGridCtor,
 }));
-vi.mock('./visualization/occupancy-cubes-visualizer', () => ({
-  OccupancyCubesVisualizer: mockVisualizerCtor,
-}));
+vi.mock(
+  'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer',
+  () => ({
+    OccupancyCubesVisualizer: mockVisualizerCtor,
+  })
+);
 vi.mock('./visualization/wire-occupancy-grid-subscribers', () => ({
   wireOccupancyGridSubscribers: mockWireOccupancyGridSubscribers,
 }));
@@ -539,7 +542,14 @@ describe('Occupancy-grid cube wiring in live AR', () => {
     expect(mockOccupancyGridCtor).toHaveBeenCalledTimes(1);
     // Voxel size flows from the recorder setting (occupancy.cellSizeM) into the
     // grid constructor — 2026-06-13 occupancy-grid-settings review, item 1.
-    expect(mockOccupancyGridCtor).toHaveBeenCalledWith({ cellSizeM: 0.15 });
+    // Confidence-guarded carving is tied to the SAME noise floor the renderers
+    // use (occupancy.minConfidence): any voxel solid enough to be shown can no
+    // longer be erased by one deeper reading (2026-07-16 synthetic-scene
+    // investigation — eliminates silhouette churn + occluded-background loss).
+    expect(mockOccupancyGridCtor).toHaveBeenCalledWith({
+      cellSizeM: 0.15,
+      carveConfidenceThreshold: 3,
+    });
     expect(mockVisualizerCtor).toHaveBeenCalledTimes(1);
     // The visualizer must hang off arWorldGroup, NOT the scene root: the
     // grid's cells are raw-WebXR coordinates that only register with the

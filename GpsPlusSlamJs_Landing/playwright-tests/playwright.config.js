@@ -10,7 +10,7 @@ import { defineConfig, devices } from "@playwright/test";
  *   with zero console errors / page errors.
  * - The WebGL canvas renders (or the static-DOM floor engages cleanly).
  * - The theme toggle flips and persists across reload.
- * - The four demo links stay present.
+ * - The five demo links stay present.
  * - Reduced-motion still presents every chapter readable.
  *
  * Chromium-only, matching the sibling apps. The dev server runs on the

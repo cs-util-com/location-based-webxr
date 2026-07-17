@@ -26,7 +26,7 @@
     "test:e2e:ui": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --ui",
     "format": "prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern \"src\" \"config\" \"playwright-tests\" index.html README.md package.json",
     "format:check": "prettier --check --ignore-unknown .",
-    "lint": "eslint . --config config/eslint.config.mjs --max-warnings 23",
+    "lint": "eslint . --config config/eslint.config.mjs --max-warnings 22",
     "lint:css": "stylelint \"src/**/*.css\" \"**/*.html\" --config config/stylelint.config.mjs --allow-empty-input",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.vitest.json --noEmit",

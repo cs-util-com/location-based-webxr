@@ -147,7 +147,7 @@ import { decodeFrameTexture } from './visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from './visualization/wire-frame-tile-subscribers';
 import { FrameBlobCache } from './visualization/frame-blob-cache';
 import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
-import { OccupancyCubesVisualizer } from './visualization/occupancy-cubes-visualizer';
+import { OccupancyCubesVisualizer } from 'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer';
 import {
   createOccluderSink,
   type OccluderSink,
@@ -1390,8 +1390,14 @@ async function handleEnterAR(): Promise<void> {
         // Voxel size is a user setting (recording-options `occupancy.cellSizeM`,
         // clamped 1–20 cm); read it at construction so a changed value applies
         // on the next Enter-AR. Same source main.ts uses for arCrashIsolation.
+        // Confidence-guarded carving is tied to the SAME noise floor the
+        // renderers use (occupancy.minConfidence, clamped 1–10): any voxel
+        // solid enough to be shown can no longer be erased by one deeper
+        // reading (2026-07-16 synthetic-scene investigation — eliminates
+        // silhouette churn and occluded-background destruction).
         occupancyGrid = new OccupancyGrid({
           cellSizeM: recordingOptions.occupancy.cellSizeM,
+          carveConfidenceThreshold: recordingOptions.occupancy.minConfidence,
         });
         // Publish the single live grid so non-visualizer consumers (the COLMAP
         // ZIP contributor, future floor/nav-mesh builders) can read it without a

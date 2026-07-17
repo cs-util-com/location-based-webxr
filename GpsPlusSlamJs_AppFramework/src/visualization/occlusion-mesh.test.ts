@@ -98,6 +98,36 @@ describe('OcclusionMesh', () => {
     occluder.dispose();
   });
 
+  it('exposes the underlying mesh via getMesh() for pointer raycasting', () => {
+    // The Part-B pointer-picking layer needs a handle to the real occluder mesh;
+    // getMesh() must return the very object attached to the scene graph.
+    const parent = new THREE.Group();
+    const occluder = new OcclusionMesh(parent);
+    expect(occluder.getMesh()).toBe(findMesh(parent));
+    occluder.dispose();
+  });
+
+  it('setVisible toggles the depth mesh AND active debug skins', () => {
+    // A hidden occluder must stop writing depth so co-located cubes are not
+    // occluded by it (the physics-demo "Show Mesh + Cubes shows nothing" bug).
+    const parent = new THREE.Group();
+    const occluder = new OcclusionMesh(parent);
+    occluder.setDebugStyle('depth-shaded-wireframe'); // adds visible skins
+    const depthMesh = occluder.getMesh();
+    const skins = parent.children.filter((c) => c !== depthMesh);
+    expect(skins.length).toBeGreaterThan(0);
+    expect(depthMesh.visible).toBe(true);
+
+    occluder.setVisible(false);
+    expect(depthMesh.visible).toBe(false);
+    expect(skins.every((s) => !s.visible)).toBe(true);
+
+    occluder.setVisible(true);
+    expect(depthMesh.visible).toBe(true);
+    expect(skins.every((s) => s.visible)).toBe(true);
+    occluder.dispose();
+  });
+
   it('starts empty and meshes a snapshot on update', () => {
     const parent = new THREE.Group();
     const occluder = new OcclusionMesh(parent);

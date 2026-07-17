@@ -21,6 +21,8 @@ can use it; the recorder owns only the off-by-default toggle + scene wiring. See
 - `update(cells: Iterable<GridCell>, cellSizeM: number, getCellPoint?: (cell) => Vector3 | null): void` — re-mesh from a fresh snapshot (pass `grid.getOccupiedCells(occupancy.minConfidence)`); disposes the previous geometry. `getCellPoint` (pass `grid.getCellPoint`) is consumed by the surface-hugging modes `'smooth'` and `'corner-fit'` (the cube modes ignore it).
 - `getTriangleCount(): number` — triangles currently drawn.
 - `getAabbs(): readonly Aabb[]` — the AABB list from the last `update` (physics-export hook).
+- `getMesh(): THREE.Mesh` — the underlying depth-only `THREE.Mesh`, for a pointer-raycast layer to target the real occluder surface (2026-07-15 replay-harness Part B; `pointer-picking.ts`). `colorWrite:false` does not affect `THREE.Raycaster`. Treat as read-only — re-mesh via `update` / restyle via `setDebugStyle` instead of mutating it.
+- `setVisible(visible: boolean): void` — show/hide the WHOLE occluder (depth mesh + active debug skins). Hiding stops the depth mesh writing depth, so a co-located visualizer (the occupancy cubes at the same surface) is no longer occluded by the otherwise-invisible occluder — used by a mesh-view controller to switch to a cubes-only view. Independent of `setDebugStyle` (a later style change re-adds skins visible; re-apply `setVisible` if needed).
 - `setDebugStyle(style: OccluderDebugStyle): void` — select which **visible debug skin(s)** render the meshed surface so its shape/structure can be judged on-device (2026-07-02 debug-viz-styles plan):
   - `'off'` — no debug rendering (default).
   - `'matcap'` — the original shiny semi-transparent cyan matcap skin.

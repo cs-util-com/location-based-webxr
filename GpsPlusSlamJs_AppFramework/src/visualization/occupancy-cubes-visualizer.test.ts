@@ -22,8 +22,8 @@ import {
   OccupancyCubesVisualizer,
   type OccupancyGridSource,
 } from './occupancy-cubes-visualizer';
-import type { GridCell } from 'gps-plus-slam-app-framework/ar';
-import { WEBXR_TO_NUE } from 'gps-plus-slam-app-framework/ar/webxr-nue-basis';
+import type { GridCell } from '../ar/bresenham3d';
+import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis';
 
 function makeGridSource(
   cells: GridCell[],
@@ -60,6 +60,19 @@ describe('OccupancyCubesVisualizer', () => {
     expect(mesh.parent).toBe(arSpaceNode);
     expect(mesh.count).toBe(0);
     expect(visualizer.getCount()).toBe(0);
+    visualizer.dispose();
+  });
+
+  it('setVisible toggles the mesh visibility live without clearing it', () => {
+    // The mesh-view controller flips this to hide/show cubes without a re-mesh.
+    const arSpaceNode = new THREE.Group();
+    const visualizer = new OccupancyCubesVisualizer(arSpaceNode);
+    const mesh = findMesh(arSpaceNode);
+    expect(mesh.visible).toBe(true);
+    visualizer.setVisible(false);
+    expect(mesh.visible).toBe(false);
+    visualizer.setVisible(true);
+    expect(mesh.visible).toBe(true);
     visualizer.dispose();
   });
 

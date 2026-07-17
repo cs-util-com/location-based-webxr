@@ -70,11 +70,11 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ```typescript
 {
-  depth: { enabled: true, intervalMs: 500, gridSize: 32, rgb: true },
+  depth: { enabled: true, intervalMs: 200, gridSize: 24, rgb: true },
   images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1,
             motionFilter: { enabled: true, maxAngularVelocity: 0.6, maxLinearVelocity: 2.5, maxWaitMs: 4000 },
             qualityFilter: { enabled: false, blurRelativeThreshold: 0.5, minMeanLuminance: 10, maxWaitMs: 4000 } },
-  occupancy: { cellSizeM: 0.15, minConfidence: 3, persistentOcclusion: true, liveOcclusion: false, occluderDebugStyle: 'off', occluderMeshMode: 'smooth' },
+  occupancy: { cellSizeM: 0.18, minConfidence: 3, persistentOcclusion: true, liveOcclusion: false, occluderDebugStyle: 'off', occluderMeshMode: 'smooth' },
   frameTileDisplay: { divisor: 2, maxTiles: 100 },
   visualization: { frameTiles: true, occupancyCubes: true, gpsAlignmentMarkers: true, compassCubes: true, headingUpMap: true, statsOverlay: false },
   qr: { enabled: false, intervalMs: 125, captureSize: 1024 },
@@ -89,12 +89,12 @@ The default `depth` + `occupancy` params are tuned so a usable occluder mesh
 builds up **as fast as possible** (param-sweep on a real recording — see
 [2026-06-30-0829-occluder-tuning-followups.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-0829-occluder-tuning-followups.md), Round 6):
 
-- `depth.intervalMs` **500** — the minimum cadence (2 samples/s), so points arrive fastest.
-- `depth.gridSize` **32** — the previous slider max (1024 points/sample); more observations per sample confirm cells fastest. **The slider max was raised to 64** (4096 points/sample) for on-device experimentation with even higher densities — measure the per-sample depth-readback cost before adopting a value above 32.
-- `occupancy.minConfidence` **3** — the key "time-to-mesh" lever: a cell needs this many observations before it is rendered, so it is ≈ the _dwell time_ before a surface meshes (≈1.5 s at 500 ms sampling, vs 2.5 s at 5). 3 is the **fastest noise floor that still suppresses the behind-surface phantoms** the filter exists for (it was 5 in the 2026-06-30 robustness pass; lowered here for speed).
-- `occupancy.cellSizeM` **0.15** — kept; balances detail against area-coverage speed (coarser covers area faster but blockier, and the surface-hugging meshers like the resolution).
+- `depth.intervalMs` **200** — five samples per second (2026-07-16 evening on-device framerate/mesh trade-off passes; small 24² samples keep per-frame work low enough that a fast cadence does not hurt the framerate, unlike the sweep-derived 64² samples). The slider floor stays **100** (superset-capture strategy: dense validation recordings at 100–250 ms × gridSize 64 are DECIMATED in replay to simulate every slower configuration; ~200 KB per 64²-sample, the sampler degrades gracefully on over-ambitious intervals). Framework `DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS`, shared with the PhysicsDemo.
+- `depth.gridSize` **24** — the 2026-07-16 evening on-device trade-off (the same-day sweep-derived 64 built the mesh fastest on ground truth but visibly hurt the framerate — the sweep's flagged open question, answered in the field). The sweep still holds directionally: if devices get faster, gridSize (not the interval) is the knob to raise first. Framework `DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE`, shared with the PhysicsDemo so the two apps build at the same speed; slider max stays 64 for superset validation recordings.
+- `occupancy.minConfidence` **2** — the noise floor: a cell needs this many observations before it is rendered. Lowered 3 → 2 in the 2026-07-16 evening on-device pass: the [corpus sweep](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md)'s floater argument for 3 (mc 3 ≈ 1.9% vs mc 2 ≈ 3.5%) was measured under LEGACY carving; with the decay carve guard the gap largely disappears (real pillar-orbit A/B: guarded mc 2 isolates 2.12% vs guarded mc 3 2.19%), and the lower floor halves the dwell before a surface meshes. 1 = unfiltered/legacy. Framework `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS`, shared with the PhysicsDemo.
+- `occupancy.cellSizeM` **0.16** — the 2026-07-16 evening on-device trade-off between the sweep-tested 0.15 (fidelity) and 0.18 (speed). Framework `DEFAULT_OCCUPANCY_CELL_SIZE_M`, shared with the PhysicsDemo.
 
-Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [2026-06-30 session](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-0656-occluder-tuning-and-mesh-smoothness-user-feedback.md) (F1: 1000→500 / 16→24 / 3→5). The 2026-07-01 sweep then reversed the memory/robustness hedges (24→32, 5→3) once the goal became fastest reconstruction.
+Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [2026-06-30 session](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-0656-occluder-tuning-and-mesh-smoothness-user-feedback.md) (F1: 1000→500 / 16→24 / 3→5). The 2026-07-01 sweep then reversed the memory/robustness hedges (24→32, 5→3). A [2026-07-15 device-impression change](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-15-1640-occupancy-fast-reconstruction-defaults-plan.md) briefly moved cellSize 0.15→0.18 AND minConfidence 3→2; the [2026-07-16 corpus sweep](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md) kept the 0.18 (the speed win) but reverted the floor to 3 (the floater fidelity), and hoisted both to framework constants so the PhysicsDemo shares them.
 
 > **Not synced:** the library-level `DEFAULT_CONFIG` in [`ar/depth-sampler.ts`](../../../GpsPlusSlamJs_AppFramework/src/ar/depth-sampler.ts) intentionally keeps `intervalMs: 1000 / gridSize: 16`. That is the fallback for consumers that supply no config (MinimalExample / AnchorStarter); the re-tune is a recorder-specific decision sourced from `DEFAULT_RECORDING_OPTIONS`, so bumping the library default would silently re-tune unrelated apps.
 
@@ -122,7 +122,7 @@ Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [20
 
 | Setting                                       | Min  | Max   |
 | --------------------------------------------- | ---- | ----- |
-| `depth.intervalMs`                            | 500  | 5000  |
+| `depth.intervalMs`                            | 100  | 5000  |
 | `depth.gridSize`                              | 2    | 64    |
 | `images.intervalMs`                           | 250  | 10000 |
 | `images.quality`                              | 0.3  | 1.0   |
@@ -138,7 +138,7 @@ Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [20
 
 `occupancy.cellSizeM` is clamped to 1–20 cm: cell count scales as 1/cellSize³, so sub-cm voxels are both a memory/perf cliff and below the depth-sensor noise floor. A non-finite stored value (NaN/Infinity) falls back to the default rather than being clamped, because `OccupancyGrid` throws a `RangeError` on a non-finite cell size.
 
-`occupancy.minConfidence` (default **3**) is the voxel noise filter: the minimum observation `count` before a cell is rendered/used, forwarded to `getOccupiedCells(minObservations)`. It is rounded to an integer and clamped to 1–10 (1 = unfiltered/legacy); NaN/non-number falls back to the default. Raising it suppresses single-frame depth noise — notably the **behind-surface** phantoms (e.g. below the floor) that free-space carving can never clear. See `GpsPlusSlamJs_Docs/docs/2026-06-22-2146-occupancy-grid-behind-surface-noise-plan.md`.
+`occupancy.minConfidence` (default **3**) is the voxel noise filter: the minimum observation `count` before a cell is rendered/used, forwarded to `getOccupiedCells(minObservations)`. It is rounded to an integer and clamped to 1–10 (1 = unfiltered/legacy); NaN/non-number falls back to the default. Raising it suppresses single-frame depth noise — notably the **behind-surface** phantoms (e.g. below the floor) that free-space carving can never clear. Since 2026-07-16 the same floor also drives the grid's **confidence-guarded carving** (`OccupancyGrid.carveConfidenceThreshold`, live + replay): a voxel solid enough to be rendered can no longer be erased by a single deeper depth reading (synthetic-scene investigation — eliminates silhouette-edge churn and noisy occluded-background destruction). See `GpsPlusSlamJs_Docs/docs/2026-06-22-2146-occupancy-grid-behind-surface-noise-plan.md`.
 
 ## Examples
 

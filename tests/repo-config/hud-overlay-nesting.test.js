@@ -64,6 +64,12 @@ const APP_OVERLAY_CONTRACTS = [
     containerId: 'app',
     overlayIds: ['overlay'],
   },
+  {
+    name: 'PhysicsDemo',
+    htmlPath: 'GpsPlusSlamJs_PhysicsDemo/index.html',
+    containerId: 'app',
+    overlayIds: ['overlay'],
+  },
 ];
 
 /**

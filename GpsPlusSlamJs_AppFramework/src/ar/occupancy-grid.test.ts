@@ -15,7 +15,11 @@ import { describe, it, expect } from 'vitest';
 import { mat4 } from 'gl-matrix';
 import type { Matrix4, Vector3 } from 'gps-plus-slam-js';
 import type { DepthSample } from '../types/ar-types';
-import { OccupancyGrid } from './occupancy-grid';
+import {
+  OccupancyGrid,
+  DEFAULT_OCCUPANCY_CELL_SIZE_M,
+  DEFAULT_OCCUPANCY_MIN_OBSERVATIONS,
+} from './occupancy-grid';
 
 const PROJECTION: Matrix4 = Array.from(
   mat4.perspective(mat4.create(), Math.PI / 3, 16 / 9, 0.1, 1000)
@@ -302,6 +306,144 @@ describe('OccupancyGrid', () => {
         expect(grid.getOccupiedCells()).toContainEqual(near);
         expect(grid.getOccupiedCells()).toContainEqual(far);
       }
+    });
+  });
+
+  describe('confidence-guarded carving (carveConfidenceThreshold)', () => {
+    // Why these tests matter: the 2026-07-16 synthetic-scene investigation
+    // proved that plain carving erodes ESTABLISHED silhouette cells under a
+    // perfect sensor (H1b churn) and that noisy/bled endpoints can sweep
+    // through confirmed surfaces. But the first shipped semantics (HARD
+    // block: established cells immune to carving) fossilized noise cells on
+    // real devices — mesh built while the grid was uncertain could never be
+    // un-built (2026-07-16-1547 field regression). The guard is therefore a
+    // DECAY: a carve ray reaching a cell with count ≥ threshold decrements
+    // its count (measured means preserved) and stops the trace. One
+    // contradicting ray cannot erase an established cell, but REPEATED
+    // contradictions drain and eventually delete it. Default OFF (undefined)
+    // preserves the exact legacy behaviour.
+
+    it('default: a deeper reading erases nearer established cells (legacy baseline)', () => {
+      const grid = new OccupancyGrid({ cellSizeM: 1, carveStopCells: 2 });
+      for (let i = 0; i < 3; i++) grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [10]));
+      expect(grid.getOccupiedCells()).not.toContainEqual([0, 0, -5]);
+    });
+
+    it('a single deeper reading only DECAYS an established cell and protects cells behind it', () => {
+      const grid = new OccupancyGrid({
+        cellSizeM: 1,
+        carveStopCells: 2,
+        carveConfidenceThreshold: 3,
+      });
+      // Establish the 5 m cell well above the threshold (count 5)…
+      for (let i = 0; i < 5; i++) grid.addSample(makeSample([0, 0, 0], [5]));
+      // …and one observation of a 7 m cell behind it (the guarded carve of
+      // the 7 m ray decays the 5 m cell to 4 and stops; the endpoint
+      // increment still runs).
+      grid.addSample(makeSample([0, 0, 0], [7]));
+      expect(grid.getOccupiedCells(4)).toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -7]);
+      // A deeper reading to 10 m: the 5 m cell decays 4 → 3 (still occupied,
+      // still at the threshold floor), the trace stops there, so the 7 m
+      // cell behind it survives untouched.
+      grid.addSample(makeSample([0, 0, 0], [10]));
+      expect(grid.getOccupiedCells(3)).toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells(4)).not.toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -7]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -10]);
+    });
+
+    it('repeated contradicting rays fully un-build an established cell (fossilization fix)', () => {
+      // The 2026-07-16 field regression: noise cells that reached the
+      // threshold became IMMORTAL under the hard-block semantics. With decay,
+      // each deeper reading drains one observation; once below the threshold
+      // the next ray deletes it like any unestablished cell.
+      const grid = new OccupancyGrid({
+        cellSizeM: 1,
+        carveStopCells: 2,
+        carveConfidenceThreshold: 3,
+      });
+      for (let i = 0; i < 3; i++) grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [10])); // decay 3 → 2
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -5]);
+      grid.addSample(makeSample([0, 0, 0], [10])); // 2 < threshold → deleted
+      expect(grid.getOccupiedCells()).not.toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -10]);
+    });
+
+    it('decay preserves the measured cell point and color means', () => {
+      // The running means are sums ÷ counts; decrementing the count without
+      // scaling the sums would silently shift getCellPoint/getCellColor.
+      const grid = new OccupancyGrid({
+        cellSizeM: 1,
+        carveStopCells: 2,
+        carveConfidenceThreshold: 2,
+      });
+      grid.addSample(makeColoredSample([0, 0, 0], 5.2, [10, 20, 30]));
+      grid.addSample(makeColoredSample([0, 0, 0], 5.4, [20, 40, 60]));
+      const pointBefore = grid.getCellPoint([0, 0, -5]);
+      const colorBefore = grid.getCellColor([0, 0, -5]);
+      expect(pointBefore![2]).toBeCloseTo(-5.3, 12);
+      grid.addSample(makeSample([0, 0, 0], [10])); // decay 2 → 1
+      const pointAfter = grid.getCellPoint([0, 0, -5]);
+      const colorAfter = grid.getCellColor([0, 0, -5]);
+      expect(pointAfter![0]).toBeCloseTo(pointBefore![0], 12);
+      expect(pointAfter![1]).toBeCloseTo(pointBefore![1], 12);
+      expect(pointAfter![2]).toBeCloseTo(pointBefore![2], 12);
+      expect(colorAfter).toEqual(colorBefore);
+    });
+
+    it('bumps the revision on decay so consumers re-derive their occupied set', () => {
+      // A decayed cell can cross a consumer's minConfidence floor — a stale
+      // revision would let the mesh keep rendering it.
+      const grid = new OccupancyGrid({
+        cellSizeM: 1,
+        carveStopCells: 2,
+        carveConfidenceThreshold: 3,
+      });
+      for (let i = 0; i < 3; i++) grid.addSample(makeSample([0, 0, 0], [5]));
+      const before = grid.getRevision();
+      grid.addSample(makeSample([0, 0, 0], [10]));
+      expect(grid.getRevision()).toBeGreaterThan(before);
+      expect(grid.getOccupiedCells(3)).not.toContainEqual([0, 0, -5]);
+    });
+
+    it('still carves cells below the threshold', () => {
+      const grid = new OccupancyGrid({
+        cellSizeM: 1,
+        carveStopCells: 2,
+        carveConfidenceThreshold: 3,
+      });
+      // Only 2 observations — not established, a deeper reading erases it.
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [5]));
+      grid.addSample(makeSample([0, 0, 0], [10]));
+      expect(grid.getOccupiedCells()).not.toContainEqual([0, 0, -5]);
+      expect(grid.getOccupiedCells()).toContainEqual([0, 0, -10]);
+    });
+
+    it('exposes the threshold for runtime feature detection', () => {
+      // Consumers in the closed-source Investigation repo probe this field
+      // to decide whether the installed framework supports the guard (see
+      // lessons-learned: types see source, runtime sees the published dist).
+      const guarded = new OccupancyGrid({ carveConfidenceThreshold: 5 });
+      expect(guarded.carveConfidenceThreshold).toBe(5);
+      const legacy = new OccupancyGrid();
+      expect(legacy.carveConfidenceThreshold).toBeUndefined();
+      expect(Object.hasOwn(legacy, 'carveConfidenceThreshold')).toBe(true);
+    });
+
+    it('rejects a non-positive or non-integer threshold', () => {
+      expect(() => new OccupancyGrid({ carveConfidenceThreshold: 0 })).toThrow(
+        RangeError
+      );
+      expect(() => new OccupancyGrid({ carveConfidenceThreshold: -3 })).toThrow(
+        RangeError
+      );
+      expect(
+        () => new OccupancyGrid({ carveConfidenceThreshold: 2.5 })
+      ).toThrow(RangeError);
     });
   });
 
@@ -676,6 +818,33 @@ describe('OccupancyGrid', () => {
 
       // An untouched chunk reports 0.
       expect(grid.getChunkRevision([50, 50, 50])).toBe(0);
+    });
+  });
+
+  describe('recommended reconstruction defaults', () => {
+    /**
+     * Why this test matters: these two constants are the single framework-level
+     * source of truth the Recorder AND the PhysicsDemo inherit for voxel size +
+     * noise floor (2026-07-15 FAST-reconstruction tuning). Pinning the values
+     * guards an accidental drift, and constructing a grid with the cell-size
+     * proves it is a valid (in-range, non-throwing) grid parameter — the app
+     * defaults can never ship a value the grid rejects.
+     */
+    it('pin the FAST-reconstruction voxel size (16 cm) and noise floor (2)', () => {
+      // 2026-07-16 EVENING field tuning (maintainer's on-device framerate/mesh
+      // trade-off pass): voxel 16 cm, floor 2. The earlier corpus concern about
+      // mc 2 floaters (mc 3 ≈ 1.9% vs mc 2 ≈ 3.5% under LEGACY carving) is
+      // largely neutralized by the decay carve guard — on the real pillar-orbit
+      // A/B, guarded mc 2 isolates 2.12% vs guarded mc 3 2.19%.
+      expect(DEFAULT_OCCUPANCY_CELL_SIZE_M).toBe(0.16);
+      expect(DEFAULT_OCCUPANCY_MIN_OBSERVATIONS).toBe(2);
+    });
+
+    it('the recommended cell size constructs a valid grid', () => {
+      const grid = new OccupancyGrid({
+        cellSizeM: DEFAULT_OCCUPANCY_CELL_SIZE_M,
+      });
+      expect(grid.cellSizeM).toBe(0.16);
     });
   });
 });

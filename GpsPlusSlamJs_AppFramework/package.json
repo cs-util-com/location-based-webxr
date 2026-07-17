@@ -43,7 +43,7 @@
     "test:unit": "node ../scripts/run-vitest-scoped.mjs run --coverage --config=config/vitest.config.ts",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.vitest.json --noEmit",
-    "lint": "eslint . --config config/eslint.config.mjs --max-warnings 36",
+    "lint": "eslint . --config config/eslint.config.mjs --max-warnings 37",
     "test:watch": "vitest --config config/vitest.config.ts",
     "bench": "vitest bench --run --config config/vitest.bench.config.ts",
     "bench:watch": "vitest bench --config config/vitest.bench.config.ts",

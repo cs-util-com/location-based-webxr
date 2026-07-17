@@ -28,7 +28,7 @@ import {
   wireOccupancyGridSubscribers,
   type OccupancyGridSink,
 } from './wire-occupancy-grid-subscribers';
-import type { ViewerPose } from './occupancy-cubes-visualizer';
+import type { ViewerPose } from 'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer';
 
 function makeSample(
   timestamp = 1000,

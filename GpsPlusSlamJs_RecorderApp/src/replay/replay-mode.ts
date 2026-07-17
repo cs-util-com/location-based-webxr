@@ -49,7 +49,7 @@ import { decodeFrameTexture } from '../visualization/frame-texture-decoder';
 import { wireFrameTileSubscribers } from '../visualization/wire-frame-tile-subscribers';
 import { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
 import { loadRecordingOptions } from '../state/recording-options';
-import { OccupancyCubesVisualizer } from '../visualization/occupancy-cubes-visualizer';
+import { OccupancyCubesVisualizer } from 'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer';
 import {
   createOccluderSink,
   type OccluderSink,
@@ -235,8 +235,12 @@ export async function startReplayMode(
     // validated default on any storage error), so this stays best-effort.
     const replayOptions = loadRecordingOptions();
     const occupancyOptions = replayOptions.occupancy;
+    // Confidence-guarded carving at the same minConfidence floor as live
+    // (main.ts): a voxel solid enough to be rendered can no longer be erased
+    // by a single deeper reading (2026-07-16 synthetic-scene investigation).
     const occupancyGrid = new OccupancyGrid({
       cellSizeM: occupancyOptions.cellSizeM,
+      carveConfidenceThreshold: occupancyOptions.minConfidence,
     });
     // Same noise filter as live (main.ts): render only voxels seen ≥
     // minConfidence times, re-quantizable per replay like cellSizeM.

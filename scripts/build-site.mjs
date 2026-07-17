@@ -7,10 +7,10 @@
  * must come first: a Vite build into the shared root after the apps would
  * risk clobbering their subdirs), then builds the framework once, then the
  * RecorderApp under base `/recorder/`, the AnchorStarter under base
- * `/starter/`, the MinimalExample under base `/minimal/`, and the
- * QrTrackingDemo under base `/qr-demo/` into the same combined output
- * directory. The resulting tree is what Cloudflare serves from
- * `gps.csutil.com`:
+ * `/starter/`, the MinimalExample under base `/minimal/`, the
+ * QrTrackingDemo under base `/qr-demo/`, and the PhysicsDemo under base
+ * `/physics/` into the same combined output directory. The resulting tree is
+ * what Cloudflare serves from `gps.csutil.com`:
  *
  *   dist-site/
  *     index.html        ← Landing app (Vite build, base=/)
@@ -19,6 +19,7 @@
  *     starter/          ← AnchorStarter, base=/starter/
  *     minimal/          ← MinimalExample, base=/minimal/
  *     qr-demo/          ← QrTrackingDemo, base=/qr-demo/
+ *     physics/          ← PhysicsDemo, base=/physics/
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
  * vite configs stay at their `/` + `dist` defaults (dev/USB-debugging unchanged).
@@ -120,7 +121,13 @@ function assertNoBareAbsoluteUrlsInDir(dir, base) {
  */
 function assertLandingHtml(htmlPath) {
   const html = readFileSync(htmlPath, 'utf-8');
-  const requiredDemoLinks = ['/starter/', '/minimal/', '/qr-demo/', '/recorder/'];
+  const requiredDemoLinks = [
+    '/starter/',
+    '/minimal/',
+    '/qr-demo/',
+    '/recorder/',
+    '/physics/',
+  ];
   const missingLinks = requiredDemoLinks.filter(
     (link) => !html.includes(`href="${link}"`)
   );
@@ -157,6 +164,7 @@ function assertSiteTree() {
     'starter/index.html',
     'minimal/index.html',
     'qr-demo/index.html',
+    'physics/index.html',
   ];
   const missing = required.filter((rel) => !existsSync(join(distSite, rel)));
   if (missing.length > 0) {
@@ -251,6 +259,21 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'qr-demo'), '/qr-demo/');
+
+console.log('• Building PhysicsDemo (base=/physics/)');
+run('pnpm', ['--filter', 'gps-plus-slam-physics-demo', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-physics-demo',
+  'exec',
+  'vite',
+  'build',
+  '--base=/physics/',
+  '--outDir',
+  join(distSite, 'physics'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'physics'), '/physics/');
 
 assertLandingHtml(join(distSite, 'index.html'));
 

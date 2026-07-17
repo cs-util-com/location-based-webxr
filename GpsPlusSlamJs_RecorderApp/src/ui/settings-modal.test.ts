@@ -827,8 +827,9 @@ describe('settings-modal', () => {
       const slider = document.getElementById(
         'occupancy-cell-size'
       ) as HTMLInputElement;
-      // default 15 cm
-      expect(slider.value).toBe('15');
+      // default 16 cm (framework reconstruction default; 2026-07-16 evening
+      // on-device framerate/mesh trade-off pass)
+      expect(slider.value).toBe('16');
 
       slider.value = '10';
       slider.dispatchEvent(new Event('input'));

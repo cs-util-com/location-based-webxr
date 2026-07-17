@@ -5,6 +5,7 @@ packages:
   - GpsPlusSlamJs_AnchorStarter
   - GpsPlusSlamJs_QrTrackingDemo
   - GpsPlusSlamJs_Landing
+  - GpsPlusSlamJs_PhysicsDemo
 
 # pnpm 11: only these packages may run install/postinstall build scripts
 # (strictDepBuilds is on by default in v11, so anything else errors loudly

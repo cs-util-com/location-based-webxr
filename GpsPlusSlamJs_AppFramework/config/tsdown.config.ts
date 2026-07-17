@@ -106,6 +106,12 @@ const entryFiles = [
   'src/state/qr-detected-slice.ts',
   'src/state/recording-replayer.ts',
   'src/state/replay-engine.ts',
+  // Desktop-replay composer + its occupancy subscriber (2026-07-15 replay-harness
+  // Part A) — deep-imported by consumer apps (PhysicsDemo) via the `./state/*`
+  // wildcard, so each must be a per-file dist entry (missing entry breaks Vite
+  // resolution at runtime; see 2026-04-29-recorder-e2e-import-resolution doc).
+  'src/state/replay-session.ts',
+  'src/state/replay-occupancy-subscriber.ts',
   'src/state/store-subscribers.ts',
   'src/state/subscribe-to-selector.ts',
 
@@ -151,6 +157,13 @@ const entryFiles = [
   'src/visualization/gps-compass-cubes.ts',
   'src/visualization/gps-event-markers.ts',
   'src/visualization/occlusion-mesh.ts',
+  // Instanced debug-cube visualizer of the occupancy grid — promoted from the
+  // recorder (2026-07-15 replay-harness Part A) so every consumer gets both
+  // mesh styles. Deep-imported by the recorder (main.ts / replay-mode.ts) and
+  // the PhysicsDemo via the `./visualization/*` wildcard, so it must be a
+  // per-file dist entry (a missing entry breaks Vite resolution at runtime —
+  // see 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/visualization/occupancy-cubes-visualizer.ts',
   // Main-thread driver for the occluder Web Worker offload — deep-imported by
   // the recorder's worker client, so it must be a dist entry.
   'src/visualization/occluder-mesh-driver.ts',
@@ -159,6 +172,9 @@ const entryFiles = [
   'src/visualization/lerp-utils.ts',
   'src/visualization/map-data.ts',
   'src/visualization/map-overlay-draw.ts',
+  // Engine-free desktop pointer raycast helper (2026-07-15 replay-harness Part B)
+  // — deep-imported by consumer apps (PhysicsDemo) via `./visualization/*`.
+  'src/visualization/pointer-picking.ts',
   'src/visualization/three-dispose.ts',
   'src/visualization/vis-colors.ts',
 ];

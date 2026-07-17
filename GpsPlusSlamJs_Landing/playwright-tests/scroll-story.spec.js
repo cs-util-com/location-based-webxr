@@ -131,11 +131,17 @@ test("palette button cycles the palette and the choice persists across reload", 
   await expect(page.locator(`html[data-theme="${cycled}"]`)).toBeAttached();
 });
 
-test("all four demo apps stay launchable from the demos hub", async ({
+test("all five demo apps stay launchable from the demos hub", async ({
   page,
 }) => {
   await page.goto("/");
-  for (const href of ["/starter/", "/minimal/", "/qr-demo/", "/recorder/"]) {
+  for (const href of [
+    "/starter/",
+    "/minimal/",
+    "/qr-demo/",
+    "/recorder/",
+    "/physics/",
+  ]) {
     const card = page.locator(`a.demo-card[href="${href}"]`);
     await expect(card).toBeAttached();
     // Round-10 R10-1: demo apps open in a NEW TAB as well — every

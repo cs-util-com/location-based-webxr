@@ -314,6 +314,33 @@ export class OcclusionMesh {
   }
 
   /**
+   * The underlying `THREE.Mesh` (the depth-only occluder geometry), for a
+   * pointer-raycast layer to target the real occluder surface (2026-07-15
+   * replay-harness Part B). The mesh's `colorWrite:false` invisibility does NOT
+   * affect `THREE.Raycaster`, and `frustumCulled:false` is fine for raycasting.
+   * Treat it as read-only — re-mesh via {@link update} / restyle via
+   * {@link setDebugStyle} instead of mutating the returned object.
+   */
+  getMesh(): THREE.Mesh {
+    return this.mesh;
+  }
+
+  /**
+   * Show or hide the WHOLE occluder — the depth-only mesh AND any active debug
+   * skins. Hiding stops the depth mesh writing depth, so a co-located visualizer
+   * (e.g. the occupancy cubes at the same surface) is no longer occluded by the
+   * otherwise-invisible occluder. Independent of {@link setDebugStyle}: a later
+   * `setDebugStyle` re-adds skins as visible, so re-apply `setVisible` after a
+   * style change if you need them hidden (a mesh-view controller does exactly this).
+   */
+  setVisible(visible: boolean): void {
+    if (this.disposed) return;
+    this.mesh.visible = visible;
+    if (this.shadedSkin) this.shadedSkin.visible = visible;
+    if (this.wireframeSkin) this.wireframeSkin.visible = visible;
+  }
+
+  /**
    * Re-mesh from a fresh occupied-cell snapshot. Pass
    * `grid.getOccupiedCells(occupancy.minConfidence)` so the occluder shares the
    * same noise floor as the cubes and the COLMAP export.

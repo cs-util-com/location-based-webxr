@@ -164,6 +164,14 @@ export {
   wireStoreSubscribers,
 } from './store-subscribers.js';
 
+// --- replay-session (desktop-replay composer for consumer apps) ---
+// Deliberately NOT re-exported from this barrel: replay-session transitively
+// imports gps-event-markers → webxr-session (getScene), so barrelling it would
+// force every state-barrel importer to eagerly evaluate the heavy AR/scene stack
+// — breaking recorder tests that partially mock webxr-session. Consumers deep-
+// import it instead: `gps-plus-slam-app-framework/state/replay-session`
+// (and `.../state/replay-occupancy-subscriber`).
+
 // --- subscribe-to-selector ---
 export { subscribeToSelector } from './subscribe-to-selector.js';
 

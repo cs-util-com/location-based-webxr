@@ -20,6 +20,10 @@
 
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
+  DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,
+  DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
+} from 'gps-plus-slam-app-framework/ar/depth-sampler';
+import {
   DEFAULT_MOTION_FILTER,
   type MotionFilterConfig,
 } from 'gps-plus-slam-app-framework/ar/capture-motion-gate';
@@ -38,6 +42,10 @@ import {
   OCCLUDER_DEBUG_STYLES,
   type OccluderDebugStyle,
 } from 'gps-plus-slam-app-framework/visualization/occlusion-mesh';
+import {
+  DEFAULT_OCCUPANCY_CELL_SIZE_M,
+  DEFAULT_OCCUPANCY_MIN_OBSERVATIONS,
+} from 'gps-plus-slam-app-framework/ar/occupancy-grid';
 
 // Re-exported so recorder import sites keep sourcing the style union from the
 // catalog (the framework owns the definition — see the header comment).
@@ -118,18 +126,18 @@ export interface LoopClosureDebugOptions {
 export interface DepthCaptureOptions {
   /** Whether to capture depth samples. Default: true */
   enabled: boolean;
-  /** Interval between samples in milliseconds. Default: 500 (FAST-reconstruction tuning, 2026-07-01). */
+  /** Interval between samples in milliseconds. Default: 200 (2026-07-16 on-device framerate/mesh trade-off). */
   intervalMs: number;
   /**
-   * Grid size (N×N points per sample). Default: 32 (FAST-reconstruction
-   * tuning, 2026-07-01) — dense enough to populate the AR-space occupancy
-   * grid (2026-06-11 port plan §1).
+   * Grid size (N×N points per sample). Default: 24 (2026-07-16 on-device
+   * framerate/mesh trade-off) — dense enough to populate the AR-space
+   * occupancy grid (2026-06-11 port plan §1) without hurting the framerate.
    */
   gridSize: number;
   /**
    * Whether to enrich each depth point with the camera color at its view
    * coordinates (RGB voxel coloring, occupancy-grid port plan Iter 8).
-   * Costs one small GPU blit+readback per sample (~1 Hz); when off, the
+   * Costs one small GPU blit+readback per sample (5 Hz at the default cadence); when off, the
    * occupancy cubes keep the height-based coloring. Default: true.
    */
   rgb: boolean;
@@ -195,8 +203,9 @@ export type OccluderMeshMode = (typeof OCCLUDER_MESH_MODES)[number];
 export interface OccupancyOptions {
   /**
    * Voxel edge length in metres. Drives the occupancy-grid quantization, the
-   * debug cubes, and the COLMAP `points3D` density. Default 0.15 (15 cm, Unity
-   * parity). Smaller = finer detail but cell count scales as 1/cellSize³, so the
+   * debug cubes, and the COLMAP `points3D` density. Default `DEFAULT_OCCUPANCY_CELL_SIZE_M`
+   * (0.18 = 18 cm; framework FAST-reconstruction default, shared with the
+   * PhysicsDemo). Smaller = finer detail but cell count scales as 1/cellSize³, so the
    * range is deliberately clamped (see `OCCUPANCY_CONSTRAINTS`). Read once when
    * the grid is constructed (Enter-AR / replay load), so a change takes effect
    * on the next session rather than mid-session.
@@ -209,10 +218,18 @@ export interface OccupancyOptions {
    * lands in it; raising this filters single-frame depth noise — in
    * particular the **behind-surface** phantoms (e.g. below the floor) that
    * free-space carving can never clear because no ray passes through occluded
-   * space. Default 3 (1 = unfiltered/legacy). Higher = less noise but
+   * space. Default `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS` (3; framework noise floor,
+   * shared with the PhysicsDemo). 1 = unfiltered/legacy. Higher = less noise but
    * briefly-glimpsed real surfaces may be dropped, so it is exposed for
    * on-device tuning. Read once when the visualizer is constructed (Enter-AR
-   * / replay load). See
+   * / replay load).
+   *
+   * Since 2026-07-16 this floor ALSO drives the grid's confidence-guarded
+   * carving (`OccupancyGrid.carveConfidenceThreshold`, live + replay): a voxel
+   * solid enough to be rendered can no longer be erased by a single deeper
+   * depth reading (synthetic-scene investigation — eliminates silhouette-edge
+   * churn and noisy occluded-background destruction). One knob, one meaning:
+   * "how many observations until the app trusts a voxel". See
    * `GpsPlusSlamJs_Docs/docs/2026-06-22-2146-occupancy-grid-behind-surface-noise-plan.md`.
    */
   minConfidence: number;
@@ -452,10 +469,15 @@ export const STORAGE_KEY = 'gps-plus-slam-recorder-options';
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   depth: {
     enabled: true,
-    // Tuned for FAST mesh reconstruction (2026-07-01 param-sweep on a real
-    // recording; see recording-options.ts.md):
-    intervalMs: 500, // 2 samples per second — denser temporal sampling
-    gridSize: 32, // 32×32 = 1024 points per sample — confirms cells fastest (was 24; slider max raised to 64 for on-device experimentation)
+    // Framework reconstruction cadence — one tuning source shared with the
+    // PhysicsDemo (2026-07-16: the demo used the conservative library
+    // fallback and reconstructed visibly slower). Values from the maintainer's
+    // 2026-07-16 evening on-device framerate/mesh trade-off pass (the
+    // sweep-derived 500 ms × 64 built the mesh fastest on ground truth but
+    // visibly hurt the framerate — see the constants' doc in
+    // ar/depth-sampler.ts for the history).
+    intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, // 200 — five samples per second
+    gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE, // 24×24 = 576 points per sample
     rgb: true, // RGB voxel coloring (Iter 8)
   },
   images: {
@@ -474,8 +496,8 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   // DEFAULT_AR_CRASH_ISOLATION (same rationale as the filter groups above).
   arCrashIsolation: { ...DEFAULT_AR_CRASH_ISOLATION },
   occupancy: {
-    cellSizeM: 0.15, // 15 cm voxels — matches OccupancyGrid's own default (Unity parity); balances detail vs speed
-    minConfidence: 3, // ≥3 observations to render a voxel — the FAST-reconstruction noise floor (2026-07-01; ~1.5s dwell before a surface meshes vs 2.5s at 5, +25% early coverage; 1 = legacy/unfiltered)
+    cellSizeM: DEFAULT_OCCUPANCY_CELL_SIZE_M, // 18 cm voxels — framework default (2026-07-16 sweep); the speed lever, coarser/faster than the old 15 cm. Shared with the PhysicsDemo.
+    minConfidence: DEFAULT_OCCUPANCY_MIN_OBSERVATIONS, // ≥3 observations to render a voxel — framework noise floor. Kept at 3 (the sweep: floaters = phantom colliders are set by the floor, not the voxel). 1 = legacy/unfiltered. Shared with the PhysicsDemo.
     persistentOcclusion: true, // persistent depth-only mesh occluder ON by default (2026-07-01: Web-Worker offload removed the render stall — see 2026-07-01-0733-occluder-worker-and-chunked-remesh-plan.md)
     liveOcclusion: false, // live CPU-depth occluder OFF by default (device-gated quality; replay no-op)
     occluderDebugStyle: 'off', // debug visualization of the persistent occluder mesh OFF by default (occlusion is invisible in normal use)
@@ -529,12 +551,22 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
 
 /** Validation constraints for depth options */
 export const DEPTH_CONSTRAINTS = {
-  intervalMs: { min: 500, max: 5000, step: 100 },
-  // Max raised 32 → 64 (2026-07-01) for on-device experimentation with faster
-  // mesh reconstruction: 64×64 = 4096 getDepthInMeters reads per sample (4× the
-  // 32² default). High values trade per-sample depth-readback cost + grid growth
-  // for faster cell confirmation — measure the per-frame cost on-device before
-  // adopting a value above the 32 default.
+  // Min lowered 500 → 100 (2026-07-16, superset-capture strategy — mirrors
+  // the images 1000→250 change of 2026-07-10): dense validation recordings
+  // (high rate + gridSize 64) are decimated in replay to simulate every
+  // slower configuration, so the capture floor must sit below anything worth
+  // simulating. The sampler emits at most once per XR frame and skips frames
+  // while a sample is due, so an over-ambitious interval degrades gracefully;
+  // expect ~200 KB per 64²-sample — zips grow fast below 250 ms. The
+  // PRODUCTION default is DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS (200 ms
+  // since the 2026-07-16 evening on-device trade-off pass).
+  intervalMs: { min: 100, max: 5000, step: 100 },
+  // Max 64 (raised 2026-07-01, kept for superset validation recordings):
+  // 64×64 = 4096 getDepthInMeters reads per sample. High values trade
+  // per-sample depth-readback cost + grid growth for faster cell confirmation;
+  // the 2026-07-16 on-device pass settled the PRODUCTION default at 24
+  // (DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE) because 64 visibly hurt the
+  // framerate.
   gridSize: { min: 2, max: 64, step: 1 },
 } as const;
 

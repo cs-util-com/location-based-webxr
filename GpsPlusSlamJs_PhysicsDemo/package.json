@@ -1,0 +1,62 @@
+{
+  "name": "gps-plus-slam-physics-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo consuming gps-plus-slam-app-framework: physics balls bounce off the reconstructed occupancy mesh. Runs in AR on-device, and on the desktop by replaying a recorded session (the replay-as-a-developer-harness). The next rung after the anchor starter.",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm run build:framework && vite",
+    "build": "pnpm run build:framework && tsc -p tsconfig.app.json && vite build",
+    "preview": "vite preview",
+    "test": "pnpm run test:core && pnpm run test:e2e",
+    "test:core": "pnpm run format && pnpm run lint && pnpm run lint:css && pnpm run check:all && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
+    "test:unit": "node ../scripts/run-vitest-scoped.mjs run",
+    "test:watch": "vitest",
+    "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
+    "test:e2e": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js",
+    "test:e2e:headed": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --headed",
+    "test:e2e:ui": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --ui",
+    "format": "prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern \"src\" \"config\" \"playwright-tests\" index.html README.md package.json",
+    "format:check": "prettier --check --ignore-unknown .",
+    "lint": "eslint . --config config/eslint.config.mjs",
+    "lint:css": "stylelint \"**/*.html\" --config config/stylelint.config.mjs --allow-empty-input",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.vitest.json --noEmit",
+    "check:dup": "jscpd --config config/.jscpd.json src",
+    "check:cycles": "dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts",
+    "check:boundaries": "depcruise -c config/.dependency-cruiser.cjs src",
+    "check:deadcode": "pnpm --workspace-root run check:deadcode",
+    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries && pnpm run check:deadcode"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.12.0",
+    "gps-plus-slam-app-framework": "workspace:*",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@carlosjeurissen/stylelint-csstree-validator": "^3.3.1",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.7.0",
+    "@types/three": "^0.184.1",
+    "@vitest/eslint-plugin": "^1.6.17",
+    "dependency-cruiser": "^17.4.0",
+    "dpdm": "^4.2.0",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.6.0",
+    "jscpd": "^4.1.1",
+    "postcss-html": "^1.8.1",
+    "prettier": "^3.8.3",
+    "stylelint": "^17.11.0",
+    "stylelint-config-standard": "^40.0.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.3",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0"
+}

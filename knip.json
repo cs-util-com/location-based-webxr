@@ -23,7 +23,9 @@
         "src/types/global.d.ts",
         "src/types/webxr.d.ts",
         "src/licensing/index.ts",
-        "src/test-utils/**/*.ts"
+        "src/test-utils/**/*.ts",
+        "src/state/replay-session.ts",
+        "src/state/replay-occupancy-subscriber.ts"
       ],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["redux"]
@@ -70,6 +72,18 @@
       ]
     },
     "GpsPlusSlamJs_QrTrackingDemo": {
+      "entry": [
+        "config/stylelint.config.mjs",
+        "playwright-tests/**/*.{js,ts}"
+      ],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": [
+        "@carlosjeurissen/stylelint-csstree-validator",
+        "postcss-html",
+        "stylelint-config-standard"
+      ]
+    },
+    "GpsPlusSlamJs_PhysicsDemo": {
       "entry": [
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}"

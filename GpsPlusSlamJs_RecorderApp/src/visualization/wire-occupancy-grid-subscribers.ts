@@ -23,7 +23,7 @@ import type { DepthSample } from 'gps-plus-slam-app-framework/types/ar-types';
 import type { RecorderStore } from '../state/recorder-store';
 import type { StoreRef } from '../state/store-ref';
 import { followStore } from '../state/store-ref';
-import type { ViewerPose } from './occupancy-cubes-visualizer';
+import type { ViewerPose } from 'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer';
 
 /** Default minimum delay between two visualizer refreshes. */
 const DEFAULT_REFRESH_INTERVAL_MS = 1000;

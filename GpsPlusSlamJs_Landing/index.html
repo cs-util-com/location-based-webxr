@@ -1245,7 +1245,9 @@ world.add(marker);               <span class="c">// marker: any three.js Object3
           <!-- Order (round-14 R14-18): two demos first (Anchor Starter,
                QR-Tracking), then the two "App" examples (Minimal Example
                App, Recorder App). Anchor Starter stays first — the demo
-               we most want people to open. -->
+               we most want people to open. The Physics Demo (2026-07-15)
+               sits after QR-Tracking — it replays a recorded walk and drops
+               physics balls on the reconstructed mesh (the developer harness). -->
           <div class="demo-grid">
             <a
               class="demo-card"
@@ -1291,6 +1293,33 @@ world.add(marker);               <span class="c">// marker: any three.js Object3
                   >Point at any printed QR code: it measures the code's real
                   size from the depth map and glues a 3D axis + cube to
                   it.</small
+                >
+              </span>
+            </a>
+            <a
+              class="demo-card"
+              href="/physics/"
+              target="_blank"
+              rel="noopener"
+            >
+              <svg viewBox="0 0 34 34" aria-hidden="true">
+                <rect
+                  x="4"
+                  y="25"
+                  width="26"
+                  height="4"
+                  rx="1"
+                  fill="#8b8b95"
+                />
+                <circle cx="15" cy="12" r="6" fill="#4f8cff" />
+                <circle cx="25" cy="19" r="3.4" fill="#9fdcff" />
+              </svg>
+              <span>
+                <strong>Physics Demo</strong>
+                <small
+                  >Drop physics balls that bounce off the reconstructed
+                  real-world mesh: replay a recorded walk on the desktop and
+                  watch them settle on the captured surfaces.</small
                 >
               </span>
             </a>

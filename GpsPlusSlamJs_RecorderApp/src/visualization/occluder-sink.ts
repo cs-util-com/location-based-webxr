@@ -29,7 +29,7 @@ import type { OccupancyOptions } from '../state/recording-options';
 import { OcclusionMesh } from 'gps-plus-slam-app-framework/visualization';
 import type { Object3D } from 'three';
 import { createOccluderMeshWorker } from './occluder-mesh-worker-client';
-import type { ViewerPose } from './occupancy-cubes-visualizer';
+import type { ViewerPose } from 'gps-plus-slam-app-framework/visualization/occupancy-cubes-visualizer';
 
 /** The grid-facing half: what `wireOccupancyGridSubscribers` drives. */
 export interface OccluderSink {
