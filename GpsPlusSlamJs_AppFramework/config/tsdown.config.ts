@@ -175,8 +175,16 @@ const entryFiles = [
   // Engine-free desktop pointer raycast helper (2026-07-15 replay-harness Part B)
   // — deep-imported by consumer apps (PhysicsDemo) via `./visualization/*`.
   'src/visualization/pointer-picking.ts',
+  // Shared canvas-text sprite helper (2026-07-17 wayfinding graduation).
+  'src/visualization/text-sprite.ts',
   'src/visualization/three-dispose.ts',
   'src/visualization/vis-colors.ts',
+  // Wayfinding HUD presenter + pure placement seam (2026-07-17 graduation) —
+  // deep-imported by consumer apps (WayfindingHudDemo) via `./visualization/*`,
+  // so each must be a per-file dist entry (a missing entry breaks Vite
+  // resolution at runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/visualization/wayfinding-hud.ts',
+  'src/visualization/wayfinding-placement.ts',
 ];
 
 export default defineConfig({
