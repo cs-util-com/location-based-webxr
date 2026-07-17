@@ -1,0 +1,15 @@
+{
+  "threshold": 0.5,
+  "minTokens": 50,
+  "reporters": ["console"],
+  "files": ["src/**/*.ts"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/*.d.ts"
+  ],
+  "gitignore": true
+}

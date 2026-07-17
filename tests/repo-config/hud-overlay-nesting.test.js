@@ -70,6 +70,12 @@ const APP_OVERLAY_CONTRACTS = [
     containerId: 'app',
     overlayIds: ['overlay'],
   },
+  {
+    name: 'WayfindingHudDemo',
+    htmlPath: 'GpsPlusSlamJs_WayfindingHudDemo/index.html',
+    containerId: 'app',
+    overlayIds: ['overlay'],
+  },
 ];
 
 /**

@@ -94,6 +94,18 @@
         "postcss-html",
         "stylelint-config-standard"
       ]
+    },
+    "GpsPlusSlamJs_WayfindingHudDemo": {
+      "entry": [
+        "config/stylelint.config.mjs",
+        "playwright-tests/**/*.{js,ts}"
+      ],
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": [
+        "@carlosjeurissen/stylelint-csstree-validator",
+        "postcss-html",
+        "stylelint-config-standard"
+      ]
     }
   }
 }
