@@ -13,6 +13,7 @@
  */
 
 import * as THREE from 'three';
+import { createTextSprite } from './text-sprite';
 import { disposeObject3D } from './three-dispose';
 import { VIS_COLORS } from './vis-colors';
 
@@ -69,32 +70,15 @@ const CUBE_SPECS: readonly CubeSpec[] = [
 ];
 
 /**
- * Create a text sprite from a canvas texture.
- * Uses a 64×64 canvas with centered white text on transparent background.
+ * Create a static glyph label above a cube via the shared text-sprite helper
+ * (64×64 canvas defaults: centered white text on transparent background).
  */
-function createTextSprite(text: string): THREE.Sprite {
-  const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-
-  if (ctx) {
-    ctx.clearRect(0, 0, 64, 64);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 48px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, 32, 32);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-  const sprite = new THREE.Sprite(material);
+function createCubeLabel(text: string): THREE.Sprite {
+  const { sprite } = createTextSprite({ text });
   sprite.name = `label-${text}`;
   // Position above the cube
   sprite.position.set(0, COMPASS_CUBE_SIZE * 1.5, 0);
   sprite.scale.set(0.4, 0.4, 0.4);
-
   return sprite;
 }
 
@@ -121,7 +105,7 @@ export function createGpsCompassCubes(parent: THREE.Object3D): GpsCompassCubes {
     mesh.position.set(...spec.position);
 
     if (spec.label) {
-      mesh.add(createTextSprite(spec.label));
+      mesh.add(createCubeLabel(spec.label));
     }
 
     group.add(mesh);

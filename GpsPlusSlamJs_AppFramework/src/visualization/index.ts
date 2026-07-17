@@ -129,6 +129,13 @@ export {
   drawMapData,
 } from './map-overlay-draw.js';
 
+// --- text-sprite ---
+export {
+  type TextSprite,
+  type TextSpriteOptions,
+  createTextSprite,
+} from './text-sprite.js';
+
 // --- three-dispose ---
 export {
   type DisposeOptions,
