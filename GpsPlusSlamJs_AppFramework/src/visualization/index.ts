@@ -136,6 +136,19 @@ export {
   createTextSprite,
 } from './text-sprite.js';
 
+// --- wayfinding-placement (pure seam of the wayfinding HUD) ---
+export {
+  type TargetPlacement,
+  type TargetPlacementInput,
+  type TargetPlacementState,
+  type ArrowPlacement,
+  type CirclePlacement,
+  type HiddenPlacement,
+  computeTargetPlacement,
+  formatDistanceLabel,
+  getHudFrustumExtents,
+} from './wayfinding-placement.js';
+
 // --- three-dispose ---
 export {
   type DisposeOptions,
