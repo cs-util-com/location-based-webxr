@@ -123,9 +123,20 @@
         min-width: 44px;
         font-variant-numeric: tabular-nums;
       }
-      #ar-hint {
+      #ar-instructions {
         font-size: 13px;
         color: #cfcfcf;
+      }
+      #ar-instructions ol {
+        margin: 0;
+        padding-left: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      #ar-hint-flash {
+        font-size: 13px;
+        color: #ffd27f;
       }
       #error {
         color: #ff8a8a;
@@ -214,9 +225,24 @@
               ></output>
             </label>
           </div>
-          <div id="ar-hint" data-testid="ar-hint" hidden>
-            Tap a surface to place a waypoint — the HUD guides you back to it.
+          <div id="ar-instructions" data-testid="ar-instructions" hidden>
+            <ol>
+              <li>
+                Three example targets appeared around you — the edge arrow
+                points at the one behind you.
+              </li>
+              <li>Tap a surface to place your own waypoint.</li>
+              <li>
+                Walk 3+&nbsp;m away from a target — its on-screen ring and
+                distance label appear.
+              </li>
+              <li>
+                Walk back to a target until its ring disappears: you have
+                arrived.
+              </li>
+            </ol>
           </div>
+          <div id="ar-hint-flash" data-testid="ar-hint-flash" hidden></div>
           <div id="error" data-testid="error" hidden></div>
         </section>
       </div>

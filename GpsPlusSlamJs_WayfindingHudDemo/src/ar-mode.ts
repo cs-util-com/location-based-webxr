@@ -34,6 +34,7 @@ import {
   type WayfindingHud,
 } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 
+import { buildExampleWaypoints } from "./ar-waypoints";
 import type { HudDemoConfig } from "./hud-config";
 import { formatHudStatus, summarizeHudScene } from "./hud-status";
 import { createWaypointMarker } from "./sim-waypoints";
@@ -45,6 +46,8 @@ export interface ArModeDeps {
   getConfig(): HudDemoConfig;
   /** Receives the formatted HUD status line once per XR frame. */
   onStatus(text: string): void;
+  /** Transient user hint (e.g. a tap with no surface under the reticle). */
+  onHint(message: string): void;
   /** Surfaced when the AR session cannot start or dies. */
   onError(message: string): void;
   /** Fired once the session is live (reveal the in-AR UI). */
@@ -137,9 +140,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   }
   let hud = createHud();
 
-  const placeWaypoint = (): void => {
-    if (!reticle.visible) return; // no surface under the cursor — ignore
-    const worldPosition = reticle.getWorldPosition(new THREE.Vector3());
+  /** Add a waypoint marker at a WORLD position (parented under arWorldGroup). */
+  const addMarkerAtWorld = (worldPosition: THREE.Vector3): void => {
     const marker = createWaypointMarker(new THREE.Vector3());
     arWorldGroup.updateWorldMatrix(true, false);
     marker.position.copy(arWorldGroup.worldToLocal(worldPosition));
@@ -147,10 +149,20 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     markers.push(marker);
   };
 
+  const placeWaypoint = (): void => {
+    if (!reticle.visible) {
+      // Async-feedback rule: a tap that cannot place must say why.
+      deps.onHint("Point the camera at the floor, then tap.");
+      return;
+    }
+    addMarkerAtWorld(reticle.getWorldPosition(new THREE.Vector3()));
+  };
+
   let hitTestSource: XRHitTestSource | null = null;
   let hitTestSourceRequested = false;
   let sessionEnded = false;
   let selectWired = false;
+  let examplesSpawned = false;
   let disposed = false;
 
   const dispose = (): void => {
@@ -172,6 +184,25 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
 
   const unregisterFrameUpdate = registerXrFrameUpdate(
     ({ frame, referenceSpace, session }) => {
+      // First tracked frame: spawn the example targets around the user's
+      // start pose so the HUD demonstrates itself immediately (ring ahead,
+      // arrows right + behind) — see ar-waypoints.ts and the demo plan's
+      // AR-onboarding revision. The init-time camera pose is not settled
+      // yet, hence first-frame spawning rather than at startArMode.
+      if (!examplesSpawned) {
+        examplesSpawned = true;
+        const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
+        const cameraQuaternion = camera.getWorldQuaternion(
+          new THREE.Quaternion(),
+        );
+        for (const waypoint of buildExampleWaypoints(
+          cameraPosition,
+          cameraQuaternion,
+        )) {
+          addMarkerAtWorld(waypoint);
+        }
+      }
+
       if (!selectWired) {
         selectWired = true;
         session.addEventListener("select", placeWaypoint);

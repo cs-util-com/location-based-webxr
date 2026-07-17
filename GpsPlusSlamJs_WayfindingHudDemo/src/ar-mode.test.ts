@@ -38,6 +38,8 @@ vi.mock("gps-plus-slam-app-framework/visualization/wayfinding-hud", () => ({
 
 import { startArMode, type ArModeDeps } from "./ar-mode";
 import { initAR } from "gps-plus-slam-app-framework/ar/webxr-session";
+import { registerXrFrameUpdate } from "gps-plus-slam-app-framework/ar/xr-frame-loop";
+import { createReticleMesh } from "gps-plus-slam-app-framework/visualization/hit-test-reticle";
 import { createWayfindingHud } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 
 function makeDeps() {
@@ -45,8 +47,38 @@ function makeDeps() {
     container: {} as HTMLElement,
     getConfig: () => ({ distanceMin: 1.5, distanceMax: 3, indicatorScale: 1 }),
     onStatus: vi.fn((_text: string) => undefined),
+    onHint: vi.fn((_message: string) => undefined),
     onError: vi.fn((_message: string) => undefined),
   } satisfies ArModeDeps;
+}
+
+/** Minimal XR frame context for the captured registerXrFrameUpdate callback. */
+function makeFrameContext() {
+  const sessionHandlers = new Map<string, () => void>();
+  const session = {
+    addEventListener: vi.fn((type: string, handler: () => void) => {
+      sessionHandlers.set(type, handler);
+    }),
+    requestReferenceSpace: vi.fn(() => Promise.resolve({})),
+    // No requestHitTestSource — the source stays null (older-runtime path).
+  };
+  return {
+    context: {
+      frame: { getHitTestResults: vi.fn(() => []) },
+      referenceSpace: {},
+      session,
+    },
+    /** Fire the AR "tap". */
+    select: () => sessionHandlers.get("select")?.(),
+  };
+}
+
+/** Run the frame callback ar-mode registered with the (mocked) XR frame loop. */
+function runXrFrame(context: unknown): void {
+  const callback = vi.mocked(registerXrFrameUpdate).mock.calls[0]![0] as (
+    ctx: unknown,
+  ) => void;
+  callback(context);
 }
 
 beforeEach(() => {
@@ -85,6 +117,51 @@ describe("startArMode", () => {
     const mode = await startArMode(makeDeps());
     mode.refreshHud();
     expect(createWayfindingHud).toHaveBeenCalledTimes(2);
+    mode.dispose();
+  });
+
+  // Why this test matters (AR-onboarding revision): without the spawned
+  // examples the demo boots into "tap something and then nothing visible
+  // happens" — the examples must appear exactly once, on the first tracked
+  // frame, and land beyond the activation distance so the HUD is live in
+  // second one.
+  it("spawns the three example waypoints once, on the first XR frame", async () => {
+    const deps = makeDeps();
+    const mode = await startArMode(deps);
+    const options = vi.mocked(createWayfindingHud).mock.calls[0]![0];
+    expect(options.getTargets().length).toBe(0); // nothing before frame 1
+
+    const { context } = makeFrameContext();
+    runXrFrame(context);
+    expect(options.getTargets().length).toBe(3);
+    expect(mode.placedCount()).toBe(3);
+
+    runXrFrame(context); // second frame must not duplicate
+    expect(options.getTargets().length).toBe(3);
+    mode.dispose();
+  });
+
+  // Why this test matters: a tap with no surface under the reticle used to
+  // be silently ignored (against the repo's async-feedback rule) — it must
+  // surface a hint and place nothing.
+  it("flashes a hint instead of placing when the reticle has no surface", async () => {
+    const deps = makeDeps();
+    const mode = await startArMode(deps);
+    const { context, select } = makeFrameContext();
+    runXrFrame(context); // wires select + spawns examples
+
+    const reticle = vi.mocked(createReticleMesh).mock.results[0]!
+      .value as THREE.Mesh;
+    reticle.visible = false;
+    select();
+    expect(deps.onHint).toHaveBeenCalledWith(
+      "Point the camera at the floor, then tap.",
+    );
+    expect(mode.placedCount()).toBe(3); // examples only — nothing placed
+
+    reticle.visible = true;
+    select();
+    expect(mode.placedCount()).toBe(4); // visible reticle places normally
     mode.dispose();
   });
 

@@ -37,7 +37,8 @@ function main(): void {
   const capabilityMessage = requireEl("capability-message");
   const hudPanel = requireEl("hud-panel");
   const hudStatus = requireEl<HTMLPreElement>("hud-status");
-  const arHint = requireEl("ar-hint");
+  const arInstructions = requireEl("ar-instructions");
+  const arHintFlash = requireEl("ar-hint-flash");
   const sliders = {
     distanceMin: requireEl<HTMLInputElement>("distance-min"),
     distanceMax: requireEl<HTMLInputElement>("distance-max"),
@@ -93,6 +94,19 @@ function main(): void {
     hudStatus.textContent = text;
   };
 
+  // Transient hint flash (e.g. a tap with no surface). Cancels a pending
+  // revert so rapid re-taps restart the 2.5 s window instead of cutting it.
+  let hintFlashTimer: number | null = null;
+  const flashHint = (message: string): void => {
+    if (hintFlashTimer !== null) window.clearTimeout(hintFlashTimer);
+    arHintFlash.textContent = message;
+    arHintFlash.hidden = false;
+    hintFlashTimer = window.setTimeout(() => {
+      arHintFlash.hidden = true;
+      hintFlashTimer = null;
+    }, 2500);
+  };
+
   // --- mode wiring ---------------------------------------------------------
   void detectArSupport().then((supported) => {
     applyModeEntry(supported, { startArButton, simNote });
@@ -127,6 +141,7 @@ function main(): void {
         container: app,
         getConfig: readConfig,
         onStatus,
+        onHint: flashHint,
         onError: (message) => {
           startArButton.disabled = false;
           capabilityMessage.hidden = false;
@@ -136,13 +151,14 @@ function main(): void {
           modeScreen.hidden = true;
           capabilityMessage.hidden = true;
           hudPanel.hidden = false;
-          arHint.hidden = false;
+          arInstructions.hidden = false;
         },
         onEnded: () => {
           // System back gesture etc. — return to the mode screen for a rerun.
           activeMode = null;
           hudPanel.hidden = true;
-          arHint.hidden = true;
+          arInstructions.hidden = true;
+          arHintFlash.hidden = true;
           modeScreen.hidden = false;
           startArButton.disabled = false;
           capabilityMessage.hidden = true;
