@@ -261,6 +261,7 @@ export class ARWayfindingHUD {
             isXrSession: !!this.renderer?.xr?.isPresenting,
         });
 
+        const previousState = state.currentState;
         state.currentState = placement.state;
 
         if (placement.state === 'hidden') {
@@ -278,8 +279,15 @@ export class ARWayfindingHUD {
             state.arrowMesh.visible = false;
             state.circleMesh.visible = true;
 
+            // Snap to the placement on the frame the circle becomes visible;
+            // damping only applies BETWEEN circle frames (smoothedCirclePos
+            // would otherwise lerp in from its stale/zero value).
             const circleDamping = 0.15;
-            state.smoothedCirclePos.lerp(placement.circlePosition, circleDamping);
+            if (previousState !== 'circle') {
+                state.smoothedCirclePos.copy(placement.circlePosition);
+            } else {
+                state.smoothedCirclePos.lerp(placement.circlePosition, circleDamping);
+            }
             state.circleMesh.position.copy(state.smoothedCirclePos);
             return;
         }

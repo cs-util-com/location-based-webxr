@@ -103,6 +103,36 @@ test('setWaypoints discards stale target states and their HUD objects', () => {
     assert.equal(hud.targetStates[0].currentState, 'arrow');
 });
 
+// Why this test matters: smoothedCirclePos starts at (0,0,0). If the first
+// circle placement is lerped instead of copied, a newly visible circle renders
+// near the screen center and visibly slides outward over the next frames.
+test('circle indicator snaps to its placement on the first visible frame, then damps', () => {
+    const { hud, camera } = makeHud();
+    // Off-center so the circle position is clearly non-zero in x.
+    hud.setWaypoints([new THREE.Vector3(2, 0, -5)]);
+    hud.update();
+
+    const state = hud.targetStates[0];
+    assert.equal(state.currentState, 'circle');
+    // First visible frame: exactly on the HUD plane at the projected position.
+    assert.equal(state.circleMesh.position.z, -2.5);
+    assert.ok(state.circleMesh.position.x > 0.5);
+    const firstFramePos = state.circleMesh.position.clone();
+
+    // Subsequent frames damp toward the new placement instead of snapping.
+    camera.position.set(0.5, 0, 0);
+    camera.updateMatrixWorld(true);
+    hud.update();
+    const secondFramePos = state.circleMesh.position.clone();
+    assert.equal(state.currentState, 'circle');
+    assert.notDeepEqual(secondFramePos, firstFramePos);
+
+    // Damped: after one frame the mesh must NOT have fully reached the new
+    // placement (repeat updates keep moving it in the same direction).
+    hud.update();
+    assert.notDeepEqual(state.circleMesh.position.clone(), secondFramePos);
+});
+
 // Why this test matters: removing a target mid-session must not dispose the
 // geometry/material SHARED by the remaining procedural indicators — only the
 // per-target resources (the label's canvas texture and sprite material).
