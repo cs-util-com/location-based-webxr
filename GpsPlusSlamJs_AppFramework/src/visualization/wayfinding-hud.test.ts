@@ -182,6 +182,41 @@ describe('createWayfindingHud — per-frame placement', () => {
     hud.dispose();
   });
 
+  // Why this test matters: the circle smoothing must be frame-rate aware
+  // (alpha = clampedAlpha(rate, dt), lerp-utils idiom — not the prototype's
+  // fixed per-frame factor) so a 90 Hz device damps at the same wall-clock
+  // speed as a 60 Hz one. A doubled dt must take a ~2× single-frame step.
+  it('circle damping scales with dt (frame-rate independence)', () => {
+    // One isolated HUD per measurement (disposed before the next is created,
+    // so runFrameUpdates never ticks two HUDs at once). Returns the x-step
+    // one damped frame of the given dt covers after an identical camera move.
+    const measureDampedStep = (dt: number): number => {
+      const camera = makeCamera();
+      const targets = [new THREE.Vector3(2, 0, -5)];
+      const hud = createWayfindingHud({
+        camera,
+        getTargets: () => targets,
+        distanceMin: 1.5,
+        distanceMax: 3.0,
+        hudDistance: 2.5,
+      });
+      runFrameUpdates(1 / 60, 0); // first visible frame: snap
+      camera.position.set(0.5, 0, 0);
+      camera.updateMatrixWorld(true);
+      const circle = childrenByName(camera, 'wayfinding-circle')[0]!;
+      const before = circle.position.x;
+      runFrameUpdates(dt, 0); // one damped frame at the measured dt
+      const step = circle.position.x - before;
+      hud.dispose();
+      return step;
+    };
+
+    const step60 = measureDampedStep(1 / 60);
+    const step30 = measureDampedStep(1 / 30);
+    expect(Math.abs(step60)).toBeGreaterThan(0);
+    expect(step30 / step60).toBeCloseTo(2, 1);
+  });
+
   it('updates the distance label text through the shared text sprite', () => {
     const { hud, camera } = makeHud([new THREE.Vector3(0, 0, -5)]);
     tick();

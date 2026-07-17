@@ -26,6 +26,7 @@ import * as THREE from 'three';
 import { registerFrameUpdate } from '../ar/frame-loop.js';
 import { registerSessionDisposer } from '../ar/session-disposers.js';
 import { createLogger } from '../utils/logger';
+import { clampedAlpha } from './lerp-utils.js';
 import { createTextSprite, type TextSprite } from './text-sprite.js';
 import {
   computeTargetPlacement,
@@ -91,11 +92,12 @@ export interface WayfindingHud {
 /** Indicator tint used by the procedural cone/ring fallbacks. */
 const HUD_COLOR = 0xff3b30;
 /**
- * Per-frame lerp factor for the circle's snap-then-damp smoothing (parity
- * with the prototype). Deliberately frame-rate dependent for now — a
- * dt-normalized rate via lerp-utils is a possible follow-up.
+ * Damping rate for the circle's snap-then-damp smoothing, consumed as
+ * `clampedAlpha(CIRCLE_DAMPING_RATE, dt)` (lerp-utils idiom) so the damping
+ * speed is frame-rate independent. 9 reproduces the field-validated
+ * prototype's fixed 0.15-per-frame factor at 60 fps.
  */
-const CIRCLE_DAMPING = 0.15;
+const CIRCLE_DAMPING_RATE = 9;
 
 function assertPositiveFiniteOption(name: string, value: number): void {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
@@ -347,7 +349,8 @@ export function createWayfindingHud(
   function showCircle(
     state: TargetState,
     placement: CirclePlacement,
-    previous: TargetPlacementState
+    previous: TargetPlacementState,
+    dt: number
   ): void {
     state.arrow.visible = false;
     state.circle.visible = true;
@@ -358,7 +361,10 @@ export function createWayfindingHud(
     if (previous !== 'circle') {
       state.smoothedCirclePos.copy(placement.circlePosition);
     } else {
-      state.smoothedCirclePos.lerp(placement.circlePosition, CIRCLE_DAMPING);
+      state.smoothedCirclePos.lerp(
+        placement.circlePosition,
+        clampedAlpha(CIRCLE_DAMPING_RATE, dt)
+      );
     }
     state.circle.position.copy(state.smoothedCirclePos);
   }
@@ -377,7 +383,8 @@ export function createWayfindingHud(
 
   function updateTarget(
     targetWorldPos: THREE.Vector3,
-    state: TargetState
+    state: TargetState,
+    dt: number
   ): void {
     const placement = computeTargetPlacement({
       targetWorldPos,
@@ -405,7 +412,7 @@ export function createWayfindingHud(
     state.label.sprite.visible = true;
 
     if (placement.state === 'circle') {
-      showCircle(state, placement, previous);
+      showCircle(state, placement, previous, dt);
       return;
     }
     showArrow(state, placement);
@@ -426,11 +433,11 @@ export function createWayfindingHud(
     return [];
   }
 
-  function update(): void {
+  function update(dt: number): void {
     const targets = readTargets();
     syncTargetCount(targets.length);
     targets.forEach((targetWorldPos, index) => {
-      updateTarget(targetWorldPos, states[index] as TargetState);
+      updateTarget(targetWorldPos, states[index] as TargetState, dt);
     });
   }
 
