@@ -113,7 +113,7 @@ const DISTANCE_MIN = 95.0;
 function evaluateDistanceHysteresis(distance, currentState) {
     if (currentState === 'circle' && distance < DISTANCE_MIN) {
         return 'hidden'; // Target is now sufficiently close
-    } else if (currentState !== 'hidden' && distance >= DISTANCE_MAX) {
+    } else if (currentState === 'hidden' && distance >= DISTANCE_MAX) {
         return 'circle'; // Target exceeded maximum visibility threshold
     }
     return currentState; // Maintain current state within the deadband

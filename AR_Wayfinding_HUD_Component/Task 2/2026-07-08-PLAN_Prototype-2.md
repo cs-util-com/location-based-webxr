@@ -16,7 +16,7 @@ Prototype 1 produced the `ARWayfindingHUD` module and verified it in a desktop T
 
 The project is a direct copy of `AR_Wayfinding_HUD_Component/Task 2/AR-wayfinding-HUD-Prototype-1/`, placed at `AR_Wayfinding_HUD_Component/Task 2/AR-wayfinding-HUD-Prototype-2/`, with `main.js` replaced for the AR context.
 
-```
+```plaintext
 AR_Wayfinding_HUD_Component/
 └── Task 2/
     └── AR-wayfinding-HUD-Prototype-2/
@@ -46,6 +46,7 @@ npm run dev:host     # starts HTTPS dev server exposed on local network
 Vite outputs a `https://192.168.x.x:5173` Network URL. The phone (on the same Wi-Fi) opens this URL in Chrome. On first visit Chrome shows a certificate warning — tap "Advanced → Proceed" once, then WebXR is available.
 
 ### Rejected alternatives
+
 | Option | Reason rejected |
 |---|---|
 | `@vitejs/plugin-basic-ssl` | Does not support Vite 8 (`peer vite@"^3–6"`) |
