@@ -8,9 +8,10 @@
  * risk clobbering their subdirs), then builds the framework once, then the
  * RecorderApp under base `/recorder/`, the AnchorStarter under base
  * `/starter/`, the MinimalExample under base `/minimal/`, the
- * QrTrackingDemo under base `/qr-demo/`, and the PhysicsDemo under base
- * `/physics/` into the same combined output directory. The resulting tree is
- * what Cloudflare serves from `gps.csutil.com`:
+ * QrTrackingDemo under base `/qr-demo/`, the PhysicsDemo under base
+ * `/physics/`, and the WayfindingHudDemo under base `/wayfinding/` into the
+ * same combined output directory. The resulting tree is what Cloudflare
+ * serves from `gps.csutil.com`:
  *
  *   dist-site/
  *     index.html        ← Landing app (Vite build, base=/)
@@ -20,6 +21,7 @@
  *     minimal/          ← MinimalExample, base=/minimal/
  *     qr-demo/          ← QrTrackingDemo, base=/qr-demo/
  *     physics/          ← PhysicsDemo, base=/physics/
+ *     wayfinding/       ← WayfindingHudDemo, base=/wayfinding/
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
  * vite configs stay at their `/` + `dist` defaults (dev/USB-debugging unchanged).
@@ -127,6 +129,7 @@ function assertLandingHtml(htmlPath) {
     '/qr-demo/',
     '/recorder/',
     '/physics/',
+    '/wayfinding/',
   ];
   const missingLinks = requiredDemoLinks.filter(
     (link) => !html.includes(`href="${link}"`)
@@ -165,6 +168,7 @@ function assertSiteTree() {
     'minimal/index.html',
     'qr-demo/index.html',
     'physics/index.html',
+    'wayfinding/index.html',
   ];
   const missing = required.filter((rel) => !existsSync(join(distSite, rel)));
   if (missing.length > 0) {
@@ -274,6 +278,21 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'physics'), '/physics/');
+
+console.log('• Building WayfindingHudDemo (base=/wayfinding/)');
+run('pnpm', ['--filter', 'gps-plus-slam-wayfinding-hud-demo', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-wayfinding-hud-demo',
+  'exec',
+  'vite',
+  'build',
+  '--base=/wayfinding/',
+  '--outDir',
+  join(distSite, 'wayfinding'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'wayfinding'), '/wayfinding/');
 
 assertLandingHtml(join(distSite, 'index.html'));
 
