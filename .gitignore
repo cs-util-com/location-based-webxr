@@ -10,3 +10,6 @@ dist-site/
 # .npmrc as defense-in-depth against accidental `npm config set ... --location=project`.
 .npmrc
 .DS_Store
+
+# Per-developer IDE state (JetBrains) — never commit editor config.
+.idea/
