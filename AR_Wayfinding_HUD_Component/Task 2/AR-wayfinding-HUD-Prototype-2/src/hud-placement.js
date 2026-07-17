@@ -64,8 +64,10 @@ export function getHudFrustumExtents(camera, hudDistance, isXrSession = false) {
  * @param {THREE.Vector3} params.targetWorldPos - The waypoint's world position.
  * @param {THREE.Camera} params.camera - The active evaluation camera.
  * @param {number} params.hudDistance - Z-distance for the HUD plane.
- * @param {number} params.distanceMin - Distance threshold to hide indicators.
- * @param {number} params.distanceMax - (Currently unused parameter for max distance).
+ * @param {number} params.distanceMin - Distance (m) below which a visible indicator hides ("arrived").
+ * @param {number} params.distanceMax - Distance (m) a hidden target must reach before its
+ *   indicator reactivates. Together with distanceMin this forms a hysteresis deadband that
+ *   prevents flicker at the distanceMin boundary.
  * @param {string} [params.previousState='hidden'] - The target's state from the previous frame.
  * @param {boolean} [params.isXrSession=false] - WebXR active flag.
  * @param {number} [params.viewportInner=0.95] - Hysteresis threshold for arrow-to-circle transition.
@@ -106,7 +108,13 @@ export function computeTargetPlacement({
         Math.abs(ndc.y) <= onScreenLimit;
 
     if (onScreen) {
-        if (distance < distanceMin) {
+        // Distance hysteresis: a target that is already visible (circle, or an
+        // arrow that just came on-screen) stays visible down to distanceMin;
+        // a hidden target only reactivates once it is distanceMax away.
+        const activationDistance =
+            previousState === 'hidden' ? distanceMax : distanceMin;
+
+        if (distance < activationDistance) {
             return {
                 state: 'hidden',
                 onScreen,

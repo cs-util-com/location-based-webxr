@@ -82,6 +82,53 @@ test('computeTargetPlacement returns the expected state for close, far, and off-
     assert.ok(Math.abs(offScreenPlacement.arrowRotationZ + Math.PI / 2) < 1e-12);
 });
 
+// Why this test matters: distanceMin/distanceMax form a hysteresis deadband
+// (see 2026-07-08-PLAN_Prototype-2.md "HUD config"). A hidden target must not
+// reactivate until it is at least distanceMax away, while an already-visible
+// target (circle or arrow) stays visible all the way down to distanceMin.
+// Without this, distanceMax is silently ignored and indicators flicker at the
+// distanceMin boundary.
+test('computeTargetPlacement applies distanceMin/distanceMax hysteresis for on-screen targets', () => {
+    const camera = makeCamera();
+    const betweenThresholds = new THREE.Vector3(0, 0, -2); // 2 m: between 1.5 and 3.0
+    const base = {
+        targetWorldPos: betweenThresholds,
+        camera,
+        hudDistance: 2.5,
+        distanceMin: 1.5,
+        distanceMax: 3.0,
+    };
+
+    // A hidden target between the thresholds must stay hidden…
+    const stillHidden = computeTargetPlacement({ ...base, previousState: 'hidden' });
+    assert.equal(stillHidden.state, 'hidden');
+
+    // …until it reaches distanceMax.
+    const activated = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, -3),
+        previousState: 'hidden',
+    });
+    assert.equal(activated.state, 'circle');
+
+    // An active circle keeps showing inside the deadband (no flicker)…
+    const stillCircle = computeTargetPlacement({ ...base, previousState: 'circle' });
+    assert.equal(stillCircle.state, 'circle');
+
+    // …and only hides once the user is closer than distanceMin ("arrived").
+    const arrived = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, -1),
+        previousState: 'circle',
+    });
+    assert.equal(arrived.state, 'hidden');
+
+    // A target the arrow was just pointing at must not vanish when the user
+    // turns toward it: visible states convert to circle inside the deadband.
+    const fromArrow = computeTargetPlacement({ ...base, previousState: 'arrow' });
+    assert.equal(fromArrow.state, 'circle');
+});
+
 test('computeTargetPlacement flips the arrow direction for targets behind the camera', () => {
     const camera = makeCamera();
 
@@ -97,6 +144,10 @@ test('computeTargetPlacement flips the arrow direction for targets behind the ca
     assert.equal(placement.state, 'arrow');
     assert.equal(placement.isBehind, true);
     assert.ok(placement.arrowPosition instanceof THREE.Vector3);
+    // The target sits behind and to the RIGHT; the flip must point the arrow
+    // right (positive x, rotation -π/2 relative to "up"), not mirror it left.
+    assert.ok(placement.arrowPosition.x > 0);
+    assert.ok(Math.abs(placement.arrowRotationZ + Math.PI / 2) < 1e-12);
     assert.match(formatDistanceLabel(placement.distance), /^\d+\.\d m$/);
 });
 
