@@ -1,29 +1,26 @@
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { unzipSync, strFromU8 } from 'fflate';
 
-function readZipEntry(zipPath, entryName) {
-  return execFileSync('unzip', ['-p', zipPath, entryName], {
-    encoding: 'utf8',
-  });
-}
-
-function listZipEntries(zipPath) {
-  return execFileSync('unzip', ['-Z1', zipPath], {
-    encoding: 'utf8',
-  })
-    .trim()
-    .split('\n')
-    .filter(Boolean);
-}
-
+// Reads the recording zip in-process via fflate. The previous implementation
+// shelled out to the `unzip` CLI, which does not exist on Windows and made
+// this spec *nix-only. The filter keeps the large image entries compressed —
+// only the JSON payloads are inflated.
 function loadTask1Replay(zipPath) {
-  const session = JSON.parse(readZipEntry(zipPath, 'session.json'));
-  const actions = listZipEntries(zipPath)
-    .filter((entryName) => entryName.startsWith('actions/') && entryName.endsWith('.json'))
+  const zipBytes = new Uint8Array(readFileSync(zipPath));
+  const entries = unzipSync(zipBytes, {
+    filter: (file) =>
+      file.name === 'session.json' ||
+      (file.name.startsWith('actions/') && file.name.endsWith('.json')),
+  });
+
+  const session = JSON.parse(strFromU8(entries['session.json']));
+  const actions = Object.keys(entries)
+    .filter((entryName) => entryName.startsWith('actions/'))
     .sort()
-    .map((entryName) => JSON.parse(readZipEntry(zipPath, entryName)));
+    .map((entryName) => JSON.parse(strFromU8(entries[entryName])));
 
   return { session, actions };
 }

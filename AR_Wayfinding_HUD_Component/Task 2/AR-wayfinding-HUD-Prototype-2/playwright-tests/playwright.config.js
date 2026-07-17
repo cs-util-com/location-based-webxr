@@ -30,7 +30,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'VITE_DISABLE_MKCERT=1 npm run dev -- --host 127.0.0.1 --port 5173',
+    // Env vars must go through `env`, not a POSIX `VAR=x` prefix — the prefix
+    // form breaks when Playwright spawns the server through cmd.exe on Windows.
+    command: 'npm run dev -- --host 127.0.0.1 --port 5173',
+    env: { VITE_DISABLE_MKCERT: '1' },
     url: 'http://127.0.0.1:5173',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
