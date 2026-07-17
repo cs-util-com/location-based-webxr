@@ -7,10 +7,10 @@ import { ARWayfindingHUD } from './ARWayfindingHUD.js';
 // Adjust these values to place targets at meaningful distances for your test.
 // ---------------------------------------------------------------------------
 const waypoints = [
-    new THREE.Vector3( 3,  0,   0),   // 10 m to the right
-    new THREE.Vector3(-2,   0,   5),   // 8 m left, 5 m forward
-    new THREE.Vector3( 0,   0, -4),   // 15 m behind
-    new THREE.Vector3( 1,   2,   2),   // elevated target
+    new THREE.Vector3( 3,  0,   0),   // 3 m to the right
+    new THREE.Vector3(-2,   0,   5),   // 2 m left, 5 m behind
+    new THREE.Vector3( 0,   0, -4),   // 4 m ahead
+    new THREE.Vector3( 1,   2,   2),   // elevated target behind-right
 ];
 
 // ---------------------------------------------------------------------------
@@ -51,8 +51,10 @@ const hudConfig = {
     hudDistance: 1.5,
     indicatorScale: 0.4,  // shrink indicators for mobile screen
     labelScale: 0.5,      // shrink distance labels for mobile screen
-    arrowSprite: './src/assets/Arrow-Right-1-icon-1515697076.png',
-    circleSprite: './src/assets/Circle-Logo-Template-PNG-HD-2761340067.png',
+    // Resolved via import.meta.url so Vite fingerprints the assets in builds
+    // (a raw './src/...' string would 404 in production output).
+    arrowSprite: new URL('./assets/Arrow-Right-1-icon-1515697076.png', import.meta.url).href,
+    circleSprite: new URL('./assets/Circle-Logo-Template-PNG-HD-2761340067.png', import.meta.url).href,
 };
 
 let hud = null;

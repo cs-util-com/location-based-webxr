@@ -40,7 +40,7 @@ export class DistanceLabel {
     /**
      * Updates the text rendered on the canvas. To optimize performance,
      * the canvas is only redrawn if the text content has changed.
-     * * @param {string} text - The formatted string to display (e.g., "15.2 m")
+     * @param {string} text - The formatted string to display (e.g., "15.2 m")
      */
     updateText(text) {
         if (this.currentText === text) {
@@ -76,7 +76,7 @@ export class DistanceLabel {
 
     /**
      * Retrieves the underlying THREE.Sprite object for scene integration.
-     * * @returns {THREE.Sprite}
+     * @returns {THREE.Sprite}
      */
     getMesh() {
         return this.sprite;
