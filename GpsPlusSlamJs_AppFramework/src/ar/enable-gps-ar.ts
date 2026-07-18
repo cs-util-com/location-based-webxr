@@ -286,6 +286,26 @@ export function createEnableGpsArController(
 
     setState({ status: 'starting' });
 
+    // Wrap the app's per-session callbacks so the controller OBSERVES the
+    // session ending (system back gesture, or an external endARSession call).
+    // While `running` it stops the watches and returns to `ready`, so the
+    // app's button recovers without a page reload and the watches cannot
+    // leak. In every other status the respective path already owns the
+    // teardown (the enable() rollback below during `starting`, disable()
+    // during `stopping`) and the wrapper stays inert. The app's own
+    // onSessionEnd is always chained, whatever the status.
+    const appCallbacks = config.callbacks;
+    const callbacks: ArSessionCallbacks = {
+      ...appCallbacks,
+      onSessionEnd: (info) => {
+        if (state.status === 'running') {
+          stopWatches();
+          setState({ status: 'ready' });
+        }
+        appCallbacks?.onSessionEnd?.(info);
+      },
+    };
+
     let sessionStarted = false;
     try {
       const permissionError = await requestPermissions(config);
@@ -305,7 +325,7 @@ export function createEnableGpsArController(
         {
           requestHitTest: config.requestHitTest,
         },
-        config.callbacks
+        callbacks
       );
       sessionStarted = true;
 
@@ -373,10 +393,8 @@ export function createEnableGpsArController(
     return { ok: false, error };
   }
 
-  async function disable(): Promise<void> {
-    if (state.status !== 'running') return;
-    setState({ status: 'stopping' });
-
+  /** Stop whichever sensor watches this controller started (idempotent). */
+  function stopWatches(): void {
     if (gpsWatchActive) {
       resolved.stopGpsWatch();
       gpsWatchActive = false;
@@ -385,6 +403,13 @@ export function createEnableGpsArController(
       resolved.stopOrientationWatch();
       orientationWatchActive = false;
     }
+  }
+
+  async function disable(): Promise<void> {
+    if (state.status !== 'running') return;
+    setState({ status: 'stopping' });
+
+    stopWatches();
 
     try {
       await resolved.endARSession();
