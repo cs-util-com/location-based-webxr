@@ -27,7 +27,9 @@ import {
   getCurrentArPose,
   getScene,
   registerXrFrameUpdate,
+  startHitTestReticle,
   type EnableGpsArState,
+  type HitTestReticleHandle,
 } from 'gps-plus-slam-app-framework/ar';
 import {
   createGpsPositionHandler,
@@ -45,9 +47,7 @@ import type {
 } from 'gps-plus-slam-app-framework/sensors';
 import {
   createGpsAnchor,
-  createReticleMesh,
   enableArWorldGroupAlignment,
-  updateReticle,
 } from 'gps-plus-slam-app-framework/visualization';
 import type { LatLong, LatLongAlt } from 'gps-plus-slam-app-framework/core';
 import { Vector3 } from 'three';
@@ -90,104 +90,44 @@ function buttonView(state: EnableGpsArState): { label: string; disabled: boolean
 }
 
 /**
- * Request a screen-centre hit-test source from the live session. Returns `null`
- * when the runtime does not expose `requestHitTestSource` (older WebXR builds).
- */
-async function requestHitTestSource(
-  session: XRSession
-): Promise<XRHitTestSource | null> {
-  const viewerSpace = await session.requestReferenceSpace('viewer');
-  const source = await session.requestHitTestSource?.({ space: viewerSpace });
-  return source ?? null;
-}
-
-/**
- * Install the hit-test reticle and tap-to-place once AR is running. Ordinary
- * three.js example code apart from parenting the reticle under `arWorldGroup`
- * (AR-local). The actual placement (the contrast co-spawn) is delegated to
- * `onPlace` so the store-bound `createGpsAnchor` wiring stays in `main()`.
+ * Install the hit-test reticle and tap-to-place once AR is running. The
+ * per-frame WebXR plumbing (source request, race guards, session-end reset)
+ * lives in the framework's shared `startHitTestReticle` driver; only the app
+ * decisions stay here. The actual placement (the contrast co-spawn) is
+ * delegated to `onPlace` so the store-bound `createGpsAnchor` wiring stays in
+ * `main()`. Returns the driver handle so `main()` can dispose it on session
+ * end (replacing the old inline `'end'`-listener self-teardown).
  */
 function startArInteraction(deps: {
   hasGpsFix: () => boolean;
   onWaitingForGps: () => void;
   onPlace: (worldPosition: Vector3) => void;
-}): void {
+}): HitTestReticleHandle | null {
   const arWorldGroup = getArWorldGroup();
   if (!arWorldGroup) {
-    return;
+    return null;
   }
-  const reticle = createReticleMesh();
-  arWorldGroup.add(reticle);
-
-  let hitTestSource: XRHitTestSource | null = null;
-  let hitTestSourceRequested = false;
-  let sessionEnded = false;
-  let selectWired = false;
-  let unregisterFrameUpdate: (() => void) | null = null;
-
-  unregisterFrameUpdate = registerXrFrameUpdate(({ frame, referenceSpace, session }) => {
-    if (!selectWired) {
-      selectWired = true;
-      // A `select` is the AR "tap". The GPS gate (decideTapPlacement) ignores
-      // taps until the first fix so both objects share a start pose (Step 4).
-      session.addEventListener('select', () => {
-        const decision = decideTapPlacement({
-          hasGpsFix: deps.hasGpsFix(),
-          reticleVisible: reticle.visible,
-        });
-        if (decision.kind === 'waiting-for-gps') {
-          deps.onWaitingForGps();
-          return;
-        }
-        if (decision.kind === 'no-surface') {
-          return;
-        }
-        // The reticle's world transform is current from the last rendered frame.
-        deps.onPlace(reticle.getWorldPosition(new Vector3()));
+  return startHitTestReticle({
+    arWorldGroup,
+    // A `select` is the AR "tap"; the driver reports every tap with the
+    // reticle world position, or `null` when no surface is present. The GPS
+    // gate (decideTapPlacement) deliberately outranks the surface check so a
+    // pre-fix tap surfaces "waiting for GPS…" even with no surface (Step 4:
+    // both objects must share a start pose).
+    onSelect: (worldPosition) => {
+      const decision = decideTapPlacement({
+        hasGpsFix: deps.hasGpsFix(),
+        reticleVisible: worldPosition !== null,
       });
-      // Registered once with the other per-session setup so a hit-test retry
-      // (which re-enters the request block below) cannot add duplicate listeners.
-      session.addEventListener('end', () => {
-        sessionEnded = true;
-        hitTestSource = null;
-        hitTestSourceRequested = false;
-        // Unregister THIS session's frame callback. `startArInteraction` runs
-        // once per `running` transition against a fresh arWorldGroup + reticle,
-        // so without this a later AR re-entry would leave the old callback (and
-        // any source it resolved after `end`) running against the new session.
-        unregisterFrameUpdate?.();
-        unregisterFrameUpdate = null;
-      });
-    }
-
-    if (!hitTestSourceRequested) {
-      hitTestSourceRequested = true;
-      requestHitTestSource(session)
-        .then((source) => {
-          // Guard the race where the session ended while the request was in
-          // flight: cancel the now-orphaned source instead of retaining a dead
-          // handle (ported from AnchorStarter's reticle-hit-test.ts dispose
-          // guard — see quality-review finding A-5).
-          if (sessionEnded) {
-            source?.cancel();
-            return;
-          }
-          hitTestSource = source;
-        })
-        .catch(() => {
-          // Allow a later frame to retry if the request failed transiently.
-          hitTestSourceRequested = false;
-        });
-    }
-
-    if (!hitTestSource) {
-      updateReticle(reticle, null);
-      return;
-    }
-
-    const [hit] = frame.getHitTestResults(hitTestSource);
-    const pose = hit?.getPose(referenceSpace);
-    updateReticle(reticle, pose ? pose.transform.matrix : null);
+      if (decision.kind === 'waiting-for-gps') {
+        deps.onWaitingForGps();
+        return;
+      }
+      if (decision.kind === 'no-surface' || worldPosition === null) {
+        return;
+      }
+      deps.onPlace(worldPosition);
+    },
   });
 }
 
@@ -281,6 +221,7 @@ function main(): void {
   }
 
   const controller = createEnableGpsArController();
+  let reticleHandle: HitTestReticleHandle | null = null;
   controller.subscribe((state) => {
     const view = buttonView(state);
     button.textContent = view.label;
@@ -309,7 +250,11 @@ function main(): void {
           arWorldGroup,
         });
       }
-      startArInteraction({
+      // Each `running` transition gets a fresh arWorldGroup + reticle; the
+      // previous handle (if the session-end callback somehow didn't run) is
+      // disposed first so two drivers never run at once.
+      reticleHandle?.dispose();
+      reticleHandle = startArInteraction({
         hasGpsFix: () => gpsFixCount > 0,
         onWaitingForGps: () => {
           showHint('waiting for GPS…');
@@ -332,6 +277,16 @@ function main(): void {
         enableCameraAccess: false,
         enableDepthSensingFeature: false,
         enableCameraTextureAcquisition: false,
+      },
+      callbacks: {
+        // Dispose the reticle driver when the session ends (system back
+        // gesture or programmatic stop) — this replaces the inline `'end'`
+        // listener the hand-rolled loop used to carry; the next `running`
+        // transition creates a fresh driver against the new arWorldGroup.
+        onSessionEnd: () => {
+          reticleHandle?.dispose();
+          reticleHandle = null;
+        },
       },
       onGpsPosition: (position: GpsPosition) => {
         gpsFixCount += 1;
