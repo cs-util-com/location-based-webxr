@@ -107,9 +107,7 @@ describe('recording-options — validation properties', () => {
   it('never throws and every numeric field lands inside its constraints window', () => {
     fc.assert(
       fc.property(inputArb, (input) => {
-        const validated = validateRecordingOptions(
-          input as RecordingOptionsInput
-        );
+        const validated = validateRecordingOptions(input);
 
         expectInWindow(
           validated.depth.intervalMs,
@@ -170,7 +168,7 @@ describe('recording-options — validation properties', () => {
   it('is idempotent and serialization-stable: validate(validate(x)) round-trips byte-identically', () => {
     fc.assert(
       fc.property(inputArb, (input) => {
-        const once = validateRecordingOptions(input as RecordingOptionsInput);
+        const once = validateRecordingOptions(input);
         const twice = validateRecordingOptions(once);
         expect(twice).toEqual(once);
         // Byte-stability of the persisted JSON across save→load→validate:
