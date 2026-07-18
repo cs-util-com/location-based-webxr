@@ -291,19 +291,18 @@ WebXR session lifecycle, Three.js renderer setup, image/depth capture, replay sc
 
 ### `state/` — Store & Recording
 
-| Export                                              | Description                                                    |
-| --------------------------------------------------- | -------------------------------------------------------------- |
-| `createSlamAppStore(options)`                       | Composable store factory (see options table above).            |
-| `recordingReducer`                                  | Recording lifecycle slice (built into the factory).            |
-| `startSession()` / `endSession()`                   | Recording lifecycle actions.                                   |
-| `recordGpsEvent(payload)`                           | Record a paired AR+GPS observation.                            |
-| `createGpsPositionHandler(config)`                  | Factory that adapts `GeolocationPosition` to a store dispatch. |
-| `captureGpsAnchorSample(options)`                   | Sample a paired AR pose + GPS point for anchoring.             |
-| `loadRecordingOptions()` / `saveRecordingOptions()` | Persist user-controlled recording settings.                    |
-| `replayRecording(store, blob)`                      | Replay a ZIP recording into a store.                           |
-| `ReplayEngine`                                      | Lower-level timed action playback with pause/resume/speed.     |
-| `createPersistenceMiddleware(options)`              | Middleware factory used internally by `createSlamAppStore`.    |
-| `wireStoreSubscribers(store, deps)`                 | Bridge store state → visualization updates.                    |
+| Export                                 | Description                                                    |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `createSlamAppStore(options)`          | Composable store factory (see options table above).            |
+| `recordingReducer`                     | Recording lifecycle slice (built into the factory).            |
+| `startSession()` / `endSession()`      | Recording lifecycle actions.                                   |
+| `recordGpsEvent(payload)`              | Record a paired AR+GPS observation.                            |
+| `createGpsPositionHandler(config)`     | Factory that adapts `GeolocationPosition` to a store dispatch. |
+| `captureGpsAnchorSample(options)`      | Sample a paired AR pose + GPS point for anchoring.             |
+| `replayRecording(store, blob)`         | Replay a ZIP recording into a store.                           |
+| `ReplayEngine`                         | Lower-level timed action playback with pause/resume/speed.     |
+| `createPersistenceMiddleware(options)` | Middleware factory used internally by `createSlamAppStore`.    |
+| `wireStoreSubscribers(store, deps)`    | Bridge store state → visualization updates.                    |
 
 ### `storage/` — OPFS, ZIP, File System
 
@@ -312,7 +311,7 @@ WebXR session lifecycle, Three.js renderer setup, image/depth capture, replay sc
 | `StorageBackend`                               | Abstract storage interface (implement your own).        |
 | `OpfsStorageBackend`                           | OPFS-based `StorageBackend`.                            |
 | `NullStorageBackend`                           | No-op backend for tests and replay.                     |
-| `initOpfsStorage()` / `initStorage(backend)`   | Initialize the file-system layer.                       |
+| `initOpfsStorage()`                            | Initialize the OPFS file-system layer.                  |
 | `createSession()` / `listSessions()`           | Session lifecycle on disk.                              |
 | `exportSessionAsZip(handle, { contributors })` | Export a recording session as a ZIP blob.               |
 | `ZipExportContributor`                         | Hook for adding your own ZIP subdirectories on export.  |
