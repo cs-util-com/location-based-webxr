@@ -21,8 +21,8 @@ Pure placement seam of the wayfinding HUD: computes, for one target and one came
 
 ## Invariants & assumptions
 
-- **Hysteresis (on-screen):** a hidden target activates only at `distance ≥ distanceMax`; a visible target hides only below `distanceMin`. Between the thresholds the previous state wins — no flicker.
-- **Off-screen targets always get an arrow, regardless of distance** — deliberate prototype parity ("turn around" cue), recorded in the plan's decisions.
+- **Distance-gated visibility, independent of view direction (2026-07-18 revision):** the gate runs BEFORE the on/off-screen split. A fresh spawn (`previousState` omitted) is visible iff `distance ≥ distanceMin` — a target beyond the short-distance limit gets its indicator immediately, even inside the deadband. A visible target hides only below `distanceMin`; a deactivated (`'hidden'`) target shows NOTHING — no ring and no arrow — until `distance ≥ distanceMax`. Between the thresholds the previous state wins — no flicker, and no look-away bypass (the original prototype parity exempted the off-screen arrow from the gate, which let a glance away activate a deadband target at `distanceMin`; found in an AR field test, repro pinned in the tests).
+- **ACTIVE off-screen targets keep their edge arrow inside the deadband** — the "turn around" cue survives for targets that are currently visible; only deactivated ones lose it.
 - **Behind-camera flip:** `ndc` of a behind-camera target equals the ndc of its point reflection through the camera (both clip and w negate), so the arrow direction is negated to point where the user must turn.
 - **Degenerate projection guard (deviation from the prototype):** a target on the camera plane (`w = 0`, e.g. exactly at the camera) has no defined screen direction — the seam returns `hidden` for that frame instead of NaN transforms.
 - Calls `camera.updateMatrixWorld()` (parity with the prototype); the camera is otherwise not modified. Positions are **camera-local** — the presenter attaches indicators as camera children.

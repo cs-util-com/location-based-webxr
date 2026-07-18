@@ -257,21 +257,25 @@ describe('createWayfindingHud — target-count sync (getter-API port of the prot
     hud.dispose();
   });
 
-  // Why this test matters (ported essence of the setWaypoints reset test): a
-  // target appearing at a NEW index must start from a clean 'hidden' state —
-  // its hysteresis must not be inherited from some earlier target.
-  it('creates fresh hidden-state indicators when the target list grows', () => {
+  // Why this test matters (ported essence of the setWaypoints reset test,
+  // updated for the 2026-07-18 spawn rule): a target appearing at a NEW
+  // index must start from a clean SPAWN state — visible immediately at
+  // ≥ distanceMin (even inside the deadband), hidden below it, and never
+  // inheriting an earlier target's hysteresis.
+  it('creates fresh spawn-state indicators when the target list grows', () => {
     const { hud, camera, targetList } = makeHud([new THREE.Vector3(0, 0, -5)]);
     tick();
 
-    // New target 2 m away (inside the deadband): a FRESH state starts
-    // 'hidden' and must not activate until distanceMax.
+    // New target 2 m away (inside the 1.5/3.0 deadband): the SPAWN rule
+    // shows its ring immediately (distance ≥ distanceMin).
     targetList.push(new THREE.Vector3(0, 0.5, -2));
+    // New target 1 m away (below distanceMin): spawns hidden.
+    targetList.push(new THREE.Vector3(0, -0.2, -1));
     tick();
 
     const circles = childrenByName(camera, 'wayfinding-circle');
-    expect(circles.length).toBe(2);
-    expect(visible(circles).length).toBe(1); // only the far target shows
+    expect(circles.length).toBe(3);
+    expect(visible(circles).length).toBe(2); // far target + deadband spawn
     hud.dispose();
   });
 

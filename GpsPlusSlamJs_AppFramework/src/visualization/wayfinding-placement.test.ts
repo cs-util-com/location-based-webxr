@@ -178,19 +178,18 @@ describe('computeTargetPlacement', () => {
     expect(formatDistanceLabel(placement.distance)).toMatch(/^\d+\.\d m$/);
   });
 
-  // Why this test matters (2026-07-18 field report, wayfinding demo AR
-  // test): this documents that the distance hysteresis is PATH-DEPENDENT —
-  // the off-screen arrow path bypasses the activation threshold. A freshly
-  // placed on-screen target inside the deadband stays hidden no matter how
-  // long you look at it; but LOOKING AWAY promotes it to an edge arrow
-  // (off-screen always shows one, regardless of distance), and looking
-  // back converts that arrow to a ring at only distanceMin — the target
-  // becomes visible WITHOUT ever crossing distanceMax. Each step is an
-  // individually-pinned prototype-parity rule; their composition makes the
-  // activation threshold depend on whether the user glanced away.
-  // Currently correct-by-design (parity); this test is the executable
-  // repro for the pending design decision — invert it if the rule changes.
-  it('activates a never-activated deadband target through the off-screen arrow path (field-reported hysteresis bypass)', () => {
+  // Why these tests matter (2026-07-18 field report + design decision):
+  // visibility is a pure DISTANCE state machine, independent of the view
+  // direction. The original prototype parity made the deadband
+  // path-dependent — an on-screen target inside it stayed hidden, but a
+  // glance away promoted it to an arrow (off-screen ignored distance) and
+  // looking back converted that arrow to a ring at only distanceMin,
+  // bypassing the distanceMax activation. The revised rules:
+  // - SPAWN (no previousState): visible iff distance ≥ distanceMin —
+  //   a target beyond the short-distance limit gets its ring immediately.
+  // - Deactivated ('hidden'): nothing shows — no ring AND no arrow —
+  //   until distance ≥ distanceMax, regardless of where you look.
+  describe('distance-gated visibility (2026-07-18 revision)', () => {
     const camera = makeCamera();
     const base = {
       camera,
@@ -198,43 +197,87 @@ describe('computeTargetPlacement', () => {
       distanceMin: 1.5,
       distanceMax: 3.0,
     };
-    // A tapped target 2 m ahead (inside the 1.5/3.0 deadband): hidden while
-    // looked at — for as many frames as you like.
-    const ahead = new THREE.Vector3(0, 0, -2);
-    let placement = computeTargetPlacement({
-      ...base,
-      targetWorldPos: ahead,
-      previousState: 'hidden',
-    });
-    expect(placement.state).toBe('hidden');
-    placement = computeTargetPlacement({
-      ...base,
-      targetWorldPos: ahead,
-      previousState: placement.state,
-    });
-    expect(placement.state).toBe('hidden');
 
-    // Look away: the same 2 m target is now off-screen → edge arrow appears
-    // (off-screen ignores the distance deadband by design).
-    camera.lookAt(0, 0, 1); // turn 180°
-    camera.updateMatrixWorld(true);
-    placement = computeTargetPlacement({
-      ...base,
-      targetWorldPos: ahead,
-      previousState: placement.state,
+    it('a fresh spawn beyond distanceMin shows its ring immediately, even inside the deadband', () => {
+      const placement = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, -2), // 2 m — inside 1.5/3.0
+      });
+      expect(placement.state).toBe('circle');
     });
-    expect(placement.state).toBe('arrow');
 
-    // Look back: arrow converts to a ring at ≥ distanceMin (1.5 m) — the
-    // 2 m target is now VISIBLE although it never reached distanceMax (3 m).
-    camera.lookAt(0, 0, -1);
-    camera.updateMatrixWorld(true);
-    placement = computeTargetPlacement({
-      ...base,
-      targetWorldPos: ahead,
-      previousState: placement.state,
+    it('a fresh spawn below distanceMin shows nothing — on-screen or off', () => {
+      const near = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, -1), // 1 m < distanceMin
+      });
+      expect(near.state).toBe('hidden');
+
+      const nearOffScreen = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 1), // 1 m BEHIND the camera
+      });
+      expect(nearOffScreen.state).toBe('hidden'); // no arrow either
     });
-    expect(placement.state).toBe('circle');
+
+    it('a deactivated target stays fully hidden through a look-away/look-back cycle (no bypass)', () => {
+      const lookAwayCamera = makeCamera();
+      const seq = { ...base, camera: lookAwayCamera };
+      const near = new THREE.Vector3(0, 0, -1); // inside the "arrived" zone
+
+      let placement = computeTargetPlacement({
+        ...seq,
+        targetWorldPos: near,
+      });
+      expect(placement.state).toBe('hidden');
+
+      // Look away: still hidden — NO edge arrow for an inactive target.
+      lookAwayCamera.lookAt(0, 0, 1);
+      lookAwayCamera.updateMatrixWorld(true);
+      placement = computeTargetPlacement({
+        ...seq,
+        targetWorldPos: near,
+        previousState: placement.state,
+      });
+      expect(placement.state).toBe('hidden');
+
+      // Look back: still hidden — the glance changed nothing.
+      lookAwayCamera.lookAt(0, 0, -1);
+      lookAwayCamera.updateMatrixWorld(true);
+      placement = computeTargetPlacement({
+        ...seq,
+        targetWorldPos: near,
+        previousState: placement.state,
+      });
+      expect(placement.state).toBe('hidden');
+    });
+
+    it('a deactivated target reactivates only at distanceMax — off-screen included', () => {
+      // Off-screen, deactivated, inside the deadband: no arrow yet…
+      const inDeadband = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 2), // 2 m behind
+        previousState: 'hidden',
+      });
+      expect(inDeadband.state).toBe('hidden');
+
+      // …but beyond distanceMax the arrow returns.
+      const beyondMax = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 4), // 4 m behind
+        previousState: 'hidden',
+      });
+      expect(beyondMax.state).toBe('arrow');
+    });
+
+    it('an ACTIVE off-screen target keeps its turn-around arrow inside the deadband', () => {
+      const placement = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 2), // 2 m behind — deadband
+        previousState: 'arrow',
+      });
+      expect(placement.state).toBe('arrow');
+    });
   });
 
   // Why this test matters: a target exactly on the camera plane (w = 0)

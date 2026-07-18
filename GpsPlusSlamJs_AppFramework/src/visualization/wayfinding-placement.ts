@@ -36,7 +36,13 @@ export interface TargetPlacementInput {
    * that prevents flicker at the distanceMin boundary. Must be ≥ distanceMin.
    */
   distanceMax: number;
-  /** The target's state from the previous frame. Defaults to 'hidden'. */
+  /**
+   * The target's state from the previous frame. OMIT for a freshly spawned
+   * target — spawn visibility is `distance ≥ distanceMin`. Passing
+   * `'hidden'` means "deactivated" (arrived / spawned too close) and
+   * requires `distance ≥ distanceMax` to reactivate — regardless of view
+   * direction (2026-07-18 revision).
+   */
   previousState?: TargetPlacementState;
   /**
    * Read the frustum extents from the projection matrix instead of
@@ -148,15 +154,19 @@ function assertPositiveFinite(name: string, value: number): void {
   }
 }
 
-/** TargetPlacementInput with every optional field resolved to its default. */
-type ResolvedPlacementInput = Required<TargetPlacementInput>;
+/** TargetPlacementInput with every defaultable field resolved.
+ * `previousState` is deliberately NOT defaulted — its absence is meaningful
+ * (a fresh spawn, gated at distanceMin rather than distanceMax). */
+type ResolvedPlacementInput = Required<
+  Omit<TargetPlacementInput, 'previousState'>
+> &
+  Pick<TargetPlacementInput, 'previousState'>;
 
 function resolvePlacementInput(
   input: TargetPlacementInput
 ): ResolvedPlacementInput {
   return {
     ...input,
-    previousState: input.previousState ?? 'hidden',
     isXrSession: input.isXrSession ?? false,
     viewportInner: input.viewportInner ?? DEFAULT_VIEWPORT_INNER,
     viewportOuter: input.viewportOuter ?? DEFAULT_VIEWPORT_OUTER,
@@ -204,27 +214,10 @@ function validatePlacementInput(input: ResolvedPlacementInput): void {
   validateViewport(input.viewportInner, input.viewportOuter, input.edgeMargin);
 }
 
-function placeOnScreen(
+function placeCircle(
   base: TargetPlacementBase,
-  input: Required<
-    Pick<
-      TargetPlacementInput,
-      'hudDistance' | 'distanceMin' | 'distanceMax' | 'previousState'
-    >
-  >
-): HiddenPlacement | CirclePlacement {
-  const { hudDistance, distanceMin, distanceMax, previousState } = input;
-
-  // Distance hysteresis: a target that is already visible (circle, or an
-  // arrow that just came on-screen) stays visible down to distanceMin;
-  // a hidden target only reactivates once it is distanceMax away.
-  const activationDistance =
-    previousState === 'hidden' ? distanceMax : distanceMin;
-
-  if (base.distance < activationDistance) {
-    return { ...base, state: 'hidden' };
-  }
-
+  hudDistance: number
+): CirclePlacement {
   const circleX =
     THREE.MathUtils.clamp(base.ndc.x, -1, 1) * (base.frustumWidth / 2);
   const circleY =
@@ -344,6 +337,20 @@ export function computeTargetPlacement(
     frustumHeight,
   };
 
+  // Distance gate FIRST — before the on/off-screen split (2026-07-18
+  // revision after an AR field report): visibility is a pure distance state
+  // machine, independent of the view direction. A fresh spawn (no
+  // previousState) and any visible target need distanceMin; a deactivated
+  // ('hidden') target reactivates only at distanceMax. The original
+  // prototype parity exempted the off-screen arrow from this gate, which
+  // let a glance away bypass the activation threshold (hidden → arrow →
+  // ring at distanceMin without ever reaching distanceMax).
+  const activationDistance =
+    previousState === 'hidden' ? distanceMax : distanceMin;
+  if (distance < activationDistance) {
+    return { ...base, state: 'hidden' };
+  }
+
   // Degenerate projection guard (deviation from the prototype, which emits
   // NaN transforms here): a target on the camera plane (w = 0, e.g. exactly
   // at the camera position) has no defined screen direction — hide it for
@@ -353,12 +360,7 @@ export function computeTargetPlacement(
   }
 
   if (onScreen) {
-    return placeOnScreen(base, {
-      hudDistance,
-      distanceMin,
-      distanceMax,
-      previousState,
-    });
+    return placeCircle(base, hudDistance);
   }
 
   return placeArrow(base, hudDistance, edgeMargin);

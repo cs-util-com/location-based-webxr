@@ -54,14 +54,13 @@ test.describe("Wayfinding HUD demo — walk flow (real HUD)", () => {
     await expect(status).toContainText("arrows 3");
 
     // Blow the deadband up beyond every target (min 20 m / max 30 m): the
-    // fresh HUD starts each target 'hidden', so the ON-SCREEN ahead target
-    // (19 m < 30 m activation) stays hidden — while the OFF-SCREEN targets
-    // keep their edge arrows regardless of distance (the deliberate
-    // "turn around" parity semantic recorded in the graduation plan).
+    // fresh HUD applies the SPAWN rule (2026-07-18 revision — visibility is
+    // distance-gated regardless of view direction), and every target sits
+    // below 20 m — the whole scene goes dark, off-screen arrows included.
     await page.getByTestId("distance-min").fill("20");
     await page.getByTestId("distance-max").fill("30");
-    await expect(status).toContainText("hidden 1", { timeout: 5000 });
+    await expect(status).toContainText("hidden 4", { timeout: 5000 });
     await expect(status).toContainText("rings 0");
-    await expect(status).toContainText("arrows 3");
+    await expect(status).toContainText("arrows 0");
   });
 });

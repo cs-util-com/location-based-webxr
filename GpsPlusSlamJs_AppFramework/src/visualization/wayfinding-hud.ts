@@ -197,7 +197,9 @@ function resolveTexture(
 }
 
 interface TargetState {
-  currentState: TargetPlacementState;
+  /** null = freshly created, no frame yet — the placement seam applies its
+   * SPAWN rule (visible at distanceMin) instead of the reactivation rule. */
+  currentState: TargetPlacementState | null;
   arrow: THREE.Mesh | THREE.Sprite;
   circle: THREE.Mesh | THREE.Sprite;
   label: TextSprite;
@@ -318,7 +320,7 @@ export function createWayfindingHud(
     camera.add(label.sprite);
 
     return {
-      currentState: 'hidden',
+      currentState: null,
       arrow,
       circle,
       label,
@@ -364,7 +366,7 @@ export function createWayfindingHud(
   function showCircle(
     state: TargetState,
     placement: CirclePlacement,
-    previous: TargetPlacementState,
+    previous: TargetPlacementState | null,
     dt: number
   ): void {
     state.arrow.visible = false;
@@ -407,7 +409,12 @@ export function createWayfindingHud(
       hudDistance,
       distanceMin,
       distanceMax,
-      previousState: state.currentState,
+      // Omit previousState on the very first frame — the seam then applies
+      // its SPAWN rule (visible at distanceMin, not the distanceMax
+      // reactivation gate).
+      ...(state.currentState !== null
+        ? { previousState: state.currentState }
+        : {}),
       // Always read the projection matrix: exact for any symmetric-frustum
       // perspective camera, and in-session it is the only truthful source
       // (WebXR owns the projection; fov/aspect are stale).
