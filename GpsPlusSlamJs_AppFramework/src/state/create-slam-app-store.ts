@@ -10,8 +10,9 @@
  * never references those concepts so apps that don't need them (POI viewers,
  * navigation arrows, …) compose freely.
  *
- * The legacy `createRecorderStore` from `store.ts` is built on top of this
- * factory and will move out of the framework in Iter 1D.
+ * This is the framework's ONLY store factory (the legacy
+ * `createRecorderStore`/`store.ts` it replaced moved out in Iter 1D); the
+ * core library's license error messages point here as the remediation.
  *
  * @see docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md — Iter 1
  */
