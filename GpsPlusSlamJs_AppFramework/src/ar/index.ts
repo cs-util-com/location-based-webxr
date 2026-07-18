@@ -105,6 +105,13 @@ export {
   registerXrFrameUpdate,
 } from './xr-frame-loop.js';
 
+// --- hit-test-reticle-driver ---
+export {
+  type HitTestReticleHandle,
+  type HitTestReticleArgs,
+  startHitTestReticle,
+} from './hit-test-reticle-driver.js';
+
 // --- enable-gps-ar ---
 export {
   type EnableGpsArStatus,
