@@ -28,18 +28,36 @@ vi.mock("gps-plus-slam-app-framework/state/create-slam-app-store", () => ({
 vi.mock("gps-plus-slam-app-framework/storage/null-storage-backend", () => ({
   NullStorageBackend: class {},
 }));
-vi.mock("gps-plus-slam-app-framework/visualization/hit-test-reticle", () => ({
-  createReticleMesh: vi.fn(() => new THREE.Mesh()),
-  updateReticle: vi.fn(),
+// The shared hit-test reticle driver is mocked at its deep subpath: the tap
+// contract under test is that ar-mode passes an `onSelect` that maps the
+// driver's nullable position onto hint-vs-place (the driver's own lifecycle
+// is covered by the framework's hit-test-reticle-driver tests).
+const driverMock = vi.hoisted(() => ({
+  capturedOnSelect: null as
+    | ((worldPosition: THREE.Vector3 | null) => void)
+    | null,
+  disposeSpy: vi.fn(),
+}));
+vi.mock("gps-plus-slam-app-framework/ar/hit-test-reticle-driver", () => ({
+  startHitTestReticle: vi.fn(
+    (args: { onSelect?: (worldPosition: THREE.Vector3 | null) => void }) => {
+      driverMock.capturedOnSelect = args.onSelect ?? null;
+      return {
+        isVisible: () => false,
+        getWorldPosition: (out: THREE.Vector3) => out,
+        dispose: driverMock.disposeSpy,
+      };
+    },
+  ),
 }));
 vi.mock("gps-plus-slam-app-framework/visualization/wayfinding-hud", () => ({
   createWayfindingHud: vi.fn(() => ({ update: vi.fn(), dispose: vi.fn() })),
 }));
 
 import { startArMode, type ArModeDeps } from "./ar-mode";
+import { startHitTestReticle } from "gps-plus-slam-app-framework/ar/hit-test-reticle-driver";
 import { initAR } from "gps-plus-slam-app-framework/ar/webxr-session";
 import { registerXrFrameUpdate } from "gps-plus-slam-app-framework/ar/xr-frame-loop";
-import { createReticleMesh } from "gps-plus-slam-app-framework/visualization/hit-test-reticle";
 import { createWayfindingHud } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 
 function makeDeps() {
@@ -52,24 +70,16 @@ function makeDeps() {
   } satisfies ArModeDeps;
 }
 
-/** Minimal XR frame context for the captured registerXrFrameUpdate callback. */
+/** Minimal XR frame context for the captured registerXrFrameUpdate callback
+ * (the app's own callback only spawns examples + pushes the status line —
+ * the hit-test plumbing lives in the mocked driver). */
 function makeFrameContext() {
-  const sessionHandlers = new Map<string, () => void>();
-  const session = {
-    addEventListener: vi.fn((type: string, handler: () => void) => {
-      sessionHandlers.set(type, handler);
-    }),
-    requestReferenceSpace: vi.fn(() => Promise.resolve({})),
-    // No requestHitTestSource — the source stays null (older-runtime path).
-  };
   return {
-    context: {
-      frame: { getHitTestResults: vi.fn(() => []) },
-      referenceSpace: {},
-      session,
-    },
-    /** Fire the AR "tap". */
-    select: () => sessionHandlers.get("select")?.(),
+    frame: {},
+    referenceSpace: {},
+    session: {},
+    dt: 0,
+    elapsed: 0,
   };
 }
 
@@ -83,10 +93,11 @@ function runXrFrame(context: unknown): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  driverMock.capturedOnSelect = null;
 });
 
 describe("startArMode", () => {
-  it("boots initAR with camera/depth features OFF, hit-test ON, and the tracking store", async () => {
+  it("boots initAR with camera/depth features OFF, hit-test ON, the tracking store, and a session-end callback", async () => {
     const mode = await startArMode(makeDeps());
     expect(initAR).toHaveBeenCalledWith(
       expect.anything(),
@@ -96,9 +107,19 @@ describe("startArMode", () => {
         enableCameraTextureAcquisition: false,
       },
       { requestHitTest: true },
-      { tracking: { store: expect.anything() } },
+      {
+        tracking: { store: expect.anything() },
+        // Replaces the old inline session-'end' listener: the framework's
+        // onSessionEnd drives dispose() + deps.onEnded for both the system
+        // back gesture and the app-initiated end.
+        onSessionEnd: expect.any(Function),
+      },
     );
+    // The shared reticle driver is started with a tap handler.
+    expect(startHitTestReticle).toHaveBeenCalledTimes(1);
+    expect(driverMock.capturedOnSelect).toBeTypeOf("function");
     mode.dispose();
+    expect(driverMock.disposeSpy).toHaveBeenCalledTimes(1);
   });
 
   it("creates the HUD in the default self-registering mode from the current config", async () => {
@@ -131,7 +152,7 @@ describe("startArMode", () => {
     const options = vi.mocked(createWayfindingHud).mock.calls[0]![0];
     expect(options.getTargets().length).toBe(0); // nothing before frame 1
 
-    const { context } = makeFrameContext();
+    const context = makeFrameContext();
     runXrFrame(context);
     expect(options.getTargets().length).toBe(3);
     expect(mode.placedCount()).toBe(3);
@@ -143,25 +164,21 @@ describe("startArMode", () => {
 
   // Why this test matters: a tap with no surface under the reticle used to
   // be silently ignored (against the repo's async-feedback rule) — it must
-  // surface a hint and place nothing.
+  // surface a hint and place nothing. The driver reports such taps as
+  // `onSelect(null)`; the app owns the hint-vs-place decision.
   it("flashes a hint instead of placing when the reticle has no surface", async () => {
     const deps = makeDeps();
     const mode = await startArMode(deps);
-    const { context, select } = makeFrameContext();
-    runXrFrame(context); // wires select + spawns examples
+    runXrFrame(makeFrameContext()); // spawns the examples
 
-    const reticle = vi.mocked(createReticleMesh).mock.results[0]!
-      .value as THREE.Mesh;
-    reticle.visible = false;
-    select();
+    driverMock.capturedOnSelect!(null); // surface-less tap
     expect(deps.onHint).toHaveBeenCalledWith(
       "Point the camera at the floor, then tap.",
     );
     expect(mode.placedCount()).toBe(3); // examples only — nothing placed
 
-    reticle.visible = true;
-    select();
-    expect(mode.placedCount()).toBe(4); // visible reticle places normally
+    driverMock.capturedOnSelect!(new THREE.Vector3(1, 0, 2));
+    expect(mode.placedCount()).toBe(4); // surface tap places normally
     mode.dispose();
   });
 

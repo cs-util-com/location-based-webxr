@@ -16,6 +16,7 @@
 import * as THREE from "three";
 // Deep subpath imports (not the barrels) — keeps the node-env unit test free
 // of the leaflet-loading /visualization barrel and mirrors desktop-sim.ts.
+import { startHitTestReticle } from "gps-plus-slam-app-framework/ar/hit-test-reticle-driver";
 import {
   endARSession,
   getArWorldGroup,
@@ -25,10 +26,6 @@ import {
 import { registerXrFrameUpdate } from "gps-plus-slam-app-framework/ar/xr-frame-loop";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state/create-slam-app-store";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage/null-storage-backend";
-import {
-  createReticleMesh,
-  updateReticle,
-} from "gps-plus-slam-app-framework/visualization/hit-test-reticle";
 import {
   createWayfindingHud,
   type WayfindingHud,
@@ -71,19 +68,6 @@ const NOOP_AR_MODE: ArMode = {
   dispose: () => undefined,
 };
 
-/**
- * Request a screen-centre hit-test source from the live session. Returns
- * `null` when the runtime does not expose `requestHitTestSource` (older
- * WebXR builds).
- */
-async function requestHitTestSource(
-  session: XRSession,
-): Promise<XRHitTestSource | null> {
-  const viewerSpace = await session.requestReferenceSpace("viewer");
-  const source = await session.requestHitTestSource?.({ space: viewerSpace });
-  return source ?? null;
-}
-
 /** Start the live AR mode. Resolves to a no-op handle when AR fails. */
 export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // The store rides into initAR as the tracking group (framework convention;
@@ -91,6 +75,15 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   const store = createSlamAppStore({
     storageBackend: new NullStorageBackend(),
   });
+
+  let sessionEnded = false;
+  let disposed = false;
+  // False until startArMode's wiring below is complete. Guards the case where
+  // the session ends during a failed boot (e.g. the scene-not-ready bailout
+  // calls endARSession): dispose()/onEnded must not run against half-built
+  // state — matching the old inline 'end' listener, which was only wired
+  // once the frame loop ran.
+  let bootCompleted = false;
 
   try {
     await initAR(
@@ -104,7 +97,18 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         enableCameraTextureAcquisition: false,
       },
       { requestHitTest: true },
-      { tracking: { store } },
+      {
+        tracking: { store },
+        // Fires on both the app-initiated end (our dispose → endARSession)
+        // and the system-initiated one (back gesture). Replaces the inline
+        // session-'end' listener the hand-rolled reticle loop used to carry.
+        onSessionEnd: () => {
+          sessionEnded = true;
+          if (!bootCompleted) return;
+          dispose();
+          deps.onEnded?.();
+        },
+      },
     );
   } catch (error) {
     deps.onError(
@@ -120,9 +124,6 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     void endARSession();
     return NOOP_AR_MODE;
   }
-
-  const reticle = createReticleMesh();
-  arWorldGroup.add(reticle);
 
   const markers: THREE.Mesh[] = [];
   const getTargets = (): THREE.Vector3[] =>
@@ -149,28 +150,28 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     markers.push(marker);
   };
 
-  const placeWaypoint = (): void => {
-    if (!reticle.visible) {
-      // Async-feedback rule: a tap that cannot place must say why.
-      deps.onHint("Point the camera at the floor, then tap.");
-      return;
-    }
-    addMarkerAtWorld(reticle.getWorldPosition(new THREE.Vector3()));
-  };
+  // The framework's shared driver owns the reticle mesh and every per-frame
+  // hit-test/session-end race guard; the app only decides what a tap means.
+  const reticleHandle = startHitTestReticle({
+    arWorldGroup,
+    onSelect: (worldPosition) => {
+      if (!worldPosition) {
+        // Async-feedback rule: a tap that cannot place must say why.
+        deps.onHint("Point the camera at the floor, then tap.");
+        return;
+      }
+      addMarkerAtWorld(worldPosition);
+    },
+  });
 
-  let hitTestSource: XRHitTestSource | null = null;
-  let hitTestSourceRequested = false;
-  let sessionEnded = false;
-  let selectWired = false;
   let examplesSpawned = false;
-  let disposed = false;
 
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
     unregisterFrameUpdate();
     hud.dispose();
-    arWorldGroup.remove(reticle);
+    reticleHandle.dispose();
     for (const marker of markers) {
       arWorldGroup.remove(marker);
       marker.geometry.dispose();
@@ -182,70 +183,37 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     }
   };
 
-  const unregisterFrameUpdate = registerXrFrameUpdate(
-    ({ frame, referenceSpace, session }) => {
-      // First tracked frame: spawn the example targets around the user's
-      // start pose so the HUD demonstrates itself immediately (ring ahead,
-      // arrows right + behind) — see ar-waypoints.ts and the demo plan's
-      // AR-onboarding revision. The init-time camera pose is not settled
-      // yet, hence first-frame spawning rather than at startArMode.
-      if (!examplesSpawned) {
-        examplesSpawned = true;
-        const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
-        const cameraQuaternion = camera.getWorldQuaternion(
-          new THREE.Quaternion(),
-        );
-        for (const waypoint of buildExampleWaypoints(
-          cameraPosition,
-          cameraQuaternion,
-        )) {
-          addMarkerAtWorld(waypoint);
-        }
-      }
-
-      if (!selectWired) {
-        selectWired = true;
-        session.addEventListener("select", placeWaypoint);
-        session.addEventListener("end", () => {
-          sessionEnded = true;
-          hitTestSource = null;
-          dispose();
-          deps.onEnded?.();
-        });
-      }
-
-      if (!hitTestSourceRequested) {
-        hitTestSourceRequested = true;
-        requestHitTestSource(session)
-          .then((source) => {
-            // Session may have ended while the request was in flight.
-            if (sessionEnded) {
-              source?.cancel();
-              return;
-            }
-            hitTestSource = source;
-          })
-          .catch(() => {
-            hitTestSourceRequested = false; // allow a later-frame retry
-          });
-      }
-
-      if (hitTestSource) {
-        const [hit] = frame.getHitTestResults(hitTestSource);
-        const pose = hit?.getPose(referenceSpace);
-        updateReticle(reticle, pose ? pose.transform.matrix : null);
-      } else {
-        updateReticle(reticle, null);
-      }
-
-      deps.onStatus(
-        formatHudStatus(
-          summarizeHudScene(camera.children, camera.position, getTargets()),
-        ),
+  // The app keeps its own frame callback beside the driver's: it spawns the
+  // example waypoints on the first tracked frame and pushes the HUD status
+  // line every frame — only the hit-test plumbing moved into the framework.
+  const unregisterFrameUpdate = registerXrFrameUpdate(() => {
+    // First tracked frame: spawn the example targets around the user's
+    // start pose so the HUD demonstrates itself immediately (ring ahead,
+    // arrows right + behind) — see ar-waypoints.ts and the demo plan's
+    // AR-onboarding revision. The init-time camera pose is not settled
+    // yet, hence first-frame spawning rather than at startArMode.
+    if (!examplesSpawned) {
+      examplesSpawned = true;
+      const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
+      const cameraQuaternion = camera.getWorldQuaternion(
+        new THREE.Quaternion(),
       );
-    },
-  );
+      for (const waypoint of buildExampleWaypoints(
+        cameraPosition,
+        cameraQuaternion,
+      )) {
+        addMarkerAtWorld(waypoint);
+      }
+    }
 
+    deps.onStatus(
+      formatHudStatus(
+        summarizeHudScene(camera.children, camera.position, getTargets()),
+      ),
+    );
+  });
+
+  bootCompleted = true;
   deps.onStarted?.();
 
   return {
