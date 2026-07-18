@@ -46,8 +46,6 @@ vi.mock("gps-plus-slam-app-framework/visualization", () => ({
   createGpsAnchor: () => ({ dispose: () => undefined }),
   createWayfindingHud: () => ({ dispose: () => undefined }),
   enableArWorldGroupAlignment: () => ({ dispose: () => undefined }),
-  createReticleMesh: () => ({ visible: false }),
-  updateReticle: () => undefined,
 }));
 
 const { getSeams, realSeams } = await import("./seams.js");

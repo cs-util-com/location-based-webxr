@@ -48,7 +48,9 @@
     `requestDeviceOrientationPermission` + `startOrientationWatch` →
     wire `placeButton` + `copyLinkButton` clicks →
     `readCachedAnchor()` → on a **cache-miss** start the reticle loop
-    (`startReticleHitTest({ arWorldGroup })`); on a **cache-hit** spawn the
+    (the `startReticleHitTest` seam — the framework's shared
+    `startHitTestReticle({ arWorldGroup })` driver, no `onSelect`: placement is
+    button-driven); on a **cache-hit** spawn the
     saved anchor (`skipBootstrap` + `hideUntilAligned`) → `dispatchSetup(BOOTED)`.
   - `placeAnchor()` (cache-miss): gated by `decideAnchorPlacement` — a press
     only commits when a surface is under the reticle AND a GPS alignment exists,
@@ -127,8 +129,10 @@
   [guidance-view](guidance-view.ts.md), [placement-view](placement-view.ts.md),
   [marker](marker.ts.md)) and in the framework
   ([ar/capability-checker](../../GpsPlusSlamJs_AppFramework/src/ar/capability-checker.ts.md),
-  which replaced the app-local `capability.ts`). The reticle loop
-  ([reticle-hit-test](reticle-hit-test.ts.md)) is device-only glue. The
+  which replaced the app-local `capability.ts`, and
+  [ar/hit-test-reticle-driver](../../GpsPlusSlamJs_AppFramework/src/ar/hit-test-reticle-driver.ts.md),
+  which replaced the app-local `reticle-hit-test.ts` in the 2026-07-18
+  promotion). The
   placement glue — including the reticle gate (place when a surface is present,
   hint when not) and the failure cleanup that prevents leaked / overlapping
   markers — is covered end-to-end by the Tier 1 Playwright suite

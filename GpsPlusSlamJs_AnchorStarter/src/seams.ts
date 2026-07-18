@@ -42,8 +42,9 @@ import {
   enableArWorldGroupAlignment,
 } from "gps-plus-slam-app-framework/visualization";
 
+import { startHitTestReticle } from "gps-plus-slam-app-framework/ar/hit-test-reticle-driver";
+
 import { createAnchorMarker } from "./marker.js";
-import { startReticleHitTest } from "./reticle-hit-test.js";
 
 /** The framework/marker functions a Playwright e2e fake may override. */
 export interface AnchorStarterSeams {
@@ -70,7 +71,13 @@ export interface AnchorStarterSeams {
   enableArWorldGroupAlignment: typeof enableArWorldGroupAlignment;
   selectTrackingQuality: typeof selectTrackingQuality;
   selectAlignmentMatrix: typeof selectAlignmentMatrix;
-  startReticleHitTest: typeof startReticleHitTest;
+  /**
+   * The framework's shared hit-test reticle driver (`startHitTestReticle`,
+   * promoted 2026-07-18 from this app's former local `reticle-hit-test.ts`).
+   * The seam keeps its historical name so the Playwright fake — which swaps
+   * the whole driver out (no WebXR on desktop) — is unaffected.
+   */
+  startReticleHitTest: typeof startHitTestReticle;
   createAnchorMarker: typeof createAnchorMarker;
 }
 
@@ -97,7 +104,7 @@ export const realSeams: AnchorStarterSeams = {
   enableArWorldGroupAlignment,
   selectTrackingQuality,
   selectAlignmentMatrix,
-  startReticleHitTest,
+  startReticleHitTest: startHitTestReticle,
   createAnchorMarker,
 };
 

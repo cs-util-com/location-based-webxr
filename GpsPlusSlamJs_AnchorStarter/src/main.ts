@@ -66,7 +66,7 @@ import { getSeams } from "./seams.js";
 import { decideAnchorPlacement } from "./placement-decision.js";
 import { coldStartOverrideEnabledFromSearch } from "./cold-start-override-flag.js";
 import { hudTargetsFromMarker, type HudTargetMarker } from "./hud-targets.js";
-import { type ReticleHandle } from "./reticle-hit-test.js";
+import { type HitTestReticleHandle } from "gps-plus-slam-app-framework/ar/hit-test-reticle-driver";
 // --- your content here -----------------------------------------------------
 import { type MarkerOptions } from "./marker.js";
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ type AppStore = ReturnType<typeof createSlamAppStore>;
 let store: AppStore | null = null;
 let setupState: SetupState = initialSetupState;
 let anchor: GpsAnchor | null = null;
-let reticleHandle: ReticleHandle | null = null;
+let reticleHandle: HitTestReticleHandle | null = null;
 let lastGps: LatLongAlt | null = null;
 let lastTrackingReady = false;
 let wayfindingHud: WayfindingHud | null = null;
