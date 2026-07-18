@@ -118,6 +118,15 @@ Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [20
 
 `images.intervalMs` min/step were lowered 1000/500 → **250/250** (2026-07-10) so splat-style object scans can reach 4 Hz — the capture pipeline self-limits via `captureInProgress` if a device cannot sustain that cadence. See `GpsPlusSlamJs_Docs/docs/2026-07-10-0802-splat-orbit-capture-rate-finding.md`.
 
+## Validation mechanism (schema-driven, 2026-07-18)
+
+Every group validator is a thin wrapper over one generic `validateFields(options, defaults, specs)` core driven by a per-field spec table (`kind: 'bool' | 'num' | 'enum' | 'custom'`), replacing ~10 hand-rolled per-field validator bodies (simplify-loop Area 5):
+
+- `bool` — real boolean or the group default; `num` — FINITE number (NaN is `typeof 'number'` and must not survive), optional `round`, clamped to the referenced CONSTRAINTS window; `enum` — membership or default; `custom` — field-specific logic (the occupancy legacy migrations, the nested `images.motionFilter`/`qualityFilter` groups, `blurMetric`'s optional-default fallback).
+- The spec table is **exhaustive over the group type** (`GroupSpec<T>` maps every key): adding a field to an options interface is a compile error until its validation is declared — the hand-rolled validators could silently drop a new field.
+- The output object's keys follow the spec's declaration order, which mirrors the defaults' order — so a validated group's JSON serialization is byte-stable across save→validate round-trips (pinned by the property test).
+- Per-validator behavior is unchanged (the pre-refactor test suite passed unmodified).
+
 ## Validation Constraints
 
 | Setting                                       | Min  | Max   |
@@ -165,6 +174,7 @@ const defaults = resetRecordingOptions();
 
 ## Tests
 
+- `recording-options.property.test.ts` — fast-check properties over junk input in every group's real field names: never throws, every numeric field lands inside its CONSTRAINTS window (integers where required), validation is idempotent, and a validated object survives JSON round-trip + re-validation **byte-identically** (the key-order guarantee).
 - `recording-options.test.ts` — unit tests
   - Validation: clamps out-of-range, handles invalid types
   - Persistence: load/save/reset with localStorage
