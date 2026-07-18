@@ -178,6 +178,65 @@ describe('computeTargetPlacement', () => {
     expect(formatDistanceLabel(placement.distance)).toMatch(/^\d+\.\d m$/);
   });
 
+  // Why this test matters (2026-07-18 field report, wayfinding demo AR
+  // test): this documents that the distance hysteresis is PATH-DEPENDENT —
+  // the off-screen arrow path bypasses the activation threshold. A freshly
+  // placed on-screen target inside the deadband stays hidden no matter how
+  // long you look at it; but LOOKING AWAY promotes it to an edge arrow
+  // (off-screen always shows one, regardless of distance), and looking
+  // back converts that arrow to a ring at only distanceMin — the target
+  // becomes visible WITHOUT ever crossing distanceMax. Each step is an
+  // individually-pinned prototype-parity rule; their composition makes the
+  // activation threshold depend on whether the user glanced away.
+  // Currently correct-by-design (parity); this test is the executable
+  // repro for the pending design decision — invert it if the rule changes.
+  it('activates a never-activated deadband target through the off-screen arrow path (field-reported hysteresis bypass)', () => {
+    const camera = makeCamera();
+    const base = {
+      camera,
+      hudDistance: 2.5,
+      distanceMin: 1.5,
+      distanceMax: 3.0,
+    };
+    // A tapped target 2 m ahead (inside the 1.5/3.0 deadband): hidden while
+    // looked at — for as many frames as you like.
+    const ahead = new THREE.Vector3(0, 0, -2);
+    let placement = computeTargetPlacement({
+      ...base,
+      targetWorldPos: ahead,
+      previousState: 'hidden',
+    });
+    expect(placement.state).toBe('hidden');
+    placement = computeTargetPlacement({
+      ...base,
+      targetWorldPos: ahead,
+      previousState: placement.state,
+    });
+    expect(placement.state).toBe('hidden');
+
+    // Look away: the same 2 m target is now off-screen → edge arrow appears
+    // (off-screen ignores the distance deadband by design).
+    camera.lookAt(0, 0, 1); // turn 180°
+    camera.updateMatrixWorld(true);
+    placement = computeTargetPlacement({
+      ...base,
+      targetWorldPos: ahead,
+      previousState: placement.state,
+    });
+    expect(placement.state).toBe('arrow');
+
+    // Look back: arrow converts to a ring at ≥ distanceMin (1.5 m) — the
+    // 2 m target is now VISIBLE although it never reached distanceMax (3 m).
+    camera.lookAt(0, 0, -1);
+    camera.updateMatrixWorld(true);
+    placement = computeTargetPlacement({
+      ...base,
+      targetWorldPos: ahead,
+      previousState: placement.state,
+    });
+    expect(placement.state).toBe('circle');
+  });
+
   // Why this test matters: a target exactly on the camera plane (w = 0)
   // projects to NaN/±Infinity ndc. The prototype emitted a NaN arrow
   // transform for it; the port deliberately deviates and hides the
