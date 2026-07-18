@@ -266,8 +266,6 @@ const LIVE_FRAME_BLOB_CACHE_MAX_BYTES = 64 * 1024 * 1024; // 64 MiB
 const liveFrameBlobs = new FrameBlobCache({
   maxBytes: LIVE_FRAME_BLOB_CACHE_MAX_BYTES,
 });
-let frameTileVisualizer: FrameTileVisualizer | null = null;
-let unsubscribeFrameTiles: (() => void) | null = null;
 
 // Perf stats overlay (visualization.statsOverlay, OFF by default) — Step 0 of
 // the 2026-07-03 long-session fps plan. Mounted into the #app dom-overlay root
@@ -275,39 +273,21 @@ let unsubscribeFrameTiles: (() => void) | null = null;
 // registered in arSessionScope (same lifecycle as the frame-tile visualizer).
 let statsOverlay: PerfStatsOverlayHandle | null = null;
 
-// Occupancy-grid cubes (2026-06-11 depth occupancy-grid port plan): the
-// grid is derived state fed from `recordDepthSample` actions via
-// `wireOccupancyGridSubscribers`; the instanced-cube visualizer paints it
-// in the live AR scene at ~1 Hz.
-let occupancyGrid: OccupancyGrid | null = null;
-let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
-// Persistent depth-only occluder (ON by default — occupancy.persistentOcclusion).
-// One handle owns the mesh + off-thread worker + sink (occluder-sink.ts, the
-// wiring shared with replay); dispose() releases all three and no-ops the
-// async sink callbacks. Teardown registered in arSessionScope.
-let occluderSinkHandle: OccluderSinkHandle | null = null;
-// Live CPU-depth occluder (off by default — occupancy.liveOcclusion). Lifecycle
-// mirrors `occluderSinkHandle` via arSessionScope; `liveOccluderUnregisterFrame`
-// unhooks the per-frame depth feed alongside the dispose.
-let liveOccluder: DepthOccluder | null = null;
-let liveOccluderUnregisterFrame: (() => void) | null = null;
-let unsubscribeOccupancyGrid: (() => void) | null = null;
-
 // Live loop-closure capture (opt-in, recording-options `loopClosureDebug`).
 // The handler is (re)bound lazily to the CURRENT store inside the per-frame
 // callback — stores swap per recording session, and a rebind also resets the
 // handler's last-pose memory, which is exactly right for a fresh session.
-// Teardown registered in arSessionScope, mirroring the live occluder.
+// Teardown registered in arSessionScope, mirroring the live occluder. The
+// handler stays module-level because the tracking callbacks (onRestarted /
+// onLost / onRecovered) also drive it; the wiring-internal state lives as
+// closure-locals in `wireLoopClosureCapture`.
 let loopClosureHandler: LoopClosureHandler | null = null;
-let loopClosureHandlerBoundStore: unknown = null;
-let loopClosureUnregisterFrame: (() => void) | null = null;
 
 // Live QR recording (opt-in, recording-options `qr`). The thin RAW producer
 // (created in handleEnterAR when enabled) receives camera frames via the
 // `cameraFrame` group passed to initAR; `wireQrRecording` owns the
 // producer + the WS-5 debug-viz subscriber and returns a dispose handle.
 let qrProducer: QrDetectionController | null = null;
-let unsubscribeQrRecording: (() => void) | null = null;
 
 // Off-thread image-quality analyzer for the CURRENT recording (null between
 // recordings / when the gate is off). Recordings start and stop WITHIN one AR
@@ -321,12 +301,6 @@ type ImageQualityAnalyzerFn = NonNullable<
   NonNullable<ArSessionCallbacks['imageCapture']>['qualityAnalyzer']
 >;
 let activeImageQualityAnalyzer: ImageQualityAnalyzerFn | null = null;
-
-// HUD tracking-quality subscription. `subscribeHudToTrackingQuality` returns a
-// dispose function that detaches both the per-store subscription and the
-// store-swap listener; it is registered in arSessionScope so re-entering AR
-// and resetMainState never leak an extra subscriber per cycle.
-let unsubscribeTrackingQuality: (() => void) | null = null;
 
 // Ref-point view wiring (3D spheres + live-map markers) — AR-scoped and
 // store-swap-following via storeRef (round-3 feedback 2026-07-05). Wired at
@@ -535,14 +509,15 @@ function wireLoopClosureCapture(): () => void {
   // avoids two allocations per XR frame while the detector is enabled.
   const scratchPos: [number, number, number] = [0, 0, 0];
   const scratchRot: [number, number, number, number] = [0, 0, 0, 1];
-  loopClosureUnregisterFrame = registerXrFrameUpdate(() => {
+  let boundStore: unknown = null;
+  const unregisterFrame = registerXrFrameUpdate(() => {
     // Lazy (re)bind to the CURRENT store: `store` swaps per recording
     // session, and dispatching into a stale store would silently drop the
     // closures from the recording. A rebind starts with empty last-pose
     // memory — correct for a fresh session/frame.
-    if (loopClosureHandlerBoundStore !== store) {
+    if (boundStore !== store) {
       loopClosureHandler = createLoopClosureHandler(store);
-      loopClosureHandlerBoundStore = store;
+      boundStore = store;
     }
     // `getCurrentArPose()` is nulled by the framework on tracking loss and
     // only repopulated AFTER this callback ran on the recovery frame, so the
@@ -562,10 +537,8 @@ function wireLoopClosureCapture(): () => void {
     loopClosureHandler!.processPose(scratchPos, scratchRot);
   });
   return () => {
-    loopClosureUnregisterFrame?.();
-    loopClosureUnregisterFrame = null;
+    unregisterFrame();
     loopClosureHandler = null;
-    loopClosureHandlerBoundStore = null;
   };
 }
 
@@ -1352,7 +1325,7 @@ async function handleEnterAR(): Promise<void> {
         // maxTiles: LIVE-ONLY FIFO cap (Step 4, 2026-07-03 fps plan) — the
         // replay wiring deliberately omits it so coverage auditing sees the
         // full recorded path.
-        frameTileVisualizer = new FrameTileVisualizer(arWorldGroup, {
+        const frameTileVisualizer = new FrameTileVisualizer(arWorldGroup, {
           maxTiles: recordingOptions.frameTileDisplay.maxTiles,
         });
         // D7-resolution: downscale the live display texture by the
@@ -1360,7 +1333,7 @@ async function handleEnterAR(): Promise<void> {
         // GPU memory. Read once here at Enter-AR alongside the other viz
         // settings; capture quality (images.resolutionDivisor) is untouched.
         const frameTileDivisor = recordingOptions.frameTileDisplay.divisor;
-        unsubscribeFrameTiles = wireFrameTileSubscribers({
+        const unsubscribeFrameTiles = wireFrameTileSubscribers({
           storeRef,
           visualizer: frameTileVisualizer,
           blobSource: (imageFile) =>
@@ -1371,10 +1344,8 @@ async function handleEnterAR(): Promise<void> {
           },
         });
         return () => {
-          unsubscribeFrameTiles?.();
-          unsubscribeFrameTiles = null;
-          frameTileVisualizer?.dispose();
-          frameTileVisualizer = null;
+          unsubscribeFrameTiles();
+          frameTileVisualizer.dispose();
         };
       });
 
@@ -1395,14 +1366,15 @@ async function handleEnterAR(): Promise<void> {
         // solid enough to be shown can no longer be erased by one deeper
         // reading (2026-07-16 synthetic-scene investigation — eliminates
         // silhouette churn and occluded-background destruction).
-        occupancyGrid = new OccupancyGrid({
+        const occupancyGrid = new OccupancyGrid({
           cellSizeM: recordingOptions.occupancy.cellSizeM,
           carveConfidenceThreshold: recordingOptions.occupancy.minConfidence,
         });
         // Publish the single live grid so non-visualizer consumers (the COLMAP
         // ZIP contributor, future floor/nav-mesh builders) can read it without a
-        // one-off reference. Mirrors main.ts's `occupancyGrid` var exactly; the
-        // teardown paths below clear it back to null (COLMAP export plan Q2).
+        // one-off reference — the provider is the ONLY cross-module handle to
+        // the grid; the teardown below clears it back to null (COLMAP export
+        // plan Q2).
         setOccupancyGrid(occupancyGrid);
 
         // The occupancyCubes toggle gates ONLY the rendered debug cubes — the
@@ -1414,6 +1386,7 @@ async function handleEnterAR(): Promise<void> {
           refresh(grid: OccupancyGrid): void;
           clear(): void;
         };
+        let occupancyCubesVisualizer: OccupancyCubesVisualizer | null = null;
         if (viz.occupancyCubes) {
           occupancyCubesVisualizer = new OccupancyCubesVisualizer(
             arWorldGroup,
@@ -1435,6 +1408,7 @@ async function handleEnterAR(): Promise<void> {
         // for live AND replay) snapshots the SAME minConfidence floor the
         // cubes/COLMAP use, so the three consumers can't silently diverge; its
         // handle owns mesh + worker teardown (endARSession disposes it).
+        let occluderSinkHandle: OccluderSinkHandle | null = null;
         let occluderSink: OccluderSink | undefined;
         if (recordingOptions.occupancy.persistentOcclusion) {
           occluderSinkHandle = createOccluderSink(
@@ -1452,7 +1426,7 @@ async function handleEnterAR(): Promise<void> {
           viz.occupancyCubes ||
           (recordingOptions.occupancy.persistentOcclusion &&
             recordingOptions.occupancy.occluderRadiusM > 0);
-        unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
+        const unsubscribeOccupancyGrid = wireOccupancyGridSubscribers({
           storeRef,
           grid: occupancyGrid,
           visualizer: occupancyVisualizerSink,
@@ -1479,13 +1453,9 @@ async function handleEnterAR(): Promise<void> {
         return () => {
           // Stop feeding the grid before releasing the visualizer/occluder it
           // feeds; clear the published grid reference last (COLMAP plan Q2).
-          unsubscribeOccupancyGrid?.();
-          unsubscribeOccupancyGrid = null;
+          unsubscribeOccupancyGrid();
           occupancyCubesVisualizer?.dispose();
-          occupancyCubesVisualizer = null;
           occluderSinkHandle?.dispose();
-          occluderSinkHandle = null;
-          occupancyGrid = null;
           setOccupancyGrid(null);
         };
       });
@@ -1503,11 +1473,10 @@ async function handleEnterAR(): Promise<void> {
         recordingOptions.occupancy.liveOcclusion,
         () => {
           const occluder = new DepthOccluder();
-          liveOccluder = occluder;
           // The mesh's vertex shader ignores transforms, but parenting under
           // arWorldGroup keeps it in the AR render pass alongside the content.
           arWorldGroup.add(occluder.getOcclusionMesh());
-          liveOccluderUnregisterFrame = registerXrFrameUpdate(
+          const unregisterFrame = registerXrFrameUpdate(
             ({ frame, referenceSpace }) => {
               const pose = frame.getViewerPose(referenceSpace);
               const depthInfo = getDepthInfoFromFrame(frame, pose);
@@ -1515,10 +1484,8 @@ async function handleEnterAR(): Promise<void> {
             }
           );
           return () => {
-            liveOccluderUnregisterFrame?.();
-            liveOccluderUnregisterFrame = null;
-            liveOccluder?.dispose();
-            liveOccluder = null;
+            unregisterFrame();
+            occluder.dispose();
           };
         }
       );
@@ -1526,7 +1493,7 @@ async function handleEnterAR(): Promise<void> {
       // Live QR RAW recording + WS-5 debug viz (opt-in). Gated on the operator
       // setting; the camera-frame callback was registered before initAR above.
       arSessionScope.wire('QR recording', recordingOptions.qr.enabled, () => {
-        unsubscribeQrRecording = wireQrRecording({
+        const unsubscribeQrRecording = wireQrRecording({
           storeRef,
           getArWorldGroup,
           qr: recordingOptions.qr,
@@ -1535,8 +1502,7 @@ async function handleEnterAR(): Promise<void> {
           },
         });
         return () => {
-          unsubscribeQrRecording?.();
-          unsubscribeQrRecording = null;
+          unsubscribeQrRecording();
           qrProducer = null;
         };
       });
@@ -1549,14 +1515,14 @@ async function handleEnterAR(): Promise<void> {
     // health. Goes through `storeRef` so the subscription follows every
     // store swap (Start Recording / replay) — see F1 in
     // `docs/2026-05-26-tracking-quality-regression-and-replay-gaps-user-feedback.md`.
-    unsubscribeTrackingQuality = subscribeHudToTrackingQuality({
+    const unsubscribeTrackingQuality = subscribeHudToTrackingQuality({
       storeRef,
       updateHud: updateTrackingQuality,
     });
-    arSessionScope.add('Tracking-quality subscription', () => {
-      unsubscribeTrackingQuality?.();
-      unsubscribeTrackingQuality = null;
-    });
+    arSessionScope.add(
+      'Tracking-quality subscription',
+      unsubscribeTrackingQuality
+    );
 
     // Issue 7 Phase 2: Push AR screen state for back-button navigation
     pushScreenState('ar');

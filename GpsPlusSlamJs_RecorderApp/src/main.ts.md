@@ -66,6 +66,15 @@ This module is the entry point that runs on page load. It also exports the follo
   mesh is gated). The cube visualizer is parented under `arWorldGroup` (NOT
   the scene root): the grid's cells are raw-WebXR coordinates that must ride
   the alignment matrix like the camera (port plan Iter 7 reparenting fix).
+  **Wiring-internal handles are closure-locals** (2026-07-18 simplify-loop
+  Area 6): a resource read only inside its own wire factory + disposer
+  (visualizer instances, unsubscribe functions, frame-loop unregisters) lives
+  as a `const` in that closure — never as a module-level `let` with a
+  `x?.dispose(); x = null` teardown mirror. Module-level `let` handles are
+  reserved for resources genuinely read across functions (`mapOverlay`,
+  `cameraFollower`, `alignmentLerper`, `statsOverlay`, `loopClosureHandler`,
+  `qrProducer`, `refPointViews`, and the per-RECORDING
+  `activeImageQualityAnalyzer`, which is deliberately NOT session-scoped).
 - **Live QR recording + debug viz** (opt-in, `recording-options.qr.enabled`;
   recorder live-QR WS-2/WS-5). When enabled, `handleEnterAR` includes the
   camera-frame group in the `ArSessionCallbacks` struct passed to `initAR`
