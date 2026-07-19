@@ -71,7 +71,20 @@ export interface ScenePalette {
     readonly ground: number;
     readonly intensity: number;
   };
-  readonly directional: { readonly color: number; readonly intensity: number };
+  readonly directional: {
+    readonly color: number;
+    readonly intensity: number;
+    /**
+     * Optional per-palette sun position (golden-hour restyle): dusk
+     * moves the light low and to the LEFT for long sunset shadows.
+     * Absent = the controller's shared default position.
+     */
+    readonly position?: {
+      readonly x: number;
+      readonly y: number;
+      readonly z: number;
+    };
+  };
   /**
    * Sky dome gradient + celestial accents (v3 F3); consumed by
    * `sky-dome.ts`, not by the role traversal (the dome is unlit).
@@ -293,7 +306,13 @@ const DUSK: ScenePalette = {
   // Warm sky fill + teal ground bounce: this pairing is what makes the
   // shadow sides read teal-green while lit faces go copper.
   hemisphere: { sky: 0xffc9a0, ground: 0x24443c, intensity: 1.1 },
-  directional: { color: 0xffb27a, intensity: 1.35 },
+  // Low golden-hour sun from the LEFT → long soft shadows (the only
+  // palette with an explicit light position).
+  directional: {
+    color: 0xffb27a,
+    intensity: 1.35,
+    position: { x: -26, y: 12, z: 6 },
+  },
   // Sunset sky: pale turquoise zenith melting into a peach horizon + low
   // fat sun with clouds (sky-dome.ts places them around the sun).
   sky: {

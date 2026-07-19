@@ -184,6 +184,10 @@ const SCRUB_TAU_MS = 240;
 /** Snap threshold: below this progress delta we stop re-seeking. */
 const SCRUB_EPSILON = 0.0005;
 
+/** Shared sun position for every palette without an explicit
+ * `directional.position` (dusk overrides it for golden-hour shadows). */
+const DEFAULT_LIGHT_POSITION = new Vector3(18, 30, 14);
+
 function defaultCreateRenderer(): RendererLike {
   return new WebGLRenderer({
     antialias: true,
@@ -248,15 +252,20 @@ export function createSceneController(
   });
   const hemisphere = new HemisphereLight();
   const directional = new DirectionalLight();
-  directional.position.set(18, 30, 14);
+  directional.position.copy(DEFAULT_LIGHT_POSITION);
   directional.castShadow = tier.shadows;
   if (tier.shadows) {
     directional.shadow.mapSize.set(1024, 1024);
+    // Blurred PCF edges for the golden-hour look (shadow.radius is
+    // sampled by the default PCFShadowMap path; PCFSoftShadowMap would
+    // IGNORE it). Bounds ±38: dusk's low sun casts long shadows that
+    // would clip the old ±30 box.
+    directional.shadow.radius = 4;
     const shadowCam = directional.shadow.camera;
-    shadowCam.left = -30;
-    shadowCam.right = 30;
-    shadowCam.top = 30;
-    shadowCam.bottom = -30;
+    shadowCam.left = -38;
+    shadowCam.right = 38;
+    shadowCam.top = 38;
+    shadowCam.bottom = -38;
   }
   const sky = buildSkyDome();
   // Ambient particles (v3 F2): scroll mode + high tier only — reduced
@@ -329,6 +338,15 @@ export function createSceneController(
     hemisphere.intensity = palette.hemisphere.intensity;
     directional.color.setHex(palette.directional.color);
     directional.intensity = palette.directional.intensity;
+    // Per-palette sun position (golden-hour restyle): explicitly restore
+    // the default when absent — a sticky dusk position would relight
+    // every other theme from the wrong side after one visit to dusk.
+    const lightPos = palette.directional.position;
+    if (lightPos) {
+      directional.position.set(lightPos.x, lightPos.y, lightPos.z);
+    } else {
+      directional.position.copy(DEFAULT_LIGHT_POSITION);
+    }
     dirty = true;
   }
 

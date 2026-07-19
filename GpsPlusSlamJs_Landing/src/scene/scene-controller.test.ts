@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { Vector3, type Color, type PerspectiveCamera, type Scene } from "three";
+import {
+  Vector3,
+  type Color,
+  type DirectionalLight,
+  type PerspectiveCamera,
+  type Scene,
+} from "three";
 import type { QualityTier } from "../capability";
+import { getPalette } from "./palette";
 import {
   createSceneController,
   type ComposerLike,
@@ -299,6 +306,30 @@ describe("createSceneController", () => {
     controller?.tick(32);
     expect(camera.position.distanceTo(before)).toBeGreaterThan(10);
     expect(renderer.renders).toBeGreaterThan(1);
+  });
+
+  it("applyTheme moves the sun to the palette's light position, default when absent (golden-hour restyle)", () => {
+    // Dusk's low-left sun is what produces the long golden-hour shadows;
+    // every palette without an explicit position must return the light
+    // to the shared default — a sticky dusk position would relight all
+    // other themes from the wrong side after one visit to dusk.
+    const { controller } = makeController();
+    const scene = controller?.stage.camera.parent as Scene;
+    const light = scene.children.find(
+      (child) => (child as DirectionalLight).isDirectionalLight,
+    ) as DirectionalLight;
+    expect(light).toBeDefined();
+    expect(light.position.toArray()).toEqual([18, 30, 14]); // default
+
+    controller?.applyTheme("dusk");
+    const dusk = getPalette("dusk").directional.position;
+    expect(dusk).toBeDefined();
+    expect(light.position.toArray()).toEqual([dusk!.x, dusk!.y, dusk!.z]);
+    expect(dusk!.x).toBeLessThan(0); // low sun from the LEFT
+    expect(dusk!.y).toBeLessThan(20); // low over the horizon
+
+    controller?.applyTheme("light");
+    expect(light.position.toArray()).toEqual([18, 30, 14]); // restored
   });
 
   it("applyTheme swaps the scene background and triggers a re-render", () => {

@@ -59,9 +59,17 @@ renders on demand.
   to the end AND updates the scrubbed camera base (it previously snapped
   back to the stale intro pose).
 - `applyTheme` swaps palette colors, background, fog and light settings in
-  place — no scene rebuild.
+  place — no scene rebuild. Since the golden-hour restyle it also moves
+  the directional light to `palette.directional.position` when set (only
+  dusk: low-left sun for long sunset shadows) and explicitly RESTORES the
+  shared default `(18, 30, 14)` when absent — a sticky dusk position
+  would relight every other theme from the wrong side (test-pinned).
 - Tier application: `setPixelRatio(tier.dprCap)`, `shadowMap.enabled`,
   world geometry detail (`buildClayWorld(tier.geometryDetail)`).
+- Shadows (golden-hour restyle): `shadow.radius = 4` blurs the PCF edges
+  (sampled by the default `PCFShadowMap` path — `PCFSoftShadowMap` would
+  ignore the radius, so the renderer type is deliberately left default);
+  shadow camera bounds are ±38 so dusk's long shadows don't clip.
 - **Post-processing (v3 F1):** when `tier.postprocessing`, frames render
   through a `ComposerLike` INSTEAD of `renderer.render` (never both).
   The composer owns GPU render targets, so it is **disposed on
