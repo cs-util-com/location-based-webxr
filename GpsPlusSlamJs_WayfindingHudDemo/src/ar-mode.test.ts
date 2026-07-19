@@ -60,10 +60,15 @@ import { initAR } from "gps-plus-slam-app-framework/ar/webxr-session";
 import { registerXrFrameUpdate } from "gps-plus-slam-app-framework/ar/xr-frame-loop";
 import { createWayfindingHud } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 
-function makeDeps() {
+function makeDeps(configOverride?: { imageIndicators?: boolean }) {
   return {
     container: {} as HTMLElement,
-    getConfig: () => ({ distanceMin: 1.5, distanceMax: 3, indicatorScale: 1 }),
+    getConfig: () => ({
+      distanceMin: 1.5,
+      distanceMax: 3,
+      indicatorScale: 1,
+      imageIndicators: configOverride?.imageIndicators ?? false,
+    }),
     onStatus: vi.fn((_text: string) => undefined),
     onHint: vi.fn((_message: string) => undefined),
     onError: vi.fn((_message: string) => undefined),
@@ -130,7 +135,22 @@ describe("startArMode", () => {
     expect(options.distanceMax).toBe(3);
     // No explicit-tick override: inside a session the frame loop ticks it.
     expect(options.autoRegisterFrameUpdate).toBeUndefined();
+    // Default config: procedural indicators — no sprite URLs passed.
+    expect(options.arrowSprite).toBeUndefined();
+    expect(options.circleSprite).toBeUndefined();
     expect(options.getTargets()).toEqual([]); // nothing placed yet
+    mode.dispose();
+  });
+
+  // Why this test matters: the image-indicator toggle is the demo's (and the
+  // repo's) only consumer of the framework's sprite-URL path — the wiring
+  // must hand real asset URLs to createWayfindingHud, not booleans or paths
+  // the bundler cannot fingerprint.
+  it("passes the self-made sprite asset URLs when the config enables image indicators", async () => {
+    const mode = await startArMode(makeDeps({ imageIndicators: true }));
+    const options = vi.mocked(createWayfindingHud).mock.calls[0]![0];
+    expect(options.arrowSprite).toMatch(/wayfinding-arrow.*\.png$/);
+    expect(options.circleSprite).toMatch(/wayfinding-ring.*\.png$/);
     mode.dispose();
   });
 

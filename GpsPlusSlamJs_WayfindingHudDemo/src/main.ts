@@ -44,6 +44,7 @@ function main(): void {
     distanceMax: requireEl<HTMLInputElement>("distance-max"),
     indicatorScale: requireEl<HTMLInputElement>("indicator-scale"),
   };
+  const imageIndicators = requireEl<HTMLInputElement>("image-indicators");
   const outputs = {
     distanceMin: requireEl<HTMLOutputElement>("distance-min-value"),
     distanceMax: requireEl<HTMLOutputElement>("distance-max-value"),
@@ -68,6 +69,7 @@ function main(): void {
         distanceMin: Number.parseFloat(sliders.distanceMin.value),
         distanceMax: Number.parseFloat(sliders.distanceMax.value),
         indicatorScale: Number.parseFloat(sliders.indicatorScale.value),
+        imageIndicators: imageIndicators.checked,
       },
       configFallback,
     );
@@ -76,6 +78,7 @@ function main(): void {
     sliders.distanceMin.value = String(config.distanceMin);
     sliders.distanceMax.value = String(config.distanceMax);
     sliders.indicatorScale.value = String(config.indicatorScale);
+    imageIndicators.checked = config.imageIndicators;
     refreshOutputs();
   };
 
@@ -85,6 +88,9 @@ function main(): void {
       activeMode?.refreshHud();
     });
   }
+  imageIndicators.addEventListener("change", () => {
+    activeMode?.refreshHud();
+  });
 
   // Status line: identical text skips the DOM write (called every frame).
   let lastStatus = "";

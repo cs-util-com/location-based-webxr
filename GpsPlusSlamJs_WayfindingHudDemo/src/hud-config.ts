@@ -15,6 +15,8 @@ export interface HudDemoConfig {
   distanceMax: number;
   /** Uniform scale multiplier for the arrow/ring indicators. */
   indicatorScale: number;
+  /** Use the self-made image sprites instead of the procedural cone/ring. */
+  imageIndicators: boolean;
 }
 
 /** Real-world walking distances — the AR tap-to-place mode. */
@@ -22,6 +24,7 @@ export const AR_HUD_CONFIG: HudDemoConfig = {
   distanceMin: 1.5,
   distanceMax: 3.0,
   indicatorScale: 1.0,
+  imageIndicators: false,
 };
 
 /**
@@ -33,6 +36,7 @@ export const SIM_HUD_CONFIG: HudDemoConfig = {
   distanceMin: 8,
   distanceMax: 12,
   indicatorScale: 1.0,
+  imageIndicators: false,
 };
 
 const INDICATOR_SCALE_MIN = 0.1;
@@ -66,5 +70,11 @@ export function sanitizeHudDemoConfig(
       finiteOr(raw.indicatorScale, fallback.indicatorScale),
     ),
   );
-  return { distanceMin, distanceMax, indicatorScale };
+  // Boolean analogue of the finiteness rule: a checkbox read gone wrong
+  // (undefined/garbage) degrades to the mode fallback, never to truthiness.
+  const imageIndicators =
+    typeof raw.imageIndicators === "boolean"
+      ? raw.imageIndicators
+      : fallback.imageIndicators;
+  return { distanceMin, distanceMax, indicatorScale, imageIndicators };
 }

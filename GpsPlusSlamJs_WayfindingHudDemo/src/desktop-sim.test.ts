@@ -24,7 +24,10 @@ import {
 } from "./desktop-sim";
 import { SIM_EYE_HEIGHT, SIM_WAYPOINTS } from "./sim-waypoints";
 
-function makeHarness(configOverride?: { distanceMin: number }) {
+function makeHarness(configOverride?: {
+  distanceMin?: number;
+  imageIndicators?: boolean;
+}) {
   const listeners = new Map<string, EventListener[]>();
   const windowLike = {
     innerWidth: 800,
@@ -89,6 +92,7 @@ function makeHarness(configOverride?: { distanceMin: number }) {
     distanceMin: configOverride?.distanceMin ?? 8,
     distanceMax: 12,
     indicatorScale: 1,
+    imageIndicators: configOverride?.imageIndicators ?? false,
   };
   const statuses: string[] = [];
 
@@ -129,7 +133,21 @@ describe("startDesktopSim", () => {
     const options = h.createHudImpl.mock.calls[0]![0];
     expect(options.autoRegisterFrameUpdate).toBe(false);
     expect(options.distanceMin).toBe(8);
+    // Default config: procedural indicators — no sprite URLs passed.
+    expect(options.arrowSprite).toBeUndefined();
+    expect(options.circleSprite).toBeUndefined();
     expect(options.getTargets().length).toBe(SIM_WAYPOINTS.length);
+    h.sim.dispose();
+  });
+
+  // Why this test matters: the desktop simulator is the e2e-observable host
+  // of the image-indicator toggle — it must hand the fingerprintable asset
+  // URLs to the HUD factory when (and only when) the config asks for them.
+  it("passes the sprite asset URLs to the HUD when the config enables image indicators", () => {
+    const h = makeHarness({ imageIndicators: true });
+    const options = h.createHudImpl.mock.calls[0]![0];
+    expect(options.arrowSprite).toMatch(/wayfinding-arrow.*\.png$/);
+    expect(options.circleSprite).toMatch(/wayfinding-ring.*\.png$/);
     h.sim.dispose();
   });
 
@@ -163,7 +181,12 @@ describe("startDesktopSim", () => {
 
   it("re-creates the HUD from the latest config on refreshHud", () => {
     const h = makeHarness();
-    h.setConfig({ distanceMin: 2, distanceMax: 4, indicatorScale: 0.5 });
+    h.setConfig({
+      distanceMin: 2,
+      distanceMax: 4,
+      indicatorScale: 0.5,
+      imageIndicators: false,
+    });
     h.sim.refreshHud();
     expect(h.hudInstances[0]!.dispose).toHaveBeenCalledTimes(1);
     expect(h.createHudImpl).toHaveBeenCalledTimes(2);
