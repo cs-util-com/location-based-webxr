@@ -138,7 +138,9 @@ describe("applySkyPalette — per-palette accents and gradient", () => {
     applySkyPalette(sky, dusk);
     const clouds = sky.getObjectByName(SKY_NODE.clouds)!;
     for (const blob of clouds.children) {
-      const material = (blob as Mesh).material as { color: Color };
+      // Cloud blobs carry a single color-bearing material; the double cast is
+      // needed because Mesh['material'] is `Material | Material[]`.
+      const material = (blob as Mesh).material as unknown as { color: Color };
       expect(material.color.getHex()).toBe(
         dusk.sky.cloudColor ?? dusk.sky.accentColor,
       );
