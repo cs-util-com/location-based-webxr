@@ -52,6 +52,28 @@ describe("buildStoryTimeline", () => {
     stage = makeStage();
   });
 
+  // Why this test matters: PR #191 review (gemini, "high") claimed the QR
+  // accuracy ring stays invisible because "opacity" is tweened on the Mesh
+  // rather than its material. Empirically the in-project anime.js timeline
+  // DOES drive the material (0.85 at the beat's peak, no dead expando on the
+  // mesh) and the collapse tween eases the group scale — but raw anime on a
+  // bare Mesh behaves differently, so this pin guards the ring's visibility
+  // contract against an anime upgrade ever changing target resolution.
+  it("fades the QR accuracy ring in via its material opacity during the QR beat", () => {
+    const timeline = buildStoryTimeline(stage, () => {});
+    timeline.seek(1600); // between the fade-in (ends 1500) and fade-out (1890)
+    const snapRing = stage.world.getObjectByName(WORLD_NODE.snapRing)!;
+    const ringMesh = snapRing.children[0] as Mesh & { opacity?: number };
+    const material = ringMesh.material as MeshStandardMaterial;
+    // The renderer reads the MATERIAL's opacity — that is what must animate.
+    expect(material.opacity).toBeGreaterThan(0.5);
+    // No dead expando on the mesh (the failure mode the review predicted).
+    expect(ringMesh.opacity).toBeUndefined();
+    // And the ring is mid-collapse (scale tween live at this seek).
+    expect(snapRing.scale.x).toBeLessThan(3);
+    expect(snapRing.scale.x).toBeGreaterThan(0.06);
+  });
+
   it("covers every chapter with the fixed per-chapter duration", () => {
     const timeline = buildStoryTimeline(stage, () => {});
     expect(timeline.duration).toBe(CHAPTER_COUNT * CHAPTER_DURATION_MS);
