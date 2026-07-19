@@ -23,17 +23,51 @@ describe("getPalette", () => {
     }
   });
 
-  it("keeps the color CODING invariant across ALL palettes (round-2 D3)", () => {
-    // GPS/QR = amber family, anchors = brand red, so the copy highlights
+  it("keeps the color CODING invariant across ALL palettes (round-2 D3, golden-hour retune)", () => {
+    // GPS/QR = amber family, anchors = red family, so the copy highlights
     // and the story stay readable no matter which palette is cycled to.
+    // The golden-hour restyle (2026-07-19) retuned DUSK's anchor red to a
+    // deeper crimson that harmonizes with the copper/teal grade — a
+    // deliberate per-theme exception; every other theme keeps the brand
+    // #ef4444 (matching the page chrome's :root --accent).
+    const expectedAccent: Record<string, number> = {
+      light: 0xef4444,
+      dark: 0xef4444,
+      neon: 0xef4444,
+      dusk: 0xe0483c,
+      mono: 0xef4444,
+      terminal: 0xef4444,
+    };
     for (const theme of ALL_THEME_IDS) {
       const roles = getPalette(theme).roles;
-      expect(roles.markerFused.color, `${theme}/fused`).toBe(0xef4444);
-      expect(roles.poi.color, `${theme}/poi`).toBe(0xef4444);
+      expect(roles.markerFused.color, `${theme}/fused`).toBe(
+        expectedAccent[theme],
+      );
+      expect(roles.poi.color, `${theme}/poi`).toBe(expectedAccent[theme]);
+      // Red family guard: any future retune must stay clearly red so the
+      // anchor coding never drifts toward orange/pink.
+      const red = roles.markerFused.color;
+      const [rR, rG, rB] = [(red >> 16) & 0xff, (red >> 8) & 0xff, red & 0xff];
+      expect(rR, `${theme}/fused R`).toBeGreaterThan(190);
+      expect(rR - rG, `${theme}/fused R-G`).toBeGreaterThan(100);
+      expect(rR - rB, `${theme}/fused R-B`).toBeGreaterThan(100);
       // Amber family: red and green channels high, blue low.
       const amber = roles.markerRaw.color;
       expect((amber >> 16) & 0xff, `${theme}/raw R`).toBeGreaterThan(150);
       expect(amber & 0xff, `${theme}/raw B`).toBeLessThan(100);
+    }
+  });
+
+  it("defines the portal-interior gradient block in every palette (golden-hour portal)", () => {
+    // The rebuilt portal's "other world" plane is vertex-colored, so it
+    // cannot ride the role traversal — a theme missing the block would
+    // keep the previous theme's world visible inside the frame.
+    for (const theme of ALL_THEME_IDS) {
+      const interior = getPalette(theme).portalInterior;
+      expect(interior, theme).toBeDefined();
+      expect(typeof interior.top, `${theme}/top`).toBe("number");
+      expect(typeof interior.bottom, `${theme}/bottom`).toBe("number");
+      expect(typeof interior.clouds, `${theme}/clouds`).toBe("number");
     }
   });
 
@@ -66,6 +100,59 @@ describe("getPalette", () => {
       (phone & 0xff) - ((phone >> 16) & 0xff),
       "phone blue-ness",
     ).toBeGreaterThan(40);
+  });
+
+  it("keeps the dusk theme's world objects readable against the background (golden-hour restyle)", () => {
+    // Same lesson as the dark-theme floors (round-4 V3): the new deep
+    // teal-green dusk background must never silently swallow the world.
+    // Floors mirror the dark test, one step gentler for statue (it sits
+    // in warm directional light at dusk rather than in shadow).
+    const wcagChannel = (byte: number): number => {
+      const c = byte / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const luminance = (hex: number): number =>
+      0.2126 * wcagChannel((hex >> 16) & 0xff) +
+      0.7152 * wcagChannel((hex >> 8) & 0xff) +
+      0.0722 * wcagChannel(hex & 0xff);
+    const dusk = getPalette("dusk");
+    const background = luminance(dusk.background);
+    const contrast = (role: PaletteRole): number =>
+      (luminance(dusk.roles[role].color) + 0.05) / (background + 0.05);
+    expect(contrast("skyline"), "skyline").toBeGreaterThanOrEqual(2.0);
+    expect(contrast("path"), "path").toBeGreaterThanOrEqual(2.2);
+    expect(contrast("statue"), "statue").toBeGreaterThanOrEqual(2.5);
+    expect(contrast("phone"), "phone").toBeGreaterThanOrEqual(2.5);
+    const phone = dusk.roles.phone.color;
+    expect(
+      (phone & 0xff) - ((phone >> 16) & 0xff),
+      "phone blue-ness",
+    ).toBeGreaterThan(40);
+  });
+
+  it("pins the dusk teal-and-orange grade mechanically (golden-hour restyle)", () => {
+    // The art direction in one test: lit/horizontal surfaces warm
+    // (copper/orange), vegetation and the portal frame teal-green, and
+    // the portal interior a warm-over-cool sunset gradient. A future
+    // palette tweak that flips any of these flips the whole look.
+    const r = (hex: number): number => (hex >> 16) & 0xff;
+    const g = (hex: number): number => (hex >> 8) & 0xff;
+    const b = (hex: number): number => hex & 0xff;
+    const dusk = getPalette("dusk");
+    for (const warm of ["ground", "grass", "hill", "path"] as const) {
+      expect(r(dusk.roles[warm].color), `${warm} warm`).toBeGreaterThan(
+        b(dusk.roles[warm].color),
+      );
+    }
+    for (const teal of ["foliage", "portal"] as const) {
+      expect(
+        g(dusk.roles[teal].color),
+        `${teal} teal-green`,
+      ).toBeGreaterThanOrEqual(r(dusk.roles[teal].color));
+    }
+    // Interior gradient: bottom (horizon) clearly warmer than top (sky).
+    const { top, bottom } = dusk.portalInterior;
+    expect(r(bottom) - b(bottom)).toBeGreaterThan(r(top) - b(top));
   });
 
   it("gives the dark theme glowing accents (emissive) and the light theme matte clay", () => {
