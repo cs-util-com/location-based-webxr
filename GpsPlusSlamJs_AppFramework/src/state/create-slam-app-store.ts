@@ -34,7 +34,7 @@ import {
   setCompassRotationPriorEnabled,
   setCompassWebXRConsistencyEnabled,
   setCompassExperimentEnabled,
-  setRansacComparisonEnabled,
+  setRobustSolverComparisonEnabled,
   type RootState as LibraryRootState,
 } from 'gps-plus-slam-js';
 import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-js/community-license-key';
@@ -207,14 +207,15 @@ export interface SlamAppStoreOptions<
   enableCompassExperiment?: boolean;
 
   /**
-   * **Field-test flag** — enable the library's plain-RANSAC comparison arm
-   * (`useRansac`; NOT a compass mechanism — position-residual RANSAC,
-   * corpus-rejected as a default, exposed for on-device A/B against the
-   * compass experiment; adds seed-dependent run-to-run variance by nature).
-   * Dispatches `setRansacComparisonEnabled(true)` once `gpsData` exists.
-   * Default `false` ⇒ byte-identical. The action persists into recordings.
+   * **Field-test flag** — enable the library's alternative robust-solver
+   * comparison arm (NOT a compass mechanism — a generic outlier-tolerant
+   * position fit, rejected as a default on the evaluation corpus but exposed
+   * for on-device A/B against the compass experiment; adds run-to-run
+   * variance by nature). Dispatches `setRobustSolverComparisonEnabled(true)`
+   * once `gpsData` exists. Default `false` ⇒ byte-identical. The action
+   * persists into recordings.
    */
-  enableRansacComparison?: boolean;
+  enableRobustSolverComparison?: boolean;
 }
 
 /**
@@ -280,7 +281,7 @@ export function createSlamAppStore<
     enableCompassWebXRConsistency = false,
     // Field-test opt-ins (2026-07-19 enablement plan) — default OFF.
     enableCompassExperiment = false,
-    enableRansacComparison = false,
+    enableRobustSolverComparison = false,
   } = options;
 
   validateLicenseKey(licenseKey);
@@ -359,10 +360,10 @@ export function createSlamAppStore<
       apply: (dispatch) => dispatch(setCompassExperimentEnabled(true)),
     });
   }
-  if (enableRansacComparison) {
+  if (enableRobustSolverComparison) {
     compassOptIns.push({
-      isSet: (s) => s.gpsData?.ransacComparisonEnabled === true,
-      apply: (dispatch) => dispatch(setRansacComparisonEnabled(true)),
+      isSet: (s) => s.gpsData?.robustSolverComparisonEnabled === true,
+      apply: (dispatch) => dispatch(setRobustSolverComparisonEnabled(true)),
     });
   }
 

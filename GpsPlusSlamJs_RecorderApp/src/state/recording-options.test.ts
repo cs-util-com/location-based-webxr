@@ -831,7 +831,7 @@ describe('recording-options', () => {
         rotationPrior: false,
         webXRConsistency: false,
         experiment: false,
-        ransacComparison: false,
+        robustSolverComparison: false,
       });
     });
 
@@ -842,14 +842,14 @@ describe('recording-options', () => {
           rotationPrior: true,
           webXRConsistency: true,
           experiment: true,
-          ransacComparison: true,
+          robustSolverComparison: true,
         })
       ).toEqual({
         coldStartOverride: false,
         rotationPrior: true,
         webXRConsistency: true,
         experiment: true,
-        ransacComparison: true,
+        robustSolverComparison: true,
       });
     });
 
@@ -873,8 +873,8 @@ describe('recording-options', () => {
       ).toBe(false);
       expect(
         validateCompassDebugOptions({
-          ransacComparison: 1 as unknown as boolean,
-        }).ransacComparison
+          robustSolverComparison: 1 as unknown as boolean,
+        }).robustSolverComparison
       ).toBe(false);
     });
 
@@ -887,7 +887,7 @@ describe('recording-options', () => {
         rotationPrior: false,
         webXRConsistency: false,
         experiment: false,
-        ransacComparison: false,
+        robustSolverComparison: false,
       });
       const clone = cloneRecordingOptions(opts);
       expect(clone.compassDebug).not.toBe(opts.compassDebug); // no aliasing

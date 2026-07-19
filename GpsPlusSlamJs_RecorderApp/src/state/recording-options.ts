@@ -108,10 +108,10 @@ export interface CompassDebugOptions {
    */
   experiment: boolean;
   /**
-   * Plain-RANSAC comparison arm (`setRansacComparisonEnabled`) for on-device
+   * Alternative robust-solver comparison arm (`setRobustSolverComparisonEnabled`) for on-device
    * A/B against the experiment — NOT a compass mechanism. Default OFF.
    */
-  ransacComparison: boolean;
+  robustSolverComparison: boolean;
 }
 
 /**
@@ -555,7 +555,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     // 2026-07-19 field-test toggles (enablement plan) — OFF until the
     // operator explicitly opts a session in.
     experiment: false,
-    ransacComparison: false,
+    robustSolverComparison: false,
   },
   loopClosureDebug: {
     // OFF by default: with it ON every AR relocalization jump dispatches
@@ -791,7 +791,7 @@ export function validateCompassDebugOptions(
     rotationPrior: { kind: 'bool' },
     webXRConsistency: { kind: 'bool' },
     experiment: { kind: 'bool' },
-    ransacComparison: { kind: 'bool' },
+    robustSolverComparison: { kind: 'bool' },
   });
 }
 

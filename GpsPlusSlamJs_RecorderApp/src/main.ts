@@ -217,7 +217,7 @@ function createNewStore() {
     enableCompassRotationPrior: compass?.rotationPrior,
     enableCompassWebXRConsistency: compass?.webXRConsistency,
     enableCompassExperiment: compass?.experiment,
-    enableRansacComparison: compass?.ransacComparison,
+    enableRobustSolverComparison: compass?.robustSolverComparison,
   });
 }
 

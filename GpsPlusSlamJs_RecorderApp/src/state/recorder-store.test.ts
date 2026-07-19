@@ -560,7 +560,7 @@ describe('Recorder Store', () => {
       }
     });
 
-    it('forwards the 2026-07-19 field-test opt-ins to the framework store (experiment + RANSAC comparison)', async () => {
+    it('forwards the 2026-07-19 field-test opt-ins to the framework store (experiment + Robust-solver comparison)', async () => {
       // Why: the recorder settings toggles reach the solve only through this
       // forwarding chain (compassDebug → createRecorderStore →
       // createSlamAppStore → recorded gpsData actions). Pin that both new
@@ -570,16 +570,16 @@ describe('Recorder Store', () => {
         storageBackend: new NullStorageBackend(),
         enableDevChecks: false,
         enableCompassExperiment: true,
-        enableRansacComparison: true,
+        enableRobustSolverComparison: true,
       });
       s.dispatch(setZeroPos({ lat: 48.8566, lon: 2.3522 }));
       await new Promise((resolve) => setTimeout(resolve, 0));
       const gpsData = s.getState().gpsData as {
         compassExperimentEnabled?: boolean;
-        ransacComparisonEnabled?: boolean;
+        robustSolverComparisonEnabled?: boolean;
       } | null;
       expect(gpsData?.compassExperimentEnabled).toBe(true);
-      expect(gpsData?.ransacComparisonEnabled).toBe(true);
+      expect(gpsData?.robustSolverComparisonEnabled).toBe(true);
     });
 
     it('should use per-instance action indices, not shared across stores (Bug 10)', () => {

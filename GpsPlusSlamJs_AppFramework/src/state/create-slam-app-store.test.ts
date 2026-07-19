@@ -178,10 +178,11 @@ describe('createSlamAppStore', () => {
   // library's `compassExperimentEnabled` flag (which threads the decided
   // combo: rotation prior + trust tolerance 15° + C′ pair selection — the
   // combo itself is pinned in the LIBRARY's gpsDataSlice tests, not here);
-  // `enableRansacComparison` sets `ransacComparisonEnabled` (plain useRansac
-  // A/B arm). Both follow the recorded-action opt-in pattern: dispatched only
-  // once gpsData exists, default OFF ⇒ byte-identical.
-  describe('enableCompassExperiment + enableRansacComparison (field-test opt-ins)', () => {
+  // `enableRobustSolverComparison` sets `robustSolverComparisonEnabled` (the
+  // alternative robust-solver A/B arm). Both follow the recorded-action
+  // opt-in pattern: dispatched only once gpsData exists, default OFF ⇒
+  // byte-identical.
+  describe('enableCompassExperiment + enableRobustSolverComparison (field-test opt-ins)', () => {
     it('enables the compass experiment once gpsData exists (after the first setZeroPos)', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,
@@ -193,14 +194,16 @@ describe('createSlamAppStore', () => {
       expect(store.getState().gpsData?.compassExperimentEnabled).toBe(true);
     });
 
-    it('enables the RANSAC comparison once gpsData exists', async () => {
+    it('enables the Robust-solver comparison once gpsData exists', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,
-        enableRansacComparison: true,
+        enableRobustSolverComparison: true,
       });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
-      expect(store.getState().gpsData?.ransacComparisonEnabled).toBe(true);
+      expect(store.getState().gpsData?.robustSolverComparisonEnabled).toBe(
+        true
+      );
     });
 
     it('leaves both off by default (byte-identical)', async () => {
@@ -209,21 +212,21 @@ describe('createSlamAppStore', () => {
       await Promise.resolve();
       const s = store.getState().gpsData;
       expect(s?.compassExperimentEnabled).toBeFalsy();
-      expect(s?.ransacComparisonEnabled).toBeFalsy();
+      expect(s?.robustSolverComparisonEnabled).toBeFalsy();
     });
 
     it('both experiment opt-ins combine with the default Stage-0 override', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassExperiment: true,
-        enableRansacComparison: true,
+        enableRobustSolverComparison: true,
       });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
       const s = store.getState().gpsData;
       expect(s?.coldStartOverrideEnabled).toBe(true); // default-on Stage 0
       expect(s?.compassExperimentEnabled).toBe(true);
-      expect(s?.ransacComparisonEnabled).toBe(true);
+      expect(s?.robustSolverComparisonEnabled).toBe(true);
     });
   });
 

@@ -121,11 +121,11 @@ export interface RecorderStoreOptions {
   /**
    * 2026-07-19 field-test opt-ins (enablement plan): the compass experiment
    * combo (rotation prior + trust tolerance 15° + C′ pair selection) and the
-   * plain-RANSAC comparison arm. Sourced from
-   * `RecordingOptions.compassDebug.{experiment,ransacComparison}`; default OFF.
+   * alternative robust-solver comparison arm. Sourced from
+   * `RecordingOptions.compassDebug.{experiment,robustSolverComparison}`; default OFF.
    */
   enableCompassExperiment?: boolean;
-  enableRansacComparison?: boolean;
+  enableRobustSolverComparison?: boolean;
 }
 
 /**
@@ -147,7 +147,7 @@ export function createRecorderStore(
     enableCompassRotationPrior: options.enableCompassRotationPrior,
     enableCompassWebXRConsistency: options.enableCompassWebXRConsistency,
     enableCompassExperiment: options.enableCompassExperiment,
-    enableRansacComparison: options.enableRansacComparison,
+    enableRobustSolverComparison: options.enableRobustSolverComparison,
     // Persist the recorder-owned refPoints slice and the framework qrDetected
     // slice. Derived from each slice's own action type (never a literal) so a
     // rename can't silently drop data from recordings — see the 2026-05-28
