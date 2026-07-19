@@ -36,8 +36,12 @@ test.describe("Physics Demo Smoke", () => {
 
     // The always-on perf panel (FPS/MS/MB) mounts unconditionally — Stats.js
     // renders one <canvas> per metric (3 with Chrome's performance.memory).
-    await expect(page.locator(".perf-stats")).toBeAttached();
-    await expect(page.locator(".perf-stats canvas").first()).toBeAttached();
+    // `.perf-stats-overlay` is the framework overlay's container class since the
+    // c1f263b consolidation (the demo's local `.perf-stats` copy was deleted).
+    await expect(page.locator(".perf-stats-overlay")).toBeAttached();
+    await expect(
+      page.locator(".perf-stats-overlay canvas").first(),
+    ).toBeAttached();
 
     expect(errors).toEqual([]);
   });
