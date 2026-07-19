@@ -36,6 +36,7 @@ export const SKY_NODE = {
   sun: "sky-sun",
   horizonBand: "sky-horizon-band",
   starGrid: "sky-star-grid",
+  clouds: "sky-clouds",
 } as const;
 
 /** Dome radius: outside the world (30) + skyline (~48), inside camera far (220). */
@@ -165,19 +166,56 @@ function buildStarGrid(): Points {
 }
 
 function buildSun(): Mesh {
-  const sun = new Mesh(new SphereGeometry(9, 20, 14), unlit());
+  // Golden-hour restyle: fatter and lower — a big setting sun kissing
+  // the horizon, roughly where the dive camera faces.
+  const sun = new Mesh(new SphereGeometry(10, 20, 14), unlit());
   sun.name = SKY_NODE.sun;
-  // Low over the horizon, roughly where the dive camera faces.
-  sun.position.set(30, 14, -128);
+  sun.position.set(30, 10, -128);
   sun.renderOrder = -9;
   return sun;
 }
 
+/**
+ * Low-poly cloud bank (golden-hour restyle): a handful of flattened
+ * unlit blobs in the sun's azimuth sector, LCG-placed (deterministic —
+ * the shoot-script screenshot review depends on identical builds).
+ * Tinted via `sky.cloudColor` (fallback `accentColor`); visible only
+ * with the "sun" accent set, i.e. dusk.
+ */
+function buildClouds(): Group {
+  const clouds = namedGroup(SKY_NODE.clouds);
+  const rng = createRng(20260719);
+  const sunAzimuth = Math.atan2(-128, 30); // same sky sector as the sun
+  const count = 6;
+  for (let i = 0; i < count; i += 1) {
+    const azimuth = sunAzimuth + (rng() - 0.5) * 1.1;
+    const elevation = 0.12 + rng() * 0.18;
+    const r = SKY_RADIUS * 0.94;
+    const material = unlit();
+    material.depthWrite = false;
+    const blob = new Mesh(new SphereGeometry(1, 8, 6), material);
+    blob.position.set(
+      Math.cos(azimuth) * Math.cos(elevation) * r,
+      Math.sin(elevation) * r,
+      Math.sin(azimuth) * Math.cos(elevation) * r,
+    );
+    const size = 7 + rng() * 5;
+    blob.scale.set(size, size * 0.28, size * 0.55);
+    blob.rotation.y = azimuth + (rng() - 0.5) * 0.6;
+    blob.renderOrder = -9;
+    blob.frustumCulled = false;
+    clouds.add(blob);
+  }
+  return clouds;
+}
+
 function buildHorizonBand(): Mesh {
+  // Golden-hour restyle: taller and stronger — the warm sunset glow band
+  // is most of the "horizon on fire" impression at dusk.
   const geometry = new CylinderGeometry(
     SKY_RADIUS * 0.97,
     SKY_RADIUS * 0.97,
-    9,
+    12,
     48,
     1,
     true,
@@ -186,7 +224,7 @@ function buildHorizonBand(): Mesh {
     side: BackSide,
     fog: false,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.5,
     depthWrite: false,
   });
   const band = new Mesh(geometry, material);
@@ -206,6 +244,7 @@ export function buildSkyDome(): Group {
     buildSun(),
     buildHorizonBand(),
     buildStarGrid(),
+    buildClouds(),
   ];
   for (const accent of accents) {
     accent.visible = false;
@@ -217,7 +256,7 @@ export function buildSkyDome(): Group {
 function setAccentVisibility(sky: Group, palette: ScenePalette): void {
   const visibleByKind: Record<string, readonly string[]> = {
     "moon-stars": [SKY_NODE.moon, SKY_NODE.stars],
-    sun: [SKY_NODE.sun, SKY_NODE.horizonBand],
+    sun: [SKY_NODE.sun, SKY_NODE.horizonBand, SKY_NODE.clouds],
     "star-grid": [SKY_NODE.starGrid],
     none: [],
   };
@@ -228,6 +267,7 @@ function setAccentVisibility(sky: Group, palette: ScenePalette): void {
     SKY_NODE.sun,
     SKY_NODE.horizonBand,
     SKY_NODE.starGrid,
+    SKY_NODE.clouds,
   ]) {
     const node = sky.getObjectByName(name);
     if (node) {
@@ -270,6 +310,16 @@ function recolorAccents(sky: Group, palette: ScenePalette): void {
       material.color.setHex(palette.sky.accentColor);
     }
   }
+  // Cloud blobs get their own tint (peach, not the sun's gold) so the
+  // bank reads as clouds instead of orange smudges.
+  const clouds = sky.getObjectByName(SKY_NODE.clouds);
+  const cloudColor = palette.sky.cloudColor ?? palette.sky.accentColor;
+  clouds?.traverse((blob) => {
+    const material = (blob as Mesh).material;
+    if (material instanceof MeshBasicMaterial) {
+      material.color.setHex(cloudColor);
+    }
+  });
 }
 
 /**

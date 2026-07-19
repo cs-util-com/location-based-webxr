@@ -42,6 +42,7 @@ describe("buildSkyDome — structure", () => {
       SKY_NODE.sun,
       SKY_NODE.horizonBand,
       SKY_NODE.starGrid,
+      SKY_NODE.clouds,
     ]) {
       expect(sky.getObjectByName(name), name).toBeDefined();
     }
@@ -51,6 +52,7 @@ describe("buildSkyDome — structure", () => {
       SKY_NODE.sun,
       SKY_NODE.horizonBand,
       SKY_NODE.starGrid,
+      SKY_NODE.clouds,
     ]) {
       expect(sky.getObjectByName(name)?.visible, name).toBe(false);
     }
@@ -84,12 +86,27 @@ describe("buildSkyDome — structure", () => {
     ).geometry.getAttribute("position");
     expect(starsA.array).toEqual(starsB.array);
   });
+
+  it("is deterministic: two builds produce identical cloud banks (golden-hour restyle)", () => {
+    // The dusk clouds are LCG-placed like the stars — a nondeterministic
+    // bank would defeat the shoot-script screenshot review.
+    const bank = (sky: ReturnType<typeof buildSkyDome>) =>
+      sky
+        .getObjectByName(SKY_NODE.clouds)!
+        .children.map((c) =>
+          [c.position.toArray(), c.scale.toArray(), c.rotation.y].flat(),
+        );
+    const a = bank(buildSkyDome());
+    const b = bank(buildSkyDome());
+    expect(a.length).toBeGreaterThanOrEqual(5);
+    expect(a).toEqual(b);
+  });
 });
 
 describe("applySkyPalette — per-palette accents and gradient", () => {
   const CASES = [
     ["dark", [SKY_NODE.moon, SKY_NODE.stars]],
-    ["dusk", [SKY_NODE.sun, SKY_NODE.horizonBand]],
+    ["dusk", [SKY_NODE.sun, SKY_NODE.horizonBand, SKY_NODE.clouds]],
     ["neon", [SKY_NODE.starGrid]],
     ["light", []],
     ["mono", []],
@@ -104,10 +121,26 @@ describe("applySkyPalette — per-palette accents and gradient", () => {
       SKY_NODE.sun,
       SKY_NODE.horizonBand,
       SKY_NODE.starGrid,
+      SKY_NODE.clouds,
     ];
     for (const name of allAccents) {
       expect(sky.getObjectByName(name)?.visible, `${theme}:${name}`).toBe(
         (visible as readonly string[]).includes(name),
+      );
+    }
+  });
+
+  it("tints the cloud bank with the palette's cloudColor (fallback: accentColor)", () => {
+    // The peach clouds are the reference image's sky signature; a bank
+    // stuck on the sun's accent color would read as orange smudges.
+    const sky = buildSkyDome();
+    const dusk = getPalette("dusk");
+    applySkyPalette(sky, dusk);
+    const clouds = sky.getObjectByName(SKY_NODE.clouds)!;
+    for (const blob of clouds.children) {
+      const material = (blob as Mesh).material as { color: Color };
+      expect(material.color.getHex()).toBe(
+        dusk.sky.cloudColor ?? dusk.sky.accentColor,
       );
     }
   });
