@@ -302,7 +302,11 @@ const NEON: ScenePalette = {
 // objects melt toward the peach horizon instead of into the ground color.
 const DUSK: ScenePalette = {
   background: 0x142a27,
-  fog: { color: 0xc59f78, near: 32, far: 88 },
+  // near 40 / far 110 (not the shared 40/90): the works-anywhere camera
+  // sits far out — at far 88 the whole world melted into the haze
+  // (screenshot round 1); 110 keeps the golden wash at the horizon while
+  // the mid-ground stays readable.
+  fog: { color: 0xc59f78, near: 40, far: 110 },
   // Warm sky fill + teal ground bounce: this pairing is what makes the
   // shadow sides read teal-green while lit faces go copper.
   hemisphere: { sky: 0xffc9a0, ground: 0x24443c, intensity: 1.1 },

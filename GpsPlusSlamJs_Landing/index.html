@@ -159,6 +159,9 @@
         --link: #9cc8e8;
         --veil: #142a27;
         --grain-opacity: 0.055;
+        --brand-shadow:
+          0 0 2px rgb(16 34 31 / 95%), 0 0 5px rgb(16 34 31 / 85%),
+          0 1px 14px rgb(16 34 31 / 65%);
 
         color-scheme: dark;
       }
@@ -315,6 +318,11 @@
         letter-spacing: 0.02em;
         font-size: 0.95rem;
         color: var(--muted);
+
+        /* Per-theme legibility scrim: dusk's cream text sits over the
+           BRIGHT peach sky once the veil lifts (the only dark-text-free
+           theme with a bright sky), so it sets a soft dark glow. */
+        text-shadow: var(--brand-shadow, none);
       }
       #theme-toggle {
         pointer-events: auto;
