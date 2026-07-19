@@ -78,10 +78,11 @@ the copy.
 ## Invariants & assumptions
 
 - **FOUC guard:** the inline `<script>` in `<head>` applies the persisted
-  (or OS-preferred) theme to `<html data-theme>` before first paint. Its
-  resolution rule MUST stay in sync with `src/theme.ts`
-  (`resolveInitialTheme`) — same storage key `gps-landing-theme`, same
-  valid values, same fallback.
+  theme (fallback: unconditional `dusk`, the golden-hour restyle's
+  first-visit default — no `prefers-color-scheme` branch) to
+  `<html data-theme>` before first paint. Its resolution rule MUST stay
+  in sync with `src/theme.ts` (`resolveInitialTheme`) — same storage key
+  `gps-landing-theme`, same valid values, same fallback.
 - **Theming:** all chrome colors go through CSS custom properties defined
   per `html[data-theme='dark'|'light']`; the accent `#ef4444` matches the
   3D palette's fused-anchor color.

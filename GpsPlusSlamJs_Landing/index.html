@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dusk">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -35,20 +35,16 @@
       type="image/svg+xml"
     />
     <script>
-      // FOUC guard: apply the persisted (or OS-preferred) theme before first
-      // paint. src/theme.ts re-derives the same value with the same rules and
-      // stays the source of truth after boot.
+      // FOUC guard: apply the persisted theme (default: dusk — the
+      // golden-hour restyle's unconditional first-visit look, no
+      // prefers-color-scheme branch) before first paint. src/theme.ts
+      // re-derives the same value with the same rules and stays the
+      // source of truth after boot.
       (function () {
         try {
           var valid = ["light", "dark", "neon", "dusk", "mono", "terminal"];
           var stored = localStorage.getItem("gps-landing-theme");
-          var theme =
-            valid.indexOf(stored) >= 0
-              ? stored
-              : window.matchMedia &&
-                  window.matchMedia("(prefers-color-scheme: light)").matches
-                ? "light"
-                : "dark";
+          var theme = valid.indexOf(stored) >= 0 ? stored : "dusk";
           document.documentElement.dataset.theme = theme;
         } catch (_e) {
           /* keep the html default */

@@ -27,7 +27,12 @@ import { CHAPTERS, sectionElementId } from "./chapters";
 import { heroVeilOpacity } from "./hero-veil";
 import { computeScrollState, type SectionMetrics } from "./scroll-story";
 import { scrollColorStrength } from "./scroll-color";
-import { createThemeController, SECRET_THEME_ID, type Theme } from "./theme";
+import {
+  createThemeController,
+  resolveInitialTheme,
+  SECRET_THEME_ID,
+  type Theme,
+} from "./theme";
 import { createSecretUnlock } from "./secret-palette";
 import { showEggToast } from "./egg-toast";
 import { isGenuineClick } from "./scene/egg-picker";
@@ -243,8 +248,10 @@ function boot(): void {
       tier,
       // The FOUC guard already stamped the resolved theme on <html>; the
       // theme controller below re-applies it right after construction.
-      initialTheme:
-        document.documentElement.dataset.theme === "light" ? "light" : "dark",
+      // resolveInitialTheme validates the attribute (garbage → dusk).
+      initialTheme: resolveInitialTheme(
+        document.documentElement.dataset.theme ?? null,
+      ),
       onContextLost: () => {
         // GPU gave up mid-visit: degrade to the static DOM floor rather
         // than freezing the story on a dead canvas.
@@ -274,8 +281,6 @@ function boot(): void {
   });
   const themeController = createThemeController({
     storage: safeLocalStorage(),
-    prefersLight: () =>
-      window.matchMedia("(prefers-color-scheme: light)").matches,
     applyTheme,
     isSecretUnlocked: () => secretUnlock.isUnlocked(),
   });
