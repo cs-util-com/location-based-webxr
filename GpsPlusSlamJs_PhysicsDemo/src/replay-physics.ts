@@ -49,6 +49,12 @@ export interface ReplayPhysicsFactories {
   readonly createPhysicsRuntime: typeof createPhysicsRuntime;
 }
 
+/**
+ * Max pointer travel (px) between pointerdown and pointerup for the gesture to
+ * count as a click-to-shoot; anything farther is an OrbitControls drag.
+ */
+const DRAG_THRESHOLD_PX = 5;
+
 const defaultScheduler: FrameScheduler = {
   request: (cb) => requestAnimationFrame(cb),
   cancel: (handle) => cancelAnimationFrame(handle),
@@ -117,10 +123,27 @@ export function startReplayPhysics(
   frameHandle = scheduler.request(tick);
 
   // Placement (desktop): click → shoot a ball FROM the camera toward where you
-  // clicked, so it flies out, hits the reconstructed mesh and bounces.
+  // clicked, so it flies out, hits the reconstructed mesh and bounces. The
+  // canvas is shared with the replay scene's OrbitControls, so the shot fires
+  // on pointerUP and only when the pointer stayed within DRAG_THRESHOLD_PX of
+  // its pointerdown — a camera-orbit drag must not spawn a ball (PR #198
+  // review, gemini-code-assist).
   const canvas = scene.renderer.domElement;
   const raycaster = new THREE.Raycaster();
+  let pointerIsDown = false;
+  let downX = 0;
+  let downY = 0;
   const onPointerDown = (e: PointerEvent): void => {
+    pointerIsDown = true;
+    downX = e.clientX;
+    downY = e.clientY;
+  };
+  const onPointerUp = (e: PointerEvent): void => {
+    if (!pointerIsDown) return;
+    pointerIsDown = false;
+    const dx = e.clientX - downX;
+    const dy = e.clientY - downY;
+    if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
     const ndc = pointerToNdc(
       e.clientX,
       e.clientY,
@@ -134,6 +157,7 @@ export function startReplayPhysics(
     );
   };
   canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointerup", onPointerUp);
 
   let disposed = false;
   return (): void => {
@@ -142,6 +166,7 @@ export function startReplayPhysics(
     active = false;
     scheduler.cancel(frameHandle);
     canvas.removeEventListener("pointerdown", onPointerDown);
+    canvas.removeEventListener("pointerup", onPointerUp);
     controls.meshStyleSelect.removeEventListener("change", onMeshStyleChange);
     controls.meshShaderSelect.removeEventListener("change", onMeshShaderChange);
     runtime.dispose();

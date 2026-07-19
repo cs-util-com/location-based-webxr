@@ -157,6 +157,10 @@ describe("startReplayPhysics", () => {
       "pointerdown",
       expect.any(Function),
     );
+    expect(h.canvas.removeEventListener).toHaveBeenCalledWith(
+      "pointerup",
+      expect.any(Function),
+    );
     expect(h.meshStyleSelect.removeEventListener).toHaveBeenCalledWith(
       "change",
       expect.any(Function),
@@ -175,12 +179,51 @@ describe("startReplayPhysics", () => {
     const h = harness();
     startReplayPhysics(h.session, h.controls, h.scheduler, h.factories);
 
-    const pointerHandler = h.canvas.addEventListener.mock.calls.find(
+    const downHandler = h.canvas.addEventListener.mock.calls.find(
       (c) => c[0] === "pointerdown",
     )?.[1] as (e: { clientX: number; clientY: number }) => void;
-    expect(pointerHandler).toBeTypeOf("function");
+    const upHandler = h.canvas.addEventListener.mock.calls.find(
+      (c) => c[0] === "pointerup",
+    )?.[1] as (e: { clientX: number; clientY: number }) => void;
+    expect(downHandler).toBeTypeOf("function");
+    expect(upHandler).toBeTypeOf("function");
 
-    pointerHandler({ clientX: 50, clientY: 50 });
+    // The shot fires on release, not press — a press alone must not spawn
+    // (it may be the start of an OrbitControls drag, see the drag test).
+    downHandler({ clientX: 50, clientY: 50 });
+    expect(h.runtime.spawnBallWithVelocity).not.toHaveBeenCalled();
+    upHandler({ clientX: 50, clientY: 50 });
+    expect(h.runtime.spawnBallWithVelocity).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: the replay canvas is shared with OrbitControls
+  // (click-drag orbit is the framework replay scene's default camera mode), so
+  // shooting on bare pointerdown fired an unwanted ball on EVERY camera drag
+  // (PR #198 review, gemini-code-assist). A shot must only fire for a
+  // stationary click: pointerup within the drag threshold of its pointerdown.
+  it("an orbit drag (pointerdown, displaced pointerup) does not shoot", () => {
+    const h = harness();
+    startReplayPhysics(h.session, h.controls, h.scheduler, h.factories);
+
+    const downHandler = h.canvas.addEventListener.mock.calls.find(
+      (c) => c[0] === "pointerdown",
+    )?.[1] as (e: { clientX: number; clientY: number }) => void;
+    const upHandler = h.canvas.addEventListener.mock.calls.find(
+      (c) => c[0] === "pointerup",
+    )?.[1] as (e: { clientX: number; clientY: number }) => void;
+
+    // Drag: down at (50,50), released 30 px away — an orbit gesture, no shot.
+    downHandler({ clientX: 50, clientY: 50 });
+    upHandler({ clientX: 80, clientY: 50 });
+    expect(h.runtime.spawnBallWithVelocity).not.toHaveBeenCalled();
+
+    // A subsequent clean click still shoots (drag state fully reset).
+    downHandler({ clientX: 50, clientY: 50 });
+    upHandler({ clientX: 52, clientY: 51 });
+    expect(h.runtime.spawnBallWithVelocity).toHaveBeenCalledTimes(1);
+
+    // A stray pointerup with no preceding pointerdown never shoots.
+    upHandler({ clientX: 52, clientY: 51 });
     expect(h.runtime.spawnBallWithVelocity).toHaveBeenCalledTimes(1);
   });
 

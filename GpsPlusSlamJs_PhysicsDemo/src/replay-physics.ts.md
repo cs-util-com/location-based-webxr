@@ -36,6 +36,11 @@ createPhysicsRuntime }` (defaults to the real ones); the seam that keeps the
 - `pointerToNdc` is deep-imported from
   `gps-plus-slam-app-framework/visualization/pointer-picking` (not the `visualization`
   barrel) so the node-env unit test does not pull the leaflet-bound map exports.
+- **Click vs. orbit drag (PR #198 review):** the canvas is shared with the
+  replay scene's OrbitControls, so the shot fires on **pointerup**, and only
+  when the pointer travelled ≤ `DRAG_THRESHOLD_PX` (5 px) since its
+  pointerdown — a camera-orbit drag never spawns a ball. A stray pointerup
+  without a preceding pointerdown is ignored.
 
 ## Examples
 
@@ -54,5 +59,7 @@ dispose();
 
 - `replay-physics.test.ts` — steps + re-arms each active frame; the disposer stops
   the loop (straggler frame is a no-op), frees runtime + occupancy view, and
-  removes every listener, idempotently; click-to-shoot fires a ball; the dropdowns
-  drive the occupancy view. Factories + scheduler injected → no WebGL/Rapier.
+  removes every listener, idempotently; click-to-shoot fires a ball on pointerup
+  (never on bare pointerdown); an orbit drag (displaced pointerup) does not
+  shoot; the dropdowns drive the occupancy view. Factories + scheduler
+  injected → no WebGL/Rapier.
