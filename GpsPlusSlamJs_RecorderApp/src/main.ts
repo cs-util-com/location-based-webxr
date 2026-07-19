@@ -216,6 +216,8 @@ function createNewStore() {
     enableCompassColdStartOverride: compass?.coldStartOverride,
     enableCompassRotationPrior: compass?.rotationPrior,
     enableCompassWebXRConsistency: compass?.webXRConsistency,
+    enableCompassExperiment: compass?.experiment,
+    enableRansacComparison: compass?.ransacComparison,
   });
 }
 

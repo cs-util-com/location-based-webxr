@@ -100,6 +100,18 @@ export interface CompassDebugOptions {
   rotationPrior: boolean;
   /** GPS-free compass↔WebXR consistency gate (`setCompassWebXRConsistencyEnabled`). */
   webXRConsistency: boolean;
+  /**
+   * 2026-07-19 field-test combo (`setCompassExperimentEnabled`): rotation
+   * prior + trust tolerance 15° + C′ compass-guided pair selection. The combo
+   * lives in the library; this is a single boolean. Default OFF. See the
+   * private repo's compass-experiment recorder enablement plan.
+   */
+  experiment: boolean;
+  /**
+   * Plain-RANSAC comparison arm (`setRansacComparisonEnabled`) for on-device
+   * A/B against the experiment — NOT a compass mechanism. Default OFF.
+   */
+  ransacComparison: boolean;
 }
 
 /**
@@ -540,6 +552,10 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     coldStartOverride: true,
     rotationPrior: false,
     webXRConsistency: false,
+    // 2026-07-19 field-test toggles (enablement plan) — OFF until the
+    // operator explicitly opts a session in.
+    experiment: false,
+    ransacComparison: false,
   },
   loopClosureDebug: {
     // OFF by default: with it ON every AR relocalization jump dispatches
@@ -774,6 +790,8 @@ export function validateCompassDebugOptions(
     coldStartOverride: { kind: 'bool' },
     rotationPrior: { kind: 'bool' },
     webXRConsistency: { kind: 'bool' },
+    experiment: { kind: 'bool' },
+    ransacComparison: { kind: 'bool' },
   });
 }
 

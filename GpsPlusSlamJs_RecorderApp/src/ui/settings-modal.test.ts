@@ -1231,6 +1231,10 @@ describe('settings-modal', () => {
       ['compass-cold-start-override', 'coldStartOverride'],
       ['compass-rotation-prior', 'rotationPrior'],
       ['compass-webxr-consistency', 'webXRConsistency'],
+      // 2026-07-19 field-test toggles (enablement plan): the experiment combo
+      // (prior + tolerance 15° + C′) and the plain-RANSAC comparison arm.
+      ['compass-experiment', 'experiment'],
+      ['compass-ransac-comparison', 'ransacComparison'],
     ] as const;
 
     const COMPASS_DEFAULT_CHECKED: Record<
@@ -1240,6 +1244,8 @@ describe('settings-modal', () => {
       coldStartOverride: true,
       rotationPrior: false,
       webXRConsistency: false,
+      experiment: false,
+      ransacComparison: false,
     };
 
     it('default checkbox states match the per-flag defaults (Stage 0 on, others off)', () => {

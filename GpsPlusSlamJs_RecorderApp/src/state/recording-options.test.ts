@@ -830,6 +830,8 @@ describe('recording-options', () => {
         coldStartOverride: true,
         rotationPrior: false,
         webXRConsistency: false,
+        experiment: false,
+        ransacComparison: false,
       });
     });
 
@@ -839,17 +841,22 @@ describe('recording-options', () => {
           coldStartOverride: false,
           rotationPrior: true,
           webXRConsistency: true,
+          experiment: true,
+          ransacComparison: true,
         })
       ).toEqual({
         coldStartOverride: false,
         rotationPrior: true,
         webXRConsistency: true,
+        experiment: true,
+        ransacComparison: true,
       });
     });
 
     it('falls back to each field default for non-boolean values', () => {
       // Stage 0 falls back to its default-ON; the experimental flags fall back
-      // OFF — a garbage persisted value never silently enables Stage C / gate.
+      // OFF — a garbage persisted value never silently enables Stage C / gate /
+      // the 2026-07-19 field-test experiments.
       expect(
         validateCompassDebugOptions({
           coldStartOverride: 'no' as unknown as boolean,
@@ -858,6 +865,16 @@ describe('recording-options', () => {
       expect(
         validateCompassDebugOptions({ rotationPrior: 1 as unknown as boolean })
           .rotationPrior
+      ).toBe(false);
+      expect(
+        validateCompassDebugOptions({
+          experiment: 'yes' as unknown as boolean,
+        }).experiment
+      ).toBe(false);
+      expect(
+        validateCompassDebugOptions({
+          ransacComparison: 1 as unknown as boolean,
+        }).ransacComparison
       ).toBe(false);
     });
 
@@ -869,6 +886,8 @@ describe('recording-options', () => {
         coldStartOverride: true,
         rotationPrior: false,
         webXRConsistency: false,
+        experiment: false,
+        ransacComparison: false,
       });
       const clone = cloneRecordingOptions(opts);
       expect(clone.compassDebug).not.toBe(opts.compassDebug); // no aliasing
