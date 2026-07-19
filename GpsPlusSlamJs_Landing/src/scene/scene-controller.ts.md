@@ -59,7 +59,9 @@ renders on demand.
   to the end AND updates the scrubbed camera base (it previously snapped
   back to the stale intro pose).
 - `applyTheme` swaps palette colors, background, fog and light settings in
-  place — no scene rebuild. Since the golden-hour restyle it also moves
+  place — no scene rebuild. It also repaints the portal interior via
+  `applyPortalPalette` (vertex colors can't ride the role traversal).
+  Since the golden-hour restyle it also moves
   the directional light to `palette.directional.position` when set (only
   dusk: low-left sun for long sunset shadows) and explicitly RESTORES the
   shared default `(18, 30, 14)` when absent — a sticky dusk position

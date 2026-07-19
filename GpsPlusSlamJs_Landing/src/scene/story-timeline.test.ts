@@ -400,9 +400,13 @@ describe("buildStoryTimeline", () => {
     expect(ndc.z).toBeLessThan(1); // in front of the camera
   });
 
-  it("opens the forest portal while far out and closes it before the city (round-14 R14-10)", () => {
+  it("opens the portal INTERIOR while far out and closes it before the city; the frame never moves (round-14 R14-10, golden-hour rebuild)", () => {
+    // Since the golden-hour rebuild the monument frame stands
+    // permanently — the timeline only pops the bright interior world.
     const timeline = buildStoryTimeline(stage, () => {});
-    const portal = stage.world.getObjectByName("forest-portal");
+    const frame = stage.world.getObjectByName("forest-portal");
+    expect(frame).toBeDefined();
+    const portal = frame!.getObjectByName("portal-interior");
     expect(portal).toBeDefined();
 
     timeline.seek(3900); // works-anywhere copy only entering: still closed
@@ -417,6 +421,12 @@ describe("buildStoryTimeline", () => {
     // Scrub back re-closes it (explicit {from,to} contract).
     timeline.seek(3900);
     expect(portal!.scale.x).toBeLessThan(0.01);
+
+    // The monument frame stays full-scale through the whole story.
+    for (const t of [0, 3900, 4650, 5200, 7000]) {
+      timeline.seek(t);
+      expect(frame!.scale.x, `frame @${t}`).toBeCloseTo(1);
+    }
   });
 
   it("pops the parkour blocks in during works-anywhere (round-14 R14-12)", () => {

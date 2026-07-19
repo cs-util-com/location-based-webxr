@@ -27,7 +27,7 @@ import {
 import { buildSatellites, updateSatellites } from "./satellites";
 import { buildShootingStar, updateShootingStar } from "./shooting-stars";
 import { buildHeroPeeker, createHeroIdleBeat } from "./hero-idle";
-import { PORTAL_NAME, updatePortalSpin } from "./portal";
+import { applyPortalPalette, PORTAL_NAME, updatePortalSpin } from "./portal";
 import { pickEggTarget, type PointerNdc } from "./egg-picker";
 import { GEOCACHE_NAME, toggleGeocache, updateGeocache } from "./geocache";
 import { VIGNETTE_NODE } from "./use-case-vignettes";
@@ -328,6 +328,10 @@ export function createSceneController(
     const palette = getPalette(theme);
     applyPaletteToScene(scene, palette);
     applySkyPalette(sky, palette);
+    if (portal) {
+      // The vertex-colored interior can't ride the role traversal.
+      applyPortalPalette(portal, palette);
+    }
     if (particles) {
       applyParticlePalette(particles, palette);
     }
