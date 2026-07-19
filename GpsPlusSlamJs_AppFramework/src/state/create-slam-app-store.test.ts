@@ -173,6 +173,60 @@ describe('createSlamAppStore', () => {
     });
   });
 
+  // Why these tests matter: the 2026-07-19 recorder enablement plan exposes
+  // two on-device field-test opt-ins. `enableCompassExperiment` must set the
+  // library's `compassExperimentEnabled` flag (which threads the decided
+  // combo: rotation prior + trust tolerance 15° + C′ pair selection — the
+  // combo itself is pinned in the LIBRARY's gpsDataSlice tests, not here);
+  // `enableRansacComparison` sets `ransacComparisonEnabled` (plain useRansac
+  // A/B arm). Both follow the recorded-action opt-in pattern: dispatched only
+  // once gpsData exists, default OFF ⇒ byte-identical.
+  describe('enableCompassExperiment + enableRansacComparison (field-test opt-ins)', () => {
+    it('enables the compass experiment once gpsData exists (after the first setZeroPos)', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassExperiment: true,
+      });
+      expect(store.getState().gpsData).toBeNull();
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      expect(store.getState().gpsData?.compassExperimentEnabled).toBe(true);
+    });
+
+    it('enables the RANSAC comparison once gpsData exists', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableRansacComparison: true,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      expect(store.getState().gpsData?.ransacComparisonEnabled).toBe(true);
+    });
+
+    it('leaves both off by default (byte-identical)', async () => {
+      const store = createSlamAppStore({ storageBackend: backend });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      const s = store.getState().gpsData;
+      expect(s?.compassExperimentEnabled).toBeFalsy();
+      expect(s?.ransacComparisonEnabled).toBeFalsy();
+    });
+
+    it('both experiment opt-ins combine with the default Stage-0 override', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassExperiment: true,
+        enableRansacComparison: true,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      const s = store.getState().gpsData;
+      expect(s?.coldStartOverrideEnabled).toBe(true); // default-on Stage 0
+      expect(s?.compassExperimentEnabled).toBe(true);
+      expect(s?.ransacComparisonEnabled).toBe(true);
+    });
+  });
+
   describe('enableCompassWebXRConsistency (GPS-free trust gate debug opt-in)', () => {
     it('enables the consistency gate once gpsData exists', async () => {
       const store = createSlamAppStore({

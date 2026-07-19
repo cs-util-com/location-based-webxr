@@ -33,6 +33,8 @@ import {
   setColdStartOverrideEnabled,
   setCompassRotationPriorEnabled,
   setCompassWebXRConsistencyEnabled,
+  setCompassExperimentEnabled,
+  setRansacComparisonEnabled,
   type RootState as LibraryRootState,
 } from 'gps-plus-slam-js';
 import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-js/community-license-key';
@@ -190,6 +192,29 @@ export interface SlamAppStoreOptions<
    * `false` ⇒ byte-identical. The action persists into recordings.
    */
   enableCompassWebXRConsistency?: boolean;
+
+  /**
+   * **Field-test flag (2026-07-19 enablement plan)** — enable the library's
+   * compass EXPERIMENT combo: Stage-C rotation prior + trust tolerance 15°
+   * (the census-backed activating value) + C′ compass-guided pair selection.
+   * Dispatches `setCompassExperimentEnabled(true)` once `gpsData` exists; the
+   * combo itself lives in the library (single boolean crosses the boundary).
+   * Default `false` ⇒ byte-identical. The action persists into recordings, so
+   * replays/censuses can attribute. Keep OFF for §6a calibration recordings.
+   *
+   * @see GpsPlusSlamJs_Docs/docs/2026-07-19-0813-compass-experiment-recorder-enablement-plan.md
+   */
+  enableCompassExperiment?: boolean;
+
+  /**
+   * **Field-test flag** — enable the library's plain-RANSAC comparison arm
+   * (`useRansac`; NOT a compass mechanism — position-residual RANSAC,
+   * corpus-rejected as a default, exposed for on-device A/B against the
+   * compass experiment; adds seed-dependent run-to-run variance by nature).
+   * Dispatches `setRansacComparisonEnabled(true)` once `gpsData` exists.
+   * Default `false` ⇒ byte-identical. The action persists into recordings.
+   */
+  enableRansacComparison?: boolean;
 }
 
 /**
@@ -253,6 +278,9 @@ export function createSlamAppStore<
     enableCompassColdStartOverride = true,
     enableCompassRotationPrior = false,
     enableCompassWebXRConsistency = false,
+    // Field-test opt-ins (2026-07-19 enablement plan) — default OFF.
+    enableCompassExperiment = false,
+    enableRansacComparison = false,
   } = options;
 
   validateLicenseKey(licenseKey);
@@ -323,6 +351,18 @@ export function createSlamAppStore<
     compassOptIns.push({
       isSet: (s) => s.gpsData?.compassWebXRConsistencyEnabled === true,
       apply: (dispatch) => dispatch(setCompassWebXRConsistencyEnabled(true)),
+    });
+  }
+  if (enableCompassExperiment) {
+    compassOptIns.push({
+      isSet: (s) => s.gpsData?.compassExperimentEnabled === true,
+      apply: (dispatch) => dispatch(setCompassExperimentEnabled(true)),
+    });
+  }
+  if (enableRansacComparison) {
+    compassOptIns.push({
+      isSet: (s) => s.gpsData?.ransacComparisonEnabled === true,
+      apply: (dispatch) => dispatch(setRansacComparisonEnabled(true)),
     });
   }
 
