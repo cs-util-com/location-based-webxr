@@ -29,6 +29,11 @@ light/mono skip it.
   immediate meteor (test-pinned: first streak ≥30 s).
 - **Dark-sky gate:** `enabled` is passed by the scene controller
   (`theme !== light && theme !== mono`); false → always hidden.
+- **Trail orientation:** the trail mesh sits at local −Z; `updateShootingStar`
+  `lookAt`s ahead along the constant travel direction (a non-camera Object3D
+  faces its target with +Z), so the trail streams out behind the head
+  (test-pinned; the original pure Z-roll left it sideways along world Z —
+  PR #193 review).
 - **Continuous-render gate:** driven next to the particles/satellites,
   so a hidden tab or a non-particle tier never animates it. The head +
   trail use a fixed white `MeshBasicMaterial` (a sky effect, not
@@ -38,5 +43,5 @@ light/mono skip it.
 ## Tests
 
 `shooting-stars.test.ts` — named + hidden build, always-hidden when
-disabled, fires within 2 min + crosses the sky + hides after, clock
-purity, 30–60 s spacing.
+disabled, fires within 2 min + crosses the sky + hides after, trail
+oriented behind the head along travel, clock purity, 30–60 s spacing.
