@@ -44,6 +44,10 @@ const entryFiles = [
   'src/ar/occlusion-mesh-worker.ts',
   'src/ar/enable-gps-ar.ts',
   'src/ar/frame-loop.ts',
+  // Shared hit-test reticle driver (2026-07-18 promotion of the three
+  // app-local copies) — deep-imported by consumer apps via the `./ar/*`
+  // wildcard, so it must be a per-file dist entry.
+  'src/ar/hit-test-reticle-driver.ts',
   'src/ar/image-capture.ts',
   // Pure blur/blackness metrics + verdict policy — deep-imported by the
   // recorder's image-quality.worker.ts (NOT via the `/ar` barrel). The `./ar/*`
@@ -175,8 +179,21 @@ const entryFiles = [
   // Engine-free desktop pointer raycast helper (2026-07-15 replay-harness Part B)
   // — deep-imported by consumer apps (PhysicsDemo) via `./visualization/*`.
   'src/visualization/pointer-picking.ts',
+  // Shared Stats.js perf overlay (2026-07-17 promotion of the recorder +
+  // PhysicsDemo copies) — deep-imported by both via `./visualization/*`, so it
+  // must be a per-file dist entry (a missing entry breaks Vite resolution at
+  // runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/visualization/perf-stats-overlay.ts',
+  // Shared canvas-text sprite helper (2026-07-17 wayfinding graduation).
+  'src/visualization/text-sprite.ts',
   'src/visualization/three-dispose.ts',
   'src/visualization/vis-colors.ts',
+  // Wayfinding HUD presenter + pure placement seam (2026-07-17 graduation) —
+  // deep-imported by consumer apps (WayfindingHudDemo) via `./visualization/*`,
+  // so each must be a per-file dist entry (a missing entry breaks Vite
+  // resolution at runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/visualization/wayfinding-hud.ts',
+  'src/visualization/wayfinding-placement.ts',
 ];
 
 export default defineConfig({

@@ -112,6 +112,8 @@ let vizStatsOverlayCheckbox: HTMLInputElement | null = null;
 let compassColdStartOverrideCheckbox: HTMLInputElement | null = null;
 let compassRotationPriorCheckbox: HTMLInputElement | null = null;
 let compassWebXRConsistencyCheckbox: HTMLInputElement | null = null;
+let compassExperimentCheckbox: HTMLInputElement | null = null;
+let compassRobustSolverComparisonCheckbox: HTMLInputElement | null = null;
 let loopClosureDetectorCheckbox: HTMLInputElement | null = null;
 let qrEnabledCheckbox: HTMLInputElement | null = null;
 let qrIntervalSlider: HTMLInputElement | null = null;
@@ -293,6 +295,12 @@ export function initSettingsModal(
   ) as HTMLInputElement;
   compassWebXRConsistencyCheckbox = document.getElementById(
     'compass-webxr-consistency'
+  ) as HTMLInputElement;
+  compassExperimentCheckbox = document.getElementById(
+    'compass-experiment'
+  ) as HTMLInputElement;
+  compassRobustSolverComparisonCheckbox = document.getElementById(
+    'compass-robust-solver-comparison'
   ) as HTMLInputElement;
   loopClosureDetectorCheckbox = document.getElementById(
     'loop-closure-detector'
@@ -674,6 +682,23 @@ export function initSettingsModal(
     if (workingOptions && compassWebXRConsistencyCheckbox) {
       workingOptions.compassDebug.webXRConsistency =
         compassWebXRConsistencyCheckbox.checked;
+    }
+  });
+
+  // 2026-07-19 field-test toggles (enablement plan): experiment combo + the
+  // alternative robust-solver comparison arm. Applied on the next session/reload like the
+  // other compass flags.
+  compassExperimentCheckbox?.addEventListener('change', () => {
+    if (workingOptions && compassExperimentCheckbox) {
+      workingOptions.compassDebug.experiment =
+        compassExperimentCheckbox.checked;
+    }
+  });
+
+  compassRobustSolverComparisonCheckbox?.addEventListener('change', () => {
+    if (workingOptions && compassRobustSolverComparisonCheckbox) {
+      workingOptions.compassDebug.robustSolverComparison =
+        compassRobustSolverComparisonCheckbox.checked;
     }
   });
 
@@ -1127,6 +1152,13 @@ function populateForm(options: RecordingOptions): void {
   if (compassWebXRConsistencyCheckbox) {
     compassWebXRConsistencyCheckbox.checked =
       options.compassDebug.webXRConsistency;
+  }
+  if (compassExperimentCheckbox) {
+    compassExperimentCheckbox.checked = options.compassDebug.experiment;
+  }
+  if (compassRobustSolverComparisonCheckbox) {
+    compassRobustSolverComparisonCheckbox.checked =
+      options.compassDebug.robustSolverComparison;
   }
   if (loopClosureDetectorCheckbox) {
     loopClosureDetectorCheckbox.checked =

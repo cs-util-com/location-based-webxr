@@ -11,8 +11,8 @@ physics collider (user feedback: same framework building block). Owns an
 ## Public API
 
 - **`createOccupancyView(arWorldGroup, store, options?): OccupancyView`** —
-  `options` = `{ cellSizeM=DEFAULT_OCCUPANCY_CELL_SIZE_M (0.18),
-minObservations=DEFAULT_OCCUPANCY_MIN_OBSERVATIONS (3), meshMode='smooth',
+  `options` = `{ cellSizeM=DEFAULT_OCCUPANCY_CELL_SIZE_M (0.16),
+minObservations=DEFAULT_OCCUPANCY_MIN_OBSERVATIONS (2), meshMode='smooth',
 debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from the
   framework constants so the demo shares the RecorderApp's tuning. The 18 cm voxel
   is the speed lever; the noise floor stays at 3 to keep floaters (= phantom
@@ -31,6 +31,11 @@ debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from t
 - **One occluder = occlusion + physics.** The depth-only occluder always writes
   depth (occlusion is on in every shader, incl. `'off'`); its geometry buffer
   (raw-WebXR) is the physics trimesh — so the two never diverge.
+- **Confidence-guarded carving at the noise floor** (2026-07-16 synthetic-scene
+  investigation): the grid is built with
+  `carveConfidenceThreshold = minObservations`, so any voxel solid enough to be
+  meshed can no longer be erased by a single deeper depth reading — the
+  collider/occluder stays stable instead of churning at silhouette edges.
 - **Grid persists across mode changes** — `setMeshMode` disposes/rebuilds only the
   occluder and re-meshes from the existing grid, so no depth data is lost.
 - No cube visualizer — "Cubes (blocky)" is the `'greedy'` mesher mode of the
@@ -41,4 +46,5 @@ debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from t
 - `occupancy-view.test.ts` (real framework objects + fake store) — each depth
   sample folds into the grid and re-meshes the occluder; defaults to Surface nets +
   the combined shader; `setDebugStyle` switches live; `setMeshMode` yields a NEW
-  `getMesh()` handle and re-meshes; dispose detaches.
+  `getMesh()` handle and re-meshes; the confidence guard keeps an established
+  cell against a deeper reading (identity-projection rays); dispose detaches.

@@ -11,11 +11,15 @@
     `getArWorldGroup`, `endARSession`, `getCamera`,
     `startGpsWatch`, `startOrientationWatch`,
     `requestDeviceOrientationPermission`, `createGpsAnchor`,
-    `enableArWorldGroupAlignment`, `selectTrackingQuality`,
-    `selectAlignmentMatrix`, `startReticleHitTest`, `createAnchorMarker`).
+    `createWayfindingHud`, `enableArWorldGroupAlignment`,
+    `selectTrackingQuality`, `selectAlignmentMatrix`, `startReticleHitTest`,
+    `createAnchorMarker`).
     `selectAlignmentMatrix` lets the e2e fake drive the placement alignment gate
     (a desktop browser never computes a real alignment); `startReticleHitTest`
-    lets it drive the hit-test reticle (surface present / absent) deterministically.
+    lets it drive the hit-test reticle (surface present / absent) deterministically
+    — since the 2026-07-18 promotion its real value is the framework's shared
+    `startHitTestReticle` (`ar/hit-test-reticle-driver`), while the seam keeps
+    its historical key so the Playwright fakes are unaffected.
     Since the framework's setter fold, the tracking store + restart callback
     ride into `initAR` as its `callbacks.tracking` group (they arrive TOGETHER;
     without the group the framework forwards no per-frame poses and the

@@ -96,16 +96,18 @@ test.describe('Settings Modal', () => {
 
     test('depth interval slider shows default value', async ({ page }) => {
       const valueDisplay = page.locator('#depth-interval-value');
-      // 2026-06-30 occluder-tuning re-tune: depth sampling doubled to 0.5s.
-      await expect(valueDisplay).toHaveText('0.5s');
+      // 0.2s since the 2026-07-16 evening on-device framerate/mesh trade-off
+      // passes; equals the framework DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS.
+      await expect(valueDisplay).toHaveText('0.2s');
     });
 
     test('depth grid slider shows default value', async ({ page }) => {
       const valueDisplay = page.locator('#depth-grid-value');
-      // Default raised to 32 (max points/sample) in the 2026-07-01
-      // fast-reconstruction tuning — cells confirm fastest. The slider max was
-      // also raised to 64 for on-device experimentation with higher densities.
-      await expect(valueDisplay).toHaveText('32×32');
+      // 24×24 since the 2026-07-16 evening on-device framerate/mesh
+      // trade-off pass (the sweep-derived 64 hurt the framerate); equals the
+      // framework DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE shared with the
+      // PhysicsDemo.
+      await expect(valueDisplay).toHaveText('24×24');
     });
 
     test('images interval slider shows default value', async ({ page }) => {

@@ -158,9 +158,14 @@ export function runMeshRequest(request: MeshWorkerRequest): {
     cells.push([flat[i * 3]!, flat[i * 3 + 1]!, flat[i * 3 + 2]!]);
   }
 
+  // 'smooth' consumes the wire-format centroids array DIRECTLY (input-order
+  // aligned — exactly how this function receives it), deleting the per-cell
+  // key-map + callback + result-tuple plumbing from the hottest re-mesh loop
+  // (2026-07-17 perf loop, iteration 2). Other centroid-consuming modes
+  // ('corner-fit') keep the callback adapter below.
   let getCellPoint: ((cell: GridCell) => Vector3 | null) | undefined;
   const pts = centroids;
-  if (pts) {
+  if (pts && mode !== 'smooth') {
     const indexByKey = new Map<number, number>();
     for (let i = 0; i < n; i++) {
       indexByKey.set(
@@ -181,7 +186,14 @@ export function runMeshRequest(request: MeshWorkerRequest): {
     };
   }
 
-  const mesh = meshOccupiedCells(cells, cellSizeM, { mode, getCellPoint });
+  // The worker response carries only geometry — skip the AABB list the
+  // direct-call API builds (it was ~2 discarded allocations per cell here).
+  const mesh = meshOccupiedCells(cells, cellSizeM, {
+    mode,
+    getCellPoint,
+    centroids,
+    includeAabbs: false,
+  });
   const response: MeshWorkerResponse = {
     id,
     positions: mesh.positions,

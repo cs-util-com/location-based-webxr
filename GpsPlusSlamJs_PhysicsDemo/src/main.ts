@@ -16,7 +16,7 @@ import { detectArSupport, applyModeEntry } from "./mode-detection";
 import { loadAndStartReplay, type ReplayLaunchSink } from "./replay-launch";
 import { initRapier } from "./physics-world";
 import { startArMode } from "./ar-mode";
-import { createPerfStats } from "./perf-stats";
+import { createPerfStatsOverlay } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
 import { startReplayPhysics } from "./replay-physics";
 import type { ReplaySessionController } from "gps-plus-slam-app-framework/state/replay-session";
 
@@ -49,7 +49,7 @@ function main(): void {
   // Always-on FPS / memory panel (user feedback #4): mounted into the dom-overlay
   // layer so it composites over both the desktop scene and the AR camera feed. It
   // is driven per-frame from whichever loop is active (desktop rAF / AR XR frame).
-  const perfStats = createPerfStats(overlay);
+  const perfStats = createPerfStatsOverlay(overlay);
 
   // Live AR: on a WebXR-capable device, "Start AR" launches a genuine AR physics
   // session (device-only — verified via `pnpm dev` on a phone). The play/pause +

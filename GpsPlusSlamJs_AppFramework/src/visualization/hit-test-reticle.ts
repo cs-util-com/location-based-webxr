@@ -13,8 +13,9 @@
  * to it (see that function for the full rationale).
  *
  * The per-frame XR plumbing (requesting the hit-test source, reading
- * `frame.getHitTestResults(...)`) stays in each app's WebXR glue and is
- * verified manually on-device. The two functions here are the unit-tested core:
+ * `frame.getHitTestResults(...)`) lives in the framework's shared driver,
+ * `ar/hit-test-reticle-driver.ts` (`startHitTestReticle`), promoted 2026-07-18
+ * from the app-local copies. The two functions here are the unit-tested core:
  * given the latest hit pose (a column-major 4x4 transform matrix) or `null`,
  * drive the mesh's visibility + transform. They are unit tested because that is
  * the logic a porting developer is most likely to get subtly wrong (e.g.

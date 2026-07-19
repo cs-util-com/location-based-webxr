@@ -48,7 +48,9 @@
     `requestDeviceOrientationPermission` + `startOrientationWatch` →
     wire `placeButton` + `copyLinkButton` clicks →
     `readCachedAnchor()` → on a **cache-miss** start the reticle loop
-    (`startReticleHitTest({ arWorldGroup })`); on a **cache-hit** spawn the
+    (the `startReticleHitTest` seam — the framework's shared
+    `startHitTestReticle({ arWorldGroup })` driver, no `onSelect`: placement is
+    button-driven); on a **cache-hit** spawn the
     saved anchor (`skipBootstrap` + `hideUntilAligned`) → `dispatchSetup(BOOTED)`.
   - `placeAnchor()` (cache-miss): gated by `decideAnchorPlacement` — a press
     only commits when a surface is under the reticle AND a GPS alignment exists,
@@ -78,6 +80,16 @@
     [gps-anchor](../../GpsPlusSlamJs_AppFramework/src/visualization/gps-anchor.ts.md)).
     This makes `anchor.dispose()` a complete teardown for every caller
     (placement retry, `failStart` boot rollback, `beforeunload`).
+  - `spawnAnchor()` also starts the **F2 wayfinding HUD**
+    (`seams.createWayfindingHud`, deadband `HUD_DISTANCE_MIN_M`/`_MAX_M` =
+    1.5/3.0 m) for the spawned marker on both branches (cache-miss placement
+    and `?show=` cache-hit). The target feed is the pure
+    [hud-targets](hud-targets.ts.md) helper, which yields the marker's world
+    position only while `marker.visible` — so the hidden pre-alignment
+    cache-hit marker never produces a target at the AR origin. HUD creation
+    is wrapped in try/catch (auxiliary feature: a HUD failure must never
+    break the anchor flow), and the anchor `dispose()` wrapper also disposes
+    the HUD.
   - `failStart()` (async): unwinds a failed AR boot — calls
     `endARSession()` (via seam) to flush the framework session
     (`renderer`/`xrSession`/session-disposer registry) so `initAR()` can
@@ -112,12 +124,15 @@
   decision logic it composes is unit-tested in the sibling modules
   ([setup-state-machine](setup-state-machine.ts.md),
   [placement-decision](placement-decision.ts.md),
+  [hud-targets](hud-targets.ts.md),
   [url-anchor-state](url-anchor-state.ts.md),
   [guidance-view](guidance-view.ts.md), [placement-view](placement-view.ts.md),
   [marker](marker.ts.md)) and in the framework
   ([ar/capability-checker](../../GpsPlusSlamJs_AppFramework/src/ar/capability-checker.ts.md),
-  which replaced the app-local `capability.ts`). The reticle loop
-  ([reticle-hit-test](reticle-hit-test.ts.md)) is device-only glue. The
+  which replaced the app-local `capability.ts`, and
+  [ar/hit-test-reticle-driver](../../GpsPlusSlamJs_AppFramework/src/ar/hit-test-reticle-driver.ts.md),
+  which replaced the app-local `reticle-hit-test.ts` in the 2026-07-18
+  promotion). The
   placement glue — including the reticle gate (place when a surface is present,
   hint when not) and the failure cleanup that prevents leaked / overlapping
   markers — is covered end-to-end by the Tier 1 Playwright suite

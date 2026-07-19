@@ -66,6 +66,15 @@ This module is the entry point that runs on page load. It also exports the follo
   mesh is gated). The cube visualizer is parented under `arWorldGroup` (NOT
   the scene root): the grid's cells are raw-WebXR coordinates that must ride
   the alignment matrix like the camera (port plan Iter 7 reparenting fix).
+  **Wiring-internal handles are closure-locals** (2026-07-18 simplify-loop
+  Area 6): a resource read only inside its own wire factory + disposer
+  (visualizer instances, unsubscribe functions, frame-loop unregisters) lives
+  as a `const` in that closure — never as a module-level `let` with a
+  `x?.dispose(); x = null` teardown mirror. Module-level `let` handles are
+  reserved for resources genuinely read across functions (`mapOverlay`,
+  `cameraFollower`, `alignmentLerper`, `statsOverlay`, `loopClosureHandler`,
+  `qrProducer`, `refPointViews`, and the per-RECORDING
+  `activeImageQualityAnalyzer`, which is deliberately NOT session-scoped).
 - **Live QR recording + debug viz** (opt-in, `recording-options.qr.enabled`;
   recorder live-QR WS-2/WS-5). When enabled, `handleEnterAR` includes the
   camera-frame group in the `ArSessionCallbacks` struct passed to `initAR`
@@ -97,9 +106,10 @@ This module is the entry point that runs on page load. It also exports the follo
     sample without allocating GPU geometry.
   - **statsOverlay** (default OFF — Step 0 of the
     [2026-07-03 long-session fps plan](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-03-1344-long-session-fps-and-voxel-grid-scaling-plan.md)) —
-    mounts the Stats.js FPS/ms/MB panel row
-    ([ui/stats-overlay.ts](ui/stats-overlay.ts.md)) into the `#app` dom-overlay
-    root and advances it from the initAR `callbacks.onFrame` tick. Teardown runs via
+    mounts the Stats.js FPS/ms/MB panel row (the framework's
+    `createPerfStatsOverlay`, `gps-plus-slam-app-framework/visualization/perf-stats-overlay`)
+    into the `#app` dom-overlay root and advances it from the initAR
+    `callbacks.onFrame` tick. Teardown runs via
     `arSessionScope` on re-enter (panels never stack) and in `resetMainState`
     (no frozen panels on the setup screen). The occupancy wirer additionally gets
     `onGridSize` telemetry (one `[OccupancyGrid] <n> cells` log per ~30 s) so a

@@ -23,18 +23,34 @@ framework does not own button DOM (unlike three.js' `ARButton`).
   `EnableGpsArResult`, `EnableGpsArDeps`, `EnableGpsArController`.
 - `EnableGpsArConfig.callbacks?: ArSessionCallbacks` — the per-session AR
   callbacks (tracking store, depth, image capture, `onFrame`, `onSessionEnd`)
-  forwarded verbatim as `initAR`'s 4th argument. Since the framework folded its
+  forwarded as `initAR`'s 4th argument. Since the framework folded its
   pre-init setter exports into `initAR` (surface-reduction step 1), this option
-  is the ONLY way controller-driven apps wire those callbacks.
+  is the ONLY way controller-driven apps wire those callbacks. Every field
+  reaches `initAR` unchanged **except `onSessionEnd`, which the controller
+  wraps** (see "Session-end awareness" below); the app's own callback is
+  always chained.
 
 ### `EnableGpsArStatus`
 
 `checking → ready → starting → running` on success; `running → stopping → ready`
 on teardown; any failure routes to `error`; an unsupported probe routes to
-`unsupported`.
+`unsupported`. A session that ends **externally** (system back gesture, or a
+direct framework `endARSession()` call) while `running` also returns the
+controller to `ready` — see "Session-end awareness".
 
 ## Invariants & assumptions
 
+- **Session-end awareness (2026-07-18, simplify-loop Area 4b):** `enable()`
+  wraps `config.callbacks.onSessionEnd` before forwarding to `initAR`, so the
+  controller observes the session ending on every path. While `running`, the
+  wrapper stops the started watches and transitions to `ready` — without this
+  a system back gesture left the status stuck at `running` (the app's button
+  dead-ended at "AR running") and the GPS/orientation watches kept running.
+  In any other status the wrapper is inert: the `enable()` rollback (during
+  `starting`) and `disable()` (during `stopping`) already own their teardown.
+  The app's own `onSessionEnd` is always chained, whatever the status. The
+  controller never calls `endARSession` from the wrapper — the session is
+  already gone.
 - **Minimal default permission set:** the default path requests only WebXR
   support + geolocation + orientation. `requestWebXRWithDepthPermission` is
   called **only** when `config.requestDepth === true`. The seam never calls
@@ -117,10 +133,11 @@ controller.subscribe((s) => {
   button.textContent = s.status === 'starting' ? 'Starting…' : 'Enable GPS AR';
 });
 
-// When the XR session ends (e.g. user exits AR), tear down and allow re-entry:
-xrSession.addEventListener('end', () => {
-  void controller.disable();
-});
+// A session end (system back gesture, external endARSession) is observed by
+// the controller itself: it stops the watches and returns to `ready`, so the
+// subscribe() listener above re-renders the button as a fresh CTA. Apps that
+// need their own end-of-session work pass callbacks.onSessionEnd — it is
+// chained, not replaced.
 ```
 
 ## Tests
@@ -136,6 +153,10 @@ transition, selective watch stop (only watches that were started), `endARSession
 call, no-op when not running, re-entry after disable, resilience to
 `endARSession` rejection, `enable()`/`refreshSupport()` blocked during
 `stopping`, concurrent `disable()` idempotency, and per-cycle watch tracking.
+The "session end (system or external)" describe block covers the session-end
+awareness: external end → `ready` + watches stopped + re-entry works, app
+callback chaining, no double-stop during `disable()`, and the rollback path's
+`error` state surviving the end event.
 
 ## Related
 

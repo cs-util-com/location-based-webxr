@@ -9,9 +9,11 @@ pose (a column-major 4×4 transform) or `null`, it drives a Three.js mesh's
 visibility + transform.
 
 The per-frame XR plumbing (requesting the hit-test source, reading
-`frame.getHitTestResults(...)`) lives in each app's WebXR glue; only the logic
-here is unit-tested because it is what a porting developer is most likely to get
-subtly wrong.
+`frame.getHitTestResults(...)`) lives in the framework's shared driver,
+[ar/hit-test-reticle-driver](../ar/hit-test-reticle-driver.ts.md)
+(`startHitTestReticle`, promoted 2026-07-18 from the app-local copies); the
+logic here is unit-tested because it is what a porting developer is most likely
+to get subtly wrong.
 
 ## Public API
 

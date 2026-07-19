@@ -226,14 +226,19 @@ describe('createEnableGpsArController — enable() success path', () => {
       {
         requestHitTest: true,
       },
-      undefined
+      // Even with no app callbacks the controller passes its session-end
+      // wrapper (session-end awareness — see the "session end" describe).
+      { onSessionEnd: expect.any(Function) }
     );
   });
 
   // Why this test matters: since the pre-init setter fold (surface-reduction
   // step 1) the ONLY way a controller-driven app can wire tracking/depth/etc.
-  // is the `callbacks` option — it must reach initAR verbatim.
-  it('forwards the per-session AR callbacks to initAR', async () => {
+  // is the `callbacks` option — every app-provided field must reach initAR
+  // unchanged. The single exception is `onSessionEnd`, which the controller
+  // wraps (session-end awareness; the app's own callback is chained — see the
+  // "session end" describe block).
+  it('forwards the per-session AR callbacks to initAR (plus the session-end wrapper)', async () => {
     const deps = makeDeps();
     const controller = createEnableGpsArController(deps);
     const container = fakeContainer();
@@ -245,7 +250,7 @@ describe('createEnableGpsArController — enable() success path', () => {
       container,
       undefined,
       { requestHitTest: undefined },
-      callbacks
+      { onFrame: callbacks.onFrame, onSessionEnd: expect.any(Function) }
     );
   });
 
@@ -784,5 +789,123 @@ describe('createEnableGpsArController — disable()', () => {
     await controller.disable();
     expect(deps.stopGpsWatch).toHaveBeenCalledTimes(2);
     expect(deps.stopOrientationWatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Why these tests matter: the controller used to be session-end BLIND — nothing
+// observed the XRSession ending, so a system back gesture left the status stuck
+// at `running` (the app's button dead-ends at "AR running" with no re-entry)
+// and any started GPS/orientation watches kept running (leak: disable() is the
+// only stopper and the app never calls it on a system end). The controller now
+// wraps `config.callbacks.onSessionEnd` before forwarding to initAR: while
+// `running` it stops the watches and returns to `ready`; the app's own
+// callback is always chained. Found by the 2026-07-18 simplify-loop survey
+// (Area 4b — see the findings doc).
+describe('createEnableGpsArController — session end (system or external)', () => {
+  /** Enable with both watches and hand back the wrapped onSessionEnd. */
+  async function enableAndCaptureSessionEnd(
+    deps: EnableGpsArDeps,
+    extraConfig: Record<string, unknown> = {}
+  ) {
+    const controller = createEnableGpsArController(deps);
+    await controller.enable({
+      container: fakeContainer(),
+      onGpsPosition: vi.fn(),
+      onOrientation: vi.fn(),
+      ...extraConfig,
+    });
+    const forwarded = vi.mocked(deps.initAR).mock.calls[0]?.[3];
+    return { controller, onSessionEnd: forwarded?.onSessionEnd };
+  }
+
+  it('returns to ready and stops started watches when the session ends externally', async () => {
+    const deps = makeDeps();
+    const { controller, onSessionEnd } = await enableAndCaptureSessionEnd(deps);
+    expect(controller.getState().status).toBe('running');
+
+    onSessionEnd?.({ requestedByApp: false });
+
+    expect(controller.getState().status).toBe('ready');
+    expect(deps.stopGpsWatch).toHaveBeenCalledTimes(1);
+    expect(deps.stopOrientationWatch).toHaveBeenCalledTimes(1);
+    // The session is already gone — the controller must NOT try to end it.
+    expect(deps.endARSession).not.toHaveBeenCalled();
+
+    // The user can re-enter AR without a page reload.
+    const retry = await controller.enable({ container: fakeContainer() });
+    expect(retry.ok).toBe(true);
+  });
+
+  it("chains the app's own onSessionEnd callback with the end info", async () => {
+    const deps = makeDeps();
+    const appOnSessionEnd = vi.fn();
+    const { controller, onSessionEnd } = await enableAndCaptureSessionEnd(
+      deps,
+      { callbacks: { onSessionEnd: appOnSessionEnd } }
+    );
+
+    const info = { requestedByApp: false };
+    onSessionEnd?.(info);
+
+    expect(appOnSessionEnd).toHaveBeenCalledTimes(1);
+    expect(appOnSessionEnd).toHaveBeenCalledWith(info);
+    expect(controller.getState().status).toBe('ready');
+  });
+
+  it('does not double-stop watches when the end event arrives during disable()', async () => {
+    // In production the app-initiated disable() → endARSession() fires the
+    // same onSessionEnd callback (requestedByApp: true) while the controller
+    // is `stopping`. The wrapper must not act then — disable() already owns
+    // the watch teardown and the ready transition.
+    const deps = makeDeps();
+    let fireSessionEnd: (() => void) | null = null;
+    deps.endARSession = vi.fn(() => {
+      fireSessionEnd?.();
+      return Promise.resolve();
+    });
+    const { controller, onSessionEnd } = await enableAndCaptureSessionEnd(deps);
+    fireSessionEnd = () => onSessionEnd?.({ requestedByApp: true });
+
+    await controller.disable();
+
+    expect(controller.getState().status).toBe('ready');
+    expect(deps.stopGpsWatch).toHaveBeenCalledTimes(1);
+    expect(deps.stopOrientationWatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not clobber the error state when the rollback path ends the session', async () => {
+    // A watch-start failure after initAR triggers the enable() rollback:
+    // endARSession() fires onSessionEnd while the controller is still
+    // `starting`. The wrapper must stay inert so the final state remains
+    // `error` (the button's retry CTA), not `ready`.
+    const deps = makeDeps({
+      startGpsWatch: vi.fn(() => {
+        throw new Error('watch blew up');
+      }),
+    });
+    let capturedEnd: ((info: { requestedByApp: boolean }) => void) | undefined;
+    const captureInitAR: EnableGpsArDeps['initAR'] = (
+      _c,
+      _i,
+      _f,
+      callbacks
+    ) => {
+      capturedEnd = callbacks?.onSessionEnd;
+      return Promise.resolve();
+    };
+    deps.initAR = vi.fn(captureInitAR);
+    deps.endARSession = vi.fn(() => {
+      capturedEnd?.({ requestedByApp: true });
+      return Promise.resolve();
+    });
+    const controller = createEnableGpsArController(deps);
+
+    const result = await controller.enable({
+      container: fakeContainer(),
+      onGpsPosition: vi.fn(),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(controller.getState().status).toBe('error');
   });
 });

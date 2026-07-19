@@ -33,9 +33,12 @@
 import type { Vector3 } from 'gps-plus-slam-js';
 import type { GridCell } from './bresenham3d';
 import {
+  CELL_KEY_STRIDE_X,
+  CELL_KEY_STRIDE_Y,
   HALF_LATTICE_CELL_KEY_LIMIT,
   packCellKey as cellKey,
 } from './cell-key';
+import { PackedKeyHash } from './packed-key-hash';
 
 /**
  * An axis-aligned bounding box for one occupied cell (or, after greedy merge, a
@@ -113,6 +116,27 @@ export interface MeshOccupiedCellsOptions {
    * retain the tuple (no caching it as a key, no async use). Copy it if needed.
    */
   readonly getCellPoint?: (cell: GridCell) => Vector3 | null;
+  /**
+   * Pre-packed per-cell centroids for `'smooth'`, aligned with the **input
+   * `cells` order** (3 numbers per input cell; a non-finite triple — the
+   * worker wire protocol packs NaN for "no centroid" — falls back to that
+   * cell's geometric centre, exactly like a null/non-finite `getCellPoint`
+   * result). This is the mesh-worker fast path (2026-07-17 perf loop,
+   * iteration 2): `runMeshRequest` receives exactly this array over the wire,
+   * so consuming it directly deletes the per-cell key-map + callback + tuple
+   * plumbing from the hottest re-mesh loop. When set, `'smooth'` ignores
+   * `getCellPoint`; other modes ignore `centroids` entirely (`'corner-fit'`
+   * still needs the callback).
+   */
+  readonly centroids?: Float64Array | null;
+  /**
+   * Set `false` to skip building the per-cell AABB list (`result.aabbs` is
+   * then empty). The occlusion-mesh worker path consumes only
+   * positions/indices, and at the ~100k-cell regime the discarded AABB
+   * objects (~2 allocations per cell, every re-mesh) were pure GC pressure
+   * (2026-07-17 perf loop, iteration 2). Default `true`.
+   */
+  readonly includeAabbs?: boolean;
 }
 
 /** Resolve the effective mesher mode from the options. */
@@ -279,12 +303,24 @@ export function meshOccupiedCells(
   }
   const half = cellSizeM / 2;
 
-  // Snapshot into a Set for O(1) neighbour tests, de-duplicating and dropping
-  // non-integer / out-of-range cells. Keep the de-duplicated cells in insertion
-  // order for deterministic AABB / face emission.
-  const occupied = new Set<number>();
+  const mode = resolveMode(options);
+  // Input-order-aligned centroids are a smooth-only fast path (see the option
+  // docs); tracking each unique cell's input index costs a parallel array, so
+  // it is only recorded when actually consumed.
+  const centroids = mode === 'smooth' ? (options?.centroids ?? null) : null;
+
+  // Snapshot into a PackedKeyHash for O(1) neighbour tests (2026-07-17 perf
+  // loop iteration 2 — flat typed-array table instead of a Set; the value is
+  // the cell's ordinal in `uniqueCells`, which the smooth builder uses to
+  // index its eagerly-resolved centroid arrays). De-duplicates and drops
+  // non-integer / out-of-range cells; insertion order kept for deterministic
+  // AABB / face emission.
+  const occupied = new PackedKeyHash(Array.isArray(cells) ? cells.length : 64);
   const uniqueCells: GridCell[] = [];
+  const inputIndices: number[] | null = centroids ? [] : null;
+  let inputIndex = -1;
   for (const cell of cells) {
+    inputIndex++;
     if (!isPackableCell(cell)) {
       continue;
     }
@@ -292,37 +328,49 @@ export function meshOccupiedCells(
     if (occupied.has(key)) {
       continue;
     }
-    occupied.add(key);
+    occupied.set(key, uniqueCells.length);
     uniqueCells.push(cell);
+    inputIndices?.push(inputIndex);
   }
 
   // Every cell's halfExtents is identical (`[half, half, half]`); share one
   // frozen instance instead of allocating it per cell (the `Aabb` contract is
   // readonly, so sharing is safe). Halves the AABB-list allocations.
+  // `includeAabbs: false` (the worker path, which consumes only geometry)
+  // skips the list entirely — ~2 discarded allocations per cell per re-mesh.
   const sharedHalfExtents: readonly [number, number, number] = Object.freeze([
     half,
     half,
     half,
   ]);
-  const aabbs: Aabb[] = uniqueCells.map(([x, y, z]) => ({
-    center: [x * cellSizeM, y * cellSizeM, z * cellSizeM],
-    halfExtents: sharedHalfExtents,
-  }));
+  const aabbs: Aabb[] =
+    options?.includeAabbs === false
+      ? []
+      : uniqueCells.map(([x, y, z]) => ({
+          center: [x * cellSizeM, y * cellSizeM, z * cellSizeM],
+          halfExtents: sharedHalfExtents,
+        }));
+
+  if (mode === 'smooth') {
+    // The smooth builder produces typed arrays directly (no number[]
+    // intermediate — the geometry is millions of entries at the corpus
+    // regime and the convert-at-the-end copy was measurable).
+    const points = centroids
+      ? resolveCellPointsFromCentroids(
+          uniqueCells,
+          inputIndices!,
+          centroids,
+          cellSizeM
+        )
+      : resolveCellPoints(uniqueCells, cellSizeM, options?.getCellPoint);
+    const geometry = buildSmooth(occupied, uniqueCells, cellSizeM, points);
+    return { positions: geometry.positions, indices: geometry.indices, aabbs };
+  }
 
   const positions: number[] = [];
   const indices: number[] = [];
-  const mode = resolveMode(options);
   if (mode === 'greedy') {
     buildGreedy(occupied, uniqueCells, cellSizeM, positions, indices);
-  } else if (mode === 'smooth') {
-    buildSmooth(
-      occupied,
-      uniqueCells,
-      cellSizeM,
-      options?.getCellPoint,
-      positions,
-      indices
-    );
   } else if (mode === 'corner-fit') {
     buildCornerFit(
       occupied,
@@ -349,7 +397,7 @@ export function meshOccupiedCells(
 /** Push a quad (4 corners, already ordered) as two triangles. */
 /** Per-face culling: emit each exposed unit face as its own quad. */
 function buildCulled(
-  occupied: Set<number>,
+  occupied: PackedKeyHash,
   uniqueCells: readonly GridCell[],
   cellSizeM: number,
   positions: number[],
@@ -430,104 +478,190 @@ function buildCulled(
  */
 const SINGLE_CORNER_NUDGE_K = 0.5;
 
-function buildSmooth(
-  occupied: Set<number>,
+/**
+ * Resolve every unique cell's surface point (measured centroid via
+ * `getCellPoint`, or the geometric centre when the provider is absent /
+ * returns null / returns a non-finite triple) EAGERLY into ordinal-aligned
+ * typed arrays — `buildSmooth`'s dual-vertex loop then reads points by the
+ * ordinal stored in the occupied hash, with no per-key memo Map. The lazy
+ * memo this replaces resolved the same points for every surface cell anyway
+ * (interior cells of a solid are the only extra work, and reconstruction
+ * grids are shells).
+ */
+function resolveCellPoints(
   uniqueCells: readonly GridCell[],
   cellSizeM: number,
-  getCellPoint: ((cell: GridCell) => Vector3 | null) | undefined,
-  positions: number[],
-  indices: number[]
-): void {
-  // Memoized per-cell surface point (measured centroid, or geometric centre as
-  // fallback), keyed by the numeric cell key. Each occupied cell is a corner of
-  // up to 8 dual cells, so without the cache `getCellPoint` would be re-invoked
-  // ~8× per cell (each call also allocating its arg tuple + result). Resolve once.
-  const pointCache = new Map<number, readonly [number, number, number]>();
+  getCellPoint: ((cell: GridCell) => Vector3 | null) | undefined
+): { px: Float64Array; py: Float64Array; pz: Float64Array } {
+  const n = uniqueCells.length;
+  const px = new Float64Array(n);
+  const py = new Float64Array(n);
+  const pz = new Float64Array(n);
   const scratch: [number, number, number] = [0, 0, 0];
-  const cellPoint = (
-    ckey: number,
-    x: number,
-    y: number,
-    z: number
-  ): readonly [number, number, number] => {
-    const hit = pointCache.get(ckey);
-    if (hit !== undefined) {
-      return hit;
-    }
-    let p: readonly [number, number, number] = [
-      x * cellSizeM,
-      y * cellSizeM,
-      z * cellSizeM,
-    ];
+  for (let i = 0; i < n; i++) {
+    const cell = uniqueCells[i]!;
+    const x = cell[0];
+    const y = cell[1];
+    const z = cell[2];
+    let wx = x * cellSizeM;
+    let wy = y * cellSizeM;
+    let wz = z * cellSizeM;
     if (getCellPoint) {
       scratch[0] = x;
       scratch[1] = y;
       scratch[2] = z;
       const cp = getCellPoint(scratch);
       if (cp && isFiniteVector3(cp)) {
-        p = [cp[0], cp[1], cp[2]];
+        wx = cp[0];
+        wy = cp[1];
+        wz = cp[2];
       }
     }
-    pointCache.set(ckey, p);
-    return p;
-  };
+    px[i] = wx;
+    py[i] = wy;
+    pz[i] = wz;
+  }
+  return { px, py, pz };
+}
+
+/**
+ * The `centroids`-array twin of {@link resolveCellPoints} (the mesh-worker
+ * fast path): centroids arrive input-order-aligned over the wire, so each
+ * unique cell's point is `centroids[inputIndices[i]·3 …]` when that triple is
+ * finite, else the geometric centre — the exact fallback rule of the callback
+ * path (NaN is the wire's "no centroid" sentinel; a non-finite value from a
+ * poisoned provider must also degrade, never propagate).
+ */
+function resolveCellPointsFromCentroids(
+  uniqueCells: readonly GridCell[],
+  inputIndices: readonly number[],
+  centroids: Float64Array,
+  cellSizeM: number
+): { px: Float64Array; py: Float64Array; pz: Float64Array } {
+  const n = uniqueCells.length;
+  const px = new Float64Array(n);
+  const py = new Float64Array(n);
+  const pz = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const j = inputIndices[i]! * 3;
+    const cx = centroids[j]!;
+    const cy = centroids[j + 1]!;
+    const cz = centroids[j + 2]!;
+    if (Number.isFinite(cx) && Number.isFinite(cy) && Number.isFinite(cz)) {
+      px[i] = cx;
+      py[i] = cy;
+      pz[i] = cz;
+    } else {
+      const cell = uniqueCells[i]!;
+      px[i] = cell[0] * cellSizeM;
+      py[i] = cell[1] * cellSizeM;
+      pz[i] = cell[2] * cellSizeM;
+    }
+  }
+  return { px, py, pz };
+}
+
+/** Ordinal-aligned resolved surface points (see {@link resolveCellPoints}). */
+interface CellPoints {
+  readonly px: Float64Array;
+  readonly py: Float64Array;
+  readonly pz: Float64Array;
+}
+
+/** Growth step for the smooth builder's typed output buffers. */
+function grownCopy<T extends Float32Array | Uint32Array>(
+  buffer: T,
+  Ctor: new (length: number) => T
+): T {
+  const grown = new Ctor(buffer.length * 2);
+  grown.set(buffer);
+  return grown;
+}
+
+function buildSmooth(
+  occupied: PackedKeyHash,
+  uniqueCells: readonly GridCell[],
+  cellSizeM: number,
+  points: CellPoints
+): { positions: Float32Array; indices: Uint32Array } {
+  // PERFORMANCE (2026-07-17 perf loop, iteration 2): this builder runs on
+  // every occluder re-mesh at the 200 ms reconstruction cadence and profiled
+  // ~65% inside Map/Set operations. It therefore works entirely on the flat
+  // `occupied` PackedKeyHash (whose value is the cell's ORDINAL in
+  // `uniqueCells`) plus the ordinal-aligned resolved points, derives every
+  // neighbour/dual/corner key INCREMENTALLY from the per-axis key strides —
+  // no per-lookup repacking, no per-cell tuples — and writes its geometry
+  // into growable typed arrays (no number[] intermediate + convert-at-end
+  // copy over millions of entries). Output is byte-identical to the previous
+  // Map/Set implementation (pinned by the frozen-oracle property test);
+  // measured −69% on the production re-mesh path (runMeshRequest) at 100k
+  // cells (devbox-win11, numbers in the sidecar).
+  const n = uniqueCells.length;
+  const { px, py, pz } = points;
+  let positions = new Float32Array(4096 * 3);
+  let posLen = 0;
+  let indices = new Uint32Array(8192 * 3);
+  let idxLen = 0;
 
   // One welded vertex per boundary dual cell (key = its min-corner cell `b`),
   // created lazily and positioned at the mean of its OCCUPIED corner cells'
-  // measured surface points.
-  const vertexIndex = new Map<number, number>();
-  const dualVertex = (bx: number, by: number, bz: number): number => {
-    const dkey = cellKey(bx, by, bz);
+  // measured surface points. The 8 corner keys are `dkey + dx·Sx + dy·Sy + dz`.
+  const vertexIndex = new PackedKeyHash(n * 2);
+  const nudge = cellSizeM * SINGLE_CORNER_NUDGE_K;
+  const dualVertex = (dkey: number): number => {
     const existing = vertexIndex.get(dkey);
-    if (existing !== undefined) {
+    if (existing !== -1) {
       return existing;
     }
     let sx = 0;
     let sy = 0;
     let sz = 0;
-    let n = 0;
+    let count = 0;
     // Local offset of the (last seen) occupied corner within the dual cell —
-    // only consumed when n === 1, where it identifies THE single corner.
+    // only consumed when count === 1, where it identifies THE single corner.
     let odx = 0;
     let ody = 0;
     let odz = 0;
     for (let dx = 0; dx <= 1; dx++) {
       for (let dy = 0; dy <= 1; dy++) {
         for (let dz = 0; dz <= 1; dz++) {
-          const cx = bx + dx;
-          const cy = by + dy;
-          const cz = bz + dz;
-          const ckey = cellKey(cx, cy, cz);
-          if (!occupied.has(ckey)) {
+          const ord = occupied.get(
+            dkey + dx * CELL_KEY_STRIDE_X + dy * CELL_KEY_STRIDE_Y + dz
+          );
+          if (ord === -1) {
             continue;
           }
-          const p = cellPoint(ckey, cx, cy, cz);
-          sx += p[0];
-          sy += p[1];
-          sz += p[2];
-          n += 1;
+          sx += px[ord]!;
+          sy += py[ord]!;
+          sz += pz[ord]!;
+          count += 1;
           odx = dx;
           ody = dy;
           odz = dz;
         }
       }
     }
-    // n ≥ 1: a dual vertex is only requested for a boundary dual cell, which by
-    // construction has at least one occupied corner (the crossing's solid side).
-    let px = sx / n;
-    let py = sy / n;
-    let pz = sz / n;
-    if (n === 1) {
+    // count ≥ 1: a dual vertex is only requested for a boundary dual cell, which
+    // by construction has at least one occupied corner (the crossing's solid side).
+    let vx = sx / count;
+    let vy = sy / count;
+    let vz = sz / count;
+    if (count === 1) {
       // Single-corner fallback: pull the vertex off the lone cell point toward
       // the dual-cell centre so neighbouring dual vertices no longer coincide
       // (see SINGLE_CORNER_NUDGE_K above for the full rationale/trade-off).
-      const nudge = cellSizeM * SINGLE_CORNER_NUDGE_K;
-      px += (0.5 - odx) * nudge;
-      py += (0.5 - ody) * nudge;
-      pz += (0.5 - odz) * nudge;
+      vx += (0.5 - odx) * nudge;
+      vy += (0.5 - ody) * nudge;
+      vz += (0.5 - odz) * nudge;
     }
-    const idx = positions.length / 3;
-    positions.push(px, py, pz);
+    if (posLen + 3 > positions.length) {
+      positions = grownCopy(positions, Float32Array);
+    }
+    const idx = posLen / 3;
+    positions[posLen] = vx;
+    positions[posLen + 1] = vy;
+    positions[posLen + 2] = vz;
+    posLen += 3;
     vertexIndex.set(dkey, idx);
     return idx;
   };
@@ -535,50 +669,56 @@ function buildSmooth(
   // One quad per occupied↔empty crossing (== the cube mesher's exposed faces).
   // For an occupied cell C with an empty neighbour along d·sgn, the four dual
   // cells sharing the (C, neighbour) edge have `base_d = (sgn>0 ? C_d : C_d−1)`
-  // and `base_{u,v} ∈ {C−1, C}`; they are wound to face the empty side.
-  // Reused scratch tuples — mutated in place, read immediately, so the
-  // per-cell loop allocates nothing (`c` is the axis-indexable view of the
-  // current cell; `dualBase` is the dual-cell base fed to dualVertex).
-  const dualBase: [number, number, number] = [0, 0, 0];
-  const c: [number, number, number] = [0, 0, 0];
+  // and `base_{u,v} ∈ {C−1, C}` — all derived from C's key via the axis
+  // strides: neighbour = cKey ± S[d]; dual cell A = cKey (− S[d] for the −sgn
+  // face) − S[u] − S[v]; B/C/D add S[u]/S[v] back. Winding faces the empty side.
+  const STRIDES: readonly [number, number, number] = [
+    CELL_KEY_STRIDE_X,
+    CELL_KEY_STRIDE_Y,
+    1,
+  ];
   for (const cell of uniqueCells) {
-    c[0] = cell[0];
-    c[1] = cell[1];
-    c[2] = cell[2];
+    const cKey = cellKey(cell[0], cell[1], cell[2]);
     for (const { d, u, v } of GREEDY_DIRS) {
+      const sd = STRIDES[d];
+      const su = STRIDES[u];
+      const sv = STRIDES[v];
       for (let sgn = 1; sgn >= -1; sgn -= 2) {
-        const nbd = c[d] + sgn;
         // crossing iff the neighbour along d·sgn is empty
-        dualBase[d] = nbd;
-        dualBase[u] = c[u];
-        dualBase[v] = c[v];
-        if (occupied.has(cellKey(dualBase[0], dualBase[1], dualBase[2]))) {
+        if (occupied.has(cKey + sgn * sd)) {
           continue; // interior face — no crossing here
         }
-        const baseD = sgn > 0 ? c[d] : c[d] - 1;
-        const bu0 = c[u] - 1;
-        const bv0 = c[v] - 1;
         // The four dual cells sharing this edge, at (u,v) base offsets A(0,0)
-        // B(1,0) C(1,1) D(0,1). dualBase is reused (d fixed, u,v set per corner).
-        dualBase[d] = baseD;
-        dualBase[u] = bu0;
-        dualBase[v] = bv0;
-        const iA = dualVertex(dualBase[0], dualBase[1], dualBase[2]);
-        dualBase[u] = bu0 + 1;
-        const iB = dualVertex(dualBase[0], dualBase[1], dualBase[2]);
-        dualBase[v] = bv0 + 1;
-        const iC = dualVertex(dualBase[0], dualBase[1], dualBase[2]);
-        dualBase[u] = bu0;
-        const iD = dualVertex(dualBase[0], dualBase[1], dualBase[2]);
-        // +d faces CCW as A→B→C→D; −d reverses to A→D→C→B.
-        if (sgn > 0) {
-          indices.push(iA, iB, iC, iA, iC, iD);
-        } else {
-          indices.push(iA, iD, iC, iA, iC, iB);
+        // B(1,0) C(1,1) D(0,1).
+        const keyA = (sgn > 0 ? cKey : cKey - sd) - su - sv;
+        const iA = dualVertex(keyA);
+        const iB = dualVertex(keyA + su);
+        const iC = dualVertex(keyA + su + sv);
+        const iD = dualVertex(keyA + sv);
+        if (idxLen + 6 > indices.length) {
+          indices = grownCopy(indices, Uint32Array);
         }
+        // +d faces CCW as A→B→C→D; −d reverses to A→D→C→B.
+        indices[idxLen] = iA;
+        indices[idxLen + 3] = iA;
+        indices[idxLen + 4] = iC;
+        if (sgn > 0) {
+          indices[idxLen + 1] = iB;
+          indices[idxLen + 2] = iC;
+          indices[idxLen + 5] = iD;
+        } else {
+          indices[idxLen + 1] = iD;
+          indices[idxLen + 2] = iC;
+          indices[idxLen + 5] = iB;
+        }
+        idxLen += 6;
       }
     }
   }
+  return {
+    positions: positions.slice(0, posLen),
+    indices: indices.slice(0, idxLen),
+  };
 }
 
 /**
@@ -607,7 +747,7 @@ function buildSmooth(
  * merging does not apply (displaced corners are non-coplanar).
  */
 function buildCornerFit(
-  occupied: Set<number>,
+  occupied: PackedKeyHash,
   uniqueCells: readonly GridCell[],
   cellSizeM: number,
   getCellPoint: ((cell: GridCell) => Vector3 | null) | undefined,
@@ -723,7 +863,7 @@ function buildCornerFit(
  * only the triangle count drops.
  */
 function buildGreedy(
-  occupied: Set<number>,
+  occupied: PackedKeyHash,
   uniqueCells: readonly GridCell[],
   cellSizeM: number,
   positions: number[],

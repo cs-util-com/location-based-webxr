@@ -41,7 +41,7 @@ Returns a `GpsCompassCubes` object:
 ## Invariants & Assumptions
 
 - Cubes follow NUE convention where X=North, Y=Up, Z=East.
-- Text labels are rendered via `CanvasTexture` on `Sprite` — null-safe for jsdom (canvas context may be null).
+- Text labels are rendered through the shared [text-sprite.ts](text-sprite.ts.md) helper (`createTextSprite`, default static-glyph configuration) — null-safe for jsdom (canvas context may be null). Label naming (`label-<text>`), position above the cube, and scale stay local to this module.
 - No label on the Up cube (just a green cube).
 - `dispose()` cleans up all geometry, material, and texture resources.
 

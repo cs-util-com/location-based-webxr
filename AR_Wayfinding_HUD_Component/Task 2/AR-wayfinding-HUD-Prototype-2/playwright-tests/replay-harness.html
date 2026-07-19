@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Task 2 Replay Harness</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body {
+        margin: 0;
+        background: #06070a;
+        color: #eef2ff;
+        font-family: system-ui, sans-serif;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+      }
+      #hud-report {
+        position: fixed;
+        left: 16px;
+        top: 16px;
+        z-index: 10;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: rgba(8, 10, 16, 0.72);
+        backdrop-filter: blur(10px);
+        white-space: pre-wrap;
+        max-width: min(90vw, 640px);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <pre id="hud-report">Waiting for replay…</pre>
+    <script type="module" src="./replay-harness.js"></script>
+  </body>
+</html>

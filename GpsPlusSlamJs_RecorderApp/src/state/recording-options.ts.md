@@ -70,7 +70,7 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ```typescript
 {
-  depth: { enabled: true, intervalMs: 500, gridSize: 32, rgb: true },
+  depth: { enabled: true, intervalMs: 200, gridSize: 24, rgb: true },
   images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1,
             motionFilter: { enabled: true, maxAngularVelocity: 0.6, maxLinearVelocity: 2.5, maxWaitMs: 4000 },
             qualityFilter: { enabled: false, blurRelativeThreshold: 0.5, minMeanLuminance: 10, maxWaitMs: 4000 } },
@@ -78,7 +78,7 @@ User-configurable recording options for controlling high-frequency data streams 
   frameTileDisplay: { divisor: 2, maxTiles: 100 },
   visualization: { frameTiles: true, occupancyCubes: true, gpsAlignmentMarkers: true, compassCubes: true, headingUpMap: true, statsOverlay: false },
   qr: { enabled: false, intervalMs: 125, captureSize: 1024 },
-  compassDebug: { coldStartOverride: true, rotationPrior: false, webXRConsistency: false },
+  compassDebug: { coldStartOverride: true, rotationPrior: false, webXRConsistency: false, experiment: false, robustSolverComparison: false },
   loopClosureDebug: { detectorEnabled: false }
 }
 ```
@@ -89,10 +89,10 @@ The default `depth` + `occupancy` params are tuned so a usable occluder mesh
 builds up **as fast as possible** (param-sweep on a real recording — see
 [2026-06-30-0829-occluder-tuning-followups.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-0829-occluder-tuning-followups.md), Round 6):
 
-- `depth.intervalMs` **500** — the minimum cadence (2 samples/s), so points arrive fastest.
-- `depth.gridSize` **32** — the previous slider max (1024 points/sample); more observations per sample confirm cells fastest. **The slider max was raised to 64** (4096 points/sample) for on-device experimentation with even higher densities — measure the per-sample depth-readback cost before adopting a value above 32.
-- `occupancy.minConfidence` **3** — the noise floor: a cell needs this many observations before it is rendered (≈ the _dwell time_ before a surface meshes, ≈1.5 s at 500 ms sampling). Kept at 3 (the [2026-07-16 sweep](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md): floaters = phantom colliders are set by the floor, not the voxel — mc 3 ≈ 1.9% floaters vs mc 2 ≈ 3.5%, so the floor is the fidelity lever). 1 = unfiltered/legacy. Now the framework `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS`, shared with the PhysicsDemo.
-- `occupancy.cellSizeM` **0.18** — raised from 0.15: coarser 18 cm voxels build the mesh/physics up faster (+18% early coverage at equal floater fidelity) — the sweep's clean speed lever. Now the framework `DEFAULT_OCCUPANCY_CELL_SIZE_M`, shared with the PhysicsDemo.
+- `depth.intervalMs` **200** — five samples per second (2026-07-16 evening on-device framerate/mesh trade-off passes; small 24² samples keep per-frame work low enough that a fast cadence does not hurt the framerate, unlike the sweep-derived 64² samples). The slider floor stays **100** (superset-capture strategy: dense validation recordings at 100–250 ms × gridSize 64 are DECIMATED in replay to simulate every slower configuration; ~200 KB per 64²-sample, the sampler degrades gracefully on over-ambitious intervals). Framework `DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS`, shared with the PhysicsDemo.
+- `depth.gridSize` **24** — the 2026-07-16 evening on-device trade-off (the same-day sweep-derived 64 built the mesh fastest on ground truth but visibly hurt the framerate — the sweep's flagged open question, answered in the field). The sweep still holds directionally: if devices get faster, gridSize (not the interval) is the knob to raise first. Framework `DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE`, shared with the PhysicsDemo so the two apps build at the same speed; slider max stays 64 for superset validation recordings.
+- `occupancy.minConfidence` **2** — the noise floor: a cell needs this many observations before it is rendered. Lowered 3 → 2 in the 2026-07-16 evening on-device pass: the [corpus sweep](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md)'s floater argument for 3 (mc 3 ≈ 1.9% vs mc 2 ≈ 3.5%) was measured under LEGACY carving; with the decay carve guard the gap largely disappears (real pillar-orbit A/B: guarded mc 2 isolates 2.12% vs guarded mc 3 2.19%), and the lower floor halves the dwell before a surface meshes. 1 = unfiltered/legacy. Framework `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS`, shared with the PhysicsDemo.
+- `occupancy.cellSizeM` **0.16** — the 2026-07-16 evening on-device trade-off between the sweep-tested 0.15 (fidelity) and 0.18 (speed). Framework `DEFAULT_OCCUPANCY_CELL_SIZE_M`, shared with the PhysicsDemo.
 
 Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [2026-06-30 session](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-30-0656-occluder-tuning-and-mesh-smoothness-user-feedback.md) (F1: 1000→500 / 16→24 / 3→5). The 2026-07-01 sweep then reversed the memory/robustness hedges (24→32, 5→3). A [2026-07-15 device-impression change](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-15-1640-occupancy-fast-reconstruction-defaults-plan.md) briefly moved cellSize 0.15→0.18 AND minConfidence 3→2; the [2026-07-16 corpus sweep](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md) kept the 0.18 (the speed win) but reverted the floor to 3 (the floater fidelity), and hoisted both to framework constants so the PhysicsDemo shares them.
 
@@ -118,11 +118,20 @@ Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [20
 
 `images.intervalMs` min/step were lowered 1000/500 → **250/250** (2026-07-10) so splat-style object scans can reach 4 Hz — the capture pipeline self-limits via `captureInProgress` if a device cannot sustain that cadence. See `GpsPlusSlamJs_Docs/docs/2026-07-10-0802-splat-orbit-capture-rate-finding.md`.
 
+## Validation mechanism (schema-driven, 2026-07-18)
+
+Every group validator is a thin wrapper over one generic `validateFields(options, defaults, specs)` core driven by a per-field spec table (`kind: 'bool' | 'num' | 'enum' | 'custom'`), replacing ~10 hand-rolled per-field validator bodies (simplify-loop Area 5):
+
+- `bool` — real boolean or the group default; `num` — FINITE number (NaN is `typeof 'number'` and must not survive), optional `round`, clamped to the referenced CONSTRAINTS window; `enum` — membership or default; `custom` — field-specific logic (the occupancy legacy migrations, the nested `images.motionFilter`/`qualityFilter` groups, `blurMetric`'s optional-default fallback).
+- The spec table is **exhaustive over the group type** (`GroupSpec<T>` maps every key): adding a field to an options interface is a compile error until its validation is declared — the hand-rolled validators could silently drop a new field.
+- The output object's keys follow the spec's declaration order, which mirrors the defaults' order — so a validated group's JSON serialization is byte-stable across save→validate round-trips (pinned by the property test).
+- Per-validator behavior is unchanged (the pre-refactor test suite passed unmodified).
+
 ## Validation Constraints
 
 | Setting                                       | Min  | Max   |
 | --------------------------------------------- | ---- | ----- |
-| `depth.intervalMs`                            | 500  | 5000  |
+| `depth.intervalMs`                            | 100  | 5000  |
 | `depth.gridSize`                              | 2    | 64    |
 | `images.intervalMs`                           | 250  | 10000 |
 | `images.quality`                              | 0.3  | 1.0   |
@@ -138,7 +147,7 @@ Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [20
 
 `occupancy.cellSizeM` is clamped to 1–20 cm: cell count scales as 1/cellSize³, so sub-cm voxels are both a memory/perf cliff and below the depth-sensor noise floor. A non-finite stored value (NaN/Infinity) falls back to the default rather than being clamped, because `OccupancyGrid` throws a `RangeError` on a non-finite cell size.
 
-`occupancy.minConfidence` (default **3**) is the voxel noise filter: the minimum observation `count` before a cell is rendered/used, forwarded to `getOccupiedCells(minObservations)`. It is rounded to an integer and clamped to 1–10 (1 = unfiltered/legacy); NaN/non-number falls back to the default. Raising it suppresses single-frame depth noise — notably the **behind-surface** phantoms (e.g. below the floor) that free-space carving can never clear. See `GpsPlusSlamJs_Docs/docs/2026-06-22-2146-occupancy-grid-behind-surface-noise-plan.md`.
+`occupancy.minConfidence` (default **3**) is the voxel noise filter: the minimum observation `count` before a cell is rendered/used, forwarded to `getOccupiedCells(minObservations)`. It is rounded to an integer and clamped to 1–10 (1 = unfiltered/legacy); NaN/non-number falls back to the default. Raising it suppresses single-frame depth noise — notably the **behind-surface** phantoms (e.g. below the floor) that free-space carving can never clear. Since 2026-07-16 the same floor also drives the grid's **confidence-guarded carving** (`OccupancyGrid.carveConfidenceThreshold`, live + replay): a voxel solid enough to be rendered can no longer be erased by a single deeper depth reading (synthetic-scene investigation — eliminates silhouette-edge churn and noisy occluded-background destruction). See `GpsPlusSlamJs_Docs/docs/2026-06-22-2146-occupancy-grid-behind-surface-noise-plan.md`.
 
 ## Examples
 
@@ -165,6 +174,7 @@ const defaults = resetRecordingOptions();
 
 ## Tests
 
+- `recording-options.property.test.ts` — fast-check properties over junk input in every group's real field names: never throws, every numeric field lands inside its CONSTRAINTS window (integers where required), validation is idempotent, and a validated object survives JSON round-trip + re-validation **byte-identically** (the key-order guarantee).
 - `recording-options.test.ts` — unit tests
   - Validation: clamps out-of-range, handles invalid types
   - Persistence: load/save/reset with localStorage

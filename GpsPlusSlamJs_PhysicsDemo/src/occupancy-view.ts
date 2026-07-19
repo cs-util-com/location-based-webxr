@@ -34,9 +34,9 @@ import {
 } from "gps-plus-slam-app-framework/state/replay-occupancy-subscriber";
 
 export interface OccupancyViewOptions {
-  /** Voxel edge (m). Default `DEFAULT_OCCUPANCY_CELL_SIZE_M` (0.18 — framework FAST-reconstruction). */
+  /** Voxel edge (m). Default `DEFAULT_OCCUPANCY_CELL_SIZE_M` (0.16 — framework reconstruction tuning). */
   readonly cellSizeM?: number;
-  /** Noise floor (min observations). Default `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS` (3 — framework default; keeps phantom colliders low). */
+  /** Noise floor (min observations). Default `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS` (2 — framework default; the decay carve guard keeps phantom colliders low at this floor). */
   readonly minObservations?: number;
   /** Mesher mode. Default `'smooth'` (Surface nets — the RecorderApp default). */
   readonly meshMode?: MeshMode;
@@ -66,7 +66,14 @@ export function createOccupancyView(
     options.debugStyle ?? "depth-shaded-wireframe";
   let meshMode: MeshMode = options.meshMode ?? "smooth";
 
-  const grid = new OccupancyGrid({ cellSizeM });
+  // Confidence-guarded carving at the noise floor (2026-07-16 synthetic-scene
+  // investigation): any cell solid enough to be meshed (≥ minObservations) can
+  // no longer be erased by a single deeper reading — eliminates silhouette
+  // churn and occluded-background destruction; the collider stays stable.
+  const grid = new OccupancyGrid({
+    cellSizeM,
+    carveConfidenceThreshold: minObservations,
+  });
 
   const buildOccluder = (mode: MeshMode): OcclusionMesh => {
     const mesh = new OcclusionMesh(arWorldGroup, { mode });

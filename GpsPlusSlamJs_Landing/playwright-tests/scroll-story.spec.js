@@ -131,16 +131,19 @@ test("palette button cycles the palette and the choice persists across reload", 
   await expect(page.locator(`html[data-theme="${cycled}"]`)).toBeAttached();
 });
 
-test("all five demo apps stay launchable from the demos hub", async ({
+test("all six demo apps stay launchable from the demos hub", async ({
   page,
 }) => {
   await page.goto("/");
+  // Keep in sync with requiredDemoLinks in scripts/build-site.mjs (the
+  // deploy-time guard); this e2e re-checks the same set in the LIVE page.
   for (const href of [
     "/starter/",
     "/minimal/",
     "/qr-demo/",
     "/recorder/",
     "/physics/",
+    "/wayfinding/",
   ]) {
     const card = page.locator(`a.demo-card[href="${href}"]`);
     await expect(card).toBeAttached();

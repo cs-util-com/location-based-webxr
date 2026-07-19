@@ -827,8 +827,9 @@ describe('settings-modal', () => {
       const slider = document.getElementById(
         'occupancy-cell-size'
       ) as HTMLInputElement;
-      // default 18 cm (framework FAST-reconstruction default, 2026-07-15)
-      expect(slider.value).toBe('18');
+      // default 16 cm (framework reconstruction default; 2026-07-16 evening
+      // on-device framerate/mesh trade-off pass)
+      expect(slider.value).toBe('16');
 
       slider.value = '10';
       slider.dispatchEvent(new Event('input'));
@@ -1230,6 +1231,10 @@ describe('settings-modal', () => {
       ['compass-cold-start-override', 'coldStartOverride'],
       ['compass-rotation-prior', 'rotationPrior'],
       ['compass-webxr-consistency', 'webXRConsistency'],
+      // 2026-07-19 field-test toggles (enablement plan): the experiment combo
+      // (prior + tolerance 15° + C′) and the alternative robust-solver comparison arm.
+      ['compass-experiment', 'experiment'],
+      ['compass-robust-solver-comparison', 'robustSolverComparison'],
     ] as const;
 
     const COMPASS_DEFAULT_CHECKED: Record<
@@ -1239,6 +1244,8 @@ describe('settings-modal', () => {
       coldStartOverride: true,
       rotationPrior: false,
       webXRConsistency: false,
+      experiment: false,
+      robustSolverComparison: false,
     };
 
     it('default checkbox states match the per-flag defaults (Stage 0 on, others off)', () => {

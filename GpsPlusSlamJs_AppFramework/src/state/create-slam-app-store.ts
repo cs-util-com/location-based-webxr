@@ -10,8 +10,9 @@
  * never references those concepts so apps that don't need them (POI viewers,
  * navigation arrows, …) compose freely.
  *
- * The legacy `createRecorderStore` from `store.ts` is built on top of this
- * factory and will move out of the framework in Iter 1D.
+ * This is the framework's ONLY store factory (the legacy
+ * `createRecorderStore`/`store.ts` it replaced moved out in Iter 1D); the
+ * core library's license error messages point here as the remediation.
  *
  * @see docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md — Iter 1
  */
@@ -32,6 +33,8 @@ import {
   setColdStartOverrideEnabled,
   setCompassRotationPriorEnabled,
   setCompassWebXRConsistencyEnabled,
+  setCompassExperimentEnabled,
+  setRobustSolverComparisonEnabled,
   type RootState as LibraryRootState,
 } from 'gps-plus-slam-js';
 import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-js/community-license-key';
@@ -189,6 +192,30 @@ export interface SlamAppStoreOptions<
    * `false` ⇒ byte-identical. The action persists into recordings.
    */
   enableCompassWebXRConsistency?: boolean;
+
+  /**
+   * **Field-test flag (2026-07-19 enablement plan)** — enable the library's
+   * compass EXPERIMENT combo: Stage-C rotation prior + trust tolerance 15°
+   * (the census-backed activating value) + C′ compass-guided pair selection.
+   * Dispatches `setCompassExperimentEnabled(true)` once `gpsData` exists; the
+   * combo itself lives in the library (single boolean crosses the boundary).
+   * Default `false` ⇒ byte-identical. The action persists into recordings, so
+   * replays/censuses can attribute. Keep OFF for §6a calibration recordings.
+   *
+   * @see GpsPlusSlamJs_Docs/docs/2026-07-19-0813-compass-experiment-recorder-enablement-plan.md
+   */
+  enableCompassExperiment?: boolean;
+
+  /**
+   * **Field-test flag** — enable the library's alternative robust-solver
+   * comparison arm (NOT a compass mechanism — a generic outlier-tolerant
+   * position fit, rejected as a default on the evaluation corpus but exposed
+   * for on-device A/B against the compass experiment; adds run-to-run
+   * variance by nature). Dispatches `setRobustSolverComparisonEnabled(true)`
+   * once `gpsData` exists. Default `false` ⇒ byte-identical. The action
+   * persists into recordings.
+   */
+  enableRobustSolverComparison?: boolean;
 }
 
 /**
@@ -252,6 +279,9 @@ export function createSlamAppStore<
     enableCompassColdStartOverride = true,
     enableCompassRotationPrior = false,
     enableCompassWebXRConsistency = false,
+    // Field-test opt-ins (2026-07-19 enablement plan) — default OFF.
+    enableCompassExperiment = false,
+    enableRobustSolverComparison = false,
   } = options;
 
   validateLicenseKey(licenseKey);
@@ -322,6 +352,18 @@ export function createSlamAppStore<
     compassOptIns.push({
       isSet: (s) => s.gpsData?.compassWebXRConsistencyEnabled === true,
       apply: (dispatch) => dispatch(setCompassWebXRConsistencyEnabled(true)),
+    });
+  }
+  if (enableCompassExperiment) {
+    compassOptIns.push({
+      isSet: (s) => s.gpsData?.compassExperimentEnabled === true,
+      apply: (dispatch) => dispatch(setCompassExperimentEnabled(true)),
+    });
+  }
+  if (enableRobustSolverComparison) {
+    compassOptIns.push({
+      isSet: (s) => s.gpsData?.robustSolverComparisonEnabled === true,
+      apply: (dispatch) => dispatch(setRobustSolverComparisonEnabled(true)),
     });
   }
 

@@ -107,6 +107,14 @@ export {
   pickWorldPoint,
 } from './pointer-picking.js';
 
+// --- perf-stats-overlay (shared Stats.js FPS/MS/MB panel row) ---
+export {
+  type PerfStatsInstance,
+  type PerfStatsOverlayOptions,
+  type PerfStatsOverlayHandle,
+  createPerfStatsOverlay,
+} from './perf-stats-overlay.js';
+
 // --- accuracy-circles (shared per-event GPS accuracy circles) ---
 export {
   type AccuracyCircleSample,
@@ -128,6 +136,35 @@ export {
   MAP_PATH_POLYLINE_OPACITY,
   drawMapData,
 } from './map-overlay-draw.js';
+
+// --- text-sprite ---
+export {
+  type TextSprite,
+  type TextSpriteOptions,
+  createTextSprite,
+} from './text-sprite.js';
+
+// --- wayfinding-hud (frustum-locked target indicators as camera children) ---
+export {
+  type WayfindingHud,
+  type WayfindingHudOptions,
+  DEFAULT_WAYFINDING_HUD,
+  createWayfindingHud,
+  validateWayfindingHudOptions,
+} from './wayfinding-hud.js';
+
+// --- wayfinding-placement (pure seam of the wayfinding HUD) ---
+export {
+  type TargetPlacement,
+  type TargetPlacementInput,
+  type TargetPlacementState,
+  type ArrowPlacement,
+  type CirclePlacement,
+  type HiddenPlacement,
+  computeTargetPlacement,
+  formatDistanceLabel,
+  getHudFrustumExtents,
+} from './wayfinding-placement.js';
 
 // --- three-dispose ---
 export {

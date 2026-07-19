@@ -95,6 +95,16 @@ export async function installAnchorStarterFakes(page, options = {}) {
       /** When true, the faked `createGpsAnchor` throws (placement failure). */
       failCreateAnchor: false,
       /**
+       * Options captured on every `createWayfindingHud` call (F2 wiring
+       * guard): the HUD must be started for the placed anchor (cache-miss)
+       * AND for the `?show=` cache-hit anchor, with the camera, a target
+       * getter, and the distance deadband. `addInitScript` re-runs per
+       * navigation, so this resets on reload.
+       */
+      wayfindingHudCalls: [],
+      /** Counts fake wayfinding-HUD disposals (teardown proof). */
+      wayfindingHudDisposals: 0,
+      /**
        * Whether the faked hit-test reticle currently reports a surface under
        * the screen centre. Defaults to `true` so the existing placement specs
        * (which don't care about the reticle) keep placing; the no-surface spec
@@ -200,6 +210,19 @@ export async function installAnchorStarterFakes(page, options = {}) {
           opts.onBootstrapComplete(opts.gpsPoint);
         }
         return { dispose() {} };
+      },
+      createWayfindingHud: (opts) => {
+        control.wayfindingHudCalls.push({
+          hasCamera: Boolean(opts?.camera),
+          hasGetTargets: typeof opts?.getTargets === "function",
+          distanceMin: opts?.distanceMin,
+          distanceMax: opts?.distanceMax,
+        });
+        return {
+          dispose() {
+            control.wayfindingHudDisposals++;
+          },
+        };
       },
       selectTrackingQuality: () => control.trackingReport,
       selectAlignmentMatrix: () => control.alignmentMatrix,

@@ -10,6 +10,10 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,
+  DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
+} from 'gps-plus-slam-app-framework/ar/depth-sampler';
+import {
   loadRecordingOptions,
   saveRecordingOptions,
   resetRecordingOptions,
@@ -118,9 +122,37 @@ describe('recording-options', () => {
       expect(validateDepthOptions({ rgb: false }).rgb).toBe(false);
     });
 
+    it('defaults to the framework reconstruction cadence (200 ms × gridSize 24)', () => {
+      // Why this test matters: both reconstruction apps must share ONE depth
+      // tuning source or they visibly drift apart (the demo-vs-recorder speed
+      // gap, 2026-07-16). Values from the maintainer's 2026-07-16 on-device
+      // framerate/mesh trade-off pass — the sweep-derived 500 ms × 64 hurt
+      // the framerate (8192 points/s); 24² @ 2 s keeps rendering smooth.
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(
+        DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS
+      );
+      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(
+        DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE
+      );
+      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(24);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(200);
+    });
+
     it('clamps intervalMs below minimum to minimum', () => {
-      const result = validateDepthOptions({ intervalMs: 100 });
+      const result = validateDepthOptions({ intervalMs: 30 });
       expect(result.intervalMs).toBe(DEPTH_CONSTRAINTS.intervalMs.min);
+    });
+
+    it('accepts dense-capture intervals down to 100 ms unclamped', () => {
+      // Why this test matters (2026-07-16 superset-capture strategy): dense
+      // validation recordings are captured at high rate + high gridSize and
+      // DECIMATED in replay to simulate every slower configuration — a
+      // recording can only ever be thinned, never densified. The old 500 ms
+      // floor made such supersets impossible; 100 and 250 must now pass
+      // through validation verbatim (the sampler emits at most once per XR
+      // frame, so an over-ambitious interval degrades gracefully on-device).
+      expect(validateDepthOptions({ intervalMs: 100 }).intervalMs).toBe(100);
+      expect(validateDepthOptions({ intervalMs: 250 }).intervalMs).toBe(250);
     });
 
     it('clamps intervalMs above maximum to maximum', () => {
@@ -458,13 +490,13 @@ describe('recording-options', () => {
      * recorder setting (2026-06-22 behind-surface-noise plan). It is forwarded
      * to `getOccupiedCells(minObservations)`, which expects a positive integer,
      * so validation must round, clamp to 1–10, and reject garbage to the
-     * default (default 3, not 1 — the filter is on out of the box; set to 3 in
-     * the 2026-07-01 fast-reconstruction tuning: the fastest noise floor that
-     * still suppresses behind-surface phantoms, ~1.5s dwell before a surface
-     * meshes vs 2.5s at 5).
+     * default (default 2, not 1 — the filter is on out of the box; lowered
+     * 3 → 2 in the 2026-07-16 evening on-device trade-off pass: the decay
+     * carve guard neutralizes mc 2's floater cost, and the lower floor
+     * meshes surfaces after ~half the dwell).
      */
-    it('defaults minConfidence to 3 for an empty object', () => {
-      expect(validateOccupancyOptions({}).minConfidence).toBe(3);
+    it('defaults minConfidence to 2 for an empty object', () => {
+      expect(validateOccupancyOptions({}).minConfidence).toBe(2);
     });
 
     it('preserves a valid in-range minConfidence', () => {
@@ -798,6 +830,8 @@ describe('recording-options', () => {
         coldStartOverride: true,
         rotationPrior: false,
         webXRConsistency: false,
+        experiment: false,
+        robustSolverComparison: false,
       });
     });
 
@@ -807,17 +841,22 @@ describe('recording-options', () => {
           coldStartOverride: false,
           rotationPrior: true,
           webXRConsistency: true,
+          experiment: true,
+          robustSolverComparison: true,
         })
       ).toEqual({
         coldStartOverride: false,
         rotationPrior: true,
         webXRConsistency: true,
+        experiment: true,
+        robustSolverComparison: true,
       });
     });
 
     it('falls back to each field default for non-boolean values', () => {
       // Stage 0 falls back to its default-ON; the experimental flags fall back
-      // OFF — a garbage persisted value never silently enables Stage C / gate.
+      // OFF — a garbage persisted value never silently enables Stage C / gate /
+      // the 2026-07-19 field-test experiments.
       expect(
         validateCompassDebugOptions({
           coldStartOverride: 'no' as unknown as boolean,
@@ -826,6 +865,16 @@ describe('recording-options', () => {
       expect(
         validateCompassDebugOptions({ rotationPrior: 1 as unknown as boolean })
           .rotationPrior
+      ).toBe(false);
+      expect(
+        validateCompassDebugOptions({
+          experiment: 'yes' as unknown as boolean,
+        }).experiment
+      ).toBe(false);
+      expect(
+        validateCompassDebugOptions({
+          robustSolverComparison: 1 as unknown as boolean,
+        }).robustSolverComparison
       ).toBe(false);
     });
 
@@ -837,6 +886,8 @@ describe('recording-options', () => {
         coldStartOverride: true,
         rotationPrior: false,
         webXRConsistency: false,
+        experiment: false,
+        robustSolverComparison: false,
       });
       const clone = cloneRecordingOptions(opts);
       expect(clone.compassDebug).not.toBe(opts.compassDebug); // no aliasing
@@ -1514,26 +1565,26 @@ describe('recording-options', () => {
     });
 
     it('has reasonable default intervals', () => {
-      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(500);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(200);
       expect(DEFAULT_RECORDING_OPTIONS.images.intervalMs).toBe(2000);
     });
 
     /**
-     * Why this matters: the 2026-07-01 param-sweep (on a real recording) tuned
-     * the depth/occupancy defaults for FAST mesh reconstruction — surfaces
-     * should mesh ASAP. These pin that decision: intervalMs 500 (min cadence),
-     * gridSize 32 (max points/sample ⇒ cells confirm fastest), minConfidence 3
-     * and cellSizeM 0.18 (2026-07-16 cellSize × noise corpus sweep: the speed comes
-     * from the coarser 18 cm voxel, the noise floor stays at 3 because floaters =
-     * phantom colliders are set by the floor not the voxel — these come from the
-     * framework-level DEFAULT_OCCUPANCY_* constants so the demo shares them). See
-     * GpsPlusSlamJs_Docs/docs/2026-07-16-0557-occupancy-cellsize-noise-quality-sweep-plan.md.
+     * Why this matters: these pin the maintainer's 2026-07-16 EVENING
+     * on-device framerate/mesh trade-off (screenshot-documented settings pass):
+     * depth 2000 ms × 24×24, voxel 16 cm, minConfidence 2. The same-day
+     * sweep-derived 500 ms × 64 delivered the fastest mesh on ground truth but
+     * visibly hurt the on-device framerate — the sweep's flagged open
+     * question. mc 2's floater cost under legacy carving is neutralized by the
+     * decay carve guard (real pillar A/B: guarded mc 2 ≈ mc 3 isolation).
+     * All four values come from framework constants so the PhysicsDemo shares
+     * them.
      */
     it('uses the fast-reconstruction depth/occupancy defaults', () => {
-      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(500);
-      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(32);
-      expect(DEFAULT_RECORDING_OPTIONS.occupancy.minConfidence).toBe(3);
-      expect(DEFAULT_RECORDING_OPTIONS.occupancy.cellSizeM).toBe(0.18);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.intervalMs).toBe(200);
+      expect(DEFAULT_RECORDING_OPTIONS.depth.gridSize).toBe(24);
+      expect(DEFAULT_RECORDING_OPTIONS.occupancy.minConfidence).toBe(2);
+      expect(DEFAULT_RECORDING_OPTIONS.occupancy.cellSizeM).toBe(0.16);
     });
 
     it('has resolutionDivisor defaulting to 1 (full resolution)', () => {

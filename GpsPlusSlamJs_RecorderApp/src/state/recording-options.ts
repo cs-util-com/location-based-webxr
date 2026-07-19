@@ -20,6 +20,10 @@
 
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
+  DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,
+  DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
+} from 'gps-plus-slam-app-framework/ar/depth-sampler';
+import {
   DEFAULT_MOTION_FILTER,
   type MotionFilterConfig,
 } from 'gps-plus-slam-app-framework/ar/capture-motion-gate';
@@ -96,6 +100,18 @@ export interface CompassDebugOptions {
   rotationPrior: boolean;
   /** GPS-free compass↔WebXR consistency gate (`setCompassWebXRConsistencyEnabled`). */
   webXRConsistency: boolean;
+  /**
+   * 2026-07-19 field-test combo (`setCompassExperimentEnabled`): rotation
+   * prior + trust tolerance 15° + C′ compass-guided pair selection. The combo
+   * lives in the library; this is a single boolean. Default OFF. See the
+   * private repo's compass-experiment recorder enablement plan.
+   */
+  experiment: boolean;
+  /**
+   * Alternative robust-solver comparison arm (`setRobustSolverComparisonEnabled`) for on-device
+   * A/B against the experiment — NOT a compass mechanism. Default OFF.
+   */
+  robustSolverComparison: boolean;
 }
 
 /**
@@ -122,18 +138,18 @@ export interface LoopClosureDebugOptions {
 export interface DepthCaptureOptions {
   /** Whether to capture depth samples. Default: true */
   enabled: boolean;
-  /** Interval between samples in milliseconds. Default: 500 (FAST-reconstruction tuning, 2026-07-01). */
+  /** Interval between samples in milliseconds. Default: 200 (2026-07-16 on-device framerate/mesh trade-off). */
   intervalMs: number;
   /**
-   * Grid size (N×N points per sample). Default: 32 (FAST-reconstruction
-   * tuning, 2026-07-01) — dense enough to populate the AR-space occupancy
-   * grid (2026-06-11 port plan §1).
+   * Grid size (N×N points per sample). Default: 24 (2026-07-16 on-device
+   * framerate/mesh trade-off) — dense enough to populate the AR-space
+   * occupancy grid (2026-06-11 port plan §1) without hurting the framerate.
    */
   gridSize: number;
   /**
    * Whether to enrich each depth point with the camera color at its view
    * coordinates (RGB voxel coloring, occupancy-grid port plan Iter 8).
-   * Costs one small GPU blit+readback per sample (~1 Hz); when off, the
+   * Costs one small GPU blit+readback per sample (5 Hz at the default cadence); when off, the
    * occupancy cubes keep the height-based coloring. Default: true.
    */
   rgb: boolean;
@@ -218,7 +234,14 @@ export interface OccupancyOptions {
    * shared with the PhysicsDemo). 1 = unfiltered/legacy. Higher = less noise but
    * briefly-glimpsed real surfaces may be dropped, so it is exposed for
    * on-device tuning. Read once when the visualizer is constructed (Enter-AR
-   * / replay load). See
+   * / replay load).
+   *
+   * Since 2026-07-16 this floor ALSO drives the grid's confidence-guarded
+   * carving (`OccupancyGrid.carveConfidenceThreshold`, live + replay): a voxel
+   * solid enough to be rendered can no longer be erased by a single deeper
+   * depth reading (synthetic-scene investigation — eliminates silhouette-edge
+   * churn and noisy occluded-background destruction). One knob, one meaning:
+   * "how many observations until the app trusts a voxel". See
    * `GpsPlusSlamJs_Docs/docs/2026-06-22-2146-occupancy-grid-behind-surface-noise-plan.md`.
    */
   minConfidence: number;
@@ -458,10 +481,15 @@ export const STORAGE_KEY = 'gps-plus-slam-recorder-options';
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   depth: {
     enabled: true,
-    // Tuned for FAST mesh reconstruction (2026-07-01 param-sweep on a real
-    // recording; see recording-options.ts.md):
-    intervalMs: 500, // 2 samples per second — denser temporal sampling
-    gridSize: 32, // 32×32 = 1024 points per sample — confirms cells fastest (was 24; slider max raised to 64 for on-device experimentation)
+    // Framework reconstruction cadence — one tuning source shared with the
+    // PhysicsDemo (2026-07-16: the demo used the conservative library
+    // fallback and reconstructed visibly slower). Values from the maintainer's
+    // 2026-07-16 evening on-device framerate/mesh trade-off pass (the
+    // sweep-derived 500 ms × 64 built the mesh fastest on ground truth but
+    // visibly hurt the framerate — see the constants' doc in
+    // ar/depth-sampler.ts for the history).
+    intervalMs: DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS, // 200 — five samples per second
+    gridSize: DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE, // 24×24 = 576 points per sample
     rgb: true, // RGB voxel coloring (Iter 8)
   },
   images: {
@@ -524,6 +552,10 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     coldStartOverride: true,
     rotationPrior: false,
     webXRConsistency: false,
+    // 2026-07-19 field-test toggles (enablement plan) — OFF until the
+    // operator explicitly opts a session in.
+    experiment: false,
+    robustSolverComparison: false,
   },
   loopClosureDebug: {
     // OFF by default: with it ON every AR relocalization jump dispatches
@@ -535,12 +567,22 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
 
 /** Validation constraints for depth options */
 export const DEPTH_CONSTRAINTS = {
-  intervalMs: { min: 500, max: 5000, step: 100 },
-  // Max raised 32 → 64 (2026-07-01) for on-device experimentation with faster
-  // mesh reconstruction: 64×64 = 4096 getDepthInMeters reads per sample (4× the
-  // 32² default). High values trade per-sample depth-readback cost + grid growth
-  // for faster cell confirmation — measure the per-frame cost on-device before
-  // adopting a value above the 32 default.
+  // Min lowered 500 → 100 (2026-07-16, superset-capture strategy — mirrors
+  // the images 1000→250 change of 2026-07-10): dense validation recordings
+  // (high rate + gridSize 64) are decimated in replay to simulate every
+  // slower configuration, so the capture floor must sit below anything worth
+  // simulating. The sampler emits at most once per XR frame and skips frames
+  // while a sample is due, so an over-ambitious interval degrades gracefully;
+  // expect ~200 KB per 64²-sample — zips grow fast below 250 ms. The
+  // PRODUCTION default is DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS (200 ms
+  // since the 2026-07-16 evening on-device trade-off pass).
+  intervalMs: { min: 100, max: 5000, step: 100 },
+  // Max 64 (raised 2026-07-01, kept for superset validation recordings):
+  // 64×64 = 4096 getDepthInMeters reads per sample. High values trade
+  // per-sample depth-readback cost + grid growth for faster cell confirmation;
+  // the 2026-07-16 on-device pass settled the PRODUCTION default at 24
+  // (DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE) because 64 visibly hurt the
+  // framerate.
   gridSize: { min: 2, max: 64, step: 1 },
 } as const;
 
@@ -653,25 +695,87 @@ export const QR_CONSTRAINTS = {
 } as const;
 
 /**
- * Boolean-or-default (quality-review C-1): persisted/external values are
- * untrusted, so anything that is not a real boolean falls back to the
- * default. Shared by every validator below — the ~30 hand-rolled copies of
- * this ternary are exactly the drift a helper prevents. (The framework's
- * `ar/ar-crash-isolation.ts` keeps its own local copy so its validator stays
- * dependency-free.)
+ * Per-field validation spec for {@link validateFields}. Persisted/external
+ * values are untrusted (quality-review C-1), so every kind falls back to the
+ * group default on anything unexpected:
+ *
+ * - `bool` — accept only a real boolean.
+ * - `num` — accept only a FINITE number (a stored `NaN` is `typeof 'number'`
+ *   and would survive a bare clamp), optionally `round` to an integer first,
+ *   then clamp to the constraint's min/max.
+ * - `enum` — accept only a member of `values`.
+ * - `custom` — field-specific logic (legacy migrations, nested groups); gets
+ *   the whole raw group input plus the field's default.
+ *
+ * (The framework's `ar/ar-crash-isolation.ts` keeps its own hand-rolled
+ * validator so it stays dependency-free.)
  */
-function boolOr(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
-}
+type FieldSpec<T, K extends keyof T> =
+  | { kind: 'bool' }
+  | {
+      kind: 'num';
+      constraint: { readonly min: number; readonly max: number };
+      round?: boolean;
+    }
+  | { kind: 'enum'; values: readonly NonNullable<T[K]>[] }
+  | { kind: 'custom'; resolve: (options: Partial<T>, fallback: T[K]) => T[K] };
 
 /**
- * Finite-number-or-default (quality-review C-1): anything that is not a
- * FINITE number falls back to the default. The finiteness guard was applied
- * inconsistently across the hand-rolled validators; it is now uniform.
- * Range/step constraints beyond finiteness stay at the call sites.
+ * One spec per field, EXHAUSTIVE over the group type: adding a field to an
+ * options interface is a compile error until its validation is declared here
+ * (the hand-rolled validators could silently drop a new field instead).
  */
-function numOr(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+type GroupSpec<T> = { [K in keyof T]-?: FieldSpec<T, K> };
+
+/**
+ * Validate one options group against its spec table. The output object's keys
+ * follow the SPEC's declaration order, so each group's serialized JSON stays
+ * byte-stable across save→validate round-trips (declare specs in the same
+ * order as the group's defaults).
+ *
+ * The casts inside the switch are contained here on purpose: TypeScript
+ * cannot correlate `T[K]` with the matched spec kind inside a generic loop.
+ * Call sites stay fully typed via {@link GroupSpec}.
+ */
+function validateFields<T extends object>(
+  options: Partial<T>,
+  defaults: T,
+  specs: GroupSpec<T>
+): T {
+  const result = {} as T;
+  for (const key of Object.keys(specs) as (keyof T)[]) {
+    const spec = specs[key];
+    const fallback = defaults[key];
+    const value = options[key];
+    switch (spec.kind) {
+      case 'bool':
+        result[key] = (
+          typeof value === 'boolean' ? value : fallback
+        ) as T[typeof key];
+        break;
+      case 'num': {
+        const finite =
+          typeof value === 'number' && Number.isFinite(value)
+            ? value
+            : (fallback as number);
+        result[key] = clamp(
+          spec.round ? Math.round(finite) : finite,
+          spec.constraint.min,
+          spec.constraint.max
+        ) as T[typeof key];
+        break;
+      }
+      case 'enum':
+        result[key] = (
+          (spec.values as readonly unknown[]).includes(value) ? value : fallback
+        ) as T[typeof key];
+        break;
+      case 'custom':
+        result[key] = spec.resolve(options, fallback);
+        break;
+    }
+  }
+  return result;
 }
 
 /**
@@ -682,18 +786,13 @@ function numOr(value: unknown, fallback: number): number {
 export function validateCompassDebugOptions(
   options: Partial<CompassDebugOptions>
 ): CompassDebugOptions {
-  const defaults = DEFAULT_RECORDING_OPTIONS.compassDebug;
-  return {
-    coldStartOverride: boolOr(
-      options.coldStartOverride,
-      defaults.coldStartOverride
-    ),
-    rotationPrior: boolOr(options.rotationPrior, defaults.rotationPrior),
-    webXRConsistency: boolOr(
-      options.webXRConsistency,
-      defaults.webXRConsistency
-    ),
-  };
+  return validateFields(options, DEFAULT_RECORDING_OPTIONS.compassDebug, {
+    coldStartOverride: { kind: 'bool' },
+    rotationPrior: { kind: 'bool' },
+    webXRConsistency: { kind: 'bool' },
+    experiment: { kind: 'bool' },
+    robustSolverComparison: { kind: 'bool' },
+  });
 }
 
 /**
@@ -704,10 +803,9 @@ export function validateCompassDebugOptions(
 export function validateLoopClosureDebugOptions(
   options: Partial<LoopClosureDebugOptions>
 ): LoopClosureDebugOptions {
-  const defaults = DEFAULT_RECORDING_OPTIONS.loopClosureDebug;
-  return {
-    detectorEnabled: boolOr(options.detectorEnabled, defaults.detectorEnabled),
-  };
+  return validateFields(options, DEFAULT_RECORDING_OPTIONS.loopClosureDebug, {
+    detectorEnabled: { kind: 'bool' },
+  });
 }
 
 /**
@@ -719,20 +817,16 @@ export function validateLoopClosureDebugOptions(
 export function validateVisualizationOptions(
   options: Partial<VisualizationOptions>
 ): VisualizationOptions {
-  const defaults = DEFAULT_RECORDING_OPTIONS.visualization;
-  return {
-    frameTiles: boolOr(options.frameTiles, defaults.frameTiles),
-    occupancyCubes: boolOr(options.occupancyCubes, defaults.occupancyCubes),
-    gpsAlignmentMarkers: boolOr(
-      options.gpsAlignmentMarkers,
-      defaults.gpsAlignmentMarkers
-    ),
-    compassCubes: boolOr(options.compassCubes, defaults.compassCubes),
-    headingUpMap: boolOr(options.headingUpMap, defaults.headingUpMap),
+  return validateFields(options, DEFAULT_RECORDING_OPTIONS.visualization, {
+    frameTiles: { kind: 'bool' },
+    occupancyCubes: { kind: 'bool' },
+    gpsAlignmentMarkers: { kind: 'bool' },
+    compassCubes: { kind: 'bool' },
+    headingUpMap: { kind: 'bool' },
     // Same boolean-or-default policy, but the default is OFF (debug tool) — a
     // corrupt value must never switch the overlay on by itself.
-    statsOverlay: boolOr(options.statsOverlay, defaults.statsOverlay),
-  };
+    statsOverlay: { kind: 'bool' },
+  });
 }
 
 // --- Validation ---
@@ -755,20 +849,11 @@ function clamp(value: number, min: number, max: number): number {
 export function validateQrOptions(
   options: Partial<QrCaptureOptions>
 ): QrCaptureOptions {
-  const defaults = DEFAULT_RECORDING_OPTIONS.qr;
-  return {
-    enabled: boolOr(options.enabled, defaults.enabled),
-    intervalMs: clamp(
-      numOr(options.intervalMs, defaults.intervalMs),
-      QR_CONSTRAINTS.intervalMs.min,
-      QR_CONSTRAINTS.intervalMs.max
-    ),
-    captureSize: clamp(
-      numOr(options.captureSize, defaults.captureSize),
-      QR_CONSTRAINTS.captureSize.min,
-      QR_CONSTRAINTS.captureSize.max
-    ),
-  };
+  return validateFields(options, DEFAULT_RECORDING_OPTIONS.qr, {
+    enabled: { kind: 'bool' },
+    intervalMs: { kind: 'num', constraint: QR_CONSTRAINTS.intervalMs },
+    captureSize: { kind: 'num', constraint: QR_CONSTRAINTS.captureSize },
+  });
 }
 
 /**
@@ -778,26 +863,21 @@ export function validateQrOptions(
 export function validateDepthOptions(
   options: Partial<DepthCaptureOptions>
 ): DepthCaptureOptions {
-  const defaults = DEFAULT_RECORDING_OPTIONS.depth;
-  return {
-    enabled: boolOr(options.enabled, defaults.enabled),
-    intervalMs: clamp(
-      numOr(options.intervalMs, defaults.intervalMs),
-      DEPTH_CONSTRAINTS.intervalMs.min,
-      DEPTH_CONSTRAINTS.intervalMs.max
-    ),
+  return validateFields(options, DEFAULT_RECORDING_OPTIONS.depth, {
+    enabled: { kind: 'bool' },
+    intervalMs: { kind: 'num', constraint: DEPTH_CONSTRAINTS.intervalMs },
     // gridSize is an N×N grid dimension, so it must be an integer: round here
     // (and fall back to the default for non-finite input) so the sanitizer's
     // output always applies downstream. DepthSampler.updateConfig rejects a
     // fractional gridSize, so without this an out-of-band value would survive
     // validation yet silently fall back to the sampler's default at runtime.
-    gridSize: clamp(
-      Math.round(numOr(options.gridSize, defaults.gridSize)),
-      DEPTH_CONSTRAINTS.gridSize.min,
-      DEPTH_CONSTRAINTS.gridSize.max
-    ),
-    rgb: boolOr(options.rgb, defaults.rgb),
-  };
+    gridSize: {
+      kind: 'num',
+      constraint: DEPTH_CONSTRAINTS.gridSize,
+      round: true,
+    },
+    rgb: { kind: 'bool' },
+  });
 }
 
 /**
@@ -811,25 +891,25 @@ export function validateDepthOptions(
 export function validateMotionFilterOptions(
   options: Partial<MotionFilterConfig>
 ): MotionFilterConfig {
-  const defaults = DEFAULT_RECORDING_OPTIONS.images.motionFilter;
-  return {
-    enabled: boolOr(options.enabled, defaults.enabled),
-    maxAngularVelocity: clamp(
-      numOr(options.maxAngularVelocity, defaults.maxAngularVelocity),
-      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.min,
-      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.max
-    ),
-    maxLinearVelocity: clamp(
-      numOr(options.maxLinearVelocity, defaults.maxLinearVelocity),
-      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.min,
-      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.max
-    ),
-    maxWaitMs: clamp(
-      numOr(options.maxWaitMs, defaults.maxWaitMs),
-      MOTION_FILTER_CONSTRAINTS.maxWaitMs.min,
-      MOTION_FILTER_CONSTRAINTS.maxWaitMs.max
-    ),
-  };
+  return validateFields(
+    options,
+    DEFAULT_RECORDING_OPTIONS.images.motionFilter,
+    {
+      enabled: { kind: 'bool' },
+      maxAngularVelocity: {
+        kind: 'num',
+        constraint: MOTION_FILTER_CONSTRAINTS.maxAngularVelocity,
+      },
+      maxLinearVelocity: {
+        kind: 'num',
+        constraint: MOTION_FILTER_CONSTRAINTS.maxLinearVelocity,
+      },
+      maxWaitMs: {
+        kind: 'num',
+        constraint: MOTION_FILTER_CONSTRAINTS.maxWaitMs,
+      },
+    }
+  );
 }
 
 /**
@@ -847,30 +927,38 @@ export function validateMotionFilterOptions(
 export function validateQualityFilterOptions(
   options: Partial<QualityFilterConfig>
 ): QualityFilterConfig {
-  const defaults = DEFAULT_RECORDING_OPTIONS.images.qualityFilter;
-  return {
-    enabled: boolOr(options.enabled, defaults.enabled),
-    blurRelativeThreshold: clamp(
-      numOr(options.blurRelativeThreshold, defaults.blurRelativeThreshold),
-      QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold.min,
-      QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold.max
-    ),
-    minMeanLuminance: clamp(
-      numOr(options.minMeanLuminance, defaults.minMeanLuminance),
-      QUALITY_FILTER_CONSTRAINTS.minMeanLuminance.min,
-      QUALITY_FILTER_CONSTRAINTS.minMeanLuminance.max
-    ),
-    maxWaitMs: clamp(
-      numOr(options.maxWaitMs, defaults.maxWaitMs),
-      QUALITY_FILTER_CONSTRAINTS.maxWaitMs.min,
-      QUALITY_FILTER_CONSTRAINTS.maxWaitMs.max
-    ),
-    // Last so the validated object serializes in DEFAULT_QUALITY_FILTER's key
-    // order (persisted JSON stays byte-comparable across save→validate).
-    blurMetric: BLUR_METRIC_IDS.includes(options.blurMetric as BlurMetricId)
-      ? options.blurMetric
-      : (defaults.blurMetric ?? 'variance-of-laplacian'),
-  };
+  return validateFields(
+    options,
+    DEFAULT_RECORDING_OPTIONS.images.qualityFilter,
+    {
+      enabled: { kind: 'bool' },
+      blurRelativeThreshold: {
+        kind: 'num',
+        constraint: QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold,
+      },
+      minMeanLuminance: {
+        kind: 'num',
+        constraint: QUALITY_FILTER_CONSTRAINTS.minMeanLuminance,
+      },
+      maxWaitMs: {
+        kind: 'num',
+        constraint: QUALITY_FILTER_CONSTRAINTS.maxWaitMs,
+      },
+      // Declared last so the validated object serializes in
+      // DEFAULT_QUALITY_FILTER's key order (persisted JSON stays
+      // byte-comparable across save→validate). Membership-validated against
+      // BLUR_METRIC_IDS with an explicit fallback because the group default
+      // may itself omit the (optional) field — the original behavior is
+      // variance-of-Laplacian (2026-07-12 blur-metric-toggle plan).
+      blurMetric: {
+        kind: 'custom',
+        resolve: (opts, fallback) =>
+          BLUR_METRIC_IDS.includes(opts.blurMetric as BlurMetricId)
+            ? opts.blurMetric
+            : (fallback ?? 'variance-of-laplacian'),
+      },
+    }
+  );
 }
 
 /**
@@ -880,27 +968,26 @@ export function validateQualityFilterOptions(
 export function validateImageOptions(
   options: Partial<ImageCaptureOptions>
 ): ImageCaptureOptions {
-  const defaults = DEFAULT_RECORDING_OPTIONS.images;
-  return {
-    enabled: boolOr(options.enabled, defaults.enabled),
-    intervalMs: clamp(
-      numOr(options.intervalMs, defaults.intervalMs),
-      IMAGE_CONSTRAINTS.intervalMs.min,
-      IMAGE_CONSTRAINTS.intervalMs.max
-    ),
-    quality: clamp(
-      numOr(options.quality, defaults.quality),
-      IMAGE_CONSTRAINTS.quality.min,
-      IMAGE_CONSTRAINTS.quality.max
-    ),
-    resolutionDivisor: clamp(
-      numOr(options.resolutionDivisor, defaults.resolutionDivisor),
-      IMAGE_CONSTRAINTS.resolutionDivisor.min,
-      IMAGE_CONSTRAINTS.resolutionDivisor.max
-    ),
-    motionFilter: validateMotionFilterOptions(options.motionFilter ?? {}),
-    qualityFilter: validateQualityFilterOptions(options.qualityFilter ?? {}),
-  };
+  return validateFields(options, DEFAULT_RECORDING_OPTIONS.images, {
+    enabled: { kind: 'bool' },
+    intervalMs: { kind: 'num', constraint: IMAGE_CONSTRAINTS.intervalMs },
+    quality: { kind: 'num', constraint: IMAGE_CONSTRAINTS.quality },
+    resolutionDivisor: {
+      kind: 'num',
+      constraint: IMAGE_CONSTRAINTS.resolutionDivisor,
+    },
+    // Nested groups: a missing group default-fills entirely, so a pre-feature
+    // persisted object that lacks it loads with that gate's defaults rather
+    // than crashing.
+    motionFilter: {
+      kind: 'custom',
+      resolve: (opts) => validateMotionFilterOptions(opts.motionFilter ?? {}),
+    },
+    qualityFilter: {
+      kind: 'custom',
+      resolve: (opts) => validateQualityFilterOptions(opts.qualityFilter ?? {}),
+    },
+  });
 }
 
 /**
@@ -975,60 +1062,51 @@ function resolveOccluderDebugStyle(
 export function validateOccupancyOptions(
   options: Partial<OccupancyOptions>
 ): OccupancyOptions {
-  const defaults = DEFAULT_RECORDING_OPTIONS.occupancy;
-  // Legacy fields (removed from OccupancyOptions): only read for migration.
-  const legacyOcclusionMeshEnabled = (
-    options as { occlusionMeshEnabled?: unknown }
-  ).occlusionMeshEnabled;
-  const legacyOccluderDebugViz = (options as { occluderDebugViz?: unknown })
-    .occluderDebugViz;
-  return {
-    cellSizeM: clamp(
-      numOr(options.cellSizeM, defaults.cellSizeM),
-      OCCUPANCY_CONSTRAINTS.cellSizeM.min,
-      OCCUPANCY_CONSTRAINTS.cellSizeM.max
-    ),
-    // Round before clamping so a fractional stored value resolves to a valid
-    // integer threshold; NaN/non-finite falls back to the default (clamp would
-    // otherwise pass NaN straight through, and getOccupiedCells expects an int).
-    minConfidence: clamp(
-      Math.round(numOr(options.minConfidence, defaults.minConfidence)),
-      OCCUPANCY_CONSTRAINTS.minConfidence.min,
-      OCCUPANCY_CONSTRAINTS.minConfidence.max
-    ),
+  return validateFields(options, DEFAULT_RECORDING_OPTIONS.occupancy, {
+    cellSizeM: { kind: 'num', constraint: OCCUPANCY_CONSTRAINTS.cellSizeM },
+    // Rounded so a fractional stored value resolves to a valid integer
+    // threshold (getOccupiedCells expects an int).
+    minConfidence: {
+      kind: 'num',
+      constraint: OCCUPANCY_CONSTRAINTS.minConfidence,
+      round: true,
+    },
     // Present new field wins (even if invalid → default); absent → migrate the
-    // legacy boolean. See resolvePersistentOcclusion.
-    persistentOcclusion: resolvePersistentOcclusion(
-      options,
-      legacyOcclusionMeshEnabled,
-      defaults.persistentOcclusion
-    ),
+    // legacy `occlusionMeshEnabled` boolean. See resolvePersistentOcclusion.
+    persistentOcclusion: {
+      kind: 'custom',
+      resolve: (opts, fallback) =>
+        resolvePersistentOcclusion(
+          opts,
+          (opts as { occlusionMeshEnabled?: unknown }).occlusionMeshEnabled,
+          fallback
+        ),
+    },
     // The legacy single-toggle never drove a live occluder, so there is nothing
     // to migrate here — boolean-or-default only.
-    liveOcclusion: boolOr(options.liveOcclusion, defaults.liveOcclusion),
+    liveOcclusion: { kind: 'bool' },
     // Present new field wins (unknown value → default 'off'); absent → migrate
-    // the legacy occluderDebugViz boolean. See resolveOccluderDebugStyle.
-    occluderDebugStyle: resolveOccluderDebugStyle(
-      options,
-      legacyOccluderDebugViz,
-      defaults.occluderDebugStyle
-    ),
+    // the legacy `occluderDebugViz` boolean. See resolveOccluderDebugStyle.
+    occluderDebugStyle: {
+      kind: 'custom',
+      resolve: (opts, fallback) =>
+        resolveOccluderDebugStyle(
+          opts,
+          (opts as { occluderDebugViz?: unknown }).occluderDebugViz,
+          fallback
+        ),
+    },
     // Enum-or-default: only one of the known mesher modes is accepted; anything
     // else (corrupt/legacy/missing) falls back to the default blocky cubes.
-    occluderMeshMode: (OCCLUDER_MESH_MODES as readonly string[]).includes(
-      options.occluderMeshMode as string
-    )
-      ? (options.occluderMeshMode as OccluderMeshMode)
-      : defaults.occluderMeshMode,
-    // Number-or-default; 0 stays 0 (the explicit "unbounded"). Rounded to
-    // whole meters — the grid throws on invalid radii, so garbage must never
-    // pass through.
-    occluderRadiusM: clamp(
-      Math.round(numOr(options.occluderRadiusM, defaults.occluderRadiusM)),
-      OCCUPANCY_CONSTRAINTS.occluderRadiusM.min,
-      OCCUPANCY_CONSTRAINTS.occluderRadiusM.max
-    ),
-  };
+    occluderMeshMode: { kind: 'enum', values: OCCLUDER_MESH_MODES },
+    // 0 stays 0 (the explicit "unbounded"). Rounded to whole meters — the grid
+    // throws on invalid radii, so garbage must never pass through.
+    occluderRadiusM: {
+      kind: 'num',
+      constraint: OCCUPANCY_CONSTRAINTS.occluderRadiusM,
+      round: true,
+    },
+  });
 }
 
 /**
@@ -1041,20 +1119,19 @@ export function validateOccupancyOptions(
 export function validateFrameTileDisplayOptions(
   options: Partial<FrameTileDisplayOptions>
 ): FrameTileDisplayOptions {
-  const defaults = DEFAULT_RECORDING_OPTIONS.frameTileDisplay;
-  return {
-    divisor: clamp(
-      Math.round(numOr(options.divisor, defaults.divisor)),
-      FRAME_TILE_DISPLAY_CONSTRAINTS.divisor.min,
-      FRAME_TILE_DISPLAY_CONSTRAINTS.divisor.max
-    ),
-    // Same number-or-default policy; 0 stays 0 (the explicit "unlimited").
-    maxTiles: clamp(
-      Math.round(numOr(options.maxTiles, defaults.maxTiles)),
-      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.min,
-      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.max
-    ),
-  };
+  return validateFields(options, DEFAULT_RECORDING_OPTIONS.frameTileDisplay, {
+    divisor: {
+      kind: 'num',
+      constraint: FRAME_TILE_DISPLAY_CONSTRAINTS.divisor,
+      round: true,
+    },
+    // Same policy; 0 stays 0 (the explicit "unlimited").
+    maxTiles: {
+      kind: 'num',
+      constraint: FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles,
+      round: true,
+    },
+  });
 }
 
 /**
