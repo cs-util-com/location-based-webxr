@@ -80,6 +80,27 @@ describe("createPhysicsRuntime", () => {
     runtime.dispose();
   });
 
+  // Why this test matters: early in a session the reconstructed mesh is still
+  // empty, and a failed (null) trimesh read must NOT consume the throttle
+  // window — otherwise the FIRST collider lags up to colliderRebuildMs behind
+  // the mesh appearing and balls fall through the world meanwhile (PR #195
+  // review, gemini-code-assist). The throttle spaces REBUILDS, not attempts.
+  it("builds the first collider immediately after the mesh appears (empty reads don't consume the throttle window)", () => {
+    const arWorldGroup = new THREE.Group();
+    const source = meshSource(null); // reconstruction has not produced geometry yet
+    const runtime = createPhysicsRuntime(arWorldGroup, source, {
+      colliderRebuildMs: 500,
+    });
+
+    runtime.step(0); // empty read — no collider, and no throttle window started
+    expect(runtime.colliderShapeCount()).toBe(0);
+
+    source.set(quad());
+    runtime.step(16); // well inside what a consumed window would block
+    expect(runtime.colliderShapeCount()).toBe(2);
+    runtime.dispose();
+  });
+
   it("shoots a ball from a WORLD origin with a WORLD velocity (both converted to local)", () => {
     const arWorldGroup = new THREE.Group(); // identity → ball group world = WEBXR_TO_NUE
     const runtime = createPhysicsRuntime(arWorldGroup, null); // no floor → free flight
