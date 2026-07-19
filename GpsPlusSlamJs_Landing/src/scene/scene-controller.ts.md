@@ -71,7 +71,10 @@ renders on demand.
 - Shadows (golden-hour restyle): `shadow.radius = 4` blurs the PCF edges
   (sampled by the default `PCFShadowMap` path — `PCFSoftShadowMap` would
   ignore the radius, so the renderer type is deliberately left default);
-  shadow camera bounds are ±38 so dusk's long shadows don't clip.
+  shadow camera bounds are ±38 so dusk's long shadows don't clip, and
+  `updateProjectionMatrix()` is called after setting them — without it the
+  ortho shadow camera silently keeps its default ±5 box (PR #189 review,
+  test-pinned via the projection-matrix elements).
 - **Post-processing (v3 F1):** when `tier.postprocessing`, frames render
   through a `ComposerLike` INSTEAD of `renderer.render` (never both).
   The composer owns GPU render targets, so it is **disposed on

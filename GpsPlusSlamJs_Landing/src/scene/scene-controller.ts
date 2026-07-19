@@ -266,6 +266,10 @@ export function createSceneController(
     shadowCam.right = 38;
     shadowCam.top = 38;
     shadowCam.bottom = -38;
+    // Mutating the bounds does nothing until the projection is rebuilt —
+    // without this call the shadow camera keeps its default ±5 box and
+    // clips every shadow beyond ~5 units (PR #189 review, test-pinned).
+    shadowCam.updateProjectionMatrix();
   }
   const sky = buildSkyDome();
   // Ambient particles (v3 F2): scroll mode + high tier only — reduced

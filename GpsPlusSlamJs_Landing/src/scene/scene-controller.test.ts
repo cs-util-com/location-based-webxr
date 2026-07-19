@@ -318,6 +318,25 @@ describe("createSceneController", () => {
     expect(camera.position.distanceTo(settled)).toBeLessThan(0.01);
   });
 
+  // Why this test matters: mutating the shadow camera's left/right/top/
+  // bottom does NOTHING until updateProjectionMatrix() rebuilds the
+  // projection — without it the DirectionalLight keeps its default ±5
+  // shadow box and every shadow beyond ~5 units of the origin clips,
+  // silently undoing the golden-hour ±38 widening (PR #189 review,
+  // gemini + coderabbit). The bounds must be live in the projection
+  // matrix itself: for an ortho camera m[0] = 2/(right−left).
+  it("applies the widened shadow-camera bounds to the live projection matrix", () => {
+    const { controller } = makeController();
+    const scene = controller?.stage.camera.parent as Scene;
+    const light = scene.children.find(
+      (child) => (child as DirectionalLight).isDirectionalLight,
+    ) as DirectionalLight;
+    expect(light.castShadow).toBe(true);
+    const m = light.shadow.camera.projectionMatrix.elements;
+    expect(m[0]).toBeCloseTo(2 / 76, 5);
+    expect(m[5]).toBeCloseTo(2 / 76, 5);
+  });
+
   it("applyTheme moves the sun to the palette's light position, default when absent (golden-hour restyle)", () => {
     // Dusk's low-left sun is what produces the long golden-hour shadows;
     // every palette without an explicit position must return the light
