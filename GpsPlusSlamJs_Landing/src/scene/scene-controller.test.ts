@@ -306,6 +306,16 @@ describe("createSceneController", () => {
     controller?.tick(32);
     expect(camera.position.distanceTo(before)).toBeGreaterThan(10);
     expect(renderer.renders).toBeGreaterThan(1);
+
+    // Regression pin (PR #190 review): the continuous tick loop keeps
+    // calling advanceScrub, and showChapterEndState must retarget the
+    // scrub alongside the seek — with a stale targetProgress (0) the
+    // composition slowly slid back to the hero framing over later ticks.
+    const settled = camera.position.clone();
+    for (let i = 3; i <= 300; i++) {
+      controller?.tick(i * 16);
+    }
+    expect(camera.position.distanceTo(settled)).toBeLessThan(0.01);
   });
 
   it("applyTheme moves the sun to the palette's light position, default when absent (golden-hour restyle)", () => {
