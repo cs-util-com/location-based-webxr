@@ -27,12 +27,17 @@ rAF for replay, the XR frame loop for AR) and how a spawn point is obtained
 - Balls hang under a `WEBXR_TO_NUE` child of `arWorldGroup`, so they ride the same
   `alignment × WEBXR_TO_NUE` chain as the reconstructed mesh (visual coincidence).
 - Collider rebuilt at most once per `colliderRebuildMs` (coalesce; design §6).
+  Only a **successful** rebuild consumes the throttle window — a null trimesh
+  read (mesh still empty) retries next frame, so the first collider lands as
+  soon as reconstruction produces geometry (PR #195 review).
 - `nowMs` is the frame timestamp driving the throttle (rAF `t` / `performance.now`).
 - `initRapier()` must have resolved before this is created (the caller awaits it).
 
 ## Tests
 
 - `physics-runtime.test.ts` (headless, real Rapier + THREE) — collider rebuilt only
-  once per throttle window as the AABB source grows; a WORLD origin + velocity
+  once per throttle window as the AABB source grows; the first collider builds
+  immediately after the mesh appears (empty reads don't consume the window); a
+  WORLD origin + velocity
   round-trip to the ball-group-local space (the ball spawns at the origin and the
   velocity carries it in the aimed direction under gravity); clear + `onStats`.

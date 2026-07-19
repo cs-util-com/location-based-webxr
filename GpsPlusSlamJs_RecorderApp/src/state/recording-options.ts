@@ -112,6 +112,14 @@ export interface CompassDebugOptions {
    * A/B against the experiment — NOT a compass mechanism. Default OFF.
    */
   robustSolverComparison: boolean;
+  /**
+   * Steady-state compass vote weight ∈ [0,1] (`setCompassVoteWeight`) — how
+   * strongly a trusted compass pulls the rotation once GPS yaw is observable.
+   * Only consulted while the experiment / rotation prior is active. Default
+   * 0.3 (the library default); the 2026-07-19 census weight curve measured
+   * 0.1 as the whole-session optimum — the slider exists to field-test both.
+   */
+  voteWeight: number;
 }
 
 /**
@@ -216,7 +224,7 @@ export interface OccupancyOptions {
   /**
    * Voxel edge length in metres. Drives the occupancy-grid quantization, the
    * debug cubes, and the COLMAP `points3D` density. Default `DEFAULT_OCCUPANCY_CELL_SIZE_M`
-   * (0.18 = 18 cm; framework FAST-reconstruction default, shared with the
+   * (0.16 = 16 cm; framework FAST-reconstruction default, shared with the
    * PhysicsDemo). Smaller = finer detail but cell count scales as 1/cellSize³, so the
    * range is deliberately clamped (see `OCCUPANCY_CONSTRAINTS`). Read once when
    * the grid is constructed (Enter-AR / replay load), so a change takes effect
@@ -230,7 +238,7 @@ export interface OccupancyOptions {
    * lands in it; raising this filters single-frame depth noise — in
    * particular the **behind-surface** phantoms (e.g. below the floor) that
    * free-space carving can never clear because no ray passes through occluded
-   * space. Default `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS` (3; framework noise floor,
+   * space. Default `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS` (2; framework noise floor,
    * shared with the PhysicsDemo). 1 = unfiltered/legacy. Higher = less noise but
    * briefly-glimpsed real surfaces may be dropped, so it is exposed for
    * on-device tuning. Read once when the visualizer is constructed (Enter-AR
@@ -553,9 +561,12 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     rotationPrior: false,
     webXRConsistency: false,
     // 2026-07-19 field-test toggles (enablement plan) — OFF until the
-    // operator explicitly opts a session in.
+    // operator explicitly opts a session in. voteWeight mirrors the library
+    // default (0.3); the census weight curve measured 0.1 as the
+    // whole-session optimum — slider exists to field-test both.
     experiment: false,
     robustSolverComparison: false,
+    voteWeight: 0.3,
   },
   loopClosureDebug: {
     // OFF by default: with it ON every AR relocalization jump dispatches
@@ -694,6 +705,11 @@ export const QR_CONSTRAINTS = {
   captureSize: { min: 256, max: 2048, step: 128 },
 } as const;
 
+/** Validation constraints for the compass-debug group's numeric fields */
+export const COMPASS_DEBUG_CONSTRAINTS = {
+  voteWeight: { min: 0, max: 1, step: 0.05 },
+} as const;
+
 /**
  * Per-field validation spec for {@link validateFields}. Persisted/external
  * values are untrusted (quality-review C-1), so every kind falls back to the
@@ -792,6 +808,10 @@ export function validateCompassDebugOptions(
     webXRConsistency: { kind: 'bool' },
     experiment: { kind: 'bool' },
     robustSolverComparison: { kind: 'bool' },
+    voteWeight: {
+      kind: 'num',
+      constraint: COMPASS_DEBUG_CONSTRAINTS.voteWeight,
+    },
   });
 }
 

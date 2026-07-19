@@ -218,6 +218,12 @@ function createNewStore() {
     enableCompassWebXRConsistency: compass?.webXRConsistency,
     enableCompassExperiment: compass?.experiment,
     enableRobustSolverComparison: compass?.robustSolverComparison,
+    // Weight only matters while a rotation prior is active — pass it only
+    // then, so sessions without the experiment don't record a dead action.
+    compassVoteWeight:
+      compass?.experiment || compass?.rotationPrior
+        ? compass?.voteWeight
+        : undefined,
   });
 }
 

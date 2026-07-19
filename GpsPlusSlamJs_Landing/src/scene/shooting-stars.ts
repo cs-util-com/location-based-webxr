@@ -105,8 +105,11 @@ export function updateShootingStar(
   const x = startX - side * CROSS_SPAN * progress;
   const y = y0 - progress * 8; // slight downward arc
   group.position.set(x, y, z);
-  // Orient the trail along travel (heading in the x/-y plane).
-  group.rotation.set(0, 0, side * -0.25);
+  // Orient the trail along travel: look AHEAD along the (constant) travel
+  // direction so the −z trail streams out behind the head. A non-camera
+  // Object3D faces its lookAt target with +Z. (The previous pure Z-roll
+  // left the trail lying sideways along world Z — PR #193 review.)
+  group.lookAt(x - side * CROSS_SPAN, y - 8, z);
   const material = group.userData.starMaterial as MeshBasicMaterial;
   // Fade out over the last third of the streak.
   material.opacity = progress < 0.7 ? 1 : Math.max(0, (1 - progress) / 0.3);

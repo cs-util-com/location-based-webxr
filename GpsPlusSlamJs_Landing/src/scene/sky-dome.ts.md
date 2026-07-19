@@ -4,8 +4,9 @@
 
 Replaces the flat background color above the horizon with one
 vertex-colored gradient dome plus palette-specific celestial accents:
-dark = moon + deterministic star sprinkle, dusk = low sun + warm horizon
-band, neon = synthwave star grid, light/mono = the soft gradient alone.
+dark = moon + deterministic star sprinkle, dusk = low fat sun + warm
+horizon band + peach cloud bank (golden-hour restyle 2026-07-19), neon =
+synthwave star grid, light/mono = the soft gradient alone.
 
 ## Public API
 
@@ -13,12 +14,13 @@ band, neon = synthwave star grid, light/mono = the soft gradient alone.
   hidden until a palette applies.
 - `applySkyPalette(sky, palette): void` — repaints the dome gradient
   from `palette.sky` (zenith/horizon), toggles exactly that palette's
-  accent set, recolors accents with `palette.sky.accentColor`. Missing
-  nodes are no-ops.
+  accent set, recolors accents with `palette.sky.accentColor` (the
+  cloud bank uses `palette.sky.cloudColor`, falling back to
+  `accentColor`). Missing nodes are no-ops.
 - `domeGradientColorAt(elevation01, palette): Color` — the analytic
   gradient (smoothstep horizon→zenith); exported so tests can pin it.
 - `SKY_NODE` — names of all addressable nodes (root, shell, moon,
-  stars, sun, horizonBand, starGrid).
+  stars, sun, horizonBand, starGrid, clouds).
 
 ## Invariants & assumptions
 
@@ -30,8 +32,12 @@ false`, `frustumCulled: false` — the sky renders first and the world
   always draws on top.
 - **Color-coding invariant untouched:** amber/red/blue roles are not
   used in the sky; all sky colors live in `palette.sky` only.
-- **Determinism:** the star sprinkle uses a seeded LCG — two builds are
-  identical (test-pinned).
+- **Determinism:** the star sprinkle AND the cloud bank use seeded LCGs
+  — two builds are identical (test-pinned; the shoot-script screenshot
+  review depends on it).
+- The cloud bank lives in the sun's azimuth sector (elevations
+  0.12–0.3 rad) so it is in frame for the dive camera; it shows only
+  with the `"sun"` accent set (dusk).
 - The dome is unlit (`MeshBasicMaterial`) and NOT part of the
   `paletteRole` traversal; `scene-controller.applyThemeInternal` calls
   `applySkyPalette` right after `applyPaletteToScene`.
@@ -47,6 +53,7 @@ applySkyPalette(sky, getPalette("dusk")); // sun + horizon band visible
 ## Tests
 
 `sky-dome.test.ts` — palette sky-block completeness across all five
-themes, node-name contract, fog exclusion, depth/render order, star
-determinism, per-palette accent visibility matrix, analytic gradient
+themes, node-name contract, fog exclusion, depth/render order, star +
+cloud determinism, per-palette accent visibility matrix (dusk includes
+the cloud bank), cloud tinting via `cloudColor`, analytic gradient
 endpoints. Visual truth: `pnpm run shoot` across all palettes.

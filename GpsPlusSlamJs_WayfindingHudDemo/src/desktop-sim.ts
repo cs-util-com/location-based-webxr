@@ -28,6 +28,7 @@ import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three
 
 import type { HudDemoConfig } from "./hud-config";
 import { formatHudStatus, summarizeHudScene } from "./hud-status";
+import { ARROW_SPRITE_URL, CIRCLE_SPRITE_URL } from "./indicator-assets";
 import {
   SIM_EYE_HEIGHT,
   SIM_WAYPOINTS,
@@ -170,6 +171,11 @@ export function startDesktopSim(deps: DesktopSimDeps): DesktopSim {
       distanceMin: config.distanceMin,
       distanceMax: config.distanceMax,
       indicatorScale: config.indicatorScale,
+      // Image toggle: URL-loaded textures are owned (and disposed) by the
+      // HUD, so re-creation on toggle/slider changes leaks nothing.
+      ...(config.imageIndicators
+        ? { arrowSprite: ARROW_SPRITE_URL, circleSprite: CIRCLE_SPRITE_URL }
+        : {}),
       autoRegisterFrameUpdate: false,
     });
   }

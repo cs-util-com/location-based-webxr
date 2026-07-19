@@ -1,14 +1,16 @@
 /**
- * Palette controller: persisted color-palette choice with OS default.
+ * Palette controller: persisted color-palette choice with a dusk default.
  *
  * Round-2 R19 turned the light/dark toggle into a CYCLE over five curated
  * palettes. Resolution rule (must stay in sync with the inline FOUC-guard
  * script in index.html, which applies the same logic before first paint):
  * a validly persisted palette id wins; anything else falls back to
- * `prefers-color-scheme` (light → "light", dark → "dark"). The controller
- * owns the rule after boot and pushes every change through the injected
- * `applyTheme` seam, which the bootstrap wires to BOTH the DOM
- * (`data-theme` attribute → CSS custom properties) and the 3D palette.
+ * `"dusk"` unconditionally — the golden-hour restyle (2026-07-19) made
+ * the cinematic dusk look the first-visit brand statement, with no
+ * `prefers-color-scheme` branch. The controller owns the rule after boot
+ * and pushes every change through the injected `applyTheme` seam, which
+ * the bootstrap wires to BOTH the DOM (`data-theme` attribute → CSS
+ * custom properties) and the 3D palette.
  *
  * All browser APIs are injected seams so the module tests in plain node:
  * storage failures (Safari private mode, blocked third-party storage) are
@@ -36,8 +38,6 @@ type ThemeStorage = Pick<Storage, "getItem" | "setItem">;
 
 export interface ThemeEnvironment {
   readonly storage: ThemeStorage | null;
-  /** Seam over `matchMedia('(prefers-color-scheme: light)').matches`. */
-  readonly prefersLight: () => boolean;
   /** Receives every palette change, including the initial resolution. */
   readonly applyTheme: (theme: Theme) => void;
   /** Whether the hidden terminal palette is unlocked (catalog №4); when
@@ -62,14 +62,11 @@ function isThemeId(value: unknown): value is Theme {
 }
 
 /** Pure resolution rule shared conceptually with the index.html FOUC guard. */
-export function resolveInitialTheme(
-  stored: string | null,
-  prefersLight: boolean,
-): Theme {
+export function resolveInitialTheme(stored: string | null): Theme {
   if (isThemeId(stored)) {
     return stored;
   }
-  return prefersLight ? "light" : "dark";
+  return "dusk";
 }
 
 function readStoredTheme(storage: ThemeStorage | null): string | null {
@@ -89,10 +86,7 @@ function persistTheme(storage: ThemeStorage | null, theme: Theme): void {
 }
 
 export function createThemeController(env: ThemeEnvironment): ThemeController {
-  let theme = resolveInitialTheme(
-    readStoredTheme(env.storage),
-    env.prefersLight(),
-  );
+  let theme = resolveInitialTheme(readStoredTheme(env.storage));
   env.applyTheme(theme);
 
   const cycleOrder = (): readonly Theme[] =>
@@ -107,7 +101,7 @@ export function createThemeController(env: ThemeEnvironment): ThemeController {
       // If the current palette isn't in the (possibly shrunk) order,
       // start the cycle from its beginning.
       const index = order.indexOf(theme);
-      theme = order[(index + 1) % order.length] ?? "dark";
+      theme = order[(index + 1) % order.length] ?? "dusk";
       env.applyTheme(theme);
       persistTheme(env.storage, theme);
       return theme;

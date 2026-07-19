@@ -215,6 +215,33 @@ describe('createSlamAppStore', () => {
       expect(s?.robustSolverComparisonEnabled).toBeFalsy();
     });
 
+    // Why: the vote-weight slider (2026-07-19 weight-curve follow-up) rides
+    // this option — a number, not a flag, so it is dispatched only when the
+    // caller provides one (absent ⇒ library default, byte-identical).
+    it('compassVoteWeight dispatches the weight once gpsData exists', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassExperiment: true,
+        compassVoteWeight: 0.1,
+      });
+      expect(store.getState().gpsData).toBeNull();
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      const s = store.getState().gpsData;
+      expect(s?.compassExperimentEnabled).toBe(true);
+      expect(s?.compassVoteWeight).toBe(0.1);
+    });
+
+    it('compassVoteWeight stays absent when not provided', async () => {
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassExperiment: true,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      expect(store.getState().gpsData?.compassVoteWeight).toBeUndefined();
+    });
+
     it('both experiment opt-ins combine with the default Stage-0 override', async () => {
       const store = createSlamAppStore({
         storageBackend: backend,

@@ -571,15 +571,18 @@ describe('Recorder Store', () => {
         enableDevChecks: false,
         enableCompassExperiment: true,
         enableRobustSolverComparison: true,
+        compassVoteWeight: 0.1,
       });
       s.dispatch(setZeroPos({ lat: 48.8566, lon: 2.3522 }));
       await new Promise((resolve) => setTimeout(resolve, 0));
       const gpsData = s.getState().gpsData as {
         compassExperimentEnabled?: boolean;
         robustSolverComparisonEnabled?: boolean;
+        compassVoteWeight?: number;
       } | null;
       expect(gpsData?.compassExperimentEnabled).toBe(true);
       expect(gpsData?.robustSolverComparisonEnabled).toBe(true);
+      expect(gpsData?.compassVoteWeight).toBe(0.1);
     });
 
     it('should use per-instance action indices, not shared across stores (Bug 10)', () => {

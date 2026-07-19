@@ -7,26 +7,29 @@ import {
 } from "./theme";
 
 // Why this test matters: the palette is a first-paint-visible product
-// decision (default follows the OS, the choice persists across visits) and
-// it drives BOTH the CSS custom properties and the 3D palette. Round-2
-// turned the light/dark toggle into a CYCLE over five curated palettes —
-// these tests pin the cycle order, the persistence of every id, and the
-// resolution rules the inline FOUC-guard script in index.html duplicates.
+// decision (the golden-hour restyle made DUSK the unconditional first-visit
+// default — the cinematic look IS the brand statement; the choice persists
+// across visits) and it drives BOTH the CSS custom properties and the 3D
+// palette. Round-2 turned the light/dark toggle into a CYCLE over five
+// curated palettes — these tests pin the cycle order, the persistence of
+// every id, and the resolution rules the inline FOUC-guard script in
+// index.html duplicates.
 
 describe("resolveInitialTheme", () => {
-  it("uses any validly persisted palette id over the OS preference", () => {
-    expect(resolveInitialTheme("light", false)).toBe("light");
-    expect(resolveInitialTheme("dark", true)).toBe("dark");
-    expect(resolveInitialTheme("neon", true)).toBe("neon");
-    expect(resolveInitialTheme("dusk", false)).toBe("dusk");
-    expect(resolveInitialTheme("mono", false)).toBe("mono");
+  it("uses any validly persisted palette id over the default", () => {
+    expect(resolveInitialTheme("light")).toBe("light");
+    expect(resolveInitialTheme("dark")).toBe("dark");
+    expect(resolveInitialTheme("neon")).toBe("neon");
+    expect(resolveInitialTheme("dusk")).toBe("dusk");
+    expect(resolveInitialTheme("mono")).toBe("mono");
   });
 
-  it("falls back to the OS preference for missing or garbage stored values", () => {
-    expect(resolveInitialTheme(null, true)).toBe("light");
-    expect(resolveInitialTheme(null, false)).toBe("dark");
-    expect(resolveInitialTheme("solarized", true)).toBe("light");
-    expect(resolveInitialTheme("", false)).toBe("dark");
+  it("falls back to dusk for missing or garbage stored values (first visit = golden hour, regardless of OS scheme)", () => {
+    // The restyle decision (2026-07-19): NO prefers-color-scheme branch —
+    // every first-time visitor lands on the cinematic dusk look.
+    expect(resolveInitialTheme(null)).toBe("dusk");
+    expect(resolveInitialTheme("solarized")).toBe("dusk");
+    expect(resolveInitialTheme("")).toBe("dusk");
   });
 });
 
@@ -45,28 +48,27 @@ describe("createThemeController", () => {
   it("applies the resolved initial palette once on creation", () => {
     const applyTheme = vi.fn();
     const controller = createThemeController({
-      storage: makeStorage({ [THEME_STORAGE_KEY]: "dusk" }),
-      prefersLight: () => false,
+      storage: makeStorage({ [THEME_STORAGE_KEY]: "neon" }),
       applyTheme,
     });
-    expect(controller.theme).toBe("dusk");
-    expect(applyTheme).toHaveBeenCalledExactlyOnceWith("dusk");
+    expect(controller.theme).toBe("neon");
+    expect(applyTheme).toHaveBeenCalledExactlyOnceWith("neon");
   });
 
   it("cycle walks through every palette in order and persists each step", () => {
     const storage = makeStorage();
     const applyTheme = vi.fn();
     const controller = createThemeController({
-      storage,
-      prefersLight: () => false, // initial: dark
+      storage, // empty: initial resolves to the dusk default
       applyTheme,
     });
+    expect(controller.theme).toBe("dusk");
 
-    // From dark the cycle continues with the ids after it, wrapping.
-    const darkIndex = THEME_IDS.indexOf("dark");
+    // From dusk the cycle continues with the ids after it, wrapping.
+    const duskIndex = THEME_IDS.indexOf("dusk");
     const expected = [
-      ...THEME_IDS.slice(darkIndex + 1),
-      ...THEME_IDS.slice(0, darkIndex + 1),
+      ...THEME_IDS.slice(duskIndex + 1),
+      ...THEME_IDS.slice(0, duskIndex + 1),
     ];
     for (const id of expected) {
       expect(controller.cycle()).toBe(id);
@@ -74,7 +76,7 @@ describe("createThemeController", () => {
       expect(storage.setItem).toHaveBeenLastCalledWith(THEME_STORAGE_KEY, id);
     }
     // Full loop: back at the start.
-    expect(controller.theme).toBe("dark");
+    expect(controller.theme).toBe("dusk");
   });
 
   it("keeps cycling even when storage is unavailable or throws", () => {
@@ -89,18 +91,16 @@ describe("createThemeController", () => {
     const applyTheme = vi.fn();
     const withThrowing = createThemeController({
       storage: throwingStorage,
-      prefersLight: () => true,
       applyTheme,
     });
-    expect(withThrowing.cycle()).toBe("dark");
-    expect(applyTheme).toHaveBeenLastCalledWith("dark");
+    expect(withThrowing.cycle()).toBe("mono"); // dusk default → next id
+    expect(applyTheme).toHaveBeenLastCalledWith("mono");
 
     const withoutStorage = createThemeController({
       storage: null,
-      prefersLight: () => false,
       applyTheme: () => {},
     });
-    expect(withoutStorage.cycle()).toBe("neon");
+    expect(withoutStorage.cycle()).toBe("mono");
   });
 
   it("keeps the hidden terminal palette OUT of the cycle until unlocked (catalog №4)", () => {
@@ -108,7 +108,6 @@ describe("createThemeController", () => {
     let unlocked = false;
     const controller = createThemeController({
       storage: makeStorage({ [THEME_STORAGE_KEY]: "mono" }),
-      prefersLight: () => false,
       applyTheme,
       isSecretUnlocked: () => unlocked,
     });
@@ -127,7 +126,6 @@ describe("createThemeController", () => {
     const applyTheme = vi.fn();
     const controller = createThemeController({
       storage,
-      prefersLight: () => false,
       applyTheme,
     });
     expect(controller.set("terminal")).toBe("terminal");
@@ -142,13 +140,12 @@ describe("createThemeController", () => {
   it("resolves a persisted terminal palette on boot (FOUC-guard parity)", () => {
     const controller = createThemeController({
       storage: makeStorage({ [THEME_STORAGE_KEY]: "terminal" }),
-      prefersLight: () => true,
       applyTheme: () => {},
     });
     expect(controller.theme).toBe("terminal");
   });
 
-  it("survives a getItem that throws by falling back to the OS preference", () => {
+  it("survives a getItem that throws by falling back to the dusk default", () => {
     const brokenStorage = {
       getItem: () => {
         throw new Error("SecurityError");
@@ -157,9 +154,8 @@ describe("createThemeController", () => {
     };
     const controller = createThemeController({
       storage: brokenStorage,
-      prefersLight: () => true,
       applyTheme: () => {},
     });
-    expect(controller.theme).toBe("light");
+    expect(controller.theme).toBe("dusk");
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "gps-plus-slam-app-framework",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "Reusable AR+GPS app framework layer — WebXR session management, Three.js visualization, GPS sensors, storage abstractions, replay engine, and store wiring for gps-plus-slam-js.",
   "type": "module",
   "files": [
@@ -56,7 +56,7 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.11.2",
     "gl-matrix": "3.4.4",
-    "gps-plus-slam-js": "^1.13.0",
+    "gps-plus-slam-js": "^1.14.0",
     "redux": "^5.0.1"
   },
   "peerDependencies": {

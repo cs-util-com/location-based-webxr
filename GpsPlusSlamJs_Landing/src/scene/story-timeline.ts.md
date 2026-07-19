@@ -52,8 +52,11 @@ and keeps derived state (dot-person on the path) in sync.
 - **`onUpdate` fires BEFORE child tween values apply** (anime behavior),
   so it is only a dirty-flag hook; derived state must be pulled via
   `syncStage` AFTER the seek returns.
-- The fused marker is deliberately never animated — its stillness vs. the
-  raw marker's jitter IS the product message (test-pinned).
+- The fused marker is deliberately never REPOSITIONED — its positional
+  stillness vs. the raw marker's jitter IS the product message
+  (test-pinned). Its scale IS pulsed once in the fusion chapter (the
+  "this is the anchor" pin pulse), so the invariant is about position,
+  not all animation.
 - The camera look direction is decoupled: tweens move `stage.lookTarget`
   (a bare Vector3); the render loop calls `camera.lookAt(...)`.
 - Chapter staging summary (round-2, dive re-sequenced round-4 V2): hero

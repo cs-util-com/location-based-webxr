@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { Vector3, type Color, type PerspectiveCamera, type Scene } from "three";
+import {
+  Vector3,
+  type Color,
+  type DirectionalLight,
+  type PerspectiveCamera,
+  type Scene,
+} from "three";
 import type { QualityTier } from "../capability";
+import { getPalette } from "./palette";
 import {
   createSceneController,
   type ComposerLike,
@@ -299,6 +306,59 @@ describe("createSceneController", () => {
     controller?.tick(32);
     expect(camera.position.distanceTo(before)).toBeGreaterThan(10);
     expect(renderer.renders).toBeGreaterThan(1);
+
+    // Regression pin (PR #190 review): the continuous tick loop keeps
+    // calling advanceScrub, and showChapterEndState must retarget the
+    // scrub alongside the seek — with a stale targetProgress (0) the
+    // composition slowly slid back to the hero framing over later ticks.
+    const settled = camera.position.clone();
+    for (let i = 3; i <= 300; i++) {
+      controller?.tick(i * 16);
+    }
+    expect(camera.position.distanceTo(settled)).toBeLessThan(0.01);
+  });
+
+  // Why this test matters: mutating the shadow camera's left/right/top/
+  // bottom does NOTHING until updateProjectionMatrix() rebuilds the
+  // projection — without it the DirectionalLight keeps its default ±5
+  // shadow box and every shadow beyond ~5 units of the origin clips,
+  // silently undoing the golden-hour ±38 widening (PR #189 review,
+  // gemini + coderabbit). The bounds must be live in the projection
+  // matrix itself: for an ortho camera m[0] = 2/(right−left).
+  it("applies the widened shadow-camera bounds to the live projection matrix", () => {
+    const { controller } = makeController();
+    const scene = controller?.stage.camera.parent as Scene;
+    const light = scene.children.find(
+      (child) => (child as DirectionalLight).isDirectionalLight,
+    ) as DirectionalLight;
+    expect(light.castShadow).toBe(true);
+    const m = light.shadow.camera.projectionMatrix.elements;
+    expect(m[0]).toBeCloseTo(2 / 76, 5);
+    expect(m[5]).toBeCloseTo(2 / 76, 5);
+  });
+
+  it("applyTheme moves the sun to the palette's light position, default when absent (golden-hour restyle)", () => {
+    // Dusk's low-left sun is what produces the long golden-hour shadows;
+    // every palette without an explicit position must return the light
+    // to the shared default — a sticky dusk position would relight all
+    // other themes from the wrong side after one visit to dusk.
+    const { controller } = makeController();
+    const scene = controller?.stage.camera.parent as Scene;
+    const light = scene.children.find(
+      (child) => (child as DirectionalLight).isDirectionalLight,
+    ) as DirectionalLight;
+    expect(light).toBeDefined();
+    expect(light.position.toArray()).toEqual([18, 30, 14]); // default
+
+    controller?.applyTheme("dusk");
+    const dusk = getPalette("dusk").directional.position;
+    expect(dusk).toBeDefined();
+    expect(light.position.toArray()).toEqual([dusk!.x, dusk!.y, dusk!.z]);
+    expect(dusk!.x).toBeLessThan(0); // low sun from the LEFT
+    expect(dusk!.y).toBeLessThan(20); // low over the horizon
+
+    controller?.applyTheme("light");
+    expect(light.position.toArray()).toEqual([18, 30, 14]); // restored
   });
 
   it("applyTheme swaps the scene background and triggers a re-render", () => {

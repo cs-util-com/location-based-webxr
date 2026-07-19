@@ -12,7 +12,11 @@ import * as THREE from "three";
 
 import { formatHudStatus, summarizeHudScene } from "./hud-status";
 
-const indicator = (name: string, visible: boolean) => ({ name, visible });
+const indicator = (name: string, visible: boolean, isSprite?: boolean) => ({
+  name,
+  visible,
+  ...(isSprite === undefined ? {} : { isSprite }),
+});
 
 describe("summarizeHudScene", () => {
   it("counts visible arrows and rings by presenter mesh name", () => {
@@ -35,7 +39,41 @@ describe("summarizeHudScene", () => {
       rings: 1,
       hidden: 0,
       nearest: 3,
+      indicatorStyle: "procedural",
     });
+  });
+
+  // Why these tests matter: the indicator style is THE observable the
+  // image-sprite toggle e2e asserts against — the framework keeps the same
+  // child names for sprite and mesh indicators, so only the object kind
+  // (`isSprite`) distinguishes the two paths. Visibility must not matter
+  // (style is knowable even while everything is hidden), and the label
+  // sprite (always a THREE.Sprite) must never drag the style to "image".
+  it("reports the image style from sprite-kind indicators, hidden ones included", () => {
+    const summary = summarizeHudScene(
+      [
+        indicator("wayfinding-arrow", false, true),
+        indicator("wayfinding-circle", false, true),
+        indicator("wayfinding-label", true, true), // label never counts
+      ],
+      new THREE.Vector3(),
+      [new THREE.Vector3(0, 0, -5)],
+    );
+    expect(summary.indicatorStyle).toBe("image");
+  });
+
+  it("reports mixed when sprite and mesh indicators coexist, null with none", () => {
+    const mixed = summarizeHudScene(
+      [
+        indicator("wayfinding-arrow", true, true),
+        indicator("wayfinding-circle", true),
+      ],
+      new THREE.Vector3(),
+      [new THREE.Vector3(0, 0, -5)],
+    );
+    expect(mixed.indicatorStyle).toBe("mixed");
+    const none = summarizeHudScene([], new THREE.Vector3(), []);
+    expect(none.indicatorStyle).toBeNull();
   });
 
   it("derives hidden as targets without a visible indicator", () => {
@@ -63,7 +101,7 @@ describe("summarizeHudScene", () => {
 });
 
 describe("formatHudStatus", () => {
-  it("formats counts and the nearest distance to one decimal", () => {
+  it("formats counts, the nearest distance to one decimal, and the style", () => {
     expect(
       formatHudStatus({
         targets: 4,
@@ -71,19 +109,34 @@ describe("formatHudStatus", () => {
         rings: 1,
         hidden: 0,
         nearest: 19.234,
+        indicatorStyle: "procedural",
       }),
-    ).toBe("targets 4 · arrows 3 · rings 1 · hidden 0 · nearest 19.2 m");
-  });
-
-  it("renders a dash when there is no nearest target", () => {
+    ).toBe(
+      "targets 4 · arrows 3 · rings 1 · hidden 0 · nearest 19.2 m · " +
+        "procedural indicators",
+    );
     expect(
       formatHudStatus({
-        targets: 0,
-        arrows: 0,
-        rings: 0,
+        targets: 4,
+        arrows: 3,
+        rings: 1,
         hidden: 0,
-        nearest: null,
+        nearest: 19.234,
+        indicatorStyle: "image",
       }),
-    ).toContain("nearest –");
+    ).toContain("image indicators");
+  });
+
+  it("renders a dash with no nearest target and omits an unknown style", () => {
+    const line = formatHudStatus({
+      targets: 0,
+      arrows: 0,
+      rings: 0,
+      hidden: 0,
+      nearest: null,
+      indicatorStyle: null,
+    });
+    expect(line).toContain("nearest –");
+    expect(line).not.toContain("indicators");
   });
 });

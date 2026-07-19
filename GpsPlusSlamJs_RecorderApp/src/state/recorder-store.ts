@@ -126,6 +126,12 @@ export interface RecorderStoreOptions {
    */
   enableCompassExperiment?: boolean;
   enableRobustSolverComparison?: boolean;
+  /**
+   * Steady-state compass vote weight ∈ [0,1] (the settings slider). Absent ⇒
+   * library default. Only consulted while the experiment / rotation prior is
+   * active. Sourced from `RecordingOptions.compassDebug.voteWeight`.
+   */
+  compassVoteWeight?: number;
 }
 
 /**
@@ -148,6 +154,7 @@ export function createRecorderStore(
     enableCompassWebXRConsistency: options.enableCompassWebXRConsistency,
     enableCompassExperiment: options.enableCompassExperiment,
     enableRobustSolverComparison: options.enableRobustSolverComparison,
+    compassVoteWeight: options.compassVoteWeight,
     // Persist the recorder-owned refPoints slice and the framework qrDetected
     // slice. Derived from each slice's own action type (never a literal) so a
     // rename can't silently drop data from recordings — see the 2026-05-28

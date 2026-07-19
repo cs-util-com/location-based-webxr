@@ -4,11 +4,13 @@
 
 Owns the page's color palette (round-2 R19: five curated palettes
 cycled by the palette button, not a light/dark toggle): resolves the
-initial value (persisted id wins, else OS `prefers-color-scheme` →
-light/dark), advances on `cycle()`, persists the choice, and pushes
-every change through one `applyTheme` seam that the bootstrap wires to
-both the DOM (`data-theme` → CSS custom properties) and the 3D scene
-palette.
+initial value (persisted id wins, else the unconditional `"dusk"`
+default — the golden-hour restyle of 2026-07-19 made the cinematic dusk
+look the first-visit brand statement; there is deliberately NO
+`prefers-color-scheme` branch), advances on `cycle()`, persists the
+choice, and pushes every change through one `applyTheme` seam that the
+bootstrap wires to both the DOM (`data-theme` → CSS custom properties)
+and the 3D scene palette.
 
 ## Public API
 
@@ -18,12 +20,12 @@ palette.
   applyable, FOUC-guard-accepted) but stays OUT of the cycle until
   `env.isSecretUnlocked()` returns true, at which point it joins the
   cycle after `mono`. Unlock logic lives in `secret-palette.ts`.
-- `resolveInitialTheme(stored, prefersLight) → Theme` — pure resolution
-  rule: any valid stored id wins; anything else (null, garbage) falls
-  back to the OS preference (light/dark).
+- `resolveInitialTheme(stored) → Theme` — pure resolution rule: any
+  valid stored id wins; anything else (null, garbage) falls back to
+  `"dusk"`. Also reused by `main.ts` to validate the FOUC-stamped
+  `data-theme` attribute for the scene's `initialTheme`.
 - `createThemeController(env: ThemeEnvironment) → ThemeController`
   - `env.storage: ThemeStorage | null` — narrowed localStorage seam.
-  - `env.prefersLight: () => boolean` — matchMedia seam.
   - `env.applyTheme(theme)` — called once at creation and on every cycle.
   - `env.isSecretUnlocked?()` — when true, `terminal` joins the cycle.
   - Controller: `theme` (current value), `cycle() → Theme`, `set(theme)
@@ -37,7 +39,7 @@ palette.
 
 - **Must stay in sync with the inline FOUC-guard script in `index.html`**,
   which duplicates the resolution rule (same storage key, same
-  valid-id list, same prefers-color-scheme fallback) to set
+  valid-id list, same unconditional dusk fallback) to set
   `data-theme` before first paint — AND with the CSS: every id in
   `THEME_IDS` needs an `html[data-theme="<id>"]` custom-property block in
   index.html and a `ScenePalette` in `scene/palette.ts` (test-pinned via
@@ -55,17 +57,16 @@ palette.
 ```ts
 const controller = createThemeController({
   storage: safeLocalStorage(), // null when access throws
-  prefersLight: () =>
-    window.matchMedia("(prefers-color-scheme: light)").matches,
   applyTheme: (theme) => {
     document.documentElement.dataset.theme = theme;
     scene?.applyPalette(theme);
   },
 });
-themeToggleButton.addEventListener("click", () => controller.toggle());
+themeToggleButton.addEventListener("click", () => controller.cycle());
 ```
 
 ## Tests
 
-`theme.test.ts` — persisted-over-OS resolution, garbage fallback, initial
-apply-once, toggle flip+persist+apply, throwing/absent storage resilience.
+`theme.test.ts` — persisted-over-default resolution, dusk fallback for
+missing/garbage values (no OS branch), initial apply-once, cycle
+order+persist+apply, throwing/absent storage resilience.

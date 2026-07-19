@@ -78,7 +78,7 @@ User-configurable recording options for controlling high-frequency data streams 
   frameTileDisplay: { divisor: 2, maxTiles: 100 },
   visualization: { frameTiles: true, occupancyCubes: true, gpsAlignmentMarkers: true, compassCubes: true, headingUpMap: true, statsOverlay: false },
   qr: { enabled: false, intervalMs: 125, captureSize: 1024 },
-  compassDebug: { coldStartOverride: true, rotationPrior: false, webXRConsistency: false, experiment: false, robustSolverComparison: false },
+  compassDebug: { coldStartOverride: true, rotationPrior: false, webXRConsistency: false, experiment: false, robustSolverComparison: false, voteWeight: 0.3 },
   loopClosureDebug: { detectorEnabled: false }
 }
 ```

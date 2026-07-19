@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dusk">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -35,20 +35,16 @@
       type="image/svg+xml"
     />
     <script>
-      // FOUC guard: apply the persisted (or OS-preferred) theme before first
-      // paint. src/theme.ts re-derives the same value with the same rules and
-      // stays the source of truth after boot.
+      // FOUC guard: apply the persisted theme (default: dusk — the
+      // golden-hour restyle's unconditional first-visit look, no
+      // prefers-color-scheme branch) before first paint. src/theme.ts
+      // re-derives the same value with the same rules and stays the
+      // source of truth after boot.
       (function () {
         try {
           var valid = ["light", "dark", "neon", "dusk", "mono", "terminal"];
           var stored = localStorage.getItem("gps-landing-theme");
-          var theme =
-            valid.indexOf(stored) >= 0
-              ? stored
-              : window.matchMedia &&
-                  window.matchMedia("(prefers-color-scheme: light)").matches
-                ? "light"
-                : "dark";
+          var theme = valid.indexOf(stored) >= 0 ? stored : "dusk";
           document.documentElement.dataset.theme = theme;
         } catch (_e) {
           /* keep the html default */
@@ -133,28 +129,39 @@
 
         color-scheme: dark;
       }
+      /* Golden-hour restyle (2026-07-19): dusk went from vaporwave purple
+         to a cinematic teal-and-orange grade — deep teal-green base, warm
+         cream text, copper panel edges, dusk-only crimson accent (retuned
+         within the red family; :root keeps #ef4444 for the other themes)
+         and a touch more film grain. */
       html[data-theme="dusk"] {
-        --bg: #2a1a3e;
-        --text: #ffeadd;
-        --muted: #d9b8a8;
-        --hl-raw: #fcd34d;
-        --hl-code: #fbbf24;
-        --hl-kw: #93c5fd;
-        --hl-lit: #a7f3d0;
-        --hl-ar: #60a5fa;
-        --hl-story: #d8b4fe;
-        --hl-portal: #38bdf8;
-        --hl-parkour: #34d399;
-        --panel: rgb(42 26 62 / 62%);
-        --panel-border: rgb(255 176 138 / 18%);
-        --panel-border-hi: rgb(255 176 138 / 50%);
-        --hl-glow-raw: 0 0 18px rgb(252 211 77 / 40%);
-        --hl-glow-fused: 0 0 20px rgb(239 68 68 / 50%);
-        --card: #3a2a55;
-        --card-border: #5d4680;
-        --card-hover: #47356a;
-        --link: #93c5fd;
-        --veil: #2a1a3e;
+        --accent: #e0483c;
+        --accent-hover: #c93a2e;
+        --bg: #142a27;
+        --text: #fed;
+        --muted: #d8bca4;
+        --hl-raw: #f6c052;
+        --hl-code: #e8a83d;
+        --hl-kw: #9cc3e8;
+        --hl-lit: #9fdcc0;
+        --hl-ar: #6fa9e0;
+        --hl-story: #d0b3f5;
+        --hl-portal: #7fd4c8;
+        --hl-parkour: #4cc38a;
+        --panel: rgb(16 34 31 / 62%);
+        --panel-border: rgb(255 178 128 / 18%);
+        --panel-border-hi: rgb(255 178 128 / 50%);
+        --hl-glow-raw: 0 0 18px rgb(246 192 82 / 40%);
+        --hl-glow-fused: 0 0 20px rgb(224 72 60 / 50%);
+        --card: #1c3833;
+        --card-border: #2f524b;
+        --card-hover: #234440;
+        --link: #9cc8e8;
+        --veil: #142a27;
+        --grain-opacity: 0.055;
+        --brand-shadow:
+          0 0 2px rgb(16 34 31 / 95%), 0 0 5px rgb(16 34 31 / 85%),
+          0 1px 14px rgb(16 34 31 / 65%);
 
         color-scheme: dark;
       }
@@ -311,6 +318,11 @@
         letter-spacing: 0.02em;
         font-size: 0.95rem;
         color: var(--muted);
+
+        /* Per-theme legibility scrim: dusk's cream text sits over the
+           BRIGHT peach sky once the veil lifts (the only dark-text-free
+           theme with a bright sky), so it sets a soft dark glow. */
+        text-shadow: var(--brand-shadow, none);
       }
       #theme-toggle {
         pointer-events: auto;
@@ -513,14 +525,16 @@
 
       /* Subtle full-page grain (v3 F5): a tiny tiled SVG noise, fixed
          over everything, pointer-transparent. Kills banding in the big
-         soft gradients without reading as dirt. */
+         soft gradients without reading as dirt. Per-theme strength via
+         --grain-opacity (golden-hour restyle: dusk runs a touch heavier
+         for the "light analog film grain" look). */
       body::after {
         content: "";
         position: fixed;
         inset: 0;
         z-index: 6;
         pointer-events: none;
-        opacity: 0.035;
+        opacity: var(--grain-opacity, 0.035);
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
       }
 

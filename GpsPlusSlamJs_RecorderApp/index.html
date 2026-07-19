@@ -1588,6 +1588,24 @@ No errors</pre
                   selection (field test)</span
                 >
               </label>
+              <div>
+                <div class="flex justify-between text-sm text-gray-200 mb-1">
+                  <span>Vote weight (steady-state compass influence)</span>
+                  <span id="compass-vote-weight-value">0.30</span>
+                </div>
+                <input
+                  type="range"
+                  id="compass-vote-weight"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  class="w-full accent-blue-500"
+                />
+                <p class="text-[11px] text-gray-400">
+                  Applies while the experiment / rotation prior is active.
+                  Library default 0.3; corpus optimum 0.1.
+                </p>
+              </div>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"

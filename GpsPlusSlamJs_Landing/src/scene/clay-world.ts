@@ -165,15 +165,16 @@ const GEOCACHE_ANCHOR = VIGNETTE_ANCHORS.castle
 // during the QR chapter, easy to miss.
 const BIRD_ANCHOR = WORLD_ANCHORS.sign.clone().add(new Vector3(0.25, 2.55, 0));
 
-// Forest portal anchor (round-14 R14-10): a floating gateway between the
-// world and the tents, in the outer-tree band near the campus — pulled
-// ~15 units back toward the world center from the campus and lifted so
-// it hovers between the trees. It faces the world center (the far-out
-// works-anywhere camera looks from there).
+// Forest portal anchor (round-14 R14-10, grounded in the golden-hour
+// rebuild): the monument stands ON the terrain between the world and the
+// tents, in the outer-tree band near the campus — pulled ~15 units back
+// toward the world center from the campus. Ground level also gives the
+// planned portal-traveler egg (N2) a doorway to step out of. It faces
+// the world center (the far-out works-anywhere camera looks from there).
 const PORTAL_ANCHOR = VIGNETTE_ANCHORS.campus
   .clone()
   .add(VIGNETTE_ANCHORS.campus.clone().setY(0).normalize().multiplyScalar(-15))
-  .setY(2.8);
+  .setY(0);
 
 // Parkour park anchor (round-14 R14-12): a lawn patch IN FRONT of the
 // city highrises — pulled ~11 units back toward the world center from

@@ -13,7 +13,7 @@ import {
 } from "./clay-world";
 import type { MarkerPair } from "./markers";
 import { VIGNETTE_NODE } from "./use-case-vignettes";
-import { PORTAL_NAME } from "./portal";
+import { PORTAL_INTERIOR_NAME, PORTAL_NAME } from "./portal";
 import { PARK_BLOCKS_NAME } from "./park";
 
 /**
@@ -677,15 +677,19 @@ export function buildStoryTimeline(
   // box becomes a big part of the screen ("erst auftauchen, wenn der
   // Textblock zu einem Großteil im Bild ist"), then closes as the camera
   // turns to the city.
-  const portal = world.getObjectByName(PORTAL_NAME);
-  if (portal) {
+  // Golden-hour rebuild: the monument frame stands permanently — the
+  // timeline pops only the bright INTERIOR world open and shut.
+  const portalInterior = world
+    .getObjectByName(PORTAL_NAME)
+    ?.getObjectByName(PORTAL_INTERIOR_NAME);
+  if (portalInterior) {
     timeline.add(
-      portal,
+      portalInterior,
       { scale: { from: 0.001, to: 1 }, duration: 380, ease: "outCubic" },
       4200,
     );
     timeline.add(
-      portal,
+      portalInterior,
       { scale: { from: 1, to: 0.001 }, duration: 320, ease: "inCubic" },
       4820,
     );

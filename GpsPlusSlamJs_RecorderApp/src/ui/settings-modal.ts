@@ -17,6 +17,7 @@ import {
   OCCUPANCY_CONSTRAINTS,
   FRAME_TILE_DISPLAY_CONSTRAINTS,
   QR_CONSTRAINTS,
+  COMPASS_DEBUG_CONSTRAINTS,
   type RecordingOptions,
   type OccluderMeshMode,
   type OccluderDebugStyle,
@@ -114,6 +115,8 @@ let compassRotationPriorCheckbox: HTMLInputElement | null = null;
 let compassWebXRConsistencyCheckbox: HTMLInputElement | null = null;
 let compassExperimentCheckbox: HTMLInputElement | null = null;
 let compassRobustSolverComparisonCheckbox: HTMLInputElement | null = null;
+let compassVoteWeightSlider: HTMLInputElement | null = null;
+let compassVoteWeightValue: HTMLElement | null = null;
 let loopClosureDetectorCheckbox: HTMLInputElement | null = null;
 let qrEnabledCheckbox: HTMLInputElement | null = null;
 let qrIntervalSlider: HTMLInputElement | null = null;
@@ -302,6 +305,23 @@ export function initSettingsModal(
   compassRobustSolverComparisonCheckbox = document.getElementById(
     'compass-robust-solver-comparison'
   ) as HTMLInputElement;
+  compassVoteWeightSlider = document.getElementById(
+    'compass-vote-weight'
+  ) as HTMLInputElement;
+  compassVoteWeightValue = document.getElementById('compass-vote-weight-value');
+  // Slider bounds from the validation constraints — one source of truth, so
+  // the UI can never offer a value the validator would clamp away.
+  if (compassVoteWeightSlider) {
+    compassVoteWeightSlider.min = String(
+      COMPASS_DEBUG_CONSTRAINTS.voteWeight.min
+    );
+    compassVoteWeightSlider.max = String(
+      COMPASS_DEBUG_CONSTRAINTS.voteWeight.max
+    );
+    compassVoteWeightSlider.step = String(
+      COMPASS_DEBUG_CONSTRAINTS.voteWeight.step
+    );
+  }
   loopClosureDetectorCheckbox = document.getElementById(
     'loop-closure-detector'
   ) as HTMLInputElement;
@@ -699,6 +719,16 @@ export function initSettingsModal(
     if (workingOptions && compassRobustSolverComparisonCheckbox) {
       workingOptions.compassDebug.robustSolverComparison =
         compassRobustSolverComparisonCheckbox.checked;
+    }
+  });
+
+  compassVoteWeightSlider?.addEventListener('input', () => {
+    if (workingOptions && compassVoteWeightSlider) {
+      const w = Number(compassVoteWeightSlider.value);
+      workingOptions.compassDebug.voteWeight = w;
+      if (compassVoteWeightValue) {
+        compassVoteWeightValue.textContent = w.toFixed(2);
+      }
     }
   });
 
@@ -1159,6 +1189,13 @@ function populateForm(options: RecordingOptions): void {
   if (compassRobustSolverComparisonCheckbox) {
     compassRobustSolverComparisonCheckbox.checked =
       options.compassDebug.robustSolverComparison;
+  }
+  if (compassVoteWeightSlider) {
+    compassVoteWeightSlider.value = String(options.compassDebug.voteWeight);
+  }
+  if (compassVoteWeightValue) {
+    compassVoteWeightValue.textContent =
+      options.compassDebug.voteWeight.toFixed(2);
   }
   if (loopClosureDetectorCheckbox) {
     loopClosureDetectorCheckbox.checked =

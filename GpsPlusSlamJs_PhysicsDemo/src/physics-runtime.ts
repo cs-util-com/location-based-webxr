@@ -101,8 +101,12 @@ export function createPhysicsRuntime(
         const trimesh = readTrimesh(meshSource.getMesh());
         if (trimesh) {
           session.setColliderFromTrimesh(trimesh.positions, trimesh.indices);
+          // Only a successful rebuild consumes the throttle window: a null
+          // read (mesh still empty) is a cheap attribute check, and counting
+          // it would delay the FIRST collider by up to colliderRebuildMs
+          // after geometry appears (PR #195 review).
+          lastRebuild = nowMs;
         }
-        lastRebuild = nowMs;
       }
       session.step();
       options.onStats?.(session.ballCount(), session.colliderShapeCount());

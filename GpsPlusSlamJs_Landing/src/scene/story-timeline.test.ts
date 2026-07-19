@@ -52,6 +52,28 @@ describe("buildStoryTimeline", () => {
     stage = makeStage();
   });
 
+  // Why this test matters: PR #191 review (gemini, "high") claimed the QR
+  // accuracy ring stays invisible because "opacity" is tweened on the Mesh
+  // rather than its material. Empirically the in-project anime.js timeline
+  // DOES drive the material (0.85 at the beat's peak, no dead expando on the
+  // mesh) and the collapse tween eases the group scale — but raw anime on a
+  // bare Mesh behaves differently, so this pin guards the ring's visibility
+  // contract against an anime upgrade ever changing target resolution.
+  it("fades the QR accuracy ring in via its material opacity during the QR beat", () => {
+    const timeline = buildStoryTimeline(stage, () => {});
+    timeline.seek(1600); // between the fade-in (ends 1500) and fade-out (1890)
+    const snapRing = stage.world.getObjectByName(WORLD_NODE.snapRing)!;
+    const ringMesh = snapRing.children[0] as Mesh & { opacity?: number };
+    const material = ringMesh.material as MeshStandardMaterial;
+    // The renderer reads the MATERIAL's opacity — that is what must animate.
+    expect(material.opacity).toBeGreaterThan(0.5);
+    // No dead expando on the mesh (the failure mode the review predicted).
+    expect(ringMesh.opacity).toBeUndefined();
+    // And the ring is mid-collapse (scale tween live at this seek).
+    expect(snapRing.scale.x).toBeLessThan(3);
+    expect(snapRing.scale.x).toBeGreaterThan(0.06);
+  });
+
   it("covers every chapter with the fixed per-chapter duration", () => {
     const timeline = buildStoryTimeline(stage, () => {});
     expect(timeline.duration).toBe(CHAPTER_COUNT * CHAPTER_DURATION_MS);
@@ -400,9 +422,13 @@ describe("buildStoryTimeline", () => {
     expect(ndc.z).toBeLessThan(1); // in front of the camera
   });
 
-  it("opens the forest portal while far out and closes it before the city (round-14 R14-10)", () => {
+  it("opens the portal INTERIOR while far out and closes it before the city; the frame never moves (round-14 R14-10, golden-hour rebuild)", () => {
+    // Since the golden-hour rebuild the monument frame stands
+    // permanently — the timeline only pops the bright interior world.
     const timeline = buildStoryTimeline(stage, () => {});
-    const portal = stage.world.getObjectByName("forest-portal");
+    const frame = stage.world.getObjectByName("forest-portal");
+    expect(frame).toBeDefined();
+    const portal = frame!.getObjectByName("portal-interior");
     expect(portal).toBeDefined();
 
     timeline.seek(3900); // works-anywhere copy only entering: still closed
@@ -417,6 +443,12 @@ describe("buildStoryTimeline", () => {
     // Scrub back re-closes it (explicit {from,to} contract).
     timeline.seek(3900);
     expect(portal!.scale.x).toBeLessThan(0.01);
+
+    // The monument frame stays full-scale through the whole story.
+    for (const t of [0, 3900, 4650, 5200, 7000]) {
+      timeline.seek(t);
+      expect(frame!.scale.x, `frame @${t}`).toBeCloseTo(1);
+    }
   });
 
   it("pops the parkour blocks in during works-anywhere (round-14 R14-12)", () => {

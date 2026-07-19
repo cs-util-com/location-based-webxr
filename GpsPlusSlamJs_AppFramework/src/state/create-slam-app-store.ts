@@ -35,6 +35,7 @@ import {
   setCompassWebXRConsistencyEnabled,
   setCompassExperimentEnabled,
   setRobustSolverComparisonEnabled,
+  setCompassVoteWeight,
   type RootState as LibraryRootState,
 } from 'gps-plus-slam-js';
 import { COMMUNITY_LICENSE_KEY } from 'gps-plus-slam-js/community-license-key';
@@ -216,6 +217,15 @@ export interface SlamAppStoreOptions<
    * persists into recordings.
    */
   enableRobustSolverComparison?: boolean;
+
+  /**
+   * **Field-test knob** — steady-state compass vote weight ∈ [0,1] for the
+   * rotation prior / compass experiment (the recorder's vote-weight slider,
+   * 2026-07-19 weight-curve follow-up). Dispatches `setCompassVoteWeight(w)`
+   * once `gpsData` exists. Absent ⇒ the library default; only consulted while
+   * a rotation prior is active. The action persists into recordings.
+   */
+  compassVoteWeight?: number;
 }
 
 /**
@@ -282,6 +292,7 @@ export function createSlamAppStore<
     // Field-test opt-ins (2026-07-19 enablement plan) — default OFF.
     enableCompassExperiment = false,
     enableRobustSolverComparison = false,
+    compassVoteWeight,
   } = options;
 
   validateLicenseKey(licenseKey);
@@ -364,6 +375,12 @@ export function createSlamAppStore<
     compassOptIns.push({
       isSet: (s) => s.gpsData?.robustSolverComparisonEnabled === true,
       apply: (dispatch) => dispatch(setRobustSolverComparisonEnabled(true)),
+    });
+  }
+  if (compassVoteWeight !== undefined) {
+    compassOptIns.push({
+      isSet: (s) => s.gpsData?.compassVoteWeight === compassVoteWeight,
+      apply: (dispatch) => dispatch(setCompassVoteWeight(compassVoteWeight)),
     });
   }
 

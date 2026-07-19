@@ -8,6 +8,7 @@
  * must stay hidden both between events and entirely in light palettes.
  */
 import { describe, expect, it } from "vitest";
+import { Vector3 } from "three";
 import {
   buildShootingStar,
   SHOOTING_STAR_NAME,
@@ -58,6 +59,29 @@ describe("shooting stars", () => {
     expect(a.distanceTo(b)).toBeGreaterThan(2);
     // High in the sky, not down among the world.
     expect(group.position.y).toBeGreaterThan(15);
+  });
+
+  // Why this test matters: the build comment promises "a stretched trail
+  // behind it (−z local; the group is oriented along travel at update
+  // time)" — but a pure Z-roll cannot orient anything along a travel
+  // direction that lies in the XY plane, so the 4.5-long trail lay
+  // sideways along world Z (foreshortened to nearly nothing on screen)
+  // instead of streaming behind the head (PR #193 review, gemini).
+  it("orients the trail behind the head along the travel direction", () => {
+    const group = buildShootingStar();
+    const start = firstActiveTime();
+    updateShootingStar(group, start + 100, true);
+    const a = group.position.clone();
+    updateShootingStar(group, start + 500, true);
+    const travel = group.position.clone().sub(a).normalize();
+
+    // children[1] is the trail (head added first); it sits at local −Z.
+    group.updateMatrixWorld(true);
+    const trailDir = group.children[1]!.getWorldPosition(new Vector3())
+      .sub(group.getWorldPosition(new Vector3()))
+      .normalize();
+    // The trail must point OPPOSITE the travel direction (behind the head).
+    expect(trailDir.dot(travel)).toBeLessThan(-0.95);
   });
 
   it("delays the first streak by at least the minimum gap (no meteor on load)", () => {

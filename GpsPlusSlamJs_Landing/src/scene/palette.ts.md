@@ -1,21 +1,28 @@
-# `scene/palette.ts` — dual scene palettes + role-based recoloring
+# `scene/palette.ts` — per-theme scene palettes + role-based recoloring
 
 ## Purpose
 
-Encodes the plan's visual decision (light = white/matte clay world, dark =
-night world with glowing accents) as two palettes, and recolors the whole
-scene graph in one traversal via `userData.paletteRole` tags — the
-mechanism behind the theme toggle. Also provides the shared mesh/group
-factories all scene builders use.
+Encodes the visual decision of each of the six themes (light = white/matte
+clay, dark = night world with glowing accents, neon = cyberpunk, dusk =
+the golden-hour teal-and-orange film grade (restyled 2026-07-19), mono =
+ink/paper, terminal = hidden CRT) as data, and recolors the whole scene
+graph in one traversal via `userData.paletteRole` tags — the mechanism
+behind the palette cycle. Also provides the shared mesh/group factories
+all scene builders use.
 
 ## Public API
 
-- `PALETTE_ROLES` / `PaletteRole` — the closed set of role tags.
+- `PALETTE_ROLES` / `PaletteRole` — the closed set of role tags (now
+  incl. `portal` = the monument frame and `portalMoss` = its moss clumps
+  since the golden-hour portal rebuild).
 - `getPalette(theme: Theme) → ScenePalette` — `background`, `fog`,
   `hemisphere` + `directional` light settings, `sky` (v3 F3: zenith/
-  horizon gradient colors + `accents` kind + `accentColor`, consumed by
-  `sky-dome.ts` — NOT by the role traversal), and `roles` (per-role
-  `{ color, emissive?, emissiveIntensity? }`).
+  horizon gradient colors + `accents` kind + `accentColor` + optional
+  `cloudColor` for the dusk cloud blobs, consumed by `sky-dome.ts` — NOT
+  by the role traversal), `portalInterior` (`{ top, bottom, clouds }` —
+  the rebuilt portal's vertex-colored "other world" gradient, consumed by
+  `applyPortalPalette` in `portal.ts`, NOT by the role traversal), and
+  `roles` (per-role `{ color, emissive?, emissiveIntensity? }`).
 - The accent-set union (`"moon-stars" | "sun" | "star-grid" | "none"`)
   is module-private (`SkyAccents`), same knip rule as `RoleStyle`.
 - `applyPaletteToScene(root, palette)` — recolors every role-tagged
@@ -28,13 +35,25 @@ factories all scene builders use.
 
 ## Invariants & assumptions
 
-- **Both palettes define every role** (test-pinned) — a missing role would
-  leave meshes in the other theme's colors after a toggle.
-- **The fused-anchor accent is `#ef4444` in both themes**, matching the
-  page chrome's `--accent` (brand continuity, test-pinned).
+- **Every palette defines every role AND the `portalInterior` block**
+  (test-pinned) — a missing role would leave meshes in the other theme's
+  colors after a cycle.
+- **The fused-anchor accent is a per-theme exact map** (test-pinned):
+  `#ef4444` everywhere EXCEPT dusk, which runs the deliberately retuned
+  crimson `#e0483c` (`DUSK_ACCENT`) matching its CSS `--accent` override.
+  A red-family guard (R>190, R−G>100, R−B>100) keeps any future retune
+  clearly red.
+- **Dusk grade invariants** (test-pinned): ground/grass/hill/path warm
+  (R>B), foliage + portal frame teal-green (G≥R), portal interior bottom
+  warmer than top, plus WCAG readability floors over the dusk background
+  (skyline ≥2.0, path ≥2.2, statue ≥2.5, phone ≥2.5 + blue-ness) —
+  same lesson as the dark-theme floors from round-4.
+- Dusk's `fog.color` is deliberately WARMER than `background` (golden
+  haze toward the peach horizon); every other theme keeps fog = bg.
 - Dark theme glows via `emissiveIntensity > 0`; light theme is matte
-  (`0`). `applyPaletteToScene` always writes all three channels, so
-  toggling back fully restores the previous look (no sticky state).
+  (`0`); dusk stays in a restrained ~0.3–0.6 band ("restrained bloom,
+  not neon"). `applyPaletteToScene` always writes all three channels, so
+  cycling fully restores the previous look (no sticky state).
 - Unknown role strings and non-standard materials are skipped silently —
   a bad tag degrades to "keeps previous color", never a crash.
 - `clayMesh` gives each mesh its OWN material instance; sharing across
@@ -44,10 +63,12 @@ factories all scene builders use.
 
 ```ts
 const world = buildClayWorld("high");
-applyPaletteToScene(world, getPalette("dark"));
+applyPaletteToScene(world, getPalette("dusk"));
 ```
 
 ## Tests
 
-`palette.test.ts` — role completeness in both themes, accent pin, glow
-vs. matte, recolor + toggle-back traversal, unknown-tag/no-tag skipping.
+`palette.test.ts` — role + portalInterior completeness across all six
+themes, per-theme accent map + red-family guard, dusk readability floors,
+dusk grade pins, glow vs. matte, recolor + toggle-back traversal,
+unknown-tag/no-tag skipping.
