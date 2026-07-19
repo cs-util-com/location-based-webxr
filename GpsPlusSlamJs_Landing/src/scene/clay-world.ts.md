@@ -20,7 +20,8 @@ via a seeded LCG.
   stones were removed in round-9).
 - `WORLD_NODE` — the names of every addressable node (`root`, `ground`,
   `path`, `hills`, `trees`, `rocks`, `sign`, `statue`, `snapRing`,
-  `outer`, `arContent`). The story timeline looks these up by name.
+  `outer`, `skyline`, `arContent`, `grass`, `contactShadows`,
+  `vignettes`). The story timeline looks these up by name.
   `arContent` holds the dive's in-world AR overlays: a DENSE path-forward
   arrow trail (8 arrows, 0.05 apart, reaching t≈0.91 — round-8 Z3,
   count/spacing/extent test-pinned; each carries `userData.pathT`,
@@ -53,8 +54,9 @@ via a seeded LCG.
 - **Name contract:** every `WORLD_NODE` name resolves via
   `getObjectByName` on the built world (test-pinned) — the timeline
   animates nothing silently if a name drifts, so this is the guard.
-- **Reveal groups start hidden:** `outer` and `gallery` have
-  `visible === false` until their chapters (test-pinned).
+- **Reveal groups start hidden:** `outer`, `snapRing` and `arContent` have
+  `visible === false` until their chapters (test-pinned; the former
+  `gallery` treasures group was removed per round-2 R13).
 - All meshes are tagged with roles that exist in `PALETTE_ROLES`
   (test-pinned) so the theme toggle recolors the entire world.
 - Path is at y=0 and stays inside the world disc; scatter placement keeps
