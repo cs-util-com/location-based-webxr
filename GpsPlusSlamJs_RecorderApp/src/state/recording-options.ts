@@ -112,6 +112,14 @@ export interface CompassDebugOptions {
    * A/B against the experiment — NOT a compass mechanism. Default OFF.
    */
   robustSolverComparison: boolean;
+  /**
+   * Steady-state compass vote weight ∈ [0,1] (`setCompassVoteWeight`) — how
+   * strongly a trusted compass pulls the rotation once GPS yaw is observable.
+   * Only consulted while the experiment / rotation prior is active. Default
+   * 0.3 (the library default); the 2026-07-19 census weight curve measured
+   * 0.1 as the whole-session optimum — the slider exists to field-test both.
+   */
+  voteWeight: number;
 }
 
 /**
@@ -553,9 +561,12 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     rotationPrior: false,
     webXRConsistency: false,
     // 2026-07-19 field-test toggles (enablement plan) — OFF until the
-    // operator explicitly opts a session in.
+    // operator explicitly opts a session in. voteWeight mirrors the library
+    // default (0.3); the census weight curve measured 0.1 as the
+    // whole-session optimum — slider exists to field-test both.
     experiment: false,
     robustSolverComparison: false,
+    voteWeight: 0.3,
   },
   loopClosureDebug: {
     // OFF by default: with it ON every AR relocalization jump dispatches
@@ -694,6 +705,11 @@ export const QR_CONSTRAINTS = {
   captureSize: { min: 256, max: 2048, step: 128 },
 } as const;
 
+/** Validation constraints for the compass-debug group's numeric fields */
+export const COMPASS_DEBUG_CONSTRAINTS = {
+  voteWeight: { min: 0, max: 1, step: 0.05 },
+} as const;
+
 /**
  * Per-field validation spec for {@link validateFields}. Persisted/external
  * values are untrusted (quality-review C-1), so every kind falls back to the
@@ -792,6 +808,10 @@ export function validateCompassDebugOptions(
     webXRConsistency: { kind: 'bool' },
     experiment: { kind: 'bool' },
     robustSolverComparison: { kind: 'bool' },
+    voteWeight: {
+      kind: 'num',
+      constraint: COMPASS_DEBUG_CONSTRAINTS.voteWeight,
+    },
   });
 }
 
