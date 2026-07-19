@@ -1,10 +1,12 @@
 /**
  * Landing-page bootstrap. Wires the DOM chapters to the 3D scroll story.
  *
- * Boot order matters: theme first (so the first rendered frame uses the
- * right palette), then capability detection (decides quality tier and
- * whether scroll-driven animation runs at all), then the 3D scene. Every
- * step degrades gracefully — the DOM copy must stand alone when WebGL or
+ * Boot order matters: capability detection first (decides quality tier
+ * and whether scroll-driven animation runs at all), then the 3D scene
+ * (seeded with the FOUC-guard's resolved theme), then the theme
+ * controller — created AFTER the scene so a single `applyTheme` call
+ * reaches both the DOM and the 3D palette (see main.ts.md). Every step
+ * degrades gracefully — the DOM copy must stand alone when WebGL or
  * motion is unavailable (see the plan doc's "Fallbacks" decision).
  */
 import {
