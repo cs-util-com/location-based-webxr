@@ -224,7 +224,7 @@ export interface OccupancyOptions {
   /**
    * Voxel edge length in metres. Drives the occupancy-grid quantization, the
    * debug cubes, and the COLMAP `points3D` density. Default `DEFAULT_OCCUPANCY_CELL_SIZE_M`
-   * (0.18 = 18 cm; framework FAST-reconstruction default, shared with the
+   * (0.16 = 16 cm; framework FAST-reconstruction default, shared with the
    * PhysicsDemo). Smaller = finer detail but cell count scales as 1/cellSize³, so the
    * range is deliberately clamped (see `OCCUPANCY_CONSTRAINTS`). Read once when
    * the grid is constructed (Enter-AR / replay load), so a change takes effect
@@ -238,7 +238,7 @@ export interface OccupancyOptions {
    * lands in it; raising this filters single-frame depth noise — in
    * particular the **behind-surface** phantoms (e.g. below the floor) that
    * free-space carving can never clear because no ray passes through occluded
-   * space. Default `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS` (3; framework noise floor,
+   * space. Default `DEFAULT_OCCUPANCY_MIN_OBSERVATIONS` (2; framework noise floor,
    * shared with the PhysicsDemo). 1 = unfiltered/legacy. Higher = less noise but
    * briefly-glimpsed real surfaces may be dropped, so it is exposed for
    * on-device tuning. Read once when the visualizer is constructed (Enter-AR
