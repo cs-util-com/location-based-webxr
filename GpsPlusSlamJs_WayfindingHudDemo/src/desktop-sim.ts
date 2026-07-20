@@ -150,6 +150,12 @@ export function startDesktopSim(deps: DesktopSimDeps): DesktopSim {
   );
   camera.position.set(0, SIM_EYE_HEIGHT, 5);
   camera.lookAt(0, SIM_EYE_HEIGHT, 4.99);
+  // The HUD parents its indicators to the camera, and three.js only renders
+  // objects reachable from the scene root — without this the indicators
+  // exist (and the status line reports them) but never draw. The framework's
+  // "never scene.add(camera)" rule applies to the AR pose chain only; this
+  // simulator owns its free camera, so scene-root parenting is correct here.
+  scene.add(camera);
 
   const renderer = createRenderer();
   renderer.setPixelRatio(windowLike.devicePixelRatio);
