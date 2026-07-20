@@ -1296,9 +1296,10 @@ describe('settings-modal', () => {
       expect(cb?.checked).toBe(true);
     });
 
-    it('vote-weight slider defaults to 0.3, persists a change, and populates from a saved value', () => {
+    it('vote-weight slider defaults to 0.1 (census optimum), persists a change, and populates from a saved value', () => {
       // Why: the slider is the field-test surface for the 2026-07-19
-      // vote-weight curve (0.1 vs the 0.3 default). It must round-trip through
+      // vote-weight curve. Default moved 0.3 → 0.1 on 2026-07-20 (census
+      // optimum; settings-clarity follow-up §4.6). It must round-trip through
       // save/load like the sibling compass toggles and render its value.
       initSettingsModal();
       showSettingsModal();
@@ -1308,15 +1309,15 @@ describe('settings-modal', () => {
       ) as HTMLInputElement | null;
       const valueSpan = document.getElementById('compass-vote-weight-value');
       expect(slider).not.toBeNull();
-      expect(Number(slider!.value)).toBeCloseTo(0.3, 6);
-      expect(valueSpan?.textContent).toContain('0.30');
-
-      slider!.value = '0.1';
-      slider!.dispatchEvent(new Event('input'));
+      expect(Number(slider!.value)).toBeCloseTo(0.1, 6);
       expect(valueSpan?.textContent).toContain('0.10');
+
+      slider!.value = '0.3';
+      slider!.dispatchEvent(new Event('input'));
+      expect(valueSpan?.textContent).toContain('0.30');
       document.getElementById('btn-settings-save')?.click();
       expect(loadRecordingOptions().compassDebug.voteWeight).toBeCloseTo(
-        0.1,
+        0.3,
         6
       );
     });

@@ -562,11 +562,13 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     webXRConsistency: false,
     // 2026-07-19 field-test toggles (enablement plan) — OFF until the
     // operator explicitly opts a session in. voteWeight mirrors the library
-    // default (0.3); the census weight curve measured 0.1 as the
-    // whole-session optimum — slider exists to field-test both.
+    // default (0.1 since 2026-07-20 — the census weight curve measured 0.1 as
+    // the whole-session optimum; settings-clarity follow-up §4.6). NOTE:
+    // operators with a persisted 0.3 keep it — persisted settings win over
+    // this default.
     experiment: false,
     robustSolverComparison: false,
-    voteWeight: 0.3,
+    voteWeight: 0.1,
   },
   loopClosureDebug: {
     // OFF by default: with it ON every AR relocalization jump dispatches

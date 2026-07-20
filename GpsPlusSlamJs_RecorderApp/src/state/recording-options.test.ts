@@ -832,7 +832,10 @@ describe('recording-options', () => {
         webXRConsistency: false,
         experiment: false,
         robustSolverComparison: false,
-        voteWeight: 0.3,
+        // 0.1 = the census-optimal weight (2026-07-19 sweep; developer
+        // decision 2026-07-20, settings-clarity follow-up §4.6 — mirrors the
+        // library default).
+        voteWeight: 0.1,
       });
     });
 
@@ -881,12 +884,13 @@ describe('recording-options', () => {
       ).toBe(false);
     });
 
-    it('voteWeight clamps to [0,1] and falls back to 0.3 for non-finite values', () => {
+    it('voteWeight clamps to [0,1] and falls back to 0.1 for non-finite values', () => {
       // Why: the vote weight feeds straight into the steady-state compass
       // blend — a garbage persisted value must neither crash the library
       // action (which throws outside [0,1]) nor silently distort the solve.
-      expect(validateCompassDebugOptions({ voteWeight: 0.1 }).voteWeight).toBe(
-        0.1
+      // The fallback matches the 0.1 default (census optimum, 2026-07-20).
+      expect(validateCompassDebugOptions({ voteWeight: 0.3 }).voteWeight).toBe(
+        0.3
       );
       expect(validateCompassDebugOptions({ voteWeight: 1.5 }).voteWeight).toBe(
         1
@@ -896,12 +900,12 @@ describe('recording-options', () => {
       );
       expect(
         validateCompassDebugOptions({ voteWeight: Number.NaN }).voteWeight
-      ).toBe(0.3);
+      ).toBe(0.1);
       expect(
         validateCompassDebugOptions({
           voteWeight: 'high' as unknown as number,
         }).voteWeight
-      ).toBe(0.3);
+      ).toBe(0.1);
     });
 
     it('validateRecordingOptions + cloneRecordingOptions carry compassDebug (deep-cloned)', () => {
@@ -914,7 +918,7 @@ describe('recording-options', () => {
         webXRConsistency: false,
         experiment: false,
         robustSolverComparison: false,
-        voteWeight: 0.3,
+        voteWeight: 0.1,
       });
       const clone = cloneRecordingOptions(opts);
       expect(clone.compassDebug).not.toBe(opts.compassDebug); // no aliasing
