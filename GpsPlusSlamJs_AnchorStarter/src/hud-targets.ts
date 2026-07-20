@@ -9,6 +9,7 @@
  */
 
 import { Vector3 } from "three";
+import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 
 /**
  * The structural slice of a marker the HUD feed needs. Matches both a real
@@ -19,16 +20,23 @@ export interface HudTargetMarker {
   getWorldPosition(out: Vector3): Vector3;
 }
 
+/** Stable per-target state key for the app's single anchor (the HUD keys
+ * hysteresis state by id — 2026-07-20 per-target config plan). */
+const ANCHOR_TARGET_ID = "anchor";
+
 /**
  * Current HUD targets for the app's anchor marker.
  *
- * Returns the marker's world position while the marker exists and is
- * visible; an empty list otherwise (no marker yet, or hidden awaiting the
- * first alignment).
+ * Returns one `WayfindingTarget` at the marker's world position while the
+ * marker exists and is visible; an empty list otherwise (no marker yet, or
+ * hidden awaiting the first alignment). Fresh literals per call are safe:
+ * the constant id keeps the HUD's per-target hysteresis state stable.
  */
 export function hudTargetsFromMarker(
   marker: HudTargetMarker | null,
-): Vector3[] {
+): WayfindingTarget[] {
   if (!marker || !marker.visible) return [];
-  return [marker.getWorldPosition(new Vector3())];
+  return [
+    { id: ANCHOR_TARGET_ID, position: marker.getWorldPosition(new Vector3()) },
+  ];
 }
