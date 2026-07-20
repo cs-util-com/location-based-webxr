@@ -1334,6 +1334,106 @@ describe('settings-modal', () => {
       expect(Number(slider?.value)).toBeCloseTo(0.5, 6);
     });
 
+    // Why these tests matter: the 2026-07-20 settings-clarity follow-up (§3.4,
+    // §4.2) found the vote-weight slider looked live in the Stage-0-only
+    // default state although nothing consumes it, and that checking Stage C
+    // next to the experiment silently does nothing extra. The gating below
+    // mirrors compassStoreOptions (slider) and the config-derivation semantics
+    // (experiment implies Stage C at 15°). Decision §4.6: greyed-out Stage C
+    // KEEPS its stored value and both flags keep being recorded.
+    describe('compass control gating (settings-clarity §4.2)', () => {
+      const el = (id: string) =>
+        document.getElementById(id) as HTMLInputElement;
+
+      it('greys the vote-weight slider out until the experiment or Stage C can consume it', () => {
+        initSettingsModal();
+        showSettingsModal();
+        // Stage-0-only default state: the weight reaches no consumer.
+        expect(el('compass-vote-weight').disabled).toBe(true);
+
+        el('compass-experiment').checked = true;
+        el('compass-experiment').dispatchEvent(new Event('change'));
+        expect(el('compass-vote-weight').disabled).toBe(false);
+
+        el('compass-experiment').checked = false;
+        el('compass-experiment').dispatchEvent(new Event('change'));
+        expect(el('compass-vote-weight').disabled).toBe(true);
+
+        el('compass-rotation-prior').checked = true;
+        el('compass-rotation-prior').dispatchEvent(new Event('change'));
+        expect(el('compass-vote-weight').disabled).toBe(false);
+      });
+
+      it('greys Stage C out while the experiment implies it, keeping and persisting its stored value', () => {
+        localStorageMock.getItem.mockReturnValueOnce(
+          JSON.stringify({
+            compassDebug: { rotationPrior: true, experiment: true },
+          })
+        );
+        initSettingsModal();
+        showSettingsModal();
+        const stageC = el('compass-rotation-prior');
+        expect(stageC.disabled).toBe(true);
+        expect(stageC.checked).toBe(true); // value preserved while greyed
+
+        // Saving while greyed persists BOTH flags (keep-value-record-both).
+        document.getElementById('btn-settings-save')?.click();
+        const saved = loadRecordingOptions().compassDebug;
+        expect(saved.rotationPrior).toBe(true);
+        expect(saved.experiment).toBe(true);
+
+        el('compass-experiment').checked = false;
+        el('compass-experiment').dispatchEvent(new Event('change'));
+        expect(stageC.disabled).toBe(false);
+        expect(stageC.checked).toBe(true);
+      });
+
+      it('applies the gating when the modal opens with a saved prior (slider live, Stage C enabled)', () => {
+        localStorageMock.getItem.mockReturnValueOnce(
+          JSON.stringify({ compassDebug: { rotationPrior: true } })
+        );
+        initSettingsModal();
+        showSettingsModal();
+        expect(el('compass-vote-weight').disabled).toBe(false);
+        expect(el('compass-rotation-prior').disabled).toBe(false);
+      });
+    });
+
+    // Why these tests matter: §3.2/§3.5/§3.7 of the follow-up — "trust" used
+    // to name two unrelated mechanisms in adjacent labels (the compass↔GPS
+    // trust machine vs the compass↔WebXR consistency gate), and the group help
+    // text neither covered all six controls nor the full calibration rule.
+    describe('compass group copy (trust-naming split + calibration rule)', () => {
+      it('names the WebXR mechanism "Consistency gate" and reserves "trust" for the trust machine', () => {
+        initSettingsModal();
+        showSettingsModal();
+        const gateLabel =
+          document.getElementById('compass-webxr-consistency')?.closest('label')
+            ?.textContent ?? '';
+        expect(gateLabel).toContain('Consistency gate');
+        expect(gateLabel.toLowerCase()).not.toContain('trust');
+      });
+
+      it('help text states the full calibration rule (Stage 0 AND experiment toggles OFF) and the 0.1 expectation', () => {
+        initSettingsModal();
+        showSettingsModal();
+        const help =
+          document.getElementById('compass-debug-help')?.textContent ?? '';
+        // Full §6a calibration rule — not just "Stage 0 OFF".
+        expect(help).toMatch(/Stage 0.*experiment.*OFF/is);
+        // One line of corpus expectation-setting for field testers.
+        expect(help).toContain('0.1');
+      });
+
+      it('visually separates the robust-solver A/B arm from the compass mechanisms', () => {
+        initSettingsModal();
+        showSettingsModal();
+        const divider = document.getElementById('compass-ab-arm-divider');
+        expect(divider).not.toBeNull();
+        expect(divider!.textContent).toMatch(/not a compass/i);
+      });
+    });
+
     it('persists + populates the loop-closure capture toggle (experimental, default OFF)', () => {
       // Why: the loop-closure detector wiring is opt-in per the 2026-07-06
       // recorder wiring plan — the checkbox must default unchecked, persist an

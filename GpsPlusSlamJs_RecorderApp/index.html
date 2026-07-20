@@ -1536,13 +1536,23 @@ No errors</pre
               >
             </div>
             <div class="bg-gray-700/50 rounded-lg p-3 space-y-3">
-              <p class="text-[11px] text-gray-400">
+              <p id="compass-debug-help" class="text-[11px] text-gray-400">
                 Feed the absolute-orientation compass into the live GPS
-                alignment. Stage 0 is ON by default (fixes initial rotation);
-                Stage C + the trust gate are experimental (off). Applies on the
-                next session / reload. These flags are recorded into the session
-                (replay re-enables them), so turn Stage 0 OFF for compass
-                calibration sets.
+                alignment. Applies on the next session / reload; all flags are
+                recorded into the session (replay re-enables them). Stage 0 (ON
+                by default) owns the yaw only until it becomes observable from
+                GPS. Stage C keeps a small steady-state vote afterwards, gated
+                by the compass↔GPS <em>trust machine</em> (8° tolerance — too
+                strict to activate on the field corpus). The compass experiment
+                is the recommended field-test combo: the Stage C vote at the
+                census-backed 15° trust tolerance plus C′ pair selection — it
+                implies Stage C, so that checkbox greys out. The consistency
+                gate is a different mechanism than the trust machine: a
+                compass↔WebXR drift check applied only once yaw is observable
+                (with only Stage 0 on it barely acts). Vote weight scales the
+                Stage C / experiment vote — 0.1 measured best (2026-07-19 weight
+                census). Calibration rule: Stage 0 AND the experiment toggles
+                must all be OFF for §6a compass-calibration recordings.
               </p>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
@@ -1562,8 +1572,8 @@ No errors</pre
                   class="w-4 h-4 accent-blue-500"
                 />
                 <span class="text-sm text-gray-200"
-                  >Stage C — steady-state rotation prior (trust-gated
-                  vote)</span
+                  >Stage C — steady-state rotation prior (trust-machine-gated
+                  vote; implied by the experiment)</span
                 >
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
@@ -1573,8 +1583,8 @@ No errors</pre
                   class="w-4 h-4 accent-blue-500"
                 />
                 <span class="text-sm text-gray-200"
-                  >Trust gate — only use compass when consistent with
-                  WebXR</span
+                  >Consistency gate — down-weight the compass while it drifts
+                  against WebXR</span
                 >
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
@@ -1584,8 +1594,8 @@ No errors</pre
                   class="w-4 h-4 accent-blue-500"
                 />
                 <span class="text-sm text-gray-200"
-                  >Compass experiment — trust vote (15° tolerance) + pair
-                  selection (field test)</span
+                  >Compass experiment — Stage C vote at 15° trust tolerance + C′
+                  pair selection (field test)</span
                 >
               </label>
               <div>
@@ -1602,10 +1612,17 @@ No errors</pre
                   class="w-full accent-blue-500"
                 />
                 <p class="text-[11px] text-gray-400">
-                  Applies while the experiment / rotation prior is active.
-                  Default 0.1 — the corpus-measured optimum (2026-07-19 weight
-                  census).
+                  Only active while the experiment / Stage C is on (greyed out
+                  otherwise). Default 0.1 — the corpus-measured optimum
+                  (2026-07-19 weight census).
                 </p>
+              </div>
+              <div
+                id="compass-ab-arm-divider"
+                class="border-t border-gray-600 pt-2 text-[11px] text-gray-400"
+              >
+                A/B comparison arm — not a compass mechanism (seed-dependent;
+                attribute its effects to the solver, not the compass):
               </div>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
@@ -1614,8 +1631,8 @@ No errors</pre
                   class="w-4 h-4 accent-blue-500"
                 />
                 <span class="text-sm text-gray-200"
-                  >Robust-solver comparison — plain outlier rejection (not
-                  compass; A/B arm)</span
+                  >Robust-solver comparison — plain outlier rejection
+                  (RANSAC)</span
                 >
               </label>
             </div>

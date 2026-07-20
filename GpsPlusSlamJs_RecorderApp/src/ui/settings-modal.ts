@@ -696,6 +696,7 @@ export function initSettingsModal(
       workingOptions.compassDebug.rotationPrior =
         compassRotationPriorCheckbox.checked;
     }
+    updateCompassControlsState();
   });
 
   compassWebXRConsistencyCheckbox?.addEventListener('change', () => {
@@ -713,6 +714,7 @@ export function initSettingsModal(
       workingOptions.compassDebug.experiment =
         compassExperimentCheckbox.checked;
     }
+    updateCompassControlsState();
   });
 
   compassRobustSolverComparisonCheckbox?.addEventListener('change', () => {
@@ -1229,6 +1231,30 @@ function populateForm(options: RecordingOptions): void {
   updateDepthControlsState();
   updateImageControlsState();
   updateQrControlsState();
+  updateCompassControlsState();
+}
+
+/**
+ * Grey out compass controls that cannot act in the current flag combination
+ * (2026-07-20 settings-clarity follow-up §4.2/§4.6):
+ * - The vote-weight slider is inert unless the experiment or Stage C is on —
+ *   mirrors `compassStoreOptions`, which only forwards the weight when a
+ *   rotation prior can consume it.
+ * - The experiment IMPLIES Stage C (at the 15° trust tolerance — deterministic,
+ *   pinned in the library's gpsDataSlice tests), so Stage C greys out while
+ *   the experiment is on. Its stored value is deliberately KEPT and both flags
+ *   keep being persisted/recorded (keep-value-record-both decision).
+ */
+function updateCompassControlsState(): void {
+  const experimentOn = compassExperimentCheckbox?.checked ?? false;
+  const priorActive =
+    experimentOn || (compassRotationPriorCheckbox?.checked ?? false);
+  if (compassVoteWeightSlider) {
+    compassVoteWeightSlider.disabled = !priorActive;
+  }
+  if (compassRotationPriorCheckbox) {
+    compassRotationPriorCheckbox.disabled = experimentOn;
+  }
 }
 
 function updateDepthControlsState(): void {
