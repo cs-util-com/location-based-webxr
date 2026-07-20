@@ -294,58 +294,60 @@ const NEON: ScenePalette = {
   },
 };
 
-// DUSK (blue hour, restyled 2026-07-20 from the user's reference images;
-// previously golden hour 2026-07-19): the sun has SET. Cool near-black
-// terrain lit by slate skylight, warm near-black vegetation silhouettes,
-// a dark slate zenith over an ochre afterglow horizon, one readable warm
-// path ribbon, restrained emissives. The teal-and-orange film grade
-// survives an octave down — cool-vs-warm swapped surfaces (test-pinned).
+// DUSK (late sunset, converged 2026-07-20 over three same-day rounds:
+// golden hour read too bright on-device, full blue hour too dark): the
+// sun is ALMOST done setting — a last sliver on the horizon. Warm
+// lightly-lit terrain (the user's #91582f direction), vegetation kept
+// as warm near-black silhouettes, a dark slate zenith over an ochre
+// horizon with the low sun disc, restrained emissives. The
+// teal-and-orange film grade holds (cool sky vs warm ground/horizon).
 // The fog stays deliberately WARMER than the background so distant
-// objects melt toward the afterglow instead of into the ground color.
+// objects melt toward the sunset instead of into the ground color.
 const DUSK: ScenePalette = {
   background: 0x142a27,
   // near 40 / far 110 (not the shared 40/90): the works-anywhere camera
   // sits far out — at far 88 the whole world melted into the haze
   // (screenshot round 1); 110 keeps the warm wash at the horizon while
   // the mid-ground stays readable.
-  fog: { color: 0x6e563c, near: 40, far: 110 },
-  // COOL slate skylight from above + faint warm bounce: after sundown
-  // the sky is the light source — this is what makes the ground read
-  // cool while vegetation silhouettes stay warm-black.
-  hemisphere: { sky: 0x3d5258, ground: 0x1a1410, intensity: 0.8 },
-  // Dim warm afterglow from the LEFT horizon (the sun just set there) —
-  // soft faint shadows, enough to model form (the only palette with an
-  // explicit light position).
+  fog: { color: 0x7a5f40, near: 40, far: 110 },
+  // Cool-leaning skylight from above + faint warm bounce: the sky still
+  // dominates fill light this late, which keeps shadow sides cool while
+  // the low sun warms lit faces.
+  hemisphere: { sky: 0x4a5a5a, ground: 0x241a12, intensity: 0.9 },
+  // Low warm sun from the LEFT, moments from the horizon — long soft
+  // shadows, dimmer than golden hour (the only palette with an explicit
+  // light position).
   directional: {
-    color: 0xc98a5a,
-    intensity: 0.5,
+    color: 0xe89a5e,
+    intensity: 0.8,
     position: { x: -26, y: 12, z: 6 },
   },
-  // Blue-hour sky: dark slate zenith melting into an ochre afterglow.
-  // No sun disc — the "afterglow" accent set shows only the horizon
-  // band (accentColor) and dark silhouette clouds (cloudColor).
+  // Late-sunset sky: dark slate zenith melting into an ochre horizon,
+  // the fat sun disc a last sliver above it (accentColor tints disc +
+  // band), dark silhouette clouds (cloudColor).
   sky: {
     zenith: 0x263c42,
-    horizon: 0x9f784d,
-    accents: "afterglow",
-    accentColor: 0xb5824e,
-    cloudColor: 0x554639,
+    horizon: 0xab7f50,
+    accents: "sun",
+    accentColor: 0xf0a55c,
+    cloudColor: 0x5e4c3d,
   },
   portalInterior: { top: 0x9fd8cf, bottom: 0xffc9a0, clouds: 0xffddb8 },
   particles: { color: 0xffd9a0, style: "fireflies" },
   roles: {
-    // Terrain: cool near-black (user reference values) — the world is
-    // mostly silhouette; depth comes from the afterglow, fog and the
-    // path ribbon, not from surface brightness.
-    ground: { color: 0x192022 },
+    // Terrain: warm and lightly lit (the user's #91582f direction; base
+    // colors sit darker than that target because the warm light lifts
+    // them) — the last direct sunlight rakes across the ground.
+    ground: { color: 0x5e3e23 },
     // The one deliberately readable terrain element (WCAG floor ≥2.2):
-    // a warm ribbon catching the last skylight.
-    path: { color: 0x7a5f3d },
-    hill: { color: 0x1f2222 },
-    // Vegetation: warm near-black silhouettes (user reference value).
+    // a warm ribbon clearly brighter than the ground it crosses.
+    path: { color: 0x8a6b44 },
+    hill: { color: 0x54381f },
+    // Vegetation: warm near-black silhouettes (kept from the blue-hour
+    // round; pinned relationally — clearly darker than the ground).
     foliage: { color: 0x21130e },
     trunk: { color: 0x1c110b },
-    rock: { color: 0x232624 },
+    rock: { color: 0x33302a },
     sign: { color: 0x1c110b },
     signPanel: { color: 0xe8d0b0, emissiveIntensity: 0.15 },
     statue: { color: 0x8a6f52 },
@@ -362,9 +364,9 @@ const DUSK: ScenePalette = {
     // Dark-mesa silhouettes, but with a readability floor over the teal
     // background (test-pinned, same lesson as the dark theme).
     skyline: { color: 0x40605a, emissiveIntensity: 0.08 },
-    // The instanced world-detail grass covers the whole field: warm-dark
-    // tufts (vegetation family) give the near-black floor its texture.
-    grass: { color: 0x2a1a12 },
+    // The instanced world-detail grass covers the whole field: warm dry
+    // tufts a step darker than the ground give the floor its texture.
+    grass: { color: 0x4f321b },
     tent: { color: 0x6e4a2c, emissiveIntensity: 0.12 },
     ruin: { color: 0x3a3028, emissiveIntensity: 0.08 },
     ghost: { color: 0x8fb8e8, emissiveIntensity: 0.5 },

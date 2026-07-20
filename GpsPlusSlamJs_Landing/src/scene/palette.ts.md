@@ -4,8 +4,9 @@
 
 Encodes the visual decision of each of the six themes (light = white/matte
 clay, dark = night world with glowing accents, neon = cyberpunk, dusk =
-the blue-hour teal-and-orange film grade — sun below the horizon, restyled
-2026-07-20 (golden hour 2026-07-19 before that), mono =
+the late-sunset teal-and-orange film grade — sun almost done setting,
+converged 2026-07-20 over three rounds (golden hour → blue hour → late
+sunset), mono =
 ink/paper, terminal = hidden CRT) as data, and recolors the whole scene
 graph in one traversal via `userData.paletteRole` tags — the mechanism
 behind the palette cycle. Also provides the shared mesh/group factories
@@ -44,21 +45,23 @@ all scene builders use.
   crimson `#e0483c` (`DUSK_ACCENT`) matching its CSS `--accent` override.
   A red-family guard (R>190, R−G>100, R−B>100) keeps any future retune
   clearly red.
-- **Dusk grade invariants** (test-pinned, blue hour 2026-07-20 — a
-  deliberate INVERSION of the 2026-07-19 golden-hour pins): terrain cool
-  (ground/hill B≥R, slate skylight), vegetation warm near-black
-  silhouettes (foliage/grass R>B), the path a warm ribbon ≥3× the ground
-  luminance, sky zenith cool / horizon warm, portal frame teal-green
-  (G≥R) with a warm-over-cool interior. WCAG readability floors over the
-  dusk background stay (skyline ≥2.0, path ≥2.2, statue ≥2.5, phone
-  ≥2.5 + blue-ness) — same lesson as the dark-theme floors from round-4.
+- **Dusk grade invariants** (test-pinned, late sunset 2026-07-20, 3rd
+  round): terrain warm (ground/hill/grass/path R>B — the last direct
+  sunlight), vegetation a warm SILHOUETTE pinned relationally (foliage
+  R>B and luminance < ½ of ground), the path ≥2× the ground luminance,
+  sky zenith cool / horizon warm (the dark zenith also keeps the top-bar
+  brand readable), portal frame teal-green (G≥R) with a warm-over-cool
+  interior. WCAG readability floors over the dusk background stay
+  (skyline ≥2.0, path ≥2.2, statue ≥2.5, phone ≥2.5 + blue-ness) —
+  same lesson as the dark-theme floors from round-4.
 - **Dusk brightness ceilings** (test-pinned): the world must stay in the
-  blue-hour band — luminance ceilings on sky zenith/horizon (≤0.10 /
-  ≤0.25) and ground/grass/hill (≤0.03) / path (≤0.16), and intensity
-  caps (hemisphere ≤0.85, directional ≤0.6 — the sun has set).
-  Counterpart of the readability floors: floors stop key elements
-  sinking into the background, ceilings stop the world drifting back to
-  daylight. The path must live between its floor and ceiling.
+  late-sunset band — luminance ceilings on sky zenith/horizon (≤0.10 /
+  ≤0.28) and ground ≤0.08 / hill ≤0.07 / grass ≤0.06 / path ≤0.20, and
+  intensity caps (hemisphere ≤0.95, directional ≤0.9 — the sun is a
+  sliver on the horizon, not up in the sky). Counterpart of the
+  readability floors: floors stop key elements sinking into the
+  background, ceilings stop the world drifting back to daylight. The
+  path must live between its floor and ceiling.
 - Dusk's `fog.color` is deliberately WARMER than `background` (golden
   haze toward the peach horizon); every other theme keeps fog = bg.
 - Dark theme glows via `emissiveIntensity > 0`; light theme is matte

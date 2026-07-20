@@ -4,10 +4,11 @@
 
 Replaces the flat background color above the horizon with one
 vertex-colored gradient dome plus palette-specific celestial accents:
-dark = moon + deterministic star sprinkle, dusk = ochre afterglow band +
-silhouette cloud bank, no sun disc (blue-hour restyle 2026-07-20; the
-`"sun"` accent kind with a visible disc remains available), neon =
-synthwave star grid, light/mono = the soft gradient alone.
+dark = moon + deterministic star sprinkle, dusk = low sun disc (a last
+sliver above the horizon) + ochre band + silhouette cloud bank
+(late-sunset restyle 2026-07-20; a sun-less `"afterglow"` kind also
+exists), neon = synthwave star grid, light/mono = the soft gradient
+alone.
 
 ## Public API
 
@@ -36,10 +37,10 @@ false`, `frustumCulled: false` — the sky renders first and the world
 - **Determinism:** the star sprinkle AND the cloud bank use seeded LCGs
   — two builds are identical (test-pinned; the shoot-script screenshot
   review depends on it).
-- The cloud bank lives in the (former) sun's azimuth sector (elevations
+- The cloud bank lives in the sun's azimuth sector (elevations
   0.12–0.3 rad) so it is in frame for the dive camera; it shows with
-  the `"sun"` and `"afterglow"` accent sets (dusk uses `"afterglow"`:
-  band + clouds, sun disc hidden).
+  the `"sun"` accent set (dusk: disc + band + clouds) and the sun-less
+  `"afterglow"` set (band + clouds, currently unused by palettes).
 - The dome is unlit (`MeshBasicMaterial`) and NOT part of the
   `paletteRole` traversal; `scene-controller.applyThemeInternal` calls
   `applySkyPalette` right after `applyPaletteToScene`.
@@ -49,7 +50,7 @@ false`, `frustumCulled: false` — the sky renders first and the world
 ```ts
 const sky = buildSkyDome();
 scene.add(sky);
-applySkyPalette(sky, getPalette("dusk")); // afterglow band + clouds visible
+applySkyPalette(sky, getPalette("dusk")); // sun + band + clouds visible
 ```
 
 ## Tests

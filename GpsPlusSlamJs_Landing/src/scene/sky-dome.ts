@@ -17,9 +17,9 @@ import { namedGroup, type ScenePalette } from "./palette";
 /**
  * Per-palette sky (v3 F3): one vertex-colored gradient dome plus
  * palette-specific celestial accents — dark = moon + star points,
- * dusk = ochre afterglow band + silhouette clouds (blue hour, the sun
- * has set; the "sun" kind with a visible disc remains available), neon
- * = synthwave star grid, light/mono = the soft zenith gradient alone.
+ * dusk = low sun disc + ochre band + silhouette clouds (late sunset;
+ * a sun-less "afterglow" kind also exists), neon = synthwave star
+ * grid, light/mono = the soft zenith gradient alone.
  *
  * The dome is UNLIT and OUTSIDE the scene fog (`fog: false` on every
  * material): it sits at radius 150 while the fog ends at ~90, so with

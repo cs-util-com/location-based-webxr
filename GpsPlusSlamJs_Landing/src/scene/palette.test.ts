@@ -126,28 +126,28 @@ describe("getPalette", () => {
     ).toBeGreaterThan(40);
   });
 
-  it("caps the dusk brightness — blue-hour light budget (2026-07-20 restyle)", () => {
-    // On-device feedback (2026-07-20) said the dusk world read too bright;
-    // the follow-up reference review moved dusk to a BLUE-HOUR register
-    // outright. These ceilings are the mechanical form of that decision
-    // and the counterpart of the WCAG floors above: floors stop key
-    // elements sinking into the background, ceilings stop the world
-    // drifting back toward daylight. Bands, not exact pins, so future hue
-    // retunes stay possible within the mood.
+  it("caps the dusk brightness — late-sunset light budget (2026-07-20, 3rd round)", () => {
+    // Dusk brightness converged over three same-day rounds: golden hour
+    // read too bright on-device, full blue hour read too dark — the
+    // final register is LATE SUNSET (sun almost done setting). These
+    // ceilings are the counterpart of the WCAG floors above: floors stop
+    // key elements sinking into the background, ceilings stop the world
+    // drifting back toward daylight. Bands, not exact pins, so future
+    // hue retunes stay possible within the mood.
     const dusk = getPalette("dusk");
-    // Dusk must be lit clearly BELOW the shared bright-theme budget —
-    // the sun has set; only skylight + a dim warm afterglow remain.
-    expect(dusk.hemisphere.intensity, "hemisphere").toBeLessThanOrEqual(0.85);
-    expect(dusk.directional.intensity, "directional").toBeLessThanOrEqual(0.6);
+    // Still clearly below the shared bright-theme budget — the sun is a
+    // last sliver on the horizon, not up in the sky.
+    expect(dusk.hemisphere.intensity, "hemisphere").toBeLessThanOrEqual(0.95);
+    expect(dusk.directional.intensity, "directional").toBeLessThanOrEqual(0.9);
     expect(luminance(dusk.sky.zenith), "sky zenith").toBeLessThanOrEqual(0.1);
     expect(luminance(dusk.sky.horizon), "sky horizon").toBeLessThanOrEqual(
-      0.25,
+      0.28,
     );
     const terrainCeilings: Partial<Record<PaletteRole, number>> = {
-      ground: 0.03,
-      grass: 0.03,
-      hill: 0.03,
-      path: 0.16, // stays above its 2.2-contrast floor (≈ L 0.103)
+      ground: 0.08,
+      grass: 0.06,
+      hill: 0.07,
+      path: 0.2, // stays above its 2.2-contrast floor (≈ L 0.103)
     };
     for (const [role, ceiling] of Object.entries(terrainCeilings)) {
       expect(
@@ -157,40 +157,40 @@ describe("getPalette", () => {
     }
   });
 
-  it("pins the dusk blue-hour grade mechanically (2026-07-20 restyle)", () => {
-    // Second dusk direction (2026-07-20, from the user's reference
-    // images): BLUE HOUR — the sun has set. Cool near-black terrain lit
-    // by slate skylight, warm near-black vegetation silhouettes, one
-    // readable warm path ribbon, a dark slate zenith over an ochre
-    // afterglow horizon. This deliberately INVERTS the 2026-07-19
-    // golden-hour pins (warm ground / teal foliage): the teal-and-orange
-    // pairing survives, but cool-vs-warm swaps surfaces and the whole
-    // grade drops an octave. A tweak that flips any of these flips the
-    // look back.
+  it("pins the dusk late-sunset grade mechanically (2026-07-20, 3rd round)", () => {
+    // Final dusk direction after three same-day rounds: LATE SUNSET —
+    // the sun is almost done setting. Warm lightly-lit terrain (the
+    // user's #91582f direction), vegetation kept as warm near-black
+    // silhouettes from the blue-hour round (pinned RELATIONALLY: foliage
+    // clearly darker than the ground it stands on), one brighter warm
+    // path ribbon, and the blue-hour sky register: dark slate zenith
+    // over an ochre horizon with the sun disc back. A tweak that flips
+    // any of these flips the look.
     const r = (hex: number): number => (hex >> 16) & 0xff;
     const g = (hex: number): number => (hex >> 8) & 0xff;
     const b = (hex: number): number => hex & 0xff;
     const dusk = getPalette("dusk");
-    // Terrain reads cool (slate skylight)...
-    for (const cool of ["ground", "hill"] as const) {
-      expect(b(dusk.roles[cool].color), `${cool} cool`).toBeGreaterThanOrEqual(
-        r(dusk.roles[cool].color),
-      );
-    }
-    // ...vegetation reads as warm near-black silhouettes.
-    for (const warm of ["foliage", "grass"] as const) {
+    // Terrain warm again (last direct sunlight)...
+    for (const warm of ["ground", "hill", "grass", "path"] as const) {
       expect(r(dusk.roles[warm].color), `${warm} warm`).toBeGreaterThan(
         b(dusk.roles[warm].color),
       );
     }
-    // The path stays a warm ribbon clearly brighter than the floor — the
-    // one terrain element that must survive the near-black world.
-    const path = dusk.roles.path.color;
-    expect(r(path), "path warm").toBeGreaterThan(b(path));
-    expect(luminance(path), "path vs ground").toBeGreaterThan(
-      3 * luminance(dusk.roles.ground.color),
+    // ...vegetation stays a silhouette: warm-toned AND clearly darker
+    // than the ground behind it.
+    expect(r(dusk.roles.foliage.color), "foliage warm").toBeGreaterThan(
+      b(dusk.roles.foliage.color),
     );
-    // Sky: cool dark zenith over a warm afterglow horizon.
+    expect(
+      luminance(dusk.roles.foliage.color),
+      "foliage vs ground",
+    ).toBeLessThan(0.5 * luminance(dusk.roles.ground.color));
+    // The path stays clearly brighter than the floor it crosses.
+    expect(luminance(dusk.roles.path.color), "path vs ground").toBeGreaterThan(
+      2 * luminance(dusk.roles.ground.color),
+    );
+    // Sky: cool dark zenith over a warm horizon (the zenith staying dark
+    // is also what keeps the top-bar brand text readable).
     expect(b(dusk.sky.zenith), "zenith cool").toBeGreaterThan(
       r(dusk.sky.zenith),
     );

@@ -109,9 +109,9 @@ describe("buildSkyDome — structure", () => {
 describe("applySkyPalette — per-palette accents and gradient", () => {
   const CASES = [
     ["dark", [SKY_NODE.moon, SKY_NODE.stars]],
-    // Blue-hour dusk (2026-07-20): the sun is BELOW the horizon — only
-    // the afterglow band and the cloud silhouettes show, never the disc.
-    ["dusk", [SKY_NODE.horizonBand, SKY_NODE.clouds]],
+    // Late-sunset dusk (2026-07-20, 3rd round): the sun is a last
+    // sliver on the horizon — disc + band + cloud silhouettes.
+    ["dusk", [SKY_NODE.sun, SKY_NODE.horizonBand, SKY_NODE.clouds]],
     ["neon", [SKY_NODE.starGrid]],
     ["light", []],
     ["mono", []],
