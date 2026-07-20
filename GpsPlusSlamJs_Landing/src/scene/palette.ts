@@ -306,32 +306,36 @@ const DUSK: ScenePalette = {
   // sits far out — at far 88 the whole world melted into the haze
   // (screenshot round 1); 110 keeps the golden wash at the horizon while
   // the mid-ground stays readable.
-  fog: { color: 0xc59f78, near: 40, far: 110 },
+  fog: { color: 0xb08a62, near: 40, far: 110 },
   // Warm sky fill + teal ground bounce: this pairing is what makes the
-  // shadow sides read teal-green while lit faces go copper.
-  hemisphere: { sky: 0xffc9a0, ground: 0x24443c, intensity: 1.1 },
+  // shadow sides read teal-green while lit faces go copper. Intensities
+  // sit BELOW the shared bright-theme budget (test-pinned ceilings) —
+  // on-device feedback 2026-07-20: the first cut read late-afternoon
+  // bright, not "low golden-hour light".
+  hemisphere: { sky: 0xe8b48c, ground: 0x24443c, intensity: 0.9 },
   // Low golden-hour sun from the LEFT → long soft shadows (the only
   // palette with an explicit light position).
   directional: {
     color: 0xffb27a,
-    intensity: 1.35,
+    intensity: 1.0,
     position: { x: -26, y: 12, z: 6 },
   },
-  // Sunset sky: pale turquoise zenith melting into a peach horizon + low
-  // fat sun with clouds (sky-dome.ts places them around the sun).
+  // Sunset sky: muted turquoise zenith melting into a deep-peach horizon
+  // + low fat sun with clouds (sky-dome.ts places them around the sun).
+  // The sun stays the brightest sky element; clouds sit a step below it.
   sky: {
-    zenith: 0x8fc5c0,
-    horizon: 0xffc493,
+    zenith: 0x6fa39f,
+    horizon: 0xf0aa70,
     accents: "sun",
-    accentColor: 0xffd9a8,
-    cloudColor: 0xffddb8,
+    accentColor: 0xffcf96,
+    cloudColor: 0xf0c298,
   },
   portalInterior: { top: 0x9fd8cf, bottom: 0xffc9a0, clouds: 0xffddb8 },
   particles: { color: 0xffd9a0, style: "fireflies" },
   roles: {
-    ground: { color: 0x8f5e39 },
-    path: { color: 0xb08655 },
-    hill: { color: 0x7d5233 },
+    ground: { color: 0x7a4f30 },
+    path: { color: 0x9a744a },
+    hill: { color: 0x6a4529 },
     foliage: { color: 0x1e5148 },
     trunk: { color: 0x54402f },
     rock: { color: 0x6e5a45 },
@@ -353,7 +357,7 @@ const DUSK: ScenePalette = {
     skyline: { color: 0x40605a, emissiveIntensity: 0.08 },
     // The instanced world-detail grass covers the whole field: this one
     // value is most of the "dry reddish-orange grass" look.
-    grass: { color: 0xa06b3d },
+    grass: { color: 0x8a5c34 },
     tent: { color: 0xb5763f, emissiveIntensity: 0.12 },
     ruin: { color: 0x63503f, emissiveIntensity: 0.08 },
     ghost: { color: 0x8fb8e8, emissiveIntensity: 0.5 },

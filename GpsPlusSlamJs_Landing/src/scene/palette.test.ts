@@ -13,6 +13,18 @@ import {
 // meshes in the other theme's colors after a toggle; a drifted accent would
 // break the brand continuity with the page chrome (--accent: #ef4444).
 
+// Shared WCAG relative-luminance helper for the readability-floor and
+// brightness-ceiling pins below (sRGB channel → linear, 0.2126/0.7152/0.0722
+// mix per WCAG 2.x).
+const wcagChannel = (byte: number): number => {
+  const c = byte / 255;
+  return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+};
+const luminance = (hex: number): number =>
+  0.2126 * wcagChannel((hex >> 16) & 0xff) +
+  0.7152 * wcagChannel((hex >> 8) & 0xff) +
+  0.0722 * wcagChannel(hex & 0xff);
+
 describe("getPalette", () => {
   it("defines every role in every palette", () => {
     for (const theme of ALL_THEME_IDS) {
@@ -77,14 +89,6 @@ describe("getPalette", () => {
     // flagged role over the dark background so a future palette tweak can
     // never silently sink the world into the night again. Floors sit one
     // visible step above the flagged (too dark) values.
-    const wcagChannel = (byte: number): number => {
-      const c = byte / 255;
-      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-    };
-    const luminance = (hex: number): number =>
-      0.2126 * wcagChannel((hex >> 16) & 0xff) +
-      0.7152 * wcagChannel((hex >> 8) & 0xff) +
-      0.0722 * wcagChannel(hex & 0xff);
     const dark = getPalette("dark");
     const background = luminance(dark.background);
     const contrast = (role: PaletteRole): number =>
@@ -107,14 +111,6 @@ describe("getPalette", () => {
     // teal-green dusk background must never silently swallow the world.
     // Floors mirror the dark test, one step gentler for statue (it sits
     // in warm directional light at dusk rather than in shadow).
-    const wcagChannel = (byte: number): number => {
-      const c = byte / 255;
-      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-    };
-    const luminance = (hex: number): number =>
-      0.2126 * wcagChannel((hex >> 16) & 0xff) +
-      0.7152 * wcagChannel((hex >> 8) & 0xff) +
-      0.0722 * wcagChannel(hex & 0xff);
     const dusk = getPalette("dusk");
     const background = luminance(dusk.background);
     const contrast = (role: PaletteRole): number =>
@@ -128,6 +124,37 @@ describe("getPalette", () => {
       (phone & 0xff) - ((phone >> 16) & 0xff),
       "phone blue-ness",
     ).toBeGreaterThan(40);
+  });
+
+  it("caps the dusk brightness — low golden-hour light, muted sky (2026-07-20 darkening)", () => {
+    // On-device feedback (2026-07-20): the dusk terrain and sky read too
+    // bright — late afternoon instead of the reference's "low golden-hour
+    // light" and "muted" sunset sky. These ceilings are the mechanical
+    // form of that feedback and the counterpart of the WCAG floors above:
+    // floors stop the world sinking into the background, ceilings stop it
+    // drifting back toward noon. Bands, not exact pins, so future hue
+    // retunes stay possible within the dusk mood.
+    const dusk = getPalette("dusk");
+    // Dusk must be lit BELOW the shared bright-theme budget (1.15 hemi +
+    // default directional) — the low sun is the point of the theme.
+    expect(dusk.hemisphere.intensity, "hemisphere").toBeLessThanOrEqual(1.0);
+    expect(dusk.directional.intensity, "directional").toBeLessThanOrEqual(1.1);
+    expect(luminance(dusk.sky.zenith), "sky zenith").toBeLessThanOrEqual(0.35);
+    expect(luminance(dusk.sky.horizon), "sky horizon").toBeLessThanOrEqual(
+      0.55,
+    );
+    const terrainCeilings: Partial<Record<PaletteRole, number>> = {
+      ground: 0.12,
+      grass: 0.15,
+      path: 0.22, // stays above its 2.2-contrast floor (≈ L 0.103)
+      hill: 0.1,
+    };
+    for (const [role, ceiling] of Object.entries(terrainCeilings)) {
+      expect(
+        luminance(dusk.roles[role as PaletteRole].color),
+        role,
+      ).toBeLessThanOrEqual(ceiling);
+    }
   });
 
   it("pins the dusk teal-and-orange grade mechanically (golden-hour restyle)", () => {

@@ -48,6 +48,13 @@ all scene builders use.
   warmer than top, plus WCAG readability floors over the dusk background
   (skyline ≥2.0, path ≥2.2, statue ≥2.5, phone ≥2.5 + blue-ness) —
   same lesson as the dark-theme floors from round-4.
+- **Dusk brightness ceilings** (test-pinned, 2026-07-20 darkening): the
+  world must stay in the "low golden-hour" band — luminance ceilings on
+  sky zenith/horizon and ground/grass/path/hill, and intensity caps
+  (hemisphere ≤1.0, directional ≤1.1, i.e. BELOW the shared bright-theme
+  budget). Counterpart of the readability floors: floors stop the world
+  sinking into the background, ceilings stop it drifting back to noon.
+  Terrain values must live between their floor and ceiling.
 - Dusk's `fog.color` is deliberately WARMER than `background` (golden
   haze toward the peach horizon); every other theme keeps fog = bg.
 - Dark theme glows via `emissiveIntensity > 0`; light theme is matte
@@ -70,5 +77,5 @@ applyPaletteToScene(world, getPalette("dusk"));
 
 `palette.test.ts` — role + portalInterior completeness across all six
 themes, per-theme accent map + red-family guard, dusk readability floors,
-dusk grade pins, glow vs. matte, recolor + toggle-back traversal,
-unknown-tag/no-tag skipping.
+dusk brightness ceilings, dusk grade pins, glow vs. matte, recolor +
+toggle-back traversal, unknown-tag/no-tag skipping.
