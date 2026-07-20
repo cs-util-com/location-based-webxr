@@ -23,6 +23,7 @@ import {
   validateWayfindingHudOptions,
   DEFAULT_WAYFINDING_HUD,
   type WayfindingHudOptions,
+  type WayfindingTarget,
 } from './wayfinding-hud.js';
 import { clearFrameUpdates, runFrameUpdates } from '../ar/frame-loop.js';
 import {
@@ -43,12 +44,24 @@ function makeCamera(): THREE.PerspectiveCamera {
   return camera;
 }
 
+/** Normalize plain positions into the `WayfindingTarget` shape the clean-break
+ * API takes (2026-07-20 per-target config plan) — tests stay terse. */
+function toTargets(
+  targets: readonly (THREE.Vector3 | WayfindingTarget)[]
+): WayfindingTarget[] {
+  return targets.map((t) =>
+    (t as THREE.Vector3).isVector3
+      ? { position: t as THREE.Vector3 }
+      : (t as WayfindingTarget)
+  );
+}
+
 function makeHud(
-  targets: THREE.Vector3[],
+  targets: (THREE.Vector3 | WayfindingTarget)[],
   overrides?: Partial<WayfindingHudOptions>
 ) {
   const camera = makeCamera();
-  const targetList = [...targets];
+  const targetList = toTargets(targets);
   const hud = createWayfindingHud({
     camera,
     getTargets: () => targetList,
@@ -96,7 +109,7 @@ describe('validateWayfindingHudOptions', () => {
     expect(() =>
       validateWayfindingHudOptions({
         ...valid,
-        getTargets: null as unknown as () => THREE.Vector3[],
+        getTargets: null as unknown as () => WayfindingTarget[],
       })
     ).toThrow(/getTargets/);
     expect(() =>
@@ -192,7 +205,7 @@ describe('createWayfindingHud — per-frame placement', () => {
     // one damped frame of the given dt covers after an identical camera move.
     const measureDampedStep = (dt: number): number => {
       const camera = makeCamera();
-      const targets = [new THREE.Vector3(2, 0, -5)];
+      const targets = toTargets([new THREE.Vector3(2, 0, -5)]);
       const hud = createWayfindingHud({
         camera,
         getTargets: () => targets,
@@ -268,9 +281,9 @@ describe('createWayfindingHud — target-count sync (getter-API port of the prot
 
     // New target 2 m away (inside the 1.5/3.0 deadband): the SPAWN rule
     // shows its ring immediately (distance ≥ distanceMin).
-    targetList.push(new THREE.Vector3(0, 0.5, -2));
+    targetList.push({ position: new THREE.Vector3(0, 0.5, -2) });
     // New target 1 m away (below distanceMin): spawns hidden.
-    targetList.push(new THREE.Vector3(0, -0.2, -1));
+    targetList.push({ position: new THREE.Vector3(0, -0.2, -1) });
     tick();
 
     const circles = childrenByName(camera, 'wayfinding-circle');
@@ -316,13 +329,13 @@ describe('createWayfindingHud — target-count sync (getter-API port of the prot
   // frame loop (frame-loop already isolates throws, but the HUD should
   // handle it as "no targets" and keep its previous scene state consistent).
   it('treats a non-array getTargets result as an empty target list', () => {
-    const targets: THREE.Vector3[] = [new THREE.Vector3(0, 0, -5)];
+    const targets = toTargets([new THREE.Vector3(0, 0, -5)]);
     let broken = false;
     const camera = makeCamera();
     const hud = createWayfindingHud({
       camera,
       getTargets: () =>
-        broken ? (undefined as unknown as THREE.Vector3[]) : targets,
+        broken ? (undefined as unknown as WayfindingTarget[]) : targets,
       distanceMin: 1.5,
       distanceMax: 3.0,
     });
@@ -336,6 +349,180 @@ describe('createWayfindingHud — target-count sync (getter-API port of the prot
   });
 });
 
+describe('createWayfindingHud — per-target configuration (2026-07-20 plan)', () => {
+  // The presenter logs consumer bugs through log.error → console.error with
+  // the '[WayfindingHud]' prefix; counting those calls asserts the
+  // "log ONCE per offending key, never per frame" boundary contract.
+  function hudErrors(spy: { mock: { calls: unknown[][] } }): number {
+    return spy.mock.calls.filter((call) =>
+      String(call[0]).includes('WayfindingHud')
+    ).length;
+  }
+
+  // Why this test matters: per-target state is keyed by `id ?? index`. A
+  // consumer returning fresh target literals in a different order each call
+  // (sorting, filtering upstream) must NOT leak one target's hysteresis
+  // state into another. Distances are chosen so index keying would visibly
+  // differ: after the swap the deactivated target's state would land on the
+  // in-deadband target and hide it (0 visible) instead of keeping 1 visible.
+  it('id keying: per-target hysteresis state follows the id through a reorder', () => {
+    const near: WayfindingTarget = {
+      id: 'near',
+      position: new THREE.Vector3(0, 0, -1), // < distanceMin → spawns hidden
+    };
+    const deadband: WayfindingTarget = {
+      id: 'deadband',
+      position: new THREE.Vector3(0, 0.3, -2.5), // in 1.5/3.0 → spawns circle
+    };
+    const { hud, camera, targetList } = makeHud([near, deadband]);
+    tick();
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(1);
+
+    // Same targets, swapped order: states must stick to their ids.
+    targetList.length = 0;
+    targetList.push(deadband, near);
+    tick();
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(1);
+    hud.dispose();
+  });
+
+  it('per-target distanceMin/distanceMax override the HUD-level options', () => {
+    // 4 m away: the HUD deadband (1.5/3.0) would show a ring on spawn, but
+    // the target's own distanceMin: 5 marks it as "arrived" territory.
+    const { hud, camera } = makeHud([
+      {
+        id: 'strict',
+        position: new THREE.Vector3(0, 0, -4),
+        distanceMin: 5,
+        distanceMax: 6,
+      },
+      { id: 'default', position: new THREE.Vector3(0, 0.3, -5) },
+    ]);
+    tick();
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(1);
+    hud.dispose();
+  });
+
+  // Why this test matters: the clean-break migration error. A consumer still
+  // returning plain Vector3s must get ONE clear error naming the new shape —
+  // not a per-frame throw that kills the host render loop, and not silence.
+  it('rejects a legacy plain-Vector3 element with one migration error; other targets keep working', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Deliberately NOT via makeHud/toTargets: this simulates an unmigrated
+    // consumer whose getter still returns raw Vector3 elements.
+    const targets = [
+      { id: 'ok', position: new THREE.Vector3(0, 0.3, -5) },
+      new THREE.Vector3(0, 0, -5) as unknown as WayfindingTarget,
+    ];
+    const camera = makeCamera();
+    const hud = createWayfindingHud({
+      camera,
+      getTargets: () => targets,
+      distanceMin: 1.5,
+      distanceMax: 3.0,
+      hudDistance: 2.5,
+    });
+    tick();
+    tick();
+
+    // Only the valid target got indicators; the legacy element is skipped.
+    expect(childrenByName(camera, 'wayfinding-circle').length).toBe(1);
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(1);
+    expect(hudErrors(errorSpy)).toBe(1); // once, not per frame
+    hud.dispose();
+    errorSpy.mockRestore();
+  });
+
+  it('a duplicate id within one result logs once and only the first occurrence is shown', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { hud, camera } = makeHud([
+      { id: 'twin', position: new THREE.Vector3(0, 0.3, -5) }, // circle
+      { id: 'twin', position: new THREE.Vector3(10, 0, -5) }, // would be arrow
+    ]);
+    tick();
+    tick();
+
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(1);
+    expect(visible(childrenByName(camera, 'wayfinding-arrow')).length).toBe(0);
+    expect(hudErrors(errorSpy)).toBe(1);
+    hud.dispose();
+    errorSpy.mockRestore();
+  });
+
+  it('an invalid per-target deadband hides that target (one log) until it becomes valid', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { hud, camera, targetList } = makeHud([
+      {
+        id: 'bad',
+        position: new THREE.Vector3(0, 0.3, -5),
+        distanceMin: 3,
+        distanceMax: 1, // inverted — same 0 ≤ min ≤ max rule as the seam
+      },
+    ]);
+    tick();
+    tick();
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(0);
+    expect(hudErrors(errorSpy)).toBe(1);
+
+    // Healing the config brings the target back (fresh spawn semantics).
+    targetList[0] = {
+      id: 'bad',
+      position: new THREE.Vector3(0, 0.3, -5),
+      distanceMin: 1.5,
+      distanceMax: 3,
+    };
+    tick();
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(1);
+    hud.dispose();
+    errorSpy.mockRestore();
+  });
+
+  // Why this test matters: the per-target parity opt-in. A deactivated
+  // flagged target must show the edge arrow (+ label by default) when
+  // off-screen, nothing when on-screen — and coming on-screen inside the
+  // deadband must NOT resurrect the ring (2026-07-18 no-bypass rule).
+  it('showArrowWhenInactive: renders the inactive edge arrow with label; no ring on-screen', () => {
+    const target: WayfindingTarget = {
+      id: 'exit',
+      position: new THREE.Vector3(0, 0, 1), // 1 m BEHIND → off-screen, < min
+      showArrowWhenInactive: true,
+    };
+    const { hud, camera, targetList } = makeHud([target]);
+    tick(); // spawn frame: below distanceMin → hidden, no payload yet
+    expect(visible(childrenByName(camera, 'wayfinding-arrow')).length).toBe(0);
+
+    tick(); // deactivated + off-screen → inactive arrow + label
+    expect(visible(childrenByName(camera, 'wayfinding-arrow')).length).toBe(1);
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(0);
+    expect(visible(childrenByName(camera, 'wayfinding-label')).length).toBe(1);
+
+    // Turn around: target on-screen at 2 m (deadband) — still deactivated,
+    // so NOTHING shows (no ring resurrection through the presenter path).
+    targetList[0] = { ...target, position: new THREE.Vector3(0, 0, -2) };
+    tick();
+    expect(visible(childrenByName(camera, 'wayfinding-arrow')).length).toBe(0);
+    expect(visible(childrenByName(camera, 'wayfinding-circle')).length).toBe(0);
+    expect(visible(childrenByName(camera, 'wayfinding-label')).length).toBe(0);
+    hud.dispose();
+  });
+
+  it('showLabelWhenInactive: false renders the inactive arrow without its label', () => {
+    const { hud, camera } = makeHud([
+      {
+        id: 'quiet',
+        position: new THREE.Vector3(0, 0, 1),
+        showArrowWhenInactive: true,
+        showLabelWhenInactive: false,
+      },
+    ]);
+    tick(); // spawn (hidden)
+    tick(); // inactive arrow frame
+    expect(visible(childrenByName(camera, 'wayfinding-arrow')).length).toBe(1);
+    expect(visible(childrenByName(camera, 'wayfinding-label')).length).toBe(0);
+    hud.dispose();
+  });
+});
+
 describe('createWayfindingHud — explicit-tick mode (autoRegisterFrameUpdate: false)', () => {
   // Why these tests matter: outside a WebXR session nothing ticks the
   // framework frame loop (runFrameUpdates is session-internal), so
@@ -343,7 +530,7 @@ describe('createWayfindingHud — explicit-tick mode (autoRegisterFrameUpdate: f
   // must be able to drive the HUD directly via handle.update(dt).
   it('is not driven by the frame loop; handle.update(dt) drives placement instead', () => {
     const camera = makeCamera();
-    const targets = [new THREE.Vector3(0, 0, -5)];
+    const targets = toTargets([new THREE.Vector3(0, 0, -5)]);
     const hud = createWayfindingHud({
       camera,
       getTargets: () => targets,
@@ -364,7 +551,7 @@ describe('createWayfindingHud — explicit-tick mode (autoRegisterFrameUpdate: f
 
   it('update(dt) applies dt to the circle damping and dispose() stays complete', () => {
     const camera = makeCamera();
-    const targets = [new THREE.Vector3(2, 0, -5)];
+    const targets = toTargets([new THREE.Vector3(2, 0, -5)]);
     const hud = createWayfindingHud({
       camera,
       getTargets: () => targets,
