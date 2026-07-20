@@ -97,6 +97,13 @@ export interface ScenePalette {
     /** Cloud-blob tint for the "sun"/"afterglow" accent sets; falls
      * back to `accentColor` when omitted. */
     readonly cloudColor?: number;
+    /**
+     * Elevation (0..1] at which the horizon→zenith transition completes;
+     * above it the dome is pure zenith. Omitted = 1 (full-height ramp).
+     * Dusk compresses the warm sunset glow to the lower sky so the blue
+     * zenith actually shows in horizon-facing camera framings.
+     */
+    readonly horizonFalloff?: number;
   };
   /**
    * The rebuilt portal's "other world" (golden-hour restyle): a
@@ -323,15 +330,19 @@ const DUSK: ScenePalette = {
     position: { x: -26, y: 12, z: 6 },
   },
   // Late-sunset sky: dark BLUE zenith (user feedback 2026-07-20: "more
-  // blue"; test-pinned B−R ≥ 40) melting into an ochre horizon, the fat
-  // sun disc a last sliver above it (accentColor tints disc + band),
-  // dark silhouette clouds (cloudColor).
+  // blue"; test-pinned B−R ≥ 40) over an ochre horizon, the fat sun
+  // disc a last sliver above it (accentColor tints disc + band), dark
+  // silhouette clouds (cloudColor). horizonFalloff 0.3 squeezes the
+  // warm glow into the lowest sky — the fusion/og-card camera only sees
+  // elevations below ~0.2, so the blue must take over that early to
+  // appear in shot at all (0.45 was tried and still read tan there).
   sky: {
-    zenith: 0x274460,
+    zenith: 0x2c4d6e,
     horizon: 0xab7f50,
     accents: "sun",
     accentColor: 0xf0a55c,
     cloudColor: 0x5e4c3d,
+    horizonFalloff: 0.3,
   },
   portalInterior: { top: 0x9fd8cf, bottom: 0xffc9a0, clouds: 0xffddb8 },
   particles: { color: 0xffd9a0, style: "fireflies" },

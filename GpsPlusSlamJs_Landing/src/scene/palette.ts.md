@@ -20,8 +20,9 @@ all scene builders use.
 - `getPalette(theme: Theme) → ScenePalette` — `background`, `fog`,
   `hemisphere` + `directional` light settings, `sky` (v3 F3: zenith/
   horizon gradient colors + `accents` kind + `accentColor` + optional
-  `cloudColor` for the dusk cloud blobs, consumed by `sky-dome.ts` — NOT
-  by the role traversal), `portalInterior` (`{ top, bottom, clouds }` —
+  `cloudColor` for the dusk cloud blobs + optional `horizonFalloff`
+  compressing the warm horizon zone of the dome gradient, consumed by
+  `sky-dome.ts` — NOT by the role traversal), `portalInterior` (`{ top, bottom, clouds }` —
   the rebuilt portal's vertex-colored "other world" gradient, consumed by
   `applyPortalPalette` in `portal.ts`, NOT by the role traversal), and
   `roles` (per-role `{ color, emissive?, emissiveIntensity? }`).

@@ -54,14 +54,27 @@ function createRng(seed: number): () => number {
 
 /**
  * The analytic dome gradient: elevation 0 (horizon) → `sky.horizon`,
- * elevation 1 (zenith) → `sky.zenith`, smoothstep in between. Exported
- * so tests can pin the gradient without sampling vertex buffers.
+ * elevation `horizonFalloff` (default 1 = zenith) and above →
+ * `sky.zenith`, smoothstep in between. A palette can compress the warm
+ * horizon zone into the lower sky via `sky.horizonFalloff` (dusk does —
+ * horizon-facing cameras would otherwise never show the zenith color).
+ * Exported so tests can pin the gradient without sampling vertex
+ * buffers. A malformed falloff (non-finite or outside (0, 1]) degrades
+ * to the full-height ramp.
  */
 export function domeGradientColorAt(
   elevation01: number,
   palette: ScenePalette,
 ): Color {
-  const t = Math.min(1, Math.max(0, elevation01));
+  const rawFalloff = palette.sky.horizonFalloff;
+  const falloff =
+    rawFalloff !== undefined &&
+    Number.isFinite(rawFalloff) &&
+    rawFalloff > 0 &&
+    rawFalloff <= 1
+      ? rawFalloff
+      : 1;
+  const t = Math.min(1, Math.max(0, elevation01 / falloff));
   const smooth = t * t * (3 - 2 * t);
   return new Color(palette.sky.horizon).lerp(
     new Color(palette.sky.zenith),

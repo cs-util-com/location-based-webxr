@@ -20,7 +20,11 @@ alone.
   cloud bank uses `palette.sky.cloudColor`, falling back to
   `accentColor`). Missing nodes are no-ops.
 - `domeGradientColorAt(elevation01, palette): Color` — the analytic
-  gradient (smoothstep horizon→zenith); exported so tests can pin it.
+  gradient (smoothstep horizon→zenith); an optional `sky.horizonFalloff`
+  (0..1] compresses the warm zone so the transition completes AT that
+  elevation (dusk: 0.3 — horizon-facing cameras only see low elevations,
+  which would otherwise never show the zenith blue). Malformed falloff
+  values degrade to the full-height ramp. Exported so tests can pin it.
 - `SKY_NODE` — names of all addressable nodes (root, shell, moon,
   stars, sun, horizonBand, starGrid, clouds).
 

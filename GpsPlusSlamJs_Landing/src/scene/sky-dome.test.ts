@@ -152,6 +152,29 @@ describe("applySkyPalette — per-palette accents and gradient", () => {
     }
   });
 
+  it("compresses the warm horizon zone via sky.horizonFalloff (dusk: blue from mid-sky up)", () => {
+    // User feedback (2026-07-20): with the default full-height gradient
+    // the og-card/fusion framing shows only low elevations, where the
+    // warm horizon color dominates — the blue zenith never appeared in
+    // shot. `horizonFalloff` scales the gradient so the transition
+    // completes AT that elevation: dusk (0.45) is fully zenith-blue
+    // from mid-sky down to ~45% elevation, while palettes without the
+    // field keep the original full-height ramp.
+    const dusk = getPalette("dusk");
+    const zenith = new Color(dusk.sky.zenith);
+    expect(domeGradientColorAt(0.5, dusk).getHex()).toBe(zenith.getHex());
+    // Endpoints are unaffected by the falloff.
+    expect(domeGradientColorAt(0, dusk).getHex()).toBe(
+      new Color(dusk.sky.horizon).getHex(),
+    );
+    // A palette without horizonFalloff keeps the default ramp: mid-sky
+    // is still a blend, NOT pure zenith.
+    const light = getPalette("light");
+    expect(domeGradientColorAt(0.5, light).getHex()).not.toBe(
+      new Color(light.sky.zenith).getHex(),
+    );
+  });
+
   it("paints the dome as a vertex gradient from horizon (bottom) to zenith (top)", () => {
     const sky = buildSkyDome();
     const palette = getPalette("dusk");
