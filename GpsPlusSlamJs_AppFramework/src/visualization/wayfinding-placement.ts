@@ -56,6 +56,14 @@ export interface TargetPlacementInput {
   viewportOuter?: number;
   /** Fraction of the half-extents the arrow is inset to. In (0, 1]. */
   edgeMargin?: number;
+  /**
+   * Restore the pre-2026-07-18 "always guide me back" edge arrow for a
+   * DEACTIVATED (`previousState: 'hidden'`) off-screen target, as a
+   * display-only {@link HiddenPlacement.inactiveArrow} payload. The returned
+   * `state` stays `'hidden'` so the distanceMax reactivation gate is
+   * untouched (no ring resurrection). Defaults to false.
+   */
+  showArrowWhenInactive?: boolean;
 }
 
 interface TargetPlacementBase {
@@ -73,8 +81,26 @@ interface TargetPlacementBase {
   frustumHeight: number;
 }
 
+/** Display-only edge-arrow placement carried by a `hidden` result when
+ * `showArrowWhenInactive` applies — same math as an active arrow. */
+export interface InactiveArrowPlacement {
+  /** Arrow position on the edge-margin rectangle, camera-local. */
+  arrowPosition: THREE.Vector3;
+  /** Z rotation for an upward-pointing arrow asset, in radians. */
+  arrowRotationZ: number;
+  /** Distance-label position, inset from the arrow toward the center. */
+  labelPosition: THREE.Vector3;
+}
+
 export interface HiddenPlacement extends TargetPlacementBase {
   state: 'hidden';
+  /**
+   * Present only for a deactivated OFF-screen target with
+   * `showArrowWhenInactive: true`: the presenter may draw this edge arrow
+   * while the hysteresis state itself remains `'hidden'` (feeding `state`
+   * back as `previousState` keeps the distanceMax reactivation gate).
+   */
+  inactiveArrow?: InactiveArrowPlacement;
 }
 
 export interface CirclePlacement extends TargetPlacementBase {
@@ -171,6 +197,7 @@ function resolvePlacementInput(
     viewportInner: input.viewportInner ?? DEFAULT_VIEWPORT_INNER,
     viewportOuter: input.viewportOuter ?? DEFAULT_VIEWPORT_OUTER,
     edgeMargin: input.edgeMargin ?? DEFAULT_EDGE_MARGIN,
+    showArrowWhenInactive: input.showArrowWhenInactive ?? false,
   };
 }
 
@@ -278,6 +305,38 @@ function placeArrow(
 }
 
 /**
+ * The distance-gated `'hidden'` result. When the per-target parity opt-in
+ * (`showArrowWhenInactive`) applies — deactivated, off-screen, well-defined
+ * projection — the result carries the display-only `inactiveArrow` payload.
+ * The `state` stays `'hidden'` on purpose: returning `'arrow'` would feed
+ * back as next frame's `previousState` and flip the activation gate from
+ * distanceMax to distanceMin (the 2026-07-18 hysteresis bypass).
+ */
+function placeHidden(
+  base: TargetPlacementBase,
+  resolved: ResolvedPlacementInput
+): HiddenPlacement {
+  const eligible =
+    resolved.showArrowWhenInactive &&
+    resolved.previousState === 'hidden' &&
+    !base.onScreen &&
+    Number.isFinite(base.ndc.x) &&
+    Number.isFinite(base.ndc.y);
+  if (!eligible) return { ...base, state: 'hidden' };
+
+  const arrow = placeArrow(base, resolved.hudDistance, resolved.edgeMargin);
+  return {
+    ...base,
+    state: 'hidden',
+    inactiveArrow: {
+      arrowPosition: arrow.arrowPosition,
+      arrowRotationZ: arrow.arrowRotationZ,
+      labelPosition: arrow.labelPosition,
+    },
+  };
+}
+
+/**
  * Compute the placement view-model for one target waypoint.
  *
  * Note: calls `camera.updateMatrixWorld()` so the projection uses the
@@ -348,7 +407,7 @@ export function computeTargetPlacement(
   const activationDistance =
     previousState === 'hidden' ? distanceMax : distanceMin;
   if (distance < activationDistance) {
-    return { ...base, state: 'hidden' };
+    return placeHidden(base, resolved);
   }
 
   // Degenerate projection guard (deviation from the prototype, which emits
