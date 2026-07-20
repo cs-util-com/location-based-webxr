@@ -23,6 +23,7 @@ import {
   validateFrameTileDisplayOptions,
   validateVisualizationOptions,
   validateCompassDebugOptions,
+  compassStoreOptions,
   validateLoopClosureDebugOptions,
   validateQrOptions,
   validateMotionFilterOptions,
@@ -906,6 +907,66 @@ describe('recording-options', () => {
           voteWeight: 'high' as unknown as number,
         }).voteWeight
       ).toBe(0.1);
+    });
+
+    // Why these tests matter: this mapping was an inline conditional in
+    // main.ts `createNewStore` and was UNTESTED (settings-clarity follow-up
+    // §3.4/§4.1c). The load-bearing rule: the vote weight is forwarded ONLY
+    // when a rotation prior can consume it (experiment or Stage C on) — a
+    // Stage-0-only session must not record a dead setCompassVoteWeight action.
+    describe('compassStoreOptions', () => {
+      it('maps each flag 1:1 onto the store option names', () => {
+        expect(
+          compassStoreOptions({
+            coldStartOverride: true,
+            rotationPrior: true,
+            webXRConsistency: true,
+            experiment: true,
+            robustSolverComparison: true,
+            voteWeight: 0.25,
+          })
+        ).toEqual({
+          enableCompassColdStartOverride: true,
+          enableCompassRotationPrior: true,
+          enableCompassWebXRConsistency: true,
+          enableCompassExperiment: true,
+          enableRobustSolverComparison: true,
+          compassVoteWeight: 0.25,
+        });
+      });
+
+      it('omits the vote weight when neither experiment nor rotation prior is on (Stage-0-only default state)', () => {
+        const stage0Only = compassStoreOptions(
+          DEFAULT_RECORDING_OPTIONS.compassDebug
+        );
+        expect(stage0Only.enableCompassColdStartOverride).toBe(true);
+        expect(stage0Only.compassVoteWeight).toBeUndefined();
+      });
+
+      it('forwards the vote weight when the experiment OR the rotation prior is on', () => {
+        const base = {
+          ...DEFAULT_RECORDING_OPTIONS.compassDebug,
+          voteWeight: 0.2,
+        };
+        expect(
+          compassStoreOptions({ ...base, experiment: true }).compassVoteWeight
+        ).toBe(0.2);
+        expect(
+          compassStoreOptions({ ...base, rotationPrior: true })
+            .compassVoteWeight
+        ).toBe(0.2);
+      });
+
+      it('returns all-undefined options when no compassDebug options exist yet (boot before load)', () => {
+        expect(compassStoreOptions(undefined)).toEqual({
+          enableCompassColdStartOverride: undefined,
+          enableCompassRotationPrior: undefined,
+          enableCompassWebXRConsistency: undefined,
+          enableCompassExperiment: undefined,
+          enableRobustSolverComparison: undefined,
+          compassVoteWeight: undefined,
+        });
+      });
     });
 
     it('validateRecordingOptions + cloneRecordingOptions carry compassDebug (deep-cloned)', () => {

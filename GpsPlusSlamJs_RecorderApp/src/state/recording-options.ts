@@ -818,6 +818,45 @@ export function validateCompassDebugOptions(
 }
 
 /**
+ * The compass subset of the recorder-store options, keyed by the
+ * `createRecorderStore` option names (structurally assignable to
+ * `RecorderStoreOptions` — kept local so this options module does not import
+ * the store).
+ */
+export interface CompassStoreOptions {
+  enableCompassColdStartOverride?: boolean;
+  enableCompassRotationPrior?: boolean;
+  enableCompassWebXRConsistency?: boolean;
+  enableCompassExperiment?: boolean;
+  enableRobustSolverComparison?: boolean;
+  compassVoteWeight?: number;
+}
+
+/**
+ * Map the persisted compass debug toggles onto the `createRecorderStore`
+ * option names. The one non-1:1 rule: the vote weight is forwarded ONLY when
+ * a rotation prior can consume it (experiment or Stage C on) — a Stage-0-only
+ * session must not record a dead `setCompassVoteWeight` action into the
+ * session (the slider is inert without a prior; see the 2026-07-20
+ * settings-clarity follow-up §3.4). `undefined` input (boot before the
+ * options load) yields all-undefined options — the framework defaults apply.
+ */
+export function compassStoreOptions(
+  compass: CompassDebugOptions | undefined
+): CompassStoreOptions {
+  if (!compass) return {};
+  const priorActive = compass.experiment || compass.rotationPrior;
+  return {
+    enableCompassColdStartOverride: compass.coldStartOverride,
+    enableCompassRotationPrior: compass.rotationPrior,
+    enableCompassWebXRConsistency: compass.webXRConsistency,
+    enableCompassExperiment: compass.experiment,
+    enableRobustSolverComparison: compass.robustSolverComparison,
+    compassVoteWeight: priorActive ? compass.voteWeight : undefined,
+  };
+}
+
+/**
  * Validate and normalize the loop-closure capture toggles. Boolean-or-default
  * per field; a missing/corrupted/pre-feature value falls back to the OFF
  * default so a bad persisted value can never silently wire the detector in.

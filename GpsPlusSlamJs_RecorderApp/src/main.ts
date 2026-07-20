@@ -176,6 +176,7 @@ import { createReplayHandlers } from './replay/replay-handlers';
 import { createRefPointHandlers } from './ref-points/ref-point-handlers';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
+  compassStoreOptions,
   loadRecordingOptions,
   type RecordingOptions,
 } from './state/recording-options';
@@ -210,20 +211,11 @@ function handleWriteFailure(error: Error): void {
 function createNewStore() {
   // Compass alignment debug opt-ins from the persisted recording settings, so a
   // new store (boot or per-session swap) picks up the operator's toggles.
-  const compass = recordingOptions?.compassDebug;
+  // Mapping (incl. the forward-the-weight-only-with-a-prior rule) lives in
+  // `compassStoreOptions`, where it is unit-tested.
   return createRecorderStore({
     onWriteFailure: handleWriteFailure,
-    enableCompassColdStartOverride: compass?.coldStartOverride,
-    enableCompassRotationPrior: compass?.rotationPrior,
-    enableCompassWebXRConsistency: compass?.webXRConsistency,
-    enableCompassExperiment: compass?.experiment,
-    enableRobustSolverComparison: compass?.robustSolverComparison,
-    // Weight only matters while a rotation prior is active — pass it only
-    // then, so sessions without the experiment don't record a dead action.
-    compassVoteWeight:
-      compass?.experiment || compass?.rotationPrior
-        ? compass?.voteWeight
-        : undefined,
+    ...compassStoreOptions(recordingOptions?.compassDebug),
   });
 }
 
