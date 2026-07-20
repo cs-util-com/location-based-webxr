@@ -17,8 +17,9 @@ import { namedGroup, type ScenePalette } from "./palette";
 /**
  * Per-palette sky (v3 F3): one vertex-colored gradient dome plus
  * palette-specific celestial accents — dark = moon + star points,
- * dusk = low sun + warm horizon band, neon = synthwave star grid,
- * light/mono = the soft zenith gradient alone.
+ * dusk = low sun disc + ochre band + silhouette clouds (late sunset;
+ * a sun-less "afterglow" kind also exists), neon = synthwave star
+ * grid, light/mono = the soft zenith gradient alone.
  *
  * The dome is UNLIT and OUTSIDE the scene fog (`fog: false` on every
  * material): it sits at radius 150 while the fog ends at ~90, so with
@@ -53,14 +54,27 @@ function createRng(seed: number): () => number {
 
 /**
  * The analytic dome gradient: elevation 0 (horizon) → `sky.horizon`,
- * elevation 1 (zenith) → `sky.zenith`, smoothstep in between. Exported
- * so tests can pin the gradient without sampling vertex buffers.
+ * elevation `horizonFalloff` (default 1 = zenith) and above →
+ * `sky.zenith`, smoothstep in between. A palette can compress the warm
+ * horizon zone into the lower sky via `sky.horizonFalloff` (dusk does —
+ * horizon-facing cameras would otherwise never show the zenith color).
+ * Exported so tests can pin the gradient without sampling vertex
+ * buffers. A malformed falloff (non-finite or outside (0, 1]) degrades
+ * to the full-height ramp.
  */
 export function domeGradientColorAt(
   elevation01: number,
   palette: ScenePalette,
 ): Color {
-  const t = Math.min(1, Math.max(0, elevation01));
+  const rawFalloff = palette.sky.horizonFalloff;
+  const falloff =
+    rawFalloff !== undefined &&
+    Number.isFinite(rawFalloff) &&
+    rawFalloff > 0 &&
+    rawFalloff <= 1
+      ? rawFalloff
+      : 1;
+  const t = Math.min(1, Math.max(0, elevation01 / falloff));
   const smooth = t * t * (3 - 2 * t);
   return new Color(palette.sky.horizon).lerp(
     new Color(palette.sky.zenith),
@@ -179,8 +193,9 @@ function buildSun(): Mesh {
  * Low-poly cloud bank (golden-hour restyle): a handful of flattened
  * unlit blobs in the sun's azimuth sector, LCG-placed (deterministic —
  * the shoot-script screenshot review depends on identical builds).
- * Tinted via `sky.cloudColor` (fallback `accentColor`); visible only
- * with the "sun" accent set, i.e. dusk.
+ * Tinted via `sky.cloudColor` (fallback `accentColor`); visible with
+ * the "sun" and "afterglow" accent sets (blue-hour dusk tints them as
+ * dark silhouettes against the afterglow).
  */
 function buildClouds(): Group {
   const clouds = namedGroup(SKY_NODE.clouds);
@@ -257,6 +272,8 @@ function setAccentVisibility(sky: Group, palette: ScenePalette): void {
   const visibleByKind: Record<string, readonly string[]> = {
     "moon-stars": [SKY_NODE.moon, SKY_NODE.stars],
     sun: [SKY_NODE.sun, SKY_NODE.horizonBand, SKY_NODE.clouds],
+    // Blue hour: the sun is below the horizon — band + clouds only.
+    afterglow: [SKY_NODE.horizonBand, SKY_NODE.clouds],
     "star-grid": [SKY_NODE.starGrid],
     none: [],
   };

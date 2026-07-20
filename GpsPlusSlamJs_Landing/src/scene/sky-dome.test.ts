@@ -4,8 +4,9 @@
  * exist in every palette (role completeness), it must NOT be eaten by
  * the scene fog (a 150-unit dome behind a 90-unit fog would render as a
  * flat fog-colored shell), and each palette must toggle exactly its own
- * celestial accents (dark = moon + stars, dusk = sun + horizon band,
- * neon = star grid, light/mono = gradient only).
+ * celestial accents (dark = moon + stars, dusk = afterglow band + cloud
+ * silhouettes — blue hour, the sun has set, neon = star grid, light/mono
+ * = gradient only).
  */
 import { describe, expect, it } from "vitest";
 import { Color, type Mesh, type Points } from "three";
@@ -26,7 +27,9 @@ describe("palette sky-role completeness", () => {
       expect(typeof sky.zenith, theme).toBe("number");
       expect(typeof sky.horizon, theme).toBe("number");
       expect(typeof sky.accentColor, theme).toBe("number");
-      expect(["moon-stars", "sun", "star-grid", "none"]).toContain(sky.accents);
+      expect(["moon-stars", "sun", "afterglow", "star-grid", "none"]).toContain(
+        sky.accents,
+      );
     }
   });
 });
@@ -106,6 +109,8 @@ describe("buildSkyDome — structure", () => {
 describe("applySkyPalette — per-palette accents and gradient", () => {
   const CASES = [
     ["dark", [SKY_NODE.moon, SKY_NODE.stars]],
+    // Late-sunset dusk (2026-07-20, 3rd round): the sun is a last
+    // sliver on the horizon — disc + band + cloud silhouettes.
     ["dusk", [SKY_NODE.sun, SKY_NODE.horizonBand, SKY_NODE.clouds]],
     ["neon", [SKY_NODE.starGrid]],
     ["light", []],
@@ -131,8 +136,8 @@ describe("applySkyPalette — per-palette accents and gradient", () => {
   });
 
   it("tints the cloud bank with the palette's cloudColor (fallback: accentColor)", () => {
-    // The peach clouds are the reference image's sky signature; a bank
-    // stuck on the sun's accent color would read as orange smudges.
+    // The clouds carry their own tint (blue hour: dark silhouettes); a
+    // bank stuck on the band's accent color would read as glow smudges.
     const sky = buildSkyDome();
     const dusk = getPalette("dusk");
     applySkyPalette(sky, dusk);
@@ -145,6 +150,29 @@ describe("applySkyPalette — per-palette accents and gradient", () => {
         dusk.sky.cloudColor ?? dusk.sky.accentColor,
       );
     }
+  });
+
+  it("compresses the warm horizon zone via sky.horizonFalloff (dusk: blue from mid-sky up)", () => {
+    // User feedback (2026-07-20): with the default full-height gradient
+    // the og-card/fusion framing shows only low elevations, where the
+    // warm horizon color dominates — the blue zenith never appeared in
+    // shot. `horizonFalloff` scales the gradient so the transition
+    // completes AT that elevation: dusk (0.45) is fully zenith-blue
+    // from mid-sky down to ~45% elevation, while palettes without the
+    // field keep the original full-height ramp.
+    const dusk = getPalette("dusk");
+    const zenith = new Color(dusk.sky.zenith);
+    expect(domeGradientColorAt(0.5, dusk).getHex()).toBe(zenith.getHex());
+    // Endpoints are unaffected by the falloff.
+    expect(domeGradientColorAt(0, dusk).getHex()).toBe(
+      new Color(dusk.sky.horizon).getHex(),
+    );
+    // A palette without horizonFalloff keeps the default ramp: mid-sky
+    // is still a blend, NOT pure zenith.
+    const light = getPalette("light");
+    expect(domeGradientColorAt(0.5, light).getHex()).not.toBe(
+      new Color(light.sky.zenith).getHex(),
+    );
   });
 
   it("paints the dome as a vertex gradient from horizon (bottom) to zenith (top)", () => {

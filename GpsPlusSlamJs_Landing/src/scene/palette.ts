@@ -57,7 +57,7 @@ interface RoleStyle {
 // Which celestial accent set a palette's sky shows (v3 F3). Consumers
 // reference it via `ScenePalette['sky']['accents']`; keep the alias
 // module-private until an importer needs it by name (knip enforces this).
-type SkyAccents = "moon-stars" | "sun" | "star-grid" | "none";
+type SkyAccents = "moon-stars" | "sun" | "afterglow" | "star-grid" | "none";
 
 export interface ScenePalette {
   readonly background: number;
@@ -94,9 +94,16 @@ export interface ScenePalette {
     readonly horizon: number;
     readonly accents: SkyAccents;
     readonly accentColor: number;
-    /** Cloud-blob tint for the "sun" accent set (golden-hour restyle);
-     * falls back to `accentColor` when omitted. */
+    /** Cloud-blob tint for the "sun"/"afterglow" accent sets; falls
+     * back to `accentColor` when omitted. */
     readonly cloudColor?: number;
+    /**
+     * Elevation (0..1] at which the horizon→zenith transition completes;
+     * above it the dome is pure zenith. Omitted = 1 (full-height ramp).
+     * Dusk compresses the warm sunset glow to the lower sky so the blue
+     * zenith actually shows in horizon-facing camera framings.
+     */
+    readonly horizonFalloff?: number;
   };
   /**
    * The rebuilt portal's "other world" (golden-hour restyle): a
@@ -294,49 +301,67 @@ const NEON: ScenePalette = {
   },
 };
 
-// DUSK (golden hour, restyled 2026-07-19): the cinematic teal-and-orange
-// grade — deep teal-green base under a turquoise→peach sunset sky, warm
-// copper light from a low left sun, dry-orange terrain, teal vegetation
-// and shadows, restrained emissives ("restrained bloom, not neon"). The
-// fog is a golden haze deliberately WARMER than the background so distant
-// objects melt toward the peach horizon instead of into the ground color.
+// DUSK (late sunset, converged 2026-07-20 over three same-day rounds:
+// golden hour read too bright on-device, full blue hour too dark): the
+// sun is ALMOST done setting — a last sliver on the horizon. Warm
+// lightly-lit terrain (the user's #91582f direction), vegetation kept
+// as warm near-black silhouettes, a dark slate zenith over an ochre
+// horizon with the low sun disc, restrained emissives. The
+// teal-and-orange film grade holds (cool sky vs warm ground/horizon).
+// The fog stays deliberately WARMER than the background so distant
+// objects melt toward the sunset instead of into the ground color.
 const DUSK: ScenePalette = {
   background: 0x142a27,
   // near 40 / far 110 (not the shared 40/90): the works-anywhere camera
   // sits far out — at far 88 the whole world melted into the haze
-  // (screenshot round 1); 110 keeps the golden wash at the horizon while
+  // (screenshot round 1); 110 keeps the warm wash at the horizon while
   // the mid-ground stays readable.
-  fog: { color: 0xc59f78, near: 40, far: 110 },
-  // Warm sky fill + teal ground bounce: this pairing is what makes the
-  // shadow sides read teal-green while lit faces go copper.
-  hemisphere: { sky: 0xffc9a0, ground: 0x24443c, intensity: 1.1 },
-  // Low golden-hour sun from the LEFT → long soft shadows (the only
-  // palette with an explicit light position).
+  fog: { color: 0x7a5f40, near: 40, far: 110 },
+  // Blue-leaning skylight from above + faint warm bounce: the sky still
+  // dominates fill light this late, which keeps shadow sides cool while
+  // the low sun warms lit faces.
+  hemisphere: { sky: 0x475a68, ground: 0x241a12, intensity: 0.9 },
+  // Low warm sun from the LEFT, moments from the horizon — long soft
+  // shadows, dimmer than golden hour (the only palette with an explicit
+  // light position).
   directional: {
-    color: 0xffb27a,
-    intensity: 1.35,
+    color: 0xe89a5e,
+    intensity: 0.8,
     position: { x: -26, y: 12, z: 6 },
   },
-  // Sunset sky: pale turquoise zenith melting into a peach horizon + low
-  // fat sun with clouds (sky-dome.ts places them around the sun).
+  // Late-sunset sky: dark BLUE zenith (user feedback 2026-07-20: "more
+  // blue"; test-pinned B−R ≥ 40) over an ochre horizon, the fat sun
+  // disc a last sliver above it (accentColor tints disc + band), dark
+  // silhouette clouds (cloudColor). horizonFalloff 0.3 squeezes the
+  // warm glow into the lowest sky — the fusion/og-card camera only sees
+  // elevations below ~0.2, so the blue must take over that early to
+  // appear in shot at all (0.45 was tried and still read tan there).
   sky: {
-    zenith: 0x8fc5c0,
-    horizon: 0xffc493,
+    zenith: 0x2c4d6e,
+    horizon: 0xab7f50,
     accents: "sun",
-    accentColor: 0xffd9a8,
-    cloudColor: 0xffddb8,
+    accentColor: 0xf0a55c,
+    cloudColor: 0x5e4c3d,
+    horizonFalloff: 0.3,
   },
   portalInterior: { top: 0x9fd8cf, bottom: 0xffc9a0, clouds: 0xffddb8 },
   particles: { color: 0xffd9a0, style: "fireflies" },
   roles: {
-    ground: { color: 0x8f5e39 },
-    path: { color: 0xb08655 },
-    hill: { color: 0x7d5233 },
-    foliage: { color: 0x1e5148 },
-    trunk: { color: 0x54402f },
-    rock: { color: 0x6e5a45 },
-    sign: { color: 0x54402f },
-    signPanel: { color: 0xffe9d2, emissiveIntensity: 0.15 },
+    // Terrain: warm and lightly lit (the user's #91582f direction; base
+    // colors sit darker than that target because the warm light lifts
+    // them) — the last direct sunlight rakes across the ground.
+    ground: { color: 0x5e3e23 },
+    // The one deliberately readable terrain element (WCAG floor ≥2.2):
+    // a warm ribbon clearly brighter than the ground it crosses.
+    path: { color: 0x8a6b44 },
+    hill: { color: 0x54381f },
+    // Vegetation: warm near-black silhouettes (kept from the blue-hour
+    // round; pinned relationally — clearly darker than the ground).
+    foliage: { color: 0x21130e },
+    trunk: { color: 0x1c110b },
+    rock: { color: 0x33302a },
+    sign: { color: 0x1c110b },
+    signPanel: { color: 0xe8d0b0, emissiveIntensity: 0.15 },
     statue: { color: 0x8a6f52 },
     person: { color: 0x2dd4bf, emissiveIntensity: 0.4 },
     markerRaw: { color: 0xf0a832, emissiveIntensity: 0.5 },
@@ -351,11 +376,11 @@ const DUSK: ScenePalette = {
     // Dark-mesa silhouettes, but with a readability floor over the teal
     // background (test-pinned, same lesson as the dark theme).
     skyline: { color: 0x40605a, emissiveIntensity: 0.08 },
-    // The instanced world-detail grass covers the whole field: this one
-    // value is most of the "dry reddish-orange grass" look.
-    grass: { color: 0xa06b3d },
-    tent: { color: 0xb5763f, emissiveIntensity: 0.12 },
-    ruin: { color: 0x63503f, emissiveIntensity: 0.08 },
+    // The instanced world-detail grass covers the whole field: warm dry
+    // tufts a step darker than the ground give the floor its texture.
+    grass: { color: 0x4f321b },
+    tent: { color: 0x6e4a2c, emissiveIntensity: 0.12 },
+    ruin: { color: 0x3a3028, emissiveIntensity: 0.08 },
     ghost: { color: 0x8fb8e8, emissiveIntensity: 0.5 },
     satellite: { color: 0x9fb8e0, emissiveIntensity: 0.35 },
     // The portal role is the monument FRAME since the golden-hour

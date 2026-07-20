@@ -151,6 +151,25 @@ describe("startDesktopSim", () => {
     h.sim.dispose();
   });
 
+  // Why this test matters: the framework HUD parents every indicator to the
+  // camera, and three.js only renders objects reachable from the scene root —
+  // a camera outside the scene draws NO indicators even though the status
+  // line (built from camera.children) still reports them. Field report
+  // 2026-07-20: desktop showed no HUD elements while the phone AR mode did
+  // (there the framework's arpose chain keeps the camera in the scene). This
+  // pins the scene-graph wiring the status seam cannot see; the pixel-level
+  // proof lives in playwright-tests/hud-render.spec.js.
+  it("parents the camera into the scene so camera-attached HUD indicators render", () => {
+    const h = makeHarness();
+    h.step(0);
+    const [scene, camera] = h.renderer.render.mock.calls[0] as [
+      THREE.Scene,
+      THREE.Camera,
+    ];
+    expect(camera.parent).toBe(scene);
+    h.sim.dispose();
+  });
+
   it("ticks the HUD with dt seconds and reports a status line every frame", () => {
     const h = makeHarness();
     h.step(1000);
