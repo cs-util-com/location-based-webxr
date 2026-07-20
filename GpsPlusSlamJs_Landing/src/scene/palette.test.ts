@@ -126,28 +126,28 @@ describe("getPalette", () => {
     ).toBeGreaterThan(40);
   });
 
-  it("caps the dusk brightness — low golden-hour light, muted sky (2026-07-20 darkening)", () => {
-    // On-device feedback (2026-07-20): the dusk terrain and sky read too
-    // bright — late afternoon instead of the reference's "low golden-hour
-    // light" and "muted" sunset sky. These ceilings are the mechanical
-    // form of that feedback and the counterpart of the WCAG floors above:
-    // floors stop the world sinking into the background, ceilings stop it
-    // drifting back toward noon. Bands, not exact pins, so future hue
-    // retunes stay possible within the dusk mood.
+  it("caps the dusk brightness — blue-hour light budget (2026-07-20 restyle)", () => {
+    // On-device feedback (2026-07-20) said the dusk world read too bright;
+    // the follow-up reference review moved dusk to a BLUE-HOUR register
+    // outright. These ceilings are the mechanical form of that decision
+    // and the counterpart of the WCAG floors above: floors stop key
+    // elements sinking into the background, ceilings stop the world
+    // drifting back toward daylight. Bands, not exact pins, so future hue
+    // retunes stay possible within the mood.
     const dusk = getPalette("dusk");
-    // Dusk must be lit BELOW the shared bright-theme budget (1.15 hemi +
-    // default directional) — the low sun is the point of the theme.
-    expect(dusk.hemisphere.intensity, "hemisphere").toBeLessThanOrEqual(1.0);
-    expect(dusk.directional.intensity, "directional").toBeLessThanOrEqual(1.1);
-    expect(luminance(dusk.sky.zenith), "sky zenith").toBeLessThanOrEqual(0.35);
+    // Dusk must be lit clearly BELOW the shared bright-theme budget —
+    // the sun has set; only skylight + a dim warm afterglow remain.
+    expect(dusk.hemisphere.intensity, "hemisphere").toBeLessThanOrEqual(0.85);
+    expect(dusk.directional.intensity, "directional").toBeLessThanOrEqual(0.6);
+    expect(luminance(dusk.sky.zenith), "sky zenith").toBeLessThanOrEqual(0.1);
     expect(luminance(dusk.sky.horizon), "sky horizon").toBeLessThanOrEqual(
-      0.55,
+      0.25,
     );
     const terrainCeilings: Partial<Record<PaletteRole, number>> = {
-      ground: 0.12,
-      grass: 0.15,
-      path: 0.22, // stays above its 2.2-contrast floor (≈ L 0.103)
-      hill: 0.1,
+      ground: 0.03,
+      grass: 0.03,
+      hill: 0.03,
+      path: 0.16, // stays above its 2.2-contrast floor (≈ L 0.103)
     };
     for (const [role, ceiling] of Object.entries(terrainCeilings)) {
       expect(
@@ -157,27 +157,52 @@ describe("getPalette", () => {
     }
   });
 
-  it("pins the dusk teal-and-orange grade mechanically (golden-hour restyle)", () => {
-    // The art direction in one test: lit/horizontal surfaces warm
-    // (copper/orange), vegetation and the portal frame teal-green, and
-    // the portal interior a warm-over-cool sunset gradient. A future
-    // palette tweak that flips any of these flips the whole look.
+  it("pins the dusk blue-hour grade mechanically (2026-07-20 restyle)", () => {
+    // Second dusk direction (2026-07-20, from the user's reference
+    // images): BLUE HOUR — the sun has set. Cool near-black terrain lit
+    // by slate skylight, warm near-black vegetation silhouettes, one
+    // readable warm path ribbon, a dark slate zenith over an ochre
+    // afterglow horizon. This deliberately INVERTS the 2026-07-19
+    // golden-hour pins (warm ground / teal foliage): the teal-and-orange
+    // pairing survives, but cool-vs-warm swaps surfaces and the whole
+    // grade drops an octave. A tweak that flips any of these flips the
+    // look back.
     const r = (hex: number): number => (hex >> 16) & 0xff;
     const g = (hex: number): number => (hex >> 8) & 0xff;
     const b = (hex: number): number => hex & 0xff;
     const dusk = getPalette("dusk");
-    for (const warm of ["ground", "grass", "hill", "path"] as const) {
+    // Terrain reads cool (slate skylight)...
+    for (const cool of ["ground", "hill"] as const) {
+      expect(b(dusk.roles[cool].color), `${cool} cool`).toBeGreaterThanOrEqual(
+        r(dusk.roles[cool].color),
+      );
+    }
+    // ...vegetation reads as warm near-black silhouettes.
+    for (const warm of ["foliage", "grass"] as const) {
       expect(r(dusk.roles[warm].color), `${warm} warm`).toBeGreaterThan(
         b(dusk.roles[warm].color),
       );
     }
-    for (const teal of ["foliage", "portal"] as const) {
-      expect(
-        g(dusk.roles[teal].color),
-        `${teal} teal-green`,
-      ).toBeGreaterThanOrEqual(r(dusk.roles[teal].color));
-    }
-    // Interior gradient: bottom (horizon) clearly warmer than top (sky).
+    // The path stays a warm ribbon clearly brighter than the floor — the
+    // one terrain element that must survive the near-black world.
+    const path = dusk.roles.path.color;
+    expect(r(path), "path warm").toBeGreaterThan(b(path));
+    expect(luminance(path), "path vs ground").toBeGreaterThan(
+      3 * luminance(dusk.roles.ground.color),
+    );
+    // Sky: cool dark zenith over a warm afterglow horizon.
+    expect(b(dusk.sky.zenith), "zenith cool").toBeGreaterThan(
+      r(dusk.sky.zenith),
+    );
+    expect(r(dusk.sky.horizon), "horizon warm").toBeGreaterThan(
+      b(dusk.sky.horizon),
+    );
+    // Portal: frame stays near-black green; interior gradient stays a
+    // warm-over-cool dawn (its brightness contrast is the design premise).
+    expect(
+      g(dusk.roles.portal.color),
+      "portal frame teal-green",
+    ).toBeGreaterThanOrEqual(r(dusk.roles.portal.color));
     const { top, bottom } = dusk.portalInterior;
     expect(r(bottom) - b(bottom)).toBeGreaterThan(r(top) - b(top));
   });

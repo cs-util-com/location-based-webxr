@@ -17,8 +17,9 @@ import { namedGroup, type ScenePalette } from "./palette";
 /**
  * Per-palette sky (v3 F3): one vertex-colored gradient dome plus
  * palette-specific celestial accents — dark = moon + star points,
- * dusk = low sun + warm horizon band, neon = synthwave star grid,
- * light/mono = the soft zenith gradient alone.
+ * dusk = ochre afterglow band + silhouette clouds (blue hour, the sun
+ * has set; the "sun" kind with a visible disc remains available), neon
+ * = synthwave star grid, light/mono = the soft zenith gradient alone.
  *
  * The dome is UNLIT and OUTSIDE the scene fog (`fog: false` on every
  * material): it sits at radius 150 while the fog ends at ~90, so with
@@ -179,8 +180,9 @@ function buildSun(): Mesh {
  * Low-poly cloud bank (golden-hour restyle): a handful of flattened
  * unlit blobs in the sun's azimuth sector, LCG-placed (deterministic —
  * the shoot-script screenshot review depends on identical builds).
- * Tinted via `sky.cloudColor` (fallback `accentColor`); visible only
- * with the "sun" accent set, i.e. dusk.
+ * Tinted via `sky.cloudColor` (fallback `accentColor`); visible with
+ * the "sun" and "afterglow" accent sets (blue-hour dusk tints them as
+ * dark silhouettes against the afterglow).
  */
 function buildClouds(): Group {
   const clouds = namedGroup(SKY_NODE.clouds);
@@ -257,6 +259,8 @@ function setAccentVisibility(sky: Group, palette: ScenePalette): void {
   const visibleByKind: Record<string, readonly string[]> = {
     "moon-stars": [SKY_NODE.moon, SKY_NODE.stars],
     sun: [SKY_NODE.sun, SKY_NODE.horizonBand, SKY_NODE.clouds],
+    // Blue hour: the sun is below the horizon — band + clouds only.
+    afterglow: [SKY_NODE.horizonBand, SKY_NODE.clouds],
     "star-grid": [SKY_NODE.starGrid],
     none: [],
   };
