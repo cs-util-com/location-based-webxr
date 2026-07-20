@@ -14,15 +14,26 @@ import * as THREE from "three";
 /** Eye height of the simulator camera, in meters. */
 export const SIM_EYE_HEIGHT = 1.6;
 
+/** One simulator waypoint: a stable id (the HUD keys per-target hysteresis
+ * state by it, 2026-07-20 per-target config plan) plus its world position. */
+export interface SimWaypoint {
+  id: string;
+  position: THREE.Vector3;
+}
+
 /**
- * Simulator waypoint positions (world space, meters; camera starts at
+ * Simulator waypoints (world space, meters; camera starts at
  * (0, SIM_EYE_HEIGHT, 5) looking toward −z).
  */
-export const SIM_WAYPOINTS: readonly THREE.Vector3[] = [
-  new THREE.Vector3(0, SIM_EYE_HEIGHT, -14), // straight ahead — starts as a ring
-  new THREE.Vector3(15, SIM_EYE_HEIGHT, 0), // off to the right — edge arrow
-  new THREE.Vector3(-12, SIM_EYE_HEIGHT, 12), // behind-left — flipped arrow
-  new THREE.Vector3(0, 8, 20), // elevated, behind — arrow with pitch
+export const SIM_WAYPOINTS: readonly SimWaypoint[] = [
+  // straight ahead — starts as a ring
+  { id: "ahead", position: new THREE.Vector3(0, SIM_EYE_HEIGHT, -14) },
+  // off to the right — edge arrow
+  { id: "right", position: new THREE.Vector3(15, SIM_EYE_HEIGHT, 0) },
+  // behind-left — flipped arrow
+  { id: "behind-left", position: new THREE.Vector3(-12, SIM_EYE_HEIGHT, 12) },
+  // elevated, behind — arrow with pitch
+  { id: "elevated", position: new THREE.Vector3(0, 8, 20) },
 ];
 
 const WAYPOINT_COLOR = 0x4caf50;

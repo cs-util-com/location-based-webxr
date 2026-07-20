@@ -137,9 +137,14 @@ export function startDesktopSim(deps: DesktopSimDeps): DesktopSim {
   scene.background = new THREE.Color(0x222222);
   scene.add(new THREE.GridHelper(50, 50));
 
-  const targets = SIM_WAYPOINTS.map((waypoint) => waypoint.clone());
+  // WayfindingTarget shape (2026-07-20 per-target config plan): stable ids
+  // key the HUD's per-target hysteresis state.
+  const targets = SIM_WAYPOINTS.map((waypoint) => ({
+    id: waypoint.id,
+    position: waypoint.position.clone(),
+  }));
   for (const target of targets) {
-    scene.add(createWaypointMarker(target));
+    scene.add(createWaypointMarker(target.position));
   }
 
   const camera = new THREE.PerspectiveCamera(
@@ -243,7 +248,11 @@ export function startDesktopSim(deps: DesktopSimDeps): DesktopSim {
     hud.update(dt);
     onStatus(
       formatHudStatus(
-        summarizeHudScene(camera.children, camera.position, targets),
+        summarizeHudScene(
+          camera.children,
+          camera.position,
+          targets.map((target) => target.position),
+        ),
       ),
     );
 

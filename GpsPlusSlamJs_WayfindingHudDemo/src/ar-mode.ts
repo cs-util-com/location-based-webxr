@@ -29,6 +29,7 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage/null-sto
 import {
   createWayfindingHud,
   type WayfindingHud,
+  type WayfindingTarget,
 } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
 
 import { buildExampleWaypoints } from "./ar-waypoints";
@@ -127,8 +128,14 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   }
 
   const markers: THREE.Mesh[] = [];
-  const getTargets = (): THREE.Vector3[] =>
-    markers.map((marker) => marker.getWorldPosition(new THREE.Vector3()));
+  // Fresh WayfindingTarget literals every call are fine BECAUSE each carries
+  // the marker's uuid as its stable id — the HUD keys per-target hysteresis
+  // state by id (2026-07-20 per-target config plan).
+  const getTargets = (): WayfindingTarget[] =>
+    markers.map((marker) => ({
+      id: marker.uuid,
+      position: marker.getWorldPosition(new THREE.Vector3()),
+    }));
 
   function createHud(): WayfindingHud {
     const config = deps.getConfig();
@@ -214,7 +221,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
 
     deps.onStatus(
       formatHudStatus(
-        summarizeHudScene(camera.children, camera.position, getTargets()),
+        summarizeHudScene(
+          camera.children,
+          camera.position,
+          getTargets().map((target) => target.position),
+        ),
       ),
     );
   });
