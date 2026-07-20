@@ -310,10 +310,10 @@ const DUSK: ScenePalette = {
   // (screenshot round 1); 110 keeps the warm wash at the horizon while
   // the mid-ground stays readable.
   fog: { color: 0x7a5f40, near: 40, far: 110 },
-  // Cool-leaning skylight from above + faint warm bounce: the sky still
+  // Blue-leaning skylight from above + faint warm bounce: the sky still
   // dominates fill light this late, which keeps shadow sides cool while
   // the low sun warms lit faces.
-  hemisphere: { sky: 0x4a5a5a, ground: 0x241a12, intensity: 0.9 },
+  hemisphere: { sky: 0x475a68, ground: 0x241a12, intensity: 0.9 },
   // Low warm sun from the LEFT, moments from the horizon — long soft
   // shadows, dimmer than golden hour (the only palette with an explicit
   // light position).
@@ -322,11 +322,12 @@ const DUSK: ScenePalette = {
     intensity: 0.8,
     position: { x: -26, y: 12, z: 6 },
   },
-  // Late-sunset sky: dark slate zenith melting into an ochre horizon,
-  // the fat sun disc a last sliver above it (accentColor tints disc +
-  // band), dark silhouette clouds (cloudColor).
+  // Late-sunset sky: dark BLUE zenith (user feedback 2026-07-20: "more
+  // blue"; test-pinned B−R ≥ 40) melting into an ochre horizon, the fat
+  // sun disc a last sliver above it (accentColor tints disc + band),
+  // dark silhouette clouds (cloudColor).
   sky: {
-    zenith: 0x263c42,
+    zenith: 0x274460,
     horizon: 0xab7f50,
     accents: "sun",
     accentColor: 0xf0a55c,

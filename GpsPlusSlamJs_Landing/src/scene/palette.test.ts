@@ -189,11 +189,14 @@ describe("getPalette", () => {
     expect(luminance(dusk.roles.path.color), "path vs ground").toBeGreaterThan(
       2 * luminance(dusk.roles.ground.color),
     );
-    // Sky: cool dark zenith over a warm horizon (the zenith staying dark
-    // is also what keeps the top-bar brand text readable).
-    expect(b(dusk.sky.zenith), "zenith cool").toBeGreaterThan(
-      r(dusk.sky.zenith),
-    );
+    // Sky: CLEARLY blue dark zenith over a warm horizon — "more blue"
+    // was explicit user feedback (2026-07-20); a slate-gray zenith with
+    // B barely above R fails this. Staying dark also keeps the top-bar
+    // brand text readable.
+    expect(
+      b(dusk.sky.zenith) - r(dusk.sky.zenith),
+      "zenith clearly blue",
+    ).toBeGreaterThanOrEqual(40);
     expect(r(dusk.sky.horizon), "horizon warm").toBeGreaterThan(
       b(dusk.sky.horizon),
     );
