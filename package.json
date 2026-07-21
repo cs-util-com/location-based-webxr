@@ -29,6 +29,7 @@
     },
     "license": "Apache-2.0",
     "devDependencies": {
+        "fast-check": "^4.8.0",
         "knip": "^6.13.1",
         "vitest": "^4.1.6",
         "yaml": "^2.9.0"

@@ -1,0 +1,160 @@
+{
+  "numTotalTestSuites": 2,
+  "numPassedTestSuites": 2,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 12,
+  "numPassedTests": 12,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1782952223963,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta throws on an empty history (nothing to describe)",
+          "status": "passed",
+          "title": "throws on an empty history (nothing to describe)",
+          "duration": 1.6695000000000277,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta reports the first-ever recording as kind \"first\" with no flag",
+          "status": "passed",
+          "title": "reports the first-ever recording as kind \"first\" with no flag",
+          "duration": 0.6672999999999547,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta reports a machine change as baseline reset (no cross-machine deltas)",
+          "status": "passed",
+          "title": "reports a machine change as baseline reset (no cross-machine deltas)",
+          "duration": 0.154200000000003,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta flags slower only when BOTH >20% and >2s are exceeded",
+          "status": "passed",
+          "title": "flags slower only when BOTH >20% and >2s are exceeded",
+          "duration": 0.22200000000003683,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta flags faster for the mirrored improvement",
+          "status": "passed",
+          "title": "flags faster for the mirrored improvement",
+          "duration": 0.10779999999999745,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta stays \"same\" when only the percentage threshold is exceeded (+50% but +1.5s)",
+          "status": "passed",
+          "title": "stays \"same\" when only the percentage threshold is exceeded (+50% but +1.5s)",
+          "duration": 0.09499999999997044,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta stays \"same\" when only the absolute threshold is exceeded (+3s but +10%)",
+          "status": "passed",
+          "title": "stays \"same\" when only the absolute threshold is exceeded (+3s but +10%)",
+          "duration": 0.08629999999999427,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta stays \"same\" at exactly the thresholds (strictly-greater semantics)",
+          "status": "passed",
+          "title": "stays \"same\" at exactly the thresholds (strictly-greater semantics)",
+          "duration": 0.08999999999997499,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta compares against the previous SAME-machine entry, skipping other machines",
+          "status": "passed",
+          "title": "compares against the previous SAME-machine entry, skipping other machines",
+          "duration": 0.13970000000000482,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta reports test-count delta from passed counts when both entries have counts",
+          "status": "passed",
+          "title": "reports test-count delta from passed counts when both entries have counts",
+          "duration": 0.10070000000001755,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta reports null test delta when either entry lacks counts",
+          "status": "passed",
+          "title": "reports null test delta when either entry lacks counts",
+          "duration": 0.12540000000001328,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        },
+        {
+          "ancestorTitles": ["computeDelta"],
+          "fullName": "computeDelta rejects malformed entries defensively (non-finite duration)",
+          "status": "passed",
+          "title": "rejects malformed entries defensively (non-finite duration)",
+          "duration": 0.12609999999995125,
+          "failureMessages": [],
+          "meta": {},
+          "tags": []
+        }
+      ],
+      "startTime": 1782952224419,
+      "endTime": 1782952224423.1262,
+      "status": "passed",
+      "message": "",
+      "name": "C:/gps/gps-plus-slam/GpsPlusSlamJs/scripts/test-timing/delta.test.mjs"
+    }
+  ]
+}
