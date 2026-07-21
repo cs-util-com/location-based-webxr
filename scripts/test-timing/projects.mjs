@@ -200,6 +200,14 @@ export const PROJECTS = [
         counts: null,
       },
       {
+        // Previously a standalone script no gate ever ran (speedup summary
+        // F6, owner decision 2026-07-21: gate it like every other package).
+        name: 'check:cycles',
+        command:
+          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts',
+        counts: null,
+      },
+      {
         name: 'typecheck',
         command: 'tsc -p tsconfig.app.json --noEmit',
         counts: null,

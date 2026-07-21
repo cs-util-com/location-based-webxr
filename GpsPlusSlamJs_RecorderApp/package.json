@@ -16,7 +16,6 @@
     "test": "node ../scripts/test-timing/run-gate.mjs",
     "test:core": "pnpm run format && pnpm run lint && pnpm run lint:css && pnpm run check:all && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
     "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
-    "test:investigation": "pnpm --filter gps-plus-slam-investigation test",
     "test:watch": "vitest --config config/vitest.config.ts",
     "bench": "vitest bench --run --config config/vitest.bench.config.ts",
     "bench:watch": "vitest bench --config config/vitest.bench.config.ts",
