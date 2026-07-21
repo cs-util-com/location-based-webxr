@@ -59,6 +59,43 @@ describe('wrapper path variants (webxr multi-package layout)', () => {
     };
     expect(checkChainDrift(scripts, ['lint'])).toEqual([]);
   });
+
+  // Why this test matters: e2e stages split their framework build into an
+  // own stage row, but the standalone `pnpm run test:e2e` script must STILL
+  // build first (stale-dist footgun). Its script is therefore a chain whose
+  // earlier members are other stage scripts and whose last member is the
+  // wrapper — that shape is canonical wiring, not drift.
+  it('accepts a stage script chained behind other stage scripts', () => {
+    const scripts = {
+      'build:framework':
+        'node ../scripts/test-timing/timed-stage.mjs build:framework',
+      'test:e2e':
+        'pnpm run build:framework && node ../scripts/test-timing/timed-stage.mjs test:e2e',
+    };
+    expect(checkChainDrift(scripts, ['build:framework', 'test:e2e'])).toEqual(
+      []
+    );
+  });
+
+  it('still warns when the chained script tail is not the wrapper', () => {
+    const scripts = {
+      'build:framework':
+        'node ../scripts/test-timing/timed-stage.mjs build:framework',
+      'test:e2e':
+        'pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js',
+    };
+    expect(
+      checkChainDrift(scripts, ['build:framework', 'test:e2e'])
+    ).toHaveLength(1);
+  });
+
+  it('warns when a chain member references a non-stage script', () => {
+    const scripts = {
+      'test:e2e':
+        'pnpm run some-unrelated-script && node ../scripts/test-timing/timed-stage.mjs test:e2e',
+    };
+    expect(checkChainDrift(scripts, ['test:e2e'])).toHaveLength(1);
+  });
 });
 
 describe('expandChain', () => {

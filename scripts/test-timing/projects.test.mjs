@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { isWrappedStageScript } from './chain-guard.mjs';
 import {
   PROJECTS,
   TOTAL_STAGE,
@@ -68,11 +69,17 @@ describe('projects.mjs ↔ package.json wiring', () => {
     (_name, project) => {
       const scripts = readScripts(project);
       const prefix = wrapperPrefix(project);
+      const names = stageOrder(project);
       for (const stage of project.stages) {
+        const value = scripts[stage.name];
         expect(
-          scripts[stage.name],
-          `script "${stage.name}" must be "${prefix}/timed-stage.mjs ${stage.name}"`
-        ).toBe(`${prefix}/timed-stage.mjs ${stage.name}`);
+          value,
+          `script "${stage.name}" is missing from ${project.dir}/package.json`
+        ).toBeDefined();
+        expect(
+          isWrappedStageScript(String(value), stage.name, names),
+          `script "${stage.name}" (${value}) must invoke ${prefix}/timed-stage.mjs ${stage.name} (optionally chained behind other stage scripts)`
+        ).toBe(true);
       }
       expect(scripts.test, '`test` must run the gate orchestrator').toBe(
         `${prefix}/run-gate.mjs`

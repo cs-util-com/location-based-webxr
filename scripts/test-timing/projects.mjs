@@ -52,6 +52,89 @@ const ZERO_COVERAGE_THRESHOLDS = Object.freeze([
   '--coverage.thresholds.lines=0',
 ]);
 
+/** Format command shared by the app packages (framework differs). */
+const APP_FORMAT_COMMAND =
+  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" index.html README.md package.json';
+
+/**
+ * The stage set shared verbatim by the four uniform demo apps (AnchorStarter,
+ * QrTrackingDemo, PhysicsDemo, WayfindingHudDemo): identical package.json
+ * chains, no coverage on unit tests, framework build split into its own
+ * stage row before e2e (speedup plan Phase A.2).
+ *
+ * @returns {StageConfig[]}
+ */
+function demoAppStages() {
+  return [
+    { name: 'format', command: APP_FORMAT_COMMAND, counts: null },
+    {
+      name: 'lint',
+      command: 'eslint . --config config/eslint.config.mjs',
+      counts: null,
+    },
+    {
+      name: 'lint:css',
+      command:
+        'stylelint "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
+      counts: null,
+    },
+    {
+      name: 'check:dup',
+      command: 'jscpd --config config/.jscpd.json src',
+      counts: null,
+    },
+    {
+      name: 'check:cycles',
+      command: 'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts',
+      counts: null,
+    },
+    {
+      name: 'check:boundaries',
+      command: 'depcruise -c config/.dependency-cruiser.cjs src',
+      counts: null,
+    },
+    {
+      name: 'check:deadcode',
+      command: 'pnpm --workspace-root run check:deadcode',
+      counts: null,
+    },
+    {
+      name: 'typecheck',
+      command: 'tsc -p tsconfig.app.json --noEmit',
+      counts: null,
+    },
+    {
+      name: 'typecheck:tests',
+      command: 'tsc -p tsconfig.vitest.json --noEmit',
+      counts: null,
+    },
+    { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+    {
+      name: 'build:framework',
+      command: 'pnpm --filter gps-plus-slam-app-framework run build',
+      counts: null,
+    },
+    {
+      name: 'test:e2e',
+      command: 'playwright test --config playwright-tests/playwright.config.js',
+      counts: 'playwright',
+    },
+  ];
+}
+
+/**
+ * @param {string} dirName
+ * @returns {ProjectConfig}
+ */
+function demoAppProject(dirName) {
+  return {
+    name: dirName,
+    dir: dirName,
+    chainNames: ['test:core', 'check:all'],
+    stages: demoAppStages(),
+  };
+}
+
 /** @type {readonly ProjectConfig[]} */
 export const PROJECTS = [
   {
@@ -88,6 +171,100 @@ export const PROJECTS = [
       },
     ],
   },
+  {
+    name: 'GpsPlusSlamJs_RecorderApp',
+    dir: 'GpsPlusSlamJs_RecorderApp',
+    chainNames: ['test:core', 'check:all'],
+    stages: [
+      { name: 'format', command: APP_FORMAT_COMMAND, counts: null },
+      {
+        name: 'lint',
+        command: 'eslint . --config config/eslint.config.mjs --max-warnings 22',
+        counts: null,
+      },
+      {
+        name: 'lint:css',
+        command:
+          'stylelint "src/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
+        counts: null,
+      },
+      {
+        name: 'check:dup',
+        command: 'jscpd --config config/.jscpd.json src',
+        counts: null,
+      },
+      {
+        name: 'check:cycles',
+        command:
+          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts',
+        counts: null,
+      },
+      {
+        name: 'check:boundaries',
+        command: 'depcruise -c config/.dependency-cruiser.cjs src',
+        counts: null,
+      },
+      {
+        name: 'check:deadcode',
+        command: 'pnpm --workspace-root run check:deadcode',
+        counts: null,
+      },
+      {
+        name: 'typecheck',
+        command: 'tsc -p tsconfig.app.json --noEmit',
+        counts: null,
+      },
+      {
+        name: 'typecheck:tests',
+        command: 'tsc -p tsconfig.vitest.json --noEmit',
+        counts: null,
+      },
+      {
+        name: 'test:unit',
+        command: 'vitest run --coverage --config=config/vitest.config.ts',
+        counts: 'vitest',
+        filteredRunArgs: ZERO_COVERAGE_THRESHOLDS,
+      },
+      {
+        name: 'build:framework',
+        command: 'pnpm --filter gps-plus-slam-app-framework run build',
+        counts: null,
+      },
+      {
+        // `pnpm exec playwright --version` is the historical install-probe;
+        // Phase C.2 of the speedup plan decides its fate with measurements.
+        name: 'test:e2e',
+        command:
+          'pnpm exec playwright --version && playwright test --config playwright-tests/playwright.config.js',
+        counts: 'playwright',
+      },
+    ],
+  },
+  demoAppProject('GpsPlusSlamJs_AnchorStarter'),
+  {
+    name: 'GpsPlusSlamJs_MinimalExample',
+    dir: 'GpsPlusSlamJs_MinimalExample',
+    chainNames: [],
+    stages: [
+      {
+        name: 'typecheck',
+        command: 'tsc -p tsconfig.json --noEmit',
+        counts: null,
+      },
+      { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+    ],
+  },
+  demoAppProject('GpsPlusSlamJs_QrTrackingDemo'),
+  {
+    // Landing has no framework dependency: no build:framework stage, and its
+    // e2e runs directly against the vite build.
+    name: 'GpsPlusSlamJs_Landing',
+    dir: 'GpsPlusSlamJs_Landing',
+    chainNames: ['test:core', 'check:all'],
+    stages: demoAppStages().filter((stage) => stage.name !== 'build:framework'),
+  },
+  demoAppProject('GpsPlusSlamJs_PhysicsDemo'),
+  demoAppProject('GpsPlusSlamJs_WayfindingHudDemo'),
 ];
 
 /**

@@ -55,6 +55,31 @@ export function expandChain(scripts, name, visited = new Set()) {
 }
 
 /**
+ * Whether a package.json script value is canonical wiring for a stage: the
+ * exact wrapper invocation, or a `&&` chain whose LAST member is the wrapper
+ * invocation and whose earlier members are each `pnpm run <other stage>`
+ * (webxr layout: e2e stage scripts chain their framework-build stage first
+ * so standalone `pnpm run test:e2e` still builds — stale-dist footgun).
+ *
+ * @param {string} value - package.json script value
+ * @param {string} stageName - the stage this script belongs to
+ * @param {readonly string[]} stageNames - all configured stage names
+ * @returns {boolean}
+ */
+export function isWrappedStageScript(value, stageName, stageNames) {
+  const members = value.split('&&').map((part) => part.trim());
+  const last = members[members.length - 1];
+  const wrapperMatch = WRAPPER_RE.exec(last ?? '');
+  if (!wrapperMatch || wrapperMatch[1] !== stageName) {
+    return false;
+  }
+  return members.slice(0, -1).every((member) => {
+    const runMatch = PNPM_RUN_RE.exec(member);
+    return runMatch !== null && stageNames.includes(runMatch[1]);
+  });
+}
+
+/**
  * @param {Record<string, string | undefined>} scripts - package.json scripts
  * @param {readonly string[]} stageNames - stages.mjs order
  * @param {readonly string[]} [chainNames] - chain scripts to check
@@ -78,8 +103,7 @@ export function checkChainDrift(
       );
       continue;
     }
-    const match = WRAPPER_RE.exec(value);
-    if (!match || match[1] !== stage) {
+    if (!isWrappedStageScript(value, stage, stageNames)) {
       warnings.add(
         `script "${stage}" does not invoke the timed-stage.mjs wrapper — its runs will not be recorded`
       );

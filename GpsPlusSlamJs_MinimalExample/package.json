@@ -9,9 +9,9 @@
     "build": "pnpm run build:framework && tsc -p tsconfig.json && vite build",
     "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
     "preview": "vite preview",
-    "test": "pnpm run typecheck && pnpm run test:unit",
-    "test:unit": "node ../scripts/run-vitest-scoped.mjs run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "test": "node ../scripts/test-timing/run-gate.mjs",
+    "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
+    "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck"
   },
   "engines": {
     "node": ">=22.14.0"
