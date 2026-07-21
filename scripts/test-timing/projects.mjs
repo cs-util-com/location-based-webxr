@@ -28,6 +28,14 @@ import path from 'node:path';
  * @property {readonly string[]} [filteredRunArgs] - appended (before the
  *   forwarded args) ONLY when a run is filtered by forwarded args; full-suite
  *   and CI runs never see them.
+ * @property {string} [filteredRunCommand] - cheaper base command substituted
+ *   ONLY on filtered runs (e.g. test:unit without --coverage — speedup plan
+ *   C.1); recorded full-suite and CI runs always use `command`.
+ * @property {boolean} [wrapperScript] - default true. false = the package.json
+ *   script of the same name intentionally does NOT route through
+ *   timed-stage.mjs (e.g. build:framework: dev flows and Playwright
+ *   webServer `pnpm run dev` spawns reference the script and must not
+ *   record timing rows); the gate still runs this stage via its `command`.
  */
 
 /**
@@ -43,14 +51,18 @@ import path from 'node:path';
 /** Name of the synthetic full-gate row; only run-gate.mjs writes it. */
 export const TOTAL_STAGE = 'total';
 
-/** Zero-overrides for global coverage thresholds on filtered runs — covering
- * one file can never meet a whole-suite threshold (pilot behavior). */
-const ZERO_COVERAGE_THRESHOLDS = Object.freeze([
-  '--coverage.thresholds.statements=0',
-  '--coverage.thresholds.branches=0',
-  '--coverage.thresholds.functions=0',
-  '--coverage.thresholds.lines=0',
-]);
+/** Shared build:framework stage: skips the (identical) framework build when
+ * dist/ is already fresh — the cascade otherwise rebuilds it once per
+ * consumer package (speedup plan C.2). wrapperScript false: the package.json
+ * build:framework script stays a RAW unconditional build because dev flows
+ * and Playwright webServer `pnpm run dev` spawns call it and must neither
+ * record timing rows nor inherit the skip. */
+const BUILD_FRAMEWORK_STAGE = Object.freeze({
+  name: 'build:framework',
+  command: 'node ../scripts/build-framework-if-stale.mjs',
+  counts: /** @type {null} */ (null),
+  wrapperScript: false,
+});
 
 /** Format command shared by the app packages (framework differs). */
 const APP_FORMAT_COMMAND =
@@ -109,11 +121,7 @@ function demoAppStages() {
       counts: null,
     },
     { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
-    {
-      name: 'build:framework',
-      command: 'pnpm --filter gps-plus-slam-app-framework run build',
-      counts: null,
-    },
+    BUILD_FRAMEWORK_STAGE,
     {
       name: 'test:e2e',
       command: 'playwright test --config playwright-tests/playwright.config.js',
@@ -135,8 +143,46 @@ function demoAppProject(dirName) {
   };
 }
 
+/**
+ * @param {string} scriptName - root chain row label (e.g. 'test:recorder')
+ * @param {string} packageName - pnpm workspace package name
+ * @returns {StageConfig} duration-only row; the package gate it spawns
+ *   records its own per-stage detail in that package's docs/test-timings.md
+ */
+function packageGateStage(scriptName, packageName) {
+  return {
+    name: scriptName,
+    command: `pnpm --filter ${packageName} test`,
+    counts: null,
+  };
+}
+
 /** @type {readonly ProjectConfig[]} */
 export const PROJECTS = [
+  {
+    // The workspace-root cascade: one duration row per package gate plus the
+    // root repo-config tests. Includes PhysicsDemo and WayfindingHudDemo —
+    // previously missing from the root chain entirely (speedup plan §1.1,
+    // decided 2026-07-21).
+    name: 'location-based-webxr',
+    dir: '.',
+    chainNames: [],
+    stages: [
+      {
+        name: 'test:repo-config',
+        command: 'vitest run --config vitest.config.js',
+        counts: 'vitest',
+      },
+      packageGateStage('test:framework', 'gps-plus-slam-app-framework'),
+      packageGateStage('test:recorder', 'gps-plus-slam-recorder'),
+      packageGateStage('test:starter', 'gps-plus-slam-anchor-starter'),
+      packageGateStage('test:example', 'gps-plus-slam-minimal-example'),
+      packageGateStage('test:qr-demo', 'gps-plus-slam-qr-tracking-demo'),
+      packageGateStage('test:landing', 'gps-plus-slam-landing'),
+      packageGateStage('test:physics', 'gps-plus-slam-physics-demo'),
+      packageGateStage('test:wayfinding', 'gps-plus-slam-wayfinding-hud-demo'),
+    ],
+  },
   {
     name: 'GpsPlusSlamJs_AppFramework',
     dir: 'GpsPlusSlamJs_AppFramework',
@@ -167,7 +213,10 @@ export const PROJECTS = [
         name: 'test:unit',
         command: 'vitest run --coverage --config=config/vitest.config.ts',
         counts: 'vitest',
-        filteredRunArgs: ZERO_COVERAGE_THRESHOLDS,
+        // Filtered single-file TDD runs skip coverage collection (speedup
+        // plan C.1): repo-wide coverage of a one-file run is meaningless
+        // and expensive. Full-suite and CI runs keep `command`.
+        filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
       },
     ],
   },
@@ -223,19 +272,20 @@ export const PROJECTS = [
         name: 'test:unit',
         command: 'vitest run --coverage --config=config/vitest.config.ts',
         counts: 'vitest',
-        filteredRunArgs: ZERO_COVERAGE_THRESHOLDS,
+        // Filtered single-file TDD runs skip coverage collection (speedup
+        // plan C.1); dropping --coverage also drops the config's global
+        // thresholds. Full-suite and CI runs keep `command`.
+        filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
       },
+      BUILD_FRAMEWORK_STAGE,
       {
-        name: 'build:framework',
-        command: 'pnpm --filter gps-plus-slam-app-framework run build',
-        counts: null,
-      },
-      {
-        // `pnpm exec playwright --version` is the historical install-probe;
-        // Phase C.2 of the speedup plan decides its fate with measurements.
+        // The historical `pnpm exec playwright --version` install-probe was
+        // removed from the timed path (speedup plan C.2): with the build
+        // split into its own stage the probe was pure overhead, and a
+        // missing browser still fails loudly inside playwright itself.
         name: 'test:e2e',
         command:
-          'pnpm exec playwright --version && playwright test --config playwright-tests/playwright.config.js',
+          'playwright test --config playwright-tests/playwright.config.js',
         counts: 'playwright',
       },
     ],

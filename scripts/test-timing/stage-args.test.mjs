@@ -125,3 +125,46 @@ describe('buildStageCommand', () => {
     expect(buildStageCommand(CMD, decision)).toBe(`${CMD} src/foo.test.ts`);
   });
 });
+
+// Why these tests matter: coverage collection is a large share of a filtered
+// unit run's wall-clock, but its repo-wide numbers are meaningless when only
+// one file's tests ran (speedup plan Phase C.1, decided 2026-07-21). A stage
+// may therefore declare a filteredRunCommand — a cheaper command substituted
+// ONLY on filtered runs. Recorded full-suite runs and unfiltered CI runs
+// must keep the canonical command byte-identical: recorded durations always
+// include coverage, and thresholds stay enforced where they are meaningful.
+describe('buildStageCommand with filteredRunCommand', () => {
+  const CMD = 'vitest run --coverage --config config/vitest.config.ts';
+  const FAST = 'vitest run --config config/vitest.config.ts';
+
+  it('substitutes the filtered-run command on filtered runs', () => {
+    const decision = decideRecording(['src/foo.test.ts'], {});
+    expect(buildStageCommand(CMD, decision, [], FAST)).toBe(
+      `${FAST} src/foo.test.ts`
+    );
+  });
+
+  it('keeps the canonical command for full-suite runs', () => {
+    const decision = decideRecording([], {});
+    expect(buildStageCommand(CMD, decision, [], FAST)).toBe(CMD);
+  });
+
+  it('keeps the canonical command for unfiltered CI runs', () => {
+    const decision = decideRecording([], { CI: 'true' });
+    expect(buildStageCommand(CMD, decision, [], FAST)).toBe(CMD);
+  });
+
+  it('uses the filtered-run command for CI runs WITH a file filter', () => {
+    const decision = decideRecording(['src/foo.test.ts'], { CI: 'true' });
+    expect(buildStageCommand(CMD, decision, [], FAST)).toBe(
+      `${FAST} src/foo.test.ts`
+    );
+  });
+
+  it('combines filteredRunArgs with the filtered-run command', () => {
+    const decision = decideRecording(['src/foo.test.ts'], {});
+    expect(buildStageCommand(CMD, decision, ['--silent=false'], FAST)).toBe(
+      `${FAST} --silent=false src/foo.test.ts`
+    );
+  });
+});

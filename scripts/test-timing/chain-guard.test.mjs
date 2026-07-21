@@ -96,6 +96,30 @@ describe('wrapper path variants (webxr multi-package layout)', () => {
     };
     expect(checkChainDrift(scripts, ['test:e2e'])).toHaveLength(1);
   });
+
+  // Why these tests matter: build:framework's package.json script is
+  // intentionally RAW (dev flows and Playwright webServer `pnpm run dev`
+  // spawns call it and must not record timing rows), while the gate still
+  // runs the stage via its canonical command. The guard must neither warn
+  // about the raw script nor stop checking that it exists.
+  it('accepts a raw (unwrapped) script for stages listed in rawStageNames', () => {
+    const scripts = {
+      'build:framework': 'pnpm --filter gps-plus-slam-app-framework run build',
+      'test:e2e':
+        'pnpm run build:framework && node ../scripts/test-timing/timed-stage.mjs test:e2e',
+    };
+    expect(
+      checkChainDrift(scripts, ['build:framework', 'test:e2e'], [], [
+        'build:framework',
+      ])
+    ).toEqual([]);
+  });
+
+  it('still warns when a raw stage has no package.json script at all', () => {
+    expect(
+      checkChainDrift({}, ['build:framework'], [], ['build:framework'])
+    ).toHaveLength(1);
+  });
 });
 
 describe('expandChain', () => {

@@ -76,6 +76,16 @@ describe('projects.mjs ↔ package.json wiring', () => {
           value,
           `script "${stage.name}" is missing from ${project.dir}/package.json`
         ).toBeDefined();
+        if (stage.wrapperScript === false) {
+          // Intentionally raw (e.g. build:framework: dev flows and
+          // Playwright webServer spawns must not record timing rows) — the
+          // script must NOT route through the wrapper.
+          expect(
+            isWrappedStageScript(String(value), stage.name, names),
+            `script "${stage.name}" (${value}) must stay RAW (wrapperScript: false)`
+          ).toBe(false);
+          continue;
+        }
         expect(
           isWrappedStageScript(String(value), stage.name, names),
           `script "${stage.name}" (${value}) must invoke ${prefix}/timed-stage.mjs ${stage.name} (optionally chained behind other stage scripts)`

@@ -53,19 +53,31 @@ export function appendArgs(command, extraArgs) {
  * forwarded args — so e.g. test:unit neutralizes its global coverage
  * thresholds (meaningless when only a slice of the suite ran, and the reason
  * single-file TDD loops used to exit 1 despite green tests), while a
- * developer-forwarded flag still comes last and wins on conflicts.
- * Unfiltered runs — recorded full-suite runs AND CI runs — get the canonical
- * command byte-identical, keeping thresholds enforced where they mean
- * something.
+ * developer-forwarded flag still comes last and wins on conflicts. A stage
+ * may also declare a filteredRunCommand — a cheaper base command substituted
+ * on filtered runs only (e.g. test:unit without --coverage: repo-wide
+ * coverage of a one-file run is meaningless and expensive; speedup plan
+ * Phase C.1). Unfiltered runs — recorded full-suite runs AND CI runs — get
+ * the canonical command byte-identical, keeping coverage in every recorded
+ * duration and thresholds enforced where they mean something.
  *
  * @param {string} command - canonical shell command from stages.mjs
  * @param {RecordingDecision} decision
  * @param {readonly string[]} [filteredRunArgs] - stage's filtered-run extras
+ * @param {string} [filteredRunCommand] - base command for filtered runs
  * @returns {string}
  */
-export function buildStageCommand(command, decision, filteredRunArgs = []) {
+export function buildStageCommand(
+  command,
+  decision,
+  filteredRunArgs = [],
+  filteredRunCommand = undefined
+) {
   if (decision.extraArgs.length === 0) {
     return command;
   }
-  return appendArgs(command, [...filteredRunArgs, ...decision.extraArgs]);
+  return appendArgs(filteredRunCommand ?? command, [
+    ...filteredRunArgs,
+    ...decision.extraArgs,
+  ]);
 }

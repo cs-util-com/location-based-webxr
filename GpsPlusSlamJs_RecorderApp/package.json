@@ -20,7 +20,7 @@
     "test:watch": "vitest --config config/vitest.config.ts",
     "bench": "vitest bench --run --config config/vitest.bench.config.ts",
     "bench:watch": "vitest bench --config config/vitest.bench.config.ts",
-    "build:framework": "node ../scripts/test-timing/timed-stage.mjs build:framework",
+    "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
     "test:e2e": "pnpm run build:framework && node ../scripts/test-timing/timed-stage.mjs test:e2e",
     "test:e2e:headed": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --headed",
     "test:e2e:ui": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --ui",

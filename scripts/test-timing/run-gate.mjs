@@ -35,10 +35,14 @@ function warnOnChainDrift() {
         readFileSync(path.join(projectRoot(project), 'package.json'), 'utf8')
       )
     );
+    const rawStageNames = project.stages
+      .filter((stage) => stage.wrapperScript === false)
+      .map((stage) => stage.name);
     for (const warning of checkChainDrift(
       packageJson.scripts ?? {},
       stageOrder(project),
-      project.chainNames
+      project.chainNames,
+      rawStageNames
     )) {
       console.warn(`test-timing: chain drift: ${warning}`);
     }

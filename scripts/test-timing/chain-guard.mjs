@@ -83,12 +83,18 @@ export function isWrappedStageScript(value, stageName, stageNames) {
  * @param {Record<string, string | undefined>} scripts - package.json scripts
  * @param {readonly string[]} stageNames - stages.mjs order
  * @param {readonly string[]} [chainNames] - chain scripts to check
+ * @param {readonly string[]} [rawStageNames] - stages whose package.json
+ *   script intentionally does NOT route through the wrapper (webxr:
+ *   build:framework — dev flows and Playwright webServer spawns call the
+ *   script and must not record). The script must still EXIST; it may hold
+ *   any command.
  * @returns {string[]} warnings (empty when consistent)
  */
 export function checkChainDrift(
   scripts,
   stageNames,
-  chainNames = ['test:core', 'check:all']
+  chainNames = ['test:core', 'check:all'],
+  rawStageNames = []
 ) {
   // A Set because nested chains (test:core expands check:all) surface the
   // same drift from multiple chains; warnings are keyed by the drift itself.
@@ -102,6 +108,9 @@ export function checkChainDrift(
         `stage "${stage}" from stages.mjs has no package.json script`
       );
       continue;
+    }
+    if (rawStageNames.includes(stage)) {
+      continue; // intentionally unwrapped; existence was checked above
     }
     if (!isWrappedStageScript(value, stage, stageNames)) {
       warnings.add(

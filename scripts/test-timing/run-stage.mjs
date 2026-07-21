@@ -252,7 +252,8 @@ export async function runStage(project, stageName, forwardedArgs) {
   let command = buildStageCommand(
     stage.command,
     decision,
-    stage.filteredRunArgs
+    stage.filteredRunArgs,
+    stage.filteredRunCommand
   );
   const root = projectRoot(project);
   const env = { ...process.env };

@@ -8,7 +8,12 @@ import { defineConfig } from 'vitest/config';
 // GpsPlusSlamJs_AppFramework/config/vitest.config.ts).
 export default defineConfig({
   test: {
-    include: ['tests/**/*.test.js', 'scripts/test-timing/**/*.test.mjs'],
+    include: [
+      'tests/**/*.test.js',
+      'scripts/*.test.mjs',
+      'scripts/test-timing/**/*.test.mjs',
+      'scripts/test-changed/**/*.test.mjs',
+    ],
     environment: 'node',
   },
 });
