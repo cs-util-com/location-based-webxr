@@ -2,19 +2,30 @@
 
 ## Purpose
 
-UI component for the settings modal dialog. Allows users to configure recording options (depth sampling, image capture) with visual sliders and checkboxes.
+UI component for the settings modal dialog. Allows users to configure recording options (depth sampling, image capture, occupancy, visualization, compass debug, QR, …) with sliders, checkboxes and selects.
+
+## Architecture: declarative option↔DOM binding
+
+The per-control wiring is a data table, `OPTION_BINDINGS` — one entry per form control with its element id, `RecordingOptions` accessors (`get`/`set`), slider `range` (sourced from the validation `*_CONSTRAINTS`, in slider units), optional model↔slider unit conversion (`toSlider`/`fromSlider`, used by the cm↔m voxel size), label `format`, and an `enabledWhen` gating rule. A small engine consumes the table:
+
+- `bindOptionControls()` (from `initSettingsModal`) resolves each entry against the DOM (`instanceof`-checked; a missing/wrong-typed element logs a warning and stays inert), applies slider min/max/step once, and attaches the listener (`input` for sliders, `change` for checkboxes/selects).
+- `populateForm(options)` pushes values + labels into every bound control.
+- `refreshControlStates()` re-evaluates every `enabledWhen` after any control event and after populate. Gating reads the **DOM state** of the controlling checkboxes (not the working copy) so it stays evaluable while the modal is hidden — pinned by the compass-gating tests.
+
+**Adding an option = one table entry + the HTML** (control + `${id}-value` label for sliders). Never hand-write a handler/populate pair. A typo'd id fails the binding-completeness test (see Tests) instead of shipping a dead control.
 
 ## Public API
 
 ### Functions
 
-| Function                       | Input               | Output                     | Description                               |
-| ------------------------------ | ------------------- | -------------------------- | ----------------------------------------- |
-| `initSettingsModal(callback?)` | `(options) => void` | `void`                     | Initializes modal, wires up events        |
-| `showSettingsModal()`          | -                   | `void`                     | Shows modal, loads current options        |
-| `hideSettingsModal()`          | -                   | `void`                     | Hides modal, discards unsaved changes     |
-| `isSettingsModalVisible()`     | -                   | `boolean`                  | Check if modal is currently shown         |
-| `getWorkingOptions()`          | -                   | `RecordingOptions \| null` | Get current unsaved options (for testing) |
+| Function                                 | Input               | Output                     | Description                                       |
+| ---------------------------------------- | ------------------- | -------------------------- | ------------------------------------------------- |
+| `initSettingsModal(callback?, clearCb?)` | `(options) => void` | `void`                     | Initializes modal, binds the table, wires buttons |
+| `showSettingsModal()`                    | -                   | `void`                     | Shows modal, loads current options                |
+| `hideSettingsModal()`                    | -                   | `void`                     | Hides modal, discards unsaved changes             |
+| `isSettingsModalVisible()`               | -                   | `boolean`                  | Check if modal is currently shown                 |
+| `getWorkingOptions()`                    | -                   | `RecordingOptions \| null` | Get current unsaved options (for testing)         |
+| `getOptionBindingIdsForTesting()`        | -                   | `{id, kind}[]`             | Table ids/kinds for the binding-completeness test |
 
 > **Note:** HTML markup lives in `index.html`. Tests use `../test-utils/html-fixtures.ts` to load production HTML, ensuring tests always match the actual UI.
 
@@ -66,7 +77,7 @@ UI component for the settings modal dialog. Allows users to configure recording 
 | `compass-webxr-consistency`        | checkbox | "Consistency gate" — compass↔WebXR drift health factor (default **off**; label deliberately avoids the word "trust", which is reserved for the compass↔GPS trust machine — 2026-07-20 naming split)                      |
 | `compass-experiment`               | checkbox | 2026-07-19 field-test combo: Stage C vote at 15° trust tolerance + C′ pair selection (default **off**)                                                                                                                   |
 | `compass-ab-arm-divider`           | div      | Divider marking the robust-solver toggle as an A/B arm, **not a compass mechanism** (2026-07-20 §4.4)                                                                                                                    |
-| `compass-robust-solver-comparison` | checkbox | Alternative robust-solver comparison arm — plain RANSAC (default **off**)                                                                                                                                                |
+| `compass-robust-solver-comparison` | checkbox | Alternative robust-solver comparison arm — plain outlier rejection (default **off**)                                                                                                                                     |
 | `compass-vote-weight`              | range    | Steady-state compass vote weight 0–1 step 0.05 (default **0.1** — census optimum, 2026-07-20; **greyed out unless experiment/Stage C is on** — mirrors `compassStoreOptions`, which only forwards it then)               |
 | `compass-vote-weight-value`        | span     | Display: "0.10"                                                                                                                                                                                                          |
 | `qr-enabled`                       | checkbox | Toggle live QR detection + RAW recording (default **off**)                                                                                                                                                               |
@@ -80,11 +91,13 @@ UI component for the settings modal dialog. Allows users to configure recording 
 
 - Modal starts with `hidden` class applied
 - Changes are only persisted on Save, not on close/backdrop click
-- Sliders are disabled when their parent toggle is unchecked
-- Compass gating (`updateCompassControlsState`, 2026-07-20 settings-clarity §4.2/§4.6): the vote-weight slider is disabled unless the experiment or Stage C is checked; Stage C is disabled while the experiment is on. A greyed-out Stage C **keeps its stored value and both flags keep being persisted/recorded** (keep-value-record-both) — disabling is a UI affordance, never a value change. See `GpsPlusSlamJs_Docs/docs/2026-07-20-0549-compass-debug-settings-ui-clarity-followup.md`.
+- Sliders are disabled when their parent toggle is unchecked (`enabledWhen` rules in `OPTION_BINDINGS`)
+- Slider min/max/step are applied ONCE at init from the validation constraints — one source of truth, so the UI can never offer a value the validator would clamp away
+- Slider inputs that parse non-finite are dropped (never written into the working copy); save-time validation remains the authoritative clamp
+- Compass gating (`compassPriorConsumerOn`/`compassExperimentOff` rules, 2026-07-20 settings-clarity §4.2/§4.6): the vote-weight slider is disabled unless the experiment or Stage C is checked; Stage C is disabled while the experiment is on. A greyed-out Stage C **keeps its stored value and both flags keep being persisted/recorded** (keep-value-record-both) — disabling is a UI affordance, never a value change. See `GpsPlusSlamJs_Docs/docs/2026-07-20-0549-compass-debug-settings-ui-clarity-followup.md`.
 - Working copy is created on show, cleared on hide
 - Callback is invoked only after successful save
-- The voxel-size slider operates in **centimetres** for readability, but the stored option (`occupancy.cellSizeM`) is **metres** — the input handler divides by 100 and `populateForm` multiplies by 100. A unit mismatch here would feed the grid a 100× wrong cell size, so both directions are unit-tested. Changing it takes effect on the next Enter-AR / replay load (the grid reads it at construction), not mid-session. See [recording-options.ts.md](../state/recording-options.ts.md).
+- The voxel-size slider operates in **centimetres** for readability, but the stored option (`occupancy.cellSizeM`) is **metres** — the binding's `fromSlider` divides by 100 and `toSlider` multiplies by 100. A unit mismatch here would feed the grid a 100× wrong cell size, so both directions are unit-tested. Changing it takes effect on the next Enter-AR / replay load (the grid reads it at construction), not mid-session. See [recording-options.ts.md](../state/recording-options.ts.md).
 - Build version label (`#build-version-label`) is populated during `initSettingsModal()` from `getBuildInfo()`. If metadata is unavailable, the modal logs a warning and shows `Build unavailable` instead of throwing.
 - The `occupancy-occluder-radius` slider writes `workingOptions.occupancy.occluderRadiusM` (Step 2 of the 2026-07-03 fps plan): the camera-local persistent-occluder window (default 25 m; `0` renders as "unlimited" — the pre-Step-2 behaviour). Applies at the next Enter-AR / replay load like the other occupancy knobs.
 - The `frame-tile-max-tiles` slider writes `workingOptions.frameTileDisplay.maxTiles` (Step 4 of the [2026-07-03 long-session fps plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-03-1344-long-session-fps-and-voxel-grid-scaling-plan.md)): the **live-only** FIFO cap on rendered frame tiles (default 100; `0` renders as the label "unlimited"). Replay is never capped (full-path coverage auditing) — the help text says so. Applies at the next Enter-AR like the other frame-tile settings.
@@ -110,13 +123,14 @@ document
 
 ## Tests
 
-- `settings-modal.test.ts` — 40 unit tests
+- `settings-modal.test.ts` — 137 unit tests
+  - Binding-table completeness: every `OPTION_BINDINGS` id resolves to the right element kind (checkbox/range/select) in production HTML, and every slider has its `${id}-value` label — a typo'd table id fails here instead of shipping a dead control
   - Production HTML validation: modal and button markup from `index.html`
   - Modal visibility: show/hide behavior
-  - Form population: checkboxes, sliders
-  - Slider interactions: value updates on input
-  - Checkbox interactions: disables related sliders
-  - Save/reset/close behavior
+  - Form population: checkboxes, sliders, selects (incl. legacy-field migrations)
+  - Slider interactions: value updates + label formats on input
+  - Gating: parent-toggle → sub-control disabling, incl. the compass rules
+  - Save/reset/close behavior and persistence round-trips
   - Build label population and graceful fallback when metadata is unavailable
 
 > Tests use `html-fixtures.ts` to load the actual production HTML from `index.html`, eliminating duplication and ensuring tests fail if the production markup is broken.

@@ -17,6 +17,7 @@ import {
   hideSettingsModal,
   isSettingsModalVisible,
   getWorkingOptions,
+  getOptionBindingIdsForTesting,
 } from './settings-modal';
 import {
   loadSettingsModalHtml,
@@ -328,6 +329,44 @@ describe('settings-modal', () => {
       const html = loadSettingsModalHtml();
       expect(html).toContain('id="btn-clear-refpoint-cache"');
       expect(html).toContain('Clear Reference Point Cache');
+    });
+  });
+
+  describe('binding-table completeness (declarative wiring guard)', () => {
+    // Why this test matters: the option↔DOM wiring is driven by the
+    // OPTION_BINDINGS table, and a typo'd element id there would produce a
+    // silently DEAD control (getElementById → null → binding skipped — the
+    // "dead checkbox" failure mode several older tests guard per-control).
+    // This asserts every bound id resolves to the right element kind in the
+    // PRODUCTION modal HTML, and that every slider has its `${id}-value`
+    // label, so a dead control fails CI instead of shipping.
+    /** Classify a resolved element into the binding-kind vocabulary. */
+    function resolvedKind(el: HTMLElement | null): string {
+      if (el === null) return 'missing';
+      if (el instanceof HTMLSelectElement) return 'select';
+      if (el instanceof HTMLInputElement) {
+        if (el.type === 'checkbox') return 'checkbox';
+        if (el.type === 'range') return 'slider';
+        return `input[type=${el.type}]`;
+      }
+      return el.tagName.toLowerCase();
+    }
+
+    it('every bound control id resolves to the right element kind in production HTML', () => {
+      initSettingsModal();
+      const mismatches = getOptionBindingIdsForTesting()
+        .map(({ id, kind }) => ({
+          id,
+          expected: kind,
+          actual: resolvedKind(document.getElementById(id)),
+          valueLabelMissing:
+            kind === 'slider' &&
+            document.getElementById(`${id}-value`) === null,
+        }))
+        .filter((r) => r.actual !== r.expected || r.valueLabelMissing);
+      // Empty list = every control resolves to its declared kind and every
+      // slider has its value label; failures print the offending descriptors.
+      expect(mismatches).toEqual([]);
     });
   });
 
