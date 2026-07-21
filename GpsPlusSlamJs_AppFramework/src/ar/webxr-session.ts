@@ -263,12 +263,79 @@ let camera: THREE.PerspectiveCamera | null = null;
 let xrSession: XRSession | null = null;
 
 /**
- * Monotonic time of the previous XR frame, in milliseconds (XR `time`
- * argument). Reset to 0 by `resetWebXRState()` so the first frame of a
- * new session sees `dt = 0` rather than a stale delta from the prior
- * session.
+ * Per-session state owned by one AR session — Stage 0 of the staged ArSession
+ * refactor (see `GpsPlusSlamJs_Docs/docs/2026-07-18-2045-webxr-session-arsession-handle-refactor-plan.md`).
+ * A fresh handle is created by `initAR()` (parameterized with this session's
+ * crash-isolation options and session-end callback) and by `resetWebXRState()`
+ * (so pre-init and post-teardown reads see well-defined defaults) — replacing
+ * a field-by-field reset for everything in here. Later stages migrate the
+ * remaining module-level clusters into this handle.
  */
-let lastFrameTime = 0;
+interface ArSessionHandle {
+  /** Crash-isolation diagnostic flags resolved for this session. */
+  crashIsolation: ArCrashIsolationOptions;
+  /**
+   * Host callback fired exactly once whenever the XRSession ends — on BOTH
+   * the app-initiated and the system-initiated path (initAR
+   * `callbacks.onSessionEnd`).
+   */
+  onSessionEnd: ((info: SessionEndInfo) => void) | null;
+  /**
+   * Set by endARSession() immediately before its `xrSession.end()` so the
+   * shared 'end' listener can tell the two trigger paths apart (the app's own
+   * end() fires the same 'end' event the system path does). Read by
+   * handleSessionEnded(); cleared with the rest of the handle on teardown
+   * (also covering the case where end() rejects without the event firing).
+   */
+  endRequestedByApp: boolean;
+  /**
+   * Monotonic time of the previous XR frame, in milliseconds (XR `time`
+   * argument). Starts at 0 so the first frame of a new session sees
+   * `dt = 0` rather than a stale delta from the prior session.
+   */
+  lastFrameTime: number;
+  /**
+   * Latest WebXR camera texture, updated each frame when camera-access is
+   * enabled (valid only within that XR frame). Acquired via Three.js's
+   * renderer.xr.getCameraTexture() API (ExternalTexture).
+   * @see xr-camera-texture.ts
+   */
+  latestCameraTexture: THREE.Texture | null;
+  /**
+   * Latest camera frame dimensions from XRCamera (native resolution). Used to
+   * dynamically resize the blit render target for full-quality captures.
+   */
+  latestCameraWidth: number;
+  latestCameraHeight: number;
+  /** Whether the once-per-session camera-access diagnostic has been logged. */
+  cameraAccessLoggedOnce: boolean;
+  /** Throttle counter for the getCameraTexture()-returned-null diagnostic. */
+  getCameraTextureNullCount: number;
+}
+
+function createArSessionHandle(
+  crashIsolation: ArCrashIsolationOptions = { ...DEFAULT_AR_CRASH_ISOLATION },
+  onSessionEnd: ((info: SessionEndInfo) => void) | null = null
+): ArSessionHandle {
+  return {
+    crashIsolation,
+    onSessionEnd,
+    endRequestedByApp: false,
+    lastFrameTime: 0,
+    latestCameraTexture: null,
+    latestCameraWidth: 0,
+    latestCameraHeight: 0,
+    cameraAccessLoggedOnce: false,
+    getCameraTextureNullCount: 0,
+  };
+}
+
+/**
+ * The live session handle. Always non-null in Stage 0 — teardown REPLACES it
+ * with a fresh default handle, so pre-init/post-teardown reads need no null
+ * checks (the plan's Stage 3 makes it nullable once every cluster lives here).
+ */
+let activeSession: ArSessionHandle = createArSessionHandle();
 
 /**
  * Reset WebXR module state - exported for testing only.
@@ -289,7 +356,10 @@ export function resetWebXRState(): void {
   xrSession = null;
   arWorldGroup = null;
   latestArPose = null;
-  lastFrameTime = 0;
+  // Replace the per-session handle wholesale — one line resets every field
+  // that lives on it (frame diagnostics, session-end pair, crash-isolation
+  // options), so new handle state can never be forgotten here.
+  activeSession = createArSessionHandle();
   clearFrameUpdates();
   clearXrFrameUpdates();
   // Flush session-scoped teardown (e.g. the store subscription opened by
@@ -315,8 +385,6 @@ export function resetWebXRState(): void {
   onTrackingRestarted = null;
   onTrackingLost = null;
   onTrackingRecovered = null;
-  onSessionEnd = null;
-  endRequestedByApp = false;
   depthSampler = null;
   onDepthCaptured = null;
   onDepthUnavailable = null;
@@ -336,13 +404,6 @@ export function resetWebXRState(): void {
     css3dManager.dispose();
     css3dManager = null;
   }
-  cameraAccessLoggedOnce = false;
-  getCameraTextureNullCount = 0;
-  latestCameraWidth = 0;
-  latestCameraHeight = 0;
-  currentArCrashIsolationOptions = {
-    ...DEFAULT_AR_CRASH_ISOLATION,
-  };
   cleanupBlitResources();
 }
 
@@ -453,21 +514,8 @@ export interface SessionEndInfo {
   requestedByApp: boolean;
 }
 
-/**
- * Host callback fired exactly once whenever the XRSession ends — on BOTH the
- * app-initiated and the system-initiated path (initAR `callbacks.onSessionEnd`).
- * Cleared by resetWebXRState() like every other module-level callback.
- */
-let onSessionEnd: ((info: SessionEndInfo) => void) | null = null;
-
-/**
- * Set by endARSession() immediately before its `xrSession.end()` so the
- * shared 'end' listener can tell the two trigger paths apart (the app's own
- * end() fires the same 'end' event the system path does). Consumed (reset to
- * false) by handleSessionEnded(); also cleared defensively in
- * resetWebXRState() in case end() rejects without the event ever firing.
- */
-let endRequestedByApp = false;
+// The session-end callback + app-initiated-end discriminator live on
+// `activeSession` (Stage 0) — see the ArSessionHandle field docs.
 
 /**
  * Depth sampler instance (created when AR session starts with depth callbacks)
@@ -570,35 +618,10 @@ let cameraFrameSource: CameraFrameSource | null = null;
 /** Callback for each throttled camera RGBA frame (initAR `callbacks.cameraFrame`). */
 let onCameraFrame: ((image: RgbaImage) => void) | null = null;
 
-/**
- * Latest WebXR camera texture, updated each frame when camera-access is enabled.
- * Acquired via Three.js's renderer.xr.getCameraTexture() API (ExternalTexture).
- * @see xr-camera-texture.ts
- */
-let latestCameraTexture: THREE.Texture | null = null;
+// The per-frame camera texture/dimensions and the camera-access diagnostic
+// latches live on `activeSession` (Stage 0) — see the ArSessionHandle docs.
 
-/**
- * Latest camera frame dimensions from XRCamera (native resolution).
- * Used to dynamically resize the blit render target for full-quality captures.
- */
-let latestCameraWidth = 0;
-let latestCameraHeight = 0;
-
-/**
- * Track whether camera-access diagnostic status has been logged.
- * Reset on each new session via resetWebXRState().
- */
-let cameraAccessLoggedOnce = false;
-
-/**
- * Counter for throttled getCameraTexture diagnostic logging.
- * Only logs the first few null returns to avoid log spam.
- */
-let getCameraTextureNullCount = 0;
 const GET_CAMERA_TEXTURE_LOG_THRESHOLD = 5;
-let currentArCrashIsolationOptions: ArCrashIsolationOptions = {
-  ...DEFAULT_AR_CRASH_ISOLATION,
-};
 
 /**
  * Dispose blit capture resources and clear the cached camera texture.
@@ -609,7 +632,7 @@ function cleanupBlitResources(): void {
     blitCapture.dispose();
     blitCapture = null;
   }
-  latestCameraTexture = null;
+  activeSession.latestCameraTexture = null;
 }
 
 /**
@@ -620,6 +643,7 @@ function cleanupBlitResources(): void {
  * a disposal elsewhere is self-healing.
  */
 function acquireDepthRgbLookup(): RgbLookup | null {
+  const { latestCameraTexture } = activeSession;
   if (!renderer || !latestCameraTexture) {
     return null;
   }
@@ -638,6 +662,7 @@ function acquireDepthRgbLookup(): RgbLookup | null {
  * self-healing. Reuses `latestCameraTexture`, exactly like the depth-RGB path.
  */
 function acquireCameraFrameRgba(): RgbaImage | null {
+  const { latestCameraTexture } = activeSession;
   if (!renderer || !latestCameraTexture) {
     return null;
   }
@@ -648,8 +673,8 @@ function acquireCameraFrameRgba(): RgbaImage | null {
   // `resizeIfNeeded` is a no-op once they stabilise, so the realloc only happens
   // on the first frame or a device rotation.
   const target = computeAspectFitSize(
-    latestCameraWidth,
-    latestCameraHeight,
+    activeSession.latestCameraWidth,
+    activeSession.latestCameraHeight,
     cameraFrameCaptureSize
   );
   if (!cameraFrameBlit) {
@@ -1050,10 +1075,13 @@ export async function initAR(
   onDepthUnavailable = callbacks.depth?.onUnavailable ?? null;
   onCameraFrame = callbacks.cameraFrame?.onFrame ?? null;
   onFrameCallback = callbacks.onFrame ?? null;
-  onSessionEnd = callbacks.onSessionEnd ?? null;
 
-  currentArCrashIsolationOptions =
-    validateArCrashIsolationOptions(isolationOptions);
+  // Fresh per-session handle, parameterized with this session's validated
+  // crash-isolation options and session-end callback (Stage 0 clusters).
+  activeSession = createArSessionHandle(
+    validateArCrashIsolationOptions(isolationOptions),
+    callbacks.onSessionEnd ?? null
+  );
 
   // G-7 (2026-07-10 quality review): apply the Chromium camera-access
   // tab-crash workaround here so every consumer gets it by default —
@@ -1063,7 +1091,7 @@ export async function initAR(
   // still call `applyChromiumProjectionLayerWorkaround()` at bootstrap are
   // unaffected. Opt out via `isolationOptions` on unaffected devices
   // (e.g. Quest) where forcing `XRWebGLLayer` could regress WebXR.
-  if (currentArCrashIsolationOptions.applyChromiumProjectionLayerWorkaround) {
+  if (activeSession.crashIsolation.applyChromiumProjectionLayerWorkaround) {
     applyChromiumProjectionLayerWorkaround();
   }
 
@@ -1081,7 +1109,7 @@ export async function initAR(
 
   // Create CSS3D renderer overlay (Approach E) — child of dom overlay root
   // so it's visible in WebXR's dom-overlay compositing.
-  if (currentArCrashIsolationOptions.enableCss3dRenderer) {
+  if (activeSession.crashIsolation.enableCss3dRenderer) {
     css3dManager = createCss3dRendererManager(
       container,
       window.innerWidth,
@@ -1099,7 +1127,7 @@ export async function initAR(
   // Request AR session with validated options
   const sessionOptions = buildSessionOptions(
     container,
-    currentArCrashIsolationOptions,
+    activeSession.crashIsolation,
     sessionFeatures
   );
 
@@ -1312,9 +1340,12 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // `THREE.Clock` — so replay/test harnesses that drive `onXRFrame` with
   // synthetic timestamps see deterministic ticks. See `frame-loop.ts.md`
   // and `2026-05-13-ecs-migration-plan.md`.
-  const dt = lastFrameTime === 0 ? 0 : (time - lastFrameTime) / 1000;
+  const dt =
+    activeSession.lastFrameTime === 0
+      ? 0
+      : (time - activeSession.lastFrameTime) / 1000;
   const elapsed = time / 1000;
-  lastFrameTime = time;
+  activeSession.lastFrameTime = time;
   runFrameUpdates(dt, elapsed);
 
   // Hand the live XR context to app-registered per-frame callbacks (hit-test,
@@ -1343,8 +1374,8 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // any previous reference up-front and only repopulate on successful
   // acquisition this frame. This prevents stale textures from being used
   // in the subsequent capture logic (which could cause native crashes).
-  latestCameraTexture = null;
-  if (currentArCrashIsolationOptions.enableCameraTextureAcquisition) {
+  activeSession.latestCameraTexture = null;
+  if (activeSession.crashIsolation.enableCameraTextureAcquisition) {
     // getXrCameraFromPose() collapses every precondition failure
     // (pose=null, no views, no .camera, invalid dimensions) to a single
     // null result. Combined with the unconditional clear above, this
@@ -1358,11 +1389,11 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
     if (
       shouldLogCameraAccessDiagnostic(
         pose,
-        cameraAccessLoggedOnce,
+        activeSession.cameraAccessLoggedOnce,
         imageCaptureManager !== null
       )
     ) {
-      cameraAccessLoggedOnce = true;
+      activeSession.cameraAccessLoggedOnce = true;
       if (xrCamera) {
         log.info(
           'camera-access GRANTED — XRView.camera is available for blit capture'
@@ -1381,15 +1412,18 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
       // and wraps the result in an ExternalTexture (proper texture subclass).
       const result = acquireCameraTexture(renderer, xrCamera);
       if (result) {
-        latestCameraTexture = result.texture;
-        latestCameraWidth = result.width;
-        latestCameraHeight = result.height;
+        activeSession.latestCameraTexture = result.texture;
+        activeSession.latestCameraWidth = result.width;
+        activeSession.latestCameraHeight = result.height;
       } else {
         // Diagnostic: log when getCameraTexture returns null/undefined
-        getCameraTextureNullCount++;
-        if (getCameraTextureNullCount <= GET_CAMERA_TEXTURE_LOG_THRESHOLD) {
+        activeSession.getCameraTextureNullCount++;
+        if (
+          activeSession.getCameraTextureNullCount <=
+          GET_CAMERA_TEXTURE_LOG_THRESHOLD
+        ) {
           log.warn(
-            `getCameraTexture() returned null (occurrence ${getCameraTextureNullCount}/${GET_CAMERA_TEXTURE_LOG_THRESHOLD}). ` +
+            `getCameraTexture() returned null (occurrence ${activeSession.getCameraTextureNullCount}/${GET_CAMERA_TEXTURE_LOG_THRESHOLD}). ` +
               'camera-access is granted but Three.js did not provide a texture.'
           );
         }
@@ -1429,7 +1463,7 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   renderer.render(scene, camera);
 
   // Render CSS3D overlay (DOM-based 3D objects like Leaflet map)
-  if (currentArCrashIsolationOptions.enableCss3dRenderer && css3dManager) {
+  if (activeSession.crashIsolation.enableCss3dRenderer && css3dManager) {
     css3dManager.render(scene, camera);
   }
 }
@@ -1604,10 +1638,9 @@ export function nueQuaternionToWebXR(
 function handleSessionEnded(): void {
   log.info('Session ended');
   // Capture callback + discriminator BEFORE teardown — resetWebXRState()
-  // clears both.
-  const callback = onSessionEnd;
-  const requestedByApp = endRequestedByApp;
-  endRequestedByApp = false;
+  // replaces the session handle, clearing both.
+  const callback = activeSession.onSessionEnd;
+  const requestedByApp = activeSession.endRequestedByApp;
   // Reset the tracking slice so the next session starts from a clean
   // INITIALIZING state (must run before resetWebXRState() nulls the store).
   if (trackingStore) {
@@ -1659,7 +1692,7 @@ export async function endARSession(): Promise<void> {
       // Mark this end as app-initiated for the shared 'end' listener —
       // end() fires the same 'end' event a system-initiated end does, and
       // handleSessionEnded() consumes this flag to discriminate the paths.
-      endRequestedByApp = true;
+      activeSession.endRequestedByApp = true;
       await xrSession.end();
     }
   } finally {
@@ -1741,6 +1774,8 @@ export function startImageCapture(config?: Partial<ImageCaptureConfig>): void {
     // The local keeps a stable handle for this in-flight capture; a frame from a
     // torn-down session is harmlessly discarded downstream.
     const bc = blitCapture;
+    const { latestCameraTexture, latestCameraWidth, latestCameraHeight } =
+      activeSession;
     if (!bc || !latestCameraTexture) {
       // camera-access not available or no texture yet — fall back to
       // canvas.toBlob. The canvas backing store is what toBlob encodes, so its

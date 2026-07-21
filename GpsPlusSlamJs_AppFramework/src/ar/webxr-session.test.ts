@@ -1294,8 +1294,11 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
 
+    // Stage 0 of the ArSession refactor moved the isolation options onto the
+    // per-session handle (`activeSession.crashIsolation`) — the assertion pins
+    // the same gate, at its new spelling.
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCss3dRenderer)'
+      'if (activeSession.crashIsolation.enableCss3dRenderer)'
     );
     expect(source).toContain('createCss3dRendererManager');
   });
@@ -1308,11 +1311,12 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
 
+    // Same Stage 0 handle move as above — gates unchanged, spelling updated.
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCameraTextureAcquisition)'
+      'if (activeSession.crashIsolation.enableCameraTextureAcquisition)'
     );
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCss3dRenderer && css3dManager)'
+      'if (activeSession.crashIsolation.enableCss3dRenderer && css3dManager)'
     );
   });
 });
