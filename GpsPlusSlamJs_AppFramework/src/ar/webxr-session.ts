@@ -337,6 +337,21 @@ interface ArSessionHandle {
     captureSize: number;
     onFrame: ((image: RgbaImage) => void) | null;
   };
+  /**
+   * Tracking-state pipeline (Stage 2). Store + host callbacks arrive TOGETHER
+   * via initAR `callbacks.tracking`; `phaseUnsubscribe` is the store phase
+   * subscription opened by `initAR` (torn down by teardown/rebind so no
+   * dangling listener outlives its store). `store` is the ONE handle field
+   * mutated mid-session — {@link rebindTrackingStore}, the recorder's
+   * per-recording store swap.
+   */
+  tracking: {
+    store: TrackingSubscribableStore | null;
+    phaseUnsubscribe: (() => void) | null;
+    onRestarted: ((payload: OdometryTrackingRestartedPayload) => void) | null;
+    onLost: (() => void) | null;
+    onRecovered: (() => void) | null;
+  };
   /** Crash-isolation diagnostic flags resolved for this session. */
   crashIsolation: ArCrashIsolationOptions;
   /**
@@ -387,32 +402,65 @@ function orNull<T>(value: T | undefined): T | null {
   return value ?? null;
 }
 
+// Per-cluster builders — one per ArSessionCallbacks group, each with its own
+// lint complexity budget (every `?.` counts as a decision point).
+function createImageCaptureCluster(
+  cb: ArSessionCallbacks['imageCapture']
+): ArSessionHandle['imageCapture'] {
+  return {
+    manager: null,
+    blit: null,
+    onCaptured: orNull(cb?.onCaptured),
+    getScreenRotation: orNull(cb?.getScreenRotation),
+    onFailed: orNull(cb?.onFailed),
+    onSuspicious: orNull(cb?.onSuspicious),
+    qualityAnalyzer: orNull(cb?.qualityAnalyzer),
+  };
+}
+
+function createDepthCluster(
+  cb: ArSessionCallbacks['depth']
+): ArSessionHandle['depth'] {
+  return {
+    sampler: null,
+    rgbBlit: null,
+    onCaptured: orNull(cb?.onCaptured),
+    onUnavailable: orNull(cb?.onUnavailable),
+  };
+}
+
+function createCameraFrameCluster(
+  cb: ArSessionCallbacks['cameraFrame']
+): ArSessionHandle['cameraFrame'] {
+  return {
+    source: null,
+    blit: null,
+    captureSize: DEFAULT_CAMERA_FRAME_CAPTURE_SIZE,
+    onFrame: orNull(cb?.onFrame),
+  };
+}
+
+function createTrackingCluster(
+  cb: ArSessionCallbacks['tracking']
+): ArSessionHandle['tracking'] {
+  return {
+    store: orNull(cb?.store),
+    phaseUnsubscribe: null,
+    onRestarted: orNull(cb?.onRestarted),
+    onLost: orNull(cb?.onLost),
+    onRecovered: orNull(cb?.onRecovered),
+  };
+}
+
 function createArSessionHandle(
   crashIsolation: ArCrashIsolationOptions,
   callbacks: ArSessionCallbacks
 ): ArSessionHandle {
   return {
-    imageCapture: {
-      manager: null,
-      blit: null,
-      onCaptured: orNull(callbacks.imageCapture?.onCaptured),
-      getScreenRotation: orNull(callbacks.imageCapture?.getScreenRotation),
-      onFailed: orNull(callbacks.imageCapture?.onFailed),
-      onSuspicious: orNull(callbacks.imageCapture?.onSuspicious),
-      qualityAnalyzer: orNull(callbacks.imageCapture?.qualityAnalyzer),
-    },
-    depth: {
-      sampler: null,
-      rgbBlit: null,
-      onCaptured: orNull(callbacks.depth?.onCaptured),
-      onUnavailable: orNull(callbacks.depth?.onUnavailable),
-    },
-    cameraFrame: {
-      source: null,
-      blit: null,
-      captureSize: DEFAULT_CAMERA_FRAME_CAPTURE_SIZE,
-      onFrame: orNull(callbacks.cameraFrame?.onFrame),
-    },
+    imageCapture: createImageCaptureCluster(callbacks.imageCapture),
+    depth: createDepthCluster(callbacks.depth),
+    cameraFrame: createCameraFrameCluster(callbacks.cameraFrame),
+    tracking: createTrackingCluster(callbacks.tracking),
     crashIsolation,
     onSessionEnd: orNull(callbacks.onSessionEnd),
     endRequestedByApp: false,
@@ -464,20 +512,14 @@ export function resetWebXRState(): void {
   // outlive the session. This is the single chokepoint every restart passes
   // through, so callers never have to dispose those by hand.
   runSessionDisposers();
-  if (trackingPhaseUnsubscribe) {
-    trackingPhaseUnsubscribe();
-    trackingPhaseUnsubscribe = null;
-  }
-  trackingStore = null;
-  onTrackingRestarted = null;
-  onTrackingLost = null;
-  onTrackingRecovered = null;
-  // Dispose the GPU-backed blit targets owned by the outgoing handle, then
+  // Tear down the outgoing handle's live subscription so no phase listener
+  // outlives its store, then dispose its GPU-backed blit targets, then
   // replace the handle wholesale — one line resets every field on it (capture
-  // clusters incl. the injected quality analyzer, session-end pair,
-  // crash-isolation options, frame diagnostics), so new handle state can
-  // never be forgotten here. Hosts re-pass their callbacks on the next
+  // + tracking clusters incl. the injected quality analyzer, session-end
+  // pair, crash-isolation options, frame diagnostics), so new handle state
+  // can never be forgotten here. Hosts re-pass their callbacks on the next
   // initAR (they own e.g. the analyzer Worker).
+  activeSession.tracking.phaseUnsubscribe?.();
   cleanupBlitResources();
   activeSession.depth.rgbBlit?.dispose();
   activeSession.cameraFrame.blit?.dispose();
@@ -513,42 +555,12 @@ let latestArPose: ARPose | null = null;
 // quality analyzer) lives on `activeSession.imageCapture` (Stage 1) — see the
 // ArSessionHandle field docs.
 
-/**
- * Redux store injected by the host (initAR `callbacks.tracking.store`;
- * swapped mid-session via {@link rebindTrackingStore}). When present,
- * `onXRFrame` dispatches `poseReceived`/`poseLost`, the XR reference-space
- * reset listener dispatches `originReset`, and a subscription translates
- * phase transitions back into the host's `onTrackingLost` /
- * `onTrackingRestarted` / `onTrackingRecovered` callbacks. When the store
- * is absent the tracking pipeline simply no-ops.
- */
-let trackingStore: TrackingSubscribableStore | null = null;
-
-/**
- * Unsubscribe handle returned by the phase subscription set up in
- * `initAR`. Cleared in `resetWebXRState` and on session-end so we never
- * leave dangling listeners on a stale store.
- */
-let trackingPhaseUnsubscribe: (() => void) | null = null;
-
-/**
- * Callback for when tracking restarts (initAR `callbacks.tracking.onRestarted`)
- */
-let onTrackingRestarted:
-  | ((payload: OdometryTrackingRestartedPayload) => void)
-  | null = null;
-
-/**
- * Callback for when tracking is lost (initAR `callbacks.tracking.onLost`)
- * Field Test Readiness Issue #3: Provide user feedback when tracking is lost
- */
-let onTrackingLost: (() => void) | null = null;
-
-/**
- * Callback for when tracking recovers seamlessly without origin reset (Case 1).
- * initAR `callbacks.tracking.onRecovered`.
- */
-let onTrackingRecovered: (() => void) | null = null;
+// The tracking cluster (store, phase subscription, host callbacks) lives on
+// `activeSession.tracking` (Stage 2) — see the ArSessionHandle field docs.
+// When the store is present, `onXRFrame` dispatches `poseReceived`/`poseLost`,
+// the XR reference-space reset listener dispatches `originReset`, and a
+// subscription translates phase transitions back into the host's callbacks;
+// when absent the tracking pipeline simply no-ops.
 
 /**
  * Info passed to the session-end callback (F3, 2026-07-04 user feedback).
@@ -1031,20 +1043,16 @@ export async function initAR(
     );
   }
 
-  // Unpack the still-module-level callback slots (tracking cluster + per-frame
-  // tick) — resetWebXRState() cleared them at the previous session end, and
-  // assigning unconditionally (absent ⇒ null) keeps this init deterministic
-  // even after an aborted initAR.
-  trackingStore = callbacks.tracking?.store ?? null;
-  onTrackingRestarted = callbacks.tracking?.onRestarted ?? null;
-  onTrackingLost = callbacks.tracking?.onLost ?? null;
-  onTrackingRecovered = callbacks.tracking?.onRecovered ?? null;
+  // The one still-module-level callback slot (per-frame tick) —
+  // resetWebXRState() cleared it at the previous session end, and assigning
+  // unconditionally (absent ⇒ null) keeps this init deterministic even after
+  // an aborted initAR.
   onFrameCallback = callbacks.onFrame ?? null;
 
   // Fresh per-session handle carrying this session's validated crash-isolation
-  // options, the capture-cluster callback slots and the session-end callback
-  // (Stages 0–1). No per-frame indirection beyond one monomorphic property
-  // access: onXRFrame reads the handle fields directly.
+  // options, the capture/tracking-cluster callback slots and the session-end
+  // callback (Stages 0–2). No per-frame indirection beyond one monomorphic
+  // property access: onXRFrame reads the handle fields directly.
   activeSession = createArSessionHandle(
     validateArCrashIsolationOptions(isolationOptions),
     callbacks
@@ -1117,6 +1125,7 @@ export async function initAR(
   // quality review) is structurally impossible now. Without the group we
   // keep the legacy no-op behaviour: `onXRFrame` never dispatches and no
   // callbacks ever fire. See docs/2026-05-13-tracking-state-slice-port-plan.md.
+  const trackingStore = activeSession.tracking.store;
   if (trackingStore) {
     const store = trackingStore;
     // Start from a clean slate — the previous session may have left the
@@ -1125,7 +1134,7 @@ export async function initAR(
     // the slice match.
     store.dispatch(resetTrackingAction());
 
-    trackingPhaseUnsubscribe = subscribeToTrackingPhase(store);
+    activeSession.tracking.phaseUnsubscribe = subscribeToTrackingPhase(store);
 
     // Listen for XRReferenceSpace reset events to distinguish Case 1 (seamless
     // recovery) from Case 2 (relocalization). The reset event fires when the
@@ -1206,14 +1215,15 @@ function snapshotDeviceOrientation(): {
  * runs synchronously inside each `dispatch`, so the host callbacks fire
  * in the same order as a direct invocation would.
  *
- * Translation rules (locked in by tracking-slice tests):
+ * Translation rules (locked in by tracking-slice tests; the host callbacks
+ * live on `activeSession.tracking`):
  *   - `tracking → lost`: clear `latestArPose` (drops in-flight GPS events)
- *     and call `onTrackingLost?.()`.
+ *     and call the host's `onLost`.
  *   - `lost → tracking` with `lastRestartedPayload !== null` (Case 2):
- *     call `onTrackingRestarted?.(payload)` then dispatch
+ *     call the host's `onRestarted(payload)` then dispatch
  *     `clearLastRestartedPayload` so a subsequent loss cycle starts clean.
  *   - `lost → tracking` with payload null (Case 1: seamless recovery):
- *     call `onTrackingRecovered?.()`.
+ *     call the host's `onRecovered`.
  *   - `initializing → tracking`: no callback (initial acquisition is not
  *     a restart — same behaviour as the manager).
  */
@@ -1236,7 +1246,7 @@ function subscribeToTrackingPhase(
       // Drop GPS events during tracking loss by nulling the pose.
       // The recording coordinator's null guard will skip GPS events.
       latestArPose = null;
-      onTrackingLost?.();
+      activeSession.tracking.onLost?.();
       return;
     }
 
@@ -1244,7 +1254,7 @@ function subscribeToTrackingPhase(
       const payload = selectLastRestartedPayload(store.getState());
       if (payload !== null) {
         log.info('Tracking restarted (origin reset)');
-        onTrackingRestarted?.(payload);
+        activeSession.tracking.onRestarted?.(payload);
         store.dispatch(clearLastRestartedPayloadAction());
       } else {
         // A null payload means Case 1 (no origin reset during loss). The
@@ -1256,7 +1266,7 @@ function subscribeToTrackingPhase(
         // only remaining null-payload case is a genuine seamless recovery.
         // See tracking-slice.ts (defensive branch) and the port plan doc.
         log.info('Tracking recovered (same coordinate frame)');
-        onTrackingRecovered?.();
+        activeSession.tracking.onRecovered?.();
       }
     }
   });
@@ -1268,19 +1278,20 @@ function subscribeToTrackingPhase(
  * requested via initAR `callbacks.tracking`).
  */
 function updateTrackingState(arPose: ARPose | null): void {
-  if (!trackingStore) {
+  const { store } = activeSession.tracking;
+  if (!store) {
     return;
   }
 
   if (arPose) {
-    trackingStore.dispatch(
+    store.dispatch(
       poseReceivedAction({
         pose: arPose,
         sensorOrientation: snapshotDeviceOrientation(),
       })
     );
   } else {
-    trackingStore.dispatch(poseLostAction());
+    store.dispatch(poseLostAction());
   }
 }
 
@@ -1613,10 +1624,9 @@ function handleSessionEnded(): void {
   const callback = activeSession.onSessionEnd;
   const requestedByApp = activeSession.endRequestedByApp;
   // Reset the tracking slice so the next session starts from a clean
-  // INITIALIZING state (must run before resetWebXRState() nulls the store).
-  if (trackingStore) {
-    trackingStore.dispatch(resetTrackingAction());
-  }
+  // INITIALIZING state (must run before resetWebXRState() replaces the
+  // handle carrying the store).
+  activeSession.tracking.store?.dispatch(resetTrackingAction());
   resetWebXRState();
   // Notify the host last, defensively: a throwing callback must never leave
   // the module half-torn-down.
@@ -1850,11 +1860,12 @@ export function rebindTrackingStore(store: TrackingSubscribableStore): void {
   // tear it down before swapping. The new subscription is established
   // inside `initAR`, not here, because we also want it to survive
   // `resetWebXRState`-then-`initAR` cycles cleanly.
-  if (trackingPhaseUnsubscribe) {
-    trackingPhaseUnsubscribe();
-    trackingPhaseUnsubscribe = null;
+  const { tracking } = activeSession;
+  if (tracking.phaseUnsubscribe) {
+    tracking.phaseUnsubscribe();
+    tracking.phaseUnsubscribe = null;
   }
-  trackingStore = store;
+  tracking.store = store;
 }
 
 /**
