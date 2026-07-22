@@ -27,6 +27,7 @@ import {
 import {
   loadRecordingOptions,
   DEFAULT_RECORDING_OPTIONS,
+  COMPASS_DEBUG_CONSTRAINTS,
 } from '../state/recording-options';
 
 const { mockGetBuildInfo } = vi.hoisted(() => ({
@@ -1359,6 +1360,30 @@ describe('settings-modal', () => {
         0.3,
         6
       );
+    });
+
+    it('vote-weight slider matches its sibling sliders: accessible name, shared track classes, constraints injected from COMPASS_DEBUG_CONSTRAINTS', () => {
+      // Why: PR 205 review (coderabbit) — the slider shipped without the
+      // aria-label and shared track styling every other modal slider carries
+      // (browser-default track, no accessible name), and with min/max/step
+      // hardcoded in the HTML although initSettingsModal injects them from
+      // COMPASS_DEBUG_CONSTRAINTS (the single source of truth). Class parity
+      // with a sibling slider pins the visual consistency; the constraint
+      // assertions prove the injection covers the removed HTML attributes.
+      initSettingsModal();
+      showSettingsModal();
+      const slider = document.getElementById(
+        'compass-vote-weight'
+      ) as HTMLInputElement;
+      const sibling = document.getElementById(
+        'images-interval'
+      ) as HTMLInputElement;
+      expect(slider.getAttribute('aria-label')).toBe('Vote weight');
+      expect(slider.className).toBe(sibling.className);
+      const { min, max, step } = COMPASS_DEBUG_CONSTRAINTS.voteWeight;
+      expect(slider.min).toBe(String(min));
+      expect(slider.max).toBe(String(max));
+      expect(slider.step).toBe(String(step));
     });
 
     it('populates the vote-weight slider from a saved 0.5', () => {
