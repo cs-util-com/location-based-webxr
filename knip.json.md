@@ -48,7 +48,12 @@ entirely after confirming they were only transitively pulled in.
   and would otherwise flag them as unused files (an `error`-severity
   gate). There is intentionally **no** `src/ref-points/index.ts` entry —
   that module does not exist in this package; a stale entry produced a
-  "no matches" configuration hint. `redux` is in `ignoreDependencies`:
+  "no matches" configuration hint. `dpdm` is in `ignoreDependencies` because the framework's
+  `check:cycles` command moved from an inline package.json script into
+  `scripts/test-timing/projects.mjs` (2026-07-21 gate wiring), where
+  knip's package.json-script analysis cannot see it — the standard
+  treatment documented in the projects.mjs header, matching every app
+  package. `redux` is in `ignoreDependencies`:
   no source file imports it directly, but it must be a **direct**
   dependency so tsdown externalizes redux types in the built d.ts
   instead of bundling them into a private, non-`exports`-reachable
