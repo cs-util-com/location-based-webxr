@@ -157,9 +157,10 @@ describe("applySkyPalette — per-palette accents and gradient", () => {
     // the og-card/fusion framing shows only low elevations, where the
     // warm horizon color dominates — the blue zenith never appeared in
     // shot. `horizonFalloff` scales the gradient so the transition
-    // completes AT that elevation: dusk (0.45) is fully zenith-blue
-    // from mid-sky down to ~45% elevation, while palettes without the
-    // field keep the original full-height ramp.
+    // completes AT that elevation: dusk (0.3) is fully zenith-blue
+    // from ~30% elevation upward (0.45 was tried and still read tan in
+    // the og-card framing — see the DUSK palette comment), while
+    // palettes without the field keep the original full-height ramp.
     const dusk = getPalette("dusk");
     const zenith = new Color(dusk.sky.zenith);
     expect(domeGradientColorAt(0.5, dusk).getHex()).toBe(zenith.getHex());
