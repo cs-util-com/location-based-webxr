@@ -839,7 +839,9 @@ export interface CompassStoreOptions {
  * session must not record a dead `setCompassVoteWeight` action into the
  * session (the slider is inert without a prior; see the 2026-07-20
  * settings-clarity follow-up §3.4). `undefined` input (boot before the
- * options load) yields all-undefined options — the framework defaults apply.
+ * options load) yields `{}` — deliberately NO explicit keys, because spreading
+ * explicit-`undefined` keys over a defaults object would clobber the framework
+ * defaults; an empty object leaves them all in place.
  */
 export function compassStoreOptions(
   compass: CompassDebugOptions | undefined

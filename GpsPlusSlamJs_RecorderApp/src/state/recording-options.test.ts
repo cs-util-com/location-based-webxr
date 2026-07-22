@@ -957,15 +957,12 @@ describe('recording-options', () => {
         ).toBe(0.2);
       });
 
-      it('returns all-undefined options when no compassDebug options exist yet (boot before load)', () => {
-        expect(compassStoreOptions(undefined)).toEqual({
-          enableCompassColdStartOverride: undefined,
-          enableCompassRotationPrior: undefined,
-          enableCompassWebXRConsistency: undefined,
-          enableCompassExperiment: undefined,
-          enableRobustSolverComparison: undefined,
-          compassVoteWeight: undefined,
-        });
+      // Why toStrictEqual({}): `{}` vs explicit-undefined keys is load-bearing
+      // — spreading explicit-undefined keys over the framework's defaults
+      // would clobber them, while `{}` preserves them. toEqual cannot tell
+      // the two shapes apart; toStrictEqual pins the no-explicit-keys shape.
+      it('returns an empty object (no explicit keys) when no compassDebug options exist yet (boot before load)', () => {
+        expect(compassStoreOptions(undefined)).toStrictEqual({});
       });
     });
 
