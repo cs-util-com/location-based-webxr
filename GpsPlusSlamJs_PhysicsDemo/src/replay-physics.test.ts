@@ -181,18 +181,18 @@ describe("startReplayPhysics", () => {
 
     const downHandler = h.canvas.addEventListener.mock.calls.find(
       (c) => c[0] === "pointerdown",
-    )?.[1] as (e: { clientX: number; clientY: number }) => void;
+    )?.[1] as (e: { clientX: number; clientY: number; button: number }) => void;
     const upHandler = h.canvas.addEventListener.mock.calls.find(
       (c) => c[0] === "pointerup",
-    )?.[1] as (e: { clientX: number; clientY: number }) => void;
+    )?.[1] as (e: { clientX: number; clientY: number; button: number }) => void;
     expect(downHandler).toBeTypeOf("function");
     expect(upHandler).toBeTypeOf("function");
 
     // The shot fires on release, not press — a press alone must not spawn
     // (it may be the start of an OrbitControls drag, see the drag test).
-    downHandler({ clientX: 50, clientY: 50 });
+    downHandler({ clientX: 50, clientY: 50, button: 0 });
     expect(h.runtime.spawnBallWithVelocity).not.toHaveBeenCalled();
-    upHandler({ clientX: 50, clientY: 50 });
+    upHandler({ clientX: 50, clientY: 50, button: 0 });
     expect(h.runtime.spawnBallWithVelocity).toHaveBeenCalledTimes(1);
   });
 
@@ -207,23 +207,52 @@ describe("startReplayPhysics", () => {
 
     const downHandler = h.canvas.addEventListener.mock.calls.find(
       (c) => c[0] === "pointerdown",
-    )?.[1] as (e: { clientX: number; clientY: number }) => void;
+    )?.[1] as (e: { clientX: number; clientY: number; button: number }) => void;
     const upHandler = h.canvas.addEventListener.mock.calls.find(
       (c) => c[0] === "pointerup",
-    )?.[1] as (e: { clientX: number; clientY: number }) => void;
+    )?.[1] as (e: { clientX: number; clientY: number; button: number }) => void;
 
     // Drag: down at (50,50), released 30 px away — an orbit gesture, no shot.
-    downHandler({ clientX: 50, clientY: 50 });
-    upHandler({ clientX: 80, clientY: 50 });
+    downHandler({ clientX: 50, clientY: 50, button: 0 });
+    upHandler({ clientX: 80, clientY: 50, button: 0 });
     expect(h.runtime.spawnBallWithVelocity).not.toHaveBeenCalled();
 
     // A subsequent clean click still shoots (drag state fully reset).
-    downHandler({ clientX: 50, clientY: 50 });
-    upHandler({ clientX: 52, clientY: 51 });
+    downHandler({ clientX: 50, clientY: 50, button: 0 });
+    upHandler({ clientX: 52, clientY: 51, button: 0 });
     expect(h.runtime.spawnBallWithVelocity).toHaveBeenCalledTimes(1);
 
     // A stray pointerup with no preceding pointerdown never shoots.
-    upHandler({ clientX: 52, clientY: 51 });
+    upHandler({ clientX: 52, clientY: 51, button: 0 });
+    expect(h.runtime.spawnBallWithVelocity).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: OrbitControls pans with the RIGHT button on the
+  // same shared canvas, and the browser opens a context menu on right-click —
+  // a stationary secondary-button release must not also fire a ball
+  // (PR #205 review, coderabbit). Only the primary button shoots.
+  it("a stationary right- or middle-button click does not shoot", () => {
+    const h = harness();
+    startReplayPhysics(h.session, h.controls, h.scheduler, h.factories);
+
+    const downHandler = h.canvas.addEventListener.mock.calls.find(
+      (c) => c[0] === "pointerdown",
+    )?.[1] as (e: { clientX: number; clientY: number; button: number }) => void;
+    const upHandler = h.canvas.addEventListener.mock.calls.find(
+      (c) => c[0] === "pointerup",
+    )?.[1] as (e: { clientX: number; clientY: number; button: number }) => void;
+
+    // Right-button click (context menu / pan): stationary, but must not shoot.
+    downHandler({ clientX: 50, clientY: 50, button: 2 });
+    upHandler({ clientX: 50, clientY: 50, button: 2 });
+    // Middle-button click: same rule.
+    downHandler({ clientX: 50, clientY: 50, button: 1 });
+    upHandler({ clientX: 50, clientY: 50, button: 1 });
+    expect(h.runtime.spawnBallWithVelocity).not.toHaveBeenCalled();
+
+    // A following primary click still shoots (no stuck state).
+    downHandler({ clientX: 50, clientY: 50, button: 0 });
+    upHandler({ clientX: 50, clientY: 50, button: 0 });
     expect(h.runtime.spawnBallWithVelocity).toHaveBeenCalledTimes(1);
   });
 

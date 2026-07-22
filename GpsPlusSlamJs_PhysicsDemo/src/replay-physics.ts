@@ -127,19 +127,23 @@ export function startReplayPhysics(
   // canvas is shared with the replay scene's OrbitControls, so the shot fires
   // on pointerUP and only when the pointer stayed within DRAG_THRESHOLD_PX of
   // its pointerdown — a camera-orbit drag must not spawn a ball (PR #198
-  // review, gemini-code-assist).
+  // review, gemini-code-assist). Primary button only: OrbitControls pans with
+  // the right button and the browser owns the context menu, so a stationary
+  // secondary click must not shoot either (PR #205 review, coderabbit);
+  // touch/pen contacts report button 0 and keep working.
   const canvas = scene.renderer.domElement;
   const raycaster = new THREE.Raycaster();
   let pointerIsDown = false;
   let downX = 0;
   let downY = 0;
   const onPointerDown = (e: PointerEvent): void => {
+    if (e.button !== 0) return;
     pointerIsDown = true;
     downX = e.clientX;
     downY = e.clientY;
   };
   const onPointerUp = (e: PointerEvent): void => {
-    if (!pointerIsDown) return;
+    if (e.button !== 0 || !pointerIsDown) return;
     pointerIsDown = false;
     const dx = e.clientX - downX;
     const dy = e.clientY - downY;

@@ -41,6 +41,10 @@ createPhysicsRuntime }` (defaults to the real ones); the seam that keeps the
   when the pointer travelled ≤ `DRAG_THRESHOLD_PX` (5 px) since its
   pointerdown — a camera-orbit drag never spawns a ball. A stray pointerup
   without a preceding pointerdown is ignored.
+- **Primary button only (PR #205 review):** OrbitControls pans with the right
+  button and the browser owns the context menu, so both handlers ignore
+  events with `button !== 0` — a stationary right-/middle-button click never
+  shoots. Touch and pen contacts report `button === 0` and keep working.
 
 ## Examples
 
@@ -61,5 +65,6 @@ dispose();
   the loop (straggler frame is a no-op), frees runtime + occupancy view, and
   removes every listener, idempotently; click-to-shoot fires a ball on pointerup
   (never on bare pointerdown); an orbit drag (displaced pointerup) does not
-  shoot; the dropdowns drive the occupancy view. Factories + scheduler
+  shoot; a stationary right-/middle-button click does not shoot (primary
+  button only); the dropdowns drive the occupancy view. Factories + scheduler
   injected → no WebGL/Rapier.
