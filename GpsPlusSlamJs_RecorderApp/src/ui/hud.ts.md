@@ -4,6 +4,8 @@
 
 Manages the HTML overlay elements: status display, buttons, modals. Provides a callback-based interface for the main module.
 
+Being split per-panel (simplify-loop Area 5): extracted panels ([`hud-tracking-quality-panel.ts`](hud-tracking-quality-panel.ts.md), [`hud-status-rows.ts`](hud-status-rows.ts.md)) are re-exported here so `./ui/hud` stays the single import seam; the shared mutable state (`UICallbacks`, permission/storage flags, cached elements) lives in [`hud-state.ts`](hud-state.ts.md).
+
 ## Public API
 
 | Export                                                                          | Type                                       | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |

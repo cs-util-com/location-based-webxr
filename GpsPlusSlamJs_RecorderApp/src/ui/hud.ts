@@ -9,41 +9,13 @@ import { listFormatter } from 'gps-plus-slam-app-framework/utils/list-formatter'
 import { getRequiredElement } from '../utils/dom-helpers';
 import { DEFAULT_SCENARIO } from './session-browser';
 
-export interface UICallbacks {
-  onOpenFolder: () => Promise<void>;
-  onChooseSaveLocation: () => Promise<void>;
-  onEnterAR: () => Promise<void>;
-  onStartRecording: () => Promise<void>;
-  onStopRecording: () => void | Promise<void>;
-  onMarkRefPoint: () => Promise<void>;
-  onMarkNewRefPoint: () => Promise<void>;
-  onToggleMap: () => void;
-  onMapZoomIn: () => void;
-  onMapZoomOut: () => void;
-  onScenarioChange: (scenarioName: string) => void;
-  onRequestPermissions: () => Promise<void>;
-}
+// The HUD shared mutable state (host callbacks, permission/storage flags,
+// cached required elements) and the UICallbacks contract live in
+// hud-state.ts so extracted panels can share them without importing this
+// module back (simplify-loop Area 5 stage C).
+import { hudState, type UICallbacks } from './hud-state';
 
-let callbacks: UICallbacks | null = null;
-
-// Track permission status for Enter AR button validation
-let permissionsReady = false;
-
-// Track storage status for Enter AR button validation (Issue 1a-fix).
-// (The parallel `folderSelected` flag was removed 2026-07-10, quality-review
-// D-3 — it was write-only production state; only a test read it.)
-let saveLocationSelected = false;
-
-// Cached references to required UI elements, set during initUI()
-let cachedElements: {
-  btnEnterAR: HTMLButtonElement;
-  scenarioSelect: HTMLSelectElement;
-  btnStart: HTMLElement;
-  btnStop: HTMLElement;
-  btnRefPoint: HTMLElement;
-  btnNewRefPoint: HTMLElement;
-  recordingIndicator: HTMLElement;
-} | null = null;
+export type { UICallbacks } from './hud-state';
 
 /**
  * Show the new-scenario section with its fade-in transition and focus the
@@ -133,7 +105,7 @@ function hideNewScenarioSection(scenarioSelect: HTMLSelectElement): void {
  * Initialize UI event listeners
  */
 export function initUI(cbs: UICallbacks): void {
-  callbacks = cbs;
+  hudState.callbacks = cbs;
 
   // Critical setup modal elements - app cannot function without these
   const btnEnterAR = getRequiredElement<HTMLButtonElement>('btn-enter-ar');
@@ -152,7 +124,7 @@ export function initUI(cbs: UICallbacks): void {
   const recordingIndicator = getRequiredElement('recording-indicator');
 
   // Cache required elements for use in other functions
-  cachedElements = {
+  hudState.cachedElements = {
     btnEnterAR,
     scenarioSelect,
     btnStart,
@@ -174,15 +146,15 @@ export function initUI(cbs: UICallbacks): void {
 
   // Wire up events for external backup buttons (optional)
   btnOpenFolder?.addEventListener('click', () => {
-    void callbacks?.onOpenFolder();
+    void hudState.callbacks?.onOpenFolder();
   });
 
   btnChooseSave?.addEventListener('click', () => {
-    void callbacks?.onChooseSaveLocation();
+    void hudState.callbacks?.onChooseSaveLocation();
   });
 
   btnEnterAR.addEventListener('click', () => {
-    void callbacks
+    void hudState.callbacks
       ?.onEnterAR()
       .then(() => {
         hideSetupModal();
@@ -196,39 +168,39 @@ export function initUI(cbs: UICallbacks): void {
   });
 
   btnStart.addEventListener('click', () => {
-    void callbacks?.onStartRecording();
+    void hudState.callbacks?.onStartRecording();
   });
 
   btnStop.addEventListener('click', () => {
-    void callbacks?.onStopRecording();
+    void hudState.callbacks?.onStopRecording();
   });
 
   btnRefPoint.addEventListener('click', () => {
-    void callbacks?.onMarkRefPoint();
+    void hudState.callbacks?.onMarkRefPoint();
   });
 
   btnNewRefPoint.addEventListener('click', () => {
-    void callbacks?.onMarkNewRefPoint();
+    void hudState.callbacks?.onMarkNewRefPoint();
   });
 
   // Optional map button
   btnMap?.addEventListener('click', () => {
-    callbacks?.onToggleMap();
+    hudState.callbacks?.onToggleMap();
   });
 
   // Optional map zoom buttons
   const btnZoomIn = document.getElementById('btn-map-zoom-in');
   const btnZoomOut = document.getElementById('btn-map-zoom-out');
   btnZoomIn?.addEventListener('click', () => {
-    callbacks?.onMapZoomIn();
+    hudState.callbacks?.onMapZoomIn();
   });
   btnZoomOut?.addEventListener('click', () => {
-    callbacks?.onMapZoomOut();
+    hudState.callbacks?.onMapZoomOut();
   });
 
   // Permission request button
   btnRequestPermissions?.addEventListener('click', () => {
-    void callbacks?.onRequestPermissions();
+    void hudState.callbacks?.onRequestPermissions();
   });
 
   // Scenario dropdown logic — show/hide via the shared helpers (quality-review
@@ -242,7 +214,7 @@ export function initUI(cbs: UICallbacks): void {
 
       // Notify main.ts about scenario change
       if (scenarioSelect.value) {
-        callbacks?.onScenarioChange(scenarioSelect.value);
+        hudState.callbacks?.onScenarioChange(scenarioSelect.value);
       }
     }
     validateEnterButton();
@@ -461,15 +433,15 @@ interface ResetUIOptions {
 export function resetUIForNewRecording(options: ResetUIOptions): void {
   // Show setup modal, hide recording controls
   showSetupModal();
-  if (cachedElements) {
-    cachedElements.btnStart.classList.add('hidden');
-    cachedElements.btnStop.classList.add('hidden');
-    cachedElements.btnRefPoint.classList.add('hidden');
-    cachedElements.recordingIndicator.classList.add('hidden');
+  if (hudState.cachedElements) {
+    hudState.cachedElements.btnStart.classList.add('hidden');
+    hudState.cachedElements.btnStop.classList.add('hidden');
+    hudState.cachedElements.btnRefPoint.classList.add('hidden');
+    hudState.cachedElements.recordingIndicator.classList.add('hidden');
   }
 
   // Always clear save location (new session = new ZIP)
-  saveLocationSelected = false;
+  hudState.saveLocationSelected = false;
   const saveStatus = document.getElementById('save-status');
   if (saveStatus) {
     saveStatus.textContent = '';
@@ -499,21 +471,21 @@ export function resetUIForNewRecording(options: ResetUIOptions): void {
 const DEFAULT_REF_POINT_LABEL = '📍 Mark Point';
 
 export function showArReadyControls(): void {
-  if (!cachedElements) {
+  if (!hudState.cachedElements) {
     throw new Error('showArReadyControls called before initUI()');
   }
   // Show Start button (user must explicitly start recording)
-  cachedElements.btnStart.classList.remove('hidden');
+  hudState.cachedElements.btnStart.classList.remove('hidden');
   // Hide Stop button (not recording yet)
-  cachedElements.btnStop.classList.add('hidden');
+  hudState.cachedElements.btnStop.classList.add('hidden');
   // Hide ref point button (only available during recording)
-  cachedElements.btnRefPoint.classList.add('hidden');
+  hudState.cachedElements.btnRefPoint.classList.add('hidden');
   // Hide secondary "add new ref point" button
-  cachedElements.btnNewRefPoint.classList.add('hidden');
+  hudState.cachedElements.btnNewRefPoint.classList.add('hidden');
   // Hide recording indicator (not recording yet)
-  cachedElements.recordingIndicator.classList.add('hidden');
+  hudState.cachedElements.recordingIndicator.classList.add('hidden');
   // Reset ref point button label for next session (Change D)
-  cachedElements.btnRefPoint.textContent = DEFAULT_REF_POINT_LABEL;
+  hudState.cachedElements.btnRefPoint.textContent = DEFAULT_REF_POINT_LABEL;
   // Clear any leftover proximity hint (D3) so it does not linger into the
   // next AR_READY state before recording starts.
   updateRefPointHint(undefined);
@@ -524,10 +496,10 @@ export function showArReadyControls(): void {
  * Called on each GPS update during recording. Pass `undefined` to reset to default.
  */
 export function updateRefPointButtonLabel(refPointName?: string): void {
-  if (!cachedElements) {
+  if (!hudState.cachedElements) {
     return;
   }
-  cachedElements.btnRefPoint.textContent = refPointName
+  hudState.cachedElements.btnRefPoint.textContent = refPointName
     ? `📍 Capture '${refPointName}'`
     : DEFAULT_REF_POINT_LABEL;
 }
@@ -573,10 +545,10 @@ export function updateRefPointHint(nearby?: {
  * See: docs/2026-04-18-ref-point-proximity-button-improvements.md, Part B.
  */
 export function setNewRefPointButtonVisible(visible: boolean): void {
-  if (!cachedElements) {
+  if (!hudState.cachedElements) {
     return;
   }
-  cachedElements.btnNewRefPoint.classList.toggle('hidden', !visible);
+  hudState.cachedElements.btnNewRefPoint.classList.toggle('hidden', !visible);
 }
 
 /**
@@ -586,19 +558,19 @@ export function setNewRefPointButtonVisible(visible: boolean): void {
  * In RECORDING state, the Stop button is visible and Start is hidden.
  */
 export function showRecordingControls(): void {
-  if (!cachedElements) {
+  if (!hudState.cachedElements) {
     throw new Error('showRecordingControls called before initUI()');
   }
-  cachedElements.btnStart.classList.add('hidden');
-  cachedElements.btnStop.classList.remove('hidden');
-  cachedElements.btnRefPoint.classList.remove('hidden');
+  hudState.cachedElements.btnStart.classList.add('hidden');
+  hudState.cachedElements.btnStop.classList.remove('hidden');
+  hudState.cachedElements.btnRefPoint.classList.remove('hidden');
 
   // A prior stop may have left the button in its busy state — ensure each new
   // recording starts with a clean, enabled "Stop" button.
   setStopButtonBusy(false);
 
   // Show recording indicator
-  cachedElements.recordingIndicator.classList.remove('hidden');
+  hudState.cachedElements.recordingIndicator.classList.remove('hidden');
 }
 
 /** Idle and in-progress labels for the recording Stop button. */
@@ -616,10 +588,10 @@ const STOP_BUTTON_BUSY_LABEL = '⏹ Stopping…';
  * restores the idle label and re-enables the button.
  */
 export function setStopButtonBusy(busy: boolean): void {
-  if (!cachedElements) {
+  if (!hudState.cachedElements) {
     throw new Error('setStopButtonBusy called before initUI()');
   }
-  const btnStop = cachedElements.btnStop;
+  const btnStop = hudState.cachedElements.btnStop;
   btnStop.toggleAttribute('disabled', busy);
   btnStop.setAttribute('aria-busy', busy ? 'true' : 'false');
   btnStop.textContent = busy ? STOP_BUTTON_BUSY_LABEL : STOP_BUTTON_IDLE_LABEL;
@@ -647,10 +619,10 @@ export function hideRecordingControls(): void {
  * 3. A scenario must be selected or new scenario name entered
  */
 export function validateEnterButton(): void {
-  if (!cachedElements) {
+  if (!hudState.cachedElements) {
     throw new Error('validateEnterButton called before initUI()');
   }
-  const { btnEnterAR, scenarioSelect } = cachedElements;
+  const { btnEnterAR, scenarioSelect } = hudState.cachedElements;
   // newScenarioName is optional - only shown when creating new scenario
   const newScenarioName = document.getElementById(
     'new-scenario-name'
@@ -666,9 +638,9 @@ export function validateEnterButton(): void {
   // load from OPFS without a folder. The folder is an optional import/recovery
   // step (see setFolderImportExpanded + the 2026-06-05 recorder setup-UX
   // decision D5), so only the save location, permissions, and a scenario gate.
-  if (!saveLocationSelected) {
+  if (!hudState.saveLocationSelected) {
     hintText = 'Choose a save location for this recording';
-  } else if (!permissionsReady) {
+  } else if (!hudState.permissionsReady) {
     hintText = 'Grant required permissions to continue';
   } else if (scenarioSelect.value && scenarioSelect.value !== '__new__') {
     valid = true;
@@ -700,10 +672,10 @@ export function validateEnterButton(): void {
  * Populate the scenario dropdown with existing scenarios
  */
 export function populateScenarios(scenarios: string[]): void {
-  if (!cachedElements) {
+  if (!hudState.cachedElements) {
     throw new Error('populateScenarios called before initUI()');
   }
-  const { scenarioSelect } = cachedElements;
+  const { scenarioSelect } = hudState.cachedElements;
   // sessionNotes is optional - graceful degradation allowed
   const sessionNotes = document.getElementById(
     'session-notes'
@@ -736,7 +708,7 @@ export function populateScenarios(scenarios: string[]): void {
     scenarioSelect.value = scenarios[0]!;
     // Programmatic value change doesn't fire 'change' event, so we need to
     // manually notify main.ts to sync currentScenarioName
-    callbacks?.onScenarioChange(scenarios[0]!);
+    hudState.callbacks?.onScenarioChange(scenarios[0]!);
     // Hide new scenario section since an existing scenario is selected —
     // through the shared helper (quality-review D-5: this copy had drifted
     // and lost the fade-out transition handling).
@@ -759,7 +731,7 @@ export function populateScenarios(scenarios: string[]): void {
  */
 export function updatePermissionStatus(result: PermissionCheckResult): void {
   // Update internal state
-  permissionsReady = result.allMandatoryReady;
+  hudState.permissionsReady = result.allMandatoryReady;
 
   // Update File Storage status (shown first per user feedback Issue #1)
   updateSinglePermissionStatus(
@@ -937,12 +909,12 @@ function updateSinglePermissionStatus(
 }
 
 /**
- * Set the permissionsReady flag directly.
+ * Set the hudState.permissionsReady flag directly.
  * Used for testing to simulate permission states.
  * @internal
  */
 export function setPermissionsReady(ready: boolean): void {
-  permissionsReady = ready;
+  hudState.permissionsReady = ready;
 }
 
 /**
@@ -1068,21 +1040,21 @@ export function setFolderImportProgress(
 }
 
 /**
- * Set the saveLocationSelected flag.
+ * Set the hudState.saveLocationSelected flag.
  * Called after user successfully chooses a save location.
  * @internal
  */
 export function setSaveLocationSelected(selected: boolean): void {
-  saveLocationSelected = selected;
+  hudState.saveLocationSelected = selected;
 }
 
 /**
- * Get the current saveLocationSelected state.
+ * Get the current hudState.saveLocationSelected state.
  * Used for testing.
  * @internal
  */
 export function getSaveLocationSelected(): boolean {
-  return saveLocationSelected;
+  return hudState.saveLocationSelected;
 }
 
 // --- Help Section (Issue 2 - User Feedback 2026-01-27) ---
