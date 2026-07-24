@@ -1229,10 +1229,13 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
     // The resetWebXRState function must call setAnimationLoop(null),
-    // renderer.dispose(), and remove the domElement before nulling.
+    // renderer.dispose(), and remove the domElement before dropping the
+    // reference. Stage 3 of the ArSession refactor replaced the field-by-field
+    // "renderer = null" reset with the wholesale handle replacement, so the
+    // slice now ends at that replacement line — assertions unchanged.
     const resetBlock = source.slice(
       source.indexOf('function resetWebXRState'),
-      source.indexOf('renderer = null;')
+      source.indexOf('activeSession = defaultArSessionHandle();')
     );
     expect(resetBlock).toContain('setAnimationLoop(null)');
     expect(resetBlock).toContain('renderer.dispose()');
@@ -1312,11 +1315,13 @@ describe('DOM hardcoding audit regressions', () => {
     );
 
     // Same Stage 0 handle move as above — gates unchanged, spelling updated.
+    // (Stage 3 moved the CSS3D manager onto the handle's scene-graph cluster,
+    // read via a `css3d` destructure in onXRFrame.)
     expect(source).toContain(
       'if (activeSession.crashIsolation.enableCameraTextureAcquisition)'
     );
     expect(source).toContain(
-      'if (activeSession.crashIsolation.enableCss3dRenderer && css3dManager)'
+      'if (activeSession.crashIsolation.enableCss3dRenderer && css3d)'
     );
   });
 });

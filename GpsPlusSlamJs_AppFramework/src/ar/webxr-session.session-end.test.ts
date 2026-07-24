@@ -204,7 +204,7 @@ describe('session-end hook (F3)', () => {
    * surface-reduction step 3) only ever saw the getter's null default — this
    * pins the actual lifecycle observably: initAR creates the overlay when
    * `enableCss3dRenderer` is on, and the session-end teardown
-   * (resetWebXRState → css3dManager.dispose()) removes it from the DOM.
+   * (resetWebXRState → sceneGraph.css3d.dispose()) removes it from the DOM.
    */
   it('creates the CSS3D overlay on init and removes it on session end', async () => {
     await initAR(container, {

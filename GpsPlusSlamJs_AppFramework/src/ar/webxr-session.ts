@@ -257,11 +257,6 @@ export function extractPoseFromViewer(
 
 // ------------------------- (end test-only exports) -------------------------
 
-let renderer: THREE.WebGLRenderer | null = null;
-let scene: THREE.Scene | null = null;
-let camera: THREE.PerspectiveCamera | null = null;
-let xrSession: XRSession | null = null;
-
 /**
  * Default longer-edge resolution (px) for the camera-frame blit the QR / CV
  * detector sees. The on-device capture-resolution sweep (2026-06-17, via the
@@ -279,15 +274,59 @@ let xrSession: XRSession | null = null;
 export const DEFAULT_CAMERA_FRAME_CAPTURE_SIZE = 1024;
 
 /**
- * Per-session state owned by one AR session — Stages 0–1 of the staged
+ * Per-session state owned by one AR session — Stages 0–3 of the staged
  * ArSession refactor (see `GpsPlusSlamJs_Docs/docs/2026-07-18-2045-webxr-session-arsession-handle-refactor-plan.md`).
  * A fresh handle is created by `initAR()` (parameterized with this session's
  * crash-isolation options and callbacks struct) and by `resetWebXRState()`
  * (so pre-init and post-teardown reads see well-defined defaults) — replacing
- * a field-by-field reset for everything in here. Later stages migrate the
- * remaining module-level clusters into this handle.
+ * a field-by-field reset for everything in here. Since Stage 3 EVERY
+ * per-session cluster lives here: `activeSession` is the module's single
+ * remaining mutable, so new session state added to this interface is reset
+ * (and, where needed, disposed) by the wholesale handle replacement — the
+ * "add a field, forget the reset" leak class is structurally gone.
  */
 interface ArSessionHandle {
+  /**
+   * The live Three.js scene graph + renderer (Stage 3). All null until
+   * `initAR()` builds them (renderer first, then the hierarchy from
+   * `createSceneHierarchy()`), and null again after teardown — the public
+   * getters (`getScene`/`getCamera`/`getArWorldGroup`) surface exactly that
+   * null-before-init / null-after-teardown contract.
+   */
+  sceneGraph: {
+    renderer: THREE.WebGLRenderer | null;
+    scene: THREE.Scene | null;
+    /**
+     * Camera INSIDE the arpose node — its local transform is the raw WebXR
+     * pose during recording (see `createSceneHierarchy()`).
+     */
+    camera: THREE.PerspectiveCamera | null;
+    /**
+     * The AR world group — parent of camera and all AR-tracked content.
+     * This group's transform = the alignment matrix from GpsPlusSlamJs
+     * (see {@link applyAlignmentMatrix}).
+     */
+    arWorldGroup: THREE.Group | null;
+    /**
+     * CSS3D renderer manager for DOM-based 3D objects (e.g. the Leaflet
+     * map) rendered alongside WebGL. Created by `initAR()` when the
+     * `enableCss3dRenderer` isolation flag is on.
+     */
+    css3d: Css3dRendererManager | null;
+  };
+  /** The live XRSession between `initAR()` and teardown (Stage 3). */
+  xrSession: XRSession | null;
+  /**
+   * Latest raw AR pose from WebXR, updated every frame (Stage 3). Read by
+   * the GPS callback via {@link getCurrentArPose} to create paired GPS+AR
+   * events; nulled while tracking is lost so stale poses never pair.
+   */
+  latestArPose: ARPose | null;
+  /**
+   * Per-frame host callback (initAR `callbacks.onFrame`), invoked every XR
+   * frame after pose updates but before render (Stage 3).
+   */
+  onFrame: (() => void) | null;
   /**
    * Periodic JPEG image capture (Stage 1). Callback slots arrive via initAR
    * `callbacks.imageCapture`; `manager`/`blit` are created by
@@ -452,11 +491,25 @@ function createTrackingCluster(
   };
 }
 
+function createSceneGraphCluster(): ArSessionHandle['sceneGraph'] {
+  return {
+    renderer: null,
+    scene: null,
+    camera: null,
+    arWorldGroup: null,
+    css3d: null,
+  };
+}
+
 function createArSessionHandle(
   crashIsolation: ArCrashIsolationOptions,
   callbacks: ArSessionCallbacks
 ): ArSessionHandle {
   return {
+    sceneGraph: createSceneGraphCluster(),
+    xrSession: null,
+    latestArPose: null,
+    onFrame: orNull(callbacks.onFrame),
     imageCapture: createImageCaptureCluster(callbacks.imageCapture),
     depth: createDepthCluster(callbacks.depth),
     cameraFrame: createCameraFrameCluster(callbacks.cameraFrame),
@@ -479,9 +532,12 @@ function defaultArSessionHandle(): ArSessionHandle {
 }
 
 /**
- * The live session handle. Always non-null in Stages 0–1 — teardown REPLACES
- * it with a fresh default handle, so pre-init/post-teardown reads need no null
- * checks (the plan's Stage 3 makes it nullable once every cluster lives here).
+ * The live session handle — the module's ONLY mutable since Stage 3. Always
+ * non-null: teardown REPLACES it with a fresh default handle, so
+ * pre-init/post-teardown reads need no null checks. (The plan sketched making
+ * it nullable at Stage 3; the always-non-null default-handle pattern proved
+ * strictly simpler — same reset guarantee, zero null-guard churn at the ~40
+ * read sites.)
  */
 let activeSession: ArSessionHandle = defaultArSessionHandle();
 
@@ -490,7 +546,8 @@ let activeSession: ArSessionHandle = defaultArSessionHandle();
  * @internal
  */
 export function resetWebXRState(): void {
-  // Stop render loop and dispose GPU resources before nulling references
+  // Stop render loop and dispose GPU resources before dropping references
+  const { renderer } = activeSession.sceneGraph;
   if (renderer) {
     renderer.setAnimationLoop(null);
     if (renderer.domElement.parentElement) {
@@ -498,12 +555,6 @@ export function resetWebXRState(): void {
     }
     renderer.dispose();
   }
-  renderer = null;
-  scene = null;
-  camera = null;
-  xrSession = null;
-  arWorldGroup = null;
-  latestArPose = null;
   clearFrameUpdates();
   clearXrFrameUpdates();
   // Flush session-scoped teardown (e.g. the store subscription opened by
@@ -513,43 +564,33 @@ export function resetWebXRState(): void {
   // through, so callers never have to dispose those by hand.
   runSessionDisposers();
   // Tear down the outgoing handle's live subscription so no phase listener
-  // outlives its store, then dispose its GPU-backed blit targets, then
-  // replace the handle wholesale — one line resets every field on it (capture
-  // + tracking clusters incl. the injected quality analyzer, session-end
-  // pair, crash-isolation options, frame diagnostics), so new handle state
-  // can never be forgotten here. Hosts re-pass their callbacks on the next
-  // initAR (they own e.g. the analyzer Worker).
+  // outlives its store, then dispose its GPU-backed blits + the CSS3D
+  // overlay, then replace the handle wholesale — one line resets every field
+  // on it (scene graph, XR session, capture + tracking clusters incl. the
+  // injected quality analyzer, callbacks, session-end pair, crash-isolation
+  // options, frame diagnostics), so new handle state can never be forgotten
+  // here. Hosts re-pass their callbacks on the next initAR (they own e.g.
+  // the analyzer Worker). Note this never calls XRSession.end() — that is
+  // endARSession()'s one unique step.
   activeSession.tracking.phaseUnsubscribe?.();
   cleanupBlitResources();
   activeSession.depth.rgbBlit?.dispose();
   activeSession.cameraFrame.blit?.dispose();
+  activeSession.sceneGraph.css3d?.dispose();
   activeSession = defaultArSessionHandle();
-  onFrameCallback = null;
-  if (css3dManager) {
-    css3dManager.dispose();
-    css3dManager = null;
-  }
 }
 
-/**
- * The AR world group - parent of camera and all AR-tracked content.
- * This group's transform = the alignment matrix from GpsPlusSlamJs.
- * When the library computes a new alignment, apply it to this group.
- */
-let arWorldGroup: THREE.Group | null = null;
-
-// NOTE: the live session keeps NO module reference to the arpose node (the
+// The scene graph (renderer, scene, camera, arWorldGroup, CSS3D manager),
+// the XRSession, and the latest raw AR pose live on
+// `activeSession.sceneGraph` / `.xrSession` / `.latestArPose` (Stage 3) —
+// see the ArSessionHandle field docs.
+//
+// NOTE: the live session keeps NO reference to the arpose node (the
 // intermediate Object3D between basisChangeNode and the camera). It stays at
 // identity during recording and lives purely in the scene graph built by
 // createSceneHierarchy(); its only reader was the replay-injection getter
 // getArPose(), deleted by surface-reduction step 2 — replay now uses its own
 // arpose from replay-scene's getReplayState().
-
-/**
- * Stores the latest raw AR pose from WebXR (updated every frame).
- * This is read by the GPS callback to create paired GPS+AR events.
- */
-let latestArPose: ARPose | null = null;
 
 // The image-capture cluster (manager, blit, callback slots incl. the injected
 // quality analyzer) lives on `activeSession.imageCapture` (Stage 1) — see the
@@ -579,17 +620,9 @@ export interface SessionEndInfo {
 // The depth-sampling cluster (sampler, rgb blit, callbacks) lives on
 // `activeSession.depth` (Stage 1) — see the ArSessionHandle field docs.
 
-/**
- * Per-frame callback for custom updates (e.g., map overlay position).
- * Called every XR frame after pose updates but before render.
- */
-let onFrameCallback: (() => void) | null = null;
-
-/**
- * CSS3D renderer manager for rendering DOM-based 3D objects (e.g., Leaflet map)
- * alongside the WebGL render. Created in initAR(), disposed in resetWebXRState().
- */
-let css3dManager: Css3dRendererManager | null = null;
+// The per-frame host callback lives on `activeSession.onFrame` (Stage 3);
+// the CSS3D renderer manager on `activeSession.sceneGraph.css3d` — see the
+// ArSessionHandle field docs.
 
 // The camera-frame CV cluster (source, blit, capture size, callback) lives on
 // `activeSession.cameraFrame` (Stage 1). SINGLE consumer by design: one
@@ -630,6 +663,7 @@ function cleanupBlitResources(): void {
  */
 function acquireDepthRgbLookup(): RgbLookup | null {
   const { latestCameraTexture, depth } = activeSession;
+  const { renderer } = activeSession.sceneGraph;
   if (!renderer || !latestCameraTexture) {
     return null;
   }
@@ -649,6 +683,7 @@ function acquireDepthRgbLookup(): RgbLookup | null {
  */
 function acquireCameraFrameRgba(): RgbaImage | null {
   const { latestCameraTexture, cameraFrame } = activeSession;
+  const { renderer } = activeSession.sceneGraph;
   if (!renderer || !latestCameraTexture) {
     return null;
   }
@@ -682,7 +717,7 @@ function acquireCameraFrameRgba(): RgbaImage | null {
  * @returns The latest AR pose, or null if no pose available yet
  */
 export function getCurrentArPose(): ARPose | null {
-  return latestArPose;
+  return activeSession.latestArPose;
 }
 
 /**
@@ -934,9 +969,10 @@ export function createSceneHierarchy(): {
  * allowed half-wired states like a tracking store without its callbacks).
  *
  * Everything here is INIT-TIME wiring: initAR unpacks the struct once into
- * the module-level slots the frame path reads directly (no per-frame
- * indirection), and `resetWebXRState()` clears every slot at session end —
- * re-pass the struct with each `initAR`. The single mid-session mutation the
+ * the session handle's slots the frame path reads directly (one monomorphic
+ * property access, no per-frame indirection), and `resetWebXRState()`
+ * replaces the handle at session end — re-pass the struct with each
+ * `initAR`. The single mid-session mutation the
  * apps need (the recorder swapping its Redux store per recording) has its own
  * narrow function, {@link rebindTrackingStore}.
  */
@@ -1018,8 +1054,8 @@ export interface ArSessionCallbacks {
  * @param sessionFeatures - Opt-in standard WebXR features (e.g.
  *   `requestHitTest`) forwarded to the session negotiation.
  * @param callbacks - Host callbacks for this session (see
- *   {@link ArSessionCallbacks}); unpacked once into module slots that
- *   `resetWebXRState()` clears at session end.
+ *   {@link ArSessionCallbacks}); unpacked once into the session handle's
+ *   slots, which `resetWebXRState()` replaces wholesale at session end.
  */
 export async function initAR(
   container: HTMLElement,
@@ -1035,28 +1071,24 @@ export async function initAR(
   // successful initAR() and a matching endARSession()/resetWebXRState(). If
   // either is still set, calling initAR() again would orphan the previous
   // renderer's canvas in the DOM and leak its GPU resources while silently
-  // overwriting the module-level references. Surface this as a programming
-  // error so the host tears down the existing session explicitly first.
-  if (renderer || xrSession) {
+  // replacing the live handle. Surface this as a programming error so the
+  // host tears down the existing session explicitly first.
+  if (activeSession.sceneGraph.renderer || activeSession.xrSession) {
     throw new Error(
       'AR session already initialized — call endARSession() before initAR() again'
     );
   }
 
-  // The one still-module-level callback slot (per-frame tick) —
-  // resetWebXRState() cleared it at the previous session end, and assigning
-  // unconditionally (absent ⇒ null) keeps this init deterministic even after
-  // an aborted initAR.
-  onFrameCallback = callbacks.onFrame ?? null;
-
   // Fresh per-session handle carrying this session's validated crash-isolation
-  // options, the capture/tracking-cluster callback slots and the session-end
-  // callback (Stages 0–2). No per-frame indirection beyond one monomorphic
-  // property access: onXRFrame reads the handle fields directly.
+  // options, every callback slot (incl. the per-frame tick), and the
+  // scene-graph/session fields populated below (Stages 0–3). No per-frame
+  // indirection beyond one monomorphic property access: onXRFrame reads the
+  // handle fields directly.
   activeSession = createArSessionHandle(
     validateArCrashIsolationOptions(isolationOptions),
     callbacks
   );
+  const { sceneGraph } = activeSession;
 
   // G-7 (2026-07-10 quality review): apply the Chromium camera-access
   // tab-crash workaround here so every consumer gets it by default —
@@ -1071,10 +1103,11 @@ export async function initAR(
   }
 
   // Create Three.js renderer
-  renderer = new THREE.WebGLRenderer({
+  const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: true,
   });
+  sceneGraph.renderer = renderer;
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
@@ -1085,7 +1118,7 @@ export async function initAR(
   // Create CSS3D renderer overlay (Approach E) — child of dom overlay root
   // so it's visible in WebXR's dom-overlay compositing.
   if (activeSession.crashIsolation.enableCss3dRenderer) {
-    css3dManager = createCss3dRendererManager(
+    sceneGraph.css3d = createCss3dRendererManager(
       container,
       window.innerWidth,
       window.innerHeight
@@ -1093,11 +1126,11 @@ export async function initAR(
   }
 
   // Create scene with proper hierarchy. The arpose node stays in the graph
-  // only (no module ref) — see the NOTE next to the module state above.
+  // only (no handle ref) — see the NOTE next to the handle state above.
   const hierarchy = createSceneHierarchy();
-  scene = hierarchy.scene;
-  arWorldGroup = hierarchy.arWorldGroup;
-  camera = hierarchy.camera;
+  sceneGraph.scene = hierarchy.scene;
+  sceneGraph.arWorldGroup = hierarchy.arWorldGroup;
+  sceneGraph.camera = hierarchy.camera;
 
   // Request AR session with validated options
   const sessionOptions = buildSessionOptions(
@@ -1106,7 +1139,11 @@ export async function initAR(
     sessionFeatures
   );
 
-  xrSession = await navigator.xr.requestSession('immersive-ar', sessionOptions);
+  const xrSession = await navigator.xr.requestSession(
+    'immersive-ar',
+    sessionOptions
+  );
+  activeSession.xrSession = xrSession;
 
   // Handle session end — BOTH trigger paths funnel through this listener:
   // the system-initiated end (Android back gesture — fires 'end' directly)
@@ -1245,7 +1282,7 @@ function subscribeToTrackingPhase(
       log.warn('Tracking lost');
       // Drop GPS events during tracking loss by nulling the pose.
       // The recording coordinator's null guard will skip GPS events.
-      latestArPose = null;
+      activeSession.latestArPose = null;
       activeSession.tracking.onLost?.();
       return;
     }
@@ -1299,6 +1336,7 @@ function updateTrackingState(arPose: ARPose | null): void {
  * Called each XR frame
  */
 function onXRFrame(time: number, frame: XRFrame | undefined): void {
+  const { renderer, scene, camera } = activeSession.sceneGraph;
   if (!renderer || !scene || !camera || !frame) {
     return;
   }
@@ -1333,6 +1371,7 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // contract. We only run these when a session is live (it always is inside
   // `onXRFrame`, but the guard keeps the types honest and avoids firing during
   // teardown races).
+  const { xrSession } = activeSession;
   if (xrSession) {
     runXrFrameUpdates({
       frame,
@@ -1345,7 +1384,7 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
 
   if (arPose) {
     // Store the latest pose for getCurrentArPose()
-    latestArPose = arPose;
+    activeSession.latestArPose = arPose;
   }
 
   // Extract camera texture for blit capture (camera-access feature).
@@ -1434,19 +1473,21 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   }
 
   // Call per-frame callback (e.g., for map overlay position updates)
-  if (onFrameCallback) {
+  const { onFrame } = activeSession;
+  if (onFrame) {
     try {
-      onFrameCallback();
+      onFrame();
     } catch (error) {
-      log.error('Error in onFrameCallback:', error);
+      log.error('Error in onFrame callback:', error);
     }
   }
 
   renderer.render(scene, camera);
 
   // Render CSS3D overlay (DOM-based 3D objects like Leaflet map)
-  if (activeSession.crashIsolation.enableCss3dRenderer && css3dManager) {
-    css3dManager.render(scene, camera);
+  const { css3d } = activeSession.sceneGraph;
+  if (activeSession.crashIsolation.enableCss3dRenderer && css3d) {
+    css3d.render(scene, camera);
   }
 }
 
@@ -1522,7 +1563,7 @@ export function getDepthInfoFromFrame(
  * Get the current Three.js scene (for adding objects like map)
  */
 export function getScene(): THREE.Scene | null {
-  return scene;
+  return activeSession.sceneGraph.scene;
 }
 
 /**
@@ -1530,14 +1571,14 @@ export function getScene(): THREE.Scene | null {
  * Content added here will be transformed by the alignment matrix.
  */
 export function getArWorldGroup(): THREE.Group | null {
-  return arWorldGroup;
+  return activeSession.sceneGraph.arWorldGroup;
 }
 
 /**
  * Get the current camera
  */
 export function getCamera(): THREE.PerspectiveCamera | null {
-  return camera;
+  return activeSession.sceneGraph.camera;
 }
 
 /**
@@ -1564,6 +1605,7 @@ export function getCamera(): THREE.PerspectiveCamera | null {
  * @param matrix - 16-element column-major matrix (gl-matrix mat4 format)
  */
 export function applyAlignmentMatrix(matrix: readonly number[]): void {
+  const { arWorldGroup } = activeSession.sceneGraph;
   if (!arWorldGroup) {
     log.warn('Cannot apply alignment - arWorldGroup not initialized');
     return;
@@ -1643,7 +1685,7 @@ function handleSessionEnded(): void {
  * End the current XR session and clean up all resources.
  *
  * Stops the animation loop, ends the XR session, then delegates the full
- * teardown to {@link resetWebXRState} so every module-level reference is
+ * teardown to {@link resetWebXRState} so every session reference is
  * cleared (renderer/scene/camera, image-capture, depth, the tracking-phase
  * subscription, the frame-update registry, diagnostics, blit resources).
  * This is the production cleanup path — call it when the AR experience is
@@ -1652,9 +1694,7 @@ function handleSessionEnded(): void {
 export async function endARSession(): Promise<void> {
   // Stop the render loop first so onXRFrame stops firing before we end the
   // session and tear everything down.
-  if (renderer) {
-    renderer.setAnimationLoop(null);
-  }
+  activeSession.sceneGraph.renderer?.setAnimationLoop(null);
 
   // End the actual XR session and await it. resetWebXRState() in the
   // `finally` below only nulls the `xrSession` reference — it never calls
@@ -1669,6 +1709,7 @@ export async function endARSession(): Promise<void> {
   // session until a page reload. Running the teardown unconditionally
   // guarantees the module always returns to a clean, re-initialisable state.
   try {
+    const { xrSession } = activeSession;
     if (xrSession) {
       // Mark this end as app-initiated for the shared 'end' listener —
       // end() fires the same 'end' event a system-initiated end does, and
@@ -1678,13 +1719,13 @@ export async function endARSession(): Promise<void> {
     }
   } finally {
     // Delegate the rest of the teardown to resetWebXRState() so we never leak
-    // any module-level reference. Re-implementing a subset here (the previous
+    // any session reference. Re-implementing a subset here (the previous
     // approach) silently dropped imageCaptureManager, depthSampler, the
     // tracking-phase subscription, the frame-update registry, the scene-graph
     // references and the diagnostic counters — all of which resetWebXRState()
-    // clears. Keeping a single source of truth for cleanup prevents new module
-    // state from leaking between sessions when it is added to resetWebXRState()
-    // but forgotten here.
+    // clears via the wholesale handle replacement. Keeping a single source of
+    // truth for cleanup prevents new session state from leaking between
+    // sessions when it is added to the handle but this path is forgotten.
     resetWebXRState();
   }
 }
@@ -1700,6 +1741,7 @@ export async function endARSession(): Promise<void> {
  *   — see `2026-06-12-1130-payload-rebuild-field-drop-audit.md` (F3).
  */
 export function startImageCapture(config?: Partial<ImageCaptureConfig>): void {
+  const { renderer } = activeSession.sceneGraph;
   if (!renderer) {
     log.warn('Cannot start image capture - renderer not initialized');
     return;
