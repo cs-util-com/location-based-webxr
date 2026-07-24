@@ -75,12 +75,22 @@ test.describe("Wayfinding HUD demo — rendered pixels", () => {
       width: box.width * 0.5,
       height: box.height * 0.5,
     };
-    const screenshot = await page.screenshot({ clip });
-
-    const hudPixels = await countHudTintPixels(page, screenshot);
     // The ring annulus alone covers several hundred pixels at any desktop
-    // viewport; ~0 means the indicator exists in the graph but is not
-    // rendered (the camera-not-in-scene class of bug).
-    expect(hudPixels).toBeGreaterThan(100);
+    // viewport; a persistent ~0 means the indicator exists in the graph but
+    // is not rendered (the camera-not-in-scene class of bug). POLLED, not
+    // one-shot: the status line derives from the scene graph and updates
+    // ahead of the first painted WebGL frame, so under full-cascade CPU
+    // contention a single screenshot can race the paint and read 0 (flaked
+    // twice on 2026-07-24). Polling keeps the spec's purpose — a ring that
+    // never renders still fails after the timeout.
+    await expect
+      .poll(
+        async () => {
+          const screenshot = await page.screenshot({ clip });
+          return countHudTintPixels(page, screenshot);
+        },
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(100);
   });
 });
