@@ -20,6 +20,7 @@
 import * as THREE from 'three';
 import { createLogger } from '../utils/logger';
 import { applyChromiumProjectionLayerWorkaround } from './chromium-camera-access-workaround';
+import { probeImmersiveArSupport } from './webxr-support-probe';
 import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
   ImageCaptureManager,
@@ -832,17 +833,15 @@ export function buildSessionOptions(
 }
 
 /**
- * Check if WebXR immersive-ar is supported
+ * Check if WebXR immersive-ar is supported.
+ *
+ * Delegates to the timeout-guarded {@link probeImmersiveArSupport} — a
+ * wedged OS XR runtime can make the underlying `isSessionSupported`
+ * promise never settle (2026-07-24), and this check must degrade to
+ * `false` instead of hanging the caller's boot path.
  */
 export async function isWebXRSupported(): Promise<boolean> {
-  if (!navigator.xr) {
-    return false;
-  }
-  try {
-    return await navigator.xr.isSessionSupported('immersive-ar');
-  } catch {
-    return false;
-  }
+  return probeImmersiveArSupport();
 }
 
 /**

@@ -195,6 +195,15 @@ export {
   type SessionFeatureOptions,
 } from './webxr-session.js';
 
+// --- webxr-support-probe ---
+export {
+  probeImmersiveArSupport,
+  probeImmersiveArSupportOutcome,
+  WEBXR_SUPPORT_PROBE_TIMEOUT_MS,
+  type ImmersiveArProbeOutcome,
+  type XrSystemLike,
+} from './webxr-support-probe.js';
+
 // --- webxr-nue-basis ---
 export { WEBXR_TO_NUE } from './webxr-nue-basis.js';
 

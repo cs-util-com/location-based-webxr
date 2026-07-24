@@ -8,6 +8,8 @@
  * browser supports an `immersive-ar` WebXR session.
  */
 
+import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar/webxr-support-probe";
+
 /** The subset of `XRSystem` we probe (kept structural so tests need no polyfill). */
 export interface XrLike {
   isSessionSupported?(mode: string): Promise<boolean>;
@@ -15,20 +17,15 @@ export interface XrLike {
 
 /**
  * Resolve to `true` when the browser can start an `immersive-ar` WebXR session.
- * Defensive: a missing `navigator.xr`, a missing `isSessionSupported`, or a
- * throwing/rejecting probe all resolve to `false` (offer replay, never crash).
+ * Delegates to the framework's timeout-guarded probe: a missing
+ * `navigator.xr`, a missing `isSessionSupported`, a throwing/rejecting probe,
+ * AND a probe that never answers (wedged OS XR runtime, 2026-07-24) all
+ * resolve to `false` (offer replay, never crash, never hang).
  */
 export async function detectArSupport(
   xr: XrLike | undefined = (navigator as Navigator & { xr?: XrLike }).xr,
 ): Promise<boolean> {
-  if (!xr || typeof xr.isSessionSupported !== "function") {
-    return false;
-  }
-  try {
-    return await xr.isSessionSupported("immersive-ar");
-  } catch {
-    return false;
-  }
+  return probeImmersiveArSupport({ xr });
 }
 
 /**

@@ -9,6 +9,7 @@
  */
 
 import { createLogger } from '../utils/logger';
+import { probeImmersiveArSupportOutcome } from '../ar/webxr-support-probe';
 
 const log = createLogger('PermissionChecker');
 
@@ -150,24 +151,29 @@ export async function checkWebXRSupport(): Promise<PermissionStatus> {
     };
   }
 
-  try {
-    const supported = await navigator.xr.isSessionSupported('immersive-ar');
-    if (!supported) {
+  // Timeout-guarded probe (2026-07-24): a wedged OS XR runtime can make
+  // isSessionSupported('immersive-ar') never settle, and this check sits on
+  // every consumer's boot path — an unanswered probe must degrade to
+  // "not supported" (→ replay/desktop fallback UX), never hang the app.
+  const outcome = await probeImmersiveArSupportOutcome();
+  switch (outcome) {
+    case 'supported':
+      // WebXR doesn't have a separate permission - support implies availability
+      return { supported: true, granted: true };
+    case 'unsupported':
       return {
         supported: false,
         granted: null,
         error: 'AR mode not supported. Ensure you have ARCore/ARKit installed.',
       };
-    }
-    // WebXR doesn't have a separate permission - support implies availability
-    return { supported: true, granted: true };
-  } catch (err) {
-    log.error('WebXR support check failed:', err);
-    return {
-      supported: false,
-      granted: null,
-      error: 'Failed to check AR support. Please refresh and try again.',
-    };
+    default:
+      // 'error' and 'timeout': the answer is unknown, not a confirmed
+      // missing-ARCore — keep the transient "try again" framing.
+      return {
+        supported: false,
+        granted: null,
+        error: 'Failed to check AR support. Please refresh and try again.',
+      };
   }
 }
 

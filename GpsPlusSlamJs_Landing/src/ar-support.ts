@@ -21,10 +21,19 @@ export const CTA_CLAIM_ELEMENT_ID = "cta-device-claim";
 export const CTA_CLAIM_CAPABLE = "The demos below run on your phone right now";
 
 /**
+ * How long to wait for `isSessionSupported` before keeping the honest static
+ * claim. A wedged OS XR runtime can make the promise NEVER settle
+ * (2026-07-24 — it hung the CTA upgrade and the desktop QR-handoff e2e);
+ * healthy browsers answer in milliseconds.
+ */
+export const AR_SUPPORT_PROBE_TIMEOUT_MS = 3000;
+
+/**
  * True iff the browser reports `immersive-ar` WebXR support.
  * `navigator.xr` is untrusted input: absent (iOS Safari, desktop
- * Firefox), malformed, or throwing (SecurityError in cross-origin
- * frames) all resolve to `false` — never a rejection.
+ * Firefox), malformed, throwing (SecurityError in cross-origin
+ * frames), or never answering (wedged OS XR runtime) all resolve to
+ * `false` — never a rejection, never a hang.
  */
 export async function detectImmersiveArSupport(
   xr: XrSystemLike | null | undefined,
@@ -32,10 +41,18 @@ export async function detectImmersiveArSupport(
   if (!xr || typeof xr.isSessionSupported !== "function") {
     return false;
   }
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return (await xr.isSessionSupported("immersive-ar")) === true;
+    return await Promise.race([
+      xr.isSessionSupported("immersive-ar").then((v) => v === true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), AR_SUPPORT_PROBE_TIMEOUT_MS);
+      }),
+    ]);
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

@@ -7,7 +7,7 @@ single signal: whether the browser supports an `immersive-ar` WebXR session.
 
 ## Public API
 
-- **`detectArSupport(xr?): Promise<boolean>`** — `true` iff `xr.isSessionSupported('immersive-ar')`
+- **`detectArSupport(xr?): Promise<boolean>`** — `true` iff the framework's timeout-guarded `probeImmersiveArSupport` confirms `immersive-ar` support
   resolves truthy. `xr` defaults to `navigator.xr`; injectable for tests.
 - **`XrLike`** — the structural subset of `XRSystem` probed (`isSessionSupported?`).
 - **`applyModeEntry(arSupported, { startArButton, fileRow }): void`** — sets the

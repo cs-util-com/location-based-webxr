@@ -14,7 +14,7 @@ claim, honest under no-JS.
 - `detectImmersiveArSupport(xr) → Promise<boolean>` — true iff
   `xr.isSessionSupported("immersive-ar")` resolves true. `xr` is the
   injectable `navigator.xr` slice (`XrSystemLike`); absent/malformed/
-  throwing input resolves `false`, never rejects.
+  throwing input resolves `false`, never rejects — and a never-settling `isSessionSupported` (wedged OS XR runtime, 2026-07-24) resolves `false` after `AR_SUPPORT_PROBE_TIMEOUT_MS` (3 s) instead of hanging the CTA upgrade + QR handoff.
 - `applyCtaDeviceClaim(doc, supported)` — swaps the text of
   `#cta-device-claim` to `CTA_CLAIM_CAPABLE` when supported; no-op
   otherwise (missing element degrades silently).
