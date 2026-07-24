@@ -22,6 +22,7 @@ import {
   type Middleware,
   type Reducer,
   type ReducersMapObject,
+  type UnknownAction,
 } from '@reduxjs/toolkit';
 import {
   gpsDataReducer,
@@ -72,6 +73,23 @@ const BUILTIN_PERSISTED_PREFIXES: readonly string[] = [
   slicePrefixOf(setZeroPos.type), // library `gpsData` slice
   slicePrefixOf(recordWriteFailure.type), // framework `recording` slice
 ];
+
+type LibraryGpsDataState = NonNullable<LibraryRootState['gpsData']>;
+
+/**
+ * `gpsData` fields that can record a boolean compass opt-in. Filtering the
+ * key union to boolean-typed fields keeps the opt-in table compile-checked:
+ * a typo'd field name OR a field of the wrong type (e.g. the numeric
+ * `compassVoteWeight`) fails to type-check as a table row, instead of
+ * silently comparing `=== true` against a value that can never be `true`.
+ */
+type BooleanCompassFlagField = {
+  [K in keyof LibraryGpsDataState]-?: NonNullable<
+    LibraryGpsDataState[K]
+  > extends boolean
+    ? K
+    : never;
+}[keyof LibraryGpsDataState];
 
 /**
  * Base shape produced by `createSlamAppStore` with no `extraReducers`.
@@ -346,37 +364,49 @@ export function createSlamAppStore<
   // AFTER setZeroPos — correct replay order by construction, no `queueMicrotask`
   // / re-entrancy guard to hand-maintain. See `slam-app-store-listener.ts` and
   // GpsPlusSlamJs_Docs/docs/2026-06-28-0751-subscriber-dispatch-persistence-ordering-plan.md.
-  const compassOptIns: CompassOptIn[] = [];
-  if (enableCompassColdStartOverride) {
-    compassOptIns.push({
-      isSet: (s) => s.gpsData?.coldStartOverrideEnabled === true,
-      apply: (dispatch) => dispatch(setColdStartOverrideEnabled(true)),
-    });
-  }
-  if (enableCompassRotationPrior) {
-    compassOptIns.push({
-      isSet: (s) => s.gpsData?.compassRotationPriorEnabled === true,
-      apply: (dispatch) => dispatch(setCompassRotationPriorEnabled(true)),
-    });
-  }
-  if (enableCompassWebXRConsistency) {
-    compassOptIns.push({
-      isSet: (s) => s.gpsData?.compassWebXRConsistencyEnabled === true,
-      apply: (dispatch) => dispatch(setCompassWebXRConsistencyEnabled(true)),
-    });
-  }
-  if (enableCompassExperiment) {
-    compassOptIns.push({
-      isSet: (s) => s.gpsData?.compassExperimentEnabled === true,
-      apply: (dispatch) => dispatch(setCompassExperimentEnabled(true)),
-    });
-  }
-  if (enableRobustSolverComparison) {
-    compassOptIns.push({
-      isSet: (s) => s.gpsData?.robustSolverComparisonEnabled === true,
-      apply: (dispatch) => dispatch(setRobustSolverComparisonEnabled(true)),
-    });
-  }
+  // The five boolean opt-ins share one shape — an options flag, the gpsData
+  // field that records it, and the library action that sets it — so they are
+  // one table row each: adding a compass toggle means adding a row (plus its
+  // option + doc above), not hand-rolling another push block. The vote weight
+  // is NOT a row: it carries a value, so its `isSet` compares equality and its
+  // action dispatches the value.
+  const booleanOptInRows: ReadonlyArray<{
+    enabled: boolean;
+    flag: BooleanCompassFlagField;
+    setFlag: (value: boolean) => UnknownAction;
+  }> = [
+    {
+      enabled: enableCompassColdStartOverride,
+      flag: 'coldStartOverrideEnabled',
+      setFlag: setColdStartOverrideEnabled,
+    },
+    {
+      enabled: enableCompassRotationPrior,
+      flag: 'compassRotationPriorEnabled',
+      setFlag: setCompassRotationPriorEnabled,
+    },
+    {
+      enabled: enableCompassWebXRConsistency,
+      flag: 'compassWebXRConsistencyEnabled',
+      setFlag: setCompassWebXRConsistencyEnabled,
+    },
+    {
+      enabled: enableCompassExperiment,
+      flag: 'compassExperimentEnabled',
+      setFlag: setCompassExperimentEnabled,
+    },
+    {
+      enabled: enableRobustSolverComparison,
+      flag: 'robustSolverComparisonEnabled',
+      setFlag: setRobustSolverComparisonEnabled,
+    },
+  ];
+  const compassOptIns: CompassOptIn[] = booleanOptInRows
+    .filter((row) => row.enabled)
+    .map(({ flag, setFlag }) => ({
+      isSet: (s) => s.gpsData?.[flag] === true,
+      apply: (dispatch) => dispatch(setFlag(true)),
+    }));
   if (compassVoteWeight !== undefined) {
     compassOptIns.push({
       isSet: (s) => s.gpsData?.compassVoteWeight === compassVoteWeight,
