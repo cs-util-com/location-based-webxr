@@ -102,8 +102,8 @@ importers:
         specifier: 3.4.4
         version: 3.4.4
       gps-plus-slam-js:
-        specifier: ^1.14.0
-        version: 1.14.0
+        specifier: ^1.15.0
+        version: 1.15.0
       redux:
         specifier: ^5.0.1
         version: 5.0.1
@@ -2437,8 +2437,8 @@ packages:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
 
-  gps-plus-slam-js@1.14.0:
-    resolution: {integrity: sha512-HUMJWDwK+YumJxxc+b6fgRCxf0DNx7ix5i9J10v0+YGfu/OoTXgN1VCW3P+sYlewqPeKvefoouSU6J8S7n3eHg==}
+  gps-plus-slam-js@1.15.0:
+    resolution: {integrity: sha512-20KZ8TVm8+WipIshrrjw1AuP6Dky2lc0uexK2+eDJeSLWyakP6nS2GekKt/+3BqNb2rwlUObQuM8sriV8QFxyg==}
     engines: {node: '>=22.14.0'}
 
   graceful-fs@4.2.11:
@@ -5472,7 +5472,7 @@ snapshots:
 
   gopd@1.2.0: {}
 
-  gps-plus-slam-js@1.14.0:
+  gps-plus-slam-js@1.15.0:
     dependencies:
       '@noble/curves': 2.2.0
       '@reduxjs/toolkit': 2.11.2
