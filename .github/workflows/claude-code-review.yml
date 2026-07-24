@@ -1,0 +1,76 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+# One review per PR at a time. A force-push or follow-up push cancels the
+# in-flight review instead of stacking a second one — this matters here because
+# the release-train `rNNN` branches stay open across many pushes.
+concurrency:
+  group: claude-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Least privilege: read the tree, write review comments, nothing else.
+# `id-token: write` is what the action uses for OIDC; it does not grant repo writes.
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  review:
+    name: Review
+    # Drafts are work-in-progress. Marking a PR ready re-fires this workflow
+    # via the `ready_for_review` event, so nothing is skipped permanently.
+    #
+    # This repo is public, so `pull_request` from a fork runs without access to
+    # secrets: the OAuth token is empty and the step fails rather than reviewing.
+    # Restricting to same-repo PRs keeps fork PRs from showing a red check for a
+    # condition the contributor cannot fix.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # Claude reads the diff through `gh pr diff` (the REST API), not local
+          # git history, so a shallow clone is enough.
+          fetch-depth: 1
+
+      - name: Review with Claude
+        uses: anthropics/claude-code-action@e0cf66d1d257526b5d07f141838c338921cb8455 # v1
+        with:
+          # Subscription-backed token from `claude setup-token`. Swap this line
+          # for `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}` to bill
+          # per-token on the API instead of the Claude subscription.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Posts a tracking comment with progress checkboxes while the review runs.
+          track_progress: true
+
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are reviewing a pull request in a pnpm workspace of WebXR/AR
+            packages: a shared app framework plus several consumer apps and demos.
+
+            First, read `.github/claude-review-guidelines.md` in this repository
+            and follow it exactly. It defines what to flag and — just as
+            importantly — what NOT to comment on, because much of this repo's
+            quality bar is already enforced deterministically by CI.
+
+            Leave inline comments on the specific lines they apply to. Use a
+            single top-level comment only for observations that genuinely span
+            the whole PR. If you find nothing worth raising, say so briefly
+            rather than manufacturing findings.
+
+          claude_args: |
+            --model sonnet
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
