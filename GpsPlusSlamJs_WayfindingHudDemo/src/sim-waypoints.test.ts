@@ -22,7 +22,7 @@ const CAMERA_START = new THREE.Vector3(0, SIM_EYE_HEIGHT, 5);
 describe("SIM_WAYPOINTS", () => {
   it("places every waypoint beyond the simulator activation distance", () => {
     for (const waypoint of SIM_WAYPOINTS) {
-      expect(CAMERA_START.distanceTo(waypoint)).toBeGreaterThanOrEqual(
+      expect(CAMERA_START.distanceTo(waypoint.position)).toBeGreaterThanOrEqual(
         SIM_HUD_CONFIG.distanceMax,
       );
     }
@@ -32,15 +32,25 @@ describe("SIM_WAYPOINTS", () => {
     // Camera starts looking toward −z; "ahead" = negative z relative to start
     // and laterally centered.
     const ahead = SIM_WAYPOINTS.filter(
-      (w) => w.z < CAMERA_START.z && Math.abs(w.x) < 1,
+      (w) => w.position.z < CAMERA_START.z && Math.abs(w.position.x) < 1,
     );
     expect(ahead.length).toBe(1);
-    expect(ahead[0]!.y).toBe(SIM_EYE_HEIGHT); // at eye height, not floating
+    expect(ahead[0]!.position.y).toBe(SIM_EYE_HEIGHT); // at eye height, not floating
   });
 
   it("includes a behind-the-start target and an elevated target (arrow variety)", () => {
-    expect(SIM_WAYPOINTS.some((w) => w.z > CAMERA_START.z)).toBe(true);
-    expect(SIM_WAYPOINTS.some((w) => w.y > SIM_EYE_HEIGHT + 1)).toBe(true);
+    expect(SIM_WAYPOINTS.some((w) => w.position.z > CAMERA_START.z)).toBe(true);
+    expect(SIM_WAYPOINTS.some((w) => w.position.y > SIM_EYE_HEIGHT + 1)).toBe(
+      true,
+    );
+  });
+
+  // Why this test matters: the HUD keys per-target hysteresis state by id
+  // (2026-07-20 per-target config plan); duplicate ids would silently drop
+  // waypoints from the HUD (only the first occurrence is shown).
+  it("gives every waypoint a unique stable id", () => {
+    const ids = SIM_WAYPOINTS.map((w) => w.id);
+    expect(new Set(ids).size).toBe(SIM_WAYPOINTS.length);
   });
 });
 

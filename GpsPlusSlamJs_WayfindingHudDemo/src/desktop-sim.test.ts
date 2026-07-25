@@ -241,7 +241,7 @@ describe("startDesktopSim", () => {
     // After blur no movement keys are held → nearest distance in the status
     // stays that of the untouched start pose.
     const nearestAtStart = SIM_WAYPOINTS.reduce(
-      (min, w) => Math.min(min, camera.distanceTo(w)),
+      (min, w) => Math.min(min, camera.distanceTo(w.position)),
       Number.POSITIVE_INFINITY,
     );
     expect(h.statuses.at(-1)).toContain(`nearest ${nearestAtStart.toFixed(1)}`);

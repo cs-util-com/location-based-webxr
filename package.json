@@ -13,22 +13,26 @@
         "build:landing": "pnpm run --filter gps-plus-slam-landing... build",
         "build:site": "node scripts/build-site.mjs",
         "check:deadcode": "knip",
-        "test:repo-config": "vitest run --config vitest.config.js",
-        "test:framework": "pnpm --filter gps-plus-slam-app-framework test",
-        "test:recorder": "pnpm --filter gps-plus-slam-recorder test",
+        "test:repo-config": "node scripts/test-timing/timed-stage.mjs test:repo-config",
+        "test:framework": "node scripts/test-timing/timed-stage.mjs test:framework",
+        "test:recorder": "node scripts/test-timing/timed-stage.mjs test:recorder",
         "test:recorder:unit": "pnpm --filter gps-plus-slam-recorder run test:unit",
         "test:recorder:e2e": "pnpm --filter gps-plus-slam-recorder run test:e2e",
-        "test:starter": "pnpm --filter gps-plus-slam-anchor-starter test",
-        "test:example": "pnpm --filter gps-plus-slam-minimal-example test",
-        "test:qr-demo": "pnpm --filter gps-plus-slam-qr-tracking-demo test",
-        "test:landing": "pnpm --filter gps-plus-slam-landing test",
-        "test": "pnpm run test:repo-config && pnpm run test:framework && pnpm run test:recorder && pnpm run test:starter && pnpm run test:example && pnpm run test:qr-demo && pnpm run test:landing"
+        "test:starter": "node scripts/test-timing/timed-stage.mjs test:starter",
+        "test:example": "node scripts/test-timing/timed-stage.mjs test:example",
+        "test:qr-demo": "node scripts/test-timing/timed-stage.mjs test:qr-demo",
+        "test:landing": "node scripts/test-timing/timed-stage.mjs test:landing",
+        "test": "node scripts/test-timing/run-gate.mjs",
+        "test:physics": "node scripts/test-timing/timed-stage.mjs test:physics",
+        "test:wayfinding": "node scripts/test-timing/timed-stage.mjs test:wayfinding",
+        "test:changed": "node scripts/test-changed/test-changed.mjs"
     },
     "engines": {
         "node": ">=22.14.0"
     },
     "license": "Apache-2.0",
     "devDependencies": {
+        "fast-check": "^4.8.0",
         "knip": "^6.13.1",
         "vitest": "^4.1.6",
         "yaml": "^2.9.0"

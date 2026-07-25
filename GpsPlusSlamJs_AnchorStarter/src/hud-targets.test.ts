@@ -34,17 +34,24 @@ describe("hudTargetsFromMarker", () => {
 
     const targets = hudTargetsFromMarker(marker);
     expect(targets.length).toBe(1);
-    expect(targets[0]!.x).toBeCloseTo(11, 6);
-    expect(targets[0]!.y).toBeCloseTo(2, 6);
-    expect(targets[0]!.z).toBeCloseTo(-2, 6);
+    expect(targets[0]!.position.x).toBeCloseTo(11, 6);
+    expect(targets[0]!.position.y).toBeCloseTo(2, 6);
+    expect(targets[0]!.position.z).toBeCloseTo(-2, 6);
   });
 
-  it("allocates a fresh Vector3 per call (no shared mutable state)", () => {
+  // Why this test matters: fresh WayfindingTarget literals per call are only
+  // safe because the stable id keys the HUD's per-target hysteresis state
+  // (2026-07-20 per-target config plan) — the id must not change between
+  // polls, and the position must be a fresh Vector3 (no shared mutable state).
+  it("allocates a fresh target with a stable id per call", () => {
     const marker = new Object3D();
     marker.updateMatrixWorld(true);
     const first = hudTargetsFromMarker(marker)[0]!;
     const second = hudTargetsFromMarker(marker)[0]!;
     expect(first).not.toBe(second);
-    expect(first).toBeInstanceOf(Vector3);
+    expect(first.position).not.toBe(second.position);
+    expect(first.position).toBeInstanceOf(Vector3);
+    expect(first.id).toBe(second.id);
+    expect(typeof first.id).toBe("string");
   });
 });

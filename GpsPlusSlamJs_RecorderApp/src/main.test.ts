@@ -375,30 +375,62 @@ vi.mock('gps-plus-slam-app-framework/state/gps-event-coordinator', () => ({
   extractOdomRotation: vi.fn().mockReturnValue([0, 0, 0, 1]),
 }));
 
-vi.mock('./state/recording-options', () => ({
-  loadRecordingOptions: vi.fn().mockReturnValue({
-    qr: { enabled: false, intervalMs: 125, captureSize: 1024 },
-    images: { enabled: false, intervalMs: 1000, quality: 0.8 },
-    depth: { enabled: false, intervalMs: 1000 },
-    arCrashIsolation: {
-      enableDomOverlay: true,
-      enableCameraAccess: true,
-      enableDepthSensingFeature: true,
-      enableCss3dRenderer: true,
-      enableCameraTextureAcquisition: true,
-      applyChromiumProjectionLayerWorkaround: false,
+vi.mock('./state/recording-options', () => {
+  // The settings-modal OPTION_BINDINGS table dereferences the *_CONSTRAINTS
+  // exports at module load (slider bounds), so this factory must provide their
+  // shapes — values are inert here; the real bounds behavior is unit-tested in
+  // settings-modal.test.ts and recording-options.test.ts.
+  const range = { min: 0, max: 100, step: 1 };
+  return {
+    DEPTH_CONSTRAINTS: { intervalMs: range, gridSize: range },
+    IMAGE_CONSTRAINTS: {
+      intervalMs: range,
+      quality: range,
+      resolutionDivisor: range,
     },
-    occupancy: { cellSizeM: 0.15 },
-    frameTileDisplay: { divisor: 2 },
-    visualization: {
-      frameTiles: true,
-      occupancyCubes: true,
-      gpsAlignmentMarkers: true,
-      compassCubes: true,
+    MOTION_FILTER_CONSTRAINTS: {
+      maxAngularVelocity: range,
+      maxLinearVelocity: range,
     },
-    loopClosureDebug: { detectorEnabled: false },
-  }),
-}));
+    QUALITY_FILTER_CONSTRAINTS: {
+      blurRelativeThreshold: range,
+      minMeanLuminance: range,
+    },
+    OCCUPANCY_CONSTRAINTS: {
+      cellSizeM: range,
+      minConfidence: range,
+      occluderRadiusM: range,
+    },
+    FRAME_TILE_DISPLAY_CONSTRAINTS: { divisor: range, maxTiles: range },
+    QR_CONSTRAINTS: { intervalMs: range, captureSize: range },
+    COMPASS_DEBUG_CONSTRAINTS: { voteWeight: range },
+    // main.ts also consumes the pure compassStoreOptions mapping — stubbed
+    // inert here; its real logic is unit-tested in recording-options.test.ts.
+    compassStoreOptions: () => ({}),
+    loadRecordingOptions: vi.fn().mockReturnValue({
+      qr: { enabled: false, intervalMs: 125, captureSize: 1024 },
+      images: { enabled: false, intervalMs: 1000, quality: 0.8 },
+      depth: { enabled: false, intervalMs: 1000 },
+      arCrashIsolation: {
+        enableDomOverlay: true,
+        enableCameraAccess: true,
+        enableDepthSensingFeature: true,
+        enableCss3dRenderer: true,
+        enableCameraTextureAcquisition: true,
+        applyChromiumProjectionLayerWorkaround: false,
+      },
+      occupancy: { cellSizeM: 0.15 },
+      frameTileDisplay: { divisor: 2 },
+      visualization: {
+        frameTiles: true,
+        occupancyCubes: true,
+        gpsAlignmentMarkers: true,
+        compassCubes: true,
+      },
+      loopClosureDebug: { detectorEnabled: false },
+    }),
+  };
+});
 
 // odometryTrackingRestarted action creator mock (dispatched by the tracking
 // onRestarted callback passed to initAR).

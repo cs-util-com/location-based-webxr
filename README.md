@@ -178,8 +178,14 @@ resolves under its app's base so a misrouted asset fails the deploy instead of
 ## Run Tests
 
 ```bash
-# All tests (repo-config + framework + recorder unit & E2E + anchor starter + minimal example)
+# All tests — the commit gate: repo-config + every package's full gate
+# (framework, recorder incl. E2E, starter, example, qr-demo, landing,
+# physics, wayfinding)
 pnpm test
+
+# Iteration only: gates of changed packages + their dependents (+ repo-config).
+# Never a substitute for the full `pnpm test` before a commit.
+pnpm run test:changed
 
 # Framework tests only
 pnpm run test:framework
@@ -196,6 +202,11 @@ pnpm run test:starter
 # Minimal-example tests only
 pnpm run test:example
 ```
+
+Every full gate run rewrites the generated `docs/test-timings.md` of the
+project(s) it ran (per package and at the root) with per-stage wall-clock
+history — commit that churn alongside your change; never hand-edit it (see
+[`scripts/test-timing/README.md`](scripts/test-timing/README.md)).
 
 ## Contributing
 

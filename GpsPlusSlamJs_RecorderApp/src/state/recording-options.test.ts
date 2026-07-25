@@ -23,6 +23,7 @@ import {
   validateFrameTileDisplayOptions,
   validateVisualizationOptions,
   validateCompassDebugOptions,
+  compassStoreOptions,
   validateLoopClosureDebugOptions,
   validateQrOptions,
   validateMotionFilterOptions,
@@ -832,7 +833,10 @@ describe('recording-options', () => {
         webXRConsistency: false,
         experiment: false,
         robustSolverComparison: false,
-        voteWeight: 0.3,
+        // 0.1 = the census-optimal weight (2026-07-19 sweep; developer
+        // decision 2026-07-20, settings-clarity follow-up §4.6 — mirrors the
+        // library default).
+        voteWeight: 0.1,
       });
     });
 
@@ -881,12 +885,13 @@ describe('recording-options', () => {
       ).toBe(false);
     });
 
-    it('voteWeight clamps to [0,1] and falls back to 0.3 for non-finite values', () => {
+    it('voteWeight clamps to [0,1] and falls back to 0.1 for non-finite values', () => {
       // Why: the vote weight feeds straight into the steady-state compass
       // blend — a garbage persisted value must neither crash the library
       // action (which throws outside [0,1]) nor silently distort the solve.
-      expect(validateCompassDebugOptions({ voteWeight: 0.1 }).voteWeight).toBe(
-        0.1
+      // The fallback matches the 0.1 default (census optimum, 2026-07-20).
+      expect(validateCompassDebugOptions({ voteWeight: 0.3 }).voteWeight).toBe(
+        0.3
       );
       expect(validateCompassDebugOptions({ voteWeight: 1.5 }).voteWeight).toBe(
         1
@@ -896,12 +901,69 @@ describe('recording-options', () => {
       );
       expect(
         validateCompassDebugOptions({ voteWeight: Number.NaN }).voteWeight
-      ).toBe(0.3);
+      ).toBe(0.1);
       expect(
         validateCompassDebugOptions({
           voteWeight: 'high' as unknown as number,
         }).voteWeight
-      ).toBe(0.3);
+      ).toBe(0.1);
+    });
+
+    // Why these tests matter: this mapping was an inline conditional in
+    // main.ts `createNewStore` and was UNTESTED (settings-clarity follow-up
+    // §3.4/§4.1c). The load-bearing rule: the vote weight is forwarded ONLY
+    // when a rotation prior can consume it (experiment or Stage C on) — a
+    // Stage-0-only session must not record a dead setCompassVoteWeight action.
+    describe('compassStoreOptions', () => {
+      it('maps each flag 1:1 onto the store option names', () => {
+        expect(
+          compassStoreOptions({
+            coldStartOverride: true,
+            rotationPrior: true,
+            webXRConsistency: true,
+            experiment: true,
+            robustSolverComparison: true,
+            voteWeight: 0.25,
+          })
+        ).toEqual({
+          enableCompassColdStartOverride: true,
+          enableCompassRotationPrior: true,
+          enableCompassWebXRConsistency: true,
+          enableCompassExperiment: true,
+          enableRobustSolverComparison: true,
+          compassVoteWeight: 0.25,
+        });
+      });
+
+      it('omits the vote weight when neither experiment nor rotation prior is on (Stage-0-only default state)', () => {
+        const stage0Only = compassStoreOptions(
+          DEFAULT_RECORDING_OPTIONS.compassDebug
+        );
+        expect(stage0Only.enableCompassColdStartOverride).toBe(true);
+        expect(stage0Only.compassVoteWeight).toBeUndefined();
+      });
+
+      it('forwards the vote weight when the experiment OR the rotation prior is on', () => {
+        const base = {
+          ...DEFAULT_RECORDING_OPTIONS.compassDebug,
+          voteWeight: 0.2,
+        };
+        expect(
+          compassStoreOptions({ ...base, experiment: true }).compassVoteWeight
+        ).toBe(0.2);
+        expect(
+          compassStoreOptions({ ...base, rotationPrior: true })
+            .compassVoteWeight
+        ).toBe(0.2);
+      });
+
+      // Why toStrictEqual({}): `{}` vs explicit-undefined keys is load-bearing
+      // — spreading explicit-undefined keys over the framework's defaults
+      // would clobber them, while `{}` preserves them. toEqual cannot tell
+      // the two shapes apart; toStrictEqual pins the no-explicit-keys shape.
+      it('returns an empty object (no explicit keys) when no compassDebug options exist yet (boot before load)', () => {
+        expect(compassStoreOptions(undefined)).toStrictEqual({});
+      });
     });
 
     it('validateRecordingOptions + cloneRecordingOptions carry compassDebug (deep-cloned)', () => {
@@ -914,7 +976,7 @@ describe('recording-options', () => {
         webXRConsistency: false,
         experiment: false,
         robustSolverComparison: false,
-        voteWeight: 0.3,
+        voteWeight: 0.1,
       });
       const clone = cloneRecordingOptions(opts);
       expect(clone.compassDebug).not.toBe(opts.compassDebug); // no aliasing

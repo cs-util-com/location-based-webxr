@@ -1,8 +1,13 @@
 /**
  * Settings Modal - UI for configuring recording options.
  *
- * Provides a modal dialog for users to toggle and configure
- * depth sampling and image capture settings.
+ * The option↔DOM wiring is declarative: `OPTION_BINDINGS` maps each form
+ * control (by element id) to its `RecordingOptions` field, slider bounds,
+ * label formatter and enabled-state rule. `initSettingsModal` binds the table
+ * once (element lookup + listener + slider bounds from the validation
+ * constraints), and populate/refresh re-read it. Adding an option means adding
+ * ONE table entry plus the HTML — never a hand-written handler/populate pair.
+ * A dead control (typo'd id) is caught by the binding-completeness test.
  */
 
 import {
@@ -32,6 +37,8 @@ import { showConfirmDialog } from './confirm-dialog';
 
 const log = createLogger('SettingsModal');
 
+// --- Label formatters ---
+
 /**
  * Image-interval display: sub-second values (possible since the 250 ms
  * IMAGE_CONSTRAINTS minimum, 2026-07-10 splat-orbit finding) show exact
@@ -46,747 +53,6 @@ function formatImageInterval(ms: number): string {
   return `${(ms / 1000).toFixed(decimals)}s`;
 }
 
-// --- State ---
-
-/** Current working copy of options (not saved until user clicks Save) */
-let workingOptions: RecordingOptions | null = null;
-
-/** Callback to notify when options are saved */
-let onOptionsChanged: ((options: RecordingOptions) => void) | null = null;
-
-/** Callback to clear the reference-point cache across all scenarios */
-let onClearRefPointCache: (() => void | Promise<void>) | null = null;
-
-// --- DOM Elements ---
-
-let modal: HTMLElement | null = null;
-let depthEnabledCheckbox: HTMLInputElement | null = null;
-let depthIntervalSlider: HTMLInputElement | null = null;
-let depthIntervalValue: HTMLElement | null = null;
-let depthGridSlider: HTMLInputElement | null = null;
-let depthGridValue: HTMLElement | null = null;
-let depthRgbCheckbox: HTMLInputElement | null = null;
-let imagesEnabledCheckbox: HTMLInputElement | null = null;
-let imagesIntervalSlider: HTMLInputElement | null = null;
-let imagesIntervalValue: HTMLElement | null = null;
-let imagesQualitySlider: HTMLInputElement | null = null;
-let imagesQualityValue: HTMLElement | null = null;
-let imagesResolutionDivisorSlider: HTMLInputElement | null = null;
-let imagesResolutionDivisorValue: HTMLElement | null = null;
-let imagesMotionFilterCheckbox: HTMLInputElement | null = null;
-let imagesQualityFilterCheckbox: HTMLInputElement | null = null;
-let imagesBlurMetricSelect: HTMLSelectElement | null = null;
-let imagesBlurThresholdSlider: HTMLInputElement | null = null;
-let imagesBlurThresholdValue: HTMLElement | null = null;
-let imagesMinLuminanceSlider: HTMLInputElement | null = null;
-let imagesMinLuminanceValue: HTMLElement | null = null;
-let imagesMaxAngularSlider: HTMLInputElement | null = null;
-let imagesMaxAngularValue: HTMLElement | null = null;
-let imagesMaxLinearSlider: HTMLInputElement | null = null;
-let imagesMaxLinearValue: HTMLElement | null = null;
-let arDomOverlayEnabledCheckbox: HTMLInputElement | null = null;
-let arCameraAccessEnabledCheckbox: HTMLInputElement | null = null;
-let arDepthSensingEnabledCheckbox: HTMLInputElement | null = null;
-let arCss3dEnabledCheckbox: HTMLInputElement | null = null;
-let arCameraTextureEnabledCheckbox: HTMLInputElement | null = null;
-let arChromiumProjectionLayerWorkaroundCheckbox: HTMLInputElement | null = null;
-let occupancyCellSizeSlider: HTMLInputElement | null = null;
-let occupancyCellSizeValue: HTMLElement | null = null;
-let occupancyMinConfidenceSlider: HTMLInputElement | null = null;
-let occupancyMinConfidenceValue: HTMLElement | null = null;
-let occupancyLiveOcclusionCheckbox: HTMLInputElement | null = null;
-let occupancyPersistentOcclusionCheckbox: HTMLInputElement | null = null;
-let occupancyOccluderDebugStyleSelect: HTMLSelectElement | null = null;
-let occupancyOccluderMeshModeSelect: HTMLSelectElement | null = null;
-let occupancyOccluderRadiusSlider: HTMLInputElement | null = null;
-let occupancyOccluderRadiusValue: HTMLElement | null = null;
-let frameTileDisplayDivisorSlider: HTMLInputElement | null = null;
-let frameTileDisplayDivisorValue: HTMLElement | null = null;
-let frameTileMaxTilesSlider: HTMLInputElement | null = null;
-let frameTileMaxTilesValue: HTMLElement | null = null;
-let vizFrameTilesCheckbox: HTMLInputElement | null = null;
-let vizOccupancyCubesCheckbox: HTMLInputElement | null = null;
-let vizGpsAlignmentMarkersCheckbox: HTMLInputElement | null = null;
-let vizCompassCubesCheckbox: HTMLInputElement | null = null;
-let vizHeadingUpMapCheckbox: HTMLInputElement | null = null;
-let vizStatsOverlayCheckbox: HTMLInputElement | null = null;
-let compassColdStartOverrideCheckbox: HTMLInputElement | null = null;
-let compassRotationPriorCheckbox: HTMLInputElement | null = null;
-let compassWebXRConsistencyCheckbox: HTMLInputElement | null = null;
-let compassExperimentCheckbox: HTMLInputElement | null = null;
-let compassRobustSolverComparisonCheckbox: HTMLInputElement | null = null;
-let compassVoteWeightSlider: HTMLInputElement | null = null;
-let compassVoteWeightValue: HTMLElement | null = null;
-let loopClosureDetectorCheckbox: HTMLInputElement | null = null;
-let qrEnabledCheckbox: HTMLInputElement | null = null;
-let qrIntervalSlider: HTMLInputElement | null = null;
-let qrIntervalValue: HTMLElement | null = null;
-let qrCaptureSizeSlider: HTMLInputElement | null = null;
-let qrCaptureSizeValue: HTMLElement | null = null;
-
-// --- Initialization ---
-
-/**
- * Initialize the settings modal.
- * Should be called once after DOM is ready.
- *
- * @param changeCallback - Called when options are saved
- */
-export function initSettingsModal(
-  changeCallback?: (options: RecordingOptions) => void,
-  clearRefPointCacheCallback?: () => void | Promise<void>
-): void {
-  onOptionsChanged = changeCallback ?? null;
-  onClearRefPointCache = clearRefPointCacheCallback ?? null;
-
-  // Get modal elements
-  modal = document.getElementById('settings-modal');
-  if (!modal) {
-    log.warn('Settings modal element not found in DOM');
-    return;
-  }
-
-  // Get button elements
-  const btnSettings = document.getElementById('btn-settings');
-  const btnClose = document.getElementById('btn-settings-close');
-  const btnSave = document.getElementById('btn-settings-save');
-  const btnReset = document.getElementById('btn-settings-reset');
-  const btnMinimalBaseline = document.getElementById('btn-ar-minimal-baseline');
-  const btnClearRefPointCache = document.getElementById(
-    'btn-clear-refpoint-cache'
-  );
-
-  // Get form elements
-  depthEnabledCheckbox = document.getElementById(
-    'depth-enabled'
-  ) as HTMLInputElement;
-  depthIntervalSlider = document.getElementById(
-    'depth-interval'
-  ) as HTMLInputElement;
-  depthIntervalValue = document.getElementById('depth-interval-value');
-  depthGridSlider = document.getElementById('depth-grid') as HTMLInputElement;
-  depthGridValue = document.getElementById('depth-grid-value');
-  depthRgbCheckbox = document.getElementById('depth-rgb') as HTMLInputElement;
-
-  imagesEnabledCheckbox = document.getElementById(
-    'images-enabled'
-  ) as HTMLInputElement;
-  imagesIntervalSlider = document.getElementById(
-    'images-interval'
-  ) as HTMLInputElement;
-  imagesIntervalValue = document.getElementById('images-interval-value');
-  imagesQualitySlider = document.getElementById(
-    'images-quality'
-  ) as HTMLInputElement;
-  imagesQualityValue = document.getElementById('images-quality-value');
-  imagesResolutionDivisorSlider = document.getElementById(
-    'images-resolution-divisor'
-  ) as HTMLInputElement;
-  imagesResolutionDivisorValue = document.getElementById(
-    'images-resolution-divisor-value'
-  );
-  imagesMotionFilterCheckbox = document.getElementById(
-    'images-motion-filter'
-  ) as HTMLInputElement;
-  imagesQualityFilterCheckbox = document.getElementById(
-    'images-quality-filter'
-  ) as HTMLInputElement;
-  imagesBlurMetricSelect = document.getElementById(
-    'images-blur-metric'
-  ) as HTMLSelectElement;
-  imagesBlurThresholdSlider = document.getElementById(
-    'images-blur-threshold'
-  ) as HTMLInputElement;
-  imagesBlurThresholdValue = document.getElementById(
-    'images-blur-threshold-value'
-  );
-  imagesMinLuminanceSlider = document.getElementById(
-    'images-min-luminance'
-  ) as HTMLInputElement;
-  imagesMinLuminanceValue = document.getElementById(
-    'images-min-luminance-value'
-  );
-  imagesMaxAngularSlider = document.getElementById(
-    'images-max-angular'
-  ) as HTMLInputElement;
-  imagesMaxAngularValue = document.getElementById('images-max-angular-value');
-  imagesMaxLinearSlider = document.getElementById(
-    'images-max-linear'
-  ) as HTMLInputElement;
-  imagesMaxLinearValue = document.getElementById('images-max-linear-value');
-  arDomOverlayEnabledCheckbox = document.getElementById(
-    'ar-dom-overlay-enabled'
-  ) as HTMLInputElement;
-  arCameraAccessEnabledCheckbox = document.getElementById(
-    'ar-camera-access-enabled'
-  ) as HTMLInputElement;
-  arDepthSensingEnabledCheckbox = document.getElementById(
-    'ar-depth-sensing-enabled'
-  ) as HTMLInputElement;
-  arCss3dEnabledCheckbox = document.getElementById(
-    'ar-css3d-enabled'
-  ) as HTMLInputElement;
-  arCameraTextureEnabledCheckbox = document.getElementById(
-    'ar-camera-texture-enabled'
-  ) as HTMLInputElement;
-  arChromiumProjectionLayerWorkaroundCheckbox = document.getElementById(
-    'ar-chromium-projection-layer-workaround'
-  ) as HTMLInputElement;
-  occupancyCellSizeSlider = document.getElementById(
-    'occupancy-cell-size'
-  ) as HTMLInputElement;
-  occupancyCellSizeValue = document.getElementById('occupancy-cell-size-value');
-  occupancyMinConfidenceSlider = document.getElementById(
-    'occupancy-min-confidence'
-  ) as HTMLInputElement;
-  occupancyLiveOcclusionCheckbox = document.getElementById(
-    'occupancy-live-occlusion'
-  ) as HTMLInputElement;
-  occupancyPersistentOcclusionCheckbox = document.getElementById(
-    'occupancy-persistent-occlusion'
-  ) as HTMLInputElement;
-  occupancyOccluderDebugStyleSelect = document.getElementById(
-    'occupancy-occluder-debug-style'
-  ) as HTMLSelectElement;
-  occupancyOccluderMeshModeSelect = document.getElementById(
-    'occupancy-occluder-mesh-mode'
-  ) as HTMLSelectElement;
-  occupancyOccluderRadiusSlider = document.getElementById(
-    'occupancy-occluder-radius'
-  ) as HTMLInputElement;
-  occupancyOccluderRadiusValue = document.getElementById(
-    'occupancy-occluder-radius-value'
-  );
-  occupancyMinConfidenceValue = document.getElementById(
-    'occupancy-min-confidence-value'
-  );
-  frameTileMaxTilesSlider = document.getElementById(
-    'frame-tile-max-tiles'
-  ) as HTMLInputElement;
-  frameTileMaxTilesValue = document.getElementById(
-    'frame-tile-max-tiles-value'
-  );
-  frameTileDisplayDivisorSlider = document.getElementById(
-    'frame-tile-display-divisor'
-  ) as HTMLInputElement;
-  frameTileDisplayDivisorValue = document.getElementById(
-    'frame-tile-display-divisor-value'
-  );
-  vizFrameTilesCheckbox = document.getElementById(
-    'viz-frame-tiles'
-  ) as HTMLInputElement;
-  vizOccupancyCubesCheckbox = document.getElementById(
-    'viz-occupancy-cubes'
-  ) as HTMLInputElement;
-  vizGpsAlignmentMarkersCheckbox = document.getElementById(
-    'viz-gps-alignment-markers'
-  ) as HTMLInputElement;
-  vizCompassCubesCheckbox = document.getElementById(
-    'viz-compass-cubes'
-  ) as HTMLInputElement;
-  vizHeadingUpMapCheckbox = document.getElementById(
-    'viz-heading-up-map'
-  ) as HTMLInputElement;
-  vizStatsOverlayCheckbox = document.getElementById(
-    'viz-stats-overlay'
-  ) as HTMLInputElement;
-  compassColdStartOverrideCheckbox = document.getElementById(
-    'compass-cold-start-override'
-  ) as HTMLInputElement;
-  compassRotationPriorCheckbox = document.getElementById(
-    'compass-rotation-prior'
-  ) as HTMLInputElement;
-  compassWebXRConsistencyCheckbox = document.getElementById(
-    'compass-webxr-consistency'
-  ) as HTMLInputElement;
-  compassExperimentCheckbox = document.getElementById(
-    'compass-experiment'
-  ) as HTMLInputElement;
-  compassRobustSolverComparisonCheckbox = document.getElementById(
-    'compass-robust-solver-comparison'
-  ) as HTMLInputElement;
-  compassVoteWeightSlider = document.getElementById(
-    'compass-vote-weight'
-  ) as HTMLInputElement;
-  compassVoteWeightValue = document.getElementById('compass-vote-weight-value');
-  // Slider bounds from the validation constraints — one source of truth, so
-  // the UI can never offer a value the validator would clamp away.
-  if (compassVoteWeightSlider) {
-    compassVoteWeightSlider.min = String(
-      COMPASS_DEBUG_CONSTRAINTS.voteWeight.min
-    );
-    compassVoteWeightSlider.max = String(
-      COMPASS_DEBUG_CONSTRAINTS.voteWeight.max
-    );
-    compassVoteWeightSlider.step = String(
-      COMPASS_DEBUG_CONSTRAINTS.voteWeight.step
-    );
-  }
-  loopClosureDetectorCheckbox = document.getElementById(
-    'loop-closure-detector'
-  ) as HTMLInputElement;
-  qrEnabledCheckbox = document.getElementById('qr-enabled') as HTMLInputElement;
-  qrIntervalSlider = document.getElementById('qr-interval') as HTMLInputElement;
-  qrIntervalValue = document.getElementById('qr-interval-value');
-  qrCaptureSizeSlider = document.getElementById(
-    'qr-capture-size'
-  ) as HTMLInputElement;
-  qrCaptureSizeValue = document.getElementById('qr-capture-size-value');
-
-  // Wire up events
-  btnSettings?.addEventListener('click', showSettingsModal);
-  btnClose?.addEventListener('click', hideSettingsModal);
-  btnSave?.addEventListener('click', handleSave);
-  btnReset?.addEventListener('click', handleReset);
-  btnMinimalBaseline?.addEventListener('click', applyMinimalArBaselinePreset);
-  btnClearRefPointCache?.addEventListener('click', () => {
-    void handleClearRefPointCache();
-  });
-
-  // Modal backdrop click to close
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      hideSettingsModal();
-    }
-  });
-
-  // Slider change handlers
-  depthIntervalSlider?.addEventListener('input', () => {
-    if (workingOptions && depthIntervalSlider && depthIntervalValue) {
-      const value = parseInt(depthIntervalSlider.value, 10);
-      workingOptions.depth.intervalMs = value;
-      depthIntervalValue.textContent = `${(value / 1000).toFixed(1)}s`;
-    }
-  });
-
-  depthGridSlider?.addEventListener('input', () => {
-    if (workingOptions && depthGridSlider && depthGridValue) {
-      const value = parseInt(depthGridSlider.value, 10);
-      workingOptions.depth.gridSize = value;
-      depthGridValue.textContent = `${value}×${value}`;
-    }
-  });
-
-  imagesIntervalSlider?.addEventListener('input', () => {
-    if (workingOptions && imagesIntervalSlider && imagesIntervalValue) {
-      const value = parseInt(imagesIntervalSlider.value, 10);
-      workingOptions.images.intervalMs = value;
-      imagesIntervalValue.textContent = formatImageInterval(value);
-    }
-  });
-
-  imagesQualitySlider?.addEventListener('input', () => {
-    if (workingOptions && imagesQualitySlider && imagesQualityValue) {
-      const value = parseFloat(imagesQualitySlider.value);
-      workingOptions.images.quality = value;
-      imagesQualityValue.textContent = `${Math.round(value * 100)}%`;
-    }
-  });
-
-  imagesResolutionDivisorSlider?.addEventListener('input', () => {
-    if (
-      workingOptions &&
-      imagesResolutionDivisorSlider &&
-      imagesResolutionDivisorValue
-    ) {
-      const value = parseInt(imagesResolutionDivisorSlider.value, 10);
-      workingOptions.images.resolutionDivisor = value;
-      imagesResolutionDivisorValue.textContent = formatResolutionDivisor(value);
-    }
-  });
-
-  // Motion-gate thresholds: stored in rad/s and m/s (the units the gate
-  // compares against), so the slider value IS the stored value.
-  imagesMaxAngularSlider?.addEventListener('input', () => {
-    if (workingOptions && imagesMaxAngularSlider && imagesMaxAngularValue) {
-      const value = parseFloat(imagesMaxAngularSlider.value);
-      workingOptions.images.motionFilter.maxAngularVelocity = value;
-      imagesMaxAngularValue.textContent = formatAngularVelocity(value);
-    }
-  });
-
-  imagesMaxLinearSlider?.addEventListener('input', () => {
-    if (workingOptions && imagesMaxLinearSlider && imagesMaxLinearValue) {
-      const value = parseFloat(imagesMaxLinearSlider.value);
-      workingOptions.images.motionFilter.maxLinearVelocity = value;
-      imagesMaxLinearValue.textContent = `${value.toFixed(2)} m/s`;
-    }
-  });
-
-  // Voxel size slider operates in centimetres for readability; the stored
-  // option (`occupancy.cellSizeM`) is in metres, so divide by 100 on the way in.
-  occupancyCellSizeSlider?.addEventListener('input', () => {
-    if (workingOptions && occupancyCellSizeSlider && occupancyCellSizeValue) {
-      const cm = parseInt(occupancyCellSizeSlider.value, 10);
-      workingOptions.occupancy.cellSizeM = cm / 100;
-      occupancyCellSizeValue.textContent = `${cm} cm`;
-    }
-  });
-
-  // Live CPU-depth occluder (occupancy.liveOcclusion). Live-AR only; applies on
-  // the next Enter-AR. Composes with the persistent mesh below (both can be on).
-  occupancyLiveOcclusionCheckbox?.addEventListener('change', () => {
-    if (workingOptions && occupancyLiveOcclusionCheckbox) {
-      workingOptions.occupancy.liveOcclusion =
-        occupancyLiveOcclusionCheckbox.checked;
-    }
-  });
-
-  // Persistent depth-only occlusion mesh (occupancy.persistentOcclusion).
-  // Applies on the next Enter-AR / replay load, like the voxel-size knobs.
-  occupancyPersistentOcclusionCheckbox?.addEventListener('change', () => {
-    if (workingOptions && occupancyPersistentOcclusionCheckbox) {
-      workingOptions.occupancy.persistentOcclusion =
-        occupancyPersistentOcclusionCheckbox.checked;
-    }
-  });
-
-  // Debug-visualization style of the persistent occluder mesh
-  // (occupancy.occluderDebugStyle): off / matcap / depth-shaded / wireframe /
-  // both. Only visible when the persistent occluder is on. Validated on save
-  // (unknown <option> values resolve to 'off'). Applies on the next Enter-AR /
-  // replay load.
-  occupancyOccluderDebugStyleSelect?.addEventListener('change', () => {
-    if (workingOptions && occupancyOccluderDebugStyleSelect) {
-      workingOptions.occupancy.occluderDebugStyle =
-        occupancyOccluderDebugStyleSelect.value as OccluderDebugStyle;
-    }
-  });
-
-  // Persistent-occluder mesher style (occupancy.occluderMeshMode): blocky cubes
-  // vs corner-fit cubes vs surface nets, so the surface-hugging meshers can be
-  // A/B-tested on-device. Validated on save; only one of OCCLUDER_MESH_MODES is
-  // accepted, so an unexpected <option> value still resolves to the default.
-  // Applies on the next Enter-AR / replay load.
-  occupancyOccluderMeshModeSelect?.addEventListener('change', () => {
-    if (workingOptions && occupancyOccluderMeshModeSelect) {
-      workingOptions.occupancy.occluderMeshMode =
-        occupancyOccluderMeshModeSelect.value as OccluderMeshMode;
-    }
-  });
-
-  // Camera-local occluder window (Step 2, 2026-07-03 long-session fps plan);
-  // 0 = unlimited. Applies on the next Enter-AR / replay load.
-  occupancyOccluderRadiusSlider?.addEventListener('input', () => {
-    if (
-      workingOptions &&
-      occupancyOccluderRadiusSlider &&
-      occupancyOccluderRadiusValue
-    ) {
-      const value = parseInt(occupancyOccluderRadiusSlider.value, 10);
-      workingOptions.occupancy.occluderRadiusM = value;
-      occupancyOccluderRadiusValue.textContent = formatOccluderRadius(value);
-    }
-  });
-
-  // Voxel noise filter: minimum observations before a cell is rendered.
-  // Integer count (occupancy.minConfidence); 1 = unfiltered.
-  occupancyMinConfidenceSlider?.addEventListener('input', () => {
-    if (
-      workingOptions &&
-      occupancyMinConfidenceSlider &&
-      occupancyMinConfidenceValue
-    ) {
-      const n = parseInt(occupancyMinConfidenceSlider.value, 10);
-      workingOptions.occupancy.minConfidence = n;
-      occupancyMinConfidenceValue.textContent =
-        n === 1 ? '1 (unfiltered)' : String(n);
-    }
-  });
-
-  // Frame-tile DISPLAY resolution (D7-resolution) — distinct from the capture
-  // images.resolutionDivisor above; this only downscales the in-AR/replay tile
-  // texture to save GPU memory. Reuses the same ÷N label formatter.
-  frameTileDisplayDivisorSlider?.addEventListener('input', () => {
-    if (
-      workingOptions &&
-      frameTileDisplayDivisorSlider &&
-      frameTileDisplayDivisorValue
-    ) {
-      const value = parseInt(frameTileDisplayDivisorSlider.value, 10);
-      workingOptions.frameTileDisplay.divisor = value;
-      frameTileDisplayDivisorValue.textContent = formatResolutionDivisor(value);
-    }
-  });
-
-  // Live frame-tile FIFO cap (Step 4, 2026-07-03 long-session fps plan).
-  // Live-only: replay never applies it (full-path coverage auditing).
-  frameTileMaxTilesSlider?.addEventListener('input', () => {
-    if (workingOptions && frameTileMaxTilesSlider && frameTileMaxTilesValue) {
-      const value = parseInt(frameTileMaxTilesSlider.value, 10);
-      workingOptions.frameTileDisplay.maxTiles = value;
-      frameTileMaxTilesValue.textContent = formatMaxTiles(value);
-    }
-  });
-
-  // Checkbox change handlers
-  depthEnabledCheckbox?.addEventListener('change', () => {
-    if (workingOptions && depthEnabledCheckbox) {
-      workingOptions.depth.enabled = depthEnabledCheckbox.checked;
-      updateDepthControlsState();
-    }
-  });
-
-  depthRgbCheckbox?.addEventListener('change', () => {
-    if (workingOptions && depthRgbCheckbox) {
-      workingOptions.depth.rgb = depthRgbCheckbox.checked;
-    }
-  });
-
-  imagesEnabledCheckbox?.addEventListener('change', () => {
-    if (workingOptions && imagesEnabledCheckbox) {
-      workingOptions.images.enabled = imagesEnabledCheckbox.checked;
-      updateImageControlsState();
-    }
-  });
-
-  imagesMotionFilterCheckbox?.addEventListener('change', () => {
-    if (workingOptions && imagesMotionFilterCheckbox) {
-      workingOptions.images.motionFilter.enabled =
-        imagesMotionFilterCheckbox.checked;
-      // The threshold sliders only matter while the gate is on.
-      updateImageControlsState();
-    }
-  });
-
-  imagesQualityFilterCheckbox?.addEventListener('change', () => {
-    if (workingOptions && imagesQualityFilterCheckbox) {
-      workingOptions.images.qualityFilter.enabled =
-        imagesQualityFilterCheckbox.checked;
-      // The threshold sliders only matter while the gate is on.
-      updateImageControlsState();
-    }
-  });
-
-  // Image-quality thresholds: stored exactly as the slider value (a 0–1 fraction
-  // for blur, a 0–255 luma cutoff for blackness), so no unit conversion.
-  imagesBlurThresholdSlider?.addEventListener('input', () => {
-    if (
-      workingOptions &&
-      imagesBlurThresholdSlider &&
-      imagesBlurThresholdValue
-    ) {
-      const value = parseFloat(imagesBlurThresholdSlider.value);
-      workingOptions.images.qualityFilter.blurRelativeThreshold = value;
-      imagesBlurThresholdValue.textContent = formatBlurThreshold(value);
-    }
-  });
-
-  imagesMinLuminanceSlider?.addEventListener('input', () => {
-    if (workingOptions && imagesMinLuminanceSlider && imagesMinLuminanceValue) {
-      const value = parseFloat(imagesMinLuminanceSlider.value);
-      workingOptions.images.qualityFilter.minMeanLuminance = value;
-      imagesMinLuminanceValue.textContent = formatMinLuminance(value);
-    }
-  });
-
-  imagesBlurMetricSelect?.addEventListener('change', () => {
-    if (workingOptions && imagesBlurMetricSelect) {
-      // Membership-check rather than trusting the DOM value — save-time
-      // validation would catch it too, but never let an invalid id sit in
-      // the working copy.
-      const value = imagesBlurMetricSelect.value as BlurMetricId;
-      workingOptions.images.qualityFilter.blurMetric = BLUR_METRIC_IDS.includes(
-        value
-      )
-        ? value
-        : 'variance-of-laplacian';
-    }
-  });
-
-  arDomOverlayEnabledCheckbox?.addEventListener('change', () => {
-    if (workingOptions && arDomOverlayEnabledCheckbox) {
-      workingOptions.arCrashIsolation.enableDomOverlay =
-        arDomOverlayEnabledCheckbox.checked;
-    }
-  });
-
-  arCameraAccessEnabledCheckbox?.addEventListener('change', () => {
-    if (workingOptions && arCameraAccessEnabledCheckbox) {
-      workingOptions.arCrashIsolation.enableCameraAccess =
-        arCameraAccessEnabledCheckbox.checked;
-    }
-  });
-
-  arDepthSensingEnabledCheckbox?.addEventListener('change', () => {
-    if (workingOptions && arDepthSensingEnabledCheckbox) {
-      workingOptions.arCrashIsolation.enableDepthSensingFeature =
-        arDepthSensingEnabledCheckbox.checked;
-    }
-  });
-
-  arCss3dEnabledCheckbox?.addEventListener('change', () => {
-    if (workingOptions && arCss3dEnabledCheckbox) {
-      workingOptions.arCrashIsolation.enableCss3dRenderer =
-        arCss3dEnabledCheckbox.checked;
-    }
-  });
-
-  arCameraTextureEnabledCheckbox?.addEventListener('change', () => {
-    if (workingOptions && arCameraTextureEnabledCheckbox) {
-      workingOptions.arCrashIsolation.enableCameraTextureAcquisition =
-        arCameraTextureEnabledCheckbox.checked;
-    }
-  });
-
-  arChromiumProjectionLayerWorkaroundCheckbox?.addEventListener(
-    'change',
-    () => {
-      if (workingOptions && arChromiumProjectionLayerWorkaroundCheckbox) {
-        workingOptions.arCrashIsolation.applyChromiumProjectionLayerWorkaround =
-          arChromiumProjectionLayerWorkaroundCheckbox.checked;
-      }
-    }
-  );
-
-  // Live debug-overlay toggles (Finding B). Each gates only what is drawn live
-  // during recording; replay is unaffected. Read once at the next Enter-AR.
-  vizFrameTilesCheckbox?.addEventListener('change', () => {
-    if (workingOptions && vizFrameTilesCheckbox) {
-      workingOptions.visualization.frameTiles = vizFrameTilesCheckbox.checked;
-    }
-  });
-
-  vizOccupancyCubesCheckbox?.addEventListener('change', () => {
-    if (workingOptions && vizOccupancyCubesCheckbox) {
-      workingOptions.visualization.occupancyCubes =
-        vizOccupancyCubesCheckbox.checked;
-    }
-  });
-
-  vizGpsAlignmentMarkersCheckbox?.addEventListener('change', () => {
-    if (workingOptions && vizGpsAlignmentMarkersCheckbox) {
-      workingOptions.visualization.gpsAlignmentMarkers =
-        vizGpsAlignmentMarkersCheckbox.checked;
-    }
-  });
-
-  vizCompassCubesCheckbox?.addEventListener('change', () => {
-    if (workingOptions && vizCompassCubesCheckbox) {
-      workingOptions.visualization.compassCubes =
-        vizCompassCubesCheckbox.checked;
-    }
-  });
-
-  vizHeadingUpMapCheckbox?.addEventListener('change', () => {
-    if (workingOptions && vizHeadingUpMapCheckbox) {
-      workingOptions.visualization.headingUpMap =
-        vizHeadingUpMapCheckbox.checked;
-    }
-  });
-
-  vizStatsOverlayCheckbox?.addEventListener('change', () => {
-    if (workingOptions && vizStatsOverlayCheckbox) {
-      workingOptions.visualization.statsOverlay =
-        vizStatsOverlayCheckbox.checked;
-    }
-  });
-
-  // Compass alignment debug toggles (Phase-4). Feed the absolute-orientation
-  // compass into the live GPS alignment; applied on the next session/reload.
-  compassColdStartOverrideCheckbox?.addEventListener('change', () => {
-    if (workingOptions && compassColdStartOverrideCheckbox) {
-      workingOptions.compassDebug.coldStartOverride =
-        compassColdStartOverrideCheckbox.checked;
-    }
-  });
-
-  compassRotationPriorCheckbox?.addEventListener('change', () => {
-    if (workingOptions && compassRotationPriorCheckbox) {
-      workingOptions.compassDebug.rotationPrior =
-        compassRotationPriorCheckbox.checked;
-    }
-  });
-
-  compassWebXRConsistencyCheckbox?.addEventListener('change', () => {
-    if (workingOptions && compassWebXRConsistencyCheckbox) {
-      workingOptions.compassDebug.webXRConsistency =
-        compassWebXRConsistencyCheckbox.checked;
-    }
-  });
-
-  // 2026-07-19 field-test toggles (enablement plan): experiment combo + the
-  // alternative robust-solver comparison arm. Applied on the next session/reload like the
-  // other compass flags.
-  compassExperimentCheckbox?.addEventListener('change', () => {
-    if (workingOptions && compassExperimentCheckbox) {
-      workingOptions.compassDebug.experiment =
-        compassExperimentCheckbox.checked;
-    }
-  });
-
-  compassRobustSolverComparisonCheckbox?.addEventListener('change', () => {
-    if (workingOptions && compassRobustSolverComparisonCheckbox) {
-      workingOptions.compassDebug.robustSolverComparison =
-        compassRobustSolverComparisonCheckbox.checked;
-    }
-  });
-
-  compassVoteWeightSlider?.addEventListener('input', () => {
-    if (workingOptions && compassVoteWeightSlider) {
-      const w = Number(compassVoteWeightSlider.value);
-      workingOptions.compassDebug.voteWeight = w;
-      if (compassVoteWeightValue) {
-        compassVoteWeightValue.textContent = w.toFixed(2);
-      }
-    }
-  });
-
-  // Loop-closure capture (experimental, default OFF). Applied on the next
-  // session — the detector wiring is read once at Enter AR.
-  loopClosureDetectorCheckbox?.addEventListener('change', () => {
-    if (workingOptions && loopClosureDetectorCheckbox) {
-      workingOptions.loopClosureDebug.detectorEnabled =
-        loopClosureDetectorCheckbox.checked;
-    }
-  });
-
-  // QR detection (recorder live-QR WS-2/WS-5). Opt-in; the interval + capture
-  // sliders are gated on the enabled checkbox (mirrors depth/images).
-  qrEnabledCheckbox?.addEventListener('change', () => {
-    if (workingOptions && qrEnabledCheckbox) {
-      workingOptions.qr.enabled = qrEnabledCheckbox.checked;
-      updateQrControlsState();
-    }
-  });
-
-  qrIntervalSlider?.addEventListener('input', () => {
-    if (workingOptions && qrIntervalSlider && qrIntervalValue) {
-      const value = parseInt(qrIntervalSlider.value, 10);
-      workingOptions.qr.intervalMs = value;
-      qrIntervalValue.textContent = `${value} ms`;
-    }
-  });
-
-  qrCaptureSizeSlider?.addEventListener('input', () => {
-    if (workingOptions && qrCaptureSizeSlider && qrCaptureSizeValue) {
-      const value = parseInt(qrCaptureSizeSlider.value, 10);
-      workingOptions.qr.captureSize = value;
-      qrCaptureSizeValue.textContent = `${value} px`;
-    }
-  });
-
-  // Populate build version label (one-time, build info is constant)
-  const buildLabel = document.getElementById('build-version-label');
-  if (buildLabel) {
-    try {
-      const info = getBuildInfo();
-      buildLabel.textContent = `${info.appVersion} (${info.commitHash})`;
-    } catch (error) {
-      buildLabel.textContent = 'Build unavailable';
-      log.warn('Build metadata unavailable for settings modal', error);
-    }
-  }
-
-  log.debug('Settings modal initialized');
-}
-
-// --- Show / Hide ---
-
-/**
- * Format the resolution divisor value for display.
- * 1 → "1× (full)", 2 → "÷2 (half)", 4 → "÷4 (quarter)", etc.
- */
 /** Label for the live frame-tile cap: 0 is the explicit "unlimited". */
 function formatMaxTiles(maxTiles: number): string {
   return maxTiles === 0 ? 'unlimited' : String(maxTiles);
@@ -797,6 +63,10 @@ function formatOccluderRadius(radiusM: number): string {
   return radiusM === 0 ? 'unlimited' : `${radiusM} m`;
 }
 
+/**
+ * Format the resolution divisor value for display.
+ * 1 → "1× (full)", 2 → "÷2 (half)", 4 → "÷4 (quarter)", etc.
+ */
 function formatResolutionDivisor(divisor: number): string {
   if (divisor <= 1) {
     return '1× (full)';
@@ -808,485 +78,6 @@ function formatResolutionDivisor(divisor: number): string {
     return '÷4 (quarter)';
   }
   return `÷${divisor}`;
-}
-
-/**
- * Show the settings modal.
- * Loads current options and populates form.
- */
-export function showSettingsModal(): void {
-  if (!modal) {
-    log.warn('Settings modal not initialized');
-    return;
-  }
-
-  // Load current options and create working copy
-  workingOptions = cloneRecordingOptions(loadRecordingOptions());
-
-  // Populate form with current values
-  populateForm(workingOptions);
-
-  // Show modal
-  modal.classList.remove('hidden');
-  log.debug('Settings modal shown');
-}
-
-/**
- * Hide the settings modal.
- * Discards any unsaved changes.
- */
-export function hideSettingsModal(): void {
-  if (!modal) {
-    return;
-  }
-
-  modal.classList.add('hidden');
-  workingOptions = null;
-  log.debug('Settings modal hidden');
-}
-
-/**
- * Check if the settings modal is currently visible.
- */
-export function isSettingsModalVisible(): boolean {
-  return modal !== null && !modal.classList.contains('hidden');
-}
-
-// --- Form Population ---
-
-function populateForm(options: RecordingOptions): void {
-  // Depth options
-  if (depthEnabledCheckbox) {
-    depthEnabledCheckbox.checked = options.depth.enabled;
-  }
-  if (depthIntervalSlider) {
-    depthIntervalSlider.min = String(DEPTH_CONSTRAINTS.intervalMs.min);
-    depthIntervalSlider.max = String(DEPTH_CONSTRAINTS.intervalMs.max);
-    depthIntervalSlider.step = String(DEPTH_CONSTRAINTS.intervalMs.step);
-    depthIntervalSlider.value = String(options.depth.intervalMs);
-  }
-  if (depthIntervalValue) {
-    depthIntervalValue.textContent = `${(options.depth.intervalMs / 1000).toFixed(1)}s`;
-  }
-  if (depthGridSlider) {
-    depthGridSlider.min = String(DEPTH_CONSTRAINTS.gridSize.min);
-    depthGridSlider.max = String(DEPTH_CONSTRAINTS.gridSize.max);
-    depthGridSlider.step = String(DEPTH_CONSTRAINTS.gridSize.step);
-    depthGridSlider.value = String(options.depth.gridSize);
-  }
-  if (depthGridValue) {
-    depthGridValue.textContent = `${options.depth.gridSize}×${options.depth.gridSize}`;
-  }
-  if (depthRgbCheckbox) {
-    depthRgbCheckbox.checked = options.depth.rgb;
-  }
-
-  // Image options
-  if (imagesEnabledCheckbox) {
-    imagesEnabledCheckbox.checked = options.images.enabled;
-  }
-  if (imagesMotionFilterCheckbox) {
-    imagesMotionFilterCheckbox.checked = options.images.motionFilter.enabled;
-  }
-  if (imagesQualityFilterCheckbox) {
-    imagesQualityFilterCheckbox.checked = options.images.qualityFilter.enabled;
-  }
-  if (imagesIntervalSlider) {
-    imagesIntervalSlider.min = String(IMAGE_CONSTRAINTS.intervalMs.min);
-    imagesIntervalSlider.max = String(IMAGE_CONSTRAINTS.intervalMs.max);
-    imagesIntervalSlider.step = String(IMAGE_CONSTRAINTS.intervalMs.step);
-    imagesIntervalSlider.value = String(options.images.intervalMs);
-  }
-  if (imagesIntervalValue) {
-    imagesIntervalValue.textContent = formatImageInterval(
-      options.images.intervalMs
-    );
-  }
-  if (imagesQualitySlider) {
-    imagesQualitySlider.min = String(IMAGE_CONSTRAINTS.quality.min);
-    imagesQualitySlider.max = String(IMAGE_CONSTRAINTS.quality.max);
-    imagesQualitySlider.step = String(IMAGE_CONSTRAINTS.quality.step);
-    imagesQualitySlider.value = String(options.images.quality);
-  }
-  if (imagesQualityValue) {
-    imagesQualityValue.textContent = `${Math.round(options.images.quality * 100)}%`;
-  }
-  if (imagesResolutionDivisorSlider) {
-    imagesResolutionDivisorSlider.min = String(
-      IMAGE_CONSTRAINTS.resolutionDivisor.min
-    );
-    imagesResolutionDivisorSlider.max = String(
-      IMAGE_CONSTRAINTS.resolutionDivisor.max
-    );
-    imagesResolutionDivisorSlider.step = String(
-      IMAGE_CONSTRAINTS.resolutionDivisor.step
-    );
-    imagesResolutionDivisorSlider.value = String(
-      options.images.resolutionDivisor
-    );
-  }
-  if (imagesResolutionDivisorValue) {
-    imagesResolutionDivisorValue.textContent = formatResolutionDivisor(
-      options.images.resolutionDivisor
-    );
-  }
-  if (imagesMaxAngularSlider) {
-    imagesMaxAngularSlider.min = String(
-      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.min
-    );
-    imagesMaxAngularSlider.max = String(
-      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.max
-    );
-    imagesMaxAngularSlider.step = String(
-      MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.step
-    );
-    imagesMaxAngularSlider.value = String(
-      options.images.motionFilter.maxAngularVelocity
-    );
-  }
-  if (imagesMaxAngularValue) {
-    imagesMaxAngularValue.textContent = formatAngularVelocity(
-      options.images.motionFilter.maxAngularVelocity
-    );
-  }
-  if (imagesMaxLinearSlider) {
-    imagesMaxLinearSlider.min = String(
-      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.min
-    );
-    imagesMaxLinearSlider.max = String(
-      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.max
-    );
-    imagesMaxLinearSlider.step = String(
-      MOTION_FILTER_CONSTRAINTS.maxLinearVelocity.step
-    );
-    imagesMaxLinearSlider.value = String(
-      options.images.motionFilter.maxLinearVelocity
-    );
-  }
-  if (imagesMaxLinearValue) {
-    imagesMaxLinearValue.textContent = `${options.images.motionFilter.maxLinearVelocity.toFixed(
-      2
-    )} m/s`;
-  }
-  if (imagesBlurThresholdSlider) {
-    imagesBlurThresholdSlider.min = String(
-      QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold.min
-    );
-    imagesBlurThresholdSlider.max = String(
-      QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold.max
-    );
-    imagesBlurThresholdSlider.step = String(
-      QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold.step
-    );
-    imagesBlurThresholdSlider.value = String(
-      options.images.qualityFilter.blurRelativeThreshold
-    );
-  }
-  if (imagesBlurThresholdValue) {
-    imagesBlurThresholdValue.textContent = formatBlurThreshold(
-      options.images.qualityFilter.blurRelativeThreshold
-    );
-  }
-  if (imagesMinLuminanceSlider) {
-    imagesMinLuminanceSlider.min = String(
-      QUALITY_FILTER_CONSTRAINTS.minMeanLuminance.min
-    );
-    imagesMinLuminanceSlider.max = String(
-      QUALITY_FILTER_CONSTRAINTS.minMeanLuminance.max
-    );
-    imagesMinLuminanceSlider.step = String(
-      QUALITY_FILTER_CONSTRAINTS.minMeanLuminance.step
-    );
-    imagesMinLuminanceSlider.value = String(
-      options.images.qualityFilter.minMeanLuminance
-    );
-  }
-  if (imagesMinLuminanceValue) {
-    imagesMinLuminanceValue.textContent = formatMinLuminance(
-      options.images.qualityFilter.minMeanLuminance
-    );
-  }
-  if (imagesBlurMetricSelect) {
-    // Persisted pre-toggle options may lack blurMetric — render the default.
-    imagesBlurMetricSelect.value =
-      options.images.qualityFilter.blurMetric ?? 'variance-of-laplacian';
-  }
-
-  if (arDomOverlayEnabledCheckbox) {
-    arDomOverlayEnabledCheckbox.checked =
-      options.arCrashIsolation.enableDomOverlay;
-  }
-  if (arCameraAccessEnabledCheckbox) {
-    arCameraAccessEnabledCheckbox.checked =
-      options.arCrashIsolation.enableCameraAccess;
-  }
-  if (arDepthSensingEnabledCheckbox) {
-    arDepthSensingEnabledCheckbox.checked =
-      options.arCrashIsolation.enableDepthSensingFeature;
-  }
-  if (arCss3dEnabledCheckbox) {
-    arCss3dEnabledCheckbox.checked =
-      options.arCrashIsolation.enableCss3dRenderer;
-  }
-  if (arCameraTextureEnabledCheckbox) {
-    arCameraTextureEnabledCheckbox.checked =
-      options.arCrashIsolation.enableCameraTextureAcquisition;
-  }
-  if (arChromiumProjectionLayerWorkaroundCheckbox) {
-    arChromiumProjectionLayerWorkaroundCheckbox.checked =
-      options.arCrashIsolation.applyChromiumProjectionLayerWorkaround;
-  }
-
-  // Occupancy voxel size — slider min/max/step are in cm (constraints are in m).
-  if (occupancyCellSizeSlider) {
-    occupancyCellSizeSlider.min = String(
-      OCCUPANCY_CONSTRAINTS.cellSizeM.min * 100
-    );
-    occupancyCellSizeSlider.max = String(
-      OCCUPANCY_CONSTRAINTS.cellSizeM.max * 100
-    );
-    occupancyCellSizeSlider.step = String(
-      OCCUPANCY_CONSTRAINTS.cellSizeM.step * 100
-    );
-    occupancyCellSizeSlider.value = String(
-      Math.round(options.occupancy.cellSizeM * 100)
-    );
-  }
-  if (occupancyCellSizeValue) {
-    occupancyCellSizeValue.textContent = `${Math.round(options.occupancy.cellSizeM * 100)} cm`;
-  }
-
-  // Occupancy noise filter — integer observation count (no unit conversion).
-  if (occupancyMinConfidenceSlider) {
-    occupancyMinConfidenceSlider.min = String(
-      OCCUPANCY_CONSTRAINTS.minConfidence.min
-    );
-    occupancyMinConfidenceSlider.max = String(
-      OCCUPANCY_CONSTRAINTS.minConfidence.max
-    );
-    occupancyMinConfidenceSlider.step = String(
-      OCCUPANCY_CONSTRAINTS.minConfidence.step
-    );
-    occupancyMinConfidenceSlider.value = String(
-      options.occupancy.minConfidence
-    );
-  }
-  if (occupancyMinConfidenceValue) {
-    const n = options.occupancy.minConfidence;
-    occupancyMinConfidenceValue.textContent =
-      n === 1 ? '1 (unfiltered)' : String(n);
-  }
-  if (occupancyLiveOcclusionCheckbox) {
-    occupancyLiveOcclusionCheckbox.checked = options.occupancy.liveOcclusion;
-  }
-  if (occupancyPersistentOcclusionCheckbox) {
-    occupancyPersistentOcclusionCheckbox.checked =
-      options.occupancy.persistentOcclusion;
-  }
-  if (occupancyOccluderDebugStyleSelect) {
-    occupancyOccluderDebugStyleSelect.value =
-      options.occupancy.occluderDebugStyle;
-  }
-  if (occupancyOccluderMeshModeSelect) {
-    occupancyOccluderMeshModeSelect.value = options.occupancy.occluderMeshMode;
-  }
-  // Camera-local occluder window (Step 2, 2026-07-03 fps plan)
-  if (occupancyOccluderRadiusSlider) {
-    occupancyOccluderRadiusSlider.min = String(
-      OCCUPANCY_CONSTRAINTS.occluderRadiusM.min
-    );
-    occupancyOccluderRadiusSlider.max = String(
-      OCCUPANCY_CONSTRAINTS.occluderRadiusM.max
-    );
-    occupancyOccluderRadiusSlider.step = String(
-      OCCUPANCY_CONSTRAINTS.occluderRadiusM.step
-    );
-    occupancyOccluderRadiusSlider.value = String(
-      options.occupancy.occluderRadiusM
-    );
-  }
-  if (occupancyOccluderRadiusValue) {
-    occupancyOccluderRadiusValue.textContent = formatOccluderRadius(
-      options.occupancy.occluderRadiusM
-    );
-  }
-
-  // Frame-tile display-resolution divisor (D7-resolution)
-  if (frameTileDisplayDivisorSlider) {
-    frameTileDisplayDivisorSlider.min = String(
-      FRAME_TILE_DISPLAY_CONSTRAINTS.divisor.min
-    );
-    frameTileDisplayDivisorSlider.max = String(
-      FRAME_TILE_DISPLAY_CONSTRAINTS.divisor.max
-    );
-    frameTileDisplayDivisorSlider.step = String(
-      FRAME_TILE_DISPLAY_CONSTRAINTS.divisor.step
-    );
-    frameTileDisplayDivisorSlider.value = String(
-      options.frameTileDisplay.divisor
-    );
-  }
-  if (frameTileDisplayDivisorValue) {
-    frameTileDisplayDivisorValue.textContent = formatResolutionDivisor(
-      options.frameTileDisplay.divisor
-    );
-  }
-  // Live frame-tile FIFO cap (Step 4, 2026-07-03 fps plan)
-  if (frameTileMaxTilesSlider) {
-    frameTileMaxTilesSlider.min = String(
-      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.min
-    );
-    frameTileMaxTilesSlider.max = String(
-      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.max
-    );
-    frameTileMaxTilesSlider.step = String(
-      FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles.step
-    );
-    frameTileMaxTilesSlider.value = String(options.frameTileDisplay.maxTiles);
-  }
-  if (frameTileMaxTilesValue) {
-    frameTileMaxTilesValue.textContent = formatMaxTiles(
-      options.frameTileDisplay.maxTiles
-    );
-  }
-
-  // Live debug-overlay toggles (Finding B)
-  if (vizFrameTilesCheckbox) {
-    vizFrameTilesCheckbox.checked = options.visualization.frameTiles;
-  }
-  if (vizOccupancyCubesCheckbox) {
-    vizOccupancyCubesCheckbox.checked = options.visualization.occupancyCubes;
-  }
-  if (vizGpsAlignmentMarkersCheckbox) {
-    vizGpsAlignmentMarkersCheckbox.checked =
-      options.visualization.gpsAlignmentMarkers;
-  }
-  if (vizCompassCubesCheckbox) {
-    vizCompassCubesCheckbox.checked = options.visualization.compassCubes;
-  }
-  if (vizHeadingUpMapCheckbox) {
-    vizHeadingUpMapCheckbox.checked = options.visualization.headingUpMap;
-  }
-  if (vizStatsOverlayCheckbox) {
-    vizStatsOverlayCheckbox.checked = options.visualization.statsOverlay;
-  }
-
-  // Compass alignment debug toggles (Phase-4)
-  if (compassColdStartOverrideCheckbox) {
-    compassColdStartOverrideCheckbox.checked =
-      options.compassDebug.coldStartOverride;
-  }
-  if (compassRotationPriorCheckbox) {
-    compassRotationPriorCheckbox.checked = options.compassDebug.rotationPrior;
-  }
-  if (compassWebXRConsistencyCheckbox) {
-    compassWebXRConsistencyCheckbox.checked =
-      options.compassDebug.webXRConsistency;
-  }
-  if (compassExperimentCheckbox) {
-    compassExperimentCheckbox.checked = options.compassDebug.experiment;
-  }
-  if (compassRobustSolverComparisonCheckbox) {
-    compassRobustSolverComparisonCheckbox.checked =
-      options.compassDebug.robustSolverComparison;
-  }
-  if (compassVoteWeightSlider) {
-    compassVoteWeightSlider.value = String(options.compassDebug.voteWeight);
-  }
-  if (compassVoteWeightValue) {
-    compassVoteWeightValue.textContent =
-      options.compassDebug.voteWeight.toFixed(2);
-  }
-  if (loopClosureDetectorCheckbox) {
-    loopClosureDetectorCheckbox.checked =
-      options.loopClosureDebug.detectorEnabled;
-  }
-
-  // QR detection (opt-in). Interval slider in ms, capture-size slider in px.
-  if (qrEnabledCheckbox) {
-    qrEnabledCheckbox.checked = options.qr.enabled;
-  }
-  if (qrIntervalSlider) {
-    qrIntervalSlider.min = String(QR_CONSTRAINTS.intervalMs.min);
-    qrIntervalSlider.max = String(QR_CONSTRAINTS.intervalMs.max);
-    qrIntervalSlider.step = String(QR_CONSTRAINTS.intervalMs.step);
-    qrIntervalSlider.value = String(options.qr.intervalMs);
-  }
-  if (qrIntervalValue) {
-    qrIntervalValue.textContent = `${options.qr.intervalMs} ms`;
-  }
-  if (qrCaptureSizeSlider) {
-    qrCaptureSizeSlider.min = String(QR_CONSTRAINTS.captureSize.min);
-    qrCaptureSizeSlider.max = String(QR_CONSTRAINTS.captureSize.max);
-    qrCaptureSizeSlider.step = String(QR_CONSTRAINTS.captureSize.step);
-    qrCaptureSizeSlider.value = String(options.qr.captureSize);
-  }
-  if (qrCaptureSizeValue) {
-    qrCaptureSizeValue.textContent = `${options.qr.captureSize} px`;
-  }
-
-  // Update enabled/disabled state of controls
-  updateDepthControlsState();
-  updateImageControlsState();
-  updateQrControlsState();
-}
-
-function updateDepthControlsState(): void {
-  const enabled = depthEnabledCheckbox?.checked ?? true;
-  if (depthIntervalSlider) {
-    depthIntervalSlider.disabled = !enabled;
-  }
-  if (depthGridSlider) {
-    depthGridSlider.disabled = !enabled;
-  }
-  if (depthRgbCheckbox) {
-    depthRgbCheckbox.disabled = !enabled;
-  }
-}
-
-function updateImageControlsState(): void {
-  const enabled = imagesEnabledCheckbox?.checked ?? true;
-  if (imagesIntervalSlider) {
-    imagesIntervalSlider.disabled = !enabled;
-  }
-  if (imagesQualitySlider) {
-    imagesQualitySlider.disabled = !enabled;
-  }
-  if (imagesResolutionDivisorSlider) {
-    imagesResolutionDivisorSlider.disabled = !enabled;
-  }
-  if (imagesMotionFilterCheckbox) {
-    // The motion gate only applies to captured images, so it is meaningless
-    // when capture is off — disable it alongside the other image sub-controls.
-    imagesMotionFilterCheckbox.disabled = !enabled;
-  }
-  if (imagesQualityFilterCheckbox) {
-    // Same rationale as the motion gate — the image-quality gate only acts on
-    // captured frames, so it is disabled when capture is off.
-    imagesQualityFilterCheckbox.disabled = !enabled;
-  }
-  // The motion threshold sliders require BOTH capture and the motion gate on.
-  const motionEnabled =
-    enabled && (imagesMotionFilterCheckbox?.checked ?? true);
-  if (imagesMaxAngularSlider) {
-    imagesMaxAngularSlider.disabled = !motionEnabled;
-  }
-  if (imagesMaxLinearSlider) {
-    imagesMaxLinearSlider.disabled = !motionEnabled;
-  }
-  // The quality threshold sliders (and the metric select) require BOTH
-  // capture and the quality gate on.
-  const qualityEnabled =
-    enabled && (imagesQualityFilterCheckbox?.checked ?? false);
-  if (imagesBlurThresholdSlider) {
-    imagesBlurThresholdSlider.disabled = !qualityEnabled;
-  }
-  if (imagesMinLuminanceSlider) {
-    imagesMinLuminanceSlider.disabled = !qualityEnabled;
-  }
-  if (imagesBlurMetricSelect) {
-    imagesBlurMetricSelect.disabled = !qualityEnabled;
-  }
 }
 
 /**
@@ -1317,15 +108,839 @@ function formatMinLuminance(luma: number): string {
   return rounded === 0 ? '0 (off)' : `${rounded} / 255`;
 }
 
-function updateQrControlsState(): void {
-  // QR is opt-in (default off), so the sliders start disabled until enabled.
-  const enabled = qrEnabledCheckbox?.checked ?? false;
-  if (qrIntervalSlider) {
-    qrIntervalSlider.disabled = !enabled;
+// --- Declarative option↔DOM binding table ---
+
+/**
+ * Enabled-state rule for a control. Reads the CURRENT DOM state of the
+ * controlling checkboxes (not the working copy) — gating must stay evaluable
+ * even while the modal is hidden and no working copy exists (pinned by the
+ * compass-gating tests), and the DOM mirrors the working copy whenever the
+ * modal is open.
+ */
+type OptionPredicate = () => boolean;
+
+interface SliderRange {
+  readonly min: number;
+  readonly max: number;
+  readonly step: number;
+}
+
+interface CheckboxBinding {
+  kind: 'checkbox';
+  id: string;
+  get: (options: RecordingOptions) => boolean;
+  set: (options: RecordingOptions, value: boolean) => void;
+  enabledWhen?: OptionPredicate;
+}
+
+interface SliderBinding {
+  kind: 'slider';
+  id: string;
+  /**
+   * Slider min/max/step, in SLIDER units (after `toSlider`). Sourced from the
+   * validation constraints — one source of truth, so the UI can never offer a
+   * value the validator would clamp away.
+   */
+  range: SliderRange;
+  get: (options: RecordingOptions) => number;
+  set: (options: RecordingOptions, value: number) => void;
+  /** Model → slider units (e.g. metres → cm). Identity when omitted. */
+  toSlider?: (model: number) => number;
+  /** Slider → model units. Identity when omitted. */
+  fromSlider?: (slider: number) => number;
+  /** Text for the sibling `${id}-value` label, from the MODEL value. */
+  format: (model: number) => string;
+  enabledWhen?: OptionPredicate;
+}
+
+interface SelectBinding {
+  kind: 'select';
+  id: string;
+  get: (options: RecordingOptions) => string;
+  set: (options: RecordingOptions, value: string) => void;
+  enabledWhen?: OptionPredicate;
+}
+
+type OptionBinding = CheckboxBinding | SliderBinding | SelectBinding;
+
+/** DOM read for the gating rules; `fallback` applies when the element is absent. */
+function isChecked(id: string, fallback: boolean): boolean {
+  const el = document.getElementById(id);
+  return el instanceof HTMLInputElement ? el.checked : fallback;
+}
+
+// Enabled-state rules. Sub-controls grey out while their parent toggle is off.
+const depthOn: OptionPredicate = () => isChecked('depth-enabled', true);
+const imagesOn: OptionPredicate = () => isChecked('images-enabled', true);
+// The motion/quality threshold controls require BOTH capture and their gate on.
+const motionGateOn: OptionPredicate = () =>
+  imagesOn() && isChecked('images-motion-filter', true);
+const qualityGateOn: OptionPredicate = () =>
+  imagesOn() && isChecked('images-quality-filter', false);
+// QR is opt-in (default off), so its sliders start disabled until enabled.
+const qrOn: OptionPredicate = () => isChecked('qr-enabled', false);
+// Compass gating (2026-07-20 settings-clarity follow-up §4.2/§4.6):
+// - The vote-weight slider is inert unless the experiment or Stage C is on —
+//   mirrors `compassStoreOptions`, which only forwards the weight when a
+//   rotation prior can consume it.
+// - The experiment IMPLIES Stage C (at the 15° trust tolerance), so Stage C
+//   greys out while the experiment is on. Its stored value is deliberately
+//   KEPT and both flags keep being persisted/recorded (keep-value-record-both).
+const compassPriorConsumerOn: OptionPredicate = () =>
+  isChecked('compass-experiment', false) ||
+  isChecked('compass-rotation-prior', false);
+const compassExperimentOff: OptionPredicate = () =>
+  !isChecked('compass-experiment', false);
+
+const OPTION_BINDINGS: readonly OptionBinding[] = [
+  // Depth sampling
+  {
+    kind: 'checkbox',
+    id: 'depth-enabled',
+    get: (o) => o.depth.enabled,
+    set: (o, v) => {
+      o.depth.enabled = v;
+    },
+  },
+  {
+    kind: 'slider',
+    id: 'depth-interval',
+    range: DEPTH_CONSTRAINTS.intervalMs,
+    get: (o) => o.depth.intervalMs,
+    set: (o, v) => {
+      o.depth.intervalMs = v;
+    },
+    format: (v) => `${(v / 1000).toFixed(1)}s`,
+    enabledWhen: depthOn,
+  },
+  {
+    kind: 'slider',
+    id: 'depth-grid',
+    range: DEPTH_CONSTRAINTS.gridSize,
+    get: (o) => o.depth.gridSize,
+    set: (o, v) => {
+      o.depth.gridSize = v;
+    },
+    format: (v) => `${v}×${v}`,
+    enabledWhen: depthOn,
+  },
+  {
+    kind: 'checkbox',
+    id: 'depth-rgb',
+    get: (o) => o.depth.rgb,
+    set: (o, v) => {
+      o.depth.rgb = v;
+    },
+    enabledWhen: depthOn,
+  },
+
+  // Image capture
+  {
+    kind: 'checkbox',
+    id: 'images-enabled',
+    get: (o) => o.images.enabled,
+    set: (o, v) => {
+      o.images.enabled = v;
+    },
+  },
+  {
+    kind: 'slider',
+    id: 'images-interval',
+    range: IMAGE_CONSTRAINTS.intervalMs,
+    get: (o) => o.images.intervalMs,
+    set: (o, v) => {
+      o.images.intervalMs = v;
+    },
+    format: formatImageInterval,
+    enabledWhen: imagesOn,
+  },
+  {
+    kind: 'slider',
+    id: 'images-quality',
+    range: IMAGE_CONSTRAINTS.quality,
+    get: (o) => o.images.quality,
+    set: (o, v) => {
+      o.images.quality = v;
+    },
+    format: (v) => `${Math.round(v * 100)}%`,
+    enabledWhen: imagesOn,
+  },
+  {
+    kind: 'slider',
+    id: 'images-resolution-divisor',
+    range: IMAGE_CONSTRAINTS.resolutionDivisor,
+    get: (o) => o.images.resolutionDivisor,
+    set: (o, v) => {
+      o.images.resolutionDivisor = v;
+    },
+    format: formatResolutionDivisor,
+    enabledWhen: imagesOn,
+  },
+
+  // Blurry-frame motion gate (2026-06-23 motion-gating plan). Thresholds are
+  // stored in rad/s and m/s (the units the gate compares against), so the
+  // slider value IS the stored value.
+  {
+    kind: 'checkbox',
+    id: 'images-motion-filter',
+    get: (o) => o.images.motionFilter.enabled,
+    set: (o, v) => {
+      o.images.motionFilter.enabled = v;
+    },
+    enabledWhen: imagesOn,
+  },
+  {
+    kind: 'slider',
+    id: 'images-max-angular',
+    range: MOTION_FILTER_CONSTRAINTS.maxAngularVelocity,
+    get: (o) => o.images.motionFilter.maxAngularVelocity,
+    set: (o, v) => {
+      o.images.motionFilter.maxAngularVelocity = v;
+    },
+    format: formatAngularVelocity,
+    enabledWhen: motionGateOn,
+  },
+  {
+    kind: 'slider',
+    id: 'images-max-linear',
+    range: MOTION_FILTER_CONSTRAINTS.maxLinearVelocity,
+    get: (o) => o.images.motionFilter.maxLinearVelocity,
+    set: (o, v) => {
+      o.images.motionFilter.maxLinearVelocity = v;
+    },
+    format: (v) => `${v.toFixed(2)} m/s`,
+    enabledWhen: motionGateOn,
+  },
+
+  // Image-quality gate (blur/blackness): thresholds stored exactly as the
+  // slider value (a 0–1 fraction for blur, a 0–255 luma cutoff for blackness).
+  {
+    kind: 'checkbox',
+    id: 'images-quality-filter',
+    get: (o) => o.images.qualityFilter.enabled,
+    set: (o, v) => {
+      o.images.qualityFilter.enabled = v;
+    },
+    enabledWhen: imagesOn,
+  },
+  {
+    kind: 'select',
+    id: 'images-blur-metric',
+    // Persisted pre-toggle options may lack blurMetric — render the default.
+    get: (o) => o.images.qualityFilter.blurMetric ?? 'variance-of-laplacian',
+    // Membership-check rather than trusting the DOM value — save-time
+    // validation would catch it too, but never let an invalid id sit in the
+    // working copy.
+    set: (o, v) => {
+      o.images.qualityFilter.blurMetric = BLUR_METRIC_IDS.includes(
+        v as BlurMetricId
+      )
+        ? (v as BlurMetricId)
+        : 'variance-of-laplacian';
+    },
+    enabledWhen: qualityGateOn,
+  },
+  {
+    kind: 'slider',
+    id: 'images-blur-threshold',
+    range: QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold,
+    get: (o) => o.images.qualityFilter.blurRelativeThreshold,
+    set: (o, v) => {
+      o.images.qualityFilter.blurRelativeThreshold = v;
+    },
+    format: formatBlurThreshold,
+    enabledWhen: qualityGateOn,
+  },
+  {
+    kind: 'slider',
+    id: 'images-min-luminance',
+    range: QUALITY_FILTER_CONSTRAINTS.minMeanLuminance,
+    get: (o) => o.images.qualityFilter.minMeanLuminance,
+    set: (o, v) => {
+      o.images.qualityFilter.minMeanLuminance = v;
+    },
+    format: formatMinLuminance,
+    enabledWhen: qualityGateOn,
+  },
+
+  // AR crash isolation (Phase 1 diagnostic flags)
+  {
+    kind: 'checkbox',
+    id: 'ar-dom-overlay-enabled',
+    get: (o) => o.arCrashIsolation.enableDomOverlay,
+    set: (o, v) => {
+      o.arCrashIsolation.enableDomOverlay = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'ar-camera-access-enabled',
+    get: (o) => o.arCrashIsolation.enableCameraAccess,
+    set: (o, v) => {
+      o.arCrashIsolation.enableCameraAccess = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'ar-depth-sensing-enabled',
+    get: (o) => o.arCrashIsolation.enableDepthSensingFeature,
+    set: (o, v) => {
+      o.arCrashIsolation.enableDepthSensingFeature = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'ar-css3d-enabled',
+    get: (o) => o.arCrashIsolation.enableCss3dRenderer,
+    set: (o, v) => {
+      o.arCrashIsolation.enableCss3dRenderer = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'ar-camera-texture-enabled',
+    get: (o) => o.arCrashIsolation.enableCameraTextureAcquisition,
+    set: (o, v) => {
+      o.arCrashIsolation.enableCameraTextureAcquisition = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'ar-chromium-projection-layer-workaround',
+    get: (o) => o.arCrashIsolation.applyChromiumProjectionLayerWorkaround,
+    set: (o, v) => {
+      o.arCrashIsolation.applyChromiumProjectionLayerWorkaround = v;
+    },
+  },
+
+  // Occupancy grid. The voxel-size slider operates in centimetres for
+  // readability; the stored option (occupancy.cellSizeM) is metres — a unit
+  // mismatch would silently feed the grid a 100× wrong cell size, so both
+  // directions are unit-tested.
+  {
+    kind: 'slider',
+    id: 'occupancy-cell-size',
+    range: {
+      min: OCCUPANCY_CONSTRAINTS.cellSizeM.min * 100,
+      max: OCCUPANCY_CONSTRAINTS.cellSizeM.max * 100,
+      step: OCCUPANCY_CONSTRAINTS.cellSizeM.step * 100,
+    },
+    get: (o) => o.occupancy.cellSizeM,
+    set: (o, v) => {
+      o.occupancy.cellSizeM = v;
+    },
+    toSlider: (m) => Math.round(m * 100),
+    fromSlider: (cm) => cm / 100,
+    format: (m) => `${Math.round(m * 100)} cm`,
+  },
+  // Voxel noise filter: minimum observations before a cell is rendered;
+  // 1 = unfiltered.
+  {
+    kind: 'slider',
+    id: 'occupancy-min-confidence',
+    range: OCCUPANCY_CONSTRAINTS.minConfidence,
+    get: (o) => o.occupancy.minConfidence,
+    set: (o, v) => {
+      o.occupancy.minConfidence = v;
+    },
+    format: (n) => (n === 1 ? '1 (unfiltered)' : String(n)),
+  },
+  // Live CPU-depth occluder — live-AR only; applies on the next Enter-AR and
+  // composes with the persistent mesh (both can be on).
+  {
+    kind: 'checkbox',
+    id: 'occupancy-live-occlusion',
+    get: (o) => o.occupancy.liveOcclusion,
+    set: (o, v) => {
+      o.occupancy.liveOcclusion = v;
+    },
+  },
+  // Persistent depth-only occlusion mesh — applies on the next Enter-AR /
+  // replay load, like the voxel-size knobs.
+  {
+    kind: 'checkbox',
+    id: 'occupancy-persistent-occlusion',
+    get: (o) => o.occupancy.persistentOcclusion,
+    set: (o, v) => {
+      o.occupancy.persistentOcclusion = v;
+    },
+  },
+  // Debug-visualization style of the persistent occluder mesh (off / matcap /
+  // depth-shaded / wireframe / both). Validated on save — an unknown <option>
+  // value resolves to 'off'.
+  {
+    kind: 'select',
+    id: 'occupancy-occluder-debug-style',
+    get: (o) => o.occupancy.occluderDebugStyle,
+    set: (o, v) => {
+      o.occupancy.occluderDebugStyle = v as OccluderDebugStyle;
+    },
+  },
+  // Persistent-occluder mesher style (blocky / corner-fit / surface nets) for
+  // on-device A/B tests. Validated on save — an unexpected <option> value
+  // resolves to the default.
+  {
+    kind: 'select',
+    id: 'occupancy-occluder-mesh-mode',
+    get: (o) => o.occupancy.occluderMeshMode,
+    set: (o, v) => {
+      o.occupancy.occluderMeshMode = v as OccluderMeshMode;
+    },
+  },
+  // Camera-local occluder window (Step 2, 2026-07-03 long-session fps plan);
+  // 0 = unlimited. Applies on the next Enter-AR / replay load.
+  {
+    kind: 'slider',
+    id: 'occupancy-occluder-radius',
+    range: OCCUPANCY_CONSTRAINTS.occluderRadiusM,
+    get: (o) => o.occupancy.occluderRadiusM,
+    set: (o, v) => {
+      o.occupancy.occluderRadiusM = v;
+    },
+    format: formatOccluderRadius,
+  },
+
+  // Frame-tile DISPLAY resolution (D7-resolution) — distinct from the capture
+  // images.resolutionDivisor; only downscales the in-AR/replay tile texture to
+  // save GPU memory. Reuses the same ÷N label formatter.
+  {
+    kind: 'slider',
+    id: 'frame-tile-display-divisor',
+    range: FRAME_TILE_DISPLAY_CONSTRAINTS.divisor,
+    get: (o) => o.frameTileDisplay.divisor,
+    set: (o, v) => {
+      o.frameTileDisplay.divisor = v;
+    },
+    format: formatResolutionDivisor,
+  },
+  // Live frame-tile FIFO cap (Step 4, 2026-07-03 long-session fps plan).
+  // Live-only: replay never applies it (full-path coverage auditing).
+  {
+    kind: 'slider',
+    id: 'frame-tile-max-tiles',
+    range: FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles,
+    get: (o) => o.frameTileDisplay.maxTiles,
+    set: (o, v) => {
+      o.frameTileDisplay.maxTiles = v;
+    },
+    format: formatMaxTiles,
+  },
+
+  // Live debug-overlay toggles (Finding B). Each gates only what is drawn live
+  // during recording; replay is unaffected. Read once at the next Enter-AR.
+  {
+    kind: 'checkbox',
+    id: 'viz-frame-tiles',
+    get: (o) => o.visualization.frameTiles,
+    set: (o, v) => {
+      o.visualization.frameTiles = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'viz-occupancy-cubes',
+    get: (o) => o.visualization.occupancyCubes,
+    set: (o, v) => {
+      o.visualization.occupancyCubes = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'viz-gps-alignment-markers',
+    get: (o) => o.visualization.gpsAlignmentMarkers,
+    set: (o, v) => {
+      o.visualization.gpsAlignmentMarkers = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'viz-compass-cubes',
+    get: (o) => o.visualization.compassCubes,
+    set: (o, v) => {
+      o.visualization.compassCubes = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'viz-heading-up-map',
+    get: (o) => o.visualization.headingUpMap,
+    set: (o, v) => {
+      o.visualization.headingUpMap = v;
+    },
+  },
+  // Stats.js perf panels — unlike its siblings this one also applies to replay
+  // (Step 0 of the 2026-07-03 long-session fps plan).
+  {
+    kind: 'checkbox',
+    id: 'viz-stats-overlay',
+    get: (o) => o.visualization.statsOverlay,
+    set: (o, v) => {
+      o.visualization.statsOverlay = v;
+    },
+  },
+
+  // Compass alignment debug toggles (Phase-4). Feed the absolute-orientation
+  // compass into the live GPS alignment; applied on the next session/reload.
+  {
+    kind: 'checkbox',
+    id: 'compass-cold-start-override',
+    get: (o) => o.compassDebug.coldStartOverride,
+    set: (o, v) => {
+      o.compassDebug.coldStartOverride = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'compass-rotation-prior',
+    get: (o) => o.compassDebug.rotationPrior,
+    set: (o, v) => {
+      o.compassDebug.rotationPrior = v;
+    },
+    enabledWhen: compassExperimentOff,
+  },
+  {
+    kind: 'checkbox',
+    id: 'compass-webxr-consistency',
+    get: (o) => o.compassDebug.webXRConsistency,
+    set: (o, v) => {
+      o.compassDebug.webXRConsistency = v;
+    },
+  },
+  // 2026-07-19 field-test toggles (enablement plan): experiment combo + the
+  // alternative robust-solver comparison arm.
+  {
+    kind: 'checkbox',
+    id: 'compass-experiment',
+    get: (o) => o.compassDebug.experiment,
+    set: (o, v) => {
+      o.compassDebug.experiment = v;
+    },
+  },
+  {
+    kind: 'checkbox',
+    id: 'compass-robust-solver-comparison',
+    get: (o) => o.compassDebug.robustSolverComparison,
+    set: (o, v) => {
+      o.compassDebug.robustSolverComparison = v;
+    },
+  },
+  {
+    kind: 'slider',
+    id: 'compass-vote-weight',
+    range: COMPASS_DEBUG_CONSTRAINTS.voteWeight,
+    get: (o) => o.compassDebug.voteWeight,
+    set: (o, v) => {
+      o.compassDebug.voteWeight = v;
+    },
+    format: (v) => v.toFixed(2),
+    enabledWhen: compassPriorConsumerOn,
+  },
+
+  // Loop-closure capture (experimental, default OFF). Applied on the next
+  // session — the detector wiring is read once at Enter AR.
+  {
+    kind: 'checkbox',
+    id: 'loop-closure-detector',
+    get: (o) => o.loopClosureDebug.detectorEnabled,
+    set: (o, v) => {
+      o.loopClosureDebug.detectorEnabled = v;
+    },
+  },
+
+  // QR detection (recorder live-QR WS-2/WS-5). Opt-in; the interval + capture
+  // sliders are gated on the enabled checkbox (mirrors depth/images).
+  {
+    kind: 'checkbox',
+    id: 'qr-enabled',
+    get: (o) => o.qr.enabled,
+    set: (o, v) => {
+      o.qr.enabled = v;
+    },
+  },
+  {
+    kind: 'slider',
+    id: 'qr-interval',
+    range: QR_CONSTRAINTS.intervalMs,
+    get: (o) => o.qr.intervalMs,
+    set: (o, v) => {
+      o.qr.intervalMs = v;
+    },
+    format: (v) => `${v} ms`,
+    enabledWhen: qrOn,
+  },
+  {
+    kind: 'slider',
+    id: 'qr-capture-size',
+    range: QR_CONSTRAINTS.captureSize,
+    get: (o) => o.qr.captureSize,
+    set: (o, v) => {
+      o.qr.captureSize = v;
+    },
+    format: (v) => `${v} px`,
+    enabledWhen: qrOn,
+  },
+];
+
+// --- Binding engine ---
+
+/** A table entry resolved to its live DOM element(s). */
+type BoundControl =
+  | { kind: 'checkbox'; binding: CheckboxBinding; input: HTMLInputElement }
+  | {
+      kind: 'slider';
+      binding: SliderBinding;
+      input: HTMLInputElement;
+      label: HTMLElement | null;
+    }
+  | { kind: 'select'; binding: SelectBinding; input: HTMLSelectElement };
+
+/** Resolved controls; rebuilt on every `initSettingsModal`. */
+let boundControls: BoundControl[] = [];
+
+/**
+ * Resolve one table entry against the DOM. Returns null (control stays inert)
+ * when the element is missing or of the wrong type — the binding-completeness
+ * test guards against this happening in production HTML.
+ */
+function resolveBinding(binding: OptionBinding): BoundControl | null {
+  const el = document.getElementById(binding.id);
+  switch (binding.kind) {
+    case 'checkbox':
+      return el instanceof HTMLInputElement
+        ? { kind: 'checkbox', binding, input: el }
+        : null;
+    case 'slider':
+      return el instanceof HTMLInputElement
+        ? {
+            kind: 'slider',
+            binding,
+            input: el,
+            label: document.getElementById(`${binding.id}-value`),
+          }
+        : null;
+    case 'select':
+      return el instanceof HTMLSelectElement
+        ? { kind: 'select', binding, input: el }
+        : null;
   }
-  if (qrCaptureSizeSlider) {
-    qrCaptureSizeSlider.disabled = !enabled;
+}
+
+/** Look up all bound elements, apply slider bounds, attach listeners. */
+function bindOptionControls(): void {
+  boundControls = [];
+  for (const binding of OPTION_BINDINGS) {
+    const control = resolveBinding(binding);
+    if (!control) {
+      log.warn(`Settings control #${binding.id} not found in DOM`);
+      continue;
+    }
+    if (control.kind === 'slider') {
+      const { min, max, step } = control.binding.range;
+      control.input.min = String(min);
+      control.input.max = String(max);
+      control.input.step = String(step);
+    }
+    boundControls.push(control);
+    // Sliders update continuously while dragging; checkboxes/selects on commit.
+    const eventName = control.kind === 'slider' ? 'input' : 'change';
+    control.input.addEventListener(eventName, () => {
+      handleControlChange(control);
+    });
   }
+}
+
+/**
+ * Write one control's DOM value into the working copy and refresh the UI.
+ * The working-copy write is skipped while the modal is hidden (no working
+ * copy), but gating always refreshes — it reads the DOM, not the copy.
+ */
+function handleControlChange(control: BoundControl): void {
+  if (workingOptions) {
+    switch (control.kind) {
+      case 'checkbox':
+        control.binding.set(workingOptions, control.input.checked);
+        break;
+      case 'slider': {
+        const sliderValue = Number(control.input.value);
+        if (!Number.isFinite(sliderValue)) {
+          break; // defensive: never write NaN into the working copy
+        }
+        const { binding, label } = control;
+        binding.set(
+          workingOptions,
+          binding.fromSlider ? binding.fromSlider(sliderValue) : sliderValue
+        );
+        if (label) {
+          label.textContent = binding.format(binding.get(workingOptions));
+        }
+        break;
+      }
+      case 'select':
+        control.binding.set(workingOptions, control.input.value);
+        break;
+    }
+  }
+  refreshControlStates();
+}
+
+/** Push `options` into every bound control (values, labels, enabled states). */
+function populateForm(options: RecordingOptions): void {
+  for (const control of boundControls) {
+    switch (control.kind) {
+      case 'checkbox':
+        control.input.checked = control.binding.get(options);
+        break;
+      case 'slider': {
+        const { binding, input, label } = control;
+        const model = binding.get(options);
+        input.value = String(
+          binding.toSlider ? binding.toSlider(model) : model
+        );
+        if (label) {
+          label.textContent = binding.format(model);
+        }
+        break;
+      }
+      case 'select':
+        control.input.value = control.binding.get(options);
+        break;
+    }
+  }
+  refreshControlStates();
+}
+
+/** Re-evaluate every `enabledWhen` rule against the current DOM state. */
+function refreshControlStates(): void {
+  for (const { binding, input } of boundControls) {
+    if (binding.enabledWhen) {
+      input.disabled = !binding.enabledWhen();
+    }
+  }
+}
+
+// --- State ---
+
+/** Current working copy of options (not saved until user clicks Save) */
+let workingOptions: RecordingOptions | null = null;
+
+/** Callback to notify when options are saved */
+let onOptionsChanged: ((options: RecordingOptions) => void) | null = null;
+
+/** Callback to clear the reference-point cache across all scenarios */
+let onClearRefPointCache: (() => void | Promise<void>) | null = null;
+
+/** Modal container element */
+let modal: HTMLElement | null = null;
+
+// --- Initialization ---
+
+/**
+ * Initialize the settings modal.
+ * Should be called once after DOM is ready.
+ *
+ * @param changeCallback - Called when options are saved
+ */
+export function initSettingsModal(
+  changeCallback?: (options: RecordingOptions) => void,
+  clearRefPointCacheCallback?: () => void | Promise<void>
+): void {
+  onOptionsChanged = changeCallback ?? null;
+  onClearRefPointCache = clearRefPointCacheCallback ?? null;
+
+  modal = document.getElementById('settings-modal');
+  if (!modal) {
+    log.warn('Settings modal element not found in DOM');
+    return;
+  }
+
+  // Option controls: one table drives lookup, listeners, bounds, labels and
+  // enabled-state rules (see OPTION_BINDINGS above).
+  bindOptionControls();
+
+  // Buttons and backdrop keep bespoke wiring — they are actions, not options.
+  document
+    .getElementById('btn-settings')
+    ?.addEventListener('click', showSettingsModal);
+  document
+    .getElementById('btn-settings-close')
+    ?.addEventListener('click', hideSettingsModal);
+  document
+    .getElementById('btn-settings-save')
+    ?.addEventListener('click', handleSave);
+  document
+    .getElementById('btn-settings-reset')
+    ?.addEventListener('click', handleReset);
+  document
+    .getElementById('btn-ar-minimal-baseline')
+    ?.addEventListener('click', applyMinimalArBaselinePreset);
+  document
+    .getElementById('btn-clear-refpoint-cache')
+    ?.addEventListener('click', () => {
+      void handleClearRefPointCache();
+    });
+
+  // Modal backdrop click to close
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      hideSettingsModal();
+    }
+  });
+
+  // Populate build version label (one-time, build info is constant)
+  const buildLabel = document.getElementById('build-version-label');
+  if (buildLabel) {
+    try {
+      const info = getBuildInfo();
+      buildLabel.textContent = `${info.appVersion} (${info.commitHash})`;
+    } catch (error) {
+      buildLabel.textContent = 'Build unavailable';
+      log.warn('Build metadata unavailable for settings modal', error);
+    }
+  }
+
+  log.debug('Settings modal initialized');
+}
+
+// --- Show / Hide ---
+
+/**
+ * Show the settings modal.
+ * Loads current options and populates form.
+ */
+export function showSettingsModal(): void {
+  if (!modal) {
+    log.warn('Settings modal not initialized');
+    return;
+  }
+
+  // Load current options and create working copy
+  workingOptions = cloneRecordingOptions(loadRecordingOptions());
+
+  populateForm(workingOptions);
+
+  modal.classList.remove('hidden');
+  log.debug('Settings modal shown');
+}
+
+/**
+ * Hide the settings modal.
+ * Discards any unsaved changes.
+ */
+export function hideSettingsModal(): void {
+  if (!modal) {
+    return;
+  }
+
+  modal.classList.add('hidden');
+  workingOptions = null;
+  log.debug('Settings modal hidden');
+}
+
+/**
+ * Check if the settings modal is currently visible.
+ */
+export function isSettingsModalVisible(): boolean {
+  return modal !== null && !modal.classList.contains('hidden');
 }
 
 // --- Actions ---
@@ -1403,4 +1018,17 @@ function applyMinimalArBaselinePreset(): void {
  */
 export function getWorkingOptions(): RecordingOptions | null {
   return workingOptions ? cloneRecordingOptions(workingOptions) : null;
+}
+
+/**
+ * The shape of every table-bound control (for testing) — lets the
+ * binding-completeness test assert each bound id (and each slider's
+ * `${id}-value` label) exists in the production HTML, so a typo'd id fails CI
+ * as a missing element instead of shipping a silently dead control.
+ */
+export function getOptionBindingIdsForTesting(): readonly {
+  id: string;
+  kind: 'checkbox' | 'slider' | 'select';
+}[] {
+  return OPTION_BINDINGS.map(({ id, kind }) => ({ id, kind }));
 }

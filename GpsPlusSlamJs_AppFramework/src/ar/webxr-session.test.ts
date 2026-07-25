@@ -1229,10 +1229,13 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
     // The resetWebXRState function must call setAnimationLoop(null),
-    // renderer.dispose(), and remove the domElement before nulling.
+    // renderer.dispose(), and remove the domElement before dropping the
+    // reference. Stage 3 of the ArSession refactor replaced the field-by-field
+    // "renderer = null" reset with the wholesale handle replacement, so the
+    // slice now ends at that replacement line — assertions unchanged.
     const resetBlock = source.slice(
       source.indexOf('function resetWebXRState'),
-      source.indexOf('renderer = null;')
+      source.indexOf('activeSession = defaultArSessionHandle();')
     );
     expect(resetBlock).toContain('setAnimationLoop(null)');
     expect(resetBlock).toContain('renderer.dispose()');
@@ -1294,8 +1297,11 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
 
+    // Stage 0 of the ArSession refactor moved the isolation options onto the
+    // per-session handle (`activeSession.crashIsolation`) — the assertion pins
+    // the same gate, at its new spelling.
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCss3dRenderer)'
+      'if (activeSession.crashIsolation.enableCss3dRenderer)'
     );
     expect(source).toContain('createCss3dRendererManager');
   });
@@ -1308,11 +1314,14 @@ describe('DOM hardcoding audit regressions', () => {
       'utf-8'
     );
 
+    // Same Stage 0 handle move as above — gates unchanged, spelling updated.
+    // (Stage 3 moved the CSS3D manager onto the handle's scene-graph cluster,
+    // read via a `css3d` destructure in onXRFrame.)
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCameraTextureAcquisition)'
+      'if (activeSession.crashIsolation.enableCameraTextureAcquisition)'
     );
     expect(source).toContain(
-      'if (currentArCrashIsolationOptions.enableCss3dRenderer && css3dManager)'
+      'if (activeSession.crashIsolation.enableCss3dRenderer && css3d)'
     );
   });
 });

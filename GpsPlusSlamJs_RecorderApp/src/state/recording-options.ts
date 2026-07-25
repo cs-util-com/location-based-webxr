@@ -562,11 +562,13 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     webXRConsistency: false,
     // 2026-07-19 field-test toggles (enablement plan) — OFF until the
     // operator explicitly opts a session in. voteWeight mirrors the library
-    // default (0.3); the census weight curve measured 0.1 as the
-    // whole-session optimum — slider exists to field-test both.
+    // default (0.1 since 2026-07-20 — the census weight curve measured 0.1 as
+    // the whole-session optimum; settings-clarity follow-up §4.6). NOTE:
+    // operators with a persisted 0.3 keep it — persisted settings win over
+    // this default.
     experiment: false,
     robustSolverComparison: false,
-    voteWeight: 0.3,
+    voteWeight: 0.1,
   },
   loopClosureDebug: {
     // OFF by default: with it ON every AR relocalization jump dispatches
@@ -813,6 +815,47 @@ export function validateCompassDebugOptions(
       constraint: COMPASS_DEBUG_CONSTRAINTS.voteWeight,
     },
   });
+}
+
+/**
+ * The compass subset of the recorder-store options, keyed by the
+ * `createRecorderStore` option names (structurally assignable to
+ * `RecorderStoreOptions` — kept local so this options module does not import
+ * the store).
+ */
+export interface CompassStoreOptions {
+  enableCompassColdStartOverride?: boolean;
+  enableCompassRotationPrior?: boolean;
+  enableCompassWebXRConsistency?: boolean;
+  enableCompassExperiment?: boolean;
+  enableRobustSolverComparison?: boolean;
+  compassVoteWeight?: number;
+}
+
+/**
+ * Map the persisted compass debug toggles onto the `createRecorderStore`
+ * option names. The one non-1:1 rule: the vote weight is forwarded ONLY when
+ * a rotation prior can consume it (experiment or Stage C on) — a Stage-0-only
+ * session must not record a dead `setCompassVoteWeight` action into the
+ * session (the slider is inert without a prior; see the 2026-07-20
+ * settings-clarity follow-up §3.4). `undefined` input (boot before the
+ * options load) yields `{}` — deliberately NO explicit keys, because spreading
+ * explicit-`undefined` keys over a defaults object would clobber the framework
+ * defaults; an empty object leaves them all in place.
+ */
+export function compassStoreOptions(
+  compass: CompassDebugOptions | undefined
+): CompassStoreOptions {
+  if (!compass) return {};
+  const priorActive = compass.experiment || compass.rotationPrior;
+  return {
+    enableCompassColdStartOverride: compass.coldStartOverride,
+    enableCompassRotationPrior: compass.rotationPrior,
+    enableCompassWebXRConsistency: compass.webXRConsistency,
+    enableCompassExperiment: compass.experiment,
+    enableRobustSolverComparison: compass.robustSolverComparison,
+    compassVoteWeight: priorActive ? compass.voteWeight : undefined,
+  };
 }
 
 /**

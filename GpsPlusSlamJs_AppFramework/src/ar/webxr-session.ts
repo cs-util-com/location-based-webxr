@@ -20,6 +20,7 @@
 import * as THREE from 'three';
 import { createLogger } from '../utils/logger';
 import { applyChromiumProjectionLayerWorkaround } from './chromium-camera-access-workaround';
+import { probeImmersiveArSupport } from './webxr-support-probe';
 import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
   ImageCaptureManager,
@@ -257,25 +258,297 @@ export function extractPoseFromViewer(
 
 // ------------------------- (end test-only exports) -------------------------
 
-let renderer: THREE.WebGLRenderer | null = null;
-let scene: THREE.Scene | null = null;
-let camera: THREE.PerspectiveCamera | null = null;
-let xrSession: XRSession | null = null;
+/**
+ * Default longer-edge resolution (px) for the camera-frame blit the QR / CV
+ * detector sees. The on-device capture-resolution sweep (2026-06-17, via the
+ * `?capture=` override) showed **1024** decodes a small / out-of-focus QR
+ * markedly better than the prior 512 with no perceptible cadence cost on the
+ * test phone; 2048 helped slightly more but risks low-end devices (4096 lagged),
+ * so 1024 is the safe default. Raise per-consumer via
+ * `startCameraFrameCapture({ captureSize })`.
+ *
+ * (Declared above the handle factory because the factory runs at module
+ * evaluation — a later `const` would still be in its temporal dead zone.)
+ *
+ * @see GpsPlusSlamJs_Docs/docs/2026-06-17-1020-qr-size-accuracy-and-thin-demo-plan.md (WS-C)
+ */
+export const DEFAULT_CAMERA_FRAME_CAPTURE_SIZE = 1024;
 
 /**
- * Monotonic time of the previous XR frame, in milliseconds (XR `time`
- * argument). Reset to 0 by `resetWebXRState()` so the first frame of a
- * new session sees `dt = 0` rather than a stale delta from the prior
- * session.
+ * Per-session state owned by one AR session — Stages 0–3 of the staged
+ * ArSession refactor (see `GpsPlusSlamJs_Docs/docs/2026-07-18-2045-webxr-session-arsession-handle-refactor-plan.md`).
+ * A fresh handle is created by `initAR()` (parameterized with this session's
+ * crash-isolation options and callbacks struct) and by `resetWebXRState()`
+ * (so pre-init and post-teardown reads see well-defined defaults) — replacing
+ * a field-by-field reset for everything in here. Since Stage 3 EVERY
+ * per-session cluster lives here: `activeSession` is the module's single
+ * remaining mutable, so new session state added to this interface is reset
+ * (and, where needed, disposed) by the wholesale handle replacement — the
+ * "add a field, forget the reset" leak class is structurally gone.
  */
-let lastFrameTime = 0;
+interface ArSessionHandle {
+  /**
+   * The live Three.js scene graph + renderer (Stage 3). All null until
+   * `initAR()` builds them (renderer first, then the hierarchy from
+   * `createSceneHierarchy()`), and null again after teardown — the public
+   * getters (`getScene`/`getCamera`/`getArWorldGroup`) surface exactly that
+   * null-before-init / null-after-teardown contract.
+   */
+  sceneGraph: {
+    renderer: THREE.WebGLRenderer | null;
+    scene: THREE.Scene | null;
+    /**
+     * Camera INSIDE the arpose node — its local transform is the raw WebXR
+     * pose during recording (see `createSceneHierarchy()`).
+     */
+    camera: THREE.PerspectiveCamera | null;
+    /**
+     * The AR world group — parent of camera and all AR-tracked content.
+     * This group's transform = the alignment matrix from GpsPlusSlamJs
+     * (see {@link applyAlignmentMatrix}).
+     */
+    arWorldGroup: THREE.Group | null;
+    /**
+     * CSS3D renderer manager for DOM-based 3D objects (e.g. the Leaflet
+     * map) rendered alongside WebGL. Created by `initAR()` when the
+     * `enableCss3dRenderer` isolation flag is on.
+     */
+    css3d: Css3dRendererManager | null;
+  };
+  /** The live XRSession between `initAR()` and teardown (Stage 3). */
+  xrSession: XRSession | null;
+  /**
+   * Latest raw AR pose from WebXR, updated every frame (Stage 3). Read by
+   * the GPS callback via {@link getCurrentArPose} to create paired GPS+AR
+   * events; nulled while tracking is lost so stale poses never pair.
+   */
+  latestArPose: ARPose | null;
+  /**
+   * Per-frame host callback (initAR `callbacks.onFrame`), invoked every XR
+   * frame after pose updates but before render (Stage 3).
+   */
+  onFrame: (() => void) | null;
+  /**
+   * Periodic JPEG image capture (Stage 1). Callback slots arrive via initAR
+   * `callbacks.imageCapture`; `manager`/`blit` are created by
+   * `startImageCapture()` and disposed by `stopImageCapture()`/teardown.
+   */
+  imageCapture: {
+    manager: ImageCaptureManager | null;
+    /** JPEG blit pipeline for WebXR opaque camera textures. */
+    blit: CameraBlitCapture | null;
+    onCaptured: ((image: CapturedImage) => void) | null;
+    /** Returns current device screen rotation (0, 90, 180, 270). */
+    getScreenRotation: (() => number) | null;
+    onFailed: (() => void) | null;
+    onSuspicious: ((blobSize: number, frameIndex: number) => void) | null;
+    /**
+     * Off-thread image-quality analyzer (device-specific — a Web Worker in
+     * the recorder — so it is INJECTED, never built here). Forwarded to
+     * `ImageCaptureManager` as its `analyzeFrame` callback; only invoked when
+     * `config.qualityFilter.enabled`. `null` ⇒ the legacy save-immediately
+     * path. Per-session: the host re-passes it with each initAR.
+     */
+    qualityAnalyzer:
+      | ((frame: CapturedFrame) => Promise<FrameQualityVerdict>)
+      | null;
+  };
+  /**
+   * Depth sampling (Stage 1). `sampler` is created by `initAR` when the
+   * `depth` callbacks group is passed; `rgbBlit` is the dedicated small
+   * 256×192 blit for per-sample RGB lookups (lazy — no GPU allocation when
+   * the rgb option is off).
+   */
+  depth: {
+    sampler: DepthSampler | null;
+    rgbBlit: CameraBlitCapture | null;
+    onCaptured: ((sample: DepthSample) => void) | null;
+    onUnavailable: (() => void) | null;
+  };
+  /**
+   * Throttled camera RGBA frames for CV (Stage 1). `source` is created by
+   * `initAR` when the `cameraFrame` callbacks group is passed; `blit` is the
+   * session-owned aspect-preserving blit (lazy, longer edge = `captureSize`).
+   */
+  cameraFrame: {
+    source: CameraFrameSource | null;
+    blit: CameraBlitCapture | null;
+    /** Longer-edge resolution (px) of the camera-frame blit. */
+    captureSize: number;
+    onFrame: ((image: RgbaImage) => void) | null;
+  };
+  /**
+   * Tracking-state pipeline (Stage 2). Store + host callbacks arrive TOGETHER
+   * via initAR `callbacks.tracking`; `phaseUnsubscribe` is the store phase
+   * subscription opened by `initAR` (torn down by teardown/rebind so no
+   * dangling listener outlives its store). `store` is the ONE handle field
+   * mutated mid-session — {@link rebindTrackingStore}, the recorder's
+   * per-recording store swap.
+   */
+  tracking: {
+    store: TrackingSubscribableStore | null;
+    phaseUnsubscribe: (() => void) | null;
+    onRestarted: ((payload: OdometryTrackingRestartedPayload) => void) | null;
+    onLost: (() => void) | null;
+    onRecovered: (() => void) | null;
+  };
+  /** Crash-isolation diagnostic flags resolved for this session. */
+  crashIsolation: ArCrashIsolationOptions;
+  /**
+   * Host callback fired exactly once whenever the XRSession ends — on BOTH
+   * the app-initiated and the system-initiated path (initAR
+   * `callbacks.onSessionEnd`).
+   */
+  onSessionEnd: ((info: SessionEndInfo) => void) | null;
+  /**
+   * Set by endARSession() immediately before its `xrSession.end()` so the
+   * shared 'end' listener can tell the two trigger paths apart (the app's own
+   * end() fires the same 'end' event the system path does). Read by
+   * handleSessionEnded(); cleared with the rest of the handle on teardown
+   * (also covering the case where end() rejects without the event firing).
+   */
+  endRequestedByApp: boolean;
+  /**
+   * Monotonic time of the previous XR frame, in milliseconds (XR `time`
+   * argument). Starts at 0 so the first frame of a new session sees
+   * `dt = 0` rather than a stale delta from the prior session.
+   */
+  lastFrameTime: number;
+  /**
+   * Latest WebXR camera texture, updated each frame when camera-access is
+   * enabled (valid only within that XR frame). Acquired via Three.js's
+   * renderer.xr.getCameraTexture() API (ExternalTexture).
+   * @see xr-camera-texture.ts
+   */
+  latestCameraTexture: THREE.Texture | null;
+  /**
+   * Latest camera frame dimensions from XRCamera (native resolution). Used to
+   * dynamically resize the blit render target for full-quality captures.
+   */
+  latestCameraWidth: number;
+  latestCameraHeight: number;
+  /** Whether the once-per-session camera-access diagnostic has been logged. */
+  cameraAccessLoggedOnce: boolean;
+  /** Throttle counter for the getCameraTexture()-returned-null diagnostic. */
+  getCameraTextureNullCount: number;
+}
+
+/**
+ * Normalize an optional callback to the handle's explicit-`null` convention
+ * (also keeps `createArSessionHandle` under the lint complexity cap — each
+ * inline `?? null` would count as a decision point).
+ */
+function orNull<T>(value: T | undefined): T | null {
+  return value ?? null;
+}
+
+// Per-cluster builders — one per ArSessionCallbacks group, each with its own
+// lint complexity budget (every `?.` counts as a decision point).
+function createImageCaptureCluster(
+  cb: ArSessionCallbacks['imageCapture']
+): ArSessionHandle['imageCapture'] {
+  return {
+    manager: null,
+    blit: null,
+    onCaptured: orNull(cb?.onCaptured),
+    getScreenRotation: orNull(cb?.getScreenRotation),
+    onFailed: orNull(cb?.onFailed),
+    onSuspicious: orNull(cb?.onSuspicious),
+    qualityAnalyzer: orNull(cb?.qualityAnalyzer),
+  };
+}
+
+function createDepthCluster(
+  cb: ArSessionCallbacks['depth']
+): ArSessionHandle['depth'] {
+  return {
+    sampler: null,
+    rgbBlit: null,
+    onCaptured: orNull(cb?.onCaptured),
+    onUnavailable: orNull(cb?.onUnavailable),
+  };
+}
+
+function createCameraFrameCluster(
+  cb: ArSessionCallbacks['cameraFrame']
+): ArSessionHandle['cameraFrame'] {
+  return {
+    source: null,
+    blit: null,
+    captureSize: DEFAULT_CAMERA_FRAME_CAPTURE_SIZE,
+    onFrame: orNull(cb?.onFrame),
+  };
+}
+
+function createTrackingCluster(
+  cb: ArSessionCallbacks['tracking']
+): ArSessionHandle['tracking'] {
+  return {
+    store: orNull(cb?.store),
+    phaseUnsubscribe: null,
+    onRestarted: orNull(cb?.onRestarted),
+    onLost: orNull(cb?.onLost),
+    onRecovered: orNull(cb?.onRecovered),
+  };
+}
+
+function createSceneGraphCluster(): ArSessionHandle['sceneGraph'] {
+  return {
+    renderer: null,
+    scene: null,
+    camera: null,
+    arWorldGroup: null,
+    css3d: null,
+  };
+}
+
+function createArSessionHandle(
+  crashIsolation: ArCrashIsolationOptions,
+  callbacks: ArSessionCallbacks
+): ArSessionHandle {
+  return {
+    sceneGraph: createSceneGraphCluster(),
+    xrSession: null,
+    latestArPose: null,
+    onFrame: orNull(callbacks.onFrame),
+    imageCapture: createImageCaptureCluster(callbacks.imageCapture),
+    depth: createDepthCluster(callbacks.depth),
+    cameraFrame: createCameraFrameCluster(callbacks.cameraFrame),
+    tracking: createTrackingCluster(callbacks.tracking),
+    crashIsolation,
+    onSessionEnd: orNull(callbacks.onSessionEnd),
+    endRequestedByApp: false,
+    lastFrameTime: 0,
+    latestCameraTexture: null,
+    latestCameraWidth: 0,
+    latestCameraHeight: 0,
+    cameraAccessLoggedOnce: false,
+    getCameraTextureNullCount: 0,
+  };
+}
+
+/** Fresh default handle for the pre-init / post-teardown state. */
+function defaultArSessionHandle(): ArSessionHandle {
+  return createArSessionHandle({ ...DEFAULT_AR_CRASH_ISOLATION }, {});
+}
+
+/**
+ * The live session handle — the module's ONLY mutable since Stage 3. Always
+ * non-null: teardown REPLACES it with a fresh default handle, so
+ * pre-init/post-teardown reads need no null checks. (The plan sketched making
+ * it nullable at Stage 3; the always-non-null default-handle pattern proved
+ * strictly simpler — same reset guarantee, zero null-guard churn at the ~40
+ * read sites.)
+ */
+let activeSession: ArSessionHandle = defaultArSessionHandle();
 
 /**
  * Reset WebXR module state - exported for testing only.
  * @internal
  */
 export function resetWebXRState(): void {
-  // Stop render loop and dispose GPU resources before nulling references
+  // Stop render loop and dispose GPU resources before dropping references
+  const { renderer } = activeSession.sceneGraph;
   if (renderer) {
     renderer.setAnimationLoop(null);
     if (renderer.domElement.parentElement) {
@@ -283,13 +556,6 @@ export function resetWebXRState(): void {
     }
     renderer.dispose();
   }
-  renderer = null;
-  scene = null;
-  camera = null;
-  xrSession = null;
-  arWorldGroup = null;
-  latestArPose = null;
-  lastFrameTime = 0;
   clearFrameUpdates();
   clearXrFrameUpdates();
   // Flush session-scoped teardown (e.g. the store subscription opened by
@@ -298,149 +564,45 @@ export function resetWebXRState(): void {
   // outlive the session. This is the single chokepoint every restart passes
   // through, so callers never have to dispose those by hand.
   runSessionDisposers();
-  imageCaptureManager = null;
-  onImageCaptured = null;
-  getScreenRotation = null;
-  onCaptureFailed = null;
-  onSuspiciousImage = null;
-  // Per-session since the setter fold (2026-07-11 surface-reduction step 1):
-  // the analyzer arrives with the other init-time callbacks and is cleared
-  // with them. Hosts re-pass it on the next initAR (they own the Worker).
-  imageQualityAnalyzer = null;
-  if (trackingPhaseUnsubscribe) {
-    trackingPhaseUnsubscribe();
-    trackingPhaseUnsubscribe = null;
-  }
-  trackingStore = null;
-  onTrackingRestarted = null;
-  onTrackingLost = null;
-  onTrackingRecovered = null;
-  onSessionEnd = null;
-  endRequestedByApp = false;
-  depthSampler = null;
-  onDepthCaptured = null;
-  onDepthUnavailable = null;
-  if (depthRgbBlit) {
-    depthRgbBlit.dispose();
-    depthRgbBlit = null;
-  }
-  cameraFrameSource = null;
-  onCameraFrame = null;
-  cameraFrameCaptureSize = DEFAULT_CAMERA_FRAME_CAPTURE_SIZE;
-  if (cameraFrameBlit) {
-    cameraFrameBlit.dispose();
-    cameraFrameBlit = null;
-  }
-  onFrameCallback = null;
-  if (css3dManager) {
-    css3dManager.dispose();
-    css3dManager = null;
-  }
-  cameraAccessLoggedOnce = false;
-  getCameraTextureNullCount = 0;
-  latestCameraWidth = 0;
-  latestCameraHeight = 0;
-  currentArCrashIsolationOptions = {
-    ...DEFAULT_AR_CRASH_ISOLATION,
-  };
+  // Tear down the outgoing handle's live subscription so no phase listener
+  // outlives its store, then dispose its GPU-backed blits + the CSS3D
+  // overlay, then replace the handle wholesale — one line resets every field
+  // on it (scene graph, XR session, capture + tracking clusters incl. the
+  // injected quality analyzer, callbacks, session-end pair, crash-isolation
+  // options, frame diagnostics), so new handle state can never be forgotten
+  // here. Hosts re-pass their callbacks on the next initAR (they own e.g.
+  // the analyzer Worker). Note this never calls XRSession.end() — that is
+  // endARSession()'s one unique step.
+  activeSession.tracking.phaseUnsubscribe?.();
   cleanupBlitResources();
+  activeSession.depth.rgbBlit?.dispose();
+  activeSession.cameraFrame.blit?.dispose();
+  activeSession.sceneGraph.css3d?.dispose();
+  activeSession = defaultArSessionHandle();
 }
 
-/**
- * The AR world group - parent of camera and all AR-tracked content.
- * This group's transform = the alignment matrix from GpsPlusSlamJs.
- * When the library computes a new alignment, apply it to this group.
- */
-let arWorldGroup: THREE.Group | null = null;
-
-// NOTE: the live session keeps NO module reference to the arpose node (the
+// The scene graph (renderer, scene, camera, arWorldGroup, CSS3D manager),
+// the XRSession, and the latest raw AR pose live on
+// `activeSession.sceneGraph` / `.xrSession` / `.latestArPose` (Stage 3) —
+// see the ArSessionHandle field docs.
+//
+// NOTE: the live session keeps NO reference to the arpose node (the
 // intermediate Object3D between basisChangeNode and the camera). It stays at
 // identity during recording and lives purely in the scene graph built by
 // createSceneHierarchy(); its only reader was the replay-injection getter
 // getArPose(), deleted by surface-reduction step 2 — replay now uses its own
 // arpose from replay-scene's getReplayState().
 
-/**
- * Stores the latest raw AR pose from WebXR (updated every frame).
- * This is read by the GPS callback to create paired GPS+AR events.
- */
-let latestArPose: ARPose | null = null;
+// The image-capture cluster (manager, blit, callback slots incl. the injected
+// quality analyzer) lives on `activeSession.imageCapture` (Stage 1) — see the
+// ArSessionHandle field docs.
 
-/**
- * Image capture manager instance (created when AR session starts)
- */
-let imageCaptureManager: ImageCaptureManager | null = null;
-
-/**
- * Callback for when an image is captured (initAR `callbacks.imageCapture`)
- */
-let onImageCaptured: ((image: CapturedImage) => void) | null = null;
-
-/**
- * Callback for when image capture fails (initAR `callbacks.imageCapture`)
- */
-let onCaptureFailed: (() => void) | null = null;
-
-/**
- * Callback for when a captured image appears suspicious/black
- * (initAR `callbacks.imageCapture`)
- */
-let onSuspiciousImage: ((blobSize: number, frameIndex: number) => void) | null =
-  null;
-
-/**
- * Screen rotation getter (initAR `callbacks.imageCapture`)
- */
-let getScreenRotation: (() => number) | null = null;
-
-/**
- * Off-thread image-quality analyzer (initAR `callbacks.imageCapture.qualityAnalyzer`).
- * Device-specific (a Web Worker in the recorder), so it is INJECTED rather than
- * built here. Forwarded to `ImageCaptureManager` as its `analyzeFrame` callback;
- * the manager only invokes it when `config.qualityFilter.enabled`. `null` ⇒ the
- * legacy save-immediately path. Per-session: cleared by resetWebXRState() like
- * every other init-time callback (the host re-passes it each session).
- */
-let imageQualityAnalyzer:
-  | ((frame: CapturedFrame) => Promise<FrameQualityVerdict>)
-  | null = null;
-
-/**
- * Redux store injected by the host (initAR `callbacks.tracking.store`;
- * swapped mid-session via {@link rebindTrackingStore}). When present,
- * `onXRFrame` dispatches `poseReceived`/`poseLost`, the XR reference-space
- * reset listener dispatches `originReset`, and a subscription translates
- * phase transitions back into the host's `onTrackingLost` /
- * `onTrackingRestarted` / `onTrackingRecovered` callbacks. When the store
- * is absent the tracking pipeline simply no-ops.
- */
-let trackingStore: TrackingSubscribableStore | null = null;
-
-/**
- * Unsubscribe handle returned by the phase subscription set up in
- * `initAR`. Cleared in `resetWebXRState` and on session-end so we never
- * leave dangling listeners on a stale store.
- */
-let trackingPhaseUnsubscribe: (() => void) | null = null;
-
-/**
- * Callback for when tracking restarts (initAR `callbacks.tracking.onRestarted`)
- */
-let onTrackingRestarted:
-  | ((payload: OdometryTrackingRestartedPayload) => void)
-  | null = null;
-
-/**
- * Callback for when tracking is lost (initAR `callbacks.tracking.onLost`)
- * Field Test Readiness Issue #3: Provide user feedback when tracking is lost
- */
-let onTrackingLost: (() => void) | null = null;
-
-/**
- * Callback for when tracking recovers seamlessly without origin reset (Case 1).
- * initAR `callbacks.tracking.onRecovered`.
- */
-let onTrackingRecovered: (() => void) | null = null;
+// The tracking cluster (store, phase subscription, host callbacks) lives on
+// `activeSession.tracking` (Stage 2) — see the ArSessionHandle field docs.
+// When the store is present, `onXRFrame` dispatches `poseReceived`/`poseLost`,
+// the XR reference-space reset listener dispatches `originReset`, and a
+// subscription translates phase transitions back into the host's callbacks;
+// when absent the tracking pipeline simply no-ops.
 
 /**
  * Info passed to the session-end callback (F3, 2026-07-04 user feedback).
@@ -453,163 +615,44 @@ export interface SessionEndInfo {
   requestedByApp: boolean;
 }
 
-/**
- * Host callback fired exactly once whenever the XRSession ends — on BOTH the
- * app-initiated and the system-initiated path (initAR `callbacks.onSessionEnd`).
- * Cleared by resetWebXRState() like every other module-level callback.
- */
-let onSessionEnd: ((info: SessionEndInfo) => void) | null = null;
+// The session-end callback + app-initiated-end discriminator live on
+// `activeSession` (Stage 0) — see the ArSessionHandle field docs.
 
-/**
- * Set by endARSession() immediately before its `xrSession.end()` so the
- * shared 'end' listener can tell the two trigger paths apart (the app's own
- * end() fires the same 'end' event the system path does). Consumed (reset to
- * false) by handleSessionEnded(); also cleared defensively in
- * resetWebXRState() in case end() rejects without the event ever firing.
- */
-let endRequestedByApp = false;
+// The depth-sampling cluster (sampler, rgb blit, callbacks) lives on
+// `activeSession.depth` (Stage 1) — see the ArSessionHandle field docs.
 
-/**
- * Depth sampler instance (created when AR session starts with depth callbacks)
- */
-let depthSampler: DepthSampler | null = null;
+// The per-frame host callback lives on `activeSession.onFrame` (Stage 3);
+// the CSS3D renderer manager on `activeSession.sceneGraph.css3d` — see the
+// ArSessionHandle field docs.
 
-/**
- * Callback for when a depth sample is captured (initAR `callbacks.depth`)
- */
-let onDepthCaptured: ((sample: DepthSample) => void) | null = null;
-
-/**
- * Callback for when depth sensing is determined to be unavailable.
- * Field Test Readiness Issue #8: Notify user if depth was requested but not granted.
- */
-let onDepthUnavailable: (() => void) | null = null;
-
-/**
- * Per-frame callback for custom updates (e.g., map overlay position).
- * Called every XR frame after pose updates but before render.
- */
-let onFrameCallback: (() => void) | null = null;
-
-/**
- * CSS3D renderer manager for rendering DOM-based 3D objects (e.g., Leaflet map)
- * alongside the WebGL render. Created in initAR(), disposed in resetWebXRState().
- */
-let css3dManager: Css3dRendererManager | null = null;
-
-/**
- * Camera blit capture instance for reading WebXR opaque camera textures.
- * Created when image capture starts, disposed when it stops.
- * @see docs/2026-02-06-bug-camera-frames-black.md
- */
-let blitCapture: CameraBlitCapture | null = null;
-
-/**
- * Dedicated small blit target for per-depth-sample RGB lookups
- * (occupancy-grid port plan Iter 8). Separate from `blitCapture`: the JPEG
- * path resizes to (camera resolution ÷ divisor) while this one stays tiny —
- * only ≤ gridSize² positions are ever read from it, so 256×192 suffices and
- * keeps the 1 Hz readback stall negligible. Created lazily on the first
- * sample that needs it (no GPU allocation when the rgb option is off),
- * disposed by resetWebXRState().
- */
-let depthRgbBlit: CameraBlitCapture | null = null;
+// The camera-frame CV cluster (source, blit, capture size, callback) lives on
+// `activeSession.cameraFrame` (Stage 1). SINGLE consumer by design: one
+// source, one callback, one blit — one CV consumer at a time (QR *or* object
+// detection). To run two live CV consumers simultaneously at independent
+// cadences/resolutions, replace the single-callback wiring with a small
+// registry (e.g. `registerCameraFrameConsumer({ intervalMs, captureSize,
+// onFrame })`) holding a `CameraFrameSource` per consumer — the class is
+// already per-instance. See the SCOPE note in `camera-frame-source.ts`.
 
 /** Readback size for the depth-RGB blit (plan §5: "e.g. 256×192 suffices"). */
 const DEPTH_RGB_BLIT_CONFIG = { width: 256, height: 192 };
 
-/**
- * Session-owned blit target for the generic camera-frame RGBA capture
- * (framework-wiring options Part A / B2) — feeds QR detection today, object
- * detection / OpenCV later. Separate from `depthRgbBlit` (256×192) on purpose:
- * CV detection needs more pixels across the target (~1024 long edge) than a
- * colour lookup, but only at the detection cadence, so the {@link CameraFrameSource}
- * throttle keeps the readback off the per-frame path. Created lazily on the
- * first capture, disposed by resetWebXRState(). The longer-edge size is
- * configurable via `startCameraFrameCapture`; the blit preserves the camera
- * aspect (see `acquireCameraFrameRgba`).
- */
-let cameraFrameBlit: CameraBlitCapture | null = null;
+// The per-frame camera texture/dimensions and the camera-access diagnostic
+// latches live on `activeSession` (Stage 0) — see the ArSessionHandle docs.
 
-/**
- * Default longer-edge resolution (px) for the camera-frame blit the QR / CV
- * detector sees. The on-device capture-resolution sweep (2026-06-17, via the
- * `?capture=` override) showed **1024** decodes a small / out-of-focus QR
- * markedly better than the prior 512 with no perceptible cadence cost on the
- * test phone; 2048 helped slightly more but risks low-end devices (4096 lagged),
- * so 1024 is the safe default. Raise per-consumer via
- * `startCameraFrameCapture({ captureSize })`.
- *
- * @see GpsPlusSlamJs_Docs/docs/2026-06-17-1020-qr-size-accuracy-and-thin-demo-plan.md (WS-C)
- */
-export const DEFAULT_CAMERA_FRAME_CAPTURE_SIZE = 1024;
-
-/**
- * Longer-edge resolution of the camera-frame blit (px), default
- * {@link DEFAULT_CAMERA_FRAME_CAPTURE_SIZE}. The blit preserves the camera
- * aspect, so the actual target is e.g. 1024×768 for a 4:3 frame — see
- * `computeAspectFitSize` / `acquireCameraFrameRgba`.
- */
-let cameraFrameCaptureSize = DEFAULT_CAMERA_FRAME_CAPTURE_SIZE;
-
-/**
- * Throttled camera frame source (created in initAR when `onCameraFrame` is
- * set). Blits the camera texture to RGBA at the detection cadence and hands it
- * to `onCameraFrame`. @see camera-frame-source.ts
- *
- * SINGLE consumer by design: one source, one callback, one blit. That covers
- * one CV consumer at a time (QR *or* object detection). To run two live CV
- * consumers **simultaneously** at independent cadences/resolutions, replace this
- * single-callback wiring with a small registry (e.g.
- * `registerCameraFrameConsumer({ intervalMs, captureSize, onFrame })`) holding a
- * `CameraFrameSource` per consumer — the class is already per-instance. See the
- * SCOPE note in `camera-frame-source.ts`.
- */
-let cameraFrameSource: CameraFrameSource | null = null;
-
-/** Callback for each throttled camera RGBA frame (initAR `callbacks.cameraFrame`). */
-let onCameraFrame: ((image: RgbaImage) => void) | null = null;
-
-/**
- * Latest WebXR camera texture, updated each frame when camera-access is enabled.
- * Acquired via Three.js's renderer.xr.getCameraTexture() API (ExternalTexture).
- * @see xr-camera-texture.ts
- */
-let latestCameraTexture: THREE.Texture | null = null;
-
-/**
- * Latest camera frame dimensions from XRCamera (native resolution).
- * Used to dynamically resize the blit render target for full-quality captures.
- */
-let latestCameraWidth = 0;
-let latestCameraHeight = 0;
-
-/**
- * Track whether camera-access diagnostic status has been logged.
- * Reset on each new session via resetWebXRState().
- */
-let cameraAccessLoggedOnce = false;
-
-/**
- * Counter for throttled getCameraTexture diagnostic logging.
- * Only logs the first few null returns to avoid log spam.
- */
-let getCameraTextureNullCount = 0;
 const GET_CAMERA_TEXTURE_LOG_THRESHOLD = 5;
-let currentArCrashIsolationOptions: ArCrashIsolationOptions = {
-  ...DEFAULT_AR_CRASH_ISOLATION,
-};
 
 /**
- * Dispose blit capture resources and clear the cached camera texture.
+ * Dispose the JPEG blit pipeline and clear the cached camera texture.
  * Shared by resetWebXRState() and stopImageCapture() to avoid duplication.
  */
 function cleanupBlitResources(): void {
-  if (blitCapture) {
-    blitCapture.dispose();
-    blitCapture = null;
+  const { imageCapture } = activeSession;
+  if (imageCapture.blit) {
+    imageCapture.blit.dispose();
+    imageCapture.blit = null;
   }
-  latestCameraTexture = null;
+  activeSession.latestCameraTexture = null;
 }
 
 /**
@@ -620,11 +663,13 @@ function cleanupBlitResources(): void {
  * a disposal elsewhere is self-healing.
  */
 function acquireDepthRgbLookup(): RgbLookup | null {
+  const { latestCameraTexture, depth } = activeSession;
+  const { renderer } = activeSession.sceneGraph;
   if (!renderer || !latestCameraTexture) {
     return null;
   }
-  depthRgbBlit ??= new CameraBlitCapture(DEPTH_RGB_BLIT_CONFIG);
-  const readback = depthRgbBlit.captureToPixels(renderer, latestCameraTexture);
+  depth.rgbBlit ??= new CameraBlitCapture(DEPTH_RGB_BLIT_CONFIG);
+  const readback = depth.rgbBlit.captureToPixels(renderer, latestCameraTexture);
   return readback
     ? createRgbLookup(readback.pixels, readback.width, readback.height)
     : null;
@@ -638,26 +683,28 @@ function acquireDepthRgbLookup(): RgbLookup | null {
  * self-healing. Reuses `latestCameraTexture`, exactly like the depth-RGB path.
  */
 function acquireCameraFrameRgba(): RgbaImage | null {
+  const { latestCameraTexture, cameraFrame } = activeSession;
+  const { renderer } = activeSession.sceneGraph;
   if (!renderer || !latestCameraTexture) {
     return null;
   }
   // Size the readback to the camera ASPECT with the longer edge =
-  // cameraFrameCaptureSize (Option 1) so a 4:3 frame becomes e.g. 512×384 — the
+  // cameraFrame.captureSize (Option 1) so a 4:3 frame becomes e.g. 512×384 — the
   // target reaches the detector undistorted instead of squashed into a square.
   // The camera dimensions are set alongside `latestCameraTexture` each frame;
   // `resizeIfNeeded` is a no-op once they stabilise, so the realloc only happens
   // on the first frame or a device rotation.
   const target = computeAspectFitSize(
-    latestCameraWidth,
-    latestCameraHeight,
-    cameraFrameCaptureSize
+    activeSession.latestCameraWidth,
+    activeSession.latestCameraHeight,
+    cameraFrame.captureSize
   );
-  if (!cameraFrameBlit) {
-    cameraFrameBlit = new CameraBlitCapture(target);
+  if (!cameraFrame.blit) {
+    cameraFrame.blit = new CameraBlitCapture(target);
   } else {
-    cameraFrameBlit.resizeIfNeeded(target.width, target.height);
+    cameraFrame.blit.resizeIfNeeded(target.width, target.height);
   }
-  return cameraFrameBlit.captureToRgba(renderer, latestCameraTexture);
+  return cameraFrame.blit.captureToRgba(renderer, latestCameraTexture);
 }
 
 /**
@@ -671,7 +718,7 @@ function acquireCameraFrameRgba(): RgbaImage | null {
  * @returns The latest AR pose, or null if no pose available yet
  */
 export function getCurrentArPose(): ARPose | null {
-  return latestArPose;
+  return activeSession.latestArPose;
 }
 
 /**
@@ -786,17 +833,15 @@ export function buildSessionOptions(
 }
 
 /**
- * Check if WebXR immersive-ar is supported
+ * Check if WebXR immersive-ar is supported.
+ *
+ * Delegates to the timeout-guarded {@link probeImmersiveArSupport} — a
+ * wedged OS XR runtime can make the underlying `isSessionSupported`
+ * promise never settle (2026-07-24), and this check must degrade to
+ * `false` instead of hanging the caller's boot path.
  */
 export async function isWebXRSupported(): Promise<boolean> {
-  if (!navigator.xr) {
-    return false;
-  }
-  try {
-    return await navigator.xr.isSessionSupported('immersive-ar');
-  } catch {
-    return false;
-  }
+  return probeImmersiveArSupport();
 }
 
 /**
@@ -923,9 +968,10 @@ export function createSceneHierarchy(): {
  * allowed half-wired states like a tracking store without its callbacks).
  *
  * Everything here is INIT-TIME wiring: initAR unpacks the struct once into
- * the module-level slots the frame path reads directly (no per-frame
- * indirection), and `resetWebXRState()` clears every slot at session end —
- * re-pass the struct with each `initAR`. The single mid-session mutation the
+ * the session handle's slots the frame path reads directly (one monomorphic
+ * property access, no per-frame indirection), and `resetWebXRState()`
+ * replaces the handle at session end — re-pass the struct with each
+ * `initAR`. The single mid-session mutation the
  * apps need (the recorder swapping its Redux store per recording) has its own
  * narrow function, {@link rebindTrackingStore}.
  */
@@ -1007,8 +1053,8 @@ export interface ArSessionCallbacks {
  * @param sessionFeatures - Opt-in standard WebXR features (e.g.
  *   `requestHitTest`) forwarded to the session negotiation.
  * @param callbacks - Host callbacks for this session (see
- *   {@link ArSessionCallbacks}); unpacked once into module slots that
- *   `resetWebXRState()` clears at session end.
+ *   {@link ArSessionCallbacks}); unpacked once into the session handle's
+ *   slots, which `resetWebXRState()` replaces wholesale at session end.
  */
 export async function initAR(
   container: HTMLElement,
@@ -1024,36 +1070,24 @@ export async function initAR(
   // successful initAR() and a matching endARSession()/resetWebXRState(). If
   // either is still set, calling initAR() again would orphan the previous
   // renderer's canvas in the DOM and leak its GPU resources while silently
-  // overwriting the module-level references. Surface this as a programming
-  // error so the host tears down the existing session explicitly first.
-  if (renderer || xrSession) {
+  // replacing the live handle. Surface this as a programming error so the
+  // host tears down the existing session explicitly first.
+  if (activeSession.sceneGraph.renderer || activeSession.xrSession) {
     throw new Error(
       'AR session already initialized — call endARSession() before initAR() again'
     );
   }
 
-  // Unpack the callbacks struct ONCE into the module-level slots the frame
-  // path reads directly — resetWebXRState() cleared them at the previous
-  // session end, and assigning unconditionally (absent ⇒ null) keeps this
-  // init deterministic even after an aborted initAR. No per-frame
-  // indirection is introduced: onXRFrame keeps reading the module vars.
-  onImageCaptured = callbacks.imageCapture?.onCaptured ?? null;
-  getScreenRotation = callbacks.imageCapture?.getScreenRotation ?? null;
-  onCaptureFailed = callbacks.imageCapture?.onFailed ?? null;
-  onSuspiciousImage = callbacks.imageCapture?.onSuspicious ?? null;
-  imageQualityAnalyzer = callbacks.imageCapture?.qualityAnalyzer ?? null;
-  trackingStore = callbacks.tracking?.store ?? null;
-  onTrackingRestarted = callbacks.tracking?.onRestarted ?? null;
-  onTrackingLost = callbacks.tracking?.onLost ?? null;
-  onTrackingRecovered = callbacks.tracking?.onRecovered ?? null;
-  onDepthCaptured = callbacks.depth?.onCaptured ?? null;
-  onDepthUnavailable = callbacks.depth?.onUnavailable ?? null;
-  onCameraFrame = callbacks.cameraFrame?.onFrame ?? null;
-  onFrameCallback = callbacks.onFrame ?? null;
-  onSessionEnd = callbacks.onSessionEnd ?? null;
-
-  currentArCrashIsolationOptions =
-    validateArCrashIsolationOptions(isolationOptions);
+  // Fresh per-session handle carrying this session's validated crash-isolation
+  // options, every callback slot (incl. the per-frame tick), and the
+  // scene-graph/session fields populated below (Stages 0–3). No per-frame
+  // indirection beyond one monomorphic property access: onXRFrame reads the
+  // handle fields directly.
+  activeSession = createArSessionHandle(
+    validateArCrashIsolationOptions(isolationOptions),
+    callbacks
+  );
+  const { sceneGraph } = activeSession;
 
   // G-7 (2026-07-10 quality review): apply the Chromium camera-access
   // tab-crash workaround here so every consumer gets it by default —
@@ -1063,15 +1097,16 @@ export async function initAR(
   // still call `applyChromiumProjectionLayerWorkaround()` at bootstrap are
   // unaffected. Opt out via `isolationOptions` on unaffected devices
   // (e.g. Quest) where forcing `XRWebGLLayer` could regress WebXR.
-  if (currentArCrashIsolationOptions.applyChromiumProjectionLayerWorkaround) {
+  if (activeSession.crashIsolation.applyChromiumProjectionLayerWorkaround) {
     applyChromiumProjectionLayerWorkaround();
   }
 
   // Create Three.js renderer
-  renderer = new THREE.WebGLRenderer({
+  const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: true,
   });
+  sceneGraph.renderer = renderer;
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
@@ -1081,8 +1116,8 @@ export async function initAR(
 
   // Create CSS3D renderer overlay (Approach E) — child of dom overlay root
   // so it's visible in WebXR's dom-overlay compositing.
-  if (currentArCrashIsolationOptions.enableCss3dRenderer) {
-    css3dManager = createCss3dRendererManager(
+  if (activeSession.crashIsolation.enableCss3dRenderer) {
+    sceneGraph.css3d = createCss3dRendererManager(
       container,
       window.innerWidth,
       window.innerHeight
@@ -1090,20 +1125,24 @@ export async function initAR(
   }
 
   // Create scene with proper hierarchy. The arpose node stays in the graph
-  // only (no module ref) — see the NOTE next to the module state above.
+  // only (no handle ref) — see the NOTE next to the handle state above.
   const hierarchy = createSceneHierarchy();
-  scene = hierarchy.scene;
-  arWorldGroup = hierarchy.arWorldGroup;
-  camera = hierarchy.camera;
+  sceneGraph.scene = hierarchy.scene;
+  sceneGraph.arWorldGroup = hierarchy.arWorldGroup;
+  sceneGraph.camera = hierarchy.camera;
 
   // Request AR session with validated options
   const sessionOptions = buildSessionOptions(
     container,
-    currentArCrashIsolationOptions,
+    activeSession.crashIsolation,
     sessionFeatures
   );
 
-  xrSession = await navigator.xr.requestSession('immersive-ar', sessionOptions);
+  const xrSession = await navigator.xr.requestSession(
+    'immersive-ar',
+    sessionOptions
+  );
+  activeSession.xrSession = xrSession;
 
   // Handle session end — BOTH trigger paths funnel through this listener:
   // the system-initiated end (Android back gesture — fires 'end' directly)
@@ -1122,6 +1161,7 @@ export async function initAR(
   // quality review) is structurally impossible now. Without the group we
   // keep the legacy no-op behaviour: `onXRFrame` never dispatches and no
   // callbacks ever fire. See docs/2026-05-13-tracking-state-slice-port-plan.md.
+  const trackingStore = activeSession.tracking.store;
   if (trackingStore) {
     const store = trackingStore;
     // Start from a clean slate — the previous session may have left the
@@ -1130,7 +1170,7 @@ export async function initAR(
     // the slice match.
     store.dispatch(resetTrackingAction());
 
-    trackingPhaseUnsubscribe = subscribeToTrackingPhase(store);
+    activeSession.tracking.phaseUnsubscribe = subscribeToTrackingPhase(store);
 
     // Listen for XRReferenceSpace reset events to distinguish Case 1 (seamless
     // recovery) from Case 2 (relocalization). The reset event fires when the
@@ -1155,28 +1195,29 @@ export async function initAR(
   }
 
   // Initialize depth sampler if callback is set
-  if (onDepthCaptured) {
+  const onDepthSampleCaptured = activeSession.depth.onCaptured;
+  if (onDepthSampleCaptured) {
     const depthCallbacks: DepthSamplerCallbacks = {
-      onSampleCaptured: onDepthCaptured,
+      onSampleCaptured: onDepthSampleCaptured,
       getCurrentPose: getCurrentArPose,
       // Iter 8: per-sample camera color for the occupancy-grid voxels.
       // Gated inside the sampler by its `rgb` config (recording option).
       acquireRgbLookup: acquireDepthRgbLookup,
       // Field Test Readiness Issue #8: Notify user if depth is unavailable
-      onDepthUnavailable: onDepthUnavailable ?? undefined,
+      onDepthUnavailable: activeSession.depth.onUnavailable ?? undefined,
     };
-    depthSampler = new DepthSampler(depthCallbacks);
+    activeSession.depth.sampler = new DepthSampler(depthCallbacks);
   }
 
   // Initialize the camera frame source if a frame callback is set (B2). The
   // source owns the detection-cadence throttle; the session owns the blit
   // (acquireCameraFrameRgba reuses `latestCameraTexture`), exactly like the
   // depth-RGB path. `startCameraFrameCapture` is what begins delivering frames.
-  if (onCameraFrame) {
-    const deliver = onCameraFrame;
-    cameraFrameSource = new CameraFrameSource({
+  const deliverCameraFrame = activeSession.cameraFrame.onFrame;
+  if (deliverCameraFrame) {
+    activeSession.cameraFrame.source = new CameraFrameSource({
       capture: acquireCameraFrameRgba,
-      onCapture: (image) => deliver(image),
+      onCapture: (image) => deliverCameraFrame(image),
     });
   }
 
@@ -1210,14 +1251,15 @@ function snapshotDeviceOrientation(): {
  * runs synchronously inside each `dispatch`, so the host callbacks fire
  * in the same order as a direct invocation would.
  *
- * Translation rules (locked in by tracking-slice tests):
+ * Translation rules (locked in by tracking-slice tests; the host callbacks
+ * live on `activeSession.tracking`):
  *   - `tracking → lost`: clear `latestArPose` (drops in-flight GPS events)
- *     and call `onTrackingLost?.()`.
+ *     and call the host's `onLost`.
  *   - `lost → tracking` with `lastRestartedPayload !== null` (Case 2):
- *     call `onTrackingRestarted?.(payload)` then dispatch
+ *     call the host's `onRestarted(payload)` then dispatch
  *     `clearLastRestartedPayload` so a subsequent loss cycle starts clean.
  *   - `lost → tracking` with payload null (Case 1: seamless recovery):
- *     call `onTrackingRecovered?.()`.
+ *     call the host's `onRecovered`.
  *   - `initializing → tracking`: no callback (initial acquisition is not
  *     a restart — same behaviour as the manager).
  */
@@ -1239,8 +1281,8 @@ function subscribeToTrackingPhase(
       log.warn('Tracking lost');
       // Drop GPS events during tracking loss by nulling the pose.
       // The recording coordinator's null guard will skip GPS events.
-      latestArPose = null;
-      onTrackingLost?.();
+      activeSession.latestArPose = null;
+      activeSession.tracking.onLost?.();
       return;
     }
 
@@ -1248,7 +1290,7 @@ function subscribeToTrackingPhase(
       const payload = selectLastRestartedPayload(store.getState());
       if (payload !== null) {
         log.info('Tracking restarted (origin reset)');
-        onTrackingRestarted?.(payload);
+        activeSession.tracking.onRestarted?.(payload);
         store.dispatch(clearLastRestartedPayloadAction());
       } else {
         // A null payload means Case 1 (no origin reset during loss). The
@@ -1260,7 +1302,7 @@ function subscribeToTrackingPhase(
         // only remaining null-payload case is a genuine seamless recovery.
         // See tracking-slice.ts (defensive branch) and the port plan doc.
         log.info('Tracking recovered (same coordinate frame)');
-        onTrackingRecovered?.();
+        activeSession.tracking.onRecovered?.();
       }
     }
   });
@@ -1272,19 +1314,20 @@ function subscribeToTrackingPhase(
  * requested via initAR `callbacks.tracking`).
  */
 function updateTrackingState(arPose: ARPose | null): void {
-  if (!trackingStore) {
+  const { store } = activeSession.tracking;
+  if (!store) {
     return;
   }
 
   if (arPose) {
-    trackingStore.dispatch(
+    store.dispatch(
       poseReceivedAction({
         pose: arPose,
         sensorOrientation: snapshotDeviceOrientation(),
       })
     );
   } else {
-    trackingStore.dispatch(poseLostAction());
+    store.dispatch(poseLostAction());
   }
 }
 
@@ -1292,6 +1335,7 @@ function updateTrackingState(arPose: ARPose | null): void {
  * Called each XR frame
  */
 function onXRFrame(time: number, frame: XRFrame | undefined): void {
+  const { renderer, scene, camera } = activeSession.sceneGraph;
   if (!renderer || !scene || !camera || !frame) {
     return;
   }
@@ -1312,9 +1356,12 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // `THREE.Clock` — so replay/test harnesses that drive `onXRFrame` with
   // synthetic timestamps see deterministic ticks. See `frame-loop.ts.md`
   // and `2026-05-13-ecs-migration-plan.md`.
-  const dt = lastFrameTime === 0 ? 0 : (time - lastFrameTime) / 1000;
+  const dt =
+    activeSession.lastFrameTime === 0
+      ? 0
+      : (time - activeSession.lastFrameTime) / 1000;
   const elapsed = time / 1000;
-  lastFrameTime = time;
+  activeSession.lastFrameTime = time;
   runFrameUpdates(dt, elapsed);
 
   // Hand the live XR context to app-registered per-frame callbacks (hit-test,
@@ -1323,6 +1370,7 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // contract. We only run these when a session is live (it always is inside
   // `onXRFrame`, but the guard keeps the types honest and avoids firing during
   // teardown races).
+  const { xrSession } = activeSession;
   if (xrSession) {
     runXrFrameUpdates({
       frame,
@@ -1335,7 +1383,7 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
 
   if (arPose) {
     // Store the latest pose for getCurrentArPose()
-    latestArPose = arPose;
+    activeSession.latestArPose = arPose;
   }
 
   // Extract camera texture for blit capture (camera-access feature).
@@ -1343,8 +1391,8 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // any previous reference up-front and only repopulate on successful
   // acquisition this frame. This prevents stale textures from being used
   // in the subsequent capture logic (which could cause native crashes).
-  latestCameraTexture = null;
-  if (currentArCrashIsolationOptions.enableCameraTextureAcquisition) {
+  activeSession.latestCameraTexture = null;
+  if (activeSession.crashIsolation.enableCameraTextureAcquisition) {
     // getXrCameraFromPose() collapses every precondition failure
     // (pose=null, no views, no .camera, invalid dimensions) to a single
     // null result. Combined with the unconditional clear above, this
@@ -1358,11 +1406,11 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
     if (
       shouldLogCameraAccessDiagnostic(
         pose,
-        cameraAccessLoggedOnce,
-        imageCaptureManager !== null
+        activeSession.cameraAccessLoggedOnce,
+        activeSession.imageCapture.manager !== null
       )
     ) {
-      cameraAccessLoggedOnce = true;
+      activeSession.cameraAccessLoggedOnce = true;
       if (xrCamera) {
         log.info(
           'camera-access GRANTED — XRView.camera is available for blit capture'
@@ -1381,15 +1429,18 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
       // and wraps the result in an ExternalTexture (proper texture subclass).
       const result = acquireCameraTexture(renderer, xrCamera);
       if (result) {
-        latestCameraTexture = result.texture;
-        latestCameraWidth = result.width;
-        latestCameraHeight = result.height;
+        activeSession.latestCameraTexture = result.texture;
+        activeSession.latestCameraWidth = result.width;
+        activeSession.latestCameraHeight = result.height;
       } else {
         // Diagnostic: log when getCameraTexture returns null/undefined
-        getCameraTextureNullCount++;
-        if (getCameraTextureNullCount <= GET_CAMERA_TEXTURE_LOG_THRESHOLD) {
+        activeSession.getCameraTextureNullCount++;
+        if (
+          activeSession.getCameraTextureNullCount <=
+          GET_CAMERA_TEXTURE_LOG_THRESHOLD
+        ) {
           log.warn(
-            `getCameraTexture() returned null (occurrence ${getCameraTextureNullCount}/${GET_CAMERA_TEXTURE_LOG_THRESHOLD}). ` +
+            `getCameraTexture() returned null (occurrence ${activeSession.getCameraTextureNullCount}/${GET_CAMERA_TEXTURE_LOG_THRESHOLD}). ` +
               'camera-access is granted but Three.js did not provide a texture.'
           );
         }
@@ -1398,14 +1449,16 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   }
 
   // Check if we need to capture an image
-  if (imageCaptureManager) {
-    imageCaptureManager.onFrame(time);
+  const { manager: imageManager } = activeSession.imageCapture;
+  if (imageManager) {
+    imageManager.onFrame(time);
   }
 
   // Check if we need to sample depth. The provider is lazy (quality-review
   // E-4): the sampler only invokes it when a sample is due, so the
   // getDepthInformation + wrap cost is paid ~1×/interval instead of every
   // render frame.
+  const { sampler: depthSampler } = activeSession.depth;
   if (depthSampler) {
     depthSampler.onFrame(time, () => getDepthInfoFromFrame(frame, pose));
   }
@@ -1413,24 +1466,27 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // Check if we need to capture a camera frame for CV. The source throttles to
   // the detection cadence, so the (more expensive, ~512²) blit runs ~8×/s — not
   // every render frame. Must run after `latestCameraTexture` is set above.
+  const { source: cameraFrameSource } = activeSession.cameraFrame;
   if (cameraFrameSource) {
     cameraFrameSource.onFrame(time);
   }
 
   // Call per-frame callback (e.g., for map overlay position updates)
-  if (onFrameCallback) {
+  const { onFrame } = activeSession;
+  if (onFrame) {
     try {
-      onFrameCallback();
+      onFrame();
     } catch (error) {
-      log.error('Error in onFrameCallback:', error);
+      log.error('Error in onFrame callback:', error);
     }
   }
 
   renderer.render(scene, camera);
 
   // Render CSS3D overlay (DOM-based 3D objects like Leaflet map)
-  if (currentArCrashIsolationOptions.enableCss3dRenderer && css3dManager) {
-    css3dManager.render(scene, camera);
+  const { css3d } = activeSession.sceneGraph;
+  if (activeSession.crashIsolation.enableCss3dRenderer && css3d) {
+    css3d.render(scene, camera);
   }
 }
 
@@ -1506,7 +1562,7 @@ export function getDepthInfoFromFrame(
  * Get the current Three.js scene (for adding objects like map)
  */
 export function getScene(): THREE.Scene | null {
-  return scene;
+  return activeSession.sceneGraph.scene;
 }
 
 /**
@@ -1514,14 +1570,14 @@ export function getScene(): THREE.Scene | null {
  * Content added here will be transformed by the alignment matrix.
  */
 export function getArWorldGroup(): THREE.Group | null {
-  return arWorldGroup;
+  return activeSession.sceneGraph.arWorldGroup;
 }
 
 /**
  * Get the current camera
  */
 export function getCamera(): THREE.PerspectiveCamera | null {
-  return camera;
+  return activeSession.sceneGraph.camera;
 }
 
 /**
@@ -1548,6 +1604,7 @@ export function getCamera(): THREE.PerspectiveCamera | null {
  * @param matrix - 16-element column-major matrix (gl-matrix mat4 format)
  */
 export function applyAlignmentMatrix(matrix: readonly number[]): void {
+  const { arWorldGroup } = activeSession.sceneGraph;
   if (!arWorldGroup) {
     log.warn('Cannot apply alignment - arWorldGroup not initialized');
     return;
@@ -1604,15 +1661,13 @@ export function nueQuaternionToWebXR(
 function handleSessionEnded(): void {
   log.info('Session ended');
   // Capture callback + discriminator BEFORE teardown — resetWebXRState()
-  // clears both.
-  const callback = onSessionEnd;
-  const requestedByApp = endRequestedByApp;
-  endRequestedByApp = false;
+  // replaces the session handle, clearing both.
+  const callback = activeSession.onSessionEnd;
+  const requestedByApp = activeSession.endRequestedByApp;
   // Reset the tracking slice so the next session starts from a clean
-  // INITIALIZING state (must run before resetWebXRState() nulls the store).
-  if (trackingStore) {
-    trackingStore.dispatch(resetTrackingAction());
-  }
+  // INITIALIZING state (must run before resetWebXRState() replaces the
+  // handle carrying the store).
+  activeSession.tracking.store?.dispatch(resetTrackingAction());
   resetWebXRState();
   // Notify the host last, defensively: a throwing callback must never leave
   // the module half-torn-down.
@@ -1629,7 +1684,7 @@ function handleSessionEnded(): void {
  * End the current XR session and clean up all resources.
  *
  * Stops the animation loop, ends the XR session, then delegates the full
- * teardown to {@link resetWebXRState} so every module-level reference is
+ * teardown to {@link resetWebXRState} so every session reference is
  * cleared (renderer/scene/camera, image-capture, depth, the tracking-phase
  * subscription, the frame-update registry, diagnostics, blit resources).
  * This is the production cleanup path — call it when the AR experience is
@@ -1638,9 +1693,7 @@ function handleSessionEnded(): void {
 export async function endARSession(): Promise<void> {
   // Stop the render loop first so onXRFrame stops firing before we end the
   // session and tear everything down.
-  if (renderer) {
-    renderer.setAnimationLoop(null);
-  }
+  activeSession.sceneGraph.renderer?.setAnimationLoop(null);
 
   // End the actual XR session and await it. resetWebXRState() in the
   // `finally` below only nulls the `xrSession` reference — it never calls
@@ -1655,22 +1708,23 @@ export async function endARSession(): Promise<void> {
   // session until a page reload. Running the teardown unconditionally
   // guarantees the module always returns to a clean, re-initialisable state.
   try {
+    const { xrSession } = activeSession;
     if (xrSession) {
       // Mark this end as app-initiated for the shared 'end' listener —
       // end() fires the same 'end' event a system-initiated end does, and
       // handleSessionEnded() consumes this flag to discriminate the paths.
-      endRequestedByApp = true;
+      activeSession.endRequestedByApp = true;
       await xrSession.end();
     }
   } finally {
     // Delegate the rest of the teardown to resetWebXRState() so we never leak
-    // any module-level reference. Re-implementing a subset here (the previous
+    // any session reference. Re-implementing a subset here (the previous
     // approach) silently dropped imageCaptureManager, depthSampler, the
     // tracking-phase subscription, the frame-update registry, the scene-graph
     // references and the diagnostic counters — all of which resetWebXRState()
-    // clears. Keeping a single source of truth for cleanup prevents new module
-    // state from leaking between sessions when it is added to resetWebXRState()
-    // but forgotten here.
+    // clears via the wholesale handle replacement. Keeping a single source of
+    // truth for cleanup prevents new session state from leaking between
+    // sessions when it is added to the handle but this path is forgotten.
     resetWebXRState();
   }
 }
@@ -1686,36 +1740,40 @@ export async function endARSession(): Promise<void> {
  *   — see `2026-06-12-1130-payload-rebuild-field-drop-audit.md` (F3).
  */
 export function startImageCapture(config?: Partial<ImageCaptureConfig>): void {
+  const { renderer } = activeSession.sceneGraph;
   if (!renderer) {
     log.warn('Cannot start image capture - renderer not initialized');
     return;
   }
 
-  if (!onImageCaptured || !getScreenRotation) {
+  const { imageCapture } = activeSession;
+  const onCaptured = imageCapture.onCaptured;
+  const getRotation = imageCapture.getScreenRotation;
+  if (!onCaptured || !getRotation) {
     log.warn('Cannot start image capture - callbacks not set');
     return;
   }
 
   // Stop any in-flight capture session before starting a new one. Without
   // this, a second startImageCapture() (e.g. toggling capture settings
-  // mid-session) would overwrite `blitCapture` — leaking the previous
+  // mid-session) would overwrite the blit pipeline — leaking the previous
   // CameraBlitCapture and its WebGLRenderTarget GPU memory — and orphan the
   // previous ImageCaptureManager, leaving two managers competing over the
   // same callbacks and a dangling safety timeout running.
-  if (imageCaptureManager || blitCapture) {
+  if (imageCapture.manager || imageCapture.blit) {
     log.warn('Image capture already running - stopping previous session');
     stopImageCapture();
   }
 
   const callbacks: ImageCaptureCallbacks = {
     getCurrentPose: getCurrentArPose,
-    getScreenRotation: getScreenRotation,
-    onCaptured: onImageCaptured,
-    onCaptureFailed: onCaptureFailed ?? undefined,
-    onSuspiciousImage: onSuspiciousImage ?? undefined,
+    getScreenRotation: getRotation,
+    onCaptured: onCaptured,
+    onCaptureFailed: imageCapture.onFailed ?? undefined,
+    onSuspiciousImage: imageCapture.onSuspicious ?? undefined,
     // Off-thread blur/blackness gate (no-op unless qualityFilter.enabled). The
     // manager calls this after a motion-calm frame is encoded.
-    analyzeFrame: imageQualityAnalyzer ?? undefined,
+    analyzeFrame: imageCapture.qualityAnalyzer ?? undefined,
   };
 
   // Merge provided config with defaults up front so the blit pipeline and
@@ -1728,19 +1786,21 @@ export function startImageCapture(config?: Partial<ImageCaptureConfig>): void {
   // Set up blit capture for WebXR opaque camera textures.
   // This creates a GPU pipeline that converts the opaque texture to readable pixels.
   // Falls back to canvas.toBlob() when camera-access is not available or blit fails.
-  blitCapture = new CameraBlitCapture();
+  imageCapture.blit = new CameraBlitCapture();
   const currentRenderer = renderer;
   const divisor = mergedConfig.resolutionDivisor;
   callbacks.captureFrame = async (
     quality: number
   ): Promise<CapturedFrame | null> => {
-    // Snapshot the module-level `blitCapture` into a local: ending/resetting the
-    // AR session (resetWebXRState → cleanupBlitResources) can null it WHILE the
-    // captureToBlob() await below is in flight, and the post-await getWidth()/
-    // getHeight() reads would then throw "Cannot read properties of null".
-    // The local keeps a stable handle for this in-flight capture; a frame from a
-    // torn-down session is harmlessly discarded downstream.
-    const bc = blitCapture;
+    // Snapshot the session's blit into a local: ending/resetting the AR
+    // session (resetWebXRState → cleanupBlitResources) can null/replace it
+    // WHILE the captureToBlob() await below is in flight, and the post-await
+    // getWidth()/getHeight() reads would then throw "Cannot read properties
+    // of null". The local keeps a stable handle for this in-flight capture; a
+    // frame from a torn-down session is harmlessly discarded downstream.
+    const bc = activeSession.imageCapture.blit;
+    const { latestCameraTexture, latestCameraWidth, latestCameraHeight } =
+      activeSession;
     if (!bc || !latestCameraTexture) {
       // camera-access not available or no texture yet — fall back to
       // canvas.toBlob. The canvas backing store is what toBlob encodes, so its
@@ -1784,12 +1844,12 @@ export function startImageCapture(config?: Partial<ImageCaptureConfig>): void {
   };
   log.info(`Blit capture pipeline initialized (resolutionDivisor=${divisor})`);
 
-  imageCaptureManager = new ImageCaptureManager(
+  imageCapture.manager = new ImageCaptureManager(
     renderer.domElement,
     callbacks,
     mergedConfig
   );
-  imageCaptureManager.start();
+  imageCapture.manager.start();
   log.info('Image capture started');
 }
 
@@ -1797,12 +1857,13 @@ export function startImageCapture(config?: Partial<ImageCaptureConfig>): void {
  * Stop capturing images.
  */
 export function stopImageCapture(): void {
-  if (imageCaptureManager) {
-    imageCaptureManager.stop();
+  const { imageCapture } = activeSession;
+  if (imageCapture.manager) {
+    imageCapture.manager.stop();
     log.info(
-      `Image capture stopped (${imageCaptureManager.getFrameCount()} frames captured)`
+      `Image capture stopped (${imageCapture.manager.getFrameCount()} frames captured)`
     );
-    imageCaptureManager = null;
+    imageCapture.manager = null;
   }
   cleanupBlitResources();
 }
@@ -1811,7 +1872,7 @@ export function stopImageCapture(): void {
  * Get the current image capture frame count.
  */
 export function getImageCaptureFrameCount(): number {
-  return imageCaptureManager?.getFrameCount() ?? 0;
+  return activeSession.imageCapture.manager?.getFrameCount() ?? 0;
 }
 
 /**
@@ -1840,11 +1901,12 @@ export function rebindTrackingStore(store: TrackingSubscribableStore): void {
   // tear it down before swapping. The new subscription is established
   // inside `initAR`, not here, because we also want it to survive
   // `resetWebXRState`-then-`initAR` cycles cleanly.
-  if (trackingPhaseUnsubscribe) {
-    trackingPhaseUnsubscribe();
-    trackingPhaseUnsubscribe = null;
+  const { tracking } = activeSession;
+  if (tracking.phaseUnsubscribe) {
+    tracking.phaseUnsubscribe();
+    tracking.phaseUnsubscribe = null;
   }
-  trackingStore = store;
+  tracking.store = store;
 }
 
 /**
@@ -1859,16 +1921,17 @@ export function rebindTrackingStore(store: TrackingSubscribableStore): void {
  *   this parameter existed (occupancy-grid port plan, Iter 6).
  */
 export function startDepthCapture(config?: Partial<DepthSamplerConfig>): void {
-  if (!depthSampler) {
+  const { sampler } = activeSession.depth;
+  if (!sampler) {
     log.warn('Cannot start depth capture - sampler not initialized');
     return;
   }
   if (config) {
-    depthSampler.updateConfig(config);
+    sampler.updateConfig(config);
   }
-  depthSampler.start();
+  sampler.start();
   log.info(
-    `Depth capture started (interval: ${depthSampler.getConfig().intervalMs}ms, grid: ${depthSampler.getConfig().gridSize}×${depthSampler.getConfig().gridSize})`
+    `Depth capture started (interval: ${sampler.getConfig().intervalMs}ms, grid: ${sampler.getConfig().gridSize}×${sampler.getConfig().gridSize})`
   );
 }
 
@@ -1876,9 +1939,10 @@ export function startDepthCapture(config?: Partial<DepthSamplerConfig>): void {
  * Stop depth sampling.
  */
 export function stopDepthCapture(): void {
-  if (depthSampler) {
-    const count = depthSampler.getSampleCount();
-    depthSampler.stop();
+  const { sampler } = activeSession.depth;
+  if (sampler) {
+    const count = sampler.getSampleCount();
+    sampler.stop();
     log.info(`Depth capture stopped (${count} samples captured)`);
   }
 }
@@ -1887,7 +1951,7 @@ export function stopDepthCapture(): void {
  * Get the current depth sample count.
  */
 export function getDepthSampleCount(): number {
-  return depthSampler?.getSampleCount() ?? 0;
+  return activeSession.depth.sampler?.getSampleCount() ?? 0;
 }
 
 /** Optional tuning for {@link startCameraFrameCapture}. */
@@ -1921,7 +1985,8 @@ export interface CameraFrameCaptureConfig {
 export function startCameraFrameCapture(
   config?: CameraFrameCaptureConfig
 ): void {
-  if (!cameraFrameSource) {
+  const { cameraFrame } = activeSession;
+  if (!cameraFrame.source) {
     log.warn(
       'Cannot start camera frame capture - frame source not initialized'
     );
@@ -1933,14 +1998,14 @@ export function startCameraFrameCapture(
     config.captureSize > 0
   ) {
     // Applied before the first capture allocates the blit.
-    cameraFrameCaptureSize = Math.floor(config.captureSize);
+    cameraFrame.captureSize = Math.floor(config.captureSize);
   }
   if (config?.intervalMs !== undefined) {
-    cameraFrameSource.updateConfig({ intervalMs: config.intervalMs });
+    cameraFrame.source.updateConfig({ intervalMs: config.intervalMs });
   }
-  cameraFrameSource.start();
+  cameraFrame.source.start();
   log.info(
-    `Camera frame capture started (interval: ${cameraFrameSource.getConfig().intervalMs}ms, long edge ${cameraFrameCaptureSize}px, aspect-preserved)`
+    `Camera frame capture started (interval: ${cameraFrame.source.getConfig().intervalMs}ms, long edge ${cameraFrame.captureSize}px, aspect-preserved)`
   );
 }
 
@@ -1948,9 +2013,10 @@ export function startCameraFrameCapture(
  * Stop camera frame capture. Safe to call when not running.
  */
 export function stopCameraFrameCapture(): void {
-  if (cameraFrameSource) {
-    const count = cameraFrameSource.getFrameCount();
-    cameraFrameSource.stop();
+  const { source } = activeSession.cameraFrame;
+  if (source) {
+    const count = source.getFrameCount();
+    source.stop();
     log.info(`Camera frame capture stopped (${count} frames captured)`);
   }
 }
@@ -1960,5 +2026,5 @@ export function stopCameraFrameCapture(): void {
  * `startCameraFrameCapture`.
  */
 export function getCameraFrameCount(): number {
-  return cameraFrameSource?.getFrameCount() ?? 0;
+  return activeSession.cameraFrame.source?.getFrameCount() ?? 0;
 }

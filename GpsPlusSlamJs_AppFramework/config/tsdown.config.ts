@@ -57,6 +57,7 @@ const entryFiles = [
   'src/ar/scene-node-names.ts',
   'src/ar/webxr-nue-basis.ts',
   'src/ar/webxr-session.ts',
+  'src/ar/webxr-support-probe.ts',
   'src/ar/xr-camera-texture.ts',
   'src/ar/xr-error-handler.ts',
   'src/ar/xr-frame-loop.ts',

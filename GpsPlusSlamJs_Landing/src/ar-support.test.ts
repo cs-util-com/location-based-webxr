@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyCtaDeviceClaim,
+  AR_SUPPORT_PROBE_TIMEOUT_MS,
   CTA_CLAIM_CAPABLE,
   CTA_CLAIM_ELEMENT_ID,
   detectImmersiveArSupport,
 } from "./ar-support";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 // Why this test matters: the CTA's "run on your phone right now" claim is
 // only true on devices with immersive-ar WebXR (round-8 Z6). The static
@@ -45,6 +50,19 @@ describe("detectImmersiveArSupport", () => {
         isSessionSupported: () => Promise.reject(new Error("denied")),
       }),
     ).resolves.toBe(false);
+  });
+
+  // Why this test matters: on 2026-07-24 a wedged OS XR runtime made the real
+  // browser's isSessionSupported('immersive-ar') NEVER settle — a bare await
+  // hung the CTA upgrade forever and the desktop QR-handoff e2e failed. The
+  // probe must give up after the timeout and keep the honest static claim.
+  it("treats a never-settling isSessionSupported as unsupported (timeout)", async () => {
+    vi.useFakeTimers();
+    const result = detectImmersiveArSupport({
+      isSessionSupported: () => new Promise<boolean>(() => {}),
+    });
+    await vi.advanceTimersByTimeAsync(AR_SUPPORT_PROBE_TIMEOUT_MS + 1);
+    await expect(result).resolves.toBe(false);
   });
 });
 

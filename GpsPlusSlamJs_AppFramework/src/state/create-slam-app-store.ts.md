@@ -77,7 +77,12 @@ thin `createRecorderStore` that calls this factory with its own extras.
   recordings `64c6a294` / `e7431b85`). The listener is only registered when at
   least one opt-in is requested (zero per-action overhead otherwise). Consumers
   asserting the flag after `setZeroPos` must `await` the async effect first (see
-  the tests). See
+  the tests). The five boolean opt-ins are built from a **declarative row table**
+  (options flag → `gpsData` field → library setter action) whose `flag` column is
+  typed `BooleanCompassFlagField` (the boolean-typed keys of `gpsData`), so a
+  typo'd or wrong-typed field name fails to compile; adding a compass toggle
+  means adding one row plus its option/doc. The value-carrying `compassVoteWeight`
+  stays a hand-written opt-in (equality `isSet`, value dispatch). See
   [`GpsPlusSlamJs_Docs/docs/2026-06-28-0751-subscriber-dispatch-persistence-ordering-plan.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-28-0751-subscriber-dispatch-persistence-ordering-plan.md).
 - The factory does **not** know about routing, ref-points, or scenarios. Any
   app needing those plugs them in via `extraReducers`.

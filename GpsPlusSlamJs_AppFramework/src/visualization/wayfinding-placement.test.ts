@@ -280,6 +280,136 @@ describe('computeTargetPlacement', () => {
     });
   });
 
+  // Why these tests matter: `showArrowWhenInactive` deliberately restores the
+  // pre-2026-07-18 "always guide me back" arrow for individual targets (per
+  // 2026-07-20-0430-wayfinding-hud-per-target-config-plan.md). The returned
+  // `state` MUST stay 'hidden' while it shows — if the seam returned 'arrow',
+  // that would become next frame's previousState and flip the reactivation
+  // gate from distanceMax back to distanceMin, recreating the exact
+  // hysteresis-bypass (ring resurrection) the 2026-07-18 revision fixed.
+  // The arrow is therefore a display-only payload on HiddenPlacement.
+  describe('showArrowWhenInactive (per-target config, 2026-07-20)', () => {
+    const camera = makeCamera();
+    const base = {
+      camera,
+      hudDistance: 2.5,
+      distanceMin: 1.5,
+      distanceMax: 3.0,
+      showArrowWhenInactive: true,
+    };
+
+    it('a flagged deactivated off-screen target stays hidden but carries the inactiveArrow payload', () => {
+      const placement = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 2), // 2 m BEHIND — deadband
+        previousState: 'hidden',
+      });
+      expect(placement.state).toBe('hidden');
+      expect(
+        placement.state === 'hidden' && placement.inactiveArrow
+      ).toBeTruthy();
+
+      // The payload uses the same edge-arrow math as an active arrow: a
+      // behind-the-camera target gets the flipped "turn around" placement.
+      const activeArrow = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 2),
+        previousState: 'arrow',
+      }) as ArrowPlacement;
+      if (placement.state !== 'hidden' || !placement.inactiveArrow) {
+        throw new Error('expected hidden placement with inactiveArrow');
+      }
+      expect(placement.inactiveArrow.arrowPosition).toEqual(
+        activeArrow.arrowPosition
+      );
+      expect(placement.inactiveArrow.arrowRotationZ).toBe(
+        activeArrow.arrowRotationZ
+      );
+      expect(placement.inactiveArrow.labelPosition).toEqual(
+        activeArrow.labelPosition
+      );
+    });
+
+    it('a flagged deactivated ON-screen target shows nothing — no payload (you can see the spot)', () => {
+      const placement = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, -1), // 1 m ahead, on-screen
+        previousState: 'hidden',
+      });
+      expect(placement.state).toBe('hidden');
+      expect(
+        placement.state === 'hidden' ? placement.inactiveArrow : 'wrong-state'
+      ).toBeUndefined();
+    });
+
+    it('no-bypass regression: the inactive arrow never flips the reactivation gate back to distanceMin', () => {
+      // Frame 1: off-screen inside the deadband → hidden + inactive arrow.
+      const offScreen = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 2), // 2 m behind (> distanceMin)
+        previousState: 'hidden',
+      });
+      expect(offScreen.state).toBe('hidden');
+
+      // Frame 2: user turns around — target now ON-screen at 2 m, which is
+      // ≥ distanceMin but < distanceMax. Feeding frame 1's returned state
+      // forward must keep it hidden (the old bug showed a ring here).
+      const onScreen = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, -2), // 2 m ahead, on-screen
+        previousState: offScreen.state,
+      });
+      expect(onScreen.state).toBe('hidden');
+    });
+
+    it('reactivation at distanceMax is unaffected by the flag', () => {
+      const placement = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 4), // 4 m behind ≥ distanceMax
+        previousState: 'hidden',
+      });
+      expect(placement.state).toBe('arrow'); // a real, ACTIVE arrow again
+    });
+
+    it('the spawn rule is unchanged: a flagged near spawn shows nothing on its first frame', () => {
+      const placement = computeTargetPlacement({
+        ...base,
+        targetWorldPos: new THREE.Vector3(0, 0, 1), // 1 m behind, no previousState
+      });
+      expect(placement.state).toBe('hidden');
+      expect(
+        placement.state === 'hidden' ? placement.inactiveArrow : 'wrong-state'
+      ).toBeUndefined();
+    });
+
+    it('a degenerate projection (target at the camera) yields hidden without a payload', () => {
+      const placement = computeTargetPlacement({
+        ...base,
+        targetWorldPos: camera.position.clone(),
+        previousState: 'hidden',
+      });
+      expect(placement.state).toBe('hidden');
+      expect(
+        placement.state === 'hidden' ? placement.inactiveArrow : 'wrong-state'
+      ).toBeUndefined();
+    });
+
+    it('without the flag (default false) a deactivated off-screen target has no payload', () => {
+      const placement = computeTargetPlacement({
+        camera,
+        hudDistance: 2.5,
+        distanceMin: 1.5,
+        distanceMax: 3.0,
+        targetWorldPos: new THREE.Vector3(0, 0, 2),
+        previousState: 'hidden',
+      });
+      expect(placement.state).toBe('hidden');
+      expect(
+        placement.state === 'hidden' ? placement.inactiveArrow : 'wrong-state'
+      ).toBeUndefined();
+    });
+  });
+
   // Why this test matters: a target exactly on the camera plane (w = 0)
   // projects to NaN/±Infinity ndc. The prototype emitted a NaN arrow
   // transform for it; the port deliberately deviates and hides the

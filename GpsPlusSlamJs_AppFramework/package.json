@@ -1,6 +1,6 @@
 {
   "name": "gps-plus-slam-app-framework",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "description": "Reusable AR+GPS app framework layer — WebXR session management, Three.js visualization, GPS sensors, storage abstractions, replay engine, and store wiring for gps-plus-slam-js.",
   "type": "module",
   "files": [
@@ -32,22 +32,22 @@
   },
   "types": "./dist/index.d.ts",
   "scripts": {
-    "test": "pnpm run test:core",
-    "test:core": "pnpm run format && pnpm run lint && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
-    "format": "prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern \"src\" \"config\" package.json README.md",
+    "test": "node ../scripts/test-timing/run-gate.mjs",
+    "test:core": "pnpm run format && pnpm run lint && pnpm run check:cycles && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
+    "format": "node ../scripts/test-timing/timed-stage.mjs format",
     "format:check": "prettier --check --ignore-unknown .",
     "build": "tsdown --config config/tsdown.config.ts",
     "verify:pack": "pnpm pack --dry-run",
     "verify:community-key-lifetime": "node scripts/verify-community-key-lifetime.mjs",
     "prepublishOnly": "pnpm run build && pnpm run verify:pack && pnpm run verify:community-key-lifetime",
-    "test:unit": "node ../scripts/run-vitest-scoped.mjs run --coverage --config=config/vitest.config.ts",
-    "typecheck": "tsc -p tsconfig.app.json --noEmit",
-    "typecheck:tests": "tsc -p tsconfig.vitest.json --noEmit",
-    "lint": "eslint . --config config/eslint.config.mjs --max-warnings 37",
+    "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
+    "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck",
+    "typecheck:tests": "node ../scripts/test-timing/timed-stage.mjs typecheck:tests",
+    "lint": "node ../scripts/test-timing/timed-stage.mjs lint",
     "test:watch": "vitest --config config/vitest.config.ts",
     "bench": "vitest bench --run --config config/vitest.bench.config.ts",
     "bench:watch": "vitest bench --config config/vitest.bench.config.ts",
-    "check:cycles": "dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts",
+    "check:cycles": "node ../scripts/test-timing/timed-stage.mjs check:cycles",
     "setup": "bash ./scripts/setup.sh"
   },
   "engines": {
@@ -56,7 +56,7 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.11.2",
     "gl-matrix": "3.4.4",
-    "gps-plus-slam-js": "^1.14.0",
+    "gps-plus-slam-js": "^1.15.0",
     "redux": "^5.0.1"
   },
   "peerDependencies": {

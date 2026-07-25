@@ -48,6 +48,5 @@ pnpm run shoot -- --mobile hero cta              # phone framing
 
 ## Tests
 
-None (dev-only tool, exempt from the unit-test mandate like the sibling
-`scripts/run-vitest-scoped.mjs`); its correctness is self-evident from
-its output — the screenshots it exists to produce.
+None (dev-only tool, exempt from the unit-test mandate); its correctness
+is self-evident from its output — the screenshots it exists to produce.
