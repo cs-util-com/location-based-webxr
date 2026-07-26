@@ -85,8 +85,11 @@ See the full analysis and plan:
   reference guard above is what stops a _never-set_ flag from looping.
 - **Effect dispatches are async** (RTK schedules listener effects after the
   trigger). Tests must `await` (a microtask / `setTimeout(0)`) before asserting.
-- The factory only registers this middleware when `optIns.length > 0`, so the
-  common path keeps zero per-action predicate overhead.
+- The factory registers this middleware whenever `optIns.length > 0`, which since
+  2026-07-26 is **always** — the cold-start opt-in is unconditional
+  (`recordWhenFalse`), so the old "zero per-action predicate overhead when nothing
+  is requested" path is gone. Every store, replay stores included, now runs one
+  predicate per action until all its flags are decided.
 
 ## Examples
 

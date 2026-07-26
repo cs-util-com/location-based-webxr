@@ -109,8 +109,14 @@ thin `createRecorderStore` that calls this factory with its own extras.
   it would be persisted with a LOWER index than the `setZeroPos` that created
   `gpsData`, and a replay would drop it (gpsData still null at that index) — the
   override looked OFF on replay though it worked live (field bug 2026-06-27,
-  recordings `64c6a294` / `e7431b85`). The listener is only registered when at
-  least one opt-in is requested (zero per-action overhead otherwise). Consumers
+  recordings `64c6a294` / `e7431b85`). Since 2026-07-26 the listener is
+  registered **unconditionally**: `recordWhenFalse` on the cold-start row means
+  `compassOptIns` is never empty, so the factory's `length > 0` guard is always
+  true and the old "zero per-action overhead when nothing is requested" path no
+  longer exists. The one consumer that actually took it was `replay-mode.ts` —
+  passing `enableCompassColdStartOverride: false` used to leave a replay store with
+  no compass listener at all — so do not reason about a replay store on that
+  premise. Consumers
   asserting the flag after `setZeroPos` must `await` the async effect first (see
   the tests). The five boolean opt-ins are built from a **declarative row table**
   (options flag → `gpsData` field → library setter action) whose `flag` column is

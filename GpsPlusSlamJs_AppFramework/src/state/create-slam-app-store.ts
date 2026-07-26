@@ -90,9 +90,12 @@ type LibraryGpsDataState = NonNullable<LibraryRootState['gpsData']>;
  * flips, and per the listener's reference guard the opt-in re-fires on every later
  * `gpsData` mutation — i.e. on every GPS fix, for the rest of the session. Keep the
  * two halves of a row visually adjacent so a mismatch is obvious on sight.
- * (Before 2026-07-26 a numeric field reached a sharper version of the same storm:
- * `isSet` compared `=== true` against a value that could never be `true`. `isSet`
- * is now `!== undefined`, which closes that particular door but not the class.)
+ * A numeric field is in fact just an instance of that same mispairing, which is why
+ * the filter earns its keep independently of the `isSet` form: no
+ * `(value: boolean) => UnknownAction` can write a numeric field, so its `isSet`
+ * never flips and it storms identically. (Before 2026-07-26 it failed one step
+ * earlier and more visibly — `isSet` compared `=== true` against a value that could
+ * never be `true`, i.e. an unsatisfiable comparison rather than an unwritten field.)
  */
 type BooleanCompassFlagField = {
   [K in keyof LibraryGpsDataState]-?: NonNullable<
@@ -501,8 +504,12 @@ export function createSlamAppStore<
   }
 
   // Listener middlewares are prepended (outermost) so their effects dispatch
-  // OUTSIDE the trigger's `next()` — the compass listener is only added when an
-  // opt-in is requested, so the common path keeps zero per-action overhead.
+  // OUTSIDE the trigger's `next()`. The guard below used to make the compass
+  // listener conditional, so a consumer requesting no opt-in paid zero per-action
+  // overhead; since `recordWhenFalse` the cold-start row is always present, so
+  // `compassOptIns` is never empty and the guard is always true. Kept because it
+  // is still the correct precondition (a `createSlamAppStoreListenerMiddleware([])`
+  // would run a predicate per action to decide nothing), not because it can fire.
   const prependedListeners: SlamAppMiddleware[] = [trackingQualityMiddleware];
   if (compassOptIns.length > 0) {
     prependedListeners.push(
