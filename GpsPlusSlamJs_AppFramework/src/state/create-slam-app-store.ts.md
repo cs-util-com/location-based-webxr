@@ -23,13 +23,55 @@ thin `createRecorderStore` that calls this factory with its own extras.
   WriteQueue — the stop flow MUST await it before reading the session's
   `actions/` for the final sync / ZIP export, 2026-07-12).
 - `SlamAppStoreOptions<ExtraReducers>` — `{ storageBackend, extraReducers?, extraMiddleware?, persistedExtraPrefixes?, onWriteFailure?, enableDevChecks?, licenseKey?, trackingQualityOptions?, enableCompassColdStartOverride? }`.
-  - `enableCompassColdStartOverride` (**default `true`** — Phase-4 Stage-0 is a field-validated, default-on feature) — a prepended listener middleware ([`slam-app-store-listener.ts`](slam-app-store-listener.ts)) dispatches the library's `setColdStartOverrideEnabled(true)` the first time `gpsData` becomes non-null (right after the first `setZeroPos`, since the flag lives on that slice and can't be set before it exists). Enables the cold-start compass override (orients the world immediately at cold start, hands back to GPS once the yaw is observable). Pass `false` to opt out (the recorder surfaces this as a settings toggle). The library's `DefaultAlignmentConfig` stays OFF, so historical recordings replay unchanged; default-on lives here as a recorded `gpsData` action — a recording made with it on replays with the override on, so collect §6a field-calibration recordings with this OFF. See [`GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md). The two sibling flags `enableCompassRotationPrior` and `enableCompassWebXRConsistency` stay **default OFF** (field-gated) and behave identically for their respective `gpsData` flags when enabled. The 2026-07-19 field-test opt-ins `enableCompassExperiment` (library combo: rotation prior + trust tolerance 15° + C′ pair selection via `setCompassExperimentEnabled`) and `enableRobustSolverComparison` (alternative robust-solver A/B arm via `setRobustSolverComparisonEnabled` — NOT a compass mechanism) follow the same pattern, default OFF; see the private repo's [compass-experiment recorder enablement plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-19-0813-compass-experiment-recorder-enablement-plan.md). `compassVoteWeight` (number ∈ [0,1], absent ⇒ library default) rides the same opt-in mechanism and carries the recorder's vote-weight slider (2026-07-19 weight-curve follow-up); only consulted while a rotation prior is active.
+  - `enableCompassColdStartOverride` (**default `true`** — Phase-4 Stage-0 is a field-validated, default-on feature) — a prepended listener middleware ([`slam-app-store-listener.ts`](slam-app-store-listener.ts)) dispatches the library's `setColdStartOverrideEnabled(<the option's value>)` the first time `gpsData` becomes non-null (right after the first `setZeroPos`, since the flag lives on that slice and can't be set before it exists). Enables the cold-start compass override (orients the world immediately at cold start, hands back to GPS once the yaw is observable). Pass `false` to opt out (the recorder surfaces this as a settings toggle). **The value is dispatched explicitly, `false` included** — see the invariant below on why dispatching only on `true` was a replay-fidelity bug once the library default flipped in gps-plus-slam-js 1.16.0. A recording carrying `setColdStartOverrideEnabled(true)` replays with the override on and one carrying `false` replays with it off, independent of the library default, so collect §6a field-calibration recordings with this OFF. See [`GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md). The two sibling flags `enableCompassRotationPrior` and `enableCompassWebXRConsistency` stay **default OFF** (field-gated) and behave identically for their respective `gpsData` flags when enabled. The 2026-07-19 field-test opt-ins `enableCompassExperiment` (library combo: rotation prior + trust tolerance 15° + C′ pair selection via `setCompassExperimentEnabled`) and `enableRobustSolverComparison` (alternative robust-solver A/B arm via `setRobustSolverComparisonEnabled` — NOT a compass mechanism) follow the same pattern, default OFF; see the private repo's [compass-experiment recorder enablement plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-19-0813-compass-experiment-recorder-enablement-plan.md). `compassVoteWeight` (number ∈ [0,1], absent ⇒ library default) rides the same opt-in mechanism and carries the recorder's vote-weight slider (2026-07-19 weight-curve follow-up); only consulted while a rotation prior is active.
 - `SlamAppRootState` — base state shape (no extras).
 - `SlamAppCombinedState<ExtraReducers>` — base state plus typed extras.
 - `SlamAppMiddleware` — middleware signature accepted by `extraMiddleware`.
 
 ## Invariants & assumptions
 
+- **`enableCompassColdStartOverride` dispatches its actual value, `false` included**
+  — it is the one row marked `recordWhenFalse`. The other four boolean opt-ins are
+  still dispatch-on-`true`, deliberately: recording all five unconditionally added
+  four no-op actions to every recording (measured: a minimal session went from 1
+  opt-in action to 5) to fix one flag, and their library defaults are `false`, so
+  for them "absent ⇒ off" is a stable contract. **Any flag whose library default
+  stops being `false` must gain the marker** — that rule is stated on the field
+  itself so it travels with the code.
+  Do not "optimise" the marked row back to `rows.filter((r) => r.enabled)`. That shape left
+  the `gpsData` flag `undefined` on an explicit opt-OUT, and the library reads
+  `undefined` as "use `DefaultAlignmentConfig`" — equivalent only while the library
+  default was also `false`. When gps-plus-slam-js **1.16.0** flipped
+  `useCompassColdStartOverride` to `true`, `enableCompassColdStartOverride: false`
+  silently began meaning **ON** for every consumer that opted out — three of them in
+  this repo, with the recording side the worst. **Recording:** a calibration capture,
+  whose purpose is to record unmodified compass behaviour, ran WITH the override
+  active while the operator had switched it off, and the recording carries no action
+  saying so — corrupt data rather than a misread of good data. **Replay:**
+  `RecorderApp`'s `replay-mode.ts` passes the same `false` to keep a session captured
+  without the override from replaying with one, and that stopped working.
+  **`AnchorStarter`:** its documented `?coldStartOverride=0` field-tester opt-out
+  became inert (no recording there, so live-session only). Dispatching the value
+  fixes all three, and it makes the persisted action stream state which
+  compass configuration a session ran with, so no future library-default change can
+  reinterpret an existing recording.
+  - The bug survived because the test asserted `toBeFalsy()`, which `undefined`
+    satisfies. The regression tests now assert `toBe(false)` and cover both values.
+  - Consequence accepted: the listener middleware is always registered, so the
+    "no opt-in requested ⇒ zero per-action overhead" path is gone. Already moot,
+    since `enableCompassColdStartOverride` defaults to `true` here.
+  - Scope of "no future library-default change can reinterpret an existing
+    recording": true for recordings made from 1.16.0 onward. Recordings made
+    **before** it with the override off carry no opt-in action at all, so faithful
+    replay of those depends on the replaying consumer passing `false` explicitly.
+    `RecorderApp`'s `replay-mode.ts` does.
+  - **The opt-in supplies an INITIAL value; the action stream wins.** `isSet` is
+    `flag !== undefined` ("decided"), never `flag === enabled`. The latter turns
+    the listener middleware into a value enforcer that overwrites a replayed
+    `setColdStartOverrideEnabled(true)` with the option's `false` — the same
+    replay defect inverted. Full reasoning in
+    [`slam-app-store-listener.ts.md`](slam-app-store-listener.ts.md); pinned by
+    "does NOT overwrite a value the action stream already decided".
 - `storageBackend` is **required**. Tests / replay paths must pass
   `NullStorageBackend`. The factory does not silently fall back to OPFS — the
   caller decides.
@@ -74,15 +116,26 @@ thin `createRecorderStore` that calls this factory with its own extras.
   it would be persisted with a LOWER index than the `setZeroPos` that created
   `gpsData`, and a replay would drop it (gpsData still null at that index) — the
   override looked OFF on replay though it worked live (field bug 2026-06-27,
-  recordings `64c6a294` / `e7431b85`). The listener is only registered when at
-  least one opt-in is requested (zero per-action overhead otherwise). Consumers
+  recordings `64c6a294` / `e7431b85`). Since 2026-07-26 the listener is
+  registered **unconditionally**: `recordWhenFalse` on the cold-start row means
+  `compassOptIns` is never empty, so the factory's `length > 0` guard is always
+  true and the old "zero per-action overhead when nothing is requested" path no
+  longer exists. The consumers that actually took it are the same three listed
+  above: each opted out of Stage 0 **and** enabled nothing else, so `compassOptIns`
+  came out empty and the store carried no compass listener at all —
+  `RecorderApp`'s `replay-mode.ts`, `AnchorStarter` under `?coldStartOverride=0`,
+  and a recorder live store with Stage 0 off (the other four opt-ins default
+  `false`, and `compassVoteWeight` is suppressed while no prior is active). Do not
+  reason about any of those stores on the old premise. Consumers
   asserting the flag after `setZeroPos` must `await` the async effect first (see
   the tests). The five boolean opt-ins are built from a **declarative row table**
   (options flag → `gpsData` field → library setter action) whose `flag` column is
   typed `BooleanCompassFlagField` (the boolean-typed keys of `gpsData`), so a
   typo'd or wrong-typed field name fails to compile; adding a compass toggle
   means adding one row plus its option/doc. The value-carrying `compassVoteWeight`
-  stays a hand-written opt-in (equality `isSet`, value dispatch). See
+  stays a hand-written opt-in because it is a number and so cannot satisfy
+  `BooleanCompassFlagField` — but it follows the same `isSet` rule as the rows
+  ("decided", i.e. `!== undefined`) and dispatches its value. See
   [`GpsPlusSlamJs_Docs/docs/2026-06-28-0751-subscriber-dispatch-persistence-ordering-plan.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-28-0751-subscriber-dispatch-persistence-ordering-plan.md).
 - The factory does **not** know about routing, ref-points, or scenarios. Any
   app needing those plugs them in via `extraReducers`.

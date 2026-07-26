@@ -40,12 +40,20 @@ const COLD = 'gpsData/setColdStartOverrideEnabled';
 const PRIOR = 'gpsData/setCompassRotationPriorEnabled';
 const RESET = 'test/reset';
 
+// `isSet` is "has this been DECIDED?" (`!== undefined`), never "does it equal my
+// value?". These fixtures previously used `=== true`, which is the shape the
+// middleware's sidecar now forbids: because the predicate is edge-triggered on the
+// `gpsData` object reference, a value-equality `isSet` makes the listener a value
+// ENFORCER that overwrites any other writer — see `slam-app-store-listener.ts.md`
+// §Invariants. These are also the in-repo examples a reader is most likely to copy,
+// so they must show the correct shape even though this file tests the middleware
+// generically and would pass either way.
 const coldOptIn: CompassOptIn = {
-  isSet: (s) => s.gpsData?.coldStartOverrideEnabled === true,
+  isSet: (s) => s.gpsData?.coldStartOverrideEnabled !== undefined,
   apply: (dispatch) => dispatch(setColdStartOverrideEnabled(true)),
 };
 const priorOptIn: CompassOptIn = {
-  isSet: (s) => s.gpsData?.compassRotationPriorEnabled === true,
+  isSet: (s) => s.gpsData?.compassRotationPriorEnabled !== undefined,
   apply: (dispatch) => dispatch(setCompassRotationPriorEnabled(true)),
 };
 

@@ -39,7 +39,7 @@ See the full analysis and plan:
   store factory (prepend is required so the effect dispatches **outside** the
   trigger's `next()`).
 - `CompassOptIn` — `{ isSet, apply }`:
-  - `isSet(state: LibraryRootState): boolean` — whether the flag is already set.
+  - `isSet(state: LibraryRootState): boolean` — whether the flag has already been **DECIDED**, not whether it equals the caller's requested value. See the "value enforcer" invariant below: writing this as `flag === myValue` makes the middleware fight the action stream, which breaks replay.
   - `apply(dispatch): void` — dispatches the action that sets the flag
     (e.g. `dispatch(setColdStartOverrideEnabled(true))`). It receives a bound
     `dispatch` rather than closing over the store, so descriptors can be built
@@ -47,6 +47,21 @@ See the full analysis and plan:
 
 ## Invariants & assumptions
 
+- **`isSet` must mean "decided", never "equals my value" — otherwise this
+  middleware becomes a value ENFORCER and fights the recorded action stream.**
+  Because the predicate is edge-triggered on the `gpsData` **object reference**
+  (below) and every library reducer mutation makes a fresh one, an `isSet` of the
+  form `flag === myValue` re-arms on the very action that disagrees with it: a
+  replayed `setColdStartOverrideEnabled(true)` would be immediately overwritten
+  with `false`, so a session recorded WITH the override replays WITHOUT one.
+  - The correct form is `flag !== undefined`. The opt-in supplies the **initial**
+    value; the action stream, or any later explicit dispatch, wins.
+  - This still satisfies the 2026-06-27 re-apply requirement, because a recreated
+    `gpsData` has the flag back at `undefined`.
+  - Caught in review on the 1.16.0 bump (2026-07-26), when the store factory
+    briefly used `=== enabled` so that an explicit `false` opt-out could be
+    dispatched. Pinned by "does NOT overwrite a value the action stream already
+    decided" in `create-slam-app-store.test.ts`.
 - **Predicate is edge-triggered on the `gpsData` reference, gated by "some flag
   unset".** It fires when `gpsData` is non-null **and** its object reference is
   new since the last apply (`s.gpsData !== lastApplied`) **and** at least one
@@ -70,8 +85,14 @@ See the full analysis and plan:
   reference guard above is what stops a _never-set_ flag from looping.
 - **Effect dispatches are async** (RTK schedules listener effects after the
   trigger). Tests must `await` (a microtask / `setTimeout(0)`) before asserting.
-- The factory only registers this middleware when `optIns.length > 0`, so the
-  common path keeps zero per-action predicate overhead.
+- The factory registers this middleware whenever `optIns.length > 0`, which since
+  2026-07-26 is **always** — the cold-start opt-in is unconditional
+  (`recordWhenFalse`), so the old "zero per-action predicate overhead when nothing
+  is requested" path is gone. Every store, replay stores included, now runs the
+  predicate on **every action for the life of the store** — there is no
+  short-circuit once the flags are decided, because the `s.gpsData !== lastApplied`
+  term stays true forever and it is the `some(...)` term that goes false. What stops
+  after the flags are decided is the _effect_, not the predicate.
 
 ## Examples
 
@@ -81,7 +102,8 @@ import { setColdStartOverrideEnabled } from 'gps-plus-slam-js';
 
 const listener = createSlamAppStoreListenerMiddleware([
   {
-    isSet: (s) => s.gpsData?.coldStartOverrideEnabled === true,
+    // "decided", not "=== true" — see the first invariant above.
+    isSet: (s) => s.gpsData?.coldStartOverrideEnabled !== undefined,
     apply: (dispatch) => dispatch(setColdStartOverrideEnabled(true)),
   },
 ]);
