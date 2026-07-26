@@ -23,13 +23,32 @@ thin `createRecorderStore` that calls this factory with its own extras.
   WriteQueue — the stop flow MUST await it before reading the session's
   `actions/` for the final sync / ZIP export, 2026-07-12).
 - `SlamAppStoreOptions<ExtraReducers>` — `{ storageBackend, extraReducers?, extraMiddleware?, persistedExtraPrefixes?, onWriteFailure?, enableDevChecks?, licenseKey?, trackingQualityOptions?, enableCompassColdStartOverride? }`.
-  - `enableCompassColdStartOverride` (**default `true`** — Phase-4 Stage-0 is a field-validated, default-on feature) — a prepended listener middleware ([`slam-app-store-listener.ts`](slam-app-store-listener.ts)) dispatches the library's `setColdStartOverrideEnabled(true)` the first time `gpsData` becomes non-null (right after the first `setZeroPos`, since the flag lives on that slice and can't be set before it exists). Enables the cold-start compass override (orients the world immediately at cold start, hands back to GPS once the yaw is observable). Pass `false` to opt out (the recorder surfaces this as a settings toggle). The library's `DefaultAlignmentConfig` stays OFF, so historical recordings replay unchanged; default-on lives here as a recorded `gpsData` action — a recording made with it on replays with the override on, so collect §6a field-calibration recordings with this OFF. See [`GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md). The two sibling flags `enableCompassRotationPrior` and `enableCompassWebXRConsistency` stay **default OFF** (field-gated) and behave identically for their respective `gpsData` flags when enabled. The 2026-07-19 field-test opt-ins `enableCompassExperiment` (library combo: rotation prior + trust tolerance 15° + C′ pair selection via `setCompassExperimentEnabled`) and `enableRobustSolverComparison` (alternative robust-solver A/B arm via `setRobustSolverComparisonEnabled` — NOT a compass mechanism) follow the same pattern, default OFF; see the private repo's [compass-experiment recorder enablement plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-19-0813-compass-experiment-recorder-enablement-plan.md). `compassVoteWeight` (number ∈ [0,1], absent ⇒ library default) rides the same opt-in mechanism and carries the recorder's vote-weight slider (2026-07-19 weight-curve follow-up); only consulted while a rotation prior is active.
+  - `enableCompassColdStartOverride` (**default `true`** — Phase-4 Stage-0 is a field-validated, default-on feature) — a prepended listener middleware ([`slam-app-store-listener.ts`](slam-app-store-listener.ts)) dispatches the library's `setColdStartOverrideEnabled(<the option's value>)` the first time `gpsData` becomes non-null (right after the first `setZeroPos`, since the flag lives on that slice and can't be set before it exists). Enables the cold-start compass override (orients the world immediately at cold start, hands back to GPS once the yaw is observable). Pass `false` to opt out (the recorder surfaces this as a settings toggle). **The value is dispatched explicitly, `false` included** — see the invariant below on why dispatching only on `true` was a replay-fidelity bug once the library default flipped in gps-plus-slam-js 1.16.0. A recording carrying `setColdStartOverrideEnabled(true)` replays with the override on and one carrying `false` replays with it off, independent of the library default, so collect §6a field-calibration recordings with this OFF. See [`GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md). The two sibling flags `enableCompassRotationPrior` and `enableCompassWebXRConsistency` stay **default OFF** (field-gated) and behave identically for their respective `gpsData` flags when enabled. The 2026-07-19 field-test opt-ins `enableCompassExperiment` (library combo: rotation prior + trust tolerance 15° + C′ pair selection via `setCompassExperimentEnabled`) and `enableRobustSolverComparison` (alternative robust-solver A/B arm via `setRobustSolverComparisonEnabled` — NOT a compass mechanism) follow the same pattern, default OFF; see the private repo's [compass-experiment recorder enablement plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-19-0813-compass-experiment-recorder-enablement-plan.md). `compassVoteWeight` (number ∈ [0,1], absent ⇒ library default) rides the same opt-in mechanism and carries the recorder's vote-weight slider (2026-07-19 weight-curve follow-up); only consulted while a rotation prior is active.
 - `SlamAppRootState` — base state shape (no extras).
 - `SlamAppCombinedState<ExtraReducers>` — base state plus typed extras.
 - `SlamAppMiddleware` — middleware signature accepted by `extraMiddleware`.
 
 ## Invariants & assumptions
 
+- **Every boolean compass opt-in dispatches its actual value, `false` included.**
+  Do not "optimise" this back to `rows.filter((r) => r.enabled)`. That shape left
+  the `gpsData` flag `undefined` on an explicit opt-OUT, and the library reads
+  `undefined` as "use `DefaultAlignmentConfig`" — equivalent only while the library
+  default was also `false`. When gps-plus-slam-js **1.16.0** flipped
+  `useCompassColdStartOverride` to `true`, `enableCompassColdStartOverride: false`
+  silently began meaning **ON**, which broke replay of any recording captured
+  without the override (`RecorderApp`'s `replay-mode.ts` passes exactly that
+  `false`). Dispatching the value makes the persisted action stream state which
+  compass configuration a session ran with, so no future library-default change can
+  reinterpret an existing recording.
+  - The bug survived because the test asserted `toBeFalsy()`, which `undefined`
+    satisfies. The regression tests now assert `toBe(false)` and cover both values.
+  - Consequence accepted: the listener middleware is always registered, so the
+    "no opt-in requested ⇒ zero per-action overhead" path is gone. Already moot,
+    since `enableCompassColdStartOverride` defaults to `true` here.
+  - Recordings made **before** 1.16.0 with the override off carry no opt-in action
+    at all, so faithful replay of those depends on the replaying consumer passing
+    `false` explicitly. `RecorderApp` does.
 - `storageBackend` is **required**. Tests / replay paths must pass
   `NullStorageBackend`. The factory does not silently fall back to OPFS — the
   caller decides.

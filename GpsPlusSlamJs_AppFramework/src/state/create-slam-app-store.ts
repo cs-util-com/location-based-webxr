@@ -180,15 +180,27 @@ export interface SlamAppStoreOptions<
    * harm once GPS is observable. Pass `false` to opt out (the recorder exposes
    * this as a settings toggle).
    *
-   * When enabled the factory dispatches `setColdStartOverrideEnabled(true)` the
-   * first time `gpsData` becomes non-null (right after the first `setZeroPos`,
-   * since the flag lives on that slice and cannot be set before it exists).
+   * The factory dispatches `setColdStartOverrideEnabled(<this value>)` — `false`
+   * included — the first time `gpsData` becomes non-null (right after the first
+   * `setZeroPos`, since the flag lives on that slice and cannot be set before it
+   * exists).
    *
-   * Replay/determinism: the library's `DefaultAlignmentConfig` stays OFF, so
-   * historical recordings replay unchanged; default-on lives here as a recorded
-   * `gpsData` action. A recording made with this on therefore replays with the
-   * override on. **For Stage-A/§6a field-calibration recordings, turn this OFF**
-   * (recorder settings) so the captured compass behaviour is unmodified.
+   * Replay/determinism: **since gps-plus-slam-js 1.16.0 the library's
+   * `DefaultAlignmentConfig.useCompassColdStartOverride` is `true`**, so "no
+   * recorded opt-in action" no longer means "override off" — it means "whatever
+   * the library currently defaults to". That is why the value is dispatched
+   * explicitly rather than only when true: the recorded action stream states
+   * which configuration a session ran with, so a future library-default change
+   * cannot reinterpret an existing recording. A recording carrying
+   * `setColdStartOverrideEnabled(true)` replays with the override on; one
+   * carrying `false` replays with it off, regardless of the library default.
+   * **For Stage-A/§6a field-calibration recordings, turn this OFF** (recorder
+   * settings) so the captured compass behaviour is unmodified.
+   *
+   * Caveat for recordings made BEFORE 1.16.0 with the override off: they carry no
+   * opt-in action at all, so faithful replay depends on the replaying consumer
+   * passing `false` — which `RecorderApp`'s replay mode does (see
+   * `replay-mode.ts`).
    *
    * @see GpsPlusSlamJs_Docs/docs/2026-06-26-0701-stage0-field-collection-and-enablement.md
    */
@@ -374,11 +386,24 @@ export function createSlamAppStore<
     enabled: boolean;
     flag: BooleanCompassFlagField;
     setFlag: (value: boolean) => UnknownAction;
+    /**
+     * Record the value even when it is `false`, instead of dispatching only on
+     * `true`. **Required for any flag whose LIBRARY default is not `false`**, and
+     * that is the whole rule: dispatching only on `true` leaves the flag
+     * `undefined`, which the library reads as "use `DefaultAlignmentConfig`", so
+     * "absent" only means "off" while the library agrees that it is off.
+     */
+    recordWhenFalse?: boolean;
   }> = [
     {
       enabled: enableCompassColdStartOverride,
       flag: 'coldStartOverrideEnabled',
       setFlag: setColdStartOverrideEnabled,
+      // The library default is `true` since gps-plus-slam-js 1.16.0, so an
+      // absent action would mean ON and an explicit opt-OUT would be a silent
+      // no-op — which is exactly what happened, breaking replay of sessions
+      // captured without the override.
+      recordWhenFalse: true,
     },
     {
       enabled: enableCompassRotationPrior,
@@ -401,11 +426,32 @@ export function createSlamAppStore<
       setFlag: setRobustSolverComparisonEnabled,
     },
   ];
+  // A row is dispatched when it is enabled OR when it must be recorded even at
+  // `false` — and it then dispatches its ACTUAL value, not a hardcoded `true`.
+  //
+  // Until 2026-07-26 this was `.filter((row) => row.enabled)`, so an explicit
+  // opt-OUT dispatched nothing and left the `gpsData` flag `undefined`. The library
+  // reads `undefined` as "use `DefaultAlignmentConfig`", which made "absent" and
+  // "false" equivalent only while the library default was also `false`. When
+  // gps-plus-slam-js 1.16.0 flipped `useCompassColdStartOverride` to `true`,
+  // `enableCompassColdStartOverride: false` silently began meaning **ON** — and
+  // `replay-mode.ts` passes exactly that `false` to stop a session captured WITHOUT
+  // the override from replaying WITH one, so the failure landed on replay fidelity.
+  // The tests missed it because the assertion was `toBeFalsy()`, which `undefined`
+  // satisfies.
+  //
+  // Why only the cold-start row carries `recordWhenFalse` rather than all five:
+  // recording every flag unconditionally would add four no-op actions to EVERY
+  // recording (measured: a minimal session went from 1 opt-in action to 5) to fix
+  // one flag. The other four are debug/experiment flags whose library default is
+  // `false`, so for them "absent ⇒ off" is a stable contract. The rule to apply
+  // when that changes is written on the `recordWhenFalse` field above: any flag
+  // whose library default stops being `false` needs it.
   const compassOptIns: CompassOptIn[] = booleanOptInRows
-    .filter((row) => row.enabled)
-    .map(({ flag, setFlag }) => ({
-      isSet: (s) => s.gpsData?.[flag] === true,
-      apply: (dispatch) => dispatch(setFlag(true)),
+    .filter((row) => row.enabled || row.recordWhenFalse)
+    .map(({ enabled, flag, setFlag }) => ({
+      isSet: (s) => s.gpsData?.[flag] === enabled,
+      apply: (dispatch) => dispatch(setFlag(enabled)),
     }));
   if (compassVoteWeight !== undefined) {
     compassOptIns.push({

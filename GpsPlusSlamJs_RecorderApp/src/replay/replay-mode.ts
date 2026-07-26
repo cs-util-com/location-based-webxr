@@ -147,13 +147,19 @@ export async function startReplayMode(
   // Compass opt-ins are DISABLED for replay: the framework would otherwise
   // re-derive them from its defaults (cold-start override defaults ON) and
   // auto-dispatch `setColdStartOverrideEnabled(true)` on the first replayed
-  // `setZeroPos`. But only ENABLED opt-ins are persisted as actions, so a
-  // recording captured with the override OFF (e.g. a §6a calibration capture)
-  // carries no opt-in action — re-deriving the default would enable an override
-  // the session was recorded WITHOUT. Replay's source of truth is the recorded
-  // action stream alone (a session recorded WITH the override on already carries
-  // the `setColdStartOverrideEnabled(true)` action, which replay re-applies), so
-  // disabling the auto-apply makes both cases replay faithfully.
+  // `setZeroPos`, enabling an override a §6a calibration capture was recorded
+  // WITHOUT. Replay's source of truth is the recorded action stream alone: a
+  // session recorded WITH the override on carries the
+  // `setColdStartOverrideEnabled(true)` action, which replay re-applies AFTER the
+  // `false` below (the framework's opt-in fires on the first `setZeroPos`, the
+  // recorded action comes later in the stream), so both cases replay faithfully.
+  //
+  // The `false` is load-bearing and must stay explicit. Since gps-plus-slam-js
+  // 1.16.0 the LIBRARY default is `true`, so "pass nothing" no longer means off —
+  // and until 2026-07-26 the framework only dispatched on `true`, which made this
+  // `false` a silent no-op that replayed old captures WITH an override they never
+  // had. The framework now dispatches the value explicitly; see the invariant in
+  // `create-slam-app-store.ts.md`.
   const store = createRecorderStore({
     storageBackend: new NullStorageBackend(),
     enableCompassColdStartOverride: false,

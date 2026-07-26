@@ -122,10 +122,13 @@ describe('createSlamAppStore', () => {
     });
 
     it('enables the override BY DEFAULT (Stage-0 ships on for every consumer)', async () => {
-      // Stage 0 is now a default-on production feature (field-validated): a
-      // consumer that says nothing still gets the cold-start compass override.
-      // The library default stays OFF for replay determinism — default-on lives
-      // here at the framework opt-in tier (the dispatch is a recorded action).
+      // Stage 0 is a default-on production feature (field-validated): a consumer
+      // that says nothing still gets the cold-start compass override. Since
+      // gps-plus-slam-js 1.16.0 the LIBRARY default is on too, so this assertion
+      // no longer distinguishes the two tiers on its own — what it still pins is
+      // that the framework records the value as an explicit `gpsData` action
+      // rather than leaving replay to infer it from whatever the library
+      // currently defaults to.
       const store = createSlamAppStore({ storageBackend: backend });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
@@ -133,13 +136,51 @@ describe('createSlamAppStore', () => {
     });
 
     it('can be opted out via enableCompassColdStartOverride: false', async () => {
+      // Why this asserts `false` and not `toBeFalsy()`: it used to assert
+      // falsy, which `undefined` satisfies — so the test passed while the
+      // opt-out did NOTHING. That was harmless only as long as the LIBRARY
+      // default was also off, because "never dispatched" and "dispatched
+      // false" then had the same effect. Since gps-plus-slam-js 1.16.0 the
+      // library default is ON and `undefined` means "use the library
+      // default", so the two differ: only an explicit `false` opts out.
+      // `toBeFalsy()` cannot tell them apart, which is exactly why it kept
+      // passing. See the replay-fidelity test below for the consequence.
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassColdStartOverride: false,
       });
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
-      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBeFalsy();
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(false);
+    });
+
+    it('dispatches the opt-in value EXPLICITLY, so the library default cannot decide it', async () => {
+      // Why this test matters: this is the regression that shipping
+      // gps-plus-slam-js 1.16.0 would otherwise have introduced silently.
+      //
+      // The framework used to dispatch only when the option was TRUE
+      // (`rows.filter(r => r.enabled)`), leaving `coldStartOverrideEnabled`
+      // `undefined` on an explicit `false`. The library reads `undefined` as
+      // "use DefaultAlignmentConfig", which flipped from `false` to `true` in
+      // 1.16.0 — so `enableCompassColdStartOverride: false` silently started
+      // meaning ON. RecorderApp replay passes exactly that `false` to keep a
+      // recording captured WITHOUT the override from replaying WITH it
+      // (see replay-mode.ts), so the failure landed on replay fidelity.
+      //
+      // The fix is to make the framework's intent explicit in state rather
+      // than inferable from a library default: every boolean compass opt-in
+      // dispatches its actual value. That also removes the whole class — a
+      // future library-default flip cannot reinterpret a recording, because
+      // the recording now carries the value as an action.
+      for (const value of [true, false]) {
+        const store = createSlamAppStore({
+          storageBackend: backend,
+          enableCompassColdStartOverride: value,
+        });
+        store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+        await Promise.resolve();
+        expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(value);
+      }
     });
 
     it('leaves the OTHER compass flags off by default (only Stage 0 ships on)', async () => {
