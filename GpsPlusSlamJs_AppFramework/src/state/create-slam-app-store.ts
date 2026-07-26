@@ -418,8 +418,9 @@ export function createSlamAppStore<
       setFlag: setColdStartOverrideEnabled,
       // The library default is `true` since gps-plus-slam-js 1.16.0, so an
       // absent action would mean ON and an explicit opt-OUT would be a silent
-      // no-op — which is exactly what happened, breaking replay of sessions
-      // captured without the override.
+      // no-op — which is exactly what happened, so a capture the operator had
+      // switched the override OFF for ran WITH it, and replay of such a session
+      // could not correct that either.
       recordWhenFalse: true,
     },
     {
@@ -451,9 +452,16 @@ export function createSlamAppStore<
   // reads `undefined` as "use `DefaultAlignmentConfig`", which made "absent" and
   // "false" equivalent only while the library default was also `false`. When
   // gps-plus-slam-js 1.16.0 flipped `useCompassColdStartOverride` to `true`,
-  // `enableCompassColdStartOverride: false` silently began meaning **ON** — and
-  // `replay-mode.ts` passes exactly that `false` to stop a session captured WITHOUT
-  // the override from replaying WITH one, so the failure landed on replay fidelity.
+  // `enableCompassColdStartOverride: false` silently began meaning **ON**, in TWO
+  // places, and the live one is the worse of the two:
+  //  - **Recording (worse).** A calibration capture, whose whole point is to record
+  //    unmodified compass behaviour, would have run WITH the override active while
+  //    the operator had switched it off — and the recording carries no action
+  //    saying so either way. That is corrupt data, not a misreading of good data.
+  //  - **Replay.** `replay-mode.ts` passes the same `false` to stop a session
+  //    captured without the override from replaying with one; that stopped working,
+  //    so a correct recording was replayed wrongly.
+  // `recordWhenFalse` fixes both, since the live store dispatches the `false` too.
   // The tests missed it because the assertion was `toBeFalsy()`, which `undefined`
   // satisfies.
   //

@@ -88,8 +88,11 @@ See the full analysis and plan:
 - The factory registers this middleware whenever `optIns.length > 0`, which since
   2026-07-26 is **always** — the cold-start opt-in is unconditional
   (`recordWhenFalse`), so the old "zero per-action predicate overhead when nothing
-  is requested" path is gone. Every store, replay stores included, now runs one
-  predicate per action until all its flags are decided.
+  is requested" path is gone. Every store, replay stores included, now runs the
+  predicate on **every action for the life of the store** — there is no
+  short-circuit once the flags are decided, because the `s.gpsData !== lastApplied`
+  term stays true forever and it is the `some(...)` term that goes false. What stops
+  after the flags are decided is the _effect_, not the predicate.
 
 ## Examples
 
