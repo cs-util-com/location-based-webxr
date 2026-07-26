@@ -80,13 +80,19 @@ type LibraryGpsDataState = NonNullable<LibraryRootState['gpsData']>;
  * `gpsData` fields that can record a boolean compass opt-in. Filtering the
  * key union to boolean-typed fields keeps the opt-in table compile-checked:
  * a typo'd field name OR a field of the wrong type (e.g. the numeric
- * `compassVoteWeight`) fails to type-check as a table row, instead of the row
- * silently reading and writing a field whose type it cannot represent — the
- * `setFlag` half takes a `boolean`, so a numeric field would be set to `true`.
- * (Before 2026-07-26 the failure mode was sharper still: `isSet` compared
- * `=== true` against a value that could never be `true`, so the opt-in re-fired
- * forever. `isSet` is now `!== undefined`, which removes that specific storm but
- * not the reason for the type filter.)
+ * `compassVoteWeight`) fails to type-check as a table row.
+ *
+ * The guarantee is **read-side only**: `flag` is only ever read (via `isDecided`),
+ * while the write goes through `setFlag`, whose reducer owns whichever field its
+ * action writes. So the filter does not stop a row from pairing one flag with a
+ * DIFFERENT flag's setter — that combination type-checks, and its failure mode is
+ * the expensive one: `isSet` reads a field the `apply` never writes, so it never
+ * flips, and per the listener's reference guard the opt-in re-fires on every later
+ * `gpsData` mutation — i.e. on every GPS fix, for the rest of the session. Keep the
+ * two halves of a row visually adjacent so a mismatch is obvious on sight.
+ * (Before 2026-07-26 a numeric field reached a sharper version of the same storm:
+ * `isSet` compared `=== true` against a value that could never be `true`. `isSet`
+ * is now `!== undefined`, which closes that particular door but not the class.)
  */
 type BooleanCompassFlagField = {
   [K in keyof LibraryGpsDataState]-?: NonNullable<

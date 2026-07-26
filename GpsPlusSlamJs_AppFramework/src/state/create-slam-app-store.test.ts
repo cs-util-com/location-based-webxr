@@ -168,10 +168,13 @@ describe('createSlamAppStore', () => {
       // (see replay-mode.ts), so the failure landed on replay fidelity.
       //
       // The fix is to make the framework's intent explicit in state rather
-      // than inferable from a library default: every boolean compass opt-in
-      // dispatches its actual value. That also removes the whole class — a
-      // future library-default flip cannot reinterpret a recording, because
-      // the recording now carries the value as an action.
+      // than inferable from a library default: the cold-start row (the one
+      // marked `recordWhenFalse`) dispatches its actual value. That removes the
+      // class FOR THAT FLAG — a future library-default flip cannot reinterpret a
+      // recording, because the recording now carries the value as an action. The
+      // other four opt-ins are still dispatch-on-`true` and so still stay
+      // `undefined` when disabled; their library defaults are `false`, so they
+      // need the marker only if that changes (rule stated on the field).
       for (const value of [true, false]) {
         const store = createSlamAppStore({
           storageBackend: backend,
