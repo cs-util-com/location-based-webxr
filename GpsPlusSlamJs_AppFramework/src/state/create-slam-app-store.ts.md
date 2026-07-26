@@ -30,8 +30,15 @@ thin `createRecorderStore` that calls this factory with its own extras.
 
 ## Invariants & assumptions
 
-- **Every boolean compass opt-in dispatches its actual value, `false` included.**
-  Do not "optimise" this back to `rows.filter((r) => r.enabled)`. That shape left
+- **`enableCompassColdStartOverride` dispatches its actual value, `false` included**
+  — it is the one row marked `recordWhenFalse`. The other four boolean opt-ins are
+  still dispatch-on-`true`, deliberately: recording all five unconditionally added
+  four no-op actions to every recording (measured: a minimal session went from 1
+  opt-in action to 5) to fix one flag, and their library defaults are `false`, so
+  for them "absent ⇒ off" is a stable contract. **Any flag whose library default
+  stops being `false` must gain the marker** — that rule is stated on the field
+  itself so it travels with the code.
+  Do not "optimise" the marked row back to `rows.filter((r) => r.enabled)`. That shape left
   the `gpsData` flag `undefined` on an explicit opt-OUT, and the library reads
   `undefined` as "use `DefaultAlignmentConfig`" — equivalent only while the library
   default was also `false`. When gps-plus-slam-js **1.16.0** flipped

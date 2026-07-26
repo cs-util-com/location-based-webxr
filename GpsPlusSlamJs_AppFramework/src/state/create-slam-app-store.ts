@@ -474,7 +474,14 @@ export function createSlamAppStore<
     }));
   if (compassVoteWeight !== undefined) {
     compassOptIns.push({
-      isSet: (s) => s.gpsData?.compassVoteWeight === compassVoteWeight,
+      // "decided", not `=== compassVoteWeight`, for the same reason as the rows
+      // above. Not an active bug today — `replay-mode.ts` never passes this
+      // option, so the opt-in is not registered on a replay store — but a session
+      // recorded with the rotation prior active DOES carry `setCompassVoteWeight`
+      // in its stream, so the old shape's safety rested entirely on replay never
+      // opting in. Making it uniform removes the contingency instead of
+      // documenting it.
+      isSet: (s) => s.gpsData?.compassVoteWeight !== undefined,
       apply: (dispatch) => dispatch(setCompassVoteWeight(compassVoteWeight)),
     });
   }

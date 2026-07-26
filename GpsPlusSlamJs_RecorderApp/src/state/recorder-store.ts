@@ -114,10 +114,12 @@ export interface RecorderStoreOptions {
    * Stage C + the consistency gate default OFF (field-gated). NB: the resulting
    * `gpsData` actions persist into the recording (replay re-applies them) — turn
    * Stage 0 OFF for §6a calibration captures so the compass behaviour is unmodified.
-   * Since gps-plus-slam-js 1.16.0 the framework dispatches these values
-   * **explicitly, `false` included**, because the library's own default for Stage 0
+   * Since gps-plus-slam-js 1.16.0 the framework dispatches **Stage 0's** value
+   * explicitly, `false` included, because the library's own default for that flag
    * is now `true` and an absent action would therefore mean "on". So a calibration
    * capture records `setColdStartOverrideEnabled(false)` and replays faithfully.
+   * Stage C and the consistency gate are unchanged — still dispatch-on-`true`,
+   * since their library defaults are `false` and "absent ⇒ off" still holds.
    */
   enableCompassColdStartOverride?: boolean;
   enableCompassRotationPrior?: boolean;
