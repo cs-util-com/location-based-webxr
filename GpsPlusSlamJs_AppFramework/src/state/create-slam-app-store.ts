@@ -447,10 +447,29 @@ export function createSlamAppStore<
   // `false`, so for them "absent ⇒ off" is a stable contract. The rule to apply
   // when that changes is written on the `recordWhenFalse` field above: any flag
   // whose library default stops being `false` needs it.
+  // `isSet` asks "has this flag been DECIDED yet?", not "does it equal my
+  // option?", and the distinction is the whole replay contract.
+  //
+  // The listener's predicate is edge-triggered on the `gpsData` OBJECT REFERENCE,
+  // and every library reducer mutation produces a fresh one. So an `isSet` of the
+  // form `flag === enabled` turns the listener into a value ENFORCER: a replayed
+  // `setColdStartOverrideEnabled(true)` re-arms the predicate, the effect sees
+  // `true !== false`, and it dispatches `false` straight over the recorded value.
+  // A session recorded WITH the override would then replay WITHOUT one — the same
+  // defect this whole change exists to fix, merely inverted.
+  //
+  // `!== undefined` gives the right semantics in one line: the framework supplies
+  // the INITIAL value, and anything the action stream (or any later explicit
+  // dispatch) decides wins. It also preserves the 2026-06-27 field-bug fix, since
+  // a recreated `gpsData` has the flag back at `undefined` and so gets re-applied.
+  const isDecided =
+    (flag: BooleanCompassFlagField) =>
+    (s: LibraryRootState): boolean =>
+      s.gpsData?.[flag] !== undefined;
   const compassOptIns: CompassOptIn[] = booleanOptInRows
     .filter((row) => row.enabled || row.recordWhenFalse)
     .map(({ enabled, flag, setFlag }) => ({
-      isSet: (s) => s.gpsData?.[flag] === enabled,
+      isSet: isDecided(flag),
       apply: (dispatch) => dispatch(setFlag(enabled)),
     }));
   if (compassVoteWeight !== undefined) {

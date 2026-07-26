@@ -39,7 +39,7 @@ See the full analysis and plan:
   store factory (prepend is required so the effect dispatches **outside** the
   trigger's `next()`).
 - `CompassOptIn` — `{ isSet, apply }`:
-  - `isSet(state: LibraryRootState): boolean` — whether the flag is already set.
+  - `isSet(state: LibraryRootState): boolean` — whether the flag has already been **DECIDED**, not whether it equals the caller's requested value. See the "value enforcer" invariant below: writing this as `flag === myValue` makes the middleware fight the action stream, which breaks replay.
   - `apply(dispatch): void` — dispatches the action that sets the flag
     (e.g. `dispatch(setColdStartOverrideEnabled(true))`). It receives a bound
     `dispatch` rather than closing over the store, so descriptors can be built
@@ -47,6 +47,21 @@ See the full analysis and plan:
 
 ## Invariants & assumptions
 
+- **`isSet` must mean "decided", never "equals my value" — otherwise this
+  middleware becomes a value ENFORCER and fights the recorded action stream.**
+  Because the predicate is edge-triggered on the `gpsData` **object reference**
+  (below) and every library reducer mutation makes a fresh one, an `isSet` of the
+  form `flag === myValue` re-arms on the very action that disagrees with it: a
+  replayed `setColdStartOverrideEnabled(true)` would be immediately overwritten
+  with `false`, so a session recorded WITH the override replays WITHOUT one.
+  - The correct form is `flag !== undefined`. The opt-in supplies the **initial**
+    value; the action stream, or any later explicit dispatch, wins.
+  - This still satisfies the 2026-06-27 re-apply requirement, because a recreated
+    `gpsData` has the flag back at `undefined`.
+  - Caught in review on the 1.16.0 bump (2026-07-26), when the store factory
+    briefly used `=== enabled` so that an explicit `false` opt-out could be
+    dispatched. Pinned by "does NOT overwrite a value the action stream already
+    decided" in `create-slam-app-store.test.ts`.
 - **Predicate is edge-triggered on the `gpsData` reference, gated by "some flag
   unset".** It fires when `gpsData` is non-null **and** its object reference is
   new since the last apply (`s.gpsData !== lastApplied`) **and** at least one
@@ -81,7 +96,8 @@ import { setColdStartOverrideEnabled } from 'gps-plus-slam-js';
 
 const listener = createSlamAppStoreListenerMiddleware([
   {
-    isSet: (s) => s.gpsData?.coldStartOverrideEnabled === true,
+    // "decided", not "=== true" — see the first invariant above.
+    isSet: (s) => s.gpsData?.coldStartOverrideEnabled !== undefined,
     apply: (dispatch) => dispatch(setColdStartOverrideEnabled(true)),
   },
 ]);

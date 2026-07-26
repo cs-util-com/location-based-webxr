@@ -46,9 +46,18 @@ thin `createRecorderStore` that calls this factory with its own extras.
   - Consequence accepted: the listener middleware is always registered, so the
     "no opt-in requested ⇒ zero per-action overhead" path is gone. Already moot,
     since `enableCompassColdStartOverride` defaults to `true` here.
-  - Recordings made **before** 1.16.0 with the override off carry no opt-in action
-    at all, so faithful replay of those depends on the replaying consumer passing
-    `false` explicitly. `RecorderApp` does.
+  - Scope of "no future library-default change can reinterpret an existing
+    recording": true for recordings made from 1.16.0 onward. Recordings made
+    **before** it with the override off carry no opt-in action at all, so faithful
+    replay of those depends on the replaying consumer passing `false` explicitly.
+    `RecorderApp`'s `replay-mode.ts` does.
+  - **The opt-in supplies an INITIAL value; the action stream wins.** `isSet` is
+    `flag !== undefined` ("decided"), never `flag === enabled`. The latter turns
+    the listener middleware into a value enforcer that overwrites a replayed
+    `setColdStartOverrideEnabled(true)` with the option's `false` — the same
+    replay defect inverted. Full reasoning in
+    [`slam-app-store-listener.ts.md`](slam-app-store-listener.ts.md); pinned by
+    "does NOT overwrite a value the action stream already decided".
 - `storageBackend` is **required**. Tests / replay paths must pass
   `NullStorageBackend`. The factory does not silently fall back to OPFS — the
   caller decides.

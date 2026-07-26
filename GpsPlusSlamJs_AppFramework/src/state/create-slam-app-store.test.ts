@@ -183,6 +183,40 @@ describe('createSlamAppStore', () => {
       }
     });
 
+    it('does NOT overwrite a value the action stream already decided (replay contract)', async () => {
+      // Why this test matters: this is the shape that distinguishes "supply an
+      // initial value" from "enforce a value forever", and getting it wrong
+      // inverts the very bug the explicit dispatch was added to fix.
+      //
+      // `replay-mode.ts` passes `enableCompassColdStartOverride: false` and then
+      // replays a recorded action stream. A session recorded WITH the override
+      // carries `setColdStartOverrideEnabled(true)`, which arrives AFTER the
+      // framework's opt-in has fired (the opt-in fires on the first `setZeroPos`;
+      // the recorded action comes later in the stream). If the listener treats
+      // "flag !== my option" as "not applied yet", it re-dispatches `false` over
+      // the recorded `true` — because its predicate is edge-triggered on the
+      // `gpsData` OBJECT REFERENCE, and the recorded action creates a fresh one.
+      // The session would then replay WITHOUT an override it was recorded WITH:
+      // the same defect as before, in the opposite direction.
+      //
+      // So the framework's value is a DEFAULT that the stream overrides, and
+      // `isSet` must ask "has this flag been decided at all?", not "does it equal
+      // my option?".
+      const store = createSlamAppStore({
+        storageBackend: backend,
+        enableCompassColdStartOverride: false,
+      });
+      store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
+      await Promise.resolve();
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(false);
+
+      // The recorded action from a session captured WITH the override.
+      store.dispatch(setColdStartOverrideEnabled(true));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
+    });
+
     it('leaves the OTHER compass flags off by default (only Stage 0 ships on)', async () => {
       // Stage C (rotation prior) and the WebXR-consistency gate stay
       // field-gated; flipping Stage 0 on must not drag them on too.
@@ -335,14 +369,29 @@ describe('createSlamAppStore', () => {
       expect(s?.compassWebXRConsistencyEnabled).toBe(true);
     });
 
-    it('RE-APPLIES the opt-in if the flag is later cleared (robust to the recorder gpsData-recreation race)', async () => {
-      // Field bug (2026-06-27): in the recorder the opt-in ended up dropped — the
-      // flag fired against a gpsData that was then recreated (store swap / origin
-      // reset), and a one-shot subscription never re-applied it. The opt-in must
-      // therefore be idempotently re-applied whenever gpsData exists with the flag
-      // unset, not fired exactly once. Modelled here by clearing it directly.
-      // Re-application runs in a listener-middleware effect (async, level-based
-      // predicate: "gpsData exists and a flag is unset"), hence the awaits.
+    it('does NOT fight an explicit later dispatch (the drop case moved to the listener test)', async () => {
+      // This test used to assert the OPPOSITE, and the change is deliberate.
+      //
+      // Field bug (2026-06-27): the opt-in fired against a gpsData that was then
+      // recreated (store swap / origin reset) and a one-shot subscription never
+      // re-applied it, so the flag ended up dropped. It must be re-applied
+      // whenever gpsData exists with the flag UNSET. That requirement still
+      // holds — but this test modelled "unset" with an explicit
+      // `setColdStartOverrideEnabled(false)`, which was only a valid stand-in
+      // while `false` and `undefined` had the same effect. Since gps-plus-slam-js
+      // 1.16.0 they do not: `undefined` means "use the library default" (now ON)
+      // and `false` is a DECISION. Re-applying `true` over an explicit `false` is
+      // exactly what breaks replay of a session recorded with the override off.
+      //
+      // Where the real coverage lives now: `slam-app-store-listener.test.ts`
+      // "re-applies the opt-in when gpsData is recreated" resets gpsData to
+      // `null` and dispatches a fresh `setZeroPos`, i.e. the actual field-bug
+      // mechanism rather than a proxy for it. It can do that because it builds
+      // its own store; a real store here has no way to reach an unset flag (a
+      // second `setZeroPos`, even a large origin jump, PRESERVES it — verified).
+      //
+      // What this test pins instead is the other half of the contract: a value
+      // the stream decides is left alone.
       const store = createSlamAppStore({
         storageBackend: backend,
         enableCompassColdStartOverride: true,
@@ -350,9 +399,10 @@ describe('createSlamAppStore', () => {
       store.dispatch(setZeroPos({ lat: 0, lon: 0 }));
       await Promise.resolve();
       expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
-      store.dispatch(setColdStartOverrideEnabled(false)); // simulate the drop
+      store.dispatch(setColdStartOverrideEnabled(false));
       await Promise.resolve();
-      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(true);
+      await Promise.resolve();
+      expect(store.getState().gpsData?.coldStartOverrideEnabled).toBe(false);
     });
   });
 
