@@ -80,8 +80,13 @@ type LibraryGpsDataState = NonNullable<LibraryRootState['gpsData']>;
  * `gpsData` fields that can record a boolean compass opt-in. Filtering the
  * key union to boolean-typed fields keeps the opt-in table compile-checked:
  * a typo'd field name OR a field of the wrong type (e.g. the numeric
- * `compassVoteWeight`) fails to type-check as a table row, instead of
- * silently comparing `=== true` against a value that can never be `true`.
+ * `compassVoteWeight`) fails to type-check as a table row, instead of the row
+ * silently reading and writing a field whose type it cannot represent — the
+ * `setFlag` half takes a `boolean`, so a numeric field would be set to `true`.
+ * (Before 2026-07-26 the failure mode was sharper still: `isSet` compared
+ * `=== true` against a value that could never be `true`, so the opt-in re-fired
+ * forever. `isSet` is now `!== undefined`, which removes that specific storm but
+ * not the reason for the type filter.)
  */
 type BooleanCompassFlagField = {
   [K in keyof LibraryGpsDataState]-?: NonNullable<
@@ -380,8 +385,11 @@ export function createSlamAppStore<
   // field that records it, and the library action that sets it — so they are
   // one table row each: adding a compass toggle means adding a row (plus its
   // option + doc above), not hand-rolling another push block. The vote weight
-  // is NOT a row: it carries a value, so its `isSet` compares equality and its
-  // action dispatches the value.
+  // is NOT a row because it carries a NUMBER rather than a boolean, so it cannot
+  // satisfy `BooleanCompassFlagField`; its `isSet` follows the same
+  // "decided" (`!== undefined`) rule as the rows, and its action dispatches the
+  // value. Anything added here does too — see `slam-app-store-listener.ts.md`
+  // §Invariants for why a value-equality `isSet` is forbidden.
   const booleanOptInRows: ReadonlyArray<{
     enabled: boolean;
     flag: BooleanCompassFlagField;

@@ -117,7 +117,9 @@ thin `createRecorderStore` that calls this factory with its own extras.
   typed `BooleanCompassFlagField` (the boolean-typed keys of `gpsData`), so a
   typo'd or wrong-typed field name fails to compile; adding a compass toggle
   means adding one row plus its option/doc. The value-carrying `compassVoteWeight`
-  stays a hand-written opt-in (equality `isSet`, value dispatch). See
+  stays a hand-written opt-in because it is a number and so cannot satisfy
+  `BooleanCompassFlagField` — but it follows the same `isSet` rule as the rows
+  ("decided", i.e. `!== undefined`) and dispatches its value. See
   [`GpsPlusSlamJs_Docs/docs/2026-06-28-0751-subscriber-dispatch-persistence-ordering-plan.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-28-0751-subscriber-dispatch-persistence-ordering-plan.md).
 - The factory does **not** know about routing, ref-points, or scenarios. Any
   app needing those plugs them in via `extraReducers`.
