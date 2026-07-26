@@ -120,10 +120,13 @@ thin `createRecorderStore` that calls this factory with its own extras.
   registered **unconditionally**: `recordWhenFalse` on the cold-start row means
   `compassOptIns` is never empty, so the factory's `length > 0` guard is always
   true and the old "zero per-action overhead when nothing is requested" path no
-  longer exists. The one consumer that actually took it was `replay-mode.ts` —
-  passing `enableCompassColdStartOverride: false` used to leave a replay store with
-  no compass listener at all — so do not reason about a replay store on that
-  premise. Consumers
+  longer exists. The consumers that actually took it are the same three listed
+  above: each opted out of Stage 0 **and** enabled nothing else, so `compassOptIns`
+  came out empty and the store carried no compass listener at all —
+  `RecorderApp`'s `replay-mode.ts`, `AnchorStarter` under `?coldStartOverride=0`,
+  and a recorder live store with Stage 0 off (the other four opt-ins default
+  `false`, and `compassVoteWeight` is suppressed while no prior is active). Do not
+  reason about any of those stores on the old premise. Consumers
   asserting the flag after `setZeroPos` must `await` the async effect first (see
   the tests). The five boolean opt-ins are built from a **declarative row table**
   (options flag → `gpsData` field → library setter action) whose `flag` column is
