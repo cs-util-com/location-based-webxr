@@ -452,8 +452,9 @@ export function createSlamAppStore<
   // reads `undefined` as "use `DefaultAlignmentConfig`", which made "absent" and
   // "false" equivalent only while the library default was also `false`. When
   // gps-plus-slam-js 1.16.0 flipped `useCompassColdStartOverride` to `true`,
-  // `enableCompassColdStartOverride: false` silently began meaning **ON**, in TWO
-  // places, and the live one is the worse of the two:
+  // `enableCompassColdStartOverride: false` silently began meaning **ON** for every
+  // consumer that opted out — three of them in this repo, and the live recording
+  // case is the worst:
   //  - **Recording (worse).** A calibration capture, whose whole point is to record
   //    unmodified compass behaviour, would have run WITH the override active while
   //    the operator had switched it off — and the recording carries no action
@@ -461,7 +462,11 @@ export function createSlamAppStore<
   //  - **Replay.** `replay-mode.ts` passes the same `false` to stop a session
   //    captured without the override from replaying with one; that stopped working,
   //    so a correct recording was replayed wrongly.
-  // `recordWhenFalse` fixes both, since the live store dispatches the `false` too.
+  //  - **`AnchorStarter`'s `?coldStartOverride=0`**, the documented no-rebuild
+  //    opt-out for field testers, also became inert. No recording there
+  //    (`NullStorageBackend`), so the effect was confined to the live session.
+  // `recordWhenFalse` fixes all three, since the live store dispatches the `false`
+  // too — the option reaches the library rather than only suppressing a dispatch.
   // The tests missed it because the assertion was `toBeFalsy()`, which `undefined`
   // satisfies.
   //

@@ -43,14 +43,16 @@ thin `createRecorderStore` that calls this factory with its own extras.
   `undefined` as "use `DefaultAlignmentConfig`" — equivalent only while the library
   default was also `false`. When gps-plus-slam-js **1.16.0** flipped
   `useCompassColdStartOverride` to `true`, `enableCompassColdStartOverride: false`
-  silently began meaning **ON** — in two places, and the recording side is the worse
-  one. **Recording:** a calibration capture, whose purpose is to record unmodified
-  compass behaviour, ran WITH the override active while the operator had switched it
-  off, and the recording carries no action saying so — corrupt data rather than a
-  misread of good data. **Replay:** `RecorderApp`'s `replay-mode.ts` passes the same
-  `false` to keep a session captured without the override from replaying with one,
-  and that stopped working. Dispatching the value fixes both, and it makes the
-  persisted action stream state which
+  silently began meaning **ON** for every consumer that opted out — three of them in
+  this repo, with the recording side the worst. **Recording:** a calibration capture,
+  whose purpose is to record unmodified compass behaviour, ran WITH the override
+  active while the operator had switched it off, and the recording carries no action
+  saying so — corrupt data rather than a misread of good data. **Replay:**
+  `RecorderApp`'s `replay-mode.ts` passes the same `false` to keep a session captured
+  without the override from replaying with one, and that stopped working.
+  **`AnchorStarter`:** its documented `?coldStartOverride=0` field-tester opt-out
+  became inert (no recording there, so live-session only). Dispatching the value
+  fixes all three, and it makes the persisted action stream state which
   compass configuration a session ran with, so no future library-default change can
   reinterpret an existing recording.
   - The bug survived because the test asserted `toBeFalsy()`, which `undefined`
