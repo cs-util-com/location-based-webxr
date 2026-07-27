@@ -29,6 +29,12 @@ export {
   writeSessionMetadata,
 } from './opfs-storage.js';
 
+// --- write-file-or-abort ---
+export {
+  writeFileOrAbort,
+  type WritableFileData,
+} from './write-file-or-abort.js';
+
 // --- file-system-utils ---
 export {
   formatTimestamp,

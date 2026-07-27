@@ -31,6 +31,7 @@
 
 import { embedCoverageInSessionJson } from 'gps-plus-slam-app-framework/storage/zip-coverage-embed';
 import { loadSessionMetadataFromBlob } from 'gps-plus-slam-app-framework/storage/zip-reader';
+import { writeFileOrAbort } from 'gps-plus-slam-app-framework/storage/write-file-or-abort';
 import { forEachWithConcurrencyLimit } from 'gps-plus-slam-app-framework/utils/concurrency';
 import { H3_RESOLUTION } from 'gps-plus-slam-app-framework/geo';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
@@ -151,20 +152,10 @@ export async function backfillCoverageIntoZips(
         if (signal?.aborted) {
           return;
         }
-        // createWritable() writes to a temp and atomically swaps on close().
-        const writable = await candidate.fileHandle.createWritable();
-        try {
-          await writable.write(rewritten);
-          await writable.close();
-        } catch (writeErr) {
-          // The write/close failed, so the temp swap holds a partial (or empty)
-          // result. abort() — NOT close() — discards that temp without swapping
-          // it over the original (close() would commit the corruption) and
-          // finalizes the stream so its file-handle lock is not leaked. Re-throw
-          // so the outer catch isolates and counts this file as failed.
-          await writable.abort().catch(() => {});
-          throw writeErr;
-        }
+        // Throws on failure (having aborted the temp rather than committing a
+        // partial zip over the original), so the outer catch isolates this
+        // file and counts it as failed.
+        await writeFileOrAbort(candidate.fileHandle, rewritten);
         embedded += 1;
       } catch (err) {
         log.warn(`Backfill failed for ${candidate.filename}:`, err);

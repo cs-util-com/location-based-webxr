@@ -130,6 +130,11 @@ const entryFiles = [
   'src/storage/zip-export.ts',
   'src/storage/zip-reader.ts',
   'src/storage/zip-coverage-embed.ts',
+  // File System Access write-with-abort helper — deep-imported by three
+  // recorder storage modules (ref-point-loader, scenario-zip-export,
+  // coverage-backfill). The `./storage/*` exports wildcard advertises this
+  // subpath, so it must be built per-file.
+  'src/storage/write-file-or-abort.ts',
 
   // test-utils/ (advertised in `exports`; consumed by RecorderApp tests)
   'src/test-utils/browser-mocks.ts',

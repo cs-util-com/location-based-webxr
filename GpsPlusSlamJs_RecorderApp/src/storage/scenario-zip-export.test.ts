@@ -153,4 +153,37 @@ describe('scenario-zip-export', () => {
     // handle (realm-independent — the assertion that actually pins the behavior).
     expect(chunks[0]).toBe(result.blob);
   });
+  /**
+   * Why this test matters: until 2026-07-27 this call site was a bare
+   * createWritable/write/close with NO abort guard — the one drifted copy of a
+   * pattern its three siblings got right. That matters more here than
+   * anywhere: the crash-safety sync overwrites the SAME external file
+   * repeatedly while recording, and createWritable() commits its temp on
+   * close(). A failed write followed by close() would therefore replace the
+   * last good backup with a partial ZIP, and skipping both would leak the
+   * handle lock so every later sync fails. This pins abort-not-close.
+   */
+  it('aborts the writable (never closes it) when the external write fails', async () => {
+    const sessionName = await seedScenarioSession('AbortSc');
+
+    const abort = vi.fn(() => Promise.resolve());
+    const close = vi.fn(() => Promise.resolve());
+    const writeFailure = new Error('disk full');
+    const fakeFileHandle = {
+      createWritable: () =>
+        Promise.resolve({
+          write: () => Promise.reject(writeFailure),
+          close,
+          abort,
+        }),
+    } as unknown as FileSystemFileHandle;
+
+    await expect(
+      syncScenarioSessionToExternalZip(fakeFileHandle, 'AbortSc', sessionName)
+    ).rejects.toBe(writeFailure);
+
+    // close() would commit the partial ZIP over the previous good export.
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+  });
 });
