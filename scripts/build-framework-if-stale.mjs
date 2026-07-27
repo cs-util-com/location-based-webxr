@@ -1,4 +1,8 @@
-#!/usr/bin/env node
+// NOTE: deliberately no `#!/usr/bin/env node` shebang — this file is only ever
+// invoked as `node scripts/build-framework-if-stale.mjs`, and a shebang makes
+// Vitest's transform fail to parse it when the colocated test imports it
+// ("SyntaxError: Invalid or unexpected token", zero tests collected).
+//
 // Skips the framework build when its dist/ is already newer than every
 // framework input (speedup plan Phase C.2). The full cascade builds the
 // framework up to six times — once per consumer package's build:framework
