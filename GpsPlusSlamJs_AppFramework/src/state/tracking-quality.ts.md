@@ -171,6 +171,16 @@ store.subscribe(() => {
   state-machine, anti-validation cases from plan §6, the listener
   middleware contract, corpus-derived defaults regression (§11 (d)), and
   §4.8 hysteresis (§11 (f)).
+- Field-recording integration:
+  [tracking-quality.field-recordings.test.ts](tracking-quality.field-recordings.test.ts)
+  replays two real recorded sessions (outdoor walking, indoor stationary)
+  through a production-shaped store and asserts findings F1/F4/F6. It skips
+  gracefully when the gitignored recordings are absent. **Its threshold
+  assertions are derived from `DEFAULT_TRACKING_QUALITY_OPTIONS`, never
+  hardcoded** (`TRANSLATION_FAIL_M`, `ROTATION_FAIL_DEG` = warn × 4) — a
+  hardcoded literal there went stale once when the upstream alignment improved
+  and the fixture's measured value moved; see the
+  [F6 recalibration followup](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-27-2210-tracking-quality-f6-recalibration-followup.md).
 - Corpus sweep (Phase A (c)): exercised in the downstream analysis
   harness — 5 tests replaying the full recording corpus (§6.1 sweep,
   compass perturbation, anti-validation).
