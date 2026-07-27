@@ -4,10 +4,16 @@
 
 User-configurable recording options for controlling high-frequency data streams (depth sampling, image capture). Allows users to disable/tune expensive capture operations to improve performance on lower-end devices.
 
-**Ownership (2026-07-11 G-1 move):** this catalog is RECORDER-owned — it moved here from the framework's `state/recording-options.ts` (see `GpsPlusSlamJs_Docs/docs/2026-07-11-1445-recording-options-altitude-move-plan.md`), so recorder settings tweaks no longer require a framework publish. Two building blocks stay framework-owned and are imported (and re-exported for recorder callers):
+**Ownership (2026-07-11 G-1 move):** this catalog is RECORDER-owned — it moved here from the framework's `state/recording-options.ts` (see `GpsPlusSlamJs_Docs/docs/2026-07-11-1445-recording-options-altitude-move-plan.md`), so recorder settings tweaks no longer require a framework publish.
+
+**The rule for the framework-owned groups (sharpened 2026-07-27): whoever owns the TYPE owns its defaults, its bounds, and its validator.** A range like `motionFilter.maxAngularVelocity ∈ [0.05, 5]` is a statement about what the motion gate does — it belongs with the gate, not with an app that happens to persist a config for it. This catalog therefore declares constraints only for the groups it genuinely owns (`depth`, `images` top-level, `occupancy`, `frameTileDisplay`, `qr`, `compassDebug`, `visualization`, `loopClosureDebug`). Imported groups:
 
 - `arCrashIsolation` — `ArCrashIsolationOptions` / `DEFAULT_AR_CRASH_ISOLATION` / `validateArCrashIsolationOptions` from `gps-plus-slam-app-framework/ar/ar-crash-isolation` (the framework reads the flags in `webxr-session.ts`). `validateRecordingOptions` delegates the group to the framework validator; `DEFAULT_RECORDING_OPTIONS.arCrashIsolation` spreads the framework default.
+- `images.motionFilter` — `MotionFilterConfig` / `DEFAULT_MOTION_FILTER` / `MOTION_FILTER_CONSTRAINTS` / `validateMotionFilterConfig` from `gps-plus-slam-app-framework/ar/capture-motion-gate`.
+- `images.qualityFilter` — `QualityFilterConfig` / `DEFAULT_QUALITY_FILTER` / `QUALITY_FILTER_CONSTRAINTS` / `validateQualityFilterConfig` from `gps-plus-slam-app-framework/ar/image-quality`.
 - `OccluderDebugStyle` + `OCCLUDER_DEBUG_STYLES` from `gps-plus-slam-app-framework/visualization/occlusion-mesh` (the style's consumer owns it; the recorder's `occluderDebugStyle` validator enum-checks against the exported array).
+
+`validateImageOptions` delegates the two nested gate groups to their framework validators. `MOTION_FILTER_CONSTRAINTS` / `QUALITY_FILTER_CONSTRAINTS` are **re-exported** from here (like `OccluderDebugStyle`) so this catalog stays the recorder's ONE options surface and `ui/settings-modal.ts` reads every slider range from a single import. They are pass-throughs, not restatements — the bounds have exactly one definition, in the gate that gives them meaning.
 
 `RecordingOptions` is deliberately a `type` alias, not an `interface`: object-literal type aliases get an implicit index signature, so the value is assignable to the framework's opaque `SessionMetadata.recordingOptions?: Record<string, unknown>` (`state/recording-slice.ts` stores it for replay context; the recorder narrows on read).
 
@@ -37,8 +43,6 @@ User-configurable recording options for controlling high-frequency data streams 
 | `resetRecordingOptions(key?)`              | `key?: string`                     | `RecordingOptions`        | Clears storage, returns a `structuredClone` of the defaults (same never-by-reference rule as `loadRecordingOptions`)                                                                                                                                                                                                                                                                                                                                                                                                |
 | `validateDepthOptions(partial)`            | `Partial<DepthCaptureOptions>`     | `DepthCaptureOptions`     | Validates and clamps; rounds `gridSize` to an integer (N×N grid) so it applies downstream                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `validateImageOptions(partial)`            | `Partial<ImageCaptureOptions>`     | `ImageCaptureOptions`     | Validates and clamps values; default-fills the `motionFilter` and `qualityFilter` groups via their validators                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `validateMotionFilterOptions(partial)`     | `Partial<MotionFilterConfig>`      | `MotionFilterConfig`      | `enabled` boolean-or-default (→ ON); clamps the three thresholds to `MOTION_FILTER_CONSTRAINTS`, NaN → default                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `validateQualityFilterOptions(partial)`    | `Partial<QualityFilterConfig>`     | `QualityFilterConfig`     | `enabled` boolean-or-default (→ **OFF**); clamps `blurRelativeThreshold`/`minMeanLuminance`/`maxWaitMs` to `QUALITY_FILTER_CONSTRAINTS`, NaN → default                                                                                                                                                                                                                                                                                                                                                              |
 | `validateOccupancyOptions(partial)`        | `Partial<OccupancyOptions>`        | `OccupancyOptions`        | Clamps `cellSizeM`; rounds + clamps `minConfidence` (1–10); coerces `persistentOcclusion`/`liveOcclusion` to boolean (non-boolean → default); enum-validates `occluderMeshMode` against `OCCLUDER_MESH_MODES` (unknown → default `'smooth'`) and `occluderDebugStyle` against `OCCLUDER_DEBUG_STYLES` (unknown → default `'off'`); **migrates** legacy fields when the new one is absent (`occlusionMeshEnabled: true`→`persistentOcclusion`, `occluderDebugViz: true`→`'matcap'`); rejects NaN/Infinity to default |
 | `validateFrameTileDisplayOptions(partial)` | `Partial<FrameTileDisplayOptions>` | `FrameTileDisplayOptions` | Clamps `divisor` to 1–8 and `maxTiles` to 0–2000, rounds both to integers; rejects NaN/Infinity to default                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `validateVisualizationOptions(partial)`    | `Partial<VisualizationOptions>`    | `VisualizationOptions`    | Boolean-or-default per field (missing/corrupted → ON)                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -50,17 +54,17 @@ User-configurable recording options for controlling high-frequency data streams 
 
 ### Constants
 
-| Constant                         | Description                                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `STORAGE_KEY`                    | localStorage key: `'gps-plus-slam-recorder-options'`                                             |
-| `DEFAULT_RECORDING_OPTIONS`      | Default values (all enabled)                                                                     |
-| `DEPTH_CONSTRAINTS`              | Min/max/step for depth options                                                                   |
-| `IMAGE_CONSTRAINTS`              | Min/max/step for image options                                                                   |
-| `MOTION_FILTER_CONSTRAINTS`      | Min/max/step for `motionFilter` thresholds (angular/linear vel, maxWaitMs)                       |
-| `QUALITY_FILTER_CONSTRAINTS`     | Min/max/step for `qualityFilter` thresholds (blurRelativeThreshold, minMeanLuminance, maxWaitMs) |
-| `OCCUPANCY_CONSTRAINTS`          | Min/max/step for `cellSizeM` (metres) and `minConfidence` (count)                                |
-| `FRAME_TILE_DISPLAY_CONSTRAINTS` | Min/max/step for `frameTileDisplay.divisor` and `.maxTiles`                                      |
-| `QR_CONSTRAINTS`                 | Min/max/step for `qr.intervalMs` and `qr.captureSize`                                            |
+| Constant                         | Description                                                              |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `STORAGE_KEY`                    | localStorage key: `'gps-plus-slam-recorder-options'`                     |
+| `DEFAULT_RECORDING_OPTIONS`      | Default values (all enabled)                                             |
+| `DEPTH_CONSTRAINTS`              | Min/max/step for depth options                                           |
+| `IMAGE_CONSTRAINTS`              | Min/max/step for image options                                           |
+| `MOTION_FILTER_CONSTRAINTS`      | **Re-export** of the motion gate's own bounds (`ar/capture-motion-gate`) |
+| `QUALITY_FILTER_CONSTRAINTS`     | **Re-export** of the quality gate's own bounds (`ar/image-quality`)      |
+| `OCCUPANCY_CONSTRAINTS`          | Min/max/step for `cellSizeM` (metres) and `minConfidence` (count)        |
+| `FRAME_TILE_DISPLAY_CONSTRAINTS` | Min/max/step for `frameTileDisplay.divisor` and `.maxTiles`              |
+| `QR_CONSTRAINTS`                 | Min/max/step for `qr.intervalMs` and `qr.captureSize`                    |
 
 ## Invariants & Assumptions
 
@@ -121,9 +125,9 @@ Earlier passes: intervalMs/gridSize/minConfidence were first re-tuned in the [20
 
 `images.intervalMs` min/step were lowered 1000/500 → **250/250** (2026-07-10) so splat-style object scans can reach 4 Hz — the capture pipeline self-limits via `captureInProgress` if a device cannot sustain that cadence. See `GpsPlusSlamJs_Docs/docs/2026-07-10-0802-splat-orbit-capture-rate-finding.md`.
 
-## Validation mechanism (schema-driven, 2026-07-18)
+## Validation mechanism (schema-driven, 2026-07-18; primitive moved to the framework 2026-07-27)
 
-Every group validator is a thin wrapper over one generic `validateFields(options, defaults, specs)` core driven by a per-field spec table (`kind: 'bool' | 'num' | 'enum' | 'custom'`), replacing ~10 hand-rolled per-field validator bodies (simplify-loop Area 5):
+Every group validator is a thin wrapper over the framework's generic `validateOptionFields(options, defaults, specs)` (`gps-plus-slam-app-framework/utils/validate-option-fields`), driven by a per-field spec table (`kind: 'bool' | 'num' | 'enum' | 'custom'`). It replaced ~10 hand-rolled per-field validator bodies (simplify-loop Area 5) and moved to the framework on 2026-07-27 so the framework's own option groups stop hand-rolling their validators:
 
 - `bool` — real boolean or the group default; `num` — FINITE number (NaN is `typeof 'number'` and must not survive), optional `round`, clamped to the referenced CONSTRAINTS window; `enum` — membership or default; `custom` — field-specific logic (the occupancy legacy migrations, the nested `images.motionFilter`/`qualityFilter` groups, `blurMetric`'s optional-default fallback).
 - The spec table is **exhaustive over the group type** (`GroupSpec<T>` maps every key): adding a field to an options interface is a compile error until its validation is declared — the hand-rolled validators could silently drop a new field.

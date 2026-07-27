@@ -1,5 +1,6 @@
 /**
- * Utils module — Logger, fused-path, failure tracker, concurrency, formatters.
+ * Utils module — Logger, fused-path, failure tracker, concurrency, formatters,
+ * persisted-options validation.
  */
 
 export {
@@ -27,3 +28,8 @@ export { mapWithConcurrencyLimit } from './concurrency.js';
 export { geodesicAngleRad } from './geodesic-angle.js';
 export { formatFileSize } from './format-file-size.js';
 export { listFormatter } from './list-formatter.js';
+export {
+  validateOptionFields,
+  type FieldSpec,
+  type GroupSpec,
+} from './validate-option-fields.js';

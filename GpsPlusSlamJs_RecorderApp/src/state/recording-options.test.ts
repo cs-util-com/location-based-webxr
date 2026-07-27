@@ -26,8 +26,6 @@ import {
   compassStoreOptions,
   validateLoopClosureDebugOptions,
   validateQrOptions,
-  validateMotionFilterOptions,
-  validateQualityFilterOptions,
   validateRecordingOptions,
   DEFAULT_RECORDING_OPTIONS,
   STORAGE_KEY,
@@ -1522,57 +1520,6 @@ describe('recording-options', () => {
         expect(DEFAULT_RECORDING_OPTIONS).toEqual(defaultsBefore);
       });
     }
-  });
-
-  describe('validateQualityFilterOptions', () => {
-    it('returns defaults (gate DISABLED) for an empty object', () => {
-      expect(validateQualityFilterOptions({})).toEqual(
-        DEFAULT_RECORDING_OPTIONS.images.qualityFilter
-      );
-      expect(validateQualityFilterOptions({}).enabled).toBe(false);
-    });
-
-    it('honors an explicit enabled=true', () => {
-      expect(validateQualityFilterOptions({ enabled: true }).enabled).toBe(
-        true
-      );
-    });
-
-    it('clamps thresholds to QUALITY_FILTER_CONSTRAINTS', () => {
-      const tooHigh = validateQualityFilterOptions({
-        blurRelativeThreshold: 9,
-      });
-      expect(tooHigh.blurRelativeThreshold).toBe(
-        QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold.max
-      );
-      const tooLow = validateQualityFilterOptions({ minMeanLuminance: -5 });
-      expect(tooLow.minMeanLuminance).toBe(
-        QUALITY_FILTER_CONSTRAINTS.minMeanLuminance.min
-      );
-    });
-  });
-
-  describe('validateMotionFilterOptions', () => {
-    it('returns defaults (gate enabled) for an empty object', () => {
-      expect(validateMotionFilterOptions({})).toEqual(
-        DEFAULT_RECORDING_OPTIONS.images.motionFilter
-      );
-    });
-
-    it('honors an explicit enabled=false', () => {
-      expect(validateMotionFilterOptions({ enabled: false }).enabled).toBe(
-        false
-      );
-    });
-
-    it('clamps thresholds to MOTION_FILTER_CONSTRAINTS', () => {
-      const tooLow = validateMotionFilterOptions({ maxAngularVelocity: 0 });
-      expect(tooLow.maxAngularVelocity).toBe(
-        MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.min
-      );
-      const tooHigh = validateMotionFilterOptions({ maxWaitMs: 999999 });
-      expect(tooHigh.maxWaitMs).toBe(MOTION_FILTER_CONSTRAINTS.maxWaitMs.max);
-    });
   });
 
   describe('DEFAULT_RECORDING_OPTIONS', () => {

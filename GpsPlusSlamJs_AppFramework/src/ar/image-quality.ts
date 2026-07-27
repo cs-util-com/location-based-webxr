@@ -26,6 +26,7 @@
  */
 
 import { lowerMedian } from '../utils/median.js';
+import { validateOptionFields } from '../utils/validate-option-fields.js';
 
 /**
  * Selectable sharpness metrics for the gate's blur check. Both are pure
@@ -105,6 +106,69 @@ export const DEFAULT_QUALITY_FILTER: QualityFilterConfig = {
   maxWaitMs: 4000,
   blurMetric: 'variance-of-laplacian',
 };
+
+/**
+ * Valid ranges for the {@link QualityFilterConfig} thresholds — bounds derived
+ * from what each number MEANS to this gate, so they live with the gate rather
+ * than with whichever app persists a config for it.
+ *
+ * `blurRelativeThreshold` (`k` in `sharpness < k·median`) is clamped to
+ * 0.05–0.95: it is a fraction of the recent sharpness median, so it must sit
+ * strictly inside (0, 1) — at ~0 the blur check never rejects, near 1 it
+ * rejects almost everything. `minMeanLuminance` (the absolute black cutoff on a
+ * 0–255 luma scale) is clamped to 0–128: 0 disables the black check, and a
+ * cutoff above mid-grey would reject normally-lit frames. `maxWaitMs` mirrors
+ * the motion gate's range (0.5–20 s) so the never-good fallback can always
+ * fire. `step` is the granularity a settings slider should use for the value.
+ */
+export const QUALITY_FILTER_CONSTRAINTS = {
+  blurRelativeThreshold: { min: 0.05, max: 0.95, step: 0.05 },
+  minMeanLuminance: { min: 0, max: 128, step: 1 },
+  maxWaitMs: { min: 500, max: 20000, step: 500 },
+} as const;
+
+/**
+ * Validate and normalize a persisted {@link QualityFilterConfig}.
+ *
+ * `enabled` is boolean-or-default; the three thresholds are clamped to
+ * {@link QUALITY_FILTER_CONSTRAINTS} with non-finite values falling back to the
+ * default (a stored `NaN` is `typeof 'number'` and would survive a bare clamp).
+ * A missing/nullish group default-fills entirely, so a config persisted before
+ * the gate existed loads with the gate DISABLED (its safe default) rather than
+ * crashing. `blurMetric` is membership-validated against {@link BLUR_METRIC_IDS}
+ * with an explicit `'variance-of-laplacian'` fallback, because the field is
+ * OPTIONAL — a config predating the metric toggle must resolve to the original
+ * behavior (2026-07-12 blur-metric-toggle plan).
+ */
+export function validateQualityFilterConfig(
+  options: Partial<QualityFilterConfig> | null | undefined
+): QualityFilterConfig {
+  return validateOptionFields(options, DEFAULT_QUALITY_FILTER, {
+    enabled: { kind: 'bool' },
+    blurRelativeThreshold: {
+      kind: 'num',
+      constraint: QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold,
+    },
+    minMeanLuminance: {
+      kind: 'num',
+      constraint: QUALITY_FILTER_CONSTRAINTS.minMeanLuminance,
+    },
+    maxWaitMs: {
+      kind: 'num',
+      constraint: QUALITY_FILTER_CONSTRAINTS.maxWaitMs,
+    },
+    // Declared last so the validated object serializes in
+    // DEFAULT_QUALITY_FILTER's key order (persisted JSON stays byte-comparable
+    // across save→validate).
+    blurMetric: {
+      kind: 'custom',
+      resolve: (opts, fallback) =>
+        BLUR_METRIC_IDS.includes(opts.blurMetric as BlurMetricId)
+          ? opts.blurMetric
+          : (fallback ?? 'variance-of-laplacian'),
+    },
+  });
+}
 
 /** Default number of recent (non-black) sharpness scores the gate keeps. */
 export const DEFAULT_SHARPNESS_HISTORY_SIZE = 15;

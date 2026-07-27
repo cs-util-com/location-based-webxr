@@ -20,6 +20,8 @@ import {
   rgbaToGrayscale,
   ImageQualityGate,
   DEFAULT_QUALITY_FILTER,
+  QUALITY_FILTER_CONSTRAINTS,
+  validateQualityFilterConfig,
   type QualityFilterConfig,
 } from './image-quality.js';
 
@@ -318,5 +320,90 @@ describe('blurMetricScorer', () => {
 
   it('DEFAULT_QUALITY_FILTER pins variance-of-laplacian (pre-toggle behavior)', () => {
     expect(DEFAULT_QUALITY_FILTER.blurMetric).toBe('variance-of-laplacian');
+  });
+});
+
+/**
+ * Why these tests matter: a QualityFilterConfig survives page reloads inside a
+ * consumer app's persisted settings, so it comes back as untrusted input. The
+ * gate owns what its own numbers mean, so it owns their bounds — these pin that
+ * a corrupt or pre-feature stored value can never turn the gate on by itself,
+ * push a threshold outside the range where the check is meaningful, or lose the
+ * pre-toggle blur-metric behaviour. (They moved here from the recorder catalog,
+ * which used to encode this gate's ranges in its own table.)
+ */
+describe('validateQualityFilterConfig', () => {
+  it('default-fills an empty, null or undefined group (gate stays DISABLED)', () => {
+    for (const empty of [{}, null, undefined]) {
+      expect(validateQualityFilterConfig(empty)).toEqual(
+        DEFAULT_QUALITY_FILTER
+      );
+      expect(validateQualityFilterConfig(empty).enabled).toBe(false);
+    }
+  });
+
+  it('honors an explicit enabled=true', () => {
+    expect(validateQualityFilterConfig({ enabled: true }).enabled).toBe(true);
+  });
+
+  it('falls back to OFF for a non-boolean enabled (never self-enables)', () => {
+    expect(
+      validateQualityFilterConfig({
+        enabled: 'yes' as unknown as boolean,
+      }).enabled
+    ).toBe(false);
+  });
+
+  it('clamps thresholds to QUALITY_FILTER_CONSTRAINTS', () => {
+    expect(
+      validateQualityFilterConfig({ blurRelativeThreshold: 9 })
+        .blurRelativeThreshold
+    ).toBe(QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold.max);
+    expect(
+      validateQualityFilterConfig({ minMeanLuminance: -5 }).minMeanLuminance
+    ).toBe(QUALITY_FILTER_CONSTRAINTS.minMeanLuminance.min);
+  });
+
+  // A stored NaN is `typeof 'number'` and would survive a bare clamp.
+  it('falls back to the default for non-finite thresholds', () => {
+    expect(validateQualityFilterConfig({ maxWaitMs: NaN }).maxWaitMs).toBe(
+      DEFAULT_QUALITY_FILTER.maxWaitMs
+    );
+  });
+
+  /**
+   * `blurMetric` is OPTIONAL, so it is the one field whose fallback cannot come
+   * from the defaults alone — a config written before the metric toggle existed
+   * must resolve to variance-of-Laplacian, the behaviour it was tuned under.
+   */
+  it('keeps a known blurMetric and maps missing/unknown to variance-of-laplacian', () => {
+    for (const id of BLUR_METRIC_IDS) {
+      expect(validateQualityFilterConfig({ blurMetric: id }).blurMetric).toBe(
+        id
+      );
+    }
+    expect(validateQualityFilterConfig({}).blurMetric).toBe(
+      'variance-of-laplacian'
+    );
+    expect(
+      validateQualityFilterConfig({
+        blurMetric: 'sobel' as unknown as BlurMetricId,
+      }).blurMetric
+    ).toBe('variance-of-laplacian');
+  });
+
+  it('brackets every numeric default inside its own constraint window', () => {
+    for (const key of [
+      'blurRelativeThreshold',
+      'minMeanLuminance',
+      'maxWaitMs',
+    ] as const) {
+      expect(DEFAULT_QUALITY_FILTER[key]).toBeGreaterThanOrEqual(
+        QUALITY_FILTER_CONSTRAINTS[key].min
+      );
+      expect(DEFAULT_QUALITY_FILTER[key]).toBeLessThanOrEqual(
+        QUALITY_FILTER_CONSTRAINTS[key].max
+      );
+    }
   });
 });

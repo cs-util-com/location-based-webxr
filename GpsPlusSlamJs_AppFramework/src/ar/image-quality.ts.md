@@ -34,6 +34,18 @@
   - `QualityFilterConfig` / `DEFAULT_QUALITY_FILTER` — the **shared** config type
     carried by both `ImageCaptureConfig` and `ImageCaptureOptions` (mirrors how
     `MotionFilterConfig` is shared, so the two cannot drift).
+  - `QUALITY_FILTER_CONSTRAINTS` — `{min, max, step}` per threshold, derived
+    from what each number MEANS here: `blurRelativeThreshold` is a fraction of
+    the recent median so it must sit strictly inside (0, 1) (clamped 0.05–0.95);
+    `minMeanLuminance` is a 0–255 luma cutoff clamped to 0–128 (above mid-grey
+    would reject normally-lit frames); `maxWaitMs` mirrors the motion gate's
+    0.5–20 s so the never-good fallback can always fire.
+  - `validateQualityFilterConfig(options): QualityFilterConfig` — normalizes an
+    UNTRUSTED persisted config: `enabled` boolean-or-default (**never**
+    self-enables), thresholds clamped with non-finite values falling back,
+    nullish/missing group default-fills to the DISABLED default, and the
+    OPTIONAL `blurMetric` resolves to `'variance-of-laplacian'` when missing or
+    unknown — the behaviour a pre-toggle config was tuned under.
   - `QualityVerdict` (`{ accept, reason, sharpness, meanLuminance }`),
     `QualityRejectReason` (`'black' | 'blurry'`).
   - `DEFAULT_SHARPNESS_HISTORY_SIZE` (15), `DEFAULT_SHARPNESS_MIN_SAMPLES` (3).

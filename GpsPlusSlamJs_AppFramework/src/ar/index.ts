@@ -129,6 +129,8 @@ export {
   type BlurMetricId,
   BLUR_METRIC_IDS,
   DEFAULT_QUALITY_FILTER,
+  QUALITY_FILTER_CONSTRAINTS,
+  validateQualityFilterConfig,
   DEFAULT_SHARPNESS_HISTORY_SIZE,
   DEFAULT_SHARPNESS_MIN_SAMPLES,
   type QualityRejectReason,

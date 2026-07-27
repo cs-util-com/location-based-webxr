@@ -148,6 +148,11 @@ const entryFiles = [
   'src/utils/fused-path.ts',
   'src/utils/list-formatter.ts',
   'src/utils/logger.ts',
+  // Persisted-options validation primitive — deep-imported by the recorder's
+  // recording-options catalog (NOT via the `/utils` barrel, which would pull in
+  // the logger and friends). The `./utils/*` exports wildcard advertises this
+  // subpath, so it must be built per-file.
+  'src/utils/validate-option-fields.ts',
 
   // visualization/
   'src/visualization/index.ts',
