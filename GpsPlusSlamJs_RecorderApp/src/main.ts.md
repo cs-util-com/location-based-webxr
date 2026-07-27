@@ -70,11 +70,20 @@ This module is the entry point that runs on page load. It also exports the follo
   Area 6): a resource read only inside its own wire factory + disposer
   (visualizer instances, unsubscribe functions, frame-loop unregisters) lives
   as a `const` in that closure — never as a module-level `let` with a
-  `x?.dispose(); x = null` teardown mirror. Module-level `let` handles are
-  reserved for resources genuinely read across functions (`mapOverlay`,
+  `x?.dispose(); x = null` teardown mirror. The handles genuinely read across
+  functions live in ONE record,
+  [`ar/ar-session-resources.ts`](ar/ar-session-resources.ts.md) — `mapOverlay`,
   `cameraFollower`, `alignmentLerper`, `statsOverlay`, `loopClosureHandler`,
-  `qrProducer`, `refPointViews`, and the per-RECORDING
-  `activeImageQualityAnalyzer`, which is deliberately NOT session-scoped).
+  `qrProducer`, `refPointViews` — read at FIRE time through
+  `arSessionResources.<slot>`. Holding them together is what lets the scene
+  wiring live outside this file; the per-RECORDING
+  `activeImageQualityAnalyzer` stays a module `let` here because it is
+  deliberately NOT session-scoped.
+- **Scene wiring lives in [`ar/wire-ar-scene.ts`](ar/wire-ar-scene.ts.md)**:
+  after `initAR` resolves, `handleEnterAR` passes the scene handles, the
+  options, the scope and the resources record to `wireArScene`, which attaches
+  every visualizer/grid/subscriber block. `main.ts` keeps only the session
+  negotiation, the callbacks struct and the user-facing status/error paths.
 - **Live QR recording + debug viz** (opt-in, `recording-options.qr.enabled`;
   recorder live-QR WS-2/WS-5). When enabled, `handleEnterAR` includes the
   camera-frame group in the `ArSessionCallbacks` struct passed to `initAR`
