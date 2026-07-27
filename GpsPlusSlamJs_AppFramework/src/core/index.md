@@ -9,21 +9,28 @@ instead of importing from `gps-plus-slam-js` directly.
 
 Re-exports from `gps-plus-slam-js`:
 
-| Symbol                      | Kind     | Used by (app code)                                                  |
-| --------------------------- | -------- | ------------------------------------------------------------------- |
-| `webxrToNUE`                | function | RecorderApp `ref-points/ref-point-handlers.ts`                      |
-| `calcGpsCoords`             | function | RecorderApp `recording/recording-session-handlers.ts`               |
-| `isIdentityMatrix4`         | function | Framework + RecorderApp tests                                       |
-| `odometryTrackingRestarted` | action   | RecorderApp `main.ts`                                               |
-| `createGpsSlamStore`        | factory  | RecorderApp `recording-replay.integration.test.ts`                  |
-| `validateLicenseKey`        | function | RecorderApp tests that exercise licensed math (e.g. visualization)  |
-| `Vector3`, `Quaternion`     | type     | RecorderApp ref-point handlers + tests                              |
-| `Matrix4`                   | type     | RecorderApp recording-session handlers                              |
-| `LatLong`                   | type     | RecorderApp main.ts, recording-session handlers, action-schema test |
-| `LatLongAlt`                | type     | RecorderApp `ref-point-loader.ts` (altitude-bearing GPS shape)      |
-| `GpsPoint`                  | type     | RecorderApp ref-point-handlers test                                 |
-| `RootState`                 | type     | Library root state — also re-exported as `LibraryRootState`         |
-| `LibraryRootState`          | type     | Alias of library `RootState` for collision-free imports             |
+| Symbol                                           | Kind     | Used by (app code)                                                                 |
+| ------------------------------------------------ | -------- | ---------------------------------------------------------------------------------- |
+| `webxrToNUE`                                     | function | RecorderApp `ref-points/ref-point-handlers.ts`                                     |
+| `calcGpsCoords`                                  | function | RecorderApp `recording/recording-session-handlers.ts`                              |
+| `calcRelativeCoordsInMeters`                     | function | Apps placing objects under the scene root (option 1 of the scene-graph convention) |
+| `isIdentityMatrix4`                              | function | Framework + RecorderApp tests                                                      |
+| `magneticHeadingFromEnuQuat`                     | function | RecorderApp live AbsCompass HUD read-out                                           |
+| `arNorthBearingDeg`                              | function | AR-north bearing for compass comparison                                            |
+| `bearingDeltaDeg`                                | function | Signed difference between two bearings                                             |
+| `odometryTrackingRestarted`                      | action   | RecorderApp `main.ts`                                                              |
+| `createLoopClosureHandler`                       | factory  | RecorderApp live loop-closure detection (operator-gated, default OFF)              |
+| `createGpsSlamStore`                             | factory  | RecorderApp `recording-replay.integration.test.ts`                                 |
+| `validateLicenseKey`                             | function | RecorderApp tests that exercise licensed math (e.g. visualization)                 |
+| `Vector3`, `Quaternion`                          | type     | RecorderApp ref-point handlers + tests                                             |
+| `Matrix4`                                        | type     | RecorderApp recording-session handlers                                             |
+| `LatLong`                                        | type     | RecorderApp main.ts, recording-session handlers, action-schema test                |
+| `LatLongAlt`                                     | type     | RecorderApp `ref-point-loader.ts` (altitude-bearing GPS shape)                     |
+| `GpsPoint`                                       | type     | RecorderApp ref-point-handlers test                                                |
+| `ArImageCapture`                                 | type     | RecorderApp frame-tile visualizer subscriber                                       |
+| `LoopClosureHandler`, `LoopClosureHandlerConfig` | type     | Contract of `createLoopClosureHandler`                                             |
+| `RootState`                                      | type     | Library root state — also re-exported as `LibraryRootState`                        |
+| `LibraryRootState`                               | type     | Alias of library `RootState` for collision-free imports                            |
 
 ## Invariants & assumptions
 
@@ -54,8 +61,8 @@ import {
 ## Tests
 
 Re-exports are exercised transitively by the apps' own tests after Phase 2 of
-the migration. A direct identity test lives in `core.test.ts` to guard
-against accidentally dropping a symbol from the curated list.
+the migration. A direct identity test lives in `index.test.ts` (colocated) to
+guard against accidentally dropping a symbol from the curated list.
 
 ## Related docs
 

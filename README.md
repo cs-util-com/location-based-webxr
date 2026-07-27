@@ -9,7 +9,7 @@ Three.js + GPS + WebXR sensor fusion that keeps 3D content pinned to real-world 
 [![npm version](https://img.shields.io/npm/v/gps-plus-slam-app-framework.svg)](https://www.npmjs.com/package/gps-plus-slam-app-framework)
 [![npm downloads](https://img.shields.io/npm/dm/gps-plus-slam-app-framework.svg)](https://www.npmjs.com/package/gps-plus-slam-app-framework)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522.14-brightgreen.svg)](https://nodejs.org/)
 
 <p align="center">
   <a href="https://gps.csutil.com"><strong>Live Demos & Examples →</strong></a>
@@ -78,6 +78,14 @@ Your app composes its own state, screen flow, and visuals on top of the framewor
 - [`GpsPlusSlamJs_AnchorStarter`](GpsPlusSlamJs_AnchorStarter/) — Persistent-anchor starter (the public "Demo"). GPS-anchored placement with URL-based persistence (`?show=`) and cross-device sharing.
 - [`GpsPlusSlamJs_MinimalExample`](GpsPlusSlamJs_MinimalExample/) — Smallest possible consumer of the framework. A single-file GPS + AR hit-test demo (Enable GPS AR button → reticle → tap-to-place) that contrasts an uncompensated floater cube with a drift-corrected `createGpsAnchor` marker. Use this as your starting template.
 
+Focused demos of individual framework capabilities:
+
+- [`GpsPlusSlamJs_QrTrackingDemo`](GpsPlusSlamJs_QrTrackingDemo/) — QR tracking end to end: detect any printed QR, measure its physical size from the depth map, and glue a pose overlay to it. The desktop stand-in for the on-device QR verification gate.
+- [`GpsPlusSlamJs_PhysicsDemo`](GpsPlusSlamJs_PhysicsDemo/) — Physics balls bounce off the reconstructed occupancy mesh of a real space, live in AR or against a replayed recording on the desktop.
+- [`GpsPlusSlamJs_WayfindingHudDemo`](GpsPlusSlamJs_WayfindingHudDemo/) — The wayfinding HUD: edge arrows for off-screen targets, on-screen rings, live distance labels, and an anti-flicker hysteresis deadband. Runs in AR on a phone or as a WASD walk simulator on the desktop.
+
+[`GpsPlusSlamJs_ExampleRecordings`](GpsPlusSlamJs_ExampleRecordings/) holds real-world RecorderApp session ZIPs (data only, not a package) so you can exercise replay without going outside first.
+
 The recorder app at a glance:
 
 - Records WebXR AR poses, GPS positions, optional camera frames, and optional depth samples.
@@ -145,6 +153,10 @@ startGpsWatch(
 | [`GpsPlusSlamJs_RecorderApp/`](GpsPlusSlamJs_RecorderApp/)   | The reference recorder app (Vite + Playwright).               |
 | [`GpsPlusSlamJs_AnchorStarter/`](GpsPlusSlamJs_AnchorStarter/) | Persistent-anchor starter example (the public "Demo").       |
 | [`GpsPlusSlamJs_MinimalExample/`](GpsPlusSlamJs_MinimalExample/) | Smallest possible framework consumer.                     |
+| [`GpsPlusSlamJs_QrTrackingDemo/`](GpsPlusSlamJs_QrTrackingDemo/) | QR detection + pose overlay demo.                         |
+| [`GpsPlusSlamJs_PhysicsDemo/`](GpsPlusSlamJs_PhysicsDemo/)  | Physics against the reconstructed occupancy mesh.              |
+| [`GpsPlusSlamJs_WayfindingHudDemo/`](GpsPlusSlamJs_WayfindingHudDemo/) | Wayfinding HUD (AR + desktop walk simulator).        |
+| [`GpsPlusSlamJs_ExampleRecordings/`](GpsPlusSlamJs_ExampleRecordings/) | Real-world session ZIPs (data only, not a package).   |
 | [`GpsPlusSlamJs_Landing/`](GpsPlusSlamJs_Landing/)          | Static landing page served at the deployment root.            |
 | `signatures/`                                               | License-key public signatures for the closed-source core.     |
 | `tests/`                                                    | Repo-config integration tests (workspace cohesion checks).    |
@@ -161,13 +173,16 @@ All public surfaces share one origin and are built into a single `dist-site/`
 directory served by Cloudflare static assets:
 
 ```bash
-pnpm run build:site   # framework + recorder (/recorder/) + starter (/starter/) + minimal (/minimal/) + landing (/)
+pnpm run build:site   # framework + every app + landing, into one dist-site/
 ```
 
 - `/` → landing page ([`GpsPlusSlamJs_Landing/`](GpsPlusSlamJs_Landing/))
 - `/recorder/` → recorder app, built with `base=/recorder/`
 - `/starter/` → anchor starter, built with `base=/starter/`
 - `/minimal/` → minimal example, built with `base=/minimal/`
+- `/qr-demo/` → QR-tracking demo, built with `base=/qr-demo/`
+- `/physics/` → physics demo, built with `base=/physics/`
+- `/wayfinding/` → wayfinding HUD demo, built with `base=/wayfinding/`
 
 The Cloudflare Git integration runs `pnpm run build:site` and serves `./dist-site`
 (see [`wrangler.toml`](wrangler.toml)). The orchestration script

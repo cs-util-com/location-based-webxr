@@ -5,11 +5,12 @@
  * Apps should import core symbols from here rather than from `gps-plus-slam-js`
  * directly so that:
  *   - Apps need only one direct npm dependency (the framework). The core is
- *     declared as a `peerDependency` of the framework and auto-installed by
- *     pnpm — see 2026-05-01-app-single-package-dep-analysis.md (Option C).
+ *     declared as a regular `dependency` of the framework, so every package
+ *     manager installs it automatically — see
+ *     2026-05-01-app-single-package-dep-analysis.md (Option C).
  *   - The framework can curate which core symbols are part of the public app
  *     surface, providing a real architectural boundary.
- *   - Coordinated releases only need to update the framework's peer-dep range,
+ *   - Coordinated releases only need to update the framework's dependency range,
  *     not pin sites scattered across every app `package.json`.
  *
  * Library-only consumers (no framework) can still depend on `gps-plus-slam-js`
