@@ -122,6 +122,7 @@ import { createStoreRef } from './state/store-ref';
 import { createArSessionScope } from './utils/ar-session-scope';
 import { createArSessionResources } from './ar/ar-session-resources';
 import { wireArScene } from './ar/wire-ar-scene';
+import { createArFrameTick } from './ar/create-ar-frame-tick';
 import { subscribeHudToTrackingQuality } from './ui/hud-tracking-quality-subscriber';
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
@@ -1034,10 +1035,6 @@ async function handleEnterAR(): Promise<void> {
       throw new Error('Missing #app container element');
     }
 
-    // Per-frame tick state for `callbacks.onFrame` below (map overlay /
-    // follower / lerper updates at render cadence, ~60+ Hz, not GPS cadence).
-    let lastFrameTime = performance.now();
-
     // ONE callbacks struct for the whole session (surface-reduction step 1 —
     // replaces the former pre/post-init setter calls; initAR unpacks it once
     // and resetWebXRState clears every slot at session end). The closures
@@ -1127,33 +1124,12 @@ async function handleEnterAR(): Promise<void> {
             ? activeImageQualityAnalyzer(frame)
             : Promise.resolve({ accept: true }),
       },
-      // Issue #14: Map overlay is created lazily on first toggle. Per-frame
-      // callback for smooth map position updates and follower tracking —
-      // called every XR frame (~60+ Hz) rather than on GPS events (~1 Hz).
-      onFrame: () => {
-        const now = performance.now();
-        const dt = (now - lastFrameTime) / 1000;
-        lastFrameTime = now;
-
-        // Advance the perf stats panels (FPS/ms/MB) once per rendered XR frame.
-        arSessionResources.statsOverlay?.update();
-
-        // Update alignment lerper (Issue 4) — interpolate arWorldGroup.matrix
-        arSessionResources.alignmentLerper?.update(dt);
-
-        // Update follower position (lerp toward camera world position)
-        const camera = getCamera();
-        if (arSessionResources.cameraFollower && camera) {
-          arSessionResources.cameraFollower.update(camera, dt);
-        }
-
-        if (arSessionResources.mapOverlay?.isVisible()) {
-          // Pass the live render camera so heading-up rotation is computed
-          // relative to where the user is actually looking (the same camera
-          // the CSS3D overlay is composited through). See the 2026-06-29 plan.
-          arSessionResources.mapOverlay.updatePosition(dt, camera ?? undefined);
-        }
-      },
+      // Render-cadence tick (~60+ Hz) driving the stats panels, alignment
+      // lerper, camera follower and map reprojection — see ar/create-ar-frame-tick.ts.
+      onFrame: createArFrameTick({
+        resources: arSessionResources,
+        getCamera,
+      }),
       // F3 (2026-07-04): react to a SYSTEM-initiated session end (Android back
       // gesture ends the XRSession directly — uncancelable). Mid-recording
       // this auto-stops + saves and lands on the summary with a toast; in
