@@ -14,7 +14,6 @@ import {
   loadRecordingOptions,
   saveRecordingOptions,
   resetRecordingOptions,
-  cloneRecordingOptions,
   DEPTH_CONSTRAINTS,
   IMAGE_CONSTRAINTS,
   MOTION_FILTER_CONSTRAINTS,
@@ -913,8 +912,10 @@ export function showSettingsModal(): void {
     return;
   }
 
-  // Load current options and create working copy
-  workingOptions = cloneRecordingOptions(loadRecordingOptions());
+  // `loadRecordingOptions` always returns a freshly built object (validated, or
+  // a clone of the defaults), so it is already this modal's private working
+  // copy — no extra clone needed before mutating it in place.
+  workingOptions = loadRecordingOptions();
 
   populateForm(workingOptions);
 
@@ -955,7 +956,7 @@ function handleSave(): void {
 
   // Notify callback
   if (onOptionsChanged) {
-    onOptionsChanged(cloneRecordingOptions(workingOptions));
+    onOptionsChanged(structuredClone(workingOptions));
   }
 
   hideSettingsModal();
@@ -1017,7 +1018,7 @@ function applyMinimalArBaselinePreset(): void {
  * Returns null if modal is not shown.
  */
 export function getWorkingOptions(): RecordingOptions | null {
-  return workingOptions ? cloneRecordingOptions(workingOptions) : null;
+  return workingOptions ? structuredClone(workingOptions) : null;
 }
 
 /**

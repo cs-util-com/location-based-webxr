@@ -29,7 +29,6 @@ import {
   validateMotionFilterOptions,
   validateQualityFilterOptions,
   validateRecordingOptions,
-  cloneRecordingOptions,
   DEFAULT_RECORDING_OPTIONS,
   STORAGE_KEY,
   DEPTH_CONSTRAINTS,
@@ -966,7 +965,7 @@ describe('recording-options', () => {
       });
     });
 
-    it('validateRecordingOptions + cloneRecordingOptions carry compassDebug (deep-cloned)', () => {
+    it('validateRecordingOptions carries compassDebug, default-filling the rest of the group', () => {
       const opts = validateRecordingOptions({
         compassDebug: { coldStartOverride: true },
       });
@@ -978,9 +977,11 @@ describe('recording-options', () => {
         robustSolverComparison: false,
         voteWeight: 0.1,
       });
-      const clone = cloneRecordingOptions(opts);
-      expect(clone.compassDebug).not.toBe(opts.compassDebug); // no aliasing
-      expect(clone.compassDebug).toEqual(opts.compassDebug);
+      // Never aliases the module defaults — see "defaults are never handed out
+      // by reference" below for why that matters.
+      expect(opts.compassDebug).not.toBe(
+        DEFAULT_RECORDING_OPTIONS.compassDebug
+      );
     });
   });
 
@@ -1018,14 +1019,14 @@ describe('recording-options', () => {
       ).toEqual({ detectorEnabled: false });
     });
 
-    it('validateRecordingOptions + cloneRecordingOptions carry loopClosureDebug (deep-cloned)', () => {
+    it('validateRecordingOptions carries loopClosureDebug without aliasing the defaults', () => {
       const opts = validateRecordingOptions({
         loopClosureDebug: { detectorEnabled: true },
       });
       expect(opts.loopClosureDebug).toEqual({ detectorEnabled: true });
-      const clone = cloneRecordingOptions(opts);
-      expect(clone.loopClosureDebug).not.toBe(opts.loopClosureDebug); // no aliasing
-      expect(clone.loopClosureDebug).toEqual(opts.loopClosureDebug);
+      expect(opts.loopClosureDebug).not.toBe(
+        DEFAULT_RECORDING_OPTIONS.loopClosureDebug
+      );
     });
   });
 
@@ -1483,110 +1484,44 @@ describe('recording-options', () => {
     });
   });
 
-  describe('cloneRecordingOptions', () => {
-    it('creates a deep copy', () => {
-      const original = DEFAULT_RECORDING_OPTIONS;
-      const clone = cloneRecordingOptions(original);
+  /**
+   * Why these tests matter: the settings modal takes the object these entry
+   * points return and mutates it IN PLACE
+   * (`workingOptions.images.motionFilter.enabled = …`). If a default-returning
+   * path ever handed out `DEFAULT_RECORDING_OPTIONS` itself — or a shallow copy
+   * of it — that write would reach straight into the module-level defaults and
+   * poison them for the rest of the session. The nested `images.motionFilter` /
+   * `images.qualityFilter` groups are the ones a shallow copy would share, so
+   * they are pinned explicitly.
+   */
+  describe('defaults are never handed out by reference', () => {
+    for (const [name, load] of [
+      ['loadRecordingOptions (nothing stored)', () => loadRecordingOptions()],
+      ['resetRecordingOptions', () => resetRecordingOptions()],
+    ] as const) {
+      it(`${name} returns options fully independent of DEFAULT_RECORDING_OPTIONS`, () => {
+        const defaultsBefore = structuredClone(DEFAULT_RECORDING_OPTIONS);
+        const options = load();
 
-      // Values should be equal
-      expect(clone).toEqual(original);
+        expect(options).toEqual(DEFAULT_RECORDING_OPTIONS);
+        expect(options).not.toBe(DEFAULT_RECORDING_OPTIONS);
+        expect(options.images.motionFilter).not.toBe(
+          DEFAULT_RECORDING_OPTIONS.images.motionFilter
+        );
+        expect(options.images.qualityFilter).not.toBe(
+          DEFAULT_RECORDING_OPTIONS.images.qualityFilter
+        );
 
-      // But not the same object references
-      expect(clone).not.toBe(original);
-      expect(clone.depth).not.toBe(original.depth);
-      expect(clone.images).not.toBe(original.images);
-    });
+        // Mutate the way the settings modal does, then prove the defaults are
+        // byte-identical to what they were before this test ran.
+        options.depth.enabled = false;
+        options.images.motionFilter.enabled = false;
+        options.images.qualityFilter.minMeanLuminance = 99;
+        options.occupancy.cellSizeM = 0.02;
 
-    it('allows mutation without affecting original', () => {
-      const original = {
-        depth: { enabled: true, intervalMs: 1000, gridSize: 3 },
-        images: {
-          enabled: true,
-          intervalMs: 2000,
-          quality: 0.7,
-          resolutionDivisor: 1,
-        },
-        arCrashIsolation: {
-          enableDomOverlay: true,
-          enableCameraAccess: true,
-          enableDepthSensingFeature: true,
-          enableCss3dRenderer: true,
-          enableCameraTextureAcquisition: true,
-        },
-      } as RecordingOptions;
-      const clone = cloneRecordingOptions(original);
-
-      clone.depth.enabled = false;
-      clone.images.quality = 0.5;
-      (
-        clone as unknown as {
-          arCrashIsolation: { enableCss3dRenderer: boolean };
-        }
-      ).arCrashIsolation.enableCss3dRenderer = false;
-
-      expect(original.depth.enabled).toBe(true);
-      expect(original.images.quality).toBe(0.7);
-      expect(
-        (
-          original as unknown as {
-            arCrashIsolation: { enableCss3dRenderer: boolean };
-          }
-        ).arCrashIsolation.enableCss3dRenderer
-      ).toBe(true);
-    });
-
-    /**
-     * Why this test matters: `images.motionFilter` is the FIRST nested object
-     * inside a group, so the shallow `{ ...options.images }` clone used for the
-     * flat groups would share its reference. The settings modal mutates it in
-     * place, which on the DEFAULT → clone → clone (no-storage/reset) path would
-     * otherwise poison DEFAULT_RECORDING_OPTIONS for the whole session. This
-     * pins that the clone owns an independent motionFilter.
-     */
-    it('deep-clones the nested images.motionFilter (no shared reference)', () => {
-      const original = cloneRecordingOptions(DEFAULT_RECORDING_OPTIONS);
-      const clone = cloneRecordingOptions(original);
-
-      expect(clone.images.motionFilter).not.toBe(original.images.motionFilter);
-
-      clone.images.motionFilter.enabled = false;
-      clone.images.motionFilter.maxAngularVelocity = 99;
-
-      expect(original.images.motionFilter.enabled).toBe(true);
-      expect(original.images.motionFilter.maxAngularVelocity).toBe(
-        DEFAULT_RECORDING_OPTIONS.images.motionFilter.maxAngularVelocity
-      );
-      // And the module-level default itself is untouched.
-      expect(DEFAULT_RECORDING_OPTIONS.images.motionFilter.enabled).toBe(true);
-    });
-
-    /**
-     * Why this test matters: `images.qualityFilter` is the SECOND nested object
-     * in the group (added with the image-quality gate). The clone branch must
-     * deep-copy it too, or the settings modal's in-place mutation would poison
-     * DEFAULT_RECORDING_OPTIONS on the DEFAULT → clone → clone path, exactly like
-     * the motionFilter case above.
-     */
-    it('deep-clones the nested images.qualityFilter (no shared reference)', () => {
-      const original = cloneRecordingOptions(DEFAULT_RECORDING_OPTIONS);
-      const clone = cloneRecordingOptions(original);
-
-      expect(clone.images.qualityFilter).not.toBe(
-        original.images.qualityFilter
-      );
-
-      clone.images.qualityFilter.enabled = true;
-      clone.images.qualityFilter.minMeanLuminance = 99;
-
-      expect(original.images.qualityFilter.enabled).toBe(false);
-      expect(original.images.qualityFilter.minMeanLuminance).toBe(
-        DEFAULT_RECORDING_OPTIONS.images.qualityFilter.minMeanLuminance
-      );
-      // And the module-level default itself is untouched.
-      expect(DEFAULT_RECORDING_OPTIONS.images.qualityFilter.enabled).toBe(
-        false
-      );
-    });
+        expect(DEFAULT_RECORDING_OPTIONS).toEqual(defaultsBefore);
+      });
+    }
   });
 
   describe('validateQualityFilterOptions', () => {

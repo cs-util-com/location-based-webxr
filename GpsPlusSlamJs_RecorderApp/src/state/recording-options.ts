@@ -485,7 +485,14 @@ export type RecordingOptions = {
  */
 export const STORAGE_KEY = 'gps-plus-slam-recorder-options';
 
-/** Default recording options (all streams enabled) */
+/**
+ * Default recording options (all streams enabled).
+ *
+ * **Never hand out this object.** Callers (the settings modal in particular)
+ * mutate their options in place, so every path that returns "the defaults"
+ * returns a `structuredClone` of it — otherwise a single in-place write would
+ * poison the defaults for the rest of the session.
+ */
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   depth: {
     enabled: true,
@@ -1250,7 +1257,7 @@ export function loadRecordingOptions(
     log.warn('Failed to load recording options:', err);
   }
   log.debug('Using default recording options');
-  return cloneRecordingOptions(DEFAULT_RECORDING_OPTIONS);
+  return structuredClone(DEFAULT_RECORDING_OPTIONS);
 }
 
 /**
@@ -1285,37 +1292,5 @@ export function resetRecordingOptions(
   } catch (err) {
     log.warn('Failed to clear recording options from storage:', err);
   }
-  return cloneRecordingOptions(DEFAULT_RECORDING_OPTIONS);
-}
-
-/**
- * Create a deep copy of recording options.
- * Useful for creating mutable copies of the frozen defaults.
- */
-export function cloneRecordingOptions(
-  options: RecordingOptions
-): RecordingOptions {
-  return {
-    depth: { ...options.depth },
-    // `images` carries NESTED objects (`motionFilter`, `qualityFilter`) — the
-    // only group that does — so each needs a deeper clone than the other
-    // flat-primitive groups. A shallow `{ ...options.images }` would share the
-    // same nested references, and the settings modal mutates them in place
-    // (`workingOptions.images.motionFilter.enabled = …`,
-    // `…images.qualityFilter.enabled = …`); without this the write would reach
-    // straight back into DEFAULT_RECORDING_OPTIONS on the no-storage / reset path
-    // (DEFAULT → clone → clone), poisoning the default for the session.
-    images: {
-      ...options.images,
-      motionFilter: { ...options.images.motionFilter },
-      qualityFilter: { ...options.images.qualityFilter },
-    },
-    arCrashIsolation: { ...options.arCrashIsolation },
-    occupancy: { ...options.occupancy },
-    frameTileDisplay: { ...options.frameTileDisplay },
-    visualization: { ...options.visualization },
-    qr: { ...options.qr },
-    compassDebug: { ...options.compassDebug },
-    loopClosureDebug: { ...options.loopClosureDebug },
-  };
+  return structuredClone(DEFAULT_RECORDING_OPTIONS);
 }
