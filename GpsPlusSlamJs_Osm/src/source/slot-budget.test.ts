@@ -238,3 +238,47 @@ describe("msUntilAvailable", () => {
     expect(budget.msUntilAvailable()).toBe(0);
   });
 });
+
+describe("a real 429 outranks a claim of 'no limit'", () => {
+  // Observed in the wild on 2026-07-28: the public pool normally reports
+  // `Rate limit: 2`, but a run saw it report `0` — which means unlimited. If
+  // that claim let the budget ignore penalties, the protection this class
+  // exists to provide would switch itself off exactly when a server was under
+  // enough stress to misreport its own configuration.
+  //
+  // The rule: a status line is a CLAIM, a 429 is EVIDENCE.
+  const unlimitedStatus = () =>
+    parseOverpassStatus(
+      [
+        "Connected as: 1",
+        "Current time: 2026-07-28T08:40:04Z",
+        "Rate limit: 0",
+        "Currently running queries (pid, space limit, time limit, start time):",
+      ].join("\n"),
+    );
+
+  it("still blocks after a penalty on an unlimited instance", () => {
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ slots: 2, now: clock.now });
+    budget.sync(unlimitedStatus());
+    expect(budget.tryAcquire()).toBe(true);
+
+    budget.penalise(30_000);
+    expect(budget.tryAcquire()).toBe(false);
+    expect(budget.msUntilAvailable()).toBe(30_000);
+
+    clock.advance(30_000);
+    expect(budget.tryAcquire()).toBe(true);
+  });
+
+  it("a later 'unlimited' sync does not clear a penalty already held", () => {
+    // The contradictory case: the server 429s us, then tells us it has no
+    // limit. Believing the second statement would immediately undo the first.
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ slots: 2, now: clock.now });
+    budget.penalise(30_000);
+    budget.sync(unlimitedStatus());
+
+    expect(budget.tryAcquire()).toBe(false);
+  });
+});

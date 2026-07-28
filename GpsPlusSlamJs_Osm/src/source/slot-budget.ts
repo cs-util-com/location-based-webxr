@@ -62,10 +62,19 @@ export class OverpassSlotBudget {
     return this.isUnlimited;
   }
 
-  /** Slots dispatchable right now. Zero while penalised, regardless of count. */
+  /**
+   * Slots dispatchable right now. Zero while penalised, regardless of count.
+   *
+   * **A penalty outranks `unlimited`.** `Rate limit: 0` is a *claim* by a
+   * server; a 429 is *evidence*. Observed in the wild on 2026-07-28: the public
+   * pool normally reports `Rate limit: 2` but was seen reporting `0` — and if
+   * that transient claim let the budget ignore subsequent 429s, the protection
+   * this class exists to provide would switch itself off exactly when a server
+   * was under enough stress to misreport.
+   */
   get available(): number {
-    if (this.isUnlimited) return Number.POSITIVE_INFINITY;
     if (this.now() < this.blockedUntilMs) return 0;
+    if (this.isUnlimited) return Number.POSITIVE_INFINITY;
     return Math.max(0, this.slots - this.inUse);
   }
 
@@ -79,8 +88,10 @@ export class OverpassSlotBudget {
    * Every `true` must be paired with exactly one {@link release}.
    */
   tryAcquire(): boolean {
-    if (this.isUnlimited) return true;
+    // NOT short-circuited on `isUnlimited`: a penalty from a real 429 must
+    // still block, even on an instance claiming no limit. See `available`.
     if (this.available <= 0) return false;
+    if (this.isUnlimited) return true;
     this.inUse++;
     return true;
   }
@@ -118,7 +129,8 @@ export class OverpassSlotBudget {
    * value always means "the server told us to wait".
    */
   msUntilAvailable(): number {
-    if (this.isUnlimited) return 0;
+    // Reported even when unlimited, for the same reason: a 429 we actually
+    // received is better evidence than a rate-limit line we were told.
     return Math.max(0, this.blockedUntilMs - this.now());
   }
 
@@ -138,7 +150,9 @@ export class OverpassSlotBudget {
   sync(status: OverpassStatus): void {
     this.isUnlimited = status.unlimited;
     if (status.unlimited) {
-      this.blockedUntilMs = 0;
+      // Deliberately does NOT clear an existing penalty. A server reporting
+      // "no limit" while we hold a fresh 429 from it is contradicting itself,
+      // and the 429 is the observation.
       return;
     }
 
