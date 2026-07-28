@@ -8,8 +8,10 @@ Two views of the same OSM data, side by side:
   features, so a discrepancy is geometry rather than data.
 
 ```bash
-pnpm run dev     # http://localhost:5186
-pnpm test        # typecheck + unit tests
+pnpm run dev            # http://127.0.0.1:5186
+                        # ?lat=&lng= points it anywhere you like
+pnpm test               # typecheck + unit + e2e
+pnpm run test:e2e:headed  # watch the e2e suite drive it
 ```
 
 ## What this demo is for
@@ -62,3 +64,28 @@ OSM data is ODbL. Both the basemap and the derived grid are shown here, so the
 Fetches live Overpass on first use and caches to OPFS (falling back to memory).
 A res-7 tile is tens of MB; **do not clear the cache casually** — the public
 instances are donated infrastructure with a shared budget.
+
+## Tests
+
+- **Unit** (`src/*.test.ts`) — the pure parts: the log colour ramp and its scale.
+- **E2E** (`playwright-tests/`) — what is actually **drawn** and what actually
+  went **over the wire**, because every failure mode this app has is silent.
+  Notably:
+  - a **pixel-level** check on the 3D canvas. A present canvas of the right size
+    proves nothing — a camera inside a wall, an empty mesh and a render that
+    never ran all look identical. The suite reads the drawing buffer and counts
+    non-background pixels, which is why the renderer sets
+    `preserveDrawingBuffer`.
+  - a **request count** across a reload, which is the only way to see the OPFS
+    cache working: the map looks the same whether or not it refetched.
+  - a **paint-order** assertion on the region outlines. It earned its place
+    immediately — the source comment claimed regions were drawn under the cells
+    while the code drew them on top, and nothing else could have noticed.
+
+**The e2e suite never touches the network.** Overpass, the rule sheet and the
+basemap are all answered from checked-in data. That is about donated
+infrastructure before it is about determinism: the public Overpass instances
+allow roughly two slots per client, and a CI suite hammering them on every push
+would be an abuse rather than a flaky test. The interception is at the HTTP
+layer, so `OverpassSource`, the parser, the cache, the OPFS store, the scorer
+and the mesh extruder all run for real.

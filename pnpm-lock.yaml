@@ -360,6 +360,9 @@ importers:
         specifier: ^0.184.0
         version: 0.184.0
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.60.0
+        version: 1.60.0
       '@types/leaflet':
         specifier: ^1.9.21
         version: 1.9.21

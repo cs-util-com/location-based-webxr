@@ -50,7 +50,16 @@ export class BuildingView {
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      // The scene renders on demand rather than in a rAF loop, so without this
+      // the drawing buffer is cleared before anything can read it back. It
+      // costs a little memory and buys the only way to assert this view drew
+      // anything at all: the e2e suite reads the pixels and counts the
+      // non-background ones. A 3D pane that silently renders nothing looks
+      // exactly like a 3D pane with no buildings nearby.
+      preserveDrawingBuffer: true,
+    });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     options.container.appendChild(this.renderer.domElement);
 

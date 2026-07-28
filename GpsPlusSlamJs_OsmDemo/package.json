@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "test": "node ../scripts/test-timing/run-gate.mjs",
     "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
-    "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck"
+    "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck",
+    "test:e2e": "node ../scripts/test-timing/timed-stage.mjs test:e2e",
+    "test:e2e:headed": "playwright test --config playwright-tests/playwright.config.js --headed"
   },
   "engines": {
     "node": ">=22.14.0"
@@ -29,7 +31,8 @@
     "@types/three": "^0.184.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.12",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "@playwright/test": "^1.60.0"
   },
   "license": "Apache-2.0"
 }

@@ -375,6 +375,12 @@ export const PROJECTS = [
         counts: null,
       },
       { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+      {
+        name: 'test:e2e',
+        command:
+          'playwright test --config playwright-tests/playwright.config.js',
+        counts: 'playwright',
+      },
     ],
   },
   demoAppProject('GpsPlusSlamJs_QrTrackingDemo'),

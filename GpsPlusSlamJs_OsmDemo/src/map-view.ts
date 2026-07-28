@@ -57,10 +57,19 @@ export class MapView {
       attribution: OSM_ATTRIBUTION,
     }).addTo(this.map);
 
-    // Regions UNDER cells: the outline is context for the grid, and drawing it
-    // on top hides the very cells that produced it.
-    this.regionLayer = L.layerGroup().addTo(this.map);
+    // Region outlines are drawn OVER the cells, and the group order here is
+    // cosmetic — Leaflet's default renderer puts every vector into one shared
+    // <svg>, so what decides paint order is the order `render()` creates the
+    // paths, not the order the groups were added. The groups are ordered to
+    // agree with it anyway, so nobody has to know that twice.
+    //
+    // On top rather than underneath because a 2 px dashed stroke occludes
+    // essentially nothing, while a stroke *under* 55 %-opacity fills is washed
+    // out precisely where the boundary matters. (An earlier comment here
+    // claimed the opposite and the code did this; the e2e ordering assertion is
+    // what surfaced the disagreement.)
     this.cellLayer = L.layerGroup().addTo(this.map);
+    this.regionLayer = L.layerGroup().addTo(this.map);
 
     this.userMarker = L.circleMarker([options.centre.lat, options.centre.lng], {
       radius: 6,
@@ -108,6 +117,11 @@ export class MapView {
         stroke: false,
         fillColor: toHex(heatColour(score, scale)),
         fillOpacity: 0.55,
+        // Named so the e2e suite can count what is actually on screen. Leaflet
+        // renders every polygon as an indistinguishable `<path>`; without a
+        // class, a test asserting "cells are drawn" would equally match the
+        // region outlines and would pass while the grid was empty.
+        className: 'affordance-cell',
       })
         .bindTooltip(tooltipFor(cell, category, score))
         .addTo(this.cellLayer);
@@ -117,7 +131,13 @@ export class MapView {
       for (const polygon of region.outline) {
         L.polygon(
           polygon.map((ring) => ring.map((p) => [p.lat, p.lng] as [number, number])),
-          { color: '#ffffff', weight: 2, fill: false, dashArray: '4 4' }
+          {
+            color: '#ffffff',
+            weight: 2,
+            fill: false,
+            dashArray: '4 4',
+            className: 'region-outline',
+          }
         )
           .bindTooltip(
             `${region.category}: ${region.cellCount} cells, ` +

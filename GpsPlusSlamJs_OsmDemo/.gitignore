@@ -1,3 +1,4 @@
-node_modules/
-dist/
-*.tsbuildinfo
+dist
+node_modules
+playwright-report
+test-results
