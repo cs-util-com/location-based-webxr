@@ -19,3 +19,28 @@ export {
 
 export type { MergedTiles, FeatureProvenance } from "./merge-tiles.js";
 export { mergeTiles } from "./merge-tiles.js";
+
+export { cellsOfChunks } from "./chunk-cells.js";
+
+export type { Bbox } from "./clip.js";
+export {
+  clipToBbox,
+  boundsOf,
+  positionsOf,
+  padBbox,
+  bboxesIntersect,
+} from "./clip.js";
+
+export type { CellCoverage } from "./cell-coverage.js";
+export { coverCells, dilate, cellCentre } from "./cell-coverage.js";
+
+export type {
+  H3FeatureIndex,
+  CellFeature,
+  BuildIndexOptions,
+} from "./h3-feature-index.js";
+export {
+  buildFeatureIndex,
+  featuresAt,
+  indexEntryCount,
+} from "./h3-feature-index.js";

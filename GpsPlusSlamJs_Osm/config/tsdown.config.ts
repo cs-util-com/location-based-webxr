@@ -45,6 +45,10 @@ const entryFiles = [
   "src/spatial/index.ts",
   "src/spatial/resolutions.ts",
   "src/spatial/merge-tiles.ts",
+  "src/spatial/cell-coverage.ts",
+  "src/spatial/h3-feature-index.ts",
+  "src/spatial/chunk-cells.ts",
+  "src/spatial/clip.ts",
 
   // rules/ — the policy layer: loads and validates the affordance rule table
   "src/rules/index.ts",
