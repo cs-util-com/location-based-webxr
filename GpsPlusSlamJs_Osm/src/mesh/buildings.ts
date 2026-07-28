@@ -1,0 +1,240 @@
+/**
+ * OSM features → building volumes, honouring `building:part`.
+ *
+ * THE ONE IDEA THAT MAKES THIS WORTH BUILDING. Landmark detail in OSM is not a
+ * model file and not a landmark database — it is many `building:part` polygons,
+ * each with its own `height` and `min_height`, under the Simple 3D Buildings
+ * schema. A naive one-polygon extrusion of Cologne Cathedral gives a box; the
+ * SAME extruder applied per part, respecting `min_height`, gives something
+ * recognisably cathedral-shaped. The detail is free if you honour the schema.
+ *
+ * THE RULE FOR COMBINING THEM, taken from OSM2World's `Building.java` because
+ * it is the most complete implementation of the schema anywhere:
+ *
+ * - A building's parts are the `building:part` areas geometrically inside its
+ *   outline (OSM2World also accepts `type=building` relation members with role
+ *   `part`; we support both).
+ * - **If a building has parts, the outline itself is NOT extruded** — the parts
+ *   replace it. Extruding both is the single most visible S3DB mistake: every
+ *   detailed building gets a box drawn through it.
+ * - If it has no parts, the outline is its own only part.
+ *
+ * @see buildings.ts.md
+ */
+
+import type {
+  LatLng,
+  OsmFeature,
+  OsmFeatureKey,
+} from "../model/osm-feature.js";
+import { featureKey } from "../model/osm-feature.js";
+import { toGeometry } from "../model/osm-geometry.js";
+import type { OsmGeometry } from "../model/osm-geometry.js";
+import type { EnuFrame, EnuPoint } from "./enu.js";
+import { ringToEnu } from "./enu.js";
+import {
+  isBuilding,
+  isBuildingPart,
+  resolveHeights,
+} from "./building-heights.js";
+import type { BuildingHeights } from "./building-heights.js";
+import { extrudeBuilding } from "./extrude.js";
+import type { MeshData } from "./mesh-data.js";
+
+/** One extruded volume, with the provenance to trace it back to OSM. */
+export interface BuildingVolume {
+  readonly feature: OsmFeatureKey;
+  /** The outline this volume belongs to, when it is a part. */
+  readonly parentFeature?: OsmFeatureKey;
+  readonly heights: BuildingHeights;
+  readonly mesh: MeshData;
+}
+
+export interface BuildBuildingsOptions {
+  readonly frame: EnuFrame;
+  /** Ground elevation per feature, metres. Defaults to 0 everywhere. */
+  readonly groundHeightM?: (position: LatLng) => number;
+}
+
+/**
+ * Extrudes every building in `features`, honouring `building:part`.
+ *
+ * Features that are not buildings are ignored. A feature whose geometry cannot
+ * be built is skipped rather than throwing — same contract as the rest of the
+ * package, because the planet contains relations that cannot be closed.
+ */
+export function buildBuildings(
+  features: Iterable<OsmFeature>,
+  options: BuildBuildingsOptions,
+): BuildingVolume[] {
+  const { outlines, parts } = collectFootprints(features, options.frame);
+  const { claimed, partsByOutline } = assignPartsToOutlines(outlines, parts);
+
+  const volumes: BuildingVolume[] = [];
+
+  for (const outline of outlines) {
+    const key = featureKey(outline.feature);
+    // A building WITH parts is not extruded itself — the parts replace it.
+    // Drawing both is the most visible S3DB mistake there is.
+    if (claimed.has(key)) continue;
+    volumes.push(volumeFor(outline.feature, outline.rings, undefined, options));
+  }
+
+  for (const [outlineKey, list] of partsByOutline) {
+    for (const part of list) {
+      volumes.push(volumeFor(part.feature, part.rings, outlineKey, options));
+    }
+  }
+
+  // A part with no containing outline is still a real volume — a tile boundary
+  // can deliver it without its parent. Dropping it would erase the building.
+  for (const part of parts) {
+    const alreadyPlaced = [...partsByOutline.values()].some((list) =>
+      list.includes(part),
+    );
+    if (alreadyPlaced) continue;
+    volumes.push(volumeFor(part.feature, part.rings, undefined, options));
+  }
+
+  return volumes;
+}
+
+interface Footprint {
+  readonly feature: OsmFeature;
+  readonly rings: EnuPoint[][];
+}
+
+/** Splits the input into building outlines and `building:part` volumes. */
+function collectFootprints(
+  features: Iterable<OsmFeature>,
+  frame: EnuFrame,
+): { outlines: Footprint[]; parts: Footprint[] } {
+  const outlines: Footprint[] = [];
+  const parts: Footprint[] = [];
+
+  for (const feature of features) {
+    const part = isBuildingPart(feature);
+    if (!part && !isBuilding(feature)) continue;
+    const rings = toEnuRings(feature, frame);
+    if (rings === undefined) continue;
+    (part ? parts : outlines).push({ feature, rings });
+  }
+  return { outlines, parts };
+}
+
+/**
+ * Assigns each part to the outline containing it.
+ *
+ * Containment is tested on a REPRESENTATIVE POINT rather than on every vertex:
+ * parts routinely share an edge with their outline, so an all-vertices test
+ * would reject the common case on a floating-point tie.
+ */
+function assignPartsToOutlines(
+  outlines: readonly Footprint[],
+  parts: readonly Footprint[],
+): {
+  claimed: Set<OsmFeatureKey>;
+  partsByOutline: Map<OsmFeatureKey, Footprint[]>;
+} {
+  const claimed = new Set<OsmFeatureKey>();
+  const partsByOutline = new Map<OsmFeatureKey, Footprint[]>();
+
+  for (const part of parts) {
+    const inside = outlines.find((outline) =>
+      containsPoint(
+        outline.rings[0] ?? [],
+        representativePoint(part.rings[0] ?? []),
+      ),
+    );
+    if (inside === undefined) continue;
+    const key = featureKey(inside.feature);
+    claimed.add(key);
+    const list = partsByOutline.get(key) ?? [];
+    list.push(part);
+    partsByOutline.set(key, list);
+  }
+  return { claimed, partsByOutline };
+}
+
+function volumeFor(
+  feature: OsmFeature,
+  rings: EnuPoint[][],
+  parentFeature: OsmFeatureKey | undefined,
+  options: BuildBuildingsOptions,
+): BuildingVolume {
+  const heights = resolveHeights(feature.tags);
+  const anchor = options.frame.toLatLng(rings[0]?.[0] ?? { x: 0, y: 0 });
+  const groundHeightM = options.groundHeightM?.(anchor) ?? 0;
+
+  const mesh = extrudeBuilding(rings, {
+    minHeightM: heights.minHeightM,
+    eaveHeightM: heights.eaveHeightM,
+    totalHeightM: heights.totalHeightM,
+    roofShape: heights.roofShape,
+    groundHeightM,
+  });
+
+  return parentFeature === undefined
+    ? { feature: featureKey(feature), heights, mesh }
+    : { feature: featureKey(feature), parentFeature, heights, mesh };
+}
+
+/** A feature's rings in the local ENU frame, or `undefined` if it has none. */
+function toEnuRings(
+  feature: OsmFeature,
+  frame: EnuFrame,
+): EnuPoint[][] | undefined {
+  const geometry = toGeometry(feature);
+  if (!geometry.ok) return undefined;
+  const rings = ringsOf(geometry.geometry);
+  if (rings.length === 0) return undefined;
+  return rings.map((ring) => ringToEnu(ring, frame));
+}
+
+/**
+ * The rings of an areal geometry.
+ *
+ * A multipolygon contributes only its FIRST polygon: a building mapped as
+ * several disjoint polygons is a data error rather than a shape, and extruding
+ * all of them with one set of heights would be inventing buildings.
+ */
+function ringsOf(geometry: OsmGeometry): readonly (readonly LatLng[])[] {
+  switch (geometry.kind) {
+    case "polygon":
+      return geometry.rings;
+    case "multipolygon":
+      return geometry.polygons[0] ?? [];
+    default:
+      return [];
+  }
+}
+
+/** A point guaranteed to lie inside a simple ring, for containment tests. */
+function representativePoint(ring: readonly EnuPoint[]): EnuPoint {
+  if (ring.length === 0) return { x: 0, y: 0 };
+  let x = 0;
+  let y = 0;
+  for (const p of ring) {
+    x += p.x;
+    y += p.y;
+  }
+  // The centroid is inside for convex rings and for the great majority of real
+  // building parts. A concave part whose centroid falls outside is assigned to
+  // no outline and extruded standalone — visible, and not wrong.
+  return { x: x / ring.length, y: y / ring.length };
+}
+
+/** Ray-casting point-in-ring, in the ENU frame. */
+function containsPoint(ring: readonly EnuPoint[], point: EnuPoint): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if (a === undefined || b === undefined) continue;
+    const straddles = a.y > point.y !== b.y > point.y;
+    if (!straddles) continue;
+    const x = ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
+    if (point.x < x) inside = !inside;
+  }
+  return inside;
+}

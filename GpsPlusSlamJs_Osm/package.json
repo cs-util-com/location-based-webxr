@@ -21,7 +21,9 @@
     "./regions": "./dist/regions/index.js",
     "./regions/*": "./dist/regions/*.js",
     "./elevation": "./dist/elevation/index.js",
-    "./elevation/*": "./dist/elevation/*.js"
+    "./elevation/*": "./dist/elevation/*.js",
+    "./mesh": "./dist/mesh/index.js",
+    "./mesh/*": "./dist/mesh/*.js"
   },
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -50,10 +52,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/earcut": "^3.0.0",
     "@types/node": "^25.7.0",
     "@vitest/coverage-v8": "^4.1.6",
     "@vitest/eslint-plugin": "^1.6.17",
     "dpdm": "^4.2.0",
+    "earcut": "^3.2.3",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "fast-check": "^4.8.0",

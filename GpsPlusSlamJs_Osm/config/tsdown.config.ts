@@ -73,6 +73,17 @@ const entryFiles = [
   "src/elevation/terrarium.ts",
   "src/elevation/opentopodata-provider.ts",
   "src/elevation/geoid.ts",
+
+  // mesh/ — OSM features to renderable geometry, as plain typed arrays
+  "src/mesh/index.ts",
+  "src/mesh/enu.ts",
+  "src/mesh/triangulate.ts",
+  "src/mesh/building-heights.ts",
+  "src/mesh/mesh-data.ts",
+  "src/mesh/extrude.ts",
+  "src/mesh/roof.ts",
+  "src/mesh/buildings.ts",
+  "src/mesh/trees.ts",
 ];
 
 export default defineConfig({
