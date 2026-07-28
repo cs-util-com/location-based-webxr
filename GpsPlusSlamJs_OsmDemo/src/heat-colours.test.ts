@@ -14,7 +14,7 @@
  * rather than to NaN.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 
 import {
   describeScale,
@@ -22,31 +22,31 @@ import {
   heatFraction,
   heatScale,
   toHex,
-} from './heat-colours.js';
+} from "./heat-colours.js";
 
-describe('building the scale from the data', () => {
-  it('uses the highest score present, so each category gets its own range', () => {
+describe("building the scale from the data", () => {
+  it("uses the highest score present, so each category gets its own range", () => {
     // `walkable` in a city saturates where `restingArea` has a few cells at 6.
     // A fixed scale would render most categories uniformly dark and hide the
     // variation the session exists to judge.
     expect(heatScale([1, 5, 35], 1)).toEqual({ threshold: 1, max: 35 });
   });
 
-  it('never drops below the threshold, even if every score is at it', () => {
+  it("never drops below the threshold, even if every score is at it", () => {
     expect(heatScale([1, 1], 1).max).toBe(1);
   });
 
-  it('ignores non-finite scores rather than propagating them', () => {
+  it("ignores non-finite scores rather than propagating them", () => {
     // A NaN max would make every fraction NaN and every cell black — a total
     // blackout caused by one bad cell.
     expect(heatScale([5, Number.NaN, 10], 1).max).toBe(10);
   });
 });
 
-describe('the ramp is logarithmic, which is the point', () => {
+describe("the ramp is logarithmic, which is the point", () => {
   const scale = heatScale([100], 1);
 
-  it('gives equal RATIOS equal steps', () => {
+  it("gives equal RATIOS equal steps", () => {
     // 1 -> 10 -> 100 is two equal ratios, so it must be two equal colour steps.
     // Under a linear ramp 10 would sit at 9% and the map would look empty.
     const atTen = heatFraction(10, scale);
@@ -55,18 +55,18 @@ describe('the ramp is logarithmic, which is the point', () => {
     expect(atHundred).toBeCloseTo(1, 6);
   });
 
-  it('puts anything at or below the threshold off the ramp entirely', () => {
+  it("puts anything at or below the threshold off the ramp entirely", () => {
     // The identity means "no rule said anything here". Colouring it would claim
     // knowledge the data does not have.
     expect(heatFraction(1, scale)).toBe(0);
     expect(heatFraction(0.5, scale)).toBe(0);
   });
 
-  it('clamps rather than running off the ramp', () => {
+  it("clamps rather than running off the ramp", () => {
     expect(heatFraction(1000, scale)).toBe(1);
   });
 
-  it('collapses to flat when every score is identical', () => {
+  it("collapses to flat when every score is identical", () => {
     // max === threshold would divide by zero. A flat map is the correct picture
     // of flat data; NaN is a black screen with no explanation.
     const flat = heatScale([1, 1, 1], 1);
@@ -75,10 +75,10 @@ describe('the ramp is logarithmic, which is the point', () => {
   });
 });
 
-describe('colours', () => {
+describe("colours", () => {
   const scale = heatScale([100], 1);
 
-  it('runs from the dark end to the bright end', () => {
+  it("runs from the dark end to the bright end", () => {
     const low = heatColour(1.01, scale);
     const high = heatColour(100, scale);
     // Perceptually near-uniform and colour-blind safe; a rainbow ramp invents
@@ -86,13 +86,13 @@ describe('colours', () => {
     expect(low.r + low.g + low.b).toBeLessThan(high.r + high.g + high.b);
   });
 
-  it('produces valid hex for CSS and Leaflet', () => {
+  it("produces valid hex for CSS and Leaflet", () => {
     expect(toHex(heatColour(10, scale))).toMatch(/^#[0-9a-f]{6}$/);
-    expect(toHex({ r: 0, g: 0, b: 0 })).toBe('#000000');
-    expect(toHex({ r: 255, g: 255, b: 255 })).toBe('#ffffff');
+    expect(toHex({ r: 0, g: 0, b: 0 })).toBe("#000000");
+    expect(toHex({ r: 255, g: 255, b: 255 })).toBe("#ffffff");
   });
 
-  it('is monotonic in the score', () => {
+  it("is monotonic in the score", () => {
     // A non-monotonic ramp would put a lower score at a brighter colour, which
     // is worse than no colour at all — it inverts the reading.
     const fractions = [2, 5, 20, 60, 100].map((s) => heatFraction(s, scale));
@@ -102,21 +102,21 @@ describe('colours', () => {
   });
 });
 
-describe('describeScale', () => {
-  it('states the numbers behind the picture', () => {
+describe("describeScale", () => {
+  it("states the numbers behind the picture", () => {
     // Without this the demo answers "does it look plausible?" rather than "is 1
     // really the identity here?", and only the second is worth a session.
     const text = describeScale(heatScale([35], 1));
-    expect(text).toContain('1');
-    expect(text).toContain('35');
+    expect(text).toContain("1");
+    expect(text).toContain("35");
     expect(text).toMatch(/identity/);
   });
 
-  it('rounds floating-point noise at the PRESENTATION boundary', () => {
+  it("rounds floating-point noise at the PRESENTATION boundary", () => {
     // The multiplicative kernel produces 3.6000000000000005. Rounding here
     // keeps the oracle values exact in the model, which is where they must be.
     expect(describeScale({ threshold: 1, max: 3.6000000000000005 })).toContain(
-      '3.6'
+      "3.6",
     );
   });
 });

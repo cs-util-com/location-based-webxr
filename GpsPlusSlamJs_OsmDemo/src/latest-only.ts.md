@@ -37,8 +37,8 @@ recent one, so a slow fetch cannot be overtaken by a newer click.
 
 ```ts
 const refresh = latestOnly(doRefresh);
-mapView.map.on('click', () => void refresh());
-if (refresh.busy) status.textContent = 'still fetching…';
+mapView.map.on("click", () => void refresh());
+if (refresh.busy) status.textContent = "still fetching…";
 ```
 
 ## Tests

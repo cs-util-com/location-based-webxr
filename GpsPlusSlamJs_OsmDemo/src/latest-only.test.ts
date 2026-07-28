@@ -23,9 +23,9 @@
  * gap the `?lat=&lng=` guard fell into on the previous PR.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from "vitest";
 
-import { latestOnly } from './latest-only.js';
+import { latestOnly } from "./latest-only.js";
 
 /** A promise plus the handles to settle it, so tests control the ordering. */
 function deferred(): {
@@ -42,26 +42,29 @@ function deferred(): {
   return { promise, resolve, reject };
 }
 
-describe('latestOnly', () => {
-  it('runs the first call immediately', async () => {
+describe("latestOnly", () => {
+  it("runs the first call immediately", async () => {
     const run = vi.fn().mockResolvedValue(undefined);
     const refresh = latestOnly(run);
 
-    await refresh('a');
+    await refresh("a");
 
     expect(run).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledWith('a');
+    expect(run).toHaveBeenCalledWith("a");
   });
 
-  it('never runs two at once', async () => {
+  it("never runs two at once", async () => {
     // The whole point: two concurrent `pipeline.update()` calls mutate one
     // `AffordanceIndex`, and its own tests only ever exercise it serially.
     const first = deferred();
-    const run = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(undefined);
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue(undefined);
     const refresh = latestOnly(run);
 
-    const a = refresh('a');
-    const b = refresh('b');
+    const a = refresh("a");
+    const b = refresh("b");
     expect(run).toHaveBeenCalledTimes(1);
 
     first.resolve();
@@ -69,25 +72,29 @@ describe('latestOnly', () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
-  it('runs the LATEST queued input and skips the ones it superseded', async () => {
+  it("runs the LATEST queued input and skips the ones it superseded", async () => {
     // Clicking around the map is the demo's whole interaction, so dropping
     // clicks is not an acceptable way to prevent the overlap. What must be
     // dropped is the intermediate work, not the user's final intent.
     const first = deferred();
-    const run = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(undefined);
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue(undefined);
     const refresh = latestOnly(run);
 
-    const a = refresh('a');
-    const b = refresh('b');
-    const c = refresh('c');
+    const a = refresh("a");
+    const b = refresh("b");
+    const c = refresh("c");
 
     first.resolve();
     await Promise.all([a, b, c]);
 
-    expect(run.mock.calls.map((call) => call[0])).toEqual(['a', 'c']);
+    const inputs = run.mock.calls.map((call) => String(call[0]));
+    expect(inputs).toEqual(["a", "c"]);
   });
 
-  it('ends on the newest input, so the view matches the last click', async () => {
+  it("ends on the newest input, so the view matches the last click", async () => {
     const seen: string[] = [];
     const gate = deferred();
     let first = true;
@@ -99,37 +106,37 @@ describe('latestOnly', () => {
       seen.push(input);
     });
 
-    const a = refresh('first');
-    const b = refresh('second');
+    const a = refresh("first");
+    const b = refresh("second");
     gate.resolve();
     await Promise.all([a, b]);
 
-    expect(seen[seen.length - 1]).toBe('second');
+    expect(seen[seen.length - 1]).toBe("second");
   });
 
-  it('does not wedge when the runner rejects', async () => {
+  it("does not wedge when the runner rejects", async () => {
     // `refresh` catches its own errors today, but a wrapper that stops
     // accepting work after one failure would turn a transient Overpass 429 into
     // a permanently dead demo — a much worse failure than the one it replaced.
     const run = vi
       .fn()
-      .mockRejectedValueOnce(new Error('overpass 429'))
+      .mockRejectedValueOnce(new Error("overpass 429"))
       .mockResolvedValue(undefined);
     const refresh = latestOnly(run);
 
-    await refresh('a');
-    await refresh('b');
+    await refresh("a");
+    await refresh("b");
 
     expect(run).toHaveBeenCalledTimes(2);
   });
 
-  it('reports whether work is in flight, so the UI can say so', async () => {
+  it("reports whether work is in flight, so the UI can say so", async () => {
     const first = deferred();
     const run = vi.fn().mockReturnValue(first.promise);
     const refresh = latestOnly(run);
 
     expect(refresh.busy).toBe(false);
-    const a = refresh('a');
+    const a = refresh("a");
     expect(refresh.busy).toBe(true);
 
     first.resolve();

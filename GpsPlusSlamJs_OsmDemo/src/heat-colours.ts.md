@@ -37,7 +37,7 @@ read — and stating the scale so the picture can be checked.
 ## Examples
 
 ```ts
-const scale = heatScale(scores, thresholdFor(table, 'walkable'));
+const scale = heatScale(scores, thresholdFor(table, "walkable"));
 element.style.fill = toHex(heatColour(score, scale));
 caption.textContent = describeScale(scale);
 ```

@@ -41,28 +41,22 @@ export interface LatestOnly<T> {
  * would be a worse failure than the race it replaced. Reporting the error stays
  * the runner's job — it has the context to say what failed.
  */
-export function latestOnly<T>(
-  run: (input: T) => Promise<void>,
-): LatestOnly<T> {
+export function latestOnly<T>(run: (input: T) => Promise<void>): LatestOnly<T> {
   let active: Promise<void> | undefined;
   /** The one input waiting behind the active run. Newer inputs replace it. */
   let queued: { input: T } | undefined;
 
   async function drain(input: T): Promise<void> {
-    let next: T | undefined = input;
-    let hasNext = true;
-    while (hasNext) {
+    let next = input;
+    for (;;) {
       try {
-        await run(next as T);
+        await run(next);
       } catch {
         // Swallowed deliberately — see the docstring. The runner reports.
       }
-      if (queued === undefined) {
-        hasNext = false;
-      } else {
-        next = queued.input;
-        queued = undefined;
-      }
+      if (queued === undefined) return;
+      next = queued.input;
+      queued = undefined;
     }
   }
 

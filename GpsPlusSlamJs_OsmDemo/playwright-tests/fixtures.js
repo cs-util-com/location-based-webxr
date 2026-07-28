@@ -19,9 +19,9 @@
  * seam inside the app would have been easier and would have tested the seam.
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -47,14 +47,14 @@ export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}`;
 export function parkPayload() {
   const path = join(
     here,
-    '..',
-    '..',
-    'GpsPlusSlamJs_Osm',
-    'src',
-    'testdata',
-    'park.json'
+    "..",
+    "..",
+    "GpsPlusSlamJs_Osm",
+    "src",
+    "testdata",
+    "park.json",
   );
-  return JSON.parse(readFileSync(path, 'utf8')).payload;
+  return JSON.parse(readFileSync(path, "utf8")).payload;
 }
 
 /**
@@ -70,10 +70,11 @@ export function parkPayload() {
  */
 const isOverpass = (url) =>
   /(^|\.)overpass[^.]*\.de$|(^|\.)kumi\.systems$|(^|\.)openstreetmap\.fr$/i.test(
-    url.hostname
+    url.hostname,
   );
 const isRuleSheet = (url) => /(^|\.)docs\.google\.com$/i.test(url.hostname);
-const isBasemap = (url) => /(^|\.)tile\.openstreetmap\.org$/i.test(url.hostname);
+const isBasemap = (url) =>
+  /(^|\.)tile\.openstreetmap\.org$/i.test(url.hostname);
 
 /**
  * Routes the app's outside world to checked-in data.
@@ -95,20 +96,20 @@ export async function stubNetwork(page, options = {}) {
     // is completely broken and the reload issues exactly one fresh QUERY with no
     // status probe - which is the precise failure that test exists to catch.
     // `/api/status` is the slot-budget probe, not a query, and it costs no slot.
-    if (route.request().url().includes('/api/status')) {
+    if (route.request().url().includes("/api/status")) {
       counts.overpassStatus++;
       // Must answer in the plain-text OSM3S format or the client cannot parse
       // its own budget.
       await route.fulfill({
         status: 200,
-        contentType: 'text/plain',
+        contentType: "text/plain",
         body: [
-          'Connected as: 1354464119',
-          `Current time: ${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}`,
-          'Rate limit: 2',
-          '2 slots available now.',
-          'Currently running queries (pid, space limit, time limit, start time):',
-        ].join('\n'),
+          "Connected as: 1354464119",
+          `Current time: ${new Date().toISOString().replace(/\.\d+Z$/, "Z")}`,
+          "Rate limit: 2",
+          "2 slots available now.",
+          "Currently running queries (pid, space limit, time limit, start time):",
+        ].join("\n"),
       });
       return;
     }
@@ -122,13 +123,13 @@ export async function stubNetwork(page, options = {}) {
       // instead of through several seconds of exponential backoff. (That
       // "permanent errors must escape the loop" behaviour is itself a fix this
       // package shipped, so the choice is not arbitrary.)
-      await route.fulfill({ status, contentType: 'text/plain', body: 'nope' });
+      await route.fulfill({ status, contentType: "text/plain", body: "nope" });
       return;
     }
 
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: payload,
     });
   });
@@ -143,15 +144,15 @@ export async function stubNetwork(page, options = {}) {
   await page.route(isBasemap, (route) =>
     route.fulfill({
       status: 200,
-      contentType: 'image/png',
+      contentType: "image/png",
       // 1x1 transparent PNG.
       body: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-        'base64'
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "base64",
       ),
-    })
+    }),
   );
-  page.on('request', (request) => {
+  page.on("request", (request) => {
     if (isBasemap(new URL(request.url()))) counts.basemap++;
   });
 
@@ -169,8 +170,8 @@ export async function stubNetwork(page, options = {}) {
  */
 export async function waitForRefresh(page) {
   await page
-    .locator('#status')
+    .locator("#status")
     .filter({ hasText: /\d+ cells|Failed|unavailable/ })
     .first()
-    .waitFor({ state: 'visible', timeout: 60000 });
+    .waitFor({ state: "visible", timeout: 60000 });
 }

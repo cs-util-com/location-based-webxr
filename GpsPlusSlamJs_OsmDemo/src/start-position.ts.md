@@ -12,7 +12,7 @@ Parses the demo's `?lat=&lng=` start-position override.
 ## Invariants & assumptions
 
 - **`Number('')` is `0`, not `NaN`.** This is the whole reason the function
-  checks emptiness *before* finiteness. The README advertises the literal form
+  checks emptiness _before_ finiteness. The README advertises the literal form
   `?lat=&lng=`, which is a present-but-empty pair: it passes `Number.isFinite`,
   passes the range check, and opened the demo at 0°N 0°E — a point in the Gulf
   of Guinea with no OSM data, which reads as "the demo is broken" rather than

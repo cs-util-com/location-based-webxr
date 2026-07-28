@@ -27,10 +27,10 @@ import {
   type Region,
   type RuleTable,
   type LatLng,
-} from 'gps-plus-slam-osm';
-import { fetchTilesForScoreWorkingSet, toScoreChunk } from 'gps-plus-slam-osm';
-import { latLngToCell } from 'h3-js';
-import { SCORE_CHUNK_RES } from 'gps-plus-slam-osm';
+} from "gps-plus-slam-osm";
+import { fetchTilesForScoreWorkingSet, toScoreChunk } from "gps-plus-slam-osm";
+import { latLngToCell } from "h3-js";
+import { SCORE_CHUNK_RES } from "gps-plus-slam-osm";
 
 export interface DemoPipelineOptions {
   readonly source: OsmDataSource;
@@ -76,7 +76,7 @@ export class DemoPipeline {
     this.index = new AffordanceIndex(
       options.categories === undefined
         ? { table: options.table }
-        : { table: options.table, categories: options.categories }
+        : { table: options.table, categories: options.categories },
     );
     // A late tile invalidates chunks; the demo simply redraws from the next
     // snapshot, so nothing needs to listen. Registering a no-op listener would
@@ -113,12 +113,12 @@ export class DemoPipeline {
     const above = cellsAboveThreshold(
       { cells: [...scoresByCell.values()], unmappedTagCounts: {}, lookups: 0 },
       category,
-      threshold
+      threshold,
     );
     const regions = buildRegions(
       connectedComponents(above),
       category,
-      scoresByCell
+      scoresByCell,
     );
 
     return {

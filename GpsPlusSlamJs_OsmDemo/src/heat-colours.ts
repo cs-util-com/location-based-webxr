@@ -60,7 +60,7 @@ export interface HeatScale {
  */
 export function heatScale(
   scores: readonly number[],
-  threshold: number
+  threshold: number,
 ): HeatScale {
   let max = threshold;
   for (const score of scores) {
@@ -113,7 +113,7 @@ export function heatColour(score: number, scale: HeatScale): Rgb {
 
 /** `#rrggbb`, for Leaflet and CSS. */
 export function toHex({ r, g, b }: Rgb): string {
-  const hex = (v: number) => v.toString(16).padStart(2, '0');
+  const hex = (v: number) => v.toString(16).padStart(2, "0");
   return `#${hex(r)}${hex(g)}${hex(b)}`;
 }
 

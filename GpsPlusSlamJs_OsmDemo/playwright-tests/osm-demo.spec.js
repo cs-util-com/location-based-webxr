@@ -20,12 +20,12 @@
  * infrastructure before it is about determinism.
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 
-import { AT_FIXTURE, stubNetwork, waitForRefresh } from './fixtures.js';
+import { AT_FIXTURE, stubNetwork, waitForRefresh } from "./fixtures.js";
 
-test.describe('the demo boots', () => {
-  test('loads the rule table and populates the category picker', async ({
+test.describe("the demo boots", () => {
+  test("loads the rule table and populates the category picker", async ({
     page,
   }) => {
     await stubNetwork(page);
@@ -35,18 +35,18 @@ test.describe('the demo boots', () => {
     // The categories come from the rule table, not from a hardcoded list, so a
     // populated picker is evidence the table parsed. `walkable` is the C#
     // vocabulary's own category and the demo's default.
-    const options = page.locator('#category option');
+    const options = page.locator("#category option");
     await expect(options).not.toHaveCount(0);
-    await expect(page.locator('#category')).toHaveValue('walkable');
+    await expect(page.locator("#category")).toHaveValue("walkable");
 
     // WHICH TIER the table came from is displayed on purpose: a demo silently
     // running on the checked-in snapshot looks identical to one on the live
     // sheet, and they are different claims about what is being judged. The
     // suite blocks the sheet, so `snapshot` is the correct answer here.
-    await expect(page.locator('#status')).toContainText('rules: snapshot');
+    await expect(page.locator("#status")).toContainText("rules: snapshot");
   });
 
-  test('requests basemap tiles, so the grid has something to sit on', async ({
+  test("requests basemap tiles, so the grid has something to sit on", async ({
     page,
   }) => {
     const counts = await stubNetwork(page);
@@ -62,20 +62,20 @@ test.describe('the demo boots', () => {
     expect(counts.basemap).toBeGreaterThan(0);
   });
 
-  test('reports the scale it is drawing with', async ({ page }) => {
+  test("reports the scale it is drawing with", async ({ page }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
     // Without this the demo answers "does it look plausible?" instead of "is 1
     // really the identity here?" — and only the second is worth a session.
-    await expect(page.locator('#scale')).toContainText('identity is 1');
-    await expect(page.locator('#scale')).toContainText('log scale');
+    await expect(page.locator("#scale")).toContainText("identity is 1");
+    await expect(page.locator("#scale")).toContainText("log scale");
   });
 });
 
-test.describe('the affordance map', () => {
-  test('draws res-13 cells over the basemap', async ({ page }) => {
+test.describe("the affordance map", () => {
+  test("draws res-13 cells over the basemap", async ({ page }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
@@ -83,19 +83,19 @@ test.describe('the affordance map', () => {
     // The class exists so this assertion cannot be satisfied by the region
     // outlines: Leaflet renders every polygon as an indistinguishable <path>,
     // and a test matching all of them would pass with an empty grid.
-    const cells = page.locator('#map path.affordance-cell');
+    const cells = page.locator("#map path.affordance-cell");
     await expect(cells.first()).toBeVisible();
     expect(await cells.count()).toBeGreaterThan(10);
   });
 
-  test('draws region outlines, and draws them OVER the cells', async ({
+  test("draws region outlines, and draws them OVER the cells", async ({
     page,
   }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const outlines = page.locator('#map path.region-outline');
+    const outlines = page.locator("#map path.region-outline");
     await expect(outlines.first()).toBeVisible();
 
     // Paint order is invisible to every unit test and decides whether the
@@ -108,13 +108,13 @@ test.describe('the affordance map', () => {
     // regions were drawn underneath while the code drew them on top, and
     // nothing else in the suite could have noticed.
     const order = await page.evaluate(() => {
-      const paths = [...document.querySelectorAll('#map svg path')];
+      const paths = [...document.querySelectorAll("#map svg path")];
       return {
         lastCell: paths.findLastIndex((p) =>
-          p.classList.contains('affordance-cell')
+          p.classList.contains("affordance-cell"),
         ),
         firstRegion: paths.findIndex((p) =>
-          p.classList.contains('region-outline')
+          p.classList.contains("region-outline"),
         ),
       };
     });
@@ -122,43 +122,43 @@ test.describe('the affordance map', () => {
     expect(order.firstRegion).toBeGreaterThan(order.lastCell);
   });
 
-  test('a cell tooltip names the OSM elements that produced its score', async ({
+  test("a cell tooltip names the OSM elements that produced its score", async ({
     page,
   }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await page.locator('#map path.affordance-cell').first().hover();
+    await page.locator("#map path.affordance-cell").first().hover();
 
     // Provenance is the whole reason the C# reference kept a
     // contributing-entries map: it turns "that cell looks wrong" into "that
     // cell is wrong BECAUSE of way/12345" in one click. A tooltip that shows
     // only a number would make every surprising score a dead end.
-    const tooltip = page.locator('.leaflet-tooltip').first();
+    const tooltip = page.locator(".leaflet-tooltip").first();
     await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText('walkable =');
-    await expect(tooltip.locator('a[href*="openstreetmap.org/"]').first()).toHaveCount(
-      1
-    );
+    await expect(tooltip).toContainText("walkable =");
+    await expect(
+      tooltip.locator('a[href*="openstreetmap.org/"]').first(),
+    ).toHaveCount(1);
   });
 
-  test('switching category redraws the grid', async ({ page }) => {
+  test("switching category redraws the grid", async ({ page }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
     const other = await page.evaluate(() => {
-      const select = document.getElementById('category');
-      const values = [...(select?.querySelectorAll('option') ?? [])].map(
-        (o) => o.value
+      const select = document.getElementById("category");
+      const values = [...(select?.querySelectorAll("option") ?? [])].map(
+        (o) => o.value,
       );
-      return values.find((v) => v !== 'walkable') ?? '';
+      return values.find((v) => v !== "walkable") ?? "";
     });
-    test.skip(other === '', 'rule table declares only one category');
+    test.skip(other === "", "rule table declares only one category");
 
-    await page.locator('#category').selectOption(other);
-    await expect(page.locator('#status')).toContainText(`${other} regions`);
+    await page.locator("#category").selectOption(other);
+    await expect(page.locator("#status")).toContainText(`${other} regions`);
 
     // A category switch that rescored but never repainted would leave the map
     // showing `walkable` under a `restingArea` label — the exact kind of stale
@@ -172,22 +172,22 @@ test.describe('the affordance map', () => {
     // same colour bucket. The tooltip cannot be stale: `map-view.ts` rebuilds it
     // per render with `tooltipFor(cell, category, score)`, so it NAMES the
     // category the paths were drawn for.
-    const cell = page.locator('#map path.affordance-cell').first();
+    const cell = page.locator("#map path.affordance-cell").first();
     await expect(cell).toBeVisible();
     await cell.hover();
-    await expect(page.locator('.leaflet-tooltip').first()).toContainText(
-      `${other} =`
+    await expect(page.locator(".leaflet-tooltip").first()).toContainText(
+      `${other} =`,
     );
   });
 });
 
-test.describe('the 3D view', () => {
-  test('actually draws pixels, not just a canvas element', async ({ page }) => {
+test.describe("the 3D view", () => {
+  test("actually draws pixels, not just a canvas element", async ({ page }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const canvas = page.locator('#scene canvas');
+    const canvas = page.locator("#scene canvas");
     await expect(canvas).toBeVisible();
 
     // THE PIXEL PROOF. A present canvas of the right size proves nothing: a
@@ -196,12 +196,12 @@ test.describe('the 3D view', () => {
     // (which is why the renderer sets `preserveDrawingBuffer`) and counts
     // pixels that are not the background colour.
     const painted = await page.evaluate(() => {
-      const el = document.querySelector('#scene canvas');
+      const el = document.querySelector("#scene canvas");
       if (!(el instanceof HTMLCanvasElement)) return -1;
-      const probe = document.createElement('canvas');
+      const probe = document.createElement("canvas");
       probe.width = el.width;
       probe.height = el.height;
-      const ctx = probe.getContext('2d');
+      const ctx = probe.getContext("2d");
       if (ctx === null) return -1;
       ctx.drawImage(el, 0, 0);
       const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
@@ -219,7 +219,7 @@ test.describe('the 3D view', () => {
     expect(painted).toBeGreaterThan(500);
   });
 
-  test('reports what it built, including the honesty flags', async ({
+  test("reports what it built, including the honesty flags", async ({
     page,
   }) => {
     await stubNetwork(page);
@@ -230,14 +230,14 @@ test.describe('the 3D view', () => {
     // place it becomes visible. The census said only ~16 % of buildings carry a
     // `height` tag, so a demo reporting zero guesses over real data would mean
     // the flag stopped being set, not that OSM improved.
-    await expect(page.locator('#status')).toContainText('volumes');
-    await expect(page.locator('#status')).toContainText('guessed heights');
-    await expect(page.locator('#status')).toContainText('triangles');
+    await expect(page.locator("#status")).toContainText("volumes");
+    await expect(page.locator("#status")).toContainText("guessed heights");
+    await expect(page.locator("#status")).toContainText("triangles");
   });
 });
 
-test.describe('caching and failure', () => {
-  test('a reload is served from OPFS without refetching', async ({ page }) => {
+test.describe("caching and failure", () => {
+  test("a reload is served from OPFS without refetching", async ({ page }) => {
     const counts = await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
@@ -260,7 +260,7 @@ test.describe('caching and failure', () => {
     expect(counts.overpassQuery).toBe(queriesAfterFirst);
   });
 
-  test('a failed fetch is reported, not silently blank', async ({ page }) => {
+  test("a failed fetch is reported, not silently blank", async ({ page }) => {
     await stubNetwork(page, { overpassStatus: 400 });
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
@@ -268,6 +268,6 @@ test.describe('caching and failure', () => {
     // A blank map with no message looks exactly like "there is no data at this
     // location" — the one reading that would send someone debugging the wrong
     // layer entirely.
-    await expect(page.locator('#status')).toContainText(/unavailable|Failed/);
+    await expect(page.locator("#status")).toContainText(/unavailable|Failed/);
   });
 });

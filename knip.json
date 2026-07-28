@@ -100,8 +100,21 @@
       ]
     },
     "GpsPlusSlamJs_OsmDemo": {
+      "entry": [
+        "config/stylelint.config.mjs",
+        "playwright-tests/**/*.{js,ts}",
+        "config/eslint.config.mjs"
+      ],
       "project": [
         "src/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@carlosjeurissen/stylelint-csstree-validator",
+        "dependency-cruiser",
+        "dpdm",
+        "jscpd",
+        "postcss-html",
+        "stylelint-config-standard"
       ]
     },
     "GpsPlusSlamJs_Landing": {

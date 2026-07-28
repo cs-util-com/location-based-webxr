@@ -15,7 +15,7 @@
  * @see building-view.ts.md
  */
 
-import * as THREE from 'three';
+import * as THREE from "three";
 import {
   buildBuildings,
   buildTrees,
@@ -25,7 +25,7 @@ import {
   type LatLng,
   type MeshData,
   type OsmFeature,
-} from 'gps-plus-slam-osm';
+} from "gps-plus-slam-osm";
 
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
@@ -73,7 +73,7 @@ export class BuildingView {
     // on something rather than floating in the void.
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(2000, 2000),
-      new THREE.MeshStandardMaterial({ color: 0x1d2230 })
+      new THREE.MeshStandardMaterial({ color: 0x1d2230 }),
     );
     ground.rotation.x = -Math.PI / 2;
     this.scene.add(ground);
@@ -83,7 +83,7 @@ export class BuildingView {
     this.camera.lookAt(0, 10, 0);
 
     this.resize();
-    window.addEventListener('resize', () => {
+    window.addEventListener("resize", () => {
       this.resize();
     });
   }
@@ -120,12 +120,12 @@ export class BuildingView {
     for (const tree of trees) {
       const trunk = new THREE.Mesh(
         new THREE.ConeGeometry(tree.crownDiameterM / 2, tree.heightM, 6),
-        new THREE.MeshStandardMaterial({ color: 0x3f7d4a })
+        new THREE.MeshStandardMaterial({ color: 0x3f7d4a }),
       );
       trunk.position.set(
         tree.position.x,
         tree.groundHeightM + tree.heightM / 2,
-        tree.position.y
+        tree.position.y,
       );
       trunk.rotation.y = tree.rotationY;
       this.group.add(trunk);
@@ -138,10 +138,10 @@ export class BuildingView {
   private meshFor(data: MeshData): THREE.Mesh {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(data.positions, 3)
+      "position",
+      new THREE.BufferAttribute(data.positions, 3),
     );
-    geometry.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
     geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
     return new THREE.Mesh(
       geometry,
@@ -158,18 +158,31 @@ export class BuildingView {
         // `mesh-orientation.test.ts` instead of by looking at this.
         side: THREE.DoubleSide,
         flatShading: true,
-      })
+      }),
     );
   }
 
   private clear(): void {
     for (const child of [...this.group.children]) {
       this.group.remove(child);
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose();
-        const material = child.material;
-        if (Array.isArray(material)) material.forEach((m) => m.dispose());
-        else material.dispose();
+      // ASSERTED, not inferred. `instanceof THREE.Mesh` narrows to
+      // `Mesh<any, any, any>` because three's generic parameters default to
+      // `any`, so `.geometry` and `.material` both arrive untyped and every
+      // dispose call below them is unchecked. Naming the real shape once here
+      // is the smallest place to put the assertion — everything this view
+      // adds to `this.group` is built in `meshFor` or the tree loop, and both
+      // use exactly this pairing.
+      if (!(child instanceof THREE.Mesh)) continue;
+      const mesh = child as THREE.Mesh<
+        THREE.BufferGeometry,
+        THREE.Material | THREE.Material[]
+      >;
+      mesh.geometry.dispose();
+      const material = mesh.material;
+      if (Array.isArray(material)) {
+        for (const one of material) one.dispose();
+      } else {
+        material.dispose();
       }
     }
   }
@@ -191,7 +204,7 @@ export class BuildingView {
 function statsFor(
   volumes: readonly BuildingVolume[],
   merged: MeshData,
-  trees: number
+  trees: number,
 ): BuildingStats {
   return {
     volumes: volumes.length,
@@ -199,7 +212,8 @@ function statsFor(
     triangles: merged.triangleCount,
     guessedHeights: volumes.filter((v) => v.heights.heightIsGuessed).length,
     approximateRoofs: volumes.filter(
-      (v) => v.heights.roofShape === 'gabled' || v.heights.roofShape === 'hipped'
+      (v) =>
+        v.heights.roofShape === "gabled" || v.heights.roofShape === "hipped",
     ).length,
     trees,
   };

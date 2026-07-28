@@ -16,9 +16,9 @@
  * @see map-view.ts.md
  */
 
-import L from 'leaflet';
-import { cellToBoundary } from 'h3-js';
-import type { CellScore, Region } from 'gps-plus-slam-osm';
+import L from "leaflet";
+import { cellToBoundary } from "h3-js";
+import type { CellScore, Region } from "gps-plus-slam-osm";
 
 import {
   describeScale,
@@ -26,13 +26,13 @@ import {
   heatScale,
   toHex,
   type HeatScale,
-} from './heat-colours.js';
+} from "./heat-colours.js";
 
 /**
  * ODbL requires attribution wherever OSM data is shown — and this view shows
  * both the basemap tiles and data derived from OSM, so it is doubly required.
  */
-const OSM_ATTRIBUTION = '© OpenStreetMap contributors';
+const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 
 export interface MapViewOptions {
   readonly container: HTMLElement;
@@ -49,10 +49,10 @@ export class MapView {
   constructor(options: MapViewOptions) {
     this.map = L.map(options.container).setView(
       [options.centre.lat, options.centre.lng],
-      options.zoom ?? 18
+      options.zoom ?? 18,
     );
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: OSM_ATTRIBUTION,
     }).addTo(this.map);
@@ -73,9 +73,9 @@ export class MapView {
 
     this.userMarker = L.circleMarker([options.centre.lat, options.centre.lng], {
       radius: 6,
-      color: '#ffffff',
+      color: "#ffffff",
       weight: 2,
-      fillColor: '#ff3860',
+      fillColor: "#ff3860",
       fillOpacity: 1,
     }).addTo(this.map);
   }
@@ -96,14 +96,14 @@ export class MapView {
     cells: readonly CellScore[],
     regions: readonly Region[],
     category: string,
-    threshold: number
+    threshold: number,
   ): HeatScale {
     this.cellLayer.clearLayers();
     this.regionLayer.clearLayers();
 
     const scale = heatScale(
       cells.map((cell) => cell.scores[category] ?? 1),
-      threshold
+      threshold,
     );
 
     for (const cell of cells) {
@@ -113,7 +113,7 @@ export class MapView {
       // the bottom of the ramp would assert knowledge the data does not have.
       if (score <= threshold) continue;
 
-      L.polygon(cellToBoundary(cell.cell) as [number, number][], {
+      L.polygon(cellToBoundary(cell.cell), {
         stroke: false,
         fillColor: toHex(heatColour(score, scale)),
         fillOpacity: 0.55,
@@ -121,7 +121,7 @@ export class MapView {
         // renders every polygon as an indistinguishable `<path>`; without a
         // class, a test asserting "cells are drawn" would equally match the
         // region outlines and would pass while the grid was empty.
-        className: 'affordance-cell',
+        className: "affordance-cell",
       })
         .bindTooltip(tooltipFor(cell, category, score))
         .addTo(this.cellLayer);
@@ -130,18 +130,20 @@ export class MapView {
     for (const region of regions) {
       for (const polygon of region.outline) {
         L.polygon(
-          polygon.map((ring) => ring.map((p) => [p.lat, p.lng] as [number, number])),
+          polygon.map((ring) =>
+            ring.map((p) => [p.lat, p.lng] as [number, number]),
+          ),
           {
-            color: '#ffffff',
+            color: "#ffffff",
             weight: 2,
             fill: false,
-            dashArray: '4 4',
-            className: 'region-outline',
-          }
+            dashArray: "4 4",
+            className: "region-outline",
+          },
         )
           .bindTooltip(
             `${region.category}: ${region.cellCount} cells, ` +
-              `${Math.round(region.areaM2)} m², median ${round(region.medianScore)}`
+              `${Math.round(region.areaM2)} m², median ${round(region.medianScore)}`,
           )
           .addTo(this.regionLayer);
       }
@@ -169,14 +171,14 @@ function tooltipFor(cell: CellScore, category: string, score: number): string {
     .slice(0, 8)
     .map(
       ([key, factor]) =>
-        `<a href="https://www.openstreetmap.org/${key}" target="_blank" rel="noreferrer">${key}</a> × ${round(factor)}`
+        `<a href="https://www.openstreetmap.org/${key}" target="_blank" rel="noreferrer">${key}</a> × ${round(factor)}`,
     );
 
   return (
     `<strong>${category} = ${round(score)}</strong><br>` +
     (lines.length > 0
-      ? lines.join('<br>')
-      : '<em>no rule contributed — this is the identity</em>')
+      ? lines.join("<br>")
+      : "<em>no rule contributed — this is the identity</em>")
   );
 }
 

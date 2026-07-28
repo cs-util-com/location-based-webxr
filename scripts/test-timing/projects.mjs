@@ -381,34 +381,30 @@ export const PROJECTS = [
     ],
   },
   {
-    // Registered by hand rather than with demoAppProject(): it has no
-    // `build:framework` stage, because `pnpm run dev` — the Playwright
-    // webServer command — already runs `build:deps`. That build is therefore
-    // unconditional (it does not get build-framework-if-stale.mjs's skip) and
-    // its cost lands inside the `test:e2e` row rather than a row of its own.
+    // Registered by hand rather than with demoAppProject() for two reasons.
     //
-    // It DOES have an e2e suite; an earlier version of this comment said it did
-    // not, which stopped being true the moment one was added.
+    // 1. It needs `build:osm` FIRST. Every other app's dependency build sits
+    //    after `typecheck`, which is safe only because RecorderApp maps the
+    //    framework to SOURCE via tsconfig `paths`. Nothing maps
+    //    `gps-plus-slam-osm`, so `tsc` cannot see one of its types until dist
+    //    exists — and until this stage was added, nothing in the workspace
+    //    built it at all, which is what broke the /osm/ deployment.
+    // 2. It has no `build:framework` stage, because `pnpm run dev` — the
+    //    Playwright webServer command — already runs `build:deps`. That build
+    //    is unconditional (no staleness skip) and its cost lands inside the
+    //    `test:e2e` row rather than a row of its own.
+    //
+    // Otherwise it now runs the SAME stage set as every other demo app. It
+    // previously ran only typecheck/test:unit/test:e2e — no format, lint,
+    // lint:css, check:dup, check:cycles, check:boundaries, check:deadcode or
+    // typecheck:tests — because the package was created without the demo-app
+    // tooling (no config/ directory and none of the 14 tool devDependencies).
     name: 'GpsPlusSlamJs_OsmDemo',
     dir: 'GpsPlusSlamJs_OsmDemo',
-    chainNames: [],
+    chainNames: ['test:core', 'check:all'],
     stages: [
-      // FIRST, unlike `build:framework` which sits after typecheck elsewhere:
-      // this package resolves `gps-plus-slam-osm` through its `exports`, so
-      // `tsc` cannot see a single one of its types until dist exists.
       BUILD_OSM_STAGE,
-      {
-        name: 'typecheck',
-        command: 'tsc -p tsconfig.json --noEmit',
-        counts: null,
-      },
-      { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
-      {
-        name: 'test:e2e',
-        command:
-          'playwright test --config playwright-tests/playwright.config.js',
-        counts: 'playwright',
-      },
+      ...demoAppStages().filter((stage) => stage.name !== 'build:framework'),
     ],
   },
   demoAppProject('GpsPlusSlamJs_QrTrackingDemo'),

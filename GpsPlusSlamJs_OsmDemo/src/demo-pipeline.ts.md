@@ -32,7 +32,7 @@ path, with no DOM in it.
 
 ```ts
 const pipeline = new DemoPipeline({ source, table });
-const snapshot = await pipeline.update({ lat: 50.94, lng: 6.96 }, 'walkable');
+const snapshot = await pipeline.update({ lat: 50.94, lng: 6.96 }, "walkable");
 ```
 
 ## Tests

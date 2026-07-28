@@ -34,7 +34,7 @@ raster basemap.
 
 ```ts
 const view = new MapView({ container, centre });
-const scale = view.render(cells, regions, 'walkable', threshold);
+const scale = view.render(cells, regions, "walkable", threshold);
 ```
 
 ## Tests

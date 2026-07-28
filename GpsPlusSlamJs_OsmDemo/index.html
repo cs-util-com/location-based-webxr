@@ -17,7 +17,9 @@
       }
       body {
         margin: 0;
-        font: 14px/1.4 system-ui, sans-serif;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
         background: #11131a;
         color: #e6e8ef;
         display: grid;
@@ -46,7 +48,8 @@
         grid-template-columns: 1fr 1fr;
         min-height: 0;
       }
-      @media (max-width: 860px) {
+
+      @media (width <= 860px) {
         main {
           grid-template-columns: 1fr;
           grid-template-rows: 1fr 1fr;
@@ -77,7 +80,10 @@
   <body>
     <header>
       <h1>OSM affordance demo</h1>
-      <label>category <select id="category"></select></label>
+      <label
+        >category
+        <select id="category"></select
+      ></label>
       <span class="hint">click the map to move</span>
       <span id="status">starting…</span>
       <span id="scale"></span>
