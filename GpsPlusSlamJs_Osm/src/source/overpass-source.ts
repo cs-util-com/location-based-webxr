@@ -89,6 +89,34 @@ export interface OverpassSourceOptions {
   readonly random?: () => number;
   readonly now?: () => number;
   readonly sleepImpl?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Cap on `stats.attempts`. See {@link OverpassStats}. */
+  readonly maxAttemptLog?: number;
+}
+
+/**
+ * One dispatched request's outcome.
+ *
+ * Exists because the first real end-to-end fetch took FOUR requests to land one
+ * tile with `rateLimited === 0` — so three attempts failed on something else,
+ * and a retry COUNT could not say what. The on-device walk is expensive to
+ * repeat; this is what makes one walk conclusive rather than suggestive.
+ */
+export interface OverpassAttempt {
+  /** HTTP status, or undefined for a transport failure that never got one. */
+  readonly status?: number;
+  readonly endpoint: string;
+  /** Message of a transport-level failure, when there was one. */
+  readonly error?: string;
+  readonly at: number;
+}
+
+export interface OverpassStats {
+  requests: number;
+  retries: number;
+  deduplicated: number;
+  rateLimited: number;
+  /** The most recent attempts, oldest first. Bounded — see `maxAttemptLog`. */
+  attempts: OverpassAttempt[];
 }
 
 /** Matches the measured `Rate limit: 2` on the public instances. */
@@ -109,6 +137,16 @@ const DEFAULT_TIMEOUT_SECONDS = 180;
  * block.
  */
 const DEFAULT_RATE_LIMIT_PENALTY_MS = 35_000;
+
+/**
+ * How many attempt records to keep.
+ *
+ * Bounded because a walking user fetches for hours, and an unbounded diagnostic
+ * array is a slow memory leak in the one component that has to survive a long
+ * field session. The RECENT attempts are what matter — a failure being
+ * diagnosed is nearly always the latest one.
+ */
+const DEFAULT_MAX_ATTEMPT_LOG = 50;
 
 /**
  * A failure that retrying cannot fix — a 400 because our query is malformed, a
@@ -182,7 +220,13 @@ export class OverpassSource implements OsmDataSource {
   private readonly queue: (() => void)[] = [];
 
   /** Observable counters, for the demo app's "how many queries did I make?". */
-  readonly stats = { requests: 0, retries: 0, deduplicated: 0, rateLimited: 0 };
+  readonly stats: OverpassStats = {
+    requests: 0,
+    retries: 0,
+    deduplicated: 0,
+    rateLimited: 0,
+    attempts: [],
+  };
 
   /**
    * The client's own slot accounting.
@@ -194,6 +238,7 @@ export class OverpassSource implements OsmDataSource {
   readonly budget: OverpassSlotBudget;
 
   private readonly selectKeys: readonly string[];
+  private readonly maxAttemptLog: number;
 
   constructor(options: OverpassSourceOptions) {
     const resolved = { ...defaultOptions(), ...stripUndefined(options) };
@@ -212,6 +257,7 @@ export class OverpassSource implements OsmDataSource {
     this.now = resolved.now;
     this.sleepImpl = resolved.sleepImpl;
     this.selectKeys = resolved.selectKeys;
+    this.maxAttemptLog = resolved.maxAttemptLog;
     this.budget =
       resolved.budget ?? new OverpassSlotBudget({ now: () => this.now() });
   }
@@ -305,6 +351,11 @@ export class OverpassSource implements OsmDataSource {
 
       try {
         const response = await this.dispatch(endpoint, query, signal);
+        this.recordAttempt({
+          endpoint,
+          status: response.status,
+          at: this.now(),
+        });
 
         if (response.ok) {
           return await this.toResult(tile, endpoint, response);
@@ -328,6 +379,17 @@ export class OverpassSource implements OsmDataSource {
         if (isAbortError(error) || error instanceof PermanentOverpassError) {
           throw error;
         }
+        // A transport failure (DNS, reset connection) never produced a status.
+        // Recorded WITHOUT one rather than omitted: dropping it would make the
+        // log claim fewer requests than were really made, which is the one
+        // direction of error that under-reports quota use.
+        if (!(error instanceof PermanentOverpassError)) {
+          this.recordAttempt({
+            endpoint,
+            error: describe(error),
+            at: this.now(),
+          });
+        }
         lastError = error;
         if (attempt >= this.maxRetries) {
           break;
@@ -339,6 +401,18 @@ export class OverpassSource implements OsmDataSource {
     throw new Error(
       `Overpass fetch failed for tile ${tile} after ${this.maxRetries + 1} attempt(s): ${describe(lastError)}`,
     );
+  }
+
+  /** Appends to the bounded attempt log. */
+  private recordAttempt(attempt: OverpassAttempt): void {
+    this.stats.attempts.push(attempt);
+    if (this.stats.attempts.length > this.maxAttemptLog) {
+      // Drop the OLDEST: a failure being diagnosed is nearly always the latest.
+      this.stats.attempts.splice(
+        0,
+        this.stats.attempts.length - this.maxAttemptLog,
+      );
+    }
   }
 
   private dispatch(
@@ -473,6 +547,7 @@ function defaultOptions() {
     random: Math.random,
     now: Date.now,
     sleepImpl: sleep,
+    maxAttemptLog: DEFAULT_MAX_ATTEMPT_LOG,
     selectKeys: OVERPASS_SELECT_KEYS,
     budget: undefined as OverpassSlotBudget | undefined,
   };

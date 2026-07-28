@@ -567,3 +567,93 @@ describe("the select-key list is overridable", () => {
     expect(body).not.toContain('nwr["landuse"];');
   });
 });
+
+describe("attempt-level diagnostics", () => {
+  // Why these tests matter:
+  // The first real end-to-end fetch took FOUR requests to land one tile, with
+  // stats.rateLimited === 0 — so three attempts failed on something else and
+  // retry-with-rotation is what produced the data. `stats` counted the retries
+  // but not what they were, so the cause was unknowable without re-running
+  // against the live API and burning quota to find out.
+  //
+  // The on-device walk needs this answered, and the walk is expensive to repeat.
+  // Recording the outcome of each attempt is the cheap way to make one walk
+  // conclusive instead of suggestive.
+
+  it("records the status of every attempt, in order", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(504))
+      .mockResolvedValueOnce(errorResponse(504))
+      .mockResolvedValueOnce(jsonResponse(OK_BODY));
+    const { source } = makeSource(fetchImpl);
+
+    await source.fetchTile(TILE);
+
+    expect(source.stats.attempts.map((a) => a.status)).toEqual([504, 504, 200]);
+  });
+
+  it("names the endpoint each attempt used, so rotation can be judged", async () => {
+    // Rotation buys failover across one operator's backends. Whether it is
+    // actually helping — or whether every attempt hit the same backend — is not
+    // answerable from a retry count.
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(504))
+      .mockResolvedValueOnce(jsonResponse(OK_BODY));
+    const { source } = makeSource(fetchImpl);
+
+    await source.fetchTile(TILE);
+
+    for (const attempt of source.stats.attempts) {
+      expect(attempt.endpoint).toMatch(/^https:\/\//);
+    }
+    expect(source.stats.attempts).toHaveLength(2);
+  });
+
+  it("records a transport failure with no status rather than dropping it", async () => {
+    // A DNS failure or a dropped connection has no HTTP status. Omitting those
+    // attempts would make the log claim fewer requests than were really made —
+    // the one direction of error that under-reports quota use.
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("ECONNRESET"))
+      .mockResolvedValueOnce(jsonResponse(OK_BODY));
+    const { source } = makeSource(fetchImpl);
+
+    await source.fetchTile(TILE);
+
+    expect(source.stats.attempts).toHaveLength(2);
+    expect(source.stats.attempts[0]!.status).toBeUndefined();
+    expect(source.stats.attempts[0]!.error).toMatch(/ECONNRESET/);
+  });
+
+  it("keeps the attempt log bounded, so a long session cannot grow it forever", async () => {
+    // A walking user fetches for hours. An unbounded diagnostic array is a slow
+    // memory leak in the one component that must survive a long field session.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source } = makeSource(fetchImpl, { maxAttemptLog: 3 });
+
+    for (let i = 0; i < 10; i++) {
+      await source.fetchTile(`${TILE.slice(0, -1)}${i}`);
+    }
+
+    expect(source.stats.attempts.length).toBeLessThanOrEqual(3);
+    // The RECENT attempts are the ones worth keeping — a failure being
+    // diagnosed is nearly always the latest one.
+    expect(source.stats.requests).toBe(10);
+  });
+
+  it("counts requests and attempts consistently", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(504))
+      .mockResolvedValueOnce(jsonResponse(OK_BODY));
+    const { source } = makeSource(fetchImpl);
+
+    await source.fetchTile(TILE);
+    expect(source.stats.attempts).toHaveLength(source.stats.requests);
+  });
+});

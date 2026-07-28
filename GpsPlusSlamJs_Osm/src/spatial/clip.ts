@@ -136,28 +136,140 @@ function containsPoint(bbox: Bbox, p: LatLng): boolean {
 }
 
 /**
- * Keeps the parts of a linestring near the box.
+ * Keeps the parts of a linestring that touch the box.
  *
- * Deliberately coarse: a vertex is kept when it is inside the box, and so is
- * one vertex either side of it, so the segments crossing the boundary survive
- * and the supercover rasteriser still fills them. Precise segment/box
- * intersection would be more exact and is not needed — over-keeping costs a few
- * cells outside the working set, which are then filtered; under-keeping would
- * lose road.
+ * **A SEGMENT test, not a vertex test — and the difference is a silent scoring
+ * hole.** The original version kept a vertex only when it, its predecessor or
+ * its successor lay *inside* the box. For a segment straddling the box with
+ * both endpoints outside, none of those holds, so the entire way was dropped
+ * and contributed no cells at all.
+ *
+ * That is not an exotic case: `cell-coverage.ts` documents long straight ways
+ * between distant nodes as the OSM norm, and the working-set box is only a few
+ * hundred metres across. A motorway, railway, river or power line crossing the
+ * user's area would score the multiplicative identity — indistinguishable from
+ * unmapped ground.
+ *
+ * Deliberately still coarse: when a segment touches the box, BOTH its endpoints
+ * are kept rather than the exact intersection points. Over-keeping costs a few
+ * cells outside the working set, which are filtered downstream anyway;
+ * under-keeping loses road. The supercover rasteriser then fills the crossing.
  */
 function clipLine(positions: readonly LatLng[], bbox: Bbox): LatLng[] {
-  const kept: LatLng[] = [];
-  for (let i = 0; i < positions.length; i++) {
-    const current = positions[i]!;
-    const previous = positions[i - 1];
-    const next = positions[i + 1];
-    const relevant =
-      containsPoint(bbox, current) ||
-      (previous !== undefined && containsPoint(bbox, previous)) ||
-      (next !== undefined && containsPoint(bbox, next));
-    if (relevant) kept.push(current);
+  if (positions.length === 1) {
+    return containsPoint(bbox, positions[0]!) ? [positions[0]!] : [];
   }
-  return kept;
+
+  const keep = new Set<number>();
+  for (let i = 0; i + 1 < positions.length; i++) {
+    if (segmentTouchesBbox(positions[i]!, positions[i + 1]!, bbox)) {
+      keep.add(i);
+      keep.add(i + 1);
+    }
+  }
+  return [...keep].sort((a, b) => a - b).map((i) => positions[i]!);
+}
+
+/**
+ * Cohen–Sutherland region codes, for the segment/box test below.
+ *
+ * Plain numeric constants rather than an enum: these are combined with bitwise
+ * `|` and `&`, which a TS enum type makes awkward to express without either
+ * casts or `no-unsafe-enum-comparison` complaints. A bitmask is not really an
+ * enumeration.
+ */
+const OUTCODE_INSIDE = 0;
+const OUTCODE_WEST = 1;
+const OUTCODE_EAST = 2;
+const OUTCODE_SOUTH = 4;
+const OUTCODE_NORTH = 8;
+
+function outcodeOf(lat: number, lng: number, bbox: Bbox): number {
+  let code = OUTCODE_INSIDE;
+  if (lng < bbox.west) code |= OUTCODE_WEST;
+  else if (lng > bbox.east) code |= OUTCODE_EAST;
+  if (lat < bbox.south) code |= OUTCODE_SOUTH;
+  else if (lat > bbox.north) code |= OUTCODE_NORTH;
+  return code;
+}
+
+/**
+ * Does the segment `a`–`b` intersect the box at all?
+ *
+ * Cohen–Sutherland: if both endpoints share an outside region the segment is
+ * trivially rejected; if either is inside it is trivially accepted; otherwise
+ * the segment is clipped against one violated edge and retested. Terminates
+ * because each iteration moves an endpoint onto a boundary, strictly reducing
+ * the set of violated edges.
+ */
+function segmentTouchesBbox(a: LatLng, b: LatLng, bbox: Bbox): boolean {
+  let ax = a.lng;
+  let ay = a.lat;
+  let bx = b.lng;
+  let by = b.lat;
+  let codeA = outcodeOf(ay, ax, bbox);
+  let codeB = outcodeOf(by, bx, bbox);
+
+  // Bounded iteration: at most one clip per edge, plus slack for float noise.
+  for (let guard = 0; guard < 8; guard++) {
+    if ((codeA | codeB) === OUTCODE_INSIDE) return true; // both inside
+    if ((codeA & codeB) !== 0) return false; // both beyond the same edge
+
+    const outside = codeA !== OUTCODE_INSIDE ? codeA : codeB;
+    const clipped = clipEndpointToEdge(outside, ax, ay, bx, by, bbox);
+    if (clipped === undefined) return false;
+
+    if (outside === codeA) {
+      ax = clipped.lng;
+      ay = clipped.lat;
+      codeA = outcodeOf(ay, ax, bbox);
+    } else {
+      bx = clipped.lng;
+      by = clipped.lat;
+      codeB = outcodeOf(by, bx, bbox);
+    }
+  }
+  // Degenerate input the loop could not settle. Keeping the segment is the safe
+  // direction: an extra cell is filtered downstream, a lost one is invisible.
+  return true;
+}
+
+/**
+ * Moves the endpoint that violates `outside` onto the corresponding box edge.
+ *
+ * Returns `undefined` when the intersection is not finite — a vertical segment
+ * tested against a horizontal edge, or coordinates that are already NaN. Callers
+ * treat that as "no intersection", which is correct: a segment we cannot
+ * intersect with an edge does not cross it.
+ */
+function clipEndpointToEdge(
+  outside: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  bbox: Bbox,
+): LatLng | undefined {
+  let lng: number;
+  let lat: number;
+
+  if ((outside & OUTCODE_NORTH) !== 0) {
+    lng = ax + ((bx - ax) * (bbox.north - ay)) / (by - ay);
+    lat = bbox.north;
+  } else if ((outside & OUTCODE_SOUTH) !== 0) {
+    lng = ax + ((bx - ax) * (bbox.south - ay)) / (by - ay);
+    lat = bbox.south;
+  } else if ((outside & OUTCODE_EAST) !== 0) {
+    lat = ay + ((by - ay) * (bbox.east - ax)) / (bx - ax);
+    lng = bbox.east;
+  } else {
+    lat = ay + ((by - ay) * (bbox.west - ax)) / (bx - ax);
+    lng = bbox.west;
+  }
+
+  return Number.isFinite(lng) && Number.isFinite(lat)
+    ? { lat, lng }
+    : undefined;
 }
 
 function clipRings(

@@ -177,6 +177,32 @@ describe("restrictTo — what keeps the index cheap", () => {
 });
 
 describe("edge cases", () => {
+  it("handles an EMPTY restriction without crashing", () => {
+    // `boundsOf([])` is undefined, and the padded-bbox path dereferenced it —
+    // so `restrictTo: []` threw a TypeError deep inside padBbox rather than
+    // answering the question. An empty restriction is a legitimate input
+    // ("score nothing here"), and it arises naturally: a working set that has
+    // been fully filtered, or a caller passing a computed set that came back
+    // empty. The right answer is an empty index, not a crash in a helper.
+    expect(() =>
+      buildFeatureIndex([node(1)], { restrictTo: [] }),
+    ).not.toThrow();
+
+    const index = buildFeatureIndex([node(1)], { restrictTo: [] });
+    expect(index.byCell.size).toBe(0);
+    expect(index.features.size).toBe(0);
+    expect(index.failed).toEqual([]);
+  });
+
+  it("handles a restriction from an iterable that yields nothing", () => {
+    // Same case reached a different way — `restrictTo` is an Iterable, so a
+    // generator or a filtered Set is as likely as a literal array.
+    const empty = new Set<string>();
+    expect(() =>
+      buildFeatureIndex([node(1)], { restrictTo: empty }),
+    ).not.toThrow();
+  });
+
   it("returns an empty index for no features", () => {
     const index = buildFeatureIndex([]);
     expect(index.byCell.size).toBe(0);

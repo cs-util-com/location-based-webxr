@@ -15,6 +15,7 @@ import { featureKey } from "../model/osm-feature.js";
 import { toGeometry } from "../model/osm-geometry.js";
 import type { GeometryError } from "../model/osm-geometry.js";
 import { coverCells, cellCentre } from "./cell-coverage.js";
+import type { Bbox } from "./clip.js";
 import { boundsOf, padBbox, clipToBbox } from "./clip.js";
 import { AFFORDANCE_RES } from "./resolutions.js";
 
@@ -80,15 +81,10 @@ export function buildFeatureIndex(
   const kept = new Map<OsmFeatureKey, OsmFeature>();
   const failed: GeometryError[] = [];
 
-  // The area of interest, as a padded bbox. Applied to the GEOMETRY before
-  // covering — see below.
-  const interest =
-    restrict === undefined
-      ? undefined
-      : padBbox(
-          boundsOf([...restrict].map((cell) => cellCentre(cell)))!,
-          CLIP_MARGIN_DEG,
-        );
+  const interest = areaOfInterest(restrict);
+  if (interest === "empty") {
+    return { byCell, byFeature, features: kept, failed, resolution };
+  }
 
   for (const feature of features) {
     const result = toGeometry(feature);
@@ -126,6 +122,27 @@ export function buildFeatureIndex(
   }
 
   return { byCell, byFeature, features: kept, failed, resolution };
+}
+
+/**
+ * The padded bbox to clip geometry against, from a cell restriction.
+ *
+ * Three distinct answers, and the third is the one that used to crash:
+ * - `undefined` — no restriction, so no clipping.
+ * - a `Bbox` — clip to it.
+ * - `"empty"` — the restriction exists but contains nothing, so the caller
+ *   should return an empty index. A legitimate input meaning "score nothing
+ *   here" (a fully-filtered working set, or a computed set that came back
+ *   empty), which previously dereferenced undefined bounds and threw a
+ *   TypeError from inside `padBbox`.
+ */
+function areaOfInterest(
+  restrict: Set<string> | undefined,
+): Bbox | undefined | "empty" {
+  if (restrict === undefined) return undefined;
+  const bounds = boundsOf([...restrict].map((cell) => cellCentre(cell)));
+  if (bounds === undefined) return "empty";
+  return padBbox(bounds, CLIP_MARGIN_DEG);
 }
 
 /** Files one feature's coverage into `byCell`; returns the cells it landed in. */

@@ -201,6 +201,76 @@ describe("linestrings", () => {
     expect(clipped.positions).toHaveLength(3);
   });
 
+  it("KEEPS a segment that crosses the box with no vertex anywhere near it", () => {
+    // The bug this test was written against: `clipLine` kept a vertex only if
+    // it, its predecessor or its successor was INSIDE the box. For a two-node
+    // segment straddling the box, none of those three tests passes, so the
+    // whole way was dropped — `clipToBbox` returned undefined and
+    // `buildFeatureIndex` skipped the feature entirely.
+    //
+    // That is the exact case `cell-coverage.ts` calls out as ordinary in OSM:
+    // long straight ways mapped as two distant nodes. A motorway, railway,
+    // river or power line crossing the user's working set contributed NO cells
+    // and scored the multiplicative identity — a silent scoring hole, and the
+    // one failure mode this package works hardest to avoid.
+    const clipped = clipToBbox(
+      {
+        kind: "linestring",
+        positions: [
+          { lat: 50.5, lng: 5.0 }, // well west of the box
+          { lat: 50.5, lng: 8.0 }, // well east of it
+        ],
+      },
+      BOX,
+    );
+
+    expect(clipped).toBeDefined();
+    expect(clipped?.kind).toBe("linestring");
+    if (clipped?.kind !== "linestring") throw new Error("expected a line");
+    expect(clipped.positions.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps a crossing segment for every axis, not just longitude", () => {
+    // Guards a fix that only handled one pair of edges.
+    const cases: [string, { lat: number; lng: number }[]][] = [
+      [
+        "north-south",
+        [
+          { lat: 48.0, lng: 6.5 },
+          { lat: 53.0, lng: 6.5 },
+        ],
+      ],
+      [
+        "diagonal",
+        [
+          { lat: 48.0, lng: 4.0 },
+          { lat: 53.0, lng: 9.0 },
+        ],
+      ],
+    ];
+    for (const [label, positions] of cases) {
+      const clipped = clipToBbox({ kind: "linestring", positions }, BOX);
+      expect(clipped, `${label} crossing was dropped`).toBeDefined();
+    }
+  });
+
+  it("a crossing way still produces cells all the way through the box", () => {
+    // The consequence-level assertion: not merely "kept", but actually covering
+    // the ground it crosses, which is what scoring depends on.
+    const clipped = clipToBbox(
+      {
+        kind: "linestring",
+        positions: [
+          { lat: 50.5, lng: 5.0 },
+          { lat: 50.5, lng: 8.0 },
+        ],
+      },
+      { south: 50.49, west: 6.5, north: 50.51, east: 6.52 },
+    )!;
+    const cells = coverCells(clipped, 11);
+    expect(cells.length).toBeGreaterThan(1);
+  });
+
   it("drops a line entirely outside", () => {
     expect(
       clipToBbox(

@@ -140,6 +140,62 @@ describe("polygons — TOUCHED, not contained", () => {
     expect(covered.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("pins the assumption the sub-cell fallback rests on: h3 never returns zero cells", () => {
+    // Measured, not assumed: `containmentOverlapping` yields at least one cell
+    // for any valid ring, down to a 1 mm square — so the vertex fallback in
+    // `addPolygon` is unreachable for real input.
+    //
+    // It is kept anyway because `polygonToCellsExperimental` is EXPERIMENTAL
+    // upstream. This test is the tripwire: if a future h3 starts returning zero
+    // for small polygons, this fails and tells the next reader that the
+    // fallback has stopped being decorative.
+    for (const metres of [10, 1, 0.1, 0.001]) {
+      const d = metres / 2 / 111_320;
+      const ring = [
+        [51.5 - d, 7.5 - d],
+        [51.5 - d, 7.5 + d],
+        [51.5 + d, 7.5 + d],
+        [51.5 - d, 7.5 - d],
+      ] as [number, number][];
+      const cells = polygonToCellsExperimental(
+        [ring],
+        AFFORDANCE_RES,
+        POLYGON_TO_CELLS_FLAGS.containmentOverlapping,
+      );
+      expect(
+        cells.length,
+        `${metres} m square yielded no cells`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("applies the sub-cell fallback to EVERY part of a multipolygon", () => {
+    // The bug this was written against: the fallback tested the shared
+    // accumulator (`cells.size === 0`), which is only ever empty while the
+    // FIRST polygon is being processed. A multipolygon whose second part is
+    // smaller than a cell — a courtyard outbuilding, a detached kiosk in a
+    // mapped complex — got no cells and no fallback, which is precisely the
+    // silent drop the guard exists to prevent.
+    const bigRings = square(120).rings;
+    const tinyFarAway: readonly (readonly { lat: number; lng: number }[])[] = [
+      [
+        { lat: 51.5, lng: 7.5 },
+        { lat: 51.5, lng: 7.500004 },
+        { lat: 51.500004, lng: 7.500004 },
+        { lat: 51.5, lng: 7.5 },
+      ],
+    ];
+
+    const covered = coverCells({
+      kind: "multipolygon",
+      polygons: [bigRings, tinyFarAway],
+    });
+
+    // The tiny second part must contribute its own cell, far from the first.
+    const tinyCell = latLngToCell(51.5, 7.5, AFFORDANCE_RES);
+    expect(covered.map((c) => c.cell)).toContain(tinyCell);
+  });
+
   it("ignores a degenerate ring rather than throwing", () => {
     expect(
       coverCells({ kind: "polygon", rings: [[COLOGNE, COLOGNE]] }),

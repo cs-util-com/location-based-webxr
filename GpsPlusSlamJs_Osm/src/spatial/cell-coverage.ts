@@ -110,6 +110,7 @@ function addPolygon(
     .filter((ring) => ring.length >= 3)
     .map((ring) => ring.map((p) => [p.lat, p.lng] as [number, number]));
 
+  const before = cells.size;
   for (const cell of polygonToCellsExperimental(
     polygon,
     res,
@@ -118,12 +119,22 @@ function addPolygon(
     cells.add(cell);
   }
 
-  // A polygon smaller than one cell can legitimately touch NO cell under
-  // overlapping containment when it falls entirely inside a cell without
-  // crossing its boundary in a way h3 detects. Falling back to the vertices
-  // guarantees a small feature is never invisible — a 2 m kiosk must still veto
-  // the cell it stands in.
-  if (cells.size === 0) {
+  // Belt-and-braces: guarantee a small feature is never invisible — a 2 m kiosk
+  // must still veto the cell it stands in.
+  //
+  // **Measured, this never fires.** `containmentOverlapping` returns at least
+  // one cell for any valid ring, down to a 1 mm square (pinned by test). The
+  // fallback survives because `polygonToCellsExperimental` is an EXPERIMENTAL
+  // upstream API: if its small-polygon behaviour ever changes, this is what
+  // stops the change from silently deleting features, and the pinning test is
+  // what makes the change visible.
+  //
+  // Compared against THIS polygon's contribution (`before`), not the shared
+  // accumulator. `cells` is threaded through every ring of a multipolygon, so a
+  // `cells.size === 0` test could only ever be true while the FIRST part was
+  // being processed — meaning a sub-cell second part would get no fallback,
+  // which is exactly the silent drop the guard exists to prevent.
+  if (cells.size === before) {
     for (const point of outer) addPoint(cells, point, res);
   }
 }
