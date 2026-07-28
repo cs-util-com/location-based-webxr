@@ -33,35 +33,9 @@ import {
 } from 'gps-plus-slam-app-framework/osm-bridge';
 
 import { DemoPipeline } from './demo-pipeline.js';
+import { parseStartPosition } from './start-position.js';
 import { MapView } from './map-view.js';
 import { BuildingView } from './building-view.js';
-
-/** Cologne — where the fixtures and the field tests are. */
-const DEFAULT_START: LatLng = { lat: 50.9413, lng: 6.9583 };
-
-/**
- * Where to start, overridable with `?lat=&lng=`.
- *
- * Useful in its own right — pointing the demo at a place you know is the whole
- * point of it — and it is also what lets the e2e suite put the app exactly on
- * top of the checked-in fixture instead of two kilometres away from it, which
- * is a difference between "0 cells" and a working assertion.
- *
- * Both parameters are required together and both must be finite: half an
- * override would silently mix a URL latitude with a default longitude and land
- * somewhere neither the user nor the test asked for.
- */
-function startPosition(): LatLng {
-  const params = new URLSearchParams(window.location.search);
-  const lat = Number(params.get('lat'));
-  const lng = Number(params.get('lng'));
-  const given = params.has('lat') && params.has('lng');
-  if (!given || !Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return DEFAULT_START;
-  }
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return DEFAULT_START;
-  return { lat, lng };
-}
 
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id);
@@ -117,7 +91,7 @@ async function main(): Promise<void> {
   );
 
   const pipeline = new DemoPipeline({ source, table: loaded.table });
-  const start = startPosition();
+  const start = parseStartPosition(window.location.search);
   const mapView = new MapView({ container: el('map'), centre: start });
   const buildingView = new BuildingView({ container: el('scene') });
 
