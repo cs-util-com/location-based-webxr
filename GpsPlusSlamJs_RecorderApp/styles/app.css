@@ -189,3 +189,15 @@ body {
 .legend-color-fused-path {
   background: #00ffff;
 }
+
+/* --- Range sliders in scrollable panels [BEHAVIORAL] (2026-07-27 feedback) ---
+   The settings panel scrolls vertically and its full-width sliders sit right
+   under the swiping finger. `pan-y` tells the browser that vertical panning
+   belongs to the scroll container, so a downward swipe scrolls (and the slider
+   gets a pointercancel) instead of dragging the thumb along. Horizontal drags
+   are still delivered to the slider. The value itself is protected by
+   src/ui/slider-scroll-guard.ts — CSS cannot undo Blink's jump-to-position
+   write that already happens on pointer-down. */
+input[type='range'] {
+  touch-action: pan-y;
+}

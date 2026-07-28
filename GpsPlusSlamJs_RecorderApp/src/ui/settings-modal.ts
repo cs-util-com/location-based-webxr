@@ -33,6 +33,7 @@ import {
 } from 'gps-plus-slam-app-framework/ar/image-quality';
 import { getBuildInfo } from '../utils/build-info';
 import { showConfirmDialog } from './confirm-dialog';
+import { guardSliderAgainstScroll } from 'gps-plus-slam-app-framework/utils/slider-scroll-guard';
 
 const log = createLogger('SettingsModal');
 
@@ -738,6 +739,11 @@ function bindOptionControls(): void {
       control.input.min = String(min);
       control.input.max = String(max);
       control.input.step = String(step);
+      // Installed BEFORE the binding listener below: at-target listeners run in
+      // registration order, which is what lets the guard stop a scroll-gesture
+      // `input` event before this modal reacts to it (2026-07-27 feedback —
+      // swiping the panel used to edit whatever slider sat under the finger).
+      guardSliderAgainstScroll(control.input);
     }
     boundControls.push(control);
     // Sliders update continuously while dragging; checkboxes/selects on commit.

@@ -21,6 +21,14 @@
         font-family: system-ui, sans-serif;
         overflow: hidden;
       }
+      /* Range sliders in a panel that is swiped past on a phone: `pan-y` hands
+         vertical panning back to the page so a downward swipe scrolls (and the
+         browser cancels the slider gesture) instead of dragging the thumb. The
+         value itself is protected by the framework's slider-scroll-guard —
+         CSS cannot undo Blink's jump-to-position write on pointer-down. */
+      input[type="range"] {
+        touch-action: pan-y;
+      }
       /* The replay / AR scene mounts its canvas here. */
       #app {
         position: fixed;

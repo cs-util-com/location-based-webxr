@@ -249,5 +249,18 @@ describe('html-fixtures', () => {
       const html = extractElementById('status');
       expect(html).toContain('📋');
     });
+
+    it('range inputs should declare touch-action: pan-y for panel scrolling', () => {
+      // Why: user feedback 2026-07-27 — swiping the scrollable settings panel
+      // dragged whatever slider sat under the finger. `pan-y` hands vertical
+      // panning back to the scroll container (and makes the browser cancel the
+      // slider's gesture); src/ui/slider-scroll-guard.ts protects the value
+      // itself. Losing this rule brings the "cannot scroll the panel" half of
+      // the bug straight back.
+      const css = loadAppCss();
+      const rangeRule = css.match(/input\[type='range'\]\s*\{[^}]*?\}/s);
+      expect(rangeRule).not.toBeNull();
+      expect(rangeRule![0]).toMatch(/touch-action:\s*pan-y/);
+    });
   });
 });

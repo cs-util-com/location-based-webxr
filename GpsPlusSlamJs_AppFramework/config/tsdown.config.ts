@@ -139,6 +139,7 @@ const entryFiles = [
   // test-utils/ (advertised in `exports`; consumed by RecorderApp tests)
   'src/test-utils/browser-mocks.ts',
   'src/test-utils/zip-round-trip-helpers.ts',
+  'src/test-utils/pointer-gestures.ts',
 
   // types/
   'src/types/index.ts',
@@ -158,6 +159,11 @@ const entryFiles = [
   // the logger and friends). The `./utils/*` exports wildcard advertises this
   // subpath, so it must be built per-file.
   'src/utils/validate-option-fields.ts',
+  // Touch-gesture guard for range inputs — deep-imported by the recorder's
+  // settings modal and by the demo apps' control panels (NOT via the `/utils`
+  // barrel, which would pull in the logger and friends). The `./utils/*`
+  // exports wildcard advertises this subpath, so it must be built per-file.
+  'src/utils/slider-scroll-guard.ts',
 
   // visualization/
   'src/visualization/index.ts',
