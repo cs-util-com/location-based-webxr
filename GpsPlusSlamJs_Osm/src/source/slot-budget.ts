@@ -146,6 +146,20 @@ export class OverpassSlotBudget {
       this.slots = status.rateLimit;
     }
 
+    // "Zero free and no recovery time" is UNINFORMATIVE, not bad news.
+    //
+    // The parser infers zero from the absence of the `N slots available now.`
+    // line, because that is how Overpass reports exhaustion — but a real
+    // exhausted response always also carries `Slot available after:` lines. A
+    // body with neither is something else: a changed format, a truncated
+    // response, a proxy's idea of helpful. Acting on it would set inUse to the
+    // full allocation with nothing to ever release it and no penalty to expire,
+    // which soft-locks the client permanently. Ignore it and fly on local
+    // accounting, which is the authority anyway.
+    const availabilityIsKnown =
+      status.slotsAvailable > 0 || status.slotsAvailableAtMs.length > 0;
+    if (!availabilityIsKnown) return;
+
     if (status.slotsAvailable < this.available) {
       // Trust the pessimistic view: assume everything the server has not
       // reported free is spent.

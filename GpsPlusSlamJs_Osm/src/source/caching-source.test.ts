@@ -21,6 +21,7 @@ import { describe, it, expect, vi } from "vitest";
 import { latLngToCell } from "h3-js";
 import { CachingSource } from "./caching-source.js";
 import { MemoryBlobStore } from "./memory-blob-store.js";
+import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
 import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
 import { FETCH_RES } from "../spatial/resolutions.js";
 
@@ -48,7 +49,7 @@ class CountingSource implements OsmDataSource {
       ],
       fetchedAt: this.fetchedAt,
       sourceId: this.sourceId,
-      schemaVersion: 1,
+      schemaVersion: OVERPASS_SCHEMA_VERSION,
       skipped: [],
     });
   }
@@ -60,7 +61,13 @@ describe("the cache key — the decision the whole cache rests on", () => {
       new CountingSource(),
       new MemoryBlobStore(),
     );
-    expect(cache.cacheKey(TILE)).toBe(`osm/v1/${TILE}`);
+    // Derived, not restated: hardcoding the version made 8 tests fail the day
+    // OVERPASS_SCHEMA_VERSION was legitimately bumped, which is noise rather
+    // than signal. What matters is the SHAPE — cell id, and a version in it.
+    expect(cache.cacheKey(TILE)).toBe(
+      `osm/v${OVERPASS_SCHEMA_VERSION}/${TILE}`,
+    );
+    expect(cache.cacheKey(TILE)).toContain(TILE);
   });
 
   it("is stable across repeated calls — this is what makes a walking user hit cache", async () => {
@@ -80,14 +87,14 @@ describe("the cache key — the decision the whole cache rests on", () => {
   it("changes with the schema version, so a changed query never reuses old tiles", async () => {
     const store = new MemoryBlobStore();
     const innerV1 = new CountingSource();
-    await new CachingSource(innerV1, store, { schemaVersion: 1 }).fetchTile(
-      TILE,
-    );
+    await new CachingSource(innerV1, store, {
+      schemaVersion: OVERPASS_SCHEMA_VERSION,
+    }).fetchTile(TILE);
 
     const innerV2 = new CountingSource();
-    await new CachingSource(innerV2, store, { schemaVersion: 2 }).fetchTile(
-      TILE,
-    );
+    await new CachingSource(innerV2, store, {
+      schemaVersion: OVERPASS_SCHEMA_VERSION + 1,
+    }).fetchTile(TILE);
 
     expect(innerV1.calls).toBe(1);
     expect(innerV2.calls).toBe(1); // did NOT reuse the v1 entry
@@ -100,7 +107,7 @@ describe("the cache key — the decision the whole cache rests on", () => {
     // under a v2 key after a manual migration.
     const store = new MemoryBlobStore();
     await store.put(
-      "osm/v1/" + TILE,
+      `osm/v${OVERPASS_SCHEMA_VERSION}/` + TILE,
       JSON.stringify({
         tile: TILE,
         features: [],
@@ -219,7 +226,7 @@ describe("a broken cache entry must never poison a tile", () => {
     ["empty string", ""],
   ])("treats %s as a miss and refetches", async (_label, stored) => {
     const store = new MemoryBlobStore();
-    await store.put(`osm/v1/${TILE}`, stored);
+    await store.put(`osm/v${OVERPASS_SCHEMA_VERSION}/${TILE}`, stored);
     const inner = new CountingSource();
 
     const result = await new CachingSource(inner, store).fetchTile(TILE);
@@ -257,8 +264,14 @@ describe("eviction is the host application’s job", () => {
   });
 
   it("does not list entries belonging to another schema version", async () => {
+    // Relative to the current version, not a literal: this test previously
+    // seeded "osm/v2/other" as "some other version" and silently became a
+    // no-op the day OVERPASS_SCHEMA_VERSION was bumped to 2 — at which point it
+    // was asserting that the CURRENT version's entries are hidden, which is the
+    // opposite of the intent.
     const store = new MemoryBlobStore();
-    await store.put("osm/v2/other", "{}");
+    await store.put(`osm/v${OVERPASS_SCHEMA_VERSION + 1}/other`, "{}");
+    await store.put(`osm/v${OVERPASS_SCHEMA_VERSION - 1}/older`, "{}");
     const cache = new CachingSource(new CountingSource(), store);
     await cache.fetchTile(TILE);
 

@@ -14,6 +14,7 @@ export {
   cellToBoundingBox,
   AntimeridianCellError,
   OVERPASS_SCHEMA_VERSION,
+  OVERPASS_SELECT_KEYS,
 } from "./overpass-query.js";
 
 export type { BackoffOptions } from "./backoff.js";

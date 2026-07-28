@@ -20,8 +20,11 @@ import { describe, it, expect, vi } from "vitest";
 import { latLngToCell } from "h3-js";
 import {
   OverpassSource,
+  RateLimitedError,
   DEFAULT_OVERPASS_ENDPOINTS,
 } from "./overpass-source.js";
+import { OverpassSlotBudget } from "./slot-budget.js";
+import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
 import { FETCH_RES } from "../spatial/resolutions.js";
 
 const TILE = latLngToCell(50.9413, 6.9583, FETCH_RES);
@@ -100,7 +103,10 @@ describe("the request itself", () => {
 
     const body = new URLSearchParams(init.body as string).get("data")!;
     expect(body).toContain("[out:json]");
-    expect(body).toContain('nwr[~"."~"."]'); // "has at least one tag"
+    // A UNION of exact-key statements, not a key regex — the regex form was
+    // measured to 504 on every tile size tried (see overpass-query.ts).
+    expect(body).toContain('nwr["highway"];');
+    expect(body).not.toContain('[~"^(');
     expect(body).toContain("out geom;");
     expect(body).toMatch(/\[bbox:[-\d.]+,[-\d.]+,[-\d.]+,[-\d.]+\]/);
   });
@@ -116,7 +122,7 @@ describe("the request itself", () => {
     expect(result.tile).toBe(TILE);
     expect(result.fetchedAt).toBe(1_000_000);
     expect(result.sourceId).toBe("overpass:overpass-api.de");
-    expect(result.schemaVersion).toBe(1);
+    expect(result.schemaVersion).toBe(OVERPASS_SCHEMA_VERSION);
     expect(result.osmBaseTimestamp).toBe("2026-05-06T03:25:00Z");
     expect(result.features).toHaveLength(1);
   });
@@ -378,5 +384,186 @@ describe("AbortSignal support, end to end", () => {
 
     await expect(source.fetchTile(TILE)).rejects.toThrow(/aborted/i);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the slot budget gates dispatch", () => {
+  // Why these tests matter:
+  // This is where "do not trip the rate limit on a phone" is actually enforced.
+  // Everything else in this file is about recovering WELL from a failure; these
+  // are about not making the request at all.
+
+  it("does NOT dispatch when the budget is spent, and says how long to wait", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const budget = new OverpassSlotBudget({ slots: 1, now: () => 1_000_000 });
+    budget.penalise(30_000);
+
+    const { source } = makeSource(fetchImpl, { budget });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow(RateLimitedError);
+    // The assertion that matters: ZERO requests, not "a request that failed".
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(source.stats.requests).toBe(0);
+    expect(source.stats.rateLimited).toBe(1);
+  });
+
+  it("carries the wait on the error, so a caller can schedule a retry", async () => {
+    const budget = new OverpassSlotBudget({ slots: 1, now: () => 1_000_000 });
+    budget.penalise(30_000);
+    const { source } = makeSource(vi.fn(), { budget });
+
+    await expect(source.fetchTile(TILE)).rejects.toMatchObject({
+      name: "RateLimitedError",
+      retryAfterMs: 30_000,
+    });
+  });
+
+  it("releases the slot after success, so the next tile can be fetched", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const budget = new OverpassSlotBudget({ slots: 1 });
+    const { source } = makeSource(fetchImpl, { budget });
+
+    await source.fetchTile(TILE);
+    expect(budget.available).toBe(1);
+    await source.fetchTile(TILE_B);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("releases the slot after FAILURE too — otherwise one bad tile costs the allocation", async () => {
+    // The leak this guards: a slot taken and never returned looks exactly like
+    // a permanent rate limit, and it would compound with every failed tile
+    // until the client stopped fetching entirely.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(errorResponse(400)));
+    const budget = new OverpassSlotBudget({ slots: 1 });
+    const { source } = makeSource(fetchImpl, { budget });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    expect(budget.available).toBe(1);
+  });
+
+  it("penalises the SHARED budget on a 429, not just this request's retry", async () => {
+    // A second tile requested in the same tick must not walk into the same wall
+    // and earn a second strike. The penalty belongs to the client, not to the
+    // request that discovered it.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(errorResponse(429, { "Retry-After": "42" })),
+      );
+    const budget = new OverpassSlotBudget({ slots: 2, now: () => 1_000_000 });
+    const { source } = makeSource(fetchImpl, { budget, maxRetries: 0 });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    expect(budget.msUntilAvailable()).toBe(42_000);
+    await expect(source.fetchTile(TILE_B)).rejects.toThrow(RateLimitedError);
+  });
+
+  it("falls back to a measured default penalty when 429 carries no Retry-After", async () => {
+    // Measured recovery on the public instances is ~30 s. Erring slightly long
+    // costs latency; erring short costs another strike.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(errorResponse(429)));
+    const budget = new OverpassSlotBudget({ slots: 2, now: () => 1_000_000 });
+    const { source } = makeSource(fetchImpl, { budget, maxRetries: 0 });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    expect(budget.msUntilAvailable()).toBeGreaterThanOrEqual(30_000);
+  });
+});
+
+describe("syncBudget", () => {
+  const STATUS_BODY = [
+    "Connected as: 1354464119",
+    "Current time: 2026-07-28T08:40:04Z",
+    "Rate limit: 2",
+    "Currently running queries (pid, space limit, time limit, start time):",
+  ].join("\n");
+
+  it("reads /api/status on the SAME instance it queries", async () => {
+    // Reading one server's budget while querying another's would be worse than
+    // not checking at all, so the URL is derived rather than configured apart.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(new Response(STATUS_BODY)));
+    const { source } = makeSource(fetchImpl, {
+      endpoints: ["https://example.invalid/api/interpreter"],
+    });
+
+    await source.syncBudget();
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://example.invalid/api/status",
+    );
+  });
+
+  it("costs no slot — checking the budget must not consume it", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(new Response(STATUS_BODY)));
+    const budget = new OverpassSlotBudget({ slots: 2 });
+    const { source } = makeSource(fetchImpl, { budget });
+
+    await source.syncBudget();
+    expect(budget.available).toBe(2);
+  });
+
+  it("swallows a failure rather than blocking tile fetches", async () => {
+    // A status endpoint that is down, moved, or has changed shape must not stop
+    // us fetching. It only means we fly on local accounting, which is the
+    // authority anyway.
+    const { source: onReject } = makeSource(
+      vi.fn().mockRejectedValue(new Error("network down")),
+    );
+    await expect(onReject.syncBudget()).resolves.toBeUndefined();
+
+    const { source: onGarbage } = makeSource(
+      vi.fn().mockResolvedValue(new Response("<html>nope</html>")),
+    );
+    await expect(onGarbage.syncBudget()).resolves.toBeUndefined();
+
+    const { source: onError } = makeSource(
+      vi.fn().mockResolvedValue(new Response("nope", { status: 500 })),
+    );
+    await expect(onError.syncBudget()).resolves.toBeUndefined();
+  });
+
+  it("adopts the reported allocation", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response(STATUS_BODY.replace("Rate limit: 2", "Rate limit: 6")),
+        ),
+      );
+    const { source } = makeSource(fetchImpl);
+
+    const status = await source.syncBudget();
+    expect(status?.rateLimit).toBe(6);
+    expect(source.budget.capacity).toBe(6);
+  });
+});
+
+describe("the select-key list is overridable", () => {
+  it("uses a narrowed list when one is supplied", async () => {
+    // For a self-hosted or otherwise unusual instance. Widening is the safe
+    // direction; the option exists so a consumer is not stuck with our list.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source } = makeSource(fetchImpl, {
+      selectKeys: ["building", "highway"],
+    });
+
+    await source.fetchTile(TILE);
+    const init = fetchImpl.mock.calls[0]![1];
+    const body = new URLSearchParams(init.body as string).get("data")!;
+    expect(body).toContain('nwr["building"];');
+    expect(body).not.toContain('nwr["landuse"];');
   });
 });

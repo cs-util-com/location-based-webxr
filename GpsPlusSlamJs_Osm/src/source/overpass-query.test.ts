@@ -18,6 +18,7 @@ import {
   cellToBoundingBox,
   AntimeridianCellError,
   OVERPASS_SCHEMA_VERSION,
+  OVERPASS_SELECT_KEYS,
 } from "./overpass-query.js";
 import { FETCH_RES } from "../spatial/resolutions.js";
 
@@ -89,24 +90,47 @@ describe("cellToBoundingBox", () => {
 describe("buildTileQuery", () => {
   const bbox = { south: 1, west: 2, north: 3, east: 4 };
 
-  it("emits the documented three-line Overpass QL", () => {
-    expect(buildTileQuery(bbox)).toBe(
-      [
-        "[out:json][timeout:60][bbox:1,2,3,4];",
-        'nwr[~"."~"."];',
-        "out geom;",
-      ].join("\n"),
-    );
+  // ==========================================================================
+  // THE MEASUREMENT THIS SECTION ENCODES (2026-07-28, findings doc):
+  //
+  //   res-7 tile, union of 32 exact keys  -> 200 OK, 18.2 s, 28.31 MB
+  //   res-7 tile, REGEX over the same 32  -> 504 after 8 s, empty body
+  //   res-7 tile, regex over 3 keys       -> 200 OK
+  //
+  // `nwr[~"^(k1|k2|...)$"~"."]` makes Overpass evaluate a regex against every
+  // key of every element in the bbox, and the cost grows with the alternation
+  // count. Exact-key statements use the key index instead. The whole reason the
+  // project believed public Overpass was saturated was this one query form.
+  // ==========================================================================
+
+  it("emits a UNION of exact-key statements, not a key regex", () => {
+    const q = buildTileQuery(bbox);
+    expect(q).toContain('nwr["highway"];');
+    expect(q).not.toMatch(/\[~"\^\(/); // the regex form that 504s
   });
 
-  it("selects nodes, ways and relations in one statement", () => {
+  it("wraps the statements in one union block with ONE trailing out", () => {
+    // A single trailing `out` is what makes the union deduplicate: the union is
+    // a set, so each element is returned once. The measurement that recorded
+    // "union duplicates elements" was running the statements as separate
+    // queries; measured properly, 21,847 elements came back and all 21,847 were
+    // unique.
+    const q = buildTileQuery(bbox);
+    expect(q).toMatch(/^\(/m);
+    expect(q).toMatch(/\);$/m);
+    expect(q.match(/^out /gm)).toHaveLength(1);
+  });
+
+  it("covers every key in the pinned list, once each", () => {
+    const q = buildTileQuery(bbox);
+    for (const key of OVERPASS_SELECT_KEYS) {
+      expect(q).toContain(`nwr["${key}"];`);
+    }
+    expect(q.match(/nwr\[/g)).toHaveLength(OVERPASS_SELECT_KEYS.length);
+  });
+
+  it("selects nodes, ways and relations in each statement", () => {
     expect(buildTileQuery(bbox)).toContain("nwr");
-  });
-
-  it("asks for at least one tag — untagged nodes carry no scoring information", () => {
-    // Their coordinates arrive anyway, inline, via `out geom` on the parent way
-    // or relation, so dropping them server-side is free.
-    expect(buildTileQuery(bbox)).toContain('[~"."~"."]');
   });
 
   it("uses `out geom`, so no node-reference resolution is ever needed", () => {
@@ -115,8 +139,67 @@ describe("buildTileQuery", () => {
     expect(buildTileQuery(bbox)).toContain("out geom;");
   });
 
+  it("defaults to a generous timeout, because Overpass only charges time used", () => {
+    // `timeout:` bounds EXECUTION, not queue wait, and is only charged for what
+    // is actually consumed — so a high ceiling costs nothing on a fast query
+    // and avoids killing a slow one in a denser city. The old default of 60 had
+    // never completed a full-size fetch.
+    expect(buildTileQuery(bbox)).toContain("[timeout:180]");
+  });
+
   it("honours a custom timeout", () => {
-    expect(buildTileQuery(bbox, 180)).toContain("[timeout:180]");
+    expect(buildTileQuery(bbox, 90)).toContain("[timeout:90]");
+  });
+
+  it("accepts an overridden key list, for a self-hosted or narrowed instance", () => {
+    const q = buildTileQuery(bbox, 180, ["building", "highway"]);
+    expect(q).toContain('nwr["building"];');
+    expect(q).toContain('nwr["highway"];');
+    expect(q).not.toContain('nwr["landuse"];');
+  });
+
+  it("rejects an empty key list rather than fetching the whole planet's tags", () => {
+    // An empty union would emit `();` which Overpass rejects — but worse, a
+    // well-meaning "fall back to unfiltered" would restore exactly the query
+    // that 504s. Fail loudly instead.
+    expect(() => buildTileQuery(bbox, 180, [])).toThrow(/at least one key/i);
+  });
+
+  it("rejects a key containing a quote, which would break out of the statement", () => {
+    // The key list is normally a checked-in constant, but it is overridable, so
+    // it is an injection surface. An escaped quote could append arbitrary
+    // Overpass QL — including an `out` that dumps far more than intended.
+    expect(() => buildTileQuery(bbox, 180, ['building"];out meta;//'])).toThrow(
+      /invalid/i,
+    );
+  });
+});
+
+describe("OVERPASS_SELECT_KEYS", () => {
+  it("is the 32-key list proven to fetch real data", () => {
+    // Narrower lists were printed in the plan at various points (23 and 24
+    // keys). Every key dropped is scoring signal that can never arrive, and the
+    // symptom is silent: an element that never arrives scores the
+    // multiplicative identity, which reads as "nothing is mapped here".
+    expect(OVERPASS_SELECT_KEYS).toHaveLength(32);
+  });
+
+  it("includes historic, which the C# scoring oracle depends on", () => {
+    // "a historic way contributing 3" is one of the pinned oracle values, and
+    // the 23-key list that was measured first had dropped it.
+    expect(OVERPASS_SELECT_KEYS).toContain("historic");
+  });
+
+  it("has no duplicates", () => {
+    expect(new Set(OVERPASS_SELECT_KEYS).size).toBe(
+      OVERPASS_SELECT_KEYS.length,
+    );
+  });
+
+  it("contains only characters that are safe unquoted in Overpass QL", () => {
+    for (const key of OVERPASS_SELECT_KEYS) {
+      expect(key).toMatch(/^[a-z][a-z0-9_:]*$/);
+    }
   });
 });
 
@@ -124,5 +207,12 @@ describe("schema version", () => {
   it("is a positive integer, because it is part of every cache key", () => {
     expect(Number.isInteger(OVERPASS_SCHEMA_VERSION)).toBe(true);
     expect(OVERPASS_SCHEMA_VERSION).toBeGreaterThan(0);
+  });
+
+  it("is at least 2 — the res-8→7 and regex→union changes both invalidate v1", () => {
+    // Either change alone makes a v1 cache entry a lie: a res-8 tile is not a
+    // res-7 tile, and a regex-fetched tile holds a different element set from a
+    // union-fetched one. This constant exists for exactly this moment.
+    expect(OVERPASS_SCHEMA_VERSION).toBeGreaterThanOrEqual(2);
   });
 });

@@ -22,14 +22,19 @@ import {
   buildTileQuery,
   cellToBoundingBox,
   OVERPASS_SCHEMA_VERSION,
+  OVERPASS_SELECT_KEYS,
 } from "./overpass-query.js";
 import type { BackoffOptions } from "./backoff.js";
 import {
   RETRYABLE_STATUSES,
   abortError,
   nextDelayMs,
+  parseRetryAfterMs,
   sleep,
 } from "./backoff.js";
+import type { OverpassStatus } from "./overpass-status.js";
+import { parseOverpassStatus } from "./overpass-status.js";
+import { OverpassSlotBudget } from "./slot-budget.js";
 
 /**
  * Default endpoint pool.
@@ -62,6 +67,19 @@ export interface OverpassSourceOptions {
   readonly userAgent: string;
   readonly endpoints?: readonly string[];
   readonly fetchImpl?: typeof fetch;
+  /**
+   * Override the OSM keys selected on (default {@link OVERPASS_SELECT_KEYS}).
+   *
+   * For a self-hosted or otherwise generous instance that can afford a wider
+   * filter. **Only widen.** Every key removed is scoring signal that can never
+   * arrive, and its absence reads as "nothing is mapped here".
+   */
+  readonly selectKeys?: readonly string[];
+  /**
+   * Shared slot budget. Supply one when several sources talk to the same
+   * instance, since the allocation is per client IP and not per object.
+   */
+  readonly budget?: OverpassSlotBudget;
   /** Max concurrent in-flight requests. The plan caps this at 2. */
   readonly maxConcurrent?: number;
   /** Retries after the first attempt. */
@@ -73,8 +91,24 @@ export interface OverpassSourceOptions {
   readonly sleepImpl?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
+/** Matches the measured `Rate limit: 2` on the public instances. */
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_MAX_RETRIES = 3;
+
+/**
+ * Default `[timeout:]`. See `overpass-query.ts` — high on purpose, because
+ * Overpass charges only the execution time actually used.
+ */
+const DEFAULT_TIMEOUT_SECONDS = 180;
+
+/**
+ * Penalty applied on a 429 that carries no `Retry-After`.
+ *
+ * Measured recovery on the public instances is ~30 s; erring slightly long
+ * costs a little latency, erring short costs another 429 and, repeated, an IP
+ * block.
+ */
+const DEFAULT_RATE_LIMIT_PENALTY_MS = 35_000;
 
 /**
  * A failure that retrying cannot fix — a 400 because our query is malformed, a
@@ -90,6 +124,28 @@ export class PermanentOverpassError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PermanentOverpassError";
+  }
+}
+
+/**
+ * The client's own slot allocation is spent — no request was dispatched.
+ *
+ * Distinct from every other failure because the correct response is different:
+ * nothing is wrong, the data will be fetchable shortly, and the caller should
+ * serve whatever it already has. `CachingSource` turns this into "serve cache,
+ * queue the fetch"; the explicit prefetch API surfaces it, because "download
+ * this area for offline use" must be able to say it cannot right now.
+ *
+ * Measured recovery on the public instances is ~30 s, not hours.
+ */
+export class RateLimitedError extends Error {
+  constructor(
+    message: string,
+    /** Milliseconds until a slot is expected to be free. May be 0 if unknown. */
+    readonly retryAfterMs: number,
+  ) {
+    super(message);
+    this.name = "RateLimitedError";
   }
 }
 
@@ -126,20 +182,66 @@ export class OverpassSource implements OsmDataSource {
   private readonly queue: (() => void)[] = [];
 
   /** Observable counters, for the demo app's "how many queries did I make?". */
-  readonly stats = { requests: 0, retries: 0, deduplicated: 0 };
+  readonly stats = { requests: 0, retries: 0, deduplicated: 0, rateLimited: 0 };
+
+  /**
+   * The client's own slot accounting.
+   *
+   * Public so a consumer can read `available` / `msUntilAvailable()` for a UI,
+   * and so several sources against one instance can share an allocation — the
+   * limit is per client IP, not per object.
+   */
+  readonly budget: OverpassSlotBudget;
+
+  private readonly selectKeys: readonly string[];
 
   constructor(options: OverpassSourceOptions) {
-    const endpoints = validateOptions(options);
+    const resolved = { ...defaultOptions(), ...stripUndefined(options) };
+    validateOptions(options);
+
+    // Straight from `options`: it is the one REQUIRED field, so it has no
+    // default to merge over and the merged type would make it optional.
     this.userAgent = options.userAgent;
-    this.endpoints = endpoints;
-    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
-    this.maxConcurrent = options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
-    this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
-    this.timeoutSeconds = options.timeoutSeconds ?? 60;
-    this.backoff = options.backoff ?? {};
-    this.random = options.random ?? Math.random;
-    this.now = options.now ?? Date.now;
-    this.sleepImpl = options.sleepImpl ?? sleep;
+    this.endpoints = resolved.endpoints;
+    this.fetchImpl = resolved.fetchImpl;
+    this.maxConcurrent = resolved.maxConcurrent;
+    this.maxRetries = resolved.maxRetries;
+    this.timeoutSeconds = resolved.timeoutSeconds;
+    this.backoff = resolved.backoff;
+    this.random = resolved.random;
+    this.now = resolved.now;
+    this.sleepImpl = resolved.sleepImpl;
+    this.selectKeys = resolved.selectKeys;
+    this.budget =
+      resolved.budget ?? new OverpassSlotBudget({ now: () => this.now() });
+  }
+
+  /**
+   * Re-syncs the slot budget from `/api/status`.
+   *
+   * Costs no slot. Worth calling on start-up and after a 429, but **not** as a
+   * pre-flight check before each request: measured 2026-07-28, `/api/status`
+   * lags actual consumption badly enough that it reported a full allocation
+   * free while concurrent queries were being 429'd. The local budget is the
+   * authority; this only corrects it.
+   *
+   * Failures are swallowed: a status endpoint that is down or has changed shape
+   * must not stop us fetching tiles, it only means we fly on local accounting.
+   */
+  async syncBudget(signal?: AbortSignal): Promise<OverpassStatus | undefined> {
+    const endpoint = this.pickEndpoint(0);
+    try {
+      const response = await this.fetchImpl(statusUrlFor(endpoint), {
+        headers: { "User-Agent": this.userAgent },
+        ...(signal !== undefined ? { signal } : {}),
+      });
+      if (!response.ok) return undefined;
+      const status = parseOverpassStatus(await response.text());
+      this.budget.sync(status);
+      return status;
+    } catch {
+      return undefined;
+    }
   }
 
   fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
@@ -161,7 +263,32 @@ export class OverpassSource implements OsmDataSource {
     tile: string,
     signal?: AbortSignal,
   ): Promise<OsmTileResult> {
-    const query = buildTileQuery(cellToBoundingBox(tile), this.timeoutSeconds);
+    // Take a slot BEFORE building anything. Refusing here is the whole point of
+    // the budget: a request not sent cannot be rate-limited, and the caller is
+    // far better placed than we are to decide between serving cache and waiting.
+    if (!this.budget.tryAcquire()) {
+      this.stats.rateLimited++;
+      throw new RateLimitedError(
+        `Overpass slot budget exhausted for tile ${tile}`,
+        this.budget.msUntilAvailable(),
+      );
+    }
+    try {
+      return await this.fetchTileWithSlot(tile, signal);
+    } finally {
+      this.budget.release();
+    }
+  }
+
+  private async fetchTileWithSlot(
+    tile: string,
+    signal?: AbortSignal,
+  ): Promise<OsmTileResult> {
+    const query = buildTileQuery(
+      cellToBoundingBox(tile),
+      this.timeoutSeconds,
+      this.selectKeys,
+    );
 
     let lastError: unknown;
     // attempt 0 is the initial try; 1..maxRetries are retries.
@@ -177,19 +304,7 @@ export class OverpassSource implements OsmDataSource {
       this.stats.requests++;
 
       try {
-        const response = await this.fetchImpl(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Accept: "application/json",
-            // OSM convention: identify the application. Some instances reject
-            // requests without it outright.
-            "User-Agent": this.userAgent,
-            Referer: this.userAgent,
-          },
-          body: new URLSearchParams({ data: query }).toString(),
-          ...(signal !== undefined ? { signal } : {}),
-        });
+        const response = await this.dispatch(endpoint, query, signal);
 
         if (response.ok) {
           return await this.toResult(tile, endpoint, response);
@@ -200,6 +315,7 @@ export class OverpassSource implements OsmDataSource {
             `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
           );
         }
+        this.noteRateLimit(response);
         lastError = new Error(
           `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
         );
@@ -223,6 +339,44 @@ export class OverpassSource implements OsmDataSource {
     throw new Error(
       `Overpass fetch failed for tile ${tile} after ${this.maxRetries + 1} attempt(s): ${describe(lastError)}`,
     );
+  }
+
+  private dispatch(
+    endpoint: string,
+    query: string,
+    signal: AbortSignal | undefined,
+  ): Promise<Response> {
+    return this.fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        // OSM convention: identify the application. Some instances reject
+        // requests without it outright.
+        "User-Agent": this.userAgent,
+        Referer: this.userAgent,
+      },
+      body: new URLSearchParams({ data: query }).toString(),
+      ...(signal !== undefined ? { signal } : {}),
+    });
+  }
+
+  /**
+   * Feeds a 429 into the shared budget.
+   *
+   * The server's own recovery time beats our backoff curve, and it must apply
+   * to EVERY subsequent request rather than only to this one's retry —
+   * otherwise a second tile fetched in the same tick walks straight into the
+   * same wall and earns a second strike.
+   */
+  private noteRateLimit(response: Response): void {
+    if (response.status !== 429) return;
+    const retryAfterMs = parseRetryAfterMs(
+      response.headers.get("Retry-After"),
+      this.now(),
+    );
+    this.budget.penalise(retryAfterMs ?? DEFAULT_RATE_LIMIT_PENALTY_MS);
+    this.stats.rateLimited++;
   }
 
   private async waitBeforeRetry(
@@ -289,7 +443,7 @@ export class OverpassSource implements OsmDataSource {
  * consumer gets wrong once and then never again — but the first time, an
  * anonymous client can get an IP range blocked from a shared public service.
  */
-function validateOptions(options: OverpassSourceOptions): readonly string[] {
+function validateOptions(options: OverpassSourceOptions): void {
   if (
     typeof options.userAgent !== "string" ||
     options.userAgent.trim() === ""
@@ -298,11 +452,54 @@ function validateOptions(options: OverpassSourceOptions): readonly string[] {
       "OverpassSource requires a non-empty `userAgent` identifying your application (OSM convention).",
     );
   }
-  const endpoints = options.endpoints ?? DEFAULT_OVERPASS_ENDPOINTS;
-  if (endpoints.length === 0) {
+  if (options.endpoints !== undefined && options.endpoints.length === 0) {
     throw new Error("OverpassSource requires at least one endpoint.");
   }
-  return endpoints;
+}
+
+/**
+ * Every default in one place, so the constructor is an assignment list rather
+ * than a wall of `??` — which is both easier to read and easier to keep in step
+ * with the sidecar's documented defaults.
+ */
+function defaultOptions() {
+  return {
+    endpoints: DEFAULT_OVERPASS_ENDPOINTS,
+    fetchImpl: globalThis.fetch.bind(globalThis),
+    maxConcurrent: DEFAULT_MAX_CONCURRENT,
+    maxRetries: DEFAULT_MAX_RETRIES,
+    timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+    backoff: {} as BackoffOptions,
+    random: Math.random,
+    now: Date.now,
+    sleepImpl: sleep,
+    selectKeys: OVERPASS_SELECT_KEYS,
+    budget: undefined as OverpassSlotBudget | undefined,
+  };
+}
+
+/**
+ * Drops explicitly-`undefined` keys before spreading over the defaults.
+ *
+ * Without this, `{ maxRetries: undefined }` — which is exactly what an options
+ * object built from optional config produces — would overwrite the default with
+ * `undefined` and turn a retry count into `NaN` comparisons.
+ */
+function stripUndefined<T extends object>(source: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(source).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
+/**
+ * `.../api/interpreter` → `.../api/status` on the same instance.
+ *
+ * Derived rather than configured separately, so a consumer pointing at a
+ * self-hosted instance cannot end up reading one server's budget while querying
+ * another's — which would be worse than not checking at all.
+ */
+function statusUrlFor(endpoint: string): string {
+  return endpoint.replace(/\/api\/interpreter\/?$/, "/api/status");
 }
 
 function hostOf(endpoint: string): string {

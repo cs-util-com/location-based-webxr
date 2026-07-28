@@ -178,6 +178,34 @@ describe("re-syncing from /api/status", () => {
     expect(budget.msUntilAvailable()).toBe(25_000);
   });
 
+  it("IGNORES a status that reports neither free slots nor a recovery time", () => {
+    // The soft-lock this prevents, found by a test that was trying to assert
+    // something else entirely:
+    //
+    // The parser infers "0 free" from the ABSENCE of the availability line,
+    // because that is how Overpass reports exhaustion. But a genuinely
+    // exhausted response always ALSO carries "Slot available after:" lines. A
+    // body with neither — a changed format, a truncated response, a proxy being
+    // helpful — is uninformative, not bad news. Acting on it sets inUse to the
+    // full allocation, and then nothing ever releases it (we never acquired
+    // anything) and no penalty ever expires (none was set). The client stops
+    // fetching. Permanently. Looking exactly like a rate limit that never lifts.
+    const budget = new OverpassSlotBudget({ slots: 2 });
+    budget.sync(
+      parseOverpassStatus(
+        [
+          "Connected as: 1",
+          "Current time: 2026-07-28T08:40:04Z",
+          "Rate limit: 2",
+          "Currently running queries (pid, space limit, time limit, start time):",
+        ].join("\n"),
+      ),
+    );
+
+    expect(budget.available).toBe(2);
+    expect(budget.tryAcquire()).toBe(true);
+  });
+
   it("treats an unlimited instance as unlimited", () => {
     // Rate limit: 0 must not read as "zero slots" — see the parser tests.
     const budget = new OverpassSlotBudget({ slots: 2 });
