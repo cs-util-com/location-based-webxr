@@ -35,6 +35,11 @@ function toGeoJsonKind(geometry: OsmGeometry): string {
       return "Point";
     case "linestring":
       return "LineString";
+    case "multilinestring":
+      // toGeometry never produces this - only clipping does - so it cannot
+      // appear in a differential run against osmtogeojson. Handled anyway,
+      // because the exhaustive switch is what made adding the kind safe.
+      return "MultiLineString";
     case "polygon":
       return "Polygon";
     case "multipolygon":

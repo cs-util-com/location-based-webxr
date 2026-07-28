@@ -54,6 +54,9 @@ export function* positionsOf(geometry: OsmGeometry): Generator<LatLng> {
     case "linestring":
       yield* geometry.positions;
       return;
+    case "multilinestring":
+      for (const line of geometry.lines) yield* line;
+      return;
     case "polygon":
       for (const ring of geometry.rings) yield* ring;
       return;
@@ -103,12 +106,11 @@ export function clipToBbox(
     case "point":
       return containsPoint(bbox, geometry.position) ? geometry : undefined;
 
-    case "linestring": {
-      const positions = clipLine(geometry.positions, bbox);
-      return positions.length === 0
-        ? undefined
-        : { kind: "linestring", positions };
-    }
+    case "linestring":
+      return fromRuns(clipLine(geometry.positions, bbox));
+
+    case "multilinestring":
+      return fromRuns(geometry.lines.flatMap((line) => clipLine(line, bbox)));
 
     case "polygon": {
       const rings = clipRings(geometry.rings, bbox);
@@ -155,19 +157,51 @@ function containsPoint(bbox: Bbox, p: LatLng): boolean {
  * cells outside the working set, which are filtered downstream anyway;
  * under-keeping loses road. The supercover rasteriser then fills the crossing.
  */
-function clipLine(positions: readonly LatLng[], bbox: Bbox): LatLng[] {
+function clipLine(positions: readonly LatLng[], bbox: Bbox): LatLng[][] {
   if (positions.length === 1) {
-    return containsPoint(bbox, positions[0]!) ? [positions[0]!] : [];
+    return containsPoint(bbox, positions[0]!) ? [[positions[0]!]] : [];
   }
 
-  const keep = new Set<number>();
+  // CONTIGUOUS RUNS, not a flattened index set. Keeping whole segments
+  // over-keeps a little — an extra vertex per touching segment, whose cells lie
+  // outside the working set and are filtered downstream — and that is the safe
+  // kind of imprecision this function trades on.
+  //
+  // Flattening is a different thing. A way that crosses the box, wanders off
+  // and comes back keeps indices {0,1,2, 5,6}; joined into one line that
+  // contains the chord 2→5, a segment the way never had, running straight
+  // across the box. `addLineString` supercovers every consecutive pair, so the
+  // chord becomes cells INSIDE the working set — where, unlike the over-kept
+  // ones, nothing filters them. The feature then scores ground it never
+  // crossed, and the result is indistinguishable from real data.
+  const runs: LatLng[][] = [];
+  let current: LatLng[] = [];
   for (let i = 0; i + 1 < positions.length; i++) {
     if (segmentTouchesBbox(positions[i]!, positions[i + 1]!, bbox)) {
-      keep.add(i);
-      keep.add(i + 1);
+      // Start a new run whenever the previous segment was rejected, so a gap in
+      // the way is a gap in the output.
+      if (current.length === 0) current.push(positions[i]!);
+      current.push(positions[i + 1]!);
+    } else if (current.length > 0) {
+      runs.push(current);
+      current = [];
     }
   }
-  return [...keep].sort((a, b) => a - b).map((i) => positions[i]!);
+  if (current.length > 0) runs.push(current);
+  return runs;
+}
+
+/**
+ * Runs to a geometry: nothing, one linestring, or a multilinestring.
+ *
+ * Collapsing a single run back to a plain `linestring` keeps the common case —
+ * a way that crosses the area once — exactly as it was, so nothing downstream
+ * has to care about the new kind unless the way genuinely came back.
+ */
+function fromRuns(runs: readonly LatLng[][]): OsmGeometry | undefined {
+  if (runs.length === 0) return undefined;
+  if (runs.length === 1) return { kind: "linestring", positions: runs[0]! };
+  return { kind: "multilinestring", lines: runs };
 }
 
 /**

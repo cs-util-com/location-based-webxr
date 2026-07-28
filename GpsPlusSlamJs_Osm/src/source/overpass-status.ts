@@ -19,9 +19,14 @@
 export class OverpassStatusParseError extends Error {
   constructor(
     message: string,
-    readonly body: string,
+    readonly body: unknown,
   ) {
-    super(`${message} (body: ${JSON.stringify(body.slice(0, 200))})`);
+    // Coerced rather than sliced directly. Line 77 explicitly anticipates a
+    // non-string body (a proxy returning JSON, a fetch mock handing back an
+    // object), and calling .slice on it here would throw a TypeError from
+    // INSIDE the error that exists to report the problem - turning a
+    // diagnosable parse failure into a confusing crash.
+    super(`${message} (body: ${JSON.stringify(String(body).slice(0, 200))})`);
     this.name = "OverpassStatusParseError";
   }
 }

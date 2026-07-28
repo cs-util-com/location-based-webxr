@@ -64,6 +64,13 @@ export function coverCells(
     case "linestring":
       addLineString(cells, geometry.positions, resolution);
       break;
+    case "multilinestring":
+      // Each run is covered SEPARATELY and the results unioned. Covering them
+      // as one sequence would supercover the gap between runs, which is the
+      // fabricated coverage `clip.ts` splits the runs to avoid in the first
+      // place — the bug would simply move one module downstream.
+      for (const line of geometry.lines) addLineString(cells, line, resolution);
+      break;
     case "polygon":
       addPolygon(cells, geometry.rings, resolution);
       break;

@@ -25,6 +25,8 @@ import {
 } from "./clip.js";
 import { coverCells } from "./cell-coverage.js";
 import type { OsmGeometry } from "../model/osm-geometry.js";
+import type { LatLng } from "../model/osm-feature.js";
+import type { Bbox } from "./clip.js";
 
 const BOX = { south: 50.0, west: 6.0, north: 51.0, east: 7.0 };
 
@@ -391,5 +393,86 @@ describe("bbox helpers", () => {
         polygons: [[[{ lat: 1, lng: 2 }]], [[{ lat: 3, lng: 4 }]]],
       }),
     ]).toHaveLength(2);
+  });
+});
+
+describe("a way that leaves the box and comes back", () => {
+  /**
+   * WHY THIS TEST MATTERS — it pins the difference between "coarse" and
+   * "fabricated".
+   *
+   * `clipLine` keeps whole segments, which deliberately over-keeps a little:
+   * the extra vertices produce cells just outside the working set, and those
+   * are filtered downstream. That is the documented, safe kind of imprecision.
+   *
+   * Flattening the kept vertices into ONE linestring is a different thing
+   * entirely. A ring road that exits the box east, loops away north, and
+   * re-enters west keeps indices {0,1,3,4}; joined into one line that is
+   * `[p0,p1,p3,p4]`, containing the chord `p1→p3` — a segment the way never
+   * had, running straight across the middle of the box. `addLineString`
+   * supercovers every consecutive pair, so that chord becomes cells INSIDE the
+   * working set, where nothing filters them. The feature then vetoes ground it
+   * never crossed, which is indistinguishable from real data.
+   */
+  const box: Bbox = { south: 50.0, west: 6.0, north: 51.0, east: 7.0 };
+
+  /**
+   * Crosses the box, loops away north where NO segment touches it, and comes
+   * back in. Every intermediate segment is trivially rejected by
+   * Cohen-Sutherland (both endpoints share an outside region), so the kept
+   * index set has a hole in it: {0,1,2, 5,6}.
+   *
+   * Getting this fixture right is the whole test. A first attempt ended outside
+   * the box, so the last segment was rejected too, the kept set stayed
+   * contiguous at {0,1,2}, and the assertion passed against the bug.
+   */
+  const detour: LatLng[] = [
+    { lat: 50.5, lng: 5.5 }, // 0 outside, west
+    { lat: 50.5, lng: 6.5 }, // 1 INSIDE
+    { lat: 50.5, lng: 7.5 }, // 2 outside, east
+    { lat: 52.0, lng: 7.5 }, // 3 north-east, seg 2-3 shares EAST
+    { lat: 52.0, lng: 5.5 }, // 4 north-west, seg 3-4 shares NORTH
+    { lat: 50.5, lng: 5.5 }, // 5 outside west, seg 4-5 shares WEST
+    { lat: 50.5, lng: 6.5 }, // 6 INSIDE again — seg 5-6 touches
+  ];
+
+  it("does not invent a segment between the parts it kept", () => {
+    const clipped = clipToBbox({ kind: "linestring", positions: detour }, box);
+    expect(clipped).toBeDefined();
+
+    // Whatever shape the result takes, no PART of it may contain two positions
+    // that were not adjacent in the original way.
+    const parts =
+      clipped?.kind === "linestring"
+        ? [clipped.positions]
+        : clipped?.kind === "multilinestring"
+          ? clipped.lines
+          : [];
+    expect(parts.length).toBeGreaterThan(0);
+
+    const indexOf = (p: LatLng) =>
+      detour.findIndex((q) => q.lat === p.lat && q.lng === p.lng);
+    for (const part of parts) {
+      for (let i = 0; i + 1 < part.length; i++) {
+        const a = indexOf(part[i]!);
+        const b = indexOf(part[i + 1]!);
+        // Consecutive in the clipped part must mean consecutive in the way.
+        expect(Math.abs(b - a)).toBe(1);
+      }
+    }
+  });
+
+  it("keeps both crossings rather than dropping one", () => {
+    // The over-keeping contract still holds: both real traversals survive.
+    const clipped = clipToBbox({ kind: "linestring", positions: detour }, box);
+    const parts =
+      clipped?.kind === "linestring"
+        ? [clipped.positions]
+        : clipped?.kind === "multilinestring"
+          ? clipped.lines
+          : [];
+    const kept = parts.flat();
+    expect(kept).toContainEqual({ lat: 50.5, lng: 6.5 });
+    expect(kept.length).toBeGreaterThanOrEqual(3);
   });
 });

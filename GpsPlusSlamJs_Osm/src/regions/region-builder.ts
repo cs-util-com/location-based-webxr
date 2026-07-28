@@ -59,6 +59,13 @@ export function buildRegion(
   category: string,
   scoresByCell: ReadonlyMap<string, CellScore>,
 ): Region {
+  // An empty component is not a small region, it is a caller error: it would
+  // produce id "", minScore Infinity and maxScore -Infinity, all of which look
+  // like data downstream. connectedComponents never emits one (minSize >= 1),
+  // so this is a public-boundary guard rather than a reachable path.
+  if (component.length === 0) {
+    throw new RangeError("A region component must contain at least one cell");
+  }
   const cells = [...component].sort();
   const scores = cells.map(
     (cell) => scoresByCell.get(cell)?.scores[category] ?? 1,

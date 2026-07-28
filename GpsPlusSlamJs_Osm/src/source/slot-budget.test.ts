@@ -282,3 +282,56 @@ describe("a real 429 outranks a claim of 'no limit'", () => {
     expect(budget.tryAcquire()).toBe(false);
   });
 });
+
+describe("acquisitions are counted even while unlimited", () => {
+  /**
+   * WHY THIS MATTERS, and it is not bookkeeping tidiness.
+   *
+   * `tryAcquire` used to return `true` WITHOUT incrementing `inUse` whenever
+   * the instance claimed no limit. If a `sync` then reports a real allocation
+   * while those requests are still in flight, the client resumes from an
+   * `inUse` of zero and happily dispatches a full allocation on top of the
+   * requests it already has open — exceeding the limit it just learned about.
+   *
+   * That is the one direction of error this whole class exists to prevent: it
+   * is deliberately local and pessimistic precisely because `/api/status` lags
+   * actual consumption.
+   */
+  it("does not forget in-flight requests when a real limit appears", () => {
+    const budget = new OverpassSlotBudget({ now: () => 0 });
+    const unlimited = {
+      clientId: "x",
+      serverTimeMs: 0,
+      rateLimit: 0,
+      unlimited: true,
+      slotsAvailable: 0,
+      slotsAvailableAtMs: [],
+      runningQueries: 0,
+    };
+    budget.sync(unlimited);
+
+    // Two requests dispatched and still open.
+    expect(budget.tryAcquire()).toBe(true);
+    expect(budget.tryAcquire()).toBe(true);
+
+    // The instance now reports a real two-slot allocation.
+    budget.sync({
+      ...unlimited,
+      rateLimit: 2,
+      unlimited: false,
+      slotsAvailable: 2,
+    });
+
+    // Both requests are still in flight, so nothing is free. Before the fix
+    // this read 2 and the client would have dispatched two more.
+    expect(budget.available).toBe(0);
+  });
+
+  it("frees the slots again as those requests complete", () => {
+    const budget = new OverpassSlotBudget({ now: () => 0 });
+    expect(budget.tryAcquire()).toBe(true);
+    expect(budget.available).toBe(1);
+    budget.release();
+    expect(budget.available).toBe(2);
+  });
+});

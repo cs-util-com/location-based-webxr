@@ -60,7 +60,13 @@ export default defineConfig(
       "vitest/expect-expect": [
         "error",
         {
-          assertFunctionNames: ["expect", "expectTypeOf"],
+          // `expect*` covers local assertion helpers such as
+          // `expectSameScore`, which wraps a relative-tolerance comparison so
+          // the reason for NOT using `toBe` lives in one documented place
+          // rather than being restated at every call site. Without this the
+          // rule reads those tests as assertion-free — which is the opposite
+          // of true, and would push the helper back inline.
+          assertFunctionNames: ["expect", "expectTypeOf", "expect*"],
         },
       ],
     },

@@ -268,3 +268,22 @@ describe("defensive parsing — malformed input is rejected, never guessed", () 
     expect(s.slotsAvailable).toBe(2);
   });
 });
+
+describe("a non-string body does not crash the error that reports it", () => {
+  it("coerces instead of calling .slice on an object", () => {
+    // `parseOverpassStatus` explicitly anticipates a non-string body — a proxy
+    // returning JSON, a fetch mock handing back a parsed object. The error
+    // constructor then called `body.slice(0, 200)` on it, so the guard threw a
+    // TypeError from inside the error that exists to explain the problem,
+    // turning a diagnosable parse failure into a confusing crash.
+    expect(() => parseOverpassStatus({ rate: 2 } as unknown as string)).toThrow(
+      OverpassStatusParseError,
+    );
+    expect(() => parseOverpassStatus(42 as unknown as string)).toThrow(
+      OverpassStatusParseError,
+    );
+    expect(() => parseOverpassStatus(undefined as unknown as string)).toThrow(
+      OverpassStatusParseError,
+    );
+  });
+});

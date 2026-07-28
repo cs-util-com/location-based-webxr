@@ -91,7 +91,14 @@ export class OverpassSlotBudget {
     // NOT short-circuited on `isUnlimited`: a penalty from a real 429 must
     // still block, even on an instance claiming no limit. See `available`.
     if (this.available <= 0) return false;
-    if (this.isUnlimited) return true;
+    // Counted SYMMETRICALLY, including while unlimited. Callers pair every
+    // `true` with a `release()` in a `finally`, so skipping the increment here
+    // let those releases drive `inUse` to 0 against acquisitions that were
+    // never counted. A later `sync` reporting a real `Rate limit: N` would then
+    // resume from an understated `inUse` and could exceed the allocation until
+    // the next pessimistic snapshot — the one direction of error this class
+    // exists to prevent. `available` and `capacity` already ignore `inUse`
+    // while unlimited, so counting costs nothing.
     this.inUse++;
     return true;
   }

@@ -349,6 +349,15 @@ export class OverpassSource implements OsmDataSource {
       }
       this.stats.requests++;
 
+      // Whether THIS dispatch already produced a recorded attempt. The catch
+      // below must not add a second record for the same request: a 200 whose
+      // body is an HTML error page is recorded here with its status, then
+      // `toResult`'s .json() throws and lands in the catch. Recording again
+      // would make attempts.length exceed stats.requests and overstate quota
+      // use — and an instance answering 200 with an error page is exactly the
+      // case this log exists to diagnose.
+      let recorded = false;
+
       try {
         const response = await this.dispatch(endpoint, query, signal);
         this.recordAttempt({
@@ -356,6 +365,7 @@ export class OverpassSource implements OsmDataSource {
           status: response.status,
           at: this.now(),
         });
+        recorded = true;
 
         if (response.ok) {
           return await this.toResult(tile, endpoint, response);
@@ -383,7 +393,13 @@ export class OverpassSource implements OsmDataSource {
         // Recorded WITHOUT one rather than omitted: dropping it would make the
         // log claim fewer requests than were really made, which is the one
         // direction of error that under-reports quota use.
-        if (!(error instanceof PermanentOverpassError)) {
+        //
+        // Only when the dispatch itself failed. The previous guard here tested
+        // `!(error instanceof PermanentOverpassError)`, which was dead code -
+        // the block above already rethrew every one of those - while the case
+        // it needed to exclude (a response recorded with its status whose BODY
+        // then failed to parse) went unguarded.
+        if (!recorded) {
           this.recordAttempt({
             endpoint,
             error: describe(error),

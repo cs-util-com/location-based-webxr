@@ -21,6 +21,14 @@ and the movement trigger.
 
 ## Invariants & assumptions
 
+- **`maxAgeMs` only has an effect against a source that implements `ensureTile`.**
+  `fetchOne` duck-checks for it and routes through it when present; a plain
+  `OsmDataSource` has no notion of staleness, so the option is a silent no-op
+  there. That is deliberate — it is how the staleness policy reaches
+  `CachingSource` without `OsmDataSource` having to declare a capability only one
+  implementation has — but it IS a conditional option, and a caller passing it to
+  a bare source gets neither an error nor an effect.
+
 - **One mechanism, two policies.** The prefetch and the movement trigger differ
   only in what a rate limit means, so that is a flag rather than a fork. They
   are the two callers most likely to want the same tile at the same instant, and

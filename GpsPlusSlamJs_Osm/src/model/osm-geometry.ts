@@ -34,6 +34,25 @@ export interface LineStringGeometry {
   readonly kind: "linestring";
   readonly positions: readonly LatLng[];
 }
+
+/**
+ * Several disconnected runs of one linear feature.
+ *
+ * `toGeometry` never produces this — an OSM way is one run — but CLIPPING does:
+ * a way that crosses an area of interest, wanders off and comes back yields two
+ * separate traversals. Joining them into a single linestring would fabricate a
+ * segment between the last position of one run and the first of the next, and
+ * that phantom chord then gets supercovered into cells the feature never
+ * touched, INSIDE the area of interest where nothing filters them.
+ *
+ * So the kind exists to make "these parts are not connected" representable.
+ * See `spatial/clip.ts`.
+ */
+export interface MultiLineStringGeometry {
+  readonly kind: "multilinestring";
+  readonly lines: readonly (readonly LatLng[])[];
+}
+
 export interface PolygonGeometry {
   readonly kind: "polygon";
   /** `rings[0]` is the outer ring; the rest are holes. */
@@ -48,6 +67,7 @@ export interface MultiPolygonGeometry {
 export type OsmGeometry =
   | PointGeometry
   | LineStringGeometry
+  | MultiLineStringGeometry
   | PolygonGeometry
   | MultiPolygonGeometry;
 

@@ -117,7 +117,7 @@ export function parseRuleTable(
     reason: `row has ${m.fields} fields, header has ${header.length}`,
   }));
 
-  const categories = discoverCategories(header, rows);
+  const categories = discoverCategories(header, rows, skipped);
   if (categories.length === 0) {
     throw new Error(
       "Rule table declares no numeric categories; a table that scores nothing would present as unmapped ground",
@@ -222,12 +222,26 @@ function readValues(
 function discoverCategories(
   header: readonly string[],
   rows: readonly Record<string, string>[],
+  skipped: SkippedRule[],
 ): string[] {
   const categories: string[] = [];
   for (const name of header) {
     if (NEVER_CATEGORIES.has(name)) continue;
     if (name.trim() === "") continue;
-    if (name.length > MAX_CATEGORY_NAME_LENGTH) continue;
+    if (name.length > MAX_CATEGORY_NAME_LENGTH) {
+      // RECORDED, not silently dropped. The 40-char field-name check throws
+      // loudly; this one used to just `continue`, so a sheet edit adding a
+      // legitimately numeric column named 21-40 chars long would be treated as
+      // "not a category" with nothing anywhere to say so - and every cell would
+      // then score the identity for it, which is indistinguishable from
+      // unmapped ground. That is the exact failure mode this module goes out of
+      // its way to make visible everywhere else.
+      skipped.push({
+        id: `column ${JSON.stringify(name)}`,
+        reason: `column name is ${name.length} chars, over the ${MAX_CATEGORY_NAME_LENGTH}-char limit, so it is not treated as a category`,
+      });
+      continue;
+    }
     if (rows.some((row) => toNumber(row[name]) !== undefined)) {
       categories.push(name);
     }

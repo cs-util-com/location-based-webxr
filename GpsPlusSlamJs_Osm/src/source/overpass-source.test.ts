@@ -657,3 +657,59 @@ describe("attempt-level diagnostics", () => {
     expect(source.stats.attempts).toHaveLength(source.stats.requests);
   });
 });
+
+describe("the attempt log stays consistent with the request count", () => {
+  /**
+   * WHY THIS MATTERS. `stats.attempts` is the diagnostic the on-device walk
+   * depends on to answer "how much quota did a tile actually cost?", and the
+   * suite already asserts `attempts.length === requests`. That invariant had a
+   * hole: a 200 whose body is not JSON is recorded once with its status, then
+   * `toResult`'s `.json()` throws and the catch recorded it a SECOND time.
+   *
+   * An instance answering 200 with an HTML error page is precisely the case the
+   * log exists to diagnose — it is what "four requests, rateLimited === 0"
+   * looked like — so over-reporting exactly there is the worst place for it.
+   */
+  it("records ONE attempt for a 200 whose body is not JSON", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        new Response("<html>Gateway problem</html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      ),
+    ) as unknown as typeof fetch;
+
+    const source = new OverpassSource({
+      userAgent: "test",
+      fetchImpl,
+      maxRetries: 1,
+      sleepImpl: () => Promise.resolve(),
+    });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    expect(source.stats.attempts).toHaveLength(source.stats.requests);
+  });
+
+  it("still records an attempt when the dispatch itself fails", async () => {
+    // The other direction: a transport failure produced no status and no
+    // record above, so the catch must add one. Dropping it would make the log
+    // claim fewer requests than were made — under-reporting quota use.
+    const fetchImpl = vi.fn(() =>
+      Promise.reject(new TypeError("network down")),
+    ) as unknown as typeof fetch;
+
+    const source = new OverpassSource({
+      userAgent: "test",
+      fetchImpl,
+      maxRetries: 1,
+      sleepImpl: () => Promise.resolve(),
+    });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    expect(source.stats.attempts).toHaveLength(source.stats.requests);
+    expect(source.stats.attempts.every((a) => a.error !== undefined)).toBe(
+      true,
+    );
+  });
+});

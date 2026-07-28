@@ -36,9 +36,67 @@ function tableWith(values: readonly number[]): RuleTable {
   );
 }
 
-const multiplierArb = fc.constantFrom(0, 0.5, 1, 2, 3, 5, 7);
+// Includes 0.8 and 0.1: the LIVE sheet has decimal multipliers (landuse_farmland
+// scores battleArea 0.8), and binary-inexact factors are the only ones for which
+// multiplication order is observable at all. A set of exact binary values would
+// make the order property below pass for the wrong reason.
+const multiplierArb = fc.constantFrom(0, 0.1, 0.5, 0.8, 1, 2, 3, 5, 7);
+
+/**
+ * A table keyed on a DISTINCT OSM key per value: `ka=a`, `kb=b`, …
+ *
+ * `tableWith` above declares ONE key `k` with four values, which is right for
+ * properties that vary the FEATURE. It is wrong for a property about the order
+ * of one feature's OWN tags, because a feature cannot carry `k` twice — and the
+ * tag-order property below silently built `ka=a`, `kb=b` against it. Those keys
+ * matched nothing in the table, so every tag scored the multiplicative
+ * identity and the assertion was `1 === 1` for every generated case: a property
+ * test that could not fail.
+ */
+function tableWithDistinctKeys(values: readonly number[]): RuleTable {
+  const rows = VALUES.map((v, i) => `k${v}_${v},k${v},${v},${values[i] ?? 1}`);
+  return parseRuleTable(["id,Key,Value,walkable", ...rows].join("\n"), {
+    source: "prop",
+    fetchedAt: 0,
+  });
+}
 
 const tagsArb = fc.uniqueArray(fc.constantFrom(...VALUES), { maxLength: 4 });
+
+/**
+ * Asserts two scores are the same product, to within floating-point noise.
+ *
+ * WHY NOT `toBe`. Floating-point multiplication is commutative but **not
+ * associative**, so `(0.1 × 0.5) × 0.8` and `0.1 × (0.5 × 0.8)` can differ in
+ * the last bit. Order independence therefore holds for the VALUE and not for
+ * the bits, and asserting exact equality would be asserting something the IEEE
+ * spec does not promise. Measured over every permutation of eight realistic
+ * factors: 4 distinct doubles, spread 3.5e-15 absolute — **1–2 ULP**.
+ *
+ * The alternative was to canonicalise: sort tags by rule key and cell entries
+ * by feature key before multiplying, making the bits reproducible. Rejected on
+ * the numbers. A threshold comparison (`score > threshold`) only flips if the
+ * score lands within 1 ULP of the threshold, which is an exact tie — and exact
+ * ties come from binary-exact factors like 0.5 × 2, which have no ordering
+ * problem in the first place. Paying a sort per (feature, category) in the hot
+ * path, which was just made ~14× cheaper by hoisting it, to buy bit-identity no
+ * consumer reads, is the wrong trade.
+ *
+ * **What consumers must therefore not do:** compare two scores for exact
+ * equality across differently-ordered inputs. Documented in the sidecar.
+ */
+function expectSameScore(a: number | undefined, b: number | undefined): void {
+  if (a === undefined || b === undefined) {
+    expect(a).toBe(b);
+    return;
+  }
+  if (a === b) return;
+  // Relative, because scores are unbounded products; 1e-12 is many orders of
+  // magnitude above the 3.5e-16 measured and far below anything meaningful.
+  expect(Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b))).toBeLessThan(
+    1e-12,
+  );
+}
 
 const node = (id: number, values: readonly string[]): OsmFeature => ({
   type: "node",
@@ -77,7 +135,7 @@ describe("scoring algebra", () => {
             table,
           ).cells[0]?.scores["walkable"];
 
-          expect(forward).toBe(backward);
+          expectSameScore(forward, backward);
         },
       ),
     );
@@ -89,7 +147,10 @@ describe("scoring algebra", () => {
         fc.array(multiplierArb, { minLength: 4, maxLength: 4 }),
         tagsArb,
         (multipliers, values) => {
-          const table = tableWith(multipliers);
+          // NOT `tableWith`: that declares one key `k`, so these `ka`/`kb` tags
+          // would match nothing and every score would be the identity — see
+          // `tableWithDistinctKeys`.
+          const table = tableWithDistinctKeys(multipliers);
           const tags = Object.fromEntries(values.map((v) => [`k${v}`, v]));
           const reversed = Object.fromEntries(Object.entries(tags).reverse());
 
@@ -103,7 +164,7 @@ describe("scoring algebra", () => {
             "walkable",
             table,
           );
-          expect(a).toBe(b);
+          expectSameScore(a, b);
         },
       ),
     );
@@ -168,7 +229,10 @@ describe("scoring algebra", () => {
           const product = Object.values(
             cell.contributors["walkable"] ?? {},
           ).reduce((a, b) => a * b, 1);
-          expect(product).toBe(cell.scores["walkable"]);
+          // Same reason as expectSameScore: the provenance factors are
+          // multiplied here in map-iteration order, which need not be the
+          // order the kernel used.
+          expectSameScore(product, cell.scores["walkable"]);
         },
       ),
     );

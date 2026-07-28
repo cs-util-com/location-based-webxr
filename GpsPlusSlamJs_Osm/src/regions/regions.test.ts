@@ -260,3 +260,13 @@ describe("regions survive the persistence boundary", () => {
     expect(revived).toEqual(region);
   });
 });
+
+describe("empty components are rejected at the public boundary", () => {
+  it("throws rather than returning an invalid Region", () => {
+    // `buildRegion([])` used to return `id: ""`, `minScore: Infinity` and
+    // `maxScore: -Infinity` — all of which look like data downstream rather
+    // than like the caller error they are. `connectedComponents` never emits an
+    // empty component, so this is a boundary guard, not a reachable path.
+    expect(() => buildRegion([], "walkable", new Map())).toThrow(RangeError);
+  });
+});

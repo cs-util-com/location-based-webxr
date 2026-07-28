@@ -217,3 +217,38 @@ describe("ruleTableKeys — what the Overpass filter should cover", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+describe("an over-long column name is recorded, not silently dropped", () => {
+  /**
+   * WHY THIS MATTERS. The 40-char field-name check throws loudly; the 20-char
+   * category check used to `continue` with nothing recorded anywhere. A sheet
+   * edit adding a legitimately numeric column with a 21–40 char name would be
+   * treated as "not a category", and every cell would then score the identity
+   * for it — indistinguishable from unmapped ground, which is the failure mode
+   * this module makes visible everywhere else (see the `Count` blacklist and
+   * the "absent is not zero" rule).
+   */
+  it("names the column and the reason in `skipped`", () => {
+    const longName = "a".repeat(25);
+    const table = parseRuleTable(
+      [`id,Key,Value,walkable,${longName}`, `k_a,k,a,5,9`].join("\n"),
+      { source: "test", fetchedAt: 0 },
+    );
+
+    expect(table.categories).toEqual(["walkable"]);
+    expect(
+      table.skipped.some(
+        (s) => s.id.includes(longName) && /20-char/.test(s.reason),
+      ),
+    ).toBe(true);
+  });
+
+  it("still accepts a name exactly at the limit", () => {
+    const atLimit = "b".repeat(20);
+    const table = parseRuleTable(
+      [`id,Key,Value,${atLimit}`, `k_a,k,a,5`].join("\n"),
+      { source: "test", fetchedAt: 0 },
+    );
+    expect(table.categories).toEqual([atLimit]);
+  });
+});

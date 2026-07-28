@@ -27,6 +27,7 @@ import {
 import { coverCells, dilate, cellCentre } from "./cell-coverage.js";
 import { AFFORDANCE_RES } from "./resolutions.js";
 import type { PolygonGeometry } from "../model/osm-geometry.js";
+import type { LatLng } from "../model/osm-feature.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 
@@ -326,5 +327,64 @@ describe("helpers", () => {
     const cell = latLngToCell(COLOGNE.lat, COLOGNE.lng, AFFORDANCE_RES);
     const centre = cellCentre(cell);
     expect(latLngToCell(centre.lat, centre.lng, AFFORDANCE_RES)).toBe(cell);
+  });
+});
+
+describe("multilinestring coverage", () => {
+  /**
+   * WHY THIS TEST MATTERS. `coverCells`'s switch has no `default` and no
+   * exhaustiveness assertion, so adding a geometry kind and forgetting a case
+   * here does not fail to compile — it silently covers NOTHING, which is the
+   * exact silent-drop failure the clipping work exists to prevent. Adding
+   * `multilinestring` produced precisely that hazard, so it gets a test.
+   */
+  it("covers every run, and unions them", () => {
+    const a: LatLng[] = [
+      { lat: 50.94, lng: 6.95 },
+      { lat: 50.9405, lng: 6.95 },
+    ];
+    const b: LatLng[] = [
+      { lat: 50.95, lng: 6.96 },
+      { lat: 50.9505, lng: 6.96 },
+    ];
+
+    const both = new Set(
+      coverCells({ kind: "multilinestring", lines: [a, b] }).map((c) => c.cell),
+    );
+    const first = new Set(
+      coverCells({ kind: "linestring", positions: a }).map((c) => c.cell),
+    );
+    const second = new Set(
+      coverCells({ kind: "linestring", positions: b }).map((c) => c.cell),
+    );
+
+    expect(both.size).toBeGreaterThan(0);
+    for (const cell of first) expect(both.has(cell)).toBe(true);
+    for (const cell of second) expect(both.has(cell)).toBe(true);
+  });
+
+  it("does NOT cover the gap between two distant runs", () => {
+    // The whole point of splitting runs: covering them as one sequence would
+    // supercover the ~1 km gap, putting cells on ground the feature never
+    // touched — which is the bug moved one module downstream.
+    const near: LatLng[] = [
+      { lat: 50.94, lng: 6.95 },
+      { lat: 50.9401, lng: 6.95 },
+    ];
+    const far: LatLng[] = [
+      { lat: 50.95, lng: 6.96 },
+      { lat: 50.9501, lng: 6.96 },
+    ];
+
+    const split = coverCells({
+      kind: "multilinestring",
+      lines: [near, far],
+    }).length;
+    const joined = coverCells({
+      kind: "linestring",
+      positions: [...near, ...far],
+    }).length;
+
+    expect(split).toBeLessThan(joined);
   });
 });

@@ -23,10 +23,25 @@ interest rather than by the feature.
   subjects; that is a rendering artefact and is irrelevant here, because the
   result is immediately rasterised to cells and a zero-width seam covers only
   cells its neighbours already cover.
-- **Linestring clipping is deliberately coarse**: a vertex is kept if it or
-  either neighbour is inside the box, so boundary-crossing segments survive and
-  the supercover rasteriser fills them. Over-keeping costs a few cells that are
-  then filtered; under-keeping would lose road.
+- **Linestring clipping is a deliberately coarse SEGMENT test**: a segment is
+  kept, with both its endpoints, when Cohen–Sutherland says it touches the box —
+  not the exact intersection points, and not a test on the vertices. The earlier
+  vertex rule ("keep a vertex if it or either neighbour is inside") dropped any
+  segment that crossed the box with no vertex near it, which silently deleted
+  every long way crossing the working set. Over-keeping costs a few cells that
+  are then filtered; under-keeping would lose road.
+- **The kept segments are returned as CONTIGUOUS RUNS, never flattened into one
+  line.** A way that crosses the box, wanders off and comes back keeps indices
+  `{0,1,2, 5,6}`; joining those into a single linestring fabricates the chord
+  `2→5`, a segment the way never had, running straight across the box.
+  `addLineString` supercovers every consecutive pair, so that chord becomes
+  cells **inside** the working set — where, unlike the over-kept ones, nothing
+  filters them, and the feature scores ground it never crossed.
+  - Hence `MultiLineStringGeometry`: several runs need to be representable as
+    _disconnected_. A single run still collapses back to a plain `linestring`,
+    so the common case is unchanged for every consumer.
+  - `coverCells` covers each run separately and unions the result — covering
+    them as one sequence would simply move the fabrication downstream.
 - Callers should pad the box (`padBbox`) by more than one cell so the clip cannot
   cut inside a cell the restriction actually asks about. `h3-feature-index` uses
   `0.0005°` (~55 m at the equator) against a 28.7 m res-11 edge.
