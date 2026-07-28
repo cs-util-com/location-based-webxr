@@ -362,9 +362,14 @@ export const PROJECTS = [
     ],
   },
   {
-    // Registered like MinimalExample rather than with demoAppProject(): it has
-    // no e2e suite and no framework build stage of its own, and its value is a
-    // human looking at it rather than a headless assertion.
+    // Registered by hand rather than with demoAppProject(): it has no
+    // `build:framework` stage, because `pnpm run dev` — the Playwright
+    // webServer command — already runs `build:deps`. That build is therefore
+    // unconditional (it does not get build-framework-if-stale.mjs's skip) and
+    // its cost lands inside the `test:e2e` row rather than a row of its own.
+    //
+    // It DOES have an e2e suite; an earlier version of this comment said it did
+    // not, which stopped being true the moment one was added.
     name: 'GpsPlusSlamJs_OsmDemo',
     dir: 'GpsPlusSlamJs_OsmDemo',
     chainNames: [],

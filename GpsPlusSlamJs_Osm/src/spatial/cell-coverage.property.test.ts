@@ -54,7 +54,33 @@ function squareAt(
 
 const cellsOf = (g: OsmGeometry) => new Set(coverCells(g).map((c) => c.cell));
 
-describe("coverage properties", () => {
+/**
+ * SCOPED TIMEOUT, and the mechanism behind it is worth stating correctly.
+ *
+ * These are correctness checks, not latency checks — but vitest's default 5 s
+ * per-test budget IS a wall-clock assertion, and this repo has already paid for
+ * one of those (a per-chunk cost test failed the cascade at 104 ms against a
+ * "generous" 100 ms ceiling). This suite failed the root cascade twice in four
+ * runs while passing 31 consecutive standalone runs.
+ *
+ * **The contention is NOT the cascade running package gates concurrently.**
+ * `run-gate.mjs` is a sequential `for (const stage of project.stages)` with
+ * fail-fast, and the root project runs one `pnpm --filter <pkg> test` at a time.
+ * It comes one level down: vitest forks a worker pool across this package's test
+ * files, and a framework build plus a Playwright browser from preceding stages
+ * may still be releasing resources. That is a different thing to go looking at
+ * if this recurs, which is why the wrong mechanism was worth correcting.
+ *
+ * Scoped here rather than set package-wide so a genuinely hung test elsewhere
+ * still fails in 5 s rather than 30.
+ *
+ * **Honest caveat:** the failing run's message was never captured, so "timeout
+ * under contention" is the best-supported explanation rather than a proven one.
+ * A longer budget cannot mask a real counterexample — a failed assertion still
+ * fails — so it is safe either way. If it recurs, capture the failure text
+ * before doing anything else.
+ */
+describe("coverage properties", { timeout: 30_000 }, () => {
   it("is MONOTONIC: a bigger square covers everything a smaller one does", () => {
     // The property an optimisation breaks first, and the one that keeps
     // "contained inside" meaningful. If a faster path ever misses a cell the

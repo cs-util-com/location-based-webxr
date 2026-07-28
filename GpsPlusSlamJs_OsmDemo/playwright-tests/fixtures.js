@@ -38,10 +38,11 @@ export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}`;
 /**
  * A real captured Overpass response from the OSM package's fixture corpus.
  *
- * `park` is Cologne Volksgarten — the same place `main.ts` starts at — so the
- * features genuinely overlap the working set rather than arriving as data about
- * somewhere else. Read from the sibling package rather than copied, so a
- * re-capture cannot leave this suite asserting stale data.
+ * `park` is Cologne Volksgarten — ~2 km from `main.ts`'s default start, which
+ * is the whole reason `AT_FIXTURE` exists: served from the default position the
+ * features overlap none of the working set and the app renders 0 cells. Read
+ * from the sibling package rather than copied, so a re-capture cannot leave this
+ * suite asserting stale data.
  */
 export function parkPayload() {
   const path = join(
