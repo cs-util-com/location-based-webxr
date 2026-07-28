@@ -1,0 +1,28 @@
+{
+  "measuredAt": "2026-07-28T22:10:01.688Z",
+  "cell": "881fa19991fffff",
+  "res": 8,
+  "centre": {
+    "lat": 50.9413,
+    "lng": 6.9583
+  },
+  "bbox": {
+    "south": 50.93746191671599,
+    "north": 50.946217770623875,
+    "west": 6.957485598944674,
+    "east": 6.9714695753612
+  },
+  "keyCount": 32,
+  "query": "[out:json][timeout:180][bbox:50.93746191671599,6.957485598944674,50.946217770623875,6.9714695753612];\n(nwr[\"highway\"];nwr[\"surface\"];nwr[\"landuse\"];nwr[\"natural\"];nwr[\"leisure\"];nwr[\"amenity\"];nwr[\"barrier\"];nwr[\"access\"];nwr[\"wheelchair\"];nwr[\"water\"];nwr[\"waterway\"];nwr[\"man_made\"];nwr[\"tourism\"];nwr[\"sport\"];nwr[\"playground\"];nwr[\"building\"];nwr[\"building:part\"];nwr[\"building:levels\"];nwr[\"height\"];nwr[\"min_height\"];nwr[\"roof:shape\"];nwr[\"roof:levels\"];nwr[\"layer\"];nwr[\"historic\"];nwr[\"place\"];nwr[\"power\"];nwr[\"entrance\"];nwr[\"railway\"];nwr[\"service\"];nwr[\"foot\"];nwr[\"crossing\"];nwr[\"sidewalk\"];);\nout geom;",
+  "results": [
+    {
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 15646,
+      "totalMs": 17902,
+      "bytes": 42696999
+    }
+  ]
+}

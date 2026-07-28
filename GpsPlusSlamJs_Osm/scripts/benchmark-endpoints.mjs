@@ -6,6 +6,7 @@
  *
  *   node scripts/benchmark-endpoints.mjs
  *   node scripts/benchmark-endpoints.mjs --lat 50.9413 --lng 6.9583
+ *   node scripts/benchmark-endpoints.mjs --res 8 --host lz4   # one host, one res
  *
  * WHY THIS IS A SCRIPT AND NOT A TEST, same rule as `capture-fixtures.mjs`: a
  * test that touches the network is a test that fails when a public server is
@@ -38,7 +39,28 @@ import { latLngToCell, cellToBoundary } from "h3-js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Matches `FETCH_RES` in `src/spatial/resolutions.ts`. */
+/**
+ * Matches `FETCH_RES` in `src/spatial/resolutions.ts`.
+ *
+ * Overridable with `--res`. **And the answer that override produced is the
+ * opposite of the obvious one**, so it is recorded here: shrinking the bbox
+ * barely shrinks the payload. Measured on `lz4`, 2026-07-29, same centre:
+ *
+ * - res 7 (4.55 km² hexagon) — 68.0 MB
+ * - res 8 (0.65 km²) — 42.7 MB
+ * - res 9 (0.093 km²) — 38.7 MB
+ *
+ * **49x less ground for 1.8x less data.** The cause is `out geom`, which prints
+ * the FULL geometry of every element that INTERSECTS the bbox — the OSM wiki is
+ * explicit that "constituent ways or relations may extend beyond these bounds".
+ * A handful of city-scale ways (rivers, landuse multipolygons, boundaries,
+ * power lines) dominate the bytes, and every bbox in Cologne intersects them
+ * whatever its size.
+ *
+ * So `FETCH_RES` is NOT the lever on payload it looks like. The lever the wiki
+ * points at is `out geom(south,west,north,east)`, which emits only coordinates
+ * inside the box — see the results doc for why that is not a drop-in change.
+ */
 const FETCH_RES = 7;
 
 /** Cologne — the demo's default area, and where the corpus was captured. */
@@ -197,13 +219,24 @@ async function main() {
     lat: arg("lat", DEFAULT_CENTRE.lat),
     lng: arg("lng", DEFAULT_CENTRE.lng),
   };
-  const cell = latLngToCell(centre.lat, centre.lng, FETCH_RES);
+  const res = arg("res", FETCH_RES);
+  // `--host <substring>` narrows the sweep to one instance. Measuring a
+  // RESOLUTION question across six donated servers would be six times the load
+  // for an answer that only needs one of them held constant.
+  const hostFilter = process.argv.includes("--host")
+    ? process.argv[process.argv.indexOf("--host") + 1]
+    : undefined;
+  const hosts =
+    hostFilter === undefined
+      ? ENDPOINTS
+      : ENDPOINTS.filter((e) => e.url.includes(hostFilter));
+  const cell = latLngToCell(centre.lat, centre.lng, res);
   const bbox = bboxOfCell(cell);
   const keys = selectKeysFromCaptureScript();
   const query = buildQuery(bbox, keys);
 
   console.log(
-    `res-${FETCH_RES} tile ${cell} around ${centre.lat}, ${centre.lng}`,
+    `res-${res} tile ${cell} around ${centre.lat}, ${centre.lng}`,
   );
   console.log(
     `${keys.length} keys, union form, one query per host, serialised`,
@@ -211,7 +244,7 @@ async function main() {
   console.log(`${ENDPOINTS.length} hosts, ${GAP_SECONDS}s gap between them\n`);
 
   const results = [];
-  for (const [index, endpoint] of ENDPOINTS.entries()) {
+  for (const [index, endpoint] of hosts.entries()) {
     process.stdout.write(`${endpoint.url} … `);
     const result = await timeEndpoint(endpoint, query);
     results.push(result);
@@ -219,7 +252,7 @@ async function main() {
     console.log(
       `${result.status} · first byte ${result.firstByteMs ?? "—"} ms · total ${result.totalMs} ms · ${mb} MB`,
     );
-    if (index < ENDPOINTS.length - 1) {
+    if (index < hosts.length - 1) {
       await new Promise((r) => setTimeout(r, GAP_SECONDS * 1000));
     }
   }
@@ -227,6 +260,7 @@ async function main() {
   const out = {
     measuredAt: new Date().toISOString(),
     cell,
+    res,
     centre,
     bbox,
     keyCount: keys.length,
@@ -237,7 +271,9 @@ async function main() {
   };
   const outDir = join(__dirname, "..", "docs");
   mkdirSync(outDir, { recursive: true });
-  const outPath = join(outDir, "overpass-endpoint-benchmark.json");
+  // Per-resolution filename, so a resolution sweep does not overwrite the host
+  // sweep it is meant to be compared against.
+  const outPath = join(outDir, `overpass-endpoint-benchmark-res${res}.json`);
   writeFileSync(outPath, `${JSON.stringify(out, null, 2)}\n`);
   console.log(`\nwrote ${outPath}`);
 }

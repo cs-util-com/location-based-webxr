@@ -94,12 +94,17 @@ export class MapView {
   /**
    * Draws what was actually downloaded: one red box per fetch tile.
    *
-   * THE BOX IS THE QUERY, THE HEXAGON IS THE INDEX, and they are not the same
-   * shape. Overpass has no hexagon primitive, so `buildTileQuery` asks for
-   * `cellToBoundingBox(tile)` — measured at Cologne, a 2.47 x 2.55 km box
-   * against a 4.5 km² hexagon, so **39 % of every fetch is ground the index
-   * never uses**. At ~68 MB per res-7 tile that is ~19 MB of payload per fetch,
-   * paid to a donated public server.
+   * THE BOX IS THE QUERY, THE HEXAGON IS ONLY AN IDENTITY. Overpass has no
+   * hexagon primitive, so `buildTileQuery` asks for `cellToBoundingBox(tile)` —
+   * at Cologne a 2.47 x 2.55 km box around a 4.5 km² hexagon, 1.39x.
+   *
+   * **Nothing in the corners is discarded.** No hexagon filter exists on the
+   * ingest path: `acceptTile` merges every feature the response contained, and
+   * scoring bbox-tests against the CHUNK, never against the tile. The hexagon
+   * is a cache and invalidation key, not a spatial filter. What the mismatch
+   * really costs is that neighbouring tiles' bboxes OVERLAP, so the shared
+   * ground is transferred again when the adjacent tile is fetched — stored
+   * once, used fully, downloaded twice.
    *
    * Both are drawn because drawing only the box would invite the reading this
    * display exists to correct — that the red box IS the tile. The hexagon is

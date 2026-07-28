@@ -10,10 +10,18 @@
  *    hexagon primitive. So the red box on the map is the honest answer to "what
  *    did we download", and it is strictly larger than the tile the index keys
  *    on.
- * 2. **The gap between them is the over-fetch**, paid on every tile, in bytes
- *    and in server time — a res-7 fetch measured ~68 MB and ~23-110 s depending
- *    on the host. Quoting a ratio is cheap; seeing it is what changes decisions
- *    about `FETCH_RES`.
+ * 2. **The gap between them is redundant TRANSFER, not discarded data.**
+ *    Nothing filters the response to the hexagon — `acceptTile` merges every
+ *    feature and scoring bbox-tests against the CHUNK — so the corners are
+ *    indexed and used. What the 1.39× costs is that neighbouring tiles' bboxes
+ *    overlap, so shared ground is downloaded once per tile covering it.
+ *
+ * A res-7 fetch measured ~68 MB and ~23-110 s depending on the host. Note that
+ * shrinking the tile does NOT shrink that proportionally: res 9 is 49x less
+ * ground and still returned 38.7 MB, because `out geom` prints the full
+ * geometry of every element that intersects the bbox. Seeing the box is still
+ * worth it — it makes the unit the plan is written in concrete — but it is not
+ * an argument for a smaller `FETCH_RES`.
  *
  * The arithmetic lives here rather than in `map-view.ts` so it can be tested
  * without a DOM — the view is Leaflet wiring and has no unit tests, which is the

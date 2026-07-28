@@ -20,9 +20,18 @@ the demo can draw it and put a number on it.
   the red box on the map is the honest answer to "what did we download", and it
   is strictly larger than the tile the index keys on.
   - Measured at Cologne (res 7): a **2.47 × 2.55 km box = 6.3 km²** against a
-    **4.5 km² hexagon** — **1.39×**, so **~39 % of every fetch is ground the
-    index never uses**. At ~68 MB per res-7 tile that is ~19 MB per fetch, paid
-    to a donated public server.
+    **4.5 km² hexagon** — **1.39×**.
+  - **Nothing in the corners is discarded**, and an earlier version of this note
+    wrongly said otherwise. No hexagon filter exists on the ingest path:
+    `acceptTile` merges every feature the response contained and scoring
+    bbox-tests against the CHUNK. The hexagon is a cache and invalidation key,
+    not a spatial filter. The 1.39× costs redundant **transfer** — neighbouring
+    tiles' bboxes overlap, so shared ground is downloaded once per tile that
+    covers it — not discarded data.
+  - **Shrinking the tile would not shrink the payload much.** Measured on `lz4`:
+    res 9 is 49× less ground than res 7 and still returned 38.7 MB against
+    68.0 MB, because `out geom` prints the full geometry of every element that
+    _intersects_ the bbox. See the benchmark results doc.
 - **The hexagon area is exact, the box area is not.** `hexAreaKm2` comes from
   H3's own `cellArea`; the box uses an equirectangular approximation with
   longitude scaled by the mid-latitude cosine. Mixing two approximations would
