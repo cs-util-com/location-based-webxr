@@ -10,7 +10,7 @@ OSM features to building volumes, honouring `building:part`.
 - `interface BuildingVolume` — `feature`, `parentFeature?`, `heights`, `mesh`,
   `roofIsApproximate`
   - **`roofIsApproximate` is the real flag from `buildRoof`, not a proxy.**
-    Substituting "is the shape gabled or hipped?" is a *different* claim: a
+    Substituting "is the shape gabled or hipped?" is a _different_ claim: a
     gabled roof on an actual rectangle is exact, and that is the common case
     §8's approximation trade rests on — so the proxy over-reports every time.
     The demo counted it that way, which meant the counter that exists to check
