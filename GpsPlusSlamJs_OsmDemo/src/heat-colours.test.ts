@@ -120,3 +120,41 @@ describe('describeScale', () => {
     );
   });
 });
+
+describe("a non-positive threshold from the rule table", () => {
+  /**
+   * WHY THIS MATTERS. Thresholds come from the live Google Sheet through
+   * `toNumber`, which accepts `0` and negatives — nothing validates positivity
+   * at that boundary. With `threshold = 0` the log ramp degenerates:
+   * `Math.log(0)` is `-Infinity`, so `span` is `Infinity`, `at` is
+   * `Infinity/Infinity` = `NaN`, and `Math.min(1, Math.max(0, NaN))` is `NaN`
+   * because the clamp does not catch it. `heatColour` then indexes `RAMP[NaN]`
+   * and `toHex` emits `#NaNNaNNaN`, which Leaflet takes as an invalid fill.
+   *
+   * The `score <= threshold` early return does NOT save it: with a threshold of
+   * zero every drawn cell has a positive score, so every cell takes this path.
+   * A single bad sheet edit would blank the entire map.
+   */
+  it("does not produce NaN for threshold 0", () => {
+    const scale = heatScale([10, 35], 0);
+    expect(Number.isNaN(heatFraction(10, scale))).toBe(false);
+    expect(toHex(heatColour(10, scale))).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it("does not produce NaN for a negative threshold", () => {
+    // `Math.log` of a negative is NaN, which poisons the span directly.
+    const scale = heatScale([10, 35], -5);
+    expect(Number.isNaN(heatFraction(10, scale))).toBe(false);
+    expect(toHex(heatColour(10, scale))).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it("still renders every cell as SOMETHING rather than blanking the map", () => {
+    // Degrading to the bottom of the ramp is a defensible answer for a
+    // degenerate scale; an invalid fill string is not, because Leaflet drops
+    // the path entirely and the map looks like there is no data.
+    const scale = heatScale([1, 10, 100], 0);
+    for (const score of [1, 10, 100]) {
+      expect(toHex(heatColour(score, scale))).toMatch(/^#[0-9a-f]{6}$/);
+    }
+  });
+});

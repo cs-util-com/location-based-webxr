@@ -78,6 +78,17 @@ export function heatScale(
  */
 export function heatFraction(score: number, scale: HeatScale): number {
   if (!Number.isFinite(score) || score <= scale.threshold) return 0;
+  // A LOG RAMP NEEDS A POSITIVE THRESHOLD, and nothing upstream guarantees one:
+  // thresholds come from the live Google Sheet through `toNumber`, which accepts
+  // `0` and negatives. With `threshold = 0`, `Math.log(0)` is `-Infinity`, so
+  // `span` is `Infinity` and `at` is `Infinity/Infinity` — NaN, which the clamp
+  // below does NOT catch, so `RAMP[NaN]` falls through and `toHex` emits
+  // `#NaNNaNNaN`. Leaflet treats that as an invalid fill and drops the path, so
+  // one bad sheet edit blanks the entire map while every score is still fine.
+  //
+  // The `score <= threshold` return above does not save it: at a threshold of
+  // zero every drawn cell has a positive score, so every cell reaches here.
+  if (!(scale.threshold > 0) || !(scale.max > 0)) return 0;
   const span = Math.log(scale.max) - Math.log(scale.threshold);
   if (span <= 0) return 0;
   const at = (Math.log(score) - Math.log(scale.threshold)) / span;
