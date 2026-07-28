@@ -27,6 +27,28 @@
   - Found by the per-chunk cost test hanging, not by review.
 - **Several features on one cell stack.** The multiplicative kernel needs every
   factor; overwriting would drop all but one and produce a plausible wrong score.
+- **A multipolygon's outer member is suppressed when it adds nothing.** Under
+  old-style tagging an outer way repeats its relation's tags, and Overpass
+  returns both as top-level elements — so the shared tags multiply in twice and
+  a factor of 10 becomes 100, silently and only ever upward.
+  - Suppression is **conditional on the member's tags being a subset of the
+    parent's**, which is narrower than the C# reference's unconditional removal
+    of every `role=outer` member. A `barrier=fence` bounding a `natural=wood`
+    relation is a real feature the relation does not describe, and the reference
+    loses it.
+  - `role=inner` members, members of non-areal relations, and members whose
+    parent is absent from the input are all **kept** — see
+    `relation-member-doublecount.test.ts` for why each case matters.
+  - Requires materialising the input, because a relation is not guaranteed to
+    precede its own members.
+  - **Measured: this fires on zero elements across all four fixtures.** It is a
+    preventive guard, not a correction — an outer way usually carries no tags,
+    so the key filter never selects it. One fixture does return an _inner_
+    member independently, which is the evidence that the outer case is one tag
+    away rather than impossible.
+  - Known residual: a member sharing _some_ tags with its parent and adding
+    others is kept whole, so the shared subset is still double-counted. Scoring
+    only its unique tags would mean synthesising a feature that never existed.
 - A feature touching nothing in the restriction is dropped entirely — keeping it
   in `features` would grow memory with something no lookup can reach.
 - `indexEntryCount` (pairs) is the size that predicts scoring cost;

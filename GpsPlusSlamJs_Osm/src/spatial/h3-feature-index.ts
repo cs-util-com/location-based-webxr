@@ -10,10 +10,14 @@
  * @see h3-feature-index.ts.md
  */
 
-import type { OsmFeature, OsmFeatureKey } from "../model/osm-feature.js";
+import type {
+  OsmFeature,
+  OsmFeatureKey,
+  OsmTags,
+} from "../model/osm-feature.js";
 import { featureKey } from "../model/osm-feature.js";
-import { toGeometry } from "../model/osm-geometry.js";
-import type { GeometryError } from "../model/osm-geometry.js";
+import { toGeometry, isArealRelation } from "../model/osm-geometry.js";
+import type { GeometryError, OsmGeometry } from "../model/osm-geometry.js";
 import { coverCells, cellCentre } from "./cell-coverage.js";
 import type { Bbox } from "./clip.js";
 import { boundsOf, padBbox, clipToBbox } from "./clip.js";
@@ -86,7 +90,15 @@ export function buildFeatureIndex(
     return { byCell, byFeature, features: kept, failed, resolution };
   }
 
-  for (const feature of features) {
+  // Materialised because the redundancy pass below has to see every feature
+  // before the first one is indexed: Overpass does not guarantee that a
+  // relation precedes its own members, and a cross-tile merge reorders freely.
+  const all = [...features];
+  const redundant = redundantOuterMembers(all);
+
+  for (const feature of all) {
+    if (redundant.has(featureKey(feature))) continue;
+
     const result = toGeometry(feature);
     if (!result.ok) {
       failed.push(result.error);
@@ -99,10 +111,7 @@ export function buildFeatureIndex(
     // the order of 10^10 cells. Filtering that down afterwards is not slow, it
     // is non-terminating in any practical sense. Clipping makes the cost
     // proportional to the working set instead, which is the whole point.
-    const geometry =
-      interest === undefined
-        ? result.geometry
-        : clipToBbox(result.geometry, interest);
+    const geometry = clipIfRestricted(result.geometry, interest);
     if (geometry === undefined) continue;
 
     const key = featureKey(feature);
@@ -122,6 +131,86 @@ export function buildFeatureIndex(
   }
 
   return { byCell, byFeature, features: kept, failed, resolution };
+}
+
+/** Geometry clipped to the area of interest, or unchanged when unrestricted. */
+function clipIfRestricted(
+  geometry: OsmGeometry,
+  interest: Bbox | undefined,
+): OsmGeometry | undefined {
+  return interest === undefined ? geometry : clipToBbox(geometry, interest);
+}
+
+/**
+ * Members of an areal relation whose own contribution would be a pure
+ * duplicate of their parent's.
+ *
+ * THE PROBLEM. A `type=multipolygon` relation stands for the area; its
+ * `role=outer` ways are that area's boundary. Under old-style tagging the outer
+ * way repeats the relation's tags, and when it does, Overpass returns BOTH as
+ * top-level elements. They cover the same cells, so the multiplicative kernel
+ * applies the shared tags twice — a factor of 10 becomes 100. Silent, and only
+ * ever over-scoring, which is the direction that makes bad ground look good.
+ *
+ * WHY THIS IS NARROWER THAN THE C# REFERENCE, DELIBERATELY. The reference
+ * (`OsmGeoSpatialIndexer.alreadyHandledOuterRelationMembers`) removes every
+ * `role=outer` member unconditionally. That is wrong when the way carries tags
+ * of its own: a `barrier=fence` way bounding a `natural=wood` relation is a real
+ * feature, and dropping it loses the fence entirely — the relation does not
+ * carry that tag. So a member is suppressed only when **every one of its tags
+ * appears on the parent with the same value**, i.e. when its factor is provably
+ * a sub-product of the parent's and multiplying both squares it.
+ *
+ * Three cases are deliberately NOT suppressed:
+ * - `role=inner`. A hole carries its own tags and is a real area — `natural=wood`
+ *   inside a lake is separately scoreable, and the relation does not carry it.
+ *   Measured: 1 of 6 areal relations in the fixtures has an inner member that
+ *   also arrives as a top-level element, so this case is real.
+ * - A member whose parent relation is absent. A tile boundary can deliver the
+ *   way without the relation, and absence of the parent is not evidence.
+ * - A member of a NON-areal relation (`type=route` and friends). There the
+ *   members ARE the features; suppressing them would drop the roads.
+ *
+ * RESIDUAL, DOCUMENTED: a member sharing SOME tags with its parent and adding
+ * others is kept whole, so the shared subset is still counted twice. Scoring
+ * only its unique tags would mean synthesising a feature that never existed,
+ * which breaks provenance and the whole-record rule the tile merge is built on.
+ * The overlap case is rare — a way with distinct tags usually has no tag in
+ * common with its parent at all.
+ *
+ * Measured across the four fixtures: 6 areal relations, **zero** outer members
+ * also returned. So this guard is preventive rather than corrective — it fires
+ * on no checked-in data today, and the case it prevents is one tag away.
+ */
+function redundantOuterMembers(
+  features: readonly OsmFeature[],
+): ReadonlySet<OsmFeatureKey> {
+  const redundant = new Set<OsmFeatureKey>();
+  const byKey = new Map<OsmFeatureKey, OsmFeature>();
+  for (const feature of features) byKey.set(featureKey(feature), feature);
+
+  for (const feature of features) {
+    if (feature.type !== "relation") continue;
+    if (!isArealRelation(feature)) continue;
+
+    for (const member of feature.members) {
+      if (member.role !== "outer") continue;
+      const key: OsmFeatureKey = `${member.type}/${member.ref}`;
+      const present = byKey.get(key);
+      if (present === undefined) continue;
+      if (tagsAreSubsetOf(present.tags, feature.tags)) redundant.add(key);
+    }
+  }
+
+  return redundant;
+}
+
+/** True when every entry of `subset` appears in `superset` with the same value. */
+function tagsAreSubsetOf(subset: OsmTags, superset: OsmTags): boolean {
+  for (const [key, value] of Object.entries(subset)) {
+    if (superset[key] !== value) return false;
+  }
+  return true;
 }
 
 /**
