@@ -48,6 +48,15 @@ export interface DemoSnapshot {
   readonly regions: readonly Region[];
   /** Fetch tiles that were requested but refused or failed. */
   readonly missingTiles: readonly string[];
+  /**
+   * Res-7 fetch tiles whose data is currently held.
+   *
+   * Surfaced so the map can DRAW the downloaded extent. "One res-7 tile" is an
+   * abstraction until you see it over a city — and the query covers the tile's
+   * bounding box, not the hexagon, which is a difference worth seeing rather
+   * than being told.
+   */
+  readonly loadedTiles: readonly string[];
   readonly stats: {
     readonly chunksScored: number;
     readonly chunksReused: number;
@@ -128,6 +137,7 @@ export class DemoPipeline {
       cells: [...scoresByCell.values()],
       regions,
       missingTiles,
+      loadedTiles: [...this.loaded],
       stats: {
         chunksScored: this.index.stats.chunksScored,
         chunksReused: this.index.stats.chunksReused,

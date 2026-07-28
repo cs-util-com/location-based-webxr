@@ -10,7 +10,12 @@ path, with no DOM in it.
 - `class DemoPipeline` — `update(position, category): Promise<DemoSnapshot>`,
   `features()`, static `chunkFor(position)`
 - `interface DemoSnapshot` — `cells`, `regions`, `threshold`, `missingTiles`,
-  `stats`
+  `loadedTiles`, `stats`
+  - `loadedTiles` are the res-7 tiles currently held, surfaced so the map can
+    DRAW the downloaded extent. "One res-7 tile" stays an abstraction until it
+    is a box over a city — and the query covers the tile's bounding box, not the
+    hexagon, which is a 1.39× difference worth seeing rather than being told.
+    See `fetch-extent.ts.md`.
 
 ## Invariants & assumptions
 

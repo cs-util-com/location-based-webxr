@@ -88,6 +88,32 @@ test.describe("the affordance map", () => {
     expect(await cells.count()).toBeGreaterThan(10);
   });
 
+  test("draws the fetched extent as a box, and says how big it is", async ({
+    page,
+  }) => {
+    // WHY THIS MATTERS. "One res-7 tile" is the unit the whole plan is written
+    // in, and it stays an abstraction until it is drawn over a city. The box is
+    // also NOT the hexagon — Overpass has no hexagon primitive, so the query
+    // covers the tile's bounding box and we pay ~39% over-fetch on every tile.
+    // Both shapes are asserted because drawing only the box would confirm the
+    // exact misreading the display exists to correct.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await expect(page.locator("#map path.fetch-extent").first()).toBeVisible();
+    await expect(
+      page.locator("#map path.fetch-tile-hex").first(),
+    ).toBeVisible();
+
+    // The picture answers "how big" only roughly; the status line has to carry
+    // the number, or the over-fetch stays invisible on a zoomed-out map.
+    const status = await page.locator("#status").textContent();
+    expect(status).toMatch(/box per tile/);
+    expect(status).toMatch(/hexagon/);
+    expect(status).not.toMatch(/NaN|Infinity/);
+  });
+
   test("draws region outlines, and draws them OVER the cells", async ({
     page,
   }) => {

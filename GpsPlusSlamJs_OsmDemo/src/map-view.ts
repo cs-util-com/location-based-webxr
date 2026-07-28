@@ -27,6 +27,7 @@ import {
   toHex,
   type HeatScale,
 } from "./heat-colours.js";
+import { tileBounds } from "./fetch-extent.js";
 
 /**
  * ODbL requires attribution wherever OSM data is shown — and this view shows
@@ -44,6 +45,7 @@ export class MapView {
   readonly map: L.Map;
   private readonly cellLayer: L.LayerGroup;
   private readonly regionLayer: L.LayerGroup;
+  private readonly fetchLayer: L.LayerGroup;
   private readonly userMarker: L.CircleMarker;
 
   constructor(options: MapViewOptions) {
@@ -70,6 +72,10 @@ export class MapView {
     // what surfaced the disagreement.)
     this.cellLayer = L.layerGroup().addTo(this.map);
     this.regionLayer = L.layerGroup().addTo(this.map);
+    // Last, so the fetch outline sits above the grid. It is stroke-only, so
+    // being on top costs nothing and being underneath would hide it behind ~931
+    // filled cells — which is exactly where it is most worth seeing.
+    this.fetchLayer = L.layerGroup().addTo(this.map);
 
     this.userMarker = L.circleMarker([options.centre.lat, options.centre.lng], {
       radius: 6,
@@ -83,6 +89,53 @@ export class MapView {
   /** Moves the "you are here" marker without disturbing the view. */
   setPosition(position: { lat: number; lng: number }): void {
     this.userMarker.setLatLng([position.lat, position.lng]);
+  }
+
+  /**
+   * Draws what was actually downloaded: one red box per fetch tile.
+   *
+   * THE BOX IS THE QUERY, THE HEXAGON IS THE INDEX, and they are not the same
+   * shape. Overpass has no hexagon primitive, so `buildTileQuery` asks for
+   * `cellToBoundingBox(tile)` — measured at Cologne, a 2.47 x 2.55 km box
+   * against a 4.5 km² hexagon, so **39 % of every fetch is ground the index
+   * never uses**. At ~68 MB per res-7 tile that is ~19 MB of payload per fetch,
+   * paid to a donated public server.
+   *
+   * Both are drawn because drawing only the box would invite the reading this
+   * display exists to correct — that the red box IS the tile. The hexagon is
+   * dashed and dimmer: it is the reference, the box is the subject.
+   */
+  renderFetchTiles(tiles: readonly string[]): void {
+    this.fetchLayer.clearLayers();
+
+    for (const tile of tiles) {
+      const bounds = tileBounds(tile);
+      L.rectangle(
+        [
+          [bounds.south, bounds.west],
+          [bounds.north, bounds.east],
+        ],
+        {
+          color: "#ff3860",
+          weight: 2,
+          // Stroke only. A fill over the heat grid would defeat the grid, and
+          // the question here is "how big", not "what is inside".
+          fill: false,
+          // Named so the e2e suite can assert the box is really on screen
+          // rather than that some path exists.
+          className: "fetch-extent",
+        },
+      ).addTo(this.fetchLayer);
+
+      L.polygon(cellToBoundary(tile), {
+        color: "#ff3860",
+        weight: 1,
+        opacity: 0.5,
+        dashArray: "4 4",
+        fill: false,
+        className: "fetch-tile-hex",
+      }).addTo(this.fetchLayer);
+    }
   }
 
   /**

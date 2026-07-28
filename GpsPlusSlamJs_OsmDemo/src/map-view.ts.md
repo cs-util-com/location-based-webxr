@@ -8,7 +8,8 @@ raster basemap.
 ## Public API
 
 - `class MapView` — `map`, `setPosition(position)`,
-  `render(cells, regions, category, threshold): HeatScale`, `describeScale`
+  `render(cells, regions, category, threshold): HeatScale`,
+  `renderFetchTiles(tiles)`, `describeScale`
 - `OSM_ATTRIBUTION`
 
 ## Invariants & assumptions
@@ -17,8 +18,16 @@ raster basemap.
   detector because OSM footprints carry low-metre absolute error, plausibly
   larger than the fusion error being measured. On a 2D map a mis-scored lawn is
   unambiguously a scoring fact rather than a pose question.
-- **Regions are drawn UNDER cells.** The outline is context for the grid, and
-  drawing it on top hides the very cells that produced it.
+- **Regions are drawn OVER cells**, and the fetch extent over both. A 2 px
+  stroke occludes essentially nothing, while a stroke _under_ 55 %-opacity fills
+  is washed out precisely where the boundary matters. (This entry previously
+  claimed the opposite of what the code does — the e2e ordering assertion,
+  "draws region outlines, and draws them OVER the cells", is what settles it.)
+- **The fetch extent is drawn as a stroke-only red box, plus the hexagon.** The
+  box is what Overpass was asked for; the dashed hexagon is what the index keys
+  on. Both, because drawing only the box invites the reading the display exists
+  to correct — that the box _is_ the tile. Measured 1.39× over-fetch at res 7;
+  see `fetch-extent.ts.md`. No fill, so it never competes with the heat grid.
 - **Cells at the identity are not drawn at all** — see `heat-colours.ts.md`.
 - **Clear and rebuild rather than diff.** A working set is ~931 cells; a diff
   would be a second source of truth about what is on screen, which is the last

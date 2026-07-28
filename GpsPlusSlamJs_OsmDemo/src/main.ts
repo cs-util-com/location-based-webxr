@@ -35,6 +35,7 @@ import {
 import { DemoPipeline } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { latestOnly } from "./latest-only.js";
+import { describeExtent } from "./fetch-extent.js";
 import { MapView } from "./map-view.js";
 import { BuildingView } from "./building-view.js";
 
@@ -134,6 +135,10 @@ async function main(): Promise<void> {
         category,
         snapshot.threshold,
       );
+      // The red box: what Overpass was actually asked for, drawn so "one res-7
+      // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
+      // and the hexagon differ and why that gap is worth showing.
+      mapView.renderFetchTiles(snapshot.loadedTiles);
       const mesh = buildingView.render(pipeline.features().values(), position);
 
       scaleText.textContent = mapView.describeScale(scale);
@@ -143,6 +148,7 @@ async function main(): Promise<void> {
         `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,
         `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed heights)`,
         `${mesh.triangles} triangles`,
+        describeExtent(snapshot.loadedTiles),
         tableNote,
         snapshot.missingTiles.length > 0
           ? `⚠ ${snapshot.missingTiles.length} tile(s) unavailable`
