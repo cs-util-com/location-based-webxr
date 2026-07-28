@@ -24,14 +24,18 @@
  * thing to do in a desktop/Unity build and a completely unreasonable thing to
  * ship in a browser package whose entire dependency budget is one peer.
  *
- * The alternative would be a coarse global undulation grid. **We do not ship
- * one, because we do not have one we can verify.** Inventing plausible
- * undulation numbers would produce exactly the failure this file exists to
- * prevent: a confident, smooth, entirely wrong vertical offset that no test
- * would catch and that presents as a fusion bug. An honest seam with a loud
- * default beats fabricated data.
+ * **A verified 1-degree grid now ships as an opt-in import** — see
+ * `egm96.ts`, and note what changed: the original objection was never "a grid
+ * is a bad idea", it was "we must not ship numbers we cannot verify", because a
+ * plausible wrong geoid is a confident, smooth, entirely wrong vertical offset
+ * that no test would catch and that presents as a fusion bug. That is answered
+ * by generating the grid with the reference evaluator and pinning it against
+ * exact evaluations — not by waiving the concern. It lives behind its own entry
+ * point (~170 KB) so an app that does not need absolute heights never pays.
  *
- * So: the model is **injected**. Three are provided —
+ * The model is still **injected**, and four are provided —
+ *
+ * - `egm96Geoid()` from `./egm96.js` — correct anywhere on Earth, mean 0.25 m.
  *
  * - `constantGeoid(n)` — the practical answer for an app operating in one
  *   region. Look `N` up once for your area (NGA's EGM96 calculator, or the C#

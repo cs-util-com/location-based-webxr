@@ -73,6 +73,10 @@ const entryFiles = [
   "src/elevation/terrarium.ts",
   "src/elevation/opentopodata-provider.ts",
   "src/elevation/geoid.ts",
+  // The EGM96 grid is ~170 KB and is NOT in the elevation barrel, so an app
+  // that does not need absolute heights never pays for it. Own entry point.
+  "src/elevation/egm96.ts",
+  "src/elevation/egm96-grid.ts",
 
   // mesh/ — OSM features to renderable geometry, as plain typed arrays
   "src/mesh/index.ts",

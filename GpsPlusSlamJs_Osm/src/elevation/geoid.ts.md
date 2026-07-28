@@ -21,15 +21,18 @@ undulation model that makes it possible.
   session are ellipsoidal. `N` is ~+45 m in central Europe and reaches ±100 m
   globally. Getting the sign backwards is a ~90 m error that looks like a fusion
   bug, not like a bug here — which is why it is in `lessons-learned.md`.
-- **NO undulation data ships with this package, deliberately.** The C# reference
-  evaluates the EGM96 series to degree 360 from a **5 MB** coefficient table
-  (`Algorithms/AltitudeCalculation/Coef.cs`) — reasonable in Unity, unreasonable
-  in a browser package with a one-peer dependency budget. Shipping a coarse grid
-  we cannot verify would produce exactly this file's worst failure: a smooth,
-  confident, entirely wrong offset that no test could catch. An honest seam
-  beats fabricated data.
-  - **This is the one part of the plan's §7 not built as written**, and the
-    reason is recorded here rather than only in a summary doc.
+- **A verified EGM96 grid now ships — as an opt-in import, not in this file.**
+  See [`egm96.ts.md`](./egm96.ts.md): `egm96Geoid()` from
+  `gps-plus-slam-osm/elevation/egm96`, ~170 KB, measured at mean 0.25 m /
+  max 5.0 m against exact evaluations.
+  - **The original objection was never "a grid is a bad idea"** — it was "we must
+    not ship numbers we cannot verify", because a plausible wrong geoid is a
+    smooth confident tens-of-metres offset that looks like a fusion bug. That is
+    answered by generating the grid from the reference EGM96 evaluator already
+    in this project and pinning it against exact evaluations, rather than by
+    waiving the concern.
+  - It stays out of `elevation/index.ts` so an app that does not need absolute
+    heights never pays for the bytes.
 - **`ZERO_GEOID` is the default and is wrong everywhere on Earth.** It is chosen
   only because a library must not silently apply an unverifiable correction.
   `describeGeoid` exists so an app can SHOW which model is active — the

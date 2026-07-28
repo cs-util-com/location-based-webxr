@@ -42,6 +42,7 @@
     "test:watch": "vitest --config config/vitest.config.ts",
     "bench": "vitest bench --run --config config/vitest.bench.config.ts",
     "import:rule-table": "node scripts/import-rule-table.mjs",
+    "import:geoid-grid": "node scripts/import-geoid-grid.mjs",
     "capture:fixtures": "node scripts/capture-fixtures.mjs"
   },
   "engines": {
