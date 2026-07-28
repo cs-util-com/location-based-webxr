@@ -16,3 +16,6 @@ export {
   scoreWorkingSet,
   fetchTilesForScoreWorkingSet,
 } from "./resolutions.js";
+
+export type { MergedTiles, FeatureProvenance } from "./merge-tiles.js";
+export { mergeTiles } from "./merge-tiles.js";
