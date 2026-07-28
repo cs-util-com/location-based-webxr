@@ -34,14 +34,39 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  * marker, an editor or merge leftover, or a `.csv`/`.json` dump sitting in a
  * `scripts/` directory, which is for executables rather than data.
  */
-const SCRATCH_PATTERNS = [
-  /(^|[.\-_])tmp([.\-_]|$)/i,
-  /(^|[.\-_])temp([.\-_]|$)/i,
-  /(^|[.\-_])scratch([.\-_]|$)/i,
+const SCRATCH_MARKERS = ['tmp', 'temp', 'scratch'];
+
+/** Extensions that are always a working artefact, wherever they appear. */
+const SCRATCH_EXTENSIONS = [
   /\.(orig|rej|bak|swp|swo)$/i,
   /^~\$/, // Office lock files
   /\.DS_Store$/,
 ];
+
+/**
+ * Does this basename mark the file as a working artefact?
+ *
+ * The marker must sit at the START or the END of the name's first segment —
+ * `tmp-dump.csv`, `.rules-tmp.csv` — not merely somewhere inside it.
+ *
+ * That precision is not fussiness. The first version of this check matched the
+ * marker anywhere, and promptly flagged **this very file**: `no-scratch-files`
+ * is a name *about* scratch files, not the name *of* one. A rule that cannot
+ * tell those apart gets an allowlist entry on its first day and a second on its
+ * second, and stops meaning anything.
+ */
+function looksLikeScratch(name) {
+  if (SCRATCH_EXTENSIONS.some((pattern) => pattern.test(name))) return true;
+
+  // Leading dot is a hiding mechanism, not part of the name; `.rules-tmp.csv`
+  // should be judged as `rules-tmp`.
+  const stem = name.replace(/^\./, '').split('.')[0] ?? '';
+  return SCRATCH_MARKERS.some(
+    (marker) =>
+      new RegExp(`^${marker}([-_]|$)`, 'i').test(stem) ||
+      new RegExp(`([-_]|^)${marker}$`, 'i').test(stem),
+  );
+}
 
 /** Paths that look scratch-like but are deliberate. Empty is the goal. */
 const ALLOWLIST = new Set([]);
@@ -67,11 +92,43 @@ describe('no scratch artefacts are tracked in git', () => {
 
   it('tracks no file whose NAME marks it as a working artefact', () => {
     const offenders = files.filter(
-      (file) =>
-        !ALLOWLIST.has(file) &&
-        SCRATCH_PATTERNS.some((pattern) => pattern.test(basename(file))),
+      (file) => !ALLOWLIST.has(file) && looksLikeScratch(basename(file)),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it('tells a scratch file from a file ABOUT scratch files', () => {
+    // Pinned because the first version of this rule failed exactly here: it
+    // matched the marker anywhere in the name and flagged its own test file.
+    // The distinction is what keeps the rule from acquiring an allowlist entry
+    // per false positive until it means nothing.
+    for (const scratch of [
+      '.rules-tmp.csv',
+      'tmp-dump.json',
+      'dump-tmp.json',
+      'scratch.md',
+      'notes-scratch.txt',
+      'temp_output.csv',
+      'thing.orig',
+      '.DS_Store',
+    ]) {
+      expect(looksLikeScratch(scratch), `${scratch} should be flagged`).toBe(
+        true,
+      );
+    }
+
+    for (const deliberate of [
+      'no-scratch-files.test.js',
+      'temperature-sensor.ts',
+      'template.html',
+      'attempt-log.ts',
+      'contemporary.md',
+    ]) {
+      expect(
+        looksLikeScratch(deliberate),
+        `${deliberate} should NOT be flagged`,
+      ).toBe(false);
+    }
   });
 
   it('tracks no data dump sitting loose in a scripts/ directory', () => {
