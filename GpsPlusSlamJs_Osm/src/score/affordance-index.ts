@@ -486,20 +486,27 @@ export class AffordanceIndex {
 }
 
 /**
- * Every res-13 child of a res-11 chunk, memoised.
+ * Every res-13 child of a res-11 chunk.
  *
- * Memoised because a chunk's children never change and the same chunk is
- * re-scored whenever a tile invalidates it. Note `cellToChildren` is an INDEX
- * partition, not a geometric one — a child can lie slightly outside its parent
- * — which is why `scoreChunk` also pads the bbox it selects features with.
+ * DELIBERATELY NOT MEMOISED. It was, in a module-level `Map` with no eviction —
+ * which contradicted this class's own stated bound ("an unbounded cache on a
+ * user who walks all day is a leak with a slow fuse"), outlived the instance,
+ * and was shared between instances and across a whole test run. At 49 res-13
+ * ids per chunk, a day's walk through 20k chunks interns ~1M strings that
+ * `evictBeyond` could never reach, because it drops the chunk and not the data
+ * derived from it.
+ *
+ * The memoisation bought nothing worth that: measured at **9.1 µs per call**,
+ * against a `scoreChunk` that bbox-tests every one of a tile's ~21,800 features
+ * in the same pass. The result is also used only as a membership `Set` inside a
+ * single `scoreChunk` call, so it has no reason to outlive it.
+ *
+ * Note `cellToChildren` is an INDEX partition, not a geometric one — a child can
+ * lie slightly outside its parent — which is why `scoreChunk` also pads the bbox
+ * it selects features with.
  */
-const childCache = new Map<string, string[]>();
 function childCells(chunk: string): string[] {
-  const hit = childCache.get(chunk);
-  if (hit !== undefined) return hit;
-  const children = cellToChildren(chunk, AFFORDANCE_RES);
-  childCache.set(chunk, children);
-  return children;
+  return cellToChildren(chunk, AFFORDANCE_RES);
 }
 
 /**
@@ -544,13 +551,16 @@ function cellBbox(cell: string): Bbox {
   return bbox;
 }
 
-const chunkBboxCache = new Map<string, Bbox>();
+/**
+ * A chunk's bbox. Uncached, for the same reason as `childCells` above.
+ *
+ * The cache this replaces was module-level and unbounded, growing per chunk
+ * while `evictBeyond` dropped the chunks themselves. Measured cost of the call
+ * it avoided: **2.55 µs**. Its hottest caller is `acceptTile`, which runs it
+ * once per held chunk — at most 256 — behind a network fetch measured at 18 s.
+ */
 function chunkBbox(chunk: string): Bbox {
-  const hit = chunkBboxCache.get(chunk);
-  if (hit !== undefined) return hit;
-  const bbox = cellBbox(chunk);
-  chunkBboxCache.set(chunk, bbox);
-  return bbox;
+  return cellBbox(chunk);
 }
 
 function tileBbox(tile: string): Bbox {
