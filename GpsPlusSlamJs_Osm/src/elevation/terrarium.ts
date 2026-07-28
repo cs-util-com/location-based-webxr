@@ -342,12 +342,29 @@ export function browserPngDecoder(): PngDecoder {
           "In Node, pass your own `decodePng`.",
       );
     }
-    const bitmap = await createImageBitmap(new Blob([bytes]));
+    // BOTH OPT-OUTS ARE LOAD-BEARING, not defensive habit. `decodeTerrarium`
+    // treats R/G/B as an exact 24-bit fixed-point number, but this path is
+    // *allowed* to rewrite that triple on the way through: a `gAMA`, `sRGB` or
+    // `iCCP` chunk in the PNG lets the user agent colour-manage it, and alpha
+    // premultiplication can shift it again. Both default to "the UA may".
+    //
+    // A one-step shift in R is 256 METRES of elevation, arriving as a smooth
+    // plausible surface rather than an error — the exact failure this module is
+    // organised around. Terrarium tiles are data that happens to be PNG-encoded,
+    // not pictures, so every stage of image pipeline politeness is wrong here.
+    const bitmap = await createImageBitmap(new Blob([bytes]), {
+      colorSpaceConversion: "none",
+      premultiplyAlpha: "none",
+    });
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-    const ctx = canvas.getContext("2d");
+    // The canvas is never composited or animated — it exists only to hand the
+    // bytes back — so a GPU-backed surface is the wrong trade for a full read.
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (ctx === null) throw new Error("OffscreenCanvas 2d context unavailable");
     ctx.drawImage(bitmap, 0, 0);
-    const image = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+    const image = ctx.getImageData(0, 0, bitmap.width, bitmap.height, {
+      colorSpace: "srgb",
+    });
     bitmap.close();
     return { width: image.width, height: image.height, data: image.data };
   };

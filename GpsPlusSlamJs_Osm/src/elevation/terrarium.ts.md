@@ -23,6 +23,20 @@ sampling, and the provider that ties them together.
 - **The PNG decoder is injected.** No decoder is common to the browser, a Worker
   and Node, and this package has no runtime dependencies. It also makes the
   decode maths testable byte-exactly with no image codec involved.
+- **`browserPngDecoder` opts out of colour management AND alpha
+  premultiplication, and that is not defensive habit.** A Terrarium tile is data
+  that happens to be PNG-encoded, not a picture. `createImageBitmap` +
+  `drawImage` + `getImageData` is allowed to rewrite the RGB triple on the way
+  through — a `gAMA`, `sRGB` or `iCCP` chunk lets the user agent colour-manage
+  it, and premultiplication can shift it again; both default to "the UA may".
+  **A one-step shift in R is 256 metres**, arriving as a smooth plausible
+  surface rather than an error. So the call passes
+  `colorSpaceConversion: "none"` and `premultiplyAlpha: "none"`, and reads back
+  with an explicit `colorSpace: "srgb"`.
+  - The corruption cannot be reproduced in the gate — it needs a real codec and
+    a real colour-managed compositor, and every other test here injects a
+    synthetic decoder precisely to avoid one. The tests therefore pin that the
+    **flags are requested**, which is the part an edit could silently drop.
 - **z=13 by default, not z=14.** At 50.8° N a z=14 tile spans ~1.55 km against a
   2.81 km res-7 hexagon, so covering one fetch tile takes a 3 x 3 block — nine
   requests, the exact cost the res-8 to res-7 move avoided. z=13 spans ~3.1 km,

@@ -153,7 +153,9 @@ describe("an aborted consensus batch rejects rather than degrading", () => {
     controller.abort();
 
     const consensus = consensusProvider([aborting]);
-    await expect(consensus.elevationAt(AT, controller.signal)).rejects.toThrow();
+    await expect(
+      consensus.elevationAt(AT, controller.signal),
+    ).rejects.toThrow();
   });
 
   it("still degrades when a provider fails for a NON-abort reason", async () => {

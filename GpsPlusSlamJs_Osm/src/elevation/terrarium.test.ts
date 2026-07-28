@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_TERRARIUM_ZOOM,
   TerrariumProvider,
+  browserPngDecoder,
   decodeTerrarium,
   sampleTile,
   toElevationTile,
@@ -224,5 +225,97 @@ describe("TerrariumProvider", () => {
     await expect(
       provider.elevationAt([{ lat: 50.94, lng: 6.95 }]),
     ).rejects.toThrow("aborted");
+  });
+});
+
+describe("the browser PNG decoder", () => {
+  /**
+   * WHY THIS SUITE EXISTS, and why it asserts a CALL rather than a value.
+   *
+   * `decodeTerrarium` treats R/G/B as an exact 24-bit fixed-point number — the
+   * module says so, and every other test here pins exact values because of it.
+   * But `createImageBitmap` + `drawImage` + `getImageData` is *allowed* to
+   * colour-manage on the way through: a `gAMA`, `sRGB` or `iCCP` chunk in the
+   * PNG lets the user agent rewrite the triple, and alpha premultiplication can
+   * rewrite it again. Both default to "the UA may".
+   *
+   * A one-step shift in R is **256 metres** of elevation, delivered as a smooth
+   * plausible surface — precisely the "looks like a fusion bug" failure this
+   * module is organised around, and the reason the opt-outs are not optional.
+   *
+   * The corruption itself cannot be reproduced here: it needs a real codec and a
+   * real colour-managed compositor, and every other test in this file injects a
+   * synthetic decoder specifically to avoid one. So what is pinned instead is
+   * that the decoder ASKS for the opt-outs — which is the part a future edit
+   * could silently drop, with no visible symptom until someone compares a
+   * rendered city against a survey.
+   */
+  const stubCanvas = (): {
+    bitmapOptions: () => ImageBitmapOptions | undefined;
+    contextOptions: () => unknown;
+  } => {
+    let bitmapOptions: ImageBitmapOptions | undefined;
+    let contextOptions: unknown;
+
+    vi.stubGlobal(
+      "createImageBitmap",
+      (_blob: unknown, options?: ImageBitmapOptions) => {
+        bitmapOptions = options;
+        return Promise.resolve({ width: 2, height: 1, close: () => {} });
+      },
+    );
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        constructor(
+          readonly width: number,
+          readonly height: number,
+        ) {}
+        getContext(_id: string, options?: unknown) {
+          contextOptions = options;
+          return {
+            drawImage: () => {},
+            getImageData: (_x: number, _y: number, w: number, h: number) => ({
+              width: w,
+              height: h,
+              data: new Uint8ClampedArray(w * h * 4),
+            }),
+          };
+        }
+      },
+    );
+
+    return {
+      bitmapOptions: () => bitmapOptions,
+      contextOptions: () => contextOptions,
+    };
+  };
+
+  it("opts out of colour management and alpha premultiplication", async () => {
+    const stub = stubCanvas();
+    await browserPngDecoder()(new ArrayBuffer(8));
+    expect(stub.bitmapOptions()).toMatchObject({
+      colorSpaceConversion: "none",
+      premultiplyAlpha: "none",
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("asks for a read-optimised context, since it reads every pixel once", async () => {
+    // The canvas is never composited or animated — it exists solely to get the
+    // bytes back out — so a GPU-backed surface is the wrong trade.
+    const stub = stubCanvas();
+    await browserPngDecoder()(new ArrayBuffer(8));
+    expect(stub.contextOptions()).toMatchObject({ willReadFrequently: true });
+    vi.unstubAllGlobals();
+  });
+
+  it("names the missing API rather than throwing something opaque", async () => {
+    // A Node caller must supply its own decoder, and the error has to say so.
+    vi.stubGlobal("createImageBitmap", undefined);
+    await expect(browserPngDecoder()(new ArrayBuffer(8))).rejects.toThrow(
+      /createImageBitmap/,
+    );
+    vi.unstubAllGlobals();
   });
 });
