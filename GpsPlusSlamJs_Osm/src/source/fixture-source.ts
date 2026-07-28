@@ -18,7 +18,7 @@ import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
 export interface OsmFixture {
   /** Short slug, e.g. `"cologne-park"`. */
   readonly name: string;
-  /** The res-8 H3 cell the capture covers. */
+  /** The H3 cell the capture covers. Fixtures are res-10; production tiles are `FETCH_RES` (res 7). */
   readonly tile: string;
   /** Epoch ms at which the capture was taken. */
   readonly capturedAt: number;

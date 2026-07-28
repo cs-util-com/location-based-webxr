@@ -26,9 +26,10 @@ package testable offline and deterministically.
 ## The fixtures themselves
 
 Four real captures; provenance and the S3DB census are in
-[`../testdata/README.md`](../testdata/README.md). They are **res-10** tiles, not
-res-8 fetch tiles: res-8 capture 504s against public instances, which is
-measured and documented there.
+[`../testdata/README.md`](../testdata/README.md). They are **res-10** tiles, not full
+`FETCH_RES` (res-7) fetch tiles — originally because a full capture was believed
+impossible, a conclusion since withdrawn, and now because a res-7 tile is ~28 MB
+of repo weight. Both stories are in that README.
 
 The `beach` fixture is a single element — the entire North Sea relation, 0.99 MB
 — which proves a single relation can dominate a tile's payload, and will recur

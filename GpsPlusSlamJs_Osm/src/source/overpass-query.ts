@@ -142,7 +142,7 @@ export function cellToBoundingBox(cell: string): BoundingBox {
     throw new Error(`Cell ${cell} has no usable boundary`);
   }
 
-  // A res-8 hexagon is ~1 km across, i.e. well under 1° of longitude anywhere.
+  // A res-7 hexagon is ~2.8 km across, i.e. well under 1° of longitude anywhere.
   // A span above 180° therefore cannot be a real extent — it is the signature
   // of vertices sitting either side of the antimeridian.
   if (east - west > 180) {

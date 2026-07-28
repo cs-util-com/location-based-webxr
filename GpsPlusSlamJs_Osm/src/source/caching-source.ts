@@ -122,7 +122,7 @@ export class CachingSource implements OsmDataSource {
     return request;
   }
 
-  /** Every tile currently cached, as res-8 cell ids. */
+  /** Every tile currently cached, as `FETCH_RES` (res-7) cell ids. */
   async listCachedTiles(): Promise<string[]> {
     const prefix = `osm/v${this.schemaVersion}/`;
     const keys = await this.store.keys();

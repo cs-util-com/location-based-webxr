@@ -10,7 +10,7 @@ Cache-first decorator around any `OsmDataSource`, backed by an injected
 - `CachingSource` implementing `OsmDataSource`.
 - `cacheKey(tile)` → `osm/v{schemaVersion}/{tile}`.
 - `ensureTile(tile, { signal?, maxAgeMs? })`.
-- `listCachedTiles()` → res-8 cell ids.
+- `listCachedTiles()` → `FETCH_RES` (res-7) cell ids.
 - `evictTile(tile)`.
 - `stats` — `{ hits, misses, staleRefetches, deduplicated }`.
 

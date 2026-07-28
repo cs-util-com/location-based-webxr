@@ -15,13 +15,13 @@ import type { OsmFeature } from "../model/osm-feature.js";
 import type { SkippedElement } from "../model/overpass-parser.js";
 
 /**
- * The result of loading one res-8 fetch tile.
+ * The result of loading one fetch tile (`FETCH_RES`, res 7 as of 2026-07-28).
  *
  * **Structured-cloneable**, like everything else that can cross a worker
  * boundary: plain objects and arrays only.
  */
 export interface OsmTileResult {
-  /** The res-8 H3 cell this result is for. */
+  /** The `FETCH_RES` H3 cell this result is for. */
   readonly tile: string;
   readonly features: readonly OsmFeature[];
   /**
@@ -60,9 +60,9 @@ export interface OsmDataSource {
   readonly sourceId: string;
 
   /**
-   * Fetches every OSM feature intersecting the given res-8 fetch tile.
+   * Fetches every OSM feature intersecting the given fetch tile.
    *
-   * @param tile - a res-8 H3 cell id.
+   * @param tile - a `FETCH_RES` H3 cell id (res 7 as of 2026-07-28).
    * @param signal - aborts in-flight work when the user leaves the area.
    * @throws when the tile genuinely cannot be produced. Callers that must
    *   survive (the movement trigger) catch; callers that want to know (an

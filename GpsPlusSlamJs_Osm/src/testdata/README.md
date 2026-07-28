@@ -15,67 +15,66 @@ Each `<slug>.json` carries its own provenance: `tile`, `bbox`, the exact
 `query`, `capturedAt`, `capturedFrom`, `rawBytes`, `elementCount`,
 `s3dbCensus`, and `regenerateWith`.
 
-## Why these are res-10 tiles, not res-8 fetch tiles
+## Why these are res-10 tiles, not full res-7 fetch tiles
 
-> **The measurement below is provisional and is being re-run.** Owner review,
-> 2026-07-28: every number came from **one IP in one session** that ran this
-> capture script and its variants repeatedly. Overpass rate-limits per client IP
-> with a slot system, and an **exhausted slot allocation presents to the client
-> as queueing** — which is precisely the symptom the "public instances are
-> saturated" reading rests on. `/api/status` reports which of the two it is, for
-> our IP, directly, and it was never queried. Plan Iteration 2.5 re-measures
-> (`/api/status`, then this table at a quiet hour from a different network) and
-> owns the fix.
->
-> Two conclusions this section originally drew are **withdrawn**: that public
-> instances are globally saturated, and that capturing res-8 tiles needs a
-> self-hosted instance. There will be **no server infrastructure** (owner
-> decision); if the constraint survives re-measurement, the fetch _policy_
-> changes shape instead — fewer, larger requests, i.e. `FETCH_RES` 8 → 7. See
-> plan §5.1, §5.1.1 and §5.3.1.
+**The original reason is withdrawn. The current reason is repo weight.**
 
-**The plan assumed fixtures would be whole res-8 fetch tiles. They are not**, for
-the reason below. Measured against public Overpass instances on 2026-07-28
-(Cologne Volksgarten, one res-8 tile):
+These fixtures were captured on 2026-07-28 under the belief that public Overpass
+instances were saturated and that a full-size tile could not be fetched at all.
+That belief was wrong: it came from a key **regex** query
+(`nwr[~"^(k1|k2|…)$"~"."]`), which makes Overpass evaluate a regex against every
+key of every element in the bbox. A **union of exact-key statements** over the
+same 32 keys returns a whole res-7 tile — 21,847 elements, 28.31 MB
+decompressed — in **18.2 s**. See
+`GpsPlusSlamJs_Docs/docs/2026-07-28-1040-overpass-remeasurement-findings.md`.
 
-- `nwr[~"."~"."]` — the plan's §5.1 query — **504 Gateway Timeout** after 101 s.
-- `nwr;` (no tag filter at all) — **504** after 106 s.
-- Regex over the 61 keys the rule table declares — **504** after 124 s.
-- Regex over a curated 23-key list — **OK**, 2.90 MB, 3157 elements, but 96 s.
+Everything that reading produced is withdrawn: that instances are globally
+saturated, that a self-hosted instance is required, and that latency is an
+immovable constraint. `FETCH_RES` is now **7** (owner decision — over-fetch
+rather than under-fetch, one request per move instead of seven), and the
+production query in `src/source/overpass-query.ts` is the union form.
 
-The observation read as decisive at the time is that a res-**10** tile (49×
-smaller, 0.015 km²) returning 60 KB still took **75 s**, and a res-9 tile timed
-out — so response time is dominated by **queueing**, not by our query or the
-area. **That much still holds; whose queue it was does not.** Queue wait is
-independent of query size, so the res-10 control is equally consistent with "our
-IP was in the penalty queue" and does not discriminate between the two
-hypotheses.
+So a full-size capture is now possible, and what stops it is size: a res-7 tile
+is ~28 MB, the merge tests want a **second overlapping one**, and this corpus is
+4.8 MB today. That decision (gzip the fixtures / regenerate on demand / check in
+raw) is open — see the plan's §10.
 
-So fixtures are captured at res 10: small, but real OSM data with real tag
-distributions, real multipolygons and real long-tail tags — which is what
-fixtures are for. **Re-capture at the real fetch-tile resolution** once plan
-Iteration 2.5 has re-measured and settled the fetch policy (res 8, or res 7 if
-§5.1.1 wins).
+**These four stay the everyday corpus regardless**: small, fast in CI, and real
+OSM data with real tag distributions, real multipolygons and real long-tail
+tags, which is what fixtures are for. What they cannot give is true element
+counts, true parse time, or an S3DB census at a scale where one unusual block
+does not move every ratio — so quote their absolute numbers as "measured at res
+10 at X", never as typical.
 
-The payload extrapolation does hold, and confirms the plan's estimate: park at
-res 10 is 85 elements / 0.08 MB; × 49 ≈ 4165 elements / 3.9 MB, against the
-3157 elements / 2.90 MB actually measured at res 8. The plan's "low single-digit
-MB for a res-8 tile" was right.
+> **Before re-capturing, read the capture script.** `scripts/capture-fixtures.mjs`
+> still builds the **regex** query and still keeps its own copy of the key list
+> rather than importing `OVERPASS_SELECT_KEYS`. Run as-is against a res-7 tile it
+> will 504, and the failure will look like a server problem rather than a query
+> problem — which is exactly how a day was lost the first time.
 
 ## The query is key-filtered, and why that is safe
 
-These captures use a key filter (`nwr[~"^(highway|surface|...)$"~"."]`) rather
-than the plan's unfiltered regex, because the unfiltered form does not complete.
+These captures were taken with a key **regex**
+(`nwr[~"^(highway|surface|...)$"~"."]`). At res 10 that completes; at any real
+fetch-tile size it does not — the regex, not the key list, is what 504s. The
+shipped production query in `src/source/overpass-query.ts` is therefore a
+**union of exact-key statements** over the same 32 keys, one union block with
+one trailing `out`, which returns each element exactly once.
 
-**`SELECT_KEYS` in `scripts/capture-fixtures.mjs` is the only Overpass query in
-this repo that has ever fetched real data, and it has 32 keys.** The plan's §5.1
-printed a 24-key subset of it, and the "67.7 % of rule-table rows" figure quoted
-in the planning docs was computed for a 23-key list — so both are narrower than
-what actually works and neither describes the shipped filter. Plan Iteration 2.5
-moves this constant into `src/source/overpass-query.ts` and has the capture
-script import it, so production and capture cannot drift apart again; Iteration 3
-then widens it from the rule-table snapshot. **Widening is free scoring signal;
-narrowing is a silent hole that reads as "nothing is mapped here".**
+**The 32-key list is the only Overpass filter in this repo that has ever fetched
+real data.** The plan's §5.1 once printed a 24-key subset of it and the "67.7 %
+of rule-table rows" figure was computed for a 23-key list — both narrower than
+what ships. Measured against the shipped 32 keys: **75.2 %** of the rule table's
+467 scoring rules are reachable, and **zero elements dropped by the filter across
+all four fixtures would have scored anything but the identity**, because the
+uncovered keys co-occur with covered ones on the same element
+(`src/rules/key-filter-coverage.test.ts` reports both). **Widening is free
+scoring signal; narrowing is a silent hole that reads as "nothing is mapped
+here".**
+
+**Still open:** the capture script keeps its own copy of the list instead of
+importing `OVERPASS_SELECT_KEYS`, so the two can drift, and it still emits the
+regex form.
 
 **This does not cost the scoring model its long tail.** The filter selects which
 _elements_ are returned; `out geom` then returns **all tags** of every matched
