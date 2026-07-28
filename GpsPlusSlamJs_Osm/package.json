@@ -44,7 +44,7 @@
     "node": ">=22.14.0"
   },
   "peerDependencies": {
-    "h3-js": ">=4.2.0"
+    "h3-js": ">=4.2.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
