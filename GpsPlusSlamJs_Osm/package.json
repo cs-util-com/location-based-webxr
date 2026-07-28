@@ -15,7 +15,11 @@
     "./spatial": "./dist/spatial/index.js",
     "./spatial/*": "./dist/spatial/*.js",
     "./rules": "./dist/rules/index.js",
-    "./rules/*": "./dist/rules/*.js"
+    "./rules/*": "./dist/rules/*.js",
+    "./score": "./dist/score/index.js",
+    "./score/*": "./dist/score/*.js",
+    "./regions": "./dist/regions/index.js",
+    "./regions/*": "./dist/regions/*.js"
   },
   "types": "./dist/index.d.ts",
   "scripts": {

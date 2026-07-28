@@ -12,3 +12,5 @@ export * from "./model/index.js";
 export * from "./spatial/index.js";
 export * from "./source/index.js";
 export * from "./rules/index.js";
+export * from "./score/index.js";
+export * from "./regions/index.js";

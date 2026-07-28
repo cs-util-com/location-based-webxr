@@ -1,0 +1,360 @@
+/**
+ * Scoring-kernel tests — the oracle tests, and the point of the whole iteration.
+ *
+ * Why these tests matter:
+ * The C# reference's tests pin EXACT expected products: a beach cell at
+ * 5 × 7 = 35, the same cell with a historic way at 105, a hard veto at 0. Those
+ * numbers are the entire reason the multiplicative model was kept over a bounded
+ * [0,1] redesign — they make this port *verifiable* rather than merely
+ * plausible. If these pass, the port is faithful; if they drift, something in
+ * the chain from CSV to cell is wrong and the rest of the package is scoring
+ * confidently against nothing.
+ *
+ * Everything here uses a hand-built table with known inputs. That is deliberate:
+ * an oracle needs exact known inputs, not whatever a real tile happens to
+ * contain — which is also why the `beach` fixture (one element, the entire North
+ * Sea) is NOT the right place for these.
+ *
+ * @see affordance-scorer.ts.md
+ */
+
+import { describe, it, expect } from "vitest";
+import { latLngToCell } from "h3-js";
+import {
+  scoreFeature,
+  scoreCells,
+  cellsAboveThreshold,
+  debugUrlForKey,
+} from "./affordance-scorer.js";
+import { parseRuleTable } from "../rules/rule-table.js";
+import { buildFeatureIndex } from "../spatial/h3-feature-index.js";
+import { AFFORDANCE_RES } from "../spatial/resolutions.js";
+import type { OsmFeature } from "../model/osm-feature.js";
+
+const COLOGNE = { lat: 50.9413, lng: 6.9583 };
+const HERE = latLngToCell(COLOGNE.lat, COLOGNE.lng, AFFORDANCE_RES);
+
+/** The C# oracle's own values. */
+const TABLE = parseRuleTable(
+  [
+    "id,Key,Value,walkable,battleArea",
+    "surface_sand,surface,sand,5,5",
+    "natural_beach,natural,beach,7,8",
+    "historic_ruins,historic,ruins,3,3",
+    "building_house,building,house,0,0",
+    "landuse_grass,landuse,grass,9,10",
+  ].join("\n"),
+  { source: "test", fetchedAt: 0 },
+);
+
+const at = (id: number, tags: Record<string, string>): OsmFeature => ({
+  type: "node",
+  id,
+  position: COLOGNE,
+  tags,
+});
+
+const scoreAt = (features: OsmFeature[], category: string): number => {
+  const result = scoreCells(buildFeatureIndex(features), TABLE);
+  const cell = result.cells.find((c) => c.cell === HERE);
+  return cell?.scores[category] ?? Number.NaN;
+};
+
+describe("THE ORACLE — the C# reference's published values", () => {
+  it("a cell covered by surface=sand and natural=beach scores exactly 35 walkable", () => {
+    // 5 x 7. The headline number from the reference's own test suite.
+    expect(
+      scoreAt(
+        [at(1, { surface: "sand" }), at(2, { natural: "beach" })],
+        "walkable",
+      ),
+    ).toBe(35);
+  });
+
+  it("adding a historic way worth 3 makes it exactly 105", () => {
+    expect(
+      scoreAt(
+        [
+          at(1, { surface: "sand" }),
+          at(2, { natural: "beach" }),
+          at(3, { historic: "ruins" }),
+        ],
+        "walkable",
+      ),
+    ).toBe(105);
+  });
+
+  it("one feature carrying BOTH tags gives the same 35", () => {
+    // The product is over (features x tags), so how the tags are distributed
+    // between elements must not change the answer. A mapper drawing one beach
+    // polygon with both tags and a mapper drawing two overlapping ones must get
+    // the same score.
+    expect(
+      scoreAt([at(1, { surface: "sand", natural: "beach" })], "walkable"),
+    ).toBe(35);
+  });
+
+  it("any cell touched by building=house scores exactly 0 for battleArea", () => {
+    expect(
+      scoreAt(
+        [at(1, { landuse: "grass" }), at(2, { building: "house" })],
+        "battleArea",
+      ),
+    ).toBe(0);
+  });
+
+  it("a cell with no matching tags scores exactly 1 — the identity", () => {
+    expect(scoreAt([at(1, { amenity: "bench" })], "walkable")).toBe(1);
+  });
+
+  it("a feature with no tags at all scores 1", () => {
+    expect(scoreFeature(at(1, {}), "walkable", TABLE)).toBe(1);
+  });
+});
+
+describe("zero is absorbing, and the short-circuit is real", () => {
+  it("stops looking up rules once a veto is hit", () => {
+    // Asserted by COUNTING lookups, because "it returns 0" would pass with no
+    // short-circuit at all. The reference's comment is explicit that it "wont
+    // recover from 0 so can be stopped", and on a building with 30 tags that is
+    // 29 lookups saved per cell per category — in the hot loop.
+    const many: Record<string, string> = { building: "house" };
+    for (let i = 0; i < 30; i++) many[`filler${i}`] = "x";
+
+    const counters = { lookups: 0 };
+    expect(scoreFeature(at(1, many), "battleArea", TABLE, counters)).toBe(0);
+    expect(counters.lookups).toBe(1);
+  });
+
+  it("does not short-circuit when the veto is not first", () => {
+    // Sanity check on the counter itself: tags before the veto are still looked
+    // up, so a passing count of 1 above is evidence and not an artefact.
+    const counters = { lookups: 0 };
+    expect(
+      scoreFeature(
+        at(1, { surface: "sand", building: "house" }),
+        "battleArea",
+        TABLE,
+        counters,
+      ),
+    ).toBe(0);
+    expect(counters.lookups).toBe(2);
+  });
+
+  it("a veto anywhere in the cell wins, whatever else is there", () => {
+    expect(
+      scoreAt(
+        [
+          at(1, { landuse: "grass" }),
+          at(2, { surface: "sand" }),
+          at(3, { building: "house" }),
+        ],
+        "battleArea",
+      ),
+    ).toBe(0);
+  });
+});
+
+describe("provenance", () => {
+  const result = scoreCells(
+    buildFeatureIndex([
+      at(1, { surface: "sand" }),
+      at(2, { natural: "beach" }),
+    ]),
+    TABLE,
+  );
+  const cell = result.cells.find((c) => c.cell === HERE)!;
+
+  it("records each feature's own factor", () => {
+    expect(cell.contributors["walkable"]!["node/1"]).toBe(5);
+    expect(cell.contributors["walkable"]!["node/2"]).toBe(7);
+  });
+
+  it("factors multiply back to the total", () => {
+    // The invariant that makes the provenance map trustworthy: if it does not
+    // reconstruct the score, it is decoration.
+    const product = Object.values(cell.contributors["walkable"]!).reduce(
+      (a, b) => a * b,
+      1,
+    );
+    expect(product).toBe(cell.scores["walkable"]);
+  });
+
+  it("records a feature that contributed the IDENTITY too", () => {
+    // "This feature touched the cell and said nothing" is different information
+    // from "this feature was not here", and the difference is exactly what makes
+    // a surprising score diagnosable.
+    const withNeutral = scoreCells(
+      buildFeatureIndex([
+        at(1, { surface: "sand" }),
+        at(2, { amenity: "bench" }),
+      ]),
+      TABLE,
+    );
+    const c = withNeutral.cells.find((x) => x.cell === HERE)!;
+    expect(c.contributors["walkable"]!["node/2"]).toBe(1);
+  });
+
+  it("is a plain Record, not a Map — it has to survive JSON", () => {
+    // Scored chunks are cached through the string-valued blob store. A Map
+    // JSON-serialises to {} silently, which reads as "this score has no
+    // explanation" rather than as a bug.
+    const revived = JSON.parse(JSON.stringify(cell)) as typeof cell;
+    expect(revived.contributors["walkable"]!["node/1"]).toBe(5);
+  });
+
+  it("debugUrlForKey points at the real element", () => {
+    // Takes the composed `type/id` key, which is the form a caller reading
+    // `contributors` actually has. The model's getOsmDebugUrl(type, id) takes
+    // the pieces; needing to split the key first would mean nobody clicks.
+    expect(debugUrlForKey("node/1")).toBe(
+      "https://www.openstreetmap.org/node/1",
+    );
+  });
+});
+
+describe("category independence", () => {
+  it("scores every category the table declares", () => {
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { surface: "sand" })]),
+      TABLE,
+    );
+    const cell = result.cells.find((c) => c.cell === HERE)!;
+    expect(Object.keys(cell.scores).sort()).toEqual(["battleArea", "walkable"]);
+  });
+
+  it("a veto in one category does not affect another", () => {
+    // Categories are independent columns; a `building=house` that vetoes
+    // battleArea must not veto walkable unless the table says so.
+    const table = parseRuleTable(
+      [
+        "id,Key,Value,walkable,battleArea",
+        "building_house,building,house,2,0",
+      ].join("\n"),
+      { source: "test", fetchedAt: 0 },
+    );
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { building: "house" })]),
+      table,
+    );
+    const cell = result.cells.find((c) => c.cell === HERE)!;
+    expect(cell.scores["battleArea"]).toBe(0);
+    expect(cell.scores["walkable"]).toBe(2);
+  });
+
+  it("can be restricted to a subset of categories", () => {
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { surface: "sand" })]),
+      TABLE,
+      { categories: ["walkable"] },
+    );
+    expect(Object.keys(result.cells[0]!.scores)).toEqual(["walkable"]);
+  });
+});
+
+describe("unmapped-tag diagnostics", () => {
+  it("counts tags the table does not score", () => {
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { tactile_paving: "yes" })]),
+      TABLE,
+      { collectUnmapped: true },
+    );
+    expect(result.unmappedTagCounts["tactile_paving"]).toBe(1);
+  });
+
+  it("filters out the known noise", () => {
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { "addr:city": "Köln", name: "X" })]),
+      TABLE,
+      { collectUnmapped: true },
+    );
+    expect(result.unmappedTagCounts).toEqual({});
+  });
+
+  it("counts per FEATURE, not per (feature, cell)", () => {
+    // A building covering 200 cells would otherwise report its one unmapped tag
+    // two hundred times and drown the signal this exists to provide.
+    const wide: OsmFeature = {
+      type: "way",
+      id: 1,
+      geometry: [
+        { lat: COLOGNE.lat, lng: COLOGNE.lng },
+        { lat: COLOGNE.lat, lng: COLOGNE.lng + 0.002 },
+      ],
+      tags: { tactile_paving: "yes" },
+    };
+    const index = buildFeatureIndex([wide]);
+    expect(index.byCell.size).toBeGreaterThan(10);
+
+    const result = scoreCells(index, TABLE, { collectUnmapped: true });
+    expect(result.unmappedTagCounts["tactile_paving"]).toBe(1);
+  });
+
+  it("is off by default — it costs work in the hot loop", () => {
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { tactile_paving: "yes" })]),
+      TABLE,
+    );
+    expect(result.unmappedTagCounts).toEqual({});
+  });
+});
+
+describe("thresholding", () => {
+  it("selects strictly-above cells", () => {
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { surface: "sand" })]),
+      TABLE,
+    );
+    expect(cellsAboveThreshold(result, "walkable", 1)).toContain(HERE);
+    expect(cellsAboveThreshold(result, "walkable", 5)).not.toContain(HERE);
+  });
+
+  it("excludes a cell scoring exactly the identity", () => {
+    // "At least one rule said something positive here" is the bar. A cell that
+    // merely scores 1 is unmapped ground, not a region.
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { amenity: "bench" })]),
+      TABLE,
+    );
+    expect(cellsAboveThreshold(result, "walkable", 1)).toEqual([]);
+  });
+});
+
+describe("the known flaw, asserted so it stays known", () => {
+  it("is UNBOUNDED — five mapped features outscore one identical surface", () => {
+    // Carried over deliberately (plan §2). This is a data-COMPLETENESS artefact,
+    // not a real signal: the same physical ground scores higher where more
+    // mappers have been. Consumers must threshold per category and must never
+    // compare across categories. Asserted here so the flaw is visible in the
+    // test suite rather than only in a document.
+    const sparse = scoreAt([at(1, { surface: "sand" })], "walkable");
+    const dense = scoreAt(
+      [
+        at(1, { surface: "sand" }),
+        at(2, { natural: "beach" }),
+        at(3, { historic: "ruins" }),
+        at(4, { landuse: "grass" }),
+      ],
+      "walkable",
+    );
+
+    expect(sparse).toBe(5);
+    expect(dense).toBe(5 * 7 * 3 * 9);
+    expect(dense).toBeGreaterThan(sparse * 100);
+  });
+});
+
+describe("empty and degenerate input", () => {
+  it("returns no cells for an empty index", () => {
+    const result = scoreCells(buildFeatureIndex([]), TABLE);
+    expect(result.cells).toEqual([]);
+  });
+
+  it("scores a table with no matching rules as all-identity", () => {
+    const result = scoreCells(
+      buildFeatureIndex([at(1, { unknown: "thing" })]),
+      TABLE,
+    );
+    expect(result.cells[0]!.scores["walkable"]).toBe(1);
+  });
+});

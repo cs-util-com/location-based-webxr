@@ -56,6 +56,15 @@ const entryFiles = [
   "src/rules/rule-table-loader.ts",
   "src/rules/ignored-tags.ts",
   "src/rules/csv.ts",
+
+  // score/ — the multiplicative affordance kernel
+  "src/score/index.ts",
+  "src/score/affordance-scorer.ts",
+
+  // regions/ — contiguous above-threshold cells with exact outlines
+  "src/regions/index.ts",
+  "src/regions/connected-components.ts",
+  "src/regions/region-builder.ts",
 ];
 
 export default defineConfig({
