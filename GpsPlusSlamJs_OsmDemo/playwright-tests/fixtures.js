@@ -85,14 +85,19 @@ const isBasemap = (url) => /(^|\.)tile\.openstreetmap\.org$/i.test(url.hostname)
  * @param {{ overpassStatus?: number }} [options]
  */
 export async function stubNetwork(page, options = {}) {
-  const counts = { overpass: 0, basemap: 0 };
+  const counts = { overpassStatus: 0, overpassQuery: 0, basemap: 0 };
   const payload = JSON.stringify(parkPayload());
 
   await page.route(isOverpass, async (route) => {
-    counts.overpass++;
-    // `/api/status` is the slot-budget probe, not a query. It must answer in
-    // the plain-text OSM3S format or the client cannot parse its own budget.
+    // Counted SEPARATELY from queries. A single combined counter cannot express
+    // the cache assertion: "at most one more request" also passes when the cache
+    // is completely broken and the reload issues exactly one fresh QUERY with no
+    // status probe - which is the precise failure that test exists to catch.
+    // `/api/status` is the slot-budget probe, not a query, and it costs no slot.
     if (route.request().url().includes('/api/status')) {
+      counts.overpassStatus++;
+      // Must answer in the plain-text OSM3S format or the client cannot parse
+      // its own budget.
       await route.fulfill({
         status: 200,
         contentType: 'text/plain',
@@ -106,6 +111,8 @@ export async function stubNetwork(page, options = {}) {
       });
       return;
     }
+
+    counts.overpassQuery++;
 
     const status = options.overpassStatus ?? 200;
     if (status !== 200) {

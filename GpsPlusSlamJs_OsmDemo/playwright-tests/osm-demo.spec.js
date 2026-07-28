@@ -46,6 +46,22 @@ test.describe('the demo boots', () => {
     await expect(page.locator('#status')).toContainText('rules: snapshot');
   });
 
+  test('requests basemap tiles, so the grid has something to sit on', async ({
+    page,
+  }) => {
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // `counts.basemap` was incremented and never read by anything — and unlike
+    // an unused TypeScript export, nothing in the gate would say so: knip does
+    // not reach into `playwright-tests/`, and this project has no lint stage.
+    // Spending it is better than deleting it: a Leaflet tile layer that never
+    // requests a tile still renders a perfectly convincing empty map, and
+    // "the affordance cells are drawn" would keep passing over a blank canvas.
+    expect(counts.basemap).toBeGreaterThan(0);
+  });
+
   test('reports the scale it is drawing with', async ({ page }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
@@ -132,11 +148,6 @@ test.describe('the affordance map', () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const before = await page
-      .locator('#map path.affordance-cell')
-      .first()
-      .getAttribute('fill');
-
     const other = await page.evaluate(() => {
       const select = document.getElementById('category');
       const values = [...(select?.querySelectorAll('option') ?? [])].map(
@@ -152,13 +163,21 @@ test.describe('the affordance map', () => {
     // A category switch that rescored but never repainted would leave the map
     // showing `walkable` under a `restingArea` label — the exact kind of stale
     // view a status-line-only assertion cannot see.
-    await expect(page.locator('#map path.affordance-cell').first()).toBeVisible();
-    const after = await page
-      .locator('#map path.affordance-cell')
-      .first()
-      .getAttribute('fill');
-    expect(after).not.toBeNull();
-    expect(before).not.toBeNull();
+    //
+    // ASSERTED VIA THE TOOLTIP, not the fill. The earlier version read the fill
+    // before and after and then only checked both for non-nullness, so a cell
+    // that kept its exact `walkable` colour passed — which is precisely the
+    // failure the comment claims to catch. Comparing the fills instead would be
+    // legitimately flaky, because two categories can land a given cell in the
+    // same colour bucket. The tooltip cannot be stale: `map-view.ts` rebuilds it
+    // per render with `tooltipFor(cell, category, score)`, so it NAMES the
+    // category the paths were drawn for.
+    const cell = page.locator('#map path.affordance-cell').first();
+    await expect(cell).toBeVisible();
+    await cell.hover();
+    await expect(page.locator('.leaflet-tooltip').first()).toContainText(
+      `${other} =`
+    );
   });
 });
 
@@ -223,19 +242,22 @@ test.describe('caching and failure', () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const afterFirst = counts.overpass;
-    expect(afterFirst).toBeGreaterThan(0);
+    const queriesAfterFirst = counts.overpassQuery;
+    expect(queriesAfterFirst).toBeGreaterThan(0);
 
     await page.reload();
     await waitForRefresh(page);
 
     // A res-7 tile is tens of megabytes; refetching it on every reload would
-    // abuse donated infrastructure. The OPFS store is the thing that stops
-    // that, and a request count is the ONLY way to see it working — the map
-    // looks identical either way. `/api/status` may still be probed, so this
-    // asserts no new *query*, not no new request.
-    const queries = counts.overpass - afterFirst;
-    expect(queries).toBeLessThanOrEqual(1);
+    // abuse donated infrastructure. The OPFS store is what stops that, and a
+    // request count is the ONLY way to see it working — the map looks identical
+    // either way.
+    //
+    // EXACTLY zero new queries, not 'at most one'. The earlier version counted
+    // status probes and queries together and allowed a slack of 1, which also
+    // passed when the cache was completely broken and the reload issued one
+    // fresh query with no probe — the precise failure this test exists to catch.
+    expect(counts.overpassQuery).toBe(queriesAfterFirst);
   });
 
   test('a failed fetch is reported, not silently blank', async ({ page }) => {
