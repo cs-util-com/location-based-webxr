@@ -20,3 +20,15 @@ coverage
 # dotenv environment variable files
 .env
 .env.local
+
+# Working artefacts from the capture / import scripts.
+#
+# `.rules-tmp.csv` — a 97 KB intermediate dump from probing the rule sheet —
+# was committed and survived a full session plus a code review, because a
+# leading-dot name hides from `ls` and adds nothing a human reads in a diff.
+# It also went stale immediately: `src/rules/default-rules.ts` owns that data
+# now, with provenance. Tracked by tests/repo-config/no-scratch-files.test.js
+# at the workspace root.
+*-tmp.*
+.*-tmp.*
+*.scratch.*
