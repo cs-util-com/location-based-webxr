@@ -11,10 +11,19 @@
  * street-corner fixture has 1179 positions, and a coastal relation can dominate
  * a whole tile.
  *
- * **Timings are reported, and only a generous ceiling is asserted.** A tight
- * assertion on wall-clock in CI is a flake generator; the number in the output
- * is what a human should read, and the ceiling only catches an order-of-magnitude
- * regression.
+ * **Nothing here asserts wall-clock, and that is a correction rather than a
+ * shortcut.** The first version asserted a "generous" 100 ms ceiling against a
+ * measurement that runs at 8.7 ms in isolation — a 10× margin, which felt
+ * unarguable. It failed in the root cascade at **104 ms**: under a parallel
+ * 9-package run the same code is ~12× slower, because wall-clock in a
+ * contended suite measures the machine, not the code. A timing assertion large
+ * enough to survive that would be too large to catch anything.
+ *
+ * So the assertions here are **structural** — cell counts, entry counts, the
+ * working-set ratios — which are deterministic and genuinely worth gating. The
+ * timing is printed for a human to read, and `vitest bench` (already configured
+ * in this package) is the right home for a timing gate if one is ever wanted,
+ * because a benchmark runs alone.
  *
  * MEASURED 2026-07-28 on the development machine (desktop, Node):
  *
@@ -78,9 +87,22 @@ describe("indexing one res-11 working set stays inside the frame budget", () => 
           `(${perChunk.toFixed(2)} ms/chunk)`,
       );
 
-      // Generous: an order-of-magnitude regression fails, ordinary variance
-      // does not. The real signal is the printed number.
-      expect(perChunk).toBeLessThan(100);
+      // Deterministic assertions only. `perChunk` is reported above, never
+      // asserted — see the file header for why a timing gate belongs in a
+      // benchmark rather than in a parallel test run.
+      expect(perChunk).toBeGreaterThan(0);
+      expect(index.byCell.size).toBeGreaterThan(0);
+      expect(index.byCell.size).toBeLessThanOrEqual(cells.length);
+      expect(indexEntryCount(index)).toBeGreaterThanOrEqual(index.byCell.size);
+
+      // The invariant that actually protects the frame budget: clipping bounds
+      // the work to the working set, so no cell outside it is ever indexed.
+      // This is what regressed into a hang before `clip.ts` existed, and unlike
+      // a timing it fails identically under any load.
+      const allowed = new Set(cells);
+      for (const cell of index.byCell.keys()) {
+        expect(allowed.has(cell)).toBe(true);
+      }
     },
     30_000,
   );
