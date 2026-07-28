@@ -22,7 +22,7 @@ export default defineConfig({
      * 4x longer wall-clock. `cell-coverage.property.test.ts` already carries a
      * comment from an earlier session about having "blown the per-test budget
      * under parallel load", and it intermittently failed the cascade again
-     * (twice in three runs) while passing 31 consecutive standalone runs.
+     * (twice in four runs) while passing 31 consecutive standalone runs.
      *
      * **Honest caveat:** the failing run's message was never captured, so
      * "timeout under contention" is the best-supported explanation rather than
