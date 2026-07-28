@@ -21,12 +21,29 @@ and the home of every item of the plan's §5.3 network discipline.
 - **`userAgent` is required with no default.** A shared default would make every
   consumer of this library indistinguishable to the servers, so one bad actor
   would get all of them blocked. Constructing without one throws.
-- **The default endpoint pool is not four independent quotas.** `z.` and `lz4.`
-  are the two backends `overpass-api.de` load-balances across; rotating among
-  them buys failover, not headroom. `overpass.kumi.systems` is included because
-  it genuinely is independent — and it is the instance that answered when the
-  main one 504'd during development. The real answer to a quota problem is a
-  self-hosted instance passed via `endpoints`.
+- **The default endpoint pool is a PREFERENCE ORDER, walked from the front.**
+  `pickEndpoint` returns `endpoints[attempt % length]` — no shuffle. It used to
+  start at a random offset to spread load; that property was given up knowingly
+  because it made the order decorative, and the measured spread between hosts is
+  **4.2x** on an identical res-7 tile. The cost is herding onto `endpoints[0]`,
+  which is why the list must stay short and be re-measured rather than trusted.
+  - **The order came from a measurement with a shelf life.** All six known free
+    global instances were timed on 2026-07-28 by
+    `scripts/benchmark-endpoints.mjs`; see
+    `GpsPlusSlamJs_Docs/docs/2026-07-28-2344-overpass-endpoint-benchmark-results.md`.
+    One sample per host, one location, one time of day — re-run rather than
+    trusting it indefinitely.
+  - **It is three operators, not five entries of headroom.** `z.` and `lz4.` are
+    the backends `overpass-api.de` load-balances across (byte-identical
+    payloads), and **`overpass.kumi.systems` and `overpass.private.coffee` are
+    the same instance** — also byte-identical, confirming the OSM wiki's
+    "Private.coffee (formerly overpass.kumi.systems)". Only the canonical name is
+    listed. **The real answer to a quota problem is still a self-hosted instance
+    passed via `endpoints`.**
+  - **The FOSSGIS main entry is last** because it is the only host that failed
+    the query outright (504 after 8.3 s, the same signature as the key-regex
+    form) while its own backends served it. It stays in the pool: one failure is
+    not grounds for removal.
 - **One in-flight request per tile.** The plan calls this "the most likely
   source of a quota-burning bug": the movement trigger and an explicit prefetch
   can ask for the same tile in the same tick. The in-flight entry is cleared in

@@ -37,24 +37,48 @@ import { parseOverpassStatus } from "./overpass-status.js";
 import { OverpassSlotBudget } from "./slot-budget.js";
 
 /**
- * Default endpoint pool.
+ * Default endpoint pool, in PREFERENCE ORDER — `pickEndpoint` walks it from the
+ * front and does not shuffle.
  *
- * **These are NOT three independent quotas.** `z.` and `lz4.` are the two
- * backends that `overpass-api.de` itself load-balances across, so rotating
- * among them buys failover when one is in maintenance and nothing else. For
- * genuine headroom the pool needs an independently operated instance — and the
- * real answer to a quota problem is a self-hosted instance passed in via
- * `endpoints`.
+ * Ordered from a measurement, not a guess. All six known free global instances
+ * were timed on one identical res-7 Cologne tile on 2026-07-28 21:43 UTC
+ * (`scripts/benchmark-endpoints.mjs`; results in
+ * `GpsPlusSlamJs_Docs/docs/2026-07-28-2344-overpass-endpoint-benchmark-results.md`):
  *
- * `overpass.kumi.systems` is included because it IS independently operated. It
- * is also the instance that answered when the main one returned 504 during this
- * package's development, which is the whole argument for a pool.
+ * - `lz4.overpass-api.de` — 200 OK, 27.6 s
+ * - `maps.mail.ru` (VK Maps) — 200 OK, 22.9 s
+ * - `z.overpass-api.de` — 200 OK, 36.1 s
+ * - `overpass.private.coffee` — 200 OK, 110.4 s
+ * - `overpass.kumi.systems` — 200 OK, 96.8 s
+ * - `overpass-api.de` — **504 Gateway Timeout** after 8.3 s
+ *
+ * **`overpass.kumi.systems` and `overpass.private.coffee` are the same
+ * instance** — byte-identical payloads (66,348,574 B), differing from every
+ * other host's (67,973,393 B), confirming the OSM wiki's "Private.coffee
+ * (formerly overpass.kumi.systems)". Only the canonical name is listed; keeping
+ * both would inflate the apparent pool without adding an operator.
+ *
+ * **`z.` and `lz4.` are NOT independent quotas** — byte-identical to each other,
+ * they are the backends `overpass-api.de` load-balances across. So this pool is
+ * three operators, not four entries' worth of headroom, and **the real answer to
+ * a quota problem is still a self-hosted instance passed in via `endpoints`.**
+ *
+ * The FOSSGIS **main** entry is last because it is the only host that failed the
+ * query outright; a host that cannot serve it is worse than a slow one that can.
+ * Its 8.3 s 504 matches the signature of the key-regex form
+ * (`capture-script-query.test.ts`), suggesting a front-end timeout shorter than
+ * this query needs rather than a data problem — which is why its own backends
+ * answer fine. It stays in the pool: one failure is not grounds for removal.
+ *
+ * **This order has a shelf life.** It is one sample per host, from one location,
+ * at one time of day. Re-run the script rather than trusting it indefinitely.
  */
 export const DEFAULT_OVERPASS_ENDPOINTS: readonly string[] = [
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
   "https://lz4.overpass-api.de/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   "https://z.overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
 ];
 
 export interface OverpassSourceOptions {
@@ -505,9 +529,24 @@ export class OverpassSource implements OsmDataSource {
     };
   }
 
+  /**
+   * The endpoint for `attempt`, walking the pool IN ORDER from the front.
+   *
+   * Deliberately not randomised any more. The previous version started at a
+   * random offset to spread load "instead of every client hammering endpoint 0
+   * first" — a real property, given up knowingly, because it also made the pool
+   * order decorative: every client drew uniformly, so the slowest instance
+   * served its full share of traffic. Measured 2026-07-28, that share was 4.2x
+   * slower than the fastest host on an identical res-7 tile, which is the
+   * difference between a usable demo and one that looks broken.
+   *
+   * The cost is herding: every client now tries `endpoints[0]` first. That is
+   * acceptable only because the pool is ordered with a FOSSGIS backend in
+   * front, and it is the reason the list must stay short and be re-measured
+   * rather than treated as settled.
+   */
   private pickEndpoint(attempt: number): string {
-    const start = Math.floor(this.random() * this.endpoints.length);
-    return this.endpoints[(start + attempt) % this.endpoints.length]!;
+    return this.endpoints[attempt % this.endpoints.length]!;
   }
 
   /** Simple counting semaphore. */

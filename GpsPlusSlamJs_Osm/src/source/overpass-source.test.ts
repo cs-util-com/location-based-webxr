@@ -59,7 +59,9 @@ function makeSource(
   const source = new OverpassSource({
     userAgent: "gps-plus-slam-osm-tests/1.0 (+https://example.invalid)",
     fetchImpl: fetchImpl as unknown as typeof fetch,
-    random: () => 0, // deterministic endpoint choice + zero jitter
+    // Zero jitter. Endpoint choice no longer depends on `random` at all — the
+    // pool is walked in preference order — so this only pins the backoff.
+    random: () => 0,
     now: () => 1_000_000,
     sleepImpl: (ms: number) => {
       sleeps.push(ms);
@@ -121,7 +123,12 @@ describe("the request itself", () => {
 
     expect(result.tile).toBe(TILE);
     expect(result.fetchedAt).toBe(1_000_000);
-    expect(result.sourceId).toBe("overpass:overpass-api.de");
+    // Derived from the pool rather than hardcoded: the order is a measured
+    // preference that is expected to change when the hosts are re-timed, and a
+    // literal here turns a deliberate reorder into a spurious test failure.
+    expect(result.sourceId).toBe(
+      `overpass:${new URL(DEFAULT_OVERPASS_ENDPOINTS[0]!).host}`,
+    );
     expect(result.schemaVersion).toBe(OVERPASS_SCHEMA_VERSION);
     expect(result.osmBaseTimestamp).toBe("2026-05-06T03:25:00Z");
     expect(result.features).toHaveLength(1);
@@ -246,6 +253,37 @@ describe("retry, rotation and backoff", () => {
       expect(source.stats.retries).toBe(1);
     },
   );
+
+  it("always starts at the FIRST endpoint, whatever `random` returns", async () => {
+    /**
+     * WHY THIS MATTERS. The pool is a PREFERENCE ORDER, measured
+     * 2026-07-28: `lz4` and VK answered the same res-7 tile in 27.6 s and
+     * 22.9 s, `private.coffee` in 110.4 s, and the FOSSGIS main entry 504'd.
+     * A 4.2x spread is the difference between a usable demo and one that
+     * looks broken.
+     *
+     * `pickEndpoint` used to start at a RANDOM offset, which spread load but
+     * also made the order decorative — every client drew uniformly, so the
+     * slowest instance served a quarter of all traffic. Ordering the list
+     * without this change would have looked like a fix and done nothing, so
+     * the test pins the property rather than the list.
+     *
+     * `random` is still injected — it drives backoff jitter (see the
+     * exponential-growth test below), which is the one place randomness is
+     * still wanted.
+     */
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(() => Promise.resolve(errorResponse(504)))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
+    // Under the old behaviour this offset started at the LAST endpoint.
+    const { source } = makeSource(fetchImpl, { random: () => 0.999999 });
+
+    await source.fetchTile(TILE);
+
+    expect(fetchImpl.mock.calls[0]![0]).toBe(DEFAULT_OVERPASS_ENDPOINTS[0]);
+    expect(fetchImpl.mock.calls[1]![0]).toBe(DEFAULT_OVERPASS_ENDPOINTS[1]);
+  });
 
   it("does NOT retry a non-retryable status", async () => {
     // A 400 means our query is wrong. Retrying it just burns quota to get the
