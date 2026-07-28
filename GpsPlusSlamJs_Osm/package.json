@@ -52,7 +52,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/earcut": "^3.0.0",
     "@types/node": "^25.7.0",
     "@vitest/coverage-v8": "^4.1.6",
     "@vitest/eslint-plugin": "^1.6.17",
