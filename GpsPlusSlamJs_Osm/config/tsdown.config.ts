@@ -60,6 +60,7 @@ const entryFiles = [
   // score/ — the multiplicative affordance kernel
   "src/score/index.ts",
   "src/score/affordance-scorer.ts",
+  "src/score/affordance-index.ts",
 
   // regions/ — contiguous above-threshold cells with exact outlines
   "src/regions/index.ts",

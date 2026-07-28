@@ -13,3 +13,10 @@ export {
   cellsAboveThreshold,
   debugUrlForKey,
 } from "./affordance-scorer.js";
+export type {
+  AffordanceIndexOptions,
+  ChangeListener,
+  ScoredChunk,
+  UpdateResult,
+} from "./affordance-index.js";
+export { AffordanceIndex } from "./affordance-index.js";
