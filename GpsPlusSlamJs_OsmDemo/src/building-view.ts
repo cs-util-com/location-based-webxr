@@ -147,9 +147,15 @@ export class BuildingView {
       geometry,
       new THREE.MeshStandardMaterial({
         color: 0xc8ccd8,
-        // Double-sided so a wrongly-wound wall is VISIBLE as a shading oddity
-        // rather than invisible. This view exists to find that class of bug, and
-        // backface culling would hide exactly it.
+        // Double-sided because OSM volumes are not reliably closed — a
+        // `building:part` with no floor, or a footprint the triangulator could
+        // only partly cut, shows as a hole under culling for reasons that have
+        // nothing to do with this package's correctness.
+        //
+        // IT DOES NOT VALIDATE WINDING — it hides it. Every wall quad in the
+        // package was wound inside-out when this view was written and it looked
+        // entirely fine here, which is why orientation is now pinned by
+        // `mesh-orientation.test.ts` instead of by looking at this.
         side: THREE.DoubleSide,
         flatShading: true,
       })

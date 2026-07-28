@@ -22,7 +22,10 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
   indistinguishable (§8.4); a real dome needs a tessellation not worth its
   triangles until something is seen from above.
 - **`skillion` slopes along the footprint's longest axis.** `roof:direction` is
-  not read yet — a small, well-defined follow-up.
+  not read yet — a small, well-defined follow-up. Its vertices carry the sloped
+  **plane's own normal**, not `(0, 1, 0)`; with the flat normal it shades exactly
+  like a flat roof and the slope shows only in silhouette, so the tag looks like
+  it did nothing.
 - **`gabled` and `hipped` come from the oriented minimum bounding rectangle.**
   Gabled runs the ridge the full length so the ends are vertical gable walls;
   hipped pulls the ridge in by a quarter at each end so all four sides slope.
@@ -45,6 +48,22 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
     derivation this Apache-2.0 package must not contain.
 - Holes are not carried into an apex roof: a courtyard under a pyramid is not a
   shape OSM describes, and guessing would be inventing geometry.
+- **Orientation is not free here — it has bitten this file twice.** The ENU→3D
+  mapping in `extrude.ts` is `(x, height, y)`, so 3D z is ENU north and the frame
+  flips handedness. Two consequences that every new shape inherits:
+  - **Emit eave → ridge, never eave → eave → ridge.** `faceNormal` is derived
+    from the emitted winding, so a reversed face reverses its normal too and
+    both agree while both are wrong — a roof lit from underneath. The
+    winding-vs-normal check therefore _cannot_ catch it; only the
+    outward-from-the-volume check can.
+  - **`apexRoof` normalises `rings[0]` to counter-clockwise itself.**
+    `extrudeBuilding` passes rings through raw and real footprints arrive both
+    ways round, so without it the roof's facing depends on the mapper's drawing
+    direction while `addWalls` (which does normalise) stays correct.
+  - **`orientedBoundingBox` keeps its frame right-handed across the long/short
+    axis swap** by negating `cross`. A plain swap mirrors the frame, which
+    inverted every ridged roof whose footprint happened to start at a corner on
+    its short side — a coin flip per building.
 
 ## Examples
 
@@ -61,3 +80,9 @@ const roof = buildRoof(rings, cap, {
 `buildings.test.ts` — apex height for pyramidal, gabled closing at both ends
 with its exact triangle count, hipped sloping all four sides, skillion staying
 between eave and ridge, and the flat fallback when there is no rise.
+
+`mesh-orientation.test.ts` — the orientation invariants above, run over every
+shape and over rings that differ in winding and in starting corner. Note that
+none of the `buildings.test.ts` assertions could have failed while every roof in
+this file was inside-out: a triangle count and a height range are both blind to
+orientation.

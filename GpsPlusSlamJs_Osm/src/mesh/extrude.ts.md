@@ -28,6 +28,14 @@ Footprint plus heights to a triangle mesh: walls, roof, and optionally a floor.
   seen from the street below, which is exactly what `building:part` creates.
 - **Zero-length walls are skipped** — a repeated node would otherwise emit a
   degenerate quad with an undefined normal.
+- **The ENU→3D mapping flips handedness, and every emitter must compensate.**
+  Positions go out as `(p.x, height, p.y)`, so 3D z is ENU _north_; with Y up
+  that makes a counter-clockwise ring in `(east, north)` _clockwise_ seen from
+  +Y. So `addWalls` emits `(i0, i2, i1)` and `addCap`/`flatCap` emit `(a, c, b)`
+  rather than the natural order. Forgetting this in one emitter produces a
+  surface that is lit correctly and culled backwards — invisible under a normal
+  renderer, and invisible to a screenshot taken with `side: DoubleSide`, which
+  is how it survived a full PR.
 - **A footprint that cannot form a volume yields an empty mesh**, never a throw.
 - **Batch per res-8 or res-9 cell, never per fetch tile.** A fetch tile is res 7
   (2.81 km across); one merged geometry spanning 2.8 km defeats frustum culling
@@ -50,3 +58,9 @@ const mesh = extrudeBuilding([outer, courtyard], {
 `buildings.test.ts` — wall/cap counts and vertical extent, `min_height`, the
 ground offset, horizontal wall normals, courtyard walls, the empty-mesh
 contract, and merging with index re-basing.
+
+`mesh-orientation.test.ts` — the two orientation invariants, over every roof
+shape and over rings that differ in winding and in starting corner: the emitted
+winding agrees with the assigned normal, and no normal points back into the
+volume. These are separate checks because `roof.ts` derives its normals _from_
+its winding, so the first is structurally unable to fail there.

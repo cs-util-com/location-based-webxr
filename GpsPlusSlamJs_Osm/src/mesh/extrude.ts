@@ -140,8 +140,15 @@ function addWalls(
     const i1 = builder.vertex(b.x, bottomM, b.y, nx, 0, nz);
     const i2 = builder.vertex(b.x, topM, b.y, nx, 0, nz);
     const i3 = builder.vertex(a.x, topM, a.y, nx, 0, nz);
-    builder.triangle(i0, i1, i2);
-    builder.triangle(i0, i2, i3);
+    // REVERSED, for the same reason `addCap` reverses: the ENU→3D mapping is
+    // (x, height, y), so 3D z is ENU NORTH, and with Y up that flips handedness
+    // — a counter-clockwise ring in (east, north) is clockwise seen from +Y. The
+    // straightforward (i0, i1, i2) would wind these quads INWARD while the
+    // normal above points outward, so the wall would be lit correctly and culled
+    // backwards. `side: DoubleSide` in the demo hides it, which is exactly why
+    // it needs a test rather than a look.
+    builder.triangle(i0, i2, i1);
+    builder.triangle(i0, i3, i2);
   }
 }
 

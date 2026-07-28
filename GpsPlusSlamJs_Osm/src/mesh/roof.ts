@@ -41,6 +41,7 @@
  */
 
 import type { EnuPoint } from "./enu.js";
+import { isCounterClockwise } from "./enu.js";
 import type { RoofShape } from "./building-heights.js";
 import type { MeshData } from "./mesh-data.js";
 import { MeshBuilder } from "./mesh-data.js";
@@ -132,7 +133,13 @@ function apexRoof(
   cap: TriangulationResult,
   options: RoofOptions,
 ): MeshData {
-  const outer = rings[0] ?? [];
+  // Counter-clockwise first. `extrudeBuilding` passes rings through raw and
+  // real OSM footprints arrive both ways round, so without this the roof's
+  // orientation depends on the mapper's drawing direction — half the pyramids
+  // would face inward while their walls (which `addWalls` DOES normalise) faced
+  // outward, giving a building that is wrong only from above.
+  const raw = rings[0] ?? [];
+  const outer = isCounterClockwise(raw) ? raw : [...raw].reverse();
   const centre = centroid(outer);
   const builder = new MeshBuilder();
 
@@ -151,9 +158,13 @@ function apexRoof(
     if (a === undefined || b === undefined) continue;
     if (a.x === b.x && a.y === b.y) continue;
 
+    // b BEFORE a — the ENU→3D mapping (x, height, y) flips handedness, so the
+    // natural edge order winds this face downward and `faceNormal` would then
+    // agree with it, lighting the pyramid from underneath. Reversing fixes the
+    // normal and the emitted winding together, which is why both use this order.
     const normal = faceNormal(
-      { x: a.x, y: options.eaveHeightM, z: a.y },
       { x: b.x, y: options.eaveHeightM, z: b.y },
+      { x: a.x, y: options.eaveHeightM, z: a.y },
       { x: centre.x, y: options.ridgeHeightM, z: centre.y },
     );
     const i0 = builder.vertex(
@@ -172,7 +183,7 @@ function apexRoof(
       normal.y,
       normal.z,
     );
-    builder.triangle(i0, i1, apex);
+    builder.triangle(i1, i0, apex);
   }
 
   // Holes are not carried into an apex roof: a courtyard under a pyramid is not
@@ -208,10 +219,22 @@ function skillionRoof(
     );
   };
 
+  // THE PLANE'S OWN NORMAL, not (0, 1, 0). A skillion is by definition a sloped
+  // plane; giving it the flat-roof normal makes it shade exactly like a flat
+  // roof, so the slope shows only in silhouette and the `roof:shape` tag looks
+  // like it did nothing. The surface is y = eave + slope·(p·axis − min), so in
+  // 3D (X = ENU x, Y = up, Z = ENU y) the upward normal is
+  // (−∂Y/∂X, 1, −∂Y/∂Z) = (−slope·axis.x, 1, −slope·axis.y).
+  const slope =
+    span === 0 ? 0 : (options.ridgeHeightM - options.eaveHeightM) / span;
+  const nx = -slope * axis.x;
+  const nz = -slope * axis.y;
+  const nLength = Math.hypot(nx, 1, nz);
+
   const builder = new MeshBuilder();
   const base = cap.vertices.map((p) => {
     const y = heightAt(p);
-    return builder.vertex(p.x, y, p.y, 0, 1, 0);
+    return builder.vertex(p.x, y, p.y, nx / nLength, 1 / nLength, nz / nLength);
   });
   for (let i = 0; i + 2 < cap.indices.length; i += 3) {
     const a = base[cap.indices[i] as number];
@@ -278,9 +301,13 @@ function ridgeRoof(
     builder.triangle(i0, i2, i3);
   };
 
-  // The two long slopes.
-  quad(eaveA, eaveB, ridgeB, ridgeA);
-  quad(eaveC, eaveD, ridgeA, ridgeB);
+  // The two long slopes. Eave → ridge → ridge → eave, NOT eave → eave → ridge:
+  // the ENU→3D mapping (x, height, y) flips handedness, so going round the eave
+  // first winds every face downward and `faceNormal`, derived from that same
+  // winding, then points down too — a roof lit from underneath and backfacing
+  // from above. The same reversal is why `flatCap` emits (a, c, b).
+  quad(eaveA, ridgeA, ridgeB, eaveB);
+  quad(eaveC, ridgeB, ridgeA, eaveD);
 
   if (inset > 0) {
     // Hipped: the ends slope too.
@@ -296,8 +323,9 @@ function ridgeRoof(
         builder.vertex(r.x, r.y, r.z, n.x, n.y, n.z),
       );
     };
-    tri(eaveD, eaveA, ridgeA);
-    tri(eaveB, eaveC, ridgeB);
+    // Reversed for the same handedness reason as the slopes above.
+    tri(eaveA, eaveD, ridgeA);
+    tri(eaveC, eaveB, ridgeB);
   } else {
     // Gabled: the ends are vertical triangles closing the volume. Without them
     // a gabled building is open at both ends — visible from the street, and a
@@ -314,8 +342,9 @@ function ridgeRoof(
         builder.vertex(r.x, r.y, r.z, n.x, n.y, n.z),
       );
     };
-    gable(eaveD, eaveA, ridgeA);
-    gable(eaveB, eaveC, ridgeB);
+    // Reversed for the same handedness reason as the slopes above.
+    gable(eaveA, eaveD, ridgeA);
+    gable(eaveC, eaveB, ridgeB);
   }
 
   return {
@@ -419,9 +448,19 @@ function orientedBoundingBox(
     let finalAxis = axis;
     let finalCross = cross;
     // Keep `axis` the LONG side, so "the ridge runs along the axis" is true.
+    //
+    // `cross` is `axis` rotated +90°, and `ridgeRoof` relies on that handedness
+    // to decide which way its faces point. A plain swap would leave
+    // `finalCross === axis === rot(−90°)(finalCross')`, i.e. a MIRRORED frame,
+    // and every normal derived from it would flip — so a rectangle drawn from a
+    // corner on its short side would produce an inside-out roof while the same
+    // rectangle drawn from the next corner round came out fine. Negating keeps
+    // the frame right-handed; the box is symmetric about its centre, so which
+    // side counts as +across is arbitrary.
     if (halfWidth > halfLength) {
       [halfLength, halfWidth] = [halfWidth, halfLength];
-      [finalAxis, finalCross] = [cross, axis];
+      finalAxis = cross;
+      finalCross = { x: -axis.x, y: -axis.y };
     }
 
     best = {
