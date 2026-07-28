@@ -40,11 +40,25 @@ export type { OverpassSourceOptions } from "./overpass-source.js";
 export {
   OverpassSource,
   PermanentOverpassError,
+  RateLimitedError,
   DEFAULT_OVERPASS_ENDPOINTS,
 } from "./overpass-source.js";
 
 export type { CachingSourceOptions, EnsureOptions } from "./caching-source.js";
 export { CachingSource } from "./caching-source.js";
+
+export type {
+  EnsureAreaOptions,
+  AreaLoadResult,
+  LoadProgress,
+} from "./area-loader.js";
+export {
+  ensureAreaLoaded,
+  ensureWorkingSetLoaded,
+  loadTiles,
+  tilesWithin,
+  chunkFor,
+} from "./area-loader.js";
 
 export type { OsmFixture, FixtureSourceOptions } from "./fixture-source.js";
 export { FixtureSource } from "./fixture-source.js";
