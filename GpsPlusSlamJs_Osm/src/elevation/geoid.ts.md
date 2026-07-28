@@ -43,7 +43,15 @@ undulation model that makes it possible.
   — two orders of magnitude below the DEM's own ~30 m posting.
 - **`gridGeoid` validates shape at construction**, because a values/rows x cols
   mismatch would read zeros off the end and produce a smoothly wrong field.
-  Longitude wraps, latitude clamps.
+- **Latitude clamps; longitude wraps ONLY for a global grid** — one where
+  `cols × stepDeg === 360`, decided once at construction rather than per lookup.
+  - `egm96Geoid()` is such a grid (360 cols × 1°), so it stays correct across
+    the antimeridian.
+  - A **regional** grid clamps to its edge value instead. Wrapping one
+    unconditionally is worse than returning NaN: a query outside its span reads
+    an interior column, so `gridGeoid({ westLng: 5, stepDeg: 1, cols: 10, … })`
+    asked for 25°E used to answer with the grid's _middle_ — smooth, plausible,
+    confidently wrong, and indistinguishable from a fusion bug.
 
 ## Examples
 

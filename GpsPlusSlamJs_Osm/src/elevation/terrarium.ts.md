@@ -49,6 +49,10 @@ sampling, and the provider that ties them together.
   planet where clamping is wrong by half a pixel.
 - **Positions are grouped by tile before fetching**, and one fetch is in flight
   per tile however many positions want it.
+  - Through [`InFlightRequests`](../source/in-flight-requests.ts.md), so those
+    callers do not share an `AbortSignal`. A DEM tile under one position is very
+    likely to be wanted again by an unrelated later query, and the first
+    caller's lifetime must not become everyone's.
 - Latitude clamps to the Mercator limit rather than emitting `Infinity`.
 - A missing or corrupt tile yields `undefined` per position; an abort propagates.
 

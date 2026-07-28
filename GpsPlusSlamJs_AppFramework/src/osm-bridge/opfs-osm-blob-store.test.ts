@@ -29,7 +29,17 @@ import {
 /** A minimal in-memory stand-in for `FileSystemDirectoryHandle`. */
 function fakeDirectory(initial: Record<string, string> = {}) {
   const files = new Map<string, string>(Object.entries(initial));
-  const failures = { read: false, write: false, list: false };
+  const failures = {
+    read: false,
+    write: false,
+    list: false,
+    /**
+     * `write()` rejects after buffering part of the payload — the realistic
+     * quota-exceeded-mid-stream shape, and the one that distinguishes
+     * `close()` (commits the truncated temp) from `abort()` (discards it).
+     */
+    writeChunk: false,
+  };
 
   const handle = {
     files,
@@ -49,9 +59,17 @@ function fakeDirectory(initial: Record<string, string> = {}) {
         },
         createWritable() {
           if (failures.write) return Promise.reject(new Error('write failed'));
+          // Models the real API: writes land in a TEMP file, `close()` swaps it
+          // over the original and `abort()` throws it away. A fake that only
+          // had `close()` could not tell a correct failure path from one that
+          // commits a truncated file over good data.
           let buffer = '';
           return Promise.resolve({
             write: (chunk: string) => {
+              if (failures.writeChunk) {
+                buffer += chunk.slice(0, Math.ceil(chunk.length / 2));
+                return Promise.reject(new Error('quota exceeded'));
+              }
               buffer += chunk;
               return Promise.resolve();
             },
@@ -59,6 +77,7 @@ function fakeDirectory(initial: Record<string, string> = {}) {
               files.set(name, buffer);
               return Promise.resolve();
             },
+            abort: () => Promise.resolve(),
           });
         },
       });
@@ -166,6 +185,27 @@ describe('failures stay misses', () => {
     directory.failures.write = true;
     const store = storeOn(directory);
     await expect(store.put('osm/v2/a', '1')).resolves.toBeUndefined();
+    expect(store.stats.errors).toBe(1);
+  });
+
+  it('a write that fails part-way leaves the PREVIOUS entry intact', async () => {
+    // Why this test matters: `close()` is what COMMITS the temp file, so
+    // closing on the failure path swaps a truncated blob over a good one. The
+    // realistic trigger is quota exceeded mid-stream on a cache holding tens of
+    // MB of res-7 tiles, and the damage outlives the failure: `CachingSource`
+    // only rejects entries that fail `JSON.parse`/`isTileResult`, so a
+    // truncated blob is a permanent miss on that tile until something evicts
+    // it. Discarding the temp turns that into an ordinary miss instead.
+    const directory = fakeDirectory();
+    const store = storeOn(directory);
+    await store.put('osm/v2/a', '{"tile":"a","features":[]}');
+
+    directory.failures.writeChunk = true;
+    await expect(
+      store.put('osm/v2/a', 'x'.repeat(64))
+    ).resolves.toBeUndefined();
+
+    expect(await store.get('osm/v2/a')).toBe('{"tile":"a","features":[]}');
     expect(store.stats.errors).toBe(1);
   });
 

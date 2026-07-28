@@ -12,7 +12,25 @@
 
 /** A renderable mesh, in the local ENU frame, metres. */
 export interface MeshData {
-  /** xyz per vertex. Y is UP, matching the AR scene graph. */
+  /**
+   * xyz per vertex, metres. **+x is ENU east, +y is UP, +z is ENU NORTH.**
+   *
+   * Note the last one, because it is the half that is easy to miss: mapping ENU
+   * north onto **+z** makes this frame LEFT-handed. three.js and WebXR local-up
+   * spaces put north at **−z**, so dropping these buffers into a scene that has
+   * been aligned to true north renders the block MIRRORED north/south. It still
+   * looks like a plausible city — buildings sit correctly relative to each
+   * other — so it reads as a compass or heading bug rather than a frame one.
+   *
+   * A consumer aligning to true north must negate z (or scale the group by
+   * `(1, 1, -1)`). `extrude.ts` compensates for the handedness flip by reversing
+   * every winding, which fixes back-face culling only — not the frame.
+   *
+   * NOT captured by the demo: `building-view.ts` parks a free camera with no
+   * north reference, so a mirrored scene is indistinguishable from a correct
+   * one there. See `mesh-data.ts.md` for the open question about emitting `-z`
+   * instead.
+   */
   readonly positions: Float32Array;
   readonly normals: Float32Array;
   readonly indices: Uint32Array;

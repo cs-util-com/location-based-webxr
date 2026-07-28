@@ -28,7 +28,7 @@ import {
   type RuleTable,
   type LatLng,
 } from "gps-plus-slam-osm";
-import { fetchTilesForScoreWorkingSet, toScoreChunk } from "gps-plus-slam-osm";
+import { fetchTilesForScoreWorkingSet } from "gps-plus-slam-osm";
 import { latLngToCell } from "h3-js";
 import { SCORE_CHUNK_RES } from "gps-plus-slam-osm";
 
@@ -151,8 +151,17 @@ export class DemoPipeline {
     return this.index.mergedFeatures();
   }
 
-  /** The res-11 chunk a position falls in — shown so the grid is legible. */
+  /**
+   * The res-11 chunk a position falls in — shown so the grid is legible.
+   *
+   * Exactly what `update()` scores, computed the same way. NOT
+   * `toScoreChunk(latLngToCell(…, AFFORDANCE_RES))`: `toScoreChunk` walks the
+   * H3 INDEX hierarchy, whose children are not geometrically contained by their
+   * parents (`resolutions.ts` says so in as many words), so near a res-11
+   * boundary that names a different chunk than the one that was scored. On a
+   * 60-point sweep over Cologne, four disagreed.
+   */
   static chunkFor(position: LatLng): string {
-    return toScoreChunk(latLngToCell(position.lat, position.lng, 13));
+    return latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
   }
 }

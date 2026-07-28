@@ -33,6 +33,14 @@ path, with no DOM in it.
 - No store and no event emitter: a second abstraction between the index and the
   map would only obscure which of the two produced a wrong answer.
 
+- **`chunkFor` computes the chunk the SAME way `update()` does** —
+  `latLngToCell(…, SCORE_CHUNK_RES)`, never `toScoreChunk` of a res-13 cell.
+  The two are different functions: `toScoreChunk` walks the H3 **index**
+  hierarchy, and H3 children are not geometrically contained by their parents.
+  Four of sixty positions on a Cologne sweep disagreed, so a label built the
+  index way names a different chunk than the one that was scored — and making
+  the chunk grid legible is this view's entire job.
+
 ## Examples
 
 ```ts
@@ -42,7 +50,9 @@ const snapshot = await pipeline.update({ lat: 50.94, lng: 6.96 }, "walkable");
 
 ## Tests
 
-Covered indirectly through `heat-colours.test.ts` and by the package gate's
-typecheck against the real `gps-plus-slam-osm` API. Its own behaviour (fetch
-failure collection, no-refetch) is worth a test with a fake source — see the
-follow-ups doc.
+`demo-pipeline.test.ts` covers `chunkFor` — four positions where the two
+plausible computations diverge, plus a 1600-point sweep. The rest is covered
+indirectly through `heat-colours.test.ts` and by the package gate's typecheck
+against the real `gps-plus-slam-osm` API. Its remaining behaviour (fetch failure
+collection, no-refetch) is worth a test with a fake source — see the follow-ups
+doc.

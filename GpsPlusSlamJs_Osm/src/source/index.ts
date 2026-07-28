@@ -5,6 +5,8 @@
 export type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
 export { OSM_ATTRIBUTION } from "./osm-data-source.js";
 
+export { InFlightRequests } from "./in-flight-requests.js";
+
 export type { OsmBlobStore } from "./osm-blob-store.js";
 export { MemoryBlobStore } from "./memory-blob-store.js";
 

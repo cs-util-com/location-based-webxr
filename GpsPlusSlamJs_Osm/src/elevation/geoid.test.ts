@@ -115,11 +115,34 @@ describe("gridGeoid", () => {
     expect(() => gridGeoid({ ...grid, stepDeg: 0 })).toThrow(/positive step/);
   });
 
-  it("clamps latitude and wraps longitude", () => {
+  it("clamps latitude", () => {
     const geoid = gridGeoid(grid);
     // Above the grid's north edge clamps to the top row rather than NaN.
     expect(geoid.undulationMetres({ lat: 80, lng: 0 })).toBe(10);
-    // Longitude wraps, so a global grid works across the antimeridian.
-    expect(geoid.undulationMetres({ lat: 60, lng: 20 })).toBe(10);
+  });
+
+  it("wraps longitude only when the grid spans the full 360°", () => {
+    // Why this matters: an unconditional wrap makes a REGIONAL grid answer a
+    // query outside its span by reading an interior column — no NaN, no throw,
+    // just a smooth plausible offset. That is the exact failure mode this file
+    // is organised around, and it presents as a GPS+SLAM fusion bug.
+    const global = gridGeoid({
+      id: "global",
+      stepDeg: 90,
+      northLat: 90,
+      westLng: -180,
+      rows: 2,
+      cols: 4,
+      values: [1, 2, 3, 4, 5, 6, 7, 8],
+    });
+    // 180°E is the same meridian as -180°, so it must read column 0.
+    expect(global.undulationMetres({ lat: 90, lng: 180 })).toBe(1);
+    expect(global.undulationMetres({ lat: 90, lng: -180 })).toBe(1);
+
+    // The 2×2 test grid spans 0–10°E only, so 25°E is off its east edge and
+    // must degrade to the edge value — which is what the docstring promises.
+    const regional = gridGeoid(grid);
+    expect(regional.undulationMetres({ lat: 60, lng: 25 })).toBe(20);
+    expect(regional.undulationMetres({ lat: 60, lng: -25 })).toBe(10);
   });
 });

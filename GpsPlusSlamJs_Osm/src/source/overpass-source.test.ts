@@ -230,6 +230,66 @@ describe("bounded concurrency", () => {
     expect(peak).toBeLessThanOrEqual(2);
     expect(fetchImpl).toHaveBeenCalledTimes(tiles.length);
   });
+
+  it("stays bounded whatever microtask a fresh caller arrives in", async () => {
+    // Why this test matters: a queued waiter cannot increment `active` at the
+    // moment its slot is released — it only learns about it one microtask
+    // later, in its continuation. If the slot is merely *released* rather than
+    // *handed over*, a caller arriving inside that window reads a free slot,
+    // takes it, and then the waiter takes it too. The cap is exceeded, which is
+    // precisely what earns a 429 from donated infrastructure.
+    //
+    // Which microtask the third caller lands in depends entirely on the
+    // caller's own promise chain, so guessing one offset would be a coin flip
+    // (the test above starts every request in a single synchronous burst and
+    // therefore never opens the window at all). This sweeps the whole window.
+    const tiles = [TILE, TILE_B, latLngToCell(48.137, 11.575, FETCH_RES)];
+
+    for (let arrivalTicks = 0; arrivalTicks < 10; arrivalTicks++) {
+      let concurrent = 0;
+      let peak = 0;
+      const resolvers: (() => void)[] = [];
+      const fetchImpl = vi.fn().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            concurrent++;
+            peak = Math.max(peak, concurrent);
+            resolvers.push(() => {
+              concurrent--;
+              resolve(jsonResponse(OK_BODY));
+            });
+          }),
+      );
+      const { source } = makeSource(fetchImpl, { maxConcurrent: 1 });
+
+      const pending: Promise<unknown>[] = [
+        source.fetchTile(tiles[0]!), // takes the only slot
+        source.fetchTile(tiles[1]!), // queues behind it
+      ];
+
+      // Queued BEFORE the release, so it advances alongside the release chain
+      // and `arrivalTicks` slides it across the whole hand-over window.
+      let arrival = Promise.resolve();
+      for (let i = 0; i < arrivalTicks; i++) arrival = arrival.then(() => {});
+      pending.push(
+        arrival.then(() => source.fetchTile(tiles[2]!)).catch(() => undefined),
+      );
+
+      resolvers.shift()?.();
+
+      const macrotask = () => new Promise((resolve) => setTimeout(resolve, 0));
+      for (let i = 0; i < 12; i++) {
+        await macrotask();
+        while (resolvers.length > 0) resolvers.shift()?.();
+      }
+      await Promise.allSettled(pending);
+
+      expect(peak, `third caller arriving ${arrivalTicks} microtasks in`).toBe(
+        1,
+      );
+      expect(fetchImpl).toHaveBeenCalledTimes(tiles.length);
+    }
+  });
 });
 
 describe("retry, rotation and backoff", () => {
@@ -393,15 +453,32 @@ describe("AbortSignal support, end to end", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("passes the signal through to fetch", async () => {
+  it("cancels the underlying fetch when the caller aborts", async () => {
+    // Asserts the BEHAVIOUR, not signal identity. The signal handed to `fetch`
+    // is deliberately an internal one — see `in-flight-requests.ts` — because
+    // de-duplicated callers must not inherit each other's lifetimes. What has
+    // to remain true is that a lone caller's abort still reaches the wire.
+    let seen: AbortSignal | undefined;
     const fetchImpl = vi
       .fn()
-      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+      .mockImplementation((_url: string, init: RequestInit) => {
+        seen = init.signal ?? undefined;
+        return new Promise<Response>(() => {
+          /* never settles: the abort is the only way out */
+        });
+      });
     const { source } = makeSource(fetchImpl);
     const controller = new AbortController();
 
-    await source.fetchTile(TILE, controller.signal);
-    expect(fetchImpl.mock.calls[0]![1].signal).toBe(controller.signal);
+    const pending = source.fetchTile(TILE, controller.signal);
+    pending.catch(() => undefined); // observed below; keep Node quiet meanwhile
+    await Promise.resolve();
+
+    expect(seen).toBeDefined();
+    expect(seen?.aborted).toBe(false);
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+    await expect(pending).rejects.toThrow();
   });
 
   it("an abort during a retry wait is NOT swallowed as a retryable failure", async () => {

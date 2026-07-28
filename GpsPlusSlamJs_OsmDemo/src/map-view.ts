@@ -28,6 +28,7 @@ import {
   type HeatScale,
 } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
+import { escapeHtml } from "./escape-html.js";
 
 /**
  * ODbL requires attribution wherever OSM data is shown — and this view shows
@@ -200,7 +201,9 @@ export class MapView {
           },
         )
           .bindTooltip(
-            `${region.category}: ${region.cellCount} cells, ` +
+            // Escaped: `category` is a column header from the publicly editable
+            // rule sheet, and `bindTooltip` renders HTML. See `escape-html.ts`.
+            `${escapeHtml(region.category)}: ${region.cellCount} cells, ` +
               `${Math.round(region.areaM2)} m², median ${round(region.medianScore)}`,
           )
           .addTo(this.regionLayer);
@@ -227,13 +230,18 @@ function tooltipFor(cell: CellScore, category: string, score: number): string {
     .filter(([, factor]) => factor !== 1)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
-    .map(
-      ([key, factor]) =>
-        `<a href="https://www.openstreetmap.org/${key}" target="_blank" rel="noreferrer">${key}</a> × ${round(factor)}`,
-    );
+    .map(([key, factor]) => {
+      // Both the href and the link text are HTML sinks. `key` is ours
+      // (`featureKey`) rather than sheet-derived, so this is belt and braces —
+      // but an unescaped quote in an attribute is the cheapest hole there is.
+      const safeKey = escapeHtml(key);
+      return `<a href="https://www.openstreetmap.org/${safeKey}" target="_blank" rel="noreferrer">${safeKey}</a> × ${round(factor)}`;
+    });
 
   return (
-    `<strong>${category} = ${round(score)}</strong><br>` +
+    // `category` comes from the publicly editable rule sheet — see
+    // `escape-html.ts` for why the 20-character cap is not a mitigation.
+    `<strong>${escapeHtml(category)} = ${round(score)}</strong><br>` +
     (lines.length > 0
       ? lines.join("<br>")
       : "<em>no rule contributed — this is the identity</em>")

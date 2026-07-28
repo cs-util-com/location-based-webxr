@@ -34,6 +34,10 @@ map scored.
   layer's two honesty flags and this is the only place they become visible —
   which is how the census figures (16 % with `height`, 12 % non-flat roofs) get
   confirmed on real data rather than quoted.
+- **The resize listener is held in a field and removed in `dispose()`.** An
+  anonymous inline listener outlives disposal and then calls `setSize()` /
+  `updateProjectionMatrix()` on a renderer whose GL context has been released.
+  Harmless while nothing calls `dispose()`, but the method exists to be called.
 
 ## Examples
 

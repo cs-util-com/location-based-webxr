@@ -32,6 +32,7 @@
  */
 
 import { createLogger } from '../utils/logger';
+import { writeFileOrAbort } from '../storage/write-file-or-abort';
 
 const log = createLogger('OsmBlobStore');
 
@@ -102,16 +103,13 @@ export class OpfsOsmBlobStore implements OsmBlobStore {
       const handle = await this.directory.getFileHandle(fileNameFor(key), {
         create: true,
       });
-      const writable = await handle.createWritable();
-      try {
-        await writable.write(value);
-      } finally {
-        // Closing is what commits the write. Skipping it on an error path
-        // leaves a zero-length file that reads back as an empty string — which
-        // `CachingSource` would parse, fail to validate, and treat as a miss,
-        // so it is recoverable; but a leaked writable is not.
-        await writable.close();
-      }
+      // NOT a hand-rolled createWritable/write/close: `close()` is what COMMITS
+      // the temp file, so closing on the failure path swaps a TRUNCATED blob
+      // over a previously good one — and `CachingSource` only rejects entries
+      // that fail to parse, so that tile stays a permanent miss until something
+      // evicts it. `writeFileOrAbort` discards the temp instead, and reports the
+      // write error rather than whatever `close()` threw on top of it.
+      await writeFileOrAbort(handle, value);
       this.stats.puts++;
     } catch (error) {
       // A failed write must not fail the fetch that triggered it. The tile is

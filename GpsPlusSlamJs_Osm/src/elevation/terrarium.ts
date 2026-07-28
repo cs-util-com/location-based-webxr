@@ -22,6 +22,7 @@
  */
 
 import type { LatLng } from "../model/osm-feature.js";
+import { InFlightRequests } from "../source/in-flight-requests.js";
 import type { ElevationProvider } from "./elevation-provider.js";
 
 /** AWS Open Data, no authentication and no documented rate limit. */
@@ -211,11 +212,15 @@ export class TerrariumProvider implements ElevationProvider {
   private readonly maxCachedTiles: number;
 
   private readonly tiles = new Map<string, ElevationTile>();
-  /** One fetch per tile, however many positions ask for it at once. */
-  private readonly inFlight = new Map<
-    string,
-    Promise<ElevationTile | undefined>
-  >();
+  /**
+   * One fetch per tile, however many positions ask for it at once.
+   *
+   * `InFlightRequests` rather than a plain map because the callers joining here
+   * do not share a lifetime: the DEM tile under a position is very likely to be
+   * wanted by an unrelated later query, so the first caller's signal must not
+   * govern theirs. See `../source/in-flight-requests.ts`.
+   */
+  private readonly inFlight = new InFlightRequests<ElevationTile | undefined>();
 
   readonly stats = { fetches: 0, cacheHits: 0, decodeFailures: 0 };
 
@@ -269,14 +274,11 @@ export class TerrariumProvider implements ElevationProvider {
       return cached;
     }
 
-    const existing = this.inFlight.get(key);
-    if (existing !== undefined) return existing;
-
-    const pending = this.load(key, z, x, y, signal).finally(() => {
-      this.inFlight.delete(key);
-    });
-    this.inFlight.set(key, pending);
-    return pending;
+    return this.inFlight.join(
+      key,
+      (dedupSignal) => this.load(key, z, x, y, dedupSignal),
+      signal,
+    );
   }
 
   private async load(

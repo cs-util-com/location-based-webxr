@@ -38,6 +38,11 @@ raster basemap.
   is the reason the C# reference kept a contributing-entries map.
 - **ODbL attribution is required**, and doubly so here: the view shows both the
   basemap tiles and data derived from OSM.
+- **Everything interpolated into a tooltip is escaped** — see
+  [`escape-html.ts.md`](./escape-html.ts.md). `bindTooltip` renders HTML, and
+  `category` is a column header from the publicly editable rule sheet; the
+  20-character name limit does not exclude `<svg onload=x>`. Feature keys are
+  escaped too, belt-and-braces, because they land in an `href` attribute.
 
 ## Examples
 
@@ -49,4 +54,5 @@ const scale = view.render(cells, regions, "walkable", threshold);
 ## Tests
 
 None directly (Leaflet needs a DOM); the data it draws is tested in
-`demo-pipeline`, and the colours in `heat-colours.test.ts`.
+`demo-pipeline`, the colours in `heat-colours.test.ts`, and the tooltip
+escaping in `escape-html.test.ts`.

@@ -145,7 +145,14 @@ const walkable = buildRegions(
 );
 ```
 
-Three things worth knowing before you rely on the output:
+Four things worth knowing before you rely on the output:
+
+- **The 3D mesh frame is `(+x = east, +y = up, +z = NORTH)`, which is
+  left-handed.** three.js and WebXR local-up spaces put north at **−z**, so a
+  consumer that aligns the buffers to true north without negating z renders the
+  block mirrored north/south. Buildings stay correct relative to each other, so
+  it looks like a plausible city and presents as a compass bug. Negate z, or
+  scale the group by `(1, 1, -1)`.
 
 - **Scores are unbounded and NOT comparable across categories.** A cell
   overlapped by five mapped features scores far higher than the identical

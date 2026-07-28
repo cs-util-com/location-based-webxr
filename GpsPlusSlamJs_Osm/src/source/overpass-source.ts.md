@@ -49,8 +49,28 @@ and the home of every item of the plan's §5.3 network discipline.
   can ask for the same tile in the same tick. The in-flight entry is cleared in
   a `finally`, so a _failed_ tile is retryable rather than permanently poisoned
   by a cached rejection.
+- **Concurrent requests for one tile make one query — without sharing signals.**
+  De-dup goes through [`InFlightRequests`](./in-flight-requests.ts.md), so the
+  movement trigger and an explicit prefetch can join the same tile without
+  inheriting each other's lifetimes: cancelling one no longer aborts the other's
+  request, and a joiner's own abort really does cancel its own work.
 - **At most `maxConcurrent` (default 2) requests at once**, via a counting
-  semaphore.
+  semaphore that **hands the slot over instead of releasing it**.
+  - A releaser with someone queued never decrements `active`; it passes its own
+    already-counted slot on, and only the last one out decrements.
+  - Releasing instead would leave a one-microtask window (between `active--` and
+    the woken waiter's continuation) in which `active` reads below the cap while
+    a waiter is already committed. A caller arriving there takes the slot too,
+    and the cap is exceeded — which is what earns a 429.
+  - Covered by a test that sweeps the arrival across the whole window rather
+    than guessing one offset; on the released-slot version only offset 7 of 10
+    tripped it.
+- **`userAgent` does not reach the server from a browser.** `User-Agent` and
+  `Referer` are on the fetch spec's forbidden-request-header list, so the
+  browser drops both silently — no error, no warning. The option still does its
+  job under Node/`undici`, which is why it is kept and still required, but a
+  consumer debugging a block from a browser build will not find the header on
+  the wire.
 - **Permanent failures and aborts escape the retry loop.** Both were originally
   caught by the loop's own `catch` and retried — a 400 cost four requests
   instead of one, and an abort kept working on an area the user had left.

@@ -45,6 +45,7 @@ export class BuildingView {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera;
+  private readonly onWindowResize: () => void;
   private readonly group = new THREE.Group();
   private readonly container: HTMLElement;
 
@@ -83,9 +84,13 @@ export class BuildingView {
     this.camera.lookAt(0, 10, 0);
 
     this.resize();
-    window.addEventListener("resize", () => {
+    // Held rather than passed inline, so `dispose()` can actually remove it.
+    // An anonymous listener outlives disposal and then calls `setSize()` and
+    // `updateProjectionMatrix()` on a renderer whose GL context is gone.
+    this.onWindowResize = () => {
       this.resize();
-    });
+    };
+    window.addEventListener("resize", this.onWindowResize);
   }
 
   resize(): void {
@@ -188,6 +193,7 @@ export class BuildingView {
   }
 
   dispose(): void {
+    window.removeEventListener("resize", this.onWindowResize);
     this.clear();
     this.renderer.dispose();
   }

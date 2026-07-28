@@ -20,6 +20,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { latLngToCell } from "h3-js";
 import { CachingSource } from "./caching-source.js";
+import { RateLimitedError } from "./overpass-source.js";
 import { MemoryBlobStore } from "./memory-blob-store.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
 import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
@@ -27,6 +28,10 @@ import { FETCH_RES } from "../spatial/resolutions.js";
 
 const TILE = latLngToCell(50.9413, 6.9583, FETCH_RES);
 const TILE_B = latLngToCell(52.52, 13.405, FETCH_RES);
+
+/** Lets every pending microtask AND the store's async reads drain. */
+const settle = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Counting fake: the only thing that knows whether "the network" was used. */
 class CountingSource implements OsmDataSource {
@@ -217,6 +222,68 @@ describe("staleness is the consumer’s policy, never the library’s", () => {
   });
 });
 
+describe("a rate limit must not throw away data already on the device", () => {
+  /** A source that serves once and is refused a slot from then on. */
+  class RefusingSource extends CountingSource {
+    override fetchTile(tile: string): Promise<OsmTileResult> {
+      if (this.calls > 0) {
+        this.calls++;
+        return Promise.reject(new RateLimitedError("no slot", 30_000));
+      }
+      return super.fetchTile(tile);
+    }
+  }
+
+  it("serves the stale entry when the slot budget refuses the refetch", async () => {
+    // Why this test matters: `RateLimitedError` documents itself as the one
+    // failure where "nothing is wrong, serve whatever you already have", and
+    // names this class as the place that does it. Without this, a stale-but-
+    // present tile plus a refused slot resolves to a REJECTION, `loadTiles`
+    // files the tile under `deferred`, and the caller renders nothing — while
+    // a perfectly usable copy sits in the store. Stale-but-present is exactly
+    // the case where the cache holds the better answer.
+    const inner = new RefusingSource(0);
+    const cache = new CachingSource(inner, new MemoryBlobStore(), {
+      now: () => 60_000,
+    });
+
+    await cache.ensureTile(TILE);
+    const served = await cache.ensureTile(TILE, { maxAgeMs: 1000 });
+
+    expect(served.tile).toBe(TILE);
+    expect(served.fetchedAt).toBe(0); // the old copy, not a new one
+    expect(cache.stats.staleOnRateLimit).toBe(1);
+  });
+
+  it("still rejects when there is nothing cached to fall back to", async () => {
+    // The mirror case, and the reason this is not a blanket swallow: with no
+    // cached copy there IS no better answer, and reporting "not fetched yet"
+    // is the whole point of `deferred`. Silently resolving to nothing would
+    // erase the distinction between "no data here" and "not fetched yet".
+    const inner = new RefusingSource(0);
+    inner.calls = 1; // refuse from the very first call
+    const cache = new CachingSource(inner, new MemoryBlobStore());
+
+    await expect(cache.ensureTile(TILE)).rejects.toThrow(RateLimitedError);
+  });
+
+  it("does not swallow other failures just because a copy is cached", async () => {
+    // A rate limit means "come back shortly"; anything else means something is
+    // actually wrong, and hiding it behind a stale render would make a broken
+    // source indistinguishable from a working one.
+    const store = new MemoryBlobStore();
+    const inner = new CountingSource(0);
+    const cache = new CachingSource(inner, store, { now: () => 60_000 });
+    await cache.ensureTile(TILE);
+
+    vi.spyOn(inner, "fetchTile").mockRejectedValue(new Error("upstream down"));
+
+    await expect(cache.ensureTile(TILE, { maxAgeMs: 1000 })).rejects.toThrow(
+      /upstream down/,
+    );
+  });
+});
+
 describe("a broken cache entry must never poison a tile", () => {
   it.each([
     ["truncated JSON", '{"tile":"abc",'],
@@ -316,13 +383,76 @@ describe("decorator transparency", () => {
     expect(cache.sourceId).toBe("cached(counting)");
   });
 
-  it("forwards the AbortSignal to the inner source", async () => {
+  it("forwards cancellation to the inner source", async () => {
+    // The inner source gets an internal signal, not the caller's — otherwise
+    // one de-duplicated caller's abort would cancel every other caller's tile
+    // (see `in-flight-requests.ts`). What must still hold is that an abort
+    // reaches the inner source at all.
+    let seen: AbortSignal | undefined;
     const inner = new CountingSource();
-    const spy = vi.spyOn(inner, "fetchTile");
+    vi.spyOn(inner, "fetchTile").mockImplementation(
+      (_tile: string, signal?: AbortSignal) => {
+        seen = signal;
+        return new Promise<OsmTileResult>(() => {
+          /* never settles */
+        });
+      },
+    );
     const cache = new CachingSource(inner, new MemoryBlobStore());
     const controller = new AbortController();
 
-    await cache.fetchTile(TILE, controller.signal);
-    expect(spy).toHaveBeenCalledWith(TILE, controller.signal);
+    const pending = cache.fetchTile(TILE, controller.signal);
+    pending.catch(() => undefined);
+    // A macrotask, not a microtask: `ensureTile` awaits the store read before
+    // it ever reaches the inner source.
+    await settle();
+
+    expect(seen).toBeDefined();
+    expect(seen?.aborted).toBe(false);
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+    await expect(pending).rejects.toThrow();
+  });
+
+  it("does not let one caller's abort cancel another's tile", async () => {
+    // The scenario from the review: a prefetch and the movement trigger ask for
+    // the same tile, the user cancels the prefetch, and the movement trigger's
+    // whole working-set load fails with an AbortError for a signal it never
+    // owned — with no `deferred`/`failed` entry to explain it, because
+    // `loadTiles` rethrows aborts.
+    const inner = new CountingSource();
+    let resolveFetch!: (result: OsmTileResult) => void;
+    vi.spyOn(inner, "fetchTile").mockImplementation(
+      (tile: string) =>
+        new Promise<OsmTileResult>((resolve) => {
+          resolveFetch = () => {
+            resolve({
+              tile,
+              features: [],
+              fetchedAt: 1000,
+              sourceId: inner.sourceId,
+              schemaVersion: OVERPASS_SCHEMA_VERSION,
+              skipped: [],
+            });
+          };
+        }),
+    );
+    const cache = new CachingSource(inner, new MemoryBlobStore());
+    const prefetch = new AbortController();
+    const movement = new AbortController();
+
+    const prefetched = cache.fetchTile(TILE, prefetch.signal);
+    prefetched.catch(() => undefined);
+    const moved = cache.fetchTile(TILE, movement.signal);
+    // Both must have JOINED before the abort, otherwise the test would pass
+    // trivially by never having shared a request in the first place.
+    await settle();
+    expect(inner.fetchTile).toHaveBeenCalledTimes(1);
+
+    prefetch.abort();
+    await expect(prefetched).rejects.toThrow();
+
+    resolveFetch({} as OsmTileResult);
+    await expect(moved).resolves.toMatchObject({ tile: TILE });
   });
 });

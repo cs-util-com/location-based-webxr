@@ -35,6 +35,7 @@ import {
 import type { OverpassStatus } from "./overpass-status.js";
 import { parseOverpassStatus } from "./overpass-status.js";
 import { OverpassSlotBudget } from "./slot-budget.js";
+import { InFlightRequests } from "./in-flight-requests.js";
 
 /**
  * Default endpoint pool, in PREFERENCE ORDER — `pickEndpoint` walks it from the
@@ -87,6 +88,14 @@ export interface OverpassSourceOptions {
    * OSM convention, and anonymous bulk clients get blocked. There is
    * deliberately no default: a shared default would make every consumer of this
    * library indistinguishable, so one bad actor would get everyone blocked.
+   *
+   * **Node only, in practice.** `User-Agent` is a forbidden request header per
+   * the fetch spec, so a browser drops it silently and sends its own instead —
+   * no error, no warning, nothing to see in devtools. This package ships to
+   * phones, so that is the common case. The option is still required and still
+   * correct (it works under Node/`undici`, and being unable to identify
+   * yourself is not a reason to stop trying), but do not go looking for the
+   * header on the wire in a browser build.
    */
   readonly userAgent: string;
   readonly endpoints?: readonly string[];
@@ -194,9 +203,15 @@ export class PermanentOverpassError extends Error {
  *
  * Distinct from every other failure because the correct response is different:
  * nothing is wrong, the data will be fetchable shortly, and the caller should
- * serve whatever it already has. `CachingSource` turns this into "serve cache,
- * queue the fetch"; the explicit prefetch API surfaces it, because "download
- * this area for offline use" must be able to say it cannot right now.
+ * serve whatever it already has. `CachingSource` therefore answers it from the
+ * stale copy when it has one, and only propagates it when it has nothing — so
+ * this reaching a caller really does mean "no data yet", not "data withheld".
+ * There is deliberately no retry queue behind that: the caller already knows
+ * when to come back from `retryAfterMs`, and a queue the caller cannot see
+ * would refetch areas they have since walked away from.
+ *
+ * The explicit prefetch API surfaces it instead, because "download this area
+ * for offline use" must be able to say it cannot right now.
  *
  * Measured recovery on the public instances is ~30 s, not hours.
  */
@@ -237,7 +252,7 @@ export class OverpassSource implements OsmDataSource {
    * in the same tick, and without this map that is two identical multi-megabyte
    * queries against donated infrastructure.
    */
-  private readonly inFlight = new Map<string, Promise<OsmTileResult>>();
+  private readonly inFlight = new InFlightRequests<OsmTileResult>();
 
   /** Waiters for a concurrency slot. */
   private active = 0;
@@ -315,18 +330,19 @@ export class OverpassSource implements OsmDataSource {
   }
 
   fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
-    const existing = this.inFlight.get(tile);
-    if (existing !== undefined) {
-      this.stats.deduplicated++;
-      return existing;
-    }
-    const request = this.withConcurrencyLimit(() =>
-      this.fetchTileUncached(tile, signal),
-    ).finally(() => {
-      this.inFlight.delete(tile);
-    });
-    this.inFlight.set(tile, request);
-    return request;
+    if (this.inFlight.has(tile)) this.stats.deduplicated++;
+    // The joined callers' signals are deliberately NOT the one the request runs
+    // on — see `in-flight-requests.ts`. The movement trigger and an explicit
+    // prefetch are the two callers most likely to collide here, and they have
+    // different lifetimes.
+    return this.inFlight.join(
+      tile,
+      (dedupSignal) =>
+        this.withConcurrencyLimit(() =>
+          this.fetchTileUncached(tile, dedupSignal),
+        ),
+      signal,
+    );
   }
 
   private async fetchTileUncached(
@@ -467,6 +483,13 @@ export class OverpassSource implements OsmDataSource {
         Accept: "application/json",
         // OSM convention: identify the application. Some instances reject
         // requests without it outright.
+        //
+        // Both of these are forbidden request headers, so a BROWSER drops them
+        // silently and sends its own UA plus whatever `Referrer-Policy`
+        // produces. Kept because they do work under Node/`undici`, and setting
+        // them costs nothing where they do not — but the mitigation above only
+        // applies off-browser, which is the opposite of this package's main
+        // target. See `OverpassSourceOptions.userAgent`.
         "User-Agent": this.userAgent,
         Referer: this.userAgent,
       },
@@ -549,17 +572,33 @@ export class OverpassSource implements OsmDataSource {
     return this.endpoints[attempt % this.endpoints.length]!;
   }
 
-  /** Simple counting semaphore. */
+  /**
+   * Counting semaphore that HANDS THE SLOT OVER rather than releasing it.
+   *
+   * The distinction is the whole correctness argument. A waiter resumes in a
+   * continuation, one microtask after it is woken, so a semaphore that does
+   * `active--; queue.shift()?.()` leaves a window in which `active` reads one
+   * below the cap while a woken waiter is already committed to running. A
+   * caller arriving in that window takes the slot, the waiter then takes it
+   * too, and the cap is exceeded — against donated infrastructure that answers
+   * that with a 429, which this class treats as an expensive event.
+   *
+   * So a releaser with someone queued never decrements: it passes its own slot
+   * on, already counted, and only the last one out turns the light off.
+   */
   private async withConcurrencyLimit<T>(task: () => Promise<T>): Promise<T> {
     if (this.active >= this.maxConcurrent) {
       await new Promise<void>((resolve) => this.queue.push(resolve));
+      // No `active++` here: the slot arrived already counted.
+    } else {
+      this.active++;
     }
-    this.active++;
     try {
       return await task();
     } finally {
-      this.active--;
-      this.queue.shift()?.();
+      const next = this.queue.shift();
+      if (next === undefined) this.active--;
+      else next();
     }
   }
 }

@@ -40,9 +40,19 @@ consumer to inject.
 - **`keys()` ignores files it did not write**, so the directory can be shared.
 - **The directory is injected**, so the store's constructor cannot fail and a
   consumer can place OSM data somewhere evictable separately from recordings.
-- **`writable.close()` is in a `finally`** — closing is what commits the write,
-  and a leaked writable is worse than a zero-length file (which reads back as a
-  miss and is therefore recoverable).
+- **Writing goes through
+  [`writeFileOrAbort`](../storage/write-file-or-abort.ts.md)**, never a
+  hand-rolled `createWritable`/`write`/`close`.
+  - `close()` is what COMMITS the temp file, so closing on the failure path
+    swaps a **truncated** blob over a previously good one. The earlier version
+    closed in a `finally` and reasoned about a zero-length file being
+    recoverable — but the realistic failure (quota exceeded mid-stream on a
+    cache holding tens of MB of res-7 tiles) truncates rather than empties.
+  - That distinction matters downstream: `CachingSource` only rejects entries
+    that fail `JSON.parse`/`isTileResult`, so a truncated blob is a permanent
+    miss on that tile until something evicts it.
+  - The helper also reports the _write_ error rather than whatever `close()`
+    threw on top of it.
 
 ## Examples
 
@@ -62,7 +72,11 @@ const source = new CachingSource({ inner: overpass, store });
 ## Tests
 
 `opfs-osm-blob-store.test.ts` — key round-tripping and flatness, listing keys in
-their original form, ignoring foreign files, delete idempotence, and the three
-failure paths (read, write, list) each staying a miss. A fake
+their original form, ignoring foreign files, delete idempotence, the three
+failure paths (read, write, list) each staying a miss, and a part-way write
+leaving the previous entry intact. The fake writable models the real temp-file
+semantics — `close()` commits, `abort()` discards — because a fake with only
+`close()` cannot tell a correct failure path from one that commits a truncated
+file over good data. A fake
 `FileSystemDirectoryHandle` is used because OPFS does not exist in the Node test
 environment and because a real backend cannot be asked to fail on demand.

@@ -235,9 +235,7 @@ async function main() {
   const keys = selectKeysFromCaptureScript();
   const query = buildQuery(bbox, keys);
 
-  console.log(
-    `res-${res} tile ${cell} around ${centre.lat}, ${centre.lng}`,
-  );
+  console.log(`res-${res} tile ${cell} around ${centre.lat}, ${centre.lng}`);
   console.log(
     `${keys.length} keys, union form, one query per host, serialised`,
   );

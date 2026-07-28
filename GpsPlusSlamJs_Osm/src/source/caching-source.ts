@@ -12,6 +12,8 @@
 import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
 import type { OsmBlobStore } from "./osm-blob-store.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
+import { RateLimitedError } from "./overpass-source.js";
+import { InFlightRequests } from "./in-flight-requests.js";
 
 export interface CachingSourceOptions {
   /**
@@ -50,9 +52,16 @@ export class CachingSource implements OsmDataSource {
 
   private readonly schemaVersion: number;
   private readonly now: () => number;
-  private readonly inFlight = new Map<string, Promise<OsmTileResult>>();
+  private readonly inFlight = new InFlightRequests<OsmTileResult>();
 
-  readonly stats = { hits: 0, misses: 0, staleRefetches: 0, deduplicated: 0 };
+  readonly stats = {
+    hits: 0,
+    misses: 0,
+    staleRefetches: 0,
+    deduplicated: 0,
+    /** Refetches a rate limit refused, answered from the stale copy instead. */
+    staleOnRateLimit: 0,
+  };
 
   constructor(
     private readonly inner: OsmDataSource,
@@ -102,24 +111,53 @@ export class CachingSource implements OsmDataSource {
       this.stats.misses++;
     }
 
-    const existing = this.inFlight.get(tile);
-    if (existing !== undefined) {
-      this.stats.deduplicated++;
-      return existing;
-    }
+    if (this.inFlight.has(tile)) this.stats.deduplicated++;
 
-    const request = this.inner
-      .fetchTile(tile, options.signal)
+    return this.inFlight.join(
+      tile,
+      (dedupSignal) => this.fetchAndStore(tile, cached, dedupSignal),
+      options.signal,
+    );
+  }
+
+  /**
+   * The de-duplicated body: fetch, persist, and fall back to `cached`.
+   *
+   * `cached` is passed in rather than re-read because the caller has already
+   * paid for the read, and because it must be the copy the STARTING caller
+   * saw — a joiner arriving later must get the same answer as everyone else
+   * sharing this request.
+   */
+  private fetchAndStore(
+    tile: string,
+    cached: OsmTileResult | undefined,
+    signal: AbortSignal,
+  ): Promise<OsmTileResult> {
+    return this.inner
+      .fetchTile(tile, signal)
       .then(async (result) => {
         await this.store.put(this.cacheKey(tile), JSON.stringify(result));
         return result;
       })
-      .finally(() => {
-        this.inFlight.delete(tile);
+      .catch((error: unknown) => {
+        // A refused slot is not a data problem, and it is the ONE failure where
+        // the cache holds the better answer: nothing is wrong upstream, the
+        // data will be fetchable shortly, and a stale copy beats no copy.
+        // Rethrowing here instead would make `loadTiles` file the tile as
+        // `deferred` and the caller render nothing — while a usable copy sits
+        // in the store, which is the opposite of what a cache is for.
+        //
+        // Deliberately narrow on both axes: only `RateLimitedError`, and only
+        // with something cached. Any other error still propagates (a broken
+        // source must not hide behind a stale render), and a rate limit with an
+        // empty cache still rejects, because "not fetched yet" is a real answer
+        // that the caller needs to be able to tell from "no data here".
+        if (cached !== undefined && error instanceof RateLimitedError) {
+          this.stats.staleOnRateLimit++;
+          return cached;
+        }
+        throw error;
       });
-
-    this.inFlight.set(tile, request);
-    return request;
   }
 
   /** Every tile currently cached, as `FETCH_RES` (res-7) cell ids. */

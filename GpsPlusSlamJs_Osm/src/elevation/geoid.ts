@@ -116,9 +116,12 @@ export interface UndulationGrid {
  * the end and produce a smoothly wrong field, which is the failure mode this
  * whole file is organised around.
  *
- * Longitude wraps; latitude clamps. A grid covering the globe therefore behaves
- * correctly across the antimeridian, and a regional grid degrades to its edge
- * value rather than to NaN.
+ * Latitude always clamps. Longitude wraps **only for a grid that spans the full
+ * 360°** (`cols × stepDeg === 360`), so a global grid behaves correctly across
+ * the antimeridian while a regional grid degrades to its edge value. Wrapping a
+ * regional grid unconditionally would be worse than either: a query outside its
+ * span would read an interior column and return a smooth, plausible, confidently
+ * wrong `N` — no NaN, no throw, and it presents as a GPS+SLAM fusion bug.
  */
 export function gridGeoid(grid: UndulationGrid): GeoidModel {
   if (grid.rows < 2 || grid.cols < 2) {
@@ -135,9 +138,15 @@ export function gridGeoid(grid: UndulationGrid): GeoidModel {
     );
   }
 
+  // Decided once, not per lookup: only a grid whose columns cover all 360° is
+  // periodic in longitude. Anything narrower clamps, like latitude does.
+  const wrapsLongitude = Math.abs(grid.cols * grid.stepDeg - 360) < 1e-9;
+
   const at = (row: number, col: number): number => {
     const r = Math.min(grid.rows - 1, Math.max(0, row));
-    const c = ((col % grid.cols) + grid.cols) % grid.cols;
+    const c = wrapsLongitude
+      ? ((col % grid.cols) + grid.cols) % grid.cols
+      : Math.min(grid.cols - 1, Math.max(0, col));
     return grid.values[r * grid.cols + c] ?? 0;
   };
 
