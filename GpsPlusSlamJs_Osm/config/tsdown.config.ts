@@ -36,11 +36,22 @@ const entryFiles = [
   "src/source/overpass-source.ts",
   "src/source/caching-source.ts",
   "src/source/fixture-source.ts",
+  "src/source/overpass-status.ts",
+  "src/source/slot-budget.ts",
+  "src/source/area-loader.ts",
 
   // spatial/ — H3 indexing (named `spatial/`, not the plan's `index/`, to avoid
   // colliding with the `src/index.ts` barrel — see the plan's deviation log)
   "src/spatial/index.ts",
   "src/spatial/resolutions.ts",
+  "src/spatial/merge-tiles.ts",
+
+  // rules/ — the policy layer: loads and validates the affordance rule table
+  "src/rules/index.ts",
+  "src/rules/rule-table.ts",
+  "src/rules/rule-table-loader.ts",
+  "src/rules/ignored-tags.ts",
+  "src/rules/csv.ts",
 ];
 
 export default defineConfig({

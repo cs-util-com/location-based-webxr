@@ -13,7 +13,9 @@
     "./source": "./dist/source/index.js",
     "./source/*": "./dist/source/*.js",
     "./spatial": "./dist/spatial/index.js",
-    "./spatial/*": "./dist/spatial/*.js"
+    "./spatial/*": "./dist/spatial/*.js",
+    "./rules": "./dist/rules/index.js",
+    "./rules/*": "./dist/rules/*.js"
   },
   "types": "./dist/index.d.ts",
   "scripts": {
