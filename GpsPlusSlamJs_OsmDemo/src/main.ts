@@ -34,6 +34,7 @@ import {
 
 import { DemoPipeline } from './demo-pipeline.js';
 import { parseStartPosition } from './start-position.js';
+import { latestOnly } from './latest-only.js';
 import { MapView } from './map-view.js';
 import { BuildingView } from './building-view.js';
 
@@ -95,17 +96,35 @@ async function main(): Promise<void> {
   const mapView = new MapView({ container: el('map'), centre: start });
   const buildingView = new BuildingView({ container: el('scene') });
 
-  let position = start;
-
   // Clicking the map moves the "user", which is how a walk is simulated without
   // a phone — and crossing a res-11 boundary is what exercises the chunk cache.
   mapView.map.on('click', (event: { latlng: { lat: number; lng: number } }) => {
-    position = { lat: event.latlng.lat, lng: event.latlng.lng };
-    void refresh();
+    void refresh({ lat: event.latlng.lat, lng: event.latlng.lng });
   });
-  categorySelect.addEventListener('change', () => void refresh());
+  categorySelect.addEventListener('change', () => void refresh(lastPosition));
 
-  async function refresh(): Promise<void> {
+  /** The position the view is currently showing, so a category change reuses it. */
+  let lastPosition = start;
+
+  /**
+   * COALESCED, because `doRefresh` awaits a real Overpass fetch — 18.2 s for a
+   * res-7 tile — and the map stays clickable throughout. Two overlapping runs
+   * would drive one `AffordanceIndex` concurrently and let the EARLIER one
+   * write the final status line, which presents as "the map is showing the
+   * wrong place" rather than as a race. Latest-wins rather than a lock: an 18 s
+   * dead zone after every click would break the demo's only interaction.
+   *
+   * The position is an ARGUMENT rather than a mutable outer variable so that
+   * "the newest request wins" is a property of the wrapper and not an accident
+   * of when each run happens to read the variable.
+   */
+  const refresh = latestOnly(doRefresh);
+
+  async function doRefresh(position: {
+    lat: number;
+    lng: number;
+  }): Promise<void> {
+    lastPosition = position;
     const category = categorySelect.value;
     status.textContent = `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`;
     mapView.setPosition(position);
@@ -141,7 +160,7 @@ async function main(): Promise<void> {
     }
   }
 
-  await refresh();
+  await refresh(start);
 }
 
 void main();
