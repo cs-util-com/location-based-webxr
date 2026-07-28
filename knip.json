@@ -5,6 +5,19 @@
     "types": "error"
   },
   "workspaces": {
+    "GpsPlusSlamJs_Osm": {
+      "entry": [
+        "src/index.ts",
+        "src/spatial/index.ts",
+        "config/eslint.config.mjs"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "dpdm"
+      ]
+    },
     ".": {
       "entry": [
         "tests/**/*.test.js"

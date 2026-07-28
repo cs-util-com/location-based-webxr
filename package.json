@@ -15,6 +15,7 @@
         "check:deadcode": "knip",
         "test:repo-config": "node scripts/test-timing/timed-stage.mjs test:repo-config",
         "test:framework": "node scripts/test-timing/timed-stage.mjs test:framework",
+    "test:osm": "node scripts/test-timing/timed-stage.mjs test:osm",
         "test:recorder": "node scripts/test-timing/timed-stage.mjs test:recorder",
         "test:recorder:unit": "pnpm --filter gps-plus-slam-recorder run test:unit",
         "test:recorder:e2e": "pnpm --filter gps-plus-slam-recorder run test:e2e",

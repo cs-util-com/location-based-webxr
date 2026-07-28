@@ -1,0 +1,41 @@
+import { defineConfig } from "tsdown";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const projectRoot = resolve(__dirname, "..");
+
+// Explicit per-file entry list, same convention (and same reason) as
+// GpsPlusSlamJs_AppFramework/config/tsdown.config.ts: the package's `exports`
+// field advertises wildcard subpaths (e.g. `./model/*` -> `./dist/model/*.js`),
+// so tsdown must emit a per-file artifact for every public `.ts` source file.
+// The list is intentionally NOT a glob, so adding a public subpath is a
+// deliberate, PR-visible change. Keep in sync with package.json `exports`.
+// Grown one iteration at a time, in lockstep with package.json `exports` — a
+// tsdown entry for a file that does not exist yet fails the build, so this list
+// is the honest record of what the package currently ships.
+const entryFiles = [
+  // Root barrel
+  "src/index.ts",
+
+  // spatial/ — H3 indexing (named `spatial/`, not the plan's `index/`, to avoid
+  // colliding with the `src/index.ts` barrel — see the plan's deviation log)
+  "src/spatial/index.ts",
+  "src/spatial/resolutions.ts",
+];
+
+export default defineConfig({
+  entry: entryFiles.map((p) => resolve(projectRoot, p)),
+  tsconfig: resolve(projectRoot, "tsconfig.app.json"),
+  format: ["esm"],
+  dts: true,
+  outDir: resolve(projectRoot, "dist"),
+  clean: true,
+  outExtensions: () => ({ js: ".js", dts: ".d.ts" }),
+  deps: {
+    // h3-js is a peer dependency: it must resolve to the consumer's copy, not a
+    // second bundled one. Two h3-js instances would silently produce two
+    // incompatible cell-index universes.
+    neverBundle: ["h3-js"],
+  },
+});

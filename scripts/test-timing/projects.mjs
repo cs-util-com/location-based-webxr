@@ -174,6 +174,10 @@ export const PROJECTS = [
         counts: 'vitest',
       },
       packageGateStage('test:framework', 'gps-plus-slam-app-framework'),
+      // Placed right after the framework and before every app: it is a pure
+      // library with no framework dependency, so a break here is never caused
+      // by an app and should surface before the slow app gates run.
+      packageGateStage('test:osm', 'gps-plus-slam-osm'),
       packageGateStage('test:recorder', 'gps-plus-slam-recorder'),
       packageGateStage('test:starter', 'gps-plus-slam-anchor-starter'),
       packageGateStage('test:example', 'gps-plus-slam-minimal-example'),
@@ -224,6 +228,50 @@ export const PROJECTS = [
         // Filtered single-file TDD runs skip coverage collection (speedup
         // plan C.1): repo-wide coverage of a one-file run is meaningless
         // and expensive. Full-suite and CI runs keep `command`.
+        filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
+      },
+    ],
+  },
+  {
+    // Pure-data library (OSM -> H3 affordance index). Modelled on the framework
+    // entry rather than demoAppProject(): it has no vite build, no e2e, and no
+    // build:framework stage because it does not depend on the framework at all.
+    name: 'GpsPlusSlamJs_Osm',
+    dir: 'GpsPlusSlamJs_Osm',
+    chainNames: ['test:core'],
+    stages: [
+      {
+        name: 'format',
+        command:
+          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "scripts" package.json README.md',
+        counts: null,
+      },
+      {
+        name: 'lint',
+        command: 'eslint . --config config/eslint.config.mjs --max-warnings 0',
+        counts: null,
+      },
+      {
+        name: 'check:cycles',
+        command:
+          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts',
+        counts: null,
+      },
+      {
+        name: 'typecheck',
+        command: 'tsc -p tsconfig.app.json --noEmit',
+        counts: null,
+      },
+      {
+        name: 'typecheck:tests',
+        command: 'tsc -p tsconfig.vitest.json --noEmit',
+        counts: null,
+      },
+      {
+        name: 'test:unit',
+        command: 'vitest run --coverage --config=config/vitest.config.ts',
+        counts: 'vitest',
+        // Filtered single-file TDD runs skip coverage (speedup plan C.1).
         filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
       },
     ],
