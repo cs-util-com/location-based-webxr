@@ -8,6 +8,7 @@
     "GpsPlusSlamJs_Osm": {
       "entry": [
         "src/index.ts",
+        "src/model/index.ts",
         "src/spatial/index.ts",
         "config/eslint.config.mjs"
       ],

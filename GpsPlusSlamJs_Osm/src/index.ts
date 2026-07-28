@@ -8,4 +8,5 @@
  * @see GpsPlusSlamJs_Docs/docs/2026-07-28-0624-osm-h3-affordance-index-plan.md
  */
 
+export * from "./model/index.js";
 export * from "./spatial/index.js";

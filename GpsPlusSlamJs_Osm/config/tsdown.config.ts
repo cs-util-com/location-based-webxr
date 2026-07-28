@@ -18,6 +18,14 @@ const entryFiles = [
   // Root barrel
   "src/index.ts",
 
+  // model/ — typed OSM domain model, pure, no I/O
+  "src/model/index.ts",
+  "src/model/osm-feature.ts",
+  "src/model/osm-tags.ts",
+  "src/model/osm-geometry.ts",
+  "src/model/multipolygon-builder.ts",
+  "src/model/overpass-parser.ts",
+
   // spatial/ — H3 indexing (named `spatial/`, not the plan's `index/`, to avoid
   // colliding with the `src/index.ts` barrel — see the plan's deviation log)
   "src/spatial/index.ts",

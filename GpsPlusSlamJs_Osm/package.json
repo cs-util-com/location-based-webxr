@@ -8,6 +8,8 @@
   ],
   "exports": {
     ".": "./dist/index.js",
+    "./model": "./dist/model/index.js",
+    "./model/*": "./dist/model/*.js",
     "./spatial": "./dist/spatial/index.js",
     "./spatial/*": "./dist/spatial/*.js"
   },
@@ -47,6 +49,7 @@
     "fast-check": "^4.8.0",
     "globals": "^17.6.0",
     "h3-js": "^4.4.0",
+    "osmtogeojson": "3.0.0-beta.5",
     "prettier": "^3.8.3",
     "tsdown": "^0.22.0",
     "typescript": "^6.0.3",

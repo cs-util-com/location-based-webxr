@@ -1,9 +1,15 @@
 {
+  // Matches GpsPlusSlamJs_AppFramework/tsconfig.eslint.json: it inherits
+  // tsconfig.app.json WITHOUT relaxing `noUncheckedIndexedAccess`.
+  //
+  // That inheritance is deliberate and load-bearing. Relaxing it here makes
+  // `arr[i]` type as `T` rather than `T | undefined`, which turns every `!`
+  // and every `=== undefined` guard the production build REQUIRES into an
+  // "unnecessary assertion" lint error — i.e. lint would demand you delete the
+  // exact code typecheck demands you keep.
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
-    "noUncheckedIndexedAccess": false,
-    "noEmit": true,
-    "types": ["vitest/globals", "node"]
+    "noEmit": true
   },
   "include": ["src/**/*", "config/**/*"],
   "exclude": []
