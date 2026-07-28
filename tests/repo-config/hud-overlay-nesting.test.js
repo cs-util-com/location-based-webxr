@@ -201,12 +201,34 @@ function srcImportsFramework(appDir) {
  * @param {string} root repo root
  * @returns {string[]}
  */
+/**
+ * Apps that import the framework but never start a WebXR session.
+ *
+ * The discovery signal above is "imports `gps-plus-slam-app-framework`", chosen
+ * because AR apps boot their session through several different entry points and
+ * matching the package name is more robust than matching one function name.
+ * That signal has one false positive: an app can import a framework subpath for
+ * something with no AR in it at all.
+ *
+ * `GpsPlusSlamJs_OsmDemo` is that case — it imports `.../osm-bridge` purely for
+ * the OPFS blob store, and its two views are a Leaflet map and a plain WebGL
+ * canvas. There is no `initAR`, no `domOverlay`, and therefore no nesting
+ * contract to state; inventing a container id so the guard passes would put a
+ * false claim in the registry.
+ *
+ * **Adding to this list is a deliberate assertion that an app has no DOM
+ * overlay.** It is kept tiny and explicit for that reason — the guard's whole
+ * value is that a real AR app cannot be added without noticing.
+ */
+const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo']);
+
 function discoverArAppHtmlPaths(root) {
   return readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
     .filter(
       (name) =>
+        !NON_AR_APPS.has(name) &&
         existsSync(join(root, name, 'index.html')) &&
         existsSync(join(root, name, 'package.json')) &&
         srcImportsFramework(join(root, name)),
@@ -253,6 +275,20 @@ describe('overlay-contract coverage guard', () => {
     expect(discovered).toContain('GpsPlusSlamJs_QrTrackingDemo/index.html');
     expect(discovered).toContain('GpsPlusSlamJs_RecorderApp/index.html');
     expect(discovered.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('excludes apps that import the framework WITHOUT starting a session', () => {
+    // The OSM demo imports `.../osm-bridge` for the OPFS blob store and shows a
+    // Leaflet map plus a plain WebGL canvas — no initAR, no domOverlay, so no
+    // nesting contract exists to state. Registering a contrived container id
+    // would put a false claim in the registry; excluding it explicitly says the
+    // true thing. This test exists so the exclusion cannot rot into a hole:
+    // if the demo ever DOES start an AR session, this is where to look.
+    const discovered = discoverArAppHtmlPaths(repoRoot);
+    expect(discovered).not.toContain('GpsPlusSlamJs_OsmDemo/index.html');
+    expect(existsSync(join(repoRoot, 'GpsPlusSlamJs_OsmDemo/index.html'))).toBe(
+      true,
+    );
   });
 
   it('every AR app (workspace pkg + index.html + framework import) has an overlay contract', () => {

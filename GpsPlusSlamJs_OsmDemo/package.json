@@ -1,0 +1,35 @@
+{
+  "name": "gps-plus-slam-osm-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo for gps-plus-slam-osm: a Leaflet view of the res-13 affordance grid and its regions, plus a three.js view of the extruded buildings.",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm run build:deps && vite",
+    "build": "pnpm run build:deps && tsc -p tsconfig.json && vite build",
+    "build:deps": "pnpm --filter gps-plus-slam-osm run build && pnpm --filter gps-plus-slam-app-framework run build",
+    "preview": "vite preview",
+    "test": "node ../scripts/test-timing/run-gate.mjs",
+    "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
+    "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "dependencies": {
+    "gps-plus-slam-app-framework": "workspace:*",
+    "gps-plus-slam-osm": "workspace:*",
+    "h3-js": "^4.4.0",
+    "leaflet": "^1.9.4",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.21",
+    "@types/node": "^25.7.0",
+    "@types/three": "^0.184.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12",
+    "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0"
+}

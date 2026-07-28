@@ -36,6 +36,7 @@
         "src/sensors/index.ts",
         "src/state/index.ts",
         "src/storage/index.ts",
+        "src/osm-bridge/index.ts",
         "src/visualization/index.ts",
         "src/utils/index.ts",
         "src/types/index.ts",
@@ -94,6 +95,11 @@
       ]
     },
     "GpsPlusSlamJs_MinimalExample": {
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "GpsPlusSlamJs_OsmDemo": {
       "project": [
         "src/**/*.ts"
       ]

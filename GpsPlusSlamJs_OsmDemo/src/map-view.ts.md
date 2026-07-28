@@ -1,0 +1,43 @@
+# `src/map-view.ts`
+
+## Purpose
+
+The Leaflet view: res-13 affordance cells and region outlines over the OSM
+raster basemap.
+
+## Public API
+
+- `class MapView` — `map`, `setPosition(position)`,
+  `render(cells, regions, category, threshold): HeatScale`, `describeScale`
+- `OSM_ATTRIBUTION`
+
+## Invariants & assumptions
+
+- **2D first, not AR.** §8.4 of the plan: the AR overlay is a gross-failure
+  detector because OSM footprints carry low-metre absolute error, plausibly
+  larger than the fusion error being measured. On a 2D map a mis-scored lawn is
+  unambiguously a scoring fact rather than a pose question.
+- **Regions are drawn UNDER cells.** The outline is context for the grid, and
+  drawing it on top hides the very cells that produced it.
+- **Cells at the identity are not drawn at all** — see `heat-colours.ts.md`.
+- **Clear and rebuild rather than diff.** A working set is ~931 cells; a diff
+  would be a second source of truth about what is on screen, which is the last
+  thing a view built to be trusted by eye should have.
+- **The tooltip is the debugging surface.** Provenance — the OSM elements and
+  their factors, each linked to openstreetmap.org — is what turns "that cell
+  looks wrong" into "that cell is wrong because of way/12345" in one click. It
+  is the reason the C# reference kept a contributing-entries map.
+- **ODbL attribution is required**, and doubly so here: the view shows both the
+  basemap tiles and data derived from OSM.
+
+## Examples
+
+```ts
+const view = new MapView({ container, centre });
+const scale = view.render(cells, regions, 'walkable', threshold);
+```
+
+## Tests
+
+None directly (Leaflet needs a DOM); the data it draws is tested in
+`demo-pipeline`, and the colours in `heat-colours.test.ts`.

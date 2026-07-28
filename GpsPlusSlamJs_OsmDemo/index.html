@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OSM affordance demo</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font: 14px/1.4 system-ui, sans-serif;
+        background: #11131a;
+        color: #e6e8ef;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100dvh;
+      }
+      header {
+        padding: 0.6rem 0.9rem;
+        border-bottom: 1px solid #2a2f3d;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: baseline;
+      }
+      h1 {
+        font-size: 1rem;
+        margin: 0;
+      }
+      #status,
+      #scale {
+        color: #9aa3b8;
+        font-size: 0.8rem;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        min-height: 0;
+      }
+      @media (max-width: 860px) {
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr 1fr;
+        }
+      }
+      #map,
+      #scene {
+        min-height: 0;
+        min-width: 0;
+      }
+      #scene {
+        border-left: 1px solid #2a2f3d;
+        position: relative;
+      }
+      select {
+        background: #1b1f2a;
+        color: inherit;
+        border: 1px solid #2a2f3d;
+        border-radius: 4px;
+        padding: 0.2rem 0.4rem;
+      }
+      .hint {
+        color: #6f7995;
+        font-size: 0.78rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>OSM affordance demo</h1>
+      <label>category <select id="category"></select></label>
+      <span class="hint">click the map to move</span>
+      <span id="status">starting…</span>
+      <span id="scale"></span>
+    </header>
+    <main>
+      <div id="map"></div>
+      <div id="scene"></div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

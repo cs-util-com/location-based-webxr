@@ -182,6 +182,7 @@ export const PROJECTS = [
       packageGateStage('test:starter', 'gps-plus-slam-anchor-starter'),
       packageGateStage('test:example', 'gps-plus-slam-minimal-example'),
       packageGateStage('test:qr-demo', 'gps-plus-slam-qr-tracking-demo'),
+      packageGateStage('test:osm-demo', 'gps-plus-slam-osm-demo'),
       packageGateStage('test:landing', 'gps-plus-slam-landing'),
       packageGateStage('test:physics', 'gps-plus-slam-physics-demo'),
       packageGateStage('test:wayfinding', 'gps-plus-slam-wayfinding-hud-demo'),
@@ -350,6 +351,22 @@ export const PROJECTS = [
   {
     name: 'GpsPlusSlamJs_MinimalExample',
     dir: 'GpsPlusSlamJs_MinimalExample',
+    chainNames: [],
+    stages: [
+      {
+        name: 'typecheck',
+        command: 'tsc -p tsconfig.json --noEmit',
+        counts: null,
+      },
+      { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+    ],
+  },
+  {
+    // Registered like MinimalExample rather than with demoAppProject(): it has
+    // no e2e suite and no framework build stage of its own, and its value is a
+    // human looking at it rather than a headless assertion.
+    name: 'GpsPlusSlamJs_OsmDemo',
+    dir: 'GpsPlusSlamJs_OsmDemo',
     chainNames: [],
     stages: [
       {

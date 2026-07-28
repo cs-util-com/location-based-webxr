@@ -342,6 +342,43 @@ importers:
         specifier: ^4.1.6
         version: 4.1.6(@types/node@25.7.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.0.12(@types/node@25.7.0)(jiti@2.7.0)(yaml@2.9.0))
 
+  GpsPlusSlamJs_OsmDemo:
+    dependencies:
+      gps-plus-slam-app-framework:
+        specifier: workspace:*
+        version: link:../GpsPlusSlamJs_AppFramework
+      gps-plus-slam-osm:
+        specifier: workspace:*
+        version: link:../GpsPlusSlamJs_Osm
+      h3-js:
+        specifier: ^4.4.0
+        version: 4.4.0
+      leaflet:
+        specifier: ^1.9.4
+        version: 1.9.4
+      three:
+        specifier: ^0.184.0
+        version: 0.184.0
+    devDependencies:
+      '@types/leaflet':
+        specifier: ^1.9.21
+        version: 1.9.21
+      '@types/node':
+        specifier: ^25.7.0
+        version: 25.7.0
+      '@types/three':
+        specifier: ^0.184.1
+        version: 0.184.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^8.0.12
+        version: 8.0.12(@types/node@25.7.0)(jiti@2.7.0)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.6(@types/node@25.7.0)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.0.12(@types/node@25.7.0)(jiti@2.7.0)(yaml@2.9.0))
+
   GpsPlusSlamJs_PhysicsDemo:
     dependencies:
       '@dimforge/rapier3d-compat':

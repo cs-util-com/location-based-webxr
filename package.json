@@ -22,6 +22,7 @@
         "test:starter": "node scripts/test-timing/timed-stage.mjs test:starter",
         "test:example": "node scripts/test-timing/timed-stage.mjs test:example",
         "test:qr-demo": "node scripts/test-timing/timed-stage.mjs test:qr-demo",
+        "test:osm-demo": "node scripts/test-timing/timed-stage.mjs test:osm-demo",
         "test:landing": "node scripts/test-timing/timed-stage.mjs test:landing",
         "test": "node scripts/test-timing/run-gate.mjs",
         "test:physics": "node scripts/test-timing/timed-stage.mjs test:physics",
