@@ -208,6 +208,97 @@ describe("a tile arriving late", () => {
     expect(index.scoredChunks()).toHaveLength(held);
   });
 
+  it("does not invalidate everything when a KNOWN distant tile is refetched", () => {
+    /**
+     * WHY THIS MATTERS, and why the test above does not cover it.
+     *
+     * `acceptTile` invalidates a chunk when the tile overlaps it OR when the
+     * chunk names the tile in `ScoredChunk.tiles` — documented as "fetch tiles
+     * whose data contributed". The distance test above only ever accepts a tile
+     * the index has never seen, so it exercises the overlap branch alone.
+     *
+     * Take the other branch and the guarantee collapses: once a tile is held,
+     * EVERY chunk scored afterwards names it, so refetching it drops the whole
+     * chunk cache regardless of geography. That is precisely the "prefetched a
+     * route" case the overlap test exists to protect, reached from the other
+     * side — and a refetch of a held tile is the normal path, since §5.2's
+     * `maxAgeMs` refresh re-fetches tiles the index already has.
+     */
+    const index = newIndex();
+
+    const far = { lat: 51.4, lng: 7.6 };
+    index.acceptTile(tile(far, [patch(9, far, { landuse: "grass" })], 3_000));
+
+    index.update(HOME);
+    const held = index.scoredChunks().length;
+    expect(held).toBeGreaterThan(0);
+
+    // The same tile again, newer — a routine `maxAgeMs` refresh.
+    const invalidated = index.acceptTile(
+      tile(far, [patch(9, far, { landuse: "grass" })], 4_000),
+    );
+
+    expect(invalidated).toEqual([]);
+    expect(index.scoredChunks()).toHaveLength(held);
+  });
+
+  it("records only the tiles that actually contributed to a chunk", () => {
+    // The field's own docstring says "fetch tiles whose data contributed", and
+    // the invalidation test above depends on that meaning being true. Storing
+    // every held tile asserts a precision it does not have.
+    const index = newIndex();
+    const far = { lat: 51.4, lng: 7.6 };
+    index.acceptTile(tile(far, [patch(9, far, { landuse: "grass" })], 3_000));
+    index.update(HOME);
+
+    const homeTile = latLngToCell(HOME.lat, HOME.lng, FETCH_RES);
+    const farTile = latLngToCell(far.lat, far.lng, FETCH_RES);
+    const chunks = index.scoredChunks();
+
+    // The far tile fed nothing here, so no chunk may name it.
+    expect(chunks.flatMap((c) => c.tiles).filter((t) => t === farTile)).toEqual(
+      [],
+    );
+    // ...and every chunk that did get features must name the tile they came from.
+    const fed = chunks.filter((c) => c.featureCount > 0);
+    expect(fed.length).toBeGreaterThan(0);
+    expect(fed.filter((c) => !c.tiles.includes(homeTile))).toEqual([]);
+  });
+
+  it("still invalidates a chunk fed by a feature that reaches beyond its tile", () => {
+    /**
+     * The reason `tiles` cannot simply be deleted in favour of the bbox test.
+     * A single OSM way — a river, a motorway, a landuse multipolygon — can be
+     * held by one tile and still cover ground far outside that tile's bbox. A
+     * chunk scored from it names a tile it does not overlap, and when that tile
+     * is refetched the chunk genuinely is stale.
+     */
+    const index = new AffordanceIndex({ table: TABLE });
+    const far = { lat: 51.4, lng: 7.6 };
+    // A way anchored in the far tile whose geometry stretches back to HOME.
+    const sprawling: OsmFeature = {
+      type: "way",
+      id: 42,
+      tags: { landuse: "grass" },
+      geometry: [
+        { lat: far.lat, lng: far.lng },
+        { lat: HOME.lat - 0.0003, lng: HOME.lng - 0.0003 },
+        { lat: HOME.lat + 0.0003, lng: HOME.lng + 0.0003 },
+        { lat: far.lat, lng: far.lng },
+      ],
+    };
+    index.acceptTile(tile(far, [sprawling], 1_000));
+    index.update(HOME);
+    const fed = index
+      .scoredChunks()
+      .filter((c) => c.featureCount > 0)
+      .map((c) => c.chunk);
+    expect(fed.length).toBeGreaterThan(0);
+
+    const invalidated = index.acceptTile(tile(far, [sprawling], 2_000));
+    for (const chunk of fed) expect(invalidated).toContain(chunk);
+  });
+
   it("never converts geometry for a feature no chunk reaches", () => {
     const index = newIndex();
     index.update(HOME);

@@ -50,6 +50,18 @@ the package that remembers anything.
 - **Invalidation is spatial, not global.** A tile only invalidates chunks whose
   bbox it overlaps (plus any chunk that names it). A distant prefetch must not
   flush the cache.
+  - **`ScoredChunk.tiles` therefore means CONTRIBUTORS, not "tiles held".** The
+    distinction is load-bearing, not pedantic: listing every held tile makes the
+    "names it" branch true for every chunk on any refetch of a known tile, so
+    the whole cache drops regardless of geography — and §5.2's `maxAgeMs`
+    refresh is exactly that refetch, i.e. the normal path.
+  - The set is derived from `mergeTiles`'s `provenance`, which already resolves
+    which tile won each record. Recomputing it here would be a second, divergable
+    copy of the same rule.
+  - **The field cannot simply be deleted in favour of the bbox test.** One way —
+    a river, a motorway, a landuse multipolygon — can be held by one tile and
+    cover ground well outside that tile's bbox, so a chunk can legitimately name
+    a tile it does not overlap.
 - **A late tile clears the move short-circuit.** The guard is about the user's
   position; when the world changes under a stationary user, the next `update()`
   must still do work. Without this the tile would arrive and never be scored.

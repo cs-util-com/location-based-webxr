@@ -55,6 +55,7 @@ import {
 } from "../spatial/clip.js";
 import type { Bbox } from "../spatial/clip.js";
 import { mergeTiles } from "../spatial/merge-tiles.js";
+import type { FeatureProvenance } from "../spatial/merge-tiles.js";
 import {
   AFFORDANCE_RES,
   SCORE_CHUNK_RES,
@@ -130,6 +131,16 @@ export class AffordanceIndex {
   private features = new Map<OsmFeatureKey, OsmFeature>();
 
   /**
+   * The tile each surviving feature came from, straight from `mergeTiles`.
+   *
+   * Needed because `ScoredChunk.tiles` must name the tiles that CONTRIBUTED,
+   * not the tiles the index happens to hold — invalidation keys on it, and the
+   * two differ the moment a held tile is refetched.
+   */
+  private featureTile: ReadonlyMap<OsmFeatureKey, FeatureProvenance> =
+    new Map();
+
+  /**
    * Geometry per feature, computed once and kept. Cleared only for features the
    * merge actually replaced — see `acceptTile`.
    */
@@ -183,6 +194,11 @@ export class AffordanceIndex {
     const merged = mergeTiles([...this.tiles.values()]);
     const previous = this.features;
     this.features = new Map(merged.features);
+    // Which tile each SURVIVING record came from, so a scored chunk can name
+    // the tiles that actually fed it. `mergeTiles` already resolves this while
+    // picking the winner across tiles — recomputing it here would just be a
+    // second, divergable copy of the same rule.
+    this.featureTile = merged.provenance;
 
     // Drop cached geometry only where the winning record actually changed.
     // Re-converting geometry that no tile touched is the cost this class exists
@@ -375,7 +391,19 @@ export class AffordanceIndex {
     return Object.freeze({
       chunk,
       cells: Object.freeze(result.cells),
-      tiles: Object.freeze([...this.tiles.keys()]),
+      // THE TILES THAT CONTRIBUTED, derived from `kept` — not every tile held.
+      // `acceptTile` invalidates a chunk when it overlaps the tile OR when the
+      // chunk names it, so listing every held tile made the second branch fire
+      // for every chunk on any refetch of a known tile, dropping the entire
+      // cache regardless of geography. A `maxAgeMs` refresh is exactly that
+      // refetch, so the bound this class advertises was lost on the normal path.
+      tiles: Object.freeze([
+        ...new Set(
+          [...kept.keys()]
+            .map((key) => this.featureTile.get(key)?.tile)
+            .filter((t): t is string => t !== undefined),
+        ),
+      ]),
       featureCount: kept.size,
     });
   }
