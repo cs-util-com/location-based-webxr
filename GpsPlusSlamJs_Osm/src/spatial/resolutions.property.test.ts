@@ -7,7 +7,7 @@
  * antimeridian, where an implementation that quietly assumed a rectangular grid
  * (as the C# geohash reference had to) would break. The transitivity property
  * in particular is the one that would catch a well-meaning "optimisation" that
- * coarsened 13 -> 8 by two `cellToParent` hops through the wrong intermediate.
+ * coarsened 13 -> 7 by two `cellToParent` hops through the wrong intermediate.
  *
  * @see resolutions.ts.md
  */
@@ -23,6 +23,7 @@ import {
   toScoreChunk,
   fetchWorkingSet,
   scoreWorkingSet,
+  fetchTilesForScoreWorkingSet,
 } from "./resolutions.js";
 
 /** Any point on the globe, including poles and the antimeridian. */
@@ -42,7 +43,7 @@ describe("resolution ladder properties", () => {
     );
   });
 
-  it("is transitive: 13 -> 11 -> 8 equals 13 -> 8 directly", () => {
+  it("is transitive: 13 -> 11 -> 7 equals 13 -> 7 directly", () => {
     fc.assert(
       fc.property(anyLatLng, ({ lat, lng }) => {
         const cell = latLngToCell(lat, lng, AFFORDANCE_RES);
@@ -71,7 +72,7 @@ describe("resolution ladder properties", () => {
   // containing res-11 cell and the res-13 cell's parent are DIFFERENT cells.
   //
   // Measured over 200k uniform random positions: this happens for ~6% of
-  // positions at both res 8 and res 11, and the two cells are always exactly
+  // positions at both fetch and chunk level, and the two cells are always exactly
   // one grid step apart.
   //
   // Consequences this package must respect, and does:
@@ -129,6 +130,64 @@ describe("resolution ladder properties", () => {
           scoreWorkingSet(latLngToCell(lat, lng, SCORE_CHUNK_RES)),
         );
         expect(scoredChunks.has(toScoreChunk(myCell))).toBe(true);
+      }),
+    );
+  });
+
+  // ==========================================================================
+  // THE FETCH-COVERAGE INVARIANT.
+  //
+  // This is the property the whole derived-coverage design exists to guarantee,
+  // and the one a fixed `gridDisk(tile, 1)` ring could only ever approximate.
+  // If it fails, a user near a fetch-tile boundary gets a working set with no
+  // data behind part of it — and an unfetched cell is indistinguishable from
+  // genuinely unmapped ground, so the symptom is a plausible wrong answer
+  // rather than an error.
+  //
+  // Note this holds BY CONSTRUCTION (the tile set is built from these very
+  // chunks), which is exactly the point: correctness stops depending on a
+  // distance threshold that has to be re-tuned whenever a resolution moves.
+  // ==========================================================================
+  it("every chunk in the score working set is covered by a derived fetch tile", () => {
+    fc.assert(
+      fc.property(anyLatLng, ({ lat, lng }) => {
+        const chunk = latLngToCell(lat, lng, SCORE_CHUNK_RES);
+        const tiles = new Set(fetchTilesForScoreWorkingSet(chunk));
+        for (const c of scoreWorkingSet(chunk)) {
+          expect(tiles.has(toFetchTile(c))).toBe(true);
+        }
+      }),
+    );
+  });
+
+  it("the user's own affordance cell always has a fetch tile behind it", () => {
+    // The consumer-facing form of the invariant above: "what can I do where I
+    // am standing?" must never be answered from unfetched ground. Composes the
+    // non-nesting slop (proved above) with the coverage guarantee.
+    fc.assert(
+      fc.property(anyLatLng, ({ lat, lng }) => {
+        const chunk = latLngToCell(lat, lng, SCORE_CHUNK_RES);
+        const tiles = new Set(fetchTilesForScoreWorkingSet(chunk));
+        const myCell = latLngToCell(lat, lng, AFFORDANCE_RES);
+        expect(tiles.has(toFetchTile(myCell))).toBe(true);
+      }),
+    );
+  });
+
+  it("derives at most a handful of tiles — over-fetching is bounded", () => {
+    // A res-11 working set spans ~250 m and a res-7 tile is 2.81 km across, so
+    // the set can touch a boundary or a vertex but never more. If this ever
+    // exceeded 3 it would mean the working set had grown or the fetch tile had
+    // shrunk enough to make one-request-per-move false, which is the entire
+    // justification for FETCH_RES = 7.
+    fc.assert(
+      fc.property(anyLatLng, ({ lat, lng }) => {
+        const tiles = fetchTilesForScoreWorkingSet(
+          latLngToCell(lat, lng, SCORE_CHUNK_RES),
+        );
+        expect(tiles.length).toBeGreaterThanOrEqual(1);
+        expect(tiles.length).toBeLessThanOrEqual(3);
+        expect(new Set(tiles).size).toBe(tiles.length);
       }),
     );
   });

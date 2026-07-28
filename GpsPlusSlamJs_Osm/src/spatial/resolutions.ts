@@ -15,45 +15,51 @@ import { cellToParent, gridDisk, getResolution } from "h3-js";
 /**
  * The unit of network fetching and raw-data caching.
  *
- * Edge 531 m, area 0.737 km², roughly 1.06 km across. Comparable to the C#
- * reference's geohash-p6 download tile (~1.2 × 0.61 km).
+ * Edge 1406.5 m, area 5.161 km², 2.81 km across, inradius (centre to edge
+ * midpoint) 1218 m.
  *
- * NOTE the edge figure: the plan quotes 461 m, which comes from the pre-v4.1 H3
- * documentation table. h3-js 4.4 reports 531.41 m, which agrees with the value
- * derived geometrically from the average area, so the newer number is the right
- * one. Areas were correct in the plan all along; only edge lengths were stale.
+ * RAISED FROM 8 TO 7 on 2026-07-28 (owner decision, plan §2.3 / §5.1.1): fetch
+ * and cache too much around the user rather than too little, because bytes are
+ * cheap and Overpass requests are not. One res-7 cell covers what a 7-tile ring
+ * of res-8 cells covered, so this is one request per move instead of seven —
+ * and moves are ~7x rarer because a res-7 cell is crossed far less often.
  *
- * One res-8 tile contains ~16,807 (7^5) res-13 cells, so scoring must NEVER be
+ * Measured the same day: a res-7 tile fetches in 18.2 s and 28.31 MB of
+ * decompressed JSON (21,847 elements, Cologne). That 28 MB — not the request —
+ * is the number to design against; it is why parsing belongs in a worker.
+ *
+ * One res-7 tile contains ~117,649 (7^6) res-13 cells, so scoring must NEVER be
  * eager over a whole fetch tile.
  */
-export const FETCH_RES = 8;
+export const FETCH_RES = 7;
 
 /**
  * The unit of scoring, of caching computed scores, and of cache eviction.
  *
- * Edge 28.7 m, area ~2,150 m². (The plan says 24.9 m — same stale-table issue
- * as FETCH_RES above.) This is deliberately the same value as the app
- * framework's `H3_RESOLUTION`, reused for what it is genuinely good at: a
- * coarse identity / cache key.
+ * Edge 28.66 m, area ~2,150 m², centre-to-centre step 49.6 m. This is
+ * deliberately the same value as the app framework's `H3_RESOLUTION`, reused
+ * for what it is genuinely good at: a coarse identity / cache key.
  */
 export const SCORE_CHUNK_RES = 11;
 
-/**
- * The affordance cell itself. Edge 4.09 m, area 43.9 m². (The plan says 3.56 m —
- * same stale-table issue as FETCH_RES above; the 43.9 m² area is correct.)
- */
+/** The affordance cell itself. Edge 4.09 m, area 43.9 m². */
 export const AFFORDANCE_RES = 13;
 
 /**
- * Radius (in `gridDisk` rings) of res-8 tiles kept loaded around the user.
- * 1 ring = 7 tiles ≈ 5.2 km², mirroring the C# reference's "centre +
- * neighbours so a finer algorithm can roam without hitting borders".
+ * Radius (in `gridDisk` rings) of fetch tiles for the EXPLICIT prefetch API
+ * ("download this area for offline use").
+ *
+ * NOT used by the movement trigger any more. A fixed ring is a guess: at
+ * FETCH_RES = 7 it over-fetches ~140 MB in the interior while still not being
+ * provably sufficient at a boundary. The trigger uses
+ * {@link fetchTilesForScoreWorkingSet} instead, which derives the answer.
  */
 export const FETCH_DISK_RADIUS = 1;
 
 /**
  * Radius (in `gridDisk` rings) of res-11 chunks scored around the user.
- * 2 rings = 19 chunks = 931 res-13 cells, covering roughly a 250 m span.
+ * 2 rings = 19 chunks = 931 res-13 cells, reaching ~128 m from the user for a
+ * ~250 m span.
  */
 export const SCORE_DISK_RADIUS = 2;
 
@@ -108,7 +114,12 @@ function coarsenTo(cell: string, targetRes: number): string {
   return cellToParent(cell, targetRes);
 }
 
-/** The res-8 tiles that must be loaded for a user standing in `fetchTile`. */
+/**
+ * The fetch tiles a fixed-radius prefetch would load around `fetchTile`.
+ *
+ * For the EXPLICIT prefetch API only — see {@link FETCH_DISK_RADIUS}. The
+ * movement trigger must use {@link fetchTilesForScoreWorkingSet}.
+ */
 export function fetchWorkingSet(fetchTile: string): string[] {
   return gridDisk(fetchTile, FETCH_DISK_RADIUS);
 }
@@ -116,4 +127,30 @@ export function fetchWorkingSet(fetchTile: string): string[] {
 /** The res-11 chunks that must be scored for a user standing in `chunk`. */
 export function scoreWorkingSet(chunk: string): string[] {
   return gridDisk(chunk, SCORE_DISK_RADIUS);
+}
+
+/**
+ * The fetch tiles that must be loaded so every chunk in the score working set
+ * around `chunk` has data — derived, not guessed.
+ *
+ * Returns 1 tile when the working set sits inside one fetch cell, 2 when it
+ * straddles an edge, 3 near a vertex. This replaces "the tile I am in, plus a
+ * ring": a ring both over-fetches in the interior (~140 MB at FETCH_RES = 7)
+ * and is only heuristically sufficient at a boundary, whereas asking the
+ * working set what it needs is exact by construction.
+ *
+ * It also absorbs H3's non-nesting slop for free. A res-11 chunk is not
+ * geometrically inside its `cellToParent` fetch tile, so predicting coverage
+ * from the user's position needs a fudge factor; enumerating the chunks does
+ * not, because each chunk reports its own parent.
+ *
+ * INVARIANT (pinned by property test): for any position, every chunk in
+ * `scoreWorkingSet` maps to a tile in this result.
+ */
+export function fetchTilesForScoreWorkingSet(chunk: string): string[] {
+  const tiles = new Set<string>();
+  for (const c of scoreWorkingSet(chunk)) {
+    tiles.add(toFetchTile(c));
+  }
+  return [...tiles];
 }

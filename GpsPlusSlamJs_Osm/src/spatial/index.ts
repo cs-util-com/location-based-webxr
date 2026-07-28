@@ -14,4 +14,5 @@ export {
   toScoreChunk,
   fetchWorkingSet,
   scoreWorkingSet,
+  fetchTilesForScoreWorkingSet,
 } from "./resolutions.js";
