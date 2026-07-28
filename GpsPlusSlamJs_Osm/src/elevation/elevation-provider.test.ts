@@ -127,3 +127,39 @@ describe("consensusProvider", () => {
     expect(() => consensusProvider([])).toThrow(/at least one/);
   });
 });
+
+describe("an aborted consensus batch rejects rather than degrading", () => {
+  /**
+   * WHY THIS MATTERS. `TerrariumProvider.load` goes out of its way to re-throw
+   * an abort — "a caller that left the area is not asking for a degraded
+   * answer, it is asking for no answer". `Promise.allSettled` then undoes that:
+   * it treats the rejection as just another unfulfilled provider, so the batch
+   * resolves to `undefined` everywhere and the caller cannot tell "aborted"
+   * from "no DEM coverage anywhere in this batch".
+   *
+   * Those are very different facts. The second is worth caching and showing;
+   * the first means the work should simply stop.
+   */
+  it("throws AbortError instead of returning undefined everywhere", async () => {
+    const controller = new AbortController();
+    const aborting: ElevationProvider = {
+      attribution: "",
+      sourceId: "aborting",
+      elevationAt: () =>
+        Promise.reject(
+          Object.assign(new Error("aborted"), { name: "AbortError" }),
+        ),
+    };
+    controller.abort();
+
+    const consensus = consensusProvider([aborting]);
+    await expect(consensus.elevationAt(AT, controller.signal)).rejects.toThrow();
+  });
+
+  it("still degrades when a provider fails for a NON-abort reason", async () => {
+    // The distinction is the point: a provider being down must not stop the
+    // others, only an abort must.
+    const consensus = consensusProvider([fixed("a", [100, 200]), broken("b")]);
+    await expect(consensus.elevationAt(AT)).resolves.toEqual([100, 200]);
+  });
+});

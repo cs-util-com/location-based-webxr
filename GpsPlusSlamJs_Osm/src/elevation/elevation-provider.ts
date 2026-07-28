@@ -106,6 +106,15 @@ export function consensusProvider(
         providers.map((provider) => provider.elevationAt(positions, signal)),
       );
 
+      // `allSettled` swallows an abort like any other rejection, which would
+      // undo the care `TerrariumProvider` takes to re-throw one: the batch would
+      // resolve to `undefined` everywhere and the caller could not tell
+      // "aborted" from "no DEM coverage anywhere in this batch". Those are very
+      // different facts — the second is worth showing, the first means the work
+      // should simply stop. Re-raising keeps the seam consistent with its
+      // implementations.
+      signal?.throwIfAborted();
+
       const answers = settled
         .filter((r) => r.status === "fulfilled")
         .map((r) => r.value);
