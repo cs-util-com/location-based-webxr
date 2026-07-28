@@ -26,6 +26,17 @@ const entryFiles = [
   "src/model/multipolygon-builder.ts",
   "src/model/overpass-parser.ts",
 
+  // source/ — data acquisition; the only place that touches the network
+  "src/source/index.ts",
+  "src/source/osm-data-source.ts",
+  "src/source/osm-blob-store.ts",
+  "src/source/memory-blob-store.ts",
+  "src/source/overpass-query.ts",
+  "src/source/backoff.ts",
+  "src/source/overpass-source.ts",
+  "src/source/caching-source.ts",
+  "src/source/fixture-source.ts",
+
   // spatial/ — H3 indexing (named `spatial/`, not the plan's `index/`, to avoid
   // colliding with the `src/index.ts` barrel — see the plan's deviation log)
   "src/spatial/index.ts",

@@ -9,6 +9,7 @@
       "entry": [
         "src/index.ts",
         "src/model/index.ts",
+        "src/source/index.ts",
         "src/spatial/index.ts",
         "config/eslint.config.mjs"
       ],

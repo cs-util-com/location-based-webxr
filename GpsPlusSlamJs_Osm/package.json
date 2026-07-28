@@ -10,6 +10,8 @@
     ".": "./dist/index.js",
     "./model": "./dist/model/index.js",
     "./model/*": "./dist/model/*.js",
+    "./source": "./dist/source/index.js",
+    "./source/*": "./dist/source/*.js",
     "./spatial": "./dist/spatial/index.js",
     "./spatial/*": "./dist/spatial/*.js"
   },
