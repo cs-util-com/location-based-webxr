@@ -66,6 +66,13 @@ const entryFiles = [
   "src/regions/index.ts",
   "src/regions/connected-components.ts",
   "src/regions/region-builder.ts",
+
+  // elevation/ — the provider seam, Terrarium rasters, and the geoid
+  "src/elevation/index.ts",
+  "src/elevation/elevation-provider.ts",
+  "src/elevation/terrarium.ts",
+  "src/elevation/opentopodata-provider.ts",
+  "src/elevation/geoid.ts",
 ];
 
 export default defineConfig({

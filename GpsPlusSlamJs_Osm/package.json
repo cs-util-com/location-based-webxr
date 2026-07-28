@@ -19,7 +19,9 @@
     "./score": "./dist/score/index.js",
     "./score/*": "./dist/score/*.js",
     "./regions": "./dist/regions/index.js",
-    "./regions/*": "./dist/regions/*.js"
+    "./regions/*": "./dist/regions/*.js",
+    "./elevation": "./dist/elevation/index.js",
+    "./elevation/*": "./dist/elevation/*.js"
   },
   "types": "./dist/index.d.ts",
   "scripts": {
