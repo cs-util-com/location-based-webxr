@@ -25,6 +25,16 @@ export {
   sleep,
 } from "./backoff.js";
 
+export type { OverpassStatus } from "./overpass-status.js";
+export {
+  parseOverpassStatus,
+  msUntilNextSlot,
+  OverpassStatusParseError,
+} from "./overpass-status.js";
+
+export type { SlotBudgetOptions } from "./slot-budget.js";
+export { OverpassSlotBudget } from "./slot-budget.js";
+
 export type { OverpassSourceOptions } from "./overpass-source.js";
 export {
   OverpassSource,
