@@ -111,31 +111,10 @@ export function scoreCells(
   const unmapped: Record<string, number> = {};
   const cells: CellScore[] = [];
 
+  const factors = featureFactors(index, categories, table, counters);
+
   for (const [cell, entries] of index.byCell) {
-    const scores: Record<string, number> = {};
-    const contributors: Record<string, Record<OsmFeatureKey, number>> = {};
-
-    for (const category of categories) {
-      let total = 1;
-      const perFeature: Record<OsmFeatureKey, number> = {};
-
-      for (const entry of entries) {
-        const feature = index.features.get(entry.feature);
-        if (feature === undefined) continue;
-        const factor = scoreFeature(feature, category, table, counters);
-        // Recorded even when it is 1: "this feature touched the cell and said
-        // nothing" is different information from "this feature was not here",
-        // and the debugging value of the provenance map is the whole reason the
-        // C# reference kept one.
-        perFeature[entry.feature] = factor;
-        total *= factor;
-      }
-
-      scores[category] = total;
-      contributors[category] = perFeature;
-    }
-
-    cells.push({ cell, scores, contributors });
+    cells.push(scoreOneCell(cell, entries, categories, factors));
   }
 
   if (options.collectUnmapped === true) {
@@ -143,6 +122,85 @@ export function scoreCells(
   }
 
   return { cells, unmappedTagCounts: unmapped, lookups: counters.lookups };
+}
+
+/**
+ * Each feature's factor per category, computed ONCE.
+ *
+ * THE POINT OF THIS FUNCTION. `scoreFeature(feature, category, table)` reads the
+ * feature's tags and the table — never the cell. So the factor is identical for
+ * every cell the feature touches, and computing it inside the cell loop is work
+ * whose result cannot differ, growing with the feature's area. On the
+ * `building-block` fixture that was ~19,400 `scoreFeature` calls, each
+ * allocating an `Object.entries(tags)` array, where 227 features × 6 categories
+ * = 1,362 give byte-identical results.
+ *
+ * The C# reference makes the same mistake (`for element { for ruleName }`, per
+ * tile) and is no better here. The difference is that this code runs inside an
+ * AR frame budget, and the plan's own measurement already puts a dense chunk at
+ * ~87 % of its 10 ms budget on a desktop.
+ *
+ * Pinned by "looks up each (feature, category) exactly once, however many cells
+ * it spans" — a lookup COUNT, not a wall clock, because this repo has already
+ * learned that a timing assertion inside a parallel suite measures the machine.
+ */
+function featureFactors(
+  index: H3FeatureIndex,
+  categories: readonly string[],
+  table: RuleTable,
+  counters: { lookups: number },
+): Map<OsmFeatureKey, Record<string, number>> {
+  const factors = new Map<OsmFeatureKey, Record<string, number>>();
+  for (const [key, feature] of index.features) {
+    const perCategory: Record<string, number> = {};
+    for (const category of categories) {
+      perCategory[category] = scoreFeature(feature, category, table, counters);
+    }
+    factors.set(key, perCategory);
+  }
+  return factors;
+}
+
+/**
+ * One cell's score in every category, from the precomputed factors.
+ *
+ * Feature-outer, category-inner: one `factors` lookup per (cell, feature)
+ * rather than per (cell, feature, category).
+ */
+function scoreOneCell(
+  cell: string,
+  entries: readonly { readonly feature: OsmFeatureKey }[],
+  categories: readonly string[],
+  factors: ReadonlyMap<OsmFeatureKey, Record<string, number>>,
+): CellScore {
+  const scores: Record<string, number> = {};
+  const contributors: Record<string, Record<OsmFeatureKey, number>> = {};
+  for (const category of categories) {
+    scores[category] = 1;
+    contributors[category] = {};
+  }
+
+  for (const entry of entries) {
+    const perCategory = factors.get(entry.feature);
+    // A cell entry with no feature record cannot be scored. `buildFeatureIndex`
+    // never produces one, but `H3FeatureIndex` is a public type a caller can
+    // construct, so this is a boundary check rather than dead code.
+    if (perCategory === undefined) continue;
+
+    for (const category of categories) {
+      const factor = perCategory[category] ?? 1;
+      const perFeature = contributors[category];
+      if (perFeature === undefined) continue;
+      // Recorded even when it is 1: "this feature touched the cell and said
+      // nothing" is different information from "this feature was not here", and
+      // the debugging value of the provenance map is the whole reason the C#
+      // reference kept one.
+      perFeature[entry.feature] = factor;
+      scores[category] = (scores[category] ?? 1) * factor;
+    }
+  }
+
+  return { cell, scores, contributors };
 }
 
 /**

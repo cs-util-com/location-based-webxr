@@ -30,7 +30,21 @@ feature's tags ( ruleValue[tag][category] ) )`, identity `1` for unknown tags,
   whatever names it declares. The game vocabulary is one possible table.
 - **`0` short-circuits**, and the short-circuit is asserted by COUNTING lookups —
   "it returns 0" would pass with no short-circuit at all. On a building with 30
-  tags this saves 29 lookups per cell per category, in the hot loop.
+  tags this saves 29 lookups per feature per category.
+- **Scoring cost is independent of how much ground a feature covers.** A
+  feature's factor depends on its tags and the table, never on the cell, so
+  `scoreCells` computes it once per (feature, category) in `featureFactors` and
+  the cell loop only multiplies. Cost is `O(features × categories × tags)` for
+  the factor pass plus `O(cell-feature pairs × categories)` for the fold —
+  previously the two were multiplied together.
+  - Measured on `building-block`: ~19,400 `scoreFeature` calls before, 1,362
+    after, for byte-identical output.
+  - **The C# reference has the same flaw** (`for element { for ruleName }` per
+    tile) and is no better. This is not a case of the port inheriting a good
+    idea badly — it is one of the two implementations having a 16 ms frame
+    budget.
+  - Pinned by a lookup COUNT, never a wall clock: a timing assertion inside a
+    parallel suite measures the machine (this repo has the scar).
 - **An unknown tag contributes exactly `1`.** Its failure mode is the worst
   available: if unknown meant `0`, every cell everywhere would score zero.
 - **`contributors` is a plain `Record`, never a `Map`.** Scored chunks are cached

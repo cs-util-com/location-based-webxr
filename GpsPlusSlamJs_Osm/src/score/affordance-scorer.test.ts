@@ -155,6 +155,98 @@ describe("zero is absorbing, and the short-circuit is real", () => {
   });
 });
 
+describe("scoring cost does not grow with the ground a feature covers", () => {
+  /**
+   * WHY THIS TEST MATTERS.
+   *
+   * `scoreFeature(feature, category, table)` reads the feature's tags and the
+   * table. It does NOT read the cell. So the factor a feature contributes is
+   * the same for every cell it touches, and computing it once per (cell,
+   * category, feature) is redundant work that grows with the feature's area.
+   *
+   * Measured on the `building-block` fixture before this was fixed: ~19,400
+   * `scoreFeature` calls, each allocating an `Object.entries(tags)` array,
+   * where 227 features × 6 categories = 1,362 give byte-identical results.
+   * The C# reference has the same shape and is no better — but only this one
+   * runs inside a 16 ms AR frame budget, and the plan's own measurement puts a
+   * dense chunk at ~87 % of its 10 ms indexing budget on a DESKTOP.
+   *
+   * Asserting the count rather than the wall clock is deliberate: this repo has
+   * already learned that a timing assertion inside a parallel suite measures
+   * the machine, not the code (a "generous" 100 ms ceiling failed at 104 ms in
+   * a contended run). A lookup count is machine-independent and says exactly
+   * the thing that matters.
+   */
+  const wayAcross = (id: number, tags: Record<string, string>): OsmFeature => ({
+    type: "way",
+    id,
+    // A line long enough to rasterise into many res-13 cells, so "per cell" and
+    // "per feature" are far apart and the assertion can tell them apart.
+    geometry: [COLOGNE, { lat: COLOGNE.lat + 0.002, lng: COLOGNE.lng + 0.002 }],
+    tags,
+  });
+
+  it("looks up each (feature, category) exactly once, however many cells it spans", () => {
+    const features = [
+      wayAcross(1, { surface: "sand", natural: "beach" }),
+      wayAcross(2, { landuse: "grass" }),
+    ];
+    const index = buildFeatureIndex(features);
+    const result = scoreCells(index, TABLE);
+
+    // The feature genuinely covers many cells — otherwise this test proves
+    // nothing, so it is asserted rather than assumed.
+    expect(index.byCell.size).toBeGreaterThan(20);
+
+    // 2 categories in TABLE. Feature 1 has 2 tags, feature 2 has 1.
+    // Per-feature-per-category: (2 + 1) × 2 = 6. Per-cell it would be 6 × the
+    // number of cells, i.e. well over a hundred.
+    expect(result.lookups).toBe(6);
+  });
+
+  it("still short-circuits a veto, so memoising did not cost the early exit", () => {
+    // The short-circuit and the memo interact: a cached factor of 0 must not
+    // be recomputed, AND computing it must still stop at the vetoing tag.
+    const many: Record<string, string> = { building: "house" };
+    for (let i = 0; i < 30; i++) many[`filler${i}`] = "x";
+
+    const result = scoreCells(buildFeatureIndex([wayAcross(1, many)]), TABLE);
+
+    // `building=house` vetoes in both categories, and it is the first tag, so
+    // one lookup per category and nothing more — not 31, and not 31 per cell.
+    expect(result.lookups).toBe(2);
+  });
+
+  it("scores identically to a per-cell computation", () => {
+    // The memo is only safe if it changes nothing observable. Two features that
+    // overlap on some cells and not others is the case where a wrongly-scoped
+    // cache would leak a factor into a cell the feature does not touch.
+    const near = { lat: COLOGNE.lat + 0.0015, lng: COLOGNE.lng + 0.0015 };
+    const result = scoreCells(
+      buildFeatureIndex([
+        wayAcross(1, { landuse: "grass" }),
+        { type: "node", id: 2, position: near, tags: { surface: "sand" } },
+      ]),
+      TABLE,
+    );
+
+    const sandCell = latLngToCell(near.lat, near.lng, AFFORDANCE_RES);
+    const sandFactorIn = (cellId: string): number | undefined =>
+      result.cells.find((c) => c.cell === cellId)?.contributors["walkable"]?.[
+        "node/2"
+      ];
+
+    // The node contributes 5 to exactly the one cell it sits in...
+    expect(sandFactorIn(sandCell)).toBe(5);
+    // ...and to none of the way's other cells. Asserted as a set so a leak
+    // anywhere along the way shows up as a value in the diff.
+    const elsewhere = result.cells
+      .filter((c) => c.cell !== sandCell)
+      .map((c) => c.contributors["walkable"]?.["node/2"]);
+    expect(new Set(elsewhere)).toEqual(new Set([undefined]));
+  });
+});
+
 describe("provenance", () => {
   const result = scoreCells(
     buildFeatureIndex([
