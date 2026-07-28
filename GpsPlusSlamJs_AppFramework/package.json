@@ -18,6 +18,8 @@
     "./state/*": "./dist/state/*.js",
     "./storage": "./dist/storage/index.js",
     "./storage/*": "./dist/storage/*.js",
+    "./osm-bridge": "./dist/osm-bridge/index.js",
+    "./osm-bridge/*": "./dist/osm-bridge/*.js",
     "./geo": "./dist/geo/index.js",
     "./geo/*": "./dist/geo/*.js",
     "./visualization": "./dist/visualization/index.js",
