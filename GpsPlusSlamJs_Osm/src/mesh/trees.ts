@@ -28,6 +28,7 @@ import type {
   OsmFeatureKey,
 } from "../model/osm-feature.js";
 import { featureKey } from "../model/osm-feature.js";
+import { parseLengthMetres } from "./building-heights.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 
 /** How a tree should look. The consumer maps these to shared geometries. */
@@ -111,17 +112,21 @@ export function buildTrees(
     const key = featureKey(feature);
     const tags = feature.tags as Record<string, string>;
 
-    const taggedHeight = Number(tags["height"]);
+    // `parseLengthMetres`, not `Number` — `height=12 m` and `height=25'` are
+    // both ordinary on `natural=tree`, and `Number` returns NaN for both. The
+    // fallback then swallows them, so a tagged tree silently becomes an
+    // untagged one at a plausible height with nothing to show it happened.
+    const taggedHeight = parseLengthMetres(tags["height"]);
     const heightM =
-      Number.isFinite(taggedHeight) && taggedHeight > 0
+      taggedHeight !== undefined && taggedHeight > 0
         ? taggedHeight
         : // Deterministic variation around the default, so a row of untagged
           // trees does not look like a row of clones.
           DEFAULT_TREE_HEIGHT_M * (0.75 + unit(key, "h") * 0.5);
 
-    const taggedCrown = Number(tags["diameter_crown"]);
+    const taggedCrown = parseLengthMetres(tags["diameter_crown"]);
     const crownDiameterM =
-      Number.isFinite(taggedCrown) && taggedCrown > 0
+      taggedCrown !== undefined && taggedCrown > 0
         ? taggedCrown
         : heightM * DEFAULT_CROWN_RATIO;
 

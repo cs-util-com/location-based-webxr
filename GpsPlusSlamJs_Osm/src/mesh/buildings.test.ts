@@ -389,6 +389,39 @@ describe("trees", () => {
     ).toBe(22);
   });
 
+  it("reads the UNIT SUFFIXES that real tree tags carry", () => {
+    // WHY THIS MATTERS. `height=12 m` and `height=25'` are both ordinary on
+    // `natural=tree`, and `Number()` returns NaN for both — so the tagged value
+    // was discarded and the tree fell back to the hashed default. The failure
+    // is invisible: a tagged tree quietly becomes an untagged one, at a
+    // plausible height, with no warning. `building-heights.ts` already exports
+    // `parseLengthMetres` for exactly this and the buildings path uses it.
+    expect(
+      buildTrees([tree(1, 50.9413, { height: "12 m" })], { frame })[0]?.heightM,
+    ).toBeCloseTo(12, 6);
+    expect(
+      buildTrees([tree(1, 50.9413, { height: "25'" })], { frame })[0]?.heightM,
+    ).toBeCloseTo(25 * 0.3048, 6);
+  });
+
+  it("reads a crown diameter with a unit too", () => {
+    expect(
+      buildTrees([tree(1, 50.9413, { diameter_crown: "8 m" })], {
+        frame,
+      })[0]?.crownDiameterM,
+    ).toBeCloseTo(8, 6);
+  });
+
+  it("falls back to the generated height for junk rather than NaN", () => {
+    // A NaN height would propagate into the instance matrix and produce a tree
+    // that does not render at all, which is worse than a default-sized one.
+    const height = buildTrees([tree(1, 50.9413, { height: "tall" })], {
+      frame,
+    })[0]?.heightM;
+    expect(Number.isFinite(height)).toBe(true);
+    expect(height).toBeGreaterThan(0);
+  });
+
   it("reads leaf_type into a variant", () => {
     expect(
       buildTrees([tree(1, 50.9413, { leaf_type: "needleleaved" })], {
