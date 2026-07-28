@@ -141,7 +141,15 @@ describe("geometry is converted once per feature, ever", () => {
     // is `OsmGeoSpatialIndexer`'s geometryLookup/envelopeLookup pair, which is
     // the reference's single best performance idea.
     expect(index.stats.geometryBuilt).toBe(1);
-    expect(index.stats.geometryReused).toBeGreaterThan(1);
+
+    // STRONGER than the `geometryReused > 1` this replaced, and deliberately
+    // so. That assertion counted cache HITS, which only exist if something
+    // asks repeatedly — it was really measuring that `update` walked the
+    // features once per chunk. Since the working set is now scored in one
+    // batch (see `scoreChunks`), the feature is consulted exactly once for the
+    // whole cold working set: zero repeat lookups rather than 18 cheap ones.
+    // Reuse across separate updates is still pinned by the test below.
+    expect(index.stats.geometryBuilt + index.stats.geometryReused).toBe(1);
   });
 
   it("keeps converted geometry across a move", () => {
@@ -154,6 +162,33 @@ describe("geometry is converted once per feature, ever", () => {
     index.update(positionIn(neighbour));
 
     expect(index.stats.geometryBuilt).toBe(built);
+  });
+
+  it("HITS the cache when a later batch covers the same ground", () => {
+    // The counterpart the two above need. Both of them assert a NON-event
+    // (`geometryBuilt` not growing), and since the working set is scored in a
+    // single batch, a feature is consulted exactly ONCE per cold update — so
+    // deleting the cache entirely would leave both of them passing. This is
+    // the positive case: a second batch over the same ground must find the
+    // converted geometry already there.
+    //
+    // The trigger is the realistic one: a `maxAgeMs` refetch returning the
+    // same data. `acceptTile` invalidates the overlapping chunks and clears
+    // `lastChunk`, but leaves the unchanged feature record's geometry alone,
+    // so the re-score must reuse it.
+    const feature = patch(1, HOME, { landuse: "grass" });
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [feature]));
+
+    index.update(HOME);
+    expect(index.stats.geometryBuilt).toBe(1);
+    expect(index.stats.geometryReused).toBe(0);
+
+    index.acceptTile(tile(HOME, [feature], 2_000));
+    index.update(HOME);
+
+    expect(index.stats.geometryBuilt).toBe(1);
+    expect(index.stats.geometryReused).toBeGreaterThan(0);
   });
 });
 
@@ -406,5 +441,99 @@ describe("queries over the held chunks", () => {
     expect(toFetchTile(chunk)).toBe(
       latLngToCell(HOME.lat, HOME.lng, FETCH_RES),
     );
+  });
+});
+
+describe("a chunk's score does not depend on what was scored alongside it", () => {
+  /**
+   * Why this test matters: `update` scores every not-yet-held chunk of the
+   * working set in ONE pass over the features, because covering a feature once
+   * per chunk it touches was 84 % of the class's cost (perf loop, 2026-07-29).
+   * Batching is only sound if a chunk's result is a function of the chunk
+   * alone — the moment coverage, `kept`, or the contributing-tile list leaks
+   * between chunks in the batch, scores start depending on the route the user
+   * walked, which is both wrong and invisible.
+   *
+   * The two indexes below score the SAME chunks in deliberately different
+   * groupings: one in a single 19-chunk batch, the other in two overlapping
+   * batches, so the shared chunks are scored in a batch of a different size
+   * and composition.
+   */
+  const spread = [
+    patch(1, HOME, { landuse: "grass" }),
+    patch(2, { lat: HOME.lat + 0.0012, lng: HOME.lng }, { surface: "sand" }),
+    patch(3, { lat: HOME.lat, lng: HOME.lng + 0.0012 }, { landuse: "grass" }),
+    patch(
+      4,
+      { lat: HOME.lat - 0.0012, lng: HOME.lng - 0.0012 },
+      { building: "house" },
+    ),
+  ];
+
+  function indexWith() {
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, spread));
+    return index;
+  }
+
+  it("scores a chunk identically in a big batch and in a small one", () => {
+    const home = latLngToCell(HOME.lat, HOME.lng, SCORE_CHUNK_RES);
+    const neighbour = gridDisk(home, 2).find((c) => c !== home);
+    expect(neighbour).toBeDefined();
+
+    // One batch: everything in the home working set at once.
+    const oneBatch = indexWith();
+    oneBatch.update(HOME);
+
+    // Two batches: a neighbouring working set first, so the chunks the two
+    // have in common are scored in a smaller, differently-composed batch.
+    const twoBatches = indexWith();
+    twoBatches.update(positionIn(neighbour!));
+    twoBatches.update(HOME);
+
+    const shared = oneBatch
+      .scoredChunks()
+      .map((c) => c.chunk)
+      .filter((c) => twoBatches.chunk(c) !== undefined);
+    expect(shared.length).toBeGreaterThan(5); // the comparison must be real
+
+    for (const chunk of shared) {
+      expect(twoBatches.chunk(chunk)).toStrictEqual(oneBatch.chunk(chunk));
+    }
+  });
+
+  it("gives every working-set chunk a result, including empty ones", () => {
+    // Batching must not quietly skip a chunk no feature reaches: a missing
+    // entry and an empty entry mean different things to `acceptTile`'s
+    // invalidation, which keys on the chunks it holds.
+    const index = indexWith();
+    const { workingSet } = index.update(HOME);
+
+    for (const chunk of workingSet) {
+      expect(index.chunk(chunk)).toBeDefined();
+    }
+    expect(index.scoredChunks().some((c) => c.cells.length === 0)).toBe(true);
+  });
+
+  it("keeps the contributing-tile list per chunk, not per batch", () => {
+    // `tiles` drives invalidation. If the batch's union leaked into each
+    // chunk, a chunk no tile actually fed would be invalidated by that tile.
+    const index = indexWith();
+    index.update(HOME);
+
+    // Partitioned up front rather than branched inside the loop: a chunk fed
+    // by no feature must name no tile, and a chunk fed by one must name only
+    // the tile that fed it.
+    const all = index.scoredChunks();
+    const fed = all.filter((scored) => scored.featureCount > 0);
+    const empty = all.filter((scored) => scored.featureCount === 0);
+    expect(fed.length).toBeGreaterThan(0);
+    expect(empty.length).toBeGreaterThan(0);
+
+    const homeTile = latLngToCell(HOME.lat, HOME.lng, FETCH_RES);
+    expect(fed.map((scored) => scored.tiles)).toEqual(
+      fed.map(() => [homeTile]),
+    );
+    expect(empty.map((scored) => scored.tiles)).toEqual(empty.map(() => []));
   });
 });

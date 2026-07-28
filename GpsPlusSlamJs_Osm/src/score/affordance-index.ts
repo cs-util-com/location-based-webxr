@@ -270,11 +270,17 @@ export class AffordanceIndex {
       if (this.chunks.has(target)) {
         reused.push(target);
         this.stats.chunksReused++;
-        continue;
+      } else {
+        scored.push(target);
+        this.stats.chunksScored++;
       }
-      this.chunks.set(target, this.scoreChunk(target));
-      scored.push(target);
-      this.stats.chunksScored++;
+    }
+
+    // ONE pass over the features for the whole batch — see `scoreChunks`.
+    // `scored` keeps the nearest-first order of `ordered`, so a consumer still
+    // learns which chunks were computed in the order they matter.
+    for (const [target, result] of this.scoreChunks(scored)) {
+      this.chunks.set(target, result);
     }
 
     this.evictBeyond(workingSet);
@@ -321,56 +327,79 @@ export class AffordanceIndex {
   }
 
   /**
-   * Scores one chunk from the features whose bbox reaches it.
+   * Scores a BATCH of chunks in one pass over the features.
    *
-   * The bbox pre-selection is what keeps this proportional to the chunk rather
-   * than to the loaded world: a res-7 tile holds ~21,800 features and a chunk
-   * needs a handful of them. Comparing four numbers per feature is far cheaper
-   * than converting geometry, which is why geometry is cached and the bbox test
-   * is not.
+   * WHY A BATCH AND NOT ONE CHUNK AT A TIME. Measured 2026-07-29 (perf loop),
+   * **84 % of `update`'s time was `polygonToCellsExperimental`** — the h3 call
+   * behind `coverCells`. Not the bbox funnel, not clipping, not scoring. The
+   * reason it dominated was repetition: a cold working set is 19 chunks, and a
+   * feature touching several of them was clipped and covered once per chunk.
+   *
+   * The waste compounds with `CHUNK_MARGIN_DEG`. That margin is ~55 m against a
+   * res-11 chunk's ~29 m edge, so each per-chunk selection box was ~135 m
+   * across — nearly the size of the whole 19-chunk working set. Nineteen
+   * overlapping ~135 m covers were being computed to fill a ~150 m area, and
+   * all but the 49 cells belonging to the chunk being scored were discarded.
+   * Covering the union once and bucketing the results by chunk does the same
+   * work once, and the margin is now paid once rather than nineteen times.
+   *
+   * SOUNDNESS. A chunk's result must be a function of the chunk alone, or
+   * scores would depend on the route the user walked. Two things secure that:
+   * each chunk gets its own `byCell`/`kept`, and a coverage cell is attributed
+   * via `cellToChunk`, which is a partition — `childCells` of distinct res-11
+   * chunks are disjoint, so no cell can land in two buckets. Clipping to the
+   * union rather than to one chunk cannot change a cell's coverage either:
+   * clipping is an intersection, so for any cell inside the clip rectangle the
+   * covered area is identical, and the union rectangle contains every
+   * per-chunk one. `affordance-index.test.ts` pins this by scoring the same
+   * chunks in differently-composed batches and comparing.
+   *
+   * The TWO-STAGE FUNNEL is unchanged, exactly as the reference queries its
+   * quadtree: a cheap bbox test over EVERY feature, then the expensive work
+   * only for survivors. The bbox comes from the raw inline positions, so a
+   * feature the user will never walk near is never ring-stitched, never
+   * classified area-vs-line and never converted at all. That matters at res 7:
+   * a fetch tile holds ~21,800 features and a working set needs a handful.
    */
-  private scoreChunk(chunk: string): ScoredChunk {
-    const bounds = padBbox(chunkBbox(chunk), CHUNK_MARGIN_DEG);
-    const cells = new Set(gridDisk(chunk, 0).flatMap((c) => childCells(c)));
+  private scoreChunks(
+    targets: readonly string[],
+  ): Map<string, Readonly<ScoredChunk>> {
+    const out = new Map<string, Readonly<ScoredChunk>>();
+    if (targets.length === 0) return out;
 
-    // TWO-STAGE FUNNEL, exactly as the reference queries its quadtree: a cheap
-    // bbox test over EVERY feature, then the expensive work only for survivors.
-    // The bbox comes from the raw inline positions, so a feature the user will
-    // never walk near is never ring-stitched, never classified area-vs-line and
-    // never converted at all. That matters at res 7: a fetch tile holds ~21,800
-    // features and a chunk needs a handful.
-    const byCell = new Map<string, CellFeature[]>();
-    const kept = new Map<OsmFeatureKey, OsmFeature>();
+    const { cellToChunk, buckets, selection } = planBatch(targets);
 
     for (const [key, feature] of this.features) {
       const rough = this.featureBounds(key, feature);
       if (rough === null) continue;
-      if (!bboxesIntersect(rough, bounds)) continue;
+      if (!bboxesIntersect(rough, selection)) continue;
 
       const cached = this.featureGeometry(key, feature);
       if (cached === null) continue;
 
       // Coverage is computed against the CLIPPED geometry, so a continental
-      // feature costs the chunk rather than the planet. Same rule as
+      // feature costs the working set rather than the planet. Same rule as
       // `buildFeatureIndex`, applied here because this path does not use it.
-      const clipped = clipToBbox(cached.geometry, bounds);
+      const clipped = clipToBbox(cached.geometry, selection);
       if (clipped === undefined) continue;
 
-      let landed = false;
-      for (const coverage of coverCells(clipped, AFFORDANCE_RES)) {
-        if (!cells.has(coverage.cell)) continue;
-        const entry: CellFeature = {
-          feature: key,
-          fraction: coverage.fraction,
-        };
-        const bucket = byCell.get(coverage.cell);
-        if (bucket === undefined) byCell.set(coverage.cell, [entry]);
-        else bucket.push(entry);
-        landed = true;
-      }
-      if (landed) kept.set(key, feature);
+      distribute(clipped, key, feature, cellToChunk, buckets);
     }
 
+    for (const target of targets) {
+      const bucket = buckets.get(target);
+      if (bucket === undefined) continue;
+      out.set(target, this.publish(target, bucket.byCell, bucket.kept));
+    }
+    return out;
+  }
+
+  /** Scores one chunk's collected coverage and freezes the result. */
+  private publish(
+    chunk: string,
+    byCell: Map<string, CellFeature[]>,
+    kept: Map<OsmFeatureKey, OsmFeature>,
+  ): Readonly<ScoredChunk> {
     const result = scoreCells(
       {
         byCell,
@@ -483,6 +512,85 @@ export class AffordanceIndex {
       this.stats.chunksEvicted++;
     }
   }
+}
+
+/**
+ * Files one feature's coverage into whichever chunk owns each covered cell.
+ *
+ * Cells outside the batch are dropped here: covering the union produces the
+ * whole rectangle, and only the cells belonging to a chunk being scored are
+ * wanted. A feature lands in `kept` for a chunk only if it actually reached one
+ * of that chunk's cells, which is what keeps `ScoredChunk.tiles` per-chunk.
+ */
+function distribute(
+  geometry: OsmGeometry,
+  key: OsmFeatureKey,
+  feature: OsmFeature,
+  cellToChunk: ReadonlyMap<string, string>,
+  buckets: ReadonlyMap<string, ChunkBucket>,
+): void {
+  for (const coverage of coverCells(geometry, AFFORDANCE_RES)) {
+    const owner = cellToChunk.get(coverage.cell);
+    if (owner === undefined) continue;
+    const bucket = buckets.get(owner);
+    if (bucket === undefined) continue;
+
+    const entry: CellFeature = { feature: key, fraction: coverage.fraction };
+    const cell = bucket.byCell.get(coverage.cell);
+    if (cell === undefined) bucket.byCell.set(coverage.cell, [entry]);
+    else cell.push(entry);
+    bucket.kept.set(key, feature);
+  }
+}
+
+/** One chunk's collected coverage, before it is scored. */
+interface ChunkBucket {
+  byCell: Map<string, CellFeature[]>;
+  kept: Map<OsmFeatureKey, OsmFeature>;
+}
+
+/**
+ * The per-batch lookup tables `scoreChunks` needs, built in one walk.
+ *
+ * Split out of `scoreChunks` to keep it under the complexity ratchet, and it
+ * reads better besides: this is the "what are we scoring" half, and what
+ * remains there is the "walk the features" half.
+ *
+ * `cellToChunk` is a PARTITION — `childCells` of distinct res-11 chunks are
+ * disjoint — which is what lets a single coverage pass be bucketed per chunk
+ * without any cell being double-counted. `selection` is the union of the
+ * per-chunk padded boxes, so clipping against it can only ever be looser than
+ * clipping per chunk, and clipping looser cannot change the covered area of a
+ * cell that lies inside both.
+ */
+function planBatch(targets: readonly string[]): {
+  cellToChunk: Map<string, string>;
+  buckets: Map<string, ChunkBucket>;
+  selection: Bbox;
+} {
+  const cellToChunk = new Map<string, string>();
+  const buckets = new Map<string, ChunkBucket>();
+  let bounds: Bbox | undefined;
+
+  for (const target of targets) {
+    for (const cell of childCells(target)) cellToChunk.set(cell, target);
+    buckets.set(target, { byCell: new Map(), kept: new Map() });
+    const padded = padBbox(chunkBbox(target), CHUNK_MARGIN_DEG);
+    bounds =
+      bounds === undefined
+        ? padded
+        : {
+            south: Math.min(bounds.south, padded.south),
+            west: Math.min(bounds.west, padded.west),
+            north: Math.max(bounds.north, padded.north),
+            east: Math.max(bounds.east, padded.east),
+          };
+  }
+
+  if (bounds === undefined) {
+    throw new Error("planBatch needs at least one chunk");
+  }
+  return { cellToChunk, buckets, selection: bounds };
 }
 
 /**

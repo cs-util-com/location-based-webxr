@@ -35,15 +35,43 @@ the package that remembers anything.
   tile must not throw away the conversion work for the whole map. This is
   `OsmGeoSpatialIndexer`'s `geometryLookup`/`envelopeLookup` pair, the
   reference's single best performance idea.
-- **Two-stage funnel per chunk**: a cheap bbox test from RAW inline positions
-  over every feature, then ring stitching, clipping and covering only for
-  survivors. At res 7 a fetch tile holds ~21,800 features and a chunk needs a
-  handful, so converting all of them would be the cost this class exists to
-  avoid. A failed conversion is cached as a failure so a broken relation is
-  examined once, not once per chunk forever.
-- **Chunks are scored nearest-first.** Changes no result; means an interrupted
-  run did the most useful work first. Same reasoning as the reference's
-  `SortClosestTo`.
+- **Two-stage funnel**: a cheap bbox test from RAW inline positions over every
+  feature, then ring stitching, clipping and covering only for survivors. At
+  res 7 a fetch tile holds ~21,800 features and a working set needs a handful,
+  so converting all of them would be the cost this class exists to avoid. A
+  failed conversion is cached as a failure so a broken relation is examined
+  once, not once per chunk forever.
+- **The whole batch of not-yet-held chunks is scored in ONE pass over the
+  features** (`scoreChunks`), not one pass per chunk.
+  - Measured 2026-07-29 (perf loop): **84 % of `update`'s time was
+    `polygonToCellsExperimental`**, the h3 call behind `coverCells` — not the
+    bbox funnel, not clipping, not scoring. It dominated through sheer
+    repetition: a cold working set is 19 chunks, and a feature touching several
+    of them was clipped and covered once per chunk.
+  - The waste compounded with `CHUNK_MARGIN_DEG`. At ~55 m against a ~29 m
+    chunk edge, each per-chunk selection box was ~135 m across — nearly the
+    size of the entire 19-chunk working set. Nineteen overlapping ~135 m covers
+    were computed to fill a ~150 m area, and all but the 49 cells belonging to
+    the chunk under scrutiny were thrown away.
+  - Measured effect, medians of 5 on devbox-win11 (cold `update`):
+    park 226→54 ms (−76 %), street-corner 445→56 ms (−87 %), beach 72→28 ms
+    (−61 %), building-block 742→119 ms (−84 %). `update` now lands within ~5 %
+    of a single unrestricted `buildFeatureIndex` pass over the same 931 cells,
+    i.e. the repetition is gone rather than merely reduced.
+  - **Soundness rests on two things**, both pinned by tests: each chunk gets
+    its OWN `byCell`/`kept`, and coverage is attributed through a `cellToChunk`
+    partition (`childCells` of distinct res-11 chunks are disjoint, so no cell
+    reaches two buckets). Clipping to the union instead of to one chunk cannot
+    change a cell's coverage either — clipping is an intersection, so for any
+    cell inside the rectangle the covered area is identical, and the union
+    contains every per-chunk rectangle.
+  - **A chunk's result must not depend on the batch it was scored in**, or
+    scores would depend on the route the user walked. `affordance-index.test.ts`
+    scores the same chunks in deliberately different groupings and compares.
+- **Chunks are reported nearest-first.** `scored` keeps the ring-distance order,
+  so a consumer still learns which chunks were computed in the order that
+  matters. Same reasoning as the reference's `SortClosestTo` — though with one
+  batch the ordering is now presentational rather than a work schedule.
 - **Published `ScoredChunk`s are frozen**, mirroring `MakeAllTilesImmutable`. A
   late tile re-scores while a consumer may still hold the previous result, and
   an in-place update would present as a stale UI rather than an error.
@@ -97,7 +125,17 @@ const regions = buildRegions(
 - `affordance-index.test.ts` — the move short-circuit, chunk reuse across a
   step, geometry converted once, late-tile invalidation + notification + forced
   re-score, distant tiles invalidating nothing, frozen results, eviction, and
-  the queries.
+  the queries. Plus the batching guards: a chunk scored identically in a large
+  and a small batch, every working-set chunk getting a result (including empty
+  ones), and `tiles` staying per-chunk rather than per-batch.
+  - Note the geometry-cache tests are pinned by a REFETCH re-scoring the same
+    ground, not by a cold update. Since a cold working set consults each
+    feature exactly once now, the "`geometryBuilt` did not grow" assertions
+    would pass vacuously on their own — deleting the cache entirely would not
+    trip them.
+- `affordance-index.bench.ts` — the cold-`update` instrument the batching was
+  measured against, paired with a single batched pass over the same 931 cells
+  as the reference point.
 - `affordance-index.property.test.ts` — the three properties that make an
   incremental cache trustworthy: the same scores however the user walked there,
   a late tile leaving the index as if it had always been present, and no chunk
