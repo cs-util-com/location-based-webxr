@@ -48,13 +48,33 @@ export interface ExtrudeOptions {
   readonly includeFloor?: boolean;
 }
 
+/**
+ * A building's buffers plus the one thing about them that is not geometry.
+ *
+ * `roof.ts` computes `isApproximate` carefully and its docstring promises a
+ * consumer "that wants to know how much of what it draws is real can ask" — but
+ * `extrudeBuilding` used to return a bare `MeshData`, so nothing could. The
+ * demo substituted `roofShape === 'gabled' || roofShape === 'hipped'`, which is
+ * a DIFFERENT claim: a gabled roof on an actual rectangle is exact, and that is
+ * the common case the whole approximation trade rests on. The counter that
+ * exists to check the census against real data was measuring something else.
+ *
+ * Extending `MeshData` rather than wrapping it keeps every existing consumer —
+ * `mergeMeshes` included — working unchanged.
+ */
+export interface ExtrudedBuilding extends MeshData {
+  /** True when the ROOF was approximated rather than generated exactly. */
+  readonly roofIsApproximate: boolean;
+}
+
 /** An empty mesh, used for footprints that cannot form a volume. */
-const EMPTY: MeshData = {
+const EMPTY: ExtrudedBuilding = {
   positions: new Float32Array(0),
   normals: new Float32Array(0),
   indices: new Uint32Array(0),
   triangleCount: 0,
   forcedEars: 0,
+  roofIsApproximate: false,
 };
 
 /**
@@ -67,7 +87,7 @@ const EMPTY: MeshData = {
 export function extrudeBuilding(
   rings: readonly (readonly EnuPoint[])[],
   options: ExtrudeOptions,
-): MeshData {
+): ExtrudedBuilding {
   const ground = options.groundHeightM ?? 0;
   const base = ground + options.minHeightM;
   const eave = ground + options.eaveHeightM;
@@ -102,7 +122,10 @@ export function extrudeBuilding(
     addCap(builder, cap, base, false);
   }
 
-  return builder.build(cap.forcedEars + roof.forcedEars);
+  return {
+    ...builder.build(cap.forcedEars + roof.forcedEars),
+    roofIsApproximate: roof.isApproximate,
+  };
 }
 
 /** Adds the quad strip for one ring between two heights. */

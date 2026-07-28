@@ -31,6 +31,13 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
   hipped pulls the ridge in by a quarter at each end so all four sides slope.
   **Exact for a rectangular footprint, an approximation otherwise, and
   `isApproximate` says which.**
+  - **A footprint with HOLES is always approximate on this path.** `ridgeRoof`
+    reads `rings[0]` and nothing else, so a courtyard building gets a solid
+    ridge roof spanning the courtyard while `isRectangular(outer, box)` is
+    perfectly true of the outer ring — the one case where the flag would assert
+    something false rather than merely be conservative, and not rare in the
+    European blocks this package targets. The flat, apex and skillion paths all
+    pass `rings` to `triangulate` and do honour holes.
 - **The straight skeleton is deliberately NOT implemented.** A gabled roof on a
   non-rectangular footprint cannot be generated exactly without one — the
   skeleton IS the mathematical description of a roof surface. It is omitted

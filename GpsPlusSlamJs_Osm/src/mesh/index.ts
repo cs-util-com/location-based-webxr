@@ -34,6 +34,7 @@ export type { MeshData } from "./mesh-data.js";
 export { MeshBuilder } from "./mesh-data.js";
 export type { ExtrudeOptions } from "./extrude.js";
 export { extrudeBuilding, mergeMeshes } from "./extrude.js";
+export type { ExtrudedBuilding } from "./extrude.js";
 
 export type { RoofMesh, RoofOptions } from "./roof.js";
 export { buildRoof } from "./roof.js";

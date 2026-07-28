@@ -211,10 +211,12 @@ function statsFor(
     parts: volumes.filter((v) => v.parentFeature !== undefined).length,
     triangles: merged.triangleCount,
     guessedHeights: volumes.filter((v) => v.heights.heightIsGuessed).length,
-    approximateRoofs: volumes.filter(
-      (v) =>
-        v.heights.roofShape === "gabled" || v.heights.roofShape === "hipped",
-    ).length,
+    // THE REAL FLAG, not a proxy for it. This used to test
+    // `roofShape === 'gabled' || 'hipped'`, which is a different claim: a
+    // gabled roof on an actual rectangle is EXACT, and that is the common case
+    // the package's approximation trade rests on — so the counter meant to
+    // confirm the census against real data was over-reporting every time.
+    approximateRoofs: volumes.filter((v) => v.roofIsApproximate).length,
     trees,
   };
 }

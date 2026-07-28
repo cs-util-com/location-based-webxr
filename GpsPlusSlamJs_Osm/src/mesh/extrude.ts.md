@@ -37,6 +37,12 @@ Footprint plus heights to a triangle mesh: walls, roof, and optionally a floor.
   renderer, and invisible to a screenshot taken with `side: DoubleSide`, which
   is how it survived a full PR.
 - **A footprint that cannot form a volume yields an empty mesh**, never a throw.
+- **The return type is `ExtrudedBuilding` — `MeshData` plus
+  `roofIsApproximate`.** `roof.ts` promises that a consumer wanting to know how
+  much of what it draws is real can ask; returning a bare `MeshData` meant none
+  could, and the demo substituted a roof-shape test that answers a different
+  question. Extending rather than wrapping keeps `mergeMeshes` and every other
+  `MeshData` consumer working unchanged.
 - **Batch per res-8 or res-9 cell, never per fetch tile.** A fetch tile is res 7
   (2.81 km across); one merged geometry spanning 2.8 km defeats frustum culling
   entirely, since the batch is only ever wholly visible or wholly not. Fetch

@@ -48,6 +48,15 @@ export interface BuildingVolume {
   readonly parentFeature?: OsmFeatureKey;
   readonly heights: BuildingHeights;
   readonly mesh: MeshData;
+  /**
+   * True when the ROOF was approximated rather than generated exactly.
+   *
+   * Carried up from `buildRoof` so a consumer can count how much of what it
+   * draws is real. Substituting "is the shape gabled or hipped?" for this is a
+   * different claim — a gabled roof on an actual rectangle is exact, and that
+   * is the common case §8's approximation trade rests on.
+   */
+  readonly roofIsApproximate: boolean;
 }
 
 export interface BuildBuildingsOptions {
@@ -174,9 +183,16 @@ function volumeFor(
     groundHeightM,
   });
 
+  const roofIsApproximate = mesh.roofIsApproximate;
   return parentFeature === undefined
-    ? { feature: featureKey(feature), heights, mesh }
-    : { feature: featureKey(feature), parentFeature, heights, mesh };
+    ? { feature: featureKey(feature), heights, mesh, roofIsApproximate }
+    : {
+        feature: featureKey(feature),
+        parentFeature,
+        heights,
+        mesh,
+        roofIsApproximate,
+      };
 }
 
 /** A feature's rings in the local ENU frame, or `undefined` if it has none. */

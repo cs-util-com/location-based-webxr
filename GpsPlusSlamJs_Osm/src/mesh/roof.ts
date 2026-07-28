@@ -349,8 +349,16 @@ function ridgeRoof(
 
   return {
     ...builder.build(0),
-    // Exact only when the footprint IS its bounding rectangle.
-    isApproximate: !isRectangular(outer, box),
+    // Exact only when the footprint IS its bounding rectangle AND has no holes.
+    //
+    // The hole clause is not defensive padding: this function reads `rings[0]`
+    // and nothing else, so a courtyard building gets a SOLID ridge roof
+    // spanning the courtyard while `isRectangular(outer, box)` is perfectly
+    // true for the outer ring alone. That is the one case where the flag would
+    // assert something false rather than merely be conservative — and it is
+    // not rare in the European blocks this package targets. The flat, apex and
+    // skillion paths all pass `rings` to `triangulate` and do honour holes.
+    isApproximate: !isRectangular(outer, box) || rings.length > 1,
   };
 }
 

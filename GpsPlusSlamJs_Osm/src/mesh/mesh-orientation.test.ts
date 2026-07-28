@@ -33,6 +33,7 @@ import { describe, expect, it } from "vitest";
 
 import type { EnuPoint } from "./enu.js";
 import { extrudeBuilding } from "./extrude.js";
+import type { ExtrudedBuilding } from "./extrude.js";
 import type { MeshData } from "./mesh-data.js";
 import type { RoofShape } from "./building-heights.js";
 
@@ -206,7 +207,10 @@ const SHAPES: readonly RoofShape[] = [
   "hipped",
 ];
 
-function build(ring: readonly EnuPoint[], roofShape: RoofShape): MeshData {
+function build(
+  ring: readonly EnuPoint[],
+  roofShape: RoofShape,
+): ExtrudedBuilding {
   return extrudeBuilding([ring], {
     minHeightM: 0,
     eaveHeightM: 8,
@@ -304,5 +308,61 @@ describe("normals point out of the volume, not into it", () => {
       const inward = inwardTriangles(build(SHORT_SIDE_FIRST, shape)).length;
       expect({ shape, inward }).toEqual({ shape, inward: 0 });
     }
+  });
+});
+
+describe("the roof approximation flag reaches a consumer", () => {
+  /**
+   * WHY THIS MATTERS. `roof.ts` computes `isApproximate` carefully and its
+   * docstring says a consumer "that wants to know how much of what it draws is
+   * real can ask" — but `extrudeBuilding` returned a bare `MeshData`, so no
+   * consumer could. The demo substituted
+   * `roofShape === 'gabled' || roofShape === 'hipped'`, which is a DIFFERENT
+   * claim: a gabled roof on an actual rectangle is exact, and that is the
+   * common case the whole approximation argument rests on. So the counter that
+   * exists to confirm the census on real data was measuring something else.
+   */
+  it("reports a gabled roof on a real rectangle as EXACT", () => {
+    const mesh = build(RECTANGLE, "gabled");
+    expect(mesh.roofIsApproximate).toBe(false);
+  });
+
+  it("reports a gabled roof on an L-shape as approximated", () => {
+    // The oriented bounding rectangle is not the footprint here, so the ridge
+    // is in approximately — not exactly — the right place.
+    const lShape: readonly EnuPoint[] = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 8 },
+      { x: 8, y: 8 },
+      { x: 8, y: 20 },
+      { x: 0, y: 20 },
+    ];
+    expect(build(lShape, "gabled").roofIsApproximate).toBe(true);
+  });
+
+  it("reports a flat roof as exact, because it is", () => {
+    expect(build(RECTANGLE, "flat").roofIsApproximate).toBe(false);
+  });
+
+  it("reports a courtyard building's ridge roof as approximated", () => {
+    // `ridgeRoof` only ever reads `rings[0]`, so a rectangular outer ring with
+    // an inner ring gets a SOLID ridge roof spanning the courtyard while
+    // `isRectangular(outer, box)` is true — the one case where the flag
+    // asserted something false rather than merely being conservative. European
+    // blocks like the `building-block` fixture are exactly this shape.
+    const courtyard: readonly EnuPoint[] = [
+      { x: 6, y: 6 },
+      { x: 6, y: 14 },
+      { x: 14, y: 14 },
+      { x: 14, y: 6 },
+    ];
+    const mesh = extrudeBuilding([RECTANGLE, courtyard], {
+      minHeightM: 0,
+      eaveHeightM: 8,
+      totalHeightM: 12,
+      roofShape: "gabled",
+    });
+    expect(mesh.roofIsApproximate).toBe(true);
   });
 });

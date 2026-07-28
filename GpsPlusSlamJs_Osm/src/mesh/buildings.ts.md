@@ -7,7 +7,14 @@ OSM features to building volumes, honouring `building:part`.
 ## Public API
 
 - `buildBuildings(features, { frame, groundHeightM? }): BuildingVolume[]`
-- `interface BuildingVolume` — `feature`, `parentFeature?`, `heights`, `mesh`
+- `interface BuildingVolume` — `feature`, `parentFeature?`, `heights`, `mesh`,
+  `roofIsApproximate`
+  - **`roofIsApproximate` is the real flag from `buildRoof`, not a proxy.**
+    Substituting "is the shape gabled or hipped?" is a *different* claim: a
+    gabled roof on an actual rectangle is exact, and that is the common case
+    §8's approximation trade rests on — so the proxy over-reports every time.
+    The demo counted it that way, which meant the counter that exists to check
+    the census against real data was measuring something else.
 
 ## Invariants & assumptions
 
