@@ -9,8 +9,8 @@
  * RecorderApp under base `/recorder/`, the AnchorStarter under base
  * `/starter/`, the MinimalExample under base `/minimal/`, the
  * QrTrackingDemo under base `/qr-demo/`, the PhysicsDemo under base
- * `/physics/`, and the WayfindingHudDemo under base `/wayfinding/` into the
- * same combined output directory. The resulting tree is what Cloudflare
+ * `/physics/`, the WayfindingHudDemo under base `/wayfinding/` and the OsmDemo
+ * under base `/osm/` into the same combined output directory. The resulting tree is what Cloudflare
  * serves from `gps.csutil.com`:
  *
  *   dist-site/
@@ -22,6 +22,7 @@
  *     qr-demo/          ← QrTrackingDemo, base=/qr-demo/
  *     physics/          ← PhysicsDemo, base=/physics/
  *     wayfinding/       ← WayfindingHudDemo, base=/wayfinding/
+ *     osm/              ← OsmDemo, base=/osm/
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
  * vite configs stay at their `/` + `dist` defaults (dev/USB-debugging unchanged).
@@ -31,8 +32,8 @@
  * executable guard for plan Steps 1-3 (so a future runtime-absolute URL that
  * Vite cannot rewrite fails the deploy instead of 404-ing in production).
  * That guard is vacuous for the landing app (every root-absolute URL starts
- * with its base `/`), so the landing gets its own guards instead: all four
- * demo links must be present in the built HTML (the "demos remain
+ * with its base `/`), so the landing gets its own guards instead: every
+ * demo link must be present in the built HTML (the "demos remain
  * launchable" requirement) and every local asset URL it references must
  * exist in the tree.
  *
@@ -115,7 +116,7 @@ function assertNoBareAbsoluteUrlsInDir(dir, base) {
 
 /**
  * Landing-specific guards (the bare-URL assertion is vacuous at base `/`):
- * the built landing HTML must still link all four demo apps, and every
+ * the built landing HTML must still link every demo app, and every
  * local (root-absolute, non-demo) href/src it references must exist as a
  * file in dist-site — a missing bundle asset would otherwise 404 silently.
  *
@@ -130,6 +131,7 @@ function assertLandingHtml(htmlPath) {
     '/recorder/',
     '/physics/',
     '/wayfinding/',
+    '/osm/',
   ];
   const missingLinks = requiredDemoLinks.filter(
     (link) => !html.includes(`href="${link}"`)
@@ -137,7 +139,7 @@ function assertLandingHtml(htmlPath) {
   if (missingLinks.length > 0) {
     throw new Error(
       `Landing ${htmlPath} lost demo link(s): ${missingLinks.join(', ')}. ` +
-        `All four demo apps must stay launchable from the landing page.`
+        `Every demo app must stay launchable from the landing page.`
     );
   }
   const attrRe = /(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
@@ -169,6 +171,7 @@ function assertSiteTree() {
     'qr-demo/index.html',
     'physics/index.html',
     'wayfinding/index.html',
+    'osm/index.html',
   ];
   const missing = required.filter((rel) => !existsSync(join(distSite, rel)));
   if (missing.length > 0) {
@@ -293,6 +296,24 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'wayfinding'), '/wayfinding/');
+
+// The OSM demo is not an AR app — it is a Leaflet map beside a three.js scene —
+// but it is published with the others because judging the affordance grid by eye
+// is the one thing no test can do, and that needs a URL rather than a checkout.
+console.log('• Building OsmDemo (base=/osm/)');
+run('pnpm', ['--filter', 'gps-plus-slam-osm-demo', 'run', 'typecheck']);
+run('pnpm', [
+  '--filter',
+  'gps-plus-slam-osm-demo',
+  'exec',
+  'vite',
+  'build',
+  '--base=/osm/',
+  '--outDir',
+  join(distSite, 'osm'),
+  '--emptyOutDir',
+]);
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'osm'), '/osm/');
 
 assertLandingHtml(join(distSite, 'index.html'));
 

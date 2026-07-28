@@ -31,6 +31,7 @@ export {
 export type {
   PointGeometry,
   LineStringGeometry,
+  MultiLineStringGeometry,
   PolygonGeometry,
   MultiPolygonGeometry,
   OsmGeometry,
