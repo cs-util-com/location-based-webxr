@@ -59,7 +59,26 @@ export const TOTAL_STAGE = 'total';
  * record timing rows nor inherit the skip. */
 const BUILD_FRAMEWORK_STAGE = Object.freeze({
   name: 'build:framework',
-  command: 'node ../scripts/build-framework-if-stale.mjs',
+  command:
+    'node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework',
+  counts: /** @type {null} */ (null),
+  wrapperScript: false,
+});
+
+/** The same, for the OSM library.
+ *
+ * Unlike `build:framework` this must run BEFORE `typecheck`, not after it.
+ * OsmDemo resolves `gps-plus-slam-osm` through the package `exports`, i.e.
+ * through dist — where RecorderApp maps the framework to SOURCE via tsconfig
+ * `paths` and so never needs the framework built to typecheck. Nothing else in
+ * the workspace builds this package, so with the stage missing entirely the
+ * Cloudflare deployment of /osm/ failed on "Cannot find module
+ * 'gps-plus-slam-osm'" while every local run passed against a stale dist left
+ * behind by an earlier e2e run. */
+const BUILD_OSM_STAGE = Object.freeze({
+  name: 'build:osm',
+  command:
+    'node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-osm GpsPlusSlamJs_Osm',
   counts: /** @type {null} */ (null),
   wrapperScript: false,
 });
@@ -374,6 +393,10 @@ export const PROJECTS = [
     dir: 'GpsPlusSlamJs_OsmDemo',
     chainNames: [],
     stages: [
+      // FIRST, unlike `build:framework` which sits after typecheck elsewhere:
+      // this package resolves `gps-plus-slam-osm` through its `exports`, so
+      // `tsc` cannot see a single one of its types until dist exists.
+      BUILD_OSM_STAGE,
       {
         name: 'typecheck',
         command: 'tsc -p tsconfig.json --noEmit',

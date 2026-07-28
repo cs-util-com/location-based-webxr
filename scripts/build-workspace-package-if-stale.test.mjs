@@ -1,11 +1,11 @@
-// Why this test matters: build-framework-if-stale.mjs SKIPS a build the e2e
+// Why this test matters: build-workspace-package-if-stale.mjs SKIPS a build the e2e
 // suites depend on. A wrong "fresh" verdict means Playwright tests run
 // against a stale framework dist — the documented "consumers resolve through
 // built dist" footgun — so the decision function must fail open in every
 // ambiguous case.
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { isBuildRequired } from './build-framework-if-stale.mjs';
+import { isBuildRequired } from './build-workspace-package-if-stale.mjs';
 
 describe('isBuildRequired', () => {
   it('builds when dist is missing/empty (null output mtime)', () => {

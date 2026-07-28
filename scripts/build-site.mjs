@@ -202,8 +202,20 @@ run('pnpm', [
   distSite,
 ]);
 
+// The two workspace LIBRARIES, built once before any app that consumes them.
+// Consumers resolve both through their package `exports`, i.e. through dist, so
+// an app's `typecheck` fails outright if its library has not been built yet —
+// "Cannot find module 'X' or its corresponding type declarations", followed by
+// a cascade of implicit-any errors that read like the app's own bug.
+//
+// The OSM build was missing here and nowhere else supplied it, which broke the
+// /osm/ deployment while every local build passed against a stale dist left
+// over from an earlier e2e run.
 console.log('• Building framework (once)');
 run('pnpm', ['run', 'build:framework']);
+
+console.log('• Building OSM package (once)');
+run('pnpm', ['run', 'build:osm']);
 
 console.log('• Building RecorderApp (base=/recorder/)');
 run('pnpm', ['--filter', 'gps-plus-slam-recorder', 'run', 'typecheck']);

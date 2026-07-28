@@ -1,13 +1,29 @@
 // NOTE: deliberately no `#!/usr/bin/env node` shebang — this file is only ever
-// invoked as `node scripts/build-framework-if-stale.mjs`, and a shebang makes
-// Vitest's transform fail to parse it when the colocated test imports it
-// ("SyntaxError: Invalid or unexpected token", zero tests collected).
+// invoked as `node scripts/build-workspace-package-if-stale.mjs <pkg> <dir>`,
+// and a shebang makes Vitest's transform fail to parse it when the colocated
+// test imports it ("SyntaxError: Invalid or unexpected token", zero tests
+// collected).
 //
-// Skips the framework build when its dist/ is already newer than every
-// framework input (speedup plan Phase C.2). The full cascade builds the
-// framework up to six times — once per consumer package's build:framework
-// stage — although the first build already produced a fresh dist; the
-// consumers after it can skip.
+// Builds a workspace LIBRARY package's dist/ unless it is already newer than
+// every input (speedup plan Phase C.2). Consumers resolve that library through
+// its `exports`, i.e. through dist — so any consumer stage that runs before
+// dist exists fails, and `tsc` fails the loudest: "Cannot find module 'X' or
+// its corresponding type declarations", followed by a cascade of implicit-any
+// errors that read like the consumer's own bug.
+//
+// WHY IT IS PARAMETERISED. It was framework-only, and the workspace has two
+// such libraries: `gps-plus-slam-app-framework` and `gps-plus-slam-osm`. The
+// framework survived without a guaranteed build because RecorderApp maps it to
+// SOURCE via tsconfig `paths` and its `build:framework` stage happens to run
+// before the other consumers in the cascade. The OSM package has neither, so
+// nothing in the gate or in `build-site.mjs` ever built it — which broke the
+// Cloudflare deployment of /osm/ while every local run passed on a stale dist
+// left behind by an earlier e2e run.
+//
+// The consumers are deliberately NOT given `paths` mappings to source instead:
+// OsmDemo exists to prove the OSM package's public surface works from outside
+// it, and a source mapping would typecheck straight past a missing or wrong
+// entry in the export map.
 //
 // FAIL OPEN: any doubt (missing dist, unreadable dirs, mtime anomalies,
 // walker errors) ⇒ build. A wasted build costs ~4 s; a stale dist makes e2e
@@ -21,7 +37,6 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('..', import.meta.url));
-const FRAMEWORK_DIR = path.join(WORKSPACE_ROOT, 'GpsPlusSlamJs_AppFramework');
 
 /**
  * Pure staleness decision — kept separate for unit tests.
@@ -89,6 +104,14 @@ function extremeMtime(roots, pick) {
 // pathToFileURL keeps this correct on Windows (same pattern as the other
 // root scripts).
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  // Defaults keep the historical framework-only invocation working, so a stray
+  // `node scripts/build-workspace-package-if-stale.mjs` still does the obvious
+  // thing rather than failing on a missing argument.
+  const packageName = process.argv[2] ?? 'gps-plus-slam-app-framework';
+  const dirName = process.argv[3] ?? 'GpsPlusSlamJs_AppFramework';
+  const packageDir = path.join(WORKSPACE_ROOT, dirName);
+  const label = `build-if-stale(${packageName})`;
+
   /** @type {boolean} */
   let buildRequired = true;
   /** @type {string} */
@@ -96,13 +119,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try {
     const newestInput = extremeMtime(
       [
-        path.join(FRAMEWORK_DIR, 'src'),
-        path.join(FRAMEWORK_DIR, 'config'),
-        path.join(FRAMEWORK_DIR, 'package.json'),
+        path.join(packageDir, 'src'),
+        path.join(packageDir, 'config'),
+        path.join(packageDir, 'package.json'),
       ],
       'newest'
     );
-    const oldestOutput = extremeMtime([path.join(FRAMEWORK_DIR, 'dist')], 'oldest');
+    const oldestOutput = extremeMtime([path.join(packageDir, 'dist')], 'oldest');
     buildRequired = isBuildRequired(newestInput, oldestOutput);
     reason = buildRequired
       ? oldestOutput === null
@@ -115,11 +138,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   }
 
   if (!buildRequired) {
-    console.log(`build-framework-if-stale: skipping build — ${reason}`);
+    console.log(`${label}: skipping build — ${reason}`);
     process.exit(0);
   }
-  console.log(`build-framework-if-stale: building — ${reason}`);
-  const child = spawnSync('pnpm --filter gps-plus-slam-app-framework run build', {
+  console.log(`${label}: building — ${reason}`);
+  const child = spawnSync(`pnpm --filter ${packageName} run build`, {
     shell: true,
     stdio: 'inherit',
     cwd: WORKSPACE_ROOT,
