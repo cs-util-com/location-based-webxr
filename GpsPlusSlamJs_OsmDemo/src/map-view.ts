@@ -96,12 +96,34 @@ export class MapView {
       weight: 2,
       fillColor: "#ff3860",
       fillOpacity: 1,
+      // Named for the same reason the cells and the fetch box are: Leaflet
+      // renders every vector as an indistinguishable `<path>`, and the e2e
+      // needs to assert WHERE the user marker is to prove a locate recentred
+      // the viewport rather than leaving it 2 km away.
+      className: "user-marker",
     }).addTo(this.map);
   }
 
   /** Moves the "you are here" marker without disturbing the view. */
   setPosition(position: { lat: number; lng: number }): void {
     this.userMarker.setLatLng([position.lat, position.lng]);
+  }
+
+  /**
+   * Moves the marker AND brings the viewport to it.
+   *
+   * Separate from `setPosition` because the two callers want opposite things. A
+   * map click already happens somewhere the user is looking, and recentring
+   * under their cursor would yank the map out from under them. A GPS fix is
+   * typically somewhere else entirely — at zoom 18 the demo's start position is
+   * off screen from anywhere more than ~200 m away — so leaving the viewport put
+   * shows an unchanged basemap with the marker, the new grid and the fetch box
+   * all outside it. That looks exactly like a button that does nothing, which is
+   * the problem the locate button was added to solve.
+   */
+  centreOn(position: { lat: number; lng: number }): void {
+    this.setPosition(position);
+    this.map.setView([position.lat, position.lng], this.map.getZoom());
   }
 
   /**

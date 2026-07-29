@@ -144,9 +144,17 @@ async function main(): Promise<void> {
 
   new LocateControl({
     map: mapView.map,
-    // A real fix moves the "user" exactly as a map click does — same action,
-    // same refresh, no second code path that could disagree with the first.
-    onLocated: (position) => store.dispatch(actions.positionChanged(position)),
+    // A real fix moves the "user" through the same action a map click uses, so
+    // there is no second refresh path that could disagree with the first.
+    onLocated: (position) => {
+      // Recentre on the LOCATE path only. The shared `view.position` subscriber
+      // deliberately does not, because a map click already happens where the
+      // user is looking and recentring there would yank the map from under
+      // them. A fix is usually somewhere else entirely, and at zoom 18 that
+      // means off screen.
+      mapView.centreOn(position);
+      store.dispatch(actions.positionChanged(position));
+    },
     // `renderFailed` rather than `fetchFailed` because the BEHAVIOUR is what
     // matters here: a refused GPS permission says nothing about the data on
     // screen, so it must report without blanking the map. The action's name is
@@ -162,7 +170,6 @@ async function main(): Promise<void> {
   // the stylesheet.
   attachSheetDrag({
     handle: el("sheet-handle"),
-    sheet: el("map"),
     bounds: el("sheet-handle").parentElement ?? document.body,
     onResize: () => {
       // Both canvases size themselves from their container, and neither notices

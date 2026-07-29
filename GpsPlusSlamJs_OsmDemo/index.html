@@ -130,6 +130,11 @@
         position: absolute;
         left: 0;
         right: 0;
+        /* Matches #map s height in the mobile query below, so the bar sits on
+           the sheet s top edge from first paint. Without it the handle falls
+           back to its static position -- the TOP of the grid container -- and
+           floats over the 3D view until the first drag. */
+        bottom: var(--sheet-height, 45%);
         height: 1.5rem;
         z-index: 600;
         cursor: ns-resize;
@@ -221,7 +226,9 @@
           grid-area: 1 / 1;
           align-self: end;
           width: 100%;
-          /* Overridden inline by the drag handle; this is the starting height. */
+          /* Driven by --sheet-height, which the drag handle sets on <main>.
+             Read only inside this query, so a drag on a phone cannot leave a
+             stale height behind in the desktop grid after a rotation. */
           height: var(--sheet-height, 45%);
           z-index: 500;
           border-top: 1px solid #2a2f3d;

@@ -367,6 +367,16 @@ test.describe("the mobile layout", () => {
     const handleBox = await handle.boundingBox();
     if (handleBox === null) throw new Error("no handle box");
 
+    // THE GRAB BAR MUST START ON THE SHEET'S EDGE, before any drag. It is
+    // absolutely positioned, and while its offset was set only by the drag
+    // handler it fell back to its static position — the TOP of the grid
+    // container — leaving a 24 px bar floating over the 3D view ~400 px from
+    // the sheet it resizes. The drag test could not see it: it grabs the bar
+    // wherever it is and the first move snaps the sheet to the clamp anyway.
+    expect(
+      Math.abs(handleBox.y + handleBox.height / 2 - mapBox.y),
+    ).toBeLessThan(handleBox.height);
+
     await page.mouse.move(
       handleBox.x + handleBox.width / 2,
       handleBox.y + handleBox.height / 2,
@@ -413,6 +423,29 @@ test.describe("my location", () => {
     // And the fix actually drove a refresh — the status line reports the new
     // working set rather than the one it booted with.
     await expect(page.locator("#status")).toContainText("cells");
+
+    // THE VIEWPORT MUST MOVE TOO, and asserting the status line alone missed
+    // this: `map.locate({ setView: false })` deliberately leaves panning to the
+    // app, and for a while nothing did it. The marker, the new grid and the
+    // fetch box were all placed correctly — 2 km outside the visible map, at
+    // zoom 18. A working button and a dead one looked identical.
+    // Asserted through what a user would see rather than through Leaflet's
+    // internals: the marker sits at the fix, so if the viewport did not follow
+    // it, the marker is simply not on screen.
+    const marker = page.locator("#map path.user-marker");
+    await expect(marker).toBeVisible();
+    const [markerBox, mapBox] = await Promise.all([
+      marker.boundingBox(),
+      page.locator("#map").boundingBox(),
+    ]);
+    if (markerBox === null || mapBox === null) throw new Error("no boxes");
+    // Near the centre, because that is where `setView` puts it.
+    expect(Math.abs(markerBox.x - (mapBox.x + mapBox.width / 2))).toBeLessThan(
+      mapBox.width / 4,
+    );
+    expect(Math.abs(markerBox.y - (mapBox.y + mapBox.height / 2))).toBeLessThan(
+      mapBox.height / 4,
+    );
   });
 
   test("reports a denied permission instead of hanging on 'locating…'", async ({

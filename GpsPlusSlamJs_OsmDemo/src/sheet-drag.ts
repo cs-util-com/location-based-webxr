@@ -41,9 +41,10 @@ export function clampSheetHeight(fraction: number): number {
 export interface SheetDragOptions {
   /** The grab bar. */
   readonly handle: HTMLElement;
-  /** The element whose height the drag sets — the map container. */
-  readonly sheet: HTMLElement;
-  /** The area the fraction is measured against. */
+  /**
+   * The area the fraction is measured against, and the element the
+   * `--sheet-height` custom property is written to.
+   */
   readonly bounds: HTMLElement;
   /** Called after every height change, so the views can resize their canvases. */
   readonly onResize: () => void;
@@ -57,14 +58,23 @@ export interface SheetDragOptions {
  * the 24 px handle — which it does immediately on a phone.
  */
 export function attachSheetDrag(options: SheetDragOptions): () => void {
-  const { handle, sheet, bounds, onResize } = options;
+  const { handle, bounds, onResize } = options;
 
+  /**
+   * Writes the height as a CUSTOM PROPERTY rather than inline styles.
+   *
+   * Two bugs fall out of this that inline styles cannot avoid. The stylesheet
+   * declares `var(--sheet-height, 45%)` for both the sheet and the handle, so
+   * the handle sits on the sheet edge from first paint — with inline styles
+   * nothing set either until the first `pointermove`, leaving the grab bar at
+   * its static position (the TOP of the grid container) 400 px from the sheet
+   * it resizes. And because only the mobile media query reads the property for
+   * the sheet height, a phone dragged and then rotated past the breakpoint no
+   * longer carries a stale inline height into the desktop grid.
+   */
   const apply = (fraction: number): void => {
-    const clamped = clampSheetHeight(fraction);
-    sheet.style.height = `${(clamped * 100).toFixed(2)}%`;
-    // The handle rides the top edge of the sheet, so it is always grabbable at
-    // the boundary the user is actually moving.
-    handle.style.bottom = `${(clamped * 100).toFixed(2)}%`;
+    const percent = `${(clampSheetHeight(fraction) * 100).toFixed(2)}%`;
+    bounds.style.setProperty("--sheet-height", percent);
     onResize();
   };
 

@@ -9,11 +9,12 @@ raster basemap.
 
 - `class MapView` — `map`, `setPosition(position)`,
   `render(cells, regions, category, threshold, showBelowThreshold?): HeatScale`,
-  `renderFetchTiles(tiles)`, `clear()`, `describeScale`
+  `renderFetchTiles(tiles)`, `clear()`, `centreOn(position)`, `describeScale`
 - `OSM_ATTRIBUTION`
 
 ## Invariants & assumptions
 
+- **`setPosition` moves the marker; `centreOn` moves the marker AND the viewport.** Two callers want opposite things. A map click already happens where the user is looking, so recentring under their cursor would yank the map away. A GPS fix is usually somewhere else entirely — at zoom 18 anything more than ~200 m off is outside the viewport — so leaving it put shows an unchanged basemap with the marker, the new grid and the fetch box all off screen, which looks exactly like a button that does nothing.
 - **Hover shows the score; CLICK shows the evidence.** Cells carry a score-only
   `bindTooltip` and a `bindPopup` with the provenance list. This was a tooltip
   alone until 2026-07-29, and Leaflet tooltips are non-interactive by design
