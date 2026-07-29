@@ -337,12 +337,26 @@ export class BuildingView {
     });
   }
 
+  /**
+   * Matches the renderer and camera to the container, and REPAINTS.
+   *
+   * The repaint is not optional and is the whole of finding R2-3. `setSize`
+   * reallocates the drawing buffer, which clears it — so on a view that renders
+   * on demand (see `requestFrame`) a resize leaves the pane **blank** until
+   * something else happens to schedule a frame. The next thing that does is the
+   * user dragging the camera, which is exactly how the bug was reported: the
+   * picture comes back the moment you touch it.
+   *
+   * `requestFrame` coalesces, so the sheet-drag path calling this many times per
+   * second still costs one frame per animation frame rather than one per event.
+   */
   resize(): void {
     const { clientWidth, clientHeight } = this.container;
     if (clientWidth === 0 || clientHeight === 0) return;
     this.renderer.setSize(clientWidth, clientHeight, false);
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();
+    this.requestFrame();
   }
 
   /**

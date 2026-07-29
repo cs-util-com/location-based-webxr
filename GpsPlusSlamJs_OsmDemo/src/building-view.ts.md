@@ -45,6 +45,15 @@ map scored.
   without a repaint would leave the last frame in the drawing buffer with
   nothing to ever overwrite it — the pane would keep showing buildings that are
   no longer anywhere in the app's state.
+- **`resize()` repaints too, for the same reason (finding R2-3).** `setSize`
+  reallocates the drawing buffer, which CLEARS it, so on an on-demand renderer a
+  resize leaves the pane blank until something else schedules a frame. The next
+  thing that did was the user dragging the camera — which is how the bug was
+  reported: the picture returns the moment you touch it. **Any new caller that
+  changes the canvas size must schedule a frame**; the two that exist are the
+  `window` resize listener and the mobile sheet drag, and the sheet drag is the
+  harsh one because it calls `resize()` on every pointer move (coalescing in
+  `requestFrame` is what keeps that to one frame per animation frame).
 
 - **It shares the pipeline rather than fetching its own data.** This view exists
   to verify the MESH code, and it can only do that if it is looking at exactly
@@ -104,3 +113,17 @@ so cannot be constructed under vitest; the e2e suite exercises it instead. The
 geometry it renders is tested in `gps-plus-slam-osm`'s `mesh/buildings.test.ts`
 (including the differential triangulation harness against `earcut`) and
 `mesh/mesh-orientation.test.ts` (the frame).
+
+The **repaint-on-resize** invariant has two e2e tests, one per caller:
+_"repaints after a viewport resize, without waiting for a camera drag"_ and
+_"keeps the 3D view painted while the sheet is dragged"_. Both read the drawing
+buffer and count non-background pixels, and **neither may touch the camera** —
+any pointer interaction repairs the symptom and makes a broken build pass.
+
+The first one also has to **wait for the scene to go quiescent before
+resizing**, by polling `toDataURL()` for two identical reads. Without that it is
+flaky in the direction that hides the bug: `waitForRefresh` returns when the
+status line says "N cells", but the startup terrain load schedules its own frame
+through `setTerrain`, and that frame can land after the resize and repaint for a
+reason unrelated to `resize()`. This was observed — the test passed once against
+unfixed code before the wait was added.

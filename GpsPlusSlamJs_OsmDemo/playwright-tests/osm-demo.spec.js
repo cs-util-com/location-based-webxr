@@ -513,6 +513,63 @@ test.describe("the mobile layout", () => {
       })
       .toBeGreaterThan(mapBox.height + 50);
   });
+
+  test("keeps the 3D view painted while the sheet is dragged", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS (finding N1, the second half of R2-3). The sheet
+    // drag is the OTHER caller of `BuildingView.resize()`, and it is the harsh
+    // one: the window path calls resize once, this path calls it on every
+    // pointer move. Each call reallocates and therefore CLEARS the drawing
+    // buffer, so without a repaint the 3D backdrop goes blank the instant the
+    // sheet starts moving and stays blank — on the one layout where the 3D view
+    // is the full-screen background.
+    //
+    // The existing drag test above cannot see this: it asserts the sheet's
+    // HEIGHT, never the canvas contents, so a blank backdrop passes it.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const painted = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return -1;
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return -1;
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] + data[i + 1] + data[i + 2] > 0x11 + 0x13 + 0x1a + 60) {
+            count++;
+          }
+        }
+        return count;
+      });
+
+    expect(await painted()).toBeGreaterThan(500);
+
+    const handle = page.locator("#sheet-handle");
+    const handleBox = await handle.boundingBox();
+    if (handleBox === null) throw new Error("no handle box");
+
+    // A MULTI-STEP drag, so `resize()` is called repeatedly rather than once —
+    // that is the coalescing path, and a per-event repaint would show up here
+    // as a timeout rather than as a wrong picture.
+    const x = handleBox.x + handleBox.width / 2;
+    await page.mouse.move(x, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    for (const dy of [30, 60, 90, 120, 150]) {
+      await page.mouse.move(x, handleBox.y - dy);
+    }
+    await page.mouse.up();
+
+    await expect.poll(painted, { timeout: 5000 }).toBeGreaterThan(500);
+  });
 });
 
 test.describe("my location", () => {
@@ -634,6 +691,92 @@ test.describe("the 3D view", () => {
     });
 
     expect(painted).toBeGreaterThan(500);
+  });
+
+  test("repaints after a viewport resize, without waiting for a camera drag", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS (finding R2-3). The view renders ON DEMAND — a
+    // permanent rAF loop was measured and rejected (it made this suite ~6x
+    // slower and would burn phone battery repainting a static city), so frames
+    // are scheduled only from the `controls` change event and the render entry
+    // points. `resize()` updated the renderer and the camera and scheduled
+    // NOTHING. Setting `canvas.width`/`height` clears the drawing buffer, so
+    // the pane went blank and STAYED blank until the user happened to drag the
+    // camera — which is exactly how it was reported ("bis zum nächsten Mal,
+    // wenn ich die Kamera dragge, dann ist es wieder da").
+    //
+    // The existing pixel test cannot catch this: it only ever runs at one
+    // viewport. The assertion has to be "resize, then look, WITHOUT touching
+    // the camera" — any pointer interaction repairs the symptom and makes a
+    // broken build pass.
+    await stubNetwork(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const canvas = page.locator("#scene canvas");
+    await expect(canvas).toBeVisible();
+
+    /** Non-background pixels in the drawing buffer. Same probe as above. */
+    const painted = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return -1;
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return -1;
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] + data[i + 1] + data[i + 2] > 0x11 + 0x13 + 0x1a + 60) {
+            count++;
+          }
+        }
+        return count;
+      });
+
+    expect(await painted()).toBeGreaterThan(500);
+
+    // WAIT FOR THE SCENE TO GO QUIESCENT BEFORE RESIZING, or this test is
+    // flaky in the direction that hides the bug. `waitForRefresh` returns when
+    // the status line says "N cells", but the startup terrain load schedules
+    // its own frame through `setTerrain`, and that frame can land AFTER the
+    // resize — repainting the canvas for a reason unrelated to `resize()` and
+    // making a broken build pass. (Observed: this test passed once against
+    // unfixed code for exactly that reason before the wait was added.)
+    //
+    // Polling for a stable drawing buffer rather than sleeping: the condition
+    // being waited on is "nothing is repainting any more", which is precisely
+    // what two identical reads establish.
+    const fingerprint = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+      });
+    let previous = await fingerprint();
+    await expect
+      .poll(
+        async () => {
+          const current = await fingerprint();
+          const stable = current === previous;
+          previous = current;
+          return stable;
+        },
+        { timeout: 5000 },
+      )
+      .toBe(true);
+
+    // Still a DESKTOP width, so the mobile overlay layout does not change what
+    // is on screen for reasons unrelated to repainting.
+    await page.setViewportSize({ width: 1000, height: 700 });
+
+    // Poll rather than assert once: the repaint is one rAF away, and the
+    // resize listener has to run first. A bare read races the frame.
+    await expect.poll(painted, { timeout: 5000 }).toBeGreaterThan(500);
   });
 
   test("can be navigated — dragging the canvas moves the camera", async ({
