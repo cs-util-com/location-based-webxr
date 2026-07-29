@@ -52,7 +52,8 @@ import { DetailsPanel } from "./details-panel.js";
 import { LocateControl } from "./locate-control.js";
 import { attachSheetDrag } from "./sheet-drag.js";
 import { buildCellMesh, EMPTY_CELL_MESH } from "./cell-mesh.js";
-import { buildHeightfield, type Heightfield } from "./heightfield.js";
+import { type Heightfield } from "./heightfield.js";
+import { createTerrainCycle } from "./terrain-cycle.js";
 import { heatScale } from "./heat-colours.js";
 import {
   BuildingView,
@@ -224,37 +225,27 @@ async function main(): Promise<void> {
 
   const elevation = new TerrariumProvider({ decodePng: browserPngDecoder() });
 
-  async function loadTerrain(centre: {
-    lat: number;
-    lng: number;
-  }): Promise<void> {
-    const field = await buildHeightfield(elevation, {
-      frame: enuFrameAt(centre),
-      extentM: TERRAIN_EXTENT_M,
-      // Terrarium z13 is ~12 m per pixel at this latitude. Sampling finer would
-      // interpolate detail the DEM never had, at real network cost.
-      spacingM: 12,
-    });
-    // `hasData: false` means the ground stays FLAT — never sea level. A DEM
-    // outage rendered as a hole shaped like the outage reads as terrain rather
-    // than as a failure, and buries the buildings standing in it.
-    terrain = field.hasData ? field : undefined;
-    // The relief is stated because it is the one number distinguishing "the
-    // terrain loaded and this place is flat" from "the terrain did not load" —
-    // two very different facts that render identically.
-    terrainNote = field.hasData
-      ? `terrain ±${Math.round(field.reliefM)} m` +
-        (field.missing > 0
-          ? ` (${field.missing}/${field.total} samples missing)`
-          : "")
-      : "terrain unavailable — ground is flat";
-    buildingView.setTerrain(terrain);
-    // Attribution is REQUIRED wherever the data is shown, the same as the OSM
-    // one — and only shown while the data is actually in use, because crediting
-    // a source whose tiles all failed would be a claim about what is on screen.
-    terrainCredit.textContent =
-      terrain === undefined ? "" : TERRARIUM_ATTRIBUTION;
-  }
+  // Coalesced, exactly like `refresh` — the two are driven by the same click and
+  // must agree about which position is current. See `terrain-cycle.ts` for the
+  // interleaving that made an older heightfield win.
+  const loadTerrain = createTerrainCycle({
+    provider: elevation,
+    extentM: TERRAIN_EXTENT_M,
+    // Terrarium z13 is ~12 m per pixel at this latitude. Sampling finer would
+    // interpolate detail the DEM never had, at real network cost.
+    spacingM: 12,
+    apply: ({ field, note }) => {
+      terrain = field;
+      terrainNote = note;
+      buildingView.setTerrain(terrain);
+      // Attribution is REQUIRED wherever the data is shown, the same as the OSM
+      // one — and only shown while the data is actually in use, because
+      // crediting a source whose tiles all failed would be a claim about what
+      // is on screen.
+      terrainCredit.textContent =
+        terrain === undefined ? "" : TERRARIUM_ATTRIBUTION;
+    },
+  });
 
   function drawMap(snapshot: DemoSnapshot | undefined): void {
     const view = selectOsmView(store.getState());
