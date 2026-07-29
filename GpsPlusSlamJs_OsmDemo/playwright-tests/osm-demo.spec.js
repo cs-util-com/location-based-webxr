@@ -354,8 +354,8 @@ test.describe("explaining one cell", () => {
 
     await page.locator("#show-below").check();
     const vetoed = page.locator("#map path.affordance-cell-veto").first();
-    await expect(vetoed).toBeAttached();
-    await vetoed.click({ force: true });
+    await expect(vetoed).toBeVisible();
+    await vetoed.click();
 
     const panel = page.locator("#details");
     await expect(panel).toBeVisible();
@@ -376,6 +376,21 @@ test.describe("explaining one cell", () => {
     await expect(
       vetoFeature.locator("tr.panel-tag-veto").first(),
     ).toBeVisible();
+
+    // THE OTHER HALF OF THE QUESTION, and the reason a tree was built rather
+    // than a one-line "vetoed by X" banner. The owner asked to see that it
+    // "was a meadow and a park and maybe even had a bench, but that the
+    // cemetery reset it to zero regardless of how high the other ratings
+    // were" — so the outvoted contributors must still be listed under the veto.
+    expect(
+      await panel.locator("details.panel-feature").count(),
+    ).toBeGreaterThan(1);
+
+    // And "what about the bench?" — the tags the veto short-circuit never
+    // evaluated, rendered struck through. That row class exists for exactly
+    // this sentence and had never been looked at outside a unit test. Every
+    // vetoed cell in the park fixture carries between one and five of them.
+    await expect(panel.locator("tr.panel-tag-skipped").first()).toBeVisible();
   });
 
   test("the selection follows a category switch and is dropped when the user moves", async ({

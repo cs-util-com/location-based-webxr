@@ -114,7 +114,20 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
          * arbitrary action sequences. A `Map` sneaking into the snapshot fails
          * there instead of in a console warning nobody reads.
          */
-        serializableCheck: { ignoredPaths: ["osmView.snapshot"] },
+        serializableCheck: {
+          ignoredPaths: ["osmView.snapshot"],
+          /**
+           * The STATE path above is only half of it: the middleware scans the
+           * dispatched ACTION too, and `snapshotReady` carries the same ~931
+           * cells as its payload. Excluding the state alone left the per-
+           * dispatch scan exactly where it was on every refresh.
+           *
+           * Written as an action TYPE rather than a path, and taken from the
+           * action creator rather than spelled out, so a change to the slice's
+           * name cannot silently stop matching.
+           */
+          ignoredActions: [slice.actions.snapshotReady.type],
+        },
       }),
   });
 
