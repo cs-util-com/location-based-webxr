@@ -70,6 +70,20 @@ export {
   medianQrPosition,
 } from './qr-detected-slice.js';
 
+// --- osm-view-slice (opt-in, and a FACTORY rather than a ready-made slice:
+//     it is generic over the consumer's snapshot type so no `gps-plus-slam-osm`
+//     type reaches this package's published declarations — that package is not
+//     on npm, and a type-only import of it would 404 every install. Same
+//     constraint `osm-bridge/opfs-osm-blob-store.ts` documents. ---
+export {
+  createOsmViewSlice,
+  type CreateOsmViewSliceOptions,
+  type OsmViewLatLng,
+  type OsmViewLoading,
+  type OsmViewLoadingPhase,
+  type OsmViewState,
+} from './osm-view-slice.js';
+
 // --- ref-points-slice — moved to recorder app in Iter 3 of the
 //     AppFramework / RecorderApp boundary migration. Recorder consumers
 //     import these from their own local slice now. ---
