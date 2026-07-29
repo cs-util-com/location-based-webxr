@@ -75,6 +75,43 @@
         color: #6f7995;
         font-size: 0.78rem;
       }
+
+      /* The legend replaces the scale sentence: same claim, read at a glance. */
+      #legend {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.75rem;
+        color: #9aa3b8;
+        flex-wrap: wrap;
+      }
+      .legend-category {
+        color: #e6e8ef;
+        font-weight: 600;
+      }
+      .legend-strip {
+        display: inline-flex;
+        /* Butted together, so the ramp reads as a continuum rather than as a
+           set of categories — it is a continuous quantity. */
+        gap: 0;
+      }
+      .legend-swatch {
+        width: 0.85rem;
+        height: 0.85rem;
+        border: 1px solid transparent;
+        display: inline-block;
+      }
+      .legend-band {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-left: 0.4rem;
+      }
+      /* The identity band is outline-only: "nothing known here" must not paint
+         a claim the data does not support. */
+      .legend-swatch-identity {
+        border-style: dashed;
+      }
     </style>
   </head>
   <body>
@@ -86,7 +123,7 @@
       ></label>
       <span class="hint">click the map to move</span>
       <span id="status">starting…</span>
-      <span id="scale"></span>
+      <div id="legend"></div>
     </header>
     <main>
       <div id="map"></div>

@@ -41,6 +41,7 @@ import { DemoPipeline, type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { describeExtent } from "./fetch-extent.js";
 import { MapView } from "./map-view.js";
+import { LegendView } from "./legend-view.js";
 import { BuildingView, type BuildingStats } from "./building-view.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
@@ -71,7 +72,6 @@ async function makeStore() {
 
 async function main(): Promise<void> {
   const status = el("status");
-  const scaleText = el("scale");
   const categorySelect = el<HTMLSelectElement>("category");
 
   status.textContent = "Loading the rule table…";
@@ -102,6 +102,7 @@ async function main(): Promise<void> {
   const start = parseStartPosition(window.location.search);
   const mapView = new MapView({ container: el("map"), centre: start });
   const buildingView = new BuildingView({ container: el("scene") });
+  const legendView = new LegendView({ container: el("legend") });
 
   const { store, actions, subscribe } = createDemoStore({
     start,
@@ -141,9 +142,10 @@ async function main(): Promise<void> {
     const view = selectOsmView(store.getState());
     if (snapshot === undefined) {
       // A failed refresh must not leave the previous category's cells claiming
-      // to be current. Clearing is the whole of W1.
+      // to be current. Clearing is the whole of W1 — and the legend goes with
+      // them, because a legend without a map explains nothing.
       mapView.clear();
-      scaleText.textContent = "";
+      legendView.clear();
       return;
     }
     const scale = mapView.render(
@@ -156,7 +158,9 @@ async function main(): Promise<void> {
     // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
     // and the hexagon differ and why that gap is worth showing.
     mapView.renderFetchTiles(snapshot.loadedTiles);
-    scaleText.textContent = mapView.describeScale(scale);
+    // Rendered from the SAME scale the map just painted with, so the two cannot
+    // drift — the one way a legend becomes an active lie.
+    legendView.render(scale, view.category, view.showBelowThreshold);
   }
 
   function drawScene(snapshot: DemoSnapshot | undefined): void {

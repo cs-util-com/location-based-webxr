@@ -62,15 +62,34 @@ test.describe("the demo boots", () => {
     expect(counts.basemap).toBeGreaterThan(0);
   });
 
-  test("reports the scale it is drawing with", async ({ page }) => {
+  test("reports the scale it is drawing with, as a legend", async ({
+    page,
+  }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
     // Without this the demo answers "does it look plausible?" instead of "is 1
     // really the identity here?" — and only the second is worth a session.
-    await expect(page.locator("#scale")).toContainText("identity is 1");
-    await expect(page.locator("#scale")).toContainText("log scale");
+    //
+    // The claim moved from a sentence to a swatch strip on 2026-07-29 (DEC-13):
+    // the sentence was reported as unreadable, but it is the on-screen answer to
+    // iteration 8's second question, so it was replaced pictorially rather than
+    // deleted. It survives verbatim as the strip's accessible text, which is
+    // what the `title` assertion below pins — a legend that dropped it would
+    // pass a "there are swatches" test while losing the answer.
+    const legend = page.locator("#legend");
+    await expect(legend).toBeVisible();
+    await expect(legend.locator(".legend-swatch")).not.toHaveCount(0);
+    await expect(legend.locator(".legend-strip")).toHaveAttribute(
+      "title",
+      /identity is 1.*log scale/s,
+    );
+
+    // The ends of the ramp are labelled with real numbers, or the colours are
+    // a gradient with no units.
+    await expect(legend.locator(".legend-min")).toHaveText("1");
+    await expect(legend.locator(".legend-max")).not.toBeEmpty();
   });
 });
 
@@ -204,6 +223,16 @@ test.describe("the affordance map", () => {
     await expect(page.locator(".leaflet-tooltip").first()).toContainText(
       `${other} =`,
     );
+
+    // W2, added 2026-07-29. Everything above proves the map REDREW; none of it
+    // proves a person could tell. Until the legend landed, the only place the
+    // app named the current category was inside a tooltip, so the reported
+    // symptom — "switching category did not reset the map" — was reachable with
+    // this test passing: every category scores nearly every rule, and
+    // `heatScale` re-normalises to each category's own maximum, so the same
+    // hexagons come back in similar colours. The legend is the fix, and this is
+    // the assertion that keeps it honest.
+    await expect(page.locator("#legend .legend-category")).toHaveText(other);
   });
 });
 
