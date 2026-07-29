@@ -20,6 +20,10 @@ const entryFiles = [
   // ar/
   'src/ar/index.ts',
   'src/ar/ar-crash-isolation.ts',
+  // Shared scene-graph builder for live AR and replay. Both `webxr-session.ts`
+  // and `replay-scene.ts` (themselves dist entries) import it, and the `./ar/*`
+  // exports wildcard advertises the subpath, so it must be built per-file.
+  'src/ar/ar-scene-hierarchy.ts',
   'src/ar/bresenham3d.ts',
   'src/ar/camera-blit-capture.ts',
   'src/ar/capability-checker.ts',

@@ -21,7 +21,7 @@ export const SCENE_NODE: {
 
 ## Consumers
 
-- `webxr-session.ts` — sets `BASIS_CHANGE` name during `createSceneHierarchy()`
+- `ar-scene-hierarchy.ts` — sets `BASIS_CHANGE` name during `createSceneHierarchy()`
 - `camera-follower.ts` — sets `CAMERA_FOLLOWER` name at construction
 - Test files — import constants for type-safe assertions
 

@@ -2,7 +2,8 @@
  * Replay Scene Module
  *
  * Sets up a standard Three.js rendering environment for desktop replay mode
- * (no WebXR). Uses createSceneHierarchy() for the scene graph, then
+ * (no WebXR). Uses createSceneHierarchy() from ar-scene-hierarchy.ts — the
+ * scene graph shared with live AR — then
  * reparents the camera to the scene root (Issue 5 fix) so orbit and FPS
  * controls operate in a stable world-space frame, unaffected by the
  * alignment matrix on arWorldGroup or odom pose updates on arpose.
@@ -28,7 +29,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createSceneHierarchy } from './webxr-session.js';
+import { createSceneHierarchy } from './ar-scene-hierarchy.js';
 import { createLogger } from '../utils/logger.js';
 import {
   createCameraFollower,
