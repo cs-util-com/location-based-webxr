@@ -15,7 +15,7 @@
  *   information for nothing.
  *
  * So the data step lives here and reports `fetchFailed`; each view wraps its own
- * draw in {@link renderSafely} and reports `renderFailed`. The classification is
+ * draw in {@link renderSafely} and reports `nonFatalError`. The classification is
  * made where it is actually known, rather than guessed from one `catch`.
  *
  * WHY THE CYCLE TAKES NO ARGUMENTS. Position and category are dispatched intent,
@@ -104,7 +104,7 @@ export function renderSafely(
     draw();
   } catch (error) {
     access.store.dispatch(
-      access.actions.renderFailed(`${label}: ${messageOf(error)}`),
+      access.actions.nonFatalError(`${label}: ${messageOf(error)}`),
     );
   }
 }

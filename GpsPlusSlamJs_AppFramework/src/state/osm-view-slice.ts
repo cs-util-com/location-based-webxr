@@ -190,15 +190,25 @@ export function createOsmViewSlice<TSnapshot>(
       },
 
       /**
-       * A VIEW failed while drawing a valid snapshot.
+       * An error that must NOT discard the snapshot.
        *
        * KEEPS the snapshot, and that is not an oversight. If the 3D scene throws
        * after the map has drawn, the map is showing exactly the right thing;
        * routing this through `fetchFailed` would blank a correct picture to
        * report a fault in the other view. Stale cells can only originate from a
        * data failure, so nothing is lost by the split.
+       *
+       * NAMED FOR THE GUARANTEE, NOT THE ORIGIN. This was `renderFailed`, which
+       * described where the first caller happened to be rather than what the
+       * action promises — and the second caller was already a refused GPS
+       * permission, which is not a render failure by any reading. The invariant
+       * consumers depend on is "the snapshot survives"; the name now says so, so
+       * a caller can tell which of the two error actions it wants without
+       * reading the reducer. Renamed while the slice was still unreleased
+       * (published framework was 1.14.0; the slice ships in 1.15.0), so no
+       * deprecated alias is needed.
        */
-      renderFailed(state, action: PayloadAction<string>) {
+      nonFatalError(state, action: PayloadAction<string>) {
         return {
           ...state,
           loading: { phase: 'error', message: action.payload },

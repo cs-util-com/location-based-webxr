@@ -9,7 +9,7 @@
  * would get the same treatment. Blanking a correct map because the 3D pane threw
  * is the same class of lie in the other direction. These tests pin the split at
  * the seam where it can actually be known — the data step reports `fetchFailed`,
- * a view reports `renderFailed`, and only the first clears the picture.
+ * a view reports `nonFatalError`, and only the first clears the picture.
  *
  * @see refresh-cycle.ts.md
  */

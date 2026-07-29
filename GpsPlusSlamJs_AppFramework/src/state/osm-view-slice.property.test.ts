@@ -45,7 +45,7 @@ const anyAction = fc.oneof(
   fc.string().map((m) => actions.scoringStarted(m)),
   fc.nat().map((n) => actions.snapshotReady({ cells: n })),
   fc.string().map((m) => actions.fetchFailed(m)),
-  fc.string().map((m) => actions.renderFailed(m))
+  fc.string().map((m) => actions.nonFatalError(m))
 );
 
 const anySequence = fc.array(anyAction, { maxLength: 40 });
@@ -58,13 +58,13 @@ function stateAfter(sequence: readonly { type: string }[]) {
 }
 
 describe('createOsmViewSlice invariants', () => {
-  it('renderFailed NEVER changes the snapshot, from any reachable state', () => {
+  it('nonFatalError NEVER changes the snapshot, from any reachable state', () => {
     // The half of DEC-16 that a merge of the two error actions would destroy:
     // a view that fails while drawing a valid snapshot must not discard it.
     fc.assert(
       fc.property(anySequence, fc.string(), (sequence, message) => {
         const before = stateAfter(sequence);
-        const after = reducer(before, actions.renderFailed(message));
+        const after = reducer(before, actions.nonFatalError(message));
         expect(after.snapshot).toBe(before.snapshot);
         expect(after.selectedCell).toBe(before.selectedCell);
         expect(after.loading).toEqual({ phase: 'error', message });

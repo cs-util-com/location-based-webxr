@@ -964,7 +964,7 @@ test.describe("caching and failure", () => {
     // stale-snapshot case is unreachable from any network stub and is pinned
     // where it can be reached — `refresh-cycle.test.ts` and the framework's
     // `osm-view-slice` tests, which assert `fetchFailed` clears the snapshot
-    // while `renderFailed` leaves it alone.
+    // while `nonFatalError` leaves it alone.
     await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
   });
 });

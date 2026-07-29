@@ -156,13 +156,13 @@ async function main(): Promise<void> {
       mapView.centreOn(position);
       store.dispatch(actions.positionChanged(position));
     },
-    // `renderFailed` rather than `fetchFailed` because the BEHAVIOUR is what
+    // `nonFatalError` rather than `fetchFailed` because the BEHAVIOUR is what
     // matters here: a refused GPS permission says nothing about the data on
     // screen, so it must report without blanking the map. The action's name is
     // narrower than its meaning ("an error that preserves the snapshot") —
     // recorded as a follow-up rather than renamed mid-round, since it is a
     // published framework API.
-    onError: (message) => store.dispatch(actions.renderFailed(message)),
+    onError: (message) => store.dispatch(actions.nonFatalError(message)),
   });
 
   // Dragging the map sheet is mobile-only in CSS, but wiring it unconditionally

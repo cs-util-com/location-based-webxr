@@ -166,7 +166,7 @@ describe('createOsmViewSlice — the failure split (DEC-16)', () => {
     const state = reduceAll(
       slice,
       slice.actions.snapshotReady(SNAPSHOT),
-      slice.actions.renderFailed('WebGL context lost')
+      slice.actions.nonFatalError('WebGL context lost')
     );
     expect(state.snapshot).toBe(SNAPSHOT);
     expect(state.loading).toEqual({

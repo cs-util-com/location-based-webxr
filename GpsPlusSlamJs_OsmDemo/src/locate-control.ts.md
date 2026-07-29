@@ -24,7 +24,7 @@
 new LocateControl({
   map: mapView.map,
   onLocated: (position) => store.dispatch(actions.positionChanged(position)),
-  onError: (message) => store.dispatch(actions.renderFailed(message)),
+  onError: (message) => store.dispatch(actions.nonFatalError(message)),
 });
 ```
 
