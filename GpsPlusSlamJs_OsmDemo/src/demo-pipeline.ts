@@ -67,9 +67,20 @@ export interface DemoSnapshot {
 /**
  * Owns an `AffordanceIndex` and the fetches that feed it.
  *
- * Deliberately NOT a store or an event emitter: the demo redraws on demand, and
- * a second abstraction between the index and the map would only obscure which
- * of the two produced a wrong answer.
+ * STILL NOT A STORE, AND STILL NOT AN EVENT EMITTER — but the reason has
+ * narrowed. This file originally argued that no shared-state layer belonged in
+ * the demo at all, because with two write-only views and one input a second
+ * abstraction between the index and the map would only obscure which of the two
+ * produced a wrong answer. That was right for what the demo was.
+ *
+ * Re-opened 2026-07-29 (round-1 feedback, DEC-4): the demo grew a legend, a
+ * details panel and a selected cell that three views must agree on, and wiring
+ * four views to each other is six edges. There is now a Redux store in
+ * `osm-store.ts` — but it sits ABOVE this file, not inside it. This class stays
+ * a pure data producer: position and category in, a `DemoSnapshot` out, no
+ * subscriptions, no dispatch, no knowledge that a store exists. The original
+ * argument survives where it was actually load-bearing — "is the data wrong or
+ * the drawing wrong?" is still answerable by testing this in isolation.
  */
 export class DemoPipeline {
   private readonly source: OsmDataSource;

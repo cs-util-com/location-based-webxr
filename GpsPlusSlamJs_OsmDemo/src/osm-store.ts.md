@@ -1,0 +1,52 @@
+# `osm-store.ts`
+
+**Purpose.** Build the demo's single Redux store, bind the framework's generic OSM slice to `DemoSnapshot`, and hand out a change-only subscriber the views are driven from.
+
+## Public API
+
+- `createDemoStore({ start, category })` → `{ store, actions, subscribe }`
+  - `store` — a plain RTK `configureStore` with one reducer mounted at `osmView`.
+  - `actions` — the slice's action creators (`positionChanged`, `categoryChanged`, `showBelowThresholdChanged`, `cellSelected`, `fetchStarted`, `scoringStarted`, `snapshotReady`, `fetchFailed`, `renderFailed`).
+  - `subscribe(select, onChange)` — calls `onChange(current, previous)` only when `select`'s result changes by **reference**. Returns an unsubscribe function.
+- `selectOsmView(state)` — the slice state from the root. The one place the mount key is named.
+- `summariseSnapshot(state)` — the devtools `stateSanitizer`. Exported for its test, not for callers.
+- Types: `DemoRootState`, `CreateDemoStoreOptions`, `DemoStore`.
+
+## Invariants & assumptions
+
+- **Nothing non-serialisable goes in the store.** RTK's default middleware throws on non-serialisable state in development. `CellScore.contributors` is a plain `Record` rather than a `Map` for exactly this reason; the merged `OsmFeature` map is a `Map` and therefore stays in `DemoPipeline`, where it is also cheapest to keep. A test dispatches a real `DemoSnapshot` and asserts nothing was logged.
+- **`subscribe` compares by reference, never deeply.** Every producer returns a fresh object per refresh and the same object otherwise, so `!==` is both correct and free. Deep-comparing ~931 cells to decide whether to redraw them would cost more than the redraw.
+- **Views do not import this module.** Each view keeps a plain `render(...)` taking the data it draws; `main.ts` subscribes and calls them. A view that imported the store would be untestable without one, and the seam that makes "is the data wrong or the drawing wrong?" answerable is the same seam that makes the views mockable.
+- **Plain `configureStore`, not `createSlamAppStore`.** That factory wires the library's GPS/AR reducers, licence validation and persistence middleware, none of which this demo has. The slice is identical either way, so switching if AR mode ever arrives is a one-line change.
+- `summariseSnapshot` must never throw — devtools sanitises state the developer may not know is being inspected, and an exception there takes the whole app down. It tolerates a missing slice and a missing snapshot.
+
+## Examples
+
+```ts
+const { store, actions, subscribe } = createDemoStore({
+  start: { lat: 50.9413, lng: 6.9583 },
+  category: "walkable",
+});
+
+subscribe(
+  (view) => view.snapshot,
+  (snapshot) => {
+    if (snapshot === undefined) mapView.clear();
+    else
+      mapView.render(
+        snapshot.cells,
+        snapshot.regions,
+        "walkable",
+        snapshot.threshold,
+      );
+  },
+);
+
+store.dispatch(actions.positionChanged({ lat: 50.94, lng: 6.95 }));
+```
+
+## Tests
+
+`osm-store.test.ts` — the slice is mounted where the selectors look; a real `DemoSnapshot` passes RTK's serialisability check; `subscribe` fires only on change, fires with `undefined` when a failed fetch clears the snapshot, and stops after unsubscribing; `summariseSnapshot` replaces the cells with a count and tolerates an empty state.
+
+The framework slice's own behaviour (the `fetchFailed` / `renderFailed` split, the JSON round-trip) is tested in `GpsPlusSlamJs_AppFramework/src/state/osm-view-slice.{test,property.test}.ts` and deliberately not re-tested here.

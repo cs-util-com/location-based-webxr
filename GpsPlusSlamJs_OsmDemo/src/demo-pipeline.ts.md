@@ -30,8 +30,14 @@ path, with no DOM in it.
   is missing" is precisely the state the fetch policy degrades into by design.
   `missingTiles` is surfaced so the UI can say so.
 - **Tiles already handed to the index are not refetched** on a redraw.
-- No store and no event emitter: a second abstraction between the index and the
-  map would only obscure which of the two produced a wrong answer.
+- **Still no store and no event emitter INSIDE this class**, though the reason
+  has narrowed. The original claim was that the demo needed no shared-state
+  layer at all — right for two write-only views and one input. Round-1 feedback
+  added a legend, a details panel and a selected cell three views must agree on,
+  so a Redux store now exists in `osm-store.ts` — but it sits **above** this
+  file. This class stays a pure data producer: position and category in, a
+  `DemoSnapshot` out, no subscriptions and no dispatch. That is what keeps "is
+  the data wrong or the drawing wrong?" answerable by testing it in isolation.
 
 - **`chunkFor` computes the chunk the SAME way `update()` does** —
   `latLngToCell(…, SCORE_CHUNK_RES)`, never `toScoreChunk` of a res-13 cell.

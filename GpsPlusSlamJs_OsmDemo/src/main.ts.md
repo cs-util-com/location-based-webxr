@@ -2,7 +2,8 @@
 
 ## Purpose
 
-App shell — wires `DemoPipeline` to the Leaflet and three.js views.
+App shell — builds the store, the pipeline and the views, and wires them
+together.
 
 ## Public API
 
@@ -11,8 +12,24 @@ None. Entry point only, loaded by `index.html`.
 ## Invariants & assumptions
 
 - **Deliberately thin.** Everything that can be wrong in an interesting way is
-  in `demo-pipeline.ts` and `heat-colours.ts`, both pure and tested. When the
-  demo misbehaves, the question should be answerable without reading this file.
+  in `demo-pipeline.ts` (data), `refresh-cycle.ts` (the async cycle and its two
+  failure kinds), `osm-store.ts` (shared state) and `heat-colours.ts`, all pure
+  and tested. When the demo misbehaves, the question should be answerable
+  without reading this file.
+- **The views are subscribers, not callees.** Since the round-1 store migration
+  (2026-07-29, DEC-4) nothing here decides who draws first: `main.ts` dispatches
+  intent, and each view redraws when the state it reads changes. It still owns
+  the view OBJECTS — the views themselves never import the store, so they stay
+  testable without one.
+- **Each view draws inside its own guard.** `renderSafely` wraps every draw, so a
+  three.js failure reports itself as a 3D-view failure rather than blanking a
+  correct map, and cannot stop the next subscriber from running. See
+  `refresh-cycle.ts.md` for why the two failure kinds are not interchangeable.
+- **Mesh counters live here, not in the store.** `volumes` / `triangles` /
+  `guessed building heights` are properties of the DRAW, not of the scored data;
+  the store holds what was scored. The label says **building** deliberately —
+  read as bare "guessed heights" it was taken for terrain relief (finding M13),
+  which the demo does not have at all.
 - **The rule-table TIER is displayed.** A demo silently running on the
   checked-in snapshot looks identical to one running on the live sheet, and they
   are different claims about what is being judged.

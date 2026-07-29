@@ -140,6 +140,21 @@ export class BuildingView {
     return statsFor(volumes, merged, trees.length);
   }
 
+  /**
+   * Empties the scene and repaints it, leaving the ground plane and lights.
+   *
+   * The 3D counterpart of `MapView.clear()`: after a failed refresh the
+   * buildings on screen belong to a working set that no longer exists. Clearing
+   * without repainting would leave the LAST rendered frame in the drawing
+   * buffer — the view renders on demand, so nothing else would ever overwrite
+   * it, and the pane would keep showing buildings that are no longer anywhere
+   * in the app's state.
+   */
+  clearScene(): void {
+    this.clear();
+    this.renderer.render(this.scene, this.camera);
+  }
+
   private meshFor(data: MeshData): THREE.Mesh {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(

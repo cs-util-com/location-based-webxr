@@ -9,10 +9,17 @@ raster basemap.
 
 - `class MapView` — `map`, `setPosition(position)`,
   `render(cells, regions, category, threshold): HeatScale`,
-  `renderFetchTiles(tiles)`, `describeScale`
+  `renderFetchTiles(tiles)`, `clear()`, `describeScale`
 - `OSM_ATTRIBUTION`
 
 ## Invariants & assumptions
+
+- **`clear()` is what a failed refresh calls.** Cells, region outlines and the
+  red fetch boxes all describe one specific scored working set; leaving any of
+  them up after that set is gone makes the map assert a state nothing produced,
+  which is the defect round-1 feedback reported. The user marker and the basemap
+  survive: "where the user is" is still true, and the basemap was never a claim
+  about scoring.
 
 - **2D first, not AR.** §8.4 of the plan: the AR overlay is a gross-failure
   detector because OSM footprints carry low-metre absolute error, plausibly

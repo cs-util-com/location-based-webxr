@@ -1,11 +1,17 @@
 /**
- * App shell: wires the pipeline to the two views.
+ * App shell: builds the store, the pipeline and the views, and wires them.
  *
- * DELIBERATELY THIN. Everything that can be wrong in an interesting way lives in
- * `demo-pipeline.ts` (data) and `heat-colours.ts` (presentation of an unbounded
- * quantity), both of which are pure and unit-tested. This file is DOM plumbing,
- * and it is short on purpose: when the demo misbehaves, the question should be
- * answerable without reading it.
+ * DELIBERATELY THIN, AND NOW THINNER. Everything that can be wrong in an
+ * interesting way lives in `demo-pipeline.ts` (data), `refresh-cycle.ts` (the
+ * async cycle and its two failure kinds), `osm-store.ts` (shared state) and
+ * `heat-colours.ts` (presentation of an unbounded quantity) — all pure, all
+ * unit-tested. This file is DOM plumbing, and it is short on purpose: when the
+ * demo misbehaves, the question should be answerable without reading it.
+ *
+ * WHAT CHANGED WITH THE STORE. The views used to be driven imperatively from one
+ * `doRefresh`, in a fixed order, inside one `try`. They are now subscribers:
+ * nothing here decides who draws first, and each view's failure is reported as
+ * its own rather than as "the refresh failed" (see `refresh-cycle.ts`).
  *
  * WHAT THIS DEMO IS FOR — three questions no test suite can answer, and one it
  * can only answer on real data:
@@ -25,19 +31,19 @@ import {
   MemoryBlobStore,
   OverpassSource,
   loadRuleTable,
-  type LatLng,
 } from "gps-plus-slam-osm";
 import {
   OpfsOsmBlobStore,
   openOsmStoreDirectory,
 } from "gps-plus-slam-app-framework/osm-bridge";
 
-import { DemoPipeline } from "./demo-pipeline.js";
+import { DemoPipeline, type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
-import { latestOnly } from "./latest-only.js";
 import { describeExtent } from "./fetch-extent.js";
 import { MapView } from "./map-view.js";
-import { BuildingView } from "./building-view.js";
+import { BuildingView, type BuildingStats } from "./building-view.js";
+import { createDemoStore, selectOsmView } from "./osm-store.js";
+import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
 
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id);
@@ -97,73 +103,141 @@ async function main(): Promise<void> {
   const mapView = new MapView({ container: el("map"), centre: start });
   const buildingView = new BuildingView({ container: el("scene") });
 
+  const { store, actions, subscribe } = createDemoStore({
+    start,
+    category: categorySelect.value,
+  });
+  const access = { store, actions };
+  const refresh = createRefreshCycle({ store, actions, pipeline });
+
+  // --- intent in ----------------------------------------------------------
+
   // Clicking the map moves the "user", which is how a walk is simulated without
   // a phone — and crossing a res-11 boundary is what exercises the chunk cache.
   mapView.map.on("click", (event: { latlng: { lat: number; lng: number } }) => {
-    void refresh({ lat: event.latlng.lat, lng: event.latlng.lng });
+    store.dispatch(
+      actions.positionChanged({
+        lat: event.latlng.lat,
+        lng: event.latlng.lng,
+      }),
+    );
   });
-  categorySelect.addEventListener("change", () => void refresh(lastPosition));
+  categorySelect.addEventListener("change", () => {
+    store.dispatch(actions.categoryChanged(categorySelect.value));
+  });
 
-  /** The position the view is currently showing, so a category change reuses it. */
-  let lastPosition = start;
+  // --- state out ----------------------------------------------------------
 
   /**
-   * COALESCED, because `doRefresh` awaits a real Overpass fetch — 18.2 s for a
-   * res-7 tile — and the map stays clickable throughout. Two overlapping runs
-   * would drive one `AffordanceIndex` concurrently and let the EARLIER one
-   * write the final status line, which presents as "the map is showing the
-   * wrong place" rather than as a race. Latest-wins rather than a lock: an 18 s
-   * dead zone after every click would break the demo's only interaction.
+   * The last mesh build's counters, for the status line.
    *
-   * The position is an ARGUMENT rather than a mutable outer variable so that
-   * "the newest request wins" is a property of the wrapper and not an accident
-   * of when each run happens to read the variable.
+   * Kept here rather than in the store because they are a property of the DRAW,
+   * not of the data — the store holds what was scored, and a three.js triangle
+   * count is not that.
    */
-  const refresh = latestOnly(doRefresh);
+  let mesh: BuildingStats | undefined;
 
-  async function doRefresh(position: LatLng): Promise<void> {
-    lastPosition = position;
-    const category = categorySelect.value;
-    status.textContent = `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`;
-    mapView.setPosition(position);
-
-    try {
-      const snapshot = await pipeline.update(position, category);
-      const scale = mapView.render(
-        snapshot.cells,
-        snapshot.regions,
-        category,
-        snapshot.threshold,
-      );
-      // The red box: what Overpass was actually asked for, drawn so "one res-7
-      // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
-      // and the hexagon differ and why that gap is worth showing.
-      mapView.renderFetchTiles(snapshot.loadedTiles);
-      const mesh = buildingView.render(pipeline.features().values(), position);
-
-      scaleText.textContent = mapView.describeScale(scale);
-      status.textContent = [
-        `${snapshot.cells.length} cells`,
-        `${snapshot.regions.length} ${category} regions`,
-        `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,
-        `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed heights)`,
-        `${mesh.triangles} triangles`,
-        describeExtent(snapshot.loadedTiles),
-        tableNote,
-        snapshot.missingTiles.length > 0
-          ? `⚠ ${snapshot.missingTiles.length} tile(s) unavailable`
-          : "",
-      ]
-        .filter((part) => part !== "")
-        .join(" · ");
-    } catch (error) {
-      // The demo must say what went wrong rather than going blank — a silent
-      // failure here looks exactly like "there is no data at this location".
-      status.textContent = `Failed: ${error instanceof Error ? error.message : String(error)}`;
+  function drawMap(snapshot: DemoSnapshot | undefined): void {
+    const view = selectOsmView(store.getState());
+    if (snapshot === undefined) {
+      // A failed refresh must not leave the previous category's cells claiming
+      // to be current. Clearing is the whole of W1.
+      mapView.clear();
+      scaleText.textContent = "";
+      return;
     }
+    const scale = mapView.render(
+      snapshot.cells,
+      snapshot.regions,
+      view.category,
+      snapshot.threshold,
+    );
+    // The red box: what Overpass was actually asked for, drawn so "one res-7
+    // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
+    // and the hexagon differ and why that gap is worth showing.
+    mapView.renderFetchTiles(snapshot.loadedTiles);
+    scaleText.textContent = mapView.describeScale(scale);
   }
 
-  await refresh(start);
+  function drawScene(snapshot: DemoSnapshot | undefined): void {
+    if (snapshot === undefined) {
+      buildingView.clearScene();
+      mesh = undefined;
+      return;
+    }
+    mesh = buildingView.render(pipeline.features().values(), snapshot.position);
+  }
+
+  function writeStatus(): void {
+    const view = selectOsmView(store.getState());
+    if (view.loading.phase !== "idle") {
+      status.textContent =
+        view.loading.phase === "error"
+          ? `Failed: ${view.loading.message}`
+          : view.loading.message;
+      return;
+    }
+    const snapshot = view.snapshot;
+    if (snapshot === undefined) {
+      status.textContent = tableNote;
+      return;
+    }
+    status.textContent = [
+      `${snapshot.cells.length} cells`,
+      `${snapshot.regions.length} ${view.category} regions`,
+      `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,
+      mesh === undefined
+        ? ""
+        : `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed building heights)`,
+      mesh === undefined ? "" : `${mesh.triangles} triangles`,
+      describeExtent(snapshot.loadedTiles),
+      tableNote,
+      snapshot.missingTiles.length > 0
+        ? `⚠ ${snapshot.missingTiles.length} tile(s) unavailable`
+        : "",
+    ]
+      .filter((part) => part !== "")
+      .join(" · ");
+  }
+
+  subscribe(
+    (view) => view.snapshot,
+    (snapshot) => {
+      // Each view draws inside its own guard: a three.js failure must not blank
+      // a correct map, and must not stop the next subscriber from running.
+      renderSafely(access, "map", () => {
+        drawMap(snapshot);
+      });
+      renderSafely(access, "3D view", () => {
+        drawScene(snapshot);
+      });
+      writeStatus();
+    },
+  );
+
+  subscribe(
+    (view) => view.loading,
+    () => {
+      writeStatus();
+    },
+  );
+
+  subscribe(
+    (view) => view.position,
+    (position) => {
+      mapView.setPosition(position);
+      void refresh();
+    },
+  );
+
+  subscribe(
+    (view) => view.category,
+    () => {
+      void refresh();
+    },
+  );
+
+  await refresh();
 }
 
 void main();

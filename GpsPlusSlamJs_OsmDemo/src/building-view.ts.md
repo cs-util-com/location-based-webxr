@@ -7,12 +7,22 @@ map scored.
 
 ## Public API
 
-- `class BuildingView` — `render(features, centre): BuildingStats`, `resize()`,
-  `dispose()`
+- `class BuildingView` — `render(features, centre): BuildingStats`,
+  `clearScene()`, `resize()`, `dispose()`
 - `interface BuildingStats` — `volumes`, `parts`, `triangles`,
   `guessedHeights`, `approximateRoofs`, `trees`
 
 ## Invariants & assumptions
+
+- **`guessedHeights` counts BUILDING heights, not terrain.** The status line says
+  so in as many words since 2026-07-29: read as bare "guessed heights" it was
+  taken for terrain relief (finding M13), and the reasonable conclusion — "it
+  knows the elevation and just is not drawing it" — is wrong twice over, because
+  no elevation provider is wired and the ground is a flat plane at `y = 0`.
+- **`clearScene()` clears AND repaints.** The view renders on demand, so a clear
+  without a repaint would leave the last frame in the drawing buffer with
+  nothing to ever overwrite it — the pane would keep showing buildings that are
+  no longer anywhere in the app's state.
 
 - **It shares the pipeline rather than fetching its own data.** This view exists
   to verify the MESH code, and it can only do that if it is looking at exactly

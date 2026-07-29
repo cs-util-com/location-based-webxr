@@ -252,12 +252,20 @@ test.describe("the 3D view", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    // `guessed heights` is the mesh layer's honesty flag and this is the only
-    // place it becomes visible. The census said only ~16 % of buildings carry a
-    // `height` tag, so a demo reporting zero guesses over real data would mean
-    // the flag stopped being set, not that OSM improved.
+    // `guessed building heights` is the mesh layer's honesty flag and this is
+    // the only place it becomes visible. The census said only ~16 % of buildings
+    // carry a `height` tag, so a demo reporting zero guesses over real data
+    // would mean the flag stopped being set, not that OSM improved.
+    //
+    // The word BUILDING is load-bearing and was added on 2026-07-29 (finding
+    // M13): read as bare "guessed heights", the counter was taken for terrain
+    // relief, and the reasonable conclusion — "it knows the elevation, it just
+    // is not drawing it" — is wrong twice over, because the demo wires no
+    // elevation provider at all and the 3D ground is a flat plane at y = 0.
     await expect(page.locator("#status")).toContainText("volumes");
-    await expect(page.locator("#status")).toContainText("guessed heights");
+    await expect(page.locator("#status")).toContainText(
+      "guessed building heights",
+    );
     await expect(page.locator("#status")).toContainText("triangles");
   });
 });
@@ -295,5 +303,19 @@ test.describe("caching and failure", () => {
     // location" — the one reading that would send someone debugging the wrong
     // layer entirely.
     await expect(page.locator("#status")).toContainText(/unavailable|Failed/);
+
+    // And the converse, which is the defect round-1 feedback reported: a map
+    // still drawing cells while the status line says the refresh failed. With
+    // every tile refused there is nothing to draw, so the grid must be empty.
+    //
+    // NOTE ON WHAT THIS DOES *NOT* COVER, deliberately. An HTTP failure never
+    // reaches the error path that clears a PREVIOUS snapshot: `DemoPipeline`
+    // collects refused tiles into `missingTiles` rather than throwing, so this
+    // stub produces a successful refresh that happens to be empty. The
+    // stale-snapshot case is unreachable from any network stub and is pinned
+    // where it can be reached — `refresh-cycle.test.ts` and the framework's
+    // `osm-view-slice` tests, which assert `fetchFailed` clears the snapshot
+    // while `renderFailed` leaves it alone.
+    await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
   });
 });

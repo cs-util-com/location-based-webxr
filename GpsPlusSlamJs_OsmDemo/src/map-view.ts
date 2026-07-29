@@ -93,6 +93,23 @@ export class MapView {
   }
 
   /**
+   * Removes everything derived from a snapshot, leaving the basemap and the
+   * user marker.
+   *
+   * Called when a refresh FAILED and there is no longer a snapshot to draw. The
+   * cells, the region outlines and the red fetch boxes all describe a specific
+   * scored working set; keeping any of them on screen after that set is gone
+   * makes the map assert a state nothing produced — which is exactly the defect
+   * the round-1 feedback reported. The marker stays because "where the user is"
+   * is still true, and the basemap because it was never a claim about scoring.
+   */
+  clear(): void {
+    this.cellLayer.clearLayers();
+    this.regionLayer.clearLayers();
+    this.fetchLayer.clearLayers();
+  }
+
+  /**
    * Draws what was actually downloaded: one red box per fetch tile.
    *
    * THE BOX IS THE QUERY, THE HEXAGON IS ONLY AN IDENTITY. Overpass has no
