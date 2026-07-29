@@ -31,6 +31,8 @@ import {
   MemoryBlobStore,
   OverpassSource,
   loadRuleTable,
+  explainCell,
+  type OsmFeature,
 } from "gps-plus-slam-osm";
 import {
   OpfsOsmBlobStore,
@@ -42,6 +44,7 @@ import { parseStartPosition } from "./start-position.js";
 import { describeExtent } from "./fetch-extent.js";
 import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
+import { DetailsPanel } from "./details-panel.js";
 import { BuildingView, type BuildingStats } from "./building-view.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
@@ -73,6 +76,7 @@ async function makeStore() {
 async function main(): Promise<void> {
   const status = el("status");
   const categorySelect = el<HTMLSelectElement>("category");
+  const showBelow = el<HTMLInputElement>("show-below");
 
   status.textContent = "Loading the rule table…";
   const loaded = await loadRuleTable({});
@@ -100,14 +104,25 @@ async function main(): Promise<void> {
 
   const pipeline = new DemoPipeline({ source, table: loaded.table });
   const start = parseStartPosition(window.location.search);
-  const mapView = new MapView({ container: el("map"), centre: start });
-  const buildingView = new BuildingView({ container: el("scene") });
-  const legendView = new LegendView({ container: el("legend") });
 
   const { store, actions, subscribe } = createDemoStore({
     start,
     category: categorySelect.value,
   });
+
+  const mapView = new MapView({
+    container: el("map"),
+    centre: start,
+    // The map reports a selection; it does not know the panel exists.
+    onCellClick: (cell) => store.dispatch(actions.cellSelected(cell)),
+  });
+  const buildingView = new BuildingView({ container: el("scene") });
+  const legendView = new LegendView({ container: el("legend") });
+  const detailsPanel = new DetailsPanel({
+    container: el("details"),
+    onClose: () => store.dispatch(actions.cellSelected(undefined)),
+  });
+
   const access = { store, actions };
   const refresh = createRefreshCycle({ store, actions, pipeline });
 
@@ -125,6 +140,9 @@ async function main(): Promise<void> {
   });
   categorySelect.addEventListener("change", () => {
     store.dispatch(actions.categoryChanged(categorySelect.value));
+  });
+  showBelow.addEventListener("change", () => {
+    store.dispatch(actions.showBelowThresholdChanged(showBelow.checked));
   });
 
   // --- state out ----------------------------------------------------------
@@ -153,6 +171,7 @@ async function main(): Promise<void> {
       snapshot.regions,
       view.category,
       snapshot.threshold,
+      view.showBelowThreshold,
     );
     // The red box: what Overpass was actually asked for, drawn so "one res-7
     // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
@@ -238,6 +257,60 @@ async function main(): Promise<void> {
     (view) => view.category,
     () => {
       void refresh();
+    },
+  );
+
+  subscribe(
+    (view) => view.showBelowThreshold,
+    () => {
+      // No refetch and no rescore — the scores are unchanged, only which of
+      // them are drawn. Redrawing from the snapshot already in hand is the
+      // whole benefit of holding it in the store.
+      renderSafely(access, "map", () => {
+        drawMap(selectOsmView(store.getState()).snapshot);
+      });
+    },
+  );
+
+  /**
+   * The details panel follows the selection, from whichever view produced it.
+   *
+   * The explanation is recomputed on demand rather than stored: the per-tag
+   * breakdown for every (cell, feature, category) would multiply the index's
+   * memory by the average tag count and be paid on every cell whether or not
+   * anyone looks (DEC-6). The covering feature set comes from the provenance
+   * map, never re-derived from geometry — see `explain-cell.ts.md`.
+   */
+  function explainSelected(cell: string | undefined): void {
+    const view = selectOsmView(store.getState());
+    const scored = view.snapshot?.cells.find((c) => c.cell === cell);
+    if (cell === undefined || scored === undefined) {
+      detailsPanel.clear();
+      return;
+    }
+    const merged = pipeline.features();
+    const covering = Object.keys(scored.contributors[view.category] ?? {})
+      .map((key) => merged.get(key as Parameters<typeof merged.get>[0]))
+      .filter((feature): feature is OsmFeature => feature !== undefined);
+    detailsPanel.render(
+      explainCell(cell, covering, loaded.table, view.category),
+    );
+  }
+
+  subscribe((view) => view.selectedCell, explainSelected);
+  // A new snapshot or a new category re-explains whatever is still selected,
+  // so the panel can never describe a cell in a category the map is no longer
+  // showing — the disagreement the store exists to make impossible.
+  subscribe(
+    (view) => view.snapshot,
+    () => {
+      explainSelected(selectOsmView(store.getState()).selectedCell);
+    },
+  );
+  subscribe(
+    (view) => view.category,
+    () => {
+      explainSelected(selectOsmView(store.getState()).selectedCell);
     },
   );
 

@@ -42,7 +42,7 @@ export interface RankedContributor {
  * so one bad sheet row would scramble every other element's position rather than
  * just its own. `-1` sorts it last and keeps the rest correct.
  */
-function magnitudeOf(factor: number): number {
+export function magnitudeOf(factor: number): number {
   if (factor === 0) return Number.POSITIVE_INFINITY;
   const magnitude = Math.abs(Math.log(factor));
   return Number.isFinite(magnitude) ? magnitude : -1;

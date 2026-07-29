@@ -47,6 +47,80 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         min-height: 0;
+        position: relative;
+      }
+
+      /* Floats over the split rather than taking a column (DEC-17). */
+      #details {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        bottom: 0.5rem;
+        width: 22rem;
+        max-width: 42vw;
+        overflow-y: auto;
+        z-index: 1000;
+        padding: 0.6rem 0.7rem;
+        background: #171b26f2;
+        border: 1px solid #2a2f3d;
+        border-radius: 6px;
+        font-size: 0.78rem;
+      }
+      #details[hidden] {
+        display: none;
+      }
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+      }
+      .panel-close {
+        background: none;
+        border: none;
+        color: #9aa3b8;
+        font-size: 1.1rem;
+        cursor: pointer;
+        line-height: 1;
+      }
+      .panel-summary {
+        margin: 0.4rem 0;
+        color: #e6e8ef;
+      }
+      .panel-threshold {
+        margin: 0 0 0.6rem;
+        color: #9aa3b8;
+      }
+      .panel-feature {
+        border-top: 1px solid #2a2f3d;
+        padding: 0.3rem 0;
+      }
+      .panel-feature summary {
+        cursor: pointer;
+      }
+      /* The vetoing element is the answer; it should be findable at a glance. */
+      .panel-feature-veto > summary {
+        color: #ff8fa3;
+        font-weight: 600;
+      }
+      .panel-tags {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.2rem;
+      }
+      .panel-tags td {
+        padding: 0.1rem 0.3rem;
+        color: #9aa3b8;
+        vertical-align: top;
+      }
+      .panel-tag-veto td {
+        color: #ff8fa3;
+      }
+      /* A tag the veto short-circuit never evaluated: shown, but visibly not
+         part of the arithmetic. */
+      .panel-tag-skipped td {
+        opacity: 0.55;
+        text-decoration: line-through;
       }
 
       @media (width <= 860px) {
@@ -121,6 +195,10 @@
         >category
         <select id="category"></select
       ></label>
+      <label
+        ><input type="checkbox" id="show-below" /> show cells below the
+        threshold</label
+      >
       <span class="hint">click the map to move</span>
       <span id="status">starting…</span>
       <div id="legend"></div>
@@ -128,6 +206,10 @@
     <main>
       <div id="map"></div>
       <div id="scene"></div>
+      <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
+           two views to ~450 px each on a laptop, which is the width that made
+           the 3D pane useless on a phone. -->
+      <aside id="details" hidden></aside>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

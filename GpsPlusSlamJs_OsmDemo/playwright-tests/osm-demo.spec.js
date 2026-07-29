@@ -271,6 +271,66 @@ test.describe("the affordance map", () => {
   });
 });
 
+test.describe("explaining one cell", () => {
+  test("clicking a cell opens a details panel explaining its score", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const panel = page.locator("#details");
+    await expect(panel).toBeHidden();
+
+    await page.locator("#map path.affordance-cell").first().click();
+    await expect(panel).toBeVisible();
+
+    // The panel must carry what the popup cannot: every contributing feature,
+    // expandable to its individual TAGS. "Which element made this 9?" was
+    // already answerable; "which TAG made it 0?" is what this exists for.
+    const feature = panel.locator("details.panel-feature").first();
+    await expect(feature).toBeVisible();
+    await feature.locator("summary").click();
+    await expect(feature.locator("tr.panel-tag").first()).toBeVisible();
+
+    // Dismissing it deselects, rather than merely hiding a still-selected cell
+    // — otherwise re-clicking the same cell would appear to do nothing.
+    await panel.locator(".panel-close").click();
+    await expect(panel).toBeHidden();
+    await page.locator("#map path.affordance-cell").first().click();
+    await expect(panel).toBeVisible();
+  });
+
+  test("the checkbox reveals sub-threshold cells in three distinct bands", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const cells = page.locator("#map path.affordance-cell");
+    const before = await cells.count();
+
+    await page.locator("#show-below").check();
+
+    // More cells, and specifically the two the old single skip made
+    // indistinguishable: a hard veto and "no rule said anything here". Being
+    // able to tell those apart is the entire point of the checkbox — and the
+    // vetoed cell was previously the one cell that could not be clicked to ask
+    // why it was vetoed, because it was not drawn.
+    await expect
+      .poll(async () => cells.count(), { timeout: 5000 })
+      .toBeGreaterThan(before);
+    await expect(
+      page.locator("#map path.affordance-cell-identity").first(),
+    ).toBeAttached();
+
+    // The legend grows the three band swatches with it: colours on screen that
+    // the legend does not explain are worse than no legend.
+    await expect(page.locator("#legend .legend-band")).toHaveCount(3);
+  });
+});
+
 test.describe("the 3D view", () => {
   test("actually draws pixels, not just a canvas element", async ({ page }) => {
     await stubNetwork(page);

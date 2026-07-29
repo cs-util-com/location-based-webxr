@@ -20,7 +20,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { legendModel } from "./legend-model.js";
+import { classifyScore, legendModel } from "./legend-model.js";
 import { describeScale } from "./heat-colours.js";
 
 const SCALE = { threshold: 1, max: 8 };
@@ -68,6 +68,36 @@ describe("legendModel — the ramp", () => {
     expect(model.ramp.every((s) => s.colour.startsWith("#"))).toBe(true);
     expect(model.minLabel).toBe("1");
     expect(model.maxLabel).toBe("1");
+  });
+});
+
+describe("classifyScore — which band a cell belongs to", () => {
+  it("separates the three sub-threshold cases at the default threshold of 1", () => {
+    // Where the old single `score <= threshold` skip threw away the
+    // distinction: at threshold 1, a hard veto and "no rule said anything" were
+    // both simply not drawn, so the cemetery cell the owner wanted to
+    // interrogate was precisely the one that could not be clicked.
+    expect(classifyScore(0, 1)).toBe("veto");
+    expect(classifyScore(1, 1)).toBe("identity");
+    expect(classifyScore(0.5, 1)).toBe("below");
+    expect(classifyScore(1.0001, 1)).toBe("ramp");
+  });
+
+  it("keeps the identity distinct when the threshold is raised above it", () => {
+    // With threshold 2, a score of exactly 1 is BOTH the identity and below the
+    // bar. The identity reading wins: "no rule said anything" is a stronger
+    // statement about the data than "it scored 1, which is under 2".
+    expect(classifyScore(1, 2)).toBe("identity");
+    expect(classifyScore(1.5, 2)).toBe("below");
+    expect(classifyScore(2, 2)).toBe("below");
+    expect(classifyScore(2.5, 2)).toBe("ramp");
+  });
+
+  it("is total: a non-finite score lands in the band that asserts least", () => {
+    // The map asks this for every cell it draws. A score with no band would be
+    // a cell with no fill — an invisible hole rather than a visible error.
+    expect(classifyScore(Number.NaN, 1)).toBe("identity");
+    expect(classifyScore(Number.POSITIVE_INFINITY, 1)).toBe("identity");
   });
 });
 

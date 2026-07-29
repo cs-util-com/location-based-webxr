@@ -8,7 +8,7 @@ raster basemap.
 ## Public API
 
 - `class MapView` — `map`, `setPosition(position)`,
-  `render(cells, regions, category, threshold): HeatScale`,
+  `render(cells, regions, category, threshold, showBelowThreshold?): HeatScale`,
   `renderFetchTiles(tiles)`, `clear()`, `describeScale`
 - `OSM_ATTRIBUTION`
 
@@ -29,6 +29,8 @@ raster basemap.
   See `contributor-order.ts.md`: the old descending sort put a `0` veto last and
   cut it off first. The popup shows 8 and appends `+N more` — never a silent
   truncation, because a shortened provenance list reads as a complete one.
+- **Sub-threshold cells are drawn only when asked, in three distinct bands (DEC-7).** The old code skipped everything at or below the threshold while a comment claimed it skipped only the identity — a broader rule than it described, and the reason a vetoed cell was the one cell that could not be clicked to ask why it was vetoed. With the checkbox on, `0` is solid and off-palette (a veto is a categorical statement, not a low score), `1` is an outline with no fill (it must not paint a claim the data does not support), and `0 < s <= threshold` is a dimmed fill. Rendering `0` and `1` alike would answer the question with the same picture for either answer.
+- **Cell clicks are reported, not handled.** `onCellClick` hands the H3 id to the caller; the map does not know the details panel exists.
 - **`clear()` is what a failed refresh calls.** Cells, region outlines and the
   red fetch boxes all describe one specific scored working set; leaving any of
   them up after that set is gone makes the map assert a state nothing produced,
@@ -50,18 +52,17 @@ raster basemap.
   on. Both, because drawing only the box invites the reading the display exists
   to correct — that the box _is_ the tile. Measured 1.39× over-fetch at res 7;
   see `fetch-extent.ts.md`. No fill, so it never competes with the heat grid.
-- **Cells at the identity are not drawn at all** — see `heat-colours.ts.md`.
 - **Clear and rebuild rather than diff.** A working set is ~931 cells; a diff
   would be a second source of truth about what is on screen, which is the last
   thing a view built to be trusted by eye should have.
-- **The tooltip is the debugging surface.** Provenance — the OSM elements and
+- **The POPUP is the debugging surface.** Provenance — the OSM elements and
   their factors, each linked to openstreetmap.org — is what turns "that cell
   looks wrong" into "that cell is wrong because of way/12345" in one click. It
   is the reason the C# reference kept a contributing-entries map.
 - **ODbL attribution is required**, and doubly so here: the view shows both the
   basemap tiles and data derived from OSM.
-- **Everything interpolated into a tooltip is escaped** — see
-  [`escape-html.ts.md`](./escape-html.ts.md). `bindTooltip` renders HTML, and
+- **Everything interpolated into a tooltip or popup is escaped** — see
+  [`escape-html.ts.md`](./escape-html.ts.md). `bindTooltip` and `bindPopup` render HTML, and
   `category` is a column header from the publicly editable rule sheet; the
   20-character name limit does not exclude `<svg onload=x>`. Feature keys are
   escaped too, belt-and-braces, because they land in an `href` attribute.
@@ -69,12 +70,19 @@ raster basemap.
 ## Examples
 
 ```ts
-const view = new MapView({ container, centre });
-const scale = view.render(cells, regions, "walkable", threshold);
+const view = new MapView({
+  container,
+  centre,
+  onCellClick: (cell) => select(cell),
+});
+const scale = view.render(cells, regions, "walkable", threshold, showBelow);
 ```
 
 ## Tests
 
 None directly (Leaflet needs a DOM); the data it draws is tested in
-`demo-pipeline`, the colours in `heat-colours.test.ts`, and the tooltip
-escaping in `escape-html.test.ts`.
+`demo-pipeline`, the colours in `heat-colours.test.ts`, the band classifier in
+`legend-model.test.ts`, the contributor ordering in `contributor-order.test.ts`,
+and the escaping in `escape-html.test.ts`. What only a browser can show — that
+the popup opens and its links are clickable, and that the checkbox reveals three
+distinct bands — is covered in `playwright-tests/osm-demo.spec.js`.

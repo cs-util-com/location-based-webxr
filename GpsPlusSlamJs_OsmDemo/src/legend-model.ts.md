@@ -10,9 +10,9 @@
   - `description` — `describeScale(scale)` verbatim, for the strip's `title` / `aria-label`.
   - `bands` — empty unless `showBelowThreshold`; otherwise exactly three, in order `veto`, `identity`, `below`.
 - `LegendStop` — `{ kind, colour, fill, label }`. `fill: false` means "draw the outline, leave the middle empty".
-- `LegendStop.kind` — `"ramp" | "veto" | "identity" | "below"`.
-
-The three band colours (`VETO_COLOUR`, `IDENTITY_COLOUR`, `BELOW_THRESHOLD_COLOUR`) are module-private **for now**. W7 makes `map-view.ts` paint the same three bands, and they must be exported then rather than duplicated — one source, or the legend becomes an active lie. They are not exported today because the dead-code gate is right that nothing else reads them yet.
+- `LegendStopKind` — `"ramp" | "veto" | "identity" | "below"`.
+- `classifyScore(score, threshold): LegendStopKind` — which band a cell belongs to. **Total** over every finite score, and non-finite scores land in `identity`: the map asks this for every cell it draws, so a score with no band would be a cell with no fill, an invisible hole rather than a visible error.
+- `VETO_COLOUR`, `IDENTITY_COLOUR`, `BELOW_THRESHOLD_COLOUR` — consumed by `map-view.ts` so the map paints exactly the bands the legend describes. One source, or the legend becomes an active lie.
 
 ## Invariants & assumptions
 
@@ -38,4 +38,5 @@ model.bands.map((b) => b.label);
 ## Tests
 
 - `legend-model.test.ts` — the category is named; the ends carry real numbers; a messy max is rounded; ramp swatches are distinct and ordered; `describeScale` survives as the description (DEC-13); a flat scale degrades to valid colours; bands appear only when asked, are exactly three, are mutually distinguishable, and the identity band is outline-only.
+- `classifyScore` is covered in `legend-model.test.ts`: the three sub-threshold cases at the default threshold of 1, the identity staying distinct when the threshold is raised above it, and totality over non-finite scores.
 - `legend-model.property.test.ts` — totality over hostile scales: no malformed colour, no `NaN`/`Infinity` label, category passed through verbatim, band count exactly `0` or `3`.

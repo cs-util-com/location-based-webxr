@@ -30,6 +30,13 @@ import {
 import { tileBounds } from "./fetch-extent.js";
 import { escapeHtml } from "./escape-html.js";
 import { rankContributors } from "./contributor-order.js";
+import {
+  BELOW_THRESHOLD_COLOUR,
+  IDENTITY_COLOUR,
+  VETO_COLOUR,
+  classifyScore,
+  type LegendStopKind,
+} from "./legend-model.js";
 
 /**
  * ODbL requires attribution wherever OSM data is shown — and this view shows
@@ -41,6 +48,8 @@ export interface MapViewOptions {
   readonly container: HTMLElement;
   readonly centre: { lat: number; lng: number };
   readonly zoom?: number;
+  /** Called with the H3 id when a cell is clicked. */
+  readonly onCellClick?: (cell: string) => void;
 }
 
 export class MapView {
@@ -49,8 +58,10 @@ export class MapView {
   private readonly regionLayer: L.LayerGroup;
   private readonly fetchLayer: L.LayerGroup;
   private readonly userMarker: L.CircleMarker;
+  private readonly onCellClick: ((cell: string) => void) | undefined;
 
   constructor(options: MapViewOptions) {
+    this.onCellClick = options.onCellClick;
     this.map = L.map(options.container).setView(
       [options.centre.lat, options.centre.lng],
       options.zoom ?? 18,
@@ -174,6 +185,7 @@ export class MapView {
     regions: readonly Region[],
     category: string,
     threshold: number,
+    showBelowThreshold = false,
   ): HeatScale {
     this.cellLayer.clearLayers();
     this.regionLayer.clearLayers();
@@ -185,26 +197,35 @@ export class MapView {
 
     for (const cell of cells) {
       const score = cell.scores[category] ?? 1;
-      // Cells at the identity are NOT drawn. "No rule said anything here" and
-      // "this scored badly" are different claims, and colouring the first as
-      // the bottom of the ramp would assert knowledge the data does not have.
-      if (score <= threshold) continue;
+      const band = classifyScore(score, threshold);
+      // Sub-threshold cells are hidden UNLESS asked for. The old code skipped
+      // everything at or below the threshold and a comment claimed it skipped
+      // only the identity — a broader rule than it described, and the reason a
+      // vetoed cell was the one cell that could not be clicked to ask why it
+      // was vetoed. With the checkbox on, the three bands are drawn but stay
+      // visually distinct from the ramp: `0` and `1` are opposite statements,
+      // and rendering both as "faint" would answer the question with the same
+      // picture for both.
+      if (band !== "ramp" && !showBelowThreshold) continue;
 
       L.polygon(cellToBoundary(cell.cell), {
-        stroke: false,
-        fillColor: toHex(heatColour(score, scale)),
-        fillOpacity: 0.55,
+        ...styleForBand(band, score, scale),
         // Named so the e2e suite can count what is actually on screen. Leaflet
         // renders every polygon as an indistinguishable `<path>`; without a
         // class, a test asserting "cells are drawn" would equally match the
         // region outlines and would pass while the grid was empty.
-        className: "affordance-cell",
+        className: `affordance-cell affordance-cell-${band}`,
       })
         // HOVER = the number, CLICK = the evidence. The tooltip is deliberately
         // score-only now: it is non-interactive by design in Leaflet, which is
         // what made the provenance links unusable for the whole of iteration 8.
         .bindTooltip(`${escapeHtml(category)} = ${round(score)}`)
         .bindPopup(popupFor(cell, category, score))
+        .on("click", () => {
+          // The panel follows the map. The map does not know the panel exists:
+          // it reports a selection and the store decides who cares.
+          this.onCellClick?.(cell.cell);
+        })
         .addTo(this.cellLayer);
     }
 
@@ -236,6 +257,52 @@ export class MapView {
   }
 
   describeScale = describeScale;
+}
+
+/**
+ * The Leaflet style for one band (DEC-7).
+ *
+ * The three sub-threshold treatments must be unmistakably different from each
+ * other, not merely dimmer versions of the ramp — because the reason to reveal
+ * them at all is to tell a hard veto apart from "nothing is mapped here", and
+ * those are opposite statements. A single faint fill for both would answer the
+ * question with the same picture for either answer.
+ */
+function styleForBand(
+  band: LegendStopKind,
+  score: number,
+  scale: HeatScale,
+): L.PathOptions {
+  switch (band) {
+    case "ramp":
+      return {
+        stroke: false,
+        fillColor: toHex(heatColour(score, scale)),
+        fillOpacity: 0.55,
+      };
+    case "veto":
+      // Solid and off-palette: a veto is a categorical statement, not a low
+      // score, so it must not read as the dark end of the ramp.
+      return { stroke: false, fillColor: VETO_COLOUR, fillOpacity: 0.5 };
+    case "identity":
+      // OUTLINE ONLY. "No rule said anything here" must not paint a claim the
+      // data does not support — the assertion this file has always made in a
+      // comment while the code skipped a broader set than the comment described.
+      return {
+        stroke: true,
+        color: IDENTITY_COLOUR,
+        weight: 1,
+        opacity: 0.5,
+        dashArray: "2 3",
+        fill: false,
+      };
+    case "below":
+      return {
+        stroke: false,
+        fillColor: BELOW_THRESHOLD_COLOUR,
+        fillOpacity: 0.45,
+      };
+  }
 }
 
 /** How many contributors the popup lists before deferring to the panel. */

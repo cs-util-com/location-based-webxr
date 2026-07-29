@@ -39,7 +39,28 @@ import {
  * - `identity` — score exactly `1`: no rule said anything at all.
  * - `below` — `0 < score <= threshold`: rules spoke, and did not clear the bar.
  */
-type LegendStopKind = "ramp" | "veto" | "identity" | "below";
+export type LegendStopKind = "ramp" | "veto" | "identity" | "below";
+
+/**
+ * Which band a score falls in.
+ *
+ * TOTAL over every finite score, and that matters: the map asks this for every
+ * cell it draws, so a score the classifier has no answer for is a cell with no
+ * fill — an invisible hole rather than a visible error. Non-finite scores land
+ * in `identity`, the band that asserts the least.
+ */
+export function classifyScore(
+  score: number,
+  threshold: number,
+): LegendStopKind {
+  if (!Number.isFinite(score)) return "identity";
+  if (score === 0) return "veto";
+  if (score > threshold) return "ramp";
+  // Order matters here: at the default threshold of 1 the identity IS the bar,
+  // so "exactly 1" has to be tested before "under the bar" or it is swallowed.
+  if (score === 1) return "identity";
+  return "below";
+}
 
 export interface LegendStop {
   readonly kind: LegendStopKind;
@@ -74,13 +95,13 @@ const RAMP_STOPS = 7;
  * ("never here"), not a low score, and colouring it as the ramp's dark end
  * would put it on the same axis as a merely-weak cell.
  */
-const VETO_COLOUR = "#c8304a";
+export const VETO_COLOUR = "#c8304a";
 
 /** "No rule said anything here" — outline only, so it asserts nothing. */
-const IDENTITY_COLOUR = "#6f7995";
+export const IDENTITY_COLOUR = "#6f7995";
 
 /** Scored, but under the bar. A dimmed relative of the ramp's dark end. */
-const BELOW_THRESHOLD_COLOUR = "#3a3358";
+export const BELOW_THRESHOLD_COLOUR = "#3a3358";
 
 /** Multiplicative scores produce 3.6000000000000005; round for display only. */
 function round(value: number): number {
