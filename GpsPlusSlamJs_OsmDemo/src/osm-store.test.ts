@@ -70,6 +70,16 @@ describe("createDemoStore", () => {
     expect(errors).toEqual([]);
     expect(selectOsmView(store.getState()).snapshot?.cells).toHaveLength(3);
   });
+
+  it("keeps the snapshot JSON-round-trippable, since the middleware no longer checks it", () => {
+    // The snapshot is exempt from RTK's deep serialisability scan for measured
+    // performance reasons (see `osm-store.ts`), so THIS is now the thing
+    // standing between a `Map` in the snapshot and a store that cannot be
+    // persisted or inspected. It is a better guarantee than the scan was: it
+    // fails a gate rather than printing a console warning nobody reads.
+    const original = snapshot(5);
+    expect(JSON.parse(JSON.stringify(original))).toEqual(original);
+  });
 });
 
 describe("summariseSnapshot", () => {

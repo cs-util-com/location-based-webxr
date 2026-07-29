@@ -369,6 +369,40 @@ test.describe("the 3D view", () => {
     expect(painted).toBeGreaterThan(500);
   });
 
+  test("can be navigated — dragging the canvas moves the camera", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const canvas = page.locator("#scene canvas");
+    await expect(canvas).toBeVisible();
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+
+    /** A cheap fingerprint of what is on screen: the drawing buffer as a URL. */
+    const shot = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+      });
+
+    const before = await shot();
+
+    // THE WHOLE POINT OF W8, and it needs BOTH halves to pass. Before this the
+    // view had a fixed camera and no rAF loop, so it was inert in two
+    // independent ways: nothing listened to the pointer, and even if something
+    // had moved the camera, nothing would ever have repainted. A test that only
+    // checked "a controller is attached" would pass with a frozen picture.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 - 90, box.y + box.height / 2);
+    await page.mouse.up();
+
+    await expect.poll(shot, { timeout: 5000 }).not.toBe(before);
+  });
+
   test("reports what it built, including the honesty flags", async ({
     page,
   }) => {

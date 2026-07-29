@@ -97,6 +97,25 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
   const store = configureStore({
     reducer: { osmView: slice.reducer },
     devTools: { stateSanitizer: summariseSnapshot },
+    middleware: (getDefault) =>
+      getDefault({
+        /**
+         * The snapshot is exempt from the deep serialisability scan.
+         *
+         * MEASURED, not assumed: with it included, RTK logged
+         * "SerializableStateInvariantMiddleware took 71ms, more than the
+         * warning threshold of 32ms" on every action — it walks ~931 cells and
+         * their provenance records twice per dispatch, in development, which is
+         * exactly when someone is trying to judge whether the app feels fast.
+         *
+         * Nothing is given up. The guarantee moves from a runtime scan to a
+         * test: `osm-store.test.ts` asserts a real `DemoSnapshot` survives a
+         * JSON round-trip, and the framework slice has the same property over
+         * arbitrary action sequences. A `Map` sneaking into the snapshot fails
+         * there instead of in a console warning nobody reads.
+         */
+        serializableCheck: { ignoredPaths: ["osmView.snapshot"] },
+      }),
   });
 
   /**

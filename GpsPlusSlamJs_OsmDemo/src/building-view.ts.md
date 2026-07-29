@@ -8,12 +8,26 @@ map scored.
 ## Public API
 
 - `class BuildingView` — `render(features, centre): BuildingStats`,
-  `clearScene()`, `resize()`, `dispose()`
+  `clearScene()`, `resize()`, `dispose()`. Navigation is `MapControls`, attached
+  internally; there is nothing to call.
 - `interface BuildingStats` — `volumes`, `parts`, `triangles`,
   `guessedHeights`, `approximateRoofs`, `trees`
 
 ## Invariants & assumptions
 
+- **Frames are scheduled ON DEMAND, never in a permanent loop.** The scene is
+  static except while the camera is moving, so `requestFrame()` coalesces to one
+  pending rAF and the `controls` `change` event drives it. A permanent loop was
+  the first attempt and was measured to make the e2e suite ~6x slower
+  (21 s -> 2.2 m) and push one test into a timeout; on a phone it is a scene
+  that never stops drawing. Damping still works: `controls.update()` emits
+  another `change` while the camera eases, which schedules the next frame, so
+  the sequence sustains itself and then stops.
+- **`dispose()` cancels the pending frame FIRST.** An orphaned frame callback
+  touching a disposed WebGL context crashes rather than leaks.
+- **`MapControls`, not `OrbitControls` (DEC-5).** Pan-first suits a top-down city
+  view. Both ship inside the `three` package the demo already depends on, so
+  neither is a new dependency.
 - **`guessedHeights` counts BUILDING heights, not terrain.** The status line says
   so in as many words since 2026-07-29: read as bare "guessed heights" it was
   taken for terrain relief (finding M13), and the reasonable conclusion — "it

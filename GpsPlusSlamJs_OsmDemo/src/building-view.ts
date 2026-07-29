@@ -16,6 +16,7 @@
  */
 
 import * as THREE from "three";
+import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 import {
   buildBuildings,
   buildTrees,
@@ -48,17 +49,21 @@ export class BuildingView {
   private readonly onWindowResize: () => void;
   private readonly group = new THREE.Group();
   private readonly container: HTMLElement;
+  private readonly controls: MapControls;
+  /** The pending rAF handle, so `dispose()` can cancel it. */
+  private frame: number | undefined;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      // The scene renders on demand rather than in a rAF loop, so without this
-      // the drawing buffer is cleared before anything can read it back. It
-      // costs a little memory and buys the only way to assert this view drew
-      // anything at all: the e2e suite reads the pixels and counts the
-      // non-background ones. A 3D pane that silently renders nothing looks
-      // exactly like a 3D pane with no buildings nearby.
+      // Without this the drawing buffer is cleared after each composite, so a
+      // readback from JS gets a blank image. It costs a little memory and buys
+      // the only way to assert this view drew anything at all: the e2e suite
+      // reads the pixels and counts the non-background ones. A 3D pane that
+      // silently renders nothing looks exactly like a 3D pane with no
+      // buildings nearby. (Still needed now that there IS a rAF loop — the
+      // readback races the next frame otherwise.)
       preserveDrawingBuffer: true,
     });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
@@ -83,6 +88,18 @@ export class BuildingView {
     this.camera.position.set(140, 110, 140);
     this.camera.lookAt(0, 10, 0);
 
+    // `MapControls` rather than `OrbitControls` (DEC-5): pan-first suits a
+    // top-down city view, where dragging should slide the ground rather than
+    // swing the camera around a point the user did not choose. Both ship
+    // INSIDE the `three` package this demo already depends on, so neither is a
+    // new dependency — the concern that a camera controller would mean pulling
+    // one in is out of date. Touch is handled natively: one finger pans, two
+    // dolly and rotate.
+    this.controls = new MapControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.target.set(0, 0, 0);
+    this.controls.update();
+
     this.resize();
     // Held rather than passed inline, so `dispose()` can actually remove it.
     // An anonymous listener outlives disposal and then calls `setSize()` and
@@ -91,6 +108,39 @@ export class BuildingView {
       this.resize();
     };
     window.addEventListener("resize", this.onWindowResize);
+    // Repaint when the camera moves — and ONLY then. See `requestFrame`.
+    this.controls.addEventListener("change", () => {
+      this.requestFrame();
+    });
+  }
+
+  /**
+   * Schedules exactly one frame, coalescing repeats.
+   *
+   * WHY NOT A PERMANENT rAF LOOP. That was the first attempt, and it was
+   * measured: an always-running loop over a static city scene made the e2e
+   * suite ~6× slower (21 s → 2.2 m) and pushed one test into a timeout, because
+   * the loop competes for the same CPU as everything else in a headless
+   * browser. On a phone it is worse than slow — it is a scene that never stops
+   * drawing, burning battery to repaint an identical picture.
+   *
+   * The scene is static except while the user is moving the camera, so frames
+   * are scheduled on demand. This still works with damping, which is the part
+   * that looks like it should need a loop: `controls.update()` emits another
+   * `change` while the camera is still easing, which schedules the next frame,
+   * so the sequence sustains itself until the motion settles and then stops.
+   *
+   * The handle is HELD so `dispose()` can cancel it. An orphaned frame callback
+   * touching a disposed WebGL context is a crash, not a leak — the same reason
+   * the resize listener is held rather than passed inline.
+   */
+  private requestFrame(): void {
+    if (this.frame !== undefined) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = undefined;
+      this.controls.update();
+      this.renderer.render(this.scene, this.camera);
+    });
   }
 
   resize(): void {
@@ -208,6 +258,11 @@ export class BuildingView {
   }
 
   dispose(): void {
+    // Cancelled FIRST: a frame already queued would otherwise fire against a
+    // disposed context, which crashes rather than leaks.
+    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
+    this.frame = undefined;
+    this.controls.dispose();
     window.removeEventListener("resize", this.onWindowResize);
     this.clear();
     this.renderer.dispose();
