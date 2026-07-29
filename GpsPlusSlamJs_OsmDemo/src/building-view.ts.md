@@ -34,6 +34,17 @@ map scored.
   layer's two honesty flags and this is the only place they become visible —
   which is how the census figures (16 % with `height`, 12 % non-flat roofs) get
   confirmed on real data rather than quoted.
+- **OPEN FOLLOW-UP: this view has NO north reference, and that is a real gap.**
+  The camera is parked at `(140, 110, 140)` looking at the origin, with nothing
+  in the scene naming a compass direction — so a city mirrored north/south looks
+  exactly like a correct one.
+  - That is not hypothetical. `gps-plus-slam-osm` emitted a left-handed mesh
+    frame (ENU north at `+z`) until 2026-07-29, and this view — whose whole job
+    is to make the mesh checkable by eye — could not show it. It was found in a
+    code review instead, and fixed as a breaking change.
+  - Adding a debug axis or a north marker closes the loop that let it through.
+    Tracked in
+    `GpsPlusSlamJs_Docs/docs/2026-07-29-0127-osm-perf-round-followups.md`.
 - **The resize listener is held in a field and removed in `dispose()`.** An
   anonymous inline listener outlives disposal and then calls `setSize()` /
   `updateProjectionMatrix()` on a renderer whose GL context has been released.
