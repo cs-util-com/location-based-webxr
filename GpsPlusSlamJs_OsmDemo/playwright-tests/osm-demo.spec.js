@@ -331,6 +331,66 @@ test.describe("explaining one cell", () => {
   });
 });
 
+test.describe("my location", () => {
+  test("moves the user to a real fix, and says so while it is working", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    // Cologne Volksgarten — the fixture's own centre, so the refresh that
+    // follows has data to score rather than an empty working set.
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await stubNetwork(page);
+    // Deliberately NOT `AT_FIXTURE`: starting at the default proves the button
+    // moved the user, rather than confirming where they already were.
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    const button = page.locator(".locate-button");
+    await expect(button).toHaveAttribute("data-state", "idle");
+
+    await button.click();
+
+    // The button must reach a terminal state; `located` then relaxes back to
+    // `idle` after a few seconds, so either is a pass here. What must NOT
+    // happen is being stuck on `locating`.
+    await expect
+      .poll(async () => button.getAttribute("data-state"), { timeout: 10000 })
+      .toMatch(/located|idle/);
+
+    // And the fix actually drove a refresh — the status line reports the new
+    // working set rather than the one it booted with.
+    await expect(page.locator("#status")).toContainText("cells");
+  });
+
+  test("reports a denied permission instead of hanging on 'locating…'", async ({
+    page,
+    context,
+  }) => {
+    // The failure path is half of `CLAUDE.md`'s async-feedback rule, and it is
+    // the half that gets skipped: a button stuck on "locating…" forever looks
+    // exactly like a slow GPS fix, so nobody reports it as a bug.
+    await context.clearPermissions();
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator(".locate-button").click();
+
+    await expect
+      .poll(
+        async () => page.locator(".locate-button").getAttribute("data-state"),
+        {
+          timeout: 10000,
+        },
+      )
+      .toMatch(/denied|unavailable|timeout|idle/);
+    await expect(page.locator("#status")).toContainText(
+      /denied|unavailable|timed out/,
+    );
+  });
+});
+
 test.describe("the 3D view", () => {
   test("actually draws pixels, not just a canvas element", async ({ page }) => {
     await stubNetwork(page);

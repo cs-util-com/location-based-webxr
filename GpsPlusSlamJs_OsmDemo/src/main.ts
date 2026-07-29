@@ -45,6 +45,7 @@ import { describeExtent } from "./fetch-extent.js";
 import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
+import { LocateControl } from "./locate-control.js";
 import { BuildingView, type BuildingStats } from "./building-view.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
@@ -121,6 +122,20 @@ async function main(): Promise<void> {
   const detailsPanel = new DetailsPanel({
     container: el("details"),
     onClose: () => store.dispatch(actions.cellSelected(undefined)),
+  });
+
+  new LocateControl({
+    map: mapView.map,
+    // A real fix moves the "user" exactly as a map click does — same action,
+    // same refresh, no second code path that could disagree with the first.
+    onLocated: (position) => store.dispatch(actions.positionChanged(position)),
+    // `renderFailed` rather than `fetchFailed` because the BEHAVIOUR is what
+    // matters here: a refused GPS permission says nothing about the data on
+    // screen, so it must report without blanking the map. The action's name is
+    // narrower than its meaning ("an error that preserves the snapshot") —
+    // recorded as a follow-up rather than renamed mid-round, since it is a
+    // published framework API.
+    onError: (message) => store.dispatch(actions.renderFailed(message)),
   });
 
   const access = { store, actions };
