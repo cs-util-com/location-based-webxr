@@ -149,6 +149,13 @@ export function buildTrees(
  *
  * Grouped by variant, because one `InstancedMesh` draws one geometry: mixing
  * variants into a single buffer would force the consumer to un-mix them.
+ *
+ * **`positions` is in the RENDER frame, not ENU** — `+x` east, `+y` up, `−z`
+ * north, exactly as `MeshData` (`mesh-data.ts`) documents. A `TreePlacement` is
+ * still ENU because it is a placement rather than a buffer; the reflection
+ * happens here, at the boundary where buffers are produced, so instanced trees
+ * and `mergeMeshes` output drop into the same scene without the consumer
+ * having to know either frame exists.
  */
 export function packInstances(
   placements: readonly TreePlacement[],
@@ -174,7 +181,10 @@ export function packInstances(
     list.forEach((placement, i) => {
       positions[i * 3] = placement.position.x;
       positions[i * 3 + 1] = placement.groundHeightM;
-      positions[i * 3 + 2] = placement.position.y;
+      // ENU north → render −z, the same reflection `MeshBuilder.vertex` applies
+      // to every `MeshData` buffer. Packing raw ENU here would put a forest and
+      // its own buildings in two different handednesses.
+      positions[i * 3 + 2] = -placement.position.y;
       scales[i * 2] = placement.heightM;
       scales[i * 2 + 1] = placement.crownDiameterM;
       rotations[i] = placement.rotationY;

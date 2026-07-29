@@ -37,10 +37,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { EnuPoint } from "./enu.js";
+import { enuFrameAt } from "./enu.js";
 import { extrudeBuilding } from "./extrude.js";
 import type { ExtrudedBuilding } from "./extrude.js";
 import type { MeshData } from "./mesh-data.js";
+import type { OsmFeature } from "../model/osm-feature.js";
 import type { RoofShape } from "./building-heights.js";
+import { buildTrees, packInstances } from "./trees.js";
 
 interface Vec3 {
   readonly x: number;
@@ -444,5 +447,73 @@ describe("the emitted frame is right-handed, with ENU north at -z", () => {
       ),
     );
     expect(northernmost).toBeLessThan(0);
+  });
+});
+
+describe("tree instance buffers use the same frame as the mesh buffers", () => {
+  /**
+   * WHY THIS MATTERS. `packInstances` is documented as producing "the flat
+   * arrays an `InstancedMesh` wants" — render-ready buffers, the same claim
+   * `MeshData` makes. When `MeshData` moved ENU north to −z, this path was
+   * missed and kept packing north into +z, so a consumer dropping both into one
+   * scene got a forest mirrored north/south against its OWN buildings. That
+   * reads as bad data or a heading bug, never as a sign error, because the
+   * trees stay consistent with each other.
+   *
+   * `TreePlacement.position` deliberately stays in ENU — it is a placement, not
+   * a buffer — so the reflection belongs exactly here, at the buffer boundary,
+   * and that split is what the two assertions below pin.
+   */
+  const ORIGIN = { lat: 50.9412, lng: 6.9583 };
+  const METRES_PER_DEG_LAT = 111_320;
+
+  /** A `natural=tree` node `northM` metres north of the origin. */
+  function treeNorthOf(northM: number): OsmFeature {
+    return {
+      type: "node",
+      id: 1,
+      position: {
+        lat: ORIGIN.lat + northM / METRES_PER_DEG_LAT,
+        lng: ORIGIN.lng,
+      },
+      tags: { natural: "tree" },
+    };
+  }
+
+  function packedPositionOf(northM: number): {
+    x: number;
+    y: number;
+    z: number;
+  } {
+    const placements = buildTrees([treeNorthOf(northM)], {
+      frame: enuFrameAt(ORIGIN),
+      groundHeightM: () => 7,
+    });
+    const positions = packInstances(placements).get("unknown")?.positions;
+    return {
+      x: positions?.[0] as number,
+      y: positions?.[1] as number,
+      z: positions?.[2] as number,
+    };
+  }
+
+  it("packs a tree 50 m NORTH at NEGATIVE z, like every other buffer", () => {
+    const packed = packedPositionOf(50);
+    expect(packed.x).toBeCloseTo(0, 3);
+    // Ground height is the UP axis, so it must not be confused with the one
+    // that changed: a swap here would also produce a "north at 0" reading.
+    expect(packed.y).toBeCloseTo(7, 6);
+    expect(packed.z).toBeCloseTo(-50, 3);
+  });
+
+  it("keeps the PLACEMENT in ENU, with north at +y", () => {
+    // The placement type says "metres east/north of the frame origin". If the
+    // reflection leaked one level up into `buildTrees`, a consumer doing its own
+    // packing — as `building-view.ts` does — would apply it twice and get the
+    // mirror back.
+    const placement = buildTrees([treeNorthOf(50)], {
+      frame: enuFrameAt(ORIGIN),
+    })[0];
+    expect(placement?.position.y).toBeCloseTo(50, 3);
   });
 });
