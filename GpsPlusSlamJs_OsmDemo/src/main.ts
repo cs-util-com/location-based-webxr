@@ -46,6 +46,7 @@ import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
 import { LocateControl } from "./locate-control.js";
+import { attachSheetDrag } from "./sheet-drag.js";
 import { BuildingView, type BuildingStats } from "./building-view.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
@@ -136,6 +137,22 @@ async function main(): Promise<void> {
     // recorded as a follow-up rather than renamed mid-round, since it is a
     // published framework API.
     onError: (message) => store.dispatch(actions.renderFailed(message)),
+  });
+
+  // Dragging the map sheet is mobile-only in CSS, but wiring it unconditionally
+  // costs three listeners on an element that is `display: none` on desktop —
+  // cheaper than a breakpoint check here that could disagree with the one in
+  // the stylesheet.
+  attachSheetDrag({
+    handle: el("sheet-handle"),
+    sheet: el("map"),
+    bounds: el("sheet-handle").parentElement ?? document.body,
+    onResize: () => {
+      // Both canvases size themselves from their container, and neither notices
+      // a container that changed without a window resize.
+      mapView.map.invalidateSize();
+      buildingView.resize();
+    },
   });
 
   const access = { store, actions };

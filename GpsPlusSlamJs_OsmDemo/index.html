@@ -123,11 +123,28 @@
         text-decoration: line-through;
       }
 
-      @media (width <= 860px) {
-        main {
-          grid-template-columns: 1fr;
-          grid-template-rows: 1fr 1fr;
-        }
+      /* The grab bar for the map sheet. Hidden on desktop, where the split is
+         fixed and there is nothing to drag. */
+      #sheet-handle {
+        display: none;
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 1.5rem;
+        z-index: 600;
+        cursor: ns-resize;
+        touch-action: none;
+      }
+      #sheet-handle::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 0.55rem;
+        width: 2.5rem;
+        height: 0.25rem;
+        margin-left: -1.25rem;
+        border-radius: 2px;
+        background: #6f7995;
       }
       #map,
       #scene {
@@ -186,6 +203,41 @@
       .legend-swatch-identity {
         border-style: dashed;
       }
+      /* MOBILE (DEC-10): the 3D view fills the viewport and the map becomes a
+         full-width sheet over it, draggable in height -- which is also the whole
+         of D8 s resizing ask, without a splitter. Follows the RecorderApp map
+         browser s full-bleed-plus-overlays pattern rather than inventing a
+         second visual language. */
+      @media (width <= 860px) {
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr;
+        }
+        #scene {
+          grid-area: 1 / 1;
+          border-left: none;
+        }
+        #map {
+          grid-area: 1 / 1;
+          align-self: end;
+          width: 100%;
+          /* Overridden inline by the drag handle; this is the starting height. */
+          height: var(--sheet-height, 45%);
+          z-index: 500;
+          border-top: 1px solid #2a2f3d;
+        }
+        #sheet-handle {
+          display: block;
+        }
+        /* Slides up from the bottom over the map, rather than sitting in the
+           top-right corner as it does on desktop. */
+        #details {
+          inset: auto 0.5rem 0.5rem;
+          width: auto;
+          max-width: none;
+          max-height: 55%;
+        }
+      }
     </style>
   </head>
   <body>
@@ -209,6 +261,7 @@
       <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
            two views to ~450 px each on a laptop, which is the width that made
            the 3D pane useless on a phone. -->
+      <div id="sheet-handle" aria-hidden="true"></div>
       <aside id="details" hidden></aside>
     </main>
     <script type="module" src="/src/main.ts"></script>

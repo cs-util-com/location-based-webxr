@@ -331,6 +331,58 @@ test.describe("explaining one cell", () => {
   });
 });
 
+test.describe("the mobile layout", () => {
+  test.use({ viewport: { width: 390, height: 780 } });
+
+  test("puts the 3D view behind a draggable map sheet", async ({ page }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const scene = page.locator("#scene");
+    const map = page.locator("#map");
+    const main = page.locator("main");
+
+    const [sceneBox, mapBox, mainBox] = await Promise.all([
+      scene.boundingBox(),
+      map.boundingBox(),
+      main.boundingBox(),
+    ]);
+    if (sceneBox === null || mapBox === null || mainBox === null) {
+      throw new Error("no layout boxes");
+    }
+
+    // DEC-10: the 3D view fills the viewport rather than taking half of it.
+    // The old layout gave each view half the height, which is what made the 3D
+    // pane a letterbox on a phone.
+    expect(sceneBox.height).toBeGreaterThan(mainBox.height * 0.9);
+    // The map sits over it as a bottom sheet, not beside it.
+    expect(mapBox.width).toBeCloseTo(mainBox.width, 0);
+    expect(mapBox.y + mapBox.height).toBeCloseTo(mainBox.y + mainBox.height, 0);
+
+    // And it can be dragged, which is the whole of D8's resizing ask — the
+    // sheet IS the splitter, so there is no second affordance to find.
+    const handle = page.locator("#sheet-handle");
+    await expect(handle).toBeVisible();
+    const handleBox = await handle.boundingBox();
+    if (handleBox === null) throw new Error("no handle box");
+
+    await page.mouse.move(
+      handleBox.x + handleBox.width / 2,
+      handleBox.y + handleBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y - 150);
+    await page.mouse.up();
+
+    await expect
+      .poll(async () => (await map.boundingBox())?.height ?? 0, {
+        timeout: 5000,
+      })
+      .toBeGreaterThan(mapBox.height + 50);
+  });
+});
+
 test.describe("my location", () => {
   test("moves the user to a real fix, and says so while it is working", async ({
     page,
