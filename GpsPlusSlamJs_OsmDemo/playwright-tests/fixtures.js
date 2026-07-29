@@ -75,7 +75,7 @@ const isOverpass = (url) =>
   );
 const isRuleSheet = (url) => /(^|\.)docs\.google\.com$/i.test(url.hostname);
 const isTerrarium = (url) =>
-  /(^|.)s3.amazonaws.com$/i.test(url.hostname) &&
+  /(^|\.)s3\.amazonaws\.com$/i.test(url.hostname) &&
   url.pathname.includes("/terrarium/");
 const isBasemap = (url) =>
   /(^|\.)tile\.openstreetmap\.org$/i.test(url.hostname);
