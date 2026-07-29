@@ -7,9 +7,12 @@ map scored.
 
 ## Public API
 
-- `class BuildingView` — `render(features, centre): BuildingStats`,
-  `clearScene()`, `resize()`, `dispose()`. Navigation is `MapControls`, attached
-  internally; there is nothing to call.
+- `class BuildingView` — `render(features, centre, terrain?): BuildingStats`,
+  `renderCells(mesh)`, `setTerrain(field | undefined)`, `clearScene()`,
+  `resize()`, `dispose()`. Navigation is `MapControls`, attached internally;
+  there is nothing to call.
+- `TERRAIN_EXTENT_M` — half-width of the ground plane and of the terrain sampled
+  under it (300 m, i.e. a 600 m plane — DEC-15).
 - `interface BuildingStats` — `volumes`, `parts`, `triangles`,
   `guessedHeights`, `approximateRoofs`, `trees`
 
@@ -28,11 +31,13 @@ map scored.
 - **`MapControls`, not `OrbitControls` (DEC-5).** Pan-first suits a top-down city
   view. Both ship inside the `three` package the demo already depends on, so
   neither is a new dependency.
-- **`guessedHeights` counts BUILDING heights, not terrain.** The status line says
-  so in as many words since 2026-07-29: read as bare "guessed heights" it was
-  taken for terrain relief (finding M13), and the reasonable conclusion — "it
-  knows the elevation and just is not drawing it" — is wrong twice over, because
-  no elevation provider is wired and the ground is a flat plane at `y = 0`.
+- **`guessedHeights` counts BUILDING heights, not terrain**, and the word
+  BUILDING in the status line is now MORE load-bearing than when finding M13 was
+  raised, not less. It was originally ambiguous because there was no terrain at
+  all to confuse it with; since W11 there is, and the status line carries a
+  second height (`terrain ±N m`) right next to it. The two numbers answer
+  different questions: how many footprints had no `height` tag, and how much
+  relief the DEM found.
 - **`clearScene()` clears AND repaints.** The view renders on demand, so a clear
   without a repaint would leave the last frame in the drawing buffer with
   nothing to ever overwrite it — the pane would keep showing buildings that are

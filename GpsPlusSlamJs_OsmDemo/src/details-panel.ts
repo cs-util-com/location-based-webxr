@@ -107,6 +107,20 @@ function featureNode(feature: FeatureRow): HTMLElement {
 
   const table = document.createElement("table");
   table.className = "panel-tags";
+
+  // HEADERS, because the four columns are otherwise inferable only from their
+  // shape: two of them hold bare numbers and mean different things ("what this
+  // tag multiplied by" vs "what the product was after it"). A sighted reader
+  // guesses from context; a screen-reader user gets four unlabelled cells.
+  const head = document.createElement("tr");
+  for (const label of ["tag", "factor", "running", "state"]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    head.append(th);
+  }
+  table.append(head);
+
   for (const tag of feature.tags) {
     const row = document.createElement("tr");
     row.className = `panel-tag panel-tag-${tag.state}`;
@@ -114,10 +128,11 @@ function featureNode(feature: FeatureRow): HTMLElement {
       `${tag.key}=${tag.value}`,
       tag.factorLabel,
       tag.runningLabel,
-      // Named in the row rather than only in a colour: a legend for five tag
-      // states in a panel this size would cost more room than the words do,
-      // and "skipped" is the one a reader must not have to infer.
-      tag.state === "scored" ? "" : tag.state,
+      // Every state is named, including the ordinary one. Rendering `scored` as
+      // an empty cell left the normal case distinguishable only by the ABSENCE
+      // of text, which is not a distinction a screen reader can announce — and
+      // "skipped" is precisely the state a reader must not have to infer.
+      tag.state,
     ]) {
       const cell = document.createElement("td");
       cell.textContent = text;

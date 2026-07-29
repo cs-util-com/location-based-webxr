@@ -763,9 +763,11 @@ test.describe("the 3D view", () => {
     //
     // The word BUILDING is load-bearing and was added on 2026-07-29 (finding
     // M13): read as bare "guessed heights", the counter was taken for terrain
-    // relief, and the reasonable conclusion — "it knows the elevation, it just
-    // is not drawing it" — is wrong twice over, because the demo wires no
-    // elevation provider at all and the 3D ground is a flat plane at y = 0.
+    // relief. It is MORE load-bearing now than when that was reported — there
+    // is real terrain since W11, and the status line carries its relief as a
+    // second height right next to this one. The two answer different questions:
+    // how many footprints carried no `height` tag, and how much relief the DEM
+    // found.
     await expect(page.locator("#status")).toContainText("volumes");
     await expect(page.locator("#status")).toContainText(
       "guessed building heights",

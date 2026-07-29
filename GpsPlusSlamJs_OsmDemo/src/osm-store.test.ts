@@ -51,11 +51,18 @@ describe("createDemoStore", () => {
     expect(view.snapshot).toBeUndefined();
   });
 
-  it("accepts a real DemoSnapshot without tripping RTK's serialisability check", () => {
-    // `CellScore.contributors` is a plain `Record` rather than a `Map` for
-    // exactly this reason (`affordance-scorer.ts`). If a future snapshot field
-    // becomes a Map or a class, RTK throws in development and this test is
-    // where that gets caught rather than in the browser console.
+  it("stores the snapshot without RTK complaining about anything ELSE in the state", () => {
+    // NOT a serialisability guard on the snapshot — that channel is closed on
+    // purpose. `ignoredActions` skips the whole action scan and `ignoredPaths`
+    // skips the state subtree, so a `Map` inside the snapshot now produces zero
+    // `console.error` calls and this assertion would pass regardless. It still
+    // earns its place for the REST of the state — `position`, `category`,
+    // `loading` and friends are all scanned — and for proving the dispatch
+    // path stores what it was given.
+    //
+    // The snapshot's own guarantee moved to `demo-pipeline.test.ts`, against a
+    // real pipeline snapshot rather than a fixture written next to the
+    // assertion. See `osm-store.ts.md`.
     const { store, actions } = createDemoStore({
       start: COLOGNE,
       category: "walkable",
@@ -69,16 +76,6 @@ describe("createDemoStore", () => {
 
     expect(errors).toEqual([]);
     expect(selectOsmView(store.getState()).snapshot?.cells).toHaveLength(3);
-  });
-
-  it("keeps the snapshot JSON-round-trippable, since the middleware no longer checks it", () => {
-    // The snapshot is exempt from RTK's deep serialisability scan for measured
-    // performance reasons (see `osm-store.ts`), so THIS is now the thing
-    // standing between a `Map` in the snapshot and a store that cannot be
-    // persisted or inspected. It is a better guarantee than the scan was: it
-    // fails a gate rather than printing a console warning nobody reads.
-    const original = snapshot(5);
-    expect(JSON.parse(JSON.stringify(original))).toEqual(original);
   });
 });
 

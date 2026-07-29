@@ -28,8 +28,9 @@ None. Entry point only, loaded by `index.html`.
 - **Mesh counters live here, not in the store.** `volumes` / `triangles` /
   `guessed building heights` are properties of the DRAW, not of the scored data;
   the store holds what was scored. The label says **building** deliberately —
-  read as bare "guessed heights" it was taken for terrain relief (finding M13),
-  which the demo does not have at all.
+  read as bare "guessed heights" it was taken for terrain relief (finding M13).
+  Since W11 the status line carries actual terrain relief as a separate number,
+  which makes the distinction more important rather than less.
 - **The rule-table TIER is displayed.** A demo silently running on the
   checked-in snapshot looks identical to one running on the live sheet, and they
   are different claims about what is being judged.

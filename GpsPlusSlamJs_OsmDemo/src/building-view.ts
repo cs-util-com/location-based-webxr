@@ -80,6 +80,7 @@ export class BuildingView {
   private cellForTriangle: readonly string[] = [];
   private readonly raycaster = new THREE.Raycaster();
   private readonly onPointerDown: (event: PointerEvent) => void;
+  private readonly onPointerStart: (event: PointerEvent) => void;
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
@@ -161,9 +162,12 @@ export class BuildingView {
     // consumes drags, and a click at the end of a 200 px pan would otherwise
     // select whatever cell happened to be under the pointer when it stopped.
     let downAt: { x: number; y: number } | undefined;
-    this.container.addEventListener("pointerdown", (event) => {
+    // Held, like every other listener here, so `dispose()` can remove it. An
+    // anonymous one outlives disposal and keeps the view reachable.
+    this.onPointerStart = (event: PointerEvent): void => {
       downAt = { x: event.clientX, y: event.clientY };
-    });
+    };
+    this.container.addEventListener("pointerdown", this.onPointerStart);
     this.onPointerDown = (event: PointerEvent): void => {
       const from = downAt;
       downAt = undefined;
@@ -249,8 +253,7 @@ export class BuildingView {
   renderCells(mesh: CellMesh): void {
     if (this.cellMesh !== undefined) {
       this.scene.remove(this.cellMesh);
-      this.cellMesh.geometry.dispose();
-      (this.cellMesh.material as THREE.Material).dispose();
+      disposeMesh(this.cellMesh);
       this.cellMesh = undefined;
     }
     this.cellForTriangle = mesh.cellForTriangle;
@@ -445,11 +448,32 @@ export class BuildingView {
     // disposed context, which crashes rather than leaks.
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.frame = undefined;
+    this.container.removeEventListener("pointerdown", this.onPointerStart);
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
     window.removeEventListener("resize", this.onWindowResize);
     this.clear();
+    // `clear()` only walks `this.group`. The ground and the affordance grid are
+    // deliberately added straight to the scene — so that rebuilding the
+    // buildings cannot drop them — which also means nothing else ever frees
+    // their GPU buffers. Missing these leaks a geometry and a material per
+    // disposed view, and the whole point of holding the resize listener and the
+    // rAF handle is that this method actually cleans up.
+    disposeMesh(this.ground);
+    if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
+    this.cellMesh = undefined;
     this.renderer.dispose();
+  }
+}
+
+/** Frees a mesh GPU-side. Materials may be an array; three does not do this. */
+function disposeMesh(mesh: THREE.Mesh): void {
+  mesh.geometry.dispose();
+  const material = mesh.material;
+  if (Array.isArray(material)) {
+    for (const one of material) one.dispose();
+  } else {
+    material.dispose();
   }
 }
 
