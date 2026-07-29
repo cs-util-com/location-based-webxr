@@ -556,6 +556,44 @@ test.describe("the 3D view", () => {
     await expect(panel.locator(".panel-summary")).not.toBeEmpty();
   });
 
+  test("stands the buildings on real terrain, and credits where it came from", async ({
+    page,
+  }) => {
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // The DEM tile is served as a REAL PNG, so this exercises the entire path:
+    // fetch, decode, bilinear sample, displace. If the encoding in `fixtures.js`
+    // were wrong, `createImageBitmap` would reject, every sample would come back
+    // undefined, and the status line would say "unavailable" instead — which is
+    // exactly what makes this assertion worth making.
+    await expect
+      .poll(async () => page.locator("#status").textContent(), {
+        timeout: 10000,
+      })
+      .toMatch(/terrain/);
+    await expect(page.locator("#status")).not.toContainText(
+      "terrain unavailable",
+    );
+    expect(counts.terrain).toBeGreaterThan(0);
+
+    // Attribution is required wherever the data is shown, exactly as for OSM.
+    await expect(page.locator("#terrain-credit")).toContainText(
+      /Terrain|Mapzen/,
+    );
+
+    // And the terrain is actually doing something, not merely fetched. The
+    // relief is in the status line because a viewer needs it for the same
+    // reason a test does: "the DEM loaded and this place is flat" and "the DEM
+    // did not load" render identically, and only a number tells them apart.
+    // The fixture tile spans 0..40 m, so the relief must be tens of metres.
+    const status = await page.locator("#status").textContent();
+    const relief = /terrain ±(\d+) m/.exec(status ?? "");
+    expect(relief).not.toBeNull();
+    expect(Number(relief?.[1] ?? 0)).toBeGreaterThan(5);
+  });
+
   test("reports what it built, including the honesty flags", async ({
     page,
   }) => {

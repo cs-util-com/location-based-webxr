@@ -29,6 +29,24 @@ import {
 } from "gps-plus-slam-osm";
 
 import type { CellMesh } from "./cell-mesh.js";
+import type { Heightfield } from "./heightfield.js";
+
+/**
+ * Half-width of the ground plane and of the terrain sampled under it, metres.
+ *
+ * See the constructor for why this is 300 (a 600 m plane) rather than the
+ * original 1000.
+ */
+export const TERRAIN_EXTENT_M = 300;
+
+/**
+ * Plane subdivisions per axis.
+ *
+ * 64 over 600 m is a ~9.4 m quad, just finer than Terrarium z13's ~12 m per
+ * pixel at this latitude — fine enough not to lose a real feature, coarse
+ * enough not to interpolate detail the DEM never had.
+ */
+const GROUND_SEGMENTS = 64;
 
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
@@ -62,6 +80,9 @@ export class BuildingView {
   private cellForTriangle: readonly string[] = [];
   private readonly raycaster = new THREE.Raycaster();
   private readonly onPointerDown: (event: PointerEvent) => void;
+  private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
+  /** The flat plane's vertex positions, kept so terrain can be re-applied. */
+  private flatGround: Float32Array | undefined;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
@@ -87,12 +108,25 @@ export class BuildingView {
     this.scene.add(sun);
     // A ground plane, so a building with no neighbours still reads as standing
     // on something rather than floating in the void.
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(2000, 2000),
-      new THREE.MeshStandardMaterial({ color: 0x1d2230 }),
+    //
+    // 600 m across, not 2000 (DEC-15). The scoring working set reaches ~128 m
+    // from the user, so a 2 km plane is mostly ground no cell is ever scored
+    // on — and once it carries terrain, sampling all of it would fetch DEM
+    // tiles for exactly that unscored ground, while sampling only the working
+    // set would leave a flat-to-relief cliff at the seam. 600 m covers the
+    // working set with margin and has no seam. The accepted cost is a visible
+    // plane edge at the horizon.
+    this.ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(
+        TERRAIN_EXTENT_M * 2,
+        TERRAIN_EXTENT_M * 2,
+        GROUND_SEGMENTS,
+        GROUND_SEGMENTS,
+      ),
+      new THREE.MeshStandardMaterial({ color: 0x1d2230, flatShading: true }),
     );
-    ground.rotation.x = -Math.PI / 2;
-    this.scene.add(ground);
+    this.ground.rotation.x = -Math.PI / 2;
+    this.scene.add(this.ground);
 
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.5, 4000);
     this.camera.position.set(140, 110, 140);
@@ -141,6 +175,37 @@ export class BuildingView {
       if (cell !== undefined) options.onCellClick?.(cell);
     };
     this.container.addEventListener("pointerup", this.onPointerDown);
+  }
+
+  /**
+   * Displaces the ground plane by a heightfield, or flattens it again.
+   *
+   * The plane is built in its own XY space and rotated into place, so the
+   * height goes into the vertex's **z** before the rotation — putting it in `y`
+   * would push the terrain sideways, which looks like a sheared plane rather
+   * than like a mistake.
+   *
+   * The undisplaced positions are kept rather than recomputed: re-applying a
+   * new field to already-displaced vertices would accumulate the relief on
+   * every refresh, and a city would grow into a mountain over a few clicks.
+   */
+  setTerrain(field: Heightfield | undefined): void {
+    const attribute = this.ground.geometry.getAttribute("position");
+    const positions = attribute.array as Float32Array;
+    this.flatGround ??= Float32Array.from(positions);
+    const flat = this.flatGround;
+
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = flat[i] ?? 0;
+      const planeY = flat[i + 1] ?? 0;
+      // The plane's +y becomes the scene's -z under the -90° x rotation, and
+      // `cell-mesh.ts` uses the same north convention.
+      positions[i + 2] =
+        field === undefined ? 0 : field.heightAt({ x, y: planeY });
+    }
+    attribute.needsUpdate = true;
+    this.ground.geometry.computeVertexNormals();
+    this.requestFrame();
   }
 
   /**
@@ -260,13 +325,28 @@ export class BuildingView {
    * The ENU frame is anchored at the user, not at the tile: mesh coordinates
    * stay small, which keeps float32 vertex buffers precise where it matters.
    */
-  render(features: Iterable<OsmFeature>, centre: LatLng): BuildingStats {
+  render(
+    features: Iterable<OsmFeature>,
+    centre: LatLng,
+    terrain?: Heightfield,
+  ): BuildingStats {
     this.clear();
 
     const frame = enuFrameAt(centre);
     const all = [...features];
-    const volumes = buildBuildings(all, { frame });
-    const trees = buildTrees(all, { frame });
+    // ONE sample per building, taken at its anchor (`mesh/buildings.ts:176`),
+    // and one per tree. So terrain gives each building a single base height: a
+    // long building across a slope still cuts into the hill at one end and
+    // floats at the other. That is a property of the mesh layer's seam, not of
+    // this call — worth recognising in a screenshot rather than debugging.
+    const groundHeightM =
+      terrain === undefined
+        ? undefined
+        : (position: LatLng) => terrain.heightAt(frame.toEnu(position));
+    const options =
+      groundHeightM === undefined ? { frame } : { frame, groundHeightM };
+    const volumes = buildBuildings(all, options);
+    const trees = buildTrees(all, options);
 
     // ONE merged geometry for this view. The package's own guidance is to batch
     // per res-8/res-9 cell rather than per fetch tile, because a batch spanning

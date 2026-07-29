@@ -48,6 +48,15 @@ export interface CellMeshOptions {
   readonly threshold: number;
   readonly scale: HeatScale;
   readonly showBelowThreshold: boolean;
+  /**
+   * Terrain relief, if any.
+   *
+   * Without it the grid lies flat at `y = 0` — which is right while the ground
+   * is flat, and wrong the moment the ground is displaced: the cells would
+   * float over valleys and be buried inside hills, in a view whose whole point
+   * is judging whether the scored ground matches the real ground.
+   */
+  readonly heightAt?: (point: { x: number; y: number }) => number;
 }
 
 export interface CellMesh {
@@ -111,7 +120,7 @@ export function buildCellMesh(
       const point = boundary[Math.min(corner, boundary.length - 1)] ?? [0, 0];
       const enu = options.frame.toEnu({ lat: point[0], lng: point[1] });
       positions[v] = enu.x;
-      positions[v + 1] = GRID_LIFT_M;
+      positions[v + 1] = (options.heightAt?.(enu) ?? 0) + GRID_LIFT_M;
       // ENU y is north; the scene's -z is north (the mesh frame's convention).
       positions[v + 2] = -enu.y;
       colors[v] = rgb.r / 255;

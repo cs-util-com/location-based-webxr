@@ -20,6 +20,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { deflateSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -73,6 +74,9 @@ const isOverpass = (url) =>
     url.hostname,
   );
 const isRuleSheet = (url) => /(^|\.)docs\.google\.com$/i.test(url.hostname);
+const isTerrarium = (url) =>
+  /(^|.)s3.amazonaws.com$/i.test(url.hostname) &&
+  url.pathname.includes("/terrarium/");
 const isBasemap = (url) =>
   /(^|\.)tile\.openstreetmap\.org$/i.test(url.hostname);
 
@@ -87,7 +91,12 @@ const isBasemap = (url) =>
  * @param {{ overpassStatus?: number }} [options]
  */
 export async function stubNetwork(page, options = {}) {
-  const counts = { overpassStatus: 0, overpassQuery: 0, basemap: 0 };
+  const counts = {
+    overpassStatus: 0,
+    overpassQuery: 0,
+    basemap: 0,
+    terrain: 0,
+  };
   const payload = JSON.stringify(parkPayload());
 
   await page.route(isOverpass, async (route) => {
@@ -152,8 +161,25 @@ export async function stubNetwork(page, options = {}) {
       ),
     }),
   );
+  // Terrarium DEM tiles. Served as a REAL 2x2 PNG rather than aborted, so the
+  // decode + sample path runs for real: an aborted tile would exercise only the
+  // "terrain unavailable" branch and the displaced-ground code would never be
+  // reached by any test. The four pixels encode distinct heights, so the
+  // resulting surface is measurably non-flat.
+  //
+  // Terrarium decodes as (r * 256 + g + b / 256) - 32768, so r = 128, g = 0
+  // is exactly 0 m and larger g values step up one metre each.
+  await page.route(isTerrarium, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: terrariumPng(),
+    }),
+  );
   page.on("request", (request) => {
-    if (isBasemap(new URL(request.url()))) counts.basemap++;
+    const url = new URL(request.url());
+    if (isBasemap(url)) counts.basemap++;
+    if (isTerrarium(url)) counts.terrain++;
   });
 
   return counts;
@@ -174,4 +200,65 @@ export async function waitForRefresh(page) {
     .filter({ hasText: /\d+ cells|Failed|unavailable/ })
     .first()
     .waitFor({ state: "visible", timeout: 60000 });
+}
+
+/**
+ * A 2x2 Terrarium DEM tile with four distinct heights.
+ *
+ * ENCODED HERE rather than checked in as a binary, because the interesting part
+ * is the ENCODING and a base64 blob hides it. Terrarium stores height as
+ * `(r * 256 + g + b / 256) - 32768`, so `r = 128, g = 0` is exactly 0 m and each
+ * step of `g` is one metre. The four pixels below are 0 / 20 / 40 / 10 m, which
+ * is enough relief for a test to tell a displaced plane from a flat one.
+ *
+ * Written as a real PNG rather than a stub so the whole path runs for real:
+ * fetch, decode, sample, displace. An aborted tile would exercise only the
+ * "terrain unavailable" branch, and the displaced-ground code would never be
+ * reached by any test in the suite.
+ */
+function terrariumPng() {
+  const heights = [
+    [128, 0, 0],
+    [128, 20, 0],
+    [128, 40, 0],
+    [128, 10, 0],
+  ];
+  // Raw scanlines: one filter byte (0 = none) then RGB triples.
+  const raw = Buffer.concat([
+    Buffer.from([0, ...heights[0], ...heights[1]]),
+    Buffer.from([0, ...heights[2], ...heights[3]]),
+  ]);
+
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body) >>> 0);
+    return Buffer.concat([length, body, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(2, 0); // width
+  ihdr.writeUInt32BE(2, 4); // height
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type: truecolour RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** CRC-32, as PNG specifies it. */
+function crc32(buffer) {
+  let crc = ~0;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return ~crc;
 }
