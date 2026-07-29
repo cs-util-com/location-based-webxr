@@ -321,13 +321,120 @@ test.describe("explaining one cell", () => {
     await expect
       .poll(async () => cells.count(), { timeout: 5000 })
       .toBeGreaterThan(before);
+    // BOTH of the two that were previously indistinguishable, not just one.
+    // Asserting only the identity band would pass on a fixture with no vetoed
+    // cells at all — and the vetoed cell is the one the checkbox exists for.
+    // The park fixture carries 15 of them against the checked-in rule table.
     await expect(
       page.locator("#map path.affordance-cell-identity").first(),
+    ).toBeAttached();
+    await expect(
+      page.locator("#map path.affordance-cell-veto").first(),
     ).toBeAttached();
 
     // The legend grows the three band swatches with it: colours on screen that
     // the legend does not explain are worse than no legend.
     await expect(page.locator("#legend .legend-band")).toHaveCount(3);
+  });
+
+  test("a vetoed cell explains WHY it is zero, which is the whole round", async ({
+    page,
+  }) => {
+    // THE HEADLINE CLAIM, asserted end to end for the first time. Everything
+    // else in this round is scaffolding for one question the owner asked of a
+    // cemetery tile: "why is this zero when it is also a park and a meadow?"
+    //
+    // Answering it needs four separate pieces to line up — the cell must be
+    // DRAWN (W7), be CLICKABLE, open a panel (W6), and that panel must name the
+    // vetoing element and mark the tag that did it (explainCell). Each of those
+    // is unit-tested in isolation; nothing until now proved they connect.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#show-below").check();
+    const vetoed = page.locator("#map path.affordance-cell-veto").first();
+    await expect(vetoed).toBeAttached();
+    await vetoed.click({ force: true });
+
+    const panel = page.locator("#details");
+    await expect(panel).toBeVisible();
+
+    // The sentence a table of numbers cannot say. "Nothing is mapped here",
+    // "something vetoed it" and "it scored but under the bar" all render as
+    // near-identical rows; the summary is what separates them.
+    await expect(panel.locator(".panel-summary")).toContainText(/vetoed/i);
+
+    // The vetoing FEATURE is marked, and open by default — the reader should
+    // not have to guess which of several rows holds the answer.
+    const vetoFeature = panel.locator("details.panel-feature-veto").first();
+    await expect(vetoFeature).toBeVisible();
+    await expect(vetoFeature).toHaveAttribute("open", "");
+
+    // And the vetoing TAG inside it, which is the actual answer: not "some
+    // element zeroed this" but "this key=value did".
+    await expect(
+      vetoFeature.locator("tr.panel-tag-veto").first(),
+    ).toBeVisible();
+  });
+
+  test("the selection follows a category switch and is dropped when the user moves", async ({
+    page,
+  }) => {
+    // The store's central promise: the panel can never describe a cell in a
+    // category the map is no longer showing, and can never describe a cell
+    // belonging to a place the user has left. Both rules live in one reducer,
+    // one line apart, and both are invisible to every other test here.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#map path.affordance-cell").first().click();
+    const panel = page.locator("#details");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator(".panel-header strong")).toContainText(
+      "walkable",
+    );
+
+    // A category change KEEPS the selection — "what does this same cell score
+    // for battleArea?" is the obvious next click, and clearing it would make
+    // that question impossible to ask.
+    const other = await page.evaluate(() => {
+      const select = document.getElementById("category");
+      const values = [...(select?.querySelectorAll("option") ?? [])].map(
+        (o) => o.value,
+      );
+      return values.find((v) => v !== "walkable") ?? "";
+    });
+    test.skip(other === "", "rule table declares only one category");
+    await page.locator("#category").selectOption(other);
+
+    await expect(panel).toBeVisible();
+    // Re-explained in the NEW category, not left showing the old answer.
+    await expect(panel.locator(".panel-header strong")).toContainText(other);
+
+    // Moving the user DROPS it: the cell belongs to the place being left.
+    //
+    // The click has to land on BARE map, and that is not incidental. A click on
+    // a cell selects without moving — Leaflet's `bindPopup` stops propagation,
+    // so the map's own click handler never fires — while a click on empty map
+    // moves without selecting. Asserting the precondition means a fixture whose
+    // grid grows to cover this point fails loudly here rather than quietly
+    // passing for the wrong reason.
+    const point = { x: 60, y: 60 };
+    const box = await page.locator("#map").boundingBox();
+    if (box === null) throw new Error("no map box");
+    const onCell = await page.evaluate(
+      ([x, y]) =>
+        document
+          .elementFromPoint(x, y)
+          ?.classList.contains("affordance-cell") === true,
+      [box.x + point.x, box.y + point.y],
+    );
+    expect(onCell).toBe(false);
+
+    await page.locator("#map").click({ position: point });
+    await expect(panel).toBeHidden();
   });
 });
 
