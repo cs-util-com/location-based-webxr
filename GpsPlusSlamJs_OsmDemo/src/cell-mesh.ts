@@ -29,8 +29,24 @@ import type { CellScore, EnuFrame } from "gps-plus-slam-osm";
 import { heatColour, type HeatScale } from "./heat-colours.js";
 import { classifyScore } from "./legend-model.js";
 
-/** Corners in an H3 boundary. Fanned from corner 0 into `CORNERS - 2` triangles. */
-const CORNERS = 6;
+/**
+ * Corners in an H3 boundary, and why this is not a constant.
+ *
+ * A cell is USUALLY 6 corners, and a pentagon 5 — but a cell straddling an
+ * icosahedron EDGE gets extra vertices where the projection distortion is
+ * resolved, and comes back with 7, 8 or (for a pentagon itself) 10. A fixed
+ * stride of 6 truncated those to their first six corners: the hexagon drawn was
+ * not the cell's footprint, and the pick region was wrong along the clipped
+ * edge, silently, in a view whose whole job is being checked by eye.
+ *
+ * So the buffers are RAGGED — one vertex per real corner, with the per-cell
+ * offset accumulated rather than multiplied. That costs the fixed stride, which
+ * is why `cellForTriangle` is built in the same pass: with a variable offset,
+ * a triangle index can no longer be divided back into a cell index.
+ */
+function fanTriangles(corners: number): number {
+  return Math.max(0, corners - 2);
+}
 
 /**
  * How far above the ground plane the grid sits, metres.
@@ -101,23 +117,32 @@ export function buildCellMesh(
   }
   if (drawn.length === 0) return EMPTY_CELL_MESH;
 
-  const positions = new Float32Array(drawn.length * CORNERS * 3);
-  const colors = new Float32Array(drawn.length * CORNERS * 3);
-  const indices = new Uint32Array(drawn.length * (CORNERS - 2) * 3);
+  // Resolved up front because the buffers are ragged: the total vertex count is
+  // not `drawn.length * 6` and cannot be known without asking every cell.
+  const boundaries = drawn.map(({ cell, score }) => ({
+    cell,
+    score,
+    boundary: cellToBoundary(cell),
+  }));
+  const vertexCount = boundaries.reduce((sum, c) => sum + c.boundary.length, 0);
+  const triangleCount = boundaries.reduce(
+    (sum, c) => sum + fanTriangles(c.boundary.length),
+    0,
+  );
+
+  const positions = new Float32Array(vertexCount * 3);
+  const colors = new Float32Array(vertexCount * 3);
+  const indices = new Uint32Array(triangleCount * 3);
   const cellForTriangle: string[] = [];
 
   let v = 0;
   let i = 0;
-  for (const [index, { cell, score }] of drawn.entries()) {
-    const base = index * CORNERS;
+  /** First vertex of the cell being written — accumulated, not multiplied. */
+  let base = 0;
+  for (const { cell, score, boundary } of boundaries) {
     const rgb = heatColour(score, options.scale);
 
-    const boundary = cellToBoundary(cell);
-    for (let corner = 0; corner < CORNERS; corner++) {
-      // An H3 boundary is usually 6 corners but can be 5 at a pentagon; repeat
-      // the last one rather than emitting a ragged buffer, so the fan below
-      // stays a fixed stride and degenerate triangles simply draw nothing.
-      const point = boundary[Math.min(corner, boundary.length - 1)] ?? [0, 0];
+    for (const point of boundary) {
       const enu = options.frame.toEnu({ lat: point[0], lng: point[1] });
       positions[v] = enu.x;
       positions[v + 1] = (options.heightAt?.(enu) ?? 0) + GRID_LIFT_M;
@@ -129,15 +154,16 @@ export function buildCellMesh(
       v += 3;
     }
 
-    // Triangle fan from corner 0. A convex hexagon fans correctly by
-    // construction, and H3 boundaries are convex.
-    for (let corner = 1; corner < CORNERS - 1; corner++) {
+    // Triangle fan from corner 0. An H3 boundary is convex at any corner count,
+    // so a fan is correct by construction for all of them.
+    for (let corner = 1; corner < boundary.length - 1; corner++) {
       indices[i] = base;
       indices[i + 1] = base + corner;
       indices[i + 2] = base + corner + 1;
       i += 3;
       cellForTriangle.push(cell);
     }
+    base += boundary.length;
   }
 
   return {

@@ -18,7 +18,7 @@
 import { describe, it, expect } from "vitest";
 import { enuFrameAt } from "gps-plus-slam-osm";
 import type { CellScore } from "gps-plus-slam-osm";
-import { latLngToCell } from "h3-js";
+import { cellToBoundary, latLngToCell } from "h3-js";
 
 import { buildCellMesh } from "./cell-mesh.js";
 import { heatScale } from "./heat-colours.js";
@@ -107,6 +107,103 @@ describe("buildCellMesh", () => {
     for (let i = 1; i < mesh.positions.length; i += 3) {
       expect(mesh.positions[i]).toBeGreaterThan(0);
       expect(mesh.positions[i]).toBeLessThan(1);
+    }
+  });
+});
+
+describe("cells whose H3 boundary is not six corners", () => {
+  /**
+   * WHY THIS MATTERS. `cellToBoundary` is documented in this file as "usually 6
+   * corners but can be 5 at a pentagon", and the buffer stride was built on
+   * that. It is only half the story: a cell straddling an icosahedron EDGE gets
+   * extra vertices where the distortion is resolved — 7 is ordinary within a
+   * ring or two of the 12 pentagons, and a pentagon itself comes back with 10.
+   *
+   * Under a fixed 6-corner stride those cells were silently truncated to their
+   * first six corners, so the hexagon drawn was not the cell's footprint and
+   * the pick region was wrong along the clipped edge. Nothing threw and nothing
+   * looked broken — the cells are still cells, just the wrong shape, in a view
+   * whose entire job is to be checked against the real world by eye.
+   */
+  const distorted = (id: string, score: number): CellScore => ({
+    cell: id,
+    scores: { walkable: score },
+    contributors: { walkable: {} },
+  });
+
+  /** A res-13 cell one ring from a pentagon: `cellToBoundary` returns 7. */
+  const SEVEN_CORNER = "8d080000000017f";
+  /** A res-13 pentagon itself: `cellToBoundary` returns 10. */
+  const TEN_CORNER = "8d080000000003f";
+
+  it("draws EVERY corner of a 7-corner cell, not the first six", () => {
+    const boundary = cellToBoundary(SEVEN_CORNER);
+    expect(boundary).toHaveLength(7);
+
+    const mesh = buildCellMesh([distorted(SEVEN_CORNER, 4)], {
+      frame: enuFrameAt({
+        lat: boundary[0]?.[0] ?? 0,
+        lng: boundary[0]?.[1] ?? 0,
+      }),
+      category: "walkable",
+      threshold: 1,
+      scale: SCALE,
+      showBelowThreshold: false,
+    });
+
+    // One vertex per real corner, and a fan of `n - 2` triangles over them.
+    expect(mesh.positions.length / 3).toBe(7);
+    expect(mesh.indices.length / 3).toBe(5);
+    expect(mesh.cellForTriangle).toHaveLength(5);
+  });
+
+  it("draws a pentagon's 10-corner boundary in full", () => {
+    const boundary = cellToBoundary(TEN_CORNER);
+    expect(boundary).toHaveLength(10);
+
+    const mesh = buildCellMesh([distorted(TEN_CORNER, 4)], {
+      frame: enuFrameAt({
+        lat: boundary[0]?.[0] ?? 0,
+        lng: boundary[0]?.[1] ?? 0,
+      }),
+      category: "walkable",
+      threshold: 1,
+      scale: SCALE,
+      showBelowThreshold: false,
+    });
+
+    expect(mesh.positions.length / 3).toBe(10);
+    expect(mesh.indices.length / 3).toBe(8);
+  });
+
+  it("keeps the triangle index aligned across a MIX of corner counts", () => {
+    // The reason a fixed stride was tempting: `cellForTriangle` and the vertex
+    // offsets both derive from it. With ragged cells the offsets have to be
+    // accumulated, and getting that wrong sends a raycast to the wrong cell —
+    // a confidently wrong details panel, which is worse than no panel.
+    const ordinary = latLngToCell(50.9413, 6.9583, 13);
+    const mesh = buildCellMesh(
+      [distorted(SEVEN_CORNER, 4), distorted(ordinary, 6)],
+      {
+        frame: FRAME,
+        category: "walkable",
+        threshold: 1,
+        scale: SCALE,
+        showBelowThreshold: false,
+      },
+    );
+
+    expect(mesh.positions.length / 3).toBe(7 + 6);
+    expect(mesh.cellForTriangle).toHaveLength(5 + 4);
+    expect(mesh.cellForTriangle.slice(0, 5)).toEqual(
+      Array(5).fill(SEVEN_CORNER),
+    );
+    expect(mesh.cellForTriangle.slice(5)).toEqual(Array(4).fill(ordinary));
+
+    // Every index must address a vertex that exists — the arithmetic a fixed
+    // stride made trivial and an accumulated offset does not.
+    for (const index of mesh.indices) {
+      expect(index).toBeLessThan(mesh.positions.length / 3);
     }
   });
 });
