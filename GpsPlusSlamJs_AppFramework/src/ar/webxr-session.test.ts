@@ -25,7 +25,6 @@ import {
   resetWebXRState,
   endARSession,
   applyAlignmentMatrix,
-  nuePositionToWebXR,
   startImageCapture,
   stopImageCapture,
   getImageCaptureFrameCount,
@@ -598,49 +597,10 @@ describe('applyAlignmentMatrix', () => {
 
   // NOTE: the behavioural applyAlignmentMatrix tests (alignment written to
   // the live arWorldGroup, full-chain WebXR→NUE mapping, replay composition
-  // with nuePositionToWebXR) live in webxr-session.alignment.test.ts — they
+  // with the library's nueToWebXR) live in webxr-session.alignment.test.ts — they
   // seed the module arWorldGroup through the real initAR() path now that the
   // replay-mode injection setters (setArWorldGroup et al.) are deleted
   // (surface-reduction step 2).
-});
-
-describe('nuePositionToWebXR', () => {
-  /**
-   * Why this test matters:
-   * nuePositionToWebXR is the inverse of the WEBXR_TO_NUE transform applied
-   * in applyAlignmentMatrix. Replay mode needs this to set arpose in WebXR
-   * space so (alignment × W2N) × arpose_WebXR = alignment × odom_NUE.
-   */
-  it('converts NUE [north, up, east] to WebXR [east, up, -north]', () => {
-    const nue = [10, 2, 5]; // north=10, up=2, east=5
-    const webxr = nuePositionToWebXR(nue);
-
-    // WebXR: x=east=5, y=up=2, z=south=-north=-10
-    expect(webxr[0]).toBe(5);
-    expect(webxr[1]).toBe(2);
-    expect(webxr[2]).toBe(-10);
-  });
-
-  /**
-   * Why this test matters:
-   * Round-trip: WebXR→NUE (in extractOdomPosition) then NUE→WebXR should
-   * recover the original WebXR position.
-   */
-  it('is the inverse of extractOdomPosition (round-trip)', () => {
-    // Simulate extractOdomPosition: WebXR [3, 7, -11] → NUE [11, 7, 3]
-    const webxrOriginal = [3, 7, -11];
-    const nue = [-(webxrOriginal[2] ?? 0), webxrOriginal[1], webxrOriginal[0]]; // extractOdomPosition logic
-    const webxrRecovered = nuePositionToWebXR(nue);
-
-    expect(webxrRecovered[0]).toBeCloseTo(webxrOriginal[0], 10);
-    expect(webxrRecovered[1]).toBeCloseTo(webxrOriginal[1], 10);
-    expect(webxrRecovered[2]).toBeCloseTo(webxrOriginal[2], 10);
-  });
-
-  // NOTE: the replay-composition test ("composes correctly with
-  // applyAlignmentMatrix for replay") moved to webxr-session.alignment.test.ts
-  // — it needs the module arWorldGroup, which is now only seeded by initAR()
-  // (surface-reduction step 2 deleted the injection setters).
 });
 
 describe('image capture functions', () => {

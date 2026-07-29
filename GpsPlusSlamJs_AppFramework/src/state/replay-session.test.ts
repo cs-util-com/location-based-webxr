@@ -25,12 +25,12 @@ vi.mock('../ar/replay-scene', () => ({
   updateOrbitTarget: vi.fn(),
   getAlignmentLerper: vi.fn(() => ({ setTarget: vi.fn() })),
 }));
-// Stub the heavy webxr-session module: the replay path needs the two pose
-// converters (identity here — NUE≈WebXR for the test), and gps-event-markers
-// (pulled in transitively) needs getScene/getArWorldGroup.
+// Stub the heavy webxr-session module: gps-event-markers (pulled in
+// transitively) needs getScene/getArWorldGroup. The NUE→WebXR pose converters
+// are NOT stubbed — replay-session calls the library's nueToWebXR /
+// nueQuaternionToWebXR directly now, and they are pure swizzles that no test
+// here asserts on, so the real ones run.
 vi.mock('../ar/webxr-session', () => ({
-  nuePositionToWebXR: (p: readonly number[]) => [...p],
-  nueQuaternionToWebXR: (q: readonly number[]) => [...q],
   getScene: vi.fn(),
   getArWorldGroup: vi.fn(),
 }));

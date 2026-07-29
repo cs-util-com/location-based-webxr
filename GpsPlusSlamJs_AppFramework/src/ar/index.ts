@@ -209,6 +209,9 @@ export {
 // --- webxr-nue-basis ---
 export { WEBXR_TO_NUE } from './webxr-nue-basis.js';
 
+// --- nue-webxr-conversions (component form of the same basis change) ---
+export { nueToWebXR, nueQuaternionToWebXR } from './nue-webxr-conversions.js';
+
 // --- xr-camera-texture ---
 export {
   type CameraTextureResult,

@@ -76,11 +76,7 @@ import { acquireCameraTexture } from './xr-camera-texture';
 import { clearFrameUpdates, runFrameUpdates } from './frame-loop';
 import { runSessionDisposers } from './session-disposers';
 import { clearXrFrameUpdates, runXrFrameUpdates } from './xr-frame-loop';
-import {
-  type OdometryTrackingRestartedPayload,
-  nueToWebXR as _nueToWebXR,
-  nueQuaternionToWebXR as _nueQuaternionToWebXR,
-} from 'gps-plus-slam-js';
+import { type OdometryTrackingRestartedPayload } from 'gps-plus-slam-js';
 import type { ARPose } from '../types/ar-types';
 import { getLastDeviceOrientation } from '../sensors/device-orientation-cache';
 import {
@@ -1480,8 +1476,8 @@ export function getCamera(): THREE.PerspectiveCamera | null {
  * but arWorldGroup's local space is now NUE: objects placed as children
  * of arWorldGroup use NUE coordinates directly ([1,0,0]=North, [0,0,1]=East).
  *
- * Replay note: arpose still lives in WebXR space (below basisChangeNode),
- * so nuePositionToWebXR() is still required when setting arpose.position.
+ * Replay note: arpose still lives in WebXR space (below basisChangeNode), so
+ * the library's nueToWebXR() is still required when setting arpose.position.
  *
  * @param matrix - 16-element column-major matrix (gl-matrix mat4 format)
  */
@@ -1501,35 +1497,6 @@ export function applyAlignmentMatrix(matrix: readonly number[]): void {
   arWorldGroup.matrix.fromArray(matrix);
   arWorldGroup.matrixAutoUpdate = false;
   arWorldGroup.updateMatrixWorld(true);
-}
-
-/**
- * Convert a position from internal NUE convention (X=North, Y=Up, Z=East)
- * to WebXR local-floor convention (X=East, Y=Up, Z=South).
- *
- * Delegates to the canonical library implementation (nueToWebXR).
- * Accepts `readonly number[]` for call-site convenience.
- *
- * NUE [n, u, e] → WebXR [e, u, -n]
- */
-export function nuePositionToWebXR(
-  nue: readonly number[]
-): readonly [number, number, number] {
-  return _nueToWebXR(nue as [number, number, number]);
-}
-
-/**
- * Convert a quaternion from internal NUE convention to WebXR local-floor convention.
- *
- * Delegates to the canonical library implementation (nueQuaternionToWebXR).
- * Accepts `readonly number[]` for call-site convenience.
- *
- * NUE [x, y, z, w] → WebXR [z, y, -x, w]
- */
-export function nueQuaternionToWebXR(
-  nue: readonly number[]
-): readonly [number, number, number, number] {
-  return _nueQuaternionToWebXR(nue as [number, number, number, number]);
 }
 
 /**

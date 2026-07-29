@@ -96,10 +96,11 @@ vi.mock('gps-plus-slam-app-framework/visualization/gps-event-markers', () => ({
 }));
 
 vi.mock('gps-plus-slam-app-framework/ar/webxr-session', () => ({
-  nuePositionToWebXR: vi.fn((pos: readonly number[]) => pos),
-  nueQuaternionToWebXR: vi.fn((rot: readonly number[]) => rot),
   // Live-session getters: the REAL ref-point-visualizer module (not mocked
   // here) captures getScene as its default scene source at import time.
+  // The NUE→WebXR converters used to be stubbed here too; replay-mode now
+  // calls the library's nueToWebXR / nueQuaternionToWebXR directly, and those
+  // pure swizzles run for real (no test here asserts on the converted values).
   getScene: vi.fn(() => null),
   getArWorldGroup: vi.fn(() => null),
 }));
