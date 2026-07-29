@@ -515,6 +515,47 @@ test.describe("the 3D view", () => {
     await expect.poll(shot, { timeout: 5000 }).not.toBe(before);
   });
 
+  test("draws the affordance grid too, and a click on it opens the panel", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // Finding M3: the 3D pane showed buildings and nothing else, so the two
+    // views disagreed about what the app was even displaying. The grid being
+    // present is asserted through a PICK rather than through pixels, because a
+    // pick proves the geometry is both drawn and correctly indexed — a coloured
+    // hexagon nobody can identify would pass a pixel test and still be useless.
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+
+    const panel = page.locator("#details");
+    await expect(panel).toBeHidden();
+
+    // Sweep a short arc through the middle of the scene: the fixture's grid
+    // covers the centre, but the exact pixel depends on the camera.
+    for (const [dx, dy] of [
+      [0, 0],
+      [-40, 20],
+      [40, 20],
+      [0, 60],
+      [-80, 60],
+    ]) {
+      await page.mouse.click(
+        box.x + box.width / 2 + dx,
+        box.y + box.height / 2 + dy,
+      );
+      if (await panel.isVisible()) break;
+    }
+
+    await expect(panel).toBeVisible();
+    // The SAME panel a 2D click opens — one selection, one explanation, and the
+    // panel does not know which view produced it.
+    await expect(panel.locator(".panel-summary")).not.toBeEmpty();
+  });
+
   test("reports what it built, including the honesty flags", async ({
     page,
   }) => {

@@ -28,8 +28,12 @@ import {
   type OsmFeature,
 } from "gps-plus-slam-osm";
 
+import type { CellMesh } from "./cell-mesh.js";
+
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
+  /** Called with the H3 id when an affordance cell is clicked in the scene. */
+  readonly onCellClick?: (cell: string) => void;
 }
 
 export interface BuildingStats {
@@ -52,6 +56,12 @@ export class BuildingView {
   private readonly controls: MapControls;
   /** The pending rAF handle, so `dispose()` can cancel it. */
   private frame: number | undefined;
+  /** The affordance grid, kept separate so `clear()` does not drop it. */
+  private cellMesh: THREE.Mesh | undefined;
+  /** Triangle index → cell id for the current grid. */
+  private cellForTriangle: readonly string[] = [];
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly onPointerDown: (event: PointerEvent) => void;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
@@ -112,6 +122,99 @@ export class BuildingView {
     this.controls.addEventListener("change", () => {
       this.requestFrame();
     });
+
+    // Picking on `pointerup` after a still pointer, not on `click`: MapControls
+    // consumes drags, and a click at the end of a 200 px pan would otherwise
+    // select whatever cell happened to be under the pointer when it stopped.
+    let downAt: { x: number; y: number } | undefined;
+    this.container.addEventListener("pointerdown", (event) => {
+      downAt = { x: event.clientX, y: event.clientY };
+    });
+    this.onPointerDown = (event: PointerEvent): void => {
+      const from = downAt;
+      downAt = undefined;
+      if (from === undefined) return;
+      const moved =
+        Math.abs(event.clientX - from.x) + Math.abs(event.clientY - from.y);
+      if (moved > 4) return;
+      const cell = this.pick(event);
+      if (cell !== undefined) options.onCellClick?.(cell);
+    };
+    this.container.addEventListener("pointerup", this.onPointerDown);
+  }
+
+  /**
+   * The cell under a pointer event, or `undefined`.
+   *
+   * Only the grid is raycast — not the buildings — because a building is not a
+   * selectable thing in this app and hitting one should not silently select the
+   * cell behind it.
+   */
+  private pick(event: PointerEvent): string | undefined {
+    if (this.cellMesh === undefined) return undefined;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return undefined;
+    this.raycaster.setFromCamera(
+      new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      ),
+      this.camera,
+    );
+    const hit = this.raycaster.intersectObject(this.cellMesh, false)[0];
+    // `faceIndex` IS the triangle index for an indexed BufferGeometry, which is
+    // what `cellForTriangle` is keyed on — built in the same pass as the
+    // geometry so the two cannot drift.
+    // `faceIndex` is `number | null` in three's types — null when the hit
+    // object has no indexed faces, which this one always does.
+    const face = hit?.faceIndex;
+    return face === undefined || face === null
+      ? undefined
+      : this.cellForTriangle[face];
+  }
+
+  /**
+   * Draws the affordance grid, replacing any previous one.
+   *
+   * Kept out of `this.group` (and therefore out of `clear()`) so rebuilding the
+   * buildings does not silently drop the grid, and vice versa — they arrive from
+   * different parts of the same snapshot and neither should depend on the
+   * other's timing.
+   */
+  renderCells(mesh: CellMesh): void {
+    if (this.cellMesh !== undefined) {
+      this.scene.remove(this.cellMesh);
+      this.cellMesh.geometry.dispose();
+      (this.cellMesh.material as THREE.Material).dispose();
+      this.cellMesh = undefined;
+    }
+    this.cellForTriangle = mesh.cellForTriangle;
+    if (mesh.indices.length === 0) {
+      this.requestFrame();
+      return;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(mesh.positions, 3),
+    );
+    geometry.setAttribute("color", new THREE.BufferAttribute(mesh.colors, 3));
+    geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+    this.cellMesh = new THREE.Mesh(
+      geometry,
+      new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        // Matches the 2D map's fill opacity, so the same cell reads as the same
+        // strength of claim in both views.
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.scene.add(this.cellMesh);
+    this.requestFrame();
   }
 
   /**
@@ -262,6 +365,7 @@ export class BuildingView {
     // disposed context, which crashes rather than leaks.
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.frame = undefined;
+    this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
     window.removeEventListener("resize", this.onWindowResize);
     this.clear();

@@ -32,6 +32,7 @@ import {
   OverpassSource,
   loadRuleTable,
   explainCell,
+  enuFrameAt,
   type OsmFeature,
 } from "gps-plus-slam-osm";
 import {
@@ -47,6 +48,8 @@ import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
 import { LocateControl } from "./locate-control.js";
 import { attachSheetDrag } from "./sheet-drag.js";
+import { buildCellMesh, EMPTY_CELL_MESH } from "./cell-mesh.js";
+import { heatScale } from "./heat-colours.js";
 import { BuildingView, type BuildingStats } from "./building-view.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
@@ -118,7 +121,12 @@ async function main(): Promise<void> {
     // The map reports a selection; it does not know the panel exists.
     onCellClick: (cell) => store.dispatch(actions.cellSelected(cell)),
   });
-  const buildingView = new BuildingView({ container: el("scene") });
+  const buildingView = new BuildingView({
+    container: el("scene"),
+    // The same action a 2D cell click dispatches. The panel does not know, and
+    // must not know, which view the selection came from.
+    onCellClick: (cell) => store.dispatch(actions.cellSelected(cell)),
+  });
   const legendView = new LegendView({ container: el("legend") });
   const detailsPanel = new DetailsPanel({
     container: el("details"),
@@ -217,10 +225,27 @@ async function main(): Promise<void> {
   function drawScene(snapshot: DemoSnapshot | undefined): void {
     if (snapshot === undefined) {
       buildingView.clearScene();
+      buildingView.renderCells(EMPTY_CELL_MESH);
       mesh = undefined;
       return;
     }
+    const view = selectOsmView(store.getState());
     mesh = buildingView.render(pipeline.features().values(), snapshot.position);
+    // The SAME cells, bands and colours the map just drew — built from the same
+    // functions rather than a parallel implementation, so the two views cannot
+    // disagree about what a cell scores (finding M3).
+    buildingView.renderCells(
+      buildCellMesh(snapshot.cells, {
+        frame: enuFrameAt(snapshot.position),
+        category: view.category,
+        threshold: snapshot.threshold,
+        scale: heatScale(
+          snapshot.cells.map((cell) => cell.scores[view.category] ?? 1),
+          snapshot.threshold,
+        ),
+        showBelowThreshold: view.showBelowThreshold,
+      }),
+    );
   }
 
   function writeStatus(): void {
@@ -298,8 +323,12 @@ async function main(): Promise<void> {
       // No refetch and no rescore — the scores are unchanged, only which of
       // them are drawn. Redrawing from the snapshot already in hand is the
       // whole benefit of holding it in the store.
+      const snapshot = selectOsmView(store.getState()).snapshot;
       renderSafely(access, "map", () => {
-        drawMap(selectOsmView(store.getState()).snapshot);
+        drawMap(snapshot);
+      });
+      renderSafely(access, "3D view", () => {
+        drawScene(snapshot);
       });
     },
   );
