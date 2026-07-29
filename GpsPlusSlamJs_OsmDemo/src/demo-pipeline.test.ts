@@ -83,7 +83,29 @@ describe("the snapshot stays serialisable", () => {
    */
   const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 
-  /** A source that answers every tile with one tagged node at Cologne. */
+  /**
+   * A source that answers every tile with one tagged park, as a WAY.
+   *
+   * A single node was the original fixture and it scored too few adjacent cells
+   * to form a connected component, so `snapshot.regions` came back `[]` and the
+   * round-trip below never touched it. That is the one part of `DemoSnapshot`
+   * with real structure to lose — `outline` is three levels of nested array —
+   * and the one carrying `minScore`/`maxScore`, which `region-builder` notes can
+   * be `±Infinity` on a degenerate component. `JSON.stringify(Infinity)` is
+   * `"null"`, silently: the most JSON-hostile value in the snapshot lived behind
+   * the only collection the guard did not require to exist.
+   *
+   * A way is also what the region outlines and the 3D view actually consume, so
+   * it is the more representative fixture regardless.
+   */
+  const PARK: readonly { lat: number; lng: number }[] = [
+    { lat: COLOGNE.lat, lng: COLOGNE.lng },
+    { lat: COLOGNE.lat, lng: COLOGNE.lng + 0.0009 },
+    { lat: COLOGNE.lat + 0.0006, lng: COLOGNE.lng + 0.0009 },
+    { lat: COLOGNE.lat + 0.0006, lng: COLOGNE.lng },
+    { lat: COLOGNE.lat, lng: COLOGNE.lng },
+  ];
+
   const source: OsmDataSource = {
     attribution: "© OpenStreetMap contributors",
     sourceId: "fixture:serialisability",
@@ -92,9 +114,9 @@ describe("the snapshot stays serialisable", () => {
         tile,
         features: [
           {
-            type: "node" as const,
+            type: "way" as const,
             id: 1,
-            position: COLOGNE,
+            geometry: PARK,
             tags: { leisure: "park", surface: "grass" },
           },
         ],
@@ -114,15 +136,27 @@ describe("the snapshot stays serialisable", () => {
     const pipeline = new DemoPipeline({ source, table: TABLE });
     const snapshot = await pipeline.update(COLOGNE, "walkable");
 
-    // Not a smoke test: an empty snapshot would round-trip trivially.
+    // Not a smoke test: an empty snapshot would round-trip trivially. `regions`
+    // is required too — see the fixture comment for why it is the collection
+    // that matters most and was the one this guard did not reach.
     expect(snapshot.cells.length).toBeGreaterThan(0);
     expect(snapshot.loadedTiles.length).toBeGreaterThan(0);
+    expect(snapshot.regions.length).toBeGreaterThan(0);
 
-    // `toEqual` ignores `undefined` properties, which is the right comparison
-    // here — JSON drops them and the store never distinguishes an absent key
-    // from an undefined one. A `Map`, a `Set`, a `Date` or a class instance
-    // would all survive the stringify as `{}` or a string and fail this.
-    expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
+    // `toStrictEqual`, not `toEqual`. Both catch a `Map`, a `Set` or a `Date`
+    // surviving the stringify as `{}` or a string — but `toEqual` also ignores
+    // object TYPE mismatch, so a class instance with plain data fields
+    // round-trips to an equal plain object and slips through. That is not a
+    // hypothetical gap: RTK's `serializableCheck` uses `isPlainObject`, so a
+    // class instance is exactly what the scan this test replaced would have
+    // flagged, and inheriting a hole in precisely that dimension would make
+    // the replacement weaker than what it replaced.
+    //
+    // The price is that `toStrictEqual` stops tolerating `undefined`-valued
+    // keys, which JSON drops. The producer emits none today, so the stricter
+    // comparison is free — and if it ever does, the failure is worth reading
+    // rather than tolerating: an optional field the store cannot persist.
+    expect(JSON.parse(JSON.stringify(snapshot))).toStrictEqual(snapshot);
   });
 
   it("and the round-trip would actually catch a Map, which is the point", () => {
@@ -134,5 +168,23 @@ describe("the snapshot stays serialisable", () => {
     // while still passing, and this line is what would notice.
     const withMap = { cells: new Map([["a", 1]]) };
     expect(JSON.parse(JSON.stringify(withMap))).not.toEqual(withMap);
+  });
+
+  it("and would catch a CLASS INSTANCE, which `toEqual` alone would not", () => {
+    // The dimension the guard above was strengthened for. RTK's
+    // `serializableCheck` uses `isPlainObject`, so a class instance is exactly
+    // what the runtime scan would have flagged — and `toEqual` ignores object
+    // type mismatch by design, so `expect({score: 1}).toEqual(new Cell(1))`
+    // PASSES. Both halves are asserted here: the weaker comparison lets it
+    // through, the stricter one does not, so a future loosening of the guard
+    // back to `toEqual` fails this line rather than going quiet.
+    class Cell {
+      constructor(readonly score: number) {}
+    }
+    const withClass = { cell: new Cell(1) };
+    const roundTripped = JSON.parse(JSON.stringify(withClass)) as unknown;
+
+    expect(roundTripped).toEqual(withClass);
+    expect(roundTripped).not.toStrictEqual(withClass);
   });
 });

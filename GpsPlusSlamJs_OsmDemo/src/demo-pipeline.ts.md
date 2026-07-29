@@ -62,3 +62,22 @@ indirectly through `heat-colours.test.ts` and by the package gate's typecheck
 against the real `gps-plus-slam-osm` API. Its remaining behaviour (fetch failure
 collection, no-refetch) is worth a test with a fake source — see the follow-ups
 doc.
+
+It also holds **the snapshot's serialisability guard**, which lives here rather
+than in `osm-store.test.ts` on purpose: `osm-store.ts` excludes the snapshot
+from RTK's runtime scan on both the action and the state side, and a round-trip
+of a fixture written next to the assertion would only prove the fixture is
+serialisable. This drives the real producer and round-trips what it emits.
+
+- The fixture is a **way**, not a node — a node scored too few adjacent cells to
+  form a connected component, so `snapshot.regions` was `[]` and the guard never
+  reached the only deeply nested part of `DemoSnapshot` (`outline` is three
+  levels of array) nor its `minScore`/`maxScore`, which can be `±Infinity` and
+  which `JSON.stringify` turns into `"null"` without a word. All three
+  collections are now asserted non-empty.
+- The comparison is `toStrictEqual`. `toEqual` ignores object type mismatch, so
+  a class instance with plain data fields round-trips to an equal plain object —
+  precisely what RTK's `isPlainObject` scan would have caught, so the
+  replacement would otherwise have been weaker than what it replaced. A
+  companion test asserts both halves of that difference, so loosening the guard
+  back to `toEqual` fails a line rather than going quiet.
