@@ -167,25 +167,60 @@ test.describe("the affordance map", () => {
     expect(order.firstRegion).toBeGreaterThan(order.lastCell);
   });
 
-  test("a cell tooltip names the OSM elements that produced its score", async ({
+  test("a cell popup names the OSM elements that produced its score, and they are clickable", async ({
     page,
   }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await page.locator("#map path.affordance-cell").first().hover();
+    // Any new tab must land on a fixture, never on openstreetmap.org: this
+    // suite is offline by policy, and that is about not hammering donated
+    // infrastructure before it is about determinism. Routed on the CONTEXT, not
+    // the page, so it also covers the tab the link opens.
+    await page
+      .context()
+      .route("https://www.openstreetmap.org/**", (route) =>
+        route.fulfill({ contentType: "text/html", body: "<html>osm</html>" }),
+      );
 
-    // Provenance is the whole reason the C# reference kept a
-    // contributing-entries map: it turns "that cell looks wrong" into "that
-    // cell is wrong BECAUSE of way/12345" in one click. A tooltip that shows
-    // only a number would make every surprising score a dead end.
+    const cell = page.locator("#map path.affordance-cell").first();
+    await cell.hover();
+
+    // HOVER gives the number. That is all it can give: Leaflet tooltips are
+    // non-interactive by design.
     const tooltip = page.locator(".leaflet-tooltip").first();
     await expect(tooltip).toBeVisible();
     await expect(tooltip).toContainText("walkable =");
-    await expect(
-      tooltip.locator('a[href*="openstreetmap.org/"]').first(),
-    ).toHaveCount(1);
+
+    // CLICK gives the evidence. Provenance is the whole reason the C# reference
+    // kept a contributing-entries map: it turns "that cell looks wrong" into
+    // "that cell is wrong BECAUSE of way/12345" in one click.
+    await cell.click();
+    const popup = page.locator(".leaflet-popup");
+    await expect(popup).toBeVisible();
+
+    // It STAYS open when the pointer leaves — the whole difference from a
+    // tooltip, and what makes the links reachable at all.
+    await page.mouse.move(0, 0);
+    await expect(popup).toBeVisible();
+
+    // THE ASSERTION THAT WAS MISSING, and the reason this shipped broken. The
+    // old test asserted the link was PRESENT (`toHaveCount(1)`) — which a dead
+    // link satisfies exactly as well as a live one. These links lived in a
+    // tooltip, which Leaflet renders with `pointer-events: none`, so the demo's
+    // advertised core debugging affordance had never once been clickable while
+    // the suite stayed green. Presence is not reachability: click it.
+    const link = popup.locator('a[href*="openstreetmap.org/"]').first();
+    await expect(link).toHaveAttribute(
+      "href",
+      /openstreetmap\.org\/(node|way|relation)\/\d+/,
+    );
+    const opened = await Promise.all([
+      page.waitForEvent("popup"),
+      link.click(),
+    ]);
+    expect(opened[0].url()).toMatch(/openstreetmap\.org\//);
   });
 
   test("switching category redraws the grid", async ({ page }) => {

@@ -29,6 +29,7 @@ import {
 } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
 import { escapeHtml } from "./escape-html.js";
+import { rankContributors } from "./contributor-order.js";
 
 /**
  * ODbL requires attribution wherever OSM data is shown — and this view shows
@@ -199,7 +200,11 @@ export class MapView {
         // region outlines and would pass while the grid was empty.
         className: "affordance-cell",
       })
-        .bindTooltip(tooltipFor(cell, category, score))
+        // HOVER = the number, CLICK = the evidence. The tooltip is deliberately
+        // score-only now: it is non-interactive by design in Leaflet, which is
+        // what made the provenance links unusable for the whole of iteration 8.
+        .bindTooltip(`${escapeHtml(category)} = ${round(score)}`)
+        .bindPopup(popupFor(cell, category, score))
         .addTo(this.cellLayer);
     }
 
@@ -233,34 +238,55 @@ export class MapView {
   describeScale = describeScale;
 }
 
+/** How many contributors the popup lists before deferring to the panel. */
+const POPUP_CONTRIBUTORS = 8;
+
 /**
- * The tooltip is the demo's debugging surface.
+ * The popup is the demo's debugging surface — and it is a POPUP for a reason.
  *
  * Provenance is the whole reason the C# reference kept a contributing-entries
  * map, and it is what turns "that cell looks wrong" into "that cell is wrong
- * BECAUSE of way/12345" in one click. Without it a surprising score is just a
- * surprising colour.
+ * BECAUSE of way/12345" in one click. This shipped as a `bindTooltip`, and
+ * Leaflet tooltips are non-interactive by default — `interactive: false`, plus
+ * `pointer-events: none` on `.leaflet-tooltip` — so the links this function
+ * carefully builds and escapes **could never be clicked**. The demo's advertised
+ * core debugging affordance had never once worked, under a green e2e suite that
+ * asserted the links were *present*.
+ *
+ * `bindPopup` is interactive, opens on click and stays open, which is also what
+ * D3 asked for independently.
  */
-function tooltipFor(cell: CellScore, category: string, score: number): string {
+function popupFor(cell: CellScore, category: string, score: number): string {
   const contributors = cell.contributors[category] ?? {};
-  const lines = Object.entries(contributors)
-    .filter(([, factor]) => factor !== 1)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([key, factor]) => {
-      // Both the href and the link text are HTML sinks. `key` is ours
-      // (`featureKey`) rather than sheet-derived, so this is belt and braces —
-      // but an unescaped quote in an attribute is the cheapest hole there is.
-      const safeKey = escapeHtml(key);
-      return `<a href="https://www.openstreetmap.org/${safeKey}" target="_blank" rel="noreferrer">${safeKey}</a> × ${round(factor)}`;
-    });
+  // Ranked by |log(factor)|, so a veto always leads — see `contributor-order.ts`
+  // for why the previous descending sort dropped exactly the row worth reading.
+  const ranked = rankContributors(contributors).filter(
+    (entry) => entry.factor !== 1,
+  );
+
+  const lines = ranked.slice(0, POPUP_CONTRIBUTORS).map((entry) => {
+    // Both the href and the link text are HTML sinks. `key` is ours
+    // (`featureKey`) rather than sheet-derived, so this is belt and braces —
+    // but an unescaped quote in an attribute is the cheapest hole there is.
+    const safeKey = escapeHtml(entry.key);
+    return `<a href="https://www.openstreetmap.org/${safeKey}" target="_blank" rel="noreferrer">${safeKey}</a> × ${round(entry.factor)}`;
+  });
+
+  // NEVER a silent truncation: a shortened provenance list reads as a complete
+  // one, and "these are all the elements that touched this cell" is exactly the
+  // claim someone debugging a surprising score would act on.
+  const hidden = ranked.length - lines.length;
+  const more =
+    hidden > 0
+      ? `<br><em>+${hidden} more contributor${hidden === 1 ? "" : "s"}</em>`
+      : "";
 
   return (
     // `category` comes from the publicly editable rule sheet — see
     // `escape-html.ts` for why the 20-character cap is not a mitigation.
     `<strong>${escapeHtml(category)} = ${round(score)}</strong><br>` +
     (lines.length > 0
-      ? lines.join("<br>")
+      ? lines.join("<br>") + more
       : "<em>no rule contributed — this is the identity</em>")
   );
 }

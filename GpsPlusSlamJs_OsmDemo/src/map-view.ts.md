@@ -14,6 +14,21 @@ raster basemap.
 
 ## Invariants & assumptions
 
+- **Hover shows the score; CLICK shows the evidence.** Cells carry a score-only
+  `bindTooltip` and a `bindPopup` with the provenance list. This was a tooltip
+  alone until 2026-07-29, and Leaflet tooltips are non-interactive by design
+  (`interactive: false`, plus `pointer-events: none` on `.leaflet-tooltip`) — so
+  the `<a href="…openstreetmap.org/way/12345">` links the demo advertises as its
+  core debugging affordance **had never once been clickable**, under an e2e that
+  asserted they were _present_. Presence is not reachability; the test now
+  clicks.
+- **Links target the openstreetmap.org BROWSE page** (`/way/12345`), matching the
+  C# reference and `debugUrlForKey`. Not the iD editor — that would be a change
+  _from_ the reference, not a match to it (DEC-8).
+- **Contributors are ranked by `|log(factor)|`, and truncation is announced.**
+  See `contributor-order.ts.md`: the old descending sort put a `0` veto last and
+  cut it off first. The popup shows 8 and appends `+N more` — never a silent
+  truncation, because a shortened provenance list reads as a complete one.
 - **`clear()` is what a failed refresh calls.** Cells, region outlines and the
   red fetch boxes all describe one specific scored working set; leaving any of
   them up after that set is gone makes the map assert a state nothing produced,
