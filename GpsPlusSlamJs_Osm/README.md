@@ -147,12 +147,13 @@ const walkable = buildRegions(
 
 Four things worth knowing before you rely on the output:
 
-- **The 3D mesh frame is `(+x = east, +y = up, +z = NORTH)`, which is
-  left-handed.** three.js and WebXR local-up spaces put north at **−z**, so a
-  consumer that aligns the buffers to true north without negating z renders the
-  block mirrored north/south. Buildings stay correct relative to each other, so
-  it looks like a plausible city and presents as a compass bug. Negate z, or
-  scale the group by `(1, 1, -1)`.
+- **The 3D mesh frame is `(+x = east, +y = up, −z = NORTH)` — right-handed**,
+  the same convention three.js and WebXR local-up spaces use. Drop the buffers
+  into a north-aligned scene as they are; no transform, no group scale.
+  - It emitted `+z = north` before 2026-07-29, which is left-handed and rendered
+    a north-aligned scene mirrored north/south. If you were compensating for
+    that (negating z, or scaling by `(1, 1, -1)`), **remove the compensation** —
+    this is the breaking change behind the major version bump.
 
 - **Scores are unbounded and NOT comparable across categories.** A cell
   overlapped by five mapped features scores far higher than the identical

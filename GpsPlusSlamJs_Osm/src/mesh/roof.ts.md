@@ -55,9 +55,12 @@ Roof geometry above the eaves, in the plan's own order of quality-per-effort.
     derivation this Apache-2.0 package must not contain.
 - Holes are not carried into an apex roof: a courtyard under a pyramid is not a
   shape OSM describes, and guessing would be inventing geometry.
-- **Orientation is not free here — it has bitten this file twice.** The ENU→3D
-  mapping in `extrude.ts` is `(x, height, y)`, so 3D z is ENU north and the frame
-  flips handedness. Two consequences that every new shape inherits:
+- **Orientation is not free here — it has bitten this file twice.** Emitters
+  work in the ENU frame, and with Y up a counter-clockwise `(east, north)` loop
+  reads as clockwise from +Y. (The ENU→render reflection that publishes north at
+  −z is separate and lives in `MeshBuilder` — see
+  [`mesh-data.ts.md`](./mesh-data.ts.md).) Two consequences every new shape
+  inherits:
   - **Emit eave → ridge, never eave → eave → ridge.** `faceNormal` is derived
     from the emitted winding, so a reversed face reverses its normal too and
     both agree while both are wrong — a roof lit from underneath. The

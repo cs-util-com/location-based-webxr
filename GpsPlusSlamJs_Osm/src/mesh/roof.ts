@@ -158,10 +158,12 @@ function apexRoof(
     if (a === undefined || b === undefined) continue;
     if (a.x === b.x && a.y === b.y) continue;
 
-    // b BEFORE a — the ENU→3D mapping (x, height, y) flips handedness, so the
-    // natural edge order winds this face downward and `faceNormal` would then
-    // agree with it, lighting the pyramid from underneath. Reversing fixes the
-    // normal and the emitted winding together, which is why both use this order.
+    // b BEFORE a — this file works in the ENU frame, where Y-up makes a
+    // counter-clockwise (east, north) ring read as clockwise, so the natural
+    // edge order winds this face downward and `faceNormal` would then agree
+    // with it, lighting the pyramid from underneath. Reversing fixes the normal
+    // and the emitted winding together, which is why both use this order.
+    // (The ENU→render reflection is separate and lives in `MeshBuilder`.)
     const normal = faceNormal(
       { x: b.x, y: options.eaveHeightM, z: b.y },
       { x: a.x, y: options.eaveHeightM, z: a.y },
@@ -302,10 +304,12 @@ function ridgeRoof(
   };
 
   // The two long slopes. Eave → ridge → ridge → eave, NOT eave → eave → ridge:
-  // the ENU→3D mapping (x, height, y) flips handedness, so going round the eave
-  // first winds every face downward and `faceNormal`, derived from that same
-  // winding, then points down too — a roof lit from underneath and backfacing
-  // from above. The same reversal is why `flatCap` emits (a, c, b).
+  // in the ENU frame Y-up makes a counter-clockwise (east, north) loop read as
+  // clockwise, so going round the eave first winds every face downward and
+  // `faceNormal`, derived from that same winding, then points down too — a roof
+  // lit from underneath and backfacing from above. The same reason `flatCap`
+  // emits (a, c, b). Independent of the ENU→render reflection, which
+  // `MeshBuilder` applies centrally to every vertex and triangle.
   quad(eaveA, ridgeA, ridgeB, eaveB);
   quad(eaveC, ridgeB, ridgeA, eaveD);
 

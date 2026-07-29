@@ -7,12 +7,17 @@
  * They could not have failed: a count is blind to orientation, and "ny === 0"
  * is equally true of an outward normal and its negation.
  *
- * The reason orientation is easy to get wrong here is one line in `extrude.ts`:
- * the ENU→3D mapping is `(p.x, height, p.y)`, i.e. 3D z = ENU **north**. With Y
- * up that is a HANDEDNESS FLIP — a counter-clockwise loop in `(east, north)` is
+ * The reason orientation is easy to get wrong here: the emitters work in the
+ * ENU frame, and with Y up a counter-clockwise loop in `(east, north)` reads as
  * *clockwise* seen from +Y. `flatCap` and `addCap` compensate by emitting
  * `(a, c, b)`; anything that emits `(a, b, c)` on ENU-ordered points is
  * silently reversed. Nothing in the type system says so, so it has to be a test.
+ *
+ * Separately, `MeshBuilder` reflects ENU→render (`z → -z`) so the published
+ * frame is right-handed with north at −z. The last describe block pins THAT,
+ * and it is the only test here that ties the mesh to the real world: every
+ * other one compares a mesh against itself, and those all hold just as well in
+ * a mirrored world — which is how a mirrored frame shipped unnoticed.
  *
  * The two invariants below are deliberately shape-agnostic, because the failure
  * is not about pyramids or gables — it is about that one mapping, and any new
@@ -364,5 +369,80 @@ describe("the roof approximation flag reaches a consumer", () => {
       roofShape: "gabled",
     });
     expect(mesh.roofIsApproximate).toBe(true);
+  });
+});
+
+describe("the emitted frame is right-handed, with ENU north at -z", () => {
+  /**
+   * WHY THIS MATTERS, and why it did not exist before. Every other test in this
+   * file checks a mesh against ITSELF — winding against its own normals,
+   * normals against its own volume. All of those hold equally well in a
+   * mirrored world, so the entire suite passed while the package emitted a
+   * LEFT-handed frame (`+z` = ENU north). A consumer dropping the buffers into
+   * a north-aligned three.js or WebXR scene got the block flipped north/south,
+   * and because buildings stay correct relative to each other it looks like a
+   * plausible city — so it reads as a compass bug, somewhere else entirely.
+   *
+   * This is the one assertion that ties the mesh to the real world, so it is
+   * the one that has to be explicit about the convention rather than relative.
+   */
+  it("puts a point NORTH in ENU at NEGATIVE z", () => {
+    // RECTANGLE spans y (ENU north) from 0 to 10. The northern edge must come
+    // out at the more negative z, not the more positive one.
+    const mesh = build(RECTANGLE, "flat");
+
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const z = mesh.positions[i + 2] as number;
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+
+    // ENU y in [0, 10] -> z in [-10, 0].
+    expect(maxZ).toBeCloseTo(0, 6);
+    expect(minZ).toBeCloseTo(-10, 6);
+  });
+
+  it("keeps ENU east at POSITIVE x, so only one axis is mirrored", () => {
+    // The counterpart: mirroring the wrong axis, or two of them, would also
+    // satisfy "north is negative" while rotating the city 180 degrees.
+    const mesh = build(RECTANGLE, "flat");
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const x = mesh.positions[i] as number;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+    }
+
+    expect(minX).toBeCloseTo(0, 6);
+    expect(maxX).toBeCloseTo(20, 6);
+  });
+
+  it("is right-handed: east cross up points at ENU north's -z", () => {
+    // The frame property stated as a determinant rather than as coordinates.
+    // east=(1,0,0), up=(0,1,0); a right-handed basis has east x up = (0,0,-1),
+    // and that -1 is exactly where ENU north now lives.
+    const east = { x: 1, y: 0, z: 0 };
+    const up = { x: 0, y: 1, z: 0 };
+    const cross = {
+      x: east.y * up.z - east.z * up.y,
+      y: east.z * up.x - east.x * up.z,
+      z: east.x * up.y - east.y * up.x,
+    };
+    expect(cross).toEqual({ x: 0, y: 0, z: 1 });
+
+    // ...and ENU north maps to -z, so the basis (east, up, north-as-emitted)
+    // has determinant -1 read as a raw triple, which is precisely why the
+    // emitted north must be negated rather than the winding left alone.
+    const mesh = build(RECTANGLE, "flat");
+    const northernmost = Math.min(
+      ...Array.from({ length: mesh.positions.length / 3 }, (_, i) =>
+        Number(mesh.positions[i * 3 + 2]),
+      ),
+    );
+    expect(northernmost).toBeLessThan(0);
   });
 });

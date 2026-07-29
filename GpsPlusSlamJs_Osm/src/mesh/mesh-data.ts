@@ -13,23 +13,21 @@
 /** A renderable mesh, in the local ENU frame, metres. */
 export interface MeshData {
   /**
-   * xyz per vertex, metres. **+x is ENU east, +y is UP, +z is ENU NORTH.**
+   * xyz per vertex, metres. **+x is ENU east, +y is UP, −z is ENU NORTH.**
    *
-   * Note the last one, because it is the half that is easy to miss: mapping ENU
-   * north onto **+z** makes this frame LEFT-handed. three.js and WebXR local-up
-   * spaces put north at **−z**, so dropping these buffers into a scene that has
-   * been aligned to true north renders the block MIRRORED north/south. It still
-   * looks like a plausible city — buildings sit correctly relative to each
-   * other — so it reads as a compass or heading bug rather than a frame one.
+   * A **right-handed** frame, matching three.js and WebXR local-up spaces
+   * exactly: drop the buffers into a scene aligned to true north and they are
+   * already correct. No transform, no group scale, nothing to remember.
    *
-   * A consumer aligning to true north must negate z (or scale the group by
-   * `(1, 1, -1)`). `extrude.ts` compensates for the handedness flip by reversing
-   * every winding, which fixes back-face culling only — not the frame.
-   *
-   * NOT captured by the demo: `building-view.ts` parks a free camera with no
-   * north reference, so a mirrored scene is indistinguishable from a correct
-   * one there. See `mesh-data.ts.md` for the open question about emitting `-z`
-   * instead.
+   * It emitted ENU north at **+z** until 2026-07-29, which is left-handed and
+   * rendered a north-aligned scene MIRRORED north/south. That bug was
+   * particularly nasty and worth remembering: buildings stay correct relative
+   * to each other, so the result looks like a plausible city and reads as a
+   * compass or heading bug somewhere else entirely. Every test in the suite
+   * passed throughout, because they all compared a mesh against ITSELF —
+   * winding against its own normals, normals against its own volume — and all
+   * of those hold equally well in a mirrored world.
+   * `mesh-orientation.test.ts` now pins the frame against the real world.
    */
   readonly positions: Float32Array;
   readonly normals: Float32Array;
@@ -52,6 +50,29 @@ export interface MeshData {
  * No vertex sharing: each wall quad gets its own four vertices so the normals
  * are flat rather than smeared across a corner. Buildings are all hard edges,
  * so shared vertices would mean either wrong shading or a split pass to undo it.
+ *
+ * **THE ENU→RENDER REFLECTION LIVES HERE, AND ONLY HERE.** Callers hand in ENU
+ * coordinates — `(east, up, north)` — and the builder emits the right-handed
+ * render frame `(east, up, −north)`. That is a reflection, `diag(1, 1, -1)`,
+ * and it is applied in one place on purpose:
+ *
+ * - A reflection does not commute with the cross product the way a rotation
+ *   does. For `det(M) = -1`, `cross(Mu, Mv) = -M(u × v)`. So mirroring the
+ *   positions and normals ALONE would leave every triangle wound against its
+ *   own normal — lit correctly and culled backwards, the hardest class of
+ *   geometry bug to see, because the screenshot a developer reaches for as
+ *   proof is exactly the artefact that hides it.
+ * - `triangle()` therefore reverses, cancelling that sign. The pair is what
+ *   makes the transform correct, and neither half is meaningful alone.
+ *
+ * Doing it centrally rather than at each of the eleven emission sites is
+ * deliberate and was measured against the alternative: the emitters do NOT
+ * express their orientation uniformly. Some compensate by index order
+ * (`extrude.ts` walls), others by choosing the corner order of `p, q, r, s`
+ * (`roof.ts` slopes, which then emit natural `(i0, i1, i2)`). "Delete the
+ * reversals" is therefore not a mechanical edit, while one reflection at the
+ * boundary is provably complete — no emitter can be missed because no emitter
+ * is involved.
  */
 export class MeshBuilder {
   private readonly px: number[] = [];
@@ -67,13 +88,19 @@ export class MeshBuilder {
     nzv: number,
   ): number {
     const index = this.px.length / 3;
-    this.px.push(x, y, z);
-    this.nx.push(nxv, nyv, nzv);
+    // ENU north arrives as +z and is stored as -z: emitters work in the ENU
+    // frame, the buffers are in the RIGHT-HANDED render frame. See the class
+    // docstring for why the reflection also forces the winding reversal below.
+    this.px.push(x, y, -z);
+    this.nx.push(nxv, nyv, -nzv);
     return index;
   }
 
   triangle(a: number, b: number, c: number): void {
-    this.idx.push(a, b, c);
+    // Reversed because `vertex` reflects. For a reflection M with det(M) = -1,
+    // cross(Mu, Mv) = -M(u x v) — so mirroring alone would leave every triangle
+    // wound against its own normal, lit correctly and culled backwards.
+    this.idx.push(a, c, b);
   }
 
   /** Appends another mesh, re-basing its indices. */

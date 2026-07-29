@@ -20,23 +20,32 @@ What a mesh IS — the buffer type and the builder that accumulates one.
 - **Typed arrays, so results TRANSFER across a worker boundary** rather than
   being copied — §4.2 asks for this explicitly, and it matters at building
   counts.
-- **The frame is `(+x = east, +y = up, +z = NORTH)`, which is LEFT-handed.**
-  "Y is up, matching the AR scene graph" is only half of it, and the missing
-  half mirrors the city.
-  - three.js and WebXR local-up spaces put north at **−z**. A consumer that
-    aligns this mesh to true north the ordinary way therefore gets the block
-    flipped north/south — and because buildings stay correct _relative to each
-    other_, it looks like a plausible city and reads as a compass/heading bug.
-  - `extrude.ts` reverses every winding to compensate for the handedness flip.
-    That fixes back-face culling, not the frame.
-  - The demo cannot catch it: `building-view.ts` parks a free camera with no
-    north reference, so mirrored and correct are indistinguishable there.
-  - **Open question (raised in the PR 223 review, not yet decided):** emit
-    `-p.y` for z in `extrude.ts` instead, which would make the frame
-    right-handed and let the winding reversals go away — a behaviour change for
-    any existing consumer, hence documented rather than done unilaterally. Until
-    then the convention is stated on the exported `positions` field, which is
-    where a consumer actually reads it.
+- **The published frame is `(+x = east, +y = up, −z = NORTH)` — right-handed**,
+  matching three.js and WebXR local-up spaces exactly. Buffers drop straight
+  into a north-aligned scene with no transform.
+  - **It was `+z = north` until 2026-07-29**, which is left-handed and rendered
+    a north-aligned scene mirrored north/south. Buildings stay correct relative
+    to each other, so it looked like a plausible city and read as a compass or
+    heading bug somewhere else entirely. Changed on an owner decision from the
+    PR 223 review; **semver MAJOR** for any consumer that was compensating.
+  - **The reflection lives in `MeshBuilder` and only there.** Emitters keep
+    working in ENU; `vertex()` negates z and nz, and `triangle()` reverses.
+    Both halves are required and neither is meaningful alone: for a reflection
+    `M` with `det(M) = -1`, `cross(Mu, Mv) = -M(u × v)`, so mirroring positions
+    and normals alone would leave every triangle wound against its own normal —
+    lit correctly and culled backwards.
+  - **Central rather than per-emitter, deliberately.** The eleven emission sites
+    do not express orientation uniformly: some compensate by index order
+    (`extrude.ts` walls), others by choosing the corner order of `p, q, r, s`
+    (`roof.ts` slopes, which then emit natural `(i0, i1, i2)`). "Delete the
+    reversals" is therefore not a mechanical edit, whereas one reflection at the
+    boundary cannot miss an emitter because it touches none of them.
+  - **Why it shipped unnoticed:** every orientation test compared a mesh against
+    ITSELF — winding against its own normals, normals against its own volume —
+    and all of those hold equally well in a mirrored world. The demo could not
+    catch it either: `building-view.ts` parks a free camera with no north
+    reference. `mesh-orientation.test.ts` now has a block that pins the frame
+    against the real world, which is the only test here that does.
 - **No vertex sharing.** Each wall quad gets its own four vertices so normals are
   flat. Buildings are all hard edges; shared vertices would mean either smeared
   shading or a second pass to undo it.
