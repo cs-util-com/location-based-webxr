@@ -74,6 +74,16 @@ import type { CellScore } from "./affordance-scorer.js";
  * not geometric, so a chunk's res-13 children can sit slightly outside the
  * chunk's own boundary; the margin absorbs that rather than dropping coverage
  * at the seam. Over-selecting costs a bbox test, under-selecting loses cells.
+ *
+ * **This number is a conservative guess, not a computed bound.** Nobody has
+ * derived the actual maximum offset between a res-11 parent's boundary and its
+ * res-13 children, and ~55 m of slack around a ~4 m cell is very likely an
+ * order of magnitude more than needed. It is left alone deliberately: since
+ * `scoreChunks` pads the union once per batch rather than once per chunk, the
+ * cost is amortised, and the failure mode of shrinking it — silently dropped
+ * coverage at chunk seams — is one no current test would catch. Deriving the
+ * real bound and pinning it in a test is the prerequisite for touching it.
+ * See `GpsPlusSlamJs_Docs/docs/2026-07-29-0127-osm-perf-round-followups.md`.
  */
 const CHUNK_MARGIN_DEG = 0.0005;
 

@@ -76,7 +76,17 @@ export type GeometryErrorReason =
   | "degenerate-geometry"
   | "unclosable-ring"
   | "no-outer-ring"
-  | "unsupported-relation-type";
+  | "unsupported-relation-type"
+  /**
+   * The feature's extent would need more cells than any caller can want.
+   *
+   * Not a malformed element — a perfectly valid one that is simply enormous.
+   * OSM contains features of continental extent (the `beach` fixture is a
+   * single element holding the whole North Sea), and covering one at res 13 is
+   * ~10^10 cells. Raised by `buildFeatureIndex` when nothing bounds the work;
+   * `restrictTo` is the fix, and the message says so.
+   */
+  | "coverage-too-large";
 
 export interface GeometryError {
   readonly reason: GeometryErrorReason;

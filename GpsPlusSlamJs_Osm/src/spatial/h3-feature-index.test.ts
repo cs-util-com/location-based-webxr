@@ -223,3 +223,66 @@ describe("edge cases", () => {
     );
   });
 });
+
+describe("a feature too large to cover does not hang the index", () => {
+  /**
+   * Why this test matters: without `restrictTo`, `buildFeatureIndex` covers
+   * each feature over its OWN extent, and OSM contains features of continental
+   * extent — the `beach` fixture is a single element holding the entire North
+   * Sea, whose res-13 coverage is on the order of 10^10 cells. Measured
+   * 2026-07-29, the unrestricted call over the building-block fixture did not
+   * finish in TEN MINUTES, against 113 ms for the same call with `restrictTo`.
+   *
+   * A hang is the worst failure mode available: it is indistinguishable from a
+   * wedged app, so it gets debugged as one. This turns it into an ordinary
+   * skipped feature, recorded in `failed` like every other geometry problem, so
+   * the caller can see exactly which element was too big and why.
+   */
+  const continental: OsmFeature = {
+    type: "way",
+    id: 9_000_001,
+    // ~10 degrees square: far beyond any working set, and about the size of the
+    // real North Sea element that made this necessary.
+    geometry: [
+      { lat: 50, lng: 0 },
+      { lat: 50, lng: 10 },
+      { lat: 60, lng: 10 },
+      { lat: 60, lng: 0 },
+      { lat: 50, lng: 0 },
+    ],
+    tags: { natural: "water" },
+  };
+
+  it("skips it and says so, rather than covering 10^10 cells", () => {
+    const index = buildFeatureIndex([continental]);
+
+    expect(index.features.size).toBe(0);
+    expect(index.byCell.size).toBe(0);
+    expect(index.failed).toHaveLength(1);
+    expect(index.failed[0]?.reason).toBe("coverage-too-large");
+    expect(index.failed[0]?.featureKey).toBe("way/9000001");
+    // The message has to name the way out, or the caller only learns that
+    // something was too big.
+    expect(index.failed[0]?.message).toMatch(/restrictTo/);
+  });
+
+  it("still indexes it when a restriction bounds the work", () => {
+    // The same feature is perfectly indexable once clipped — the budget is
+    // about the area actually being covered, not about the feature being
+    // blacklisted.
+    const cell = latLngToCell(55, 5, AFFORDANCE_RES);
+    const index = buildFeatureIndex([continental], { restrictTo: [cell] });
+
+    expect(index.failed).toEqual([]);
+    expect(index.features.size).toBe(1);
+    expect(index.byCell.has(cell)).toBe(true);
+  });
+
+  it("leaves ordinary features alone", () => {
+    // The guard must not fire on anything real. A city block is ~10^-4 of the
+    // budget, so there is no plausible legitimate feature near it.
+    const index = buildFeatureIndex([node(1), way(2)]);
+    expect(index.failed).toEqual([]);
+    expect(index.features.size).toBe(2);
+  });
+});

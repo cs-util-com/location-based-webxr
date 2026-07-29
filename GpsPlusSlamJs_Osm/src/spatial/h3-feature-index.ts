@@ -10,6 +10,7 @@
  * @see h3-feature-index.ts.md
  */
 
+import { getHexagonAreaAvg, UNITS } from "h3-js";
 import type {
   OsmFeature,
   OsmFeatureKey,
@@ -20,7 +21,7 @@ import { toGeometry, isArealRelation } from "../model/osm-geometry.js";
 import type { GeometryError, OsmGeometry } from "../model/osm-geometry.js";
 import { coverCells, cellCentre } from "./cell-coverage.js";
 import type { Bbox } from "./clip.js";
-import { boundsOf, padBbox, clipToBbox } from "./clip.js";
+import { boundsOf, padBbox, clipToBbox, positionsOf } from "./clip.js";
 import { AFFORDANCE_RES } from "./resolutions.js";
 
 /**
@@ -30,6 +31,11 @@ import { AFFORDANCE_RES } from "./resolutions.js";
  * res-11 chunk (28.7 m edge), so the clip can never cut inside a cell that the
  * restriction actually asks about. Over-keeping costs a few cells that are then
  * filtered; under-keeping would lose real coverage at the working set's edge.
+ *
+ * **A conservative guess, not a computed bound** — same caveat as
+ * `CHUNK_MARGIN_DEG` in `affordance-index.ts`, which this deliberately mirrors.
+ * Shrinking either needs the real parent/child offset derived and pinned first,
+ * because the failure mode is silently dropped coverage at a seam.
  */
 const CLIP_MARGIN_DEG = 0.0005;
 
@@ -97,28 +103,20 @@ export function buildFeatureIndex(
   const redundant = redundantOuterMembers(all);
 
   for (const feature of all) {
-    if (redundant.has(featureKey(feature))) continue;
+    const key = featureKey(feature);
+    if (redundant.has(key)) continue;
 
-    const result = toGeometry(feature);
-    if (!result.ok) {
-      failed.push(result.error);
+    const prepared = coverableGeometry(feature, interest, resolution, key);
+    if (prepared.kind === "failed") {
+      failed.push(prepared.error);
       continue;
     }
+    if (prepared.kind === "outside") continue;
 
-    // CLIP FIRST. Covering costs time proportional to the FEATURE's extent, and
-    // OSM contains features of continental extent — the `beach` fixture is a
-    // single element holding the entire North Sea, whose res-13 coverage is on
-    // the order of 10^10 cells. Filtering that down afterwards is not slow, it
-    // is non-terminating in any practical sense. Clipping makes the cost
-    // proportional to the working set instead, which is the whole point.
-    const geometry = clipIfRestricted(result.geometry, interest);
-    if (geometry === undefined) continue;
-
-    const key = featureKey(feature);
     const cells = addCoverage(
       byCell,
       key,
-      coverCells(geometry, resolution),
+      coverCells(prepared.geometry, resolution),
       restrict,
     );
 
@@ -132,6 +130,108 @@ export function buildFeatureIndex(
 
   return { byCell, byFeature, features: kept, failed, resolution };
 }
+
+/**
+ * Cells one feature may cover before it is refused.
+ *
+ * Sized to be unreachable by anything real and still far below where h3 breaks.
+ * A whole res-7 fetch tile is ~117k affordance cells, so this is ~8 tiles'
+ * worth for ONE feature — about 44 km² at res 13. The largest sane thing in
+ * OSM (a national forest, a big lake) sits well under it; the North Sea sits
+ * five orders of magnitude over.
+ */
+const MAX_CELLS_PER_FEATURE = 1_000_000;
+
+/** What `coverableGeometry` decided about one feature. */
+type Coverable =
+  | { readonly kind: "ok"; readonly geometry: OsmGeometry }
+  | { readonly kind: "failed"; readonly error: GeometryError }
+  /** Clipped away entirely — not a failure, just not in the area of interest. */
+  | { readonly kind: "outside" };
+
+/**
+ * Turns a feature into geometry that is safe to cover, or says why it is not.
+ *
+ * Three steps, in this order, and the order is the point:
+ *
+ * 1. Build the geometry. A relation that cannot be closed is a `failed` entry.
+ * 2. **CLIP FIRST.** Covering costs time proportional to the FEATURE's extent,
+ *    and OSM contains features of continental extent — the `beach` fixture is
+ *    one element holding the entire North Sea, whose res-13 coverage is on the
+ *    order of 10^10 cells. Filtering that down afterwards is not slow, it is
+ *    non-terminating in any practical sense.
+ * 3. Budget-check what survived. Step 2 only bounds the work when there IS a
+ *    restriction, and unbounded covering fails two different ways on real data:
+ *    merely huge grinds (measured 2026-07-29: an unrestricted index over the
+ *    building-block fixture did not finish in TEN MINUTES, against 113 ms with
+ *    `restrictTo`), and genuinely continental THROWS — h3 raises `Array length
+ *    out of bounds` from inside `polygonToCellsExperimental`, 57 billion cells
+ *    for a 10-degree square, which escaped `buildFeatureIndex` and broke its
+ *    "recorded in `failed`, not thrown" contract.
+ *
+ * Also keeps `buildFeatureIndex` under the complexity ratchet.
+ */
+function coverableGeometry(
+  feature: OsmFeature,
+  interest: Bbox | undefined,
+  resolution: number,
+  key: OsmFeatureKey,
+): Coverable {
+  const result = toGeometry(feature);
+  if (!result.ok) return { kind: "failed", error: result.error };
+
+  const geometry = clipIfRestricted(result.geometry, interest);
+  if (geometry === undefined) return { kind: "outside" };
+
+  const estimate = estimateCellCount(geometry, resolution);
+  if (estimate <= MAX_CELLS_PER_FEATURE) return { kind: "ok", geometry };
+  return {
+    kind: "failed",
+    error: oversizeError(key, resolution, estimate),
+  };
+}
+
+/** The `failed` entry for a feature whose coverage would be absurd. */
+function oversizeError(
+  key: OsmFeatureKey,
+  resolution: number,
+  estimate: number,
+): GeometryError {
+  return {
+    reason: "coverage-too-large",
+    featureKey: key,
+    message:
+      `Covering ${key} at res ${resolution} needs about ` +
+      `${Math.round(estimate).toLocaleString("en-US")} cells, over the ` +
+      `${MAX_CELLS_PER_FEATURE.toLocaleString("en-US")} limit. Pass ` +
+      `restrictTo to bound the area being indexed.`,
+  };
+}
+
+/**
+ * Roughly how many cells `geometry` would cover at `resolution`.
+ *
+ * Bounding box over average hexagon area — deliberately crude, because it only
+ * has to separate "normal" from "absurd", and those differ by five orders of
+ * magnitude. It OVER-estimates for a sparse shape (a long diagonal road has a
+ * large bbox and little coverage), which is the safe direction for a guard that
+ * refuses work: a false refusal is a recorded, actionable `failed` entry, while
+ * a false acceptance is the ten-minute hang this exists to prevent.
+ */
+function estimateCellCount(geometry: OsmGeometry, resolution: number): number {
+  const bbox = boundsOf(positionsOf(geometry));
+  if (bbox === undefined) return 0;
+
+  const midLat = ((bbox.north + bbox.south) / 2) * (Math.PI / 180);
+  const heightM = (bbox.north - bbox.south) * METRES_PER_DEGREE;
+  const widthM = (bbox.east - bbox.west) * METRES_PER_DEGREE * Math.cos(midLat);
+  const areaM2 = Math.abs(heightM) * Math.abs(widthM);
+
+  return areaM2 / getHexagonAreaAvg(resolution, UNITS.m2);
+}
+
+/** Metres per degree of latitude. Close enough for an order-of-magnitude test. */
+const METRES_PER_DEGREE = 111_320;
 
 /** Geometry clipped to the area of interest, or unchanged when unrestricted. */
 function clipIfRestricted(
