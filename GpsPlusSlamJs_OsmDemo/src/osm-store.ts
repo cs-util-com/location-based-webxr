@@ -109,10 +109,16 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
          * exactly when someone is trying to judge whether the app feels fast.
          *
          * Nothing is given up. The guarantee moves from a runtime scan to a
-         * test: `osm-store.test.ts` asserts a real `DemoSnapshot` survives a
-         * JSON round-trip, and the framework slice has the same property over
-         * arbitrary action sequences. A `Map` sneaking into the snapshot fails
-         * there instead of in a console warning nobody reads.
+         * test: `demo-pipeline.test.ts` drives the real producer and asserts
+         * the snapshot it emits survives a JSON round-trip, and the framework
+         * slice has the same property over arbitrary action sequences. A `Map`
+         * sneaking into the snapshot fails a gate there instead of printing a
+         * `console.error` nobody reads.
+         *
+         * The pointer matters: the round-trip assertion lived in
+         * `osm-store.test.ts` for one commit before moving, and the test left
+         * behind there deliberately no longer guards the snapshot — it covers
+         * the REST of the state, which is still scanned.
          */
         serializableCheck: {
           ignoredPaths: ["osmView.snapshot"],
