@@ -14,6 +14,12 @@ export {
   debugUrlForKey,
 } from "./affordance-scorer.js";
 export type {
+  CellExplanation,
+  FeatureExplanation,
+  TagContribution,
+} from "./explain-cell.js";
+export { explainCell } from "./explain-cell.js";
+export type {
   AffordanceIndexOptions,
   ChangeListener,
   ScoredChunk,
