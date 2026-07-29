@@ -26,6 +26,7 @@ import {
   type LatLng,
   type MeshData,
   type OsmFeature,
+  type TreePlacement,
 } from "gps-plus-slam-osm";
 
 import type { CellMesh } from "./cell-mesh.js";
@@ -62,6 +63,28 @@ export interface BuildingStats {
   /** Roofs generated from the bounding rectangle rather than exactly. */
   readonly approximateRoofs: number;
   readonly trees: number;
+}
+
+/**
+ * Where a tree's cone stands in the scene, from its ENU placement.
+ *
+ * Extracted from the draw loop because it is the one part of it that can be
+ * proved without a GPU, and the part that fails silently: see
+ * `building-view.test.ts`.
+ */
+export function treeConePosition(
+  tree: TreePlacement,
+): [x: number, y: number, z: number] {
+  return [
+    tree.position.x,
+    // `ConeGeometry` is centred on its origin, so the base sits on the terrain
+    // sample only if the centre is half a height above it.
+    tree.groundHeightM + tree.heightM / 2,
+    // ENU y is north; the scene's -z is north (`mesh-data.ts`), the same
+    // reflection `cell-mesh.ts` and `MeshBuilder` apply. Without it a tree 50 m
+    // north renders 50 m SOUTH — 100 m from the building it stands next to.
+    -tree.position.y,
+  ];
 }
 
 export class BuildingView {
@@ -363,11 +386,7 @@ export class BuildingView {
         new THREE.ConeGeometry(tree.crownDiameterM / 2, tree.heightM, 6),
         new THREE.MeshStandardMaterial({ color: 0x3f7d4a }),
       );
-      trunk.position.set(
-        tree.position.x,
-        tree.groundHeightM + tree.heightM / 2,
-        tree.position.y,
-      );
+      trunk.position.set(...treeConePosition(tree));
       trunk.rotation.y = tree.rotationY;
       this.group.add(trunk);
     }

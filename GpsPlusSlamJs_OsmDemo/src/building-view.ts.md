@@ -15,6 +15,9 @@ map scored.
   under it (300 m, i.e. a 600 m plane — DEC-15).
 - `interface BuildingStats` — `volumes`, `parts`, `triangles`,
   `guessedHeights`, `approximateRoofs`, `trees`
+- `treeConePosition(placement): [x, y, z]` — the scene position of one tree's
+  cone, from its ENU placement. Exported because it is the only arithmetic in
+  the draw loop and therefore the only part of it provable without a GPU.
 
 ## Invariants & assumptions
 
@@ -55,6 +58,13 @@ map scored.
   the class of bug this view is here to find.
 - **The ENU frame is anchored at the user, not the tile**, so mesh coordinates
   stay small and float32 vertex buffers stay precise where it matters.
+- **Trees arrive in ENU and must be reflected here.** `mergeMeshes` output is
+  already in the render frame (`-z` north), but `TreePlacement.position` is a
+  placement rather than a buffer and stays ENU (`+y` north). `treeConePosition`
+  applies the `z -> -z` reflection, the same one `cell-mesh.ts` applies by hand.
+  Skipping it — which this file did until 2026-07-29 — put every tree on the
+  wrong side of the origin, 100 m from the building it belongs next to, while
+  the forest stayed self-consistent and so read as a data problem.
 - **One merged batch is right HERE and wrong in general.** The package's guidance
   is to batch per res-8/res-9 cell, because a batch spanning a 2.81 km fetch tile
   defeats frustum culling. This view shows one working set and is always wholly
@@ -88,6 +98,9 @@ const stats = view.render(pipeline.features().values(), position);
 
 ## Tests
 
-None directly (WebGL needs a browser); the geometry it renders is tested in
-`gps-plus-slam-osm`'s `mesh/buildings.test.ts`, including the differential
-triangulation harness against `earcut`.
+`building-view.test.ts` covers `treeConePosition` only — the frame reflection
+and the cone's half-height offset. The class itself needs a `WebGLRenderer` and
+so cannot be constructed under vitest; the e2e suite exercises it instead. The
+geometry it renders is tested in `gps-plus-slam-osm`'s `mesh/buildings.test.ts`
+(including the differential triangulation harness against `earcut`) and
+`mesh/mesh-orientation.test.ts` (the frame).
