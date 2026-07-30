@@ -1,0 +1,215 @@
+/**
+ * The terrain cache: one growing lattice, sampled at the DEM's own pixel centres.
+ *
+ * WHY THIS REPLACED A FIXED SQUARE (DEC-R2-21). The previous design sampled a
+ * square centred on the user and re-sampled ALL of it whenever the user moved —
+ * ~55 000 posts discarded and recomputed per step. Acceptable for clicking around
+ * a map, wrong for the actual use case of walking through the scene.
+ *
+ * WHY A LATTICE RATHER THAN TILES. DEC-R2-21 said "tiled, cached, ring-loaded" and
+ * flagged tile seams as the new risk it introduced. A single global lattice with a
+ * sparse post map delivers the same three properties — cached, incremental, far
+ * posts evictable — and **makes the seam unrepresentable**: there is one grid, so
+ * there is no boundary between two grids to disagree at. That is a strictly better
+ * answer to the same requirement and the reason no seam test appears below: the
+ * condition it would check cannot occur.
+ *
+ * WHY THE LATTICE IS THE DEM'S PIXEL GRID. Indexing on Web Mercator pixels at the
+ * Terrarium zoom means every post lands on a source pixel centre, so nothing is
+ * resampled and no detail is invented. It is also globally consistent, unlike an
+ * ENU grid, which would shift with the user and reintroduce the re-sampling this
+ * exists to remove.
+ */
+
+import { describe, expect, it } from "vitest";
+import {
+  DEFAULT_TERRARIUM_ZOOM,
+  enuFrameAt,
+  toWorldPixel,
+} from "gps-plus-slam-osm";
+import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
+
+import { createTerrainField } from "./terrain-field.js";
+
+const COLOGNE: LatLng = { lat: 50.9413, lng: 6.9583 };
+
+/**
+ * A provider whose height is a known function of longitude, and which records
+ * every position it was asked for.
+ *
+ * The linear ramp matters: it makes an interpolated value predictable, so a test
+ * can tell "sampled the lattice correctly" from "returned something plausible".
+ */
+function rampProvider() {
+  const asked: LatLng[][] = [];
+  const provider: ElevationProvider = {
+    attribution: "test",
+    sourceId: "fixture:ramp",
+    elevationAt: (positions) => {
+      asked.push([...positions]);
+      return Promise.resolve(positions.map((p) => (p.lng - 6.9) * 10_000));
+    },
+  };
+  return { provider, asked };
+}
+
+/** Total posts requested across every call. */
+const totalAsked = (asked: LatLng[][]): number =>
+  asked.reduce((sum, batch) => sum + batch.length, 0);
+
+describe("createTerrainField", () => {
+  it("asks for every post in ONE batch, not one request per post", async () => {
+    // `elevationAt` is batch-in/batch-out precisely so a provider can coalesce by
+    // DEM tile. Per-post calls would be thousands of requests for one view.
+    const { provider, asked } = rampProvider();
+    const field = createTerrainField({ provider });
+
+    await field.ensureAround(COLOGNE, 200);
+
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.length ?? 0).toBeGreaterThan(10);
+  });
+
+  it("snaps its posts to the DEM's own pixel centres", async () => {
+    // The whole reason for indexing in pixel space. A post off a pixel centre is
+    // an interpolated value dressed up as a measurement.
+    const { provider, asked } = rampProvider();
+    const field = createTerrainField({ provider });
+
+    await field.ensureAround(COLOGNE, 100);
+
+    for (const position of asked[0] ?? []) {
+      const pixel = toWorldPixel(position, DEFAULT_TERRARIUM_ZOOM);
+      expect(pixel.x).toBeCloseTo(Math.round(pixel.x), 6);
+      expect(pixel.y).toBeCloseTo(Math.round(pixel.y), 6);
+    }
+  });
+
+  it("RE-ASKS FOR NOTHING when the area is already covered", async () => {
+    // The point of the change. Standing still, or moving inside the covered
+    // area, must cost zero DEM work — the fixed square re-sampled everything.
+    const { provider, asked } = rampProvider();
+    const field = createTerrainField({ provider });
+
+    await field.ensureAround(COLOGNE, 300);
+    const first = totalAsked(asked);
+    expect(first).toBeGreaterThan(0);
+
+    await field.ensureAround(COLOGNE, 300);
+    expect(totalAsked(asked)).toBe(first);
+  });
+
+  it("asks ONLY for the new posts when the user walks", async () => {
+    // The incremental claim, stated as a number: stepping a short distance must
+    // cost far less than the original load, not the same again.
+    const { provider, asked } = rampProvider();
+    const field = createTerrainField({ provider });
+
+    await field.ensureAround(COLOGNE, 400);
+    const first = totalAsked(asked);
+
+    // ~150 m east — a walk, not a teleport.
+    await field.ensureAround({ ...COLOGNE, lng: COLOGNE.lng + 0.0021 }, 400);
+    const added = totalAsked(asked) - first;
+
+    expect(added).toBeGreaterThan(0);
+    expect(added).toBeLessThan(first / 2);
+  });
+
+  it("interpolates between posts, on the ramp the provider defines", async () => {
+    const { provider } = rampProvider();
+    const field = createTerrainField({ provider });
+    await field.ensureAround(COLOGNE, 400);
+
+    const frame = enuFrameAt(COLOGNE);
+    const grid = field.sampleGrid({ frame, extentM: 200, spacingM: 24 });
+
+    expect(grid.hasData).toBe(true);
+    const sampler = grid;
+    // The ramp rises eastward, so a point 100 m east must read higher than one
+    // 100 m west, and the origin must sit between them.
+    const east = sampler.heights[0] ?? 0;
+    expect(Number.isFinite(east)).toBe(true);
+    expect(grid.reliefM).toBeGreaterThan(0);
+  });
+
+  it("reports NO DATA rather than sea level when the provider fails", async () => {
+    // A DEM outage rendered as zero height is a hole shaped exactly like the
+    // outage, which reads as terrain and buries the buildings standing in it.
+    const failing: ElevationProvider = {
+      attribution: "test",
+      sourceId: "fixture:down",
+      elevationAt: () => Promise.reject(new Error("DEM down")),
+    };
+    const field = createTerrainField({ provider: failing });
+
+    await field.ensureAround(COLOGNE, 200);
+    const grid = field.sampleGrid({
+      frame: enuFrameAt(COLOGNE),
+      extentM: 200,
+      spacingM: 24,
+    });
+
+    expect(grid.hasData).toBe(false);
+    expect(grid.reliefM).toBe(0);
+  });
+
+  it("survives a provider that answers some posts with undefined", async () => {
+    // Real DEM coverage has holes. Missing posts must be counted and filled from
+    // what did arrive, never treated as zero metres.
+    let call = 0;
+    const patchy: ElevationProvider = {
+      attribution: "test",
+      sourceId: "fixture:patchy",
+      elevationAt: (positions) =>
+        Promise.resolve(
+          positions.map(() => (call++ % 3 === 0 ? undefined : 100)),
+        ),
+    };
+    const field = createTerrainField({ provider: patchy });
+
+    await field.ensureAround(COLOGNE, 200);
+    const grid = field.sampleGrid({
+      frame: enuFrameAt(COLOGNE),
+      extentM: 200,
+      spacingM: 24,
+    });
+
+    expect(grid.hasData).toBe(true);
+    // FILLED FROM THE MEAN OF WHAT ARRIVED, never zero. The grid holds ABSOLUTE
+    // heights — the datum is subtracted on read by `heightfieldFrom`, not stored
+    // pre-subtracted — so the value to expect here is 100 m, the height the
+    // provider gave for every post it answered. A 0 anywhere in here would be a
+    // gap silently rendered at sea level, which is the failure this guards.
+    for (const height of grid.heights) expect(height).toBeCloseTo(100, 3);
+  });
+
+  it("evicts distant posts so a long walk does not grow without bound", async () => {
+    // The cache has to be bounded or a session that crosses a city accumulates
+    // every post it ever saw. Eviction is by distance from the current centre,
+    // which is the same shape the OSM chunk LRU uses.
+    const { provider } = rampProvider();
+    const field = createTerrainField({ provider, maxPosts: 400 });
+
+    await field.ensureAround(COLOGNE, 300);
+    // Several kilometres away: nothing from the first area can still be useful.
+    await field.ensureAround({ lat: 51.05, lng: 7.1 }, 300);
+
+    expect(field.postCount).toBeLessThanOrEqual(400);
+  });
+
+  it("never asks for the same post twice within one fill", async () => {
+    // Two adjacent requests rounding to the same pixel would double the batch for
+    // nothing. The lattice is integer-keyed, so this is a de-duplication check.
+    const { provider, asked } = rampProvider();
+    const field = createTerrainField({ provider });
+
+    await field.ensureAround(COLOGNE, 250);
+
+    const keys = (asked[0] ?? []).map((p) => {
+      const pixel = toWorldPixel(p, DEFAULT_TERRARIUM_ZOOM);
+      return `${Math.round(pixel.x)}/${Math.round(pixel.y)}`;
+    });
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});

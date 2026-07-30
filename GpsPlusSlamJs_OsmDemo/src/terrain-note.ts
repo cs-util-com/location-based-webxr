@@ -28,16 +28,31 @@ export interface TerrainRelief {
   readonly missing: number;
   /** Posts requested. */
   readonly total: number;
-  /** Peak-to-trough relief, metres. */
+  /** Peak-to-trough relief across the whole sampled field, metres. */
   readonly reliefM: number;
+  /** Peak-to-trough relief near the user, metres. */
+  readonly nearReliefM: number;
 }
 
 /**
  * The status-line phrase for a finished load. Never empty.
  *
+ * TWO NUMBERS, NOT ONE (DEC-R2-22). The field grew from 600 m to 2.8 km, and over
+ * that span a single figure stopped answering either question properly:
+ *
+ *  - **whole-field alone** reports tens of metres in hilly terrain while the ground
+ *    under the user is flat, so it stops describing the surroundings;
+ *  - **near-field alone** can read ±0 m for a field that loaded perfectly, which
+ *    resurrects the exact ambiguity the number exists to kill.
+ *
+ * They are only both printed when they differ meaningfully — on genuinely flat
+ * ground, or when the extent is no bigger than the near field, one number is the
+ * honest answer and two would be noise in a status line that finding A3 already
+ * calls overcrowded.
+ *
  * The missing-post count is included only when non-zero: a partial field is a
- * different claim from a complete one, and silently averaging over the gaps
- * (which `buildHeightfieldData` does, deliberately) would otherwise be invisible.
+ * different claim from a complete one, and silently averaging over the gaps (which
+ * the sampler does, deliberately) would otherwise be invisible.
  */
 export function describeTerrain(field: TerrainRelief): string {
   if (!field.hasData) return "terrain unavailable — ground is flat";
@@ -45,5 +60,11 @@ export function describeTerrain(field: TerrainRelief): string {
     field.missing > 0
       ? ` (${field.missing}/${field.total} samples missing)`
       : "";
-  return `terrain ±${Math.round(field.reliefM)} m${missing}`;
+  const near = Math.round(field.nearReliefM);
+  const whole = Math.round(field.reliefM);
+  const relief =
+    near === whole
+      ? `terrain ±${whole} m`
+      : `terrain ±${near} m nearby / ±${whole} m in view`;
+  return `${relief}${missing}`;
 }

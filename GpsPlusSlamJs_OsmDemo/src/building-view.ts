@@ -27,19 +27,44 @@ import type { TransferableMesh } from "./worker/protocol.js";
 /**
  * Half-width of the ground plane and of the terrain sampled under it, metres.
  *
- * See the constructor for why this is 300 (a 600 m plane) rather than the
- * original 1000.
+ * 1400 m — a 2.8 km plane — which matches the extent of the geometry actually
+ * being rendered. **This overrides DEC-15's 600 m** (see DEC-R2-8).
+ *
+ * WHY IT HAD TO GROW. `buildBuildings` applies no distance filter: it extrudes
+ * every merged feature, i.e. everything in the res-7 fetch tile, 2.81 km across,
+ * and the camera's far plane is 4000 m. So a 600 m terrain square sat under ~2.8 km
+ * of city — and the buildings outside it were not left flat, they were offset by
+ * `bilinear`'s per-axis CLAMP, which extrudes the edge profile outward as stripes.
+ * That is fabricated height presented as data (finding R2-9), and sizing the field
+ * to the geometry is what makes it unrepresentable rather than merely unlikely.
+ *
+ * WHY THE COST OBJECTION DID NOT HOLD. DEC-15 costed this in Terrarium tiles, and a
+ * z13 tile is ~3.1 km of ground at Cologne — so covering the whole rendered city is
+ * the 1–4 tiles already being fetched. What genuinely scales is the post count, and
+ * that is handled by `terrain-field.ts`: posts are cached across positions, so the
+ * larger area is paid for once rather than on every step.
  */
-export const TERRAIN_EXTENT_M = 300;
+export const TERRAIN_EXTENT_M = 1400;
 
 /**
- * Plane subdivisions per axis.
+ * Metres between terrain posts. Terrarium z13 is ~12 m per pixel at this latitude.
  *
- * 64 over 600 m is a ~9.4 m quad, just finer than Terrarium z13's ~12 m per
- * pixel at this latitude — fine enough not to lose a real feature, coarse
- * enough not to interpolate detail the DEM never had.
+ * Sampling finer would interpolate detail the DEM never had; sampling coarser would
+ * throw away detail already fetched.
  */
-const GROUND_SEGMENTS = 64;
+export const TERRAIN_SPACING_M = 12;
+
+/**
+ * Plane subdivisions per axis, DERIVED rather than chosen.
+ *
+ * This was a hard-coded 64 with a comment explaining that 64 over 600 m gave a
+ * ~9.4 m quad, just finer than the DEM's ~12 m pitch. Prose does not follow a
+ * constant: at the new 2.8 km extent that same 64 would be **44 m quads**, four
+ * times coarser than the data, and the symptom would be "the terrain got blurry"
+ * rather than an error. Deriving it means the relationship the comment described is
+ * now enforced (finding B2).
+ */
+const GROUND_SEGMENTS = Math.round((TERRAIN_EXTENT_M * 2) / TERRAIN_SPACING_M);
 
 export interface BuildingViewOptions {
   readonly container: HTMLElement;

@@ -11,6 +11,7 @@ export {
 } from "./elevation-provider.js";
 
 export type {
+  WorldPixel,
   DecodedImage,
   ElevationTile,
   PngDecoder,
@@ -18,6 +19,8 @@ export type {
   TilePixel,
 } from "./terrarium.js";
 export {
+  fromWorldPixel,
+  toWorldPixel,
   DEFAULT_TERRARIUM_ZOOM,
   TERRARIUM_ATTRIBUTION,
   TERRARIUM_URL_TEMPLATE,

@@ -22,6 +22,8 @@ import {
   sampleTile,
   toElevationTile,
   toTilePixel,
+  toWorldPixel,
+  fromWorldPixel,
 } from "./terrarium.js";
 import type { DecodedImage } from "./terrarium.js";
 
@@ -317,5 +319,62 @@ describe("the browser PNG decoder", () => {
       /createImageBitmap/,
     );
     vi.unstubAllGlobals();
+  });
+});
+
+describe("toWorldPixel / fromWorldPixel", () => {
+  /**
+   * WHY THESE TESTS MATTER. `toWorldPixel` is the lattice the demo's terrain cache
+   * is indexed on, and `fromWorldPixel` is how it turns a lattice index back into
+   * the lat/lng an `ElevationProvider` wants. If the two are not exact inverses the
+   * lattice drifts off the DEM's own pixel centres, which silently reintroduces the
+   * resampling that indexing in pixel space exists to avoid — and the symptom would
+   * be terrain that is subtly smoothed, which looks like terrain.
+   */
+  it("round-trips a position through pixel space", () => {
+    const positions = [
+      { lat: 50.9413, lng: 6.9583 },
+      { lat: 0, lng: 0 },
+      { lat: -33.8688, lng: 151.2093 },
+      { lat: 64.1466, lng: -21.9426 },
+    ];
+    for (const position of positions) {
+      const pixel = toWorldPixel(position, 13);
+      const back = fromWorldPixel(pixel, 13);
+      // Sub-micro-degree: ~0.1 mm, i.e. exact for anything this is used for.
+      expect(back.lat).toBeCloseTo(position.lat, 9);
+      expect(back.lng).toBeCloseTo(position.lng, 9);
+    }
+  });
+
+  it("agrees with toTilePixel, which is now derived from it", () => {
+    // `toTilePixel` was rewritten in terms of `toWorldPixel`; this pins that the
+    // refactor changed nothing. Splitting a floor out of a formula is exactly the
+    // kind of edit that shifts a boundary by one pixel.
+    const position = { lat: 50.9413, lng: 6.9583 };
+    const world = toWorldPixel(position, 13);
+    const tile = toTilePixel(position, 13);
+    expect(tile.x).toBe(Math.floor(world.x / 256));
+    expect(tile.y).toBe(Math.floor(world.y / 256));
+    expect(tile.px).toBeCloseTo(world.x - tile.x * 256, 9);
+    expect(tile.py).toBeCloseTo(world.y - tile.y * 256, 9);
+  });
+
+  it("is monotonic in both axes, which is what makes it usable as a lattice", () => {
+    // A lattice index that is not monotonic in latitude would interleave posts
+    // from different places, and bilinear interpolation over it would be
+    // meaningless rather than merely wrong.
+    const a = toWorldPixel({ lat: 50.9, lng: 6.9 }, 13);
+    const b = toWorldPixel({ lat: 50.9, lng: 7.0 }, 13);
+    const c = toWorldPixel({ lat: 51.0, lng: 6.9 }, 13);
+    expect(b.x).toBeGreaterThan(a.x);
+    // Mercator y grows SOUTHWARD, so a higher latitude is a smaller y.
+    expect(c.y).toBeLessThan(a.y);
+  });
+
+  it("clamps beyond the Mercator limit rather than emitting Infinity", () => {
+    const north = toWorldPixel({ lat: 89.9, lng: 0 }, 13);
+    expect(Number.isFinite(north.y)).toBe(true);
+    expect(north.y).toBeGreaterThanOrEqual(0);
   });
 });

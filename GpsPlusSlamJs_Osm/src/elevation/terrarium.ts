@@ -68,6 +68,9 @@ export function decodeTerrarium(r: number, g: number, b: number): number {
   return r * 256 + g + b / 256 - 32768;
 }
 
+/** Mercator cannot represent the poles; clamped rather than emitting NaN. */
+const MAX_MERCATOR_LAT = 85.0511287798;
+
 export interface TilePixel {
   readonly z: number;
   readonly x: number;
@@ -91,25 +94,78 @@ export function toTilePixel(
   zoom: number,
   tileSize = 256,
 ): TilePixel {
-  const MAX_LAT = 85.0511287798;
-  const lat = Math.min(MAX_LAT, Math.max(-MAX_LAT, position.lat));
-  const lng = ((((position.lng + 180) % 360) + 360) % 360) - 180;
-
-  const scale = 2 ** zoom;
-  const worldX = ((lng + 180) / 360) * scale;
-  const sinLat = Math.sin((lat * Math.PI) / 180);
-  const worldY =
-    (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale;
-
-  const x = Math.floor(worldX);
-  const y = Math.floor(worldY);
+  const { x: worldX, y: worldY } = toWorldPixel(position, zoom, tileSize);
+  const tileX = Math.floor(worldX / tileSize);
+  const tileY = Math.floor(worldY / tileSize);
   return {
     z: zoom,
-    x,
-    y,
-    px: (worldX - x) * tileSize,
-    py: (worldY - y) * tileSize,
+    x: tileX,
+    y: tileY,
+    px: worldX - tileX * tileSize,
+    py: worldY - tileY * tileSize,
   };
+}
+
+/** A continuous position on the Web Mercator pixel plane at one zoom. */
+export interface WorldPixel {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Continuous Web Mercator pixel coordinates, un-floored.
+ *
+ * WHY THIS IS SEPARATE FROM {@link toTilePixel}. A tile-plus-offset is the right
+ * shape for *fetching* a raster, and the wrong shape for *indexing a lattice*: a
+ * consumer building a cache of height posts wants one monotonic integer grid over
+ * the whole world, not a pair of coordinates that resets at every tile boundary.
+ * Deriving one from the other is easy to get subtly wrong at a boundary, which is
+ * exactly where a terrain seam would appear.
+ *
+ * The pixel grid at a given zoom is also the DEM's OWN sampling grid, so a
+ * consumer that snaps its posts to integers here samples the source at its native
+ * resolution — no resampling, and no invented detail.
+ */
+export function toWorldPixel(
+  position: LatLng,
+  zoom: number,
+  tileSize = 256,
+): WorldPixel {
+  const lat = Math.min(
+    MAX_MERCATOR_LAT,
+    Math.max(-MAX_MERCATOR_LAT, position.lat),
+  );
+  const lng = ((((position.lng + 180) % 360) + 360) % 360) - 180;
+
+  const scale = 2 ** zoom * tileSize;
+  const sinLat = Math.sin((lat * Math.PI) / 180);
+  return {
+    x: ((lng + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale,
+  };
+}
+
+/**
+ * The exact inverse of {@link toWorldPixel}.
+ *
+ * Needed by any consumer that indexes a lattice in pixel space and then has to ask
+ * an elevation provider for those posts — the provider's API is lat/lng, so the
+ * round trip has to close. It is the inverse rather than an approximation of it,
+ * and `terrarium.property.test.ts` pins that: an approximate inverse would drift
+ * the lattice off the DEM's pixel centres, which reintroduces the resampling this
+ * exists to avoid.
+ */
+export function fromWorldPixel(
+  point: WorldPixel,
+  zoom: number,
+  tileSize = 256,
+): LatLng {
+  const scale = 2 ** zoom * tileSize;
+  const lng = (point.x / scale) * 360 - 180;
+  // Inverse Gudermannian: undoes the log((1+sin)/(1-sin)) / (4*pi) above.
+  const n = Math.PI * (1 - (2 * point.y) / scale);
+  const lat = (Math.atan(Math.sinh(n)) * 180) / Math.PI;
+  return { lat, lng };
 }
 
 /** Key for a decoded tile in the cache. */

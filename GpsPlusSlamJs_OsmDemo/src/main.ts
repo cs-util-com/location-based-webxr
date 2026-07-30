@@ -43,6 +43,7 @@ import { heatScale } from "./heat-colours.js";
 import {
   BuildingView,
   TERRAIN_EXTENT_M,
+  TERRAIN_SPACING_M,
   type BuildingStats,
 } from "./building-view.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
@@ -273,9 +274,7 @@ async function main(): Promise<void> {
   const loadTerrain = createTerrainCycle({
     worker,
     extentM: TERRAIN_EXTENT_M,
-    // Terrarium z13 is ~12 m per pixel at this latitude. Sampling finer would
-    // interpolate detail the DEM never had, at real network cost.
-    spacingM: 12,
+    spacingM: TERRAIN_SPACING_M,
     apply: ({ field, note }) => {
       terrain = field === undefined ? undefined : heightfieldFrom(field);
       terrainNote = note;

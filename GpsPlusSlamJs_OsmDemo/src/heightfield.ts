@@ -77,7 +77,20 @@ export interface HeightfieldData {
    * from terrain that failed to load. The status line says it out loud.
    */
   readonly reliefM: number;
+  /**
+   * Relief within {@link NEAR_FIELD_M} of the origin, metres.
+   *
+   * REPORTED SEPARATELY BECAUSE THE FIELD GREW (DEC-R2-22). Over a 2.8 km square
+   * `reliefM` can be tens of metres while the ground under the user is flat, so on
+   * its own it stopped describing the user's surroundings. And near-field alone can
+   * read 0 for a field that loaded perfectly, which resurrects the exact ambiguity
+   * the number exists to kill. Both are needed; the status line shows both.
+   */
+  readonly nearReliefM: number;
 }
+
+/** Radius treated as "around the user" for {@link HeightfieldData.nearReliefM}. */
+export const NEAR_FIELD_M = 300;
 
 export interface Heightfield extends HeightfieldData {
   /** Relief in metres at an ENU point, relative to the frame origin. */
@@ -95,6 +108,7 @@ function flat(total: number, extentM: number): HeightfieldData {
     missing: total,
     total,
     reliefM: 0,
+    nearReliefM: 0,
   };
 }
 
@@ -191,6 +205,7 @@ export async function buildHeightfieldData(
     // A fold has no limit and is not measurably slower, so this removes a
     // fragility rather than fixing a live bug. See `worker-round-trip.test.ts`.
     reliefM: extremesOf(known),
+    nearReliefM: extremesOf(known),
   };
 }
 

@@ -56,11 +56,8 @@ import {
 
 import { DemoPipeline } from "../demo-pipeline.js";
 import { describeTerrain } from "../terrain-note.js";
-import {
-  buildHeightfieldData,
-  heightfieldFrom,
-  type HeightfieldData,
-} from "../heightfield.js";
+import { heightfieldFrom, type HeightfieldData } from "../heightfield.js";
+import { createTerrainField, type TerrainField } from "../terrain-field.js";
 import {
   isWorkerEnvelope,
   type TransferableMesh,
@@ -90,7 +87,14 @@ async function makeStore() {
 interface WorkerState {
   readonly pipeline: DemoPipeline;
   readonly table: RuleTable;
-  readonly elevation: TerrariumProvider;
+  /**
+   * The terrain cache, built once and grown for the whole session (DEC-R2-21).
+   *
+   * Session-scoped rather than per-request: that IS the change. A post fetched
+   * for one position is reused for every later one nearby, so walking costs only
+   * the new edge instead of re-sampling the whole square.
+   */
+  readonly terrainField: TerrainField;
 }
 
 let state: WorkerState | undefined;
@@ -168,7 +172,9 @@ async function handle<K extends WorkerCallKind>(
       state = {
         pipeline: new DemoPipeline({ source, table: loaded.table }),
         table: loaded.table,
-        elevation: new TerrariumProvider({ decodePng: browserPngDecoder() }),
+        terrainField: createTerrainField({
+          provider: new TerrariumProvider({ decodePng: browserPngDecoder() }),
+        }),
       };
       return {
         categories: loaded.table.categories,
@@ -193,12 +199,16 @@ async function handle<K extends WorkerCallKind>(
     case "terrain": {
       const { centre, extentM, spacingM } =
         payload as WorkerCalls["terrain"]["request"];
-      const { elevation } = requireState();
-      const field = await buildHeightfieldData(elevation, {
+      const { terrainField } = requireState();
+      // GROW the cache to cover the view, then RENDER a bounded grid from it.
+      // The split is the whole point: the growth is incremental and permanent,
+      // while what crosses the boundary stays a fixed-shape grid.
+      await terrainField.ensureAround(centre, extentM * Math.SQRT2);
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      const field = terrainField.sampleGrid({
         frame: enuFrameAt(centre),
         extentM,
         spacingM,
-        signal,
       });
       // Stored even when empty, so a later mesh build cannot stand on the
       // PREVIOUS position's relief after a DEM outage at this one.
