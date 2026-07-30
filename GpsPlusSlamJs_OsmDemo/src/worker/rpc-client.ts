@@ -149,7 +149,7 @@ export function createRpcClient(transport: Transport): RpcClient {
     });
   }
 
-  /** Rejects and forgets every pending call. Shared by  and . */
+  /** Rejects and forgets every pending call. Shared by {@link fail} and {@link dispose}. */
   function rejectAllPending(message: string): void {
     for (const [, entry] of pending) {
       entry.cleanup();
