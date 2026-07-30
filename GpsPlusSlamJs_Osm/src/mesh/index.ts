@@ -45,6 +45,13 @@ export { buildBuildings } from "./buildings.js";
 export type { AreaPlate, BuildPlatesOptions } from "./plates.js";
 export { buildAreaPlates, isPlateArea } from "./plates.js";
 
+export type {
+  BuildRegionSlabsOptions,
+  RegionSlab,
+  SlabRegion,
+} from "./region-slabs.js";
+export { buildRegionSlabs } from "./region-slabs.js";
+
 export type { BuildRoadsOptions, RoadRibbon } from "./roads.js";
 export { buildRoads, isRoad, roadWidthM } from "./roads.js";
 
