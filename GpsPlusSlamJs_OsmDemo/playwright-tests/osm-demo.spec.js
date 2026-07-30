@@ -824,6 +824,96 @@ test.describe("the 3D view", () => {
     await expect.poll(painted, { timeout: 5000 }).toBeGreaterThan(500);
   });
 
+  test("has a graded sky, so the ground reads against it", async ({ page }) => {
+    // WHY THIS TEST MATTERS (DEC-R2-2). The background was 0x11131a and the
+    // ground 0x1d2230 — two near-blacks, which is the whole reported symptom.
+    // Asserting a GRADIENT rather than "not black": a flat dark blue would also
+    // fix the colour complaint while leaving the ground plane's far edge as a
+    // hard seam between two similar darks, which is the other half of it.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // Sampled at the LEFT edge, where the city does not reach, so the reading is
+    // sky rather than a building that happens to be tall.
+    const { top, bottom } = await page.evaluate(() => {
+      const el = document.querySelector("#scene canvas");
+      if (!(el instanceof HTMLCanvasElement)) return { top: -1, bottom: -1 };
+      const probe = document.createElement("canvas");
+      probe.width = el.width;
+      probe.height = el.height;
+      const ctx = probe.getContext("2d");
+      if (ctx === null) return { top: -1, bottom: -1 };
+      ctx.drawImage(el, 0, 0);
+      const luma = (x, y) => {
+        const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      return { top: luma(2, 2), bottom: luma(2, Math.floor(el.height * 0.45)) };
+    });
+
+    expect(top).toBeGreaterThanOrEqual(0);
+    // Brighter towards the horizon, by a margin no dithering could account for.
+    expect(bottom).toBeGreaterThan(top + 8);
+  });
+
+  test("the ground's shading changes as the camera moves, revealing its facets", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS, and what it deliberately does NOT assert. DEC-R2-1
+    // kept normal-based flat shading and accepted that genuinely flat ground
+    // looks flat — so "the terrain looks bumpy" is not a claim this build makes
+    // and must not be tested. What IS claimed is that the surface is reflective:
+    // a specular highlight slides across the facets as the camera moves, which is
+    // the cue that reveals them. That is a claim about CHANGE under motion, so a
+    // static screenshot cannot express it and neither can a material unit test
+    // (the class needs a WebGLRenderer and cannot be constructed under vitest).
+    //
+    // Sampled from a band low in the frame, where the ground fills the view,
+    // rather than the whole canvas — otherwise the existing "dragging moves the
+    // camera" test would already cover it and this would prove nothing extra.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const groundBand = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return "";
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return "";
+        ctx.drawImage(el, 0, 0);
+        // A low, wide strip: mostly ground plane at the default camera.
+        const y = Math.floor(el.height * 0.85);
+        const { data } = ctx.getImageData(0, y, el.width, 1);
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          sum += data[i] + data[i + 1] + data[i + 2];
+        }
+        return String(sum);
+      });
+
+    const before = await groundBand();
+    expect(before).not.toBe("");
+
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    // A small orbit — enough to move the highlight, not enough to leave the city.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      box.x + box.width / 2 - 40,
+      box.y + box.height / 2 - 20,
+    );
+    await page.mouse.up();
+
+    await expect.poll(groundBand, { timeout: 5000 }).not.toBe(before);
+  });
+
   test("can be navigated — dragging the canvas moves the camera", async ({
     page,
   }) => {

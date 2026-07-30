@@ -21,6 +21,7 @@ import { type MeshData, type TreePlacement } from "gps-plus-slam-osm";
 
 import type { CellMesh } from "./cell-mesh.js";
 import type { Heightfield } from "./heightfield.js";
+import { SKY_GRADIENT_ROWS, skyGradientPixels } from "./sky-gradient.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 /**
@@ -96,6 +97,8 @@ export class BuildingView {
   private readonly onPointerDown: (event: PointerEvent) => void;
   private readonly onPointerStart: (event: PointerEvent) => void;
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
+  /** The sky gradient, used as both background and environment map. */
+  private readonly sky: THREE.DataTexture;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
 
@@ -115,9 +118,41 @@ export class BuildingView {
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     options.container.appendChild(this.renderer.domElement);
 
-    this.scene.background = new THREE.Color(0x11131a);
+    // The sky is BOTH the background and the environment map (DEC-R2-1/DEC-R2-2).
+    // One texture, two jobs: it replaces the near-black background that the ground
+    // could not lift off, and it gives `MeshStandardMaterial` something to reflect
+    // — without which the reflective ground below has no specular to show, because
+    // a single directional light produces a lobe narrow enough to miss almost
+    // every facet.
+    this.sky = new THREE.DataTexture(
+      skyGradientPixels(),
+      1,
+      SKY_GRADIENT_ROWS,
+      THREE.RGBAFormat,
+    );
+    this.sky.mapping = THREE.EquirectangularReflectionMapping;
+    this.sky.colorSpace = THREE.SRGBColorSpace;
+    // `flipY` DEFAULTS TO FALSE ON `DataTexture` — unlike an image-backed texture,
+    // where it is true. So row 0 of the array lands at `v = 0`, which on an
+    // equirectangular map is the NADIR, and the sky comes out upside down: bright
+    // overhead, dark at the horizon. Measured before fixing: 63.5 luma at the top
+    // against 52.9 near the horizon, i.e. exactly reversed.
+    //
+    // Corrected here rather than by reversing `skyGradientPixels`, so the pure
+    // function keeps the contract its tests assert ("top row first", which is the
+    // intuitive reading) and the three.js-specific quirk stays in the three.js
+    // file.
+    this.sky.flipY = true;
+    this.sky.needsUpdate = true;
+    this.scene.background = this.sky;
+    this.scene.environment = this.sky;
+
     this.scene.add(this.group);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    // Ambient LOWERED from 0.55. Ambient light is flat by definition — it adds the
+    // same amount to every facet regardless of its normal — so it was actively
+    // washing out the only cue that distinguishes one ground facet from the next.
+    // The environment map now supplies the soft fill it used to.
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.25));
     const sun = new THREE.DirectionalLight(0xffffff, 1.1);
     sun.position.set(60, 120, 40);
     this.scene.add(sun);
@@ -138,7 +173,31 @@ export class BuildingView {
         GROUND_SEGMENTS,
         GROUND_SEGMENTS,
       ),
-      new THREE.MeshStandardMaterial({ color: 0x1d2230, flatShading: true }),
+      // REFLECTIVE, and flat-shaded (DEC-R2-1). The owner's decision was to keep
+      // normal-based shading and accept that genuinely flat ground looks flat,
+      // but to make the surface reflective so the facet edges show up as a
+      // highlight slides across them while the camera moves.
+      //
+      // Three changes together, and all three are needed:
+      //  - `color` lifted out of near-black (`0x1d2230` -> `0x3a4356`), because a
+      //    surface that dark has almost no dynamic range for a highlight to live
+      //    in — the shading was mathematically present and perceptually absent.
+      //  - `roughness` well below the 1.0 default, which narrows the specular lobe
+      //    so neighbouring facets return visibly different amounts of it. Too low
+      //    and the ground turns to chrome; 0.42 keeps it reading as ground.
+      //  - `flatShading` KEPT, because per-facet normals are what the highlight is
+      //    varying over. Smooth shading would average exactly the discontinuity
+      //    this is trying to reveal.
+      //
+      // Accepted, and correct: in genuinely flat terrain this still looks flat.
+      // `terrain ±N m` in the status line is the only remaining signal separating
+      // that from "the DEM did not load" — see `terrain-note.ts`.
+      new THREE.MeshStandardMaterial({
+        color: 0x3a4356,
+        flatShading: true,
+        roughness: 0.42,
+        metalness: 0.0,
+      }),
     );
     this.ground.rotation.x = -Math.PI / 2;
     this.scene.add(this.ground);
@@ -475,6 +534,10 @@ export class BuildingView {
     // disposed view, and the whole point of holding the resize listener and the
     // rAF handle is that this method actually cleans up.
     disposeMesh(this.ground);
+    // The sky is a GPU texture like any other and nothing else frees it. It is
+    // small, but it is also referenced by `scene.background` AND
+    // `scene.environment`, so leaving it behind keeps the whole scene reachable.
+    this.sky.dispose();
     if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
     this.cellMesh = undefined;
     this.renderer.dispose();
