@@ -55,3 +55,56 @@ matches the shipped picture, a toggle disturbs nothing else, the set is immutabl
 (a mutation would update store state without a dispatch, so subscribers would never
 fire), the serialised form round-trips, unknown names are ignored, and an empty
 string is distinct from the default.
+
+## The scene is swapped WHOLE, never layer by layer (F5)
+
+Stated here, once, before W12–W15 add four more independently-timed layers. It
+is enforced in four separate places today and nothing named it, which is how a
+fifth arrival gets it wrong.
+
+**The invariant.** Every layer on screen at any instant describes the _same
+position and the same working set_. There is no frame in which one layer belongs
+to the previous place and another to the current one.
+
+That is not fussiness about a single frame. Each layer is individually plausible,
+so a half-swapped scene does not look broken — it looks like _data_. Buildings
+from the last click standing on this click's terrain is a city on the wrong hill,
+and the status line agrees with it, because the status line is built from what
+was drawn. Nothing in the picture says which half is stale.
+
+**Where it is enforced, and what each one covers:**
+
+- `latest-only.ts` — coalesces overlapping runs to the newest intent, so a burst
+  of clicks produces one result rather than a race between several.
+- `refresh-cycle.ts` — hands the mesh over **before** dispatching the snapshot.
+  A dispatch-first order would run the snapshot subscriber with the previous
+  position's mesh still in place, drawing one frame of the wrong buildings.
+- `refresh-cycle.ts` and `terrain-cycle.ts` — each re-check `signal.aborted`
+  _after_ the await. If a reply has already landed when a newer input arrives,
+  the abort has nothing to cancel and the continuation would otherwise apply a
+  superseded result. Both guards were added after a PR review found the second
+  one missing.
+- `terrain-cycle.ts` — one `apply` for all four UI writes, so relief, note,
+  field and status move as a unit.
+- `building-view.ts` — `clearScene()` and `resize()` repaint rather than only
+  clearing, because on an on-demand renderer a cleared buffer is never
+  overwritten by anything else.
+- `height-ramp.ts` via `setTerrain` — the ramp is normalised over the field's own
+  range, so a new field is a new range and the colours are recomputed with it.
+
+**What a new layer (W12 POI, W13 roads, W14 slabs, W15 regions) must do:**
+
+- **Arrive through the existing snapshot/mesh handover.** Do not give a layer its
+  own fetch or its own async lifetime. A layer that loads independently is a
+  layer that can be one refresh behind, and no amount of care at the draw call
+  fixes that.
+- **If it genuinely cannot** — an imagery tile is the plausible future case —
+  then it must carry the identity of the working set it belongs to, and be
+  dropped rather than drawn when that no longer matches. "Draw it late" is not
+  an option; late and wrong are the same picture.
+- **Report its counters from what was drawn**, which `mesh-layers.ts` now does by
+  construction: a row that is off contributes zeros rather than the mesh's value.
+
+**The rule this all reduces to:** a layer may be absent, and a layer may be
+current, but a layer may never be _stale_. Absence is visible and self-reporting;
+staleness is invisible and self-consistent.

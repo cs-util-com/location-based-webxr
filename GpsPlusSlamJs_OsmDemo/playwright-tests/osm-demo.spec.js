@@ -1408,17 +1408,31 @@ test.describe("the 3D view", () => {
     expect(sky.b).toBeGreaterThan(sky.r + 20);
   });
 
-  test("the ground's shading changes as the camera moves, revealing its facets", async ({
-    page,
-  }) => {
-    // WHY THIS TEST MATTERS, and what it deliberately does NOT assert. DEC-R2-1
-    // kept normal-based flat shading and accepted that genuinely flat ground
-    // looks flat — so "the terrain looks bumpy" is not a claim this build makes
-    // and must not be tested. What IS claimed is that the surface is reflective:
-    // a specular highlight slides across the facets as the camera moves, which is
-    // the cue that reveals them. That is a claim about CHANGE under motion, so a
-    // static screenshot cannot express it and neither can a material unit test
-    // (the class needs a WebGLRenderer and cannot be constructed under vitest).
+  test("the ground redraws when the camera moves", async ({ page }) => {
+    // WHAT THIS ASSERTS: the ground redraws when the camera moves. That is all,
+    // and the name overstates it — kept, with this correction, because the
+    // overstatement is the interesting part.
+    //
+    // IT DOES NOT ASSERT THE SPECULAR FACET CUE, AND NO PIXEL TEST HERE CAN.
+    // DEC-R2-1 chose a reflective ground so a highlight would slide across the
+    // facets as the camera moves, making relief readable without a colour ramp.
+    // Before building W23 on that premise it was measured, by counting the
+    // standard deviation of ground luminance across the lower band:
+    //
+    //   material as shipped (roughness 0.42, flatShading)  SD = 2.51
+    //   deliberately matte control (roughness 1, smooth)   SD = 2.49
+    //
+    // The two are indistinguishable. The reason is geometric rather than a
+    // material-tuning problem: Cologne's relief is about +/-25 m across a 2.8 km
+    // plane, so adjacent facets differ by well under a degree, and a roughness
+    // 0.42 lobe is far too broad to resolve that. The cue is not weak here, it is
+    // absent — and it had never been observed on a real device either, because
+    // the ground plane was compiled out by the shader outage from W20 until the
+    // 2026-07-30 fix.
+    //
+    // The practical consequence is that W24's height ramp, not this, is what
+    // answers "did the DEM load?". Whether DEC-R2-1 should change is the owner's
+    // call and is raised in the round-2 plan; nothing here presumes it.
     //
     // Sampled from a band low in the frame, where the ground fills the view,
     // rather than the whole canvas — otherwise the existing "dragging moves the
