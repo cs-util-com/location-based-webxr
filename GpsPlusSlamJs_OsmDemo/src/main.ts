@@ -455,6 +455,9 @@ async function main(): Promise<void> {
       // silently produces nothing is indistinguishable from one that produced
       // nothing because there is nothing there.
       mesh === undefined || mesh.poi === 0 ? "" : `${mesh.poi} POI`,
+      mesh === undefined || mesh.roads === 0
+        ? ""
+        : `${mesh.roads} roads (${mesh.roadTriangles} tri)`,
       describeExtent(snapshot.loadedTiles),
       terrainNote,
       tableNote,

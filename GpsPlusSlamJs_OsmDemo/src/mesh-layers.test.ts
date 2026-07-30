@@ -68,6 +68,8 @@ function fullMesh(): TransferableMesh {
     ],
     plates: triangle(),
     plateCount: 3,
+    roads: triangle(),
+    roadCount: 2,
     poi: [
       {
         feature: "node/4242",
@@ -91,6 +93,8 @@ function emptyMesh(): TransferableMesh {
     trees: [],
     plates: EMPTY,
     plateCount: 0,
+    roads: EMPTY,
+    roadCount: 0,
     poi: [],
     volumes: 0,
     parts: 0,
@@ -146,6 +150,7 @@ describe("MESH_LAYERS — the table itself", () => {
       trees: true,
       plates: false,
       poi: false,
+      roads: false,
     });
   });
 });
@@ -153,8 +158,8 @@ describe("MESH_LAYERS — the table itself", () => {
 describe("drawMeshLayers — what reaches the scene", () => {
   it("draws every layer that is on", () => {
     const { objects } = drawMeshLayers(fullMesh(), ALL_ON);
-    // One buildings mesh, one plates mesh, one tree cone, one POI marker.
-    expect(objects).toHaveLength(4);
+    // Buildings, plates, roads, one tree cone, one POI marker.
+    expect(objects).toHaveLength(5);
     for (const object of objects) expect(object).toBeInstanceOf(THREE.Object3D);
   });
 
@@ -165,6 +170,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       trees: false,
       plates: false,
       poi: false,
+      roads: false,
     });
     expect(objects).toEqual([]);
   });
@@ -186,6 +192,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       buildings: false,
       trees: false,
       poi: false,
+      roads: false,
     });
     expect(objects[0]?.position.y).toBeCloseTo(groundLift("plates"), 10);
   });
@@ -307,6 +314,8 @@ describe("drawMeshLayers — the counters", () => {
       plates: 3,
       plateTriangles: 1,
       poi: 1,
+      roads: 2,
+      roadTriangles: 1,
     });
   });
 
@@ -320,9 +329,10 @@ describe("drawMeshLayers — the counters", () => {
       trees: false,
       plates: false,
       poi: false,
+      roads: false,
     });
     for (const value of Object.values(stats)) expect(value).toBe(0);
-    expect(Object.keys(stats)).toHaveLength(9);
+    expect(Object.keys(stats)).toHaveLength(11);
   });
 });
 

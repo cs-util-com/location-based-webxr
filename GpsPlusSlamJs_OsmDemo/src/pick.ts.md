@@ -27,7 +27,7 @@ Decides what a click in the 3D view selected (W12). The raycast stays in
   as a dead control, a defect this demo already shipped once via a
   non-interactive Leaflet tooltip.
 - **Nearest wins, and distance is the only tie-break.** A marker stands on the
-  grid, so clicking a marker hits both. Preferring one *kind* by rule would make
+  grid, so clicking a marker hits both. Preferring one _kind_ by rule would make
   the grid unclickable wherever a marker overlaps it, or markers unclickable
   altogether.
 - **Hits are sorted here rather than trusting the caller.** three's

@@ -69,6 +69,14 @@ export interface TransferableMesh {
    * be a second source of truth for what a POI is called.
    */
   readonly poi: readonly PoiMarker[];
+  /**
+   * Roads, one merged mesh (W13).
+   *
+   * MERGED like the plates and for the same reason: a working set has hundreds
+   * of ways and a draw call each would dominate the frame.
+   */
+  readonly roads: MeshData;
+  readonly roadCount: number;
   readonly volumes: number;
   readonly parts: number;
   readonly guessedHeights: number;

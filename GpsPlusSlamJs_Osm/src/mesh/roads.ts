@@ -243,8 +243,17 @@ function ribbonMesh(
     const ar = vertex(a.x - nx, a.y - ny);
     const bl = vertex(b.x + nx, b.y + ny);
     const br = vertex(b.x - nx, b.y - ny);
-    builder.triangle(al, ar, bl);
-    builder.triangle(bl, ar, br);
+    // WOUND SO THE FACE NORMAL POINTS UP, and the order is not obvious enough
+    // to leave unstated. `MeshBuilder` reflects ENU north onto `-z` and reverses
+    // each triangle to compensate, so the winding that survives to the buffer is
+    // the mirror of the one written here. The material uses `flatShading`, which
+    // makes three.js recompute the normal from that winding and ignore the
+    // per-vertex normals below entirely — so getting this backwards produces a
+    // ribbon lit from underneath and culled away, with the status line still
+    // reporting every triangle. Pinned by "winds every triangle so its FACE
+    // normal points UP".
+    builder.triangle(al, bl, ar);
+    builder.triangle(bl, br, ar);
   }
 
   // One disc per vertex, INCLUDING the ends. The ends are the cheap half of the
@@ -259,7 +268,8 @@ function ribbonMesh(
         point.x + Math.cos(angle) * half,
         point.y + Math.sin(angle) * half,
       );
-      builder.triangle(centre, previous, next);
+      // Same reversal as the quads above, for the same reason.
+      builder.triangle(centre, next, previous);
       previous = next;
     }
   }

@@ -42,6 +42,7 @@ import {
   buildAreaPlates,
   buildBuildings,
   buildPoiMarkers,
+  buildRoads,
   buildTrees,
   enuFrameAt,
   explainCell,
@@ -136,6 +137,9 @@ function buildMesh(
   // Same options as the trees: a marker floating over sloped ground reads as a
   // placement bug, and the sampler is the one already built for this frame.
   const poi = buildPoiMarkers(all, options);
+  // PER-VERTEX terrain, like the plates: a road is a long surface, and one
+  // sample would cut into the hill at one end and float at the other.
+  const roads = buildRoads(all, options);
   // PER-VERTEX terrain for plates, unlike buildings: a 30 m car park sampled once
   // would cut into the ground at one end and float at the other, which is exactly
   // the artefact the building change removed. The same option name carries both
@@ -152,6 +156,8 @@ function buildMesh(
     plates: mergeMeshes(plates.map((plate) => plate.mesh)),
     plateCount: plates.length,
     poi,
+    roads: mergeMeshes(roads.map((road) => road.mesh)),
+    roadCount: roads.length,
     volumes: volumes.length,
     parts: volumes.filter((v) => v.parentFeature !== undefined).length,
     guessedHeights: volumes.filter((v) => v.heights.heightIsGuessed).length,

@@ -47,7 +47,13 @@ import type { TransferableMesh } from "./worker/protocol.js";
  * test tells you the row is missing. That is not hypothetical: adding `poi` here
  * before writing its row turned the coverage test red, which is the guard working.
  */
-export const DRAWN_BY_MESH = ["buildings", "trees", "plates", "poi"] as const;
+export const DRAWN_BY_MESH = [
+  "buildings",
+  "trees",
+  "plates",
+  "poi",
+  "roads",
+] as const;
 
 /** Not exported: nothing outside this module needs to name it, and knip is right
  * to say so. It is reachable through `MeshLayerDescriptor["layer"]` if that ever
@@ -78,6 +84,10 @@ export interface BuildingStats {
   readonly plateTriangles: number;
   /** POI markers drawn (W12). */
   readonly poi: number;
+  /** Road ways drawn (W13). */
+  readonly roads: number;
+  /** Their merged triangle count — the same built-versus-drawn pair as plates. */
+  readonly roadTriangles: number;
 }
 
 /**
@@ -98,6 +108,8 @@ const NO_STATS: BuildingStats = {
   plates: 0,
   plateTriangles: 0,
   poi: 0,
+  roads: 0,
+  roadTriangles: 0,
 };
 
 /** What one drawable layer contributes to the scene and to the status line. */
@@ -269,6 +281,42 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         return cone;
       }),
     counters: (mesh) => ({ trees: mesh.trees.length }),
+  },
+  {
+    layer: "roads",
+    defaultOn: false,
+    build: (mesh) => {
+      if (mesh.roads.triangleCount === 0) return [];
+      const ribbon = new THREE.Mesh(
+        geometryFrom(mesh.roads),
+        new THREE.MeshStandardMaterial({
+          // LIGHTER than the ground, not darker, and that was a measurement
+          // rather than a preference. The first attempt was 0x2f333d — asphalt
+          // reasoning — but the ground renders at rgb(40,40,56) under this
+          // scene's lighting, so a darker road landed within a few levels of it
+          // and switching the layer on changed 77 pixels out of 460 800. A road
+          // that cannot be told from the ground it lies on is a failed layer
+          // whatever the test says.
+          color: 0x8b909c,
+          roughness: 0.9,
+          // OPAQUE, and DEC-R2-13 depends on it. The disc at each vertex overlaps
+          // the segment quads it joins; in translucent geometry that overlap would
+          // double-blend into a visible blob at every junction.
+          transparent: false,
+          // SINGLE-SIDED for the same reason as the plates: a ribbon is
+          // horizontal with an upward normal by construction, so a wrongly-wound
+          // one should disappear rather than be lit from below.
+          side: THREE.FrontSide,
+          flatShading: true,
+        }),
+      );
+      ribbon.position.y = groundLift("roads");
+      return [ribbon];
+    },
+    counters: (mesh) => ({
+      roads: mesh.roadCount,
+      roadTriangles: mesh.roads.triangleCount,
+    }),
   },
   {
     layer: "poi",

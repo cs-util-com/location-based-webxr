@@ -1347,6 +1347,83 @@ test.describe("the 3D view", () => {
       .toBeLessThan(2000);
   });
 
+  test("draws roads, and the ground changes when they come on", async ({
+    page,
+  }) => {
+    // BUILT IS NOT VISIBLE. The plates layer was counted and reported for ten
+    // work items while nothing was drawn, so every new geometry layer now gets a
+    // pixel assertion rather than a counter assertion alone.
+    //
+    // Roads are the darkest thing in the scene by design (0x2f333d against a
+    // ground of 0x3a4356), so the honest measure is how many DARK pixels appear
+    // in the lower half where the ground fills the frame.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // THE AFFORDANCE GRID COMES OFF FIRST, and that is not the test dodging its
+    // job. `layer-order.ts` deliberately paints `cells` highest — it is the
+    // finest-grained claim and the thing being inspected — and it is 55 %
+    // opaque, so it tints every ground pixel in the lower half of the frame.
+    // Measured with it on, switching roads on changed the dark-pixel count by
+    // exactly zero while the status line correctly read "23 roads (1724 tri)".
+    // Isolating the layer under test is what makes the pixel assertion about
+    // roads rather than about the grid's alpha.
+    // `exact`, because "cells" also substring-matches "show cells below the
+    // threshold" and Playwright's strict mode rejects the ambiguity.
+    await page.getByRole("checkbox", { name: "cells", exact: true }).uncheck();
+
+    // Counts the ROAD'S OWN measured tone, not "dark pixels".
+    //
+    // Two earlier attempts failed and both are worth recording. Counting dark
+    // pixels in the lower half matched 215 343 of ~230 400 either way — the
+    // lower half is empty foreground ground, and the metric was saturated. The
+    // road material was then 0x2f333d, which under this scene's lighting renders
+    // within a few levels of the ground's rgb(40,40,56); switching the layer on
+    // moved 77 pixels out of 460 800. A road that cannot be told from the ground
+    // it lies on is a failed layer whatever a test says, so the material was
+    // lightened to 0x8b909c, which renders at rgb(96,96,104).
+    //
+    // The band excludes the buildings deliberately: they are grey too, at
+    // rgb(112,112,128) and rgb(136,136,152), so the upper bound is what keeps
+    // this measuring roads rather than the skyline.
+    const roadTone = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return -1;
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return -1;
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] ?? 0;
+          const g = data[i + 1] ?? 0;
+          const b = data[i + 2] ?? 0;
+          if (r > 84 && r < 108 && Math.abs(g - r) < 12 && b - r < 18) {
+            count += 1;
+          }
+        }
+        return count;
+      });
+
+    const before = await roadTone();
+    expect(before).toBeGreaterThanOrEqual(0);
+
+    await page.getByRole("checkbox", { name: "roads" }).check();
+    await expect(page.locator("#status")).toContainText(/\d+ roads/);
+    // ~6900 pixels measured; 3000 is a floor with room for antialiasing and for
+    // a re-captured fixture, and the failure it guards against produces ZERO.
+    await expect.poll(roadTone, REPAINT).toBeGreaterThan(before + 3000);
+
+    // And back off again, so the layer is a toggle rather than a one-way door.
+    await page.getByRole("checkbox", { name: "roads" }).uncheck();
+    await expect.poll(roadTone, REPAINT).toBeLessThan(before + 3000);
+  });
+
   test("marks POIs, and clicking one says what it is", async ({ page }) => {
     // THE WHOLE POINT OF W12, end to end: the notes asked to be able to point at
     // something and be told what it is, and until now the only clickable thing

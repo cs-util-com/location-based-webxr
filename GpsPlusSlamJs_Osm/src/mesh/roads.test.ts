@@ -260,6 +260,45 @@ describe("buildRoads — geometry", () => {
     }
   });
 
+  it("winds every triangle so its FACE normal points UP", () => {
+    // WHY THIS TEST EXISTS, and it was written after the bug it catches. The
+    // ribbon material uses `flatShading`, and flat shading makes three.js
+    // RECOMPUTE the normal from each triangle's winding — the per-vertex normals
+    // this builder supplies are ignored entirely. So a correctly-normalled but
+    // inversely-wound ribbon is lit from below and culled away under
+    // `side: FrontSide`, which is exactly what happened: 23 roads and 1724
+    // triangles reported in the status line, and not one pixel on screen.
+    //
+    // The surviving evidence was that switching the material to `DoubleSide`
+    // made bright (lit-from-above) pixels appear and `FrontSide` left only dark
+    // ones — i.e. the faces we could see were the backs.
+    //
+    // Asserting the CROSS PRODUCT rather than the stored normals is the whole
+    // point: the stored normals were right the entire time.
+    const road = buildRoads(
+      [
+        way({ highway: "residential" }, [at(0, 0), at(60, 0), at(60, 60)]),
+      ],
+      { frame: FRAME },
+    );
+    const mesh = road[0]?.mesh as MeshData;
+    expect(mesh.indices.length).toBeGreaterThan(0);
+
+    for (let i = 0; i + 2 < mesh.indices.length; i += 3) {
+      const a = (mesh.indices[i] ?? 0) * 3;
+      const b = (mesh.indices[i + 1] ?? 0) * 3;
+      const c = (mesh.indices[i + 2] ?? 0) * 3;
+      const ux = (mesh.positions[b] ?? 0) - (mesh.positions[a] ?? 0);
+      const uz = (mesh.positions[b + 2] ?? 0) - (mesh.positions[a + 2] ?? 0);
+      const vx = (mesh.positions[c] ?? 0) - (mesh.positions[a] ?? 0);
+      const vz = (mesh.positions[c + 2] ?? 0) - (mesh.positions[a + 2] ?? 0);
+      // The y component of u x v for a horizontal triangle. Positive means the
+      // face points up. Degenerate triangles (0) are not an error here; a
+      // NEGATIVE one is.
+      expect(uz * vx - ux * vz).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it("samples the ground per vertex", () => {
     // Per-vertex like the plates, not once per feature like a building: a road
     // is a long surface, and one sample would cut into the hill at one end and
