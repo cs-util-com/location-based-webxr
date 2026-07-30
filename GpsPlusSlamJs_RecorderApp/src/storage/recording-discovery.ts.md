@@ -5,7 +5,7 @@
 Enumerates scenarios and session recordings from a `FileSystemDirectoryHandle`.
 Pure file-system/zip reading — no DOM, no Leaflet, no UI state. Backs three
 flows: the Replay Mode session picker, the recording-mode scenario dropdown, and
-the [`folder-manager`](folder-manager.md) folder-pick scan.
+the [`folder-manager`](folder-manager.ts.md) folder-pick scan.
 
 Lived at `ui/session-browser.ts` until 2026-07-30. It was never a UI module (its
 own header always said "pure functions"), and sitting in `ui/` cost real
@@ -13,7 +13,7 @@ complexity: `storage/folder-manager.ts` may not import from `ui/`, so it
 received `listScenariosFromFolder`, `extractScenarioNamesFromZips` and
 `discoverScenariosFromZipMetadata` as injected callbacks and kept a structural
 copy of `SessionEntry`; and the naming helpers had to be split out into
-[`session-zip-naming`](session-zip-naming.md) and re-exported from here so the
+[`session-zip-naming`](session-zip-naming.ts.md) and re-exported from here so the
 ref-point indexing pass could reach them. All of that is gone with the move.
 
 ## Public API

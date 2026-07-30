@@ -45,7 +45,7 @@ for subscriber cleanup.
 
 The ref-point **view** subscribers (3D spheres + live-map markers) are NOT wired
 here — they are AR-scoped and store-swap-following via main's `storeRef`
-([ui/ref-point-view-wiring.ts](../ui/ref-point-view-wiring.md), round-3 feedback
+([ui/ref-point-view-wiring.ts](../ui/ref-point-view-wiring.ts.md), round-3 feedback
 2026-07-05). The `deps.setStore(newStore)` call in `handleStartRecording` is
 what triggers their re-wire.
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A preset of the generic [`utils/failure-tracker`](../utils/failure-tracker.md)
+A preset of the generic [`utils/failure-tracker`](../utils/failure-tracker.ts.md)
 for **image-capture** failures: count consecutive failures and warn the user
 once when they cross a threshold, so a phone silently failing to capture frames
 (typically low memory) does not produce a recording that only looks fine.
@@ -22,7 +22,7 @@ the default. Preset applied to the generic factory:
 - `logLevel: 'warn'`
 
 The return type is the generic
-[`FailureTracker`](../utils/failure-tracker.md) — `recordSuccess()` /
+[`FailureTracker`](../utils/failure-tracker.ts.md) — `recordSuccess()` /
 `recordFailure(error?)` / `getFailureCount()` / `hasWarned()` / `reset()`.
 **There is no `CaptureFailureTracker` type**: it existed until 2026-07-30 as a
 re-declaration of `FailureTracker`, with all five methods hand-forwarded. A

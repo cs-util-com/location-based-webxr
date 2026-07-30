@@ -10,7 +10,7 @@ the `session.json` → scenario-name resolver.
 
 Scenario identity is decided in exactly one place. Four consumers need it:
 [`recording-discovery`](recording-discovery.ts.md) (replay/recording folder
-scan), [`ref-point-recovery`](ref-point-recovery.md) (recording-mode ref-point
+scan), [`ref-point-recovery`](ref-point-recovery.ts.md) (recording-mode ref-point
 indexing, 2026-07-05 folder-import plan §3.1), and `ui/hud.ts` +
 `recording/recording-session-handlers.ts` for `DEFAULT_SCENARIO` alone.
 
