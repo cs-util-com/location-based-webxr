@@ -30,7 +30,7 @@ import {
 } from "gps-plus-slam-osm";
 import { fetchTilesForScoreWorkingSet } from "gps-plus-slam-osm";
 import { latLngToCell } from "h3-js";
-import { SCORE_CHUNK_RES } from "gps-plus-slam-osm";
+import { SCORE_CHUNK_RES, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 export interface DemoPipelineOptions {
   readonly source: OsmDataSource;
@@ -128,7 +128,27 @@ export class DemoPipeline {
     const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
     const missingTiles: string[] = [];
 
-    for (const tile of fetchTilesForScoreWorkingSet(chunk)) {
+    // FETCHED FOR THE RING THIS PASS WILL SCORE, not for the widest one (W4,
+    // finding N1). Two failure modes are being avoided at once, in opposite
+    // directions:
+    //
+    //  - Deriving from `SCORE_DISK_RADIUS` while scoring reaches
+    //    `SCORE_DISK_MAX_RADIUS` — which is what shipped — scores rings 3 and 4
+    //    against tiles nobody fetched. An unfetched cell comes out as the
+    //    identity, indistinguishable from "no rule has ever mentioned this
+    //    ground": a plausible wrong answer within ~250 m of any res-7 boundary.
+    //  - Deriving from the MAXIMUM on every pass blocks the FIRST answer on a
+    //    tile only the outer rings need. The fetch loop below runs before any
+    //    scoring, so near a boundary that is 18–110 s added to the one thing the
+    //    user is actually waiting for — undoing W16, whose whole point is that
+    //    the extra reach costs nothing at the moment of waiting.
+    //
+    // `radius` is the pass's own ring, and `undefined` means the first pass, so
+    // the fallback has to be the SCORING default rather than this function's.
+    for (const tile of fetchTilesForScoreWorkingSet(
+      chunk,
+      radius ?? SCORE_DISK_RADIUS,
+    )) {
       if (this.loaded.has(tile)) continue;
       // CHECKED PER TILE, which is the granularity that matters: a tile is
       // 28-68 MB, so stopping between tiles is most of the saving available from

@@ -159,23 +159,40 @@ export function scoreWorkingSet(
  * The fetch tiles that must be loaded so every chunk in the score working set
  * around `chunk` has data — derived, not guessed.
  *
- * Returns 1 tile when the working set sits inside one fetch cell, 2 when it
- * straddles an edge, 3 near a vertex. This replaces "the tile I am in, plus a
- * ring": a ring both over-fetches in the interior (~140 MB at FETCH_RES = 7)
- * and is only heuristically sufficient at a boundary, whereas asking the
- * working set what it needs is exact by construction.
+ * Returns a small handful: 1 tile when the working set sits inside one fetch
+ * cell, more when it straddles an edge or a vertex. This replaces "the tile I am
+ * in, plus a ring": a ring both over-fetches in the interior (~140 MB at
+ * FETCH_RES = 7) and is only heuristically sufficient at a boundary, whereas
+ * asking the working set what it needs is exact by construction.
  *
  * It also absorbs H3's non-nesting slop for free. A res-11 chunk is not
  * geometrically inside its `cellToParent` fetch tile, so predicting coverage
  * from the user's position needs a fudge factor; enumerating the chunks does
  * not, because each chunk reports its own parent.
  *
- * INVARIANT (pinned by property test): for any position, every chunk in
- * `scoreWorkingSet` maps to a tile in this result.
+ * **`radius` MUST match what is about to be scored (W4, finding N1).** The
+ * default is the WIDEST disk, because a caller that does not know about
+ * progressive passes must not be handed a gap. A caller that scores ring by ring
+ * passes its own ring, and that matters in the other direction: with the default
+ * the fetch loop blocks the FIRST answer on a tile only the outer rings need,
+ * which is 18–110 s at a res-7 boundary and undoes exactly the property W16 was
+ * built for (see {@link SCORE_DISK_MAX_RADIUS}).
+ *
+ * This parameter arrived because scoring outgrew fetching silently: W16 widened
+ * the scored disk to `SCORE_DISK_MAX_RADIUS` while this function still derived
+ * from `SCORE_DISK_RADIUS`, so within ~250 m of a res-7 boundary the outer rings
+ * were scored against data that had never been downloaded — and an unfetched
+ * cell scores as the identity, which reads as "nothing is mapped here".
+ *
+ * INVARIANT (pinned by property test, at EVERY radius): every chunk in
+ * `scoreWorkingSet(chunk, radius)` maps to a tile in this result.
  */
-export function fetchTilesForScoreWorkingSet(chunk: string): string[] {
+export function fetchTilesForScoreWorkingSet(
+  chunk: string,
+  radius: number = SCORE_DISK_MAX_RADIUS,
+): string[] {
   const tiles = new Set<string>();
-  for (const c of scoreWorkingSet(chunk)) {
+  for (const c of scoreWorkingSet(chunk, radius)) {
     tiles.add(toFetchTile(c));
   }
   return [...tiles];

@@ -99,6 +99,12 @@ export function ensureAreaLoaded(
  * The movement trigger. Derives its tiles from the chunks about to be scored
  * (§4.4) rather than from a fixed ring, so coverage is exact rather than
  * estimated: 1 tile in a fetch cell's interior, 2 near an edge, 3 near a vertex.
+ *
+ * COVERS THE WIDEST SCORED DISK (W4), because this API has no notion of
+ * progressive passes — it is "make this area usable", not "score this ring". A
+ * consumer that does score ring by ring should call
+ * {@link fetchTilesForScoreWorkingSet} with its own radius instead, so the first
+ * ring is not made to wait for a tile only the outer ones need.
  */
 export function ensureWorkingSetLoaded(
   source: OsmDataSource,

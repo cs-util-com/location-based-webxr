@@ -18,6 +18,7 @@ import { latLngToCell, getResolution, cellToParent, gridDistance } from "h3-js";
 import {
   FETCH_RES,
   SCORE_CHUNK_RES,
+  SCORE_DISK_MAX_RADIUS,
   AFFORDANCE_RES,
   toFetchTile,
   toScoreChunk,
@@ -160,6 +161,52 @@ describe("resolution ladder properties", () => {
     );
   });
 
+  // ==========================================================================
+  // AND AT EVERY RADIUS THE SCORER ACTUALLY USES (W4, finding N1).
+  //
+  // The invariant above was written when scoring reached exactly
+  // `SCORE_DISK_RADIUS`, and it kept passing when W16 made scoring progressive
+  // out to `SCORE_DISK_MAX_RADIUS` — because it only ever asked about the
+  // default. The rings beyond it were scored against tiles nobody had fetched,
+  // and an unfetched cell scores as the identity: indistinguishable from "no
+  // rule has ever mentioned this ground". A silent wrong answer, within ~250 m
+  // of any res-7 boundary.
+  //
+  // Parameterising the property is the fix that cannot rot: a future radius
+  // change is covered by construction rather than by remembering this file.
+  // ==========================================================================
+  it("covers the working set at EVERY radius the scorer can use", () => {
+    fc.assert(
+      fc.property(
+        anyLatLng,
+        fc.integer({ min: 0, max: SCORE_DISK_MAX_RADIUS }),
+        ({ lat, lng }, radius) => {
+          const chunk = latLngToCell(lat, lng, SCORE_CHUNK_RES);
+          const tiles = new Set(fetchTilesForScoreWorkingSet(chunk, radius));
+          for (const c of scoreWorkingSet(chunk, radius)) {
+            expect(tiles.has(toFetchTile(c))).toBe(true);
+          }
+        },
+      ),
+    );
+  });
+
+  it("defaults to covering the WIDEST scored disk, not the first pass's", () => {
+    // The default is what every caller outside the demo's progressive loop gets
+    // — `ensureWorkingSetLoaded`, for one — and those callers have no pass
+    // structure to tell it a radius. Defaulting to the first pass's radius would
+    // hand them the same silent gap this property exists to close.
+    fc.assert(
+      fc.property(anyLatLng, ({ lat, lng }) => {
+        const chunk = latLngToCell(lat, lng, SCORE_CHUNK_RES);
+        const tiles = new Set(fetchTilesForScoreWorkingSet(chunk));
+        for (const c of scoreWorkingSet(chunk, SCORE_DISK_MAX_RADIUS)) {
+          expect(tiles.has(toFetchTile(c))).toBe(true);
+        }
+      }),
+    );
+  });
+
   it("the user's own affordance cell always has a fetch tile behind it", () => {
     // The consumer-facing form of the invariant above: "what can I do where I
     // am standing?" must never be answered from unfetched ground. Composes the
@@ -175,11 +222,12 @@ describe("resolution ladder properties", () => {
   });
 
   it("derives at most a handful of tiles — over-fetching is bounded", () => {
-    // A res-11 working set spans ~250 m and a res-7 tile is 2.81 km across, so
+    // The widest scored disk spans ~500 m and a res-7 tile is 2.81 km across, so
     // the set can touch a boundary or a vertex but never more. If this ever
     // exceeded 3 it would mean the working set had grown or the fetch tile had
     // shrunk enough to make one-request-per-move false, which is the entire
-    // justification for FETCH_RES = 7.
+    // justification for FETCH_RES = 7. (It still holds at the widened default
+    // W4 introduced — the disk doubled and the bound did not move.)
     fc.assert(
       fc.property(anyLatLng, ({ lat, lng }) => {
         const tiles = fetchTilesForScoreWorkingSet(

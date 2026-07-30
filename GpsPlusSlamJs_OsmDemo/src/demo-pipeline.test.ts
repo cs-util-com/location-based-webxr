@@ -17,6 +17,9 @@ import { latLngToCell, cellToParent } from "h3-js";
 import {
   AFFORDANCE_RES,
   SCORE_CHUNK_RES,
+  SCORE_DISK_MAX_RADIUS,
+  SCORE_DISK_RADIUS,
+  fetchTilesForScoreWorkingSet,
   parseRuleTable,
   type OsmDataSource,
 } from "gps-plus-slam-osm";
@@ -303,5 +306,103 @@ describe("DemoPipeline.update — abort", () => {
     await expect(pipeline.update(COLOGNE, "walkable")).resolves.toHaveProperty(
       "position",
     );
+  });
+});
+
+describe("the fetch set follows the ring being scored (W4, finding N1)", () => {
+  /**
+   * Why these tests matter:
+   * Scoring outgrew fetching silently. W16 made scoring progressive out to
+   * `SCORE_DISK_MAX_RADIUS` while the fetch set was still derived from
+   * `SCORE_DISK_RADIUS`, so within ~250 m of a res-7 boundary the outer rings
+   * were scored against tiles nobody had downloaded — and an unfetched cell
+   * scores as the identity, which on screen is "nothing is mapped here". The
+   * obvious fix (always derive from the maximum) trades that for a different
+   * defect: the fetch loop runs before any scoring, so the FIRST ring would
+   * block on a tile only the outer rings need. Both directions are pinned here.
+   */
+
+  /** A position whose ring-4 disk crosses into a second res-7 tile. */
+  const NEAR_A_BOUNDARY = (() => {
+    for (let i = 0; i < 4000; i++) {
+      const position = { lat: 50.9 + i * 0.0005, lng: 6.9 + i * 0.0003 };
+      const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
+      const narrow = fetchTilesForScoreWorkingSet(chunk, SCORE_DISK_RADIUS);
+      const wide = fetchTilesForScoreWorkingSet(chunk, SCORE_DISK_MAX_RADIUS);
+      if (wide.length > narrow.length) return { position, narrow, wide };
+    }
+    throw new Error("no boundary-crossing position found in the sweep");
+  })();
+
+  /** Records which tiles were asked for, and answers each with nothing. */
+  function recordingSource() {
+    const asked: string[] = [];
+    const source: OsmDataSource = {
+      attribution: "test",
+      sourceId: "fixture:asked",
+      fetchTile: (tile) => {
+        asked.push(tile);
+        return Promise.resolve({
+          tile,
+          features: [],
+          fetchedAt: 0,
+          sourceId: "fixture:asked",
+          schemaVersion: 1,
+          skipped: [],
+        });
+      },
+    };
+    return { asked, source };
+  }
+
+  const TABLE = parseRuleTable(
+    ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join("\n"),
+    { source: "test", fetchedAt: 0 },
+  );
+
+  it("guards its own fixture: the wide disk really does need another tile", () => {
+    // Without this the two tests below would both pass on a position where the
+    // rings never leave one tile, proving nothing at all.
+    expect(NEAR_A_BOUNDARY.wide.length).toBeGreaterThan(
+      NEAR_A_BOUNDARY.narrow.length,
+    );
+  });
+
+  it("fetches the outer ring's tile when the outer ring is scored", () => {
+    // The defect: those chunks used to be scored with no data behind them.
+    const { asked, source } = recordingSource();
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+
+    return pipeline
+      .update(
+        NEAR_A_BOUNDARY.position,
+        "walkable",
+        undefined,
+        SCORE_DISK_MAX_RADIUS,
+      )
+      .then(() => {
+        for (const tile of NEAR_A_BOUNDARY.wide) {
+          expect(asked).toContain(tile);
+        }
+      });
+  });
+
+  it("does NOT fetch it for the first pass, which is what the user waits on", () => {
+    // The other direction, and the reason the radius is a parameter rather than
+    // a constant: a res-7 tile is 28–68 MB and 18–110 s. Paying that before the
+    // ring-2 answer would undo W16 entirely.
+    const { asked, source } = recordingSource();
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+
+    return pipeline
+      .update(
+        NEAR_A_BOUNDARY.position,
+        "walkable",
+        undefined,
+        SCORE_DISK_RADIUS,
+      )
+      .then(() => {
+        expect([...asked].sort()).toEqual([...NEAR_A_BOUNDARY.narrow].sort());
+      });
   });
 });

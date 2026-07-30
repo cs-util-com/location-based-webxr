@@ -20,8 +20,12 @@ the derived fetch-coverage function the movement trigger uses.
   / res 11. **Throws** a named `Error` if the input is already coarser than the
   target, because `cellToParent` only ever coarsens.
 - `scoreWorkingSet(chunk)` → 19 res-11 cells.
-- `fetchTilesForScoreWorkingSet(chunk)` → 1–3 res-7 cells. **This is what the
-  movement trigger calls.**
+- `fetchTilesForScoreWorkingSet(chunk, radius?)` → 1–3 res-7 cells. **This is
+  what the movement trigger calls.** `radius` defaults to
+  `SCORE_DISK_MAX_RADIUS` — the widest disk anything scores — so a caller that
+  knows nothing about progressive passes cannot be handed a gap. **A caller that
+  scores ring by ring must pass its own ring** (W4): the default would make the
+  first, user-visible ring wait on a tile only the outer rings need.
 - `fetchWorkingSet(fetchTile)` → 7 res-7 cells. Fixed-radius; for the explicit
   "download this area" prefetch API only.
 
@@ -34,9 +38,16 @@ the derived fetch-coverage function the movement trigger uses.
   constantly.
 - **Fetch coverage is derived, not guessed.** `fetchTilesForScoreWorkingSet`
   maps every chunk we are about to score to its own fetch tile and deduplicates.
-  The invariant, pinned by property test: **every chunk in the score working set
-  maps to a tile in the result**, and therefore so does the user's own
-  affordance cell.
+  The invariant, pinned by property test **at every radius**: **every chunk in
+  `scoreWorkingSet(chunk, radius)` maps to a tile in the result**, and therefore
+  so does the user's own affordance cell.
+  - **At EVERY radius is the part that was missing (W4, finding N1).** The
+    property was written when scoring reached exactly `SCORE_DISK_RADIUS`, and it
+    kept passing when W16 made scoring progressive out to
+    `SCORE_DISK_MAX_RADIUS` — because it only ever asked about the default. Rings
+    3 and 4 were therefore scored against tiles nobody had fetched, and an
+    unfetched cell scores as the identity: indistinguishable on screen from "no
+    rule has ever mentioned this ground", within ~250 m of any res-7 boundary.
   - A fixed `gridDisk(tile, 1)` ring cannot state that. It over-fetches ~140 MB
     in the tile interior while remaining only heuristically sufficient at a
     boundary — and at `FETCH_RES = 7` a boundary position is ~20 % of the tile's
