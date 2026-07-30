@@ -35,9 +35,24 @@ Encapsulates recording-session lifecycle state and event handlers, extracted fro
 | `cleanupForNewRecording()`    | Soft reset with **teardown parity to `performStop`** (2026-07-04): first stops the live feeds via the shared `stopLiveFeeds()` (captures, sensor watches, quality-analyzer worker, HUD readouts — previously this path skipped them, leaving camera/GPS feeds and the Worker running on an XR session end), then tears down sync manager, store subscribers, failure trackers |
 | `reset()`                     | Full reset of all internal state                                                                                                                                                                                                                                                                                                                                              |
 
+## State owned (private to each factory instance)
+
+`writeFailureTracker` / `captureFailureTracker` (created per session),
+`currentSessionName`, `syncManager` / `lastSyncResult`, `imageQualityClient`,
+`absCompassHudTimer`, and the two re-entrancy guards
+`backDuringRecordingInProgress` and `stopInProgress`, plus `unsubscribeStore`
+for subscriber cleanup.
+
+The ref-point **view** subscribers (3D spheres + live-map markers) are NOT wired
+here — they are AR-scoped and store-swap-following via main's `storeRef`
+([ui/ref-point-view-wiring.ts](../ui/ref-point-view-wiring.md), round-3 feedback
+2026-07-05). The `deps.setStore(newStore)` call in `handleStartRecording` is
+what triggers their re-wire.
+
 ## Invariants & Assumptions
 
 - **Factory pattern**: Each call to `createRecordingSessionHandlers` returns independent state. No module-level mutable state.
+- **The GPS-marker opt-out must be re-asserted after `clearAll()` (regression fixed 2026-06-18)**: `handleStartRecording` calls `gpsEventVisualizer.clearAll()` to dispose the previous session's markers, but `clearAll()` resets the shared visualizer to its pristine **visible** state (a replay-safety reset). This path runs *after* Enter-AR already applied the operator's `visualization.gpsAlignmentMarkers` opt-out, so the immediately following `setVisible(...)` is load-bearing — without it, GPS spheres reappear during recording even though the toggle is off.
 - **Image-quality gate lifecycle**: when `recordingOptions.images.qualityFilter.enabled`, `handleStartRecording` spawns the off-thread analyzer worker (`createImageQualityAnalyzer`) and injects it via the `deps.setImageQualityAnalyzer` dep **before** `startImageCapture` (the manager reads the analyzer when constructed); when disabled it spawns no worker and clears the analyzer (`deps.setImageQualityAnalyzer(null)`) so a previous recording's worker can't leak in. The dep is injected by main.ts and writes main's `activeImageQualityAnalyzer` ref, which the stable `imageCapture.qualityAnalyzer` wrapper passed to `initAR` delegates to (the framework's `setImageQualityAnalyzer` export was deleted in the setter fold; recordings start/stop within one AR session, so the per-recording Worker cannot be an initAR-time constant). `performStop` clears the callback and `dispose()`s the worker. The worker is owned here (one per recording), so its rolling sharpness baseline resets each recording. **Fail-open on worker init**: the worker is constructed synchronously, so `new Worker` can throw on a locked-down deployment (e.g. CSP `worker-src`). That construction is wrapped in `try/catch` — on failure the gate is disabled (`deps.setImageQualityAnalyzer(null)`) and recording proceeds, rather than aborting a session whose GPS/orientation watches have already started. See `image-quality-client.ts.md`.
 - **Dependency injection**: `getStore()` is called on every use to resolve the _current_ store (supports soft reset via Bug 9 getter pattern).
 - **Scenario fallback is centralized**: Start-recording, metadata writing, and OPFS ZIP export all use the shared `FALLBACK_SCENARIO` constant when no scenario has been selected.
@@ -83,7 +98,7 @@ await handlers.handleStopRecording();
 
 ## Tests
 
-- `recording-session-handlers.test.ts` — 63 tests covering:
+- `recording-session-handlers.test.ts` — 85 tests covering:
   - Start/stop lifecycle, sensor wiring, storage session creation
   - Sync manager creation and final sync
   - Bug 8 regression: `hideRecordingControls` called before summary transition

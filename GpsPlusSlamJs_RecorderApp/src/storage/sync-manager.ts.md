@@ -1,100 +1,98 @@
-# Sync Manager Module
+# sync-manager.ts
 
 ## Purpose
 
-Manages periodic synchronization of OPFS session data to an external ZIP file. Provides crash safety by regularly syncing data to the user's chosen file location (obtained via File System Access API's `showSaveFilePicker`).
+Periodically runs a caller-supplied async sync operation, so a recording in
+progress is regularly flushed from OPFS to the user's chosen external ZIP file
+and survives a crash or a killed tab.
+
+It does **not** know what syncing means — the operation is injected. The module
+is pure scheduling + status: an interval, a page-hide trigger, a concurrency
+guard, and a status object for the HUD.
 
 ## Public API
 
+Exactly three exports.
+
 ### `createSyncManager(syncFn, options?): SyncManager`
 
-Factory function to create a sync manager instance.
+- `syncFn: () => Promise<void>` — the operation to run on each tick.
+- `options.intervalMs?: number` — tick interval, default `DEFAULT_SYNC_INTERVAL_MS`.
+- `options.onStatusChange?: (status) => void` — called on every status transition.
 
-**Parameters:**
+### `SyncManager` (interface)
 
-- `syncFn: () => Promise<void>` - The actual sync operation to perform
-- `options?: SyncManagerOptions`
-  - `intervalMs?: number` - Sync interval (default: 60000ms = 60 seconds)
-  - `onStatusChange?: (status: SyncStatus) => void` - Callback for status updates
-
-**Returns:** `SyncManager` instance
-
-### `SyncManager` Interface
-
-```typescript
-interface SyncManager {
-  start(): void; // Start periodic sync
-  stop(): void; // Stop sync and cleanup listeners
-  getStatus(): SyncStatus; // Get current sync status
-  syncNow(): Promise<void>; // Trigger immediate sync (resets timer)
-}
-```
-
-### `SyncStatus` Interface
-
-```typescript
-interface SyncStatus {
-  state: 'idle' | 'active' | 'syncing';
-  lastSyncTime: number | null; // ms since epoch
-  lastError: string | null;
-}
-```
+- `start()` — begin ticking and attach the `visibilitychange` listener. Calling
+  it while already started is a no-op.
+- `stop()` — clear the timer, detach the listener, status → `idle`.
+- `getStatus()` — a **copy** of the current status (callers cannot mutate it).
+- `syncNow()` — sync immediately, then reset the interval.
 
 ### `DEFAULT_SYNC_INTERVAL_MS`
 
-Constant: `60_000` (60 seconds) - The agreed sync interval per user feedback session.
+`60_000`. Agreed in a user-feedback session; the production call site passes no
+`intervalMs`, so this is the interval that actually ships.
 
-## Invariants & Assumptions
+`SyncStatus` (`{ state: 'idle' | 'active' | 'syncing'; lastSyncTime: number | null; lastError: string | null }`)
+and `SyncManagerOptions` are **not exported** — they are reachable only through
+the exported signatures.
 
-1. **Single interval**: Only one periodic sync interval runs at a time (calling `start()` twice is a no-op)
-2. **Visibility sync**: Triggers sync when page becomes hidden (user switching apps)
-3. **Timer reset**: Manual `syncNow()` resets the interval timer to avoid double-sync
-4. **Error isolation**: Sync failures don't stop the periodic loop; errors are logged and stored in status
-5. **Cleanup on stop**: All timers and event listeners are cleaned up when `stop()` is called
+## Invariants & assumptions
 
-## Examples
+- **No overlapping syncs.** A tick that arrives while `state === 'syncing'` is
+  dropped, not queued. A slow `syncFn` therefore self-limits rather than piling
+  up.
+- **Late completions after `stop()` are discarded.** This is the module's
+  subtlest behaviour and the reason the `stopped` flag exists separately from
+  `status.state`: `syncFn` is awaited, so it can settle *after* `stop()` has
+  already run. `stopped` is set `false` in `start()`, `true` as the **first**
+  statement of `stop()`, and re-checked after the `await` on both the success
+  and the error path. Without it a completing sync would write `state: 'active'`
+  over the `idle` that `stop()` just set, and the HUD would show a live sync for
+  a session that has ended.
+- **A failing `syncFn` never stops the loop.** The error is logged, stored in
+  `status.lastError`, and the state returns to `active`.
+- **Interval reset after out-of-band syncs.** Both `syncNow()` and the page-hide
+  sync restart the timer, so a manual sync is not immediately followed by a
+  scheduled one.
+- **Page-hide, not page-show.** The `visibilitychange` handler acts only on
+  `visibilityState === 'hidden'` — the point is to flush before the OS can
+  discard the tab. (Contrast `sensors/permission-checker.ts`, which listens to
+  the same event for the opposite edge.)
+- **`stop()` is idempotent and safe before `start()`** — every teardown branch is
+  null-guarded.
+- Requires `document`; unit tests run under jsdom with fake timers.
 
-### Basic usage
+## Example
 
-```typescript
-import { createSyncManager } from './sync-manager';
-import { syncToExternalZip } from './zip-export';
+The real call site (`recording/recording-session-handlers.ts`) — note the
+default interval and the HUD wiring:
 
-const handle = await window.showSaveFilePicker({ ... });
-
-const manager = createSyncManager(
-  () => syncToExternalZip(handle, scenarioName, sessionName),
-  { intervalMs: 60_000 }
-);
-
-manager.start();
-// ... recording in progress ...
-manager.stop();
-```
-
-### With UI status updates
-
-```typescript
-const manager = createSyncManager(
-  () => syncToExternalZip(handle, scenario, session),
+```ts
+const syncManager = createSyncManager(
+  async () => {
+    lastSyncResult = await syncScenarioSessionToExternalZip(
+      saveFileHandle,
+      scenarioName,
+      currentSessionName,
+      { contributors: buildZipContributors() }
+    );
+  },
   {
-    intervalMs: 60_000,
     onStatusChange: (status) => {
-      updateSyncStatus(status); // Update HUD
+      updateSyncStatus(status); // HUD indicator
     },
   }
 );
+syncManager.start();
+// ... recording ...
+await syncManager.syncNow(); // flush before teardown
+syncManager.stop();
 ```
 
 ## Tests
 
-Covered by [sync-manager.test.ts](sync-manager.test.ts):
-
-- Factory API surface validation
-- Start/stop lifecycle (periodic timer management)
-- Status tracking (idle, active, lastSyncTime, errors)
-- Manual sync via `syncNow()` with timer reset
-- Visibility change handling (sync on page hide)
-- Status change callbacks
-
-All tests use fake timers for deterministic behavior.
+`sync-manager.test.ts` — 22 tests on fake timers, grouped as: factory surface,
+start/stop lifecycle, `getStatus`, `syncNow`, visibility-change handling, status
+callbacks, and a dedicated **`stop()` race condition** group pinning the
+late-completion rule above on both the resolve and the reject path.

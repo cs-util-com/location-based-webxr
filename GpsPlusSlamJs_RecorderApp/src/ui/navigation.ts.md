@@ -36,13 +36,38 @@ and prevents accidental page exits during recording.
   delivery is swallowed — one ignored back press, benign. The guard is cleared
   by `destroyNavigation()` so it cannot leak across re-initialization.
 - Popstate handler prioritizes modal close over screen navigation.
+- **Back during recording delegates and does NOT re-push.** The handler calls
+  `onBackDuringRecording()` fire-and-forget; that callback owns showing the
+  confirm dialog, stopping the recording if confirmed, and re-pushing the
+  history entry if cancelled. Navigation deliberately re-pushes nothing itself.
+- **Back from summary cleans the stack first:** the handler
+  `history.replaceState({ screen: 'setup' })` *before* calling
+  `onBackFromSummary()`, so the soft reset does not leave a summary entry behind.
 - Screen state (`currentScreen`) lives in Redux via
   `routing-slice.ts`, not a module-level variable (Bug 2 fix).
+  `AppScreen` is imported from there — navigation does not export it.
 - Store reference is resolved via a getter function so navigation
   always uses the current store after soft resets (Bug 9 fix).
 - Routing actions are dispatched through the `NavigationStore` interface,
   keeping navigation loosely coupled from the full `RecorderStore`.
 - `getCurrentScreen()` returns `'setup'` when no store is available.
+
+## Screen transition map
+
+```
+User Action            | Navigation call               | History effect
+-----------------------|-------------------------------|---------------------------------
+Enter AR               | pushScreenState('ar')         | push {screen: 'ar'}
+Start Recording        | pushScreenState('recording')  | push {screen: 'recording'}
+Stop Recording         | replaceScreenState('summary') | replace with {screen: 'summary'}
+Soft Reset (New Rec.)  | replaceScreenState('setup')   | replace with {screen: 'setup'}
+Back from AR           | (popstate handler)            | → onBackToSetup
+Back during Recording  | (popstate handler)            | → onBackDuringRecording (confirm)
+Back from Summary      | (popstate handler)            | replaceState(setup) → onBackFromSummary
+Open ref-point picker  | pushModalState()              | push {modal: 'ref-point'}
+Close picker (confirm) | popModalState()               | pop via history.back() (guarded)
+Back while picker open | (popstate handler)            | → onCloseModal → cancel picker
+```
 
 ## Examples
 
@@ -79,3 +104,15 @@ console.log(getCurrentScreen()); // 'ar'
   - Bug 9 regression: store getter resolves current store after replacement
   - F4 regression: the self-induced popstate after `popModalState()` is
     swallowed (one-shot), user-back paths and re-init are unaffected
+- `ref-point-picker.test.ts` — integration: the picker pushes on show and pops
+  on confirm/cancel/suggestion-click, and a simulated back cancels it with
+  `null`.
+
+## Related files
+
+- [ref-point-picker.ts](./ref-point-picker.ts) — the only `pushModalState` /
+  `popModalState` caller.
+- [main.ts](../main.ts) — calls `initNavigation`, the screen-state helpers and
+  the `beforeunload` pair; wires `handleBackDuringRecording` as
+  `onBackDuringRecording`.
+- [confirm-dialog.ts](./confirm-dialog.ts) — the dialog that callback shows.
