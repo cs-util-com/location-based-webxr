@@ -64,6 +64,23 @@ export const FETCH_DISK_RADIUS = 1;
 export const SCORE_DISK_RADIUS = 2;
 
 /**
+ * How far scoring eventually reaches, in `gridDisk` rings (W16, DEC-R2-30).
+ *
+ * 4 rings = 61 chunks = ~2 989 res-13 cells, reaching ~250 m from the user.
+ *
+ * **`SCORE_DISK_RADIUS` is still what the FIRST pass scores, and that is the
+ * point rather than an implementation detail.** The rings beyond it are scored
+ * afterwards and emitted as they finish, so the extra reach costs nothing at the
+ * moment the user is actually waiting. Making the first answer slower in order
+ * to make the rings uniform would trade the thing people notice for the thing
+ * they do not.
+ *
+ * The C# reference's analogue is one ring of ~153 m tiles around a ~153 m
+ * centre; two extra rings here is the same shape at this grid's scale.
+ */
+export const SCORE_DISK_MAX_RADIUS = 4;
+
+/**
  * Number of res-13 children a res-11 chunk normally has: 7^2, two levels down.
  *
  * NOT a hard invariant. The 12 pentagons per resolution have 6 children rather
@@ -125,8 +142,17 @@ export function fetchWorkingSet(fetchTile: string): string[] {
 }
 
 /** The res-11 chunks that must be scored for a user standing in `chunk`. */
-export function scoreWorkingSet(chunk: string): string[] {
-  return gridDisk(chunk, SCORE_DISK_RADIUS);
+export function scoreWorkingSet(
+  chunk: string,
+  radius: number = SCORE_DISK_RADIUS,
+): string[] {
+  // Clamped rather than trusted. A negative radius makes `gridDisk` throw and a
+  // large one is a working set nobody asked for — this is called with a ring
+  // counter, and a counter is exactly the kind of value that goes wrong by one.
+  return gridDisk(
+    chunk,
+    Math.max(0, Math.min(SCORE_DISK_MAX_RADIUS, Math.floor(radius))),
+  );
 }
 
 /**

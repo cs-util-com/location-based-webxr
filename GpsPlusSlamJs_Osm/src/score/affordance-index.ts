@@ -168,6 +168,14 @@ export class AffordanceIndex {
 
   /** The user's last res-11 cell. The `oldUserTile` short-circuit. */
   private lastChunk: string | undefined;
+  /**
+   * The widest radius scored for `lastChunk`.
+   *
+   * Reset with the chunk, because a move invalidates how far the PREVIOUS place
+   * had been scored — carrying it over would let a new position's first pass be
+   * mistaken for an already-completed wider one.
+   */
+  private lastRadius = -1;
 
   readonly stats = {
     chunksScored: 0,
@@ -237,7 +245,10 @@ export class AffordanceIndex {
 
     // Force the next `update` to do work even if the user has not moved: the
     // short-circuit is about the USER's position, and the world just changed.
-    if (invalidated.length > 0) this.lastChunk = undefined;
+    if (invalidated.length > 0) {
+      this.lastChunk = undefined;
+      this.lastRadius = -1;
+    }
 
     if (invalidated.length > 0) this.notify(invalidated);
     return invalidated;
@@ -257,15 +268,31 @@ export class AffordanceIndex {
    * reference's `oldUserTile` short-circuit, and it is what makes calling this
    * on every GPS fix acceptable.
    */
-  update(position: LatLng): UpdateResult {
+  update(
+    position: LatLng,
+    /**
+     * How many rings to score (W16). Defaults to the first pass's radius.
+     *
+     * Calling this repeatedly with a growing radius is the progressive path: each
+     * call scores only the chunks the previous one did not, because the ones it
+     * did are already in `this.chunks` and come back as `reused`.
+     */
+    radius: number = SCORE_DISK_RADIUS,
+  ): UpdateResult {
     const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
-    const workingSet = scoreWorkingSet(chunk);
+    const workingSet = scoreWorkingSet(chunk, radius);
 
-    if (chunk === this.lastChunk) {
+    // The short-circuit now has to consider the RADIUS as well as the chunk.
+    // Keyed on the chunk alone, the second call of a progressive run — same
+    // chunk, wider ring — would return early with nothing scored, and the outer
+    // rings would silently never arrive. The symptom would be a working set that
+    // stops growing, which looks exactly like a working set that finished.
+    if (chunk === this.lastChunk && radius <= this.lastRadius) {
       this.stats.movesIgnored++;
       return { workingSet, scored: [], reused: workingSet };
     }
     this.lastChunk = chunk;
+    this.lastRadius = radius;
 
     // NEAREST FIRST, as the reference sorts its sub-tiles by real distance to
     // the user. It changes no result, and it means a run that is interrupted —

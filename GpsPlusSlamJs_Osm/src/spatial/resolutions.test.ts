@@ -28,6 +28,7 @@ import {
   AFFORDANCE_RES,
   FETCH_DISK_RADIUS,
   SCORE_DISK_RADIUS,
+  SCORE_DISK_MAX_RADIUS,
   RES13_CELLS_PER_CHUNK,
   AFFORDANCE_CELL_AREA_M2,
   toFetchTile,
@@ -250,5 +251,52 @@ describe("coarsening", () => {
   it("is a no-op when the cell is already at the target resolution", () => {
     const tile = latLngToCell(COLOGNE.lat, COLOGNE.lng, FETCH_RES);
     expect(toFetchTile(tile)).toBe(tile);
+  });
+});
+
+describe("scoreWorkingSet — progressive radii (W16, DEC-R2-30)", () => {
+  const CHUNK = latLngToCell(50.9413, 6.9583, SCORE_CHUNK_RES);
+
+  it("grows monotonically with the radius, and never shrinks", () => {
+    // WHY THIS MATTERS. The progressive path calls this with a growing ring
+    // counter, and each pass must be a SUPERSET of the last — a user watching
+    // the map fill in must never see cells disappear as it widens.
+    let previous = new Set<string>();
+    for (let radius = 0; radius <= SCORE_DISK_MAX_RADIUS; radius += 1) {
+      const set = new Set(scoreWorkingSet(CHUNK, radius));
+      expect(set.size).toBeGreaterThanOrEqual(previous.size);
+      for (const cell of previous) expect(set.has(cell)).toBe(true);
+      previous = set;
+    }
+  });
+
+  it("defaults to the FIRST pass's radius, not the widest", () => {
+    // The default is what an un-migrated caller gets, and it has to stay the
+    // narrow, fast answer. Defaulting to the maximum would silently make every
+    // existing caller do 3x the work for a reach it never asked for.
+    expect(scoreWorkingSet(CHUNK)).toEqual(
+      scoreWorkingSet(CHUNK, SCORE_DISK_RADIUS),
+    );
+    expect(scoreWorkingSet(CHUNK).length).toBeLessThan(
+      scoreWorkingSet(CHUNK, SCORE_DISK_MAX_RADIUS).length,
+    );
+  });
+
+  it("clamps a nonsensical radius instead of throwing or over-reaching", () => {
+    // This is called with a ring COUNTER, and a counter is exactly the kind of
+    // value that goes wrong by one. `gridDisk` throws on a negative radius, and
+    // an unbounded one is a working set nobody asked for.
+    expect(scoreWorkingSet(CHUNK, -3)).toEqual(scoreWorkingSet(CHUNK, 0));
+    expect(scoreWorkingSet(CHUNK, 99)).toEqual(
+      scoreWorkingSet(CHUNK, SCORE_DISK_MAX_RADIUS),
+    );
+    expect(scoreWorkingSet(CHUNK, 2.7)).toEqual(scoreWorkingSet(CHUNK, 2));
+  });
+
+  it("reaches 61 chunks at the maximum radius", () => {
+    // 1 + 6 + 12 + 18 + 24 = 61, the hexagonal ring sum. Pinned as a NUMBER
+    // because DEC-R2-30 was taken on a stated cost, and a change to the radius
+    // that did not change this count would mean the constant is not being read.
+    expect(scoreWorkingSet(CHUNK, SCORE_DISK_MAX_RADIUS)).toHaveLength(61);
   });
 });

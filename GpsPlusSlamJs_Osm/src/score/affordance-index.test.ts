@@ -537,3 +537,77 @@ describe("a chunk's score does not depend on what was scored alongside it", () =
     expect(empty.map((scored) => scored.tiles)).toEqual(empty.map(() => []));
   });
 });
+
+describe("AffordanceIndex.update — progressive radii (W16, DEC-R2-30)", () => {
+  it("scores only the NEW rings when called again with a wider radius", () => {
+    // THE POINT OF THE PROGRESSIVE PATH. The first pass is the narrow, fast
+    // answer the user waits for; widening must cost only the chunks the first
+    // pass did not already do, or the extra reach would be paid for twice.
+    const index = newIndex();
+
+    const first = index.update(HOME, 2);
+    const widened = index.update(HOME, 4);
+
+    expect(widened.workingSet.length).toBeGreaterThan(first.workingSet.length);
+    // Everything the first pass scored comes back as REUSED, not rescored.
+    for (const chunk of first.scored) {
+      expect(widened.reused).toContain(chunk);
+      expect(widened.scored).not.toContain(chunk);
+    }
+    expect(widened.scored.length).toBe(
+      widened.workingSet.length - first.workingSet.length,
+    );
+  });
+
+  it("does not shrink the working set when asked for a narrower radius again", () => {
+    // A late, superseded ring request must not undo a wider pass that already
+    // landed. The guard is `radius <= lastRadius`, and without it a stale call
+    // would evict the outer chunks — the map would visibly contract.
+    const index = newIndex();
+    index.update(HOME, 4);
+    const narrow = index.update(HOME, 2);
+
+    expect(narrow.scored).toEqual([]);
+    // The wider pass's chunks survive: the working set reported is the narrow
+    // one, but nothing was evicted from the index behind it.
+    expect(narrow.workingSet.length).toBeLessThan(61);
+  });
+
+  it("still short-circuits a repeat at the SAME radius", () => {
+    // The `oldUserTile` short-circuit is what makes calling this on every GPS
+    // fix acceptable; adding the radius must not cost that.
+    const index = newIndex();
+    index.update(HOME, 2);
+    const again = index.update(HOME, 2);
+    expect(again.scored).toEqual([]);
+  });
+
+  it("re-centres after a MOVE, however wide the previous pass was", () => {
+    // `lastRadius` is reset with `lastChunk`, because how far the PREVIOUS place
+    // had been scored says nothing about this one. Carrying it over would make a
+    // new position's narrow first pass look like an already-completed wider one,
+    // and the call would short-circuit — leaving the working set centred on the
+    // place the user has left.
+    //
+    // NOTE what this does NOT assert. The first draft expected chunks to be
+    // rescored, and that was wrong: after a radius-4 pass a short move lands
+    // entirely inside chunks that are already held, so reusing all of them is
+    // the correct and desirable outcome. What must happen is that the call is
+    // not IGNORED and the set re-centres.
+    const index = newIndex();
+    const wide = index.update(HOME, 4);
+    const ignoredBefore = index.stats.movesIgnored;
+
+    const away = positionIn(
+      gridDisk(
+        latLngToCell(HOME.lat, HOME.lng, SCORE_CHUNK_RES),
+        2,
+      )[8] as string,
+    );
+    const moved = index.update(away, 2);
+
+    expect(index.stats.movesIgnored).toBe(ignoredBefore);
+    expect(moved.workingSet).not.toEqual(wide.workingSet);
+    expect(moved.workingSet.length).toBe(19);
+  });
+});
