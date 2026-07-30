@@ -466,3 +466,115 @@ describe("merging", () => {
     expect(Math.max(...merged.indices)).toBe(merged.positions.length / 3 - 1);
   });
 });
+
+describe("buildBuildings — the base on sloped terrain (DEC-R2-19)", () => {
+  /**
+   * WHY THIS CHANGED, AND WHY IT MATTERS MORE NOW. The base used to come from ONE
+   * terrain sample, taken at the footprint's first vertex. On a slope that leaves a
+   * building cut into the hill at one end and floating at the other — documented as
+   * a known seam, and tolerable while the demo's terrain was a near-flat 600 m
+   * square. The terrain now covers the whole rendered city with real relief, so the
+   * artefact went from rare to routine.
+   *
+   * The fix is what OSM2World and most city renderers do: sit the building at the
+   * LOWEST terrain height under its footprint, so no part of it can float, and let
+   * the walls run down to meet the ground. Nothing is ever buried, nothing hovers.
+   *
+   * The accepted consequence is that walls become taller than the tagged height on
+   * steep ground. That is correct — the tagged height is measured from the building's
+   * own base, not from the lowest point of the terrain beneath it — and it is a
+   * deliberate change to existing output, which is why the assertions below are
+   * explicit about it.
+   */
+
+  /** A ~20 m square footprint, as a closed way. */
+  const SQUARE: OsmFeature = {
+    type: "way",
+    id: 1,
+    tags: { building: "yes", height: "10" },
+    geometry: [
+      { lat: 50.9413, lng: 6.9583 },
+      { lat: 50.9413, lng: 6.9586 },
+      { lat: 50.94148, lng: 6.9586 },
+      { lat: 50.94148, lng: 6.9583 },
+      { lat: 50.9413, lng: 6.9583 },
+    ],
+  };
+
+  const FRAME = enuFrameAt({ lat: 50.9413, lng: 6.9583 });
+
+  it("sits at the LOWEST terrain height under the footprint, not the first corner", () => {
+    // The first corner is deliberately the HIGHEST here, so a first-corner sample
+    // would place the building above the ground at three of its four corners.
+    const heightByLng = (position: { lng: number }): number =>
+      position.lng < 6.95845 ? 30 : 10;
+
+    const [volume] = buildBuildings([SQUARE], {
+      frame: FRAME,
+      groundHeightM: heightByLng,
+    });
+    if (volume === undefined) throw new Error("no volume built");
+
+    const lowestVertexY = lowestY(volume.mesh);
+    // The base must be at 10 m (the minimum), not 30 m (the first corner).
+    expect(lowestVertexY).toBeCloseTo(10, 3);
+  });
+
+  it("extends the walls DOWN so nothing floats over the low side", () => {
+    // The other half. Sitting at the minimum without lengthening the walls would
+    // put the roof 20 m lower than tagged on the high side.
+    const heightByLng = (position: { lng: number }): number =>
+      position.lng < 6.95845 ? 30 : 10;
+
+    const [volume] = buildBuildings([SQUARE], {
+      frame: FRAME,
+      groundHeightM: heightByLng,
+    });
+    if (volume === undefined) throw new Error("no volume built");
+
+    // Base at 10, and the roof still 10 m above the HIGHEST ground (30) — so the
+    // wall spans 30 m rather than the tagged 10.
+    expect(highestY(volume.mesh)).toBeCloseTo(40, 3);
+    expect(highestY(volume.mesh) - lowestY(volume.mesh)).toBeCloseTo(30, 3);
+  });
+
+  it("is unchanged on FLAT ground, so the common case did not move", () => {
+    // The regression guard. Most ground the demo renders is near-flat, and this
+    // change must not shift any of it.
+    const [volume] = buildBuildings([SQUARE], {
+      frame: FRAME,
+      groundHeightM: () => 12,
+    });
+    if (volume === undefined) throw new Error("no volume built");
+
+    expect(lowestY(volume.mesh)).toBeCloseTo(12, 3);
+    expect(highestY(volume.mesh)).toBeCloseTo(22, 3);
+  });
+
+  it("still works with no terrain at all", () => {
+    const [volume] = buildBuildings([SQUARE], { frame: FRAME });
+    if (volume === undefined) throw new Error("no volume built");
+    expect(lowestY(volume.mesh)).toBeCloseTo(0, 3);
+    expect(highestY(volume.mesh)).toBeCloseTo(10, 3);
+  });
+});
+
+/** Lowest vertex y in a mesh — the base the building sits on. */
+function lowestY(mesh: { positions: Float32Array }): number {
+  let min = Infinity;
+  for (let i = 1; i < mesh.positions.length; i += 3) {
+    const y = mesh.positions[i] ?? 0;
+    if (y < min) min = y;
+  }
+  return min;
+}
+
+/** Highest vertex y in a mesh — the top of the roof. */
+function highestY(mesh: { positions: Float32Array }): number {
+  let max = -Infinity;
+  for (let i = 1; i < mesh.positions.length; i += 3) {
+    const y = mesh.positions[i] ?? 0;
+    if (y > max) max = y;
+  }
+  return max;
+}

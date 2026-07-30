@@ -18,6 +18,25 @@ OSM features to building volumes, honouring `building:part`.
 
 ## Invariants & assumptions
 
+- **The base sits at the LOWEST terrain height under the outer ring, and the walls
+  are lengthened to match (DEC-R2-19).** Previously one sample was taken at the
+  footprint anchor, which is only correct on flat ground: on a slope it cut the
+  building into the hill at one end and floated it at the other. That was documented
+  as a known seam and was tolerable while consumers rendered a near-flat 600 m
+  terrain square; once terrain covers a city with real relief it becomes routine.
+  - **Both halves are required.** Re-basing without lengthening drops the roof below
+    its tagged height on the high side; lengthening without re-basing leaves the
+    building floating on the low side.
+  - **Accepted consequence:** on steep ground the wall is taller than `height=`.
+    That is correct — the tag is measured from the building’s own base, not from the
+    lowest terrain beneath it — and it is a deliberate change to existing output.
+  - **Flat ground is byte-identical to before**, because the rise is 0. Pinned by a
+    regression test.
+  - Only the OUTER ring is sampled: inner rings are courtyards, inside the outer
+    extent by definition, so they can neither lower the base nor raise the rise.
+  - A non-finite sample is SKIPPED rather than compared, or one NaN from a provider
+    would poison the whole building and a NaN position silently drops triangles.
+
 - **Landmark detail is FREE if you honour `building:part` and `min_height`.**
   Cologne Cathedral is not a model file and not a special case — it is many
   `building:part` polygons, each with its own height and `min_height`. A naive

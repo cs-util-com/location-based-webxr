@@ -39,7 +39,7 @@ pixel grid, fetched once each and reused as the user moves.
 - **Outside the covered area, `heightAtPosition` returns the NEAREST held post**,
   not `undefined`. A `NaN`/undefined vertex silently drops a triangle rather than
   reporting anything, and "this is the last thing we know" is the honest answer.
-  - This is *not* the striping bug of finding R2-9. That was a fixed 600 m field
+  - This is _not_ the striping bug of finding R2-9. That was a fixed 600 m field
     under 2.8 km of buildings, so the fallback covered most of the scene. The field
     is now sized to the rendered extent, so the fallback is an edge case rather than
     the common path.
@@ -53,8 +53,10 @@ pixel grid, fetched once each and reused as the user moves.
 ## Examples
 
 ```ts
-const field = createTerrainField({ provider: new TerrariumProvider({ decodePng }) });
-await field.ensureAround(centre, extentM * Math.SQRT2);   // grow (incremental)
+const field = createTerrainField({
+  provider: new TerrariumProvider({ decodePng }),
+});
+await field.ensureAround(centre, extentM * Math.SQRT2); // grow (incremental)
 const grid = field.sampleGrid({ frame, extentM, spacingM }); // render (bounded)
 ```
 

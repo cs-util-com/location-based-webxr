@@ -165,6 +165,48 @@ function assignPartsToOutlines(
   return { claimed, partsByOutline };
 }
 
+/**
+ * The terrain under a footprint: where its base sits, and how far the ground rises.
+ *
+ * SAMPLED AT EVERY OUTER-RING VERTEX, not once at an anchor (DEC-R2-19). One sample
+ * was the original behaviour and it is only correct on flat ground: on a slope it
+ * leaves the building cut into the hill at one end and floating at the other. That
+ * was documented as a known seam and was tolerable while consumers rendered a
+ * near-flat 600 m terrain square; once terrain covers a whole city with real relief
+ * it goes from rare to routine.
+ *
+ * Only the OUTER ring is sampled. Inner rings are holes — courtyards — and are by
+ * definition inside the outer ring's extent, so they cannot lower the base or raise
+ * the rise. Sampling them would cost work and change nothing.
+ *
+ * `rise` is 0 on flat ground, which is what keeps the common case byte-identical to
+ * the previous behaviour.
+ */
+function groundUnder(
+  rings: readonly EnuPoint[][],
+  options: BuildBuildingsOptions,
+): { lowest: number; rise: number } {
+  const sample = options.groundHeightM;
+  const outer = rings[0];
+  if (sample === undefined || outer === undefined || outer.length === 0) {
+    return { lowest: 0, rise: 0 };
+  }
+
+  let lowest = Infinity;
+  let highest = -Infinity;
+  for (const point of outer) {
+    const height = sample(options.frame.toLatLng(point));
+    // A provider that answers NaN would otherwise poison every vertex of the
+    // building through the comparison below, and a NaN position silently drops a
+    // triangle rather than reporting anything.
+    if (!Number.isFinite(height)) continue;
+    if (height < lowest) lowest = height;
+    if (height > highest) highest = height;
+  }
+  if (!Number.isFinite(lowest)) return { lowest: 0, rise: 0 };
+  return { lowest, rise: highest - lowest };
+}
+
 function volumeFor(
   feature: OsmFeature,
   rings: EnuPoint[][],
@@ -172,15 +214,24 @@ function volumeFor(
   options: BuildBuildingsOptions,
 ): BuildingVolume {
   const heights = resolveHeights(feature.tags);
-  const anchor = options.frame.toLatLng(rings[0]?.[0] ?? { x: 0, y: 0 });
-  const groundHeightM = options.groundHeightM?.(anchor) ?? 0;
+  const ground = groundUnder(rings, options);
 
   const mesh = extrudeBuilding(rings, {
     minHeightM: heights.minHeightM,
-    eaveHeightM: heights.eaveHeightM,
-    totalHeightM: heights.totalHeightM,
+    // THE WALLS RUN DOWN TO THE LOWEST GROUND, THE ROOF STAYS ABOVE THE HIGHEST.
+    // Both halves are needed and neither alone is right: basing at the minimum
+    // without lengthening the walls drops the roof below its tagged height on the
+    // high side, and lengthening without re-basing leaves the building floating on
+    // the low side. Together, nothing floats and nothing is buried.
+    //
+    // The tagged height is measured from the building's OWN base, not from the
+    // lowest point of the terrain under it, so on steep ground the wall is
+    // legitimately taller than `height=`. That is the accepted consequence of
+    // DEC-R2-19 and it changes existing output deliberately.
+    eaveHeightM: heights.eaveHeightM + ground.rise,
+    totalHeightM: heights.totalHeightM + ground.rise,
     roofShape: heights.roofShape,
-    groundHeightM,
+    groundHeightM: ground.lowest,
   });
 
   const roofIsApproximate = mesh.roofIsApproximate;
