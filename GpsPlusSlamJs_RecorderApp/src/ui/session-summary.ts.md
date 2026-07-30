@@ -142,4 +142,4 @@ npm run test:unit -- src/ui/session-summary.test.ts
 - [index.html](../../index.html) - HTML markup for the panel
 - [main.ts](../main.ts) - Initialization and `handleStopRecording` integration
 - [README.md](../../README.md#session-summary-panel-summary-state) - Spec definition
-- [2026-01-25-user-feedback.md](../../../GpsPlusSlamJs_Docs/docs/2026-01-25-user-feedback.md) - Original user feedback
+- [2026-01-25-user-feedback.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-01-25-user-feedback.md) - Original user feedback

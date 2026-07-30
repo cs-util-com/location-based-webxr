@@ -19,7 +19,7 @@ though the constant itself now lives in the core library.
 - Source of truth is the core lib (`gps-plus-slam-js`). Re-signing
   happens in that repo's CI; the AppFramework just re-exports.
 - See
-  [../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-01-community-key-resign-cross-repo-issue.md](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-01-community-key-resign-cross-repo-issue.md)
+  [../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-01-community-key-resign-cross-repo-issue.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-01-community-key-resign-cross-repo-issue.md)
   §3.6 (Option F) for the rationale of the cross-repo move.
 - The AppFramework's `prepublishOnly` runs
   `verify:community-key-lifetime` against the resolved core-lib copy as

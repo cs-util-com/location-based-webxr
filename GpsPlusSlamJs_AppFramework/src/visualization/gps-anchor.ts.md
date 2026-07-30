@@ -15,7 +15,7 @@ when to commit the new pose using a configurable mode flag.
 
 See the alignment-frame bug doc for why the inverse is required and how
 the regression was found:
-[2026-05-31-gps-anchor-alignment-frame-bug.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
+[2026-05-31-gps-anchor-alignment-frame-bug.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
 
 This is the JS port of the C# `GpsAnchor` / `GpsAnchorForNonEcsGos`
 sibling pair, merged into one component because in the JS scene-graph
@@ -23,7 +23,7 @@ world they only differ by the steady-state commit policy.
 
 For the design rationale, state machine, threshold formulas, and
 parenting rules see the dedicated port plan:
-[2026-05-13-gps-anchor-port-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md).
+[2026-05-13-gps-anchor-port-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md).
 
 ## Status
 
@@ -208,12 +208,12 @@ See [gps-anchor.test.ts](gps-anchor.test.ts). Coverage:
 
 ## Related docs
 
-- [port plan](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md) —
+- [port plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md) —
   full design, sub-step list, test matrix.
 - [`frustum-visibility.ts`](frustum-visibility.ts.md) — supplies
   `isObjectInCameraFrustum` for the upcoming `'snap-when-offscreen'`
   steady state.
 - [`ar/frame-loop.ts`](../ar/frame-loop.ts.md) — the registry the
   anchor self-registers with.
-- [`sync-gps-anchored-meshes.ts`](../../../../GpsPlusSlamJs_RecorderApp/src/visualization/sync-gps-anchored-meshes.ts.md) —
+- [`sync-gps-anchored-meshes.ts`](../../../GpsPlusSlamJs_RecorderApp/src/visualization/sync-gps-anchored-meshes.ts.md) —
   the bulk counterpart for many-spheres-one-geometry use cases.

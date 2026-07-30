@@ -10,7 +10,7 @@ The slice is the recorder-side replacement for the library's
 `gpsData.referencePoints` field + the legacy recorder `refPoints` slice.
 It is registered alongside the legacy slice under a parallel root key
 (`refPoints`) and is **pure addition** until sub-step 5.7 of the
-[slice-collapse plan](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-27-collapse-refpoint-and-frame-slices-plan.md)
+[slice-collapse plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-27-collapse-refpoint-and-frame-slices-plan.md)
 collapses the two.
 
 ## Public API

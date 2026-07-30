@@ -58,7 +58,7 @@ export const gpsEventVisualizer: GpsEventVisualizer;
 
 ## Marker Sizing
 
-> **Sizes halved 2026-06-16 (D5).** The raw-GPS / fused / snapshot debug spheres were shrunk (`GPS_MARKER_RADIUS` 0.08 → **0.04**, `SNAPSHOT_MARKER_RADIUS` 0.1 → **0.05**) so they stop cluttering the AR scene and hiding the ref-point markers — which, in the RecorderApp, grow to double instead (`ref-point-visualizer.ts`). This framework constant renders in **both live recording and replay**, so replays of older recordings also show the smaller debug spheres (intended and accepted; a plain constant change, no live-vs-replay flag). See [`2026-06-16-2053-team1-user-feedback.md`](../../../GpsPlusSlamJs_Docs/docs/2026-06-16-2053-team1-user-feedback.md) D5.
+> **Sizes halved 2026-06-16 (D5).** The raw-GPS / fused / snapshot debug spheres were shrunk (`GPS_MARKER_RADIUS` 0.08 → **0.04**, `SNAPSHOT_MARKER_RADIUS` 0.1 → **0.05**) so they stop cluttering the AR scene and hiding the ref-point markers — which, in the RecorderApp, grow to double instead (`ref-point-visualizer.ts`). This framework constant renders in **both live recording and replay**, so replays of older recordings also show the smaller debug spheres (intended and accepted; a plain constant change, no live-vs-replay flag). See [`2026-06-16-2053-team1-user-feedback.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-16-2053-team1-user-feedback.md) D5.
 
 - **Cyan fused** and **red snapshot** spheres: fixed radius (4 cm / 5 cm), identity scale, opacity 0.3 / 0.5. Geometry is `SphereGeometry` with 12 segments; `MeshBasicMaterial` is transparent with `depthWrite: false` to prevent z-fighting.
 - **Yellow raw-GPS** sphere has two rendering modes:

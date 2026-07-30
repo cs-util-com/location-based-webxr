@@ -49,4 +49,4 @@ console.log(`${info.appVersion} (${info.commitHash})`);
 
 ## Related
 
-- [2026-04-20-zip-debug-metadata-plan.md](../../../GpsPlusSlamJs_Docs/docs/2026-04-20-zip-debug-metadata-plan.md) — design plan for this feature.
+- [2026-04-20-zip-debug-metadata-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-20-zip-debug-metadata-plan.md) — design plan for this feature.

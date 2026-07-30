@@ -3,7 +3,7 @@
 ## Purpose
 
 Phase A of the tracking-quality / GPS↔SLAM convergence reporter described in
-[docs/2026-05-16-tracking-quality-metrics-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md).
+[docs/2026-05-16-tracking-quality-metrics-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md).
 Computes a single `TrackingQualityReport` from already-public Redux state
 (`gpsData`, `tracking`, `recording`) plus a small auxiliary slice
 (`trackingQuality`) that buffers the last N alignment matrices.
@@ -187,6 +187,6 @@ store.subscribe(() => {
 
 ## Related docs
 
-- Plan: [2026-05-16-tracking-quality-metrics-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md)
-- Rotation conventions: [2026-04-08-rotation-convention-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-08-rotation-convention-plan.md)
+- Plan: [2026-05-16-tracking-quality-metrics-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md)
+- Rotation conventions: [2026-04-08-rotation-convention-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-08-rotation-convention-plan.md)
 - Tracking slice: [tracking-slice.ts.md](tracking-slice.ts.md)

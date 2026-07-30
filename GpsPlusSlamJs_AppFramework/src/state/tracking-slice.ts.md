@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Redux Toolkit slice for the AR tracking-loss / tracking-restart state machine. Replaces the original `TrackingStateManager` class (formerly `ar/tracking-state.ts`, deleted in sub-step 4); see [2026-05-13-tracking-state-slice-port-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-tracking-state-slice-port-plan.md) for rationale and the full sub-step plan.
+Redux Toolkit slice for the AR tracking-loss / tracking-restart state machine. Replaces the original `TrackingStateManager` class (formerly `ar/tracking-state.ts`, deleted in sub-step 4); see [2026-05-13-tracking-state-slice-port-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-tracking-state-slice-port-plan.md) for rationale and the full sub-step plan.
 
 ## Public API
 
@@ -81,7 +81,7 @@ const payload = selectLastRestartedPayload(store.getState());
 
 ## Related
 
-- [2026-05-13-tracking-state-slice-port-plan.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-tracking-state-slice-port-plan.md) — port plan and sub-step roadmap.
-- [2026-05-07-csharp-features-not-yet-ported.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md) — survey doc, P2 step 2.
+- [2026-05-13-tracking-state-slice-port-plan.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-tracking-state-slice-port-plan.md) — port plan and sub-step roadmap.
+- [2026-05-07-csharp-features-not-yet-ported.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md) — survey doc, P2 step 2.
 - [create-slam-app-store.ts](create-slam-app-store.ts) — mounts `trackingReducer` under `state.tracking`.
 - [recording-slice.ts](recording-slice.ts.md) — sibling slice following the same pattern.
