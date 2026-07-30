@@ -21,7 +21,7 @@ import {
   listScenariosFromFolder,
   listSessionZipsInScenario,
   extractScenarioNamesFromZips,
-} from './session-browser';
+} from './recording-discovery';
 
 // ============================================================================
 // Bug 1: Replay mode doesn't discover scenarios from zip files
@@ -112,7 +112,7 @@ describe('Bug 1: Replay mode zip discovery (2026-03-01 user feedback)', () => {
 // exact user scenario — timestamp-only zips at root level
 // ============================================================================
 
-import { discoverScenariosFromZipMetadata } from './session-browser';
+import { discoverScenariosFromZipMetadata } from './recording-discovery';
 
 describe('Bug 1 fix: discoverScenariosFromZipMetadata finds timestamp-only zips (2026-03-01)', () => {
   // Why this suite matters:

@@ -803,7 +803,7 @@ GpsPlusSlamJs_RecorderApp/
     │   └── webxr.d.ts          # WebXR & File System Access type declarations
     └── ui/
         ├── hud.ts              # HUD overlay and UI event handlers
-        └── session-browser.ts  # Scenario dropdown + session list for replay mode
+        └── map-browser.ts     # Map-centric recording browser (replay selection)
 ```
 
 **Key Implementation Files (must exist):**
@@ -816,7 +816,7 @@ GpsPlusSlamJs_RecorderApp/
 6. **`src/storage/ref-point-loader.ts`** - Load/save reference points from scenario's refPoints/ directory
 7. **`src/visualization/reference-points.ts`** - Visualize ref points as Three.js spheres
 8. **`src/visualization/gps-event-markers.ts`** - Visualize raw GPS and fused alignment markers
-9. **`src/ui/session-browser.ts`** - Scenario dropdown + session list for replay UX
+9. **`src/storage/recording-discovery.ts`** - Enumerate scenarios + session zips from a picked folder (no DOM)
 10. **`src/main.ts`** - Subscribe to alignment updates, load prior ref points on session start, WebXR detection → replay branch
 
 ---

@@ -19,8 +19,7 @@ import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 vi.mock('./replay/replay-mode', () => ({
   startReplayMode: vi.fn(),
 }));
-vi.mock('./ui/session-browser', () => ({
-  DEFAULT_SCENARIO: 'Default Scenario',
+vi.mock('./storage/recording-discovery', () => ({
   listScenariosFromFolder: vi.fn(),
   extractScenarioNamesFromZips: vi.fn(),
   discoverScenariosFromZipMetadata: vi.fn(),

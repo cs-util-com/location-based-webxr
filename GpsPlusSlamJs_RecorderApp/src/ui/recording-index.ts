@@ -25,13 +25,14 @@ import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import {
   discoverScenariosFromZipMetadata,
   type SessionEntry,
-} from './session-browser';
+} from '../storage/recording-discovery';
 
 const log = createLogger('RecordingIndex');
 
 /**
  * Maximum number of legacy zips whose GPS path is read concurrently while
- * backfilling coverage. Mirrors the metadata-scan cap in `session-browser.ts`:
+ * backfilling coverage. Mirrors the metadata-scan cap in
+ * `storage/recording-discovery.ts`:
  * each read uses BlobReader but a legacy backfill reads every action file, so
  * we keep concurrency bounded to avoid overwhelming browser I/O.
  */

@@ -73,7 +73,7 @@ interface RefPointIndexResult {
 - Merged metadata: the name backed by the MOST observations wins (ties → the
   name with the newest backing observation); earliest `createdAt` wins.
 - Scenario resolution and filename-timestamp parsing live in
-  `session-zip-naming.ts` so the replay discovery and this pass can never
+  `session-zip-naming.ts` so [`recording-discovery`](recording-discovery.ts.md) and this pass can never
   drift apart.
 
 ## Examples

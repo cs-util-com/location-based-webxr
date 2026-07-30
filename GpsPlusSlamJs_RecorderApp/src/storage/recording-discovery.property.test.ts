@@ -14,11 +14,11 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import {
-  parseDateFromSessionFilename,
   listScenariosFromFolder,
   listSessionZipsInScenario,
   extractScenarioNamesFromZips,
-} from './session-browser';
+} from './recording-discovery';
+import { parseDateFromSessionFilename } from './session-zip-naming';
 import { MockFSDirectoryHandle } from 'gps-plus-slam-app-framework/test-utils/browser-mocks';
 
 // ---------------------------------------------------------------------------

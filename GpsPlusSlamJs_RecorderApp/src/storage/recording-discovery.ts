@@ -1,13 +1,21 @@
 /**
- * Session Browser Module
+ * Recording Discovery
  *
- * Provides pure functions for enumerating scenarios and session recordings
- * from a FileSystemDirectoryHandle. Used by the Replay Mode UX (Iteration 5
- * of 2026-02-19-replay-mode.md) to let desktop users browse and select
- * previously recorded sessions for replay.
+ * Enumerates scenarios and session recordings from a
+ * `FileSystemDirectoryHandle`. Pure file-system/zip reading — no DOM, no
+ * Leaflet, no UI state. Feeds the Replay Mode UX (Iteration 5 of
+ * 2026-02-19-replay-mode.md), the recording-mode scenario dropdown, and the
+ * `folder-manager` folder-pick flow.
  *
  * Also supports metadata-based discovery: reading session.json from inside
  * root-level zip files to determine the scenario name (Issue 1, 2026-03-01).
+ *
+ * Lived in `ui/session-browser.ts` until 2026-07-30. Sitting in `ui/` while
+ * being a storage module forced two workarounds that are gone with the move:
+ * `folder-manager` had to receive three of these functions as injected
+ * callbacks (storage may not import ui) plus a structural copy of
+ * `SessionEntry`, and the naming helpers had to be split into
+ * `session-zip-naming.ts` and re-exported from here.
  *
  * The expected folder structure:
  *   <RootFolder>/
@@ -44,7 +52,7 @@ export interface SessionEntry {
    * - An array (possibly empty) when the recording carries an `h3Cells` field.
    *   An empty array means the recording genuinely had no GPS coverage.
    * - `undefined` for legacy recordings that predate the field — the browser
-   *   backfills these in memory from the GPS path (see `recording-index.ts`).
+   *   backfills these in memory from the GPS path (see `ui/recording-index.ts`).
    */
   h3Cells?: readonly string[];
 }
@@ -78,16 +86,7 @@ import { mapWithConcurrencyLimit } from 'gps-plus-slam-app-framework/utils/concu
 import {
   parseDateFromSessionFilename,
   resolveScenarioNameFromMetadata,
-} from '../storage/session-zip-naming';
-
-// The naming/identity helpers moved to storage/session-zip-naming.ts so the
-// ref-point indexing pass (storage layer) can share them without violating
-// the no-storage-importing-ui boundary. Re-exported here for the existing
-// consumers of this module (hud, recording-session-handlers, tests).
-export {
-  DEFAULT_SCENARIO,
-  parseDateFromSessionFilename,
-} from '../storage/session-zip-naming';
+} from './session-zip-naming';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -208,7 +207,7 @@ const METADATA_SCAN_CONCURRENCY = 4;
  * untrustworthy, and surfacing a truncated-but-valid-looking coverage is worse
  * than falling back to deriving coverage from the authoritative GPS path.
  * `undefined` is what triggers that legacy backfill downstream
- * (`recording-index.ts`), so a non-empty array that filters to empty must NOT
+ * (`ui/recording-index.ts`), so a non-empty array that filters to empty must NOT
  * be returned as a valid empty `[]` (which means "no coverage", no backfill).
  *
  * Validating the cell ids here (not just their type) is the only safe place to

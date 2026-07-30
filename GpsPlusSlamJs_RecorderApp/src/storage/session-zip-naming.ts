@@ -1,12 +1,15 @@
 /**
  * Session-ZIP naming & scenario-identity helpers.
  *
- * Shared by the replay-mode discovery (`ui/session-browser.ts`, which
- * re-exports these for its existing consumers) and the recording-mode
- * ref-point indexing pass (`storage/ref-point-recovery.ts`). Lives in
- * `storage/` because the layered architecture forbids storage → ui imports
- * (dependency-cruiser rule `no-storage-importing-ui`) while ui → storage is
- * allowed.
+ * Shared by the replay/recording folder discovery
+ * (`storage/recording-discovery.ts`), the recording-mode ref-point indexing
+ * pass (`storage/ref-point-recovery.ts`), and the two consumers that only need
+ * `DEFAULT_SCENARIO` (`ui/hud.ts`, `recording/recording-session-handlers.ts`).
+ *
+ * It was split out of the discovery module in 2026-07 to dodge the
+ * `no-storage-importing-ui` rule while that module still sat in `ui/`; the
+ * module moved to `storage/` on 2026-07-30, so this file now stands on the
+ * plain merit of being the one place scenario identity is decided.
  */
 
 /**

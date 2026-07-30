@@ -138,8 +138,8 @@ import {
   listScenariosFromFolder,
   extractScenarioNamesFromZips,
   discoverScenariosFromZipMetadata,
-} from './ui/session-browser';
-import type { SessionEntry } from './ui/session-browser';
+} from './storage/recording-discovery';
+import type { SessionEntry } from './storage/recording-discovery';
 import {
   launchMapBrowser,
   ensureMapBrowserRoot,

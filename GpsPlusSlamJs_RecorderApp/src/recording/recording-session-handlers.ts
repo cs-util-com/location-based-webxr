@@ -113,7 +113,7 @@ import { magneticHeadingFromEnuQuat } from 'gps-plus-slam-app-framework/core';
 import type { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
 import { getBuildInfo } from '../utils/build-info';
-import { DEFAULT_SCENARIO } from '../ui/session-browser';
+import { DEFAULT_SCENARIO } from '../storage/session-zip-naming';
 
 const log = createLogger('RecordingSession');
 
@@ -124,7 +124,7 @@ const ABS_COMPASS_HUD_INTERVAL_MS = 200;
 
 /**
  * Single fallback used everywhere a scenario name is needed but unavailable.
- * Re-exported from `session-browser.DEFAULT_SCENARIO` so that the recording
+ * Re-exported from `session-zip-naming.DEFAULT_SCENARIO` so that the recording
  * pipeline and the replay browser's metadata-merge contract stay in sync
  * (any divergence would silently break the "missing-metadata + Default
  * Scenario" merge for newly-recorded zips).

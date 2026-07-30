@@ -285,9 +285,8 @@ vi.mock('./ui/hud', () => ({
   hideAbsCompass: vi.fn(),
 }));
 
-// Mock session-browser for handleOpenFolder tests (Issue 1 — 2026-02-27 + 2026-03-01)
-vi.mock('./ui/session-browser', () => ({
-  DEFAULT_SCENARIO: 'Default Scenario',
+// Mock recording-discovery for handleOpenFolder tests (Issue 1 — 2026-02-27 + 2026-03-01)
+vi.mock('./storage/recording-discovery', () => ({
   listScenariosFromFolder: vi.fn().mockResolvedValue([]),
   extractScenarioNamesFromZips: vi.fn().mockResolvedValue([]),
   listSessionZipsInScenario: vi.fn().mockResolvedValue([]),
@@ -530,7 +529,7 @@ import {
   extractScenarioNamesFromZips,
   listSessionZipsInScenario,
   discoverScenariosFromZipMetadata,
-} from './ui/session-browser';
+} from './storage/recording-discovery';
 import { importRefPointsFromFolder } from './storage/ref-point-importer';
 import { showConfirmDialog } from './ui/confirm-dialog';
 import { pushScreenState } from './ui/navigation';

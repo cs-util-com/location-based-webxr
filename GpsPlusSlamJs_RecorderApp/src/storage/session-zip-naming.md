@@ -6,15 +6,19 @@ Session-ZIP naming and scenario-identity helpers shared across layers: the
 canonical `DEFAULT_SCENARIO` constant, the zip-filename timestamp parser, and
 the `session.json` → scenario-name resolver.
 
-## Why it lives in `storage/`
+## Why it is its own module
 
-Both `ui/session-browser.ts` (replay discovery) and
-`storage/ref-point-recovery.ts` (recording-mode ref-point indexing,
-2026-07-05 folder-import plan §3.1) need these. The layered architecture
-forbids storage → ui imports (dependency-cruiser `no-storage-importing-ui`),
-while ui → storage is allowed — so the shared pieces live here and
-`session-browser.ts` re-exports them for its existing consumers (`hud.ts`,
-`recording-session-handlers.ts`, tests).
+Scenario identity is decided in exactly one place. Four consumers need it:
+[`recording-discovery`](recording-discovery.ts.md) (replay/recording folder
+scan), [`ref-point-recovery`](ref-point-recovery.md) (recording-mode ref-point
+indexing, 2026-07-05 folder-import plan §3.1), and `ui/hud.ts` +
+`recording/recording-session-handlers.ts` for `DEFAULT_SCENARIO` alone.
+
+Historically the split was forced: the discovery module lived in `ui/`, and
+dependency-cruiser's `no-storage-importing-ui` blocked `ref-point-recovery`
+from reaching it. That pressure is gone since discovery moved to `storage/`
+(2026-07-30) — all four consumers now import from here directly, with no
+re-export hop.
 
 ## Public API
 
@@ -54,9 +58,9 @@ resolveScenarioNameFromMetadata(null); // → 'Default Scenario'
 
 ## Tests
 
-Covered via the re-exporting consumers' suites:
-`src/ui/session-browser.test.ts`, `src/ui/session-browser.property.test.ts`
-(timestamp parsing properties), `src/ui/replay-zip-discovery.test.ts`
+Covered via the consumers' suites: `src/storage/recording-discovery.test.ts`
+and `src/storage/recording-discovery.property.test.ts` (timestamp parsing,
+including its properties), `src/storage/replay-zip-discovery.test.ts`
 (resolution precedence via `discoverScenariosFromZipMetadata`), and
 `src/storage/ref-point-recovery.test.ts` (resolution + newest-first ordering
 via `indexRefPointDefinitionsFromFolder`).

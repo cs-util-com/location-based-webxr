@@ -17,9 +17,9 @@ import { MockFSDirectoryHandle } from 'gps-plus-slam-app-framework/test-utils/br
 import {
   listScenariosFromFolder,
   listSessionZipsInScenario,
-  parseDateFromSessionFilename,
   extractScenarioNamesFromZips,
-} from './session-browser';
+} from './recording-discovery';
+import { parseDateFromSessionFilename } from './session-zip-naming';
 
 // ============================================================================
 // listScenariosFromFolder
@@ -526,9 +526,9 @@ describe('Integration: folder scan discovers scenarios and sessions', () => {
 
 import {
   discoverScenariosFromZipMetadata,
-  DEFAULT_SCENARIO,
   type ScenarioSessionMap,
-} from './session-browser';
+} from './recording-discovery';
+import { DEFAULT_SCENARIO } from './session-zip-naming';
 import { produceTestZip } from 'gps-plus-slam-app-framework/test-utils/zip-round-trip-helpers';
 
 describe('discoverScenariosFromZipMetadata', () => {
@@ -751,7 +751,7 @@ describe('discoverScenariosFromZipMetadata', () => {
 
   it('returns sorted scenario names', async () => {
     // Why: Consistent alphabetical ordering matches the convention of other
-    // session-browser functions (listScenariosFromFolder, etc.).
+    // recording-discovery functions (listScenariosFromFolder, etc.).
     const zipZ = await produceTestZip({ scenarioName: 'Zurich' });
     const zipA = await produceTestZip({ scenarioName: 'Athens' });
     const zipM = await produceTestZip({ scenarioName: 'Munich' });

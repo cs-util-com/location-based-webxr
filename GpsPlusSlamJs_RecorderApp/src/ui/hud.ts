@@ -5,7 +5,7 @@
  */
 
 import { getRequiredElement } from '../utils/dom-helpers';
-import { DEFAULT_SCENARIO } from './session-browser';
+import { DEFAULT_SCENARIO } from '../storage/session-zip-naming';
 
 // The HUD shared mutable state (host callbacks, permission/storage flags,
 // cached required elements) and the UICallbacks contract live in
