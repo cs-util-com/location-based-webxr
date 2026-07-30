@@ -35,8 +35,15 @@ type PoiMarker = TransferableMesh["poi"][number];
  */
 export interface PickCandidate {
   readonly distance: number;
-  /** `number | null` in three's own types — null when the object is unindexed. */
-  readonly faceIndex?: number | null;
+  /**
+   * `number | null` in three's own types — null when the object is unindexed.
+   *
+   * `| undefined` is spelled out as well as the `?`, because
+   * `exactOptionalPropertyTypes` is on: without it, a caller mapping from a real
+   * `Intersection` cannot pass the field through, since three declares it as
+   * possibly-`undefined` rather than as optional.
+   */
+  readonly faceIndex?: number | null | undefined;
   readonly userData: Record<string, unknown>;
 }
 

@@ -58,6 +58,7 @@ const NO_MESH: TransferableMesh = {
     forcedEars: 0,
   },
   plateCount: 0,
+  poi: [],
   volumes: 0,
   parts: 0,
   guessedHeights: 0,

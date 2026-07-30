@@ -46,6 +46,59 @@ export class DetailsPanel {
     this.container.hidden = true;
   }
 
+  /**
+   * Describes a picked map FEATURE (W12), replacing whatever was shown.
+   *
+   * Deliberately small. A cell explanation is an argument — factors, vetoes, a
+   * summary sentence — because a score is not self-evident. A POI is not an
+   * argument: it is a thing with a name and a type, and the useful move is to
+   * name it and get out of the way, with a link for anyone who wants the rest.
+   *
+   * Typed structurally rather than against `PoiMarker` so this file does not
+   * depend on the mesh layer to render three strings.
+   */
+  renderFeature(feature: {
+    readonly feature: string;
+    readonly kind: string;
+    readonly label: string;
+  }): void {
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("strong");
+    // `textContent`, never `innerHTML`: tag values are untrusted, because anyone
+    // can edit OSM. A label is displayed exactly as it was mapped.
+    title.textContent = feature.label;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "panel-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "close details");
+    close.addEventListener("click", this.onClose);
+    header.append(title, close);
+
+    const kind = document.createElement("p");
+    kind.className = "panel-summary";
+    kind.textContent = feature.kind;
+
+    // The demo's core promise: anything surprising on screen can be traced to a
+    // real object in one click. `node/4242` is already the path form
+    // openstreetmap.org expects.
+    const provenance = document.createElement("p");
+    provenance.className = "panel-threshold";
+    const link = document.createElement("a");
+    link.href = `https://www.openstreetmap.org/${feature.feature}`;
+    link.target = "_blank";
+    // Without this the opened page gets a handle to this one via `window.opener`.
+    link.rel = "noreferrer";
+    link.textContent = feature.feature;
+    provenance.append(link);
+
+    // REPLACE, not append: both modes share one container, and a cell
+    // explanation left under a POI heading is a confidently wrong answer.
+    this.container.replaceChildren(header, kind, provenance);
+    this.container.hidden = false;
+  }
+
   render(explanation: CellExplanation): void {
     const tree = explanationTree(explanation);
     const nodes: HTMLElement[] = [];

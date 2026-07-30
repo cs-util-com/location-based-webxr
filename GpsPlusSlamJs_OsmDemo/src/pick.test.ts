@@ -114,7 +114,10 @@ describe("resolvePick", () => {
     // faces. `cellForTriangle[null]` is `undefined` in JS but the narrowing has
     // to be explicit or the value flows on untyped.
     expect(
-      resolvePick([{ distance: 1, faceIndex: null, userData: { cellGrid: true } }], CELLS),
+      resolvePick(
+        [{ distance: 1, faceIndex: null, userData: { cellGrid: true } }],
+        CELLS,
+      ),
     ).toBeUndefined();
   });
 });

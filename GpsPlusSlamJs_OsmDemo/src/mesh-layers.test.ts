@@ -23,6 +23,7 @@ import {
   DRAWN_BY_MESH,
   drawMeshLayers,
   meshLayerSelection,
+  poiMarkerPosition,
 } from "./mesh-layers.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
@@ -195,6 +196,41 @@ describe("drawMeshLayers — what reaches the scene", () => {
     expect(objects).toHaveLength(2);
     expect(stats.plates).toBe(0);
     expect(stats.volumes).toBe(21);
+  });
+});
+
+describe("poiMarkerPosition", () => {
+  // `satisfies`, not a plain literal: `feature` is a template-literal type
+  // (`${string}/${number}`) and an object literal widens it to `string`.
+  const marker = {
+    feature: "node/1",
+    position: { x: 30, y: 50 },
+    groundHeightM: 53,
+    kind: "amenity=cafe",
+    label: "Café",
+  } satisfies TransferableMesh["poi"][number];
+
+  it("REFLECTS ENU north onto the scene's -z", () => {
+    // WHY THIS TEST MATTERS, and it is not hypothetical. The identical
+    // reflection was missing from the tree loop until 2026-07-29, and the
+    // symptom was a forest rendered 100 m from the buildings it stands beside —
+    // self-consistent, so it read as a data problem rather than a frame error.
+    // Every tree assertion that existed at the time held in the mirrored world,
+    // because they all compared trees against other trees.
+    expect(poiMarkerPosition(marker)[2]).toBe(-50);
+  });
+
+  it("passes east through unchanged", () => {
+    expect(poiMarkerPosition(marker)[0]).toBe(30);
+  });
+
+  it("stands the pin ON the ground rather than centred in it", () => {
+    // A cone is centred on its origin, so a marker placed at the sampled ground
+    // height is half buried — which at this pin size looks like a shorter pin
+    // rather than like a bug.
+    const [, y] = poiMarkerPosition(marker);
+    expect(y).toBeGreaterThan(53);
+    expect(y).toBeLessThan(53 + 6);
   });
 });
 

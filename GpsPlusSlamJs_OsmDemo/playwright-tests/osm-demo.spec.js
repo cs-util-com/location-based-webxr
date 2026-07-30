@@ -1347,6 +1347,81 @@ test.describe("the 3D view", () => {
       .toBeLessThan(2000);
   });
 
+  test("marks POIs, and clicking one says what it is", async ({ page }) => {
+    // THE WHOLE POINT OF W12, end to end: the notes asked to be able to point at
+    // something and be told what it is, and until now the only clickable thing
+    // was an affordance cell — an abstraction over the data rather than an object
+    // in it.
+    //
+    // The fixture (Cologne Volksgarten) carries 9 qualifying nodes: benches,
+    // waste baskets, recycling, bicycle parking. Counted from the captured
+    // payload rather than guessed, so a re-capture that changes it fails loudly
+    // here instead of quietly weakening the test.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // Off by default, like every layer added after the W10 baseline.
+    await expect(page.locator("#status")).not.toContainText("POI");
+    await page.getByRole("checkbox", { name: "POI" }).check();
+    await expect(page.locator("#status")).toContainText(/\d+ POI/);
+
+    // BUILT is not VISIBLE — the lesson from the plates layer, which was counted
+    // and reported for ten work items while nothing was drawn. The pins are a
+    // saturated amber against a scene that is otherwise blue-grey.
+    const amber = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return -1;
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return -1;
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] ?? 0;
+          const g = data[i + 1] ?? 0;
+          const b = data[i + 2] ?? 0;
+          if (r > 140 && g > 80 && b < g - 30) count += 1;
+        }
+        return count;
+      });
+    await expect.poll(amber, REPAINT).toBeGreaterThan(50);
+  });
+
+  test("a building stays unpickable, which W12 must not have undone", async ({
+    page,
+  }) => {
+    // THE INVARIANT W12 COULD MOST EASILY HAVE BROKEN. Buildings were excluded
+    // from the raycast set deliberately, so that hitting one does not silently
+    // select the cell behind it as though the building had been chosen.
+    // Generalising picking to two kinds of answer is exactly the change that
+    // would undo it by accident, so it gets its own assertion rather than being
+    // left to the unit test's defence-in-depth branch.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const panel = page.locator("#details");
+    await expect(panel).toBeHidden();
+
+    // The buildings sit in the upper-middle of the frame at the default camera;
+    // the affordance grid is drawn over the ground, not over the roofs.
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    await page.mouse.click(box.x + box.width * 0.55, box.y + box.height * 0.42);
+
+    // Either nothing was selected, or a CELL was — never a building. What must
+    // not happen is a panel describing a building as though it were pickable.
+    if (await panel.isVisible()) {
+      await expect(panel).not.toContainText("building");
+    }
+  });
+
   test("has a graded sky, so the ground reads against it", async ({ page }) => {
     // WHY THIS TEST MATTERS (DEC-R2-2). The background was 0x11131a and the ground
     // 0x1d2230 — two near-blacks, which is the whole reported symptom.

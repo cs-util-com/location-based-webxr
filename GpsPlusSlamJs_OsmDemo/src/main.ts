@@ -451,6 +451,10 @@ async function main(): Promise<void> {
       mesh === undefined || mesh.plates === 0
         ? ""
         : `${mesh.plates} ground areas (${mesh.plateTriangles} tri)`,
+      // Reported for the same reason as the plate count: a layer switched on that
+      // silently produces nothing is indistinguishable from one that produced
+      // nothing because there is nothing there.
+      mesh === undefined || mesh.poi === 0 ? "" : `${mesh.poi} POI`,
       describeExtent(snapshot.loadedTiles),
       terrainNote,
       tableNote,
@@ -585,6 +589,26 @@ async function main(): Promise<void> {
   subscribe(
     (view) => view.selectedCell,
     (cell) => void explainSelected(cell),
+  );
+  // The FEATURE half of the same panel (W12). Two subscribers rather than one
+  // over a union, because the two selections are mutually exclusive in the
+  // reducer — selecting either clears the other — so each subscriber only ever
+  // has to handle "mine arrived" and "mine went away". A single subscriber over
+  // both would have to re-derive which one won, which is where the two could
+  // disagree with the store.
+  subscribe(
+    (view) => view.selectedFeature,
+    (feature) => {
+      if (feature === undefined) {
+        // Only clear if no cell took over, or a cell selection would blank the
+        // panel it just filled: both subscribers fire on the same dispatch.
+        if (selectOsmView(store.getState()).selectedCell === undefined) {
+          detailsPanel.clear();
+        }
+        return;
+      }
+      detailsPanel.renderFeature(feature);
+    },
   );
   // A new snapshot or a new category re-explains whatever is still selected,
   // so the panel can never describe a cell in a category the map is no longer
