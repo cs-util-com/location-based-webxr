@@ -96,6 +96,15 @@ the package that remembers anything.
 - **Eviction is furthest-first, not least-recently-used.** The access pattern is
   spatial: a chunk 500 m behind the user is dead weight however recently it was
   read. The current working set is never evicted.
+- **The cap is DERIVED from the working set, not a written-down number (W7).**
+  `maxChunks` defaults to eight working sets at `SCORE_DISK_MAX_RADIUS`. It was a
+  hard-coded 256 chosen when a working set was 19 chunks — "~13 working sets" —
+  and DEC-R2-20 then widened the scored disk to 61 without revisiting it, leaving
+  ~4 moves of headroom. Past that the LRU evicts chunks the next click needs, so
+  a click re-scores ground it has just scored: invisible to every functional test
+  (the answers stay correct, they are only recomputed) and visible to a user as
+  the app feeling non-deterministic. Deriving it means widening the disk again
+  cannot silently reintroduce that.
 - **This class does not fetch.** `acceptTile` is push-only, so network policy
   (slot budget, backoff, queueing) stays in `source/` and this class stays
   synchronous and worker-safe.

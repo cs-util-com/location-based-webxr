@@ -59,6 +59,7 @@ import type { FeatureProvenance } from "../spatial/merge-tiles.js";
 import {
   AFFORDANCE_RES,
   SCORE_CHUNK_RES,
+  SCORE_DISK_MAX_RADIUS,
   SCORE_DISK_RADIUS,
   scoreWorkingSet,
 } from "../spatial/resolutions.js";
@@ -87,8 +88,44 @@ import type { CellScore } from "./affordance-scorer.js";
  */
 const CHUNK_MARGIN_DEG = 0.0005;
 
-/** Default cap on retained scored chunks. */
-const DEFAULT_MAX_CHUNKS = 256;
+/**
+ * How many chunks one working set is, at the widest radius anything scores.
+ *
+ * A `gridDisk` of radius r holds `3r² + 3r + 1` cells — 61 at r = 4. DERIVED
+ * rather than written down, because the two numbers must not be able to drift:
+ * the whole defect W7 fixes is a cap that was chosen against a 19-chunk working
+ * set and left alone when DEC-R2-20 tripled it.
+ */
+const CHUNKS_PER_WORKING_SET =
+  3 * SCORE_DISK_MAX_RADIUS * SCORE_DISK_MAX_RADIUS +
+  3 * SCORE_DISK_MAX_RADIUS +
+  1;
+
+/**
+ * How many working sets the default cache holds.
+ *
+ * Eight, so a short walk — or the click-around-the-map exploration this demo
+ * exists for — stops re-scoring ground it scored moments ago. Consecutive
+ * positions overlap heavily, so eight DISJOINT working sets is a generous
+ * reading of "eight moves"; the number is about the worst case, where the user
+ * jumps.
+ */
+const WORKING_SETS_RETAINED = 8;
+
+/**
+ * Default cap on retained scored chunks (W7, finding R3-3).
+ *
+ * RAISED FROM A HARD-CODED 256 AND MADE DERIVED. 256 was chosen when a working
+ * set was 19 chunks — "~13 working sets" — and DEC-R2-20 then widened the scored
+ * disk to 61 chunks without revisiting it, leaving barely four moves of headroom.
+ * Past that the LRU evicts chunks the next click needs, which shows up as a click
+ * that re-scores ground it just scored: part of what the round-3 notes described
+ * as the behaviour feeling "undeterministisch".
+ *
+ * The relationship is now in the code rather than in a comment, so widening the
+ * disk again cannot silently reintroduce the thrashing.
+ */
+const DEFAULT_MAX_CHUNKS = CHUNKS_PER_WORKING_SET * WORKING_SETS_RETAINED;
 
 export interface AffordanceIndexOptions {
   readonly table: RuleTable;
@@ -97,9 +134,9 @@ export interface AffordanceIndexOptions {
   /**
    * Chunks retained before the furthest-from-the-user are dropped.
    *
-   * 256 res-11 chunks is ~13 working sets, i.e. a few hundred metres of walking
-   * before anything is recomputed. Bounded because an unbounded cache on a
-   * user who walks all day is a leak with a slow fuse.
+   * Defaults to {@link WORKING_SETS_RETAINED} working sets at the widest scored
+   * radius, so a short walk is recomputed rather than re-scored. Bounded because
+   * an unbounded cache on a user who walks all day is a leak with a slow fuse.
    */
   readonly maxChunks?: number;
 }
@@ -191,6 +228,18 @@ export class AffordanceIndex {
     this.table = options.table;
     this.categories = options.categories ?? options.table.categories;
     this.maxChunks = options.maxChunks ?? DEFAULT_MAX_CHUNKS;
+  }
+
+  /**
+   * The cap actually in force, so a test can assert the RELATIONSHIP to the
+   * working set rather than a number (W7).
+   *
+   * Exposed rather than exporting the constant: the constant is a default, and
+   * what matters is what this instance will do — a consumer that passes
+   * `maxChunks` should be checkable the same way.
+   */
+  get maxRetainedChunks(): number {
+    return this.maxChunks;
   }
 
   /**

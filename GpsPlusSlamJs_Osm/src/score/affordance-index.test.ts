@@ -30,6 +30,8 @@ import { OVERPASS_SCHEMA_VERSION } from "../source/overpass-query.js";
 import {
   FETCH_RES,
   SCORE_CHUNK_RES,
+  SCORE_DISK_MAX_RADIUS,
+  scoreWorkingSet,
   toFetchTile,
 } from "../spatial/resolutions.js";
 
@@ -609,5 +611,43 @@ describe("AffordanceIndex.update — progressive radii (W16, DEC-R2-30)", () => 
     expect(index.stats.movesIgnored).toBe(ignoredBefore);
     expect(moved.workingSet).not.toEqual(wide.workingSet);
     expect(moved.workingSet.length).toBe(19);
+  });
+});
+
+describe("the default chunk cache holds a walk, not just one working set (W7)", () => {
+  /**
+   * Why this test matters:
+   * The cap was chosen when a working set was 19 chunks and left alone when
+   * DEC-R2-20 widened the scored disk to 61 — leaving barely four moves before
+   * the LRU started evicting chunks the next click needed, so a click re-scored
+   * ground it had just scored. That is invisible to every functional test (the
+   * answers stay correct; they are just recomputed) and shows up to a user only
+   * as the behaviour feeling non-deterministic.
+   *
+   * The assertion is on the RELATIONSHIP rather than on the number, so widening
+   * the disk again cannot silently reintroduce the thrashing.
+   */
+  it("retains several working sets' worth of chunks by default", () => {
+    const index = new AffordanceIndex({ table: TABLE });
+    const chunksPerWorkingSet = scoreWorkingSet(
+      latLngToCell(50.9413, 6.9583, SCORE_CHUNK_RES),
+      SCORE_DISK_MAX_RADIUS,
+    ).length;
+
+    // SIX, not four, and the number is load-bearing: the old hard-coded 256
+    // against a 61-chunk working set is 4.2 sets, so a "at least four" assertion
+    // would have passed on the very code this fixes. Six is comfortably above
+    // that and comfortably below the eight the default actually holds, so it
+    // states "several moves of headroom" without pinning the exact constant.
+    expect(index.maxRetainedChunks).toBeGreaterThanOrEqual(
+      chunksPerWorkingSet * 6,
+    );
+  });
+
+  it("still evicts, so a session that walks all day is not a leak", () => {
+    // The other direction. Unbounded would be the easy way to pass the test
+    // above and is the failure with the slow fuse.
+    const index = new AffordanceIndex({ table: TABLE });
+    expect(Number.isFinite(index.maxRetainedChunks)).toBe(true);
   });
 });
