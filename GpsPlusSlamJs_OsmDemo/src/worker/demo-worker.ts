@@ -64,6 +64,7 @@ import { describeTerrain } from "../terrain-note.js";
 import { heightfieldFrom, type HeightfieldData } from "../heightfield.js";
 import { createTerrainField, type TerrainField } from "../terrain-field.js";
 import { createMeshPlanner } from "./mesh-planner.js";
+import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
 import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
 import {
   isWorkerEnvelope,
@@ -95,6 +96,15 @@ async function makeStore() {
 interface WorkerState {
   readonly pipeline: DemoPipeline;
   readonly table: RuleTable;
+  /**
+   * The background ring loader (W8, DEC-R2-6).
+   *
+   * Built with the same `CachingSource` the pipeline fetches through, so a
+   * prefetched tile lands in the OPFS blob store and the next click reads it
+   * from disk instead of the network. **Deliberately not merged into the index**
+   * — see `prefetch-queue.ts` for why warming the cache is the whole job.
+   */
+  readonly prefetch: PrefetchQueue;
   /**
    * The terrain cache, built once and grown for the whole session (DEC-R2-21).
    *
@@ -282,9 +292,18 @@ async function handle<K extends WorkerCallKind>(
         }),
         await makeStore(),
       );
+      const pipeline = new DemoPipeline({ source, table: loaded.table });
       state = {
-        pipeline: new DemoPipeline({ source, table: loaded.table }),
+        pipeline,
         table: loaded.table,
+        // Through the SAME source, so a prefetched tile is written to the same
+        // OPFS blob store the next foreground fetch reads from. A separate
+        // source would warm a cache nobody consults.
+        prefetch: createPrefetchQueue({
+          fetchTile: (tile, prefetchSignal) =>
+            source.fetchTile(tile, prefetchSignal),
+          isLoaded: (tile) => pipeline.hasTile(tile),
+        }),
         terrainField: createTerrainField({
           provider: new TerrariumProvider({ decodePng: browserPngDecoder() }),
         }),
@@ -301,7 +320,7 @@ async function handle<K extends WorkerCallKind>(
     case "update": {
       const { position, category, radius } =
         payload as WorkerCalls["update"]["request"];
-      const { pipeline } = requireState();
+      const { pipeline, prefetch } = requireState();
       const snapshot = await pipeline.update(
         position,
         category,
@@ -321,6 +340,12 @@ async function handle<K extends WorkerCallKind>(
       if (needsTerrainFor(terrainCentre, position)) {
         await terrainGate.waitFor(position, signal);
       }
+      // THE RING, AFTER the visible work (W8, DEC-R2-6). Queued here rather than
+      // before the fetch loop because the user's own tile must never wait behind
+      // a background one — the public instances allocate ~2 slots per client.
+      // `replace` states the whole desired set, so moving away drops the tiles of
+      // the place left behind, including the one in flight.
+      prefetch.replace(pipeline.neighbourTilesFor(position));
       return {
         snapshot,
         mesh: meshUpdateFor(snapshot, pipeline),

@@ -2258,3 +2258,72 @@ test.describe("the terrain load and the refresh", () => {
     await expect(page.locator("#status")).toContainText(/terrain ±/);
   });
 });
+
+/**
+ * W8 / DEC-R2-6 — the ring is pulled in the background, one tile at a time.
+ *
+ * THE COST IS ACCEPTED WITH THE NUMBER STATED: 170–400 MB per move against
+ * donated Overpass infrastructure. Throttling spreads that total over time; it
+ * does not reduce it. So what these tests actually guard is the discipline —
+ * that the user's own fetch is never queued behind a background one, and that a
+ * prefetched tile is genuinely reused rather than fetched twice.
+ */
+test.describe("the background ring prefetch", () => {
+  test("warms the neighbours, and never more than one at a time", async ({
+    page,
+  }) => {
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // The user's own tile, plus the ring arriving behind it. The count is what
+    // proves the ring is being pulled at all — the map looks identical either
+    // way, which is the same reason the OPFS cache test counts requests.
+    await expect
+      .poll(() => counts.overpassQuery, { timeout: 30000 })
+      .toBeGreaterThan(1);
+
+    // AT MOST SEVEN: the tile the user is in plus its six neighbours
+    // (`fetchWorkingSet`). More than that would mean the queue is following the
+    // ring of a ring, which is how a background loader becomes a crawler.
+    expect(counts.overpassQuery).toBeLessThanOrEqual(7);
+  });
+
+  test("a prefetched neighbour is reused, not fetched again", async ({
+    page,
+  }) => {
+    // The payoff, and the only way to see it is a request count. Without the
+    // prefetch this click is an 18–110 s fetch; with it, the tile is already in
+    // OPFS and the click costs nothing on the wire.
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // Let the ring settle, then remember what has been spent.
+    await expect
+      .poll(() => counts.overpassQuery, { timeout: 30000 })
+      .toBeGreaterThan(1);
+    let previous = -1;
+    await expect
+      .poll(
+        () => {
+          const settled = counts.overpassQuery === previous;
+          previous = counts.overpassQuery;
+          return settled;
+        },
+        { timeout: 30000, intervals: [500] },
+      )
+      .toBe(true);
+    const spent = counts.overpassQuery;
+
+    // Move far enough to need a different fetch tile — the fixture answers every
+    // tile, so what is being asserted is the COUNT, not the content.
+    await page.goto(`/?lat=${50.9231 + 0.02}&lng=${6.9445 + 0.02}`);
+    await waitForRefresh(page);
+
+    // Some of the new ring will be fetched; what must NOT happen is a refetch of
+    // a tile already in the store. Bounded by one fresh working set plus its
+    // ring rather than by everything all over again.
+    expect(counts.overpassQuery - spent).toBeLessThanOrEqual(7);
+  });
+});

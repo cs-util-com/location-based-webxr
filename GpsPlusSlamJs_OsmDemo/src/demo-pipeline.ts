@@ -28,7 +28,11 @@ import {
   type RuleTable,
   type LatLng,
 } from "gps-plus-slam-osm";
-import { fetchTilesForScoreWorkingSet } from "gps-plus-slam-osm";
+import {
+  fetchTilesForScoreWorkingSet,
+  fetchWorkingSet,
+  toFetchTile,
+} from "gps-plus-slam-osm";
 import { latLngToCell } from "h3-js";
 import { SCORE_CHUNK_RES, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
@@ -155,16 +159,18 @@ export class DemoPipeline {
       // abort at all. Once the worker's caller has moved on, continuing to pull
       // tiles for a position the user has left is exactly the waste the fetch
       // discipline exists to avoid.
-      //
-      // Deliberately NOT threaded into `fetchTile` itself — that would need an
-      // `AbortSignal` through `OsmDataSource`, `CachingSource` and
-      // `OverpassSource`, which is a package API change and its own piece of
-      // work. Recorded as a follow-up; the in-flight request still completes.
       if (signal?.aborted === true) {
         throw new DOMException("Aborted", "AbortError");
       }
       try {
-        const result: OsmTileResult = await this.source.fetchTile(tile);
+        // AND THREADED INTO THE REQUEST ITSELF, so a superseded run stops the
+        // transfer rather than merely stopping before the next one. An earlier
+        // comment here said this "would need an `AbortSignal` through
+        // `OsmDataSource`, `CachingSource` and `OverpassSource`, which is a
+        // package API change" — that API change has since landed, and
+        // `fetchTile(tile, signal)` is honoured all the way down to `fetch`. The
+        // comment outlived the constraint it described.
+        const result: OsmTileResult = await this.source.fetchTile(tile, signal);
         this.loaded.add(tile);
         this.index.acceptTile(result);
       } catch {
@@ -228,6 +234,27 @@ export class DemoPipeline {
    */
   loadedTileCount(): number {
     return this.loaded.size;
+  }
+
+  /** Whether a tile is already merged in — what the prefetch queue skips on. */
+  hasTile(tile: string): boolean {
+    return this.loaded.has(tile);
+  }
+
+  /**
+   * The res-7 tiles worth having in the background for a user at `position`.
+   *
+   * The ring around the tile the user is standing in (DEC-R2-6: the full ring of
+   * six, throttled and queued), minus what is already held. Derived here rather
+   * than in the worker because the tile arithmetic and the "already loaded" set
+   * both live in this class, and splitting them would be a second place that
+   * decides what is worth fetching.
+   */
+  neighbourTilesFor(position: LatLng): string[] {
+    const here = toFetchTile(
+      latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES),
+    );
+    return fetchWorkingSet(here).filter((tile) => !this.loaded.has(tile));
   }
 
   /**
