@@ -65,6 +65,20 @@ export interface OsmViewState<TSnapshot> {
   category: string;
   /** Draw cells at or below the threshold too. */
   showBelowThreshold: boolean;
+  /**
+   * Which render layers are enabled, by name.
+   *
+   * DELIBERATELY STRUCTURAL — `Record<string, boolean>` rather than the consumer's
+   * own union. This package is published and `gps-plus-slam-osm` is not, so **any**
+   * reference to it (including a type-only import, which lands in the emitted
+   * `.d.ts`) makes `pnpm install` 404 for every consumer. That constraint is already
+   * recorded in `osm-bridge/opfs-osm-blob-store.ts` and it is why `TSnapshot` is a
+   * generic; a layer union would hit the same wall for the same reason.
+   *
+   * The consumer narrows it at its selector. The slice only has to store and replace
+   * it, which needs no knowledge of the names at all.
+   */
+  layers: Readonly<Record<string, boolean>>;
   /** The cell the details panel is explaining, or none. */
   selectedCell: string | undefined;
   loading: OsmViewLoading;
@@ -80,6 +94,8 @@ export interface CreateOsmViewSliceOptions {
   readonly name?: string;
   readonly initialPosition: OsmViewLatLng;
   readonly initialCategory: string;
+  /** Layers on at start. Defaults to none, so a consumer must opt in. */
+  readonly initialLayers?: Readonly<Record<string, boolean>>;
 }
 
 const IDLE: OsmViewLoading = { phase: 'idle', message: '' };
@@ -108,6 +124,7 @@ export function createOsmViewSlice<TSnapshot>(
     position: options.initialPosition,
     category: options.initialCategory,
     showBelowThreshold: false,
+    layers: options.initialLayers ?? {},
     selectedCell: undefined,
     loading: IDLE,
     snapshot: undefined,
@@ -142,6 +159,23 @@ export function createOsmViewSlice<TSnapshot>(
 
       showBelowThresholdChanged(state, action: PayloadAction<boolean>) {
         return { ...state, showBelowThreshold: action.payload };
+      },
+
+      /**
+       * Replaces the whole layer set.
+       *
+       * WHOLE-SET REPLACEMENT rather than a `{ layer, enabled }` pair, and the
+       * reason is the publish boundary: a per-layer action would want the
+       * consumer's layer union as its payload type, and this package cannot name
+       * an OSM type. The consumer computes the next set with its own exhaustive
+       * helper and hands the result over, which also keeps the reducer free of any
+       * opinion about what a valid layer name is.
+       */
+      layersChanged(
+        state,
+        action: PayloadAction<Readonly<Record<string, boolean>>>
+      ) {
+        return { ...state, layers: action.payload };
       },
 
       /** Select a cell, or pass `undefined` to close the details panel. */

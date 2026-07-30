@@ -204,13 +204,21 @@ export async function buildHeightfieldData(
     // reached by an ordinary change: the same extent at 8 m spacing is ~123 000.
     // A fold has no limit and is not measurably slower, so this removes a
     // fragility rather than fixing a live bug. See `worker-round-trip.test.ts`.
-    reliefM: extremesOf(known),
-    nearReliefM: extremesOf(known),
+    reliefM: peakToTrough(known),
+    nearReliefM: peakToTrough(known),
   };
 }
 
-/** Peak-to-trough of a non-empty list, without spreading it into `Math.max`. */
-function extremesOf(values: readonly number[]): number {
+/**
+ * Peak-to-trough of a non-empty list.
+ *
+ * EXPORTED because `terrain-field.ts` needs exactly this and `check:dup` caught the
+ * second copy. Shared rather than duplicated for a reason beyond tidiness: the whole
+ * point of the fold is that it does NOT spread into `Math.max`, and two copies is
+ * two chances for someone to "simplify" one of them back into a spread that throws
+ * above ~100 000 elements.
+ */
+export function peakToTrough(values: readonly number[]): number {
   let min = Infinity;
   let max = -Infinity;
   for (const value of values) {

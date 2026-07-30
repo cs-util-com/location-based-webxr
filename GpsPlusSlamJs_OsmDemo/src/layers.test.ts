@@ -1,0 +1,118 @@
+/**
+ * The layer set — which geometries the scene is asked to build.
+ *
+ * WHY THIS IS THE ACTUAL DELIVERABLE (DEC-R2-12, and the feedback said so):
+ * _"Hauptsache, dass es so ein bisschen modularisiert ist, dass man das auch dann
+ * einzeln rendern kann"_. The builders can arrive one at a time; the seam that lets
+ * a later AR mode ask for buildings + POI markers and skip ground plates is the part
+ * that is expensive to retrofit, so it lands first and the existing two layers are
+ * migrated through it before any new one is written.
+ *
+ * WHY IT IS A SET OF INDEPENDENT TOGGLES rather than a two-state mode (DEC-R2-10).
+ * The decisive argument was that a mode makes it impossible to view a merged area
+ * OVER the cells that produced it — the first check anyone makes when a region looks
+ * wrong. It also means one mechanism serves both this and the cells/areas switch,
+ * which are the same feature.
+ */
+
+import { describe, expect, it } from "vitest";
+
+import {
+  ALL_LAYERS,
+  DEFAULT_LAYERS,
+  isLayerEnabled,
+  parseLayers,
+  serialiseLayers,
+  toggleLayer,
+  type LayerKind,
+} from "./layers.js";
+
+describe("the layer set", () => {
+  it("names every layer the scene can build", () => {
+    // A guard on the union: adding a builder without adding it here would leave a
+    // layer nothing can switch off, which is the state this module exists to end.
+    expect([...ALL_LAYERS]).toEqual([
+      "cells",
+      "areas",
+      "buildings",
+      "trees",
+      "plates",
+      "roads",
+      "poi",
+    ]);
+  });
+
+  it("starts with the layers the demo shipped with, plus nothing else", () => {
+    // The default must reproduce the CURRENT picture exactly. A registry that
+    // silently switched new layers on would make its own migration unverifiable —
+    // there would be no before to compare the after against.
+    expect(isLayerEnabled(DEFAULT_LAYERS, "cells")).toBe(true);
+    expect(isLayerEnabled(DEFAULT_LAYERS, "buildings")).toBe(true);
+    expect(isLayerEnabled(DEFAULT_LAYERS, "trees")).toBe(true);
+    // Not yet built, and therefore off.
+    expect(isLayerEnabled(DEFAULT_LAYERS, "plates")).toBe(false);
+    expect(isLayerEnabled(DEFAULT_LAYERS, "roads")).toBe(false);
+    expect(isLayerEnabled(DEFAULT_LAYERS, "poi")).toBe(false);
+    // Regions were computed and outlined but never fillable, so the areas layer is
+    // off until W14/W15 give it something to draw.
+    expect(isLayerEnabled(DEFAULT_LAYERS, "areas")).toBe(false);
+  });
+
+  it("toggles one layer without disturbing the others", () => {
+    const next = toggleLayer(DEFAULT_LAYERS, "roads", true);
+    expect(isLayerEnabled(next, "roads")).toBe(true);
+    for (const layer of ALL_LAYERS) {
+      if (layer === "roads") continue;
+      expect(isLayerEnabled(next, layer)).toBe(
+        isLayerEnabled(DEFAULT_LAYERS, layer),
+      );
+    }
+  });
+
+  it("is IMMUTABLE, so a toggle cannot mutate store state in place", () => {
+    // The set lives in a Redux slice. Mutating it would update the state without a
+    // dispatch, so subscribers would never fire and the views would silently keep
+    // drawing the previous layers.
+    const before = serialiseLayers(DEFAULT_LAYERS);
+    toggleLayer(DEFAULT_LAYERS, "roads", true);
+    expect(serialiseLayers(DEFAULT_LAYERS)).toBe(before);
+  });
+
+  it("round-trips through its serialised form", () => {
+    // The set has to survive the store, which means it has to be plain data. A
+    // `Set` would be dropped by RTK's serialisability scan and by structuredClone.
+    const enabled = toggleLayer(
+      toggleLayer(DEFAULT_LAYERS, "poi", true),
+      "cells",
+      false,
+    );
+    expect(parseLayers(serialiseLayers(enabled))).toEqual(enabled);
+  });
+
+  it("ignores unknown names when parsing, rather than trusting the input", () => {
+    // The serialised form is a candidate for a URL parameter, so it is untrusted.
+    // An unknown layer must not become a key nothing can ever switch off.
+    const parsed = parseLayers("buildings,not-a-layer,poi");
+    expect(isLayerEnabled(parsed, "buildings")).toBe(true);
+    expect(isLayerEnabled(parsed, "poi")).toBe(true);
+    expect(Object.keys(parsed).sort()).toEqual([...ALL_LAYERS].sort());
+  });
+
+  it("treats an empty string as no layers, not as the default", () => {
+    // "Show nothing" has to be expressible, or a user who switches everything off
+    // gets the default back on reload and cannot tell why.
+    const parsed = parseLayers("");
+    for (const layer of ALL_LAYERS) {
+      expect(isLayerEnabled(parsed, layer)).toBe(false);
+    }
+  });
+
+  it("is exhaustive over the union, so a new layer cannot be forgotten", () => {
+    // `Record<LayerKind, boolean>` makes this a compile error too; this asserts it
+    // at runtime as well, because the parse path builds the record dynamically.
+    const layers: LayerKind[] = [...ALL_LAYERS];
+    for (const layer of layers) {
+      expect(typeof isLayerEnabled(DEFAULT_LAYERS, layer)).toBe("boolean");
+    }
+  });
+});

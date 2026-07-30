@@ -48,7 +48,9 @@ import {
 } from "./building-view.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
 import { createExplainCycle } from "./explain-cycle.js";
-import { createDemoStore, selectOsmView } from "./osm-store.js";
+import { attachLayerToggles } from "./layer-toggles.js";
+import { isLayerEnabled } from "./layers.js";
+import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 import { createRpcClient, workerTransport } from "./worker/rpc-client.js";
@@ -229,6 +231,14 @@ async function main(): Promise<void> {
   showBelow.addEventListener("change", () => {
     store.dispatch(actions.showBelowThresholdChanged(showBelow.checked));
   });
+  // The switches report a whole next set; `toggleLayer` is the only thing that
+  // knows how to build a valid one (see `osm-view-slice.ts` for why the action
+  // replaces the set rather than patching one layer).
+  const layerToggles = attachLayerToggles({
+    container: el("layers"),
+    onChange: (next) => store.dispatch(actions.layersChanged(next)),
+  });
+  layerToggles.render(selectLayers(store.getState()));
 
   // --- state out ----------------------------------------------------------
 
@@ -306,8 +316,12 @@ async function main(): Promise<void> {
       legendView.clear();
       return;
     }
+    const layers = selectLayers(store.getState());
+    // THE REGISTRY REACHES BOTH VIEWS. Gating only the 3D side would leave the map
+    // drawing a layer the store says is off — the cross-view disagreement the store
+    // exists to prevent, reintroduced by the mechanism meant to prevent it.
     const scale = mapView.render(
-      snapshot.cells,
+      isLayerEnabled(layers, "cells") ? snapshot.cells : [],
       snapshot.regions,
       view.category,
       snapshot.threshold,
@@ -331,37 +345,54 @@ async function main(): Promise<void> {
       return;
     }
     const view = selectOsmView(store.getState());
+    const layers = selectLayers(store.getState());
     const field = terrain;
-    // Built in the worker and handed over by the refresh cycle before the
-    // snapshot was dispatched, so the two always describe the same position.
-    // `undefined` here means a redraw with no new data behind it — a category
-    // switch or the below-threshold toggle — in which case the buildings on
-    // screen are already correct and only the grid below needs rebuilding.
-    if (latestMesh !== undefined) mesh = buildingView.render(latestMesh);
+    // EVERY LAYER GOES THROUGH THE REGISTRY (W10). The two that already existed —
+    // buildings and trees — are routed through it here BEFORE any new builder is
+    // written, which is the only way the migration is verifiable: the default set
+    // reproduces the previous picture exactly, so the e2e that passed before must
+    // still pass.
+    //
+    // `latestMesh === undefined` means a redraw with no new data behind it (a
+    // category switch, or the below-threshold toggle), in which case the buildings
+    // on screen are already correct and only the grid below needs rebuilding.
+    const wantsMeshLayers =
+      isLayerEnabled(layers, "buildings") || isLayerEnabled(layers, "trees");
+    if (latestMesh !== undefined && wantsMeshLayers) {
+      mesh = buildingView.render(latestMesh, {
+        buildings: isLayerEnabled(layers, "buildings"),
+        trees: isLayerEnabled(layers, "trees"),
+      });
+    } else if (!wantsMeshLayers) {
+      buildingView.clearScene();
+      mesh = undefined;
+    }
     // The SAME cells, bands and colours the map just drew — built from the same
     // functions rather than a parallel implementation, so the two views cannot
     // disagree about what a cell scores (finding M3).
     buildingView.renderCells(
-      buildCellMesh(snapshot.cells, {
-        frame: enuFrameAt(snapshot.position),
-        category: view.category,
-        threshold: snapshot.threshold,
-        scale: heatScale(
-          snapshot.cells.map((cell) => cell.scores[view.category] ?? 1),
-          snapshot.threshold,
-        ),
-        showBelowThreshold: view.showBelowThreshold,
-        // The grid rides the same surface the buildings stand on, or it would
-        // float over valleys and vanish inside hills. Captured into a const so
-        // the narrowing survives the closure — `terrain` is reassigned whenever
-        // the user moves.
-        ...(field === undefined
-          ? {}
-          : {
-              heightAt: (point: { x: number; y: number }) =>
-                field.heightAt(point),
-            }),
-      }),
+      isLayerEnabled(layers, "cells")
+        ? buildCellMesh(snapshot.cells, {
+            frame: enuFrameAt(snapshot.position),
+            category: view.category,
+            threshold: snapshot.threshold,
+            scale: heatScale(
+              snapshot.cells.map((cell) => cell.scores[view.category] ?? 1),
+              snapshot.threshold,
+            ),
+            showBelowThreshold: view.showBelowThreshold,
+            // The grid rides the same surface the buildings stand on, or it would
+            // float over valleys and vanish inside hills. Captured into a const so
+            // the narrowing survives the closure — `terrain` is reassigned whenever
+            // the user moves.
+            ...(field === undefined
+              ? {}
+              : {
+                  heightAt: (point: { x: number; y: number }) =>
+                    field.heightAt(point),
+                }),
+          })
+        : EMPTY_CELL_MESH,
     );
   }
 
@@ -396,6 +427,35 @@ async function main(): Promise<void> {
     ]
       .filter((part) => part !== "")
       .join(" · ");
+  }
+
+  /**
+   * Redraws both views from the snapshot already in hand.
+   *
+   * PRESENTATION-ONLY CHANGES USE THIS: the layer toggles and the
+   * below-threshold checkbox change WHAT IS DRAWN, not what was scored, so there
+   * is no refetch and no rescore. Redrawing from the held snapshot is the whole
+   * benefit of keeping it in the store.
+   *
+   * Shared rather than repeated per subscriber: two copies is what `check:dup`
+   * caught when the layer subscriber was added, and the duplication mattered —
+   * both copies wrap each view in its own `renderSafely`, and a future edit that
+   * fixed the guard in one place only would silently let a throwing 3D view take
+   * the map down with it.
+   */
+  function redrawFromSnapshot(): void {
+    const snapshot = selectOsmView(store.getState()).snapshot;
+    renderSafely(access, "map", () => {
+      drawMap(snapshot);
+    });
+    renderSafely(access, "3D view", () => {
+      drawScene(snapshot);
+    });
+    // THE STATUS LINE HAS TO FOLLOW. Its mesh counters describe what was drawn, so
+    // leaving it stale after a layer switch would have it reporting 21 volumes over
+    // a scene with no buildings in it — the status line contradicting the picture,
+    // which is the exact defect round 1 was about. A test caught this.
+    writeStatus();
   }
 
   subscribe(
@@ -445,20 +505,14 @@ async function main(): Promise<void> {
   );
 
   subscribe(
-    (view) => view.showBelowThreshold,
+    (view) => view.layers,
     () => {
-      // No refetch and no rescore — the scores are unchanged, only which of
-      // them are drawn. Redrawing from the snapshot already in hand is the
-      // whole benefit of holding it in the store.
-      const snapshot = selectOsmView(store.getState()).snapshot;
-      renderSafely(access, "map", () => {
-        drawMap(snapshot);
-      });
-      renderSafely(access, "3D view", () => {
-        drawScene(snapshot);
-      });
+      layerToggles.render(selectLayers(store.getState()));
+      redrawFromSnapshot();
     },
   );
+
+  subscribe((view) => view.showBelowThreshold, redrawFromSnapshot);
 
   /**
    * The details panel follows the selection, from whichever view produced it.

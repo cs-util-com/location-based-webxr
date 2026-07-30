@@ -55,21 +55,54 @@ export const TERRAIN_EXTENT_M = 1400;
 export const TERRAIN_SPACING_M = 12;
 
 /**
- * Plane subdivisions per axis, DERIVED rather than chosen.
+ * Upper bound on plane subdivisions per axis.
  *
- * This was a hard-coded 64 with a comment explaining that 64 over 600 m gave a
- * ~9.4 m quad, just finer than the DEM's ~12 m pitch. Prose does not follow a
- * constant: at the new 2.8 km extent that same 64 would be **44 m quads**, four
- * times coarser than the data, and the symptom would be "the terrain got blurry"
- * rather than an error. Deriving it means the relationship the comment described is
- * now enforced (finding B2).
+ * MEASURED, not guessed. Deriving the segment count purely from
+ * `extent / spacing` gives 234 at the 2.8 km extent — a 55 000-vertex plane that
+ * `setTerrain` walks and then re-normals on every terrain update. That tripled three
+ * e2e tests (3.7 s → 12.6 s each) and made the suite flaky, which is a real
+ * regression and not an acceptable price for ground detail.
+ *
+ * 128 is 22 m quads over 2.8 km. What that costs is only the GROUND PLANE's
+ * smoothness: every consumer that actually needs DEM precision — buildings, and the
+ * plates and roads to come — samples the heightfield directly per vertex, so the
+ * full 12 m data is still used where it changes an answer. The plane is a backdrop.
  */
-const GROUND_SEGMENTS = Math.round((TERRAIN_EXTENT_M * 2) / TERRAIN_SPACING_M);
+const MAX_GROUND_SEGMENTS = 128;
+
+/**
+ * Plane subdivisions per axis, DERIVED and then CAPPED.
+ *
+ * The derivation is the part that matters (finding B2): this was a hard-coded 64
+ * with a comment explaining that 64 over 600 m gave a ~9.4 m quad, just finer than
+ * the DEM's ~12 m pitch. Prose does not follow a constant — at 2.8 km that same 64
+ * is 44 m quads, and the symptom would be "the terrain got blurry" rather than an
+ * error. Deriving it enforces the relationship the comment only described.
+ *
+ * The cap is the part that keeps it affordable; see `MAX_GROUND_SEGMENTS`. Below
+ * ~1.5 km of extent the cap does not bind and the DEM pitch is matched exactly.
+ */
+const GROUND_SEGMENTS = Math.min(
+  MAX_GROUND_SEGMENTS,
+  Math.round((TERRAIN_EXTENT_M * 2) / TERRAIN_SPACING_M),
+);
 
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
   /** Called with the H3 id when an affordance cell is clicked in the scene. */
   readonly onCellClick?: (cell: string) => void;
+}
+
+/**
+ * Which of the mesh layers to draw.
+ *
+ * Optional at the call site, and both default to ON: an omitted argument has to
+ * reproduce the previous picture exactly, because that is what makes the layer
+ * registry migration checkable against a known-good baseline (W10).
+ */
+export interface MeshLayers {
+  readonly buildings: boolean;
+  readonly trees: boolean;
 }
 
 export interface BuildingStats {
@@ -447,14 +480,19 @@ export class BuildingView {
    * So this is now purely "typed arrays in, three.js objects out", which is what
    * `building-view.ts`'s header always claimed the file was for.
    */
-  render(mesh: TransferableMesh): BuildingStats {
+  render(mesh: TransferableMesh, layers?: MeshLayers): BuildingStats {
     this.clear();
+    // Both default to ON, so an omitted argument reproduces the previous
+    // behaviour exactly — which is what makes the layer registry's migration
+    // verifiable rather than a rewrite (W10).
+    const wantBuildings = layers?.buildings ?? true;
+    const wantTrees = layers?.trees ?? true;
 
-    if (mesh.buildings.triangleCount > 0) {
+    if (wantBuildings && mesh.buildings.triangleCount > 0) {
       this.group.add(this.meshFor(mesh.buildings));
     }
 
-    for (const tree of mesh.trees) {
+    for (const tree of wantTrees ? mesh.trees : []) {
       const trunk = new THREE.Mesh(
         new THREE.ConeGeometry(tree.crownDiameterM / 2, tree.heightM, 6),
         new THREE.MeshStandardMaterial({ color: 0x3f7d4a }),
@@ -465,13 +503,17 @@ export class BuildingView {
     }
 
     this.renderer.render(this.scene, this.camera);
+    // The counters describe WHAT WAS DRAWN, not what was available. A status
+    // line reporting 400 buildings while the buildings layer is off would be the
+    // status line lying about the picture, which is the class of defect the
+    // legend and the store exist to prevent.
     return {
-      volumes: mesh.volumes,
-      parts: mesh.parts,
-      triangles: mesh.buildings.triangleCount,
-      guessedHeights: mesh.guessedHeights,
-      approximateRoofs: mesh.approximateRoofs,
-      trees: mesh.trees.length,
+      volumes: wantBuildings ? mesh.volumes : 0,
+      parts: wantBuildings ? mesh.parts : 0,
+      triangles: wantBuildings ? mesh.buildings.triangleCount : 0,
+      guessedHeights: wantBuildings ? mesh.guessedHeights : 0,
+      approximateRoofs: wantBuildings ? mesh.approximateRoofs : 0,
+      trees: wantTrees ? mesh.trees.length : 0,
     };
   }
 

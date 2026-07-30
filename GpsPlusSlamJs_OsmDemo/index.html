@@ -190,6 +190,18 @@
         border-radius: 4px;
         padding: 0.2rem 0.4rem;
       }
+      /* The layer switches. Compact, because they sit in a bar that already has
+         a category picker and a legend. */
+      .layer-toggles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.78rem;
+        color: #9aa3b8;
+      }
+      .layer-toggle {
+        white-space: nowrap;
+      }
       .hint {
         color: #6f7995;
         font-size: 0.78rem;
@@ -354,6 +366,12 @@
         ><input type="checkbox" id="show-below" /> show cells below the
         threshold</label
       >
+      <!-- Per-layer toggles (DEC-R2-10). Independent switches rather than a
+           two-state mode: a mode makes it impossible to view a merged area OVER
+           the cells that produced it, which is the first check anyone makes when a
+           region looks wrong. Populated from ALL_LAYERS so a new builder cannot
+           arrive without a switch. -->
+      <div id="layers" class="layer-toggles"></div>
       <span class="hint">click the map to move</span>
       <span id="status">starting…</span>
       <div id="legend"></div>

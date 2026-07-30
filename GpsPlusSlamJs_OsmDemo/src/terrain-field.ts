@@ -43,7 +43,11 @@ import {
   type LatLng,
 } from "gps-plus-slam-osm";
 
-import { NEAR_FIELD_M, type HeightfieldData } from "./heightfield.js";
+import {
+  NEAR_FIELD_M,
+  peakToTrough,
+  type HeightfieldData,
+} from "./heightfield.js";
 
 /**
  * Posts kept before the furthest are evicted.
@@ -83,17 +87,6 @@ export interface TerrainField {
   sampleGrid(options: SampleGridOptions): HeightfieldData;
   /** Posts currently held. Exposed so the eviction bound is testable. */
   readonly postCount: number;
-}
-
-/** Peak-to-trough of a non-empty list, without spreading it into Math.max. */
-function spread(values: readonly number[]): number {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const value of values) {
-    if (value < min) min = value;
-    if (value > max) max = value;
-  }
-  return max - min;
 }
 
 /** Metres per Mercator pixel at a latitude — how wide one lattice step is. */
@@ -295,11 +288,12 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       // A fold, never a spread into `Math.max` — a spread passes one argument per
       // element and throws above ~100 000, which this grid comfortably exceeds at
       // the 2.8 km extent.
-      reliefM: spread(values),
+      reliefM: peakToTrough(values),
       // DEC-R2-22: the near field reported separately, because over 2.8 km the
       // whole-field number can be tens of metres while the ground under the user
       // is flat. Empty only if the extent is smaller than the near field.
-      nearReliefM: near.length === 0 ? spread(values) : spread(near),
+      nearReliefM:
+        near.length === 0 ? peakToTrough(values) : peakToTrough(near),
     };
   }
 

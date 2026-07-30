@@ -293,6 +293,79 @@ test.describe("the header", () => {
   });
 });
 
+test.describe("the layer toggles", () => {
+  test("switch geometry off and on without refetching", async ({ page }) => {
+    // WHY THIS TEST MATTERS (W10, DEC-R2-10/12). The registry's whole purpose is
+    // that a later AR mode can ask for buildings + POI markers and skip ground
+    // plates. That is only true if a switch actually changes what is BUILT — and
+    // the cheap mistake is to gate the drawing while still doing all the work, or
+    // to trigger a refetch for a presentation-only change.
+    //
+    // Asserted through the status line's own counters rather than pixels: they are
+    // reported from what was drawn, so they cannot agree with a wrong picture.
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // Generated from ALL_LAYERS, so a new builder cannot arrive without a switch.
+    await expect(page.locator("#layers input[type=checkbox]")).toHaveCount(7);
+
+    // The defaults reproduce the picture the demo shipped with — which is what
+    // makes the migration of buildings/trees through the registry verifiable.
+    await expect(page.locator("#layer-cells")).toBeChecked();
+    await expect(page.locator("#layer-buildings")).toBeChecked();
+    await expect(page.locator("#layer-trees")).toBeChecked();
+    await expect(page.locator("#layer-roads")).not.toBeChecked();
+
+    const status = page.locator("#status");
+    await expect(status).toContainText(/\d+ volumes/);
+    const before = counts.overpassQuery;
+
+    await page.locator("#layer-buildings").uncheck();
+
+    // The counters must drop to zero volumes: the layer is genuinely not built,
+    // not merely hidden.
+    await expect(status).not.toContainText(/[1-9]\d* volumes/);
+    // NO REFETCH. Layers are presentation; the snapshot in the store is reused.
+    expect(counts.overpassQuery).toBe(before);
+
+    // And the cells are independent — switching buildings off must not disturb them.
+    await expect(
+      page.locator("#map path.affordance-cell").first(),
+    ).toBeVisible();
+
+    await page.locator("#layer-buildings").check();
+    await expect(status).toContainText(/[1-9]\d* volumes/);
+    expect(counts.overpassQuery).toBe(before);
+  });
+
+  test("switching the cells layer off clears the grid in BOTH views", async ({
+    page,
+  }) => {
+    // The registry has to reach every view, or one of them keeps drawing a layer
+    // the store says is off — the cross-view disagreement the store exists to
+    // prevent, reintroduced by the mechanism meant to prevent it.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await expect(
+      page.locator("#map path.affordance-cell").first(),
+    ).toBeVisible();
+
+    await page.locator("#layer-cells").uncheck();
+
+    await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
+    // The 3D grid is inside a canvas, so it is asserted through the click it would
+    // otherwise answer: with no grid there is nothing to pick.
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(page.locator("#details")).toBeHidden();
+  });
+});
+
 test.describe("the affordance map", () => {
   test("draws res-13 cells over the basemap", async ({ page }) => {
     await stubNetwork(page);

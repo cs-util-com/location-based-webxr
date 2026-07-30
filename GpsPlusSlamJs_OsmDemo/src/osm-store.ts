@@ -32,6 +32,7 @@ import {
 import type { LatLng } from "gps-plus-slam-osm";
 
 import type { DemoSnapshot } from "./demo-pipeline.js";
+import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
 
 /** The demo's root state. One slice; the demo has no other durable state. */
 export interface DemoRootState {
@@ -41,6 +42,24 @@ export interface DemoRootState {
 export interface CreateDemoStoreOptions {
   readonly start: LatLng;
   readonly category: string;
+}
+
+/**
+ * The layer set, narrowed back to the demo's own union.
+ *
+ * The slice stores it structurally as `Record<string, boolean>` because the
+ * framework is published and cannot name an OSM type (DEC-R2-18). This is the one
+ * place the two meet.
+ *
+ * NO CAST IS NEEDED, and that is worth knowing rather than rediscovering: an index
+ * signature over `string` already satisfies every specific key, so
+ * `Record<string, boolean>` is assignable to `Record<LayerKind, boolean>` directly.
+ * The safety comes from the write side instead — `toggleLayer` is exhaustive over
+ * the union by construction, and `parseLayers` discards names it does not know, so
+ * a key outside the union can never enter the store.
+ */
+export function selectLayers(state: DemoRootState): LayerSet {
+  return selectOsmView(state).layers;
 }
 
 /** The slice's state, from the root. The one place the mount key is named. */
@@ -92,6 +111,7 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
   const slice = createOsmViewSlice<DemoSnapshot>({
     initialPosition: options.start,
     initialCategory: options.category,
+    initialLayers: DEFAULT_LAYERS,
   });
 
   const store = configureStore({

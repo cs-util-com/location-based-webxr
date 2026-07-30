@@ -214,3 +214,66 @@ describe('createOsmViewSlice — serialisability', () => {
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
 });
+
+describe('createOsmViewSlice — the layer set', () => {
+  /**
+   * WHY THE LAYER SET IS STRUCTURAL HERE. This package is published and
+   * `gps-plus-slam-osm` is not, so any reference to it — including a type-only
+   * import, which lands in the emitted `.d.ts` — 404s every consumer's install.
+   * That is why `TSnapshot` is a generic, and a layer union would hit the same wall.
+   * So the slice stores `Record<string, boolean>` and knows nothing about names.
+   */
+  it('defaults to no layers, so a consumer must opt in', () => {
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 0, lng: 0 },
+      initialCategory: 'walkable',
+    });
+    const state = slice.reducer(undefined, { type: '@@INIT' });
+    expect(state.layers).toEqual({});
+  });
+
+  it('takes the consumer initial set verbatim', () => {
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 0, lng: 0 },
+      initialCategory: 'walkable',
+      initialLayers: { buildings: true, roads: false },
+    });
+    const state = slice.reducer(undefined, { type: '@@INIT' });
+    expect(state.layers).toEqual({ buildings: true, roads: false });
+  });
+
+  it('replaces the whole set, and touches nothing else', () => {
+    // Whole-set replacement rather than a per-layer pair: a per-layer action would
+    // need the consumer's union as its payload type, which this package cannot name.
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 1, lng: 2 },
+      initialCategory: 'walkable',
+      initialLayers: { buildings: true },
+    });
+    const before = slice.reducer(undefined, { type: '@@INIT' });
+    const after = slice.reducer(
+      before,
+      slice.actions.layersChanged({ buildings: false, poi: true })
+    );
+
+    expect(after.layers).toEqual({ buildings: false, poi: true });
+    // Everything else survives — the layer set is presentation, not data.
+    expect(after.position).toEqual(before.position);
+    expect(after.category).toBe(before.category);
+    expect(after.snapshot).toBe(before.snapshot);
+    expect(after.loading).toEqual(before.loading);
+  });
+
+  it('does not mutate the previous state in place', () => {
+    // Subscribers only fire on a new reference; an in-place write would update the
+    // store invisibly and the views would keep drawing the previous layers.
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 0, lng: 0 },
+      initialCategory: 'walkable',
+      initialLayers: { buildings: true },
+    });
+    const before = slice.reducer(undefined, { type: '@@INIT' });
+    slice.reducer(before, slice.actions.layersChanged({ buildings: false }));
+    expect(before.layers).toEqual({ buildings: true });
+  });
+});
