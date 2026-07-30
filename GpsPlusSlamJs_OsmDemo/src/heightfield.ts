@@ -180,9 +180,21 @@ export async function buildHeightfieldData(
   // the surface continuous without inventing a slope the data never showed.
   const mean = known.reduce((sum, v) => sum + v, 0) / known.length;
   const heights = new Float32Array(total);
+  // The posts within `NEAR_FIELD_M` of the origin, collected as the grid is
+  // walked rather than re-derived afterwards — the row/col to ENU mapping is
+  // stated once above and deriving it a second time is how the two drift.
+  const near: number[] = [];
   for (let i = 0; i < total; i++) {
     const value = raw[i];
     heights[i] = value === undefined || !Number.isFinite(value) ? mean : value;
+    if (value === undefined || !Number.isFinite(value)) continue;
+    const col = i % side;
+    const row = Math.floor(i / side);
+    const east = -extentM + (col / (side - 1)) * extentM * 2;
+    const north = -extentM + (row / (side - 1)) * extentM * 2;
+    if (Math.abs(east) <= NEAR_FIELD_M && Math.abs(north) <= NEAR_FIELD_M) {
+      near.push(value);
+    }
   }
 
   return {
@@ -205,7 +217,18 @@ export async function buildHeightfieldData(
     // A fold has no limit and is not measurably slower, so this removes a
     // fragility rather than fixing a live bug. See `worker-round-trip.test.ts`.
     reliefM: peakToTrough(known),
-    nearReliefM: peakToTrough(known),
+    // DEC-R2-22's SECOND number, and it has to be a different one. This read
+    // `peakToTrough(known)` — byte-identical to `reliefM` — so the status line
+    // showed one value twice and could not tell "this place is hilly" from
+    // "somewhere in view is". `NEAR_FIELD_M` was not referenced anywhere in this
+    // file outside its own declaration. Raised in review on PR #231; the live
+    // path (`terrain-field.ts`'s `sampleGrid`) always restricted correctly, so
+    // this was a trap for the next consumer rather than a shipped defect.
+    //
+    // Falls back to the whole field when the extent is smaller than the near
+    // field: reporting 0 there would read as flat ground rather than as a grid
+    // too small to distinguish. Same rule `sampleGrid` follows.
+    nearReliefM: near.length === 0 ? peakToTrough(known) : peakToTrough(near),
   };
 }
 

@@ -198,6 +198,49 @@ describe("createTerrainField", () => {
     expect(field.postCount).toBeLessThanOrEqual(400);
   });
 
+  it("fills a gap OUTSIDE the ensured area from the mean, never with zero", async () => {
+    // RAISED IN REVIEW ON PR #231, and confirmed against the code. `sampleGrid`
+    // wrote `height ?? 0` into the buffer and then tried to repair gaps with
+    // `if (!Number.isFinite(...)) heights[i] = mean`. Zero IS finite, so the
+    // repair could never fire and every uncovered post stayed at 0.
+    //
+    // THE FAILURE THAT MAKES IT WORTH A TEST. The user is at A with terrain
+    // loaded, moves ~500 m to B, and `elevationAt` rejects — a transient 5xx or
+    // an aborted tile. `ensureAround` swallows it and sets no posts, so B's
+    // 2.8 km grid is part-covered by A's lattice and part not. The uncovered part
+    // reads 0, `values.length > 0` so `hasData` is true, and the worker publishes
+    // it as real terrain. After the datum subtraction that is a ~53 m PIT at
+    // Cologne shaped exactly like the outage, with the buildings sunk into it.
+    //
+    // The sibling case — the FETCH path filling undefined posts — was already
+    // covered. This is the sampling path, which had no equivalent.
+    const { provider } = rampProvider();
+    const field = createTerrainField({ provider });
+
+    // Ensure a SMALL area, then sample a grid far wider than it.
+    await field.ensureAround(COLOGNE, 150);
+    const grid = field.sampleGrid({
+      frame: enuFrameAt(COLOGNE),
+      extentM: 1200,
+      spacingM: 100,
+    });
+
+    expect(grid.hasData).toBe(true);
+    // Some posts are genuinely uncovered — otherwise this test proves nothing.
+    expect(grid.missing).toBeGreaterThan(0);
+
+    // NOT ONE POST AT THE SEA-LEVEL FLOOR. Every height must be within the
+    // range the ramp can actually produce over this grid; a 0 among values
+    // around 550 is the pit, and it is what the old code emitted.
+    const heights = [...grid.heights];
+    const lowest = Math.min(...heights);
+    const highest = Math.max(...heights);
+    expect(lowest).toBeGreaterThan(0);
+    // And the gaps sit INSIDE the observed range rather than at either edge,
+    // because the mean is by definition between them.
+    expect(highest - lowest).toBeLessThan(highest);
+  });
+
   it("never asks for the same post twice within one fill", async () => {
     // Two adjacent requests rounding to the same pixel would double the batch for
     // nothing. The lattice is integer-keyed, so this is a de-duplication check.

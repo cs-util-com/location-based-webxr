@@ -24,7 +24,11 @@ import { describe, it, expect, vi } from "vitest";
 import { enuFrameAt } from "gps-plus-slam-osm";
 import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 
-import { buildHeightfield } from "./heightfield.js";
+import {
+  buildHeightfield,
+  buildHeightfieldData,
+  NEAR_FIELD_M,
+} from "./heightfield.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 const FRAME = enuFrameAt(COLOGNE);
@@ -220,5 +224,70 @@ describe("buildHeightfield — the fetch", () => {
     const controller = new AbortController();
     await buildHeightfield(provider, { ...OPTIONS, signal: controller.signal });
     expect(seen).toHaveBeenCalledWith(controller.signal);
+  });
+});
+
+describe("buildHeightfieldData — nearReliefM is the NEAR field (PR #231)", () => {
+  it("reports less relief near the origin than across the whole grid", async () => {
+    // RAISED IN REVIEW ON PR #231 and confirmed: `nearReliefM` was
+    // `peakToTrough(known)` — byte-identical to `reliefM` — and `NEAR_FIELD_M`
+    // appeared nowhere in this file except its own declaration.
+    //
+    // DEC-R2-22 added the second number precisely because they must differ:
+    // over a 2.8 km square the whole-field relief can be tens of metres while
+    // the ground under the user is flat, and a status line showing one number
+    // for both cannot tell "this place is hilly" from "somewhere in view is".
+    //
+    // This path has no production consumer today — the demo goes through
+    // `terrainField.sampleGrid`, which does restrict correctly — so it is a trap
+    // for the next consumer rather than a live defect. `mesh-layers.test.ts`
+    // already records that a dropped field in this exact function shipped once.
+    //
+    // The provider makes a FLAT centre inside a steep rim, so the two numbers
+    // are forced apart: anything within the near field is 100, everything
+    // beyond it ramps away hard.
+    const provider: ElevationProvider = {
+      attribution: "test",
+      sourceId: "test",
+      elevationAt: (positions) =>
+        Promise.resolve(
+          positions.map((p) => {
+            const east = (p.lng - COLOGNE.lng) * 70_000;
+            const north = (p.lat - COLOGNE.lat) * 111_320;
+            const far = Math.max(Math.abs(east), Math.abs(north));
+            return far <= NEAR_FIELD_M ? 100 : 100 + (far - NEAR_FIELD_M);
+          }),
+        ),
+    };
+
+    const field = await buildHeightfieldData(provider, {
+      frame: enuFrameAt(COLOGNE),
+      extentM: 1200,
+      spacingM: 100,
+    });
+
+    expect(field.hasData).toBe(true);
+    // The whole grid climbs ~900 m from the rim; the near field is dead flat.
+    expect(field.reliefM).toBeGreaterThan(500);
+    expect(field.nearReliefM).toBeLessThan(5);
+  });
+
+  it("falls back to the whole field when the extent is smaller than the near field", async () => {
+    // Not zero, and not a throw: a 200 m grid has no posts beyond NEAR_FIELD_M,
+    // so "the near field" is the whole thing. Reporting 0 would read as flat
+    // ground rather than as a grid too small to distinguish.
+    const provider: ElevationProvider = {
+      attribution: "test",
+      sourceId: "test",
+      elevationAt: (positions) =>
+        Promise.resolve(positions.map((_, i) => i * 2)),
+    };
+    const field = await buildHeightfieldData(provider, {
+      frame: enuFrameAt(COLOGNE),
+      extentM: 100,
+      spacingM: 50,
+    });
+    expect(field.nearReliefM).toBe(field.reliefM);
+    expect(field.nearReliefM).toBeGreaterThan(0);
   });
 });

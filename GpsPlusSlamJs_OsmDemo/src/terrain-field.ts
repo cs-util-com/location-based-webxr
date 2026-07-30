@@ -251,7 +251,13 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
             near.push(height);
           }
         }
-        heights[row * side + col] = height ?? 0;
+        // NaN, NOT 0, and the difference is the whole gap-fill below. Zero is
+        // finite, so `?? 0` sailed straight through the `!Number.isFinite`
+        // repair and every uncovered post stayed at sea level — a ~53 m pit at
+        // Cologne after the datum subtraction, shaped exactly like whatever
+        // outage produced it, published as real terrain with the buildings sunk
+        // into it. Raised in review on PR #231.
+        heights[row * side + col] = height ?? Number.NaN;
       }
     }
 
