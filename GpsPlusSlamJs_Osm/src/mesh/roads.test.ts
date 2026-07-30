@@ -85,6 +85,24 @@ function inTriangle(
   return !(negative && positive);
 }
 
+/**
+ * The `y` component of `(b - a) x (c - a)` for triangle `i`, in the render frame.
+ *
+ * Positive means the face points UP. This is the quantity three.js computes for
+ * itself when `flatShading` is on — which is why it, and not the stored normals,
+ * is what the orientation test asserts.
+ */
+function faceUpness(mesh: MeshData, i: number): number {
+  const xz = (offset: number): [number, number] => {
+    const base = (mesh.indices[i + offset] ?? 0) * 3;
+    return [mesh.positions[base] ?? 0, mesh.positions[base + 2] ?? 0];
+  };
+  const [ax, az] = xz(0);
+  const [bx, bz] = xz(1);
+  const [cx, cz] = xz(2);
+  return (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+}
+
 describe("roadWidthM — the lanes-derived model", () => {
   it("uses an explicit width tag above everything else", () => {
     // Mapped data beats any model we could invent, and `parseLengthMetres`
@@ -276,26 +294,15 @@ describe("buildRoads — geometry", () => {
     // Asserting the CROSS PRODUCT rather than the stored normals is the whole
     // point: the stored normals were right the entire time.
     const road = buildRoads(
-      [
-        way({ highway: "residential" }, [at(0, 0), at(60, 0), at(60, 60)]),
-      ],
+      [way({ highway: "residential" }, [at(0, 0), at(60, 0), at(60, 60)])],
       { frame: FRAME },
     );
     const mesh = road[0]?.mesh as MeshData;
     expect(mesh.indices.length).toBeGreaterThan(0);
 
     for (let i = 0; i + 2 < mesh.indices.length; i += 3) {
-      const a = (mesh.indices[i] ?? 0) * 3;
-      const b = (mesh.indices[i + 1] ?? 0) * 3;
-      const c = (mesh.indices[i + 2] ?? 0) * 3;
-      const ux = (mesh.positions[b] ?? 0) - (mesh.positions[a] ?? 0);
-      const uz = (mesh.positions[b + 2] ?? 0) - (mesh.positions[a + 2] ?? 0);
-      const vx = (mesh.positions[c] ?? 0) - (mesh.positions[a] ?? 0);
-      const vz = (mesh.positions[c + 2] ?? 0) - (mesh.positions[a + 2] ?? 0);
-      // The y component of u x v for a horizontal triangle. Positive means the
-      // face points up. Degenerate triangles (0) are not an error here; a
-      // NEGATIVE one is.
-      expect(uz * vx - ux * vz).toBeGreaterThanOrEqual(0);
+      // Degenerate triangles (0) are not an error here; a NEGATIVE one is.
+      expect(faceUpness(mesh, i)).toBeGreaterThanOrEqual(0);
     }
   });
 
