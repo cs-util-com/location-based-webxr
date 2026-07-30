@@ -382,14 +382,21 @@ async function main(): Promise<void> {
       return;
     }
     const layers = selectLayers(store.getState());
+    // DERIVED FROM THE WHOLE SNAPSHOT, not from what this view happens to draw
+    // (W12). The cells handed to the map are filtered by the layer switch, and
+    // deriving the scale from them made switching `cells` off collapse the legend
+    // to "1 to 1" and colour the 2D regions on an empty ramp while the 3D slabs
+    // used a different one.
+    const scale = scaleFor(snapshot, view.category);
     // THE REGISTRY REACHES BOTH VIEWS. Gating only the 3D side would leave the map
     // drawing a layer the store says is off — the cross-view disagreement the store
     // exists to prevent, reintroduced by the mechanism meant to prevent it.
-    const scale = mapView.render(
+    mapView.render(
       isLayerEnabled(layers, "cells") ? snapshot.cells : [],
       snapshot.regions,
       view.category,
       snapshot.threshold,
+      scale,
       view.showBelowThreshold,
       // W15: the same switch that draws the 3D slabs. One claim, both views.
       isLayerEnabled(layers, "areas"),
@@ -471,10 +478,11 @@ async function main(): Promise<void> {
             frame: enuFrameAt(snapshot.position),
             category: view.category,
             threshold: snapshot.threshold,
-            scale: heatScale(
-              snapshot.cells.map((cell) => cell.scores[view.category] ?? 1),
-              snapshot.threshold,
-            ),
+            // THE SAME DERIVATION AS THE MAP AND THE LEGEND (W12). This was a
+            // third copy of the same expression; three copies agreeing today is
+            // three chances to disagree tomorrow, and the disagreement would be
+            // silent because each view stays self-consistent.
+            scale: scaleFor(snapshot, view.category),
             showBelowThreshold: view.showBelowThreshold,
             // The grid rides the same surface the buildings stand on, or it would
             // float over valleys and vanish inside hills. Captured into a const so

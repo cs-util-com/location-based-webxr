@@ -140,3 +140,37 @@ describe("legendModel — the sub-threshold bands (DEC-7)", () => {
     expect(below?.label).toContain("2");
   });
 });
+
+describe("the empty state (W12, finding R3-8)", () => {
+  /**
+   * Why these tests matter:
+   * The reported bug was that switching to `Spawn Point` showed "1" at BOTH ends
+   * of the legend. That is correct output from a degenerate scale — `heatScale`
+   * returns `max === threshold` when nothing on screen clears the bar — and it
+   * is not the fact, which is that no cell qualifies. Seven identical swatches
+   * between two identical labels is a picture that explains nothing.
+   */
+  it("says so when nothing scores above the bar", () => {
+    const model = legendModel({ threshold: 1, max: 1 }, "spawnPoint", false);
+
+    expect(model.emptyMessage).toContain("spawnPoint");
+    expect(model.emptyMessage).toContain("1");
+  });
+
+  it("is absent as soon as anything DOES clear the bar", () => {
+    // The other direction: a legend that claimed emptiness over a real ramp
+    // would be worse than the bug.
+    expect(
+      legendModel({ threshold: 1, max: 1.0001 }, "walkable", false)
+        .emptyMessage,
+    ).toBeUndefined();
+  });
+
+  it("still offers the sub-threshold bands, which is when they matter most", () => {
+    // "Nothing qualifies" is exactly the moment someone wants to see what IS
+    // there — a veto reads very differently from "no rule ever mentioned this".
+    const model = legendModel({ threshold: 1, max: 1 }, "spawnPoint", true);
+
+    expect(model.bands).toHaveLength(3);
+  });
+});

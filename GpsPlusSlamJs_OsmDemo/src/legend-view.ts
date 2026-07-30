@@ -52,6 +52,22 @@ export class LegendView {
     strip.setAttribute("aria-label", model.description);
     for (const stop of model.ramp) strip.append(swatch(stop));
 
+    // THE EMPTY STATE (W12). With no cell above the bar the ramp has no range,
+    // and drawing it anyway is seven identical swatches between two labels both
+    // reading "1" — the reported bug. The sentence replaces the strip rather than
+    // joining it, because a ramp that explains nothing is worse than no ramp.
+    if (model.emptyMessage !== undefined) {
+      const empty = document.createElement("span");
+      empty.className = "legend-empty";
+      empty.textContent = model.emptyMessage;
+      const children: HTMLElement[] = [name, empty];
+      // The sub-threshold bands STAY, and that is deliberate: "nothing
+      // qualifies" is exactly when someone wants to know what is actually there.
+      for (const band of model.bands) children.push(bandItem(band));
+      this.container.replaceChildren(...children);
+      return;
+    }
+
     const min = document.createElement("span");
     min.className = "legend-min";
     min.textContent = model.minLabel;
@@ -60,18 +76,21 @@ export class LegendView {
     max.textContent = model.maxLabel;
 
     const children: HTMLElement[] = [name, min, strip, max];
-    for (const band of model.bands) {
-      const item = document.createElement("span");
-      item.className = "legend-band";
-      item.append(swatch(band));
-      const label = document.createElement("span");
-      label.textContent = band.label;
-      item.append(label);
-      children.push(item);
-    }
+    for (const band of model.bands) children.push(bandItem(band));
 
     this.container.replaceChildren(...children);
   }
+}
+
+/** One band: its swatch and its label. Shared by both the ramp and the empty state. */
+function bandItem(band: LegendStop): HTMLElement {
+  const item = document.createElement("span");
+  item.className = "legend-band";
+  item.append(swatch(band));
+  const label = document.createElement("span");
+  label.textContent = band.label;
+  item.append(label);
+  return item;
 }
 
 /** One coloured square. `fill: false` renders as an outline, asserting nothing. */

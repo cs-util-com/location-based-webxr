@@ -23,7 +23,6 @@ import type { CellScore, Region } from "gps-plus-slam-osm";
 import {
   describeScale,
   heatColour,
-  heatScale,
   toHex,
   type HeatScale,
 } from "./heat-colours.js";
@@ -233,6 +232,21 @@ export class MapView {
     regions: readonly Region[],
     category: string,
     threshold: number,
+    /**
+     * The heat scale, DERIVED BY THE CALLER (W12, finding R3-8).
+     *
+     * This used to be computed here from the cells it was handed — and the
+     * caller hands it a list already filtered by the `cells` layer switch. So
+     * switching that layer off collapsed the ramp to nothing, the legend went to
+     * "1 to 1", and the 2D region fills were coloured on an empty scale while the
+     * 3D slabs used one derived from every cell. Two views, two scales, the same
+     * regions: exactly the cross-view disagreement the store exists to prevent,
+     * reintroduced by the layer registry.
+     *
+     * Passing it in makes one derivation serve the map, the 3D view and the
+     * legend, and makes a second one impossible to add by accident.
+     */
+    scale: HeatScale,
     showBelowThreshold = false,
     /**
      * Whether regions are FILLED as well as outlined (W15).
@@ -246,11 +260,6 @@ export class MapView {
   ): HeatScale {
     this.cellLayer.clearLayers();
     this.regionLayer.clearLayers();
-
-    const scale = heatScale(
-      cells.map((cell) => cell.scores[category] ?? 1),
-      threshold,
-    );
 
     for (const cell of cells) {
       const score = cell.scores[category] ?? 1;

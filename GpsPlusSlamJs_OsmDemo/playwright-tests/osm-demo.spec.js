@@ -2157,47 +2157,85 @@ test.describe("a superseded refresh", () => {
     /**
      * The drawing buffer stands in for the camera matrix, which is not exposed.
      *
-     * Kept as raw pixels rather than a data URL because the comparison below has
-     * to be a FRACTION of differing pixels, not equality — see there.
+     * BOTH THE CAPTURE AND THE COMPARISON HAPPEN IN THE PAGE. The first version
+     * returned the pixels — a ~4 million element array per call — and marshalling
+     * that over CDP took seconds under a loaded three-worker run, so two
+     * "consecutive" reads spanned a progressive ring landing and the stability
+     * poll could never converge. It was green standalone and timed out in the
+     * full suite, which is the signature of a test measuring the machine.
      */
-    const shot = () =>
+    const capture = () =>
       page.evaluate(() => {
         const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return [];
+        if (!(el instanceof HTMLCanvasElement)) return false;
         const probe = document.createElement("canvas");
         probe.width = el.width;
         probe.height = el.height;
         const ctx = probe.getContext("2d");
-        if (ctx === null) return [];
+        if (ctx === null) return false;
         ctx.drawImage(el, 0, 0);
-        return [...ctx.getImageData(0, 0, probe.width, probe.height).data];
+        /** @type {Record<string, unknown>} */ (window).__frame =
+          ctx.getImageData(0, 0, probe.width, probe.height).data;
+        return true;
       });
-    /** Fraction of RGB samples that differ by more than a quantisation step. */
-    const differs = (a, b) => {
-      if (a.length === 0 || a.length !== b.length) return 1;
-      let changed = 0;
-      for (let i = 0; i < a.length; i += 4) {
-        if (
-          Math.abs(a[i] - b[i]) > 2 ||
-          Math.abs(a[i + 1] - b[i + 1]) > 2 ||
-          Math.abs(a[i + 2] - b[i + 2]) > 2
-        ) {
-          changed++;
-        }
-      }
-      return changed / (a.length / 4);
-    };
 
-    let previous = await shot();
+    /** Fraction of RGB samples differing from the captured frame by > 2 levels. */
+    const diffFromCapture = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        const previous = /** @type {Record<string, unknown>} */ (window)
+          .__frame;
+        if (
+          !(el instanceof HTMLCanvasElement) ||
+          !(previous instanceof Uint8ClampedArray)
+        ) {
+          return 1;
+        }
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return 1;
+        ctx.drawImage(el, 0, 0);
+        const now = ctx.getImageData(0, 0, probe.width, probe.height).data;
+        if (now.length !== previous.length) return 1;
+        let changed = 0;
+        for (let i = 0; i < now.length; i += 4) {
+          if (
+            Math.abs((now[i] ?? 0) - (previous[i] ?? 0)) > 2 ||
+            Math.abs((now[i + 1] ?? 0) - (previous[i + 1] ?? 0)) > 2 ||
+            Math.abs((now[i + 2] ?? 0) - (previous[i + 2] ?? 0)) > 2
+          ) {
+            changed++;
+          }
+        }
+        return changed / (now.length / 4);
+      });
+
+    // SWITCH OFF EVERYTHING THAT CAN CHANGE ON ITS OWN, so that what remains in
+    // the canvas is the ground plane and the sky — neither of which a scoring
+    // pass touches. What is left of any difference is then the VIEWPOINT, which
+    // is the only thing this test is about.
+    //
+    // This is the second attempt at making it robust and the first one that
+    // addresses the real cause. Comparing the full scene meant comparing the
+    // affordance grid, and `waitForRefresh` returns on three stable status reads
+    // 250 ms apart — on a loaded machine running three browsers a progressive
+    // ring can take longer than that, so the reference frame could be captured
+    // mid-widening and the comparison then failed at ~13 % PERSISTENTLY. Waiting
+    // harder is a race against the machine; removing the moving parts is not.
+    await page.locator("#layer-cells").uncheck();
+    await page.locator("#layer-buildings").uncheck();
+    await page.locator("#layer-trees").uncheck();
+
+    await capture();
     await expect
       .poll(async () => {
-        const current = await shot();
-        const stable = differs(previous, current) === 0;
-        previous = current;
-        return stable;
+        const moved = await diffFromCapture();
+        await capture();
+        return moved;
       }, REPAINT)
-      .toBe(true);
-    const parked = previous;
+      .toBe(0);
 
     // Supersede: two category changes with no wait, then back to where it
     // started so the scene is comparable again.
@@ -2212,18 +2250,16 @@ test.describe("a superseded refresh", () => {
     // obvious next question. Only `fetchFailed` cleared it.
     await expect(page.locator("#details")).toBeVisible();
 
-    // A FRACTION of changed pixels, not equality. Same position, same category
-    // and the same scored chunks, so the scene is the same scene — but the two
-    // frames are not bit-identical, and chasing that would be chasing the wrong
-    // thing: what this asserts is that the VIEWPOINT did not change, and a
-    // camera reset to the default pose moves essentially every pixel of a city.
-    // The scale is known from having got this wrong: selecting the wrong
-    // category for the return leg changed 43 % of pixels, which is the order a
-    // genuine viewpoint change lands at. 5 % is far below that and far above
-    // frame-to-frame noise.
-    await expect
-      .poll(async () => differs(parked, await shot()), REPAINT)
-      .toBeLessThan(0.05);
+    // A FRACTION of changed pixels against the parked frame, not equality. Same
+    // position, same category and the same scored chunks, so the scene is the
+    // same scene — but the two frames are not bit-identical, and chasing that
+    // would be chasing the wrong thing: what this asserts is that the VIEWPOINT
+    // did not change, and a camera reset to the default pose moves essentially
+    // every pixel of a city. The scale is known from having got this wrong:
+    // selecting the wrong category for the return leg changed 43 % of pixels,
+    // which is the order a genuine viewpoint change lands at. 5 % is far below
+    // that and far above frame-to-frame noise.
+    await expect.poll(diffFromCapture, REPAINT).toBeLessThan(0.05);
   });
 });
 
@@ -2386,5 +2422,71 @@ test.describe("the ground mode picker", () => {
     await page.locator("#ground-mode").selectOption("gpu");
     await expect(ramp).toBeEnabled();
     await expect(ramp).toBeChecked();
+  });
+});
+
+/**
+ * W12 / finding R3-8 — one scale, and a legend that says when there is no ramp.
+ */
+test.describe("the legend", () => {
+  test("keeps its scale when the cells layer is switched off", async ({
+    page,
+  }) => {
+    // THE DEFECT, and it is not in the notes: the scale was derived from the
+    // cells the MAP was handed, and those are filtered by this switch. So
+    // switching it off collapsed the ramp — the legend went to "1 to 1" and the
+    // 2D region fills were coloured on an empty scale while the 3D slabs used a
+    // different one. Two views, two scales, the same regions.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const legend = page.locator("#legend");
+    const before = await legend.textContent();
+    expect(before).not.toBeNull();
+
+    await page.locator("#layer-cells").uncheck();
+    await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
+
+    // The cells are gone from the map; the scale describes the data, not the
+    // drawing, so the legend must be unchanged.
+    await expect(legend).toHaveText(before ?? "");
+  });
+
+  test("says nothing qualifies instead of showing a 1-to-1 ramp", async ({
+    page,
+  }) => {
+    // The reported symptom, as an assertion. Any category with no cell above the
+    // bar produces a degenerate scale; the fixture's own categories are used
+    // rather than a hardcoded name, so this stays true if the rule table moves.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const picker = page.locator("#category");
+    const values = await page
+      .locator("#category option")
+      .evaluateAll((nodes) =>
+        nodes.map((node) => /** @type {HTMLOptionElement} */ (node).value),
+      );
+
+    for (const value of values) {
+      await picker.selectOption(value);
+      await waitForRefresh(page);
+      const text = (await page.locator("#legend").textContent()) ?? "";
+      // Either there is a real ramp, or there is a sentence — never a ramp whose
+      // two ends carry the same number.
+      const min = await page.locator("#legend .legend-min").count();
+      if (min === 0) {
+        expect(text).toContain("no cell scores above");
+        return;
+      }
+    }
+    // Not a failure: this fixture may have data for every category. Recorded so
+    // a green run cannot be mistaken for proof that the empty state was reached.
+    test.info().annotations.push({
+      type: "note",
+      description: "every category had cells above the bar in this fixture",
+    });
   });
 });

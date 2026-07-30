@@ -83,6 +83,19 @@ export interface LegendModel {
   readonly bands: readonly LegendStop[];
   /** `describeScale`'s sentence, kept as the strip's title / screen-reader text. */
   readonly description: string;
+  /**
+   * Set when NO cell scores above the bar, and the ramp therefore has no range.
+   *
+   * THE REPORTED BUG (finding R3-8): switching to a category nothing qualifies
+   * for — `spawnPoint` in the note — printed seven identical swatches labelled
+   * "1" at both ends. That is correct output from a degenerate scale and it is
+   * not the FACT, which is "no cell here scores above the bar for this
+   * category". A ramp cannot say that; a sentence can.
+   *
+   * Carried as a message rather than a boolean so the view has nothing to
+   * decide, and so the wording is testable without a browser.
+   */
+  readonly emptyMessage?: string;
 }
 
 /** How many swatches the strip samples the ramp at. */
@@ -138,6 +151,13 @@ export function legendModel(
     });
   }
 
+  // NO RANGE MEANS NO RAMP. `heatScale` returns `max === threshold` when nothing
+  // on screen clears the bar, and every stop above then samples the identical
+  // colour — seven grey squares between two labels reading "1". Saying so is the
+  // whole fix; the bands are still offered, because "nothing qualifies" is
+  // exactly when someone wants to see what IS there.
+  const empty = scale.max <= scale.threshold;
+
   return {
     category,
     ramp,
@@ -145,6 +165,11 @@ export function legendModel(
     maxLabel: String(round(scale.max)),
     bands: showBelowThreshold ? bandsFor(scale) : [],
     description: describeScale(scale),
+    ...(empty
+      ? {
+          emptyMessage: `no cell scores above ${round(scale.threshold)} for ${category} here`,
+        }
+      : {}),
   };
 }
 
