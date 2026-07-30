@@ -31,7 +31,7 @@ import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import { selectOsmView, type DemoStore } from "./osm-store.js";
-import type { TransferableMesh, UpdateResult } from "./worker/protocol.js";
+import type { MeshUpdate, UpdateResult } from "./worker/protocol.js";
 
 /**
  * The part of the worker client this needs; narrowed so tests can fake it.
@@ -86,7 +86,7 @@ export interface RefreshCycleOptions extends StoreAccess {
    * in place by the time that subscriber runs — hence "before", and hence a
    * callback rather than a return value.
    */
-  readonly onMesh: (mesh: TransferableMesh) => void;
+  readonly onMesh: (mesh: MeshUpdate) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -122,11 +122,12 @@ export function createRefreshCycle(
       // so an interrupted run has done the most useful work first; this is the
       // interruption it was written for.
       //
-      // KNOWN COST, recorded rather than hidden: every pass rebuilds the whole
-      // mesh, and only the region slabs actually change with the radius — the
-      // buildings, trees, roads and plates are identical each time. Splitting the
-      // reply so later passes carry only what grew is a real improvement and a
-      // follow-up, not a correctness issue; the work is in the worker.
+      // THE MESH IS BUILT ONCE PER CLICK (W6), not once per pass. Only the
+      // region slabs change with the radius; the buildings, trees, POI markers,
+      // roads and plates depend on the features, the terrain and the ENU frame
+      // origin, none of which a widening ring touches. The worker decides which
+      // kind of reply to send and the callback merges it — see `MeshUpdate`.
+      // This was recorded here as a known cost for one round.
       for (const radius of PROGRESSIVE_RADII) {
         const { snapshot, mesh } = await worker.call(
           "update",

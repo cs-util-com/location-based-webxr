@@ -219,6 +219,18 @@ export class DemoPipeline {
   }
 
   /**
+   * How many fetch tiles are currently merged in.
+   *
+   * A faithful signature of the FEATURE SET, and that is why it is a count: tiles
+   * are only ever added, never removed or replaced, so "the same count" and "the
+   * same features" are the same statement. W6 uses it to decide whether a pass
+   * has to rebuild the geometry or may re-send only the region slabs.
+   */
+  loadedTileCount(): number {
+    return this.loaded.size;
+  }
+
+  /**
    * The score record for one cell, or `undefined` if it is not currently held.
    *
    * Exists so `explainCell` can be answered inside the worker. Before the worker

@@ -230,8 +230,23 @@ async function main(): Promise<void> {
     store,
     actions,
     worker,
+    // A pass either rebuilds the geometry or re-sends only the region slabs
+    // (W6). The slabs are the one layer a widening ring changes; everything else
+    // depends on the features, the terrain and the frame origin, none of which a
+    // wider radius touches.
+    //
+    // MERGED INTO THE HELD MESH rather than replacing it, and the guard matters:
+    // a regions-only reply with no mesh behind it can only happen if the worker
+    // decided nothing changed since a full build this side never received, which
+    // would be a protocol bug. Dropping the update is the safe reading — the next
+    // full build repairs it — and drawing slabs over no city is not.
     onMesh: (built) => {
-      latestMesh = built;
+      if (built.kind === "full") {
+        latestMesh = built.mesh;
+        return;
+      }
+      if (latestMesh === undefined) return;
+      latestMesh = { ...latestMesh, regions: built.regions };
     },
   });
 

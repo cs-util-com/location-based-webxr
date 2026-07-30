@@ -63,6 +63,7 @@ import { DemoPipeline } from "../demo-pipeline.js";
 import { describeTerrain } from "../terrain-note.js";
 import { heightfieldFrom, type HeightfieldData } from "../heightfield.js";
 import { createTerrainField, type TerrainField } from "../terrain-field.js";
+import { createMeshPlanner } from "./mesh-planner.js";
 import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
 import {
   isWorkerEnvelope,
@@ -135,6 +136,27 @@ let terrainCentre: { lat: number; lng: number } | undefined;
  */
 const terrainGate = createTerrainGate();
 
+/**
+ * The ENU frame at `centre` plus the terrain sampler every builder reads.
+ *
+ * ONE PLACE, because the region slabs are now built on their own as well as
+ * inside a full mesh (W6) and the two must stand on the same surface. Deriving
+ * the sampler twice is the shape of defect this demo keeps finding: two
+ * computations that agree today with nothing asserting they always will.
+ */
+function meshOptions(centre: LatLng): {
+  frame: ReturnType<typeof enuFrameAt>;
+  groundHeightM?: (position: LatLng) => number;
+} {
+  const frame = enuFrameAt(centre);
+  const field = terrain === undefined ? undefined : heightfieldFrom(terrain);
+  if (field === undefined) return { frame };
+  return {
+    frame,
+    groundHeightM: (position: LatLng) => field.heightAt(frame.toEnu(position)),
+  };
+}
+
 /** Builds the scene geometry for the current features, on the current terrain. */
 function buildMesh(
   features: Iterable<OsmFeature>,
@@ -150,19 +172,8 @@ function buildMesh(
    */
   regions: readonly SlabRegion[] = [],
 ): TransferableMesh {
-  const frame = enuFrameAt(centre);
+  const options = meshOptions(centre);
   const all = [...features];
-
-  // ONE sample per building, taken at its anchor, and one per tree — so a long
-  // building across a slope still cuts into the hill at one end. That is a
-  // property of the mesh layer, not of this call.
-  const field = terrain === undefined ? undefined : heightfieldFrom(terrain);
-  const groundHeightM =
-    field === undefined
-      ? undefined
-      : (position: LatLng) => field.heightAt(frame.toEnu(position));
-  const options =
-    groundHeightM === undefined ? { frame } : { frame, groundHeightM };
 
   const volumes = buildBuildings(all, options);
   const trees = buildTrees(all, options);
@@ -199,6 +210,53 @@ function buildMesh(
     // THE REAL FLAG, not a proxy: a gabled roof on an actual rectangle is EXACT,
     // and that is the common case the approximation trade rests on.
     approximateRoofs: volumes.filter((v) => v.roofIsApproximate).length,
+  };
+}
+
+/**
+ * Decides whether a pass rebuilds the geometry or only re-sends the slabs (W6).
+ *
+ * The decision itself lives in `mesh-planner.ts`, where it can be tested without
+ * a worker — this file only supplies the inputs and acts on the answer.
+ */
+const meshPlanner = createMeshPlanner();
+
+/** Bumped whenever the held terrain is replaced; an input to the planner. */
+let terrainStamp = 0;
+
+/**
+ * Builds what this pass actually needs to send.
+ *
+ * The region slabs are ALWAYS rebuilt, because they are a product of SCORING and
+ * scoring is exactly what a widening ring changes. Everything else is a product
+ * of the features, the terrain and the frame origin.
+ */
+function meshUpdateFor(
+  snapshot: { position: LatLng; regions: readonly SlabRegion[] },
+  pipeline: DemoPipeline,
+): WorkerCalls["update"]["result"]["mesh"] {
+  const full = meshPlanner.needsFullBuild({
+    position: snapshot.position,
+    loadedTileCount: pipeline.loadedTileCount(),
+    terrainStamp,
+  });
+
+  if (!full) {
+    return {
+      kind: "regions",
+      regions: buildRegionSlabs(
+        snapshot.regions,
+        meshOptions(snapshot.position),
+      ),
+    };
+  }
+  return {
+    kind: "full",
+    mesh: buildMesh(
+      pipeline.features().values(),
+      snapshot.position,
+      snapshot.regions,
+    ),
   };
 }
 
@@ -265,11 +323,7 @@ async function handle<K extends WorkerCallKind>(
       }
       return {
         snapshot,
-        mesh: buildMesh(
-          pipeline.features().values(),
-          snapshot.position,
-          snapshot.regions,
-        ),
+        mesh: meshUpdateFor(snapshot, pipeline),
       };
     }
 
@@ -355,6 +409,9 @@ async function loadTerrain(
   // review against the commit before the terrain cache landed, where there was
   // no check here at all and the hole was real.
   terrain = field.hasData ? field : undefined;
+  // The mesh key reads this: a new field means the heights every builder samples
+  // have changed, so the next pass must rebuild rather than re-send slabs (W6).
+  terrainStamp += 1;
   // RECORDED EVEN WHEN THE FIELD IS EMPTY. This is what the mesh build's join
   // reads to decide whether it already has the terrain for its own position, and
   // "the DEM failed here" is an answer to that question. Recording it only on
@@ -389,8 +446,13 @@ async function loadTerrain(
  */
 function transferablesOf(kind: WorkerCallKind, value: unknown): Transferable[] {
   if (kind !== "update") return [];
-  const mesh = (value as UpdateResult | undefined)?.mesh;
-  if (mesh === undefined) return [];
+  const update = (value as UpdateResult | undefined)?.mesh;
+  // A REGIONS-ONLY REPLY TRANSFERS NOTHING (W6). It has no `buildings` or
+  // `plates` to hand over, and the slab buffers are not in this list either —
+  // which is worth knowing rather than assuming: the win from W6 is the BUILD
+  // being skipped, not a transfer being saved.
+  if (update === undefined || update.kind !== "full") return [];
+  const mesh = update.mesh;
   return [
     mesh.buildings.positions.buffer,
     mesh.buildings.normals.buffer,

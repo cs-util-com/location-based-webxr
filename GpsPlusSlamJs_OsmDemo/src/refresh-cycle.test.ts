@@ -115,6 +115,8 @@ type Update = (
 
 function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
   const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+  /** Reply counter, so the fake sends one full mesh and then slabs (W6). */
+  let calls = 0;
   /** Records the order of mesh handoffs and dispatches — see the ordering test. */
   const events: string[] = [];
   const refresh = createRefreshCycle({
@@ -136,7 +138,13 @@ function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
         // The signal is FORWARDED to the test, so a test can supersede the run
         // after the reply has landed — the exact race the guard exists for.
         onReply?.(options.signal);
-        return { snapshot, mesh: NO_MESH };
+        // The worker sends the FULL mesh on the first pass of a click and only
+        // the region slabs afterwards (W6). The fake reproduces that shape so the
+        // cycle is driven by what it will really receive.
+        calls += 1;
+        return calls === 1
+          ? { snapshot, mesh: { kind: "full" as const, mesh: NO_MESH } }
+          : { snapshot, mesh: { kind: "regions" as const, regions: [] } };
       },
     },
     onMesh: () => {
@@ -569,5 +577,53 @@ describe("createRefreshCycle — an error stops the widening (W16)", () => {
     const view = selectOsmView(store.getState());
     expect(view.loading.phase).toBe("error");
     expect(view.loading.message).toContain("denied");
+  });
+});
+
+describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
+  it("merges a regions-only pass into the mesh it already holds", async () => {
+    // WHY THIS TEST MATTERS. Progressive scoring runs three passes and only the
+    // region slabs change between them, so the worker sends the full geometry
+    // once and slabs afterwards. The obvious way to get that wrong is to treat a
+    // slabs-only reply as "no geometry" and blank the buildings on rings 3 and 4
+    // — which would look exactly like the reset bug W2 just fixed.
+    const held: unknown[] = [];
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    let calls = 0;
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      worker: {
+        call: (_kind, payload) => {
+          calls += 1;
+          return Promise.resolve(
+            calls === 1
+              ? {
+                  snapshot: snapshotAt(payload.category, payload.radius),
+                  mesh: { kind: "full" as const, mesh: NO_MESH },
+                }
+              : {
+                  snapshot: snapshotAt(payload.category, payload.radius),
+                  mesh: {
+                    kind: "regions" as const,
+                    regions: [{ medianScore: calls, mesh: NO_MESH.buildings }],
+                  },
+                },
+          );
+        },
+      },
+      onMesh: (mesh) => held.push(mesh),
+    });
+
+    await refresh();
+
+    // One full reply, then one per remaining ring. The COUNT of full replies is
+    // the whole claim: it used to be one per ring.
+    const kinds = held.map((mesh) => (mesh as { kind: string }).kind);
+    expect(kinds[0]).toBe("full");
+    expect(kinds.filter((kind) => kind === "full")).toHaveLength(1);
+    expect(kinds.filter((kind) => kind === "regions")).toHaveLength(
+      SCORE_DISK_MAX_RADIUS - SCORE_DISK_RADIUS,
+    );
   });
 });

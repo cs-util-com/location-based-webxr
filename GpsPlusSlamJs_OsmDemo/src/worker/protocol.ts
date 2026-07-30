@@ -114,10 +114,32 @@ interface InitResult {
   readonly degradedBecause?: string;
 }
 
+/**
+ * What one pass contributes to the geometry (W6, finding R3-3).
+ *
+ * AN EXPLICIT `kind` RATHER THAN AN OPTIONAL `mesh`. Progressive scoring runs
+ * three passes per click and only the region slabs change between them — the
+ * buildings, trees, POI markers, roads and plates are identical, because they
+ * depend on the features, the terrain and the ENU frame origin, none of which a
+ * widening ring touches. Rebuilding the whole city three times was most of the
+ * per-click cost the round-3 notes reported as "the calculation just takes
+ * longer".
+ *
+ * An optional field would read as "sometimes missing"; this is "deliberately not
+ * resent", and a consumer that fails to handle it should fail at compile time
+ * rather than draw nothing.
+ */
+export type MeshUpdate =
+  | { readonly kind: "full"; readonly mesh: TransferableMesh }
+  | {
+      readonly kind: "regions";
+      readonly regions: readonly RegionSlabData[];
+    };
+
 /** One finished data cycle. */
 export interface UpdateResult {
   readonly snapshot: DemoSnapshot;
-  readonly mesh: TransferableMesh;
+  readonly mesh: MeshUpdate;
 }
 
 export interface TerrainResult {
