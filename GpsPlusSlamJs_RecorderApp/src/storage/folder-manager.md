@@ -30,12 +30,14 @@ Factory function that creates a folder manager instance with injected dependenci
 Dependencies injected from `main.ts`:
 
 - **Cross-module state:** `getIsReplayMode`, `setReplayZipScenariosCache`
-- **UI callbacks:** `showError`, `updateStatus`, `populateScenarios`, `setSaveLocationSelected`, `setFolderImportExpanded`, `validateEnterButton`, `listScenariosFromFolder`, `extractScenarioNamesFromZips`, `discoverScenariosFromZipMetadata`, `populateReplayScenarios`, `updateFolderStatus`, `updateSaveStatus` (the write-only `setFolderSelected` was removed end-to-end in quality-review D-3)
+- **UI callbacks:** `showError`, `updateStatus`, `populateScenarios`, `setSaveLocationSelected`, `setFolderImportExpanded`, `validateEnterButton`, `populateReplayScenarios`, `updateFolderStatus`, `updateSaveStatus` (the write-only `setFolderSelected` was removed end-to-end in quality-review D-3)
 - **Indexing pass callbacks (D2/D3, 2026-07-05):** `onIndexingProgress?({done,total})` — one event per ZIP (plus an initial `{0,total}`), drives the folder-import progress bar; `onIndexingSettled?(outcome)` — terminal `success | error | aborted` outcome (drives the bar's durable end state and the completion toast; the success variant carries `refPointsWritten`, `zipFilesScanned`, `zipFilesTotal`, `errors`)
 
 (The former optional `mapOverlay` dep was removed in the 2026-07-05 live-map feedback round: its `addPriorMarkers` call always ran before the lazily created AR minimap existed. The minimap now renders ref points from the store via `ui/ref-point-map-markers.ts`, fed by the `setImportedRefPointEntries` dispatch below.)
 
 UI functions are injected (not imported directly) to respect the `storage/ → ui/` dependency boundary rule enforced by dependency-cruiser. This includes status display helpers (`updateFolderStatus`, `updateSaveStatus`) so the module has zero direct DOM access.
+
+**Only those two categories belong in `FolderManagerDeps`.** The folder/zip scan (`listScenariosFromFolder`, `extractScenarioNamesFromZips`, `discoverScenariosFromZipMetadata`) used to be injected as three more callbacks, and `SessionEntry` was duplicated here as a structural `SessionEntryLike` — both only because that scan lived in `ui/session-browser.ts` and the boundary rule blocked the import. It moved to [`storage/recording-discovery.ts`](recording-discovery.ts.md) on 2026-07-30, so the scan is now a plain import. Do not reintroduce a callback for something this module can import.
 
 ## Invariants & Assumptions
 
@@ -62,9 +64,6 @@ const folderManager = createFolderManager({
   populateScenarios,
   setSaveLocationSelected,
   validateEnterButton,
-  listScenariosFromFolder,
-  extractScenarioNamesFromZips,
-  discoverScenariosFromZipMetadata,
   populateReplayScenarios,
   updateFolderStatus(text) {
     const el = document.getElementById('folder-status');

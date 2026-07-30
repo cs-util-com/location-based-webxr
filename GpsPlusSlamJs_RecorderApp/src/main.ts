@@ -134,11 +134,6 @@ import {
   switchToReplayMode,
   populateReplayScenarios,
 } from './ui/replay-ui';
-import {
-  listScenariosFromFolder,
-  extractScenarioNamesFromZips,
-  discoverScenariosFromZipMetadata,
-} from './storage/recording-discovery';
 import type { SessionEntry } from './storage/recording-discovery';
 import {
   launchMapBrowser,
@@ -318,9 +313,6 @@ const folderManager = createFolderManager({
   onIndexingProgress: ({ done, total }) =>
     setFolderImportProgress({ kind: 'progress', done, total }),
   onIndexingSettled: (outcome) => handleRefPointIndexingSettled(outcome),
-  listScenariosFromFolder,
-  extractScenarioNamesFromZips,
-  discoverScenariosFromZipMetadata,
   populateReplayScenarios,
   updateFolderStatus,
   updateSaveStatus,
