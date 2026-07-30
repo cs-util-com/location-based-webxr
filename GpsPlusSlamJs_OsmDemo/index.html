@@ -372,6 +372,16 @@
            region looks wrong. Populated from ALL_LAYERS so a new builder cannot
            arrive without a switch. -->
       <div id="layers" class="layer-toggles"></div>
+      <!--
+        W23's A/B switch. NOT a layer — it does not add or remove anything from
+        the scene, it changes WHICH PATH displaces the ground plane. Keeping it
+        out of the layer registry is deliberate: `ALL_LAYERS` means "things the
+        scene can draw", and a rendering strategy is not one of them.
+      -->
+      <label class="layer-toggle" id="ground-gpu-label">
+        <input type="checkbox" id="ground-gpu" />
+        GPU ground
+      </label>
       <span class="hint">click the map to move</span>
       <span id="status">starting…</span>
       <div id="legend"></div>

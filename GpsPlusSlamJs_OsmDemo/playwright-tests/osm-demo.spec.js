@@ -1347,6 +1347,87 @@ test.describe("the 3D view", () => {
       .toBeLessThan(2000);
   });
 
+  test("displaces the ground on the GPU, and it matches the CPU path", async ({
+    page,
+  }) => {
+    // WHY THIS TEST CARRIES MORE THAN USUAL. The GPU path is custom GLSL injected
+    // into MeshStandardMaterial via onBeforeCompile — the exact surface that took
+    // the entire scene down for ten work items when `scene.environment` was set.
+    // jsdom cannot compile a shader, so nothing in the unit suite can tell you
+    // this code even builds.
+    //
+    // Three things are asserted, and the first is the one that would have caught
+    // the original outage: the console stays clean, so a shader that fails to
+    // compile fails HERE rather than being logged and silently not drawn.
+    const errors = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(String(error)));
+
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // A PER-PIXEL comparison, and the threshold is measured rather than chosen.
+    //
+    // The first version of this compared whole-frame channel sums and allowed 5 %
+    // — and it passed with the shader's displacement line deleted, because the
+    // fixture's relief moves the summed frame by well under 5 %. It was a vacuous
+    // test, caught by mutating the shader rather than by reading it.
+    //
+    // Counting pixels that differ by more than 3 levels separates the two cases
+    // decisively:
+    //
+    //   GPU displacement working    116 differing pixels of 430 686
+    //   GPU displacement deleted   8990 differing pixels of 430 686
+    //
+    // 77x apart, so 2000 is a floor with enormous margin in both directions. The
+    // 116 are real and expected: the CPU path interpolates in float64 and the GPU
+    // path samples a half-float texture, so bit-identical output was never the
+    // claim. The claim is that they describe the same ground.
+    const framePixels = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return [];
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return [];
+        ctx.drawImage(el, 0, 0);
+        return Array.from(
+          ctx.getImageData(0, 0, probe.width, probe.height).data,
+        );
+      });
+
+    const onCpu = await framePixels();
+    expect(onCpu.length).toBeGreaterThan(0);
+    await expect(page.locator("#status")).toContainText(/ground cpu \d/);
+
+    await page.getByRole("checkbox", { name: "GPU ground" }).check();
+    await expect(page.locator("#status")).toContainText(/ground gpu \d/);
+    const onGpu = await framePixels();
+
+    let differing = 0;
+    for (let i = 0; i < onCpu.length; i += 4) {
+      if (Math.abs((onCpu[i] ?? 0) - (onGpu[i] ?? 0)) > 3) differing += 1;
+    }
+    // SAME GROUND. If the two disagreed, switching the toggle would move the
+    // buildings relative to the terrain and the GPU would be a second source of
+    // truth for ground height — the defect DEC-R2-21 rejected geo-three for, and
+    // it would be self-inflicted here. The arithmetic is asserted exactly in
+    // terrain-texture.test.ts; this proves the SHADER implements that arithmetic.
+    expect(differing).toBeLessThan(2000);
+
+    // And something was actually drawn, in both modes.
+    expect(onGpu.some((value) => value > 0)).toBe(true);
+
+    const noise =
+      /Rule table fetch failed|net::ERR_FAILED|Failed to load resource/;
+    expect(errors.filter((text) => !noise.test(text))).toEqual([]);
+  });
+
   test("draws roads, and the ground changes when they come on", async ({
     page,
   }) => {

@@ -23,6 +23,7 @@ import type { Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import { resolvePick, type Pick } from "./pick.js";
+import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import { SKY_GRADIENT_ROWS, skyGradientPixels } from "./sky-gradient.js";
 import type { TransferableMesh } from "./worker/protocol.js";
@@ -32,6 +33,9 @@ import type { TransferableMesh } from "./worker/protocol.js";
 // exactly the union of what the rows count.
 export type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 export type { Pick } from "./pick.js";
+
+/** Which path displaces the ground plane (W23). */
+export type GroundDisplacement = "cpu" | "gpu";
 export { treeConePosition } from "./mesh-layers.js";
 
 /**
@@ -150,6 +154,8 @@ export class BuildingView {
   private readonly sky: THREE.DataTexture;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
+  /** The current field, so a mode switch and the ramp can re-read it. */
+  private terrain: Heightfield | undefined;
   /** The ground's normal look, held so the debug ramp can be switched back off. */
   private readonly groundMaterial: THREE.Material;
   /**
@@ -165,6 +171,30 @@ export class BuildingView {
   private readonly groundRampMaterial: THREE.MeshBasicMaterial;
   /** Whether the ramp is showing, so a terrain update knows to recolour. */
   private groundDebug = false;
+  /**
+   * Which path displaces the ground (W23, DEC-R2-24 as revised).
+   *
+   * BOTH SHIP, and the switch is deliberate rather than a leftover. The
+   * measurement that first deferred the GPU path was taken on a desktop at a
+   * fixed camera, which says little about a phone in AR where per-frame CPU is
+   * the scarce resource — so the owner's call was to build both and compare them
+   * on a real device. `terrain-texture.test.ts` asserts the two produce the same
+   * ground, which is what stops the toggle moving the buildings.
+   */
+  private displacement: GroundDisplacement = "cpu";
+  /** The height texture the GPU path samples. Undefined when there is no DEM. */
+  private heightTexture: THREE.DataTexture | undefined;
+  /** Uniforms shared by every ground material, so one write reaches all of them. */
+  private readonly groundUniforms = {
+    uHeightMap: { value: null as THREE.Texture | null },
+    uExtentM: { value: 0 },
+    uSpacingM: { value: 0 },
+    uSide: { value: 0 },
+    /** 1 while the GPU path owns displacement, 0 while the CPU path does. */
+    uDisplace: { value: 0 },
+  };
+  /** Milliseconds the last terrain application took, for the A/B comparison. */
+  private lastTerrainMs = 0;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
@@ -300,6 +330,11 @@ export class BuildingView {
     this.groundRampMaterial = new THREE.MeshBasicMaterial({
       vertexColors: true,
     });
+    // BOTH materials displace, driven by one uniform, so switching the mode does
+    // NOT recompile a shader — and so the height ramp is legible in either mode
+    // rather than being a CPU-only debug view.
+    installGroundDisplacement(this.groundMaterial, this.groundUniforms);
+    installGroundDisplacement(this.groundRampMaterial, this.groundUniforms);
     this.scene.add(this.ground);
 
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.5, 4000);
@@ -367,18 +402,25 @@ export class BuildingView {
    * every refresh, and a city would grow into a mountain over a few clicks.
    */
   setTerrain(field: Heightfield | undefined): void {
+    const started = performance.now();
+    this.terrain = field;
+    this.uploadHeightTexture(field);
     const attribute = this.ground.geometry.getAttribute("position");
     const positions = attribute.array as Float32Array;
     this.flatGround ??= Float32Array.from(positions);
     const flat = this.flatGround;
 
+    // THE CPU PATH. Skipped entirely in GPU mode — leaving the plane flat is
+    // what makes the comparison honest, because a run that does both would
+    // measure neither.
+    const onCpu = this.displacement === "cpu";
     for (let i = 0; i < positions.length; i += 3) {
       const x = flat[i] ?? 0;
       const planeY = flat[i + 1] ?? 0;
       // The plane's +y becomes the scene's -z under the -90° x rotation, and
       // `cell-mesh.ts` uses the same north convention.
       positions[i + 2] =
-        field === undefined ? 0 : field.heightAt({ x, y: planeY });
+        field === undefined || !onCpu ? 0 : field.heightAt({ x, y: planeY });
     }
     attribute.needsUpdate = true;
     this.ground.geometry.computeVertexNormals();
@@ -387,7 +429,89 @@ export class BuildingView {
     // over this position's ground, which is the half-swapped scene this demo has
     // twice had to engineer away.
     if (this.groundDebug) this.applyGroundRamp();
+    this.lastTerrainMs = performance.now() - started;
     this.requestFrame();
+  }
+
+  /**
+   * How long the last `setTerrain` took, and which path did it.
+   *
+   * Surfaced so the CPU/GPU comparison is a NUMBER rather than an impression.
+   * The whole reason both paths ship is to be measured on a real phone, and
+   * "it feels about the same" is not a measurement — this repo has already had
+   * one constant justified by a remembered figure that did not reproduce.
+   */
+  terrainCost(): { ms: number; mode: GroundDisplacement } {
+    return {
+      ms: Math.round(this.lastTerrainMs * 10) / 10,
+      mode: this.displacement,
+    };
+  }
+
+  /**
+   * Switches which path displaces the ground (W23).
+   *
+   * Re-applies the terrain, because the two paths are mutually exclusive: the
+   * CPU path writes heights into the position buffer and the GPU path needs that
+   * buffer flat. Leaving the old displacement in place would DOUBLE it.
+   */
+  setGroundDisplacement(mode: GroundDisplacement): void {
+    if (mode === this.displacement) return;
+    this.displacement = mode;
+    this.groundUniforms.uDisplace.value = mode === "gpu" ? 1 : 0;
+    this.setTerrain(this.terrain);
+  }
+
+  /**
+   * Uploads the height field as a texture for the GPU path.
+   *
+   * HALF-FLOAT, not full float, and that is a portability decision rather than a
+   * memory one. `R32F` is not linearly filterable in WebGL 2 without
+   * `OES_texture_float_linear`, and a missing extension degrades to NEAREST
+   * SILENTLY — which would give the GPU path a visibly blockier surface than the
+   * CPU path while every test still passed. `R16F` is filterable in core WebGL 2,
+   * and its ~11-bit mantissa resolves datum-relative relief to about 6 cm, which
+   * is far finer than the DEM's own ~12 m posting. It would be useless for
+   * ABSOLUTE altitude, which is a second, independent reason the texture is built
+   * datum-relative.
+   */
+  private uploadHeightTexture(field: Heightfield | undefined): void {
+    this.heightTexture?.dispose();
+    this.heightTexture = undefined;
+    this.groundUniforms.uHeightMap.value = null;
+
+    const texture = field === undefined ? undefined : terrainTextureFrom(field);
+    if (texture === undefined) {
+      // No DEM. The uniform stays null and `uDisplace` is irrelevant, so the GPU
+      // path draws the same flat plane the CPU path would.
+      this.groundUniforms.uSide.value = 0;
+      return;
+    }
+
+    const half = new Uint16Array(texture.data.length);
+    for (let i = 0; i < half.length; i += 1) {
+      half[i] = THREE.DataUtils.toHalfFloat(texture.data[i] ?? 0);
+    }
+    const map = new THREE.DataTexture(
+      half,
+      texture.side,
+      texture.side,
+      THREE.RedFormat,
+      THREE.HalfFloatType,
+    );
+    map.minFilter = THREE.LinearFilter;
+    map.magFilter = THREE.LinearFilter;
+    // CLAMPED, so a sample beyond the field repeats the edge rather than wrapping
+    // to the far side of the city — which would put a cliff at the plane's rim.
+    map.wrapS = THREE.ClampToEdgeWrapping;
+    map.wrapT = THREE.ClampToEdgeWrapping;
+    map.needsUpdate = true;
+
+    this.heightTexture = map;
+    this.groundUniforms.uHeightMap.value = map;
+    this.groundUniforms.uExtentM.value = texture.extentM;
+    this.groundUniforms.uSpacingM.value = texture.spacingM;
+    this.groundUniforms.uSide.value = texture.side;
   }
 
   /**
@@ -420,11 +544,24 @@ export class BuildingView {
    * The plane is built in its own XY space, so height lives in `z`.
    */
   private applyGroundRamp(): void {
+    // SAMPLED FROM THE FIELD, not read back out of the position buffer. The
+    // buffer only carries heights in CPU mode — in GPU mode it is deliberately
+    // flat — so reading it there would colour the whole plane at the ramp's floor
+    // and make the diagnostic silently useless in exactly one of the two modes.
+    const flat = this.flatGround;
+    const field = this.terrain;
     const positions = this.ground.geometry.getAttribute("position")
       .array as Float32Array;
     const heights = new Float32Array(positions.length / 3);
     for (let i = 0; i < heights.length; i += 1) {
-      heights[i] = positions[i * 3 + 2] ?? Number.NaN;
+      const source = flat ?? positions;
+      heights[i] =
+        field === undefined
+          ? 0
+          : field.heightAt({
+              x: source[i * 3] ?? 0,
+              y: source[i * 3 + 1] ?? 0,
+            });
     }
     this.ground.geometry.setAttribute(
       "color",
@@ -688,6 +825,7 @@ export class BuildingView {
     // `scene.environment`, so leaving it behind keeps the whole scene reachable.
     this.sky.dispose();
     this.groundRampMaterial.dispose();
+    this.heightTexture?.dispose();
     if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
     this.cellMesh = undefined;
     this.renderer.dispose();
@@ -703,4 +841,88 @@ function disposeMesh(mesh: THREE.Mesh): void {
   } else {
     material.dispose();
   }
+}
+
+/**
+ * Injects GPU height displacement into a ground material (W23).
+ *
+ * WHY `onBeforeCompile` RATHER THAN A `ShaderMaterial`. The ground is lit by the
+ * scene's own lights and DEC-R2-1's look depends on `MeshStandardMaterial`'s PBR
+ * response; reimplementing that in a raw shader would be a second source of truth
+ * for how the ground looks. Patching the stock shader keeps every lighting change
+ * automatic.
+ *
+ * WHY A UNIFORM RATHER THAN TWO MATERIALS. `uDisplace` flips between the paths
+ * with no recompile, and the same injection serves the height-ramp material — so
+ * the ramp stays legible in GPU mode instead of being a CPU-only view.
+ *
+ * THE PLANE'S LOCAL AXES ARE NOT THE WORLD'S. The geometry is built flat in its
+ * own XY and rotated -90 degrees about X, so local `z` becomes world `y` (height)
+ * and local `y` becomes world `-z` (north). Displacement therefore goes into
+ * `transformed.z`, and the object-space normal of a surface `z = h(x, y)` is
+ * `(-dh/dx, -dh/dy, 1)`.
+ *
+ * ON NORMALS AND `flatShading`. The ground material sets `flatShading: true`, and
+ * three.js then derives the fragment normal from screen-space derivatives of the
+ * displaced view position — so facets are shaded correctly even without the code
+ * below. The vertex normal is computed anyway, because it makes this path correct
+ * if `flatShading` is ever turned off, and because shipping displacement with
+ * knowingly wrong normals is what `geo-three` does: its shader rewrites
+ * `gl_Position` only, so its terrain is lit as if flat.
+ */
+function installGroundDisplacement(
+  material: THREE.Material,
+  uniforms: Record<string, { value: unknown }>,
+): void {
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform sampler2D uHeightMap;
+        uniform float uExtentM;
+        uniform float uSpacingM;
+        uniform float uSide;
+        uniform float uDisplace;
+
+        // Mirrors \`textureUv\` in terrain-texture.ts. Texel CENTRES: a coordinate
+        // of 0 is the outer edge of the first texel, so grid index g maps to
+        // (g + 0.5) / side. Half a texel out shifts the surface by half a post.
+        float groundUv(float v) {
+          float last = uSide - 1.0;
+          float grid = clamp(((v + uExtentM) / (uExtentM * 2.0)) * last, 0.0, last);
+          return (grid + 0.5) / uSide;
+        }
+
+        float groundHeight(vec2 plan) {
+          if (uSide < 2.0) return 0.0;
+          return texture2D(uHeightMap, vec2(groundUv(plan.x), groundUv(plan.y))).r;
+        }`,
+      )
+      .replace(
+        "#include <beginnormal_vertex>",
+        `#include <beginnormal_vertex>
+        if (uDisplace > 0.5 && uSide >= 2.0) {
+          // Four taps one POST apart, so the difference is over the DEM's real
+          // pitch rather than an arbitrary epsilon.
+          float hL = groundHeight(position.xy - vec2(uSpacingM, 0.0));
+          float hR = groundHeight(position.xy + vec2(uSpacingM, 0.0));
+          float hD = groundHeight(position.xy - vec2(0.0, uSpacingM));
+          float hU = groundHeight(position.xy + vec2(0.0, uSpacingM));
+          vec2 gradient = vec2(hR - hL, hU - hD) / (2.0 * uSpacingM);
+          objectNormal = normalize(vec3(-gradient.x, -gradient.y, 1.0));
+        }`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+        if (uDisplace > 0.5) {
+          transformed.z += groundHeight(position.xy);
+        }`,
+      );
+  };
+  // Materials are cached by program; changing the compile hook has to invalidate
+  // that cache or the patch never reaches the GPU.
+  material.needsUpdate = true;
 }

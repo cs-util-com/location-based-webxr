@@ -160,6 +160,15 @@ async function main(): Promise<void> {
       }
     },
   });
+  // W23's A/B switch. Both displacement paths ship and the point is to compare
+  // them on a real device, so the control is a live toggle rather than a URL
+  // parameter — flipping it and watching the reported cost is the measurement.
+  const groundGpu = el<HTMLInputElement>("ground-gpu");
+  groundGpu.addEventListener("change", () => {
+    buildingView.setGroundDisplacement(groundGpu.checked ? "gpu" : "cpu");
+    writeStatus();
+  });
+
   const legendView = new LegendView({ container: el("legend") });
   const detailsPanel = new DetailsPanel({
     container: el("details"),
@@ -440,6 +449,7 @@ async function main(): Promise<void> {
       status.textContent = tableNote;
       return;
     }
+    const terrainCost = buildingView.terrainCost();
     status.textContent = [
       `${snapshot.cells.length} cells`,
       `${snapshot.regions.length} ${view.category} regions`,
@@ -458,6 +468,11 @@ async function main(): Promise<void> {
       mesh === undefined || mesh.roads === 0
         ? ""
         : `${mesh.roads} roads (${mesh.roadTriangles} tri)`,
+      // W23's comparison, as a NUMBER. Both displacement paths ship precisely so
+      // they can be measured against each other on a phone, and "it feels about
+      // the same" is not a measurement — this repo has already had one constant
+      // justified by a remembered figure that did not reproduce.
+      `ground ${terrainCost.mode} ${terrainCost.ms} ms`,
       describeExtent(snapshot.loadedTiles),
       terrainNote,
       tableNote,

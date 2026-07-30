@@ -79,9 +79,23 @@ describe("heightfield invariants", () => {
         async (heights, points) => {
           const field = await buildHeightfield(providerOf(heights), OPTIONS);
           const span = Math.max(...heights) - Math.min(...heights);
+          // RELATIVE tolerance, and the absolute 1e-6 it replaces was a genuine
+          // flake rather than a conservative choice. `span` is computed from the
+          // doubles fast-check generated, but `heightfield` stores its posts in a
+          // **Float32Array** — so `heightAt` reads values already rounded to
+          // single precision. Float32 has ~1.2e-7 relative epsilon, and this
+          // generator reaches 4000, so rounding alone moves a post by up to
+          // ~5e-4: two orders of magnitude outside the old bound. It failed once
+          // in a full-suite run and passed on every rerun, because it needs a
+          // seed that produces both a large magnitude and an unlucky rounding.
+          //
+          // The mathematical claim is unchanged and still worth asserting:
+          // bilinear interpolation is a weighted average, so it cannot overshoot
+          // the data's own range.
+          const tolerance = 1e-6 + Math.abs(span) * 1e-6;
           for (const point of points) {
             expect(Math.abs(field.heightAt(point))).toBeLessThanOrEqual(
-              span + 1e-6,
+              span + tolerance,
             );
           }
         },
