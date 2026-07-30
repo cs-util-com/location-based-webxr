@@ -19,6 +19,19 @@ const captureArtifacts = process.env.PLAYWRIGHT_CAPTURE === "1";
 
 export default defineConfig({
   testDir: ".",
+  // 90 s, not Playwright's 30 s default, and the default was INCOHERENT with this
+  // suite's own waits: `waitForRefresh` allows the pipeline 60 s to finish, which
+  // it could never use, because the test was killed at 30 s first. The boot chain
+  // is long by design — the rule-table loader degrades live -> cache -> snapshot
+  // (the fixture aborts the live fetch on purpose), then a full fetch, score and
+  // mesh build runs before the first assertion.
+  //
+  // This is a machine-speed guard, not slack for slow code. Three browsers run in
+  // parallel here, and on a loaded developer machine every stage of the gate was
+  // measured at 3-4x its own recorded median — at which point a 30 s budget is
+  // measuring the machine. It cost two or three failures per run, a different two
+  // or three each time, with every one of them passing standalone.
+  timeout: 90_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

@@ -22,6 +22,22 @@
 
 import { test, expect } from "@playwright/test";
 
+/**
+ * How long a poll waits for a REPAINT to land.
+ *
+ * Every use below is "wait until the canvas (or the Leaflet layer) has been
+ * redrawn", which costs an animation frame plus whatever GPU work the frame
+ * implies. It was 5 s, and that is a wall-clock assertion inside a suite that
+ * runs three browsers in parallel — it measures the machine, not the code. On a
+ * loaded developer machine three tests failed per run, each run a different
+ * three, while every one of them passed standalone.
+ *
+ * RAISING THIS WEAKENS NOTHING. A poll returns the instant its condition holds,
+ * so a passing test is not slowed by one millisecond; only the time a genuinely
+ * broken build takes to report changes. The assertions themselves are untouched.
+ */
+const REPAINT = { timeout: 15000 };
+
 import { AT_FIXTURE, stubNetwork, waitForRefresh } from "./fixtures.js";
 
 test.describe("the demo boots", () => {
@@ -412,15 +428,12 @@ test.describe("the layer toggles", () => {
     // compared rather than the layer change (the same trap as R2-3's test).
     let previous = await shot();
     await expect
-      .poll(
-        async () => {
-          const current = await shot();
-          const stable = current === previous;
-          previous = current;
-          return stable;
-        },
-        { timeout: 5000 },
-      )
+      .poll(async () => {
+        const current = await shot();
+        const stable = current === previous;
+        previous = current;
+        return stable;
+      }, REPAINT)
       .toBe(true);
     const before = previous;
 
@@ -431,7 +444,7 @@ test.describe("the layer toggles", () => {
     // park, a garden and playgrounds. Both halves are asserted — that the geometry
     // was built, and that it reached the screen.
     await expect(page.locator("#status")).toContainText(/[1-9]d* ground areas/);
-    await expect.poll(shot, { timeout: 5000 }).not.toBe(before);
+    await expect.poll(shot, REPAINT).not.toBe(before);
   });
 
   test("switching the cells layer off clears the grid in BOTH views", async ({
@@ -687,7 +700,7 @@ test.describe("explaining one cell", () => {
     // vetoed cell was previously the one cell that could not be clicked to ask
     // why it was vetoed, because it was not drawn.
     await expect
-      .poll(async () => cells.count(), { timeout: 5000 })
+      .poll(async () => cells.count(), REPAINT)
       .toBeGreaterThan(before);
     // BOTH of the two that were previously indistinguishable, not just one.
     // Asserting only the identity band would pass on a fixture with no vetoed
@@ -936,7 +949,7 @@ test.describe("the mobile layout", () => {
     }
     await page.mouse.up();
 
-    await expect.poll(painted, { timeout: 5000 }).toBeGreaterThan(500);
+    await expect.poll(painted, REPAINT).toBeGreaterThan(500);
   });
 });
 
@@ -1174,15 +1187,12 @@ test.describe("the 3D view", () => {
       });
     let previous = await fingerprint();
     await expect
-      .poll(
-        async () => {
-          const current = await fingerprint();
-          const stable = current === previous;
-          previous = current;
-          return stable;
-        },
-        { timeout: 5000 },
-      )
+      .poll(async () => {
+        const current = await fingerprint();
+        const stable = current === previous;
+        previous = current;
+        return stable;
+      }, REPAINT)
       .toBe(true);
 
     // Still a DESKTOP width, so the mobile overlay layout does not change what
@@ -1191,7 +1201,7 @@ test.describe("the 3D view", () => {
 
     // Poll rather than assert once: the repaint is one rAF away, and the
     // resize listener has to run first. A bare read races the frame.
-    await expect.poll(painted, { timeout: 5000 }).toBeGreaterThan(500);
+    await expect.poll(painted, REPAINT).toBeGreaterThan(500);
   });
 
   test("renders the BUILDINGS, not just the affordance grid", async ({
@@ -1243,11 +1253,10 @@ test.describe("the 3D view", () => {
         return count;
       });
 
-    // The fixture has 21 building volumes at the camera's default framing.
     // The fixture has 21 building volumes at the default framing. A generous floor:
     // the assertion that matters is "not zero", because zero is what a shader that
     // failed to compile produces.
-    await expect.poll(buildingPixels, { timeout: 5000 }).toBeGreaterThan(2000);
+    await expect.poll(buildingPixels, REPAINT).toBeGreaterThan(2000);
   });
 
   test("has a graded sky, so the ground reads against it", async ({ page }) => {
@@ -1365,7 +1374,7 @@ test.describe("the 3D view", () => {
     );
     await page.mouse.up();
 
-    await expect.poll(groundBand, { timeout: 5000 }).not.toBe(before);
+    await expect.poll(groundBand, REPAINT).not.toBe(before);
   });
 
   test("can be navigated — dragging the canvas moves the camera", async ({
@@ -1399,7 +1408,7 @@ test.describe("the 3D view", () => {
     await page.mouse.move(box.x + box.width / 2 - 90, box.y + box.height / 2);
     await page.mouse.up();
 
-    await expect.poll(shot, { timeout: 5000 }).not.toBe(before);
+    await expect.poll(shot, REPAINT).not.toBe(before);
   });
 
   test("draws the affordance grid too, and a click on it opens the panel", async ({

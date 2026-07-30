@@ -17,13 +17,19 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
-import { type MeshData, type TreePlacement } from "gps-plus-slam-osm";
 
 import type { CellMesh } from "./cell-mesh.js";
 import type { Heightfield } from "./heightfield.js";
-import { groundLift } from "./layer-order.js";
+import { drawMeshLayers } from "./mesh-layers.js";
+import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import { SKY_GRADIENT_ROWS, skyGradientPixels } from "./sky-gradient.js";
 import type { TransferableMesh } from "./worker/protocol.js";
+
+// Re-exported so the many call sites that import these from the view keep working.
+// The table owns them because it owns what they describe: `BuildingStats` is
+// exactly the union of what the rows count.
+export type { BuildingStats, MeshLayers } from "./mesh-layers.js";
+export { treeConePosition } from "./mesh-layers.js";
 
 /**
  * Half-width of the ground plane and of the terrain sampled under it, metres.
@@ -94,57 +100,6 @@ export interface BuildingViewOptions {
   readonly onCellClick?: (cell: string) => void;
 }
 
-/**
- * Which of the mesh layers to draw.
- *
- * Optional at the call site, and both default to ON: an omitted argument has to
- * reproduce the previous picture exactly, because that is what makes the layer
- * registry migration checkable against a known-good baseline (W10).
- */
-export interface MeshLayers {
-  readonly buildings: boolean;
-  readonly trees: boolean;
-  readonly plates: boolean;
-}
-
-export interface BuildingStats {
-  readonly volumes: number;
-  readonly parts: number;
-  readonly triangles: number;
-  readonly guessedHeights: number;
-  /** Roofs generated from the bounding rectangle rather than exactly. */
-  readonly approximateRoofs: number;
-  readonly trees: number;
-  /** Ground areas drawn. Reported because a silent 0 is the failure mode. */
-  readonly plates: number;
-  /** Their merged triangle count — a non-zero plate count with zero triangles
-   * is a distinct failure from no plates at all, and only the pair tells them
-   * apart. */
-  readonly plateTriangles: number;
-}
-
-/**
- * Where a tree's cone stands in the scene, from its ENU placement.
- *
- * Extracted from the draw loop because it is the one part of it that can be
- * proved without a GPU, and the part that fails silently: see
- * `building-view.test.ts`.
- */
-export function treeConePosition(
-  tree: TreePlacement,
-): [x: number, y: number, z: number] {
-  return [
-    tree.position.x,
-    // `ConeGeometry` is centred on its origin, so the base sits on the terrain
-    // sample only if the centre is half a height above it.
-    tree.groundHeightM + tree.heightM / 2,
-    // ENU y is north; the scene's -z is north (`mesh-data.ts`), the same
-    // reflection `cell-mesh.ts` and `MeshBuilder` apply. Without it a tree 50 m
-    // north renders 50 m SOUTH — 100 m from the building it stands next to.
-    -tree.position.y,
-  ];
-}
-
 export class BuildingView {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
@@ -163,7 +118,7 @@ export class BuildingView {
   private readonly onPointerDown: (event: PointerEvent) => void;
   private readonly onPointerStart: (event: PointerEvent) => void;
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
-  /** The sky gradient. Background directly; environment only after PMREM. */
+  /** The sky gradient. BACKGROUND ONLY — never `scene.environment`, see below. */
   private readonly sky: THREE.DataTexture;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
@@ -184,12 +139,13 @@ export class BuildingView {
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     options.container.appendChild(this.renderer.domElement);
 
-    // The sky is BOTH the background and the environment map (DEC-R2-1/DEC-R2-2).
-    // One texture, two jobs: it replaces the near-black background that the ground
-    // could not lift off, and it gives `MeshStandardMaterial` something to reflect
-    // — without which the reflective ground below has no specular to show, because
-    // a single directional light produces a lobe narrow enough to miss almost
-    // every facet.
+    // The sky is the BACKGROUND, and only the background (DEC-R2-2). It replaces
+    // the near-black that the ground could not lift off.
+    //
+    // This comment used to say it was "both the background and the environment
+    // map... one texture, two jobs", and that second job took the whole scene down
+    // for ten work items — see the block at the `scene.background` assignment
+    // below, and `building-view.ts.md`'s lighting invariant.
     this.sky = new THREE.DataTexture(
       skyGradientPixels(),
       1,
@@ -521,58 +477,37 @@ export class BuildingView {
    */
   render(mesh: TransferableMesh, layers?: MeshLayers): BuildingStats {
     this.clear();
-    // Both default to ON, so an omitted argument reproduces the previous
-    // behaviour exactly — which is what makes the layer registry's migration
-    // verifiable rather than a rewrite (W10).
-    const wantBuildings = layers?.buildings ?? true;
-    const wantTrees = layers?.trees ?? true;
-    // Plates default OFF, unlike buildings and trees: they are a NEW layer, and an
-    // omitted argument has to keep reproducing the picture the demo shipped with.
-    const wantPlates = layers?.plates ?? false;
+    // ONE LINE PER LAYER'S WORTH OF WORK, in `mesh-layers.ts`. This used to be a
+    // pair of branches per layer — one to draw it, one ternary per counter to zero
+    // its contribution when off — which reached complexity 21 with three layers and
+    // had four more (W12–W15) queued behind it. The table also makes a MISSING
+    // layer detectable, which the longhand form could not: see that file's header.
+    const { objects, stats } = drawMeshLayers(mesh, layers);
+    for (const object of objects) this.group.add(object);
 
-    if (wantBuildings && mesh.buildings.triangleCount > 0) {
-      this.group.add(this.meshFor(mesh.buildings));
-    }
-    if (wantPlates && mesh.plates.triangleCount > 0) {
-      this.group.add(this.plateMeshFor(mesh.plates));
-    }
-
-    for (const tree of wantTrees ? mesh.trees : []) {
-      const trunk = new THREE.Mesh(
-        new THREE.ConeGeometry(tree.crownDiameterM / 2, tree.heightM, 6),
-        new THREE.MeshStandardMaterial({ color: 0x3f7d4a }),
-      );
-      trunk.position.set(...treeConePosition(tree));
-      trunk.rotation.y = tree.rotationY;
-      this.group.add(trunk);
-    }
-
-    // SCHEDULED, not rendered inline. A synchronous  here does
-    // put pixels in the drawing buffer, but with  that buffer is
+    // SCHEDULED, not rendered inline. A synchronous `renderer.render()` here does
+    // put pixels in the drawing buffer, but with `antialias: true` that buffer is
     // multisampled and is only RESOLVED to the canvas at composite time — which
     // happens on an animation frame. So a mid-task render is invisible to
-    //  until something else schedules a frame, and a layer switched on
-    // outside a rAF appeared to draw nothing at all. Diagnosed the slow way: the
-    // geometry was proven correct (274 triangles, sane bounding box), proven to
-    // reach the scene, and still produced a byte-identical canvas even when
-    // coloured bright red and lifted 100 m above the terrain.
+    // `toDataURL` until something else schedules a frame, which is a real
+    // constraint on how any pixel-level test must be written.
     //
-    //  coalesces, so this is also cheaper than rendering per call.
+    // CORRECTED ATTRIBUTION: this comment used to go on to blame that mechanism
+    // for the W11 plates symptom — "a byte-identical canvas even when coloured
+    // bright red and lifted 100 m above the terrain". It was not the cause. Every
+    // `MeshStandardMaterial` in the scene had failed to compile (see the lighting
+    // invariant in `building-view.ts.md`), so the plates were not being drawn at
+    // all, on any frame, scheduled or not. The multisample-resolve point above is
+    // independently true and is why the render is scheduled; it simply did not
+    // explain that bug.
+    //
+    // `requestFrame` coalesces, so this is also cheaper than rendering per call.
     this.requestFrame();
-    // The counters describe WHAT WAS DRAWN, not what was available. A status
-    // line reporting 400 buildings while the buildings layer is off would be the
-    // status line lying about the picture, which is the class of defect the
-    // legend and the store exist to prevent.
-    return {
-      volumes: wantBuildings ? mesh.volumes : 0,
-      parts: wantBuildings ? mesh.parts : 0,
-      triangles: wantBuildings ? mesh.buildings.triangleCount : 0,
-      guessedHeights: wantBuildings ? mesh.guessedHeights : 0,
-      approximateRoofs: wantBuildings ? mesh.approximateRoofs : 0,
-      trees: wantTrees ? mesh.trees.length : 0,
-      plates: wantPlates ? mesh.plateCount : 0,
-      plateTriangles: wantPlates ? mesh.plates.triangleCount : 0,
-    };
+    // Already narrowed to WHAT WAS DRAWN by the table — a status line reporting
+    // 400 buildings while the buildings layer is off would be the status line
+    // lying about the picture, which is the class of defect the legend and the
+    // store exist to prevent.
+    return stats;
   }
 
   /**
@@ -588,63 +523,6 @@ export class BuildingView {
   clearScene(): void {
     this.clear();
     this.renderer.render(this.scene, this.camera);
-  }
-
-  private meshFor(data: MeshData): THREE.Mesh {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(data.positions, 3),
-    );
-    geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
-    geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
-    return new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({
-        color: 0xc8ccd8,
-        // Double-sided because OSM volumes are not reliably closed — a
-        // `building:part` with no floor, or a footprint the triangulator could
-        // only partly cut, shows as a hole under culling for reasons that have
-        // nothing to do with this package's correctness.
-        //
-        // IT DOES NOT VALIDATE WINDING — it hides it. Every wall quad in the
-        // package was wound inside-out when this view was written and it looked
-        // entirely fine here, which is why orientation is now pinned by
-        // `mesh-orientation.test.ts` instead of by looking at this.
-        side: THREE.DoubleSide,
-        flatShading: true,
-      }),
-    );
-  }
-
-  /**
-   * A ground-plate mesh: flat, matte, and lifted off the terrain.
-   *
-   * SINGLE-SIDED, unlike the buildings. A plate is horizontal with an upward normal
-   * by construction, so a back face is never legitimately visible — and culling it
-   * means a plate wound the wrong way DISAPPEARS instead of being silently lit from
-   * below, which is the failure worth noticing rather than hiding.
-   */
-  private plateMeshFor(data: MeshData): THREE.Mesh {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(data.positions, 3),
-    );
-    geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
-    geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
-    const mesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({
-        color: 0x4a5468,
-        roughness: 0.85,
-        flatShading: true,
-        side: THREE.FrontSide,
-      }),
-    );
-    // From the shared ladder, so it cannot be coplanar with the roads or the grid.
-    mesh.position.y = groundLift("plates");
-    return mesh;
   }
 
   private clear(): void {

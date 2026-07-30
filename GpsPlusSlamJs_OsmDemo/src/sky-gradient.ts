@@ -17,11 +17,20 @@
  * one, not monotonic), and it is also the only part provable without a GPU. So the
  * arithmetic lives here and `building-view.ts` wraps it in a `DataTexture`.
  *
- * THE SAME TEXTURE IS ALSO THE ENVIRONMENT MAP, which is what makes DEC-R2-1's
- * reflective ground work: a `MeshStandardMaterial` needs something to reflect, and
- * a one-directional-light scene gives a specular lobe so narrow it registers on
- * almost nothing. Using the sky as the environment means the ground reflects the
- * sky, which is both physically sensible and free.
+ * THIS TEXTURE IS A BACKGROUND ONLY. It must NEVER be assigned to
+ * `scene.environment`, and this paragraph used to say the opposite — that using the
+ * sky as the environment map was what made DEC-R2-1's reflective ground work,
+ * because "a one-directional-light scene gives a specular lobe so narrow it
+ * registers on almost nothing". Both halves were wrong, and the claim took the
+ * entire scene down for ten work items: three.js routes any environment map through
+ * its CubeUV path, which expects a PMREM-processed texture, and a raw equirect
+ * `DataTexture` makes it emit integer `CUBEUV_*` defines into float assignments, so
+ * every `MeshStandardMaterial` fragment shader fails to compile. three.js logs that
+ * and silently does not draw the material. PMREM-processing does not rescue this
+ * gradient either — it is one pixel wide, degenerate for the equirect-to-cube-UV
+ * projection. The sky-tinted fill comes from a `HemisphereLight` instead, and
+ * DEC-R2-1's moving facet edges come from the directional light's specular
+ * highlight and low roughness. See `building-view.ts.md`'s lighting invariant.
  *
  * @see sky-gradient.ts.md
  */

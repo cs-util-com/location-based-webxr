@@ -50,6 +50,7 @@ import { attachHeaderCollapse } from "./header-collapse.js";
 import { createExplainCycle } from "./explain-cycle.js";
 import { attachLayerToggles } from "./layer-toggles.js";
 import { isLayerEnabled } from "./layers.js";
+import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
 import type { TransferableMesh } from "./worker/protocol.js";
@@ -374,16 +375,12 @@ async function main(): Promise<void> {
     // rebuilds the building and tree geometry it did not need to. Distinguishing
     // "layers changed" from "only the draw filter changed" would avoid it and is a
     // follow-up, not a correctness issue.
-    const wantsMeshLayers =
-      isLayerEnabled(layers, "buildings") ||
-      isLayerEnabled(layers, "trees") ||
-      isLayerEnabled(layers, "plates");
+    // ASKED OF THE TABLE, not hand-listed. Both of these used to enumerate the
+    // three mesh layers by name, so adding one meant remembering two places and
+    // forgetting either gave a layer that toggles in the UI but never draws.
+    const wantsMeshLayers = wantsAnyMeshLayer(layers);
     if (latestMesh !== undefined && wantsMeshLayers) {
-      mesh = buildingView.render(latestMesh, {
-        buildings: isLayerEnabled(layers, "buildings"),
-        trees: isLayerEnabled(layers, "trees"),
-        plates: isLayerEnabled(layers, "plates"),
-      });
+      mesh = buildingView.render(latestMesh, meshLayerSelection(layers));
     } else if (!wantsMeshLayers) {
       buildingView.clearScene();
       mesh = undefined;
