@@ -41,6 +41,7 @@ import {
   browserPngDecoder,
   buildAreaPlates,
   buildBuildings,
+  buildPoiMarkers,
   buildTrees,
   enuFrameAt,
   explainCell,
@@ -132,6 +133,9 @@ function buildMesh(
 
   const volumes = buildBuildings(all, options);
   const trees = buildTrees(all, options);
+  // Same options as the trees: a marker floating over sloped ground reads as a
+  // placement bug, and the sampler is the one already built for this frame.
+  const poi = buildPoiMarkers(all, options);
   // PER-VERTEX terrain for plates, unlike buildings: a 30 m car park sampled once
   // would cut into the ground at one end and float at the other, which is exactly
   // the artefact the building change removed. The same option name carries both
@@ -147,6 +151,7 @@ function buildMesh(
     trees,
     plates: mergeMeshes(plates.map((plate) => plate.mesh)),
     plateCount: plates.length,
+    poi,
     volumes: volumes.length,
     parts: volumes.filter((v) => v.parentFeature !== undefined).length,
     guessedHeights: volumes.filter((v) => v.heights.heightIsGuessed).length,

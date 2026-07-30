@@ -96,6 +96,57 @@ describe('createOsmViewSlice — user intent', () => {
     expect(state.selectedCell).toBe('8d1fb46622d8dbf');
   });
 
+  it('selects a FEATURE, and that clears any selected cell', () => {
+    // WHY THESE TWO ARE MUTUALLY EXCLUSIVE. There is one details panel, so there
+    // is one selection. Holding both would make the panel's contents depend on
+    // which branch of the renderer ran last — a coin-toss the user cannot see and
+    // no test would reliably catch.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.featureSelected({
+        feature: 'node/4242',
+        kind: 'amenity=cafe',
+        label: 'Café Schmitz',
+      })
+    );
+    expect(state.selectedFeature?.label).toBe('Café Schmitz');
+    expect(state.selectedCell).toBeUndefined();
+  });
+
+  it('selecting a cell clears any selected feature, for the same reason', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.featureSelected({
+        feature: 'node/4242',
+        kind: 'amenity=cafe',
+        label: 'Café Schmitz',
+      }),
+      slice.actions.cellSelected('8d1fb46622d8dbf')
+    );
+    expect(state.selectedCell).toBe('8d1fb46622d8dbf');
+    expect(state.selectedFeature).toBeUndefined();
+  });
+
+  it('moving the user clears the selected FEATURE too', () => {
+    // A marker belongs to a working set. After a move it may not be in the new
+    // one at all, and a panel describing something no longer on screen is the
+    // half-swapped scene in its most damaging form — it reads as current.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.featureSelected({
+        feature: 'node/4242',
+        kind: 'amenity=cafe',
+        label: 'Café Schmitz',
+      }),
+      slice.actions.positionChanged({ lat: 51, lng: 7 })
+    );
+    expect(state.selectedFeature).toBeUndefined();
+  });
+
   it('toggles the below-threshold band and clears the selection on demand', () => {
     const slice = makeSlice();
     const shown = reduceAll(

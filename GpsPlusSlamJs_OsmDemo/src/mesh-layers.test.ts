@@ -67,6 +67,15 @@ function fullMesh(): TransferableMesh {
     ],
     plates: triangle(),
     plateCount: 3,
+    poi: [
+      {
+        feature: "node/4242",
+        position: { x: 5, y: -7 },
+        groundHeightM: 53,
+        kind: "amenity=cafe",
+        label: "Café Schmitz",
+      },
+    ],
     volumes: 21,
     parts: 25,
     guessedHeights: 7,
@@ -81,6 +90,7 @@ function emptyMesh(): TransferableMesh {
     trees: [],
     plates: EMPTY,
     plateCount: 0,
+    poi: [],
     volumes: 0,
     parts: 0,
     guessedHeights: 0,
@@ -130,15 +140,20 @@ describe("MESH_LAYERS — the table itself", () => {
     const defaults = Object.fromEntries(
       MESH_LAYERS.map((one) => [one.layer, one.defaultOn]),
     );
-    expect(defaults).toEqual({ buildings: true, trees: true, plates: false });
+    expect(defaults).toEqual({
+      buildings: true,
+      trees: true,
+      plates: false,
+      poi: false,
+    });
   });
 });
 
 describe("drawMeshLayers — what reaches the scene", () => {
   it("draws every layer that is on", () => {
     const { objects } = drawMeshLayers(fullMesh(), ALL_ON);
-    // One buildings mesh, one plates mesh, one tree cone.
-    expect(objects).toHaveLength(3);
+    // One buildings mesh, one plates mesh, one tree cone, one POI marker.
+    expect(objects).toHaveLength(4);
     for (const object of objects) expect(object).toBeInstanceOf(THREE.Object3D);
   });
 
@@ -148,6 +163,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       buildings: false,
       trees: false,
       plates: false,
+      poi: false,
     });
     expect(objects).toEqual([]);
   });
@@ -168,6 +184,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       ...ALL_ON,
       buildings: false,
       trees: false,
+      poi: false,
     });
     expect(objects[0]?.position.y).toBeCloseTo(groundLift("plates"), 10);
   });
@@ -178,6 +195,48 @@ describe("drawMeshLayers — what reaches the scene", () => {
     expect(objects).toHaveLength(2);
     expect(stats.plates).toBe(0);
     expect(stats.volumes).toBe(21);
+  });
+});
+
+describe("drawMeshLayers — POI markers", () => {
+  it("carries the marker itself, so a pick can name what was clicked", () => {
+    // The identity that reaches the details panel. Stored ON the object rather
+    // than in a side table keyed by index: `clear()` and the next render rebuild
+    // the scene, and an index-keyed table survives that silently while pointing at
+    // the PREVIOUS working set — a panel confidently describing the wrong feature,
+    // which is the half-swapped scene in its most damaging form.
+    const { objects } = drawMeshLayers(fullMesh(), ALL_ON);
+    const pin = objects.find((o) => o.userData["poi"] !== undefined);
+    expect(pin).toBeDefined();
+    expect((pin?.userData["poi"] as { label: string }).label).toBe(
+      "Café Schmitz",
+    );
+  });
+
+  it("SHARES one geometry and material, and flags them so nothing disposes them", () => {
+    // WHY THIS TEST MATTERS. Markers are numerous and identical, which is the
+    // whole reason the package emits placements instead of geometry — so the pins
+    // share one geometry and one material. But `BuildingView.clear()` disposes the
+    // geometry and material of every child it removes, which for a shared resource
+    // means the FIRST refresh destroys it and every later frame draws nothing.
+    //
+    // That failure is silent in exactly the way this codebase keeps meeting:
+    // three.js does not throw for a disposed geometry, the counters still report
+    // the markers, and the layer simply stops appearing. The flag is what lets
+    // `clear()` tell "mine to free" from "borrowed".
+    const first = drawMeshLayers(fullMesh(), ALL_ON).objects.find(
+      (o) => o.userData["poi"] !== undefined,
+    );
+    const second = drawMeshLayers(fullMesh(), ALL_ON).objects.find(
+      (o) => o.userData["poi"] !== undefined,
+    );
+    expect(first).toBeInstanceOf(THREE.Mesh);
+    const a = first as THREE.Mesh;
+    const b = second as THREE.Mesh;
+    // The same instances ACROSS calls, which is what makes disposal fatal.
+    expect(a.geometry).toBe(b.geometry);
+    expect(a.material).toBe(b.material);
+    expect(a.userData["sharedResources"]).toBe(true);
   });
 });
 
@@ -211,6 +270,7 @@ describe("drawMeshLayers — the counters", () => {
       trees: 1,
       plates: 3,
       plateTriangles: 1,
+      poi: 1,
     });
   });
 
@@ -223,9 +283,10 @@ describe("drawMeshLayers — the counters", () => {
       buildings: false,
       trees: false,
       plates: false,
+      poi: false,
     });
     for (const value of Object.values(stats)) expect(value).toBe(0);
-    expect(Object.keys(stats)).toHaveLength(8);
+    expect(Object.keys(stats)).toHaveLength(9);
   });
 });
 

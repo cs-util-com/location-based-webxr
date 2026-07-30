@@ -22,6 +22,7 @@ import type { CellMesh } from "./cell-mesh.js";
 import type { Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
 import { drawMeshLayers } from "./mesh-layers.js";
+import { resolvePick, type Pick } from "./pick.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import { SKY_GRADIENT_ROWS, skyGradientPixels } from "./sky-gradient.js";
 import type { TransferableMesh } from "./worker/protocol.js";
@@ -30,6 +31,7 @@ import type { TransferableMesh } from "./worker/protocol.js";
 // The table owns them because it owns what they describe: `BuildingStats` is
 // exactly the union of what the rows count.
 export type { BuildingStats, MeshLayers } from "./mesh-layers.js";
+export type { Pick } from "./pick.js";
 export { treeConePosition } from "./mesh-layers.js";
 
 /**
@@ -115,8 +117,15 @@ const GROUND_SEGMENTS = Math.min(
 
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
-  /** Called with the H3 id when an affordance cell is clicked in the scene. */
-  readonly onCellClick?: (cell: string) => void;
+  /**
+   * Called with whatever the user selected (W12).
+   *
+   * GENERALISED from `onCellClick(cell)`, because a cell is no longer the only
+   * selectable thing. Buildings are still not selectable and that is deliberate:
+   * they are excluded from the raycast set, so hitting one neither selects it nor
+   * silently selects the cell behind it as though it had been chosen.
+   */
+  readonly onPick?: (pick: Pick) => void;
 }
 
 export class BuildingView {
@@ -339,8 +348,8 @@ export class BuildingView {
       const moved =
         Math.abs(event.clientX - from.x) + Math.abs(event.clientY - from.y);
       if (moved > 4) return;
-      const cell = this.pick(event);
-      if (cell !== undefined) options.onCellClick?.(cell);
+      const picked = this.pick(event);
+      if (picked !== undefined) options.onPick?.(picked);
     };
     this.container.addEventListener("pointerup", this.onPointerDown);
   }
@@ -430,8 +439,7 @@ export class BuildingView {
    * selectable thing in this app and hitting one should not silently select the
    * cell behind it.
    */
-  private pick(event: PointerEvent): string | undefined {
-    if (this.cellMesh === undefined) return undefined;
+  private pick(event: PointerEvent): Pick | undefined {
     const rect = this.renderer.domElement.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return undefined;
     this.raycaster.setFromCamera(
@@ -441,16 +449,27 @@ export class BuildingView {
       ),
       this.camera,
     );
-    const hit = this.raycaster.intersectObject(this.cellMesh, false)[0];
-    // `faceIndex` IS the triangle index for an indexed BufferGeometry, which is
-    // what `cellForTriangle` is keyed on — built in the same pass as the
-    // geometry so the two cannot drift.
-    // `faceIndex` is `number | null` in three's types — null when the hit
-    // object has no indexed faces, which this one always does.
-    const face = hit?.faceIndex;
-    return face === undefined || face === null
-      ? undefined
-      : this.cellForTriangle[face];
+    // THE RAYCAST SET IS THE INVARIANT. Buildings, trees, plates and the ground
+    // are absent from it by construction, so no amount of later logic can make
+    // them selectable — which is a stronger guarantee than filtering hits after
+    // the fact, and it is also much cheaper than raycasting the whole city.
+    const targets: THREE.Object3D[] = [];
+    if (this.cellMesh !== undefined) targets.push(this.cellMesh);
+    for (const child of this.group.children) {
+      if (child.userData["poi"] !== undefined) targets.push(child);
+    }
+    if (targets.length === 0) return undefined;
+    // Reduced to what the decision reads. `Intersection` nests `userData` under
+    // `object`, and `pick.ts` must be constructible in a test without a renderer,
+    // so the flattening happens at this boundary rather than in the pure module.
+    return resolvePick(
+      this.raycaster.intersectObjects(targets, false).map((hit) => ({
+        distance: hit.distance,
+        faceIndex: hit.faceIndex,
+        userData: hit.object.userData,
+      })),
+      this.cellForTriangle,
+    );
   }
 
   /**
@@ -492,6 +511,10 @@ export class BuildingView {
         depthWrite: false,
       }),
     );
+    // How `resolvePick` recognises the grid. A flag rather than an identity
+    // comparison, so the decision stays a pure function of the hits and can be
+    // tested without a renderer.
+    this.cellMesh.userData["cellGrid"] = true;
     this.scene.add(this.cellMesh);
     this.requestFrame();
   }
@@ -621,6 +644,14 @@ export class BuildingView {
       // adds to `this.group` is built in `meshFor` or the tree loop, and both
       // use exactly this pairing.
       if (!(child instanceof THREE.Mesh)) continue;
+      // BORROWED, not owned. The POI pins share one geometry and one material
+      // across every marker and across every render — that is the point of the
+      // package emitting placements rather than geometry. Disposing them here
+      // would destroy them on the first refresh, and every later frame would draw
+      // nothing at all: three.js does not throw for a disposed geometry, the
+      // counters would keep reporting the markers, and the layer would simply stop
+      // appearing. Exactly the silent-absence shape as the shader outage.
+      if (child.userData["sharedResources"] === true) continue;
       const mesh = child as THREE.Mesh<
         THREE.BufferGeometry,
         THREE.Material | THREE.Material[]

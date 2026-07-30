@@ -41,11 +41,13 @@ import type { TransferableMesh } from "./worker/protocol.js";
  * The layers whose geometry comes out of the worker's mesh.
  *
  * The rest of `ALL_LAYERS` is drawn by other means — `cells` and `areas` are the
- * affordance overlays built by `cell-mesh.ts`, and `roads`/`poi` have no builder
- * yet. This constant is the declared truth the table is checked against, so adding
- * a builder means adding its id HERE and the test tells you the row is missing.
+ * affordance overlays built by `cell-mesh.ts`, `terrainDebug` re-colours the ground
+ * plane, and `roads` has no builder yet. This constant is the declared truth the
+ * table is checked against, so adding a builder means adding its id HERE and the
+ * test tells you the row is missing. That is not hypothetical: adding `poi` here
+ * before writing its row turned the coverage test red, which is the guard working.
  */
-export const DRAWN_BY_MESH = ["buildings", "trees", "plates"] as const;
+export const DRAWN_BY_MESH = ["buildings", "trees", "plates", "poi"] as const;
 
 /** Not exported: nothing outside this module needs to name it, and knip is right
  * to say so. It is reachable through `MeshLayerDescriptor["layer"]` if that ever
@@ -74,6 +76,8 @@ export interface BuildingStats {
    * is a distinct failure from no plates at all, and only the pair tells them
    * apart. */
   readonly plateTriangles: number;
+  /** POI markers drawn (W12). */
+  readonly poi: number;
 }
 
 /**
@@ -93,6 +97,7 @@ const NO_STATS: BuildingStats = {
   trees: 0,
   plates: 0,
   plateTriangles: 0,
+  poi: 0,
 };
 
 /** What one drawable layer contributes to the scene and to the status line. */
@@ -133,6 +138,42 @@ export function treeConePosition(
     -tree.position.y,
   ];
 }
+
+/**
+ * Where a POI marker's pin stands, from its ENU placement.
+ *
+ * The same `+y` north to `-z` north reflection `treeConePosition` applies, and it
+ * fails the same silent way: a marker 50 m north of a shop renders 50 m south of
+ * it, labelled correctly, looking like a data error rather than a frame error.
+ * The pin is a cone standing ON the ground, so its centre sits half its height up.
+ */
+export function poiMarkerPosition(
+  marker: TransferableMesh["poi"][number],
+): [x: number, y: number, z: number] {
+  return [
+    marker.position.x,
+    marker.groundHeightM + POI_HEIGHT_M / 2,
+    -marker.position.y,
+  ];
+}
+
+/** Height of a marker pin, metres. Tall enough to clear a hedge, short enough
+ * not to compete with the buildings. */
+const POI_HEIGHT_M = 6;
+
+/**
+ * ONE geometry and ONE material, SHARED by every pin.
+ *
+ * Markers are numerous and identical, which is the whole reason the package emits
+ * placements rather than geometry. Sharing here is also why `clear()` must not
+ * dispose them — see the note in `building-view.ts`.
+ */
+const POI_GEOMETRY = new THREE.ConeGeometry(1.6, POI_HEIGHT_M, 5);
+const POI_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0xffb454,
+  flatShading: true,
+  roughness: 0.5,
+});
 
 /** Wraps worker buffers in a geometry. The buffers are already validated. */
 function geometryFrom(data: MeshData): THREE.BufferGeometry {
@@ -228,6 +269,30 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         return cone;
       }),
     counters: (mesh) => ({ trees: mesh.trees.length }),
+  },
+  {
+    layer: "poi",
+    // OFF by default. Every layer added after the W10 baseline is, so that an
+    // omitted selection still reproduces the picture the demo shipped with.
+    defaultOn: false,
+    build: (mesh) =>
+      mesh.poi.map((marker) => {
+        const pin = new THREE.Mesh(POI_GEOMETRY, POI_MATERIAL);
+        pin.position.set(...poiMarkerPosition(marker));
+        // The identity a pick reads back. Stored on the object rather than in a
+        // side table keyed by index, because `clear()` and the next render
+        // rebuild the scene and an index-keyed table survives that silently while
+        // pointing at the previous working set — the half-swapped scene, in its
+        // most damaging form: a panel confidently describing the wrong feature.
+        // `sharedResources` tells the scene owner this object's geometry and
+        // material are BORROWED, not its own to free. `BuildingView.clear()`
+        // disposes both for every child it removes, which for a shared resource
+        // means the first refresh destroys it and every later frame silently draws
+        // nothing — three.js does not throw for a disposed geometry.
+        pin.userData = { poi: marker, sharedResources: true };
+        return pin;
+      }),
+    counters: (mesh) => ({ poi: mesh.poi.length }),
   },
 ];
 

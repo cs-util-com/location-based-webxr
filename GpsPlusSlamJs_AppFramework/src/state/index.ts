@@ -78,6 +78,7 @@ export {
 export {
   createOsmViewSlice,
   type CreateOsmViewSliceOptions,
+  type OsmViewFeature,
   type OsmViewLatLng,
   type OsmViewLoading,
   type OsmViewLoadingPhase,

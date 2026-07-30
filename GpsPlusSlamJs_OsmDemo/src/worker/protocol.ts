@@ -30,6 +30,7 @@ import type {
   CellExplanation,
   LatLng,
   MeshData,
+  PoiMarker,
   TreePlacement,
 } from "gps-plus-slam-osm";
 
@@ -59,6 +60,15 @@ export interface TransferableMesh {
    */
   readonly plates: MeshData;
   readonly plateCount: number;
+  /**
+   * POI markers (W12), as placements for the same reason trees are.
+   *
+   * They carry `feature`, `kind` and `label` as well as a position, because a
+   * marker the app cannot name is a dot — and naming it is the entire feature.
+   * Deriving the label again on this side from tags the worker still holds would
+   * be a second source of truth for what a POI is called.
+   */
+  readonly poi: readonly PoiMarker[];
   readonly volumes: number;
   readonly parts: number;
   readonly guessedHeights: number;

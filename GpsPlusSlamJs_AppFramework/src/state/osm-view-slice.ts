@@ -81,9 +81,34 @@ export interface OsmViewState<TSnapshot> {
   layers: Readonly<Record<string, boolean>>;
   /** The cell the details panel is explaining, or none. */
   selectedCell: string | undefined;
+  /**
+   * The map FEATURE the details panel is describing, or none.
+   *
+   * Mutually exclusive with `selectedCell`: there is one panel, so there is one
+   * selection. Holding both would make the panel's contents depend on which
+   * branch of the renderer ran last.
+   */
+  selectedFeature: OsmViewFeature | undefined;
   loading: OsmViewLoading;
   /** Whatever the consumer's pipeline last produced. Opaque here. */
   snapshot: TSnapshot | undefined;
+}
+
+/**
+ * A selected map feature, STRUCTURALLY.
+ *
+ * The same publish-boundary rule as `layers`: this package is on npm and
+ * `gps-plus-slam-osm` is not, so a type-only import of `PoiMarker` here would 404
+ * every consumer's install. Three plain strings are all the panel needs, and TS
+ * structural typing means a consumer can hand a `PoiMarker` straight in.
+ */
+export interface OsmViewFeature {
+  /** Stable id, e.g. `node/4242`. */
+  readonly feature: string;
+  /** `key=value` of the primary tag, e.g. `amenity=cafe`. */
+  readonly kind: string;
+  /** A short human label. */
+  readonly label: string;
 }
 
 export interface CreateOsmViewSliceOptions {
@@ -126,6 +151,7 @@ export function createOsmViewSlice<TSnapshot>(
     showBelowThreshold: false,
     layers: options.initialLayers ?? {},
     selectedCell: undefined,
+    selectedFeature: undefined,
     loading: IDLE,
     snapshot: undefined,
   };
@@ -145,6 +171,7 @@ export function createOsmViewSlice<TSnapshot>(
           ...state,
           position: action.payload,
           selectedCell: undefined,
+          selectedFeature: undefined,
         };
       },
 
@@ -178,9 +205,33 @@ export function createOsmViewSlice<TSnapshot>(
         return { ...state, layers: action.payload };
       },
 
-      /** Select a cell, or pass `undefined` to close the details panel. */
+      /**
+       * Select a cell, or pass `undefined` to close the details panel.
+       *
+       * CLEARS any selected feature: one panel, one selection.
+       */
       cellSelected(state, action: PayloadAction<string | undefined>) {
-        return { ...state, selectedCell: action.payload };
+        return {
+          ...state,
+          selectedCell: action.payload,
+          selectedFeature: undefined,
+        };
+      },
+
+      /**
+       * Select a map feature, or pass `undefined` to close the panel.
+       *
+       * CLEARS any selected cell, for the same reason `cellSelected` clears this.
+       */
+      featureSelected(
+        state,
+        action: PayloadAction<OsmViewFeature | undefined>
+      ) {
+        return {
+          ...state,
+          selectedFeature: action.payload,
+          selectedCell: undefined,
+        };
       },
 
       /**
@@ -219,6 +270,7 @@ export function createOsmViewSlice<TSnapshot>(
           ...state,
           snapshot: undefined,
           selectedCell: undefined,
+          selectedFeature: undefined,
           loading: { phase: 'error', message: action.payload },
         };
       },

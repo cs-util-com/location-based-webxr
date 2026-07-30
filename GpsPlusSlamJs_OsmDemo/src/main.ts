@@ -149,9 +149,16 @@ async function main(): Promise<void> {
   });
   const buildingView = new BuildingView({
     container: el("scene"),
-    // The same action a 2D cell click dispatches. The panel does not know, and
-    // must not know, which view the selection came from.
-    onCellClick: (cell) => store.dispatch(actions.cellSelected(cell)),
+    // A cell selection dispatches the SAME action a 2D cell click does: the panel
+    // does not know, and must not know, which view the selection came from. A POI
+    // selection is a different kind of answer and gets its own action (W12).
+    onPick: (picked) => {
+      if (picked.kind === "cell") {
+        store.dispatch(actions.cellSelected(picked.cell));
+      } else {
+        store.dispatch(actions.featureSelected(picked.marker));
+      }
+    },
   });
   const legendView = new LegendView({ container: el("legend") });
   const detailsPanel = new DetailsPanel({
