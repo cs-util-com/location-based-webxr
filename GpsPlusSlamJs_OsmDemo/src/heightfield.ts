@@ -243,13 +243,25 @@ export async function buildHeightfield(
 }
 
 /**
- * Bilinear read, clamped to the grid.
+ * Bilinear read, clamped to the grid — a LAST-RESORT GUARD, not a working path.
  *
  * Clamping rather than returning `NaN` outside the extent: the ground plane and
  * the affordance grid both sample this, and a `NaN` vertex silently drops a
- * triangle instead of reporting anything. The edge value is the honest answer —
- * "this is the last thing we know" — and the caller sizes the plane to the
- * extent anyway.
+ * triangle instead of reporting anything. The edge value is the least-bad answer
+ * available — "this is the last thing we know".
+ *
+ * **CORRECTED per DEC-R2-9. This comment used to end "and the caller sizes the
+ * plane to the extent anyway", and that clause was false — it was the whole of
+ * the R2-9 bug.** It was true of the ground plane and false of the buildings,
+ * which are the larger consumer and reached ~2.8 km while the field was 600 m.
+ * `x` and `y` clamp INDEPENDENTLY, so every building outside the square was
+ * given the height of the nearest edge at its own cross-axis offset — the edge
+ * profile extruded outward as stripes, which looks like terrain data and is not.
+ *
+ * The guarantee that replaced the false claim is structural, not a comment: the
+ * sampled field is sized from the extent actually being rendered, so a query
+ * outside it cannot arise in normal operation (DEC-R2-9). Reaching this clamp in
+ * production means that sizing has been broken somewhere upstream.
  */
 function bilinear(
   heights: Float32Array,

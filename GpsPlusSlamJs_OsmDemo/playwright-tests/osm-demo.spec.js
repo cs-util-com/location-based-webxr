@@ -450,7 +450,11 @@ test.describe("the layer toggles", () => {
     // The fixture is Cologne Volksgarten: 3 `amenity=parking` areas, landuse, a
     // park, a garden and playgrounds. Both halves are asserted — that the geometry
     // was built, and that it reached the screen.
-    await expect(page.locator("#status")).toContainText(/[1-9]d* ground areas/);
+    // `\d`, not a bare `d`: the missing backslash made this match a literal "d",
+    // so it could not match a two-digit count — and this fixture builds 11 plates.
+    await expect(page.locator("#status")).toContainText(
+      /[1-9]\d* ground areas/,
+    );
     await expect.poll(shot, REPAINT).not.toBe(before);
   });
 
@@ -1236,8 +1240,8 @@ test.describe("the 3D view", () => {
     // Everything else in the frame is either saturated (the heat ramp's purples and
     // teals), blue (the sky, up to 92,108,140 — and max-min 48) or dark (the ground,
     // 0x3a4356). Only the buildings are simultaneously bright and near-grey, so
-    //  isolates them. Measured, not guessed: 13,874
-    // pixels at the default framing.
+    // `min > 110 && max - min < 40` isolates them — the predicate below. Measured,
+    // not guessed: 13,874 pixels at the default framing.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
