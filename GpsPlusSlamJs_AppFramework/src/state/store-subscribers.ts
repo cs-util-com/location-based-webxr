@@ -12,8 +12,8 @@
  * fire when the specific state slice they care about actually changes.
  * This replaces the manual lastX tracking variables from the original design.
  *
- * @see docs/2026-02-19-replay-mode.md Issue 2, Risk R2
- * @see docs/2026-04-07-architecture-observations-consolidated.md §1
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-19-replay-mode.md Issue 2, Risk R2
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-07-architecture-observations-consolidated.md §1
  */
 
 import type { LatLong, Matrix4, Vector3, Quaternion } from 'gps-plus-slam-js';

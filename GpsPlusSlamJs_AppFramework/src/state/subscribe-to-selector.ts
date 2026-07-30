@@ -5,7 +5,7 @@
  * with automated reference-equality change detection. Only fires the
  * callback when the selector's output actually changes between dispatches.
  *
- * @see docs/2026-04-07-architecture-observations-consolidated.md §1
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-07-architecture-observations-consolidated.md §1
  */
 
 import type { CombinedRootState } from './combined-root-state';

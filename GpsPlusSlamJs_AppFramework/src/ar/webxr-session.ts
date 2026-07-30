@@ -141,7 +141,7 @@ export function isXRCameraLike(value: unknown): value is XRCameraLike {
  *   - the first view has no `camera` property (camera-access not granted)
  *   - the camera property is not a valid XRCameraLike (zero/NaN dimensions)
  *
- * @see docs/2026-02-06-bug-camera-frames-black.md
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-06-bug-camera-frames-black.md
  */
 export function getXrCameraFromPose(
   pose: XRViewerPose | null

@@ -14,7 +14,7 @@
  * `createRecorderStore`/`store.ts` it replaced moved out in Iter 1D); the
  * core library's license error messages point here as the remediation.
  *
- * @see docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md — Iter 1
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md — Iter 1
  */
 
 import {
@@ -179,7 +179,7 @@ export interface SlamAppStoreOptions<
    * Optional overrides for the tracking-quality reporter
    * (matrix-history size, residual window, thresholds, etc.).
    *
-   * @see docs/2026-05-16-tracking-quality-metrics-plan.md
+   * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-16-tracking-quality-metrics-plan.md
    */
   trackingQualityOptions?: Partial<TrackingQualityOptions>;
 

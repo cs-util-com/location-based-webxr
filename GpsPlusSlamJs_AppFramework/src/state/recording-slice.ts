@@ -6,7 +6,7 @@
  *
  * Manages: recording state, session metadata, write failure tracking.
  *
- * @see docs/2026-04-07-architecture-observations-consolidated.md §4
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-07-architecture-observations-consolidated.md §4
  */
 
 import type { Draft, PayloadAction } from '@reduxjs/toolkit';

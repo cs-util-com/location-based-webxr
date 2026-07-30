@@ -11,7 +11,7 @@
  *
  * The first target is applied instantly (no animation from identity).
  *
- * @see docs/2026-03-21-user-feedback.md Issue 4
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-03-21-user-feedback.md Issue 4
  */
 
 import * as THREE from 'three';

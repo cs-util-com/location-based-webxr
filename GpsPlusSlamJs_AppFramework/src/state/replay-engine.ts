@@ -11,7 +11,7 @@
  *   (uses performance.now, not epoch ms — Risk R4)
  * - Max delay clamp prevents hanging on stale recordings
  *
- * @see docs/2026-02-19-replay-mode.md Issue 2 (Option D), Issue 3
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-19-replay-mode.md Issue 2 (Option D), Issue 3
  */
 
 import type { ReducersMapObject } from '@reduxjs/toolkit';

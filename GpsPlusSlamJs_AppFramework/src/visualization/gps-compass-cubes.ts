@@ -9,7 +9,7 @@
  * Designed to be added as children of a CameraFollower so they
  * stay near the camera but always GPS-world-aligned.
  *
- * @see docs/2026-03-12-user-feedback.md Issue 8
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-03-12-user-feedback.md Issue 8
  */
 
 import * as THREE from 'three';

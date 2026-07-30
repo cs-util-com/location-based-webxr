@@ -59,7 +59,7 @@ export interface ARPose {
  *
  * Returns the raw WebXR position without coordinate conversion — the reducer
  * applies the WebXR→NUE transform when storing into state (raw-storage
- * pattern, see docs/2026-04-09-raw-storage-convert-on-read.md).
+ * pattern, see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-09-raw-storage-convert-on-read.md).
  * WebXR local-floor frame: X=East, Y=Up, Z=South (toward viewer / backward).
  *
  * Lives next to the type (quality-review G-8 — it used to sit in

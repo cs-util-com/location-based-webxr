@@ -11,7 +11,7 @@
  * - R7: Error handling — onError callback is wired from config to the engine.
  * - R8: Data flow — zip bytes → loadActionsFromZip → actions → engine.
  *
- * @see docs/2026-02-19-replay-mode.md Iteration 6
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-19-replay-mode.md Iteration 6
  */
 
 import {

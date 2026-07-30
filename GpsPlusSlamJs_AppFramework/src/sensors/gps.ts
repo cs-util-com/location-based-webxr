@@ -74,7 +74,7 @@ export function startGpsWatch(
       onError?.(err);
     },
     {
-      // Android-focused tuning (see docs/2026-05-20-android-altitude-accuracy-audit.md, R1):
+      // Android-focused tuning (see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-20-android-altitude-accuracy-audit.md, R1):
       // - enableHighAccuracy forces GNSS instead of Wi-Fi/cell triangulation; without it
       //   Android typically returns altitudeAccuracy=null and the vertical weight in
       //   computeVerticalWeights falls back to latLongAccuracy.

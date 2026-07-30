@@ -26,7 +26,7 @@
  *   └── Scenario B/
  *       └── recording-2026-02-10_09-00-00utc.zip
  *
- * @see docs/2026-02-19-replay-mode.md Issue 6
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-19-replay-mode.md Issue 6
  */
 
 // ---------------------------------------------------------------------------

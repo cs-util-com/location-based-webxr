@@ -19,8 +19,8 @@
  * Replaced with the Three.js API since it handles the same logic
  * internally and uses the proper ExternalTexture type.
  *
- * @see docs/2026-02-26-bug-camera-frames-black-2.md (reference tutorial)
- * @see docs/2026-02-26-user-feedback.md Issue 5 Phase 2
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-26-bug-camera-frames-black-2.md (reference tutorial)
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-26-user-feedback.md Issue 5 Phase 2
  */
 
 import type * as THREE from 'three';

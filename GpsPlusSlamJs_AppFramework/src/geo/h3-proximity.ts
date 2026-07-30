@@ -9,7 +9,7 @@
  * naming. The math is unchanged; only the public type/function names were
  * generalised so the framework can serve any geo-anchored consumer.
  *
- * @see docs/2026-03-08-ref-point-naming-investigation.md §6
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-03-08-ref-point-naming-investigation.md §6
  */
 
 import {

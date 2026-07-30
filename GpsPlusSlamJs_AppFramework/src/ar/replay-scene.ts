@@ -23,8 +23,8 @@
  *   - fps: Drag-based mouse look + WASD — left-click-drag rotates camera,
  *     WASD moves, Space/Shift for vertical movement (Issue 6)
  *
- * @see docs/2026-02-19-replay-mode.md Issue 4, Issue 5, Risk R1, R5
- * @see docs/2026-03-12-user-feedback.md Issue 5
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-19-replay-mode.md Issue 4, Issue 5, Risk R1, R5
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-03-12-user-feedback.md Issue 5
  */
 
 import * as THREE from 'three';
