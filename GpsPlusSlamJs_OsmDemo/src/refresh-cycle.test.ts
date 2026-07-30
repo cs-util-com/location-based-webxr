@@ -16,12 +16,24 @@
 
 import { describe, it, expect, vi } from "vitest";
 
+import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
+
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
+
+/** `radius` cells, so a wider pass is observably a bigger working set. */
+const snapshotAt = (category: string, radius: number): DemoSnapshot => ({
+  ...snapshot(category),
+  cells: Array.from({ length: radius }, (_, i) => ({
+    cell: `cell-${i}`,
+    scores: { [category]: 3 },
+    contributors: { [category]: {} },
+  })),
+});
 
 const snapshot = (category: string): DemoSnapshot => ({
   position: COLOGNE,
@@ -78,6 +90,7 @@ const NO_MESH: TransferableMesh = {
 type Update = (
   position: { lat: number; lng: number },
   category: string,
+  radius: number,
 ) => Promise<DemoSnapshot>;
 
 function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
@@ -91,7 +104,11 @@ function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
     // narrow `RefreshWorker` shape is what keeps this test worker-free.
     worker: {
       call: async (_kind, payload, options) => {
-        const snapshot = await update(payload.position, payload.category);
+        const snapshot = await update(
+          payload.position,
+          payload.category,
+          payload.radius,
+        );
         // The signal is FORWARDED to the test, so a test can supersede the run
         // after the reply has landed — the exact race the guard exists for.
         onReply?.(options.signal);
@@ -155,7 +172,14 @@ describe("createRefreshCycle — the happy path", () => {
 
     await refresh();
 
-    expect(events).toEqual(["mesh", "snapshot"]);
+    // ONE PAIR PER RING now (W16), and the ORDER within each pair is the
+    // invariant — not the count. A dispatch before its mesh would draw the new
+    // ring's cells over the previous ring's geometry.
+    expect(events).toHaveLength(6);
+    for (let i = 0; i < events.length; i += 2) {
+      expect(events[i]).toBe("mesh");
+      expect(events[i + 1]).toBe("snapshot");
+    }
   });
 
   it("reads the position and category from the store at call time", async () => {
@@ -171,7 +195,9 @@ describe("createRefreshCycle — the happy path", () => {
     store.dispatch(actions.categoryChanged("battleArea"));
     await refresh();
 
-    expect(seen).toEqual(["battleArea"]);
+    // Once per ring, and every ring reads the SAME current intent — a widening
+    // pass must not drift onto a category the store has moved off.
+    expect(seen).toEqual(["battleArea", "battleArea", "battleArea"]);
   });
 
   it("coalesces overlapping refreshes to the most recent intent", async () => {
@@ -197,8 +223,15 @@ describe("createRefreshCycle — the happy path", () => {
     resolveFirst?.();
     await first;
 
-    // Two runs, not three: the middle intent was superseded before it started.
-    expect(categories).toEqual(["walkable", "restingArea"]);
+    // The middle intent was superseded before it started, so it never runs. The
+    // first run contributes only its opening ring — it is aborted after that —
+    // and the survivor runs all three.
+    expect(categories).toEqual([
+      "walkable",
+      "restingArea",
+      "restingArea",
+      "restingArea",
+    ]);
   });
 });
 
@@ -330,12 +363,132 @@ describe("createRefreshCycle — a superseded run applies nothing", () => {
 
     await refresh();
 
-    // ONE handover, not two: the superseded run applied nothing and the run that
-    // replaced it applied everything. Without the guard both would.
-    expect(events.filter((e) => e === "mesh")).toHaveLength(1);
+    // THREE handovers, one per ring, and all three belong to the SURVIVING run:
+    // the superseded run applied nothing. Without the guard its rings would
+    // interleave with the survivor's, and the last one to land would win.
+    expect(events.filter((e) => e === "mesh")).toHaveLength(3);
     // The surviving run still published, so the guard did not simply break the cycle.
     expect(selectOsmView(store.getState()).snapshot).toBeDefined();
     // And a supersession is not a failure.
     expect(selectOsmView(store.getState()).loading.phase).not.toBe("error");
+  });
+});
+
+describe("createRefreshCycle — progressive scoring (W16, DEC-R2-30)", () => {
+  it("widens ring by ring, and the FIRST pass is the full original working set", () => {
+    // THE REQUIREMENT THAT SHAPES THE REST. The user waits for the first answer
+    // and for nothing else, so progressive scoring must not make it later.
+    // Starting at ring 0 to make the steps uniform would trade the thing people
+    // notice for the thing they do not — the plan says that fails review.
+    const radii: number[] = [];
+    const { refresh } = setup((_position, category, radius) => {
+      radii.push(radius);
+      return Promise.resolve(snapshotAt(category, radius));
+    });
+
+    return refresh().then(() => {
+      expect(radii[0]).toBe(SCORE_DISK_RADIUS);
+      expect(radii[radii.length - 1]).toBe(SCORE_DISK_MAX_RADIUS);
+      // Strictly increasing: a repeated radius is wasted work, and a decreasing
+      // one would narrow the map after widening it.
+      for (let i = 1; i < radii.length; i += 1) {
+        expect(radii[i]).toBeGreaterThan(radii[i - 1] as number);
+      }
+    });
+  });
+
+  it("publishes a MONOTONICALLY growing working set", async () => {
+    // What the user sees: the map fills outward. A pass that published fewer
+    // cells than the one before would make it visibly contract, which reads as
+    // data being lost rather than as more arriving.
+    const counts: number[] = [];
+    const { store, refresh, subscribe } = setup((_p, category, radius) =>
+      Promise.resolve(snapshotAt(category, radius)),
+    );
+    subscribe(
+      (view) => view.snapshot,
+      (snap) => {
+        if (snap !== undefined) counts.push(snap.cells.length);
+      },
+    );
+
+    await refresh();
+
+    expect(counts.length).toBeGreaterThan(1);
+    for (let i = 1; i < counts.length; i += 1) {
+      expect(counts[i]).toBeGreaterThan(counts[i - 1] as number);
+    }
+    expect(selectOsmView(store.getState()).snapshot?.cells.length).toBe(
+      SCORE_DISK_MAX_RADIUS,
+    );
+  });
+
+  it("STOPS the remaining rings when the user moves", async () => {
+    // The other half of the guarantee. The rings still to come belong to a place
+    // the user has left; scoring them spends the worker on ground nobody is
+    // looking at, and publishing them would put the old position back on screen
+    // after the new one had arrived.
+    let superseded = false;
+    function supersede(): void {
+      void refresh();
+    }
+    const radii: number[] = [];
+    const { refresh, events } = setup(
+      (_p, category, radius) => {
+        radii.push(radius);
+        return Promise.resolve(snapshotAt(category, radius));
+      },
+      () => {
+        if (superseded) return;
+        superseded = true;
+        supersede();
+      },
+    );
+
+    await refresh();
+
+    // The first run got exactly one ring in before it was superseded; the run
+    // that replaced it did all three. Four calls, not six.
+    expect(radii).toEqual([
+      SCORE_DISK_RADIUS,
+      SCORE_DISK_RADIUS,
+      SCORE_DISK_RADIUS + 1,
+      SCORE_DISK_MAX_RADIUS,
+    ]);
+    // And only the survivor's rings reached the store.
+    expect(events.filter((e) => e === "snapshot")).toHaveLength(3);
+  });
+});
+
+describe("createRefreshCycle — an error stops the widening (W16)", () => {
+  it("does not let a later ring erase a message the user needs to read", async () => {
+    // A DEFECT W16 INTRODUCED, fixed and pinned. Publishing a snapshot returns
+    // the loading phase to `idle`, which erases whatever is on the status line.
+    // With one emission per refresh that window was negligible; with three it
+    // spans the whole widening, so an error arriving mid-run — a refused
+    // geolocation permission was the real case — got wiped by the next ring and
+    // the demo looked like it had done nothing at all.
+    //
+    // Found by an e2e that had nothing to do with scoring, which is the argument
+    // for keeping end-to-end tests of things that "cannot" interact.
+    const seen: number[] = [];
+    const { store, actions, refresh } = setup((_p, category, radius) => {
+      seen.push(radius);
+      // Something fails while the first ring is in flight.
+      if (radius === SCORE_DISK_RADIUS) {
+        queueMicrotask(() => store.dispatch(actions.fetchFailed("denied")));
+      }
+      return Promise.resolve(snapshotAt(category, radius));
+    });
+
+    await refresh();
+
+    // The opening ring was REQUESTED but never published, and no wider ring was
+    // even asked for.
+    expect(seen).toEqual([SCORE_DISK_RADIUS]);
+    expect(selectOsmView(store.getState()).snapshot).toBeUndefined();
+    const view = selectOsmView(store.getState());
+    expect(view.loading.phase).toBe("error");
+    expect(view.loading.message).toContain("denied");
   });
 });

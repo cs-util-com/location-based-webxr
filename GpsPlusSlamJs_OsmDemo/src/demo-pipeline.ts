@@ -115,6 +115,15 @@ export class DemoPipeline {
     position: LatLng,
     category: string,
     signal?: AbortSignal,
+    /**
+     * How many `gridDisk` rings of chunks to score (W16, DEC-R2-30).
+     *
+     * Omitted means the first pass's radius — the narrow, fast answer the user
+     * is actually waiting for. The demo calls this again with wider radii once
+     * that has been drawn, and each call scores only the rings the previous one
+     * did not, so the reach is progressive rather than paid for up front.
+     */
+    radius?: number,
   ): Promise<DemoSnapshot> {
     const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
     const missingTiles: string[] = [];
@@ -153,7 +162,7 @@ export class DemoPipeline {
       throw new DOMException("Aborted", "AbortError");
     }
 
-    this.index.update(position);
+    this.index.update(position, radius);
 
     const threshold = thresholdFor(this.table, category);
     const scoresByCell = this.index.scoresByCell();

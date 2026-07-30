@@ -221,10 +221,15 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "update": {
-      const { position, category } =
+      const { position, category, radius } =
         payload as WorkerCalls["update"]["request"];
       const { pipeline } = requireState();
-      const snapshot = await pipeline.update(position, category, signal);
+      const snapshot = await pipeline.update(
+        position,
+        category,
+        signal,
+        radius,
+      );
       return {
         snapshot,
         mesh: buildMesh(

@@ -27,6 +27,8 @@
  * @see refresh-cycle.ts.md
  */
 
+import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
+
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import { selectOsmView, type DemoStore } from "./osm-store.js";
 import type { TransferableMesh, UpdateResult } from "./worker/protocol.js";
@@ -41,10 +43,31 @@ import type { TransferableMesh, UpdateResult } from "./worker/protocol.js";
 interface RefreshWorker {
   call(
     kind: "update",
-    payload: { position: { lat: number; lng: number }; category: string },
+    payload: {
+      position: { lat: number; lng: number };
+      category: string;
+      radius: number;
+    },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
 }
+
+/**
+ * The ring radii one refresh scores, in order (W16, DEC-R2-30).
+ *
+ * DERIVED, not listed. The two constants are the decision; a hand-written
+ * `[2, 3, 4]` would be a third place the radius lives and the one that silently
+ * disagrees when either constant moves.
+ *
+ * The FIRST entry is the full original working set, and that is the requirement
+ * rather than an accident of ordering: the user waits for the first answer and
+ * for nothing else, so progressive scoring must not make it later. Starting at
+ * ring 0 to make the steps uniform would do exactly that.
+ */
+const PROGRESSIVE_RADII: readonly number[] = Array.from(
+  { length: SCORE_DISK_MAX_RADIUS - SCORE_DISK_RADIUS + 1 },
+  (_, step) => SCORE_DISK_RADIUS + step,
+);
 
 /** The store handles the cycle writes through. */
 export interface StoreAccess {
@@ -93,25 +116,59 @@ export function createRefreshCycle(
     );
 
     try {
-      const { snapshot, mesh } = await worker.call(
-        "update",
-        { position, category },
-        { signal },
-      );
-      // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the
-      // call before it resolves, but there is a real race: if the worker's reply
-      // has already landed when the newer input arrives, the promise is already
-      // settled and the cancellation has nothing left to cancel. Without this
-      // guard that snapshot would be dispatched — a visible flash of the previous
-      // position before the current one replaces it.
-      if (signal.aborted) return;
-      // Mesh FIRST, then dispatch. The 3D view draws from a snapshot
-      // subscription, so a dispatch before the mesh is in place would draw the
-      // new snapshot's cells over the PREVIOUS mesh — one frame of buildings
-      // belonging to somewhere else, which is the class of disagreement the
-      // store was introduced to make impossible.
-      onMesh(mesh);
-      store.dispatch(actions.snapshotReady(snapshot));
+      // RING BY RING (W16). Each pass widens the scored disk and publishes what
+      // it has, so the map fills outward instead of appearing all at once after
+      // the widest pass. `AffordanceIndex.update` sorts nearest-first precisely
+      // so an interrupted run has done the most useful work first; this is the
+      // interruption it was written for.
+      //
+      // KNOWN COST, recorded rather than hidden: every pass rebuilds the whole
+      // mesh, and only the region slabs actually change with the radius — the
+      // buildings, trees, roads and plates are identical each time. Splitting the
+      // reply so later passes carry only what grew is a real improvement and a
+      // follow-up, not a correctness issue; the work is in the worker.
+      for (const radius of PROGRESSIVE_RADII) {
+        const { snapshot, mesh } = await worker.call(
+          "update",
+          { position, category, radius },
+          { signal },
+        );
+        // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the
+        // call before it resolves, but there is a real race: if the worker's reply
+        // has already landed when the newer input arrives, the promise is already
+        // settled and the cancellation has nothing left to cancel. Without this
+        // guard that snapshot would be dispatched — a visible flash of the previous
+        // position before the current one replaces it.
+        //
+        // It also ENDS THE LOOP, which is the other half of the guarantee: the
+        // remaining rings belong to a place the user has left, and scoring them
+        // would spend the worker on ground nobody is looking at.
+        if (signal.aborted) return;
+        // AN ERROR ON SCREEN STOPS THE WIDENING, and this is a defect W16
+        // introduced rather than defensive tidiness. Publishing a snapshot
+        // returns the loading phase to `idle`, which erases whatever message is
+        // showing. With one emission per refresh that window was negligible;
+        // with three it spans the whole widening, so an error arriving in the
+        // middle of it — a refused geolocation permission was the real case —
+        // was wiped off the status line by the next ring, and the demo looked
+        // like it had done nothing at all.
+        //
+        // CHECKED HERE, immediately before publishing, rather than at the top of
+        // the pass. An error can arrive while a ring is already in flight, and
+        // that ring's own dispatch is then what erases it — a top-of-loop check
+        // runs too early to see it.
+        //
+        // `fetchStarted` clears any earlier error at the top of the run, so an
+        // error visible here always belongs to THIS run.
+        if (selectOsmView(store.getState()).loading.phase === "error") return;
+        // Mesh FIRST, then dispatch. The 3D view draws from a snapshot
+        // subscription, so a dispatch before the mesh is in place would draw the
+        // new snapshot's cells over the PREVIOUS mesh — one frame of buildings
+        // belonging to somewhere else, which is the class of disagreement the
+        // store was introduced to make impossible.
+        onMesh(mesh);
+        store.dispatch(actions.snapshotReady(snapshot));
+      }
     } catch (error) {
       store.dispatch(actions.fetchFailed(messageOf(error)));
     }

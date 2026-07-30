@@ -141,7 +141,20 @@ export interface WorkerCalls {
     readonly result: InitResult;
   };
   readonly update: {
-    readonly request: { readonly position: LatLng; readonly category: string };
+    readonly request: {
+      readonly position: LatLng;
+      readonly category: string;
+      /**
+       * Rings of chunks to score (W16). Omitted means the first pass's radius.
+       *
+       * The progressive path is repeated `update` calls with a growing radius
+       * rather than one call that streams — the RPC is request/response, and a
+       * streaming reply would need a second channel plus its own ordering and
+       * abort semantics. Repeated calls get all of that from `latestOnly` for
+       * free, and a superseded ring is simply a call that never happens.
+       */
+      readonly radius?: number;
+    };
     readonly result: UpdateResult;
   };
   readonly explain: {

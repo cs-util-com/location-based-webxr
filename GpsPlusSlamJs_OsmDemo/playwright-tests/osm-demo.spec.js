@@ -811,6 +811,11 @@ test.describe("explaining one cell", () => {
     });
     test.skip(other === "", "rule table declares only one category");
     await page.locator("#category").selectOption(other);
+    // A category change starts its OWN progressive refresh (W16), and the panel
+    // is re-explained on each ring. Capturing state before that settles races
+    // three republishes — which is what made this test flaky in the suite while
+    // passing standalone.
+    await waitForRefresh(page);
 
     await expect(panel).toBeVisible();
     // Re-explained in the NEW category, not left showing the old answer.

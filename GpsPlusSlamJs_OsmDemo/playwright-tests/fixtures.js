@@ -19,6 +19,7 @@
  * seam inside the app would have been easier and would have tested the seam.
  */
 
+import { expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { dirname, join } from "node:path";
@@ -200,6 +201,41 @@ export async function waitForRefresh(page) {
     .filter({ hasText: /\d+ cells|Failed|unavailable/ })
     .first()
     .waitFor({ state: "visible", timeout: 60000 });
+
+  // AND THEN WAIT FOR THE WIDENING TO SETTLE (W16). Scoring is progressive: the
+  // first emission is the ring-2 working set and rings 3 and 4 follow, each
+  // republishing a larger snapshot. So the status line appearing no longer means
+  // the refresh has FINISHED — only that it has started delivering.
+  //
+  // Without this, every test capturing state after this helper races the
+  // widening, and three did, in three unrelated ways: a cell clicked in ring 2
+  // was re-rendered before the click landed, a selection was dropped by a later
+  // republish, and a pixel comparison caught two different rings. None of them
+  // was about scoring, which is why the helper is the right place to fix it
+  // rather than each call site.
+  //
+  // QUIESCENCE rather than a ring counter: it needs no new instrumentation and
+  // stays correct if the number of rings ever changes.
+  // THREE consecutive identical reads, not two, and the interval is pinned.
+  // Two reads 100 ms apart can both land in the gap between rings and report a
+  // settled scene that is still growing — which showed up as a Leaflet popup
+  // being closed by `clearLayers()` on the next republish, and as a frame
+  // captured mid-widening. Three reads at 250 ms span 500 ms, comfortably wider
+  // than the gap.
+  let previous = "";
+  let stableReads = 0;
+  await expect
+    .poll(
+      async () => {
+        const current = (await page.locator("#status").textContent()) ?? "";
+        stableReads =
+          current !== "" && current === previous ? stableReads + 1 : 0;
+        previous = current;
+        return stableReads;
+      },
+      { timeout: 30000, intervals: [250] },
+    )
+    .toBeGreaterThanOrEqual(3);
 }
 
 /**
