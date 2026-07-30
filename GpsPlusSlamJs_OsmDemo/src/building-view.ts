@@ -20,6 +20,7 @@ import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 
 import type { CellMesh } from "./cell-mesh.js";
 import type { Heightfield } from "./heightfield.js";
+import { heightRampColours } from "./height-ramp.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import { SKY_GRADIENT_ROWS, skyGradientPixels } from "./sky-gradient.js";
@@ -122,6 +123,21 @@ export class BuildingView {
   private readonly sky: THREE.DataTexture;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
+  /** The ground's normal look, held so the debug ramp can be switched back off. */
+  private readonly groundMaterial: THREE.Material;
+  /**
+   * The height-ramp look (W24).
+   *
+   * UNLIT (`MeshBasicMaterial`) on purpose, and this is the whole reason it is a
+   * separate material rather than `vertexColors` on the existing one. A lit
+   * material MULTIPLIES the vertex colour by the incoming light, so the ramp would
+   * be modulated by the very shading the ramp exists to see past — dark ground in
+   * shadow would read as low, which is precisely the misreading this layer is here
+   * to eliminate.
+   */
+  private readonly groundRampMaterial: THREE.MeshBasicMaterial;
+  /** Whether the ramp is showing, so a terrain update knows to recolour. */
+  private groundDebug = false;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
@@ -253,6 +269,10 @@ export class BuildingView {
       }),
     );
     this.ground.rotation.x = -Math.PI / 2;
+    this.groundMaterial = this.ground.material;
+    this.groundRampMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+    });
     this.scene.add(this.ground);
 
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.5, 4000);
@@ -335,7 +355,54 @@ export class BuildingView {
     }
     attribute.needsUpdate = true;
     this.ground.geometry.computeVertexNormals();
+    // The ramp is normalised over the field's own range, so a new field is a new
+    // range: leaving the old colours would show the PREVIOUS position's relief
+    // over this position's ground, which is the half-swapped scene this demo has
+    // twice had to engineer away.
+    if (this.groundDebug) this.applyGroundRamp();
     this.requestFrame();
+  }
+
+  /**
+   * Shows or hides the terrain height ramp (W24, DEC-R2-25).
+   *
+   * A DIAGNOSTIC view, not a change to the look DEC-R2-1 chose: that decision
+   * rejected a hypsometric ramp as the PRIMARY appearance and said nothing about a
+   * debug layer. What it buys is the answer to "did the DEM load, or is this place
+   * just flat?" — a question `terrain ±N m` in the status line is currently
+   * carrying alone, and which a picture answers better.
+   */
+  setGroundDebug(enabled: boolean): void {
+    if (enabled === this.groundDebug) return;
+    this.groundDebug = enabled;
+    if (enabled) this.applyGroundRamp();
+    this.ground.material = enabled
+      ? this.groundRampMaterial
+      : this.groundMaterial;
+    // On demand rendering: without this the swap is invisible until the camera
+    // moves, which is finding R2-3 in a new place.
+    this.requestFrame();
+  }
+
+  /**
+   * Writes a `color` attribute from the plane's current displaced heights.
+   *
+   * The heights are read back out of the POSITION buffer rather than kept
+   * alongside it, so the colours cannot disagree with the surface they describe —
+   * there is one source of truth and it is the geometry that is actually drawn.
+   * The plane is built in its own XY space, so height lives in `z`.
+   */
+  private applyGroundRamp(): void {
+    const positions = this.ground.geometry.getAttribute("position")
+      .array as Float32Array;
+    const heights = new Float32Array(positions.length / 3);
+    for (let i = 0; i < heights.length; i += 1) {
+      heights[i] = positions[i * 3 + 2] ?? Number.NaN;
+    }
+    this.ground.geometry.setAttribute(
+      "color",
+      new THREE.BufferAttribute(heightRampColours(heights), 3),
+    );
   }
 
   /**
@@ -571,6 +638,7 @@ export class BuildingView {
     // small, but it is also referenced by `scene.background` AND
     // `scene.environment`, so leaving it behind keeps the whole scene reachable.
     this.sky.dispose();
+    this.groundRampMaterial.dispose();
     if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
     this.cellMesh = undefined;
     this.renderer.dispose();

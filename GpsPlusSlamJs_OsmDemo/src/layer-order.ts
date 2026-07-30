@@ -53,9 +53,15 @@ export function groundLift(layer: LayerKind): number {
       return STEP_M * 3;
     case "cells":
       return STEP_M * 4;
+    // Nothing to lift. Buildings, trees and POI markers stand up from the ground
+    // and are separated by their own geometry. `terrainDebug` is a different
+    // reason for the same answer: it re-colours the ground plane IN PLACE rather
+    // than adding a surface above it, so a lifted copy would z-fight with the very
+    // plane it replaces.
     case "buildings":
     case "trees":
     case "poi":
+    case "terrainDebug":
       return 0;
   }
 }

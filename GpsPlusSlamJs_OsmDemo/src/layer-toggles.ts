@@ -52,6 +52,8 @@ function labelFor(layer: LayerKind): string {
       return "roads";
     case "poi":
       return "POI";
+    case "terrainDebug":
+      return "height ramp";
   }
 }
 

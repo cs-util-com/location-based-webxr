@@ -39,6 +39,9 @@ describe("the layer set", () => {
       "plates",
       "roads",
       "poi",
+      // W24's diagnostic. Last because it is the only entry that answers a
+      // question about the DATA rather than showing a thing that is in the world.
+      "terrainDebug",
     ]);
   });
 

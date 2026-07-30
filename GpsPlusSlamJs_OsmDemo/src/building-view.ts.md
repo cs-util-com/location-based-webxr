@@ -7,17 +7,24 @@ map scored.
 
 ## Public API
 
-- `class BuildingView` — `render(mesh: TransferableMesh): BuildingStats` (the geometry is built in the WORKER now; this file only turns typed arrays into three.js objects, which is what its header always claimed it was for),
-  `renderCells(mesh)`, `setTerrain(field | undefined)`, `clearScene()`,
-  `resize()`, `dispose()`. Navigation is `MapControls`, attached internally;
-  there is nothing to call.
+- `class BuildingView` — `render(mesh: TransferableMesh, layers?: MeshLayers): BuildingStats`
+  (the geometry is built in the WORKER now; this file only turns typed arrays
+  into three.js objects, which is what its header always claimed it was for),
+  `renderCells(mesh)`, `setTerrain(field | undefined)`,
+  `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`.
+  Navigation is `MapControls`, attached internally; there is nothing to call.
 - `TERRAIN_EXTENT_M` — half-width of the ground plane and of the terrain sampled
-  under it (300 m, i.e. a 600 m plane — DEC-15).
-- `interface BuildingStats` — `volumes`, `parts`, `triangles`,
-  `guessedHeights`, `approximateRoofs`, `trees`
-- `treeConePosition(placement): [x, y, z]` — the scene position of one tree's
-  cone, from its ENU placement. Exported because it is the only arithmetic in
-  the draw loop and therefore the only part of it provable without a GPU.
+  under it. **1400 m, i.e. a 2.8 km plane (DEC-R2-8, which overrides DEC-15's
+  600 m).**
+- `TERRAIN_SPACING_M` — 12 m, the Terrarium z13 pixel pitch at this latitude.
+- `MeshLayers` and `BuildingStats` — **re-exported from `mesh-layers.ts`**, which
+  owns them because it owns what they describe. `BuildingStats` is `volumes`,
+  `parts`, `triangles`, `guessedHeights`, `approximateRoofs`, `trees`, `plates`,
+  `plateTriangles`.
+- `treeConePosition(placement): [x, y, z]` — also re-exported from
+  `mesh-layers.ts`. The scene position of one tree's cone, from its ENU
+  placement; kept separate because it is the only arithmetic in the draw loop and
+  therefore the only part of it provable without a GPU.
 
 ## Invariants & assumptions
 
@@ -69,6 +76,9 @@ map scored.
     W11 recorded as the plates "known gap".
   - PMREM-processing the gradient does **not** rescue it: the texture is one
     pixel wide, which is degenerate for the equirect-to-cube-UV projection.
+  - Three other comments in the tree repeated the same wrong claim and were
+    corrected with it: `sky-gradient.ts`'s header, the `sky` field docstring, and
+    the constructor comment. All three told the next reader to re-add it.
   - The sky-tinted fill the environment map was contributing now comes from a
     `HemisphereLight` whose colours match the gradient's horizon and the ground —
     a light rather than a texture the PBR shader has to sample, so there is no
@@ -155,3 +165,33 @@ status line says "N cells", but the startup terrain load schedules its own frame
 through `setTerrain`, and that frame can land after the resize and repaint for a
 reason unrelated to `resize()`. This was observed — the test passed once against
 unfixed code before the wait was added.
+
+## The terrain height ramp (W24, DEC-R2-25)
+
+`setGroundDebug(enabled)` swaps the ground plane between its normal reflective
+material and a height ramp. `height-ramp.ts` owns the colour arithmetic; this
+file owns the material swap and when the colours are refreshed.
+
+- **The ramp material is UNLIT (`MeshBasicMaterial`), and that is why it is a
+  second material rather than `vertexColors` on the existing one.** A lit
+  material multiplies the vertex colour by the incoming light, so the ramp would
+  be modulated by exactly the shading it exists to see past — ground in shadow
+  would read as low, the precise misreading the layer is here to eliminate.
+- **The heights are read back out of the POSITION buffer**, not kept alongside
+  it, so the colours cannot disagree with the surface they describe. There is one
+  source of truth and it is the geometry actually being drawn. The plane is built
+  in its own XY space, so height lives in `z`.
+- **`setTerrain` recolours while the ramp is showing.** The ramp is normalised
+  over the field's own range, so a new field is a new range; leaving the old
+  colours would show the previous position's relief over this position's ground —
+  the half-swapped scene this demo has twice had to engineer away.
+- **It has no entry in the `layer-order.ts` ladder (returns 0).** It re-colours
+  the ground plane in place rather than adding a surface above it, so there is
+  nothing to lift; a lifted copy would z-fight with the plane it replaces.
+- **`main.ts` applies it unconditionally, ahead of the mesh layers.** It
+  describes the ground plane, which exists whether or not any mesh layer is on —
+  behind `wantsMeshLayers` it would vanish when the user switched everything else
+  off, which is when a diagnostic is most likely to be wanted.
+- **DEC-R2-1 is not violated.** That decision rejected a hypsometric ramp as the
+  _primary_ look and said nothing about a debug view; the layer defaults to off
+  and the e2e asserts it can be switched back off again.

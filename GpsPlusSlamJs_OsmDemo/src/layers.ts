@@ -41,6 +41,10 @@ export const ALL_LAYERS = [
   "plates",
   "roads",
   "poi",
+  // A DIAGNOSTIC layer, not part of the scene's look (DEC-R2-25, W24). Last in
+  // the list because it is the only entry that answers a question about the data
+  // rather than showing a thing that is in the world.
+  "terrainDebug",
 ] as const;
 
 export type LayerKind = (typeof ALL_LAYERS)[number];
@@ -68,7 +72,8 @@ function setOf(enabled: Iterable<LayerKind>): LayerSet {
  * no before to compare the after against.
  *
  * `areas` is off because regions had no fillable representation until W14/W15;
- * `plates`, `roads` and `poi` are off because they have no builder yet.
+ * `plates`, `roads` and `poi` are off because they have no builder yet, and
+ * `terrainDebug` is off because it is a diagnostic the reader asks for.
  */
 export const DEFAULT_LAYERS: LayerSet = setOf(["cells", "buildings", "trees"]);
 

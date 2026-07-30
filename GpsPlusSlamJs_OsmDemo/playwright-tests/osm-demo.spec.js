@@ -365,7 +365,14 @@ test.describe("the layer toggles", () => {
     await waitForRefresh(page);
 
     // Generated from ALL_LAYERS, so a new builder cannot arrive without a switch.
-    await expect(page.locator("#layers input[type=checkbox]")).toHaveCount(7);
+    //
+    // The number is DUPLICATED here rather than derived, because this file is
+    // plain JS running in node and `layers.ts` is TypeScript served by vite —
+    // there is no import that reaches it. The duplication is tolerable precisely
+    // because it fails loudly and immediately: adding `terrainDebug` turned this
+    // red on the very next gate run, which is the whole value of asserting a
+    // count. `layers.test.ts` pins the actual list.
+    await expect(page.locator("#layers input[type=checkbox]")).toHaveCount(8);
 
     // The defaults reproduce the picture the demo shipped with — which is what
     // makes the migration of buildings/trees through the registry verifiable.
@@ -1257,6 +1264,87 @@ test.describe("the 3D view", () => {
     // the assertion that matters is "not zero", because zero is what a shader that
     // failed to compile produces.
     await expect.poll(buildingPixels, REPAINT).toBeGreaterThan(2000);
+  });
+
+  test("shows the terrain as a height ramp when that layer is on", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS (W24, DEC-R2-25). The ramp exists to answer "did the
+    // DEM load, or is this place simply flat?" — a question DEC-R2-1's deliberately
+    // near-flat look leaves to a single number in the status line. A ramp that is
+    // built but never reaches the screen answers nothing, and that is not a
+    // hypothetical here: the plates layer spent ten work items in exactly that
+    // state, counted and reported and completely invisible.
+    //
+    // So this asserts PIXELS, and asserts the ramp's own colours rather than "the
+    // canvas changed". The ramp is saturated by construction and the scene it
+    // replaces is not — every other surface in this view is a desaturated blue-grey
+    // — so counting strongly-saturated pixels distinguishes the ramp from any
+    // amount of ordinary repainting.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // Counts the ramp's OWN two ends, not "saturated pixels".
+    //
+    // The first version of this counted saturation, and it would have passed on a
+    // ground rendered entirely in `NO_DATA_RGB` magenta — which is the exact
+    // failure the ramp exists to make visible, so the test would have been green
+    // on the worst possible output. Measured before it was rewritten: the real
+    // ramp's floor renders as rgb(64,64,160) and its top as rgb(224,224,224),
+    // after three's linear-to-sRGB output conversion.
+    //
+    // Asserting BOTH ends is what makes it a ramp rather than a flat wash: cool
+    // for the low ground, bright and neutral for the high ground. Magenta
+    // (255,0,255) satisfies neither — blue does not lead red, and green is 0.
+    const rampEnds = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return { cool: -1, bright: -1 };
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return { cool: -1, bright: -1 };
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let cool = 0;
+        let bright = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] ?? 0;
+          const g = data[i + 1] ?? 0;
+          const b = data[i + 2] ?? 0;
+          // Blue leads BOTH others by a clear margin — the ramp's floor. The sky
+          // gradient is also blue-ish but far less separated, and the untinted
+          // ground is a near-neutral blue-grey.
+          if (b > r + 60 && b > g + 60) cool += 1;
+          // Bright and near-neutral — the ramp's top stop.
+          if (r > 190 && g > 190 && b > 170) bright += 1;
+        }
+        return { cool, bright };
+      });
+
+    const before = await rampEnds();
+    // The untinted scene has essentially none of either.
+    expect(before.cool).toBeLessThan(2000);
+
+    await page.getByRole("checkbox", { name: "height ramp" }).check();
+
+    // Both ends present, so the ramp spans rather than washing out. Generous
+    // floors: what this guards against produces zero of one or both.
+    await expect
+      .poll(async () => (await rampEnds()).cool, REPAINT)
+      .toBeGreaterThan(20_000);
+    await expect
+      .poll(async () => (await rampEnds()).bright, REPAINT)
+      .toBeGreaterThan(500);
+
+    // And it goes away again: a debug layer that cannot be switched off is a
+    // change to the primary look, which is what DEC-R2-1 forbids.
+    await page.getByRole("checkbox", { name: "height ramp" }).uncheck();
+    await expect
+      .poll(async () => (await rampEnds()).cool, REPAINT)
+      .toBeLessThan(2000);
   });
 
   test("has a graded sky, so the ground reads against it", async ({ page }) => {

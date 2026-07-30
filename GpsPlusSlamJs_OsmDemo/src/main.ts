@@ -375,6 +375,11 @@ async function main(): Promise<void> {
     // rebuilds the building and tree geometry it did not need to. Distinguishing
     // "layers changed" from "only the draw filter changed" would avoid it and is a
     // follow-up, not a correctness issue.
+    // Applied before the mesh, and unconditionally: the ramp re-colours the
+    // GROUND PLANE, which exists whether or not any mesh layer is on. Putting it
+    // behind `wantsMeshLayers` would make switching every other layer off also
+    // silently switch off the diagnostic.
+    buildingView.setGroundDebug(isLayerEnabled(layers, "terrainDebug"));
     // ASKED OF THE TABLE, not hand-listed. Both of these used to enumerate the
     // three mesh layers by name, so adding one meant remembering two places and
     // forgetting either gave a layer that toggles in the UI but never draws.
