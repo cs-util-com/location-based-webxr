@@ -239,6 +239,39 @@ export async function waitForRefresh(page) {
 }
 
 /**
+ * Asserts the 3D canvas is laid out at its CONTAINER's size (finding R3-2, W1).
+ *
+ * WHY THIS IS A SHARED HELPER AND NOT TWO COPIES. The same assertion has to run
+ * at two device pixel ratios and `test.use` is per-describe, so the two callers
+ * are two `describe` blocks. The interesting part is the comparison, and it
+ * belongs in one place.
+ *
+ * WHAT IT CATCHES. `WebGLRenderer.setSize(w, h, false)` sets the canvas
+ * width/height ATTRIBUTES to `size x devicePixelRatio` and deliberately does not
+ * write `canvas.style`. With no CSS rule for the canvas, the element then lays
+ * out at its attribute size in CSS pixels — 2-3x its container on a phone, and
+ * 1.25-1.5x on a Windows desktop at 125-150 % scaling. Everything still renders
+ * correctly into the drawing buffer, so every pixel assertion in this suite
+ * stays green; what breaks is that most of the picture is outside the visible
+ * box, taking the projection centre — and with it every orbit pivot — off screen.
+ *
+ * The bounding box is in CSS pixels, which is exactly the comparison that
+ * matters: the drawing buffer is SUPPOSED to be larger than the box.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function expectCanvasFillsContainer(page) {
+  const container = await page.locator("#scene").boundingBox();
+  const canvas = await page.locator("#scene canvas").boundingBox();
+  if (container === null || canvas === null) {
+    throw new Error("no bounding box for #scene or its canvas");
+  }
+  // A pixel of tolerance, not exactness: a fractional container size rounds.
+  expect(Math.abs(canvas.width - container.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(canvas.height - container.height)).toBeLessThanOrEqual(1);
+}
+
+/**
  * A 2x2 Terrarium DEM tile with four distinct heights.
  *
  * ENCODED HERE rather than checked in as a binary, because the interesting part

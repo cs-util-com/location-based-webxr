@@ -57,10 +57,27 @@ map scored.
   resize leaves the pane blank until something else schedules a frame. The next
   thing that did was the user dragging the camera — which is how the bug was
   reported: the picture returns the moment you touch it. **Any new caller that
-  changes the canvas size must schedule a frame**; the two that exist are the
-  `window` resize listener and the mobile sheet drag, and the sheet drag is the
-  harsh one because it calls `resize()` on every pointer move (coalescing in
-  `requestFrame` is what keeps that to one frame per animation frame).
+  changes the canvas size must schedule a frame**; the callers are the container
+  `ResizeObserver`, the mobile sheet drag and the header collapse, and the sheet
+  drag is the harsh one because it calls `resize()` on every pointer move
+  (coalescing in `requestFrame` is what keeps that to one frame per animation
+  frame).
+- **The CANVAS is sized by CSS and the DRAWING BUFFER by `setSize` (W1, finding
+  R3-2), and the two must not both be driven from three.** `setSize(w, h, false)`
+  writes the width/height attributes — `size x devicePixelRatio`, the buffer —
+  and skips `canvas.style`; `index.html`'s `#scene canvas { width: 100%; height:
+100% }` supplies the layout box. With neither, the element laid out at its
+  attribute size: 2-3x its container on a phone, which puts the projection centre
+  (and every orbit pivot) outside the visible box while every pixel assertion
+  stays green. Passing `updateStyle: true` as well would write an inline style
+  that beats the stylesheet, so the rule would silently stop being the mechanism.
+- **The size trigger is a `ResizeObserver` on the CONTAINER, not a `window`
+  listener.** The container is the `1fr` row of a `auto 1fr` grid, so it shrinks
+  when the header grows — and the header grows with no window resize at all, as
+  soon as the status line fills in and wraps. Measured at 1280x800: the drawing
+  buffer sat **109 px taller than its container** for the whole session, on a
+  stale camera aspect. The observer covers window resize, rotation, the sheet
+  drag and the header collapse in one place.
 - **The sky texture is a BACKGROUND only. Never assign it to
   `scene.environment`.** W20 did, and it took the entire scene down: three.js
   routes any environment map through its CubeUV path, which expects a
@@ -131,8 +148,8 @@ map scored.
   - Adding a debug axis or a north marker closes the loop that let it through.
     Tracked in
     `GpsPlusSlamJs_Docs/docs/2026-07-29-0127-osm-perf-round-followups.md`.
-- **The resize listener is held in a field and removed in `dispose()`.** An
-  anonymous inline listener outlives disposal and then calls `setSize()` /
+- **The `ResizeObserver` is held in a field and disconnected in `dispose()`.** An
+  observer that outlives disposal calls `setSize()` /
   `updateProjectionMatrix()` on a renderer whose GL context has been released.
   Harmless while nothing calls `dispose()`, but the method exists to be called.
 

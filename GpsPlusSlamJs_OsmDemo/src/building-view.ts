@@ -137,7 +137,23 @@ export class BuildingView {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera;
-  private readonly onWindowResize: () => void;
+  /**
+   * Watches the CONTAINER, not the window (W1, finding R3-2).
+   *
+   * The container is a `1fr` row of a `auto 1fr` grid, so it shrinks whenever the
+   * header grows — and the header grows on its own, without any window resize,
+   * the moment the status line goes from "Loading the rule table…" to the
+   * eight-fact string plus the legend and wraps to more lines. A window listener
+   * cannot see that: measured at 1280x800, the drawing buffer stayed **109 px
+   * taller than its container** for the whole session, stretching the picture and
+   * leaving the camera on a stale aspect ratio.
+   *
+   * A `ResizeObserver` covers every cause at once — window resize, phone
+   * rotation, the mobile sheet drag, the header collapsing — so the explicit
+   * `resize()` calls those paths still make are belt-and-braces rather than the
+   * mechanism.
+   */
+  private readonly containerResize: ResizeObserver;
   private readonly group = new THREE.Group();
   private readonly container: HTMLElement;
   private readonly controls: MapControls;
@@ -206,8 +222,14 @@ export class BuildingView {
       // the only way to assert this view drew anything at all: the e2e suite
       // reads the pixels and counts the non-background ones. A 3D pane that
       // silently renders nothing looks exactly like a 3D pane with no
-      // buildings nearby. (Still needed now that there IS a rAF loop — the
-      // readback races the next frame otherwise.)
+      // buildings nearby.
+      //
+      // NEEDED PRECISELY BECAUSE THERE IS NO PERMANENT rAF LOOP — see
+      // `requestFrame`. Frames are scheduled on demand, so by the time a test
+      // reads the canvas nothing is repainting, and without this the buffer has
+      // already been cleared after the last composite. (This comment used to say
+      // the opposite — "now that there IS a rAF loop" — which contradicted
+      // `requestFrame`'s own docstring and the measurement behind it.)
       preserveDrawingBuffer: true,
     });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
@@ -355,13 +377,13 @@ export class BuildingView {
     this.controls.update();
 
     this.resize();
-    // Held rather than passed inline, so `dispose()` can actually remove it.
-    // An anonymous listener outlives disposal and then calls `setSize()` and
+    // Held rather than constructed inline, so `dispose()` can actually
+    // disconnect it. An observer that outlives disposal calls `setSize()` and
     // `updateProjectionMatrix()` on a renderer whose GL context is gone.
-    this.onWindowResize = () => {
+    this.containerResize = new ResizeObserver(() => {
       this.resize();
-    };
-    window.addEventListener("resize", this.onWindowResize);
+    });
+    this.containerResize.observe(this.container);
     // Repaint when the camera moves — and ONLY then. See `requestFrame`.
     this.controls.addEventListener("change", () => {
       this.requestFrame();
@@ -816,7 +838,7 @@ export class BuildingView {
     this.container.removeEventListener("pointerdown", this.onPointerStart);
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
-    window.removeEventListener("resize", this.onWindowResize);
+    this.containerResize.disconnect();
     this.clear();
     // `clear()` only walks `this.group`. The ground and the affordance grid are
     // deliberately added straight to the scene — so that rebuilding the
@@ -826,8 +848,10 @@ export class BuildingView {
     // rAF handle is that this method actually cleans up.
     disposeMesh(this.ground);
     // The sky is a GPU texture like any other and nothing else frees it. It is
-    // small, but it is also referenced by `scene.background` AND
-    // `scene.environment`, so leaving it behind keeps the whole scene reachable.
+    // small, but `scene.background` holds it, so leaving it behind keeps the
+    // whole scene reachable. (It is no longer also `scene.environment` — that
+    // assignment took every `MeshStandardMaterial` off screen and was removed;
+    // this comment still named it.)
     this.sky.dispose();
     this.groundRampMaterial.dispose();
     this.heightTexture?.dispose();

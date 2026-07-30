@@ -38,7 +38,12 @@ import { test, expect } from "@playwright/test";
  */
 const REPAINT = { timeout: 15000 };
 
-import { AT_FIXTURE, stubNetwork, waitForRefresh } from "./fixtures.js";
+import {
+  AT_FIXTURE,
+  expectCanvasFillsContainer,
+  stubNetwork,
+  waitForRefresh,
+} from "./fixtures.js";
 
 test.describe("the demo boots", () => {
   test("loads the rule table and populates the category picker", async ({
@@ -2016,5 +2021,45 @@ test.describe("caching and failure", () => {
     // `osm-view-slice` tests, which assert `fetchFailed` clears the snapshot
     // while `nonFatalError` leaves it alone.
     await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
+  });
+});
+
+/**
+ * W1 / finding R3-2 — the canvas must lay out at its container's size.
+ *
+ * TWO DESCRIBE BLOCKS because `test.use` is per-describe and the whole point is
+ * to run the same assertion at two device pixel ratios: the bug is identically
+ * zero at dpr 1, which is why every project in this suite ran at dpr 1 for the
+ * whole of rounds 1 and 2 and never saw it.
+ */
+test.describe("the 3D canvas at a high device pixel ratio", () => {
+  // A phone: 390x780 CSS pixels at dpr 2. Without the fix the canvas element is
+  // 780x1560 CSS pixels inside a 390-wide container.
+  test.use({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 2 });
+
+  test("lays out at its container's size, not at its drawing buffer's", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await expectCanvasFillsContainer(page);
+  });
+});
+
+test.describe("the 3D canvas at dpr 1", () => {
+  test.use({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+
+  test("still lays out at its container's size", async ({ page }) => {
+    // The regression guard for the fix itself: at dpr 1 the attribute size and
+    // the container size coincide, so this passed BEFORE the fix too. It is here
+    // so that a future change which sizes the canvas some third way cannot break
+    // the desktop case while the dpr-2 test keeps passing.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await expectCanvasFillsContainer(page);
   });
 });

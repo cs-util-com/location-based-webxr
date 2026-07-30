@@ -183,6 +183,26 @@
         border-left: 1px solid #2a2f3d;
         position: relative;
       }
+
+      /* THE CANVAS IS SIZED BY CSS, AND ONLY BY CSS (W1, finding R3-2).
+         `WebGLRenderer.setSize(w, h, false)` sets the width/height ATTRIBUTES to
+         `size x devicePixelRatio` — the drawing buffer, which is supposed to be
+         larger — and deliberately does not write `canvas.style`. Without a rule
+         here the element then lays out at its attribute size in CSS pixels: 2-3x
+         its container on a phone, 1.25-1.5x on a Windows desktop at 125-150 %
+         scaling. Everything renders correctly into the buffer, so no pixel test
+         notices; what breaks is that most of the picture falls outside the
+         visible box and the projection centre — every orbit's pivot — goes with
+         it.
+
+         DO NOT ALSO PASS `updateStyle: true`. three then writes
+         `canvas.style.width` INLINE, an inline style beats this rule, and this
+         rule becomes decoration. One mechanism, and it is this one. */
+      #scene canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
       select {
         background: #1b1f2a;
         color: inherit;
