@@ -103,7 +103,8 @@
       "entry": [
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
-        "config/eslint.config.mjs"
+        "config/eslint.config.mjs",
+        "src/worker/demo-worker.ts"
       ],
       "project": [
         "src/**/*.ts"

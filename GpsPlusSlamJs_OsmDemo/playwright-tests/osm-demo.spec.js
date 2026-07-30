@@ -93,6 +93,51 @@ test.describe("the demo boots", () => {
   });
 });
 
+test.describe("the worker", () => {
+  test("is really constructed, and the UI thread is not doing the work", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. Every other test in this suite would pass just as
+    // well if the worker were quietly bypassed and everything ran on the main
+    // thread — they assert on what is drawn, and the drawing is identical either
+    // way. The whole point of the split is WHERE the work happens, and that is
+    // invisible to every assertion except this one.
+    //
+    // Counting `new Worker` rather than timing anything: a timing assertion for
+    // "the UI thread stayed responsive" is exactly the kind of threshold that
+    // passes on a fast machine and flakes in CI.
+    await stubNetwork(page);
+
+    // Installed before any module runs, so the demo's own construction is seen.
+    await page.addInitScript(() => {
+      const w = /** @type {any} */ (window);
+      w.__workers = [];
+      const Real = window.Worker;
+      // @ts-expect-error — deliberately replacing the constructor.
+      window.Worker = class extends Real {
+        constructor(url, options) {
+          w.__workers.push(String(url));
+          super(url, options);
+        }
+      };
+    });
+
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const workers = await page.evaluate(
+      () => /** @type {any} */ (window).__workers,
+    );
+    expect(workers).toHaveLength(1);
+    expect(workers[0]).toContain("demo-worker");
+
+    // And it ANSWERED: the status line's cell count comes back over the RPC
+    // boundary, so a worker that started and then died would fail here rather
+    // than leaving a passing test and a blank page.
+    await expect(page.locator("#status")).toContainText(/\d+ cells/);
+  });
+});
+
 test.describe("the affordance map", () => {
   test("draws res-13 cells over the basemap", async ({ page }) => {
     await stubNetwork(page);

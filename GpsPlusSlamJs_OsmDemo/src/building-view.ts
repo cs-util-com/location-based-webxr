@@ -17,20 +17,11 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
-import {
-  buildBuildings,
-  buildTrees,
-  enuFrameAt,
-  mergeMeshes,
-  type BuildingVolume,
-  type LatLng,
-  type MeshData,
-  type OsmFeature,
-  type TreePlacement,
-} from "gps-plus-slam-osm";
+import { type MeshData, type TreePlacement } from "gps-plus-slam-osm";
 
 import type { CellMesh } from "./cell-mesh.js";
 import type { Heightfield } from "./heightfield.js";
+import type { TransferableMesh } from "./worker/protocol.js";
 
 /**
  * Half-width of the ground plane and of the terrain sampled under it, metres.
@@ -360,42 +351,26 @@ export class BuildingView {
   }
 
   /**
-   * Rebuilds the scene from features around `centre`.
+   * Draws a mesh the WORKER built.
    *
-   * The ENU frame is anchored at the user, not at the tile: mesh coordinates
-   * stay small, which keeps float32 vertex buffers precise where it matters.
+   * WHAT MOVED AND WHY. This method used to take the merged features and call
+   * `buildBuildings`/`buildTrees` itself. Both now run in the worker, because the
+   * features are 28–68 MB and must not cross the boundary to be turned into
+   * geometry that crosses back — the package's mesh output is `Float32Array`
+   * precisely so the BUFFERS can transfer instead (`mesh/extrude.ts` says so).
+   * The ENU frame anchoring and the terrain sampling moved with them.
+   *
+   * So this is now purely "typed arrays in, three.js objects out", which is what
+   * `building-view.ts`'s header always claimed the file was for.
    */
-  render(
-    features: Iterable<OsmFeature>,
-    centre: LatLng,
-    terrain?: Heightfield,
-  ): BuildingStats {
+  render(mesh: TransferableMesh): BuildingStats {
     this.clear();
 
-    const frame = enuFrameAt(centre);
-    const all = [...features];
-    // ONE sample per building, taken at its anchor (`mesh/buildings.ts:176`),
-    // and one per tree. So terrain gives each building a single base height: a
-    // long building across a slope still cuts into the hill at one end and
-    // floats at the other. That is a property of the mesh layer's seam, not of
-    // this call — worth recognising in a screenshot rather than debugging.
-    const groundHeightM =
-      terrain === undefined
-        ? undefined
-        : (position: LatLng) => terrain.heightAt(frame.toEnu(position));
-    const options =
-      groundHeightM === undefined ? { frame } : { frame, groundHeightM };
-    const volumes = buildBuildings(all, options);
-    const trees = buildTrees(all, options);
+    if (mesh.buildings.triangleCount > 0) {
+      this.group.add(this.meshFor(mesh.buildings));
+    }
 
-    // ONE merged geometry for this view. The package's own guidance is to batch
-    // per res-8/res-9 cell rather than per fetch tile, because a batch spanning
-    // 2.8 km defeats frustum culling — but this view shows one working set at a
-    // time and is always wholly on screen, so a single batch is right here.
-    const merged = mergeMeshes(volumes.map((volume) => volume.mesh));
-    if (merged.triangleCount > 0) this.group.add(this.meshFor(merged));
-
-    for (const tree of trees) {
+    for (const tree of mesh.trees) {
       const trunk = new THREE.Mesh(
         new THREE.ConeGeometry(tree.crownDiameterM / 2, tree.heightM, 6),
         new THREE.MeshStandardMaterial({ color: 0x3f7d4a }),
@@ -406,7 +381,14 @@ export class BuildingView {
     }
 
     this.renderer.render(this.scene, this.camera);
-    return statsFor(volumes, merged, trees.length);
+    return {
+      volumes: mesh.volumes,
+      parts: mesh.parts,
+      triangles: mesh.buildings.triangleCount,
+      guessedHeights: mesh.guessedHeights,
+      approximateRoofs: mesh.approximateRoofs,
+      trees: mesh.trees.length,
+    };
   }
 
   /**
@@ -508,32 +490,4 @@ function disposeMesh(mesh: THREE.Mesh): void {
   } else {
     material.dispose();
   }
-}
-
-/**
- * The numbers that make the picture checkable.
- *
- * `guessedHeights` and `approximateRoofs` are the two honesty flags the mesh
- * layer carries, and this view is the only place they ever become visible. The
- * census said 16 % of buildings carry `height` and 12 % a non-flat roof shape —
- * these counters are how that gets confirmed on real data rather than quoted.
- */
-function statsFor(
-  volumes: readonly BuildingVolume[],
-  merged: MeshData,
-  trees: number,
-): BuildingStats {
-  return {
-    volumes: volumes.length,
-    parts: volumes.filter((v) => v.parentFeature !== undefined).length,
-    triangles: merged.triangleCount,
-    guessedHeights: volumes.filter((v) => v.heights.heightIsGuessed).length,
-    // THE REAL FLAG, not a proxy for it. This used to test
-    // `roofShape === 'gabled' || 'hipped'`, which is a different claim: a
-    // gabled roof on an actual rectangle is EXACT, and that is the common case
-    // the package's approximation trade rests on — so the counter meant to
-    // confirm the census against real data was over-reporting every time.
-    approximateRoofs: volumes.filter((v) => v.roofIsApproximate).length,
-    trees,
-  };
 }

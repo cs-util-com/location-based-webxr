@@ -17,12 +17,9 @@
 import { describe, it, expect, vi } from "vitest";
 
 import { createDemoStore, selectOsmView } from "./osm-store.js";
-import {
-  createRefreshCycle,
-  renderSafely,
-  type RefreshPipeline,
-} from "./refresh-cycle.js";
+import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
+import type { TransferableMesh } from "./worker/protocol.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 
@@ -43,14 +40,53 @@ const snapshot = (category: string): DemoSnapshot => ({
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 0 },
 });
 
-function setup(update: RefreshPipeline["update"]) {
+/** An empty mesh — these tests are about the cycle, not about geometry. */
+const NO_MESH: TransferableMesh = {
+  buildings: {
+    positions: new Float32Array(0),
+    normals: new Float32Array(0),
+    indices: new Uint32Array(0),
+    triangleCount: 0,
+    forcedEars: 0,
+  },
+  trees: [],
+  volumes: 0,
+  parts: 0,
+  guessedHeights: 0,
+  approximateRoofs: 0,
+};
+
+/** The producer shape these tests write against: position + category in, snapshot out. */
+type Update = (
+  position: { lat: number; lng: number },
+  category: string,
+) => Promise<DemoSnapshot>;
+
+function setup(update: Update) {
   const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+  /** Records the order of mesh handoffs and dispatches — see the ordering test. */
+  const events: string[] = [];
   const refresh = createRefreshCycle({
     store: demo.store,
     actions: demo.actions,
-    pipeline: { update },
+    // The pipeline moved into the worker, so the cycle now calls over RPC. The
+    // narrow `RefreshWorker` shape is what keeps this test worker-free.
+    worker: {
+      call: async (_kind, payload) => ({
+        snapshot: await update(payload.position, payload.category),
+        mesh: NO_MESH,
+      }),
+    },
+    onMesh: () => {
+      events.push("mesh");
+    },
   });
-  return { ...demo, refresh };
+  demo.store.subscribe(() => {
+    if (selectOsmView(demo.store.getState()).snapshot !== undefined) {
+      if (!events.includes("snapshot")) events.push("snapshot");
+    }
+  });
+  return { ...demo, refresh, events };
 }
 
 describe("createRefreshCycle — the happy path", () => {
@@ -79,6 +115,26 @@ describe("createRefreshCycle — the happy path", () => {
     expect(phases).toContain("fetching");
     expect(selectOsmView(store.getState()).loading.phase).toBe("idle");
     expect(selectOsmView(store.getState()).snapshot?.category).toBe("walkable");
+  });
+
+  it("hands over the mesh BEFORE dispatching the snapshot", async () => {
+    // WHY THIS TEST MATTERS. The mesh cannot live in the store (it is
+    // Float32Array vertex data, which RTK's serialisability scan rejects), so it
+    // is handed to the caller through a callback while the 3D view draws from a
+    // snapshot SUBSCRIPTION. If the dispatch came first, that subscriber would
+    // run with the previous position's mesh still in place and draw one frame of
+    // buildings belonging somewhere else — the exact class of cross-view
+    // disagreement the store was introduced to make impossible.
+    //
+    // Ordering is invisible to every other test here: both orders end with the
+    // same final state, and only the intermediate frame differs.
+    const { refresh, events } = setup(() =>
+      Promise.resolve(snapshot("walkable")),
+    );
+
+    await refresh();
+
+    expect(events).toEqual(["mesh", "snapshot"]);
   });
 
   it("reads the position and category from the store at call time", async () => {

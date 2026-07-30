@@ -26,24 +26,9 @@
  * @see main.ts.md
  */
 
-import {
-  CachingSource,
-  MemoryBlobStore,
-  OverpassSource,
-  loadRuleTable,
-  explainCell,
-  enuFrameAt,
-  TerrariumProvider,
-  TERRARIUM_ATTRIBUTION,
-  browserPngDecoder,
-  type OsmFeature,
-} from "gps-plus-slam-osm";
-import {
-  OpfsOsmBlobStore,
-  openOsmStoreDirectory,
-} from "gps-plus-slam-app-framework/osm-bridge";
+import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
 
-import { DemoPipeline, type DemoSnapshot } from "./demo-pipeline.js";
+import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { describeExtent } from "./fetch-extent.js";
 import { MapView } from "./map-view.js";
@@ -52,7 +37,7 @@ import { DetailsPanel } from "./details-panel.js";
 import { LocateControl } from "./locate-control.js";
 import { attachSheetDrag } from "./sheet-drag.js";
 import { buildCellMesh, EMPTY_CELL_MESH } from "./cell-mesh.js";
-import { type Heightfield } from "./heightfield.js";
+import { heightfieldFrom, type Heightfield } from "./heightfield.js";
 import { createTerrainCycle } from "./terrain-cycle.js";
 import { heatScale } from "./heat-colours.js";
 import {
@@ -62,6 +47,8 @@ import {
 } from "./building-view.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
+import type { TransferableMesh } from "./worker/protocol.js";
+import { createRpcClient, workerTransport } from "./worker/rpc-client.js";
 
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id);
@@ -70,21 +57,25 @@ const el = <T extends HTMLElement>(id: string): T => {
 };
 
 /**
- * OPFS where available, memory otherwise.
+ * The worker, and everything expensive with it.
  *
- * OPFS is the point — a cached res-7 tile is tens of MB and refetching it on
- * every reload would be an abuse of donated infrastructure. But the demo must
- * still run in a browser without it rather than refusing to start.
+ * `new URL(..., import.meta.url)` is the form Vite understands natively, so this
+ * adds no bundler configuration. The data source, the OPFS tile store, the rule
+ * table, the affordance index, the mesh build and the DEM sampling all live on
+ * the other side of it now — see `worker/demo-worker.ts` for why each one had to
+ * move, and note that OPFS is available in workers (with better APIs than on the
+ * main thread), so the tile cache moved with the fetching rather than staying
+ * behind.
  */
-async function makeStore() {
-  try {
-    const root = await navigator.storage.getDirectory();
-    return new OpfsOsmBlobStore({
-      directory: await openOsmStoreDirectory(root),
-    });
-  } catch {
-    return new MemoryBlobStore();
-  }
+function createWorkerClient(onFatal: (message: string) => void) {
+  return createRpcClient(
+    workerTransport(
+      new Worker(new URL("./worker/demo-worker.ts", import.meta.url), {
+        type: "module",
+      }),
+      onFatal,
+    ),
+  );
 }
 
 async function main(): Promise<void> {
@@ -94,36 +85,51 @@ async function main(): Promise<void> {
   const terrainCredit = el("terrain-credit");
 
   status.textContent = "Loading the rule table…";
-  const loaded = await loadRuleTable({});
+
+  /**
+   * Where a worker-level failure goes.
+   *
+   * Indirected through a mutable holder because the worker has to exist before
+   * the store does — the store's initial category comes from the rule table,
+   * which the worker loads. Until the store exists the status line is the only
+   * channel there is; afterwards it becomes `fetchFailed`, because a dead worker
+   * means no data at all and anything still drawn is a claim nothing supports.
+   */
+  let reportFatal = (message: string): void => {
+    status.textContent = `Failed: ${message}`;
+  };
+  const worker = createWorkerClient((message) => {
+    reportFatal(message);
+  });
+  // The rule table is loaded INSIDE the worker, so what comes back is only what
+  // the UI needs: the category list for the picker and the provenance tier. The
+  // table itself stays over there, next to the scorer and `explainCell`, which
+  // are the only things that read it.
+  const loaded = await worker.call("init", {});
   // Which TIER the table came from is worth showing: a demo silently running on
   // the checked-in snapshot looks identical to one running on the live sheet,
   // and they are different claims about what is being judged.
   const tableNote = `rules: ${loaded.tier}${loaded.degradedBecause === undefined ? "" : ` (${loaded.degradedBecause})`}`;
 
-  for (const category of loaded.table.categories) {
+  for (const category of loaded.categories) {
     const option = document.createElement("option");
     option.value = category;
     option.textContent = category;
     categorySelect.append(option);
   }
-  categorySelect.value = loaded.table.categories.includes("walkable")
+  categorySelect.value = loaded.categories.includes("walkable")
     ? "walkable"
-    : (loaded.table.categories[0] ?? "");
+    : (loaded.categories[0] ?? "");
 
-  const source = new CachingSource(
-    new OverpassSource({
-      userAgent: "gps-plus-slam-osm-demo (github.com/cs-util-com)",
-    }),
-    await makeStore(),
-  );
-
-  const pipeline = new DemoPipeline({ source, table: loaded.table });
   const start = parseStartPosition(window.location.search);
 
   const { store, actions, subscribe } = createDemoStore({
     start,
     category: categorySelect.value,
   });
+  reportFatal = (message) => {
+    store.dispatch(actions.fetchFailed(`the worker failed: ${message}`));
+  };
 
   const mapView = new MapView({
     container: el("map"),
@@ -181,7 +187,14 @@ async function main(): Promise<void> {
   });
 
   const access = { store, actions };
-  const refresh = createRefreshCycle({ store, actions, pipeline });
+  const refresh = createRefreshCycle({
+    store,
+    actions,
+    worker,
+    onMesh: (built) => {
+      latestMesh = built;
+    },
+  });
 
   // --- intent in ----------------------------------------------------------
 
@@ -214,6 +227,17 @@ async function main(): Promise<void> {
   let mesh: BuildingStats | undefined;
 
   /**
+   * The most recent geometry the worker built, awaiting a draw.
+   *
+   * Not in the store: it is `Float32Array` vertex data, which RTK's
+   * serialisability scan rejects and devtools would try to serialise on every
+   * action. Set by the refresh cycle immediately BEFORE `snapshotReady` is
+   * dispatched, so the 3D view's snapshot subscriber never draws a snapshot
+   * against the previous position's buildings.
+   */
+  let latestMesh: TransferableMesh | undefined;
+
+  /**
    * Terrain under the current position, or `undefined` while it is flat.
    *
    * Loaded once per position rather than per render: the DEM does not change
@@ -223,19 +247,23 @@ async function main(): Promise<void> {
   let terrain: Heightfield | undefined;
   let terrainNote = "";
 
-  const elevation = new TerrariumProvider({ decodePng: browserPngDecoder() });
-
   // Coalesced, exactly like `refresh` — the two are driven by the same click and
   // must agree about which position is current. See `terrain-cycle.ts` for the
   // interleaving that made an older heightfield win.
+  //
+  // The SAMPLING happens in the worker; what comes back is `HeightfieldData`, and
+  // `heightfieldFrom` rebuilds the synchronous sampler here. The worker keeps its
+  // own copy because the mesh build needs it — one owner per side, and the same
+  // numbers on both, so the surface the buildings stand on cannot disagree with
+  // the surface the ground plane draws.
   const loadTerrain = createTerrainCycle({
-    provider: elevation,
+    worker,
     extentM: TERRAIN_EXTENT_M,
     // Terrarium z13 is ~12 m per pixel at this latitude. Sampling finer would
     // interpolate detail the DEM never had, at real network cost.
     spacingM: 12,
     apply: ({ field, note }) => {
-      terrain = field;
+      terrain = field === undefined ? undefined : heightfieldFrom(field);
       terrainNote = note;
       buildingView.setTerrain(terrain);
       // Attribution is REQUIRED wherever the data is shown, the same as the OSM
@@ -278,15 +306,17 @@ async function main(): Promise<void> {
       buildingView.clearScene();
       buildingView.renderCells(EMPTY_CELL_MESH);
       mesh = undefined;
+      latestMesh = undefined;
       return;
     }
     const view = selectOsmView(store.getState());
     const field = terrain;
-    mesh = buildingView.render(
-      pipeline.features().values(),
-      snapshot.position,
-      field,
-    );
+    // Built in the worker and handed over by the refresh cycle before the
+    // snapshot was dispatched, so the two always describe the same position.
+    // `undefined` here means a redraw with no new data behind it — a category
+    // switch or the below-threshold toggle — in which case the buildings on
+    // screen are already correct and only the grid below needs rebuilding.
+    if (latestMesh !== undefined) mesh = buildingView.render(latestMesh);
     // The SAME cells, bands and colours the map just drew — built from the same
     // functions rather than a parallel implementation, so the two views cannot
     // disagree about what a cell scores (finding M3).
@@ -410,21 +440,49 @@ async function main(): Promise<void> {
    * memory by the average tag count and be paid on every cell whether or not
    * anyone looks (DEC-6). The covering feature set comes from the provenance
    * map, never re-derived from geometry — see `explain-cell.ts.md`.
+   *
+   * IT IS NOW AN RPC, and that is the point rather than an inconvenience. The
+   * explanation needs the merged features and the rule table, both of which live
+   * in the worker; answering it here would mean shipping 28–68 MB of features
+   * across the boundary to explain one cell. Asking the side that already holds
+   * them is the whole reason the split is worth having.
+   *
+   * Fire-and-forget with a guard: by the time the answer arrives the user may
+   * have selected something else, and rendering a stale explanation into the
+   * panel is exactly the kind of quiet disagreement the store exists to prevent.
    */
   function explainSelected(cell: string | undefined): void {
-    const view = selectOsmView(store.getState());
-    const scored = view.snapshot?.cells.find((c) => c.cell === cell);
-    if (cell === undefined || scored === undefined) {
+    if (cell === undefined) {
       detailsPanel.clear();
       return;
     }
-    const merged = pipeline.features();
-    const covering = Object.keys(scored.contributors[view.category] ?? {})
-      .map((key) => merged.get(key as Parameters<typeof merged.get>[0]))
-      .filter((feature): feature is OsmFeature => feature !== undefined);
-    detailsPanel.render(
-      explainCell(cell, covering, loaded.table, view.category),
-    );
+    const view = selectOsmView(store.getState());
+    const category = view.category;
+    void worker
+      .call("explain", { cell, category })
+      .then((explanation) => {
+        const current = selectOsmView(store.getState());
+        // Dropped unless BOTH still match: a late answer for a cell that is no
+        // longer selected, or for a category the map is no longer showing, would
+        // describe something the user is not looking at.
+        if (current.selectedCell !== cell || current.category !== category) {
+          return;
+        }
+        if (explanation === undefined) {
+          detailsPanel.clear();
+          return;
+        }
+        renderSafely(access, "details panel", () => {
+          detailsPanel.render(explanation);
+        });
+      })
+      .catch((error: unknown) => {
+        store.dispatch(
+          actions.nonFatalError(
+            `details panel: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+      });
   }
 
   subscribe((view) => view.selectedCell, explainSelected);

@@ -4,12 +4,13 @@
 
 ## Public API
 
-- `createRefreshCycle({ store, actions, pipeline })` → `LatestOnly<void>`
+- `createRefreshCycle({ store, actions, worker, onMesh })` → `LatestOnly<void>`
   - Takes **no arguments** when called. Reads `position` and `category` from the store at call time.
   - Dispatches `fetchStarted` → (`snapshotReady` | `fetchFailed`).
   - Coalesced through `latestOnly`: at most one run in flight, only the newest waiting intent survives, never rejects.
 - `renderSafely({ store, actions }, label, draw)` — runs one view's draw; on a throw dispatches `nonFatalError` with `"<label>: <message>"` and returns normally.
-- Types: `RefreshPipeline` (the narrowed `DemoPipeline` surface, so tests can fake it), `StoreAccess`, `RefreshCycleOptions`.
+- Types: `StoreAccess`, `RefreshCycleOptions`. The narrowed worker surface (`RefreshWorker`) is module-private — it exists so `refresh-cycle.test.ts` can drive the cycle without a worker.
+- **`onMesh` is called BEFORE `snapshotReady` is dispatched**, and the order is load-bearing: the mesh cannot live in the store (`Float32Array` vertex data, which RTK rejects), but the 3D view draws from a snapshot subscription — so a dispatch first would draw the new snapshot against the previous position's buildings. Pinned by its own test, because both orders end in the same final state and only the intermediate frame differs.
 
 ## Invariants & assumptions
 
@@ -22,7 +23,7 @@
 ## Examples
 
 ```ts
-const refresh = createRefreshCycle({ store, actions, pipeline });
+const refresh = createRefreshCycle({ store, actions, worker, onMesh });
 
 subscribe(
   (view) => view.position,

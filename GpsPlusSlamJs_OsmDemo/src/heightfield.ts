@@ -35,9 +35,33 @@ export interface HeightfieldOptions {
   readonly signal?: AbortSignal;
 }
 
-export interface Heightfield {
-  /** Relief in metres at an ENU point, relative to the frame origin. */
-  heightAt(point: { x: number; y: number }): number;
+/**
+ * A heightfield as PLAIN DATA — the form that survives a worker boundary.
+ *
+ * Split out from {@link Heightfield} because the sampling now happens in the
+ * worker (the field is ~55 000 posts since the extent grew to the rendered
+ * extent) while the ground plane and the affordance grid read it on the main
+ * thread. `heightAt` is a **method**, and the structured-clone algorithm drops
+ * methods *silently* — leaving an object that looks correct until the first call.
+ * So the grid crosses as numbers and {@link heightfieldFrom} rebuilds the
+ * sampler on the far side.
+ *
+ * `heights` is a `Float32Array` so it can be **transferred** rather than copied.
+ */
+export interface HeightfieldData {
+  /** Row-major posts, `side * side` of them. Empty when `hasData` is false. */
+  readonly heights: Float32Array;
+  /** Posts per axis. */
+  readonly side: number;
+  /** Half-width of the sampled square, metres. */
+  readonly extentM: number;
+  /**
+   * The origin's height, subtracted from every read.
+   *
+   * Kept rather than pre-subtracted from `heights` so the datum stays visible
+   * and the arithmetic is identical on both sides of the boundary.
+   */
+  readonly datum: number;
   /** False when nothing usable arrived — `heightAt` is then flat zero. */
   readonly hasData: boolean;
   /** Posts the provider had no answer for. */
@@ -55,14 +79,41 @@ export interface Heightfield {
   readonly reliefM: number;
 }
 
+export interface Heightfield extends HeightfieldData {
+  /** Relief in metres at an ENU point, relative to the frame origin. */
+  heightAt(point: { x: number; y: number }): number;
+}
+
 /** What a failed or empty load produces: flat, and honest about it. */
-function flat(total: number): Heightfield {
+function flat(total: number, extentM: number): HeightfieldData {
   return {
-    heightAt: () => 0,
+    heights: new Float32Array(0),
+    side: 0,
+    extentM,
+    datum: 0,
     hasData: false,
     missing: total,
     total,
     reliefM: 0,
+  };
+}
+
+/**
+ * Rebuilds the synchronous sampler from plain data.
+ *
+ * The one place `heightAt` is created, so the main thread and the worker cannot
+ * disagree about what a post means. A field with `hasData: false` samples flat
+ * zero — never a sea-level surface, for the reason in the module header.
+ */
+export function heightfieldFrom(data: HeightfieldData): Heightfield {
+  if (!data.hasData || data.side === 0) {
+    return { ...data, heightAt: () => 0 };
+  }
+  return {
+    ...data,
+    heightAt: (point) =>
+      bilinear(data.heights, data.side, data.extentM, point.x, point.y) -
+      data.datum,
   };
 }
 
@@ -73,10 +124,10 @@ function flat(total: number): Heightfield {
  * buildings and the affordance grid are still worth looking at, and a thrown
  * error here would take the whole pane down with it.
  */
-export async function buildHeightfield(
+export async function buildHeightfieldData(
   provider: ElevationProvider,
   options: HeightfieldOptions,
-): Promise<Heightfield> {
+): Promise<HeightfieldData> {
   const { frame, extentM, spacingM } = options;
   // `+1` because the posts include both edges: a 600 m span at 50 m spacing is
   // 13 posts, not 12. Off by one here tilts the whole surface.
@@ -102,13 +153,13 @@ export async function buildHeightfield(
     // of requests for one view.
     raw = await provider.elevationAt(positions, options.signal);
   } catch {
-    return flat(total);
+    return flat(total, extentM);
   }
 
   const known = raw.filter(
     (v): v is number => v !== undefined && Number.isFinite(v),
   );
-  if (known.length === 0) return flat(total);
+  if (known.length === 0) return flat(total, extentM);
 
   // Missing posts take the mean of what did arrive. Not zero — see the module
   // header — and not a neighbour scan either: at this grid size the mean keeps
@@ -120,20 +171,52 @@ export async function buildHeightfield(
     heights[i] = value === undefined || !Number.isFinite(value) ? mean : value;
   }
 
-  // The origin's height, subtracted from every read so the surface is relief
-  // rather than altitude. Sampled through the same bilinear path as everything
-  // else, so it is exactly what `heightAt({x: 0, y: 0})` would otherwise return.
-  const sample = (x: number, y: number): number =>
-    bilinear(heights, side, extentM, x, y);
-  const datum = sample(0, 0);
-
   return {
-    heightAt: (point) => sample(point.x, point.y) - datum,
+    heights,
+    side,
+    extentM,
+    // The origin's height, subtracted from every read so the surface is relief
+    // rather than altitude. Sampled through the same bilinear path as everything
+    // else, so it is exactly what an undatumed `heightAt({x: 0, y: 0})` returns.
+    datum: bilinear(heights, side, extentM, 0, 0),
     hasData: true,
     missing: total - known.length,
     total,
-    reliefM: Math.max(...known) - Math.min(...known),
+    // NOT `Math.max(...known)`. A spread passes one argument per element, and
+    // measured in this Node the limit is between 100 000 and 125 000 before
+    // `RangeError: Maximum call stack size exceeded`. At the rendered extent
+    // (~2.8 km at 12 m) the field is ~55 000 posts, so the spread was **not**
+    // yet broken — but it is within about 2x of the limit, and the limit is
+    // reached by an ordinary change: the same extent at 8 m spacing is ~123 000.
+    // A fold has no limit and is not measurably slower, so this removes a
+    // fragility rather than fixing a live bug. See `worker-round-trip.test.ts`.
+    reliefM: extremesOf(known),
   };
+}
+
+/** Peak-to-trough of a non-empty list, without spreading it into `Math.max`. */
+function extremesOf(values: readonly number[]): number {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const value of values) {
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return max - min;
+}
+
+/**
+ * Loads a heightfield and returns it ready to sample.
+ *
+ * The main-thread convenience form: exactly
+ * `heightfieldFrom(await buildHeightfieldData(...))`. The worker uses the data
+ * form directly, because that is what crosses the boundary.
+ */
+export async function buildHeightfield(
+  provider: ElevationProvider,
+  options: HeightfieldOptions,
+): Promise<Heightfield> {
+  return heightfieldFrom(await buildHeightfieldData(provider, options));
 }
 
 /**

@@ -27,15 +27,22 @@
  * @see refresh-cycle.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
-
-import type { DemoSnapshot } from "./demo-pipeline.js";
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import { selectOsmView, type DemoStore } from "./osm-store.js";
+import type { TransferableMesh, UpdateResult } from "./worker/protocol.js";
 
-/** The part of `DemoPipeline` this needs; narrowed so tests can fake it. */
-export interface RefreshPipeline {
-  update(position: LatLng, category: string): Promise<DemoSnapshot>;
+/**
+ * The part of the worker client this needs; narrowed so tests can fake it.
+ *
+ * Was `RefreshPipeline` with an `update(position, category)` — the pipeline now
+ * lives in the worker, so the same call goes over the RPC boundary instead. The
+ * narrow shape is what lets `refresh-cycle.test.ts` drive this without a worker.
+ */
+interface RefreshWorker {
+  call(
+    kind: "update",
+    payload: { position: { lat: number; lng: number }; category: string },
+  ): Promise<UpdateResult>;
 }
 
 /** The store handles the cycle writes through. */
@@ -45,7 +52,17 @@ export interface StoreAccess {
 }
 
 export interface RefreshCycleOptions extends StoreAccess {
-  readonly pipeline: RefreshPipeline;
+  readonly worker: RefreshWorker;
+  /**
+   * Receives the freshly built mesh, BEFORE the snapshot is dispatched.
+   *
+   * The mesh cannot live in the store: it is `Float32Array` vertex data, which
+   * RTK's serialisability scan rejects and devtools would try to serialise on
+   * every action. But the 3D view is a snapshot subscriber, so the mesh has to be
+   * in place by the time that subscriber runs — hence "before", and hence a
+   * callback rather than a return value.
+   */
+  readonly onMesh: (mesh: TransferableMesh) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -64,7 +81,7 @@ function messageOf(error: unknown): string {
 export function createRefreshCycle(
   options: RefreshCycleOptions,
 ): LatestOnly<void> {
-  const { store, actions, pipeline } = options;
+  const { store, actions, worker, onMesh } = options;
 
   return latestOnly(async () => {
     const { position, category } = selectOsmView(store.getState());
@@ -75,7 +92,16 @@ export function createRefreshCycle(
     );
 
     try {
-      const snapshot = await pipeline.update(position, category);
+      const { snapshot, mesh } = await worker.call("update", {
+        position,
+        category,
+      });
+      // Mesh FIRST, then dispatch. The 3D view draws from a snapshot
+      // subscription, so a dispatch before the mesh is in place would draw the
+      // new snapshot's cells over the PREVIOUS mesh — one frame of buildings
+      // belonging to somewhere else, which is the class of disagreement the
+      // store was introduced to make impossible.
+      onMesh(mesh);
       store.dispatch(actions.snapshotReady(snapshot));
     } catch (error) {
       store.dispatch(actions.fetchFailed(messageOf(error)));

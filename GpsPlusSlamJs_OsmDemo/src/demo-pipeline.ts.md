@@ -7,7 +7,7 @@ path, with no DOM in it.
 
 ## Public API
 
-- `class DemoPipeline` — `update(position, category): Promise<DemoSnapshot>`,
+- `class DemoPipeline` — `update(position, category, signal?): Promise<DemoSnapshot>` (the signal is checked PER TILE, which is where the saving is: a tile is 28-68 MB), `scoreFor(cell): CellScore | undefined` (so `explainCell` can be answered inside the worker, where the merged features already are),
   `features()`, static `chunkFor(position)`
 - `interface DemoSnapshot` — `cells`, `regions`, `threshold`, `missingTiles`,
   `loadedTiles`, `stats`

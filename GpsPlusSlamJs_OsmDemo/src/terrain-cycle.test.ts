@@ -17,8 +17,11 @@
 
 import { describe, expect, it } from "vitest";
 
+import { enuFrameAt } from "gps-plus-slam-osm";
 import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 
+import { buildHeightfieldData } from "./heightfield.js";
+import { describeTerrain } from "./terrain-note.js";
 import { createTerrainCycle, type TerrainState } from "./terrain-cycle.js";
 
 const COLOGNE: LatLng = { lat: 50.9412, lng: 6.9583 };
@@ -71,7 +74,24 @@ function cycleFor(provider: ElevationProvider): {
 } {
   const applied: TerrainState[] = [];
   const load = createTerrainCycle({
-    provider,
+    // The sampling moved into the worker, so the cycle is now a coalescing
+    // wrapper around an RPC call. This fake worker runs the REAL sampler and the
+    // real status phrase in-process, so the coalescing behaviour these tests
+    // exist for is still exercised end to end — only the thread boundary is
+    // faked, which is the part that has nothing to do with coalescing.
+    worker: {
+      call: async (_kind, payload) => {
+        const field = await buildHeightfieldData(provider, {
+          frame: enuFrameAt(payload.centre),
+          extentM: payload.extentM,
+          spacingM: payload.spacingM,
+        });
+        return {
+          field: field.hasData ? field : undefined,
+          note: describeTerrain(field),
+        };
+      },
+    },
     // Small enough that the fake provider is asked for a handful of posts
     // rather than thousands; the grid size is `heightfield.ts`'s business.
     extentM: 50,

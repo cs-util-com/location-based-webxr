@@ -111,12 +111,29 @@ export class DemoPipeline {
    * the map is missing" is exactly the state the fetch policy is designed to
    * degrade into gracefully.
    */
-  async update(position: LatLng, category: string): Promise<DemoSnapshot> {
+  async update(
+    position: LatLng,
+    category: string,
+    signal?: AbortSignal,
+  ): Promise<DemoSnapshot> {
     const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
     const missingTiles: string[] = [];
 
     for (const tile of fetchTilesForScoreWorkingSet(chunk)) {
       if (this.loaded.has(tile)) continue;
+      // CHECKED PER TILE, which is the granularity that matters: a tile is
+      // 28-68 MB, so stopping between tiles is most of the saving available from
+      // abort at all. Once the worker's caller has moved on, continuing to pull
+      // tiles for a position the user has left is exactly the waste the fetch
+      // discipline exists to avoid.
+      //
+      // Deliberately NOT threaded into `fetchTile` itself — that would need an
+      // `AbortSignal` through `OsmDataSource`, `CachingSource` and
+      // `OverpassSource`, which is a package API change and its own piece of
+      // work. Recorded as a follow-up; the in-flight request still completes.
+      if (signal?.aborted === true) {
+        throw new DOMException("Aborted", "AbortError");
+      }
       try {
         const result: OsmTileResult = await this.source.fetchTile(tile);
         this.loaded.add(tile);
@@ -160,6 +177,19 @@ export class DemoPipeline {
   /** The features currently merged in, for the 3D view. */
   features() {
     return this.index.mergedFeatures();
+  }
+
+  /**
+   * The score record for one cell, or `undefined` if it is not currently held.
+   *
+   * Exists so `explainCell` can be answered inside the worker. Before the worker
+   * split, the caller found this by scanning `snapshot.cells` on the main thread;
+   * that no longer works, because answering it there would mean shipping the
+   * merged features across the boundary — 28–68 MB of them — to explain one cell.
+   * Asking the side that already holds them is the whole point.
+   */
+  scoreFor(cell: string): CellScore | undefined {
+    return this.index.scoresByCell().get(cell);
   }
 
   /**

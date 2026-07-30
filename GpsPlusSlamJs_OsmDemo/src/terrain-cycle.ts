@@ -20,34 +20,50 @@
  * move together or the screen says one thing while it draws another. One `apply`
  * makes that atomic by construction.
  *
+ * WHAT CHANGED WITH THE WORKER. The sampling itself moved (~55 000 posts once the
+ * terrain covers the rendered extent), so this file is now the coalescing wrapper
+ * around an RPC call rather than around the sampler. The coalescing is still
+ * needed for exactly the reason above — the worker's tile cache makes a second
+ * request resolve faster than the first just as readily as the provider's did.
+ *
  * @see terrain-cycle.ts.md
  */
 
-import {
-  enuFrameAt,
-  type ElevationProvider,
-  type LatLng,
-} from "gps-plus-slam-osm";
+import { type LatLng } from "gps-plus-slam-osm";
 
-import { buildHeightfield, type Heightfield } from "./heightfield.js";
+import type { HeightfieldData } from "./heightfield.js";
 import { latestOnly, type LatestOnly } from "./latest-only.js";
+import type { TerrainResult } from "./worker/protocol.js";
 
 /** Everything one finished load produces, applied as a unit. */
 export interface TerrainState {
   /**
-   * The loaded relief, or `undefined` when the ground stays FLAT.
+   * The loaded relief as PLAIN DATA, or `undefined` when the ground stays FLAT.
    *
    * Never a sea-level field: `hasData: false` rendered as zero height would be
    * a hole shaped exactly like the DEM outage, which reads as terrain rather
    * than as a failure and buries the buildings standing in it.
+   *
+   * `HeightfieldData`, not `Heightfield`: this arrives from the worker, and
+   * `heightAt` is a method that structured clone drops **silently** — leaving an
+   * object that looks right until the first call. The caller rebuilds the sampler
+   * with `heightfieldFrom`.
    */
-  readonly field: Heightfield | undefined;
+  readonly field: HeightfieldData | undefined;
   /** One phrase for the status line, never empty. */
   readonly note: string;
 }
 
+/** Narrowed so `terrain-cycle.test.ts` can drive this without a worker. */
+interface TerrainWorker {
+  call(
+    kind: "terrain",
+    payload: { centre: LatLng; extentM: number; spacingM: number },
+  ): Promise<TerrainResult>;
+}
+
 export interface TerrainCycleOptions {
-  readonly provider: ElevationProvider;
+  readonly worker: TerrainWorker;
   /** Half-width of the sampled square, metres. */
   readonly extentM: number;
   /** Distance between posts, metres. Match the DEM's own resolution. */
@@ -57,41 +73,23 @@ export interface TerrainCycleOptions {
 }
 
 /**
- * The status-line phrase for a finished load.
- *
- * The relief is stated out loud because it is the one number distinguishing
- * "the terrain loaded and this place is flat" from "the terrain did not load" —
- * two very different facts that render identically.
- */
-function describe(field: Heightfield): string {
-  if (!field.hasData) return "terrain unavailable — ground is flat";
-  const missing =
-    field.missing > 0
-      ? ` (${field.missing}/${field.total} samples missing)`
-      : "";
-  return `terrain ±${Math.round(field.reliefM)} m${missing}`;
-}
-
-/**
  * Builds the coalesced terrain loader.
  *
  * The returned wrapper never rejects — a DEM outage costs the relief, not the
  * 3D view — and `apply` is called exactly once per load that is not superseded.
+ *
+ * THE STATUS PHRASE IS BUILT IN THE WORKER (`demo-worker.ts`), beside the posts
+ * it describes. Deriving it here instead would be a second place that could
+ * describe a field it did not compute — and the number's whole job is to
+ * distinguish "this ground is flat" from "the DEM did not load", which is exactly
+ * the claim that must not be made by something holding stale data.
  */
 export function createTerrainCycle(
   options: TerrainCycleOptions,
 ): LatestOnly<LatLng> {
-  const { provider, extentM, spacingM, apply } = options;
+  const { worker, extentM, spacingM, apply } = options;
 
   return latestOnly(async (centre: LatLng) => {
-    const field = await buildHeightfield(provider, {
-      frame: enuFrameAt(centre),
-      extentM,
-      spacingM,
-    });
-    apply({
-      field: field.hasData ? field : undefined,
-      note: describe(field),
-    });
+    apply(await worker.call("terrain", { centre, extentM, spacingM }));
   });
 }

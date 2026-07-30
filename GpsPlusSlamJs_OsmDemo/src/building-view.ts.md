@@ -7,7 +7,7 @@ map scored.
 
 ## Public API
 
-- `class BuildingView` — `render(features, centre, terrain?): BuildingStats`,
+- `class BuildingView` — `render(mesh: TransferableMesh): BuildingStats` (the geometry is built in the WORKER now; this file only turns typed arrays into three.js objects, which is what its header always claimed it was for),
   `renderCells(mesh)`, `setTerrain(field | undefined)`, `clearScene()`,
   `resize()`, `dispose()`. Navigation is `MapControls`, attached internally;
   there is nothing to call.
@@ -55,13 +55,20 @@ map scored.
   harsh one because it calls `resize()` on every pointer move (coalescing in
   `requestFrame` is what keeps that to one frame per animation frame).
 
-- **It shares the pipeline rather than fetching its own data.** This view exists
-  to verify the MESH code, and it can only do that if it is looking at exactly
-  the features the 2D view scored — two fetch paths would let a discrepancy be
-  the data rather than the geometry.
+- **It draws geometry the WORKER built; it no longer builds any.** `render()` used
+  to take the merged features and call `buildBuildings`/`buildTrees` itself. Both
+  moved into `worker/demo-worker.ts`, because the features are 28–68 MB and must
+  not cross the boundary to produce geometry that crosses back — the package's
+  mesh output is `Float32Array` precisely so the BUFFERS transfer instead. The ENU
+  frame anchoring and the terrain sampling moved with them.
+  - The invariant that mattered is unchanged: the geometry is still built from
+    exactly the features the 2D view scored, because one pipeline still produces
+    both. Two fetch paths would let a discrepancy be the data rather than the
+    geometry.
 - **The package produces buffers; this file makes meshes.** `gps-plus-slam-osm`
   must not depend on `three` (plan §4.2), so it stops at `Float32Array` /
-  `Uint32Array` and the consumer does the three lines that follow.
+  `Uint32Array` and the consumer does the three lines that follow. That split is
+  what made moving the build into a worker a small change rather than a rewrite.
 - **Materials are DOUBLE-SIDED on purpose.** A wrongly-wound wall should show up
   as a shading oddity rather than disappear; backface culling would hide exactly
   the class of bug this view is here to find.
@@ -102,7 +109,7 @@ map scored.
 
 ```ts
 const view = new BuildingView({ container });
-const stats = view.render(pipeline.features().values(), position);
+const stats = view.render(meshFromWorker);
 ```
 
 ## Tests

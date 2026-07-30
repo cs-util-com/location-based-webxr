@@ -4,7 +4,9 @@
 
 ## Public API
 
-- `buildHeightfield(provider, { frame, extentM, spacingM, signal? }): Promise<Heightfield>` — **never rejects.**
+- `buildHeightfieldData(provider, { frame, extentM, spacingM, signal? }): Promise<HeightfieldData>` — **never rejects.** Plain, cloneable data; this is what the worker calls and what crosses the boundary.
+- `heightfieldFrom(data): Heightfield` — rebuilds the synchronous sampler. The ONE place `heightAt` is created, so the worker and the main thread cannot disagree about what a post means.
+- `buildHeightfield(provider, options): Promise<Heightfield>` — the main-thread convenience form, exactly `heightfieldFrom(await buildHeightfieldData(...))`. **Never rejects.**
 - `Heightfield` — `{ heightAt({x, y}), hasData, missing, total, reliefM }`.
   - `heightAt` is **relative** to the frame origin and always finite.
   - `hasData: false` means flat zero everywhere.

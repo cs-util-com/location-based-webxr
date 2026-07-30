@@ -4,11 +4,11 @@
 
 ## Public API
 
-- `createTerrainCycle({ provider, extentM, spacingM, apply })` → `LatestOnly<LatLng>`
+- `createTerrainCycle({ worker, extentM, spacingM, apply })` → `LatestOnly<LatLng>`
   - Called with the centre position. Loads a `Heightfield` through `buildHeightfield` and reports it via `apply` exactly once per load that is not superseded.
   - Coalesced through `latestOnly`: at most one load in flight, only the newest waiting position survives, never rejects.
 - `interface TerrainState` — `field` (`Heightfield | undefined`; `undefined` means the ground stays flat) and `note` (one status-line phrase, never empty).
-- `interface TerrainCycleOptions` — `provider` (`ElevationProvider`), `extentM`, `spacingM`, `apply`.
+- `interface TerrainCycleOptions` — `worker` (the narrowed RPC surface), `extentM`, `spacingM`, `apply`. The SAMPLING moved into the worker; this module is now the coalescing wrapper around an RPC call, and `apply` receives `HeightfieldData` (not `Heightfield` — `heightAt` is a method and structured clone drops methods silently).
 
 ## Invariants & assumptions
 
@@ -24,7 +24,7 @@
 
 ```ts
 const loadTerrain = createTerrainCycle({
-  provider: elevation,
+  worker,
   extentM: TERRAIN_EXTENT_M,
   spacingM: 12,
   apply: ({ field, note }) => {
