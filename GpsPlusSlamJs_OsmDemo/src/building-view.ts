@@ -163,7 +163,7 @@ export class BuildingView {
   private readonly onPointerDown: (event: PointerEvent) => void;
   private readonly onPointerStart: (event: PointerEvent) => void;
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
-  /** The sky gradient, used as both background and environment map. */
+  /** The sky gradient. Background directly; environment only after PMREM. */
   private readonly sky: THREE.DataTexture;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
@@ -211,7 +211,33 @@ export class BuildingView {
     this.sky.flipY = true;
     this.sky.needsUpdate = true;
     this.scene.background = this.sky;
-    this.scene.environment = this.sky;
+    // NO `scene.environment`, AND THAT IS THE FIX FOR A REAL OUTAGE.
+    //
+    // W20 set `scene.environment = this.sky` — a raw equirect `DataTexture`.
+    // three.js routes any environment map through its CubeUV path, which expects a
+    // PMREM-processed texture, and with a raw one it emits integer `CUBEUV_*`
+    // defines into float assignments. Every `MeshStandardMaterial` fragment shader
+    // then fails to compile:
+    //
+    //   ERROR: 0:439: 'assign' : cannot convert from 'const int' to 'highp float'
+    //
+    // three.js does not throw for that. It logs to the console and simply DOES NOT
+    // DRAW the material. So the buildings, the trees, the ground plane and the
+    // plates all disappeared from the demo, while the status line still reported
+    // "21 volumes" and the suite stayed green — every pixel assertion was satisfied
+    // by the one surviving `MeshBasicMaterial`, the affordance grid.
+    //
+    // PMREM-processing it was tried and does NOT help here: the gradient is one
+    // pixel wide, which is degenerate for the equirect-to-cube-UV projection.
+    //
+    // Removing it costs almost nothing against DEC-R2-1. That decision asked for a
+    // surface reflective enough that facet edges show as the camera moves, and the
+    // mechanism for that is the SPECULAR HIGHLIGHT from the directional light
+    // sliding across per-facet normals — which needs low roughness, not an
+    // environment map. My original note here claimed a lone directional light
+    // "produces a lobe narrow enough to miss almost every facet"; that was wrong,
+    // and it cost the entire scene. The hemisphere light below supplies the
+    // sky-tinted fill the environment map was actually contributing.
 
     this.scene.add(this.group);
     // Ambient LOWERED from 0.55. Ambient light is flat by definition — it adds the
@@ -219,6 +245,11 @@ export class BuildingView {
     // washing out the only cue that distinguishes one ground facet from the next.
     // The environment map now supplies the soft fill it used to.
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+    // Sky above, ground below — the directional fill the environment map used to
+    // contribute, from a LIGHT rather than from a texture the PBR shader has to
+    // sample. Colours match the sky gradient's horizon and the ground, so the scene
+    // still reads as lit by its own sky, with no shader-compilation surface at all.
+    this.scene.add(new THREE.HemisphereLight(0x5c6c8c, 0x3a4356, 0.55));
     const sun = new THREE.DirectionalLight(0xffffff, 1.1);
     sun.position.set(60, 120, 40);
     this.scene.add(sun);

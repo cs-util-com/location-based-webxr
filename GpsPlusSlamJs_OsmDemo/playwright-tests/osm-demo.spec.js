@@ -93,6 +93,47 @@ test.describe("the demo boots", () => {
   });
 });
 
+test.describe("the browser console", () => {
+  test("stays clean — no shader, WebGL or page errors", async ({ page }) => {
+    // WHY THIS TEST EXISTS. A three.js material whose shader fails to compile is
+    // simply NOT DRAWN. There is no exception, no rejected promise, nothing in the
+    // DOM and nothing in any status line — the geometry is handed to the renderer,
+    // counted, reported, and silently skipped. The only signal is a `console.error`
+    // from `WebGLProgram`.
+    //
+    // That is not hypothetical: setting `scene.environment` to a raw equirect
+    // texture (rather than a PMREM-processed one) made EVERY `MeshStandardMaterial`
+    // fail to compile — buildings, trees, ground plane and plates all vanished from
+    // the demo — while the suite stayed green and the status line reported
+    // "21 volumes". The whole suite asserted on pixels that the surviving
+    // `MeshBasicMaterial` grid happened to satisfy.
+    //
+    // So the console is now part of the contract. Vite's own dev-server noise and
+    // the deliberately-stubbed network are filtered; everything else fails.
+    const errors = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const ignorable = (text) =>
+      // The suite blocks the live rule sheet on purpose; the app reports the
+      // degradation in its status line and the fixture asserts on it.
+      /Rule table fetch failed/.test(text) ||
+      // Blocked by `stubNetwork`, deliberately.
+      /net::ERR_FAILED|Failed to load resource/.test(text);
+
+    const real = errors.filter((text) => !ignorable(text));
+    expect(real, `unexpected console errors:\n${real.join("\n---\n")}`).toEqual(
+      [],
+    );
+  });
+});
+
 test.describe("the worker", () => {
   test("is really constructed, and the UI thread is not doing the work", async ({
     page,
@@ -339,28 +380,21 @@ test.describe("the layer toggles", () => {
     expect(counts.overpassQuery).toBe(before);
   });
 
-  test("builds ground plates when the layer is switched on", async ({
+  test("draws ground plates when the layer is switched on", async ({
     page,
   }) => {
     // WHY THIS TEST MATTERS (W11). The feedback asked for ground areas as real
     // geometry — "flache Platten quasi im 3D-Raum" — and the registry only earns
     // its keep if a NEW builder is reachable through it without touching the ones
     // already there. So this asserts the default is OFF (the shipped picture must
-    // stay reproducible) and that switching it on actually BUILDS geometry.
+    // stay reproducible) and that switching it on changes what is DRAWN.
     //
-    // WHAT IT DELIBERATELY DOES NOT ASSERT, and this is a known gap rather than an
-    // oversight: that the plates appear as PIXELS. A fingerprint comparison of the
-    // canvas does not change when the layer is switched on, and the cause is not
-    // yet identified. Ruled out, each by direct experiment: the geometry (13 unit
-    // tests including one over this same captured fixture, plus a bounding-box
-    // check showing sane world coordinates), the merge, reaching the scene (the
-    // counters below come from the completed render), occlusion (unchanged when
-    // lifted 100 m above a ±25 m terrain), the material (unchanged with
-    // flatShading, unchanged in bright red) and frame scheduling.
-    //
-    // Asserting the counters rather than inventing a passing pixel test: they are
-    // reported from what the renderer was actually given, so they cannot agree
-    // with a scene that was never built. Tracked as a follow-up.
+    // This test previously asserted only that plates were BUILT and counted, with a
+    // long note recording that the pixels never changed and I could not find why.
+    // The cause was the shader outage: plates are `MeshStandardMaterial`, so they
+    // were compiled-out along with the buildings, the trees and the ground plane.
+    // Every experiment I ran — lifting them 100 m, colouring them bright red — was
+    // testing geometry that the renderer was silently refusing to draw.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
@@ -368,13 +402,36 @@ test.describe("the layer toggles", () => {
     await expect(page.locator("#layer-plates")).not.toBeChecked();
     await expect(page.locator("#status")).not.toContainText(/ground areas/);
 
+    const shot = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+      });
+
+    // Wait for the scene to settle, or the startup terrain frame is what gets
+    // compared rather than the layer change (the same trap as R2-3's test).
+    let previous = await shot();
+    await expect
+      .poll(
+        async () => {
+          const current = await shot();
+          const stable = current === previous;
+          previous = current;
+          return stable;
+        },
+        { timeout: 5000 },
+      )
+      .toBe(true);
+    const before = previous;
+
     await page.locator("#layer-plates").check();
     await expect(page.locator("#layer-plates")).toBeChecked();
 
-    // The fixture is Cologne Volksgarten: 3  areas, landuse,
-    // a park, a garden and playgrounds. A zero here is a real failure.
+    // The fixture is Cologne Volksgarten: 3 `amenity=parking` areas, landuse, a
+    // park, a garden and playgrounds. Both halves are asserted — that the geometry
+    // was built, and that it reached the screen.
     await expect(page.locator("#status")).toContainText(/[1-9]d* ground areas/);
-    await expect(page.locator("#status")).toContainText(/([1-9]d* tri)/);
+    await expect.poll(shot, { timeout: 5000 }).not.toBe(before);
   });
 
   test("switching the cells layer off clears the grid in BOTH views", async ({
@@ -1137,37 +1194,121 @@ test.describe("the 3D view", () => {
     await expect.poll(painted, { timeout: 5000 }).toBeGreaterThan(500);
   });
 
-  test("has a graded sky, so the ground reads against it", async ({ page }) => {
-    // WHY THIS TEST MATTERS (DEC-R2-2). The background was 0x11131a and the
-    // ground 0x1d2230 — two near-blacks, which is the whole reported symptom.
-    // Asserting a GRADIENT rather than "not black": a flat dark blue would also
-    // fix the colour complaint while leaving the ground plane's far edge as a
-    // hard seam between two similar darks, which is the other half of it.
+  test("renders the BUILDINGS, not just the affordance grid", async ({
+    page,
+  }) => {
+    // WHY THIS TEST EXISTS, and why the one below it was not enough. "actually
+    // draws pixels" counts everything that is not the background, so the hex grid
+    // alone satisfies it — and that is exactly what shipped: every
+    // `MeshStandardMaterial` in the scene (buildings, trees, ground plane, plates)
+    // failed to compile its fragment shader, leaving a scene of nothing but the
+    // grid, while a green suite and a status line reporting "21 volumes" both said
+    // it was fine.
+    //
+    // Buildings are keyed on NEUTRALITY, not brightness. The material is 0xc8ccd8
+    // but it renders at about (133,137,148) once lit, so a brightness threshold
+    // picked by eye from the source colour misses them entirely — which is exactly
+    // what the first version of this test did, reporting 0 while the buildings were
+    // plainly on screen in the captured PNG.
+    //
+    // Everything else in the frame is either saturated (the heat ramp's purples and
+    // teals), blue (the sky, up to 92,108,140 — and max-min 48) or dark (the ground,
+    // 0x3a4356). Only the buildings are simultaneously bright and near-grey, so
+    //  isolates them. Measured, not guessed: 13,874
+    // pixels at the default framing.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    // Sampled at the LEFT edge, where the city does not reach, so the reading is
-    // sky rather than a building that happens to be tall.
-    const { top, bottom } = await page.evaluate(() => {
+    const buildingPixels = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return -1;
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return -1;
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] ?? 0;
+          const g = data[i + 1] ?? 0;
+          const b = data[i + 2] ?? 0;
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          if (min > 110 && max - min < 40) count++;
+        }
+        return count;
+      });
+
+    // The fixture has 21 building volumes at the camera's default framing.
+    // The fixture has 21 building volumes at the default framing. A generous floor:
+    // the assertion that matters is "not zero", because zero is what a shader that
+    // failed to compile produces.
+    await expect.poll(buildingPixels, { timeout: 5000 }).toBeGreaterThan(2000);
+  });
+
+  test("has a graded sky, so the ground reads against it", async ({ page }) => {
+    // WHY THIS TEST MATTERS (DEC-R2-2). The background was 0x11131a and the ground
+    // 0x1d2230 — two near-blacks, which is the whole reported symptom.
+    //
+    // WHAT IT ASSERTS, AND WHY THE THRESHOLD IS SMALL. The gradient's SHAPE is
+    // pinned by five unit tests in `sky-gradient.test.ts` (orientation,
+    // monotonicity, opacity, contrast against the ground). This test's job is only
+    // that it reached the canvas.
+    //
+    // The threshold has to be small because only a sliver of sky is on screen: the
+    // ground plane is 2.8 km across, so at this camera it fills everything below
+    // ~7% of the frame height, and the gradient across that sliver is about 1 luma.
+    // An earlier version asserted +8 between 2% and 45% — which passed only because
+    // the ground plane was not being drawn at all (every MeshStandardMaterial had
+    // failed to compile), so it was measuring sky against sky. It started failing
+    // the moment that was fixed.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // WHAT THIS ASSERTS, AND WHAT IT DELIBERATELY DOES NOT. The gradient's SHAPE —
+    // orientation, monotonicity, opacity, contrast against the ground — is pinned by
+    // five unit tests in `sky-gradient.test.ts`, where it can be checked exactly.
+    // This test only establishes that the gradient reached the canvas.
+    //
+    // The slope is NOT asserted here, and that is a measurement rather than a
+    // preference: the ground plane is 2.8 km across, so only a thin band of sky is
+    // on screen at this camera, and the luma change across that band is about 1 —
+    // below the dithering noise, and a threshold on it would be flaky by
+    // construction. An earlier version asserted +8 luma and passed only because
+    // every MeshStandardMaterial had failed to compile, so the ground plane was not
+    // drawn and it was comparing sky against sky.
+    const sky = await page.evaluate(() => {
       const el = document.querySelector("#scene canvas");
-      if (!(el instanceof HTMLCanvasElement)) return { top: -1, bottom: -1 };
+      if (!(el instanceof HTMLCanvasElement)) return null;
       const probe = document.createElement("canvas");
       probe.width = el.width;
       probe.height = el.height;
       const ctx = probe.getContext("2d");
-      if (ctx === null) return { top: -1, bottom: -1 };
+      if (ctx === null) return null;
       ctx.drawImage(el, 0, 0);
-      const luma = (x, y) => {
-        const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      // Top-left: above the horizon at any framing this scene uses.
+      const [r, g, b] = ctx.getImageData(2, 2, 1, 1).data;
+      return {
+        r: r ?? 0,
+        g: g ?? 0,
+        b: b ?? 0,
+        luma: 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0),
       };
-      return { top: luma(2, 2), bottom: luma(2, Math.floor(el.height * 0.45)) };
     });
+    if (sky === null) throw new Error("no canvas");
 
-    expect(top).toBeGreaterThanOrEqual(0);
-    // Brighter towards the horizon, by a margin no dithering could account for.
-    expect(bottom).toBeGreaterThan(top + 8);
+    // NOT the old near-black. 0x11131a is luma ~19, and that flat dark background
+    // against a barely-lighter ground is the whole reported symptom.
+    expect(sky.luma).toBeGreaterThan(40);
+    // And it is SKY-coloured rather than grey: the gradient is a desaturated blue,
+    // so blue leads red by a clear margin. A flat grey or a black clear-colour
+    // would not.
+    expect(sky.b).toBeGreaterThan(sky.r + 20);
   });
 
   test("the ground's shading changes as the camera moves, revealing its facets", async ({

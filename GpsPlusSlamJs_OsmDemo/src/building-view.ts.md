@@ -54,6 +54,27 @@ map scored.
   `window` resize listener and the mobile sheet drag, and the sheet drag is the
   harsh one because it calls `resize()` on every pointer move (coalescing in
   `requestFrame` is what keeps that to one frame per animation frame).
+- **The sky texture is a BACKGROUND only. Never assign it to
+  `scene.environment`.** W20 did, and it took the entire scene down: three.js
+  routes any environment map through its CubeUV path, which expects a
+  PMREM-processed texture. Given a raw equirect `DataTexture` it emits integer
+  `CUBEUV_*` defines into float assignments, and every `MeshStandardMaterial`
+  fragment shader fails to compile with
+  `'assign' : cannot convert from 'const int' to 'highp float'`.
+  - **three.js does not throw for that** — it logs and silently does not draw
+    the material. Buildings, trees, plates and the ground plane all vanished
+    while the status line still reported "21 volumes" and the whole suite stayed
+    green, because every pixel assertion was satisfied by the one surviving
+    `MeshBasicMaterial`, the affordance grid. This is also the real cause of what
+    W11 recorded as the plates "known gap".
+  - PMREM-processing the gradient does **not** rescue it: the texture is one
+    pixel wide, which is degenerate for the equirect-to-cube-UV projection.
+  - The sky-tinted fill the environment map was contributing now comes from a
+    `HemisphereLight` whose colours match the gradient's horizon and the ground —
+    a light rather than a texture the PBR shader has to sample, so there is no
+    shader-compilation surface at all. DEC-R2-1's moving facet edges come from
+    the directional light's specular highlight and low roughness, not from an
+    environment map.
 
 - **It draws geometry the WORKER built; it no longer builds any.** `render()` used
   to take the merged features and call `buildBuildings`/`buildTrees` itself. Both
