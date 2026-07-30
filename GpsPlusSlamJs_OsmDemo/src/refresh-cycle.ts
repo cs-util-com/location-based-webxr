@@ -42,6 +42,7 @@ interface RefreshWorker {
   call(
     kind: "update",
     payload: { position: { lat: number; lng: number }; category: string },
+    options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
 }
 
@@ -83,7 +84,7 @@ export function createRefreshCycle(
 ): LatestOnly<void> {
   const { store, actions, worker, onMesh } = options;
 
-  return latestOnly(async () => {
+  return latestOnly(async (_input, signal) => {
     const { position, category } = selectOsmView(store.getState());
     store.dispatch(
       actions.fetchStarted(
@@ -92,10 +93,18 @@ export function createRefreshCycle(
     );
 
     try {
-      const { snapshot, mesh } = await worker.call("update", {
-        position,
-        category,
-      });
+      const { snapshot, mesh } = await worker.call(
+        "update",
+        { position, category },
+        { signal },
+      );
+      // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the
+      // call before it resolves, but there is a real race: if the worker's reply
+      // has already landed when the newer input arrives, the promise is already
+      // settled and the cancellation has nothing left to cancel. Without this
+      // guard that snapshot would be dispatched — a visible flash of the previous
+      // position before the current one replaces it.
+      if (signal.aborted) return;
       // Mesh FIRST, then dispatch. The 3D view draws from a snapshot
       // subscription, so a dispatch before the mesh is in place would draw the
       // new snapshot's cells over the PREVIOUS mesh — one frame of buildings

@@ -19,6 +19,19 @@ path, with no DOM in it.
 
 ## Invariants & assumptions
 
+- **`update` checks its `AbortSignal` TWICE, and both are load-bearing.** Once per
+  tile in the fetch loop, and once again after the loop before scoring.
+  - The per-tile check is where the bytes are: a tile is 28–68 MB.
+  - The post-loop check exists because the per-tile one only fires when there IS a
+    next tile, and at an interior position the working set needs exactly one. A run
+    superseded during its single fetch would otherwise go on to score 19 chunks and
+    931 cells for a position the user had already left. **A test found this** — see
+    `demo-pipeline.test.ts`.
+  - The signal is deliberately NOT threaded into `fetchTile`, which would need an
+    `AbortSignal` through `OsmDataSource`, `CachingSource` and `OverpassSource` — a
+    package API change and its own piece of work. The request already in flight
+    completes; only the ones after it are skipped.
+
 - **DOM-free and unit-tested, because the browser is a bad debugger.** Iteration
   8's value is a human judging a picture; getting the data to the picture is
   ordinary wiring that fails in ordinary ways, and separating the two is what

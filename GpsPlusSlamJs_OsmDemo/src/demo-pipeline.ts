@@ -143,6 +143,16 @@ export class DemoPipeline {
       }
     }
 
+    // CHECKED AGAIN AFTER THE FETCH LOOP, and this is not redundant. The
+    // per-tile check only fires when there is a NEXT tile, and at an interior
+    // position the working set needs exactly one — so a run superseded during
+    // its single fetch would otherwise go on to score 19 chunks and 931 cells
+    // for a position the user has already left. Scoring is the other expensive
+    // half of this method, so skipping it is worth as much as skipping a tile.
+    if (signal?.aborted === true) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+
     this.index.update(position);
 
     const threshold = thresholdFor(this.table, category);

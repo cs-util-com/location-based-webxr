@@ -15,6 +15,22 @@ recent one, so a slow fetch cannot be overtaken by a newer click.
 
 ## Invariants & assumptions
 
+- **A superseded run is now ABORTED, not merely ignored.** The runner receives an
+  `AbortSignal` as its second argument, and it is aborted the moment a newer input
+  arrives. Originally the in-flight run was left to finish and only its result was
+  discarded, because on the main thread there was nothing to cancel. Since the
+  pipeline moved into a worker there is: a superseded position keeps pulling tiles
+  at 28–68 MB each for ground the user has left.
+  - **Each run gets a FRESH controller.** Reusing one would leave it aborted
+    forever after the first supersession, so every later run would start cancelled
+    and nothing would complete again.
+  - **An abort rejection is swallowed like any other**, and must be: a cancelled
+    run has nothing to report and its replacement is already queued, so surfacing
+    it would turn every supersession into an error.
+  - The user-visible behaviour is unchanged and slightly better — the newest input
+    still wins, and now starts sooner because it no longer waits behind a fetch
+    whose result was going to be thrown away.
+
 - **At most one `run` is in flight.** The demo's `refresh` drives one
   `AffordanceIndex` and one `MapView`; two concurrent runs mutate shared state
   and let the earlier one write the final status line.

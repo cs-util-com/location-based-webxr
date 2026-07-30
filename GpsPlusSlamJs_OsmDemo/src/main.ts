@@ -46,6 +46,7 @@ import {
   type BuildingStats,
 } from "./building-view.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
+import { createExplainCycle } from "./explain-cycle.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
 import type { TransferableMesh } from "./worker/protocol.js";
@@ -83,7 +84,6 @@ async function main(): Promise<void> {
   const status = el("status");
   const categorySelect = el<HTMLSelectElement>("category");
   const showBelow = el<HTMLInputElement>("show-below");
-  const terrainCredit = el("terrain-credit");
 
   status.textContent = "Loading the rule table…";
 
@@ -285,14 +285,12 @@ async function main(): Promise<void> {
       // crediting a source whose tiles all failed would be a claim about what
       // is on screen.
       //
-      // IT GOES INTO LEAFLET'S ATTRIBUTION CONTROL, not the header (DEC-R2-4).
-      // The header is collapsible now, and attribution may not be collapsed
-      // away — the Leaflet control is always visible and is where a credit
-      // conventionally belongs anyway. The header element is kept as a
-      // (hidden-when-collapsed) mirror so nothing that already looked there
-      // breaks, but the control is the one that satisfies the licence.
-      terrainCredit.textContent =
-        terrain === undefined ? "" : TERRARIUM_ATTRIBUTION;
+      // INTO LEAFLET S ATTRIBUTION CONTROL, not the header (DEC-R2-4). The
+      // header is collapsible now, and attribution may not be collapsed away.
+      // The control is always visible and is where a credit conventionally
+      // belongs, so it is the ONLY place this is shown — a second copy in the
+      // header would be the copy that does not satisfy the obligation, sitting
+      // next to the one that does.
       mapView.setTerrainAttribution(
         terrain === undefined ? undefined : TERRARIUM_ATTRIBUTION,
       );
@@ -482,54 +480,39 @@ async function main(): Promise<void> {
    * have selected something else, and rendering a stale explanation into the
    * panel is exactly the kind of quiet disagreement the store exists to prevent.
    */
-  function explainSelected(cell: string | undefined): void {
-    if (cell === undefined) {
-      detailsPanel.clear();
-      return;
-    }
-    const view = selectOsmView(store.getState());
-    const category = view.category;
-    void worker
-      .call("explain", { cell, category })
-      .then((explanation) => {
-        const current = selectOsmView(store.getState());
-        // Dropped unless BOTH still match: a late answer for a cell that is no
-        // longer selected, or for a category the map is no longer showing, would
-        // describe something the user is not looking at.
-        if (current.selectedCell !== cell || current.category !== category) {
-          return;
-        }
-        if (explanation === undefined) {
-          detailsPanel.clear();
-          return;
-        }
-        renderSafely(access, "details panel", () => {
-          detailsPanel.render(explanation);
-        });
-      })
-      .catch((error: unknown) => {
-        store.dispatch(
-          actions.nonFatalError(
-            `details panel: ${error instanceof Error ? error.message : String(error)}`,
-          ),
-        );
+  const explainSelected = createExplainCycle({
+    store,
+    actions,
+    worker,
+    // Wrapped so a throwing panel reports as a view failure rather than
+    // escaping into the store subscriber that called it.
+    render: (explanation) => {
+      renderSafely(access, "details panel", () => {
+        detailsPanel.render(explanation);
       });
-  }
+    },
+    clear: () => {
+      detailsPanel.clear();
+    },
+  });
 
-  subscribe((view) => view.selectedCell, explainSelected);
+  subscribe(
+    (view) => view.selectedCell,
+    (cell) => void explainSelected(cell),
+  );
   // A new snapshot or a new category re-explains whatever is still selected,
   // so the panel can never describe a cell in a category the map is no longer
   // showing — the disagreement the store exists to make impossible.
   subscribe(
     (view) => view.snapshot,
     () => {
-      explainSelected(selectOsmView(store.getState()).selectedCell);
+      void explainSelected(selectOsmView(store.getState()).selectedCell);
     },
   );
   subscribe(
     (view) => view.category,
     () => {
-      explainSelected(selectOsmView(store.getState()).selectedCell);
+      void explainSelected(selectOsmView(store.getState()).selectedCell);
     },
   );
 

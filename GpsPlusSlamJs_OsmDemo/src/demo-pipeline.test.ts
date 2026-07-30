@@ -188,3 +188,120 @@ describe("the snapshot stays serialisable", () => {
     expect(roundTripped).not.toStrictEqual(withClass);
   });
 });
+
+describe("DemoPipeline.update — abort", () => {
+  const COLOGNE = { lat: 50.9413, lng: 6.9583 };
+  /** Minimal table: these tests are about the fetch loop, not about scoring. */
+  const TABLE = parseRuleTable(
+    ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join("\n"),
+    { source: "test", fetchedAt: 0 },
+  );
+
+  /**
+   * WHY THESE TESTS MATTER, AND WHY THEY ARE HERE RATHER THAN IN AN E2E. The abort
+   * signal is the mechanism that stops a superseded position from continuing to
+   * pull tiles, and a tile is 28-68 MB. What makes it real is that `update()`
+   * checks the signal BETWEEN tiles, so the saving is "the remaining tiles are
+   * never requested".
+   *
+   * That is precisely measurable here — count the source's calls — and it is not
+   * measurable in the e2e suite, where the Overpass stub answers instantly so no
+   * supersession can land mid-fetch. A timing-based e2e ("the second request
+   * started before the first finished") would be exactly the kind of threshold
+   * that passes locally and flakes in CI.
+   *
+   * The complementary halves live elsewhere: `latest-only.test.ts` proves the
+   * signal is aborted the moment a newer input arrives and that each run gets a
+   * fresh one, and `rpc-client.test.ts` proves the cancellation is posted to the
+   * worker rather than merely dropped on the main thread.
+   */
+
+  /** Counts calls, and never resolves faster than the test allows. */
+  function countingSource(): { source: OsmDataSource; tiles: string[] } {
+    const tiles: string[] = [];
+    return {
+      tiles,
+      source: {
+        attribution: "test",
+        sourceId: "fixture:abort",
+        fetchTile: (tile) => {
+          tiles.push(tile);
+          return Promise.resolve({
+            tile,
+            features: [],
+            fetchedAt: 0,
+            sourceId: "fixture:abort",
+            schemaVersion: 1,
+            skipped: [],
+          });
+        },
+      },
+    };
+  }
+
+  it("throws AbortError and fetches NOTHING when already aborted", async () => {
+    const { source, tiles } = countingSource();
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+
+    await expect(
+      pipeline.update(COLOGNE, "walkable", AbortSignal.abort()),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    // The check is before the first fetch, so an already-superseded run costs
+    // nothing at all — not even one tile.
+    expect(tiles).toEqual([]);
+  });
+
+  it("stops after the tile in flight, and does NOT go on to score", async () => {
+    // WHAT THIS TEST TAUGHT, and why the production code gained a second check.
+    // The original guard was only at the top of the tile loop, so it fired only
+    // when there WAS a next tile — and at an interior position the working set
+    // needs exactly one. A run superseded during its single fetch therefore went
+    // on to score 19 chunks and 931 cells for a position the user had left.
+    // Scoring is the other expensive half of , so there is now a check
+    // after the loop as well, and this test is what forced it.
+    const { source, tiles } = countingSource();
+    const controller = new AbortController();
+    const counting: OsmDataSource = {
+      ...source,
+      fetchTile: async (tile) => {
+        const result = await source.fetchTile(tile);
+        // Supersede the run as soon as the first tile has landed.
+        controller.abort();
+        return result;
+      },
+    };
+    const pipeline = new DemoPipeline({ source: counting, table: TABLE });
+
+    await expect(
+      pipeline.update(COLOGNE, "walkable", controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    // Exactly one: the tile that was already in flight completed, and the loop
+    // refused to start another.
+    expect(tiles).toHaveLength(1);
+  });
+
+  it("completes normally when the signal is never aborted", async () => {
+    // The control case: the guard must not make the ordinary path abortive.
+    const { source, tiles } = countingSource();
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+
+    const snapshot = await pipeline.update(
+      COLOGNE,
+      "walkable",
+      new AbortController().signal,
+    );
+
+    expect(snapshot.position).toEqual(COLOGNE);
+    expect(tiles.length).toBeGreaterThan(0);
+  });
+
+  it("works with no signal at all, so callers that do not cancel are unaffected", async () => {
+    const { source } = countingSource();
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+    await expect(pipeline.update(COLOGNE, "walkable")).resolves.toHaveProperty(
+      "position",
+    );
+  });
+});

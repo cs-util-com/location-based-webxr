@@ -59,6 +59,7 @@ interface TerrainWorker {
   call(
     kind: "terrain",
     payload: { centre: LatLng; extentM: number; spacingM: number },
+    options: { signal: AbortSignal },
   ): Promise<TerrainResult>;
 }
 
@@ -89,7 +90,9 @@ export function createTerrainCycle(
 ): LatestOnly<LatLng> {
   const { worker, extentM, spacingM, apply } = options;
 
-  return latestOnly(async (centre: LatLng) => {
-    apply(await worker.call("terrain", { centre, extentM, spacingM }));
+  return latestOnly(async (centre: LatLng, signal) => {
+    apply(
+      await worker.call("terrain", { centre, extentM, spacingM }, { signal }),
+    );
   });
 }

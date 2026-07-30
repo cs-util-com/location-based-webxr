@@ -136,6 +136,55 @@ test.describe("the worker", () => {
     // than leaving a passing test and a blank page.
     await expect(page.locator("#status")).toContainText(/\d+ cells/);
   });
+
+  test("a dead worker is REPORTED, not left hanging", async ({ page }) => {
+    // WHY THIS TEST MATTERS, and it was missing when the worker landed. A worker
+    // that dies — a syntax error in its module graph, an OOM — fires `error` and
+    // then never replies to anything. Every pending call hangs forever, and an
+    // `error` event carries no request id, so nothing CAN be rejected. The only
+    // correct behaviour is an out-of-band report, which is why `onFatal` is a
+    // required parameter of `workerTransport`.
+    //
+    // The symptom without it is the worst kind: the demo sits on "Loading the
+    // rule table…" indefinitely, which looks exactly like a slow network. So the
+    // assertion is that the failure becomes VISIBLE.
+    await stubNetwork(page);
+
+    // A Worker that constructs successfully and then dies, which is the shape of
+    // a real module-graph failure. Deliberately NOT a constructor that throws:
+    // that would fail at `new Worker` and never exercise the error listener.
+    await page.addInitScript(() => {
+      // @ts-expect-error — deliberately replacing the constructor.
+      window.Worker = class extends EventTarget {
+        constructor() {
+          super();
+          setTimeout(() => {
+            this.dispatchEvent(
+              Object.assign(new Event("error"), {
+                message: "simulated worker death",
+              }),
+            );
+          }, 0);
+        }
+        postMessage() {
+          /* a dead worker answers nothing — that is the whole point */
+        }
+        terminate() {}
+      };
+    });
+
+    await page.goto(AT_FIXTURE);
+
+    // Reported through the pre-store channel, because the worker has to exist
+    // before the store does (the store's initial category comes from the rule
+    // table, which the worker loads). Either channel is a pass; silence is not.
+    await expect(page.locator("#status")).toContainText(/Failed/, {
+      timeout: 15000,
+    });
+    await expect(page.locator("#status")).toContainText(
+      /simulated worker death/,
+    );
+  });
 });
 
 test.describe("the header", () => {
@@ -1164,10 +1213,13 @@ test.describe("the 3D view", () => {
     );
     expect(counts.terrain).toBeGreaterThan(0);
 
-    // Attribution is required wherever the data is shown, exactly as for OSM.
-    await expect(page.locator("#terrain-credit")).toContainText(
-      /Terrain|Mapzen/,
-    );
+    // Attribution is required wherever the data is shown, exactly as for OSM —
+    // and it lives in Leaflet's attribution control rather than the header,
+    // because the header collapses and a credit that can be collapsed away does
+    // not satisfy the obligation (DEC-R2-4).
+    await expect(
+      page.locator("#map .leaflet-control-attribution"),
+    ).toContainText(/Terrain|Mapzen/);
 
     // And the terrain is actually doing something, not merely fetched. The
     // relief is in the status line because a viewer needs it for the same
