@@ -29,6 +29,7 @@ import {
 } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
 import { escapeHtml } from "./escape-html.js";
+import { regionStyle } from "./region-style.js";
 import { rankContributors } from "./contributor-order.js";
 import {
   BELOW_THRESHOLD_COLOUR,
@@ -233,6 +234,15 @@ export class MapView {
     category: string,
     threshold: number,
     showBelowThreshold = false,
+    /**
+     * Whether regions are FILLED as well as outlined (W15).
+     *
+     * The `areas` layer, which is the same switch that draws the 3D slabs — one
+     * claim, drawn in both views or in neither. The dashed boundary is not behind
+     * this flag: it answers "where does this end", which does not stop mattering
+     * when the fill answers "how good is it".
+     */
+    fillRegions = false,
   ): HeatScale {
     this.cellLayer.clearLayers();
     this.regionLayer.clearLayers();
@@ -282,13 +292,7 @@ export class MapView {
           polygon.map((ring) =>
             ring.map((p) => [p.lat, p.lng] as [number, number]),
           ),
-          {
-            color: "#ffffff",
-            weight: 2,
-            fill: false,
-            dashArray: "4 4",
-            className: "region-outline",
-          },
+          regionStyle(region.medianScore, scale, fillRegions),
         )
           .bindTooltip(
             // Escaped: `category` is a column header from the publicly editable

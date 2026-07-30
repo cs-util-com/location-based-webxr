@@ -328,6 +328,21 @@ async function main(): Promise<void> {
     },
   });
 
+  /**
+   * The heat scale for a snapshot — the ONE derivation both views read.
+   *
+   * The map returns its scale so the legend can paint the same ramp; the 3D
+   * view needs it too, for W14's region slabs. Deriving it twice is the shape of
+   * defect this demo keeps finding: two computations that agree today and have
+   * nothing asserting they always will.
+   */
+  function scaleFor(snapshot: DemoSnapshot, category: string) {
+    return heatScale(
+      snapshot.cells.map((cell) => cell.scores[category] ?? 1),
+      snapshot.threshold,
+    );
+  }
+
   function drawMap(snapshot: DemoSnapshot | undefined): void {
     const view = selectOsmView(store.getState());
     if (snapshot === undefined) {
@@ -348,6 +363,8 @@ async function main(): Promise<void> {
       view.category,
       snapshot.threshold,
       view.showBelowThreshold,
+      // W15: the same switch that draws the 3D slabs. One claim, both views.
+      isLayerEnabled(layers, "areas"),
     );
     // The red box: what Overpass was actually asked for, drawn so "one res-7
     // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
@@ -401,15 +418,12 @@ async function main(): Promise<void> {
     // forgetting either gave a layer that toggles in the UI but never draws.
     const wantsMeshLayers = wantsAnyMeshLayer(layers);
     if (latestMesh !== undefined && wantsMeshLayers) {
-      // ONE SCALE, BOTH VIEWS. The region slabs are coloured through exactly the
-      // function the 2D map paints with, built from the same snapshot — so a
-      // region cannot read as "good" in one pane and "poor" in the other. That
-      // cross-view disagreement is what the store exists to make impossible, and
-      // a second colour function here would reintroduce it by the back door.
-      const scale = heatScale(
-        snapshot.cells.map((cell) => cell.scores[view.category] ?? 1),
-        snapshot.threshold,
-      );
+      // ONE SCALE, BOTH VIEWS, and DERIVED IN ONE PLACE. W14 first computed a
+      // second `heatScale` here from the same snapshot — agreeing with the map's
+      // by construction, but by construction is not the same as by design: two
+      // derivations of the identical thing is how they eventually differ, and
+      // the failure would be silent because each view stays self-consistent.
+      const scale = scaleFor(snapshot, view.category);
       mesh = buildingView.render(latestMesh, meshLayerSelection(layers), {
         colourForScore: (score) => {
           const { r, g, b } = heatColour(score, scale);

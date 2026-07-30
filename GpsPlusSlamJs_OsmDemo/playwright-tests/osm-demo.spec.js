@@ -1428,6 +1428,47 @@ test.describe("the 3D view", () => {
     expect(errors.filter((text) => !noise.test(text))).toEqual([]);
   });
 
+  test("fills the regions on the MAP when the areas layer is on", async ({
+    page,
+  }) => {
+    // W15, the 2D half of the same claim W14 draws in 3D. Regions shipped as a
+    // 2 px dashed stroke with fill:false — deliberately understated, and the
+    // reason the round-1 session missed them entirely, asking whether the flood
+    // fill existed about a feature that had been on screen the whole time.
+    //
+    // Leaflet renders every polygon as an indistinguishable <path>, so the
+    // outline and the fill carry different classes and this counts them
+    // separately. Without that, "regions are filled" would match the unfilled
+    // outline and pass while nothing had changed.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const outlines = page.locator("#map path.region-outline");
+    const fills = page.locator("#map path.region-fill");
+
+    // The boundary is always drawn: it answers "where does this end", which does
+    // not stop mattering when the fill answers "how good is it".
+    await expect(outlines).not.toHaveCount(0);
+    await expect(fills).toHaveCount(0);
+
+    await page.getByRole("checkbox", { name: "areas" }).check();
+    await expect(fills).not.toHaveCount(0);
+    // Still outlined as well as filled.
+    await expect(outlines).not.toHaveCount(0);
+
+    // The fill is a real colour from the ramp, not a default. Leaflet writes the
+    // style onto the path, so this reads what the browser actually applied
+    // rather than what the code intended.
+    const fill = await fills
+      .first()
+      .evaluate((node) => node.getAttribute("fill"));
+    expect(fill).toMatch(/^#[0-9a-f]{6}$/i);
+
+    await page.getByRole("checkbox", { name: "areas" }).uncheck();
+    await expect(fills).toHaveCount(0);
+  });
+
   test("draws merged regions as slabs, in the map's own colours", async ({
     page,
   }) => {
