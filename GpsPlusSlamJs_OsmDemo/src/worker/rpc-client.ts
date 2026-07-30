@@ -52,6 +52,17 @@ export interface RpcClient {
     payload: WorkerCalls[K]["request"],
     options?: RpcCallOptions,
   ): Promise<WorkerCalls[K]["result"]>;
+  /**
+   * Rejects every pending call WITHOUT terminating the transport.
+   *
+   * For a worker that has already died: it will never reply, so leaving calls
+   * pending costs more than silence. `latestOnly`'s active promise never settles,
+   * so its `busy` stays true and the cycles that chain off it never run again —
+   * the demo wedges
+   * in a state whose loading phase says error while its cycles think work is in
+   * flight. Rejecting loses nothing a dead worker could still have told them.
+   */
+  fail(message: string): void;
   /** Rejects every pending call and terminates the transport. */
   dispose(): void;
 }
@@ -138,18 +149,28 @@ export function createRpcClient(transport: Transport): RpcClient {
     });
   }
 
+  /** Rejects and forgets every pending call. Shared by  and . */
+  function rejectAllPending(message: string): void {
+    for (const [, entry] of pending) {
+      entry.cleanup();
+      entry.reject(new Error(message));
+    }
+    pending.clear();
+  }
+
   return {
     call,
+    fail(message: string): void {
+      // NOT disposed: a dead worker is not a page tearing down, and the client
+      // stays usable so a later call fails fast rather than hanging too.
+      rejectAllPending(message);
+    },
     dispose(): void {
       disposed = true;
       // Reject rather than leave hanging: a disposed client with pending calls
       // is a page that is tearing down, and a promise that never settles there
       // keeps whatever awaited it alive with it.
-      for (const [, entry] of pending) {
-        entry.cleanup();
-        entry.reject(new Error("The worker client has been disposed"));
-      }
-      pending.clear();
+      rejectAllPending("The worker client has been disposed");
       transport.terminate();
     },
   };

@@ -70,7 +70,7 @@ type Update = (
   category: string,
 ) => Promise<DemoSnapshot>;
 
-function setup(update: Update) {
+function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
   const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
   /** Records the order of mesh handoffs and dispatches — see the ordering test. */
   const events: string[] = [];
@@ -80,10 +80,13 @@ function setup(update: Update) {
     // The pipeline moved into the worker, so the cycle now calls over RPC. The
     // narrow `RefreshWorker` shape is what keeps this test worker-free.
     worker: {
-      call: async (_kind, payload) => ({
-        snapshot: await update(payload.position, payload.category),
-        mesh: NO_MESH,
-      }),
+      call: async (_kind, payload, options) => {
+        const snapshot = await update(payload.position, payload.category);
+        // The signal is FORWARDED to the test, so a test can supersede the run
+        // after the reply has landed — the exact race the guard exists for.
+        onReply?.(options.signal);
+        return { snapshot, mesh: NO_MESH };
+      },
     },
     onMesh: () => {
       events.push("mesh");
@@ -91,7 +94,7 @@ function setup(update: Update) {
   });
   demo.store.subscribe(() => {
     if (selectOsmView(demo.store.getState()).snapshot !== undefined) {
-      if (!events.includes("snapshot")) events.push("snapshot");
+      events.push("snapshot");
     }
   });
   return { ...demo, refresh, events };
@@ -279,5 +282,50 @@ describe("renderSafely — a view failure", () => {
     renderSafely({ store, actions }, "second", second);
 
     expect(second).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createRefreshCycle — a superseded run applies nothing", () => {
+  it("drops a reply that landed just before the supersession", async () => {
+    // WHY THIS TEST MATTERS, and it was missing until a PR review pointed it out.
+    // Normally the abort rejects the worker call before it resolves. But there is a
+    // real race: if the reply has ALREADY landed when a newer input arrives, the
+    // cancellation has nothing left to cancel and the continuation runs anyway. The
+    // superseded snapshot would then be dispatched — a visible flash of the previous
+    // position before the current one replaces it.
+    //
+    // The guard is `if (signal.aborted) return;` after the await. Deleting it left
+    // all ten other tests in this file green, because the fake worker ignored its
+    // third argument and no test ever superseded a run after its reply landed.
+    //
+    // Driven through a REAL supersession rather than a hand-aborted controller:
+    // `latestOnly` owns the signal, so the only honest way to abort it is to give
+    // the wrapper a newer input — which is exactly what a second map click does.
+    let superseded = false;
+    // A function DECLARATION, so it is hoisted and can be named by the callback
+    // that runs before `refresh` is bound. A `let` holder is the same thing with an
+    // extra reassignment that `prefer-const` correctly objects to.
+    function supersede(): void {
+      void refresh();
+    }
+    const { store, refresh, events } = setup(
+      () => Promise.resolve(snapshot("walkable")),
+      () => {
+        // Once only, or this recurses for as long as the wrapper keeps draining.
+        if (superseded) return;
+        superseded = true;
+        supersede();
+      },
+    );
+
+    await refresh();
+
+    // ONE handover, not two: the superseded run applied nothing and the run that
+    // replaced it applied everything. Without the guard both would.
+    expect(events.filter((e) => e === "mesh")).toHaveLength(1);
+    // The surviving run still published, so the guard did not simply break the cycle.
+    expect(selectOsmView(store.getState()).snapshot).toBeDefined();
+    // And a supersession is not a failure.
+    expect(selectOsmView(store.getState()).loading.phase).not.toBe("error");
   });
 });

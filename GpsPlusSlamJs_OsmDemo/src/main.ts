@@ -103,6 +103,11 @@ async function main(): Promise<void> {
     status.textContent = `Failed: ${message}`;
   };
   const worker = createWorkerClient((message) => {
+    // BOTH, and both are needed. `worker.fail` rejects every call already in
+    // flight — a dead worker replies to nothing, so without it `latestOnly` never
+    // settles, its `busy` stays true, and every cycle chaining off it stops running
+    // (raised in review on #228). `reportFatal` is what the user sees.
+    worker.fail(message);
     reportFatal(message);
   });
   // The rule table is loaded INSIDE the worker, so what comes back is only what
@@ -353,9 +358,22 @@ async function main(): Promise<void> {
     // reproduces the previous picture exactly, so the e2e that passed before must
     // still pass.
     //
-    // `latestMesh === undefined` means a redraw with no new data behind it (a
-    // category switch, or the below-threshold toggle), in which case the buildings
-    // on screen are already correct and only the grid below needs rebuilding.
+    // `latestMesh` IS DELIBERATELY NEVER CLEARED, and an earlier version of this
+    // comment was wrong about it. It claimed the `undefined` branch handled a
+    // category switch and the below-threshold toggle — but nothing clears the
+    // variable, so once the first fetch has succeeded that branch is unreachable.
+    // A reviewer spotted the dead claim and suggested clearing on consumption
+    // (#228); that would have been right at the time and is wrong now.
+    //
+    // It has to persist, because a LAYER change has no new snapshot behind it and
+    // still needs the geometry rebuilt — switching plates on must re-render from
+    // the mesh the last refresh produced. Clearing it would make the layer toggles
+    // silently no-ops on everything except the affordance grid.
+    //
+    // KNOWN COST, recorded rather than hidden: a below-threshold toggle now
+    // rebuilds the building and tree geometry it did not need to. Distinguishing
+    // "layers changed" from "only the draw filter changed" would avoid it and is a
+    // follow-up, not a correctness issue.
     const wantsMeshLayers =
       isLayerEnabled(layers, "buildings") ||
       isLayerEnabled(layers, "trees") ||

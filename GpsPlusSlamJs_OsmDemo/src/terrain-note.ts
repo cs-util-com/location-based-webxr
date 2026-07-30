@@ -15,8 +15,21 @@
  * WHY THE NUMBER MATTERS MORE THAN IT USED TO. DEC-R2-1 accepted that genuinely
  * flat ground should look flat (normal-based shading on sub-1° slopes shows
  * nothing, and that is now the correct outcome rather than a defect). So this
- * string is the ONLY remaining signal separating flat-and-loaded from
- * not-loaded. It must not be dropped by the collapsible header (DEC-R2-4).
+ * string is the ONLY remaining signal separating flat-and-loaded from not-loaded.
+ *
+ * AND IT IS HIDDEN WHILE THE HEADER IS COLLAPSED. An earlier revision of this
+ * comment claimed the opposite — "it must not be dropped by the collapsible header"
+ * — which the same PR contradicted: DEC-R2-4 hides `#status`, and
+ * `header-collapse.ts` lists the status string among what it hides. Caught in
+ * review, and recorded here as the real behaviour rather than the intended one.
+ *
+ * The gap is small but genuine: with the bar collapsed there is no way to tell flat
+ * ground from a DEM that never loaded. It is not covered by DEC-R2-15's
+ * auto-expand, because that fires on the error channel and a terrain load that
+ * returns a flat field is not an error. Either the phrase needs a home outside the
+ * collapsible region — the way the Terrarium attribution moved into Leaflet's
+ * control for exactly this reason — or the collapsed bar needs to keep it. Filed as
+ * a follow-up rather than decided here.
  *
  * @see terrain-note.ts.md
  */

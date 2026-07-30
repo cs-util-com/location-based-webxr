@@ -63,6 +63,7 @@ import {
   isWorkerEnvelope,
   type TransferableMesh,
   type WorkerCallKind,
+  type UpdateResult,
   type WorkerCalls,
 } from "./protocol.js";
 
@@ -220,6 +221,19 @@ async function handle<K extends WorkerCallKind>(
       });
       // Stored even when empty, so a later mesh build cannot stand on the
       // PREVIOUS position's relief after a DEM outage at this one.
+      //
+      // A SUPERSEDED LOAD CANNOT REACH THIS LINE, and the reason is worth stating
+      // because it is not obvious: the `signal.aborted` throw above is the last
+      // `await` boundary in this handler, so everything from that check to this
+      // assignment runs in one synchronous turn. An `abort` message can only be
+      // delivered between turns, so it cannot land in the gap.
+      //
+      // That matters because the alternative is the exact failure this file's
+      // header says holding the field worker-side prevents: two overlapping loads
+      // where the OLDER one writes last, leaving the mesh built on one position's
+      // relief while the main thread's ground plane draws another's. Raised in
+      // review against the commit before the terrain cache landed, where there was
+      // no check here at all and the hole was real.
       terrain = field.hasData ? field : undefined;
       return {
         field: terrain,
@@ -246,6 +260,54 @@ async function handle<K extends WorkerCallKind>(
       throw new Error(`Unknown request kind: ${String(kind)}`);
   }
 }
+
+/**
+ * Buffers to hand over rather than copy, per request kind.
+ *
+ * WHY PER KIND AND NOT A BLANKET SWEEP. Transferring **detaches** a buffer on this
+ * side, so it may only be done for data the worker does not keep:
+ *
+ * - **update** — the mesh comes from `mergeMeshes`, freshly allocated per call and
+ *   never retained here, so handing it over is free. This is the payload that
+ *   matters: the building geometry is the largest thing that crosses.
+ * - **terrain** — the field's `heights` MUST NOT be transferred. That same object
+ *   stays in module state for the next mesh build, and detaching it would leave the
+ *   worker holding a zero-length array. Buildings would silently drop to flat ground
+ *   on the following refresh, which reads as a terrain bug rather than as a
+ *   memory-ownership one.
+ * - **init / explain** — small plain objects with nothing worth transferring.
+ *
+ * Until this existed the package's `Float32Array` output was only transfer**able**,
+ * while four docstrings claimed the transfer itself as the payoff of the worker
+ * split. Raised in review on #228: the docs asserted a property the code lacked.
+ */
+function transferablesOf(kind: WorkerCallKind, value: unknown): Transferable[] {
+  if (kind !== "update") return [];
+  const mesh = (value as UpdateResult | undefined)?.mesh;
+  if (mesh === undefined) return [];
+  return [
+    mesh.buildings.positions.buffer,
+    mesh.buildings.normals.buffer,
+    mesh.buildings.indices.buffer,
+    mesh.plates.positions.buffer,
+    mesh.plates.normals.buffer,
+    mesh.plates.indices.buffer,
+  ].filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
+}
+
+/**
+ * `postMessage` with a transfer list, typed for a worker rather than a window.
+ *
+ * The project ships the DOM lib and not WebWorker, so `self` types as a `Window`
+ * and its `postMessage` overloads expect a `targetOrigin` string — which makes the
+ * transfer-list form a type error at every call site. Narrowed once here instead of
+ * casting twice, and deliberately NOT by adding the WebWorker lib globally: that
+ * would let every other file in this app reach for worker-only globals.
+ */
+const postToMain = self.postMessage.bind(self) as (
+  message: unknown,
+  transfer?: Transferable[],
+) => void;
 
 /** In-flight requests, so an `abort` can actually stop the work it names. */
 const inFlight = new Map<number, AbortController>();
@@ -278,11 +340,11 @@ self.addEventListener("message", (event: MessageEvent) => {
         // A superseded request must not resolve: the caller has already rejected
         // it and a late success would be applied to a position the user left.
         if (controller.signal.aborted) return;
-        self.postMessage({ id, ok: true, value });
+        postToMain({ id, ok: true, value }, transferablesOf(kind, value));
       },
       (error: unknown) => {
         if (controller.signal.aborted) return;
-        self.postMessage({
+        postToMain({
           id,
           ok: false,
           message: error instanceof Error ? error.message : String(error),

@@ -41,8 +41,10 @@ State lives in `header[data-collapsed]`, so the CSS, the tests and
   re-create the confusion it was added to fix.
 - **Attribution is never collapsed away.** The Terrarium credit moved into
   Leaflet's attribution control (`MapView.setTerrainAttribution`), which is always
-  visible. The header still mirrors it, but the control is what satisfies the
-  licence.
+  visible. The header span was REMOVED rather than kept as a mirror: two copies of
+  one credit is one too many, and the header copy is the one that disappears on
+  collapse — i.e. the copy that does not satisfy the obligation, sitting beside the
+  one that does.
 - **The toggle is an `<h1>` given `role="button"` + `tabindex="0"`, so Enter and
   Space are implemented by hand.** A real `<button>` gets them free; `role` only
   _promises_ them. Space also has `preventDefault()` or it scrolls the page out

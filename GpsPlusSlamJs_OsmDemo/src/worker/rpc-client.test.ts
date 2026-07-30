@@ -195,3 +195,60 @@ describe("createRpcClient", () => {
     await expect(client.call("init", {})).rejects.toThrow("disposed");
   });
 });
+
+describe("createRpcClient — a fatal worker failure", () => {
+  it("rejects every pending call, so no caller waits forever", async () => {
+    // WHY THIS MATTERS, and a PR review is what surfaced the consequence. A dead
+    // worker replies to nothing, so without this every in-flight call stays
+    // pending for the life of the page — and the cost is not merely silence.
+    //
+    // `latestOnly`'s `active` promise never settles, so `busy` stays true forever
+    // and `main.ts`'s `loadTerrain(position).finally(() => refresh())` never fires
+    // again. The demo ends up in a state whose `loading` phase says error while its
+    // cycles still believe work is in flight — wedged, not merely broken.
+    //
+    // Rejecting loses no information: a worker that will never reply has nothing
+    // left to tell any of them.
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport);
+
+    const init = client.call("init", {});
+    const update = client.call("update", {
+      position: { lat: 50.94, lng: 6.96 },
+      category: "walkable",
+    });
+
+    client.fail("the worker died");
+
+    await expect(init).rejects.toThrow("the worker died");
+    await expect(update).rejects.toThrow("the worker died");
+  });
+
+  it("does NOT terminate the transport, unlike dispose", async () => {
+    // The distinction that makes `fail` worth having separately: `dispose()` is a
+    // page tearing down and terminates the worker; `fail()` is the worker already
+    // being gone. Terminating here would be redundant at best, and would discard
+    // the `error` event's own diagnostics at worst.
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport);
+    const pending = client.call("init", {});
+
+    client.fail("boom");
+
+    await expect(pending).rejects.toThrow("boom");
+    expect(fake.terminated).toBe(false);
+  });
+
+  it("leaves the client usable, so a later call fails fast rather than hanging", async () => {
+    // A fatal error is not disposal, so the client is not marked disposed — but a
+    // caller that tries again must not be left pending either. It gets a rejection
+    // from the reply that never comes, exactly like the ones already in flight.
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport);
+    client.fail("gone");
+
+    const later = client.call("init", {});
+    client.fail("still gone");
+    await expect(later).rejects.toThrow("still gone");
+  });
+});

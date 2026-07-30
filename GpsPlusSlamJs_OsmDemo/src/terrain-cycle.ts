@@ -91,8 +91,23 @@ export function createTerrainCycle(
   const { worker, extentM, spacingM, apply } = options;
 
   return latestOnly(async (centre: LatLng, signal) => {
-    apply(
-      await worker.call("terrain", { centre, extentM, spacingM }, { signal }),
+    const state = await worker.call(
+      "terrain",
+      { centre, extentM, spacingM },
+      { signal },
     );
+    // NOTHING IS APPLIED FOR A SUPERSEDED LOAD — the same guard `refresh-cycle.ts`
+    // carries, and it matters more here. Usually the abort rejects the call before
+    // it resolves; but if the reply has ALREADY landed when the newer position
+    // arrives, the cancellation has nothing left to cancel and this continuation
+    // runs anyway. `apply` would then hand the UI the superseded centre's field —
+    // the 3D view's buildings on one position's relief with the status line
+    // reporting the other's, which is by name the interleaving this whole module
+    // exists to prevent.
+    //
+    // Missed when the sampling moved behind the RPC, and found in review rather
+    // than by a test: the guard's sibling had the same hole.
+    if (signal.aborted) return;
+    apply(state);
   });
 }
