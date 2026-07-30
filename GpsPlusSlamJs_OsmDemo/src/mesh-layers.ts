@@ -53,6 +53,7 @@ export const DRAWN_BY_MESH = [
   "plates",
   "poi",
   "roads",
+  "areas",
 ] as const;
 
 /** Not exported: nothing outside this module needs to name it, and knip is right
@@ -84,6 +85,8 @@ export interface BuildingStats {
   readonly plateTriangles: number;
   /** POI markers drawn (W12). */
   readonly poi: number;
+  /** Merged affordance regions drawn as slabs (W14). */
+  readonly areas: number;
   /** Road ways drawn (W13). */
   readonly roads: number;
   /** Their merged triangle count — the same built-versus-drawn pair as plates. */
@@ -108,9 +111,35 @@ const NO_STATS: BuildingStats = {
   plates: 0,
   plateTriangles: 0,
   poi: 0,
+  areas: 0,
   roads: 0,
   roadTriangles: 0,
 };
+
+/**
+ * What a layer needs beyond the mesh itself.
+ *
+ * Exists for exactly one reason: W14's region slabs are coloured by
+ * `medianScore`, and **the 2D map and the 3D view must never be able to disagree
+ * about what a score looks like.** The demo owns one `heatScale`/`heatColour`
+ * pair, both views read it, and it is handed in here rather than reimplemented —
+ * a second colour function would be a second source of truth for the same
+ * question, which is the whole reason the store exists.
+ */
+export interface MeshLayerContext {
+  /** The 2D map's colour for a score, as a packed `0xrrggbb`. */
+  readonly colourForScore: (score: number) => number;
+}
+
+/**
+ * The fallback context.
+ *
+ * A VISIBLY WRONG magenta rather than a plausible grey, because the only way to
+ * reach it is for a caller to forget the real scale — and a plausible colour
+ * would make that mistake look like a design choice. The same reasoning as
+ * `NO_DATA_RGB` in `height-ramp.ts`.
+ */
+const NEUTRAL_CONTEXT: MeshLayerContext = { colourForScore: () => 0xff00ff };
 
 /** What one drawable layer contributes to the scene and to the status line. */
 export interface MeshLayerDescriptor {
@@ -124,7 +153,7 @@ export interface MeshLayerDescriptor {
    */
   readonly defaultOn: boolean;
   /** Objects to add to the scene. Empty when the layer has nothing to draw. */
-  build(mesh: TransferableMesh): THREE.Object3D[];
+  build(mesh: TransferableMesh, context: MeshLayerContext): THREE.Object3D[];
   /** The counters this layer owns, supplied only when it is drawn. */
   counters(mesh: TransferableMesh): Partial<BuildingStats>;
 }
@@ -283,6 +312,38 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     counters: (mesh) => ({ trees: mesh.trees.length }),
   },
   {
+    layer: "areas",
+    // OFF by default like every layer added after the W10 baseline. It is also
+    // the layer the round-1 feedback missed entirely, which is why W15 fills the
+    // 2D outline at the same time — the same claim, drawn in both views.
+    defaultOn: false,
+    build: (mesh, context) =>
+      mesh.regions
+        .filter((slab) => slab.mesh.triangleCount > 0)
+        .map((slab) => {
+          const object = new THREE.Mesh(
+            geometryFrom(slab.mesh),
+            new THREE.MeshStandardMaterial({
+              // THE SAME COLOUR THE MAP DRAWS, through the same function. A
+              // region that reads as "good" in 2D and "poor" in 3D is the exact
+              // cross-view disagreement the store was introduced to prevent.
+              color: context.colourForScore(slab.medianScore),
+              roughness: 0.8,
+              flatShading: true,
+              transparent: true,
+              // Translucent so the ground and the buildings inside a region stay
+              // readable through it — a region is a claim ABOUT the ground, not
+              // a replacement for it.
+              opacity: 0.55,
+              side: THREE.DoubleSide,
+            }),
+          );
+          object.position.y = groundLift("areas");
+          return object;
+        }),
+    counters: (mesh) => ({ areas: mesh.regions.length }),
+  },
+  {
     layer: "roads",
     defaultOn: false,
     build: (mesh) => {
@@ -355,12 +416,13 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
 export function drawMeshLayers(
   mesh: TransferableMesh,
   layers?: MeshLayers,
+  context: MeshLayerContext = NEUTRAL_CONTEXT,
 ): { objects: THREE.Object3D[]; stats: BuildingStats } {
   const objects: THREE.Object3D[] = [];
   let stats = NO_STATS;
   for (const descriptor of MESH_LAYERS) {
     if (!(layers?.[descriptor.layer] ?? descriptor.defaultOn)) continue;
-    objects.push(...descriptor.build(mesh));
+    objects.push(...descriptor.build(mesh, context));
     stats = { ...stats, ...descriptor.counters(mesh) };
   }
   return { objects, stats };

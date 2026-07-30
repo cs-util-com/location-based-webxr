@@ -67,6 +67,7 @@ const NO_MESH: TransferableMesh = {
     forcedEars: 0,
   },
   roadCount: 0,
+  regions: [],
   volumes: 0,
   parts: 0,
   guessedHeights: 0,

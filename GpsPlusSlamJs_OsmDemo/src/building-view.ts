@@ -22,6 +22,7 @@ import type { CellMesh } from "./cell-mesh.js";
 import type { Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
 import { drawMeshLayers } from "./mesh-layers.js";
+import type { MeshLayerContext } from "./mesh-layers.js";
 import { resolvePick, type Pick } from "./pick.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
@@ -720,14 +721,18 @@ export class BuildingView {
    * So this is now purely "typed arrays in, three.js objects out", which is what
    * `building-view.ts`'s header always claimed the file was for.
    */
-  render(mesh: TransferableMesh, layers?: MeshLayers): BuildingStats {
+  render(
+    mesh: TransferableMesh,
+    layers?: MeshLayers,
+    context?: MeshLayerContext,
+  ): BuildingStats {
     this.clear();
     // ONE LINE PER LAYER'S WORTH OF WORK, in `mesh-layers.ts`. This used to be a
     // pair of branches per layer — one to draw it, one ternary per counter to zero
     // its contribution when off — which reached complexity 21 with three layers and
     // had four more (W12–W15) queued behind it. The table also makes a MISSING
     // layer detectable, which the longhand form could not: see that file's header.
-    const { objects, stats } = drawMeshLayers(mesh, layers);
+    const { objects, stats } = drawMeshLayers(mesh, layers, context);
     for (const object of objects) this.group.add(object);
 
     // SCHEDULED, not rendered inline. A synchronous `renderer.render()` here does

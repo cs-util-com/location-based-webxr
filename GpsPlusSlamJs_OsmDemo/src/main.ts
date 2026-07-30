@@ -39,7 +39,7 @@ import { attachSheetDrag } from "./sheet-drag.js";
 import { buildCellMesh, EMPTY_CELL_MESH } from "./cell-mesh.js";
 import { heightfieldFrom, type Heightfield } from "./heightfield.js";
 import { createTerrainCycle } from "./terrain-cycle.js";
-import { heatScale } from "./heat-colours.js";
+import { heatColour, heatScale } from "./heat-colours.js";
 import {
   BuildingView,
   TERRAIN_EXTENT_M,
@@ -401,7 +401,21 @@ async function main(): Promise<void> {
     // forgetting either gave a layer that toggles in the UI but never draws.
     const wantsMeshLayers = wantsAnyMeshLayer(layers);
     if (latestMesh !== undefined && wantsMeshLayers) {
-      mesh = buildingView.render(latestMesh, meshLayerSelection(layers));
+      // ONE SCALE, BOTH VIEWS. The region slabs are coloured through exactly the
+      // function the 2D map paints with, built from the same snapshot — so a
+      // region cannot read as "good" in one pane and "poor" in the other. That
+      // cross-view disagreement is what the store exists to make impossible, and
+      // a second colour function here would reintroduce it by the back door.
+      const scale = heatScale(
+        snapshot.cells.map((cell) => cell.scores[view.category] ?? 1),
+        snapshot.threshold,
+      );
+      mesh = buildingView.render(latestMesh, meshLayerSelection(layers), {
+        colourForScore: (score) => {
+          const { r, g, b } = heatColour(score, scale);
+          return (r << 16) | (g << 8) | b;
+        },
+      });
     } else if (!wantsMeshLayers) {
       buildingView.clearScene();
       mesh = undefined;
@@ -468,6 +482,7 @@ async function main(): Promise<void> {
       mesh === undefined || mesh.roads === 0
         ? ""
         : `${mesh.roads} roads (${mesh.roadTriangles} tri)`,
+      mesh === undefined || mesh.areas === 0 ? "" : `${mesh.areas} area slabs`,
       // W23's comparison, as a NUMBER. Both displacement paths ship precisely so
       // they can be measured against each other on a phone, and "it feels about
       // the same" is not a measurement — this repo has already had one constant

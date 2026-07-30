@@ -42,6 +42,8 @@ import {
   buildAreaPlates,
   buildBuildings,
   buildPoiMarkers,
+  buildRegionSlabs,
+  type SlabRegion,
   buildRoads,
   buildTrees,
   enuFrameAt,
@@ -117,6 +119,16 @@ let terrain: HeightfieldData | undefined;
 function buildMesh(
   features: Iterable<OsmFeature>,
   centre: LatLng,
+  /**
+   * The scored regions.
+   *
+   * From the SNAPSHOT, not from the features: a region is a product of scoring
+   * — a flood fill over affordance cells — rather than of geometry, so it is the
+   * one input to the mesh build that the feature set cannot supply. Passed in
+   * rather than re-derived, so the slab a user sees and the outline the map
+   * draws are the same region.
+   */
+  regions: readonly SlabRegion[] = [],
 ): TransferableMesh {
   const frame = enuFrameAt(centre);
   const all = [...features];
@@ -140,6 +152,8 @@ function buildMesh(
   // PER-VERTEX terrain, like the plates: a road is a long surface, and one
   // sample would cut into the hill at one end and float at the other.
   const roads = buildRoads(all, options);
+  // Per-vertex terrain again: a region can be hundreds of metres across.
+  const regionSlabs = buildRegionSlabs(regions, options);
   // PER-VERTEX terrain for plates, unlike buildings: a 30 m car park sampled once
   // would cut into the ground at one end and float at the other, which is exactly
   // the artefact the building change removed. The same option name carries both
@@ -158,6 +172,7 @@ function buildMesh(
     poi,
     roads: mergeMeshes(roads.map((road) => road.mesh)),
     roadCount: roads.length,
+    regions: regionSlabs,
     volumes: volumes.length,
     parts: volumes.filter((v) => v.parentFeature !== undefined).length,
     guessedHeights: volumes.filter((v) => v.heights.heightIsGuessed).length,
@@ -212,7 +227,11 @@ async function handle<K extends WorkerCallKind>(
       const snapshot = await pipeline.update(position, category, signal);
       return {
         snapshot,
-        mesh: buildMesh(pipeline.features().values(), snapshot.position),
+        mesh: buildMesh(
+          pipeline.features().values(),
+          snapshot.position,
+          snapshot.regions,
+        ),
       };
     }
 

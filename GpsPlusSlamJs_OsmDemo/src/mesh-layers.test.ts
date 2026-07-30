@@ -70,6 +70,7 @@ function fullMesh(): TransferableMesh {
     plateCount: 3,
     roads: triangle(),
     roadCount: 2,
+    regions: [{ medianScore: 4, mesh: triangle() }],
     poi: [
       {
         feature: "node/4242",
@@ -95,6 +96,7 @@ function emptyMesh(): TransferableMesh {
     plateCount: 0,
     roads: EMPTY,
     roadCount: 0,
+    regions: [],
     poi: [],
     volumes: 0,
     parts: 0,
@@ -151,6 +153,7 @@ describe("MESH_LAYERS — the table itself", () => {
       plates: false,
       poi: false,
       roads: false,
+      areas: false,
     });
   });
 });
@@ -158,8 +161,8 @@ describe("MESH_LAYERS — the table itself", () => {
 describe("drawMeshLayers — what reaches the scene", () => {
   it("draws every layer that is on", () => {
     const { objects } = drawMeshLayers(fullMesh(), ALL_ON);
-    // Buildings, plates, roads, one tree cone, one POI marker.
-    expect(objects).toHaveLength(5);
+    // Buildings, plates, roads, one area slab, one tree cone, one POI marker.
+    expect(objects).toHaveLength(6);
     for (const object of objects) expect(object).toBeInstanceOf(THREE.Object3D);
   });
 
@@ -171,6 +174,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       plates: false,
       poi: false,
       roads: false,
+      areas: false,
     });
     expect(objects).toEqual([]);
   });
@@ -193,6 +197,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       trees: false,
       poi: false,
       roads: false,
+      areas: false,
     });
     expect(objects[0]?.position.y).toBeCloseTo(groundLift("plates"), 10);
   });
@@ -283,6 +288,70 @@ describe("drawMeshLayers — POI markers", () => {
   });
 });
 
+describe("drawMeshLayers — region slabs", () => {
+  it("colours a slab through the CALLER's scale, not one of its own", () => {
+    // WHY THIS IS THE TEST W14 EXISTS FOR. A region that reads as "good" in the
+    // 2D map and "poor" in the 3D view is the cross-view disagreement the store
+    // was introduced to prevent, and a colour function defined in here would
+    // reintroduce it by the back door — silently, because both views would look
+    // internally consistent.
+    //
+    // The context is the seam: `main.ts` passes the same `heatColour`/`heatScale`
+    // pair the map paints with, built from the same snapshot.
+    const { objects } = drawMeshLayers(
+      fullMesh(),
+      {
+        ...ALL_ON,
+        buildings: false,
+        trees: false,
+        plates: false,
+        poi: false,
+        roads: false,
+      },
+      { colourForScore: (score) => (score === 4 ? 0x123456 : 0x000000) },
+    );
+    expect(objects).toHaveLength(1);
+    const slab = objects[0] as THREE.Mesh<
+      THREE.BufferGeometry,
+      THREE.MeshStandardMaterial
+    >;
+    expect(slab.material.color.getHex()).toBe(0x123456);
+  });
+
+  it("falls back to a VISIBLY wrong colour when no scale is given", () => {
+    // Magenta, not a plausible grey. The only way to reach this is for a caller
+    // to forget the real scale, and a plausible colour would make that mistake
+    // look like a design choice — the same reasoning as `NO_DATA_RGB`.
+    const { objects } = drawMeshLayers(fullMesh(), {
+      ...ALL_ON,
+      buildings: false,
+      trees: false,
+      plates: false,
+      poi: false,
+      roads: false,
+    });
+    const slab = objects[0] as THREE.Mesh<
+      THREE.BufferGeometry,
+      THREE.MeshStandardMaterial
+    >;
+    expect(slab.material.color.getHex()).toBe(0xff00ff);
+  });
+
+  it("puts the slab on the shared ladder, above plates and roads", () => {
+    // A region is a claim ABOUT the ground rather than part of it, which is the
+    // ordering `layer-order.ts` states. Coplanar with the roads it would z-fight.
+    const { objects } = drawMeshLayers(fullMesh(), {
+      ...ALL_ON,
+      buildings: false,
+      trees: false,
+      plates: false,
+      poi: false,
+      roads: false,
+    });
+    expect(objects[0]?.position.y).toBeCloseTo(groundLift("areas"), 10);
+  });
+});
+
 describe("drawMeshLayers — the counters", () => {
   it("reports what was DRAWN, not what was available", () => {
     // The status line describing geometry that is switched off is the class of
@@ -314,6 +383,7 @@ describe("drawMeshLayers — the counters", () => {
       plates: 3,
       plateTriangles: 1,
       poi: 1,
+      areas: 1,
       roads: 2,
       roadTriangles: 1,
     });
@@ -330,9 +400,10 @@ describe("drawMeshLayers — the counters", () => {
       plates: false,
       poi: false,
       roads: false,
+      areas: false,
     });
     for (const value of Object.values(stats)) expect(value).toBe(0);
-    expect(Object.keys(stats)).toHaveLength(11);
+    expect(Object.keys(stats)).toHaveLength(12);
   });
 });
 

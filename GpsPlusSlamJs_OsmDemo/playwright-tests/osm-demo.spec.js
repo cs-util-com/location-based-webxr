@@ -1428,6 +1428,70 @@ test.describe("the 3D view", () => {
     expect(errors.filter((text) => !noise.test(text))).toEqual([]);
   });
 
+  test("draws merged regions as slabs, in the map's own colours", async ({
+    page,
+  }) => {
+    // BUILT IS NOT VISIBLE — the lesson the plates layer taught by being counted
+    // and reported for ten work items while nothing was drawn. Every geometry
+    // layer since gets a pixel assertion, not only a counter one.
+    //
+    // The fixture has one walkable region, and it is coloured through the SAME
+    // heatColour/heatScale pair the 2D map paints with. That sharing is the point
+    // of W14: a region reading as "good" in one pane and "poor" in the other is
+    // the cross-view disagreement the store exists to prevent.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // The affordance grid paints highest at 55 % opacity and would tint every
+    // ground pixel; the slab is what is under test.
+    await page.getByRole("checkbox", { name: "cells", exact: true }).uncheck();
+
+    // MEASURED, not guessed, and the first attempt shows why that matters. It
+    // required saturation > 45 and green > 60, on the reasoning that the heat
+    // ramp is vivid — but this fixture's single region scores at the LOW end of
+    // the ramp, where the colour is a dark violet. The filter matched zero pixels
+    // while 177 961 of them had changed.
+    //
+    // Histogram of the lower scene, with the layer off and on:
+    //
+    //   off   rgb(40,40,56) x375362      the ground
+    //   on    rgb(40,32,64) x177961      the slab over it
+    //
+    // Red LEADS green on the slab and equals it on the ground, which separates
+    // the two cleanly and does not depend on where in the ramp a region lands.
+    const vivid = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return -1;
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return -1;
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] ?? 0;
+          const g = data[i + 1] ?? 0;
+          const b = data[i + 2] ?? 0;
+          if (r > g + 4 && b > r + 8) count += 1;
+        }
+        return count;
+      });
+
+    const before = await vivid();
+    await page.getByRole("checkbox", { name: "areas" }).check();
+    await expect(page.locator("#status")).toContainText(/\d+ area slabs/);
+    // ~178 000 pixels measured; 20 000 is a floor with a wide margin, and what
+    // it guards against produces zero.
+    await expect.poll(vivid, REPAINT).toBeGreaterThan(before + 20_000);
+
+    await page.getByRole("checkbox", { name: "areas" }).uncheck();
+    await expect.poll(vivid, REPAINT).toBeLessThan(before + 20_000);
+  });
+
   test("draws roads, and the ground changes when they come on", async ({
     page,
   }) => {

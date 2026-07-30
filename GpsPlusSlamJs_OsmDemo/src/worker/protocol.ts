@@ -77,10 +77,34 @@ export interface TransferableMesh {
    */
   readonly roads: MeshData;
   readonly roadCount: number;
+  /**
+   * Merged affordance regions as slabs (W14), one entry per region.
+   *
+   * NOT merged into a single mesh, unlike the plates and the roads, and the
+   * difference is the colour: every region is drawn in the shade of its own
+   * `medianScore`, so merging them would need per-vertex colours computed
+   * against a scale the worker does not have. There are a handful of regions per
+   * working set, not hundreds, so a draw call each is affordable.
+   *
+   * The score rides along UNCOLOURED on purpose — see `region-slabs.ts.md`.
+   */
+  readonly regions: readonly RegionSlabData[];
   readonly volumes: number;
   readonly parts: number;
   readonly guessedHeights: number;
   readonly approximateRoofs: number;
+}
+
+/**
+ * One region's slab, with the score the main thread colours it by.
+ *
+ * Not exported: it is reachable as `TransferableMesh["regions"][number]`, which
+ * is how every other consumer in this demo names a member of a transferred
+ * array, and knip is right that a second public name earns nothing.
+ */
+interface RegionSlabData {
+  readonly medianScore: number;
+  readonly mesh: MeshData;
 }
 
 /** What the worker reports once its rule table is loaded. */
