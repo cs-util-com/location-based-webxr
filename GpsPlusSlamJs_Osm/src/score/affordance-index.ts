@@ -203,6 +203,21 @@ export class AffordanceIndex {
   private readonly chunks = new Map<string, ScoredChunk>();
   private readonly listeners = new Set<ChangeListener>();
 
+  /**
+   * Bumped by every path that adds, replaces or drops a scored chunk (W9).
+   *
+   * A COUNTER RATHER THAN A DIRTY FLAG, so a cache can record which version it
+   * was built from and a future second cache cannot be reset by the first one
+   * clearing the flag. The three writers are `scoreChunks`, `acceptTile`'s
+   * invalidation and `evictBeyond`; missing one would produce a stale read that
+   * looks like the map has stopped updating.
+   */
+  private chunkVersion = 0;
+
+  /** The last `scoresByCell` result, and the version it was built from. */
+  private scoresByCellCache: Map<string, CellScore> | undefined;
+  private scoresByCellVersion = -1;
+
   /** The user's last res-11 cell. The `oldUserTile` short-circuit. */
   private lastChunk: string | undefined;
   /**
@@ -289,6 +304,7 @@ export class AffordanceIndex {
       const overlaps = bboxesIntersect(bbox, chunkBbox(chunk));
       if (!overlaps && !scored.tiles.includes(tile.tile)) continue;
       this.chunks.delete(chunk);
+      this.chunkVersion += 1;
       invalidated.push(chunk);
     }
 
@@ -367,6 +383,7 @@ export class AffordanceIndex {
     // learns which chunks were computed in the order they matter.
     for (const [target, result] of this.scoreChunks(scored)) {
       this.chunks.set(target, result);
+      this.chunkVersion += 1;
     }
 
     this.evictBeyond(workingSet);
@@ -394,12 +411,39 @@ export class AffordanceIndex {
     return out;
   }
 
-  /** Cell id → its score record, across every held chunk. */
+  /**
+   * Cell id → its score record, across every held chunk.
+   *
+   * CACHED AGAINST A MUTATION COUNTER (W9). This walks every retained chunk —
+   * up to eight working sets of 49 cells each — and the demo asks for it once
+   * per scoring pass (three times per click) and again for every `explain`. At
+   * that size the rebuild is the single most expensive read on this class, and
+   * nothing about it changes between two calls with no mutation in between.
+   *
+   * **The invalidation is the part that matters, not the cache.** A stale map
+   * here would show as a map that stops updating — far worse than the cost it
+   * removes — so it is keyed on a counter bumped by every path that can add,
+   * replace or drop a chunk (`scoreChunks`, `acceptTile`'s invalidation, and
+   * eviction), rather than on anything derived from the contents.
+   *
+   * The returned map is the CACHED INSTANCE, not a copy: callers read it, and
+   * copying it per call would give back most of the saving. It is invalidated
+   * rather than mutated, so a caller holding one across a mutation keeps a
+   * consistent old snapshot instead of a half-updated one.
+   */
   scoresByCell(): Map<string, CellScore> {
+    if (
+      this.scoresByCellCache !== undefined &&
+      this.scoresByCellVersion === this.chunkVersion
+    ) {
+      return this.scoresByCellCache;
+    }
     const byCell = new Map<string, CellScore>();
     for (const scored of this.chunks.values()) {
       for (const cell of scored.cells) byCell.set(cell.cell, cell);
     }
+    this.scoresByCellCache = byCell;
+    this.scoresByCellVersion = this.chunkVersion;
     return byCell;
   }
 
@@ -595,6 +639,7 @@ export class AffordanceIndex {
     for (const chunk of candidates) {
       if (this.chunks.size <= this.maxChunks) break;
       this.chunks.delete(chunk);
+      this.chunkVersion += 1;
       this.stats.chunksEvicted++;
     }
   }

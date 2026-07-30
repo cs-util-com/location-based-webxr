@@ -105,6 +105,15 @@ the package that remembers anything.
   (the answers stay correct, they are only recomputed) and visible to a user as
   the app feeling non-deterministic. Deriving it means widening the disk again
   cannot silently reintroduce that.
+- **`scoresByCell()` is cached against a chunk-version counter (W9), and the
+  INVALIDATION is the point.** The map walks every retained chunk — up to eight
+  working sets of 49 cells — and the demo asks for it once per scoring pass
+  (three per click) plus once per `explain`. A stale map here is a map that stops
+  updating, which is far worse than the cost it removes, so the counter is bumped
+  by every path that adds, replaces or drops a chunk. The returned map is the
+  cached INSTANCE, not a copy: it is invalidated rather than mutated, so a caller
+  holding one across a mutation keeps a consistent old snapshot rather than a
+  half-updated one.
 - **This class does not fetch.** `acceptTile` is push-only, so network policy
   (slot budget, backoff, queueing) stays in `source/` and this class stays
   synchronous and worker-safe.

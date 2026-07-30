@@ -651,3 +651,67 @@ describe("the default chunk cache holds a walk, not just one working set (W7)", 
     expect(Number.isFinite(index.maxRetainedChunks)).toBe(true);
   });
 });
+
+describe("scoresByCell is cached, and the INVALIDATION is the point (W9)", () => {
+  /**
+   * Why these tests matter:
+   * The demo asks for this map once per scoring pass — three times per click —
+   * and again for every `explain`, and it walks every retained chunk: up to
+   * eight working sets of 49 cells. Caching it is worth real time. But a stale
+   * cache here is a map that stops updating, which is far worse than the cost it
+   * removes, so the invalidation gets a test per mutation path rather than one
+   * test for the cache.
+   */
+  const AT = HOME;
+
+  it("returns the same instance while nothing has changed", () => {
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })]));
+    index.update(AT);
+
+    expect(index.scoresByCell()).toBe(index.scoresByCell());
+  });
+
+  it("rebuilds after new chunks are scored", () => {
+    // The mutation that happens on every move.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })]));
+    index.update(AT);
+    const first = index.scoresByCell();
+
+    index.update({ lat: AT.lat + 0.01, lng: AT.lng + 0.01 });
+
+    expect(index.scoresByCell()).not.toBe(first);
+  });
+
+  it("rebuilds after a late tile invalidates chunks", () => {
+    // THE ONE THAT WOULD HURT MOST. A tile arriving late drops the chunks it
+    // contradicts; serving the previous map afterwards would show scores the
+    // index itself has already disowned.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })]));
+    index.update(AT);
+    const first = index.scoresByCell();
+
+    index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })], 2_000));
+
+    expect(index.scoresByCell()).not.toBe(first);
+  });
+
+  it("rebuilds after a move that evicts", () => {
+    // HONEST ABOUT WHAT THIS COVERS: eviction only ever happens at the end of an
+    // `update` that also scored, so the scoring bump alone would satisfy this
+    // test. The version bump inside `evictBeyond` is therefore defensive — it is
+    // there so a future path that drops chunks WITHOUT scoring (a memory-pressure
+    // trim, say) cannot silently serve cells it has just discarded. Recorded
+    // rather than dressed up as a stronger assertion than it is.
+    const index = new AffordanceIndex({ table: TABLE, maxChunks: 1 });
+    index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })]));
+    index.update(AT);
+    const first = index.scoresByCell();
+
+    index.update({ lat: AT.lat + 0.05, lng: AT.lng + 0.05 });
+
+    expect(index.scoresByCell()).not.toBe(first);
+  });
+});
