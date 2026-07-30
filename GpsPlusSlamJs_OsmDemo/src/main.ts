@@ -575,9 +575,19 @@ async function main(): Promise<void> {
     (view) => view.position,
     (position) => {
       mapView.setPosition(position);
-      // Terrain first, so the mesh build that follows has a surface to sit on.
-      // A failure here degrades to flat and never blocks the refresh.
-      void loadTerrain(position).finally(() => refresh());
+      // BOTH AT ONCE (W3). These used to be chained — `loadTerrain(p).finally(()
+      // => refresh())` — so a ~55 000-post DEM grid was sampled, transferred and
+      // applied before the fetch and the scoring even started. They are
+      // independent work on the same worker and the wait was pure latency.
+      //
+      // The mesh still cannot be built on the wrong ground: the worker joins
+      // them on the far side, holding the mesh build until the terrain for THAT
+      // POSITION has settled (`worker/terrain-gate.ts`). The join is keyed on the
+      // position rather than on the order these two calls post, because
+      // `loadTerrain` is coalesced and only QUEUES while a load is in flight —
+      // so `refresh` can genuinely reach the worker first.
+      void loadTerrain(position);
+      void refresh();
     },
   );
 
@@ -673,8 +683,11 @@ async function main(): Promise<void> {
     },
   );
 
-  await loadTerrain(start);
-  await refresh();
+  // Concurrent at boot too, for the same reason and with the same guarantee: the
+  // worker holds the first mesh build until the start position's terrain has
+  // settled. `Promise.all` rather than two bare `void`s because `main` should not
+  // resolve while the first picture is still being assembled.
+  await Promise.all([loadTerrain(start), refresh()]);
 }
 
 void main();

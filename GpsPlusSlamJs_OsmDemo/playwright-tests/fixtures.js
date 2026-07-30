@@ -97,8 +97,17 @@ export async function stubNetwork(page, options = {}) {
     overpassQuery: 0,
     basemap: 0,
     terrain: 0,
+    /** Lets the DEM answer, for tests that opted into `holdTerrain`. */
+    releaseTerrain: () => {
+      releaseTerrain();
+    },
   };
   const payload = JSON.stringify(parkPayload());
+  /** Resolved by `counts.releaseTerrain()`; see the `holdTerrain` option. */
+  let releaseTerrain = () => undefined;
+  const terrainHeld = new Promise((resolve) => {
+    releaseTerrain = resolve;
+  });
 
   await page.route(isOverpass, async (route) => {
     // Counted SEPARATELY from queries. A single combined counter cannot express
@@ -170,13 +179,23 @@ export async function stubNetwork(page, options = {}) {
   //
   // Terrarium decodes as (r * 256 + g + b / 256) - 32768, so r = 128, g = 0
   // is exactly 0 m and larger g values step up one metre each.
-  await page.route(isTerrarium, (route) =>
-    route.fulfill({
+  await page.route(isTerrarium, async (route) => {
+    // `holdTerrain` STALLS the DEM indefinitely, until the test releases it (W3).
+    //
+    // A HOLD RATHER THAN A DELAY, and the difference is the difference between
+    // an ordering assertion and a wall-clock one. What W3 changed is that the
+    // Overpass fetch is issued WHILE the DEM is outstanding, instead of after
+    // it; with a fixed delay a test can only say "the query happened within N
+    // seconds", which measures the machine. With a hold, the query provably
+    // happens while the DEM cannot possibly have finished, and the test spends
+    // no time waiting for a timer.
+    if (options.holdTerrain === true) await terrainHeld;
+    await route.fulfill({
       status: 200,
       contentType: "image/png",
       body: terrariumPng(),
-    }),
-  );
+    });
+  });
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (isBasemap(url)) counts.basemap++;

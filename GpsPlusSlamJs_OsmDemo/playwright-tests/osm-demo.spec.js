@@ -2224,3 +2224,37 @@ test.describe("a superseded refresh", () => {
       .toBeLessThan(0.05);
   });
 });
+
+/**
+ * W3 / finding R3-3 — the refresh no longer waits for the DEM grid.
+ *
+ * ORDERING, NOT A WALL CLOCK. An e2e that asserts a duration measures the
+ * machine, and this suite has a scar from exactly that. What is behavioural is
+ * that the cells arrive while the terrain is still loading — which is only
+ * possible if the two run concurrently.
+ */
+test.describe("the terrain load and the refresh", () => {
+  test("run concurrently — Overpass is queried while the DEM is still out", async ({
+    page,
+  }) => {
+    // WHAT THIS DOES *NOT* ASSERT, and why. The cells still cannot appear before
+    // the terrain: the mesh build genuinely needs the field, so the worker holds
+    // it at the gate. What W3 changed is everything BEFORE the mesh — the fetch
+    // and the scoring — which used to be queued behind the whole DEM round trip
+    // by `loadTerrain(p).finally(() => refresh())`.
+    //
+    // So the observable is the Overpass request: it is issued while the DEM is
+    // still outstanding. Held rather than delayed, so this is an ordering
+    // assertion with no timer in it.
+    const counts = await stubNetwork(page, { holdTerrain: true });
+    await page.goto(AT_FIXTURE);
+
+    // The DEM cannot have answered — nothing has released it — so a query here
+    // proves the two are in flight together.
+    await expect.poll(() => counts.overpassQuery).toBeGreaterThan(0);
+
+    counts.releaseTerrain();
+    await waitForRefresh(page);
+    await expect(page.locator("#status")).toContainText(/terrain ±/);
+  });
+});

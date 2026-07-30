@@ -63,6 +63,7 @@ import { DemoPipeline } from "../demo-pipeline.js";
 import { describeTerrain } from "../terrain-note.js";
 import { heightfieldFrom, type HeightfieldData } from "../heightfield.js";
 import { createTerrainField, type TerrainField } from "../terrain-field.js";
+import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
 import {
   isWorkerEnvelope,
   type TransferableMesh,
@@ -114,6 +115,25 @@ let state: WorkerState | undefined;
  * surface the ground plane draws cannot disagree.
  */
 let terrain: HeightfieldData | undefined;
+
+/**
+ * Which centre {@link terrain} belongs to — including when it came back empty.
+ *
+ * RECORDED EVEN ON FAILURE, and that is the difference between a degraded scene
+ * and a stalled one: it answers "is the terrain question resolved for this
+ * position?", not "is there relief?". A DEM outage resolves the question.
+ */
+let terrainCentre: { lat: number; lng: number } | undefined;
+
+/**
+ * Releases a mesh build that is waiting for its own position's terrain (W3).
+ *
+ * The main thread now fires the terrain load and the refresh CONCURRENTLY, so a
+ * mesh build can reach this worker before the DEM grid it must stand on. See
+ * `terrain-gate.ts` for why the join is keyed on the position rather than on the
+ * order the two messages arrive in.
+ */
+const terrainGate = createTerrainGate();
 
 /** Builds the scene geometry for the current features, on the current terrain. */
 function buildMesh(
@@ -230,6 +250,19 @@ async function handle<K extends WorkerCallKind>(
         signal,
         radius,
       );
+      // THE JOIN (W3). The fetch and the scoring above ran while the DEM grid
+      // for this position was still being sampled — that concurrency is the
+      // whole item — so the mesh must not be built until the terrain UNDER THIS
+      // POSITION has landed. Anything else stands the buildings on the previous
+      // position's relief, permanently, because nothing rebuilds them when the
+      // field arrives.
+      //
+      // Skipped when the held field already belongs here, which is every
+      // category change and every widening ring: those never move the user, so
+      // there is nothing to wait for and waiting would give back what W3 won.
+      if (needsTerrainFor(terrainCentre, position)) {
+        await terrainGate.waitFor(position, signal);
+      }
       return {
         snapshot,
         mesh: buildMesh(
@@ -244,36 +277,22 @@ async function handle<K extends WorkerCallKind>(
       const { centre, extentM, spacingM } =
         payload as WorkerCalls["terrain"]["request"];
       const { terrainField } = requireState();
-      // GROW the cache to cover the view, then RENDER a bounded grid from it.
-      // The split is the whole point: the growth is incremental and permanent,
-      // while what crosses the boundary stays a fixed-shape grid.
-      await terrainField.ensureAround(centre, extentM * Math.SQRT2);
-      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-      const field = terrainField.sampleGrid({
-        frame: enuFrameAt(centre),
-        extentM,
-        spacingM,
-      });
-      // Stored even when empty, so a later mesh build cannot stand on the
-      // PREVIOUS position's relief after a DEM outage at this one.
-      //
-      // A SUPERSEDED LOAD CANNOT REACH THIS LINE, and the reason is worth stating
-      // because it is not obvious: the `signal.aborted` throw above is the last
-      // `await` boundary in this handler, so everything from that check to this
-      // assignment runs in one synchronous turn. An `abort` message can only be
-      // delivered between turns, so it cannot land in the gap.
-      //
-      // That matters because the alternative is the exact failure this file's
-      // header says holding the field worker-side prevents: two overlapping loads
-      // where the OLDER one writes last, leaving the mesh built on one position's
-      // relief while the main thread's ground plane draws another's. Raised in
-      // review against the commit before the terrain cache landed, where there was
-      // no check here at all and the hole was real.
-      terrain = field.hasData ? field : undefined;
-      return {
-        field: terrain,
-        note: describeTerrain(field),
-      };
+      try {
+        return await loadTerrain(
+          terrainField,
+          centre,
+          extentM,
+          spacingM,
+          signal,
+        );
+      } finally {
+        // IN A `finally`, and that is load-bearing. A mesh build waiting on this
+        // centre is asking "is the terrain question resolved here?", not "is
+        // there relief here?" — so a DEM outage, an abort and a success all
+        // release it. Releasing only on success turns a failed tile into a
+        // stalled mesh, which is the one outcome worse than flat ground.
+        terrainGate.settle(centre);
+      }
     }
 
     case "explain": {
@@ -294,6 +313,58 @@ async function handle<K extends WorkerCallKind>(
     default:
       throw new Error(`Unknown request kind: ${String(kind)}`);
   }
+}
+
+/**
+ * Samples the DEM grid for one centre and adopts it as the current terrain.
+ *
+ * Split out of {@link handle} so the `finally` that settles the terrain gate has
+ * exactly one statement to guard — with the body inline, the gate's release
+ * would sit ~30 lines away from the `try` it belongs to.
+ */
+async function loadTerrain(
+  terrainField: TerrainField,
+  centre: LatLng,
+  extentM: number,
+  spacingM: number,
+  signal: AbortSignal,
+): Promise<WorkerCalls["terrain"]["result"]> {
+  // GROW the cache to cover the view, then RENDER a bounded grid from it.
+  // The split is the whole point: the growth is incremental and permanent,
+  // while what crosses the boundary stays a fixed-shape grid.
+  await terrainField.ensureAround(centre, extentM * Math.SQRT2);
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  const field = terrainField.sampleGrid({
+    frame: enuFrameAt(centre),
+    extentM,
+    spacingM,
+  });
+  // Stored even when empty, so a later mesh build cannot stand on the
+  // PREVIOUS position's relief after a DEM outage at this one.
+  //
+  // A SUPERSEDED LOAD CANNOT REACH THIS LINE, and the reason is worth stating
+  // because it is not obvious: the `signal.aborted` throw above is the last
+  // `await` boundary in this function, so everything from that check to this
+  // assignment runs in one synchronous turn. An `abort` message can only be
+  // delivered between turns, so it cannot land in the gap.
+  //
+  // That matters because the alternative is the exact failure this file's
+  // header says holding the field worker-side prevents: two overlapping loads
+  // where the OLDER one writes last, leaving the mesh built on one position's
+  // relief while the main thread's ground plane draws another's. Raised in
+  // review against the commit before the terrain cache landed, where there was
+  // no check here at all and the hole was real.
+  terrain = field.hasData ? field : undefined;
+  // RECORDED EVEN WHEN THE FIELD IS EMPTY. This is what the mesh build's join
+  // reads to decide whether it already has the terrain for its own position, and
+  // "the DEM failed here" is an answer to that question. Recording it only on
+  // success would make every later mesh build at this position wait out the
+  // gate's full timeout.
+  terrainCentre = centre;
+  return {
+    field: terrain,
+    note: describeTerrain(field),
+  };
 }
 
 /**
