@@ -73,14 +73,9 @@ import {
   createImageQualityAnalyzer,
   type ImageQualityClient,
 } from './image-quality-client';
-import {
-  createWriteFailureTracker,
-  type WriteFailureTracker,
-} from '../storage/write-failure-tracker';
-import {
-  createCaptureFailureTracker,
-  type CaptureFailureTracker,
-} from 'gps-plus-slam-app-framework/ar/capture-failure-tracker';
+import { createWriteFailureTracker } from '../storage/write-failure-tracker';
+import { createCaptureFailureTracker } from 'gps-plus-slam-app-framework/ar/capture-failure-tracker';
+import type { FailureTracker } from 'gps-plus-slam-app-framework/utils/failure-tracker';
 import {
   showRecordingControls,
   hideRecordingControls,
@@ -248,8 +243,8 @@ export function createRecordingSessionHandlers(
   deps: RecordingSessionDeps
 ): RecordingSessionHandlers {
   // --- State ---
-  let writeFailureTracker: WriteFailureTracker | null = null;
-  let captureFailureTracker: CaptureFailureTracker | null = null;
+  let writeFailureTracker: FailureTracker | null = null;
+  let captureFailureTracker: FailureTracker | null = null;
   let currentSessionName = '';
   let syncManager: SyncManager | null = null;
   let lastSyncResult: ZipExportResult | null = null;

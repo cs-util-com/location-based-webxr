@@ -39,11 +39,12 @@ export {
 } from './chromium-camera-access-workaround.js';
 
 // --- capture-failure-tracker ---
+// The preset returns the generic `FailureTracker` (exported from `utils`);
+// there is deliberately no `CaptureFailureTracker` type any more.
 export {
   type CaptureFailureTrackerConfig,
   DEFAULT_CAPTURE_TRACKER_CONFIG,
   CAPTURE_FAILURE_WARNING,
-  type CaptureFailureTracker,
   createCaptureFailureTracker,
 } from './capture-failure-tracker.js';
 

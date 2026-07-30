@@ -41,7 +41,7 @@ and prevents accidental page exits during recording.
   confirm dialog, stopping the recording if confirmed, and re-pushing the
   history entry if cancelled. Navigation deliberately re-pushes nothing itself.
 - **Back from summary cleans the stack first:** the handler
-  `history.replaceState({ screen: 'setup' })` *before* calling
+  `history.replaceState({ screen: 'setup' })` _before_ calling
   `onBackFromSummary()`, so the soft reset does not leave a summary entry behind.
 - Screen state (`currentScreen`) lives in Redux via
   `routing-slice.ts`, not a module-level variable (Bug 2 fix).

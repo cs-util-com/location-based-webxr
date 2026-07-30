@@ -18,21 +18,34 @@ Factory function that creates a tracker instance.
 - `config.onWarning` (required): `(message: string) => void` - Callback to show warning to user
 - `config.failureThreshold` (optional): `number` - Consecutive failures before warning (default: 3)
 
-**Returns:** `WriteFailureTracker` instance
+**Returns:** the framework's generic `FailureTracker`.
 
-### `WriteFailureTracker` Interface
+This module is a **named preset**, not a wrapper: it supplies four config values
+(`label: 'WriteFailure'`, the warning message, `defaultThreshold: 3`,
+`logLevel: 'error'`) to `createFailureTracker` and returns the result unchanged.
+**There is no `WriteFailureTracker` type** — it existed until 2026-07-30 as a
+re-declaration of `FailureTracker` with all five methods hand-forwarded, which
+also made this file a near-copy of the framework's capture preset. Import the
+type from `gps-plus-slam-app-framework/utils/failure-tracker`.
 
-| Method                 | Description                                         |
-| ---------------------- | --------------------------------------------------- |
-| `recordSuccess()`      | Reset failure counter (call after successful write) |
-| `recordFailure(error)` | Increment counter and warn if threshold exceeded    |
-| `getFailureCount()`    | Get current consecutive failure count               |
-| `hasWarned()`          | Check if warning has been shown                     |
-| `reset()`              | Reset all state (call when starting new session)    |
+### `FailureTracker` (the returned shape)
+
+| Method                  | Description                                         |
+| ----------------------- | --------------------------------------------------- |
+| `recordSuccess()`       | Reset failure counter (call after successful write) |
+| `recordFailure(error?)` | Increment counter and warn if threshold exceeded    |
+| `getFailureCount()`     | Get current consecutive failure count               |
+| `hasWarned()`           | Check if warning has been shown                     |
+| `reset()`               | Reset all state (call when starting new session)    |
+
+`error` is optional on the shared type, but **this preset logs at `error` level
+and includes it** — pass the causing error. Convention, not a type constraint.
 
 ### Exported Constants
 
-- `DEFAULT_TRACKER_CONFIG`: Default threshold configuration
+- `DEFAULT_TRACKER_CONFIG`: Default threshold configuration (3 — deliberately
+  lower than the capture preset's 5, because a failed write loses data while a
+  missed capture only degrades one)
 - `WRITE_FAILURE_WARNING`: User-facing warning message
 
 ## Invariants & Assumptions

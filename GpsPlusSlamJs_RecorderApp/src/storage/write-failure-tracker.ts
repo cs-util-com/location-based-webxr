@@ -6,7 +6,13 @@
  *
  * Field Test Readiness Issue #7: Silent image write failures
  *
- * Thin wrapper around the generic failure tracker factory.
+ * This module is a NAMED PRESET of the framework's `utils/failure-tracker`,
+ * nothing more — it supplies the four write-specific config values and returns
+ * the generic tracker unchanged. It deliberately does NOT re-declare the
+ * tracker interface or forward its methods; that boilerplate was removed
+ * 2026-07-30 because it duplicated `FailureTracker` exactly (and duplicated the
+ * framework's capture preset a second time) while adding a layer to keep in
+ * sync.
  */
 
 import {
@@ -15,30 +21,29 @@ import {
 } from 'gps-plus-slam-app-framework/utils/failure-tracker';
 
 /**
- * Configuration for the write failure tracker.
+ * Options for the write failure tracker.
  */
 interface WriteFailureTrackerConfig {
-  /**
-   * Number of consecutive failures before warning the user.
-   * Default: 3
-   */
-  failureThreshold: number;
+  /** Callback invoked once when consecutive failures reach the threshold. */
+  onWarning: (message: string) => void;
 
   /**
-   * Callback to show error to user.
+   * Override the consecutive-failure threshold.
+   * Defaults to {@link DEFAULT_TRACKER_CONFIG}`.failureThreshold`.
    */
-  onWarning: (message: string) => void;
+  failureThreshold?: number;
 }
 
 /**
  * Default configuration values.
+ *
+ * The threshold is deliberately LOWER than the capture tracker's 5: a failed
+ * write loses data, whereas a missed capture only degrades one, so writes warn
+ * sooner.
  */
-export const DEFAULT_TRACKER_CONFIG: Omit<
-  WriteFailureTrackerConfig,
-  'onWarning'
-> = {
+export const DEFAULT_TRACKER_CONFIG = {
   failureThreshold: 3,
-};
+} as const;
 
 /**
  * User-facing warning message when threshold is exceeded.
@@ -47,27 +52,19 @@ export const WRITE_FAILURE_WARNING =
   'Multiple frame write failures. Storage may be full or unavailable.';
 
 /**
- * Tracks consecutive write failures and warns user when threshold is exceeded.
- */
-export interface WriteFailureTracker {
-  recordSuccess(): void;
-  recordFailure(error: unknown): void;
-  getFailureCount(): number;
-  hasWarned(): boolean;
-  reset(): void;
-}
-
-/**
- * Create a new write failure tracker.
+ * Create a failure tracker preset for file writes.
  *
- * @param config - Configuration with warning callback and optional threshold
- * @returns WriteFailureTracker instance
+ * Callers should pass the causing error to `recordFailure(error)` — this preset
+ * logs at `error` level and includes it. The parameter is optional on
+ * {@link FailureTracker}, so it is a convention here, not a type constraint.
+ *
+ * @param config - Warning callback and optional threshold override
+ * @returns A {@link FailureTracker} — the same shape every preset returns
  */
 export function createWriteFailureTracker(
-  config: Partial<WriteFailureTrackerConfig> &
-    Pick<WriteFailureTrackerConfig, 'onWarning'>
-): WriteFailureTracker {
-  const tracker: FailureTracker = createFailureTracker({
+  config: WriteFailureTrackerConfig
+): FailureTracker {
+  return createFailureTracker({
     label: 'WriteFailure',
     warningMessage: WRITE_FAILURE_WARNING,
     defaultThreshold: DEFAULT_TRACKER_CONFIG.failureThreshold,
@@ -75,12 +72,4 @@ export function createWriteFailureTracker(
     failureThreshold: config.failureThreshold,
     logLevel: 'error',
   });
-
-  return {
-    recordSuccess: () => tracker.recordSuccess(),
-    recordFailure: (error: unknown) => tracker.recordFailure(error),
-    getFailureCount: () => tracker.getFailureCount(),
-    hasWarned: () => tracker.hasWarned(),
-    reset: () => tracker.reset(),
-  };
 }

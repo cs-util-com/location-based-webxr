@@ -44,7 +44,7 @@ the exported signatures.
   up.
 - **Late completions after `stop()` are discarded.** This is the module's
   subtlest behaviour and the reason the `stopped` flag exists separately from
-  `status.state`: `syncFn` is awaited, so it can settle *after* `stop()` has
+  `status.state`: `syncFn` is awaited, so it can settle _after_ `stop()` has
   already run. `stopped` is set `false` in `start()`, `true` as the **first**
   statement of `stop()`, and re-checked after the `await` on both the success
   and the error path. Without it a completing sync would write `state: 'active'`

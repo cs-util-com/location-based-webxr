@@ -15,11 +15,11 @@ import {
   createWriteFailureTracker,
   DEFAULT_TRACKER_CONFIG,
   WRITE_FAILURE_WARNING,
-  type WriteFailureTracker,
 } from './write-failure-tracker';
+import type { FailureTracker } from 'gps-plus-slam-app-framework/utils/failure-tracker';
 
 describe('WriteFailureTracker', () => {
-  let tracker: WriteFailureTracker;
+  let tracker: FailureTracker;
   let onWarning: (message: string) => void;
 
   beforeEach(() => {

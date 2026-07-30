@@ -6,7 +6,11 @@
  *
  * Field Test Readiness Issue #11: Silent image capture failures
  *
- * Thin wrapper around the generic failure tracker factory.
+ * This module is a NAMED PRESET of `utils/failure-tracker`, nothing more — it
+ * supplies the four capture-specific config values and returns the generic
+ * tracker unchanged. It deliberately does NOT re-declare the tracker interface
+ * or forward its methods; that boilerplate was removed 2026-07-30 because it
+ * duplicated `FailureTracker` exactly while adding a layer to keep in sync.
  */
 
 import {
@@ -15,30 +19,29 @@ import {
 } from '../utils/failure-tracker';
 
 /**
- * Configuration for the capture failure tracker.
+ * Options for the capture failure tracker.
  */
 export interface CaptureFailureTrackerConfig {
-  /**
-   * Number of consecutive failures before warning the user.
-   * Default: 5 (higher than write failures since capture failures are less critical)
-   */
-  failureThreshold: number;
+  /** Callback invoked once when consecutive failures reach the threshold. */
+  onWarning: (message: string) => void;
 
   /**
-   * Callback to show error to user.
+   * Override the consecutive-failure threshold.
+   * Defaults to {@link DEFAULT_CAPTURE_TRACKER_CONFIG}`.failureThreshold`.
    */
-  onWarning: (message: string) => void;
+  failureThreshold?: number;
 }
 
 /**
  * Default configuration values.
+ *
+ * The threshold is deliberately HIGHER than the write tracker's 3: a missed
+ * frame degrades a capture, whereas a failed write loses data, so capture
+ * tolerates a longer failure run before warning the user.
  */
-export const DEFAULT_CAPTURE_TRACKER_CONFIG: Omit<
-  CaptureFailureTrackerConfig,
-  'onWarning'
-> = {
+export const DEFAULT_CAPTURE_TRACKER_CONFIG = {
   failureThreshold: 5,
-};
+} as const;
 
 /**
  * User-facing warning message when threshold is exceeded.
@@ -47,27 +50,15 @@ export const CAPTURE_FAILURE_WARNING =
   'Multiple image captures failed. Device may be low on memory.';
 
 /**
- * Tracks consecutive capture failures and warns user when threshold is exceeded.
- */
-export interface CaptureFailureTracker {
-  recordSuccess(): void;
-  recordFailure(): void;
-  getFailureCount(): number;
-  hasWarned(): boolean;
-  reset(): void;
-}
-
-/**
- * Create a new capture failure tracker.
+ * Create a failure tracker preset for image capture.
  *
- * @param config - Configuration with warning callback and optional threshold
- * @returns CaptureFailureTracker instance
+ * @param config - Warning callback and optional threshold override
+ * @returns A {@link FailureTracker} — the same shape every preset returns
  */
 export function createCaptureFailureTracker(
-  config: Partial<CaptureFailureTrackerConfig> &
-    Pick<CaptureFailureTrackerConfig, 'onWarning'>
-): CaptureFailureTracker {
-  const tracker: FailureTracker = createFailureTracker({
+  config: CaptureFailureTrackerConfig
+): FailureTracker {
+  return createFailureTracker({
     label: 'CaptureFailure',
     warningMessage: CAPTURE_FAILURE_WARNING,
     defaultThreshold: DEFAULT_CAPTURE_TRACKER_CONFIG.failureThreshold,
@@ -75,12 +66,4 @@ export function createCaptureFailureTracker(
     failureThreshold: config.failureThreshold,
     logLevel: 'warn',
   });
-
-  return {
-    recordSuccess: () => tracker.recordSuccess(),
-    recordFailure: () => tracker.recordFailure(),
-    getFailureCount: () => tracker.getFailureCount(),
-    hasWarned: () => tracker.hasWarned(),
-    reset: () => tracker.reset(),
-  };
 }
