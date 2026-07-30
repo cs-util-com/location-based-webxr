@@ -25,10 +25,10 @@ export interface Logger {
 }
 
 export interface LogEntry {
-  timestamp: number; // Unix timestamp (Date.now())
-  level: LogLevel;
-  tag: string; // Source module
-  message: string; // Stringified log content
+  readonly timestamp: number; // Unix timestamp (Date.now())
+  readonly level: LogLevel;
+  readonly tag: string; // Source module
+  readonly message: string; // Stringified log content
 }
 ```
 
@@ -88,6 +88,11 @@ unsubscribe();
 4. **Subscriber notification:** Subscribers are notified synchronously for each log call.
 
 5. **Thread safety:** Not applicable (single-threaded JS), but care is taken to avoid mutation of returned buffer copies.
+
+   **`LogEntry` is fully readonly** — a record is immutable once created. Pinned
+   at the type level by the `LogEntry ≡ Readonly<LogEntry>` guard in
+   `logger.test.ts` (Finding #6, 2026-03-05 code review), so widening a field
+   back to mutable fails the build rather than silently allowing buffer edits.
 
 6. **Sentry integration:** All log levels add Sentry breadcrumbs for debugging context. When an exception is later captured, Sentry will show the trail of log messages leading up to it. Additionally, both `warn` and `error` produce standalone Sentry **Issues** (so the Issues dashboard is the single place to watch anything logged at warn/error level):
    - `log.warn()` calls `Sentry.captureMessage(message, { level: 'warning', fingerprint: [...] })`.

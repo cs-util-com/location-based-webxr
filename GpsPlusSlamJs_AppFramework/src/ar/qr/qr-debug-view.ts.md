@@ -32,6 +32,10 @@ render it off the derived pose, live and on replay.
   miss, so the objects keep their last pose between throttled detections.
 - **Best-effort cube:** until a measured `sizeM` exists the cube stays hidden
   rather than drawing a NaN/garbage-scaled box; the axis alone proves the glue.
+- **Cube geometry:** a 1 cm-deep slab (`CUBE_DEPTH_M = 0.01`) scaled to
+  `sizeM × sizeM` in-plane and pushed back by half its depth
+  (`translateZ(-CUBE_DEPTH_M / 2)`), so its `+z` face lands exactly on the
+  printed code rather than straddling it.
 - Pure three.js — knows nothing about who solved the pose, so it runs identically
   live and on replay.
 
@@ -45,12 +49,26 @@ const pose = selectSolvedQrPose(state, text, deps); // null when not sizeable ye
 if (pose) view.update(pose, deriveQrSizeM(...));
 ```
 
+**Import via the deep subpath** (`…/ar/qr/qr-debug-view`), **not** the `…/ar`
+barrel: the barrel eagerly evaluates heavy transitive dependencies, while this
+module needs only the three-only `WEBXR_TO_NUE` constant. Both the Recorder and
+the demo import it this way.
+
 ## Tests
 
-- `qr-debug-view.test.ts` — starts hidden; rides the `WEBXR_TO_NUE` basis
+- `qr-debug-view.test.ts` — 6 tests, against a real `THREE.Group` (no WebGL
+  needed for transforms): starts hidden; rides the `WEBXR_TO_NUE` basis
   ([1,0,0] raw → world z=1); reveals + glues axis/cube at the measured size;
   axis-only when size unknown (no NaN scale); cube appears once a size arrives;
   `clear()` hides without detaching, `dispose()` detaches.
+
+## History
+
+Promoted from the QR-tracking demo into the framework (recorder live-QR WS-5).
+The demo previously kept a byte-identical local copy at
+`GpsPlusSlamJs_QrTrackingDemo/src/qr-debug-view.ts` with its own duplicate test;
+both were deleted when the demo switched to this shared module, so the two apps
+render the identical overlay and cannot diverge.
 
 ## Related
 
