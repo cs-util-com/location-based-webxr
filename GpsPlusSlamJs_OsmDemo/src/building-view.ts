@@ -115,7 +115,7 @@ const MAX_GROUND_SEGMENTS = 256;
  * At the current 2.8 km extent it does not bind, so the DEM pitch is matched
  * exactly and every quad of the ground plane carries real data.
  */
-const GROUND_SEGMENTS = Math.min(
+export const GROUND_SEGMENTS = Math.min(
   MAX_GROUND_SEGMENTS,
   Math.round((TERRAIN_EXTENT_M * 2) / TERRAIN_SPACING_M),
 );

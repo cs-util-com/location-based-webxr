@@ -126,7 +126,7 @@ export function heightfieldFrom(data: HeightfieldData): Heightfield {
   return {
     ...data,
     heightAt: (point) =>
-      bilinear(data.heights, data.side, data.extentM, point.x, point.y) -
+      surfaceHeight(data.heights, data.side, data.extentM, point.x, point.y) -
       data.datum,
   };
 }
@@ -204,7 +204,7 @@ export async function buildHeightfieldData(
     // The origin's height, subtracted from every read so the surface is relief
     // rather than altitude. Sampled through the same bilinear path as everything
     // else, so it is exactly what an undatumed `heightAt({x: 0, y: 0})` returns.
-    datum: bilinear(heights, side, extentM, 0, 0),
+    datum: surfaceHeight(heights, side, extentM, 0, 0),
     hasData: true,
     missing: total - known.length,
     total,
@@ -266,7 +266,9 @@ export async function buildHeightfield(
 }
 
 /**
- * Bilinear read, clamped to the grid — a LAST-RESORT GUARD, not a working path.
+ * Reads the ground surface at a point, clamped to the grid.
+ *
+ * The CLAMP is a LAST-RESORT GUARD, not a working path.
  *
  * Clamping rather than returning `NaN` outside the extent: the ground plane and
  * the affordance grid both sample this, and a `NaN` vertex silently drops a
@@ -286,7 +288,7 @@ export async function buildHeightfield(
  * outside it cannot arise in normal operation (DEC-R2-9). Reaching this clamp in
  * production means that sizing has been broken somewhere upstream.
  */
-function bilinear(
+function surfaceHeight(
   heights: Float32Array,
   side: number,
   extentM: number,
@@ -308,7 +310,37 @@ function bilinear(
 
   const at = (col: number, row: number): number =>
     heights[row * side + col] ?? 0;
-  const top = at(x0, y0) + (at(x1, y0) - at(x0, y0)) * fx;
-  const bottom = at(x0, y1) + (at(x1, y1) - at(x0, y1)) * fx;
-  return top + (bottom - top) * fy;
+  const h00 = at(x0, y0);
+  const h11 = at(x1, y1);
+
+  // BARYCENTRIC ON THE PLANE'S OWN TRIANGLES, NOT BILINEAR (W10, finding R3-6).
+  //
+  // The two are different surfaces, and the difference is exactly the reported
+  // bug. The ground plane carries heights only at these posts and the GPU
+  // interpolates LINEARLY ACROSS EACH TRIANGLE between them; a bilinear read
+  // returns the hyperbolic-paraboloid surface instead, which agrees with the
+  // drawn one only at the posts. Between them they differ by the quad's twist
+  // term — decimetres in city DEM data, against a 4 cm lift ladder — so plates,
+  // roads, slabs and cells sampled bilinearly sank UNDER the terrain they were
+  // supposed to sit on, wherever the ground twists.
+  //
+  // Interpolating over the same triangles makes the ladder sufficient by
+  // construction rather than by a larger guess: anything sampled here lies
+  // exactly on the surface that is drawn.
+  //
+  // THE DIAGONAL IS `THREE.PlaneGeometry`'s, and it is a property of a
+  // dependency rather than of this file — `heightfield.ts` must stay three-free
+  // (the worker imports it), so the rule is necessarily RESTATED here. Measured
+  // from the real index buffer: the quad is split into
+  // (top-left, bottom-left, top-right) and (bottom-left, bottom-right,
+  // top-right), i.e. the shared edge runs from the LOW corner to the HIGH
+  // corner. `heightfield.plane.test.ts` asserts that against a real
+  // `PlaneGeometry`, so a three upgrade that flips the winding fails a test
+  // instead of silently restoring the twist-term error.
+  if (fy >= fx) {
+    // Upper-left triangle: (x0,y0), (x0,y1), (x1,y1).
+    return h00 + (at(x0, y1) - h00) * (fy - fx) + (h11 - h00) * fx;
+  }
+  // Lower-right triangle: (x0,y0), (x1,y0), (x1,y1).
+  return h00 + (at(x1, y0) - h00) * (fx - fy) + (h11 - h00) * fy;
 }

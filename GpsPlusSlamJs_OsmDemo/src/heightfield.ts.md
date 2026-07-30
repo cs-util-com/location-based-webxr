@@ -15,6 +15,26 @@
 
 ## Invariants & assumptions
 
+- **The sampled surface IS the drawn surface (W10, finding R3-6).** `heightAt`
+  interpolates over the SAME triangles `THREE.PlaneGeometry` draws — barycentric
+  on the plane's own lattice and diagonal — not bilinearly over the posts.
+  - **Why it had to change:** the two are different surfaces. The plane carries
+    heights only at the posts and the GPU interpolates linearly across each
+    triangle; a bilinear read is a hyperbolic paraboloid that agrees only at the
+    posts. Between them they differ by the quad's twist term — decimetres in city
+    DEM data against a 4 cm lift ladder — so plates, roads, slabs and cells sank
+    UNDER the terrain wherever the ground twists. That was the reported bug, and
+    no lift constant chosen this way could have fixed it.
+  - **Two preconditions, both asserted rather than assumed** in
+    `heightfield.plane.test.ts`: the plane's lattice is the field's lattice (it is,
+    only while `MAX_GROUND_SEGMENTS` does not bind), and the DIAGONAL is three's.
+    The diagonal is a property of a dependency and this file must stay three-free
+    because the worker imports it, so the rule is necessarily restated here — and
+    a three upgrade that flipped the winding would otherwise silently restore the
+    error.
+  - **The GPU path lands on the same surface for free**: it displaces the same
+    posts and the rasteriser interpolates linearly across the same triangles.
+
 - **It is pre-fetched, not lazy.** `buildBuildings` and `buildTrees` take a synchronous `groundHeightM(position) => number`, called per volume inside a mesh build, so all network work must finish first. That is the entire reason this is a grid rather than the provider passed straight through.
 - **`undefined` is never `0`.** `elevationAt` returns `undefined` for "no data", and `?? 0` would turn a DEM outage into a sea-level hole shaped exactly like the outage — which reads as terrain rather than as a failure, and buries the buildings standing in it. Missing posts take the mean of the posts that did arrive; when _nothing_ arrives the field is flat and `hasData` is false.
 - **The surface is RELATIVE, and the datum cancels.** The provider returns orthometric height (~53 m at Cologne) while the ENU frame puts the user at `y = 0`. The origin's sampled height is subtracted from every read. **A later AR mode needs the opposite** — absolute height against an ellipsoidal GNSS altitude, which is what the package's geoid model is for. Do not reuse this there.
