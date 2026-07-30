@@ -328,3 +328,60 @@ describe('createOsmViewSlice — the layer set', () => {
     expect(before.layers).toEqual({ buildings: true });
   });
 });
+
+describe('groundMode (W11)', () => {
+  /**
+   * Why these tests matter:
+   * The ground mode is exclusive while `layers` is a set of independent
+   * switches, and the reason it is a separate field rather than another layer is
+   * that merging them would make "no ground" expressible as more than one state.
+   * These pin that separation, plus the publish-boundary shape (a plain string,
+   * because this package may not name an OSM type).
+   */
+  it('starts at whatever the consumer named, and is a plain string', () => {
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 1, lng: 2 },
+      initialCategory: 'walkable',
+      initialGroundMode: 'cpu',
+    });
+    const state = slice.reducer(undefined, { type: '@@init' });
+
+    expect(state.groundMode).toBe('cpu');
+  });
+
+  it('switches without disturbing the layer set', () => {
+    // The separation, as a behaviour: switching the ground must not silently
+    // change which layers are drawn, and vice versa.
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 1, lng: 2 },
+      initialCategory: 'walkable',
+      initialLayers: { cells: true, plates: true },
+      initialGroundMode: 'cpu',
+    });
+    const before = slice.reducer(undefined, { type: '@@init' });
+
+    const after = slice.reducer(
+      before,
+      slice.actions.groundModeChanged('none')
+    );
+
+    expect(after.groundMode).toBe('none');
+    expect(after.layers).toEqual(before.layers);
+  });
+
+  it('and a layer change leaves the ground mode alone', () => {
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 1, lng: 2 },
+      initialCategory: 'walkable',
+      initialGroundMode: 'gpu',
+    });
+    const before = slice.reducer(undefined, { type: '@@init' });
+
+    const after = slice.reducer(
+      before,
+      slice.actions.layersChanged({ cells: false })
+    );
+
+    expect(after.groundMode).toBe('gpu');
+  });
+});

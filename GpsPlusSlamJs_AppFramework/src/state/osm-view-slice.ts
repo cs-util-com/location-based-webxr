@@ -79,6 +79,18 @@ export interface OsmViewState<TSnapshot> {
    * it, which needs no knowledge of the names at all.
    */
   layers: Readonly<Record<string, boolean>>;
+  /**
+   * Which surface the consumer draws as the ground, by name.
+   *
+   * A STRING for the same publish-boundary reason as `layers`: this package is
+   * published and `gps-plus-slam-osm` is not, so naming the consumer's union
+   * here would 404 every install. The consumer narrows it at its selector.
+   *
+   * A MODE RATHER THAN A LAYER, and the distinction is the consumer's: layers
+   * are things the scene can draw, each independently, while this is one thing
+   * drawn different ways and is therefore exclusive.
+   */
+  groundMode: string;
   /** The cell the details panel is explaining, or none. */
   selectedCell: string | undefined;
   /**
@@ -121,6 +133,8 @@ export interface CreateOsmViewSliceOptions {
   readonly initialCategory: string;
   /** Layers on at start. Defaults to none, so a consumer must opt in. */
   readonly initialLayers?: Readonly<Record<string, boolean>>;
+  /** Ground mode at start. Defaults to empty — the consumer names its own. */
+  readonly initialGroundMode?: string;
 }
 
 const IDLE: OsmViewLoading = { phase: 'idle', message: '' };
@@ -150,6 +164,7 @@ export function createOsmViewSlice<TSnapshot>(
     category: options.initialCategory,
     showBelowThreshold: false,
     layers: options.initialLayers ?? {},
+    groundMode: options.initialGroundMode ?? '',
     selectedCell: undefined,
     selectedFeature: undefined,
     loading: IDLE,
@@ -186,6 +201,17 @@ export function createOsmViewSlice<TSnapshot>(
 
       showBelowThresholdChanged(state, action: PayloadAction<boolean>) {
         return { ...state, showBelowThreshold: action.payload };
+      },
+
+      /**
+       * Switch which surface is drawn as the ground.
+       *
+       * Kept out of `layersChanged` deliberately: a layer set is a set of
+       * independent switches and this is exclusive, so merging them would make
+       * "no ground" expressible as more than one state.
+       */
+      groundModeChanged(state, action: PayloadAction<string>) {
+        return { ...state, groundMode: action.payload };
       },
 
       /**

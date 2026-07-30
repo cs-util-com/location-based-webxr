@@ -19,6 +19,7 @@ import * as THREE from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 
 import type { CellMesh } from "./cell-mesh.js";
+import type { GroundMode } from "./ground-mode.js";
 import type { Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
 import { drawMeshLayers } from "./mesh-layers.js";
@@ -35,8 +36,15 @@ import type { TransferableMesh } from "./worker/protocol.js";
 export type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 export type { Pick } from "./pick.js";
 
-/** Which path displaces the ground plane (W23). */
-export type GroundDisplacement = "cpu" | "gpu";
+/**
+ * Which path displaces the ground plane, or `none` to hide it (W23, W11).
+ *
+ * Re-exported from `ground-mode.ts`, which owns the union because it also owns
+ * parsing it out of the store's plain string and deciding what a mode disables.
+ * Two definitions of "the ground modes" is the shape of drift this demo keeps
+ * finding.
+ */
+export type GroundDisplacement = GroundMode;
 export { treeConePosition } from "./mesh-layers.js";
 
 /**
@@ -482,6 +490,13 @@ export class BuildingView {
     if (mode === this.displacement) return;
     this.displacement = mode;
     this.groundUniforms.uDisplace.value = mode === "gpu" ? 1 : 0;
+    // HIDDEN, NOT REMOVED (W11). The plane keeps its geometry, its material and
+    // its displacement, so returning to `cpu`/`gpu` is a visibility flip rather
+    // than a rebuild — and nothing else in the scene depends on it existing, so
+    // the mesh layers are untouched either way. That last part is the failure
+    // mode worth naming: a mode switch that quietly cleared the scene would look
+    // exactly like the blanking bug W2 fixed.
+    this.ground.visible = mode !== "none";
     this.setTerrain(this.terrain);
   }
 

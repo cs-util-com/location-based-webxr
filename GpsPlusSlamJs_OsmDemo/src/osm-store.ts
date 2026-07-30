@@ -32,6 +32,7 @@ import {
 import type { LatLng } from "gps-plus-slam-osm";
 
 import type { DemoSnapshot } from "./demo-pipeline.js";
+import { DEFAULT_GROUND_MODE } from "./ground-mode.js";
 import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
 
 /** The demo's root state. One slice; the demo has no other durable state. */
@@ -112,6 +113,8 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
     initialPosition: options.start,
     initialCategory: options.category,
     initialLayers: DEFAULT_LAYERS,
+    // The picker names its own modes; the slice only stores the string (W11).
+    initialGroundMode: DEFAULT_GROUND_MODE,
   });
 
   const store = configureStore({

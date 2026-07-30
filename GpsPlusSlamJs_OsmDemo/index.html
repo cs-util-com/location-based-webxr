@@ -222,6 +222,12 @@
       .layer-toggle {
         white-space: nowrap;
       }
+
+      /* A switch that cannot do anything in the current mode (DEC-R3-17).
+         Dimmed rather than hidden: a control that disappears reads as a bug. */
+      .layer-toggle-off {
+        opacity: 0.45;
+      }
       .hint {
         color: #6f7995;
         font-size: 0.78rem;
@@ -393,14 +399,20 @@
            arrive without a switch. -->
       <div id="layers" class="layer-toggles"></div>
       <!--
-        W23's A/B switch. NOT a layer — it does not add or remove anything from
-        the scene, it changes WHICH PATH displaces the ground plane. Keeping it
-        out of the layer registry is deliberate: `ALL_LAYERS` means "things the
-        scene can draw", and a rendering strategy is not one of them.
+        THE GROUND MODE (W11, DEC-R3-3). NOT a layer — it does not add or remove
+        anything from the scene, it chooses which surface is drawn as the ground:
+        the CPU-displaced plane, the GPU-displaced one (W23's A/B comparison), or
+        none at all. `ALL_LAYERS` means "things the scene can draw", each
+        independently; this is one thing drawn three ways and is exclusive.
+
+        `No ground` is what makes the OSM ground areas inspectable on their own —
+        the ask behind the round-3 note — while `plates` stays an ordinary layer,
+        so "areas lying on the terrain" is still reachable. Options are populated
+        from `GROUND_MODES` so the picker cannot drift from the union.
       -->
-      <label class="layer-toggle" id="ground-gpu-label">
-        <input type="checkbox" id="ground-gpu" />
-        GPU ground
+      <label class="layer-toggle" id="ground-mode-label">
+        ground
+        <select id="ground-mode"></select>
       </label>
       <span class="hint">click the map to move</span>
       <span id="status">starting…</span>

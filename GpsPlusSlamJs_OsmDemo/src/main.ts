@@ -48,6 +48,12 @@ import {
 } from "./building-view.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
 import { createExplainCycle } from "./explain-cycle.js";
+import {
+  GROUND_MODES,
+  groundDebugAvailable,
+  groundModeLabel,
+  parseGroundMode,
+} from "./ground-mode.js";
 import { attachLayerToggles } from "./layer-toggles.js";
 import { isLayerEnabled } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
@@ -160,13 +166,20 @@ async function main(): Promise<void> {
       }
     },
   });
-  // W23's A/B switch. Both displacement paths ship and the point is to compare
-  // them on a real device, so the control is a live toggle rather than a URL
-  // parameter — flipping it and watching the reported cost is the measurement.
-  const groundGpu = el<HTMLInputElement>("ground-gpu");
-  groundGpu.addEventListener("change", () => {
-    buildingView.setGroundDisplacement(groundGpu.checked ? "gpu" : "cpu");
-    writeStatus();
+  // THE GROUND PICKER (W11, DEC-R3-3). Three exclusive states rather than W23's
+  // checkbox: the CPU path, the GPU path, and none at all — the last of which is
+  // what makes the OSM ground areas inspectable on their own, since `plates`
+  // stays an ordinary layer. Options come from `GROUND_MODES`, so the picker
+  // cannot drift from the union.
+  const groundPicker = el<HTMLSelectElement>("ground-mode");
+  for (const mode of GROUND_MODES) {
+    const option = document.createElement("option");
+    option.value = mode;
+    option.textContent = groundModeLabel(mode);
+    groundPicker.append(option);
+  }
+  groundPicker.addEventListener("change", () => {
+    store.dispatch(actions.groundModeChanged(groundPicker.value));
   });
 
   const legendView = new LegendView({ container: el("legend") });
@@ -622,6 +635,23 @@ async function main(): Promise<void> {
   );
 
   subscribe((view) => view.showBelowThreshold, redrawFromSnapshot);
+
+  subscribe(
+    (view) => view.groundMode,
+    (mode) => {
+      const ground = parseGroundMode(mode);
+      groundPicker.value = ground;
+      buildingView.setGroundDisplacement(ground);
+      // DEC-R3-17: the height ramp re-colours the ground plane IN PLACE, so with
+      // no plane it is a switch that does nothing. Disabled rather than hidden,
+      // and its stored value is untouched, so the choice survives the return.
+      layerToggles.setAvailable("terrainDebug", groundDebugAvailable(ground));
+      // The status line reports `ground <mode> <ms>`, which is W23's whole
+      // measurement — it has to follow the picker rather than the last terrain
+      // load.
+      writeStatus();
+    },
+  );
 
   /**
    * The details panel follows the selection, from whichever view produced it.

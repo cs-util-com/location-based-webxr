@@ -1420,7 +1420,9 @@ test.describe("the 3D view", () => {
     expect(onCpu.length).toBeGreaterThan(0);
     await expect(page.locator("#status")).toContainText(/ground cpu \d/);
 
-    await page.getByRole("checkbox", { name: "GPU ground" }).check();
+    // The A/B switch is a three-state picker since W11; "GPU ground" is one of
+    // its options rather than a checkbox of its own.
+    await page.locator("#ground-mode").selectOption("gpu");
     await expect(page.locator("#status")).toContainText(/ground gpu \d/);
     const onGpu = await framePixels();
 
@@ -2325,5 +2327,64 @@ test.describe("the background ring prefetch", () => {
     // a tile already in the store. Bounded by one fresh working set plus its
     // ring rather than by everything all over again.
     expect(counts.overpassQuery - spent).toBeLessThanOrEqual(7);
+  });
+});
+
+/**
+ * W11 / DEC-R3-3 — the ground picker, including the state that hides the ground.
+ */
+test.describe("the ground mode picker", () => {
+  test("draws nothing as ground on 'No ground', and comes back", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. `No ground` is the state the round-3 notes asked
+    // for — a way to look at the OSM ground areas without the terrain over them
+    // — and the way it fails is silently: a mode switch that cleared the whole
+    // scene would look exactly like the blanking bug W2 fixed, and a mode that
+    // did nothing would look like the picker was decorative.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const shot = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return "";
+        return el.toDataURL();
+      });
+
+    const withGround = await shot();
+    await page.locator("#ground-mode").selectOption("none");
+    await expect.poll(shot, REPAINT).not.toBe(withGround);
+
+    // The mesh layers are untouched — the buildings are still there.
+    await expect(page.locator("#status")).toContainText(/\d+ volumes/);
+
+    await page.locator("#ground-mode").selectOption("cpu");
+    await expect(page.locator("#status")).toContainText(/ground cpu \d/);
+  });
+
+  test("disables the height ramp when there is no ground to colour", async ({
+    page,
+  }) => {
+    // DEC-R3-17. The ramp re-colours the ground plane IN PLACE, so with the plane
+    // hidden the switch is a control that does nothing — the shape of half of
+    // this round's findings. Disabled rather than hidden, and its value survives
+    // the return, so the user's choice is not silently discarded.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const ramp = page.locator("#layer-terrainDebug");
+    await ramp.check();
+    await expect(ramp).toBeEnabled();
+
+    await page.locator("#ground-mode").selectOption("none");
+    await expect(ramp).toBeDisabled();
+    await expect(ramp).toBeChecked();
+
+    await page.locator("#ground-mode").selectOption("gpu");
+    await expect(ramp).toBeEnabled();
+    await expect(ramp).toBeChecked();
   });
 });

@@ -32,6 +32,17 @@ export interface LayerTogglesOptions {
 export interface LayerToggles {
   /** Brings the switches in line with the store. Safe to call on every change. */
   render(layers: LayerSet): void;
+  /**
+   * Greys out a switch that cannot currently do anything (DEC-R3-17).
+   *
+   * DISABLED, NEVER HIDDEN, and its stored value is untouched: a control that
+   * disappears reads as a bug, and one whose value is silently reset loses the
+   * user's choice on the way back. The live case is `terrainDebug` under the
+   * `No ground` mode — the ramp re-colours the ground plane in place, so with the
+   * plane hidden the switch would be a control that does nothing, which is the
+   * shape of half of round 3's findings.
+   */
+  setAvailable(layer: LayerKind, available: boolean): void;
   dispose(): void;
 }
 
@@ -99,6 +110,14 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
         // dispatch again — that is a loop, and a subtle one.
         if (input.checked !== enabled) input.checked = enabled;
       }
+    },
+    setAvailable(layer, available) {
+      const input = inputs.get(layer);
+      if (input === undefined) return;
+      input.disabled = !available;
+      // The LABEL is dimmed with it, or the text stays at full contrast beside a
+      // greyed box and the control reads as broken rather than as unavailable.
+      input.parentElement?.classList.toggle("layer-toggle-off", !available);
     },
     dispose() {
       container.removeEventListener("change", onInput);
