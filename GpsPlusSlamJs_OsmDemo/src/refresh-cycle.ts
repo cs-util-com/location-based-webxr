@@ -170,6 +170,32 @@ export function createRefreshCycle(
         store.dispatch(actions.snapshotReady(snapshot));
       }
     } catch (error) {
+      // A SUPERSEDED RUN IS NOT A FAILURE, and treating it as one was the
+      // reported "the scene resets" bug (finding R3-5).
+      //
+      // A newer click or a category change aborts the run in flight
+      // (`latest-only.ts`), the RPC rejects with `RpcAbortError`
+      // (`worker/rpc-client.ts`), and this `catch` used to hand that to
+      // `fetchFailed` — which clears the snapshot, the selected cell and the
+      // selected feature by design, because a DATA failure means nothing new was
+      // produced and anything still drawn is unsupported. None of that is true
+      // of an abort: the data is fine, a newer run is already queued, and the
+      // only thing that happened is that this one stopped early.
+      //
+      // Both views are snapshot subscribers, so the dispatch blanked the map and
+      // the 3D scene and closed the details panel — on nearly every second
+      // click, because three progressive rings over a 2.8 km mesh build leave a
+      // wide window in which to be superseded.
+      //
+      // KEYED ON `signal.aborted`, NOT ON THE ERROR TYPE. Only this demo's own
+      // coalescing aborts these calls, so the signal is the authoritative fact;
+      // matching `RpcAbortError` would need an import across the worker boundary
+      // and would still miss an abort that surfaces as some other error on the
+      // way out (the worker's own `DOMException("Aborted")`, for one).
+      //
+      // The two guards further up do NOT cover this: they check the signal after
+      // an await RESOLVES, and an aborted call rejects instead.
+      if (signal.aborted) return;
       store.dispatch(actions.fetchFailed(messageOf(error)));
     }
   });

@@ -41,6 +41,7 @@ const REPAINT = { timeout: 15000 };
 import {
   AT_FIXTURE,
   expectCanvasFillsContainer,
+  recordStatus,
   stubNetwork,
   waitForRefresh,
 } from "./fixtures.js";
@@ -2061,5 +2062,165 @@ test.describe("the 3D canvas at dpr 1", () => {
     await waitForRefresh(page);
 
     await expectCanvasFillsContainer(page);
+  });
+});
+
+/**
+ * W2 / finding R3-5 — "the 3D scene sometimes resets".
+ *
+ * It never was a reset. A newer click or category change aborts the run in
+ * flight, the RPC rejects, and the cycle reported that as a DATA failure —
+ * which clears the snapshot and the selection by design, blanking both views
+ * and closing the details panel. With three progressive rings over a 2.8 km
+ * mesh build, the window in which to be superseded is most of every click.
+ */
+test.describe("a superseded refresh", () => {
+  /**
+   * A category value that is not the current one.
+   *
+   * BY VALUE, never by index: the picker is populated from the rule table and
+   * the demo then selects `walkable` explicitly, which is NOT option 0. A test
+   * that switched to index 1 and "back" to index 0 silently ended on a third
+   * category — which is exactly how the camera assertion below first failed, at
+   * 43 % of pixels changed, for a reason that had nothing to do with the camera.
+   */
+  const otherCategory = async (page, current) => {
+    const values = await page
+      .locator("#category option")
+      .evaluateAll((nodes) =>
+        nodes.map((node) => /** @type {HTMLOptionElement} */ (node).value),
+      );
+    const other = values.find((value) => value !== current);
+    if (other === undefined) throw new Error("only one category in the picker");
+    return other;
+  };
+
+  test("never reports a failure, and never blanks what is drawn", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const cells = page.locator("#map path.affordance-cell");
+    expect(await cells.count()).toBeGreaterThan(0);
+
+    const statusHistory = await recordStatus(page);
+
+    // TWO CHANGES IN QUICK SUCCESSION, with no wait between them: the second
+    // supersedes the first while it is still in flight, which is the whole
+    // input. A test that waited between them would exercise nothing.
+    const picker = page.locator("#category");
+    const started = await picker.inputValue();
+    await picker.selectOption(await otherCategory(page, started));
+    await picker.selectOption(started);
+    await waitForRefresh(page);
+
+    // The status line is where `fetchFailed` becomes visible, and the message it
+    // would carry is the RPC's own. Neither may ever have appeared.
+    const history = await statusHistory();
+    expect(history.join(" | ")).not.toMatch(/Failed|superseded/);
+
+    // And the picture survived: the grid is still there, drawn for the category
+    // the picker ended on.
+    expect(await cells.count()).toBeGreaterThan(0);
+  });
+
+  test("keeps the details panel open, and does not move the camera", async ({
+    page,
+  }) => {
+    // TWO INVARIANTS IN ONE TEST because they share an expensive setup and both
+    // are about what a supersede must NOT touch. The selection half is
+    // `fetchFailed` clearing `selectedCell` — the panel dismissing itself while
+    // it is being read. The camera half is DEC-R3-1: the owner could not confirm
+    // whether the camera reset too, so nothing was fixed for it and this asserts
+    // it cannot start happening unnoticed.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // Move the camera off its default pose first, or "the camera did not move"
+    // is satisfied by a camera that was reset TO the pose it was already in.
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 - 70, box.y + box.height / 2);
+    await page.mouse.up();
+
+    await page.locator("#map path.affordance-cell").first().click();
+    await expect(page.locator("#details")).toBeVisible();
+
+    /**
+     * The drawing buffer stands in for the camera matrix, which is not exposed.
+     *
+     * Kept as raw pixels rather than a data URL because the comparison below has
+     * to be a FRACTION of differing pixels, not equality — see there.
+     */
+    const shot = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return [];
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return [];
+        ctx.drawImage(el, 0, 0);
+        return [...ctx.getImageData(0, 0, probe.width, probe.height).data];
+      });
+    /** Fraction of RGB samples that differ by more than a quantisation step. */
+    const differs = (a, b) => {
+      if (a.length === 0 || a.length !== b.length) return 1;
+      let changed = 0;
+      for (let i = 0; i < a.length; i += 4) {
+        if (
+          Math.abs(a[i] - b[i]) > 2 ||
+          Math.abs(a[i + 1] - b[i + 1]) > 2 ||
+          Math.abs(a[i + 2] - b[i + 2]) > 2
+        ) {
+          changed++;
+        }
+      }
+      return changed / (a.length / 4);
+    };
+
+    let previous = await shot();
+    await expect
+      .poll(async () => {
+        const current = await shot();
+        const stable = differs(previous, current) === 0;
+        previous = current;
+        return stable;
+      }, REPAINT)
+      .toBe(true);
+    const parked = previous;
+
+    // Supersede: two category changes with no wait, then back to where it
+    // started so the scene is comparable again.
+    const picker = page.locator("#category");
+    const started = await picker.inputValue();
+    await picker.selectOption(await otherCategory(page, started));
+    await picker.selectOption(started);
+    await waitForRefresh(page);
+
+    // A category change KEEPS the selection by design (`categoryChanged` in the
+    // slice) — "what does this same cell score for the other category?" is the
+    // obvious next question. Only `fetchFailed` cleared it.
+    await expect(page.locator("#details")).toBeVisible();
+
+    // A FRACTION of changed pixels, not equality. Same position, same category
+    // and the same scored chunks, so the scene is the same scene — but the two
+    // frames are not bit-identical, and chasing that would be chasing the wrong
+    // thing: what this asserts is that the VIEWPOINT did not change, and a
+    // camera reset to the default pose moves essentially every pixel of a city.
+    // The scale is known from having got this wrong: selecting the wrong
+    // category for the return leg changed 43 % of pixels, which is the order a
+    // genuine viewpoint change lands at. 5 % is far below that and far above
+    // frame-to-frame noise.
+    await expect
+      .poll(async () => differs(parked, await shot()), REPAINT)
+      .toBeLessThan(0.05);
   });
 });

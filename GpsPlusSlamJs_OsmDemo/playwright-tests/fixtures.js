@@ -239,6 +239,39 @@ export async function waitForRefresh(page) {
 }
 
 /**
+ * Records every distinct `#status` text from now on (W2, finding R3-5).
+ *
+ * WHY AN OBSERVER RATHER THAN POLLING. The thing being asserted is that a
+ * message NEVER appeared, and the message it is about — `Failed: The request was
+ * superseded` — is on screen only for the moment between one run being aborted
+ * and the next one publishing. A poll interval wide enough to be cheap is wide
+ * enough to miss it entirely, so the test would pass on the bug.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<() => Promise<string[]>>} reads the history so far
+ */
+export async function recordStatus(page) {
+  await page.evaluate(() => {
+    const seen = [];
+    const node = document.getElementById("status");
+    if (node === null) return;
+    seen.push(node.textContent ?? "");
+    new MutationObserver(() => {
+      const text = node.textContent ?? "";
+      if (text !== seen[seen.length - 1]) seen.push(text);
+    }).observe(node, { childList: true, characterData: true, subtree: true });
+    /** @type {Record<string, unknown>} */ (window).__statusHistory = seen;
+  });
+  return () =>
+    page.evaluate(
+      () =>
+        /** @type {string[]} */ (
+          /** @type {Record<string, unknown>} */ (window).__statusHistory ?? []
+        ),
+    );
+}
+
+/**
  * Asserts the 3D canvas is laid out at its CONTAINER's size (finding R3-2, W1).
  *
  * WHY THIS IS A SHARED HELPER AND NOT TWO COPIES. The same assertion has to run

@@ -86,6 +86,26 @@ const NO_MESH: TransferableMesh = {
   approximateRoofs: 0,
 };
 
+/**
+ * Never resolves; rejects when the run is superseded.
+ *
+ * Raced against the producer so the fake worker behaves like the real one, whose
+ * `RpcAbortError` is what makes W2's distinction — superseded is not failed —
+ * something the cycle has to make at all.
+ */
+function superseded(signal: AbortSignal): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    const fail = () => {
+      reject(new Error("The request was superseded"));
+    };
+    if (signal.aborted) {
+      fail();
+      return;
+    }
+    signal.addEventListener("abort", fail, { once: true });
+  });
+}
+
 /** The producer shape these tests write against: position + category in, snapshot out. */
 type Update = (
   position: { lat: number; lng: number },
@@ -104,11 +124,15 @@ function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
     // narrow `RefreshWorker` shape is what keeps this test worker-free.
     worker: {
       call: async (_kind, payload, options) => {
-        const snapshot = await update(
-          payload.position,
-          payload.category,
-          payload.radius,
-        );
+        // REJECTS ON ABORT, exactly as the real client does (`rpc-client.ts`
+        // posts an `abort` and rejects with `RpcAbortError`). The fake used to
+        // ignore the signal, which made every test here blind to the whole
+        // abort path — including the defect W2 fixes, where that rejection
+        // reached the generic `catch` and was reported as a data failure.
+        const snapshot = await Promise.race([
+          update(payload.position, payload.category, payload.radius),
+          superseded(options.signal),
+        ]);
         // The signal is FORWARDED to the test, so a test can supersede the run
         // after the reply has landed — the exact race the guard exists for.
         onReply?.(options.signal);
@@ -232,6 +256,61 @@ describe("createRefreshCycle — the happy path", () => {
       "restingArea",
       "restingArea",
     ]);
+  });
+});
+
+describe("createRefreshCycle — a SUPERSEDED run (W2, finding R3-5)", () => {
+  it("reports nothing, and keeps the snapshot AND the selection", async () => {
+    // WHY THIS TEST MATTERS. This is the reported bug: "the 3D scene sometimes
+    // resets — switching category empties it completely before it reloads", and
+    // "clicking the map sometimes resets the areas". Neither is a reset. A newer
+    // click aborts the run in flight, the RPC rejects with `RpcAbortError`, and
+    // the cycle's `catch` treated that identically to an Overpass 429 — so
+    // `fetchFailed` fired, which CLEARS the snapshot and the selection by
+    // design. Both views are snapshot subscribers, so both blanked, and the
+    // details panel closed itself while it was being read.
+    //
+    // The two guards that already existed cannot see it: they check
+    // `signal.aborted` after an await RESOLVES, and an aborted call rejects.
+    //
+    // The assertion is "no error was ever observed", not "the final state is
+    // fine" — the newer run's own snapshot arrives moments later and would
+    // repair the final state whether or not the bug is present.
+    let releaseFirst: (() => void) | undefined;
+    let calls = 0;
+    const { store, actions, refresh, subscribe } = setup(
+      async (_position, category) => {
+        calls += 1;
+        if (calls === 1) {
+          await new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+          });
+        }
+        return snapshot(category);
+      },
+    );
+    store.dispatch(actions.snapshotReady(snapshot("walkable")));
+    store.dispatch(actions.cellSelected("cell-0"));
+
+    const phases: string[] = [];
+    subscribe(
+      (view) => view.loading.phase,
+      (phase) => phases.push(phase),
+    );
+
+    const first = refresh();
+    // Supersedes the run in flight — the abort that used to be reported as a
+    // data failure.
+    void refresh();
+    releaseFirst?.();
+    await first;
+
+    expect(phases).not.toContain("error");
+    const view = selectOsmView(store.getState());
+    expect(view.snapshot).toBeDefined();
+    // The details panel follows this. Clearing it is why the panel dismissed
+    // itself on every second click.
+    expect(view.selectedCell).toBe("cell-0");
   });
 });
 
