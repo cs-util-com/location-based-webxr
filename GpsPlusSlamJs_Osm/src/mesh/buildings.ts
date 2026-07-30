@@ -86,26 +86,73 @@ export function buildBuildings(
     // A building WITH parts is not extruded itself — the parts replace it.
     // Drawing both is the most visible S3DB mistake there is.
     if (claimed.has(key)) continue;
-    volumes.push(volumeFor(outline.feature, outline.rings, undefined, options));
+    volumes.push(
+      volumeFor(
+        outline.feature,
+        outline.rings,
+        undefined,
+        options,
+        groundUnder([outline], options),
+      ),
+    );
   }
 
   for (const [outlineKey, list] of partsByOutline) {
+    // ONE GROUND FOR THE WHOLE BUILDING (W5, finding R3-1), sampled over the
+    // outline AND every part, and handed to each of them unchanged.
+    //
+    // `min_height` is measured from the BUILDING's base, not from the terrain
+    // under one part — so a per-part base displaces the parts of one building
+    // relative to each other by the relief between them. That is what tore
+    // Cologne Cathedral's spires off the model when the terrain grew from a
+    // near-flat 600 m square to 2.8 km of real relief.
+    //
+    // The outline is included even though it is not extruded: it is part of the
+    // building's extent, and excluding it would make the base depend on which
+    // parts happened to arrive in this tile.
+    const group = groundUnder(
+      [...(outlineOf(outlines, outlineKey) ?? []), ...list],
+      options,
+    );
     for (const part of list) {
-      volumes.push(volumeFor(part.feature, part.rings, outlineKey, options));
+      volumes.push(
+        volumeFor(part.feature, part.rings, outlineKey, options, group),
+      );
     }
   }
 
   // A part with no containing outline is still a real volume — a tile boundary
   // can deliver it without its parent. Dropping it would erase the building.
+  //
+  // It keeps the per-footprint ground, because there is no building to share
+  // one with. That is also what makes the grouping above safe to apply
+  // unconditionally: the fallback is exactly the old behaviour.
   for (const part of parts) {
     const alreadyPlaced = [...partsByOutline.values()].some((list) =>
       list.includes(part),
     );
     if (alreadyPlaced) continue;
-    volumes.push(volumeFor(part.feature, part.rings, undefined, options));
+    volumes.push(
+      volumeFor(
+        part.feature,
+        part.rings,
+        undefined,
+        options,
+        groundUnder([part], options),
+      ),
+    );
   }
 
   return volumes;
+}
+
+/** The outline footprint for a key, as a one-element list, or `undefined`. */
+function outlineOf(
+  outlines: readonly Footprint[],
+  key: OsmFeatureKey,
+): Footprint[] | undefined {
+  const found = outlines.find((outline) => featureKey(outline.feature) === key);
+  return found === undefined ? undefined : [found];
 }
 
 interface Footprint {
@@ -166,7 +213,7 @@ function assignPartsToOutlines(
 }
 
 /**
- * The terrain under a footprint: where its base sits, and how far the ground rises.
+ * The terrain under a BUILDING: where its base sits, and how far the ground rises.
  *
  * SAMPLED AT EVERY OUTER-RING VERTEX, not once at an anchor (DEC-R2-19). One sample
  * was the original behaviour and it is only correct on flat ground: on a slope it
@@ -175,33 +222,42 @@ function assignPartsToOutlines(
  * near-flat 600 m terrain square; once terrain covers a whole city with real relief
  * it goes from rare to routine.
  *
- * Only the OUTER ring is sampled. Inner rings are holes — courtyards — and are by
- * definition inside the outer ring's extent, so they cannot lower the base or raise
- * the rise. Sampling them would cost work and change nothing.
+ * TAKES THE WHOLE BUILDING, NOT ONE FOOTPRINT (W5, finding R3-1). Every volume of
+ * one building has to share a base, because `min_height` is measured from the
+ * building's base rather than from the terrain under one part — so sampling per
+ * part displaces the parts of one building relative to each other by the relief
+ * between them. On Cologne Cathedral that is metres, and it is what made the spires
+ * read as separate low-polygon objects stuck on top of the model.
+ *
+ * Only the OUTER ring of each footprint is sampled. Inner rings are holes —
+ * courtyards — and are by definition inside the outer ring's extent, so they cannot
+ * lower the base or raise the rise. Sampling them would cost work and change
+ * nothing.
  *
  * `rise` is 0 on flat ground, which is what keeps the common case byte-identical to
  * the previous behaviour.
  */
 function groundUnder(
-  rings: readonly EnuPoint[][],
+  footprints: readonly Footprint[],
   options: BuildBuildingsOptions,
 ): { lowest: number; rise: number } {
   const sample = options.groundHeightM;
-  const outer = rings[0];
-  if (sample === undefined || outer === undefined || outer.length === 0) {
-    return { lowest: 0, rise: 0 };
-  }
+  if (sample === undefined) return { lowest: 0, rise: 0 };
 
   let lowest = Infinity;
   let highest = -Infinity;
-  for (const point of outer) {
-    const height = sample(options.frame.toLatLng(point));
-    // A provider that answers NaN would otherwise poison every vertex of the
-    // building through the comparison below, and a NaN position silently drops a
-    // triangle rather than reporting anything.
-    if (!Number.isFinite(height)) continue;
-    if (height < lowest) lowest = height;
-    if (height > highest) highest = height;
+  for (const footprint of footprints) {
+    const outer = footprint.rings[0];
+    if (outer === undefined) continue;
+    for (const point of outer) {
+      const height = sample(options.frame.toLatLng(point));
+      // A provider that answers NaN would otherwise poison every vertex of the
+      // building through the comparison below, and a NaN position silently drops a
+      // triangle rather than reporting anything.
+      if (!Number.isFinite(height)) continue;
+      if (height < lowest) lowest = height;
+      if (height > highest) highest = height;
+    }
   }
   if (!Number.isFinite(lowest)) return { lowest: 0, rise: 0 };
   return { lowest, rise: highest - lowest };
@@ -212,9 +268,16 @@ function volumeFor(
   rings: EnuPoint[][],
   parentFeature: OsmFeatureKey | undefined,
   options: BuildBuildingsOptions,
+  /**
+   * The ground for the whole BUILDING this volume belongs to (W5).
+   *
+   * Passed in rather than computed here, which is the entire change: computing
+   * it here is what made it per-footprint, and per-footprint is what displaced
+   * the parts of one building relative to each other.
+   */
+  ground: { lowest: number; rise: number },
 ): BuildingVolume {
   const heights = resolveHeights(feature.tags);
-  const ground = groundUnder(rings, options);
 
   const mesh = extrudeBuilding(rings, {
     minHeightM: heights.minHeightM,

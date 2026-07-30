@@ -578,3 +578,137 @@ function highestY(mesh: { positions: Float32Array }): number {
   }
   return max;
 }
+
+describe("buildBuildings — one base per BUILDING, not per part (W5, R3-1)", () => {
+  /**
+   * Why these tests matter:
+   * DEC-R2-19 gave every volume its own terrain base — the minimum under ITS OWN
+   * footprint. For a plain building that is right. For a building mapped under
+   * Simple 3D Buildings it is wrong, because `min_height` is measured from the
+   * BUILDING's base, not from the ground under one part: two parts of one
+   * building over ground differing by `d` metres end up displaced from each
+   * other by `d`.
+   *
+   * It was harmless for exactly as long as the sampled field was 600 m and
+   * Cologne-flat, so `rise` was ~0 and every part got the same base by accident.
+   * DEC-R2-8/R2-21 extended the field to 2.8 km with real relief, and the
+   * artefact became visible on the demo's showcase building: Cologne Cathedral's
+   * spires stopped merging into the model and started reading as separate
+   * low-polygon cones stuck on top of it (finding R3-1).
+   *
+   * The fix is what OSM2World does: sample the whole building — outline plus
+   * every part — once, and give every volume in it the same base and the same
+   * rise.
+   */
+
+  const FRAME = enuFrameAt({ lat: 50.9413, lng: 6.9583 });
+
+  /** A rectangle from a lat/lng box, closed. */
+  const box = (
+    south: number,
+    west: number,
+    north: number,
+    east: number,
+  ): { lat: number; lng: number }[] => [
+    { lat: south, lng: west },
+    { lat: south, lng: east },
+    { lat: north, lng: east },
+    { lat: north, lng: west },
+    { lat: south, lng: west },
+  ];
+
+  /** An outline with two parts: a low hall to the west, a tower to the east. */
+  const OUTLINE: OsmFeature = {
+    type: "way",
+    id: 100,
+    tags: { building: "cathedral" },
+    geometry: box(50.9413, 6.9583, 50.9418, 6.9595),
+  };
+  const HALL: OsmFeature = {
+    type: "way",
+    id: 101,
+    tags: { "building:part": "yes", height: "12" },
+    geometry: box(50.9413, 6.9583, 50.9418, 6.9589),
+  };
+  const TOWER: OsmFeature = {
+    type: "way",
+    id: 102,
+    tags: { "building:part": "yes", height: "60", min_height: "12" },
+    geometry: box(50.9413, 6.959, 50.9418, 6.9595),
+  };
+
+  /** Ground that drops 20 m from west to east, across the outline. */
+  const SLOPE = (position: { lng: number }): number =>
+    position.lng < 6.95895 ? 30 : 10;
+
+  it("gives every part of one building the SAME base", () => {
+    // THE INVARIANT. Before this, the hall sat at 30 (the minimum under the west
+    // half) and the tower at 10 (the minimum under the east half) — 20 m of
+    // relative displacement inside one building, which is what tore the spires
+    // off the cathedral.
+    const volumes = buildBuildings([OUTLINE, HALL, TOWER], {
+      frame: FRAME,
+      groundHeightM: SLOPE,
+    });
+
+    const hall = volumes.find((v) => v.feature === "way/101");
+    const tower = volumes.find((v) => v.feature === "way/102");
+    if (hall === undefined || tower === undefined) {
+      throw new Error("both parts must be built");
+    }
+
+    // The hall starts at the building's base; the tower starts `min_height`
+    // above THAT SAME base. Both numbers are relative to one ground, which is
+    // the whole claim.
+    expect(lowestY(hall.mesh)).toBeCloseTo(10, 3);
+    expect(lowestY(tower.mesh)).toBeCloseTo(10 + 12, 3);
+  });
+
+  it("uses the minimum under the WHOLE building, including its parts", () => {
+    // The base is the minimum over outline AND parts. Sampling the outline alone
+    // would be nearly right and would silently drift wherever a part sticks out
+    // past its outline — which real S3DB data does, since an outline is often
+    // the courtyard-less footprint of the parts inside it.
+    const volumes = buildBuildings([OUTLINE, HALL, TOWER], {
+      frame: FRAME,
+      groundHeightM: SLOPE,
+    });
+
+    for (const volume of volumes) {
+      // Nothing in the building may sit below the terrain minimum.
+      expect(lowestY(volume.mesh)).toBeGreaterThanOrEqual(10 - 1e-6);
+    }
+  });
+
+  it("stretches the walls by the WHOLE building's rise, not each part's", () => {
+    // The rise that lengthens the walls has to be the building's, for the same
+    // reason as the base: a part that happens to sit entirely on flat ground
+    // still has to reach down to the building's own base.
+    const volumes = buildBuildings([OUTLINE, HALL, TOWER], {
+      frame: FRAME,
+      groundHeightM: SLOPE,
+    });
+    const hall = volumes.find((v) => v.feature === "way/101");
+    if (hall === undefined) throw new Error("no hall built");
+
+    // Base 10, tagged height 12, and 20 m of rise across the building: the roof
+    // clears the highest ground under the BUILDING by its tagged height.
+    expect(highestY(hall.mesh)).toBeCloseTo(30 + 12, 3);
+  });
+
+  it("leaves a part with no outline standing on its own ground", () => {
+    // A tile boundary can deliver a part without its parent. It is still a real
+    // volume and it has no building to share a base with, so it keeps the
+    // per-footprint behaviour — which is also what makes the grouping safe to
+    // apply unconditionally.
+    const volumes = buildBuildings([TOWER], {
+      frame: FRAME,
+      groundHeightM: SLOPE,
+    });
+    const tower = volumes.find((v) => v.feature === "way/102");
+    if (tower === undefined) throw new Error("no tower built");
+
+    expect(tower.parentFeature).toBeUndefined();
+    expect(lowestY(tower.mesh)).toBeCloseTo(10 + 12, 3);
+  });
+});

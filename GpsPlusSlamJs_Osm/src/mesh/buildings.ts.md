@@ -36,6 +36,24 @@ OSM features to building volumes, honouring `building:part`.
     extent by definition, so they can neither lower the base nor raise the rise.
   - A non-finite sample is SKIPPED rather than compared, or one NaN from a provider
     would poison the whole building and a NaN position silently drops triangles.
+- **ONE BASE PER BUILDING, NOT PER PART (W5, finding R3-1).** The ground is sampled
+  over the outline **and every part assigned to it**, once, and every volume in that
+  building is given the same `{ lowest, rise }`.
+  - **Why it has to be shared:** `min_height` is measured from the BUILDING's base.
+    Give each part the minimum under its own footprint and two parts of one building
+    end up displaced from each other by the relief between them.
+  - **This shipped, and it was visible on the demo's showcase building.** It was
+    harmless for exactly as long as the sampled field was 600 m and Cologne-flat, so
+    the rise was ~0 and every part got the same base by accident. Once DEC-R2-8/21
+    extended the field to 2.8 km of real relief, Cologne Cathedral's spires stopped
+    merging into the model and started reading as separate low-polygon cones stuck
+    on top of it.
+  - **The outline is included in the sample even though it is not extruded.** It is
+    part of the building's extent, and excluding it would make the base depend on
+    which parts happened to arrive in this tile.
+  - **A part with no containing outline keeps the per-footprint behaviour**, because
+    there is no building to share a base with — which is also what makes the grouping
+    safe to apply unconditionally: the fallback is exactly the old code.
 
 - **Landmark detail is FREE if you honour `building:part` and `min_height`.**
   Cologne Cathedral is not a model file and not a special case — it is many
