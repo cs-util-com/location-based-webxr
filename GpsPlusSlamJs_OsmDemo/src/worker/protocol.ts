@@ -50,6 +50,15 @@ import type { HeightfieldData } from "../heightfield.js";
 export interface TransferableMesh {
   readonly buildings: MeshData;
   readonly trees: readonly TreePlacement[];
+  /**
+   * Ground areas, one merged mesh.
+   *
+   * MERGED rather than one mesh per plate: a working set has hundreds of small
+   * areas, and a draw call each would dominate the frame. The buildings take the
+   * same trade for the same reason.
+   */
+  readonly plates: MeshData;
+  readonly plateCount: number;
   readonly volumes: number;
   readonly parts: number;
   readonly guessedHeights: number;

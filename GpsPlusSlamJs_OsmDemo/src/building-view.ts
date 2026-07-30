@@ -21,6 +21,7 @@ import { type MeshData, type TreePlacement } from "gps-plus-slam-osm";
 
 import type { CellMesh } from "./cell-mesh.js";
 import type { Heightfield } from "./heightfield.js";
+import { groundLift } from "./layer-order.js";
 import { SKY_GRADIENT_ROWS, skyGradientPixels } from "./sky-gradient.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
@@ -103,6 +104,7 @@ export interface BuildingViewOptions {
 export interface MeshLayers {
   readonly buildings: boolean;
   readonly trees: boolean;
+  readonly plates: boolean;
 }
 
 export interface BuildingStats {
@@ -113,6 +115,12 @@ export interface BuildingStats {
   /** Roofs generated from the bounding rectangle rather than exactly. */
   readonly approximateRoofs: number;
   readonly trees: number;
+  /** Ground areas drawn. Reported because a silent 0 is the failure mode. */
+  readonly plates: number;
+  /** Their merged triangle count — a non-zero plate count with zero triangles
+   * is a distinct failure from no plates at all, and only the pair tells them
+   * apart. */
+  readonly plateTriangles: number;
 }
 
 /**
@@ -487,9 +495,15 @@ export class BuildingView {
     // verifiable rather than a rewrite (W10).
     const wantBuildings = layers?.buildings ?? true;
     const wantTrees = layers?.trees ?? true;
+    // Plates default OFF, unlike buildings and trees: they are a NEW layer, and an
+    // omitted argument has to keep reproducing the picture the demo shipped with.
+    const wantPlates = layers?.plates ?? false;
 
     if (wantBuildings && mesh.buildings.triangleCount > 0) {
       this.group.add(this.meshFor(mesh.buildings));
+    }
+    if (wantPlates && mesh.plates.triangleCount > 0) {
+      this.group.add(this.plateMeshFor(mesh.plates));
     }
 
     for (const tree of wantTrees ? mesh.trees : []) {
@@ -502,7 +516,18 @@ export class BuildingView {
       this.group.add(trunk);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    // SCHEDULED, not rendered inline. A synchronous  here does
+    // put pixels in the drawing buffer, but with  that buffer is
+    // multisampled and is only RESOLVED to the canvas at composite time — which
+    // happens on an animation frame. So a mid-task render is invisible to
+    //  until something else schedules a frame, and a layer switched on
+    // outside a rAF appeared to draw nothing at all. Diagnosed the slow way: the
+    // geometry was proven correct (274 triangles, sane bounding box), proven to
+    // reach the scene, and still produced a byte-identical canvas even when
+    // coloured bright red and lifted 100 m above the terrain.
+    //
+    //  coalesces, so this is also cheaper than rendering per call.
+    this.requestFrame();
     // The counters describe WHAT WAS DRAWN, not what was available. A status
     // line reporting 400 buildings while the buildings layer is off would be the
     // status line lying about the picture, which is the class of defect the
@@ -514,6 +539,8 @@ export class BuildingView {
       guessedHeights: wantBuildings ? mesh.guessedHeights : 0,
       approximateRoofs: wantBuildings ? mesh.approximateRoofs : 0,
       trees: wantTrees ? mesh.trees.length : 0,
+      plates: wantPlates ? mesh.plateCount : 0,
+      plateTriangles: wantPlates ? mesh.plates.triangleCount : 0,
     };
   }
 
@@ -557,6 +584,36 @@ export class BuildingView {
         flatShading: true,
       }),
     );
+  }
+
+  /**
+   * A ground-plate mesh: flat, matte, and lifted off the terrain.
+   *
+   * SINGLE-SIDED, unlike the buildings. A plate is horizontal with an upward normal
+   * by construction, so a back face is never legitimately visible — and culling it
+   * means a plate wound the wrong way DISAPPEARS instead of being silently lit from
+   * below, which is the failure worth noticing rather than hiding.
+   */
+  private plateMeshFor(data: MeshData): THREE.Mesh {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(data.positions, 3),
+    );
+    geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
+    geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    const mesh = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({
+        color: 0x4a5468,
+        roughness: 0.85,
+        flatShading: true,
+        side: THREE.FrontSide,
+      }),
+    );
+    // From the shared ladder, so it cannot be coplanar with the roads or the grid.
+    mesh.position.y = groundLift("plates");
+    return mesh;
   }
 
   private clear(): void {

@@ -27,6 +27,7 @@ import { cellToBoundary } from "h3-js";
 import type { CellScore, EnuFrame } from "gps-plus-slam-osm";
 
 import { heatColour, type HeatScale } from "./heat-colours.js";
+import { groundLift } from "./layer-order.js";
 import { classifyScore } from "./legend-model.js";
 
 /**
@@ -51,12 +52,16 @@ function fanTriangles(corners: number): number {
 /**
  * How far above the ground plane the grid sits, metres.
  *
- * Coplanar surfaces z-fight: at exactly `y = 0` the grid and the ground would
- * flicker against each other as the camera moves, which reads as a rendering
- * bug rather than as a deliberate overlay. Small enough to be invisible at any
- * useful camera distance.
+ * NOW FROM THE SHARED LADDER (`layer-order.ts`) rather than a local constant. This
+ * was the only lifted layer when it was written; there are now five things that want
+ * to be at ground level, and choosing each offset against whichever neighbour its
+ * author happened to think of is how two of them end up coplanar and z-fighting —
+ * which reads as a rendering bug rather than as a layering mistake.
+ *
+ * The grid is the HIGHEST of them on purpose: it is the finest-grained claim and the
+ * thing a user clicks to interrogate, so it must never be occluded by a coarser one.
  */
-const GRID_LIFT_M = 0.05;
+const GRID_LIFT_M = groundLift("cells");
 
 export interface CellMeshOptions {
   readonly frame: EnuFrame;

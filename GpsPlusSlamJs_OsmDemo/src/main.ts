@@ -357,11 +357,14 @@ async function main(): Promise<void> {
     // category switch, or the below-threshold toggle), in which case the buildings
     // on screen are already correct and only the grid below needs rebuilding.
     const wantsMeshLayers =
-      isLayerEnabled(layers, "buildings") || isLayerEnabled(layers, "trees");
+      isLayerEnabled(layers, "buildings") ||
+      isLayerEnabled(layers, "trees") ||
+      isLayerEnabled(layers, "plates");
     if (latestMesh !== undefined && wantsMeshLayers) {
       mesh = buildingView.render(latestMesh, {
         buildings: isLayerEnabled(layers, "buildings"),
         trees: isLayerEnabled(layers, "trees"),
+        plates: isLayerEnabled(layers, "plates"),
       });
     } else if (!wantsMeshLayers) {
       buildingView.clearScene();
@@ -418,6 +421,9 @@ async function main(): Promise<void> {
         ? ""
         : `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed building heights)`,
       mesh === undefined ? "" : `${mesh.triangles} triangles`,
+      mesh === undefined || mesh.plates === 0
+        ? ""
+        : `${mesh.plates} ground areas (${mesh.plateTriangles} tri)`,
       describeExtent(snapshot.loadedTiles),
       terrainNote,
       tableNote,

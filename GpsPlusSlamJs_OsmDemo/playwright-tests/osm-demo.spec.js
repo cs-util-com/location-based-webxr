@@ -339,6 +339,44 @@ test.describe("the layer toggles", () => {
     expect(counts.overpassQuery).toBe(before);
   });
 
+  test("builds ground plates when the layer is switched on", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS (W11). The feedback asked for ground areas as real
+    // geometry — "flache Platten quasi im 3D-Raum" — and the registry only earns
+    // its keep if a NEW builder is reachable through it without touching the ones
+    // already there. So this asserts the default is OFF (the shipped picture must
+    // stay reproducible) and that switching it on actually BUILDS geometry.
+    //
+    // WHAT IT DELIBERATELY DOES NOT ASSERT, and this is a known gap rather than an
+    // oversight: that the plates appear as PIXELS. A fingerprint comparison of the
+    // canvas does not change when the layer is switched on, and the cause is not
+    // yet identified. Ruled out, each by direct experiment: the geometry (13 unit
+    // tests including one over this same captured fixture, plus a bounding-box
+    // check showing sane world coordinates), the merge, reaching the scene (the
+    // counters below come from the completed render), occlusion (unchanged when
+    // lifted 100 m above a ±25 m terrain), the material (unchanged with
+    // flatShading, unchanged in bright red) and frame scheduling.
+    //
+    // Asserting the counters rather than inventing a passing pixel test: they are
+    // reported from what the renderer was actually given, so they cannot agree
+    // with a scene that was never built. Tracked as a follow-up.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await expect(page.locator("#layer-plates")).not.toBeChecked();
+    await expect(page.locator("#status")).not.toContainText(/ground areas/);
+
+    await page.locator("#layer-plates").check();
+    await expect(page.locator("#layer-plates")).toBeChecked();
+
+    // The fixture is Cologne Volksgarten: 3  areas, landuse,
+    // a park, a garden and playgrounds. A zero here is a real failure.
+    await expect(page.locator("#status")).toContainText(/[1-9]d* ground areas/);
+    await expect(page.locator("#status")).toContainText(/([1-9]d* tri)/);
+  });
+
   test("switching the cells layer off clears the grid in BOTH views", async ({
     page,
   }) => {

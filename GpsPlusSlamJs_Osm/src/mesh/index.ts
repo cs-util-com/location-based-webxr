@@ -42,6 +42,9 @@ export { buildRoof } from "./roof.js";
 export type { BuildBuildingsOptions, BuildingVolume } from "./buildings.js";
 export { buildBuildings } from "./buildings.js";
 
+export type { AreaPlate, BuildPlatesOptions } from "./plates.js";
+export { buildAreaPlates, isPlateArea } from "./plates.js";
+
 export type { BuildTreesOptions, TreePlacement, TreeVariant } from "./trees.js";
 export {
   DEFAULT_CROWN_RATIO,

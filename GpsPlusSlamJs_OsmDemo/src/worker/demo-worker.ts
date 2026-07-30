@@ -39,6 +39,7 @@ import {
   OverpassSource,
   TerrariumProvider,
   browserPngDecoder,
+  buildAreaPlates,
   buildBuildings,
   buildTrees,
   enuFrameAt,
@@ -130,6 +131,11 @@ function buildMesh(
 
   const volumes = buildBuildings(all, options);
   const trees = buildTrees(all, options);
+  // PER-VERTEX terrain for plates, unlike buildings: a 30 m car park sampled once
+  // would cut into the ground at one end and float at the other, which is exactly
+  // the artefact the building change removed. The same option name carries both
+  // because the builders call it differently, which is where the difference belongs.
+  const plates = buildAreaPlates(all, options);
   // ONE merged geometry: this view shows one working set at a time and is always
   // wholly on screen, so a single batch is right here even though the package's
   // general guidance is to batch per res-8/res-9 cell.
@@ -138,6 +144,8 @@ function buildMesh(
   return {
     buildings,
     trees,
+    plates: mergeMeshes(plates.map((plate) => plate.mesh)),
+    plateCount: plates.length,
     volumes: volumes.length,
     parts: volumes.filter((v) => v.parentFeature !== undefined).length,
     guessedHeights: volumes.filter((v) => v.heights.heightIsGuessed).length,
