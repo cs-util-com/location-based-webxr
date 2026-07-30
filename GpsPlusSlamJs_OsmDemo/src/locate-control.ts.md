@@ -11,6 +11,21 @@
 
 ## Invariants & assumptions
 
+- **It is a SQUARE ICON BUTTON, bottom-right (DEC-R2-3).** An inline SVG map pin —
+  not an emoji (renders differently per platform, cannot inherit `currentColor`)
+  and not an image (a network request for four path commands). Bottom-right is the
+  maps convention the feedback named; Leaflet puts its attribution control in the
+  same corner, so the button stacks ABOVE it and the ODbL credit stays visible.
+- **The label is no longer the visible text, and that is the risky part.** It used
+  to be `textContent`, so removing it would have left a button that says nothing
+  to a screen reader and nothing on touch (where `title` never appears). The four
+  states now drive THREE channels: `data-state` for the CSS (a pulsing pin is the
+  in-progress state `CLAUDE.md` requires), `title` + `aria-label` + `aria-busy`
+  for the wording and for AT, and the status line for the failures. Because a
+  collapsed header hides the status line, DEC-R2-15 makes an error expand it.
+- **The old button changed SIZE when it failed** — "my location" to "location
+  permission denied". A fixed square cannot.
+
 - **No new dependency.** Leaflet has no built-in locate _button_, but `map.locate()` is built in and wraps `navigator.geolocation` with `locationfound` / `locationerror`, so this is a div, a click handler and two listeners rather than a plugin.
 - **`disableClickPropagation` is load-bearing.** Without it a click on the button also reaches the map underneath, which reads it as "the user clicked here to move" — so pressing "my location" would first teleport them to the button's own position.
 - **`setView: false`, and the app must then actually pan.** Moving the map is the app's decision rather than a side effect of asking where we are — but for a while nothing made that decision, and a fix left the viewport at the start position with the marker, the new grid and the fetch box all off screen at zoom 18. A working button and a dead one looked identical. `main.ts` now calls `MapView.centreOn` on the **locate path only**: a map click already happens where the user is looking, and recentring there would yank the map out from under them. The fix still dispatches the same `positionChanged` a click does, so there is no second refresh path.

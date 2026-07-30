@@ -37,6 +37,22 @@
       h1 {
         font-size: 1rem;
         margin: 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        user-select: none;
+      }
+      /* The disclosure caret, rotated by the collapsed state. Generated rather
+         than an element, so the markup stays one <h1>. */
+      h1::before {
+        content: "▾";
+        font-size: 0.8em;
+        color: #9aa3b8;
+        transition: transform 0.15s ease;
+      }
+      header[data-collapsed="true"] h1::before {
+        transform: rotate(-90deg);
       }
       #status,
       #scale {
@@ -179,6 +195,76 @@
         font-size: 0.78rem;
       }
 
+      /* COLLAPSED (DEC-R2-4): the title, the category picker and the legend stay.
+         The picker is one of the demo's two primary inputs, and the legend exists
+         because nothing else on screen names the current category (DEC-1) — so a
+         collapsed bar without it re-creates the round-1 confusion.
+
+         Hidden: the hint, the eight-fact status string and the show-below toggle.
+         The Terrarium attribution is NOT hidden — it moved to Leaflet's own
+         attribution control, which is always visible, because attribution may not
+         be collapsed away.
+
+         Placed AFTER `.hint` and `#status` deliberately: stylelint's
+         `no-descending-specificity` wants the lower-specificity selectors first,
+         and these override them. */
+      header[data-collapsed="true"] .hint,
+      header[data-collapsed="true"] #status,
+      header[data-collapsed="true"] label:has(#show-below) {
+        display: none;
+      }
+
+      /* The locate button (DEC-R2-3): a SQUARE icon, bottom-right, so it matches
+         the maps convention and — unlike the old text button — does not change
+         size when it fails. */
+      .locate-button {
+        width: 2rem;
+        height: 2rem;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: none;
+        background: #171b26;
+        color: #e6e8ef;
+        cursor: pointer;
+        border-radius: 3px;
+      }
+      .locate-button:disabled {
+        cursor: progress;
+      }
+      /* THE IN-PROGRESS STATE, which is the one the icon-only button would
+         otherwise have lost — and the one CLAUDE.md's async-feedback rule
+         actually mandates. A GPS fix routinely takes seconds. */
+      .locate-button[data-state="locating"] {
+        color: #7cc4ff;
+        animation: locate-pulse 1s ease-in-out infinite;
+      }
+      /* Each failure gets its own colour as well as its own label, because the
+         three have three different remedies. */
+      .locate-button[data-state="denied"],
+      .locate-button[data-state="unavailable"] {
+        color: #ff8fa3;
+      }
+      .locate-button[data-state="timeout"] {
+        color: #ffd479;
+      }
+      .locate-button[data-state="located"] {
+        color: #7ce0a3;
+      }
+
+      @keyframes locate-pulse {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      /* Respect a reduced-motion preference: the colour change still carries the
+         state, so dropping the animation loses nothing. */
+      @media (prefers-reduced-motion: reduce) {
+        .locate-button[data-state="locating"] {
+          animation: none;
+        }
+      }
+
       /* The legend replaces the scale sentence: same claim, read at a glance. */
       #legend {
         display: flex;
@@ -255,8 +341,11 @@
     </style>
   </head>
   <body>
-    <header>
-      <h1>OSM affordance demo</h1>
+    <header id="header-bar">
+      <!-- Tapping the title collapses the whole bar (DEC-R2-4). It is the title
+           AND the control, as the feedback asked; `header-collapse.ts` gives it
+           role/tabindex/aria-expanded so it is reachable by keyboard too. -->
+      <h1 id="header-toggle">OSM affordance demo</h1>
       <label
         >category
         <select id="category"></select

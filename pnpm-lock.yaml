@@ -402,6 +402,9 @@ importers:
       jscpd:
         specifier: ^4.1.1
         version: 4.1.1
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1(@noble/hashes@2.2.0)
       postcss-html:
         specifier: ^1.8.1
         version: 1.8.1

@@ -45,6 +45,7 @@ import {
   TERRAIN_EXTENT_M,
   type BuildingStats,
 } from "./building-view.js";
+import { attachHeaderCollapse } from "./header-collapse.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
 import type { TransferableMesh } from "./worker/protocol.js";
@@ -186,6 +187,19 @@ async function main(): Promise<void> {
     },
   });
 
+  // Collapsing hands the header's height back to the 3D view (it is a grid ROW,
+  // not an overlay — see `header-collapse.ts`), so both canvases have to be
+  // resized and the 3D one repainted. `BuildingView.resize()` schedules its own
+  // frame since finding R2-3, so calling it is enough.
+  const headerCollapse = attachHeaderCollapse({
+    header: el("header-bar"),
+    toggle: el("header-toggle"),
+    onToggle: () => {
+      mapView.map.invalidateSize();
+      buildingView.resize();
+    },
+  });
+
   const access = { store, actions };
   const refresh = createRefreshCycle({
     store,
@@ -270,8 +284,18 @@ async function main(): Promise<void> {
       // one — and only shown while the data is actually in use, because
       // crediting a source whose tiles all failed would be a claim about what
       // is on screen.
+      //
+      // IT GOES INTO LEAFLET'S ATTRIBUTION CONTROL, not the header (DEC-R2-4).
+      // The header is collapsible now, and attribution may not be collapsed
+      // away — the Leaflet control is always visible and is where a credit
+      // conventionally belongs anyway. The header element is kept as a
+      // (hidden-when-collapsed) mirror so nothing that already looked there
+      // breaks, but the control is the one that satisfies the licence.
       terrainCredit.textContent =
         terrain === undefined ? "" : TERRARIUM_ATTRIBUTION;
+      mapView.setTerrainAttribution(
+        terrain === undefined ? undefined : TERRARIUM_ATTRIBUTION,
+      );
     },
   });
 
@@ -394,8 +418,15 @@ async function main(): Promise<void> {
 
   subscribe(
     (view) => view.loading,
-    () => {
+    (loading) => {
       writeStatus();
+      // DEC-R2-15. The status line lives inside the header, and a collapsed
+      // header hides it — so an error would otherwise be written into something
+      // invisible, and the demo would look like it did nothing. Expanding on
+      // error keeps ONE error channel instead of growing a second one, and it
+      // covers every reporter (fetch, either view, the locate button, a dead
+      // worker) rather than just the one that prompted the rule.
+      if (loading.phase === "error") headerCollapse.revealForError();
     },
   );
 

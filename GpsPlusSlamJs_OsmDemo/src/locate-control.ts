@@ -29,6 +29,18 @@ const LOCATE_TIMEOUT_MS = 15_000;
 /** How long a terminal message stays before the button returns to idle, ms. */
 const MESSAGE_LINGER_MS = 4_000;
 
+/**
+ * The Google-Maps-style pin: round on top, pointed at the bottom.
+ *
+ * Hand-written rather than downloaded, as the feedback asked. `currentColor` so
+ * the button's own colour drives it and the state styling in `index.html` needs no
+ * second selector; `aria-hidden` because the accessible name is on the button.
+ */
+const MAP_PIN_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+  <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Z"/>
+  <circle cx="12" cy="9" r="2.6" fill="#171b26"/>
+</svg>`;
+
 export class LocateControl {
   private readonly button: HTMLButtonElement;
   private readonly map: L.Map;
@@ -41,6 +53,15 @@ export class LocateControl {
     this.button = document.createElement("button");
     this.button.type = "button";
     this.button.className = "locate-button";
+    // A SQUARE ICON BUTTON (DEC-R2-3), not a text label. The old button's width
+    // swung from "my location" to "location permission denied", which is both
+    // unlike every maps UI and a control that changes size when it fails.
+    //
+    // The pin is inline SVG rather than an emoji or an image: an emoji renders
+    // differently on every platform and cannot inherit the button's colour, and an
+    // image would be a network request for four path commands. `aria-hidden`
+    // because the accessible name lives on the button itself.
+    this.button.innerHTML = MAP_PIN_SVG;
     this.setState("idle");
 
     const Control = L.Control.extend({
@@ -54,7 +75,11 @@ export class LocateControl {
         return wrapper;
       },
     });
-    new Control({ position: "bottomleft" }).addTo(this.map);
+    // BOTTOM RIGHT (DEC-R2-3): the Google Maps convention the feedback named.
+    // Leaflet's attribution control also lives in this corner, so the button
+    // stacks ABOVE it — the ODbL credit stays visible and unobstructed, which it
+    // must.
+    new Control({ position: "bottomright" }).addTo(this.map);
 
     this.button.addEventListener("click", () => {
       this.start();
@@ -87,9 +112,31 @@ export class LocateControl {
     this.map.locate({ setView: false, timeout: LOCATE_TIMEOUT_MS });
   }
 
+  /**
+   * Moves the button to a state, keeping all three feedback channels in step.
+   *
+   * WHY THREE CHANNELS (DEC-R2-3 / DEC-R2-15). Going icon-only removed the visible
+   * text that used to carry every state, so each one now has a home:
+   *
+   * - `data-state` drives the CSS, which is what makes `locating` visibly
+   *   in-progress (a pulsing pin). `CLAUDE.md`'s async-feedback rule requires that
+   *   for anything above a few hundred ms, and a GPS fix routinely takes seconds.
+   * - `title` and `aria-label` carry the wording — the only place the four states
+   *   are actually spelled out, and the only channel available to a screen reader.
+   *   A `title` alone would be invisible on touch, which is why it is not alone.
+   * - The status line gets the failures, via the caller's `onError`. Because a
+   *   collapsed header hides the status line, DEC-R2-15 makes an error expand it,
+   *   so a message can never be written into something invisible.
+   */
   private setState(state: LocateState): void {
     this.state = state;
-    this.button.textContent = labelFor(state);
+    const label = labelFor(state);
+    this.button.title = label;
+    this.button.setAttribute("aria-label", label);
+    // Announced, not just styled: without a live region a screen reader would
+    // never learn that "locating…" became "location permission denied", because
+    // only an attribute changed.
+    this.button.setAttribute("aria-busy", String(state === "locating"));
     this.button.dataset["state"] = state;
     // Disabled only while in flight: every terminal state, including the
     // failures, must be immediately retryable.

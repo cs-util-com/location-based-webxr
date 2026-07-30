@@ -138,6 +138,112 @@ test.describe("the worker", () => {
   });
 });
 
+test.describe("the header", () => {
+  test.use({ viewport: { width: 390, height: 780 } });
+
+  test("collapses to give its height back to the 3D view", async ({ page }) => {
+    // WHY THIS TEST MATTERS, and why it asserts HEIGHT rather than visibility.
+    // The feedback assumed the header already floats over the 3D view. It does
+    // not — it is a grid row, so on a phone its wrapped lines are taken OUT of
+    // the 3D view's height. That makes collapsing a real win rather than a
+    // cosmetic one, and "the bar got shorter" is the only assertion that shows it.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const header = page.locator("#header-bar");
+    const scene = page.locator("#scene");
+    const before = await header.boundingBox();
+    const sceneBefore = await scene.boundingBox();
+    if (before === null || sceneBefore === null) throw new Error("no boxes");
+
+    await page.locator("#header-toggle").click();
+
+    await expect(header).toHaveAttribute("data-collapsed", "true");
+    await expect(page.locator("#header-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    const after = await header.boundingBox();
+    const sceneAfter = await scene.boundingBox();
+    if (after === null || sceneAfter === null) throw new Error("no boxes");
+    expect(after.height).toBeLessThan(before.height);
+    // The height went to the 3D view rather than nowhere.
+    expect(sceneAfter.height).toBeGreaterThan(sceneBefore.height);
+
+    // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4). Collapsing the
+    // category picker away would put a primary input two taps from reach, and
+    // hiding the legend would re-create the round-1 problem it was added to fix.
+    await expect(page.locator("#category")).toBeVisible();
+    await expect(page.locator("#legend")).toBeVisible();
+
+    await page.locator("#header-toggle").click();
+    await expect(header).toHaveAttribute("data-collapsed", "false");
+  });
+
+  test("expands itself when an error needs to be read", async ({
+    page,
+    context,
+  }) => {
+    // DEC-R2-15. The status line lives inside the header, and failures are
+    // reported into it — so a collapsed header would swallow the message and the
+    // demo would look like it did nothing. Driven through a REAL failure (a
+    // refused geolocation permission) rather than by dispatching by hand, because
+    // the wiring from reporter to reveal is the part that can be missing.
+    await context.clearPermissions();
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#header-toggle").click();
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+
+    await page.locator(".locate-button").click();
+
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "false",
+    );
+    // And the message is actually legible, not merely present in the DOM.
+    await expect(page.locator("#status")).toBeVisible();
+    await expect(page.locator("#status")).toContainText(
+      /denied|unavailable|timed out/,
+    );
+  });
+
+  test("keeps the terrain attribution visible even when collapsed", async ({
+    page,
+  }) => {
+    // Attribution is required wherever the data is shown, so it may not be
+    // collapsed away. It moved out of the header into Leaflet's attribution
+    // control (DEC-R2-4), which is always visible.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const attribution = page.locator("#map .leaflet-control-attribution");
+    await expect(attribution).toContainText("OpenStreetMap");
+    await expect(attribution).toContainText(
+      /Mapzen|Terrarium|Tilezen|elevation/i,
+    );
+
+    await page.locator("#header-toggle").click();
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+    // Still there with the bar collapsed — the whole point.
+    await expect(attribution).toContainText("OpenStreetMap");
+    await expect(attribution).toContainText(
+      /Mapzen|Terrarium|Tilezen|elevation/i,
+    );
+  });
+});
+
 test.describe("the affordance map", () => {
   test("draws res-13 cells over the basemap", async ({ page }) => {
     await stubNetwork(page);
@@ -670,6 +776,53 @@ test.describe("my location", () => {
     expect(Math.abs(markerBox.y - (mapBox.y + mapBox.height / 2))).toBeLessThan(
       mapBox.height / 4,
     );
+  });
+
+  test("is a square pin in the bottom-right, and still names its state", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS (DEC-R2-3). Going icon-only removes the visible text
+    // that used to carry every state, and the easy mistake is to remove the text
+    // and forget that it WAS the accessible name — leaving a button that says
+    // nothing to a screen reader and nothing on touch, where `title` never shows.
+    // So the label is asserted as an attribute, not as content.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const button = page.locator(".locate-button");
+    await expect(button).toBeVisible();
+
+    // SQUARE, and therefore stable: the old button's width swung from
+    // "my location" to "location permission denied", i.e. it changed size when it
+    // failed.
+    const box = await button.boundingBox();
+    if (box === null) throw new Error("no button box");
+    expect(Math.abs(box.width - box.height)).toBeLessThan(2);
+
+    // An inline SVG pin, not an image request and not an emoji.
+    await expect(button.locator("svg path")).toHaveCount(1);
+
+    // The wording moved to `title`/`aria-label` rather than being deleted.
+    await expect(button).toHaveAttribute("aria-label", /location/i);
+    await expect(button).toHaveAttribute("title", /location/i);
+
+    // BOTTOM RIGHT, and above the attribution rather than over it — the ODbL
+    // credit has to stay visible.
+    const [mapBox, attribution] = await Promise.all([
+      page.locator("#map").boundingBox(),
+      page.locator("#map .leaflet-control-attribution").boundingBox(),
+    ]);
+    if (mapBox === null) throw new Error("no map box");
+    expect(box.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
+    expect(box.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
+    if (attribution !== null) {
+      // Strictly above it, not overlapping it.
+      expect(box.y + box.height).toBeLessThanOrEqual(attribution.y + 1);
+    }
+    await expect(
+      page.locator("#map .leaflet-control-attribution"),
+    ).toContainText("OpenStreetMap");
   });
 
   test("reports a denied permission instead of hanging on 'locating…'", async ({

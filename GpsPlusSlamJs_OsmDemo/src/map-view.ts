@@ -59,6 +59,8 @@ export class MapView {
   private readonly fetchLayer: L.LayerGroup;
   private readonly userMarker: L.CircleMarker;
   private readonly onCellClick: ((cell: string) => void) | undefined;
+  /** The DEM credit currently in the attribution bar, so it can be removed. */
+  private terrainCredit: string | undefined;
 
   constructor(options: MapViewOptions) {
     this.onCellClick = options.onCellClick;
@@ -107,6 +109,29 @@ export class MapView {
   /** Moves the "you are here" marker without disturbing the view. */
   setPosition(position: { lat: number; lng: number }): void {
     this.userMarker.setLatLng([position.lat, position.lng]);
+  }
+
+  /**
+   * Adds or removes the elevation source's credit in Leaflet's attribution bar.
+   *
+   * WHY IT LIVES HERE RATHER THAN IN THE HEADER (DEC-R2-4). The header became
+   * collapsible, and **attribution may not be collapsed away** — it is required
+   * wherever the data is shown. Leaflet's attribution control is always visible
+   * and is where a credit conventionally goes.
+   *
+   * Passing `undefined` REMOVES it, which matters: crediting a DEM source whose
+   * tiles all failed would be a claim about what is on screen. Removal is
+   * idempotent, so a run of failed loads does not need to track what it added.
+   */
+  setTerrainAttribution(credit: string | undefined): void {
+    const control = this.map.attributionControl;
+    if (this.terrainCredit !== undefined) {
+      control.removeAttribution(this.terrainCredit);
+      this.terrainCredit = undefined;
+    }
+    if (credit === undefined) return;
+    control.addAttribution(credit);
+    this.terrainCredit = credit;
   }
 
   /**

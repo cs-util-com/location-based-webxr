@@ -26,11 +26,17 @@ export type LocateState =
   | "unavailable";
 
 /**
- * The button's label for a state.
+ * The button's accessible label for a state.
  *
  * Every state has a distinct, non-empty label — including `locating`, which is
  * the in-progress state `CLAUDE.md`'s async-feedback rule requires for anything
  * that takes more than a few hundred ms. A GPS fix routinely takes seconds.
+ *
+ * SINCE DEC-R2-3 THIS IS NO LONGER THE VISIBLE TEXT. The button is a square icon
+ * (a map pin), so these strings live in `title` and `aria-label` instead of in
+ * `textContent`. They are still the only place the four states are spelled out,
+ * and the two visible channels are the icon's animated in-progress state and the
+ * status line — see `locate-control.ts`.
  */
 export function labelFor(state: LocateState): string {
   switch (state) {
