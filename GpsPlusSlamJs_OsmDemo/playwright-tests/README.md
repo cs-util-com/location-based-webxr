@@ -3,6 +3,26 @@
 Run with `pnpm run test:e2e` (never `npx playwright test` — the repo's timing
 wrapper owns the invocation). `pnpm run test:e2e:headed` to watch it.
 
+## Getting a visual record — `PLAYWRIGHT_CAPTURE=1`
+
+By default artifacts are written **only on failure** (`screenshot: only-on-failure`,
+`video: retain-on-failure`, `trace: on-first-retry`). Set `PLAYWRIGHT_CAPTURE=1`
+and all three switch to unconditional, so a green run still leaves a screenshot
+and a video per test under `test-results/`.
+
+```powershell
+$env:PLAYWRIGHT_CAPTURE=1; pnpm run test:e2e 2>&1 | Out-String
+```
+
+**Use it whenever you change anything that renders**, and then actually open the
+images — the Read tool displays them. This is not a nicety: a green suite is
+consistent with the entire 3D scene being blank, which is exactly what happened
+across ten work items when `scene.environment` broke every `MeshStandardMaterial`
+(round-2 plan §7). Nothing failed, so nothing was captured, so there was nothing
+to look at — and when a test finally did fail, one glance at
+`test-results/*.png` showed the cause that counter-based reasoning had missed
+for days.
+
 ## What these assert, and why they are not unit tests
 
 Every failure mode this demo has is **silent**:
