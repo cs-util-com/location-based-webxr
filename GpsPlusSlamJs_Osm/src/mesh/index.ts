@@ -45,6 +45,9 @@ export { buildBuildings } from "./buildings.js";
 export type { AreaPlate, BuildPlatesOptions } from "./plates.js";
 export { buildAreaPlates, isPlateArea } from "./plates.js";
 
+export type { BuildRoadsOptions, RoadRibbon } from "./roads.js";
+export { buildRoads, isRoad, roadWidthM } from "./roads.js";
+
 export type { BuildPoiOptions, PoiMarker } from "./poi.js";
 export { buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";
 
