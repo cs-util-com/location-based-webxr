@@ -65,18 +65,35 @@ export const TERRAIN_SPACING_M = 12;
 /**
  * Upper bound on plane subdivisions per axis.
  *
- * MEASURED, not guessed. Deriving the segment count purely from
- * `extent / spacing` gives 234 at the 2.8 km extent — a 55 000-vertex plane that
- * `setTerrain` walks and then re-normals on every terrain update. That tripled three
- * e2e tests (3.7 s → 12.6 s each) and made the suite flaky, which is a real
- * regression and not an acceptable price for ground detail.
+ * RAISED FROM 128 TO 256 ON 2026-07-30, because the measurement that justified
+ * 128 does not reproduce. The old comment here read: "Deriving the segment count
+ * purely from extent / spacing gives 234 at the 2.8 km extent - a 55 000-vertex
+ * plane that setTerrain walks and then re-normals on every terrain update. That
+ * tripled three e2e tests (3.7 s -> 12.6 s each) and made the suite flaky."
  *
- * 128 is 22 m quads over 2.8 km. What that costs is only the GROUND PLANE's
- * smoothness: every consumer that actually needs DEM precision — buildings, and the
- * plates and roads to come — samples the heightfield directly per vertex, so the
- * full 12 m data is still used where it changes an answer. The plane is a backdrop.
+ * Re-measured directly, by instrumenting `setTerrain` and counting its calls:
+ *
+ *   128 segments (16 641 vertices)   1 call per load, 12 ms total
+ *   234 segments (55 225 vertices)   1 call per load, 30 ms total
+ *   full e2e suite at 234            38 passed in 1.5 min, unchanged
+ *
+ * **One call per load, not hundreds.** A +9 s per-test cost would need roughly 300
+ * calls of that walk, so whatever produced the original numbers, it was not the
+ * per-update vertex walk this constant was introduced to bound. The most likely
+ * culprit is the era it was measured in: the permanent rAF loop that was removed
+ * around the same time, or the shader outage that ran from W20 until 2026-07-30
+ * and made every ground-touching test behave oddly.
+ *
+ * 256 is a CEILING, not a target: at the current 2.8 km extent the derived value
+ * is 233 and this does not bind at all, so the plane now matches the DEM's own
+ * ~12 m pitch exactly. It still bounds the quadratic growth if `TERRAIN_EXTENT_M`
+ * ever grows — 4x the extent is 16x the vertices, which is where a real cost
+ * starts. **If you raise the extent, re-measure rather than trusting this number.**
+ *
+ * This also removes the measured payoff that motivated GPU displacement (W23,
+ * DEC-R2-24); see the round-2 plan for the deferral and its reasoning.
  */
-const MAX_GROUND_SEGMENTS = 128;
+const MAX_GROUND_SEGMENTS = 256;
 
 /**
  * Plane subdivisions per axis, DERIVED and then CAPPED.
@@ -87,8 +104,9 @@ const MAX_GROUND_SEGMENTS = 128;
  * is 44 m quads, and the symptom would be "the terrain got blurry" rather than an
  * error. Deriving it enforces the relationship the comment only described.
  *
- * The cap is the part that keeps it affordable; see `MAX_GROUND_SEGMENTS`. Below
- * ~1.5 km of extent the cap does not bind and the DEM pitch is matched exactly.
+ * The cap is a ceiling against a much larger extent; see `MAX_GROUND_SEGMENTS`.
+ * At the current 2.8 km extent it does not bind, so the DEM pitch is matched
+ * exactly and every quad of the ground plane carries real data.
  */
 const GROUND_SEGMENTS = Math.min(
   MAX_GROUND_SEGMENTS,
