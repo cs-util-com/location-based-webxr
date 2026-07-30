@@ -41,7 +41,8 @@ The file is **not** pure types — it exports two runtime helpers:
 
 Both are plain field-to-tuple reshapes that apply **no coordinate conversion** —
 the reducer applies the WebXR→NUE transform on store (raw-storage pattern, see
-`docs/2026-04-09-raw-storage-convert-on-read.md`).
+`gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-09-raw-storage-convert-on-read.md`
+— in the private repo, not this package's `docs/`).
 
 **Why they live here** (quality-review G-8): they used to sit in
 `state/gps-event-coordinator.ts`, which forced an `ar/depth-sampler.ts` →
@@ -60,11 +61,11 @@ edge. Do not relocate them back into a state module.
 3. **`DepthSample.timestamp` is epoch ms** (`performance.timeOrigin + xrFrameTime`),
    matching every other persisted action timestamp.
 4. **`projectionMatrix` is optional and additive** — a column-major 16-tuple
-   (`Matrix4` from `gps-plus-slam-js`, *not* THREE's class) of the capturing
+   (`Matrix4` from `gps-plus-slam-js`, _not_ THREE's class) of the capturing
    `XRView`. Recordings from before 2026-06 lack it; consumers must skip
    unprojection for those samples.
-5. All `DepthSample` fields are plain JSON-serializable data (Redux persistence
-   + replay).
+5. All `DepthSample` fields are plain JSON-serializable data, for both Redux
+   persistence and replay.
 6. Distances are metres (hence `depthM`); screen coordinates are normalized 0–1
    (hence `screenX`/`screenY`); orientations are unit quaternions.
 
