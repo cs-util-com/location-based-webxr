@@ -42,6 +42,20 @@ export { buildRoof } from "./roof.js";
 export type { BuildBuildingsOptions, BuildingVolume } from "./buildings.js";
 export { buildBuildings } from "./buildings.js";
 
+export type { Rgb } from "./feature-colours.js";
+export {
+  DEFAULT_BUILDING_RGB,
+  DEFAULT_ROAD_RGB,
+  REFERENCE_GROUND_RGB,
+  allBuildingColours,
+  allRoadColours,
+  buildingColour,
+  channelDistance,
+  luma,
+  parseOsmColour,
+  roadColour,
+} from "./feature-colours.js";
+
 export type { MeshChunk } from "./chunk-meshes.js";
 export {
   CHUNK_SIZE_M,

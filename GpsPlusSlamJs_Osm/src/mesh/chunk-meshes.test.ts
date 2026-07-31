@@ -126,3 +126,64 @@ describe("meshCentroidEnu", () => {
     expect(meshCentroidEnu(composed(() => undefined))).toEqual({ x: 0, y: 0 });
   });
 });
+
+describe("chunkMeshes — per-feature colours (W22/W23)", () => {
+  it("gives every vertex of a feature that feature's colour, flat", () => {
+    // FLAT PER FEATURE. A building whose walls faded into its neighbour's class
+    // colour would read as a gradient someone chose, not as a bug.
+    const chunks = chunkMeshes(
+      [cube(0, 0), cube(10, 10)],
+      (m) => m,
+      meshCentroidEnu,
+      CHUNK_SIZE_M,
+      (_m) => 0xff0000,
+    );
+    const colors = chunks[0]?.colors;
+    expect(colors).toBeDefined();
+    for (let i = 0; i < (colors?.length ?? 0); i += 3) {
+      expect(colors?.[i]).toBeCloseTo(1, 6);
+      expect(colors?.[i + 1]).toBeCloseTo(0, 6);
+      expect(colors?.[i + 2]).toBeCloseTo(0, 6);
+    }
+  });
+
+  it("keeps each feature's colour on its OWN vertices", () => {
+    // The merge preserves order, and this is what proves the colour fill follows
+    // it. Getting it wrong paints building A with building B's colour — a wrong
+    // answer that looks exactly like a right one.
+    const items = [cube(0, 0), cube(10, 10)];
+    const colours = [0xff0000, 0x0000ff];
+    const chunks = chunkMeshes(
+      items,
+      (m) => m,
+      meshCentroidEnu,
+      CHUNK_SIZE_M,
+      (m) => colours[items.indexOf(m)] as number,
+    );
+    const colors = chunks[0]?.colors as Float32Array;
+    const perCube = (items[0] as MeshData).positions.length; // 3 floats/vertex
+    // First cube red, second blue.
+    expect(colors[0]).toBeCloseTo(1, 6);
+    expect(colors[2]).toBeCloseTo(0, 6);
+    expect(colors[perCube]).toBeCloseTo(0, 6);
+    expect(colors[perCube + 2]).toBeCloseTo(1, 6);
+  });
+
+  it("emits NO colour buffer when the layer is one colour throughout", () => {
+    // Bytes and a shader define bought for nothing.
+    const chunks = chunkMeshes([cube(0, 0)], (m) => m, meshCentroidEnu);
+    expect(chunks[0]?.colors).toBeUndefined();
+  });
+
+  it("sizes the colour buffer to the merged vertex count", () => {
+    const chunks = chunkMeshes(
+      [cube(0, 0), cube(5, 5)],
+      (m) => m,
+      meshCentroidEnu,
+      CHUNK_SIZE_M,
+      () => 0x00ff00,
+    );
+    const chunk = chunks[0];
+    expect(chunk?.colors?.length).toBe(chunk?.mesh.positions.length);
+  });
+});

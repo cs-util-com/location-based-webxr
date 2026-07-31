@@ -321,13 +321,27 @@ function totalTriangles(chunks: readonly { mesh: MeshData }[]): number {
 }
 
 /** Wraps worker buffers in a geometry. The buffers are already validated. */
-function geometryFrom(data: MeshData): THREE.BufferGeometry {
+function geometryFrom(
+  data: MeshData,
+  /**
+   * Per-vertex RGB, when the layer is coloured per feature (W22/W23).
+   *
+   * A chunk is ONE draw call and the point of chunking is that it stays one, so
+   * a chunk holding a hundred buildings of twelve classes cannot use a
+   * per-material colour without becoming a hundred draw calls. Per-vertex is
+   * what keeps both.
+   */
+  colors?: Float32Array,
+): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
     "position",
     new THREE.BufferAttribute(data.positions, 3),
   );
   geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
+  if (colors !== undefined) {
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  }
   geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
   return geometry;
 }
@@ -346,9 +360,15 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
       mesh.buildings.map(
         (chunk) =>
           new THREE.Mesh(
-            geometryFrom(chunk.mesh),
+            geometryFrom(chunk.mesh, chunk.colors),
             new THREE.MeshStandardMaterial({
-              color: 0xc8ccd8,
+              // WHITE plus VERTEX COLOURS (W22). The class/material palette lives
+              // in the package and arrives per vertex, so a chunk holding a dozen
+              // building classes is still ONE draw call — which is the whole
+              // reason W20 had to come first. A non-white base would tint every
+              // colour in the palette by itself.
+              color: 0xffffff,
+              vertexColors: true,
               // SINGLE-SIDED SINCE W24 (R4-17). It was `DoubleSide`, and the
               // reason was honest: OSM volumes are not reliably closed, so a
               // `building:part` with no floor shows as a hole under culling for
@@ -499,16 +519,22 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     build: (mesh) =>
       mesh.roads.map((chunk) => {
         const ribbon = new THREE.Mesh(
-          geometryFrom(chunk.mesh),
+          geometryFrom(chunk.mesh, chunk.colors),
           new THREE.MeshStandardMaterial({
-            // LIGHTER than the ground, not darker, and that was a measurement
-            // rather than a preference. The first attempt was 0x2f333d — asphalt
-            // reasoning — but the ground renders at rgb(40,40,56) under this
-            // scene's lighting, so a darker road landed within a few levels of it
-            // and switching the layer on changed 77 pixels out of 460 800. A road
-            // that cannot be told from the ground it lies on is a failed layer
-            // whatever the test says.
-            color: 0x8b909c,
+            // WHITE plus VERTEX COLOURS (W23), like the buildings. The class and
+            // surface palette is in the package, and every colour in it is
+            // contrast-checked against the ground — DEC-R2-13's measurement, now
+            // enforced for the whole palette rather than for one constant.
+            vertexColors: true,
+            // WHITE, because the real colour is per vertex now. It was 0x8b909c,
+            // and that constant was a MEASUREMENT rather than a preference: the
+            // first attempt was 0x2f333d on asphalt reasoning, the ground renders
+            // at rgb(40,40,56) under this scene's lighting, and the darker road
+            // moved 77 pixels out of 460 800. "A road that cannot be told from
+            // the ground it lies on is a failed layer whatever the test says" —
+            // so that measurement is now enforced for the WHOLE palette by
+            // `feature-colours.test.ts`, rather than for one constant here.
+            color: 0xffffff,
             roughness: 0.9,
             // OPAQUE, and DEC-R2-13 depends on it. The disc at each vertex overlaps
             // the segment quads it joins; in translucent geometry that overlap would

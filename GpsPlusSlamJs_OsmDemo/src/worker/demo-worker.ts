@@ -50,8 +50,11 @@ import {
   metresToDegrees,
   explainCell,
   loadRuleTable,
+  buildingColour,
   chunkMeshes,
+  featureKey,
   meshCentroidEnu,
+  roadColour,
   type LatLng,
   type OsmFeature,
   type RuleTable,
@@ -275,10 +278,28 @@ function buildMesh(
   // always wholly on screen. DEC-R2-8 grew the extent to 2.8 km and that stopped
   // being true — and one mesh cannot be frustum-culled in parts, which is
   // exactly what R4-16 reports.
+  // TAGS BY KEY, so the colour of a piece of geometry comes from the feature it
+  // was built from (W22/W23). The builders return an `OsmFeatureKey` rather than
+  // the tags — they have no reason to carry them — so the lookup is assembled
+  // here, where the feature set already is.
+  const tagsByKey = new Map(
+    all.map((feature) => [featureKey(feature), feature.tags]),
+  );
+
   const buildings = chunkMeshes(
     volumes,
     (volume) => volume.mesh,
     (volume) => meshCentroidEnu(volume.mesh),
+    undefined,
+    // A `building:part` inherits its PARENT's colour: the parts of one building
+    // are one building, and colouring them independently would stripe a cathedral
+    // by whichever part happened to carry which tag.
+    (volume) =>
+      buildingColour(
+        tagsByKey.get(volume.parentFeature ?? volume.feature) ??
+          tagsByKey.get(volume.feature) ??
+          {},
+      ),
   );
 
   return {
@@ -295,6 +316,8 @@ function buildMesh(
       roads,
       (road) => road.mesh,
       (road) => meshCentroidEnu(road.mesh),
+      undefined,
+      (road) => roadColour(tagsByKey.get(road.feature) ?? {}),
     ),
     roadCount: roads.length,
     regions: regionSlabs,

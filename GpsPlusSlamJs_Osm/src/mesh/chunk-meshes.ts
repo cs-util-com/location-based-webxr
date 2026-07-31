@@ -47,6 +47,19 @@ export interface MeshChunk {
   /** `"<col>,<row>"` in chunk units. Stable, and useful in a test failure. */
   readonly key: string;
   readonly mesh: MeshData;
+  /**
+   * Per-vertex RGB in 0..1, or `undefined` when the caller supplied no colours
+   * (W22/W23).
+   *
+   * WHY THE COLOUR LIVES ON THE CHUNK AND NOT ON `MeshData`. A chunk is one draw
+   * call, and the whole point of chunking is that it stays one — so a chunk
+   * holding a hundred buildings of twelve different classes cannot use a
+   * per-material colour without becoming a hundred draw calls. Per-vertex is the
+   * only way to keep both. It is attached HERE rather than threaded through
+   * `MeshBuilder` and every builder because this is the exact seam where
+   * per-feature colour meets per-chunk batching, and nothing upstream needs it.
+   */
+  readonly colors?: Float32Array;
 }
 
 /** Which chunk an ENU point falls in. */
@@ -70,21 +83,46 @@ export function chunkMeshes<T>(
   meshOf: (item: T) => MeshData,
   positionOf: (item: T) => EnuPoint,
   sizeM = CHUNK_SIZE_M,
+  /**
+   * Packed `0xrrggbb` per item, when the layer is coloured per feature.
+   *
+   * Omitted for layers that are one colour throughout — a colour buffer nobody
+   * varies is bytes and a shader define bought for nothing.
+   */
+  colourOf?: (item: T) => number,
 ): MeshChunk[] {
-  const grouped = new Map<string, MeshData[]>();
+  const grouped = new Map<string, { mesh: MeshData; colour: number }[]>();
   for (const item of items) {
     const mesh = meshOf(item);
     // A feature that produced no triangles must not create a chunk — see above.
     if (mesh.triangleCount === 0) continue;
     const key = chunkKeyFor(positionOf(item), sizeM);
     const list = grouped.get(key) ?? [];
-    list.push(mesh);
+    list.push({ mesh, colour: colourOf?.(item) ?? 0xffffff });
     grouped.set(key, list);
   }
-  return [...grouped].map(([key, meshes]) => ({
-    key,
-    mesh: mergeMeshes(meshes),
-  }));
+  return [...grouped].map(([key, parts]) => {
+    const mesh = mergeMeshes(parts.map((part) => part.mesh));
+    if (colourOf === undefined) return { key, mesh };
+    // FLAT PER FEATURE, never interpolated across one: a building whose walls
+    // faded from one class colour to its neighbour's would read as a gradient
+    // someone chose. The merge preserves order, so filling in the same order is
+    // what keeps a colour on the feature it belongs to.
+    const colors = new Float32Array((mesh.positions.length / 3) * 3);
+    let at = 0;
+    for (const part of parts) {
+      const r = ((part.colour >> 16) & 0xff) / 255;
+      const g = ((part.colour >> 8) & 0xff) / 255;
+      const b = (part.colour & 0xff) / 255;
+      for (let i = 0; i < part.mesh.positions.length / 3; i++) {
+        colors[at] = r;
+        colors[at + 1] = g;
+        colors[at + 2] = b;
+        at += 3;
+      }
+    }
+    return { key, mesh, colors };
+  });
 }
 
 /**

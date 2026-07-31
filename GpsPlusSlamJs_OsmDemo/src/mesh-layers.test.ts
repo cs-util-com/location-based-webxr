@@ -260,6 +260,85 @@ describe("poiMarkerPosition", () => {
   });
 });
 
+describe("per-feature colour reaches the geometry (W22/W23)", () => {
+  /** A chunked layer carrying a colour buffer, as the worker now sends it. */
+  function colouredChunk() {
+    const mesh = triangle();
+    return [
+      {
+        key: "0,0",
+        mesh,
+        colors: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0]),
+      },
+    ];
+  }
+
+  function materialAndGeometry(layer: "buildings" | "roads") {
+    const base = fullMesh();
+    const mesh = { ...base, [layer]: colouredChunk() };
+    const { objects } = drawMeshLayers(mesh, {
+      buildings: layer === "buildings",
+      trees: false,
+      plates: false,
+      roads: layer === "roads",
+      poi: false,
+      areas: false,
+    });
+    const first = objects[0] as THREE.Mesh;
+    return {
+      material: first.material as THREE.MeshStandardMaterial,
+      geometry: first.geometry,
+    };
+  }
+
+  it.each(["buildings", "roads"] as const)(
+    "%s put the chunk's colours on the geometry",
+    (layer) => {
+      // WHY THIS MATTERS. The palette is computed in the package and travels as a
+      // buffer; if the demo forgets to attach it, every feature renders in the
+      // material's base colour and the whole of W22/W23 is invisible — with no
+      // error, and looking exactly like the grey it replaced.
+      const { geometry } = materialAndGeometry(layer);
+      expect(geometry.getAttribute("color")).toBeDefined();
+      expect(geometry.getAttribute("color").count).toBe(3);
+    },
+  );
+
+  it.each(["buildings", "roads"] as const)(
+    "%s use a WHITE base, or the palette is tinted by it",
+    (layer) => {
+      // A vertex colour multiplies the material colour. The old constants
+      // (0xc8ccd8, 0x8b909c) would darken and desaturate every colour in the
+      // palette — subtly, uniformly, and in a way that reads as "the palette is
+      // a bit dull" rather than as a bug.
+      const { material } = materialAndGeometry(layer);
+      expect(material.vertexColors).toBe(true);
+      expect(material.color.getHex()).toBe(0xffffff);
+    },
+  );
+
+  it("still draws when a chunk carries NO colours", () => {
+    // The fallback path: an older worker reply, or a layer that is one colour
+    // throughout. It must render rather than throw on a missing attribute.
+    const mesh = {
+      ...fullMesh(),
+      buildings: [{ key: "0,0", mesh: triangle() }],
+    } as TransferableMesh;
+    const { objects } = drawMeshLayers(mesh, {
+      buildings: true,
+      trees: false,
+      plates: false,
+      roads: false,
+      poi: false,
+      areas: false,
+    });
+    expect(objects).toHaveLength(1);
+    expect(
+      (objects[0] as THREE.Mesh).geometry.getAttribute("color"),
+    ).toBeUndefined();
+  });
+});
+
 describe("materials — what the light has to work with (W13)", () => {
   /**
    * The material of the only object drawn when just `layer` is on.
