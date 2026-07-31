@@ -1627,55 +1627,67 @@ test.describe("the 3D view", () => {
     // threshold" and Playwright's strict mode rejects the ambiguity.
     await page.getByRole("checkbox", { name: "cells", exact: true }).uncheck();
 
-    // Counts the ROAD'S OWN measured tone, not "dark pixels".
+    // Counts pixels that CHANGED against the roads-off frame.
     //
-    // Two earlier attempts failed and both are worth recording. Counting dark
-    // pixels in the lower half matched 215 343 of ~230 400 either way — the
-    // lower half is empty foreground ground, and the metric was saturated. The
-    // road material was then 0x2f333d, which under this scene's lighting renders
-    // within a few levels of the ground's rgb(40,40,56); switching the layer on
-    // moved 77 pixels out of 460 800. A road that cannot be told from the ground
-    // it lies on is a failed layer whatever a test says, so the material was
-    // lightened to 0x8b909c, which renders at rgb(96,96,104).
+    // THIS USED TO COUNT A FIXED TONE BAND and that is the interesting part.
+    // Two earlier attempts had already failed: counting dark pixels in the lower
+    // half matched 215 343 of ~230 400 either way (the metric was saturated),
+    // and the road material at 0x2f333d rendered within a few levels of the
+    // ground, so switching the layer on moved 77 pixels out of 460 800. The fix
+    // then was to lighten the material to 0x8b909c and count the narrow grey
+    // band it renders in.
     //
-    // The band excludes the buildings deliberately: they are grey too, at
-    // rgb(112,112,128) and rgb(136,136,152), so the upper bound is what keeps
-    // this measuring roads rather than the skyline.
-    const roadTone = () =>
+    // That band is a proxy for "a road is on screen", and it is a proxy that
+    // breaks whenever the SHADING changes rather than the roads. W12 moved the
+    // sun onto the camera's azimuth and the count fell from ~6900 to 1604 — with
+    // the roads drawn perfectly and the status line still reading "23 roads". A
+    // test that fails when the lighting improves is measuring the wrong thing,
+    // and W23 is about to recolour roads per class, which would break it again.
+    //
+    // A difference count is immune to both: it asserts what the layer actually
+    // claims — that switching it on changes a large part of the picture and
+    // switching it off puts it back — without pinning a palette or a light.
+    const frame = () =>
       page.evaluate(() => {
         const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return -1;
+        if (!(el instanceof HTMLCanvasElement)) return null;
         const probe = document.createElement("canvas");
         probe.width = el.width;
         probe.height = el.height;
         const ctx = probe.getContext("2d");
-        if (ctx === null) return -1;
+        if (ctx === null) return null;
         ctx.drawImage(el, 0, 0);
-        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-        let count = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i] ?? 0;
-          const g = data[i + 1] ?? 0;
-          const b = data[i + 2] ?? 0;
-          if (r > 84 && r < 108 && Math.abs(g - r) < 12 && b - r < 18) {
-            count += 1;
-          }
-        }
-        return count;
+        return [...ctx.getImageData(0, 0, probe.width, probe.height).data];
       });
 
-    const before = await roadTone();
-    expect(before).toBeGreaterThanOrEqual(0);
+    /** Pixels differing from `baseline` by more than antialiasing noise. */
+    const changedFrom = (baseline) => async () => {
+      const now = await frame();
+      if (now === null || baseline === null) return -1;
+      let count = 0;
+      for (let i = 0; i < now.length; i += 4) {
+        const dr = Math.abs((now[i] ?? 0) - (baseline[i] ?? 0));
+        const dg = Math.abs((now[i + 1] ?? 0) - (baseline[i + 1] ?? 0));
+        const db = Math.abs((now[i + 2] ?? 0) - (baseline[i + 2] ?? 0));
+        if (dr + dg + db > 24) count += 1;
+      }
+      return count;
+    };
+
+    const withoutRoads = await frame();
+    expect(withoutRoads).not.toBeNull();
 
     await page.getByRole("checkbox", { name: "roads" }).check();
-    await expect(page.locator("#status")).toContainText(/\d+ roads/);
-    // ~6900 pixels measured; 3000 is a floor with room for antialiasing and for
-    // a re-captured fixture, and the failure it guards against produces ZERO.
-    await expect.poll(roadTone, REPAINT).toBeGreaterThan(before + 3000);
+    await expect(page.locator("#status")).toContainText(/[0-9]+ roads/);
+    // ~6900 pixels of road were measured when this counted a tone band, and a
+    // difference count sees at least as many. 3000 is a floor with room for a
+    // re-captured fixture; the failure it guards against produces ZERO.
+    await expect.poll(changedFrom(withoutRoads), REPAINT).toBeGreaterThan(3000);
 
     // And back off again, so the layer is a toggle rather than a one-way door.
+    // Back to the original frame means back to almost no differing pixels.
     await page.getByRole("checkbox", { name: "roads" }).uncheck();
-    await expect.poll(roadTone, REPAINT).toBeLessThan(before + 3000);
+    await expect.poll(changedFrom(withoutRoads), REPAINT).toBeLessThan(3000);
   });
 
   test("marks POIs, and clicking one says what it is", async ({ page }) => {

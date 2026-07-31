@@ -31,6 +31,7 @@ import { heightRampColours } from "./height-ramp.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import { resolvePick, type Pick } from "./pick.js";
+import { cameraAzimuth, sunDirection } from "./sun.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import { SKY_GRADIENT_ROWS, skyGradientPixels } from "./sky-gradient.js";
@@ -148,6 +149,15 @@ export class BuildingView {
   private readonly group = new THREE.Group();
   private readonly container: HTMLElement;
   private readonly controls: MapControls;
+  /**
+   * The one sun (W12/W14).
+   *
+   * ONE VECTOR drives both this light and the sky's painted sun disc. Two
+   * independently-set sun positions would be the two-derivations-of-one-thing
+   * defect this project keeps removing, and here it would be plainly visible: a
+   * sun in the sky that disagrees with where the highlights fall.
+   */
+  private readonly sun: THREE.DirectionalLight;
   /** The pending rAF handle, so `dispose()` can cancel it. */
   private frame: number | undefined;
   /** The affordance grid, kept separate so `clear()` does not drop it. */
@@ -304,9 +314,21 @@ export class BuildingView {
     // sample. Colours match the sky gradient's horizon and the ground, so the scene
     // still reads as lit by its own sky, with no shader-compilation surface at all.
     this.scene.add(new THREE.HemisphereLight(0x5c6c8c, 0x3a4356, 0.55));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.1);
-    sun.position.set(60, 120, 40);
-    this.scene.add(sun);
+    // THE SUN FOLLOWS THE CAMERA'S AZIMUTH (W12, DEC-R4-6). It was fixed at
+    // (60, 120, 40), which is why the reflective ground only showed its relief
+    // from some angles: a highlight appears where the half-vector between light
+    // and eye aligns with a facet normal, so with a still light and a moving eye
+    // the condition is met over a band of azimuths and missed everywhere else.
+    //
+    // NOT a headlight — see `sun.ts` for why that would make it worse, and for
+    // the property test that keeps it from drifting into one.
+    this.sun = new THREE.DirectionalLight(0xffffff, 1.1);
+    this.scene.add(this.sun);
+    // NOT aimed here: `aimSun` reads `this.controls`, which is constructed
+    // further down. Aiming it at this point threw inside the constructor, took
+    // the whole view with it, and turned 58 e2e tests red at once — a useful
+    // reminder that a field-order dependency in a long constructor is invisible
+    // until it is fatal.
     // A ground plane, so a building with no neighbours still reads as standing
     // on something rather than floating in the void.
     //
@@ -377,6 +399,9 @@ export class BuildingView {
     this.controls.enableDamping = true;
     this.controls.target.set(0, 0, 0);
     this.controls.update();
+    // The sun's azimuth is derived from the camera-to-target offset (W12), so it
+    // can only be aimed once the controls own that target.
+    this.aimSun();
 
     this.resize();
     // Held rather than constructed inline, so `dispose()` can actually
@@ -388,6 +413,8 @@ export class BuildingView {
     this.containerResize.observe(this.container);
     // Repaint when the camera moves — and ONLY then. See `requestFrame`.
     this.controls.addEventListener("change", () => {
+      // The sun first, so the frame this schedules is drawn with it (W12).
+      this.aimSun();
       this.requestFrame();
     });
 
@@ -743,6 +770,34 @@ export class BuildingView {
     this.cellMesh.userData["cellGrid"] = true;
     this.scene.add(this.cellMesh);
     this.requestFrame();
+  }
+
+  /**
+   * Points the sun from the camera's current azimuth (W12).
+   *
+   * Called from the controls' `change` handler rather than from a loop: the sun
+   * only has to move when the camera does, and that is exactly when a frame is
+   * already being scheduled. DEC-R3-9's on-demand renderer is untouched.
+   *
+   * The distance is arbitrary — a `DirectionalLight` has no falloff and only its
+   * direction matters — but it must be large enough to sit outside the scene if
+   * a shadow camera is ever added.
+   */
+  private aimSun(): void {
+    const direction = sunDirection(
+      cameraAzimuth(this.camera.position, this.controls.target),
+    );
+    const distance = 1000;
+    this.sun.position.set(
+      direction.x * distance,
+      direction.y * distance,
+      direction.z * distance,
+    );
+    // The light aims at its target, which stays at the origin: the scene is
+    // re-origined on every move (see `recentre-camera.ts`), so the origin is
+    // always where the user is.
+    this.sun.target.position.set(0, 0, 0);
+    this.sun.target.updateMatrixWorld();
   }
 
   /**
