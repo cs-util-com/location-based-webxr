@@ -28,6 +28,10 @@ the derived fetch-coverage function the movement trigger uses.
   first, user-visible ring wait on a tile only the outer rings need.
 - `fetchWorkingSet(fetchTile)` → 7 res-7 cells. Fixed-radius; for the explicit
   "download this area" prefetch API only.
+- `cellPaddingDegrees(resolution, worstLatitudeDeg)` → `{ lat, lng }`. How far,
+  in degrees, a cell at `resolution` can reach beyond its own centre — the
+  amount by which a bbox built from cell CENTRES must grow to contain the cells
+  themselves.
 
 ## Invariants & assumptions
 
@@ -115,3 +119,10 @@ const tiles = fetchTilesForScoreWorkingSet(chunk); // 1-3 res-7 tiles to fetch
   idempotent and lands at the target resolution, the ladder round-trips, the
   **non-nesting** property is documented with its one-grid-step bound, and the
   **fetch-coverage invariant** holds including the bounded 1–3 tile result.
+  - Also the **padding invariant**: every vertex of a real cell's own boundary
+    falls inside `cellPaddingDegrees` of its centre, at any latitude and across
+    the antimeridian. This is what the clip in `h3-feature-index` rests on, and
+    its failure mode is silent — a dropped cell, not an exception.
+  - And the **headroom check**: the worst measured centre→vertex distance stays
+    under 2× the average edge length, so an h3 upgrade that changed cell
+    geometry enough to eat the factor of 2 fails here rather than in production.

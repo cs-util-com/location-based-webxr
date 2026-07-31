@@ -77,6 +77,26 @@ export function padBbox(bbox: Bbox, margin: number): Bbox {
   };
 }
 
+/**
+ * `padBbox` with a separate margin per axis.
+ *
+ * Exists because a distance on the ground is a different number of degrees in
+ * latitude than in longitude, and increasingly so away from the equator — so
+ * any margin derived from a real-world size (a cell's radius, say) is
+ * necessarily asymmetric. See `cellPaddingDegrees` in `resolutions.ts`.
+ */
+export function padBboxByAxis(
+  bbox: Bbox,
+  margin: { lat: number; lng: number },
+): Bbox {
+  return {
+    south: bbox.south - margin.lat,
+    west: bbox.west - margin.lng,
+    north: bbox.north + margin.lat,
+    east: bbox.east + margin.lng,
+  };
+}
+
 export function bboxesIntersect(a: Bbox, b: Bbox): boolean {
   return (
     a.west <= b.east &&

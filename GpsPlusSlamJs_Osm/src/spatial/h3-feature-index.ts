@@ -21,23 +21,8 @@ import { toGeometry, isArealRelation } from "../model/osm-geometry.js";
 import type { GeometryError, OsmGeometry } from "../model/osm-geometry.js";
 import { coverCells, cellCentre } from "./cell-coverage.js";
 import type { Bbox } from "./clip.js";
-import { boundsOf, padBbox, clipToBbox, positionsOf } from "./clip.js";
-import { AFFORDANCE_RES } from "./resolutions.js";
-
-/**
- * Margin added around the area of interest before clipping, in degrees.
- *
- * ~55 m at the equator and less with latitude — comfortably more than one
- * res-11 chunk (28.7 m edge), so the clip can never cut inside a cell that the
- * restriction actually asks about. Over-keeping costs a few cells that are then
- * filtered; under-keeping would lose real coverage at the working set's edge.
- *
- * **A conservative guess, not a computed bound** — same caveat as
- * `CHUNK_MARGIN_DEG` in `affordance-index.ts`, which this deliberately mirrors.
- * Shrinking either needs the real parent/child offset derived and pinned first,
- * because the failure mode is silently dropped coverage at a seam.
- */
-const CLIP_MARGIN_DEG = 0.0005;
+import { boundsOf, padBboxByAxis, clipToBbox, positionsOf } from "./clip.js";
+import { AFFORDANCE_RES, cellPaddingDegrees } from "./resolutions.js";
 
 /** A feature's contribution to one cell. */
 export interface CellFeature {
@@ -91,7 +76,7 @@ export function buildFeatureIndex(
   const kept = new Map<OsmFeatureKey, OsmFeature>();
   const failed: GeometryError[] = [];
 
-  const interest = areaOfInterest(restrict);
+  const interest = areaOfInterest(restrict, resolution);
   if (interest === "empty") {
     return { byCell, byFeature, features: kept, failed, resolution };
   }
@@ -324,14 +309,41 @@ function tagsAreSubsetOf(subset: OsmTags, superset: OsmTags): boolean {
  *   here" (a fully-filtered working set, or a computed set that came back
  *   empty), which previously dereferenced undefined bounds and threw a
  *   TypeError from inside `padBbox`.
+ *
+ * THE PADDING IS DERIVED, NOT GUESSED, and that changed on 2026-07-31. The
+ * bounds are over cell CENTRES, so the box must then grow by however far a cell
+ * reaches past its own centre, or geometry that genuinely touches an edge cell
+ * is clipped away and that cell silently loses coverage. It used to grow by a
+ * flat `CLIP_MARGIN_DEG = 0.0005` (~55.7 m), justified in a comment by the
+ * res-11 CHUNK edge (28.7 m) — but the set being bounded is res-13 cells, whose
+ * reach is 3.72 m. Two things were wrong with that:
+ *
+ * - It cited the wrong resolution, so it was right by accident.
+ * - A flat DEGREE margin is a shrinking DISTANCE as latitude rises: above ~80°
+ *   the longitude side of it falls under one cell, and past that the clip cuts
+ *   inside cells the restriction asks about. Nothing in the package fetches
+ *   there today, which is why it had never been seen.
+ *
+ * `cellPaddingDegrees` replaces it with the grid's own geometry, per axis, at
+ * the latitude that actually matters. It is NOT a speed change — measured at
+ * −4 % to −29 % with zero retained cells altered, because the polygon cover
+ * costs per call rather than per unit area.
  */
 function areaOfInterest(
   restrict: Set<string> | undefined,
+  resolution: number,
 ): Bbox | undefined | "empty" {
   if (restrict === undefined) return undefined;
   const bounds = boundsOf([...restrict].map((cell) => cellCentre(cell)));
   if (bounds === undefined) return "empty";
-  return padBbox(bounds, CLIP_MARGIN_DEG);
+
+  // The corner furthest from the equator, so the longitude padding is
+  // sufficient across the whole box rather than only at its nearer edge.
+  const worstLatitude = Math.max(
+    Math.abs(bounds.north),
+    Math.abs(bounds.south),
+  );
+  return padBboxByAxis(bounds, cellPaddingDegrees(resolution, worstLatitude));
 }
 
 /** Files one feature's coverage into `byCell`; returns the cells it landed in. */

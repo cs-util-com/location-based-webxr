@@ -25,6 +25,18 @@
   res-13 coverage is on the order of 10^10 cells. Filtering afterwards is not
   slow, it is non-terminating in practice. See `clip.ts`.
   - Found by the per-chunk cost test hanging, not by review.
+  - **The clip box is DERIVED from the grid, not a constant** (since
+    2026-07-31). Bounds are taken over the restriction cells' CENTRES, then
+    grown by `cellPaddingDegrees(resolution, worstLatitude)` — because a cell
+    reaches past its own centre, and geometry touching an edge cell must not be
+    clipped away. It was a flat `0.0005°` (~55.7 m) justified against the res-11
+    CHUNK edge, which is the wrong resolution: the set bounded is res-13 cells,
+    reach 3.72 m. It was therefore right by accident at mid latitudes and
+    **under-padded above ~80° N/S**, where a fixed degree margin falls below one
+    cell in longitude.
+  - Shrinking it is **not** a speed change — measured at −4 % to −29 % with
+    zero retained cells altered, because the polygon cover costs per CALL rather
+    than per unit area. See the perf-loop plan doc for that separate target.
 - **Without `restrictTo` there is a hard per-feature cell budget**
   (`MAX_CELLS_PER_FEATURE`, 1,000,000), and exceeding it records a
   `coverage-too-large` entry in `failed` rather than covering. Nothing bounds

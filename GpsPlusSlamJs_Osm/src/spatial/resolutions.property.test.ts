@@ -14,7 +14,16 @@
 
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { latLngToCell, getResolution, cellToParent, gridDistance } from "h3-js";
+import {
+  latLngToCell,
+  getResolution,
+  cellToParent,
+  gridDistance,
+  cellToLatLng,
+  cellToBoundary,
+  getHexagonEdgeLengthAvg,
+  UNITS,
+} from "h3-js";
 import {
   FETCH_RES,
   SCORE_CHUNK_RES,
@@ -25,7 +34,22 @@ import {
   fetchWorkingSet,
   scoreWorkingSet,
   fetchTilesForScoreWorkingSet,
+  cellPaddingDegrees,
 } from "./resolutions.js";
+
+/** Great-circle distance in metres, for comparing a cell against its own size. */
+function greatCircleMetres(
+  [lat1, lng1]: readonly [number, number] | number[],
+  [lat2, lng2]: readonly [number, number] | number[],
+): number {
+  const toRad = (d: number): number => (d * Math.PI) / 180;
+  const a =
+    Math.sin(toRad(lat2! - lat1!) / 2) ** 2 +
+    Math.cos(toRad(lat1!)) *
+      Math.cos(toRad(lat2!)) *
+      Math.sin(toRad(lng2! - lng1!) / 2) ** 2;
+  return 2 * 6_371_008.8 * Math.asin(Math.sqrt(a));
+}
 
 /** Any point on the globe, including poles and the antimeridian. */
 const anyLatLng = fc.record({
@@ -255,6 +279,56 @@ describe("resolution ladder properties", () => {
         expect(new Set(chunks).size).toBe(chunks.length);
       }),
     );
+  });
+
+  it("cellPaddingDegrees covers the real reach of every cell, everywhere", () => {
+    // THE INVARIANT THE CLIP DEPENDS ON. `areaOfInterest` bboxes the
+    // restriction cells' CENTRES and grows the box by this padding. If the
+    // padding ever under-covers, geometry that genuinely touches an edge cell
+    // is clipped away and that cell silently loses coverage — no crash, no
+    // failing assertion anywhere else, just a wrong affordance score.
+    //
+    // Asserted at real cells rather than in the abstract: take the cell, take
+    // its own boundary, and require every vertex to fall inside the padded box.
+    fc.assert(
+      fc.property(anyLatLng, ({ lat, lng }) => {
+        const cell = latLngToCell(lat, lng, AFFORDANCE_RES);
+        const [clat, clng] = cellToLatLng(cell);
+        const pad = cellPaddingDegrees(AFFORDANCE_RES, Math.abs(clat));
+
+        for (const [vlat, vlng] of cellToBoundary(cell)) {
+          expect(Math.abs(vlat - clat)).toBeLessThanOrEqual(pad.lat);
+          // Longitude near the antimeridian wraps; compare the short way round.
+          const dLng = Math.abs(((vlng - clng + 540) % 360) - 180);
+          expect(dLng).toBeLessThanOrEqual(pad.lng);
+        }
+      }),
+    );
+  });
+
+  it("keeps real headroom over the worst cell, so an h3 change fails here first", () => {
+    // Pins the ratio the factor of 2 in `cellPaddingDegrees` rests on. Measured
+    // 2026-07-31 over 60 000 uniformly-sampled cells at res 13: the largest
+    // centre->vertex distance is 4.514 m against a 4.092 m average edge, i.e.
+    // 1.103x. If an h3 upgrade changed cell geometry enough to eat the 2x
+    // headroom, this fails loudly instead of the clip quietly dropping cells.
+    const avgEdge = getHexagonEdgeLengthAvg(AFFORDANCE_RES, UNITS.m);
+    let worstRatio = 0;
+    fc.assert(
+      fc.property(anyLatLng, ({ lat, lng }) => {
+        const cell = latLngToCell(lat, lng, AFFORDANCE_RES);
+        const centre = cellToLatLng(cell);
+        for (const vertex of cellToBoundary(cell)) {
+          worstRatio = Math.max(
+            worstRatio,
+            greatCircleMetres(centre, vertex) / avgEdge,
+          );
+        }
+      }),
+      { numRuns: 2000 },
+    );
+    expect(worstRatio).toBeGreaterThan(0.5); // the sampling really did run
+    expect(worstRatio).toBeLessThan(2);
   });
 
   it("working sets are 7 and 19 everywhere EXCEPT around the 12 pentagons", () => {

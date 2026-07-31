@@ -10,7 +10,13 @@
  * @see GpsPlusSlamJs_Docs/docs/2026-07-28-0624-osm-h3-affordance-index-plan.md §4.4
  */
 
-import { cellToParent, gridDisk, getResolution } from "h3-js";
+import {
+  cellToParent,
+  gridDisk,
+  getResolution,
+  getHexagonEdgeLengthAvg,
+  UNITS,
+} from "h3-js";
 
 /**
  * The unit of network fetching and raw-data caching.
@@ -196,4 +202,50 @@ export function fetchTilesForScoreWorkingSet(
     tiles.add(toFetchTile(c));
   }
   return [...tiles];
+}
+
+/** Metres per degree of latitude. Constant enough for a padding bound. */
+const METRES_PER_DEGREE_LAT = 111_320;
+
+/**
+ * How far, in DEGREES, a cell at `resolution` can reach beyond its own centre.
+ *
+ * WHAT IT IS FOR. Code that bounds a set of cells by the bbox of their CENTRES
+ * has bounded the centres, not the cells: geometry can pass through a cell while
+ * lying outside that bbox, and clipping to it would drop coverage the cell
+ * genuinely has. Padding by this closes the gap.
+ *
+ * WHY A FACTOR OF 2, AND WHY IT IS A BOUND RATHER THAN A GUESS. A regular
+ * hexagon's circumradius equals its edge length, so `getHexagonEdgeLengthAvg` is
+ * the right scale; real H3 cells vary around that average, so it is scaled up.
+ * Measured 2026-07-31 over 60 000 cells sampled uniformly on the sphere at
+ * res 13: the largest centre→vertex distance is 4.514 m against a 4.092 m
+ * average edge, a ratio of **1.103**. The twelve pentagons and their two-rings —
+ * the known distortion case — are SMALLER (0.859×), not larger. A factor of 2
+ * therefore clears the measured worst case by 1.8×, and `resolutions.property.test.ts`
+ * pins the ratio so an h3 upgrade that changed cell geometry fails there rather
+ * than silently dropping coverage.
+ *
+ * WHY THE TWO AXES DIFFER. A degree of longitude shortens with latitude, so the
+ * same distance is MORE degrees the further from the equator — which is why a
+ * single fixed degree margin cannot be correct everywhere. `worstLatitudeDeg`
+ * should be the bbox corner furthest from the equator, so the padding is
+ * sufficient across the whole box.
+ *
+ * AT THE POLES this degrades safely rather than breaking: `cos` approaches zero,
+ * so the longitude padding grows without bound and the clip keeps everything.
+ * Over-keeping costs time (and the caller's own oversize guard still applies);
+ * under-keeping would lose real coverage, which is the failure this exists to
+ * prevent.
+ */
+export function cellPaddingDegrees(
+  resolution: number,
+  worstLatitudeDeg: number,
+): { lat: number; lng: number } {
+  const reach = 2 * getHexagonEdgeLengthAvg(resolution, UNITS.m);
+  const lat = reach / METRES_PER_DEGREE_LAT;
+  return {
+    lat,
+    lng: lat / Math.cos((worstLatitudeDeg * Math.PI) / 180),
+  };
 }
