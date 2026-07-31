@@ -111,6 +111,57 @@ describe("height resolution", () => {
     expect(heights.totalHeightM).toBe(30);
   });
 
+  it("gives a NON-FLAT roof a height even when nothing tags one", () => {
+    // WHY THIS TEST MATTERS — it is the root cause of R3-1/R4-7, found by the
+    // fixture corpus after three rounds of reading the source.
+    //
+    // `roof:height` and `roof:levels` are both rare. Defaulting the roof height
+    // to zero meant a part tagged `roof:shape=pyramidal` with only a `height`
+    // got `eaveHeightM === totalHeightM`, so the roof generator built a pyramid
+    // of zero height — a FLAT CAP over the full footprint. At Cologne Cathedral
+    // that is `way/206020152`, the 71 m lower tower body: it rendered as a
+    // flat-topped prism with 59 vertices across its top, while the actual spire
+    // parts above it (min_height 71, tapering to 157 m) tapered correctly. That
+    // is exactly the reported picture — "twin towers as flat-topped prisms with
+    // a finer spire behind them".
+    //
+    // OSM2World never lets this happen: `LevelAndHeightData` falls back to
+    // `DEFAULT_RIDGE_HEIGHT` (5 m), or 1 m for a single-level building, and only
+    // a FlatRoof gets zero.
+    const tower = resolveHeights({ height: "71", "roof:shape": "pyramidal" });
+    expect(tower.totalHeightM).toBe(71);
+    // The roof has to occupy some of that height, or there is no roof.
+    expect(tower.eaveHeightM).toBeLessThan(tower.totalHeightM);
+
+    // A single-level building gets a smaller default: a 5 m ridge on a 3 m
+    // cottage is most of the building.
+    const cottage = resolveHeights({
+      "building:levels": "1",
+      "roof:shape": "gabled",
+    });
+    expect(cottage.eaveHeightM).toBeLessThan(cottage.totalHeightM);
+    expect(cottage.totalHeightM - cottage.eaveHeightM).toBeLessThan(2);
+  });
+
+  it("still gives a FLAT roof no height at all", () => {
+    // The other direction, and the reason the fix is conditional: a flat roof
+    // with a phantom 5 m of "roof" would lower every untagged building's walls
+    // by 5 m — a far more common case than the one being fixed.
+    const heights = resolveHeights({ height: "20" });
+    expect(heights.roofShape).toBe("flat");
+    expect(heights.eaveHeightM).toBe(20);
+    expect(heights.totalHeightM).toBe(20);
+  });
+
+  it("lets a tagged roof height win over the default", () => {
+    const heights = resolveHeights({
+      height: "20",
+      "roof:shape": "gabled",
+      "roof:height": "2",
+    });
+    expect(heights.eaveHeightM).toBe(18);
+  });
+
   it("clamps a roof taller than its building", () => {
     // A mistyped roof:height=30 on a 10 m house would otherwise spike through
     // the sky — the most visible bad-data artefact there is.

@@ -106,6 +106,54 @@ function normaliseRoofShape(raw: string | undefined): RoofShape {
 }
 
 /**
+ * How tall the roof is, including when nothing tags one.
+ *
+ * THIS DEFAULT IS THE FIX FOR R3-1/R4-7, and its absence is why the finding
+ * survived three rounds. `roof:height` and `roof:levels` are both rare, so a
+ * zero default meant any part tagged with a real `roof:shape` and only a
+ * `height` got `eaveHeightM === totalHeightM` — and the roof generator then
+ * built a shape of ZERO height, which for `pyramidal` is a flat cap across the
+ * whole footprint rather than a spire.
+ *
+ * At Cologne Cathedral that is `way/206020152`, the 71 m lower tower body: a
+ * flat-topped prism with 59 vertices across its top, standing in front of the
+ * spire parts (`min_height` 71, tapering to 157 m) that were always correct.
+ * "Twin towers as flat-topped prisms with a finer spire behind them" is the
+ * owner's description of exactly that, and the fixture corpus is what finally
+ * made it reproducible offline.
+ *
+ * The ladder is OSM2World's (`LevelAndHeightData`): a single-level building gets
+ * 1 m, because a 5 m ridge on a 3 m cottage is most of the building; everything
+ * else gets `DEFAULT_RIDGE_HEIGHT` = 5 m. **A flat roof still gets zero**, and
+ * that condition is load-bearing rather than tidy — a phantom 5 m of roof on
+ * every untagged building would lower its walls by 5 m, which is a far more
+ * common case than the one being fixed.
+ *
+ * KNOWN SIMPLIFICATION: OSM2World gives a dome `outline diameter / 2`. That needs
+ * the footprint, which this function does not have and should not take just for
+ * this — a dome therefore gets the 5 m ridge too, which is too flat for a large
+ * dome and no longer a zero-height cap. Recorded rather than hidden; it is a
+ * smaller error than the one being removed.
+ */
+function resolveRoofHeightM(
+  tags: OsmTags,
+  roofShape: RoofShape,
+  levels: number | undefined,
+): number {
+  if (roofShape === "flat") return 0;
+  const tagged = parseLengthMetres(tags["roof:height"]);
+  if (tagged !== undefined) return tagged;
+  const roofLevels = parseLevels(tags["roof:levels"]);
+  if (roofLevels !== undefined) return roofLevels * DEFAULT_LEVEL_HEIGHT_M;
+  return levels === 1 ? SINGLE_LEVEL_RIDGE_HEIGHT_M : DEFAULT_RIDGE_HEIGHT_M;
+}
+
+/** OSM2World's `BuildingPart.DEFAULT_RIDGE_HEIGHT`. */
+const DEFAULT_RIDGE_HEIGHT_M = 5;
+/** A 5 m ridge on a 3 m cottage is most of the building. */
+const SINGLE_LEVEL_RIDGE_HEIGHT_M = 1;
+
+/**
  * Resolves the heights of one building or building part.
  *
  * Precedence, highest first — this is the order S3DB specifies and the order
@@ -126,12 +174,9 @@ export function resolveHeights(tags: OsmTags): BuildingHeights {
     parseLengthMetres(tags["min_height"]) ??
     (parseLevels(tags["building:min_level"]) ?? 0) * DEFAULT_LEVEL_HEIGHT_M;
 
-  const roofHeightM =
-    parseLengthMetres(tags["roof:height"]) ??
-    (parseLevels(tags["roof:levels"]) ?? 0) * DEFAULT_LEVEL_HEIGHT_M;
-
   const tagged = parseLengthMetres(tags["height"]);
   const levels = parseLevels(tags["building:levels"]);
+  const roofHeightM = resolveRoofHeightM(tags, roofShape, levels);
 
   let totalHeightM: number;
   let heightIsGuessed = false;
