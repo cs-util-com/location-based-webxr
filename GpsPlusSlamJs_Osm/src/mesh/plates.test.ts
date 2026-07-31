@@ -21,6 +21,8 @@ import { mergeMeshes } from "./extrude.js";
 import { buildAreaPlates, isPlateArea } from "./plates.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
+import type { Bbox } from "../spatial/clip.js";
+import { loadFixture } from "../test-utils/load-fixtures.js";
 
 const ORIGIN = { lat: 50.9413, lng: 6.9583 };
 const FRAME = enuFrameAt(ORIGIN);
@@ -268,5 +270,70 @@ describe("plates survive mergeMeshes", () => {
     expect(merged.triangleCount).toBe(expected);
     expect(merged.positions.length).toBeGreaterThan(0);
     expect(merged.indices.length).toBe(expected * 3);
+  });
+});
+
+describe("clipTo — bounding the quadratic (2026-07-31 perf loop)", () => {
+  /**
+   * Why these tests matter: `triangulate` is ear clipping, which is O(n^2) in
+   * ring size, and OSM area size is unbounded. The `building-block` fixture is
+   * one ordinary Cologne city block and contains a 316-member administrative
+   * boundary relation whose largest polygon is 25,001 points; triangulating it
+   * measured 2,657 ms, and `buildAreaPlates` as a whole 2,881 ms, on every mesh
+   * build. `clipTo` bounds the input so the quadratic never gets large input.
+   *
+   * This is the THIRD code path that same relation has broken (ring stitching
+   * and the h3 cover were the others), which is why the growth guard below
+   * exists rather than only a correctness test.
+   */
+  const fixtureFeatures = (): OsmFeature[] => [
+    ...parseOverpassJson(loadFixture("building-block").payload).features,
+  ];
+  const centre = loadFixture("building-block").centre;
+
+  it("keeps plates that are inside the box, and drops those entirely outside", () => {
+    const features = fixtureFeatures();
+    const frame = enuFrameAt(centre);
+    const near: Bbox = {
+      south: centre.lat - 0.002,
+      north: centre.lat + 0.002,
+      west: centre.lng - 0.002,
+      east: centre.lng + 0.002,
+    };
+    const faraway: Bbox = {
+      south: centre.lat + 10,
+      north: centre.lat + 11,
+      west: centre.lng + 10,
+      east: centre.lng + 11,
+    };
+
+    expect(
+      buildAreaPlates(features, { frame, clipTo: near }).length,
+    ).toBeGreaterThan(0);
+    expect(buildAreaPlates(features, { frame, clipTo: faraway })).toEqual([]);
+  });
+
+  it("is enormously faster than the unclipped build it replaces", () => {
+    // An ABSOLUTE budget, not a ratio: the unclipped call measured 2,881 ms on
+    // this fixture and the clipped one ~2 ms, so 500 ms fails decisively if the
+    // clip stops being applied while leaving ~250x headroom over the real cost.
+    // Deliberately not asserting the unclipped time — that would make the test
+    // itself take three seconds.
+    const features = fixtureFeatures();
+    const frame = enuFrameAt(centre);
+    const clipTo: Bbox = {
+      south: centre.lat - 0.013,
+      north: centre.lat + 0.013,
+      west: centre.lng - 0.02,
+      east: centre.lng + 0.02,
+    };
+
+    buildAreaPlates(features, { frame, clipTo }); // warm-up, so JIT is not timed
+    const started = performance.now();
+    const plates = buildAreaPlates(features, { frame, clipTo });
+    const elapsed = performance.now() - started;
+
+    expect(plates.length).toBeGreaterThan(0);
+    expect(elapsed).toBeLessThan(500);
   });
 });

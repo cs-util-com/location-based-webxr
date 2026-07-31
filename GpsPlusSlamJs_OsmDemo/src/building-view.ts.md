@@ -13,7 +13,7 @@ map scored.
   `renderCells(mesh)`, `setTerrain(field | undefined)`,
   `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`.
   Navigation is `MapControls`, attached internally; there is nothing to call.
-- `TERRAIN_EXTENT_M` — half-width of the ground plane and of the terrain sampled
+- `TERRAIN_EXTENT_M` — re-exported location moved to `heightfield.ts` on 2026-07-31 (the worker needs it and must not import three); half-width of the ground plane and of the terrain sampled
   under it. **1400 m, i.e. a 2.8 km plane (DEC-R2-8, which overrides DEC-15's
   600 m).**
 - `TERRAIN_SPACING_M` — 12 m, the Terrarium z13 pixel pitch at this latitude.

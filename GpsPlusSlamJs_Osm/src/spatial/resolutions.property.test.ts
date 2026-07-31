@@ -39,15 +39,15 @@ import {
 
 /** Great-circle distance in metres, for comparing a cell against its own size. */
 function greatCircleMetres(
-  [lat1, lng1]: readonly [number, number] | number[],
-  [lat2, lng2]: readonly [number, number] | number[],
+  [lat1, lng1]: readonly [number, number],
+  [lat2, lng2]: readonly [number, number],
 ): number {
   const toRad = (d: number): number => (d * Math.PI) / 180;
   const a =
-    Math.sin(toRad(lat2! - lat1!) / 2) ** 2 +
-    Math.cos(toRad(lat1!)) *
-      Math.cos(toRad(lat2!)) *
-      Math.sin(toRad(lng2! - lng1!) / 2) ** 2;
+    Math.sin(toRad(lat2 - lat1) / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(toRad(lng2 - lng1) / 2) ** 2;
   return 2 * 6_371_008.8 * Math.asin(Math.sqrt(a));
 }
 

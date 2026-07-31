@@ -8,8 +8,11 @@ surfaces. The layer the feedback asked for as _"flache Platten quasi im 3D-Raum"
 ## Public API
 
 - `isPlateArea(tags): boolean` — does this feature belong to this builder?
-- `buildAreaPlates(features, { frame, groundHeightM? }): AreaPlate[]` — one entry
-  per polygon, each with a `MeshData`. Skips everything that does not qualify.
+- `buildAreaPlates(features, { frame, groundHeightM?, clipTo? }): AreaPlate[]` —
+  one entry per polygon, each with a `MeshData`. Skips everything that does not
+  qualify.
+  - **`clipTo` is optional but strongly recommended**, and omitting it is how a
+    caller opts into an unbounded quadratic. See the complexity note below.
 
 ## Invariants & assumptions
 
@@ -42,9 +45,32 @@ const plates = buildAreaPlates(features, { frame, groundHeightM });
 const merged = mergeMeshes(plates.map((p) => p.mesh)); // one draw call
 ```
 
+## Complexity — why `clipTo` exists
+
+`triangulate` is ear clipping, which is **O(n²)** in ring size, while an OSM
+area's size is unbounded. So an area far larger than the view costs
+quadratically to draw geometry that is then off screen.
+
+Measured 2026-07-31 (devbox-win11) on `building-block`, one ordinary Cologne
+city block. It contains a 316-member administrative boundary relation — the same
+one that made ring stitching quadratic, arriving here through a third path:
+
+- its largest polygon is 25 001 points → `triangulate` **2 657.7 ms**
+- a 4 867-point one → 111.8 ms, i.e. points ×5.1 for time ×23.8
+- `buildAreaPlates` overall: **3 987 ms → 4.00 ms (−99.9 %)** once clipped to the
+  demo's rendered extent (1400 m half-width); `park` and `street-corner` are
+  unchanged within noise, having no such relation.
+- Plate COUNT drops 14 → 9 on that fixture, because five polygons of the
+  boundary relation lie entirely outside the rendered area. That is the clip
+  working, not geometry being lost.
+
+Clipping first is the same principle `h3-feature-index` applies before covering,
+for the same reason: bound the input, because the algorithm downstream cannot
+bound itself.
+
 ## Tests
 
-`plates.test.ts` — 13 examples. The classification rules, real triangles, flatness
+`plates.test.ts` — 15 examples. The classification rules, real triangles, flatness
 on level ground, per-vertex draping on a slope, holes preserved, degenerate input
 survived, and upward normals.
 
@@ -57,3 +83,10 @@ the data.
 
 **Known gap:** the demo's e2e asserts plates are BUILT and counted, not that they
 appear as pixels. See `2026-07-29-2354-osm-demo-feedback-round-2-plan.md` §7.
+
+Two more added with the 2026-07-31 clip: one pins that areas inside the box
+survive while those entirely outside are dropped, and one is a wall-clock budget
+(500 ms against a real cost of ~4 ms, versus 3 987 ms unclipped) so the clip
+silently ceasing to apply fails at the gate. The budget is absolute rather than a
+ratio, and deliberately does not time the unclipped path — asserting that would
+make the test itself take four seconds.

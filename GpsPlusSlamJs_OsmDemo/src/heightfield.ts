@@ -90,6 +90,37 @@ export interface HeightfieldData {
 }
 
 /** Radius treated as "around the user" for {@link HeightfieldData.nearReliefM}. */
+/**
+ * Half-width of the ground plane and of the terrain sampled under it, metres.
+ *
+ * 1400 m — a 2.8 km plane — which matches the extent of the geometry actually
+ * being rendered. **This overrides DEC-15's 600 m** (see DEC-R2-8).
+ *
+ * WHY IT HAD TO GROW. `buildBuildings` applies no distance filter: it extrudes
+ * every merged feature, i.e. everything in the res-7 fetch tile, 2.81 km across,
+ * and the camera's far plane is 4000 m. So a 600 m terrain square sat under
+ * ~2.8 km of city — and the buildings outside it were not left flat, they were
+ * offset by `bilinear`'s per-axis CLAMP, which extrudes the edge profile outward
+ * as stripes. That is fabricated height presented as data (finding R2-9), and
+ * sizing the field to the geometry is what makes it unrepresentable rather than
+ * merely unlikely.
+ *
+ * WHY THE COST OBJECTION DID NOT HOLD. DEC-15 costed this in Terrarium tiles,
+ * and a z13 tile is ~3.1 km of ground at Cologne — so covering the whole
+ * rendered city is the 1–4 tiles already being fetched. What genuinely scales is
+ * the post count, and that is handled by `terrain-field.ts`: posts are cached
+ * across positions, so the larger area is paid for once rather than on every
+ * step.
+ *
+ * MOVED HERE from `building-view.ts` on 2026-07-31, because it gained a second
+ * consumer that must not import three.js: the worker clips ground plates to this
+ * extent before triangulating them (see `plates.ts`'s `clipTo`, and the O(n²) it
+ * bounds). Two copies of this number would be exactly the "two computations that
+ * agree today with nothing asserting they always will" shape this demo keeps
+ * finding, so it lives once, in the module both sides already share.
+ */
+export const TERRAIN_EXTENT_M = 1400;
+
 export const NEAR_FIELD_M = 300;
 
 export interface Heightfield extends HeightfieldData {

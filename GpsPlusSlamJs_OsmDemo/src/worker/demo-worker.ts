@@ -61,7 +61,11 @@ import {
 
 import { DemoPipeline } from "../demo-pipeline.js";
 import { describeTerrain } from "../terrain-note.js";
-import { heightfieldFrom, type HeightfieldData } from "../heightfield.js";
+import {
+  heightfieldFrom,
+  TERRAIN_EXTENT_M,
+  type HeightfieldData,
+} from "../heightfield.js";
 import { createTerrainField, type TerrainField } from "../terrain-field.js";
 import { createMeshPlanner } from "./mesh-planner.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
@@ -167,6 +171,28 @@ function meshOptions(centre: LatLng): {
   };
 }
 
+/**
+ * A lat/lng box of `halfWidthM` around `centre`.
+ *
+ * Longitude degrees shorten with latitude, so the two axes differ — the same
+ * reason `cellPaddingDegrees` exists in the package. Deliberately GENEROUS
+ * rather than tight: over-keeping costs a few triangles that fall outside the
+ * view, while under-keeping would clip a plate the user can actually see.
+ */
+function clipBoxAround(
+  centre: LatLng,
+  halfWidthM: number,
+): { south: number; west: number; north: number; east: number } {
+  const lat = halfWidthM / 111_320;
+  const lng = lat / Math.cos((centre.lat * Math.PI) / 180);
+  return {
+    south: centre.lat - lat,
+    north: centre.lat + lat,
+    west: centre.lng - lng,
+    east: centre.lng + lng,
+  };
+}
+
 /** Builds the scene geometry for the current features, on the current terrain. */
 function buildMesh(
   features: Iterable<OsmFeature>,
@@ -184,6 +210,14 @@ function buildMesh(
 ): TransferableMesh {
   const options = meshOptions(centre);
   const all = [...features];
+  // Areas are clipped to what is actually rendered before they are triangulated.
+  // WHY ONLY THE PLATES: ear clipping is O(n²) in ring size and OSM area size is
+  // unbounded, so ONE administrative boundary relation — 25 001 points, spanning
+  // 100+ km of which 2.8 km is drawn — cost 2 657 ms of the 2 881 ms this build
+  // took, on every click (measured 2026-07-31). Buildings and roads are small
+  // polygons and short ribbons, so they never reach the quadratic and are left
+  // unclipped rather than changed on speculation.
+  const plateClip = clipBoxAround(centre, TERRAIN_EXTENT_M);
 
   const volumes = buildBuildings(all, options);
   const trees = buildTrees(all, options);
@@ -199,7 +233,7 @@ function buildMesh(
   // would cut into the ground at one end and float at the other, which is exactly
   // the artefact the building change removed. The same option name carries both
   // because the builders call it differently, which is where the difference belongs.
-  const plates = buildAreaPlates(all, options);
+  const plates = buildAreaPlates(all, { ...options, clipTo: plateClip });
   // ONE merged geometry: this view shows one working set at a time and is always
   // wholly on screen, so a single batch is right here even though the package's
   // general guidance is to batch per res-8/res-9 cell.

@@ -37,12 +37,15 @@ import { DetailsPanel } from "./details-panel.js";
 import { LocateControl } from "./locate-control.js";
 import { attachSheetDrag } from "./sheet-drag.js";
 import { buildCellMesh, EMPTY_CELL_MESH } from "./cell-mesh.js";
-import { heightfieldFrom, type Heightfield } from "./heightfield.js";
+import {
+  heightfieldFrom,
+  TERRAIN_EXTENT_M,
+  type Heightfield,
+} from "./heightfield.js";
 import { createTerrainCycle } from "./terrain-cycle.js";
 import { heatColour, heatScale } from "./heat-colours.js";
 import {
   BuildingView,
-  TERRAIN_EXTENT_M,
   TERRAIN_SPACING_M,
   type BuildingStats,
 } from "./building-view.js";

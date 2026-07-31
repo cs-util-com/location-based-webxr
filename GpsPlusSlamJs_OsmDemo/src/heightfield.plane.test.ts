@@ -24,12 +24,12 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 
+import { GROUND_SEGMENTS, TERRAIN_SPACING_M } from "./building-view.js";
 import {
-  GROUND_SEGMENTS,
+  heightfieldFrom,
   TERRAIN_EXTENT_M,
-  TERRAIN_SPACING_M,
-} from "./building-view.js";
-import { heightfieldFrom, type HeightfieldData } from "./heightfield.js";
+  type HeightfieldData,
+} from "./heightfield.js";
 
 /** A field with deliberate TWIST, which is the only thing that separates the two
  * interpolations: a plane or a pure ramp is bilinear and barycentric alike. */

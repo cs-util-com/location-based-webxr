@@ -36,6 +36,7 @@ import type {
 import { featureKey } from "../model/osm-feature.js";
 import { toGeometry } from "../model/osm-geometry.js";
 import type { OsmTags } from "../model/osm-feature.js";
+import { clipToBbox, type Bbox } from "../spatial/clip.js";
 import { ringToEnu, type EnuFrame, type EnuPoint } from "./enu.js";
 import { MeshBuilder, type MeshData } from "./mesh-data.js";
 import { triangulate } from "./triangulate.js";
@@ -86,6 +87,28 @@ export interface BuildPlatesOptions {
    * building does not.
    */
   readonly groundHeightM?: (position: LatLng) => number;
+  /**
+   * Clip areas to this box before triangulating them. Strongly recommended.
+   *
+   * WHY THIS EXISTS, and it is not a micro-optimisation. Triangulation is ear
+   * clipping, which is **O(n²)** in ring size, while an OSM area's size is
+   * unbounded — so an area far larger than the view costs quadratically for
+   * geometry that is then drawn off screen. Measured 2026-07-31 on the
+   * `building-block` fixture, one ordinary Cologne city block: it contains a
+   * 316-member administrative boundary relation whose largest polygon is
+   * 25 001 points, and triangulating it took **2 657 ms** — while a 4 867-point
+   * one took 111.8 ms, i.e. points ×5.1 for time ×23.8. `buildAreaPlates` as a
+   * whole cost 2 881 ms against 0.24–0.54 ms on fixtures without such a
+   * relation, and it runs on every mesh build.
+   *
+   * Clipping first is the same principle `h3-feature-index` already applies
+   * before covering, and for the same reason: bound the input, because the
+   * algorithm downstream cannot bound itself.
+   *
+   * OPTIONAL, so a caller that genuinely wants unbounded areas still can — but
+   * such a caller is accepting the quadratic knowingly.
+   */
+  readonly clipTo?: Bbox;
 }
 
 /** One filled ground area. */
@@ -102,7 +125,7 @@ export function buildAreaPlates(
   const plates: AreaPlate[] = [];
   for (const feature of features) {
     if (!isPlateArea(feature.tags)) continue;
-    const polygons = polygonsOf(feature, options.frame);
+    const polygons = polygonsOf(feature, options.frame, options.clipTo);
     for (const rings of polygons) {
       const mesh = plateMesh(rings, options);
       // A degenerate ring triangulates to nothing. Skipped rather than emitted:
@@ -115,11 +138,26 @@ export function buildAreaPlates(
   return plates;
 }
 
-/** A feature's polygons as ENU rings, outer first then holes. */
-function polygonsOf(feature: OsmFeature, frame: EnuFrame): EnuPoint[][][] {
+/**
+ * A feature's polygons as ENU rings, outer first then holes.
+ *
+ * CLIPPED BEFORE CONVERSION when `clipTo` is given — before `ringToEnu` and
+ * therefore before triangulation, which is the whole point: see `clipTo` for
+ * the measured quadratic this bounds.
+ */
+function polygonsOf(
+  feature: OsmFeature,
+  frame: EnuFrame,
+  clipTo: Bbox | undefined,
+): EnuPoint[][][] {
   const result = toGeometry(feature);
   if (result.ok !== true) return [];
-  const geometry = result.geometry;
+  const geometry =
+    clipTo === undefined
+      ? result.geometry
+      : clipToBbox(result.geometry, clipTo);
+  // Clipped away entirely — outside the area being built, not a failure.
+  if (geometry === undefined) return [];
   const toRings = (polygon: readonly (readonly LatLng[])[]): EnuPoint[][] =>
     polygon.map((ring) => ringToEnu(ring, frame));
 
