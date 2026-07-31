@@ -645,6 +645,13 @@ async function main(): Promise<void> {
     (view) => view.position,
     (position) => {
       mapView.setPosition(position);
+      // W11 (R4-12). Every refresh rebuilds the world in a frame centred on the
+      // new position, so the place the user chose is at the scene origin — but
+      // the camera is only LOOKING at the origin until the first pan, after
+      // which the clicked point renders off-centre or off screen and the 3D view
+      // appears to have ignored the click. Translation only: the camera is never
+      // rotated, which is the invariant the feedback states outright.
+      buildingView.recentre();
       // BOTH AT ONCE (W3). These used to be chained — `loadTerrain(p).finally(()
       // => refresh())` — so a ~55 000-post DEM grid was sampled, transferred and
       // applied before the fetch and the scoring even started. They are

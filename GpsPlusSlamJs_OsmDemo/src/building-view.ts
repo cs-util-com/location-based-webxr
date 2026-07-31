@@ -17,6 +17,8 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
+
+import { recentreOnOrigin } from "./recentre-camera.js";
 import {
   createPerfStatsOverlay,
   type PerfStatsOverlayHandle,
@@ -866,6 +868,22 @@ export class BuildingView {
   clearScene(): void {
     this.clear();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Points the camera back at the scene origin, by translation only (W11).
+   *
+   * Called when the user MOVES — a map click, the locate button or the location
+   * picker — because every refresh rebuilds the world in a frame centred on the
+   * new position, so the place the user chose is always at the origin. Without
+   * this, that is only on screen while the camera has never been panned.
+   *
+   * The camera is not rotated and the viewing distance is unchanged; see
+   * `recentre-camera.ts` for why that is by construction rather than by care.
+   */
+  recentre(): void {
+    recentreOnOrigin(this.camera, this.controls);
+    this.requestFrame();
   }
 
   private clear(): void {
