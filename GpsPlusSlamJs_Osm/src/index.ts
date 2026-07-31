@@ -16,3 +16,4 @@ export * from "./score/index.js";
 export * from "./regions/index.js";
 export * from "./elevation/index.js";
 export * from "./mesh/index.js";
+export * from "./places/index.js";
