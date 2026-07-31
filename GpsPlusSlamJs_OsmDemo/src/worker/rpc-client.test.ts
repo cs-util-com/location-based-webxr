@@ -239,16 +239,27 @@ describe("createRpcClient — a fatal worker failure", () => {
     expect(fake.terminated).toBe(false);
   });
 
-  it("leaves the client usable, so a later call fails fast rather than hanging", async () => {
-    // A fatal error is not disposal, so the client is not marked disposed — but a
-    // caller that tries again must not be left pending either. It gets a rejection
-    // from the reply that never comes, exactly like the ones already in flight.
+  it("rejects a call that ARRIVES AFTER the fatal, rather than posting it to a dead worker", async () => {
+    // WHY THIS TEST MATTERS, and why it calls `fail()` exactly ONCE. A worker
+    // fires `error` a single time; after that `main.ts` never calls `fail()`
+    // again. So the interesting call is the one the *user* triggers afterwards —
+    // changing the category re-enters `refresh-cycle.ts`'s `worker.call("update",
+    // …)` on a page that is still fully interactive. If that call is merely
+    // posted, it never settles: `latestOnly.busy` stays true forever and every
+    // cycle chained off it stops, with the status line frozen mid-fetch. That is
+    // the same wedge `fail()` exists to prevent, deferred by one interaction.
+    //
+    // An earlier version of this test called `fail()` a second time and asserted
+    // the rejection came from that — which could not fail for the reason its name
+    // stated, because production has no second `fail()`.
     const fake = fakeTransport();
     const client = createRpcClient(fake.transport);
     client.fail("gone");
 
     const later = client.call("init", {});
-    client.fail("still gone");
-    await expect(later).rejects.toThrow("still gone");
+
+    await expect(later).rejects.toThrow("gone");
+    // And nothing was handed to a worker that will never answer it.
+    expect(fake.posted).toHaveLength(0);
   });
 });

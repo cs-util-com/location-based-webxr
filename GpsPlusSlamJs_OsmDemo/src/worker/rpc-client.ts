@@ -53,7 +53,8 @@ export interface RpcClient {
     options?: RpcCallOptions,
   ): Promise<WorkerCalls[K]["result"]>;
   /**
-   * Rejects every pending call WITHOUT terminating the transport.
+   * Records a fatal worker failure: rejects every pending call, and every later
+   * one, WITHOUT terminating the transport.
    *
    * For a worker that has already died: it will never reply, so leaving calls
    * pending costs more than silence. `latestOnly`'s active promise never settles,
@@ -61,6 +62,11 @@ export interface RpcClient {
    * the demo wedges
    * in a state whose loading phase says error while its cycles think work is in
    * flight. Rejecting loses nothing a dead worker could still have told them.
+   *
+   * The SAME applies to calls made after the fatal, which is why the message is
+   * remembered rather than merely broadcast once: the page stays interactive, so
+   * changing the category re-enters `worker.call("update", …)`, and a worker
+   * fires `error` exactly once — nothing would reject that one.
    */
   fail(message: string): void;
   /** Rejects every pending call and terminates the transport. */
@@ -87,6 +93,8 @@ export function createRpcClient(transport: Transport): RpcClient {
   const pending = new Map<number, Pending>();
   let nextId = 1;
   let disposed = false;
+  /** Set by {@link RpcClient.fail}; makes the fatal outlive the one `error` event. */
+  let fatal: string | undefined;
 
   transport.listen((data) => {
     // GUARDED rather than cast. A worker's message channel is shared with
@@ -111,6 +119,11 @@ export function createRpcClient(transport: Transport): RpcClient {
   ): Promise<WorkerCalls[K]["result"]> {
     if (disposed) {
       return Promise.reject(new Error("The worker client has been disposed"));
+    }
+    // A dead worker answers nothing, so posting to it is a promise that never
+    // settles — the very hang `fail()` was called to end.
+    if (fatal !== undefined) {
+      return Promise.reject(new Error(fatal));
     }
     const id = nextId++;
     const signal = options?.signal;
@@ -161,8 +174,10 @@ export function createRpcClient(transport: Transport): RpcClient {
   return {
     call,
     fail(message: string): void {
-      // NOT disposed: a dead worker is not a page tearing down, and the client
-      // stays usable so a later call fails fast rather than hanging too.
+      // NOT disposed: a dead worker is not a page tearing down. But the failure
+      // is REMEMBERED, so a later call fails fast instead of hanging too — the
+      // page stays interactive and `error` fires only once.
+      fatal = message;
       rejectAllPending(message);
     },
     dispose(): void {

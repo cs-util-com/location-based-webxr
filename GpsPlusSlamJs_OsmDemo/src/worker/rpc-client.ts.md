@@ -12,6 +12,10 @@ cancellation that reaches the worker, and cleanup.
   - `call(kind, payload, { signal? })` — resolves with the worker's value, rejects
     with `Error(message)` on `ok: false`, rejects with `RpcAbortError` if the
     signal fires. Typed by `WorkerCalls[kind]`.
+  - `fail(message)` — records a fatal worker failure. Rejects every pending call
+    **and every later one** with `message`, without terminating the transport.
+    This is the method the app's failure path depends on: `main.ts` wires it to
+    `workerTransport`'s `onFatal`.
   - `dispose()` — rejects every pending call, then terminates the transport.
 - `workerTransport(worker, onFatal): Transport` — adapts a real `Worker`.
   `onFatal` is **required**, not optional.
@@ -46,6 +50,13 @@ cancellation that reaches the worker, and cleanup.
   replies to anything, so every pending call hangs. There is no id to correlate,
   so it cannot reject one call — the caller must surface it. In this app it
   becomes `fetchFailed`, since a dead worker means no data.
+- **A fatal is sticky, because `error` fires exactly once.** The page stays
+  interactive after a worker death, so the next category change re-enters
+  `worker.call("update", …)`. If that call were posted rather than rejected it
+  would never settle, `latestOnly.busy` would stay true forever, and the demo
+  would wedge with the status line frozen mid-fetch — the same failure `fail()`
+  exists to prevent, one interaction later. So `fail()` remembers its message
+  and `call()` short-circuits on it.
 
 ## Examples
 
@@ -58,8 +69,11 @@ const { snapshot, mesh } = await client.call("update", { position, category });
 
 ## Tests
 
-`rpc-client.test.ts` — 8 examples: resolution, out-of-order correlation,
+`rpc-client.test.ts` — 11 examples: resolution, out-of-order correlation,
 failure-to-rejection, foreign messages, abort reaching the worker, no-post for a
-pre-aborted signal, listener cleanup, and dispose. The abort-post and
-listener-removal assertions were **mutation-checked**: deleting either line fails
-exactly one test and nothing else.
+pre-aborted signal, listener cleanup, dispose, and three for `fail` (pending
+calls rejected, transport not terminated, and a call arriving _after_ the fatal
+rejected rather than posted). The abort-post and listener-removal assertions were
+**mutation-checked**: deleting either line fails exactly one test and nothing
+else. The post-fatal test is likewise mutation-checked — removing the `fatal`
+guard in `call()` makes it time out.
