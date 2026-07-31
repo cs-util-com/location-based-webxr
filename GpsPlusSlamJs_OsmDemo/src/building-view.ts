@@ -17,6 +17,10 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
+import {
+  createPerfStatsOverlay,
+  type PerfStatsOverlayHandle,
+} from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
 
 import type { CellMesh } from "./cell-mesh.js";
 import type { GroundMode } from "./ground-mode.js";
@@ -224,6 +228,13 @@ export class BuildingView {
   };
   /** Milliseconds the last terrain application took, for the A/B comparison. */
   private lastTerrainMs = 0;
+  /**
+   * The FPS / frame-ms / MB panels, when they are switched on (W14, DEC-R3-18).
+   *
+   * OFF BY DEFAULT and mounted on demand, so the demo's default picture — and
+   * every pixel assertion in the suite — is unchanged by its existence.
+   */
+  private perfStats: PerfStatsOverlayHandle | undefined;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
@@ -557,6 +568,26 @@ export class BuildingView {
   }
 
   /**
+   * Mounts or removes the performance panels (W14, DEC-R3-9/18).
+   *
+   * Mounted into the view's own container so it sits over the 3D pane rather
+   * than over the map, and disposed on the way out so a session of toggling
+   * cannot stack panels — the framework module's own documented hazard.
+   */
+  setPerfOverlay(enabled: boolean): void {
+    if (enabled === (this.perfStats !== undefined)) return;
+    if (!enabled) {
+      this.perfStats?.dispose();
+      this.perfStats = undefined;
+      return;
+    }
+    this.perfStats = createPerfStatsOverlay(this.container);
+    // One frame immediately, or the panels sit empty until the camera moves —
+    // which reads as "the overlay is broken" rather than "the scene is static".
+    this.requestFrame();
+  }
+
+  /**
    * Shows or hides the terrain height ramp (W24, DEC-R2-25).
    *
    * A DIAGNOSTIC view, not a change to the look DEC-R2-1 chose: that decision
@@ -757,6 +788,13 @@ export class BuildingView {
       this.frame = undefined;
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
+      // DRIVEN FROM THE ON-DEMAND FRAME, and that is the accepted trade
+      // (DEC-R3-9). This view deliberately has no permanent rAF loop — one was
+      // measured to make the e2e suite ~6x slower and would burn a phone's
+      // battery repainting a static city — so FPS and frame-ms read only while
+      // the camera is moving, which is exactly when the CPU and GPU ground paths
+      // differ. The MB panel is meaningful throughout.
+      this.perfStats?.update();
     });
   }
 
@@ -905,6 +943,8 @@ export class BuildingView {
     // assignment took every `MeshStandardMaterial` off screen and was removed;
     // this comment still named it.)
     this.sky.dispose();
+    this.perfStats?.dispose();
+    this.perfStats = undefined;
     this.groundRampMaterial.dispose();
     this.heightTexture?.dispose();
     if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);

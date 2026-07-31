@@ -2549,3 +2549,54 @@ test.describe("revealing the sub-threshold cells", () => {
     await expect(page.locator("#details")).toBeVisible();
   });
 });
+
+/**
+ * W14 / DEC-R3-9, DEC-R3-18 — the performance panels.
+ *
+ * THIS ITEM SHIPS THE INSTRUMENT; it does not take the measurement. The
+ * CPU-vs-GPU comparison the note asked for happens on a phone, which is why the
+ * control is a switch rather than a URL parameter.
+ */
+test.describe("the perf overlay", () => {
+  test("mounts on demand and leaves the scene alone", async ({ page }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const panels = page.locator("#scene .perf-stats-overlay");
+    await expect(panels).toHaveCount(0);
+
+    /** Non-background pixels, so "the scene is unchanged" is a real claim. */
+    const painted = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        if (!(el instanceof HTMLCanvasElement)) return -1;
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return -1;
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] + data[i + 1] + data[i + 2] > 0x11 + 0x13 + 0x1a + 60) {
+            count++;
+          }
+        }
+        return count;
+      });
+
+    const before = await painted();
+    await page.locator("#perf-stats").check();
+
+    // The panels are DOM over the canvas, so the rendered scene must not move —
+    // an overlay that changed the picture would corrupt the very comparison it
+    // exists to support.
+    await expect(panels).toHaveCount(1);
+    expect(Math.abs((await painted()) - before)).toBeLessThan(before * 0.02);
+
+    await page.locator("#perf-stats").uncheck();
+    await expect(panels).toHaveCount(0);
+  });
+});

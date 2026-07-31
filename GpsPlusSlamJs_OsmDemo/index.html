@@ -418,6 +418,13 @@
         ground
         <select id="ground-mode"></select>
       </label>
+      <!-- A DIAGNOSTIC, beside the height ramp rather than inside the layer
+           registry: it draws nothing in the scene. Off by default (DEC-R3-18) so
+           the demo's default picture is unchanged. -->
+      <label class="layer-toggle" id="perf-stats-label">
+        <input type="checkbox" id="perf-stats" />
+        perf
+      </label>
       <span class="hint">click the map to move</span>
       <span id="status">starting…</span>
       <div id="legend"></div>

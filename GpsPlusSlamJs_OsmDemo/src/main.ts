@@ -182,6 +182,17 @@ async function main(): Promise<void> {
     store.dispatch(actions.groundModeChanged(groundPicker.value));
   });
 
+  // THE PERF PANELS (W14, DEC-R3-18). Its own switch rather than a layer — it
+  // draws nothing in the scene — and off by default, so the demo's default
+  // picture is unchanged. A switch rather than a URL parameter because the
+  // comparison it exists for happens on the phone, where a query string is
+  // unusable. Local rather than in the store: nothing else has to agree about
+  // it, unlike the ground mode, which the layer switches also read.
+  const perfToggle = el<HTMLInputElement>("perf-stats");
+  perfToggle.addEventListener("change", () => {
+    buildingView.setPerfOverlay(perfToggle.checked);
+  });
+
   const legendView = new LegendView({ container: el("legend") });
   const detailsPanel = new DetailsPanel({
     container: el("details"),
