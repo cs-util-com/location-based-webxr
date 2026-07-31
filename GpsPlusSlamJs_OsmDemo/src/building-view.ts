@@ -169,6 +169,10 @@ export class BuildingView {
   private frame: number | undefined;
   /** The affordance grid, kept separate so `clear()` does not drop it. */
   private cellMesh: THREE.Mesh | undefined;
+  /** The outline-treated cells' boundaries (W13). Lifecycle follows the grid. */
+  private cellOutlines:
+    | THREE.LineSegments<THREE.BufferGeometry, THREE.Material>
+    | undefined;
   /** Triangle index → cell id for the current grid. */
   private cellForTriangle: readonly string[] = [];
   private readonly raycaster = new THREE.Raycaster();
@@ -661,6 +665,37 @@ export class BuildingView {
       disposeMesh(this.cellMesh);
       this.cellMesh = undefined;
     }
+    if (this.cellOutlines !== undefined) {
+      this.scene.remove(this.cellOutlines);
+      this.cellOutlines.geometry.dispose();
+      this.cellOutlines.material.dispose();
+      this.cellOutlines = undefined;
+    }
+    // THE OUTLINE HALF (W13, DEC-R3-16). An `identity` cell says "no rule ever
+    // mentioned this ground", and DEC-7 draws that as an outline in 2D because
+    // the UNFILLEDNESS is the statement. A filled hexagon cannot say it, so the
+    // 3D grid draws the boundary and leaves the face invisible — see
+    // `cell-mesh.ts` for why the face is still there at all.
+    if (mesh.linePositions.length > 0) {
+      const outlineGeometry = new THREE.BufferGeometry();
+      outlineGeometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(mesh.linePositions, 3),
+      );
+      outlineGeometry.setAttribute(
+        "color",
+        new THREE.BufferAttribute(mesh.lineColors, 3),
+      );
+      this.cellOutlines = new THREE.LineSegments(
+        outlineGeometry,
+        new THREE.LineBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.9,
+        }),
+      );
+      this.scene.add(this.cellOutlines);
+    }
     this.cellForTriangle = mesh.cellForTriangle;
     if (mesh.indices.length === 0) {
       this.requestFrame();
@@ -672,7 +707,9 @@ export class BuildingView {
       "position",
       new THREE.BufferAttribute(mesh.positions, 3),
     );
-    geometry.setAttribute("color", new THREE.BufferAttribute(mesh.colors, 3));
+    // FOUR components. An outline-treated cell carries alpha 0, so its face is
+    // present for picking and invisible on screen (DEC-R3-21).
+    geometry.setAttribute("color", new THREE.BufferAttribute(mesh.colors, 4));
     geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     this.cellMesh = new THREE.Mesh(
       geometry,
@@ -872,6 +909,11 @@ export class BuildingView {
     this.heightTexture?.dispose();
     if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
     this.cellMesh = undefined;
+    if (this.cellOutlines !== undefined) {
+      this.cellOutlines.geometry.dispose();
+      this.cellOutlines.material.dispose();
+    }
+    this.cellOutlines = undefined;
     this.renderer.dispose();
   }
 }

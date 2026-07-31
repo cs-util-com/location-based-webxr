@@ -2490,3 +2490,62 @@ test.describe("the legend", () => {
     });
   });
 });
+
+/**
+ * W13 / finding R3-8 — "show cells below the threshold does nothing".
+ *
+ * The switch was wired correctly the whole time. What it revealed was
+ * near-invisible: a 1 px 50 %-opacity dashed outline on the map, and in 3D every
+ * sub-threshold cell painted at the ramp's darkest stop over dark ground.
+ */
+test.describe("revealing the sub-threshold cells", () => {
+  test("changes BOTH views, in both directions", async ({ page }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const canvas = page.locator("#scene canvas");
+    const shot = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+      });
+    await expect(canvas).toBeVisible();
+
+    const cells = page.locator("#map path.affordance-cell");
+    const before2d = await cells.count();
+    const before3d = await shot();
+
+    await page.locator("#show-below").check();
+
+    // 2D: more cells on screen. 3D: a different picture. Both halves, because
+    // the reported symptom was that nothing appeared to happen at all.
+    await expect.poll(() => cells.count()).toBeGreaterThan(before2d);
+    await expect.poll(shot, REPAINT).not.toBe(before3d);
+
+    // AND BACK, which is the half that catches a redraw that only ever adds.
+    await page.locator("#show-below").uncheck();
+    await expect.poll(() => cells.count()).toBe(before2d);
+  });
+
+  test("an identity cell can still be clicked to ask why", async ({ page }) => {
+    // DEC-7's stated reason for revealing these cells at all: a hidden cell is
+    // the one cell you cannot click to ask why. W13 changes the identity band's
+    // TREATMENT — outline, not fill — and DEC-R3-21 keeps it interrogable.
+    //
+    // ASSERTED ON THE MAP, where a specific band can be addressed by class. The
+    // 3D half of the same guarantee is the invisible pick face, which
+    // `cell-mesh.test.ts` pins directly: a canvas click cannot be aimed at a
+    // particular band without solving for the projection first.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#show-below").check();
+    const identity = page.locator("#map path.affordance-cell-identity").first();
+    await expect(identity).toBeVisible();
+
+    await identity.click({ force: true });
+    await expect(page.locator("#details")).toBeVisible();
+  });
+});

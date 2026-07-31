@@ -62,6 +62,56 @@ export function classifyScore(
   return "below";
 }
 
+/**
+ * How a band is DRAWN — the one answer both views read (W13, DEC-R3-16).
+ *
+ * A TREATMENT RATHER THAN A COLOUR, because one of the four bands is not a
+ * colour. DEC-7 draws `identity` as an OUTLINE — `fill: false` — and the
+ * unfilledness IS the statement: "no rule said anything here" must not paint a
+ * claim the data does not support. A solid hexagon cannot equal "no fill", so
+ * "one function, two consumers" is achievable for three bands and is a category
+ * error for the fourth unless the shared answer carries the KIND as well.
+ *
+ * Before this existed the 3D grid coloured every drawn cell through
+ * `heatColour`, which returns the ramp's darkest stop for ANY score at or below
+ * the threshold — so a veto, an identity and a below-bar cell were one
+ * near-black colour in 3D and red, dashed-outline and dim on the map. The file
+ * claimed both views applied the same rule; that was true of WHICH cells are
+ * drawn and false of what they look like.
+ */
+export interface BandTreatment {
+  readonly kind: "fill" | "outline";
+  /** `#rrggbb`. The fill colour, or the stroke for an outline. */
+  readonly colour: string;
+}
+
+/**
+ * The treatment for one band — the shared answer.
+ *
+ * `ramp` needs the score and the scale; the other three are categorical and
+ * ignore both. Taking them anyway keeps every caller's call site identical,
+ * which is what stops a caller from special-casing one band and drifting.
+ */
+export function bandTreatment(
+  band: LegendStopKind,
+  score: number,
+  scale: HeatScale,
+): BandTreatment {
+  switch (band) {
+    case "ramp":
+      return { kind: "fill", colour: toHex(heatColour(score, scale)) };
+    case "veto":
+      // Solid and off-palette: a veto is a categorical statement, not a low
+      // score, so it must not read as the dark end of the ramp.
+      return { kind: "fill", colour: VETO_COLOUR };
+    case "identity":
+      // OUTLINE ONLY, in both views. This is DEC-7's whole point.
+      return { kind: "outline", colour: IDENTITY_COLOUR };
+    case "below":
+      return { kind: "fill", colour: BELOW_THRESHOLD_COLOUR };
+  }
+}
+
 export interface LegendStop {
   readonly kind: LegendStopKind;
   /** `#rrggbb`. For an outline-only stop this is the stroke, not a fill. */
@@ -108,13 +158,17 @@ const RAMP_STOPS = 7;
  * ("never here"), not a low score, and colouring it as the ramp's dark end
  * would put it on the same axis as a merely-weak cell.
  */
-export const VETO_COLOUR = "#c8304a";
+const VETO_COLOUR = "#c8304a";
 
 /** "No rule said anything here" — outline only, so it asserts nothing. */
-export const IDENTITY_COLOUR = "#6f7995";
+const IDENTITY_COLOUR = "#6f7995";
 
 /** Scored, but under the bar. A dimmed relative of the ramp's dark end. */
-export const BELOW_THRESHOLD_COLOUR = "#3a3358";
+const BELOW_THRESHOLD_COLOUR = "#3a3358";
+
+// NOT EXPORTED ANY MORE (W13): `bandTreatment` is the one way to ask what a band
+// looks like, so the raw constants have no caller outside this file. Exporting
+// them again would be re-opening the second colour path this item closed.
 
 /** Multiplicative scores produce 3.6000000000000005; round for display only. */
 function round(value: number): number {

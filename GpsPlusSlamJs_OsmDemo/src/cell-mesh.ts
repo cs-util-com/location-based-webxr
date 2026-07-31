@@ -26,9 +26,9 @@
 import { cellToBoundary } from "h3-js";
 import type { CellScore, EnuFrame } from "gps-plus-slam-osm";
 
-import { heatColour, type HeatScale } from "./heat-colours.js";
+import { type HeatScale } from "./heat-colours.js";
 import { groundLift } from "./layer-order.js";
-import { classifyScore } from "./legend-model.js";
+import { bandTreatment, classifyScore } from "./legend-model.js";
 
 /**
  * Corners in an H3 boundary, and why this is not a constant.
@@ -84,11 +84,47 @@ export interface CellMesh {
   /** The cells actually drawn, in the order their triangles appear. */
   readonly cells: readonly string[];
   readonly positions: Float32Array;
-  /** Per-vertex RGB, 0..1 — flat per hexagon, never interpolated across one. */
+  /**
+   * Per-vertex RGBA, 0..1 — flat per hexagon, never interpolated across one.
+   *
+   * ALPHA ARRIVED WITH W13, and it carries one specific case: an `identity` cell
+   * is drawn as an OUTLINE (DEC-R3-16), so its face must not be painted — but it
+   * must still exist, because picking resolves `faceIndex` against these
+   * triangles and DEC-7's whole reason for revealing sub-threshold cells is that
+   * a hidden cell is the one cell you cannot click to ask why (DEC-R3-21).
+   * Alpha 0 is a face that is present and invisible.
+   */
   readonly colors: Float32Array;
   readonly indices: Uint32Array;
   /** Triangle index → cell id. What a raycast's `faceIndex` is looked up in. */
   readonly cellForTriangle: readonly string[];
+  /**
+   * Boundary segments for the OUTLINE-treated cells, as line pairs (W13).
+   *
+   * Separate buffers rather than degenerate triangles: an outline is a different
+   * primitive, and three draws it with `LineSegments`. Empty when no drawn cell
+   * is outline-treated, which is every case where `showBelowThreshold` is off.
+   */
+  readonly linePositions: Float32Array;
+  /** Per-vertex RGB for {@link linePositions}. */
+  readonly lineColors: Float32Array;
+}
+
+/**
+ * `#rrggbb` to 0-255 components.
+ *
+ * The shared band answer is a hex string because the 2D map needs one for
+ * Leaflet; the 3D grid needs numbers. Converting here rather than making the
+ * shared function return both keeps ONE representation authoritative — two
+ * would be the drift this whole item is about.
+ */
+function fromHex(colour: string): { r: number; g: number; b: number } {
+  const value = Number.parseInt(colour.slice(1), 16);
+  return {
+    r: (value >> 16) & 0xff,
+    g: (value >> 8) & 0xff,
+    b: value & 0xff,
+  };
 }
 
 /** A grid with nothing in it — what a cleared or empty snapshot draws. */
@@ -98,6 +134,8 @@ export const EMPTY_CELL_MESH: CellMesh = {
   colors: new Float32Array(0),
   indices: new Uint32Array(0),
   cellForTriangle: [],
+  linePositions: new Float32Array(0),
+  lineColors: new Float32Array(0),
 };
 
 /**
@@ -136,27 +174,63 @@ export function buildCellMesh(
   );
 
   const positions = new Float32Array(vertexCount * 3);
-  const colors = new Float32Array(vertexCount * 3);
+  // FOUR components: see `CellMesh.colors` for why an alpha channel exists.
+  const colors = new Float32Array(vertexCount * 4);
   const indices = new Uint32Array(triangleCount * 3);
   const cellForTriangle: string[] = [];
 
+  /** Outline segments, collected as cells are written rather than in a second pass. */
+  const linePoints: number[] = [];
+  const lineTints: number[] = [];
+
   let v = 0;
+  let c = 0;
   let i = 0;
   /** First vertex of the cell being written — accumulated, not multiplied. */
   let base = 0;
   for (const { cell, score, boundary } of boundaries) {
-    const rgb = heatColour(score, options.scale);
+    // THE SAME ANSWER THE MAP USES (W13). This was `heatColour(score, scale)` for
+    // every band, which returns the ramp's darkest stop for anything at or below
+    // the threshold — so a veto, an identity and a below-bar cell were one
+    // near-black colour here while the map drew them red, dashed-outline and dim.
+    // This file's own comment claimed both views applied the same rule; that was
+    // true of WHICH cells are drawn and false of what they look like.
+    const band = classifyScore(score, options.threshold);
+    const treatment = bandTreatment(band, score, options.scale);
+    const rgb = fromHex(treatment.colour);
+    // An outline-treated cell keeps its face — invisible — so it stays pickable.
+    const alpha = treatment.kind === "outline" ? 0 : 1;
 
+    const corners: { x: number; y: number; z: number }[] = [];
     for (const point of boundary) {
       const enu = options.frame.toEnu({ lat: point[0], lng: point[1] });
       positions[v] = enu.x;
       positions[v + 1] = (options.heightAt?.(enu) ?? 0) + GRID_LIFT_M;
       // ENU y is north; the scene's -z is north (the mesh frame's convention).
       positions[v + 2] = -enu.y;
-      colors[v] = rgb.r / 255;
-      colors[v + 1] = rgb.g / 255;
-      colors[v + 2] = rgb.b / 255;
+      corners.push({
+        x: positions[v] ?? 0,
+        y: positions[v + 1] ?? 0,
+        z: positions[v + 2] ?? 0,
+      });
+      colors[c] = rgb.r / 255;
+      colors[c + 1] = rgb.g / 255;
+      colors[c + 2] = rgb.b / 255;
+      colors[c + 3] = alpha;
       v += 3;
+      c += 4;
+    }
+
+    if (treatment.kind === "outline") {
+      for (let k = 0; k < corners.length; k++) {
+        const from = corners[k];
+        const to = corners[(k + 1) % corners.length];
+        if (from === undefined || to === undefined) continue;
+        linePoints.push(from.x, from.y, from.z, to.x, to.y, to.z);
+        for (let end = 0; end < 2; end++) {
+          lineTints.push(rgb.r / 255, rgb.g / 255, rgb.b / 255);
+        }
+      }
     }
 
     // Triangle fan from corner 0. An H3 boundary is convex at any corner count,
@@ -177,5 +251,7 @@ export function buildCellMesh(
     colors,
     indices,
     cellForTriangle,
+    linePositions: new Float32Array(linePoints),
+    lineColors: new Float32Array(lineTints),
   };
 }

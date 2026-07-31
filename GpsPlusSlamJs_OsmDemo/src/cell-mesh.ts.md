@@ -10,7 +10,27 @@
 
 ## Invariants & assumptions
 
-- **It is the SAME grid the map draws, not a similar one.** Band rules come from `classifyScore` and colours from `heatColour` — the functions `map-view.ts` uses. A second colour path would let the two views disagree about a cell's score, and a reader who catches that disagreement has no way to know which to believe, which is worse than the 3D view not showing the grid at all (finding M3).
+- **It is the SAME grid the map draws, not a similar one.** Band rules come from
+  `classifyScore` and TREATMENTS from `bandTreatment` — the same functions
+  `map-view.ts` uses. A second colour path would let the two views disagree about
+  a cell's score, and a reader who catches that disagreement has no way to know
+  which to believe, which is worse than the 3D view not showing the grid at all
+  (finding M3).
+  - **The second half of that sentence used to say "colours from `heatColour`",
+    and it was false (W13, finding R3-8).** `heatColour` returns the ramp's
+    darkest stop for ANY score at or below the threshold, so a veto, an identity
+    and a below-bar cell were one near-black colour here while the map drew them
+    red, dashed-outline and dim. The claim was true of WHICH cells are drawn and
+    false of what they look like — which is most of why "show cells below the
+    threshold" read as doing nothing.
+- **An `identity` cell is an OUTLINE with an invisible face.** DEC-7 draws it
+  unfilled in 2D because the unfilledness is the statement, and a solid hexagon
+  cannot make it — so the boundary goes into `linePositions` and the face stays
+  in the triangle buffers at alpha 0. The face is not decoration: picking resolves
+  `faceIndex` against these triangles, and DEC-7's stated reason for revealing
+  sub-threshold cells at all is that a hidden cell is the one cell you cannot
+  click to ask why (DEC-R3-21).
+- **`colors` is RGBA, four components per vertex**, for exactly that alpha.
 - **Geometry and the pick index are built in one pass.** A raycast returns a triangle index, which is meaningless without `cellForTriangle`. Built separately they could drift, and a click would open the details panel on a confidently wrong cell.
 - **`faceIndex` is the triangle index** for an indexed `BufferGeometry`, which is exactly what `cellForTriangle` is keyed on.
 - **One merged buffer, not a mesh per cell.** A working set is ~931 cells; 931 draw calls for flat hexagons would cost more than everything else in the scene combined.

@@ -20,20 +20,13 @@ import L from "leaflet";
 import { cellToBoundary } from "h3-js";
 import type { CellScore, Region } from "gps-plus-slam-osm";
 
-import {
-  describeScale,
-  heatColour,
-  toHex,
-  type HeatScale,
-} from "./heat-colours.js";
+import { describeScale, type HeatScale } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
 import { escapeHtml } from "./escape-html.js";
 import { regionStyle } from "./region-style.js";
 import { rankContributors } from "./contributor-order.js";
 import {
-  BELOW_THRESHOLD_COLOUR,
-  IDENTITY_COLOUR,
-  VETO_COLOUR,
+  bandTreatment,
   classifyScore,
   type LegendStopKind,
 } from "./legend-model.js";
@@ -333,36 +326,43 @@ function styleForBand(
   score: number,
   scale: HeatScale,
 ): L.PathOptions {
-  switch (band) {
-    case "ramp":
-      return {
-        stroke: false,
-        fillColor: toHex(heatColour(score, scale)),
-        fillOpacity: 0.55,
-      };
-    case "veto":
-      // Solid and off-palette: a veto is a categorical statement, not a low
-      // score, so it must not read as the dark end of the ramp.
-      return { stroke: false, fillColor: VETO_COLOUR, fillOpacity: 0.5 };
-    case "identity":
-      // OUTLINE ONLY. "No rule said anything here" must not paint a claim the
-      // data does not support — the assertion this file has always made in a
-      // comment while the code skipped a broader set than the comment described.
-      return {
-        stroke: true,
-        color: IDENTITY_COLOUR,
-        weight: 1,
-        opacity: 0.5,
-        dashArray: "2 3",
-        fill: false,
-      };
-    case "below":
-      return {
-        stroke: false,
-        fillColor: BELOW_THRESHOLD_COLOUR,
-        fillOpacity: 0.45,
-      };
+  // THE COLOUR AND THE KIND COME FROM THE SHARED ANSWER (W13). This function used
+  // to hold its own copy of both, and the 3D grid held a third that was simply
+  // wrong — every sub-threshold cell painted at the ramp's darkest stop. What
+  // stays here is Leaflet's vocabulary for the two kinds, which is this view's
+  // business and nobody else's.
+  const treatment = bandTreatment(band, score, scale);
+  if (treatment.kind === "outline") {
+    // STRENGTHENED (DEC-R3-11). This was 1 px at 50 % opacity, dashed — over an
+    // OSM raster basemap at zoom 18 that is close to invisible, which is most of
+    // why "show cells below the threshold" read as doing nothing. It stays
+    // UNFILLED, because a fill is the thing DEC-7 forbade; visibility is not.
+    return {
+      stroke: true,
+      color: treatment.colour,
+      weight: 2,
+      opacity: 0.9,
+      dashArray: "3 2",
+      // AN INVISIBLE FILL, NOT `fill: false`, and this is a hit-testing fix
+      // rather than a visual one (DEC-R3-21). An SVG path with `fill: none`
+      // hit-tests only its STROKE, so an outline-only cell was clickable on a
+      // 2 px border and nowhere else — which made DEC-7's own justification for
+      // revealing these cells ("a hidden cell is the one cell you cannot click
+      // to ask why") false for the identity band from the moment it shipped.
+      // Found by the e2e written for the 3D half of the same guarantee.
+      //
+      // `fillOpacity: 0` paints nothing, so the band still asserts nothing.
+      fill: true,
+      fillOpacity: 0,
+    };
   }
+  return {
+    stroke: false,
+    fillColor: treatment.colour,
+    // The ramp reads as a heat value and the two flat bands as categorical
+    // statements, so the ramp keeps a slightly stronger fill.
+    fillOpacity: band === "ramp" ? 0.55 : 0.5,
+  };
 }
 
 /** How many contributors the popup lists before deferring to the panel. */

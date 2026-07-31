@@ -22,6 +22,7 @@ import { cellToBoundary, latLngToCell } from "h3-js";
 
 import { buildCellMesh } from "./cell-mesh.js";
 import { heatScale } from "./heat-colours.js";
+import { bandTreatment } from "./legend-model.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 const FRAME = enuFrameAt(COLOGNE);
@@ -88,10 +89,13 @@ describe("buildCellMesh", () => {
   it("gives every vertex of a hexagon the same colour", () => {
     // Per-vertex interpolation across one cell would imply a gradient inside a
     // cell, which is a claim about sub-cell variation the data does not make.
+    // FOUR components per vertex since W13 — the alpha channel is how an
+    // outline-treated cell keeps a face that is present for picking and
+    // invisible on screen.
     const mesh = build([cellAt(50.9413, 6.9583, 4)]);
-    const first = mesh.colors.slice(0, 3);
+    const first = mesh.colors.slice(0, 4);
     for (let i = 1; i < 6; i++) {
-      expect([...mesh.colors.slice(i * 3, i * 3 + 3)]).toEqual([...first]);
+      expect([...mesh.colors.slice(i * 4, i * 4 + 4)]).toEqual([...first]);
     }
   });
 
@@ -205,5 +209,90 @@ describe("cells whose H3 boundary is not six corners", () => {
     for (const index of mesh.indices) {
       expect(index).toBeLessThan(mesh.positions.length / 3);
     }
+  });
+});
+
+describe("the bands mean the same thing in both views (W13, finding R3-8)", () => {
+  /**
+   * Why these tests matter:
+   * The reported symptom was that "show cells below the threshold" does nothing.
+   * The switch was wired correctly the whole time; what it revealed was
+   * invisible. In 3D every sub-threshold cell was painted through `heatColour`,
+   * which returns the ramp's DARKEST stop for anything at or below the
+   * threshold — so a veto, an identity and a below-bar cell were one near-black
+   * colour over dark ground, while the map drew them red, dashed-outline and
+   * dim. This file's own comment claimed both views applied the same rule; that
+   * was true of which cells are drawn and false of what they look like.
+   */
+  const AT = { lat: 50.9413, lng: 6.9583 };
+
+  /** A cell scoring exactly `score` for the drawn category. */
+  const scored = (score: number) => cellAt(AT.lat, AT.lng, score);
+
+  it("paints a veto in the map's veto colour, not at the ramp's floor", () => {
+    const mesh = build([scored(0)], true);
+    const treatment = bandTreatment("veto", 0, { threshold: 1, max: 8 });
+    const expected = Number.parseInt(treatment.colour.slice(1), 16);
+
+    expect(Math.round((mesh.colors[0] ?? 0) * 255)).toBe(
+      (expected >> 16) & 0xff,
+    );
+    expect(Math.round((mesh.colors[1] ?? 0) * 255)).toBe(
+      (expected >> 8) & 0xff,
+    );
+    expect(Math.round((mesh.colors[2] ?? 0) * 255)).toBe(expected & 0xff);
+  });
+
+  it("draws an identity cell as an OUTLINE, with no visible face", () => {
+    // DEC-R3-16: the unfilledness IS the statement, and a solid hexagon cannot
+    // make it. The face survives at alpha 0 — see the next test for why.
+    const mesh = build([scored(1)], true);
+
+    expect(mesh.linePositions.length).toBeGreaterThan(0);
+    for (let i = 3; i < mesh.colors.length; i += 4) {
+      expect(mesh.colors[i]).toBe(0);
+    }
+  });
+
+  it("keeps the identity cell PICKABLE, which DEC-7 requires", () => {
+    // DEC-R3-21. Picking resolves `faceIndex` against these triangles, so an
+    // outline with no face would make identity the one band that cannot be
+    // clicked — while `veto`, a fill, still could. DEC-7's stated reason for
+    // revealing sub-threshold cells at all is that a hidden cell is the one cell
+    // you cannot click to ask why, so losing it for one band is this round's own
+    // finding in a new place.
+    const mesh = build([scored(1)], true);
+
+    expect(mesh.indices.length).toBeGreaterThan(0);
+    expect(mesh.cellForTriangle.length).toBeGreaterThan(0);
+    expect(new Set(mesh.cellForTriangle).size).toBe(1);
+  });
+
+  it("gives a mixed snapshot more than one colour", () => {
+    // The assertion that would have caught the defect. A "cells were added" test
+    // passes with every one of them painted the same near-black.
+    const mesh = build(
+      [
+        cellAt(AT.lat, AT.lng, 0),
+        cellAt(AT.lat + 0.0004, AT.lng, 1),
+        cellAt(AT.lat + 0.0008, AT.lng, 8),
+      ],
+      true,
+    );
+
+    const distinct = new Set<string>();
+    for (let i = 0; i < mesh.colors.length; i += 4) {
+      distinct.add(
+        [mesh.colors[i], mesh.colors[i + 1], mesh.colors[i + 2]].join(","),
+      );
+    }
+    expect(distinct.size).toBeGreaterThan(1);
+  });
+
+  it("draws no outlines at all when nothing is outline-treated", () => {
+    // The common case: above-threshold cells are fills, so the line buffers stay
+    // empty and the view adds no second object.
+    const mesh = build([scored(8)]);
+    expect(mesh.linePositions).toHaveLength(0);
   });
 });
