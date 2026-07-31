@@ -93,9 +93,17 @@ const APP_FORMAT_COMMAND =
  * chains, no coverage on unit tests, framework build split into its own
  * stage row before e2e (speedup plan Phase A.2).
  *
+ * @param {string[]} [extraCycleRoots] - additional dpdm entry points, for
+ *   packages whose graph has a root the app entry cannot reach. A module worker
+ *   is spawned from a URL string, and that is the ONE reference dpdm cannot
+ *   follow — so without its own root, everything the worker owns exclusively is
+ *   outside the cycle gate with nothing reporting it (PR #241).
+ *   `projects.test.mjs` derives the required roots from the source and fails if
+ *   one is missing.
  * @returns {StageConfig[]}
  */
-function demoAppStages() {
+function demoAppStages(extraCycleRoots = []) {
+  const cycleRoots = ['./src/main.ts', ...extraCycleRoots].join(' ');
   return [
     { name: 'format', command: APP_FORMAT_COMMAND, counts: null },
     {
@@ -116,7 +124,7 @@ function demoAppStages() {
     },
     {
       name: 'check:cycles',
-      command: 'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts',
+      command: `dpdm -T --exit-code circular:1 --no-warning --no-tree ${cycleRoots}`,
       counts: null,
     },
     {
@@ -320,8 +328,10 @@ export const PROJECTS = [
       },
       {
         name: 'check:cycles',
+        // Both module workers are cycle roots of their own: they are spawned
+        // from URL strings, which dpdm cannot follow from `main.ts` (PR #241).
         command:
-          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts',
+          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts ./src/recording/image-quality.worker.ts ./src/workers/occlusion-mesher.worker.ts',
         counts: null,
       },
       {
@@ -404,7 +414,12 @@ export const PROJECTS = [
     chainNames: ['test:core', 'check:all'],
     stages: [
       BUILD_OSM_STAGE,
-      ...demoAppStages().filter((stage) => stage.name !== 'build:framework'),
+      // The worker entry is a second cycle root: `main.ts` reaches it only
+      // through `new Worker(new URL(...))`, so `demo-worker.ts` and the three
+      // modules it alone imports were outside the cycle gate until PR #241.
+      ...demoAppStages(['./src/worker/demo-worker.ts']).filter(
+        (stage) => stage.name !== 'build:framework'
+      ),
     ],
   },
   demoAppProject('GpsPlusSlamJs_QrTrackingDemo'),

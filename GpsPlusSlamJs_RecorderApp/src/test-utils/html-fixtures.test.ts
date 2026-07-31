@@ -254,9 +254,9 @@ describe('html-fixtures', () => {
       // Why: user feedback 2026-07-27 — swiping the scrollable settings panel
       // dragged whatever slider sat under the finger. `pan-y` hands vertical
       // panning back to the scroll container (and makes the browser cancel the
-      // slider's gesture); src/ui/slider-scroll-guard.ts protects the value
-      // itself. Losing this rule brings the "cannot scroll the panel" half of
-      // the bug straight back.
+      // slider's gesture); the framework's utils/slider-scroll-guard protects
+      // the value itself. Losing this rule brings the "cannot scroll the panel"
+      // half of the bug straight back.
       const css = loadAppCss();
       const rangeRule = css.match(/input\[type='range'\]\s*\{[^}]*?\}/s);
       expect(rangeRule).not.toBeNull();
