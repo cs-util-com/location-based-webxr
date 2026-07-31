@@ -46,10 +46,48 @@ to the outer rings that contain them.
 
 ## Complexity
 
-`stitchRings` is O(n²) in the number of segments in the worst case (each
-extension rescans the pool). Real relations have tens of members, not
-thousands, and the constant is tiny; if a pathological relation ever shows up,
-the fix is an endpoint hash map, not a library.
+`stitchRings` is **linear in the total number of points**, and was made so on
+2026-07-31. It previously carried two quadratic terms, and the note that used
+to stand here — "real relations have tens of members, not thousands ... if a
+pathological relation ever shows up, the fix is an endpoint hash map" — had the
+right diagnosis and the wrong frequency. Profiling `buildFeatureIndex` found
+`attach` to be the largest own-code frame in the whole profile: the
+`building-block` fixture is one ordinary Cologne city block and contains a
+316-member, 26 778-point boundary relation, and `beach` a 217-member one. Any
+city bbox clipping an administrative boundary gets one.
+
+The two terms, and what replaced each:
+
+- **The pool rescan.** `growChain` walked the whole pool after every attach.
+  Replaced by `indexEndpoints`, a `Map` from endpoint key to the pool indices
+  of the segments touching it, so a candidate is a hash lookup.
+  - The lookup returns the **lowest live index**, which is what makes the
+    rewrite output-equivalent: the old scan walked in index order and took the
+    first segment matching any of `attach`'s four cases, so preferring (say)
+    tail matches globally would pick differently wherever more than one
+    segment fits.
+  - Buckets are compacted in place as consumed entries are found, so repeated
+    lookups do not re-walk dead indices.
+  - `endpointKey` returns `undefined` for NaN, because `positionsEqual` is
+    `===` and `NaN !== NaN` — stringifying would give every NaN endpoint the
+    same key and fabricate joins. Infinity stays keyed: `Infinity === Infinity`,
+    and the old scan did join on it.
+- **The chain copy.** `attach` rebuilt `[...chain, ...segment]` on every join,
+  copying the whole accumulated chain — so the last attaches of a 26 778-point
+  relation each copied ~26 000 points. Replaced by `Chain`, held open at both
+  ends (`head` stores the points preceding the seed, reversed), so both ends
+  grow by `push` and nothing is copied until `materialise`.
+
+Measured on devbox-win11, medians:
+
+- `stitchRings`, building-block (315 segments, 26 778 points): 33.5 → 1.11 ms.
+- `stitchRings`, beach (217 segments, 20 135 points): 12.6 → 0.66 ms.
+- Synthetic, shuffled, 64 points per segment, 50 / 200 / 800 segments:
+  0.39 / 5.3 / 137 ms → 0.12 / 0.45 / 2.54 ms.
+- Through `buildFeatureIndex`, the ranked hot path: building-block
+  112.6 → 88.7 ms (−21 %), beach 20.6 → 9.2 ms (−55 %). `park` and
+  `street-corner` are unchanged within noise, because neither holds a large
+  relation.
 
 ## Examples
 
@@ -72,4 +110,22 @@ const polygons = groupRingsIntoPolygons(stitched.rings, innerRings);
   ring; order-independence; disjoint rings never merge; a missing segment
   reports failure; point-in-ring translation invariance; hole assignment by
   containment and by smallest-containing-ring; area sign/magnitude behaviour.
+- `multipolygon-builder.test.ts` — the cases the property generators cannot
+  reach, all added with the 2026-07-31 rewrite because they are where a
+  faster candidate lookup could silently diverge: the lowest-index tie-break
+  when two segments could attach at the same end; tail-attach winning over
+  head-attach within one segment; an already-closed segment being absorbed into
+  an open chain; NaN endpoints never joining; correctness at 1600 segments; and
+  a wall-clock budget that the previous quadratic implementation could not meet
+  (1063 ms against a 500 ms budget, versus 5.5 ms now).
+  - The budget is deliberately **absolute, not a ratio**. The first attempt
+    compared 200 against 800 segments and expected ~4×; it measured 17×,
+    because at 200 segments the work is a few hundred microseconds and
+    dividing two noisy sub-millisecond numbers measures the noise.
+- Equivalence of the rewrite was additionally checked by a one-off differential
+  run against the previous implementation — 40 000 generated cases covering
+  branching fans, duplicate segments, closed/open mixes, unclosable chains and
+  NaN/`-0`/Infinity coordinates — with zero output differences. Not checked in:
+  it needs a second copy of the algorithm, and the cases worth keeping were
+  lifted into `multipolygon-builder.test.ts`.
 - Example coverage of the stitcher through `osm-geometry.test.ts`.
