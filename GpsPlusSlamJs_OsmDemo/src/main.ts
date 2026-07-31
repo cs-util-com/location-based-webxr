@@ -30,6 +30,7 @@ import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
 
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
+import { describeDrawCost } from "./draw-cost.js";
 import { describeExtent } from "./fetch-extent.js";
 import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
@@ -572,6 +573,11 @@ async function main(): Promise<void> {
       // the same" is not a measurement — this repo has already had one constant
       // justified by a remembered figure that did not reproduce.
       `ground ${terrainCost.mode} ${terrainCost.ms} ms`,
+      // W10 (N5). Every other counter here describes what was BUILT; this is
+      // what the GPU was actually asked to do, which is the number R4-17's
+      // "are the meshes as efficient as possible" turns on and the one Stage 3
+      // trades against when it chunks the geometry for culling.
+      describeDrawCost(buildingView.drawCost()),
       describeExtent(snapshot.loadedTiles),
       terrainNote,
       tableNote,

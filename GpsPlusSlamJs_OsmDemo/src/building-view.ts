@@ -30,6 +30,7 @@ import { TERRAIN_EXTENT_M, type Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
+import type { DrawCost } from "./draw-cost.js";
 import { resolvePick, type Pick } from "./pick.js";
 import { cameraAzimuth, sunDirection } from "./sun.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
@@ -215,6 +216,16 @@ export class BuildingView {
     /** 1 while the GPU path owns displacement, 0 while the CPU path does. */
     uDisplace: { value: 0 },
   };
+  /**
+   * What the last frame cost the GPU (W10, N5).
+   *
+   * READ AFTER THE RENDER, not derived from the scene graph. The scene graph
+   * says what was BUILT; `renderer.info.render` says what was actually issued
+   * after frustum culling — which is the whole difference Stage 3's chunking is
+   * meant to create, and the number that would otherwise have to be argued.
+   */
+  private lastDrawCost: DrawCost | undefined;
+
   /** Milliseconds the last terrain application took, for the A/B comparison. */
   private lastTerrainMs = 0;
   /**
@@ -826,6 +837,13 @@ export class BuildingView {
       this.frame = undefined;
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
+      // Captured immediately after the render: three resets these counters at
+      // the START of each render, so any later read would describe a frame that
+      // has not happened yet.
+      this.lastDrawCost = {
+        calls: this.renderer.info.render.calls,
+        triangles: this.renderer.info.render.triangles,
+      };
       // DRIVEN FROM THE ON-DEMAND FRAME, and that is the accepted trade
       // (DEC-R3-9). This view deliberately has no permanent rAF loop — one was
       // measured to make the e2e suite ~6x slower and would burn a phone's
@@ -920,6 +938,11 @@ export class BuildingView {
    * it, and the pane would keep showing buildings that are no longer anywhere
    * in the app's state.
    */
+  /** What the last frame cost, or `undefined` before the first one (W10). */
+  drawCost(): DrawCost | undefined {
+    return this.lastDrawCost;
+  }
+
   clearScene(): void {
     this.clear();
     this.renderer.render(this.scene, this.camera);
