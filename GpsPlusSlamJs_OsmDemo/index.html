@@ -437,6 +437,15 @@
            AND the control, as the feedback asked; `header-collapse.ts` gives it
            role/tabindex/aria-expanded so it is reachable by keyboard too. -->
       <h1 id="header-toggle">OSM affordance demo</h1>
+      <!-- THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Before the category
+           picker, as the feedback asked. Its options come from the SAME table
+           the offline fixture corpus is captured from, so the places a human
+           can reach are exactly the places the suite covers. Populated from
+           `site-picker.ts`; the markup carries no place names. -->
+      <label
+        >location
+        <select id="site"></select
+      ></label>
       <label
         >category
         <select id="category"></select

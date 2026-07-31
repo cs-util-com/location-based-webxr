@@ -11,10 +11,27 @@
  * @see start-position.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
+import { siteById, type LatLng } from "gps-plus-slam-osm";
 
-/** Cologne — where the fixtures and the field tests are. */
-export const DEFAULT_START: LatLng = { lat: 50.9413, lng: 6.9583 };
+/**
+ * Cologne Cathedral — where the fixtures and the field tests are.
+ *
+ * TAKEN FROM THE CORPUS TABLE rather than written out again (W5, DEC-R4-11).
+ * A hard-coded pair here would be a seventh place: reachable by every user on
+ * every load, and covered by no fixture — which is precisely the "the place you
+ * see is not the place that is tested" gap the shared table closes.
+ *
+ * The `??` is unreachable while `cologne-cathedral` is in the table, and
+ * `sites.test.ts` asserts it is (the site is the open R3-1/R4-7 finding, so its
+ * removal would be a decision rather than an accident). It exists because the
+ * alternative to a fallback is a module-load throw in a file whose entire job is
+ * to never leave the demo without a position.
+ */
+export const DEFAULT_START: LatLng = siteById("cologne-cathedral")
+  ?.position ?? {
+  lat: 50.9413,
+  lng: 6.9583,
+};
 
 /**
  * Parses `?lat=&lng=` from a query string, falling back to the default.

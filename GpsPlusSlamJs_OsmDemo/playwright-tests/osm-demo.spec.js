@@ -251,6 +251,49 @@ test.describe("the worker", () => {
   });
 });
 
+test.describe("the location picker", () => {
+  test("moves the map and re-runs the pipeline (W5)", async ({ page }) => {
+    // WHY THIS TEST MATTERS. The unit test pins that the picker reports the
+    // right POSITION; nothing there proves the report reaches Leaflet and the
+    // store. This is the wiring half, and its failure mode is the quiet one —
+    // a picker that changes its own value and nothing else looks exactly like a
+    // picker whose site happens to have no data.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // The placeholder plus the six corpus sites. Counted here rather than
+    // named, because WHICH six is the unit test's assertion against the shared
+    // table; this only has to know the markup carries no place names of its own.
+    await expect(page.locator("#site option")).toHaveCount(7);
+
+    /** Basemap tiles requested from the moment the choice is made. */
+    const tilesAfter = [];
+    const tilesBefore = new Set();
+    page.on("request", (request) => {
+      const url = request.url();
+      if (!url.includes("tile.openstreetmap.org")) return;
+      tilesAfter.push(url);
+    });
+    for (const url of tilesAfter.splice(0)) tilesBefore.add(url);
+
+    await page.selectOption("#site", "heidelberg-altstadt");
+
+    // Leaflet requests tiles for wherever it now is. Heidelberg is ~200 km from
+    // Cologne, so at zoom 18 not one tile of the previous view can be reused —
+    // a map that did not move would request nothing new at all.
+    await expect
+      .poll(() => tilesAfter.filter((url) => !tilesBefore.has(url)).length, {
+        timeout: 15000,
+      })
+      .toBeGreaterThan(0);
+
+    // And the data pipeline re-ran rather than only the basemap panning.
+    await waitForRefresh(page);
+    await expect(page.locator("#status")).toContainText(/\d+ cells/);
+  });
+});
+
 test.describe("the header", () => {
   test.use({ viewport: { width: 390, height: 780 } });
 

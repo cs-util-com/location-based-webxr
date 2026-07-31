@@ -58,6 +58,7 @@ import {
   parseGroundMode,
 } from "./ground-mode.js";
 import { attachLayerToggles } from "./layer-toggles.js";
+import { attachSitePicker } from "./site-picker.js";
 import { isLayerEnabled } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
@@ -200,6 +201,20 @@ async function main(): Promise<void> {
   const detailsPanel = new DetailsPanel({
     container: el("details"),
     onClose: () => store.dispatch(actions.cellSelected(undefined)),
+  });
+
+  // THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Choosing a site is the same
+  // intent as clicking the map or pressing locate — "the user is here" — so all
+  // three go through ONE action and there is no second refresh path to disagree
+  // with the first. It recentres the map for the same reason the locate path
+  // does: this is a request to GO somewhere, unlike a map click, which already
+  // happens where the user is looking.
+  attachSitePicker({
+    select: el<HTMLSelectElement>("site"),
+    onChoose: (position) => {
+      mapView.centreOn(position);
+      store.dispatch(actions.positionChanged(position));
+    },
   });
 
   new LocateControl({
