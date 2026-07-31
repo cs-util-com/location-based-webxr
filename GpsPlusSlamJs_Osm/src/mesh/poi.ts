@@ -44,7 +44,7 @@ import type { EnuFrame, EnuPoint } from "./enu.js";
  * not something a user points at to ask what it is, and marking everything would
  * bury the ones that are.
  */
-const POI_KEYS = [
+export const POI_KEYS = [
   "amenity",
   "shop",
   "tourism",

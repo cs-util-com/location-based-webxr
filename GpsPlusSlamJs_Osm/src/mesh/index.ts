@@ -56,7 +56,25 @@ export type { BuildRoadsOptions, RoadRibbon } from "./roads.js";
 export { buildRoads, isRoad, roadWidthM } from "./roads.js";
 
 export type { BuildPoiOptions, PoiMarker } from "./poi.js";
-export { buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";
+export { POI_KEYS, buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";
+
+export type { PoiModel } from "./poi-models.js";
+export { POI_MODELS, poiModelFor } from "./poi-models.js";
+export {
+  box,
+  canopy,
+  composed,
+  hut,
+  postWithHead,
+  prism,
+  slabOnLegs,
+} from "./poi-primitives.js";
+export type { RankedPoiKind } from "./poi-ranking.js";
+export {
+  POI_MODEL_LIMIT,
+  parseUsageCount,
+  rankPoiKinds,
+} from "./poi-ranking.js";
 
 export type { BuildTreesOptions, TreePlacement, TreeVariant } from "./trees.js";
 export {
