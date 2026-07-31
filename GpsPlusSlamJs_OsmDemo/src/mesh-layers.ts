@@ -300,6 +300,20 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
                 // pinned by `mesh-orientation.test.ts` instead of by looking.
                 side: THREE.DoubleSide,
                 flatShading: true,
+                // REFLECTIVE, and this was an oversight rather than a decision
+                // (W13, R4-15, N3). DEC-R2-1 made the GROUND reflective so facet
+                // edges show as a highlight slides across them while the camera
+                // moves; the buildings kept `MeshStandardMaterial`'s default
+                // `roughness: 1.0`, which is fully diffuse and has no specular
+                // lobe at all. Nothing in the record says buildings should stay
+                // matte.
+                //
+                // 0.65, NOT the ground's 0.42. A building at 0.42 reads as glass
+                // or polished stone, which for a residential block is a
+                // different kind of wrong — the ground gets away with it because
+                // wet-ish ground is plausible.
+                roughness: 0.65,
+                metalness: 0,
               }),
             ),
           ],

@@ -252,6 +252,54 @@ describe("poiMarkerPosition", () => {
   });
 });
 
+describe("materials — what the light has to work with (W13)", () => {
+  /**
+   * The material of the only object drawn when just `layer` is on.
+   *
+   * Every OTHER layer is explicitly off: an omitted layer falls back to its
+   * row's `defaultOn`, so `{ plates: true }` alone still draws the buildings and
+   * `objects[0]` is then the wrong material entirely — which is how the first
+   * version of this helper "proved" the plates were 0.65.
+   */
+  function materialOf(layer: "buildings" | "plates" | "roads") {
+    const { objects } = drawMeshLayers(fullMesh(), {
+      buildings: false,
+      trees: false,
+      plates: false,
+      roads: false,
+      poi: false,
+      areas: false,
+      [layer]: true,
+    });
+    return (objects[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
+  }
+
+  it("gives the buildings a specular lobe to catch the moving highlight", () => {
+    // WHY THIS TEST MATTERS. DEC-R2-1 made the GROUND reflective so that facet
+    // edges show up as a highlight slides across them while the camera moves,
+    // and the buildings were left on `MeshStandardMaterial`'s default
+    // `roughness: 1.0` — fully diffuse, no specular lobe, nothing for the light
+    // to do. That is invisible in a diff and invisible in a screenshot taken
+    // from one angle, which is why it survived a round.
+    expect(materialOf("buildings").roughness).toBeLessThan(1);
+  });
+
+  it("keeps them rougher than the ground, so they do not read as glass", () => {
+    // The ground is 0.42 and gets away with it because wet-ish ground is
+    // plausible. A residential block at 0.42 looks like polished stone, which
+    // is a different kind of wrong rather than an improvement.
+    expect(materialOf("buildings").roughness).toBeGreaterThan(0.5);
+  });
+
+  it("leaves the ground-level layers matte", () => {
+    // Plates and roads are deliberately not part of this: DEC-R2-13's measured
+    // road-versus-ground contrast depends on the road not competing with the
+    // surface it lies on.
+    expect(materialOf("plates").roughness).toBeGreaterThan(0.8);
+    expect(materialOf("roads").roughness).toBeGreaterThan(0.8);
+  });
+});
+
 describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", () => {
   /** Three trees: two broadleaved, one needleleaved. */
   function forest(): TransferableMesh {
