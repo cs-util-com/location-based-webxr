@@ -431,11 +431,18 @@ test.describe("the layer toggles", () => {
       page.locator("#layers input[type=checkbox][data-layer]"),
     ).toHaveCount(8);
 
-    // The defaults reproduce the picture the demo shipped with — which is what
-    // makes the migration of buildings/trees through the registry verifiable.
+    // EVERY layer starts on since W9 except the height ramp, which is a
+    // diagnostic rather than a thing in the world (DEC-R4-4, DEC-R3-17).
+    await expect(page.locator("#layer-terrainDebug")).not.toBeChecked();
     await expect(page.locator("#layer-cells")).toBeChecked();
     await expect(page.locator("#layer-buildings")).toBeChecked();
     await expect(page.locator("#layer-trees")).toBeChecked();
+    // W9 turned every layer on by default, so a test about switching a layer ON
+    // has to switch it OFF first. Asserting the "off" state is still worth doing
+    // — it is what proves the toggle works in both directions rather than only
+    // in the one the test happens to exercise.
+    await expect(page.locator("#layer-roads")).toBeChecked();
+    await page.locator("#layer-roads").uncheck();
     await expect(page.locator("#layer-roads")).not.toBeChecked();
 
     const status = page.locator("#status");
@@ -479,6 +486,12 @@ test.describe("the layer toggles", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
+    // W9 turned every layer on by default, so a test about switching a layer ON
+    // has to switch it OFF first. Asserting the "off" state is still worth doing
+    // — it is what proves the toggle works in both directions rather than only
+    // in the one the test happens to exercise.
+    await expect(page.locator("#layer-plates")).toBeChecked();
+    await page.locator("#layer-plates").uncheck();
     await expect(page.locator("#layer-plates")).not.toBeChecked();
     await expect(page.locator("#status")).not.toContainText(/ground areas/);
 
@@ -1518,7 +1531,11 @@ test.describe("the 3D view", () => {
     // The boundary is always drawn: it answers "where does this end", which does
     // not stop mattering when the fill answers "how good is it".
     await expect(outlines).not.toHaveCount(0);
+    // Filled by default since W9, so the "unfilled" half of the claim has to be
+    // reached by switching the layer off first.
+    await page.getByRole("checkbox", { name: "areas" }).uncheck();
     await expect(fills).toHaveCount(0);
+    await expect(outlines).not.toHaveCount(0);
 
     await page.getByRole("checkbox", { name: "areas" }).check();
     await expect(fills).not.toHaveCount(0);
@@ -1590,6 +1607,9 @@ test.describe("the 3D view", () => {
         return count;
       });
 
+    // Off first: W9 draws the slabs by default, so "before" has to be a frame
+    // without them or the difference this measures is zero.
+    await page.getByRole("checkbox", { name: "areas" }).uncheck();
     const before = await vivid();
     await page.getByRole("checkbox", { name: "areas" }).check();
     await expect(page.locator("#status")).toContainText(/\d+ area slabs/);
@@ -1674,6 +1694,9 @@ test.describe("the 3D view", () => {
       return count;
     };
 
+    // Off first: roads draw by default since W9, so a "before" frame with them
+    // already on would make the difference this measures zero.
+    await page.getByRole("checkbox", { name: "roads" }).uncheck();
     const withoutRoads = await frame();
     expect(withoutRoads).not.toBeNull();
 
@@ -1704,7 +1727,10 @@ test.describe("the 3D view", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    // Off by default, like every layer added after the W10 baseline.
+    // ON by default since W9, so the "absent" half is reached by switching it
+    // off — which also proves the counter disappears rather than sticking.
+    await expect(page.locator("#status")).toContainText(/[0-9]+ POI/);
+    await page.getByRole("checkbox", { name: "POI" }).uncheck();
     await expect(page.locator("#status")).not.toContainText("POI");
     await page.getByRole("checkbox", { name: "POI" }).check();
     await expect(page.locator("#status")).toContainText(/\d+ POI/);
@@ -2856,10 +2882,15 @@ test.describe("under the world", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
     await page.locator("#ground-mode").selectOption("none");
-    // The affordance grid is DoubleSide and traces the terrain, so it is the one
-    // thing that DOES look like ground from below. Off, so what is left is the
-    // question actually being asked.
-    await page.locator("#layer-cells").uncheck();
+    // EVERY GROUND-HUGGING LAYER OFF, so what is left is the question actually
+    // being asked. The affordance grid is DoubleSide and traces the terrain, so
+    // it is the one thing that DOES look like ground from below — and since W9
+    // the plates, the roads and the region slabs are on by default and lie flat
+    // on the same surface, which is the same problem three more times over.
+    for (const layer of ["cells", "plates", "roads", "areas", "poi"]) {
+      const box = page.locator(`#layer-${layer}`);
+      if (await box.isChecked()) await box.uncheck();
+    }
 
     // ROTATED IN STEPS UNTIL THE CAMERA IS DEMONSTRABLY UNDER THE SCENE, rather
     // than by a magic number of pointer-pixels. `OrbitControls` maps a full

@@ -45,20 +45,27 @@ describe("the layer set", () => {
     ]);
   });
 
-  it("starts with the layers the demo shipped with, plus nothing else", () => {
-    // The default must reproduce the CURRENT picture exactly. A registry that
-    // silently switched new layers on would make its own migration unverifiable —
-    // there would be no before to compare the after against.
-    expect(isLayerEnabled(DEFAULT_LAYERS, "cells")).toBe(true);
-    expect(isLayerEnabled(DEFAULT_LAYERS, "buildings")).toBe(true);
-    expect(isLayerEnabled(DEFAULT_LAYERS, "trees")).toBe(true);
-    // Not yet built, and therefore off.
-    expect(isLayerEnabled(DEFAULT_LAYERS, "plates")).toBe(false);
-    expect(isLayerEnabled(DEFAULT_LAYERS, "roads")).toBe(false);
-    expect(isLayerEnabled(DEFAULT_LAYERS, "poi")).toBe(false);
-    // Regions were computed and outlined but never fillable, so the areas layer is
-    // off until W14/W15 give it something to draw.
-    expect(isLayerEnabled(DEFAULT_LAYERS, "areas")).toBe(false);
+  it("starts with EVERY layer on except the diagnostic (W9)", () => {
+    // REPLACES "the layers the demo shipped with". That default existed so the
+    // W10 registry migration had a known-good before to compare against; the
+    // migration is complete, and what survived it was the historical order in
+    // which builders happened to be written — not a fact about what a user
+    // should see. The feedback: "standardmäßig sollten alle an sein".
+    //
+    // Derived from ALL_LAYERS rather than listed, so a new layer is on by
+    // default and this test cannot go stale by omission.
+    for (const layer of ALL_LAYERS) {
+      if (layer === "terrainDebug") continue;
+      expect(isLayerEnabled(DEFAULT_LAYERS, layer)).toBe(true);
+    }
+  });
+
+  it("keeps the height ramp OFF, which is the one exclusion", () => {
+    // It re-colours the ground rather than adding a thing to the world, the
+    // notes ask for it to stay off, and DEC-R3-17 already disables it outright
+    // when there is no ground to colour. Asserted separately so a bulk flip of
+    // the defaults cannot quietly take it with them.
+    expect(isLayerEnabled(DEFAULT_LAYERS, "terrainDebug")).toBe(false);
   });
 
   it("toggles one layer without disturbing the others", () => {

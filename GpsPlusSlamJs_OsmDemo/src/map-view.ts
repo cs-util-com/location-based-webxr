@@ -73,13 +73,31 @@ export class MapView {
     // paths, not the order the groups were added. The groups are ordered to
     // agree with it anyway, so nobody has to know that twice.
     //
-    // On top rather than underneath because a 2 px dashed stroke occludes
-    // essentially nothing, while a stroke *under* 55 %-opacity fills is washed
-    // out precisely where the boundary matters. (An earlier comment here
-    // claimed the opposite and the code did this; the e2e ordering assertion is
-    // what surfaced the disagreement.)
-    this.cellLayer = L.layerGroup().addTo(this.map);
+    // REGIONS UNDERNEATH THE CELLS, and W9 is what forced this round.
+    //
+    // The regions were on top, on the reasoning that a 2 px dashed stroke
+    // occludes essentially nothing while a stroke under 55 %-opacity fills is
+    // washed out where the boundary matters. That reasoning was about a region
+    // drawn as an OUTLINE — and W15 gave it a fill, which W9 then switched on by
+    // default. A filled SVG path hit-tests its interior, so every cell under a
+    // region became unclickable: the click landed on the region instead.
+    //
+    // That is round-1 DEC-7's rule reappearing one layer up — "a hidden cell is
+    // the one cell you cannot click to ask why" — and it is why the twelve e2e
+    // failures W9 produced were not all baseline churn. The cell grid is the
+    // finest-grained claim and the thing being inspected, so it goes on top and
+    // keeps the clicks; the region boundary being slightly washed out is the
+    // smaller loss by a wide margin.
+    // A PANE, not just an earlier `addTo`. Leaflet appends every path to the
+    // shared overlay pane in the order `render` creates them — cells first, then
+    // regions — so layer-group order does not decide who is on top and the
+    // regions ended up above the cells whatever the groups did. A pane with a
+    // lower z-index is the only thing that actually orders them.
+    this.map.createPane(REGION_PANE);
+    const pane = this.map.getPane(REGION_PANE);
+    if (pane !== undefined) pane.style.zIndex = "350";
     this.regionLayer = L.layerGroup().addTo(this.map);
+    this.cellLayer = L.layerGroup().addTo(this.map);
     // Last, so the fetch outline sits above the grid. It is stroke-only, so
     // being on top costs nothing and being underneath would hide it behind ~931
     // filled cells — which is exactly where it is most worth seeing.
@@ -294,7 +312,10 @@ export class MapView {
           polygon.map((ring) =>
             ring.map((p) => [p.lat, p.lng] as [number, number]),
           ),
-          regionStyle(region.medianScore, scale, fillRegions),
+          {
+            ...regionStyle(region.medianScore, scale, fillRegions),
+            pane: REGION_PANE,
+          },
         )
           .bindTooltip(
             // Escaped: `category` is a column header from the publicly editable
@@ -364,6 +385,15 @@ function styleForBand(
     fillOpacity: band === "ramp" ? 0.55 : 0.5,
   };
 }
+
+/**
+ * The pane the region polygons live in.
+ *
+ * Below Leaflet's default `overlayPane` (z-index 400), so the affordance cells
+ * keep the clicks. See the constructor for why an ordering by pane rather than
+ * by layer group.
+ */
+const REGION_PANE = "affordance-regions";
 
 /** How many contributors the popup lists before deferring to the panel. */
 const POPUP_CONTRIBUTORS = 8;

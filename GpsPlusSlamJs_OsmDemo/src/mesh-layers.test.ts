@@ -147,20 +147,17 @@ describe("MESH_LAYERS — the table itself", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("defaults to the picture the demo shipped with (W10's baseline)", () => {
-    // The registry migration is only checkable against a known-good before, so an
-    // omitted `layers` argument must still mean buildings + trees and no plates.
-    const defaults = Object.fromEntries(
-      MESH_LAYERS.map((one) => [one.layer, one.defaultOn]),
-    );
-    expect(defaults).toEqual({
-      buildings: true,
-      trees: true,
-      plates: false,
-      poi: false,
-      roads: false,
-      areas: false,
-    });
+  it("draws every mesh layer when the selection omits it (W9)", () => {
+    // REPLACES "defaults to the picture the demo shipped with". That baseline
+    // existed so the W10 registry migration could be checked against a known
+    // good; the migration is done, and what was left was the historical order in
+    // which builders were written. The per-row `defaultOn` flag is gone rather
+    // than set to `true` everywhere — a field that can only hold one value is a
+    // field that can only ever be wrong.
+    const { objects } = drawMeshLayers(fullMesh());
+    // Buildings, plates, roads, one area slab, one instanced tree mesh, one
+    // instanced POI mesh.
+    expect(objects).toHaveLength(6);
   });
 });
 
@@ -208,12 +205,16 @@ describe("drawMeshLayers — what reaches the scene", () => {
     expect(objects[0]?.position.y).toBeCloseTo(groundLift("plates"), 10);
   });
 
-  it("falls back to each row's default when no selection is given", () => {
-    const { objects, stats } = drawMeshLayers(fullMesh());
-    // Buildings + tree, and no plate: exactly W10's baseline picture.
-    expect(objects).toHaveLength(2);
-    expect(stats.plates).toBe(0);
+  it("counts every layer it drew when no selection is given (W9)", () => {
+    const { stats } = drawMeshLayers(fullMesh());
+    // The counters describe what was DRAWN, so with everything on they are all
+    // populated — a plate count of 0 here would mean the layer silently did not
+    // draw, which is indistinguishable from there being no plates.
     expect(stats.volumes).toBe(21);
+    expect(stats.plates).toBe(3);
+    expect(stats.roads).toBe(2);
+    expect(stats.poi).toBe(1);
+    expect(stats.areas).toBe(1);
   });
 });
 
@@ -338,7 +339,17 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
   }
 
   function treeMeshes(mesh: TransferableMesh): THREE.InstancedMesh[] {
-    const { objects } = drawMeshLayers(mesh, { trees: true });
+    // Every other layer explicitly OFF. Since W9 an omitted layer draws, and the
+    // POI markers are instanced too — so `{ trees: true }` alone would put their
+    // InstancedMesh in this filter and count it as a tree variant.
+    const { objects } = drawMeshLayers(mesh, {
+      buildings: false,
+      trees: true,
+      plates: false,
+      roads: false,
+      poi: false,
+      areas: false,
+    });
     return objects.filter(
       (object): object is THREE.InstancedMesh =>
         (object as THREE.InstancedMesh).isInstancedMesh === true,

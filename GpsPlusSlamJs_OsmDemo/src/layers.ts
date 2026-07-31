@@ -64,18 +64,30 @@ function setOf(enabled: Iterable<LayerKind>): LayerSet {
 }
 
 /**
- * The layers the demo shipped with, and only those.
+ * EVERYTHING except the diagnostic (W9, R4-2, DEC-R4-4).
  *
- * DELIBERATELY NOT "everything available". The registry's own migration has to be
- * verifiable, and that requires the default to reproduce the previous picture
- * exactly — a default that switched new layers on as they were written would leave
- * no before to compare the after against.
+ * It used to be `cells`, `buildings`, `trees` — the three the demo shipped with —
+ * and the reason was a migration reason: _"a default that switched new layers on
+ * as they were written would leave no before to compare the after against"_. The
+ * W10 registry migration is complete, so that baseline has served its purpose,
+ * and what remained was the historical order in which builders were written,
+ * which is not a fact about what a user should see. The feedback put it plainly:
+ * _"standardmäßig sollten alle an sein, also auch Landuse, Roads, POI"_.
  *
- * `areas` is off because regions had no fillable representation until W14/W15;
- * `plates`, `roads` and `poi` are off because they have no builder yet, and
- * `terrainDebug` is off because it is a diagnostic the reader asks for.
+ * `terrainDebug` STAYS OFF, and it is the one exclusion. It is a diagnostic that
+ * re-colours the ground rather than a thing in the world, the notes ask for it to
+ * stay off, and DEC-R3-17 already disables it outright when there is no ground to
+ * colour.
+ *
+ * COST, STATED RATHER THAN DISCOVERED (N7): every layer on multiplies the
+ * per-publish rebuild, and the 30 FPS the notes accept was measured with three
+ * layers on, not seven. That is why W6 and W7 (instancing the trees and the POI
+ * markers) land BEFORE this, and why W10's draw-call readout does too — so the
+ * change can be measured rather than felt.
  */
-export const DEFAULT_LAYERS: LayerSet = setOf(["cells", "buildings", "trees"]);
+export const DEFAULT_LAYERS: LayerSet = setOf(
+  ALL_LAYERS.filter((layer) => layer !== "terrainDebug"),
+);
 
 export function isLayerEnabled(layers: LayerSet, layer: LayerKind): boolean {
   return layers[layer];

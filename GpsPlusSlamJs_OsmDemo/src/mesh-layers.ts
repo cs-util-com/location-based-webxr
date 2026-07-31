@@ -68,8 +68,9 @@ type MeshLayerKind = (typeof DRAWN_BY_MESH)[number];
 /**
  * Which of the mesh layers to draw.
  *
- * Partial on purpose: an omitted layer falls back to its row's `defaultOn`, which
- * is what lets an omitted argument reproduce the picture the demo shipped with.
+ * Partial on purpose: an omitted layer DRAWS (W9). It used to fall back to a
+ * per-row `defaultOn` flag that reproduced the picture the demo shipped with,
+ * which was a migration guarantee — and the migration is over.
  */
 export type MeshLayers = Partial<Record<MeshLayerKind, boolean>>;
 
@@ -148,14 +149,6 @@ const NEUTRAL_CONTEXT: MeshLayerContext = { colourForScore: () => 0xff00ff };
 /** What one drawable layer contributes to the scene and to the status line. */
 export interface MeshLayerDescriptor {
   readonly layer: MeshLayerKind;
-  /**
-   * Whether an omitted selection draws it.
-   *
-   * `true` for the two layers the demo shipped with, `false` for everything added
-   * since — a new layer that switched itself on would destroy the known-good
-   * baseline that makes the registry migration checkable at all (W10).
-   */
-  readonly defaultOn: boolean;
   /** Objects to add to the scene. Empty when the layer has nothing to draw. */
   build(mesh: TransferableMesh, context: MeshLayerContext): THREE.Object3D[];
   /** The counters this layer owns, supplied only when it is drawn. */
@@ -280,7 +273,6 @@ function geometryFrom(data: MeshData): THREE.BufferGeometry {
 export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   {
     layer: "buildings",
-    defaultOn: true,
     build: (mesh) =>
       mesh.buildings.triangleCount === 0
         ? []
@@ -327,9 +319,6 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "plates",
-    // OFF by default, unlike buildings and trees: it is a layer added after the
-    // baseline, and an omitted argument has to keep reproducing that baseline.
-    defaultOn: false,
     build: (mesh) => {
       if (mesh.plates.triangleCount === 0) return [];
       const plate = new THREE.Mesh(
@@ -357,7 +346,6 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "trees",
-    defaultOn: true,
     build: (mesh) => {
       const objects: THREE.Object3D[] = [];
       // `packInstances` groups by variant and applies the ENU→scene reflection
@@ -406,10 +394,6 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "areas",
-    // OFF by default like every layer added after the W10 baseline. It is also
-    // the layer the round-1 feedback missed entirely, which is why W15 fills the
-    // 2D outline at the same time — the same claim, drawn in both views.
-    defaultOn: false,
     build: (mesh, context) =>
       mesh.regions
         .filter((slab) => slab.mesh.triangleCount > 0)
@@ -438,7 +422,6 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "roads",
-    defaultOn: false,
     build: (mesh) => {
       if (mesh.roads.triangleCount === 0) return [];
       const ribbon = new THREE.Mesh(
@@ -474,9 +457,6 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "poi",
-    // OFF by default. Every layer added after the W10 baseline is, so that an
-    // omitted selection still reproduces the picture the demo shipped with.
-    defaultOn: false,
     build: (mesh) => {
       if (mesh.poi.length === 0) return [];
       // ONE InstancedMesh for every marker (W7), like the trees. It was one
@@ -534,7 +514,11 @@ export function drawMeshLayers(
   const objects: THREE.Object3D[] = [];
   let stats = NO_STATS;
   for (const descriptor of MESH_LAYERS) {
-    if (!(layers?.[descriptor.layer] ?? descriptor.defaultOn)) continue;
+    // AN OMITTED LAYER DRAWS (W9). The per-row `defaultOn` flag was deleted
+    // rather than flipped to `true` everywhere: it existed to reproduce a
+    // baseline that no longer exists, and a field that can only ever hold one
+    // value is a field that can only ever be wrong.
+    if (!(layers?.[descriptor.layer] ?? true)) continue;
     objects.push(...descriptor.build(mesh, context));
     stats = { ...stats, ...descriptor.counters(mesh) };
   }

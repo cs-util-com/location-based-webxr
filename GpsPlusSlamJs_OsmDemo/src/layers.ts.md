@@ -8,7 +8,7 @@ Names every render layer, and holds the enabled set as plain, immutable data.
 
 - `ALL_LAYERS` — the ordered tuple; `LayerKind` is derived from it.
 - `LayerSet` — `Readonly<Record<LayerKind, boolean>>`, exhaustive by construction.
-- `DEFAULT_LAYERS` — `cells`, `buildings`, `trees`.
+- `DEFAULT_LAYERS` — every layer except `terrainDebug` (W9).
 - `isLayerEnabled`, `toggleLayer` (returns a new set), `serialiseLayers`,
   `parseLayers`.
 
@@ -23,11 +23,19 @@ Names every render layer, and holds the enabled set as plain, immutable data.
   impossible to view a merged area _over_ the cells that produced it — the first
   check anyone runs when a region looks wrong. One mechanism therefore covers both
   the layer question and the cells/areas question.
-- **`DEFAULT_LAYERS` reproduces the picture the demo shipped with, and nothing
-  more.** Not "everything available": the registry's own migration has to be
-  verifiable, and that needs a default whose output matches the known-good baseline.
-  A default that switched new layers on as they were written would leave no _before_
-  to compare against.
+- **`DEFAULT_LAYERS` is everything except the diagnostic (W9, DEC-R4-4).** It used
+  to be `cells`, `buildings`, `trees` — the three the demo shipped with — because
+  the W10 registry migration needed a known-good baseline to compare against. That
+  migration is complete, so what remained was the historical order in which builders
+  happened to be written, which is not a fact about what a user should see.
+  - It is DERIVED from `ALL_LAYERS` rather than listed, so a new layer is on by
+    default and the test cannot go stale by omission.
+  - `terrainDebug` is the one exclusion, asserted separately so a bulk flip cannot
+    quietly take it along: it re-colours the ground rather than adding a thing to
+    the world, and DEC-R3-17 already disables it when there is no ground to colour.
+  - **Cost, stated rather than discovered (N7):** every layer on multiplies the
+    per-publish rebuild, which is why W6/W7 (instancing) and W10 (the draw-call
+    readout) land before this.
 - **A plain record, never a `Set`.** This lives in a Redux slice: a `Set` is rejected
   by RTK's serialisability scan and dropped by `structuredClone` — silently, in the
   clone's case, so it would break the worker boundary without an error.
