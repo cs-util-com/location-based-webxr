@@ -49,7 +49,6 @@ export type { Pick } from "./pick.js";
  * finding.
  */
 export type GroundDisplacement = GroundMode;
-export { treeConePosition } from "./mesh-layers.js";
 
 /**
  * Metres between terrain posts. Terrarium z13 is ~12 m per pixel at this latitude.

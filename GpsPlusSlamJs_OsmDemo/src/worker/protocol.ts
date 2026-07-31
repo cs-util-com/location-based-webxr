@@ -43,10 +43,9 @@ import type { HeightfieldData } from "../heightfield.js";
  * Trees cross as `TreePlacement` — the package's own ENU form — rather than as
  * scene coordinates. The ENU→scene reflection is a real trap (`+y` north becomes
  * `-z` north, and getting it wrong renders a forest 100 m from the buildings it
- * stands beside), but `treeConePosition` is the one part of the draw loop that is
- * provable without a GPU and it is already unit-tested where it lives. Moving it
- * here to save a conversion would drag it into a module that must not import
- * `three` and would separate it from its test for no benefit.
+ * stands beside), but the package's own `packInstances` applies it — and that is
+ * where its test lives. Converting here would drag the reflection into a module
+ * that must not import `three` and would separate it from its test for no gain.
  */
 export interface TransferableMesh {
   readonly buildings: MeshData;

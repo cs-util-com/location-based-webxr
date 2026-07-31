@@ -18,10 +18,9 @@ map scored.
   owns them because it owns what they describe. `BuildingStats` is `volumes`,
   `parts`, `triangles`, `guessedHeights`, `approximateRoofs`, `trees`, `plates`,
   `plateTriangles`.
-- `treeConePosition(placement): [x, y, z]` — also re-exported from
-  `mesh-layers.ts`. The scene position of one tree's cone, from its ENU
-  placement; kept separate because it is the only arithmetic in the draw loop and
-  therefore the only part of it provable without a GPU.
+  (`treeConePosition` was removed in W6: trees are instanced now, and the ENU→
+  scene reflection comes from the package's `packInstances`, which is tested where
+  it lives.)
 
 ## Invariants & assumptions
 
@@ -126,8 +125,9 @@ map scored.
   stay small and float32 vertex buffers stay precise where it matters.
 - **Trees arrive in ENU and must be reflected here.** `mergeMeshes` output is
   already in the render frame (`-z` north), but `TreePlacement.position` is a
-  placement rather than a buffer and stays ENU (`+y` north). `treeConePosition`
-  applies the `z -> -z` reflection, the same one `cell-mesh.ts` applies by hand.
+  placement rather than a buffer and stays ENU (`+y` north). Since W6 the
+  reflection is applied by the package's `packInstances`, the same one
+  `cell-mesh.ts` applies by hand.
   Skipping it — which this file did until 2026-07-29 — put every tree on the
   wrong side of the origin, 100 m from the building it belongs next to, while
   the forest stayed self-consistent and so read as a data problem.
@@ -164,8 +164,11 @@ const stats = view.render(meshFromWorker);
 
 ## Tests
 
-`building-view.test.ts` covers `treeConePosition` only — the frame reflection
-and the cone's half-height offset. The class itself needs a `WebGLRenderer` and
+There is no `building-view.test.ts`: its only subject was `treeConePosition`,
+and W6 replaced that with assertions over the real instance matrices in
+`mesh-layers.test.ts` — a stronger claim, because they go through the draw path
+rather than through a helper it happened to call. The class itself needs a
+`WebGLRenderer` and
 so cannot be constructed under vitest; the e2e suite exercises it instead. The
 geometry it renders is tested in `gps-plus-slam-osm`'s `mesh/buildings.test.ts`
 (including the differential triangulation harness against `earcut`) and

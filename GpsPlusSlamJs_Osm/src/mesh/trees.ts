@@ -73,13 +73,33 @@ function unit(key: string, salt: string): number {
   return stableHash(`${key}#${salt}`) / 0x1_0000_0000;
 }
 
+/**
+ * Values that name a leaf type, across both keys that carry one.
+ *
+ * `wood` is the older key and is still widely tagged; OSM2World reads both
+ * (`TreeModule.LEAF_TYPE_KEYS`) and treats `deciduous` as an alias for
+ * broadleaved. Including it matters because `variant` is the ONLY thing that
+ * stops every tree being drawn as the same fir (W6), and `leaf_type` alone
+ * leaves a large share of trees at "unknown".
+ *
+ * Note what is NOT here: `wood=yes`, `wood=mixed`, and every free-text
+ * `species`/`genus` value. A controlled vocabulary is a different question from
+ * a guess, and a wrong species is no better than an unknown one.
+ */
+const LEAF_TYPES: Readonly<Record<string, TreeVariant>> = {
+  broadleaved: "broadleaved",
+  deciduous: "broadleaved",
+  needleleaved: "needleleaved",
+  coniferous: "needleleaved",
+};
+
 function variantOf(tags: Record<string, string>): TreeVariant {
-  const leaf = tags["leaf_type"];
-  if (leaf === "broadleaved") return "broadleaved";
-  if (leaf === "needleleaved") return "needleleaved";
-  // `genus`/`species` could refine this; deliberately not guessed from names,
-  // because a wrong species is no better than an unknown one and OSM's
-  // free-text species values are not a controlled vocabulary.
+  // `leaf_type` FIRST, because it is the current key: a feature carrying both
+  // is mid-retagging, and the newer value is the one someone last checked.
+  for (const key of ["leaf_type", "wood"] as const) {
+    const variant = LEAF_TYPES[tags[key] ?? ""];
+    if (variant !== undefined) return variant;
+  }
   return "unknown";
 }
 

@@ -56,14 +56,20 @@ const EMPTY = {
 function fullMesh(): TransferableMesh {
   return {
     buildings: triangle(),
+    // `variant` was `0` here until W6 — a number where `TreeVariant` is a
+    // string union, which the blanket `as unknown as` cast below hid. Nothing
+    // read the field, so nothing noticed; the moment the draw loop started
+    // grouping BY variant, a fixture carrying an impossible value would have
+    // made every assertion about that grouping meaningless.
     trees: [
       {
+        feature: "node/1",
         position: { x: 10, y: 20 },
         groundHeightM: 53,
         heightM: 8,
         crownDiameterM: 4,
         rotationY: 0.5,
-        variant: 0,
+        variant: "unknown",
       },
     ],
     plates: triangle(),
@@ -243,6 +249,124 @@ describe("poiMarkerPosition", () => {
     const [, y] = poiMarkerPosition(marker);
     expect(y).toBeGreaterThan(53);
     expect(y).toBeLessThan(53 + 6);
+  });
+});
+
+describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", () => {
+  /** Three trees: two broadleaved, one needleleaved. */
+  function forest(): TransferableMesh {
+    return {
+      ...fullMesh(),
+      trees: [
+        {
+          feature: "node/1",
+          position: { x: 10, y: 20 },
+          groundHeightM: 53,
+          heightM: 8,
+          crownDiameterM: 4,
+          rotationY: 0,
+          variant: "broadleaved",
+        },
+        {
+          feature: "node/2",
+          position: { x: 11, y: 21 },
+          groundHeightM: 54,
+          heightM: 9,
+          crownDiameterM: 5,
+          rotationY: 0.5,
+          variant: "broadleaved",
+        },
+        {
+          feature: "node/3",
+          position: { x: 12, y: 22 },
+          groundHeightM: 55,
+          heightM: 10,
+          crownDiameterM: 6,
+          rotationY: 1,
+          variant: "needleleaved",
+        },
+      ],
+    };
+  }
+
+  function treeMeshes(mesh: TransferableMesh): THREE.InstancedMesh[] {
+    const { objects } = drawMeshLayers(mesh, { trees: true });
+    return objects.filter(
+      (object): object is THREE.InstancedMesh =>
+        (object as THREE.InstancedMesh).isInstancedMesh === true,
+    );
+  }
+
+  it("draws ONE object per variant rather than one per tree", () => {
+    // WHY THIS TEST MATTERS. This is the finding, not a refactor: the package
+    // emits placements precisely so a forest is a handful of draw calls, and
+    // `packInstances` was written for it and never called — so the demo
+    // allocated a fresh ConeGeometry AND a fresh MeshStandardMaterial for every
+    // tree, on every publish, three publishes per click. Counting objects is
+    // the only assertion that can tell the two apart, because both draw trees.
+    const meshes = treeMeshes(forest());
+    expect(meshes).toHaveLength(2);
+    expect(meshes.map((m) => m.count).sort()).toEqual([1, 2]);
+  });
+
+  it("gives each variant its OWN geometry, so they stop all being firs", () => {
+    // The defect R4-3 reports. `variant` is computed in the package, crosses
+    // the worker boundary, and was read by nothing — so a broadleaved tree and
+    // a needleleaved tree rendered as the identical cone. Distinct geometry per
+    // variant is the minimum that can be false when that regresses.
+    const meshes = treeMeshes(forest());
+    const geometries = new Set(meshes.map((m) => m.geometry));
+    expect(geometries.size).toBe(2);
+  });
+
+  it("places an instance at the reflected position, standing ON the ground", () => {
+    // The SAME trap `poiMarkerPosition` documents: ENU `+y` is north and the
+    // scene's north is `-z`. It is worth re-asserting through the instance
+    // matrix because the reflection moved — it now comes from the package's
+    // `packInstances` rather than from a per-tree `position.set`, and a
+    // regression there is a forest 100 m from its own buildings, self-consistent
+    // and therefore reading as bad data.
+    const meshes = treeMeshes(forest());
+    const needle = meshes.find((m) => m.count === 1);
+    expect(needle).toBeDefined();
+
+    const matrix = new THREE.Matrix4();
+    needle?.getMatrixAt(0, matrix);
+    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
+    expect(position.x).toBeCloseTo(12);
+    expect(position.z).toBeCloseTo(-22);
+    // The BASE sits on the sampled ground: the unit geometries are built with
+    // their base at y = 0 precisely so this is the ground height itself rather
+    // than the ground height plus half a tree.
+    expect(position.y).toBeCloseTo(55);
+  });
+
+  it("scales an instance by its own height and crown", () => {
+    // The half of R4-3 that was already correct and must stay so: tree size is
+    // real data (tagged `height`, else a stable hash), and it is what the
+    // owner noticed working. Instancing must carry it through the matrix.
+    const meshes = treeMeshes(forest());
+    const needle = meshes.find((m) => m.count === 1);
+    const matrix = new THREE.Matrix4();
+    needle?.getMatrixAt(0, matrix);
+    const scale = new THREE.Vector3().setFromMatrixScale(matrix);
+    expect(scale.y).toBeCloseTo(10);
+    expect(scale.x).toBeCloseTo(6);
+    expect(scale.z).toBeCloseTo(6);
+  });
+
+  it("marks its geometry and material as BORROWED", () => {
+    // Shared across every instance and every render — that is the point. If
+    // `clear()` disposed them, the first refresh would destroy them and every
+    // later frame would silently draw nothing: three.js does not throw for a
+    // disposed geometry, and the counters would keep reporting the trees.
+    for (const mesh of treeMeshes(forest())) {
+      expect(mesh.userData["sharedResources"]).toBe(true);
+    }
+  });
+
+  it("draws nothing at all when there are no trees", () => {
+    expect(treeMeshes({ ...fullMesh(), trees: [] })).toHaveLength(0);
   });
 });
 

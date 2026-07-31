@@ -433,6 +433,37 @@ describe("trees", () => {
     );
   });
 
+  it("reads the older `wood` key too, and maps deciduous onto broadleaved", () => {
+    // WHY THIS MATTERS (W6). `variant` is the only thing that can stop every
+    // tree being drawn as the same fir, and `leaf_type` alone leaves a large
+    // share of trees at "unknown" — `wood=deciduous`/`coniferous` is the same
+    // controlled claim under an older key, and OSM2World's `TreeModule` reads
+    // both (`LEAF_TYPE_KEYS = ["leaf_type", "wood"]`, with `deciduous` an alias
+    // for broadleaved). Guessing from free-text `species` stays declined; this
+    // is a controlled vocabulary and a different question.
+    expect(
+      buildTrees([tree(1, 50.9413, { wood: "deciduous" })], { frame })[0]
+        ?.variant,
+    ).toBe("broadleaved");
+    expect(
+      buildTrees([tree(2, 50.9414, { wood: "coniferous" })], { frame })[0]
+        ?.variant,
+    ).toBe("needleleaved");
+    // `leaf_type` still wins where both are present: it is the current key, and
+    // a feature carrying both is a feature mid-retagging.
+    expect(
+      buildTrees(
+        [tree(3, 50.9415, { leaf_type: "broadleaved", wood: "coniferous" })],
+        { frame },
+      )[0]?.variant,
+    ).toBe("broadleaved");
+    // An unrecognised value is still "unknown" rather than a guess. `wood=yes`
+    // is ordinary and says nothing about leaf type.
+    expect(
+      buildTrees([tree(4, 50.9416, { wood: "yes" })], { frame })[0]?.variant,
+    ).toBe("unknown");
+  });
+
   it("packs instances grouped by variant, ready for InstancedMesh", () => {
     // One InstancedMesh draws one geometry; mixing variants into a single
     // buffer would force the consumer to un-mix them.

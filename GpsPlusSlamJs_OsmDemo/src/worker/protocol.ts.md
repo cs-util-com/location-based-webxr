@@ -31,9 +31,9 @@ target }`.
     sampler. Anything else growing a method has the same problem.
 - **Trees cross as `TreePlacement` (ENU), not as scene coordinates.** The ENU→
   scene reflection (`+y` north becomes `-z` north) is a real trap, but
-  `treeConePosition` is the one part of the draw loop provable without a GPU and
-  it is unit-tested where it lives. Moving it here would drag it into a module
-  that must not import `three`.
+  the package's `packInstances` applies it and is unit-tested where it lives.
+  Moving the conversion here would drag it into a module that must not import
+  `three`.
 - **`CALL_KINDS` is `satisfies WorkerCallKind[]`.** Without that, adding a kind
   to `WorkerCalls` and forgetting the guard produces a request the worker
   silently ignores — i.e. a promise that never settles, not a type error.

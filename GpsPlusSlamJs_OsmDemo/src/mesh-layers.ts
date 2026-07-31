@@ -31,7 +31,11 @@
  */
 
 import * as THREE from "three";
-import type { MeshData } from "gps-plus-slam-osm";
+import {
+  packInstances,
+  type MeshData,
+  type TreeVariant,
+} from "gps-plus-slam-osm";
 
 import { groundLift } from "./layer-order.js";
 import type { LayerSet } from "./layers.js";
@@ -159,34 +163,17 @@ export interface MeshLayerDescriptor {
 }
 
 /**
- * Where a tree's cone stands in the scene, from its ENU placement.
- *
- * Kept as its own function because it is the one part of the tree loop that can be
- * proved without a GPU, and the part that fails silently: see
- * `building-view.test.ts`.
- */
-export function treeConePosition(
-  tree: TransferableMesh["trees"][number],
-): [x: number, y: number, z: number] {
-  return [
-    tree.position.x,
-    // `ConeGeometry` is centred on its origin, so the base sits on the terrain
-    // sample only if the centre is half a height above it.
-    tree.groundHeightM + tree.heightM / 2,
-    // ENU y is north; the scene's -z is north (`mesh-data.ts`), the same
-    // reflection `cell-mesh.ts` and `MeshBuilder` apply. Without it a tree 50 m
-    // north renders 50 m SOUTH — 100 m from the building it stands next to.
-    -tree.position.y,
-  ];
-}
-
-/**
  * Where a POI marker's pin stands, from its ENU placement.
  *
- * The same `+y` north to `-z` north reflection `treeConePosition` applies, and it
- * fails the same silent way: a marker 50 m north of a shop renders 50 m south of
- * it, labelled correctly, looking like a data error rather than a frame error.
- * The pin is a cone standing ON the ground, so its centre sits half its height up.
+ * The same `+y` north to `-z` north reflection the tree instances get from
+ * `packInstances`, and it fails the same silent way: a marker 50 m north of a
+ * shop renders 50 m south of it, labelled correctly, looking like a data error
+ * rather than a frame error. The pin is a cone standing ON the ground, so its
+ * centre sits half its height up.
+ *
+ * Trees no longer have a counterpart to this (W6): they are instanced, and
+ * `packInstances` applies the reflection inside the package where its test
+ * lives, so the demo has one fewer place to get the frame wrong.
  */
 export function poiMarkerPosition(
   marker: TransferableMesh["poi"][number],
@@ -201,6 +188,64 @@ export function poiMarkerPosition(
 /** Height of a marker pin, metres. Tall enough to clear a hedge, short enough
  * not to compete with the buildings. */
 const POI_HEIGHT_M = 6;
+
+/**
+ * UNIT tree geometries — one per variant, built once, shared by every instance.
+ *
+ * WHY INSTANCED AT ALL (W6). `trees.ts` says it in its own header: trees are
+ * "numerous, identical up to a transform, and therefore exactly what
+ * `InstancedMesh` exists for", which is why the package emits placements rather
+ * than geometry and ships `packInstances` to pack them. **Nothing called it.**
+ * This loop allocated a fresh `ConeGeometry` and a fresh
+ * `MeshStandardMaterial` per tree, on every publish, three publishes per click —
+ * so a forest was N draw calls and N allocations on the main thread, which is
+ * half of what R4-9 reports as the hitch.
+ *
+ * WHY ONE PER VARIANT (R4-3, DEC-R4-10). `variantOf` reads `leaf_type`/`wood`
+ * into `broadleaved | needleleaved | unknown`, `TransferableMesh` carries it
+ * across the worker boundary, and the draw loop **discarded it** — so every
+ * tree, whatever its tags said, came out as the same fir. The data for the fix
+ * was already in hand; only the geometry was missing.
+ *
+ * WHY UNIT-SIZED WITH THE BASE AT y = 0. The instance matrix then composes
+ * directly from what `packInstances` already emits — position (with the ENU
+ * `+y` north to scene `-z` reflection already applied), a rotation about the
+ * vertical, and a scale of (crown, height, crown). The old per-tree code had to
+ * add half a height to stand a centred cone on the ground; a base-at-zero
+ * geometry removes that arithmetic rather than relocating it.
+ *
+ * SEGMENT COUNTS ARE DELIBERATELY LOW. This is an AR overlay before it is a
+ * desktop scene: 6 radial segments on the cone and a level-0 icosahedron (20
+ * triangles) keep a thousand trees affordable, and the flat-shaded low-polygon
+ * look is the house style rather than a compromise.
+ */
+function unitTreeGeometries(): Record<TreeVariant, THREE.BufferGeometry> {
+  // Radius 0.5 and height 1, translated up by half, so the geometry occupies
+  // x,z in [-0.5, 0.5] and y in [0, 1] — a unit cube's worth, scaled per tree.
+  const needle = new THREE.ConeGeometry(0.5, 1, 6);
+  needle.translate(0, 0.5, 0);
+  // A rounded crown, not a cone: this is the whole visible point of reading
+  // `leaf_type`. Level 0 keeps it at 20 triangles.
+  const broad = new THREE.IcosahedronGeometry(0.5, 0);
+  broad.translate(0, 0.5, 0);
+  return {
+    needleleaved: needle,
+    broadleaved: broad,
+    // UNKNOWN KEEPS THE CONE, deliberately: it is what the demo drew before, so
+    // the picture changes exactly where the data says something and nowhere
+    // else. A third invented shape would make untagged trees look like a claim.
+    unknown: needle,
+  };
+}
+
+const TREE_GEOMETRY = unitTreeGeometries();
+
+/** ONE material for every tree, shared like the geometries. */
+const TREE_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0x3f7d4a,
+  flatShading: true,
+  roughness: 0.8,
+});
 
 /**
  * ONE geometry and ONE material, SHARED by every pin.
@@ -299,16 +344,50 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   {
     layer: "trees",
     defaultOn: true,
-    build: (mesh) =>
-      mesh.trees.map((tree) => {
-        const cone = new THREE.Mesh(
-          new THREE.ConeGeometry(tree.crownDiameterM / 2, tree.heightM, 6),
-          new THREE.MeshStandardMaterial({ color: 0x3f7d4a }),
+    build: (mesh) => {
+      const objects: THREE.Object3D[] = [];
+      // `packInstances` groups by variant and applies the ENU→scene reflection
+      // itself — it is the package function written for exactly this and never
+      // called until now. Reimplementing the grouping here would be a second
+      // place for the reflection to be wrong.
+      for (const [variant, packed] of packInstances(mesh.trees)) {
+        const count = packed.rotations.length;
+        if (count === 0) continue;
+        const instanced = new THREE.InstancedMesh(
+          TREE_GEOMETRY[variant],
+          TREE_MATERIAL,
+          count,
         );
-        cone.position.set(...treeConePosition(tree));
-        cone.rotation.y = tree.rotationY;
-        return cone;
-      }),
+        const matrix = new THREE.Matrix4();
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        const up = new THREE.Vector3(0, 1, 0);
+        for (let i = 0; i < count; i++) {
+          position.set(
+            packed.positions[i * 3] ?? 0,
+            packed.positions[i * 3 + 1] ?? 0,
+            packed.positions[i * 3 + 2] ?? 0,
+          );
+          // `scales` is [heightM, crownDiameterM] per instance; the geometry is
+          // a unit whose crown spans x,z in [-0.5, 0.5], so the crown diameter
+          // is the horizontal scale directly.
+          const heightM = packed.scales[i * 2] ?? 1;
+          const crownM = packed.scales[i * 2 + 1] ?? 1;
+          scale.set(crownM, heightM, crownM);
+          quaternion.setFromAxisAngle(up, packed.rotations[i] ?? 0);
+          instanced.setMatrixAt(i, matrix.compose(position, quaternion, scale));
+        }
+        instanced.instanceMatrix.needsUpdate = true;
+        // BORROWED, like the POI pins: `clear()` must not dispose a geometry or
+        // material that every later render depends on. three.js does not throw
+        // for a disposed geometry — it silently draws nothing, and the counters
+        // keep reporting the trees.
+        instanced.userData = { sharedResources: true };
+        objects.push(instanced);
+      }
+      return objects;
+    },
     counters: (mesh) => ({ trees: mesh.trees.length }),
   },
   {

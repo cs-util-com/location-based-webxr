@@ -25,8 +25,8 @@ contributes to the status line. Replaces the branch-per-layer form that
   full set to the mesh layers.
 - `wantsAnyMeshLayer(layers: LayerSet) → boolean` — whether `render` has
   anything to do.
-- `treeConePosition(tree) → [x, y, z]` — the scene position of one tree's cone.
-  Re-exported from `building-view.ts` for existing call sites.
+  (`treeConePosition` was removed in W6 — trees are instanced and the package's
+  `packInstances` supplies both the grouping and the ENU→scene reflection.)
 
 ## Invariants & assumptions
 
@@ -107,4 +107,7 @@ No change to `BuildingView.render` and none to `main.ts`.
   keys.
 - **`meshLayerSelection`** — picks exactly the mesh layers out of the full set.
 
-`building-view.test.ts` still covers `treeConePosition` through the re-export.
+- **The instanced trees (W6)** — one `InstancedMesh` per variant rather than one
+  `Mesh` per tree, distinct geometry per variant, the instance matrix's position
+  and scale, and the `sharedResources` flag that stops `clear()` disposing a
+  geometry every later frame depends on.

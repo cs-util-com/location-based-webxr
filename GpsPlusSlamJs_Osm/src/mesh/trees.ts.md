@@ -30,6 +30,22 @@ geometry.
   look like clones while still being reproducible.
 - **`packInstances` groups by variant**, because one `InstancedMesh` draws one
   geometry; a single mixed buffer would force the consumer to un-mix it.
+  - **It had no production caller until W6 (2026-07-31).** The demo allocated a
+    fresh `ConeGeometry` and material per tree instead, so the design's whole
+    point — a forest in a handful of draw calls — was written, tested and never
+    reached. Worth recording because "the function exists" and "the function is
+    used" looked identical from inside this package.
+- **Leaf type comes from `leaf_type` OR `wood`, and `leaf_type` wins.** `wood`
+  is the older key and is still widely tagged; `deciduous` maps to broadleaved
+  and `coniferous` to needleleaved, matching OSM2World's `TreeModule`. A feature
+  carrying both is mid-retagging, so the newer key is the one someone last
+  checked.
+  - `wood=yes` and `wood=mixed` stay `unknown`: they are not leaf-type claims.
+  - **Species is still not guessed.** `species`/`genus` are free text, not a
+    controlled vocabulary, and a wrong species is no better than an unknown one.
+  - This matters more than it looks: `variant` is the only thing standing
+    between the renderer and drawing every tree as the same fir (R4-3), so every
+    tree left at `unknown` is a tree that cannot be drawn correctly.
 - **Two frames, and the boundary between them is `packInstances`.**
   `TreePlacement.position` is ENU (`+y` north) because a placement is not a
   buffer; `packInstances` emits the RENDER frame (`+x` east, `+y` up, `−z`
@@ -57,7 +73,8 @@ for (const [variant, buffers] of packInstances(placements)) {
 ## Tests
 
 `buildings.test.ts` — one instance per node, determinism across calls, variation
-between untagged trees, tagged height winning, `leaf_type` mapping to a variant,
+between untagged trees, tagged height winning, `leaf_type` and `wood` mapping to
+a variant (including which wins when both are present),
 variant-grouped packing, and hash stability.
 
 `mesh-orientation.test.ts` — the frame split above: a tree 50 m north packs to
