@@ -60,6 +60,7 @@ import {
   openOsmStoreDirectory,
 } from "gps-plus-slam-app-framework/osm-bridge";
 
+import { buildCellMesh } from "../cell-mesh.js";
 import { DemoPipeline } from "../demo-pipeline.js";
 import { describeTerrain } from "../terrain-note.js";
 import {
@@ -159,6 +160,22 @@ const terrainGate = createTerrainGate();
  * the sampler twice is the shape of defect this demo keeps finding: two
  * computations that agree today with nothing asserting they always will.
  */
+/**
+ * The key the cell-mesh request's single score is filed under.
+ *
+ * `buildCellMesh` looks a score up by category, and the caller has already
+ * chosen one — so the category name itself never crosses the boundary. A fixed
+ * private key makes that explicit instead of shipping the real name and
+ * pretending the lookup still means something.
+ */
+const CELL_MESH_CATEGORY = "score";
+
+/** The current terrain sampler in ENU, or flat. Used by the cell-mesh call. */
+function heightAtEnu(point: { x: number; y: number }): number {
+  const field = terrain === undefined ? undefined : heightfieldFrom(terrain);
+  return field === undefined ? 0 : field.heightAt(point);
+}
+
 function meshOptions(centre: LatLng): {
   frame: ReturnType<typeof enuFrameAt>;
   groundHeightM?: (position: LatLng) => number;
@@ -436,6 +453,39 @@ async function handle<K extends WorkerCallKind>(
         // stalled mesh, which is the one outcome worse than flat ground.
         terrainGate.settle(centre);
       }
+    }
+
+    case "cellMesh": {
+      const request = payload as WorkerCalls["cellMesh"]["request"];
+      // The SAME builder the main thread used, moved rather than reimplemented:
+      // a second grid builder would be a second answer to "which cells are
+      // drawn and what colour are they", which is the disagreement the shared
+      // store exists to prevent.
+      const options = meshOptions(request.centre);
+      return buildCellMesh(
+        request.cells.map(({ cell, score }) => ({
+          cell,
+          // `buildCellMesh` reads `scores[category]`; the caller has already
+          // resolved the category, so it arrives as a single value under a
+          // fixed key rather than as the whole score record. Sending every
+          // category's score for every cell would be the bulk of the payload
+          // for data the grid cannot use.
+          scores: { [CELL_MESH_CATEGORY]: score },
+        })),
+        {
+          frame: options.frame,
+          category: CELL_MESH_CATEGORY,
+          threshold: request.threshold,
+          scale: request.scale,
+          showBelowThreshold: request.showBelowThreshold,
+          ...(options.groundHeightM === undefined
+            ? {}
+            : {
+                heightAt: (point: { x: number; y: number }) =>
+                  heightAtEnu(point),
+              }),
+        },
+      );
     }
 
     case "explain": {

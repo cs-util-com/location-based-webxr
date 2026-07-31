@@ -24,7 +24,7 @@
  */
 
 import { cellToBoundary } from "h3-js";
-import type { CellScore, EnuFrame } from "gps-plus-slam-osm";
+import type { EnuFrame } from "gps-plus-slam-osm";
 
 import { type HeatScale } from "./heat-colours.js";
 import { groundLift } from "./layer-order.js";
@@ -62,6 +62,22 @@ function fanTriangles(corners: number): number {
  * thing a user clicks to interrogate, so it must never be occluded by a coarser one.
  */
 const GRID_LIFT_M = groundLift("cells");
+
+/**
+ * The least a cell has to be for the grid to draw it.
+ *
+ * NARROWED FROM `CellScore` in W8. This builder reads exactly two things — the
+ * cell id and one score — while `CellScore` also carries `contributors`, which
+ * is the per-category provenance map and by far the largest part of a scored
+ * cell. Declaring the wider type meant the worker call could not hand over just
+ * what the grid needs without fabricating provenance it would never read, and
+ * shipping the real provenance across the boundary would be most of the payload
+ * for data the grid cannot use. A `CellScore` still satisfies this structurally.
+ */
+export interface DrawableCell {
+  readonly cell: string;
+  readonly scores: Readonly<Record<string, number>>;
+}
 
 export interface CellMeshOptions {
   readonly frame: EnuFrame;
@@ -146,7 +162,7 @@ export const EMPTY_CELL_MESH: CellMesh = {
  * scene combined.
  */
 export function buildCellMesh(
-  cells: readonly CellScore[],
+  cells: readonly DrawableCell[],
   options: CellMeshOptions,
 ): CellMesh {
   const drawn: { cell: string; score: number }[] = [];

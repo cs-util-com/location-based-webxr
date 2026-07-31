@@ -26,7 +26,7 @@
  * @see main.ts.md
  */
 
-import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
+import { TERRARIUM_ATTRIBUTION } from "gps-plus-slam-osm";
 
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
@@ -37,7 +37,8 @@ import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
 import { LocateControl } from "./locate-control.js";
 import { attachSheetDrag } from "./sheet-drag.js";
-import { buildCellMesh, EMPTY_CELL_MESH } from "./cell-mesh.js";
+import { EMPTY_CELL_MESH } from "./cell-mesh.js";
+import { createCellMeshCycle } from "./cell-mesh-cycle.js";
 import {
   heightfieldFrom,
   TERRAIN_EXTENT_M,
@@ -445,6 +446,23 @@ async function main(): Promise<void> {
     legendView.render(scale, view.category, view.showBelowThreshold);
   }
 
+  /**
+   * The grid build, coalesced (W8).
+   *
+   * Declared here rather than beside the other cycles because it is the only one
+   * whose input is assembled inside `drawScene` — five different triggers rebuild
+   * the grid and three of them are a checkbox, so `latestOnly` is what stops an
+   * older build landing last and painting a grid the store no longer describes.
+   */
+  const buildGrid = createCellMeshCycle({
+    worker,
+    apply: (grid) => {
+      renderSafely(access, "3D view", () => {
+        buildingView.renderCells(grid);
+      });
+    },
+  });
+
   function drawScene(snapshot: DemoSnapshot | undefined): void {
     if (snapshot === undefined) {
       buildingView.clearScene();
@@ -455,7 +473,6 @@ async function main(): Promise<void> {
     }
     const view = selectOsmView(store.getState());
     const layers = selectLayers(store.getState());
-    const field = terrain;
     // EVERY LAYER GOES THROUGH THE REGISTRY (W10). The two that already existed —
     // buildings and trees — are routed through it here BEFORE any new builder is
     // written, which is the only way the migration is verifiable: the default set
@@ -504,34 +521,37 @@ async function main(): Promise<void> {
       buildingView.clearScene();
       mesh = undefined;
     }
-    // The SAME cells, bands and colours the map just drew — built from the same
-    // functions rather than a parallel implementation, so the two views cannot
-    // disagree about what a cell scores (finding M3).
-    buildingView.renderCells(
-      isLayerEnabled(layers, "cells")
-        ? buildCellMesh(snapshot.cells, {
-            frame: enuFrameAt(snapshot.position),
-            category: view.category,
-            threshold: snapshot.threshold,
-            // THE SAME DERIVATION AS THE MAP AND THE LEGEND (W12). This was a
-            // third copy of the same expression; three copies agreeing today is
-            // three chances to disagree tomorrow, and the disagreement would be
-            // silent because each view stays self-consistent.
-            scale: scaleFor(snapshot, view.category),
-            showBelowThreshold: view.showBelowThreshold,
-            // The grid rides the same surface the buildings stand on, or it would
-            // float over valleys and vanish inside hills. Captured into a const so
-            // the narrowing survives the closure — `terrain` is reassigned whenever
-            // the user moves.
-            ...(field === undefined
-              ? {}
-              : {
-                  heightAt: (point: { x: number; y: number }) =>
-                    field.heightAt(point),
-                }),
-          })
-        : EMPTY_CELL_MESH,
-    );
+    // THE GRID IS BUILT IN THE WORKER NOW (W8). It was `buildCellMesh` inline —
+    // one `cellToBoundary` per drawn cell, thousands of H3 calls on the thread
+    // that also has to stay responsive, on every publish. The builder itself is
+    // unchanged and unmoved in spirit: the same cells, bands and colours the map
+    // just drew, from the same functions, so the two views cannot disagree about
+    // what a cell scores (finding M3).
+    //
+    // Switching the layer OFF is synchronous, deliberately. An empty grid needs
+    // no arithmetic, and routing it through the RPC would leave the old grid on
+    // screen until a round trip completed — a checkbox that visibly lags.
+    if (!isLayerEnabled(layers, "cells")) {
+      buildingView.renderCells(EMPTY_CELL_MESH);
+    } else {
+      void buildGrid({
+        cells: snapshot.cells.map((cell) => ({
+          cell: cell.cell,
+          // Resolved HERE rather than in the worker: the category is already
+          // known on this side, and sending every category's score for every
+          // cell would be most of the payload for data the grid cannot use.
+          score: cell.scores[view.category] ?? 1,
+        })),
+        centre: snapshot.position,
+        threshold: snapshot.threshold,
+        // THE SAME DERIVATION AS THE MAP AND THE LEGEND (W12). This was a third
+        // copy of the same expression; three copies agreeing today is three
+        // chances to disagree tomorrow, and the disagreement would be silent
+        // because each view stays self-consistent.
+        scale: scaleFor(snapshot, view.category),
+        showBelowThreshold: view.showBelowThreshold,
+      });
+    }
   }
 
   function writeStatus(): void {

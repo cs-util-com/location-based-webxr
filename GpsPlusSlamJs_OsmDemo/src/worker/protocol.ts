@@ -178,6 +178,40 @@ export interface WorkerCalls {
     };
     readonly result: UpdateResult;
   };
+  /**
+   * The affordance grid's buffers (W8, R4-13).
+   *
+   * WHY THIS IS A CALL RATHER THAN PART OF `update`. The grid depends on
+   * presentation state — the category, the threshold, the heat scale and the
+   * below-threshold switch — and three of those change with NO new snapshot
+   * behind them. Folding it into `update` would make a checkbox trigger a
+   * refetch; a call of its own makes it exactly as expensive as it needs to be.
+   *
+   * WHY IT MOVED OFF THE MAIN THREAD AT ALL. `buildCellMesh` calls
+   * `cellToBoundary` once per drawn cell — an H3 library call, thousands of
+   * times, on the thread that also has to stay responsive — and then fills three
+   * typed arrays. It is pure arithmetic over cell ids and the output is
+   * transferable, so it is the one piece of R4-13's "could this happen in the
+   * background" that genuinely could.
+   *
+   * The CELLS come with the request rather than being read from the worker's own
+   * scoring state, and that is deliberate: the demo draws the snapshot it holds,
+   * and a grid built from whatever the worker happened to score last would be a
+   * second source of truth for what is on screen.
+   */
+  readonly cellMesh: {
+    readonly request: {
+      readonly cells: readonly {
+        readonly cell: string;
+        readonly score: number;
+      }[];
+      readonly centre: LatLng;
+      readonly threshold: number;
+      readonly scale: { readonly threshold: number; readonly max: number };
+      readonly showBelowThreshold: boolean;
+    };
+    readonly result: TransferableCellMesh;
+  };
   readonly explain: {
     readonly request: { readonly cell: string; readonly category: string };
     /** `undefined` when the cell is not in the current snapshot. */
@@ -191,6 +225,27 @@ export interface WorkerCalls {
     };
     readonly result: TerrainResult;
   };
+}
+
+/**
+ * The grid, as buffers.
+ *
+ * Structurally `CellMesh` minus nothing — it is re-declared here rather than
+ * imported so `protocol.ts` stays the single statement of what crosses the
+ * boundary, and so a field added to `CellMesh` that is NOT transferable fails
+ * here rather than at runtime.
+ */
+/* NOT exported: nothing outside this file names it — the demo side works in
+ * `CellMesh`, which this is the transferable statement of. Exporting it would be
+ * a second name for the same shape, and knip is right to say so. */
+interface TransferableCellMesh {
+  readonly cells: readonly string[];
+  readonly positions: Float32Array;
+  readonly colors: Float32Array;
+  readonly indices: Uint32Array;
+  readonly cellForTriangle: readonly string[];
+  readonly linePositions: Float32Array;
+  readonly lineColors: Float32Array;
 }
 
 export type WorkerCallKind = keyof WorkerCalls;
@@ -231,6 +286,7 @@ const CALL_KINDS = new Set<string>([
   "update",
   "explain",
   "terrain",
+  "cellMesh",
 ] satisfies WorkerCallKind[]);
 
 /**
