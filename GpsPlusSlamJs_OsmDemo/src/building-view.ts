@@ -32,10 +32,15 @@ import { drawMeshLayers } from "./mesh-layers.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { resolvePick, type Pick } from "./pick.js";
-import { cameraAzimuth, sunDirection } from "./sun.js";
+import { SUN_ELEVATION_RAD, cameraAzimuth, sunDirection } from "./sun.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
-import { SKY_GRADIENT_ROWS, skyGradientPixels } from "./sky-gradient.js";
+import {
+  SKY_GRADIENT_COLUMNS,
+  SKY_GRADIENT_ROWS,
+  skyGradientPixels,
+  skyRotationForSun,
+} from "./sky-gradient.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 // Re-exported so the many call sites that import these from the view keep working.
@@ -265,9 +270,11 @@ export class BuildingView {
     // map... one texture, two jobs", and that second job took the whole scene down
     // for ten work items — see the block at the `scene.background` assignment
     // below, and `building-view.ts.md`'s lighting invariant.
+    // 256 x 64 since W14, not 1 x 64. A one-column equirectangular map has no
+    // azimuth at all, so it could not hold the sun the notes asked for.
     this.sky = new THREE.DataTexture(
-      skyGradientPixels(),
-      1,
+      skyGradientPixels({ sunElevationRad: SUN_ELEVATION_RAD }),
+      SKY_GRADIENT_COLUMNS,
       SKY_GRADIENT_ROWS,
       THREE.RGBAFormat,
     );
@@ -795,9 +802,12 @@ export class BuildingView {
    * a shadow camera is ever added.
    */
   private aimSun(): void {
-    const direction = sunDirection(
-      cameraAzimuth(this.camera.position, this.controls.target),
-    );
+    const azimuth = cameraAzimuth(this.camera.position, this.controls.target);
+    const direction = sunDirection(azimuth);
+    // THE SAME VECTOR TURNS THE SKY (W14). The disc is baked at one azimuth and
+    // the whole background is rotated, so the painted sun and the light cannot
+    // disagree — and it costs a uniform rather than a texture upload per drag.
+    this.scene.backgroundRotation.y = skyRotationForSun(azimuth);
     const distance = 1000;
     this.sun.position.set(
       direction.x * distance,

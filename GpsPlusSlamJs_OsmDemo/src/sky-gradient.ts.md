@@ -1,62 +1,76 @@
-# `sky-gradient.ts`
+# `sky-gradient.ts` — the sky, as pixels
 
 ## Purpose
 
-The sky's vertical colour ramp, as RGBA pixel rows. Pure arithmetic — no `three`,
-no GPU.
+Generates the equirectangular sky texture: a zenith→horizon gradient with a sun
+disc and a warm glow baked in, plus the background rotation that places that sun
+at the light's actual azimuth.
 
 ## Public API
 
-- `skyGradientPixels(rows = SKY_GRADIENT_ROWS): Uint8Array` — RGBA, **top row
-  first**, fully opaque. Throws `RangeError` for fewer than 2 rows or a
-  non-integer.
-- `SKY_GRADIENT_ROWS` (64), `ZENITH_RGB`, `HORIZON_RGB`.
+- `SKY_GRADIENT_ROWS` (64), `SKY_GRADIENT_COLUMNS` (256).
+- `ZENITH_RGB`, `HORIZON_RGB`, `SUN_GLOW_RGB`, `SUN_DISC_RGB`.
+- `skyGradientPixels({ sunElevationRad, rows?, columns? }): Uint8Array` — RGBA,
+  row-major, **top row first**. Throws `RangeError` below 2 rows or 2 columns.
+- `skyRotationForSun(azimuthRad): number` — the `scene.backgroundRotation.y`
+  that puts the baked disc at that azimuth.
 
 ## Invariants & assumptions
 
-- **Top row first.** This is the contract the tests assert, chosen because it is
-  the intuitive reading. It is **not** what `THREE.DataTexture` wants: `flipY`
-  defaults to `false` there (unlike an image-backed texture), so row 0 lands at
-  `v = 0`, which on an equirectangular map is the **nadir**. `building-view.ts`
-  sets `flipY = true` to correct it — the three.js quirk is deliberately kept out
-  of this file.
-  - Measured before that fix: 63.5 luma overhead against 52.9 near the horizon,
-    i.e. precisely inverted. An upside-down sky reads as a stylistic choice, not a
-    bug, which is why the orientation has its own test.
-- **Monotonically brighter towards the horizon.** A band partway up reads as a
-  light source in the sky rather than as a broken ramp.
-- **Always fully opaque.** A translucent sky composites against the canvas clear
-  colour — the near-black this replaces — so the bug would present as "the change
-  did nothing".
-- **The horizon is clearly lighter than the ground** (`0x3a4356`), by design and by
-  test. That is what makes the ground plane's far edge read as a silhouette rather
-  than as a seam between two similar darks, which was the second half of the
-  reported complaint.
-- **Desaturated on purpose.** It sits behind a grey city and a heat-coloured hex
-  grid; a vivid sky would compete with the ramp the demo exists to read.
-- **No fog anywhere.** Offered and rejected (DEC-R2-2): fog would have concealed
-  finding R2-9 — distant buildings standing on fabricated, striped terrain —
-  instead of surfacing it.
+- **NEVER `scene.environment`.** Widening the texture did not change this. Only
+  one of the two reasons was about width: three routes any environment map
+  through its CubeUV path, which expects a PMREM-processed texture, and a raw
+  equirect `DataTexture` makes it emit integer `CUBEUV_*` defines into float
+  assignments — every `MeshStandardMaterial` fragment shader then fails to
+  compile, three logs it and **silently does not draw the material**. That took
+  the whole scene down for ten work items while the status line still reported
+  "21 volumes" and the suite stayed green.
+- **Top row first**, with `flipY = true` set on the `DataTexture` in
+  `building-view.ts`. The three-specific quirk lives in the three-facing file;
+  reversed, the sky is bright overhead and dark at the horizon, which reads as a
+  stylistic choice rather than a bug.
+- **The sun's ROW comes from its elevation**, via three's own
+  `v = asin(y)/π + 0.5`. A fixed row would disagree with the light the moment
+  `SUN_ELEVATION_RAD` changed — the two-sources-of-truth defect, in the one place
+  it would look merely atmospheric.
+- **The sun's COLUMN is baked once and the sky is rotated.** The sun moves with
+  the camera (W12), so regenerating the pixels would be a texture upload on every
+  drag — the exact main-thread cost this round removes. `skyRotationForSun` is
+  derived from three's `equirectUv` and its transposed background rotation, and
+  the derivation is re-computed in the test rather than tuned until it looked
+  right.
+  - **What no test here can prove is that the derivation matches a GPU.** If the
+    sun appears mirrored on screen, the sign of the `π/2` term is the single
+    knob. That check is §11.3 of the round-4 plan.
+- **The disc is angularly much larger than the real sun** (~0.035 rad vs 0.0047).
+  A physically sized sun is two pixels and reads as a dead sub-pixel.
+- **The horizontal distance is scaled by `cos(elevation)`**, so the disc stays
+  round near the zenith instead of smearing across the top of the image.
+- **Fog is no longer forbidden.** Round 2 rejected it because it would have
+  hidden finding R2-9 (distant buildings on fabricated terrain); R2-9 is fixed,
+  so W21 introduces distance haze deliberately.
 
 ## Examples
 
 ```ts
 const sky = new THREE.DataTexture(
-  skyGradientPixels(),
-  1,
+  skyGradientPixels({ sunElevationRad: SUN_ELEVATION_RAD }),
+  SKY_GRADIENT_COLUMNS,
   SKY_GRADIENT_ROWS,
   THREE.RGBAFormat,
 );
 sky.mapping = THREE.EquirectangularReflectionMapping;
-sky.flipY = true; // see the invariant above
+sky.flipY = true;
 scene.background = sky;
-scene.environment = sky; // also what makes the ground's specular read
+scene.backgroundRotation.y = skyRotationForSun(sunAzimuth);
 ```
 
 ## Tests
 
-`sky-gradient.test.ts` — orientation, monotonicity, opacity, the
-horizon-vs-ground contrast margin, and the degenerate-row guard. Each targets one
-of the three ways a gradient goes wrong while still looking deliberate on screen.
-The e2e _"has a graded sky, so the ground reads against it"_ asserts the gradient
-survives to the canvas, sampling at the left edge where no building reaches.
+`sky-gradient.test.ts` — full opacity, zenith at the top and horizon at the
+bottom, monotonic down a column away from the sun, a disc at the baked azimuth,
+the disc's row tracking the elevation, symmetry about the true (half-pixel)
+centre so the disc is round, a warm sky near the sun and a cool one far from it,
+and `RangeError` on a degenerate size. Plus `skyRotationForSun`: that it turns
+by exactly as much as the sun does, and that re-deriving three's sampling puts
+the sun on the baked column.
