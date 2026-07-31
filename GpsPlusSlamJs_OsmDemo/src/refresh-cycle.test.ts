@@ -52,32 +52,23 @@ const snapshot = (category: string): DemoSnapshot => ({
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 0 },
 });
 
+/** One empty buffer set, for the layers that are still a single mesh. */
+const EMPTY_MESH_DATA = {
+  positions: new Float32Array(0),
+  normals: new Float32Array(0),
+  indices: new Uint32Array(0),
+  triangleCount: 0,
+  forcedEars: 0,
+};
+
 /** An empty mesh — these tests are about the cycle, not about geometry. */
 const NO_MESH: TransferableMesh = {
-  buildings: {
-    positions: new Float32Array(0),
-    normals: new Float32Array(0),
-    indices: new Uint32Array(0),
-    triangleCount: 0,
-    forcedEars: 0,
-  },
+  buildings: [],
   trees: [],
-  plates: {
-    positions: new Float32Array(0),
-    normals: new Float32Array(0),
-    indices: new Uint32Array(0),
-    triangleCount: 0,
-    forcedEars: 0,
-  },
+  plates: [],
   plateCount: 0,
   poi: [],
-  roads: {
-    positions: new Float32Array(0),
-    normals: new Float32Array(0),
-    indices: new Uint32Array(0),
-    triangleCount: 0,
-    forcedEars: 0,
-  },
+  roads: [],
   roadCount: 0,
   regions: [],
   volumes: 0,
@@ -606,7 +597,11 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
                   snapshot: snapshotAt(payload.category, payload.radius),
                   mesh: {
                     kind: "regions" as const,
-                    regions: [{ medianScore: calls, mesh: NO_MESH.buildings }],
+                    // Region slabs are NOT chunked (W20): a region is one
+                    // contiguous claim and is drawn as one slab, so it stays a
+                    // single `MeshData` while buildings, plates and roads became
+                    // chunk lists.
+                    regions: [{ medianScore: calls, mesh: EMPTY_MESH_DATA }],
                   },
                 },
           );

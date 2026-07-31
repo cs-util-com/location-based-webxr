@@ -36,6 +36,7 @@ import { SUN_ELEVATION_RAD, cameraAzimuth, sunDirection } from "./sun.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import {
+  HORIZON_RGB,
   SKY_GRADIENT_COLUMNS,
   SKY_GRADIENT_ROWS,
   skyGradientPixels,
@@ -66,6 +67,28 @@ export type GroundDisplacement = GroundMode;
  * throw away detail already fetched.
  */
 export const TERRAIN_SPACING_M = 12;
+
+/**
+ * How far the camera can see, metres (W21, R4-16).
+ *
+ * WAS 4000, which put every building in a res-7 fetch tile inside the frustum —
+ * so the demo drew geometry three to five kilometres away, which is what the
+ * notes saw. The destination is AR, where the other apps in this workspace run a
+ * far plane of 200-300 m.
+ *
+ * 1200 rather than 300 because this is the DESKTOP view and seeing the city you
+ * are inspecting is its point; AR will want its own number, chosen against the
+ * draw-call readout rather than guessed.
+ */
+export const FAR_PLANE_M = 1200;
+
+/**
+ * Where the haze starts, metres.
+ *
+ * Two thirds of the way out, so the fade is gradual enough to read as distance
+ * rather than as a wall — the whole reason the far plane can be lowered at all.
+ */
+export const FOG_NEAR_M = FAR_PLANE_M * 0.66;
 
 /**
  * Upper bound on plane subdivisions per axis.
@@ -321,6 +344,25 @@ export class BuildingView {
     // and it cost the entire scene. The hemisphere light below supplies the
     // sky-tinted fill the environment map was actually contributing.
 
+    // DISTANCE HAZE, and this REVERSES a round-2 decision on its own terms.
+    // Fog was offered then and rejected because it would have hidden finding
+    // R2-9 — distant buildings standing on fabricated, striped terrain — instead
+    // of surfacing it. R2-9 is fixed (W10 of round 3 rewrote the heightfield), so
+    // the objection has expired, and without haze a lowered far plane is a wall
+    // where the world stops.
+    //
+    // The colour is the sky's HORIZON, not an arbitrary grey: anything else and
+    // the fade reads as a grey band in front of the sky rather than as distance.
+    this.scene.fog = new THREE.Fog(
+      new THREE.Color(
+        (HORIZON_RGB[0] ?? 0) / 255,
+        (HORIZON_RGB[1] ?? 0) / 255,
+        (HORIZON_RGB[2] ?? 0) / 255,
+      ),
+      FOG_NEAR_M,
+      FAR_PLANE_M,
+    );
+
     this.scene.add(this.group);
     // Ambient LOWERED from 0.55. Ambient light is flat by definition — it adds the
     // same amount to every facet regardless of its normal — so it was actively
@@ -402,7 +444,15 @@ export class BuildingView {
     installGroundDisplacement(this.groundRampMaterial, this.groundUniforms);
     this.scene.add(this.ground);
 
-    this.camera = new THREE.PerspectiveCamera(55, 1, 0.5, 4000);
+    // FAR PLANE 1200 m, DOWN FROM 4000 (W21, R4-16). A res-7 fetch tile is
+    // kilometres across and everything in it was inside the frustum, so the demo
+    // drew buildings three to five kilometres away — in an app whose destination
+    // is AR, where the other apps in this workspace run 200-300 m.
+    //
+    // 1200 rather than 300: this is the DESKTOP view, where seeing the city you
+    // are inspecting is the point. AR will want its own number, and `draw-cost`
+    // in the status line is how that choice gets made on evidence.
+    this.camera = new THREE.PerspectiveCamera(55, 1, 0.5, FAR_PLANE_M);
     this.camera.position.set(140, 110, 140);
     this.camera.lookAt(0, 10, 0);
 

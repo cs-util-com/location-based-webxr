@@ -50,7 +50,8 @@ import {
   metresToDegrees,
   explainCell,
   loadRuleTable,
-  mergeMeshes,
+  chunkMeshes,
+  meshCentroidEnu,
   type LatLng,
   type OsmFeature,
   type RuleTable,
@@ -268,18 +269,33 @@ function buildMesh(
   // the artefact the building change removed. The same option name carries both
   // because the builders call it differently, which is where the difference belongs.
   const plates = buildAreaPlates(all, { ...options, clipTo: plateClip });
-  // ONE merged geometry: this view shows one working set at a time and is always
-  // wholly on screen, so a single batch is right here even though the package's
-  // general guidance is to batch per res-8/res-9 cell.
-  const buildings = mergeMeshes(volumes.map((volume) => volume.mesh));
+  // BATCHED PER CHUNK, not merged into one (W20, R4-16). The comment that used
+  // to be here said a single batch was right "even though the package's general
+  // guidance is to batch per res-8/res-9 cell", on the grounds that the view is
+  // always wholly on screen. DEC-R2-8 grew the extent to 2.8 km and that stopped
+  // being true — and one mesh cannot be frustum-culled in parts, which is
+  // exactly what R4-16 reports.
+  const buildings = chunkMeshes(
+    volumes,
+    (volume) => volume.mesh,
+    (volume) => meshCentroidEnu(volume.mesh),
+  );
 
   return {
     buildings,
     trees,
-    plates: mergeMeshes(plates.map((plate) => plate.mesh)),
+    plates: chunkMeshes(
+      plates,
+      (plate) => plate.mesh,
+      (plate) => meshCentroidEnu(plate.mesh),
+    ),
     plateCount: plates.length,
     poi,
-    roads: mergeMeshes(roads.map((road) => road.mesh)),
+    roads: chunkMeshes(
+      roads,
+      (road) => road.mesh,
+      (road) => meshCentroidEnu(road.mesh),
+    ),
     roadCount: roads.length,
     regions: regionSlabs,
     volumes: volumes.length,
@@ -569,7 +585,7 @@ async function loadTerrain(
  * WHY PER KIND AND NOT A BLANKET SWEEP. Transferring **detaches** a buffer on this
  * side, so it may only be done for data the worker does not keep:
  *
- * - **update** — the mesh comes from `mergeMeshes`, freshly allocated per call and
+ * - **update** — the mesh comes from `chunkMeshes`, freshly allocated per call and
  *   never retained here, so handing it over is free. This is the payload that
  *   matters: the building geometry is the largest thing that crosses.
  * - **terrain** — the field's `heights` MUST NOT be transferred. That same object
@@ -592,14 +608,17 @@ function transferablesOf(kind: WorkerCallKind, value: unknown): Transferable[] {
   // being skipped, not a transfer being saved.
   if (update === undefined || update.kind !== "full") return [];
   const mesh = update.mesh;
-  return [
-    mesh.buildings.positions.buffer,
-    mesh.buildings.normals.buffer,
-    mesh.buildings.indices.buffer,
-    mesh.plates.positions.buffer,
-    mesh.plates.normals.buffer,
-    mesh.plates.indices.buffer,
-  ].filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
+  // PER CHUNK since W20. The layers are lists now, so the transfer list is a
+  // flatMap rather than six fields — and it must stay complete: a buffer left
+  // out is silently COPIED instead of moved, which is invisible except as the
+  // thing this list exists to avoid.
+  return [...mesh.buildings, ...mesh.plates, ...mesh.roads]
+    .flatMap((chunk) => [
+      chunk.mesh.positions.buffer,
+      chunk.mesh.normals.buffer,
+      chunk.mesh.indices.buffer,
+    ])
+    .filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
 }
 
 /**

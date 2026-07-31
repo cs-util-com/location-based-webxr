@@ -27,6 +27,7 @@
  */
 
 import type {
+  MeshChunk,
   CellExplanation,
   LatLng,
   MeshData,
@@ -48,7 +49,15 @@ import type { HeightfieldData } from "../heightfield.js";
  * that must not import `three` and would separate it from its test for no gain.
  */
 export interface TransferableMesh {
-  readonly buildings: MeshData;
+  /**
+   * Buildings, batched into spatial CHUNKS rather than one merged mesh (W20).
+   *
+   * three frustum-culls per `Object3D`, so one mesh spanning a 2.8 km tile is
+   * all-or-nothing: distance and frustum culling were unavailable by
+   * construction, which is what R4-16 saw as geometry kilometres away still
+   * being drawn. A list of chunks is a list of things that can be culled.
+   */
+  readonly buildings: readonly MeshChunk[];
   readonly trees: readonly TreePlacement[];
   /**
    * Ground areas, one merged mesh.
@@ -57,7 +66,7 @@ export interface TransferableMesh {
    * areas, and a draw call each would dominate the frame. The buildings take the
    * same trade for the same reason.
    */
-  readonly plates: MeshData;
+  readonly plates: readonly MeshChunk[];
   readonly plateCount: number;
   /**
    * POI markers (W12), as placements for the same reason trees are.
@@ -74,7 +83,7 @@ export interface TransferableMesh {
    * MERGED like the plates and for the same reason: a working set has hundreds
    * of ways and a draw call each would dominate the frame.
    */
-  readonly roads: MeshData;
+  readonly roads: readonly MeshChunk[];
   readonly roadCount: number;
   /**
    * Merged affordance regions as slabs (W14), one entry per region.

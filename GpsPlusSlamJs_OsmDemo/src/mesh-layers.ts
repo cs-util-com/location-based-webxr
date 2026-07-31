@@ -307,6 +307,19 @@ const POI_MATERIAL = new THREE.MeshStandardMaterial({
   roughness: 0.5,
 });
 
+/**
+ * Triangles across a layer's chunks (W20).
+ *
+ * The status line reports what was DRAWN, and after chunking that is a sum
+ * rather than a field. Written once because three layers need it and three
+ * copies of a reduce is three chances for one to be forgotten when a layer is
+ * added — which is the same shape as the missing-row failure the table exists
+ * to prevent.
+ */
+function totalTriangles(chunks: readonly { mesh: MeshData }[]): number {
+  return chunks.reduce((sum, chunk) => sum + chunk.mesh.triangleCount, 0);
+}
+
 /** Wraps worker buffers in a geometry. The buffers are already validated. */
 function geometryFrom(data: MeshData): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
@@ -326,75 +339,83 @@ function geometryFrom(data: MeshData): THREE.BufferGeometry {
 export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   {
     layer: "buildings",
+    // ONE MESH PER CHUNK (W20). Each is frustum-culled on its own, which one
+    // merged city could not be — see `chunk-meshes.ts`. The material is shared
+    // across chunks, so this costs draw calls and not memory.
     build: (mesh) =>
-      mesh.buildings.triangleCount === 0
-        ? []
-        : [
-            new THREE.Mesh(
-              geometryFrom(mesh.buildings),
-              new THREE.MeshStandardMaterial({
-                color: 0xc8ccd8,
-                // Double-sided because OSM volumes are not reliably closed — a
-                // `building:part` with no floor, or a footprint the triangulator
-                // could only partly cut, shows as a hole under culling for reasons
-                // that have nothing to do with this package's correctness.
-                //
-                // IT DOES NOT VALIDATE WINDING — it hides it. Every wall quad in
-                // the package was wound inside-out when this view was written and
-                // it looked entirely fine here, which is why orientation is now
-                // pinned by `mesh-orientation.test.ts` instead of by looking.
-                side: THREE.DoubleSide,
-                flatShading: true,
-                // REFLECTIVE, and this was an oversight rather than a decision
-                // (W13, R4-15, N3). DEC-R2-1 made the GROUND reflective so facet
-                // edges show as a highlight slides across them while the camera
-                // moves; the buildings kept `MeshStandardMaterial`'s default
-                // `roughness: 1.0`, which is fully diffuse and has no specular
-                // lobe at all. Nothing in the record says buildings should stay
-                // matte.
-                //
-                // 0.65, NOT the ground's 0.42. A building at 0.42 reads as glass
-                // or polished stone, which for a residential block is a
-                // different kind of wrong — the ground gets away with it because
-                // wet-ish ground is plausible.
-                roughness: 0.65,
-                metalness: 0,
-              }),
-            ),
-          ],
+      mesh.buildings.map(
+        (chunk) =>
+          new THREE.Mesh(
+            geometryFrom(chunk.mesh),
+            new THREE.MeshStandardMaterial({
+              color: 0xc8ccd8,
+              // SINGLE-SIDED SINCE W24 (R4-17). It was `DoubleSide`, and the
+              // reason was honest: OSM volumes are not reliably closed, so a
+              // `building:part` with no floor shows as a hole under culling for
+              // reasons that have nothing to do with this package.
+              //
+              // But that comment also recorded why it was a bad guarantee —
+              // "IT DOES NOT VALIDATE WINDING, it hides it. Every wall quad in
+              // the package was wound inside-out when this view was written and
+              // it looked entirely fine here" — and the fix for THAT was
+              // `mesh-orientation.test.ts`, which now pins the winding directly.
+              // With the winding proved, double-siding buys only the open-volume
+              // case, at roughly double the fragment work on the largest mesh in
+              // the scene. A hole where a floor is genuinely missing is also the
+              // more honest failure: it shows the data gap instead of papering
+              // over it with a wrongly-lit interior.
+              side: THREE.FrontSide,
+              flatShading: true,
+              // REFLECTIVE, and this was an oversight rather than a decision
+              // (W13, R4-15, N3). DEC-R2-1 made the GROUND reflective so facet
+              // edges show as a highlight slides across them while the camera
+              // moves; the buildings kept `MeshStandardMaterial`'s default
+              // `roughness: 1.0`, which is fully diffuse and has no specular
+              // lobe at all. Nothing in the record says buildings should stay
+              // matte.
+              //
+              // 0.65, NOT the ground's 0.42. A building at 0.42 reads as glass
+              // or polished stone, which for a residential block is a
+              // different kind of wrong — the ground gets away with it because
+              // wet-ish ground is plausible.
+              roughness: 0.65,
+              metalness: 0,
+            }),
+          ),
+      ),
     counters: (mesh) => ({
       volumes: mesh.volumes,
       parts: mesh.parts,
-      triangles: mesh.buildings.triangleCount,
+      triangles: totalTriangles(mesh.buildings),
       guessedHeights: mesh.guessedHeights,
       approximateRoofs: mesh.approximateRoofs,
     }),
   },
   {
     layer: "plates",
-    build: (mesh) => {
-      if (mesh.plates.triangleCount === 0) return [];
-      const plate = new THREE.Mesh(
-        geometryFrom(mesh.plates),
-        new THREE.MeshStandardMaterial({
-          color: 0x4a5468,
-          roughness: 0.85,
-          flatShading: true,
-          // SINGLE-SIDED, unlike the buildings. A plate is horizontal with an
-          // upward normal by construction, so a back face is never legitimately
-          // visible — and culling it means a plate wound the wrong way DISAPPEARS
-          // instead of being silently lit from below, which is the failure worth
-          // noticing rather than hiding.
-          side: THREE.FrontSide,
-        }),
-      );
-      // From the shared ladder, so it cannot be coplanar with the roads or grid.
-      plate.position.y = groundLift("plates");
-      return [plate];
-    },
+    build: (mesh) =>
+      mesh.plates.map((chunk) => {
+        const plate = new THREE.Mesh(
+          geometryFrom(chunk.mesh),
+          new THREE.MeshStandardMaterial({
+            color: 0x4a5468,
+            roughness: 0.85,
+            flatShading: true,
+            // SINGLE-SIDED. A plate is horizontal with an upward normal by
+            // construction, so a back face is never legitimately visible — and
+            // culling it means a plate wound the wrong way DISAPPEARS instead of
+            // being silently lit from below, which is the failure worth noticing
+            // rather than hiding.
+            side: THREE.FrontSide,
+          }),
+        );
+        // From the shared ladder, so it cannot be coplanar with roads or grid.
+        plate.position.y = groundLift("plates");
+        return plate;
+      }),
     counters: (mesh) => ({
       plates: mesh.plateCount,
-      plateTriangles: mesh.plates.triangleCount,
+      plateTriangles: totalTriangles(mesh.plates),
     }),
   },
   {
@@ -475,37 +496,37 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "roads",
-    build: (mesh) => {
-      if (mesh.roads.triangleCount === 0) return [];
-      const ribbon = new THREE.Mesh(
-        geometryFrom(mesh.roads),
-        new THREE.MeshStandardMaterial({
-          // LIGHTER than the ground, not darker, and that was a measurement
-          // rather than a preference. The first attempt was 0x2f333d — asphalt
-          // reasoning — but the ground renders at rgb(40,40,56) under this
-          // scene's lighting, so a darker road landed within a few levels of it
-          // and switching the layer on changed 77 pixels out of 460 800. A road
-          // that cannot be told from the ground it lies on is a failed layer
-          // whatever the test says.
-          color: 0x8b909c,
-          roughness: 0.9,
-          // OPAQUE, and DEC-R2-13 depends on it. The disc at each vertex overlaps
-          // the segment quads it joins; in translucent geometry that overlap would
-          // double-blend into a visible blob at every junction.
-          transparent: false,
-          // SINGLE-SIDED for the same reason as the plates: a ribbon is
-          // horizontal with an upward normal by construction, so a wrongly-wound
-          // one should disappear rather than be lit from below.
-          side: THREE.FrontSide,
-          flatShading: true,
-        }),
-      );
-      ribbon.position.y = groundLift("roads");
-      return [ribbon];
-    },
+    build: (mesh) =>
+      mesh.roads.map((chunk) => {
+        const ribbon = new THREE.Mesh(
+          geometryFrom(chunk.mesh),
+          new THREE.MeshStandardMaterial({
+            // LIGHTER than the ground, not darker, and that was a measurement
+            // rather than a preference. The first attempt was 0x2f333d — asphalt
+            // reasoning — but the ground renders at rgb(40,40,56) under this
+            // scene's lighting, so a darker road landed within a few levels of it
+            // and switching the layer on changed 77 pixels out of 460 800. A road
+            // that cannot be told from the ground it lies on is a failed layer
+            // whatever the test says.
+            color: 0x8b909c,
+            roughness: 0.9,
+            // OPAQUE, and DEC-R2-13 depends on it. The disc at each vertex overlaps
+            // the segment quads it joins; in translucent geometry that overlap would
+            // double-blend into a visible blob at every junction.
+            transparent: false,
+            // SINGLE-SIDED for the same reason as the plates: a ribbon is
+            // horizontal with an upward normal by construction, so a wrongly-wound
+            // one should disappear rather than be lit from below.
+            side: THREE.FrontSide,
+            flatShading: true,
+          }),
+        );
+        ribbon.position.y = groundLift("roads");
+        return ribbon;
+      }),
     counters: (mesh) => ({
       roads: mesh.roadCount,
-      roadTriangles: mesh.roads.triangleCount,
+      roadTriangles: totalTriangles(mesh.roads),
     }),
   },
   {

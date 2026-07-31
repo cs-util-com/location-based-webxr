@@ -44,18 +44,15 @@ function triangle(): {
   };
 }
 
-const EMPTY = {
-  positions: new Float32Array(0),
-  normals: new Float32Array(0),
-  indices: new Uint32Array(0),
-  triangleCount: 0,
-  forcedEars: 0,
-};
+/** One chunk holding one triangle — the post-W20 shape of a mesh layer. */
+function oneChunk(): { key: string; mesh: ReturnType<typeof triangle> }[] {
+  return [{ key: "0,0", mesh: triangle() }];
+}
 
 /** A mesh in which EVERY layer has something to draw. */
 function fullMesh(): TransferableMesh {
   return {
-    buildings: triangle(),
+    buildings: oneChunk(),
     // `variant` was `0` here until W6 — a number where `TreeVariant` is a
     // string union, which the blanket `as unknown as` cast below hid. Nothing
     // read the field, so nothing noticed; the moment the draw loop started
@@ -72,9 +69,9 @@ function fullMesh(): TransferableMesh {
         variant: "unknown",
       },
     ],
-    plates: triangle(),
+    plates: oneChunk(),
     plateCount: 3,
-    roads: triangle(),
+    roads: oneChunk(),
     roadCount: 2,
     regions: [{ medianScore: 4, mesh: triangle() }],
     poi: [
@@ -96,11 +93,13 @@ function fullMesh(): TransferableMesh {
 /** A mesh in which every layer is present but empty. */
 function emptyMesh(): TransferableMesh {
   return {
-    buildings: EMPTY,
+    // NO chunks rather than one empty chunk (W20): an empty BufferGeometry is
+    // still a draw call and a disposal obligation.
+    buildings: [],
     trees: [],
-    plates: EMPTY,
+    plates: [],
     plateCount: 0,
-    roads: EMPTY,
+    roads: [],
     roadCount: 0,
     regions: [],
     poi: [],
