@@ -936,7 +936,13 @@ export class BuildingView {
     // their GPU buffers. Missing these leaks a geometry and a material per
     // disposed view, and the whole point of holding the resize listener and the
     // rAF handle is that this method actually cleans up.
-    disposeMesh(this.ground);
+    // BOTH GROUND MATERIALS BY NAME, not whichever one is currently assigned
+    // (raised in review on #233). `disposeMesh` frees `mesh.material`, and the
+    // height ramp SWAPS that field — so with the ramp active it disposed the ramp
+    // material twice and never freed the standard one. Naming both is the only
+    // form that does not depend on which mode the view happened to be in.
+    this.ground.geometry.dispose();
+    this.groundMaterial.dispose();
     // The sky is a GPU texture like any other and nothing else frees it. It is
     // small, but `scene.background` holds it, so leaving it behind keeps the
     // whole scene reachable. (It is no longer also `scene.environment` — that

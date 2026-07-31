@@ -97,6 +97,7 @@ export async function stubNetwork(page, options = {}) {
     overpassQuery: 0,
     basemap: 0,
     terrain: 0,
+    ruleSheet: 0,
     /** Lets the DEM answer, for tests that opted into `holdTerrain`. */
     releaseTerrain: () => {
       releaseTerrain();
@@ -157,7 +158,20 @@ export async function stubNetwork(page, options = {}) {
   // aborted fetch lands it on the checked-in snapshot instantly, which is both
   // deterministic AND the tier the status bar reports, so the test can assert
   // which table it is judging.
-  await page.route(isRuleSheet, (route) => route.abort());
+  //
+  // `ruleSheetCsv` serves a real table instead, so the LIVE and CACHE tiers can
+  // be exercised at all — without it every test runs on the snapshot and the
+  // cache path has no coverage, which is how a loader whose cache was disabled in
+  // its only consumer went unnoticed (#233).
+  await page.route(isRuleSheet, (route) => {
+    counts.ruleSheet++;
+    if (options.ruleSheetCsv === undefined) return route.abort();
+    return route.fulfill({
+      status: 200,
+      contentType: "text/csv",
+      body: options.ruleSheetCsv,
+    });
+  });
 
   // Basemap tiles are decoration here and cost a third party bandwidth.
   await page.route(isBasemap, (route) =>

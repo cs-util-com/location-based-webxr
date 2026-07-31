@@ -2835,3 +2835,41 @@ test.describe("under the world", () => {
       .toBe(0);
   });
 });
+
+/**
+ * The rule table's cache tier, raised in review on PR #233.
+ *
+ * `loadRuleTable({})` was called with no store, so `readCache` returned
+ * `undefined` before doing anything: the TTL short-circuit never fired — every
+ * boot went to the network — and `checkDrift`, which the loader's own header
+ * calls "not optional", had no baseline to compare against and was therefore
+ * never evaluated. The guard existed and was inert in its only consumer.
+ */
+test.describe("the rule table cache", () => {
+  /** A minimal but real table: one rule, one category. */
+  const CSV = ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join(
+    "\n",
+  );
+
+  test("is written on the first load and served on the next", async ({
+    page,
+  }) => {
+    const counts = await stubNetwork(page, { ruleSheetCsv: CSV });
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // First load: the live sheet, and the status line names the tier it used.
+    await expect(page.locator("#status")).toContainText(/rules: live/);
+    const fetchedOnce = counts.ruleSheet;
+    expect(fetchedOnce).toBeGreaterThan(0);
+
+    await page.reload();
+    await waitForRefresh(page);
+
+    // Second load: served from OPFS inside the TTL, with NO new request. Before
+    // the fix this said `rules: live` again and the count went up — the cache was
+    // never written, so there was nothing to serve.
+    await expect(page.locator("#status")).toContainText(/rules: cache/);
+    expect(counts.ruleSheet).toBe(fetchedOnce);
+  });
+});

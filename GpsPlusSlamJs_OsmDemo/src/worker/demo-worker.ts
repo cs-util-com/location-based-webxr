@@ -285,12 +285,25 @@ async function handle<K extends WorkerCallKind>(
 ): Promise<unknown> {
   switch (kind) {
     case "init": {
-      const loaded = await loadRuleTable({});
+      // ONE STORE, AND THE RULE TABLE GETS IT TOO. This was
+      // `loadRuleTable({})` — no store — which quietly disabled two things the
+      // loader documents as load-bearing: `readCache` returns `undefined`
+      // immediately, so the TTL short-circuit never fires and every boot went to
+      // the network; and `checkDrift` has no baseline to compare against, since
+      // drift is comparative and the shipped snapshot is explicitly the wrong
+      // baseline (the loader's own header says so). The guard existed and was
+      // inert in its only consumer. Raised in review on #233.
+      //
+      // The same OPFS store serves both because the keys are namespaced —
+      // `rules/v1/table.csv` against `osm/v{n}/{tile}` — and a second store would
+      // be a second OPFS directory for no reason.
+      const store = await makeStore();
+      const loaded = await loadRuleTable({ store });
       const source = new CachingSource(
         new OverpassSource({
           userAgent: "gps-plus-slam-osm-demo (github.com/cs-util-com)",
         }),
-        await makeStore(),
+        store,
       );
       const pipeline = new DemoPipeline({ source, table: loaded.table });
       state = {

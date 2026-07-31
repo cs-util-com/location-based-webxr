@@ -759,4 +759,19 @@ async function main(): Promise<void> {
   await Promise.all([loadTerrain(start), refresh()]);
 }
 
-void main();
+// THE ONLY FAILURE CHANNEL BEFORE THE STORE EXISTS (raised in review on #233).
+//
+// `reportFatal` is installed inside `main`, and the worker's `onFatal` only
+// covers worker-LEVEL failures — an `error` event from a module that would not
+// load. A throw inside the `init` handler is different: the worker catches it and
+// replies `ok: false`, which rejects that one call. With a bare `void main()`
+// that rejection had nowhere to go, so the status line sat on "Loading the rule
+// table…" forever and the demo looked like a slow network rather than a failure.
+//
+// Written straight to the DOM because the store, and therefore the error action,
+// may not exist yet — that is precisely the window this covers.
+void main().catch((error: unknown) => {
+  const status = document.getElementById("status");
+  if (status === null) return;
+  status.textContent = `Failed: ${error instanceof Error ? error.message : String(error)}`;
+});
