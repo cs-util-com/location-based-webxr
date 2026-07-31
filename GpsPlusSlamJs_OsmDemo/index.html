@@ -203,21 +203,70 @@
         width: 100%;
         height: 100%;
       }
+      /* The two primary inputs — the category and the ground surface — plus
+         every checkbox. Styled together (W15) so the bar reads as one control
+         panel rather than as browser defaults dropped into a flex row. */
       select {
         background: #1b1f2a;
         color: inherit;
         border: 1px solid #2a2f3d;
         border-radius: 4px;
-        padding: 0.2rem 0.4rem;
+        padding: 0.2rem 0.45rem;
+        font: inherit;
+        font-size: 0.8rem;
+      }
+      select:hover {
+        border-color: #3a4356;
+      }
+      /* The accent makes a checked box read at a glance in a dark bar; the
+         default is a pale system blue that disappears against #171b26.
+
+         BEFORE the :focus-visible rule below, which stylelint's
+         no-descending-specificity requires: the lower-specificity selector has
+         to come first. */
+      input[type="checkbox"] {
+        accent-color: #7cc4ff;
+        margin: 0 0.15rem 0 0;
+        vertical-align: -0.1em;
+      }
+      select:focus-visible,
+      input[type="checkbox"]:focus-visible {
+        outline: 2px solid #7cc4ff;
+        outline-offset: 1px;
+      }
+      header label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        white-space: nowrap;
       }
       /* The layer switches. Compact, because they sit in a bar that already has
-         a category picker and a legend. */
+         a category picker and a legend — and GROUPED (W15), because nine of them
+         in one wrapping row is a pile. The three groups answer three different
+         questions: what is the affordance analysis claiming, what is in the
+         world, and what am I inspecting the renderer with. */
       .layer-toggles {
         display: flex;
         flex-wrap: wrap;
         gap: 0.5rem;
         font-size: 0.78rem;
         color: #9aa3b8;
+      }
+      .layer-group {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.15rem 0.5rem 0.15rem 0.4rem;
+        border: 1px solid #262b38;
+        border-radius: 999px;
+        background: #171b26;
+      }
+      .layer-group-label {
+        color: #6f7995;
+        font-size: 0.68rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
       }
       .layer-toggle {
         white-space: nowrap;

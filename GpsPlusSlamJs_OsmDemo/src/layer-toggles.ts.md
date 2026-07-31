@@ -16,6 +16,18 @@ switch without depending on DOM order.
 
 ## Invariants & assumptions
 
+- **The switches are GROUPED into affordance / world / debug (W15).** Nine of
+  them in one wrapping row is the pile the round-3 notes called prototypical, and
+  the grouping is not decoration: the three groups answer three different
+  questions — what is the affordance analysis claiming, what is in the world, and
+  what am I inspecting the renderer with.
+- **THE IDS ARE THE CONTRACT.** Every switch keeps `#layer-<name>`; the e2e suite
+  locates them that way, so the regrouping moved elements without renaming any.
+- **`extras` puts a non-layer control in a group.** The perf panel is a
+  diagnostic and belongs beside the height ramp, but it draws nothing in the
+  scene so it is deliberately not in `ALL_LAYERS` (DEC-R3-18). Handing the
+  element in beats a second registry or moving DOM after the fact.
+
 - **Generated from `ALL_LAYERS`, never hand-written.** A hand-written row is a second
   list of layers, and the two drift the moment a builder is added — leaving a layer
   that renders but cannot be switched off, which is the exact state the registry

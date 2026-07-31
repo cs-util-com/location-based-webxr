@@ -298,6 +298,11 @@ async function main(): Promise<void> {
   const layerToggles = attachLayerToggles({
     container: el("layers"),
     onChange: (next) => store.dispatch(actions.layersChanged(next)),
+    // The perf panel is a diagnostic and belongs beside the height ramp, but it
+    // draws nothing in the scene so it is deliberately not a layer (W15,
+    // DEC-R3-18). Handing the element over puts it in the right group without a
+    // second registry or DOM moved after the fact.
+    extras: { diagnostics: [el("perf-stats-label")] },
   });
   layerToggles.render(selectLayers(store.getState()));
 

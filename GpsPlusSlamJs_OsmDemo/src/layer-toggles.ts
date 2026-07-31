@@ -23,10 +23,58 @@ import {
   type LayerSet,
 } from "./layers.js";
 
+/**
+ * The three kinds of switch, which is what the grouping is FOR (W15).
+ *
+ * Nine checkboxes in one wrapping row is a pile, and a pile is what the round-3
+ * notes called prototypical. The grouping is not decoration: the three groups
+ * answer three different questions — what is the affordance analysis claiming,
+ * what is in the world, and what am I inspecting the renderer with — and a
+ * reader who knows which group a switch is in already knows most of what it does.
+ */
+// Not exported: `extras` reaches it through `LayerTogglesOptions`, which is the
+// only way a caller ever names a group, and knip is right that a second public
+// name earns nothing.
+type LayerGroup = "overlays" | "world" | "diagnostics";
+
+/** Which group each layer belongs to. Exhaustive over the union by construction. */
+function groupOf(layer: LayerKind): LayerGroup {
+  switch (layer) {
+    case "cells":
+    case "areas":
+      return "overlays";
+    case "buildings":
+    case "trees":
+    case "plates":
+    case "roads":
+    case "poi":
+      return "world";
+    case "terrainDebug":
+      return "diagnostics";
+  }
+}
+
+/** Group captions, in the order the groups appear. */
+const GROUP_LABELS: readonly (readonly [LayerGroup, string])[] = [
+  ["overlays", "affordance"],
+  ["world", "world"],
+  ["diagnostics", "debug"],
+];
+
 export interface LayerTogglesOptions {
   readonly container: HTMLElement;
   /** Called with the complete next set whenever a switch changes. */
   readonly onChange: (layers: LayerSet) => void;
+  /**
+   * Controls that belong in a group but are not layers.
+   *
+   * The perf panel is the live case: it is a diagnostic and belongs beside the
+   * height ramp, but it draws nothing in the scene so it is deliberately not in
+   * `ALL_LAYERS` (DEC-R3-18). Passing the element in is what puts it in the right
+   * group without inventing a second registry or moving DOM around after the
+   * fact.
+   */
+  readonly extras?: Partial<Record<LayerGroup, readonly HTMLElement[]>>;
 }
 
 export interface LayerToggles {
@@ -82,17 +130,33 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
     onChange(toggleLayer(current, layer, input.checked));
   };
 
-  for (const layer of ALL_LAYERS) {
-    const label = document.createElement("label");
-    label.className = "layer-toggle";
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.dataset["layer"] = layer;
-    // Named so the e2e can address one switch without depending on DOM order.
-    input.id = `layer-${layer}`;
-    label.append(input, document.createTextNode(` ${labelFor(layer)}`));
-    container.append(label);
-    inputs.set(layer, input);
+  for (const [group, caption] of GROUP_LABELS) {
+    const box = document.createElement("div");
+    box.className = "layer-group";
+    box.id = `layer-group-${group}`;
+    const title = document.createElement("span");
+    title.className = "layer-group-label";
+    title.textContent = caption;
+    box.append(title);
+
+    for (const layer of ALL_LAYERS) {
+      if (groupOf(layer) !== group) continue;
+      const label = document.createElement("label");
+      label.className = "layer-toggle";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.dataset["layer"] = layer;
+      // Named so the e2e can address one switch without depending on DOM order.
+      // THE IDS ARE THE CONTRACT: the suite locates every switch by `#layer-<id>`,
+      // so the grouping had to move the elements without renaming any of them.
+      input.id = `layer-${layer}`;
+      label.append(input, document.createTextNode(` ${labelFor(layer)}`));
+      box.append(label);
+      inputs.set(layer, input);
+    }
+
+    for (const extra of options.extras?.[group] ?? []) box.append(extra);
+    container.append(box);
   }
 
   // ONE delegated listener rather than seven, and held so `dispose` can remove it.

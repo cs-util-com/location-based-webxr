@@ -378,7 +378,14 @@ test.describe("the layer toggles", () => {
     // because it fails loudly and immediately: adding `terrainDebug` turned this
     // red on the very next gate run, which is the whole value of asserting a
     // count. `layers.test.ts` pins the actual list.
-    await expect(page.locator("#layers input[type=checkbox]")).toHaveCount(8);
+    // `[data-layer]` RATHER THAN EVERY CHECKBOX IN THE CONTAINER. W15 grouped
+    // the switches and put the perf toggle inside the diagnostics group, and it
+    // is deliberately NOT a layer — so the loose selector started counting 9 and
+    // this assertion failed for a reason that had nothing to do with the layers.
+    // The attribute is what "is a layer switch" actually means.
+    await expect(
+      page.locator("#layers input[type=checkbox][data-layer]"),
+    ).toHaveCount(8);
 
     // The defaults reproduce the picture the demo shipped with — which is what
     // makes the migration of buildings/trees through the registry verifiable.
@@ -2598,5 +2605,61 @@ test.describe("the perf overlay", () => {
 
     await page.locator("#perf-stats").uncheck();
     await expect(panels).toHaveCount(0);
+  });
+});
+
+/**
+ * W15 / DEC-R3-10 — the control bar is grouped, and every layer still has a
+ * switch.
+ */
+test.describe("the control bar", () => {
+  test("gives every layer exactly one visible switch", async ({ page }) => {
+    // THE REGISTRY'S OWN GUARANTEE, asserted through the UI: a builder that
+    // arrives without a switch is a layer that renders and cannot be turned off,
+    // which is the state `ALL_LAYERS` exists to prevent. Grouping the switches
+    // moved every one of them, so this is also the regression guard for that.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const switches = page.locator("#layers input[type=checkbox][data-layer]");
+    const count = await switches.count();
+    expect(count).toBeGreaterThan(0);
+
+    const layers = await switches.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-layer")),
+    );
+    expect(new Set(layers).size).toBe(count);
+    for (const layer of layers) {
+      await expect(page.locator(`#layer-${layer}`)).toBeVisible();
+    }
+
+    // And the groups exist, with the perf switch inside the diagnostics one —
+    // it is not a layer, so nothing else would put it there.
+    await expect(page.locator("#layer-group-overlays")).toBeVisible();
+    await expect(page.locator("#layer-group-world")).toBeVisible();
+    await expect(
+      page.locator("#layer-group-diagnostics #perf-stats"),
+    ).toBeVisible();
+  });
+
+  test("still collapses to the title, picker, switches and legend", async ({
+    page,
+  }) => {
+    // DEC-R2-4 is not negotiable here: the collapsed bar keeps the two primary
+    // inputs and the legend, and hides the hint, the status string and the
+    // show-below toggle. Restyling must not have moved anything across that line.
+    await stubNetwork(page);
+    await page.setViewportSize({ width: 390, height: 780 });
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#header-toggle").click();
+
+    await expect(page.locator("#category")).toBeVisible();
+    await expect(page.locator("#legend")).toBeVisible();
+    await expect(page.locator("#layer-cells")).toBeVisible();
+    await expect(page.locator("#status")).toBeHidden();
+    await expect(page.locator("#show-below")).toBeHidden();
   });
 });
