@@ -47,6 +47,7 @@ import {
   buildRoads,
   buildTrees,
   enuFrameAt,
+  metresToDegrees,
   explainCell,
   loadRuleTable,
   mergeMeshes,
@@ -172,19 +173,27 @@ function meshOptions(centre: LatLng): {
 }
 
 /**
- * A lat/lng box of `halfWidthM` around `centre`.
+ * A lat/lng box of `halfWidthM × CLIP_SLACK` around `centre`.
  *
- * Longitude degrees shorten with latitude, so the two axes differ — the same
- * reason `cellPaddingDegrees` exists in the package. Deliberately GENEROUS
- * rather than tight: over-keeping costs a few triangles that fall outside the
- * view, while under-keeping would clip a plate the user can actually see.
+ * The conversion itself comes from the package (`metresToDegrees`), so this does
+ * not re-derive metres-per-degree or the `1 / cos(latitude)` longitude scaling —
+ * both of which `cellPaddingDegrees` already owns. Two copies of that arithmetic
+ * is the shape this file's own `TERRAIN_EXTENT_M` move was made to avoid, and
+ * PR #236 caught it being reintroduced one function later.
+ *
+ * THE SLACK IS REAL, not decorative. Without it the box is EXACTLY the ground
+ * plane, edge-aligned with zero margin, so a plate reaching the very edge of the
+ * rendered square is clipped precisely at the boundary the camera can see. A few
+ * per cent of over-keeping costs a handful of triangles that fall just outside
+ * the view; under-keeping would cut a plate the user is looking at.
  */
+const CLIP_SLACK = 1.05;
+
 function clipBoxAround(
   centre: LatLng,
   halfWidthM: number,
 ): { south: number; west: number; north: number; east: number } {
-  const lat = halfWidthM / 111_320;
-  const lng = lat / Math.cos((centre.lat * Math.PI) / 180);
+  const { lat, lng } = metresToDegrees(centre.lat, halfWidthM * CLIP_SLACK);
   return {
     south: centre.lat - lat,
     north: centre.lat + lat,

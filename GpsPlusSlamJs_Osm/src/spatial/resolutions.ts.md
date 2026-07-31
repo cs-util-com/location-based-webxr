@@ -28,7 +28,7 @@ the derived fetch-coverage function the movement trigger uses.
   first, user-visible ring wait on a tile only the outer rings need.
 - `fetchWorkingSet(fetchTile)` → 7 res-7 cells. Fixed-radius; for the explicit
   "download this area" prefetch API only.
-- `cellPaddingDegrees(resolution, worstLatitudeDeg)` → `{ lat, lng }`. How far,
+- `cellPaddingDegrees(resolution, worstLatitudeDeg)` → `{ lat, lng }` (converts via `metresToDegrees` in `clip.ts`, so the arithmetic has one home). How far,
   in degrees, a cell at `resolution` can reach beyond its own centre — the
   amount by which a bbox built from cell CENTRES must grow to contain the cells
   themselves.

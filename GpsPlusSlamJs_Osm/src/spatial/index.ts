@@ -30,6 +30,7 @@ export {
   positionsOf,
   padBbox,
   bboxesIntersect,
+  metresToDegrees,
 } from "./clip.js";
 
 export type { CellCoverage } from "./cell-coverage.js";

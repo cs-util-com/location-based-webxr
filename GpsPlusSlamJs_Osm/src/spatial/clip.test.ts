@@ -21,6 +21,7 @@ import {
   boundsOf,
   positionsOf,
   padBbox,
+  metresToDegrees,
   bboxesIntersect,
 } from "./clip.js";
 import { coverCells } from "./cell-coverage.js";
@@ -474,5 +475,45 @@ describe("a way that leaves the box and comes back", () => {
     const kept = parts.flat();
     expect(kept).toContainEqual({ lat: 50.5, lng: 6.5 });
     expect(kept.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("metresToDegrees (PR #236 — one definition, not two)", () => {
+  /**
+   * Why these tests matter: this arithmetic existed twice — once in
+   * `cellPaddingDegrees` and once in the demo worker's plate-clip box, each with
+   * its own `111_320`. Both now call this, so it needs its own gate rather than
+   * being covered incidentally through two callers.
+   */
+  it("converts latitude by the metres-per-degree constant", () => {
+    expect(metresToDegrees(0, 111_320).lat).toBeCloseTo(1, 9);
+    expect(metresToDegrees(50, 1_113.2).lat).toBeCloseTo(0.01, 9);
+  });
+
+  it("makes longitude degrees GROW away from the equator, for the same distance", () => {
+    // The whole reason the two axes cannot share one number: 1 km is more
+    // degrees of longitude at 60N than at the equator, by exactly 1/cos.
+    const atEquator = metresToDegrees(0, 1000);
+    const atSixty = metresToDegrees(60, 1000);
+
+    expect(atEquator.lng).toBeCloseTo(atEquator.lat, 9);
+    expect(atSixty.lng).toBeCloseTo(atSixty.lat / Math.cos(Math.PI / 3), 9);
+    expect(atSixty.lng).toBeGreaterThan(atEquator.lng * 1.9);
+  });
+
+  it("is sign-independent in latitude — the southern hemisphere is not narrower", () => {
+    expect(metresToDegrees(-60, 1000).lng).toBeCloseTo(
+      metresToDegrees(60, 1000).lng,
+      9,
+    );
+  });
+
+  it("degrades to a HUGE box at the pole rather than dividing by zero", () => {
+    // cos(90 deg) is ~6.1e-17 in floating point rather than 0, so this stays
+    // finite. Over-keeping is the safe direction: a box that keeps everything
+    // costs time, while a box that collapsed would silently drop geometry.
+    const atPole = metresToDegrees(90, 1000);
+    expect(Number.isFinite(atPole.lng)).toBe(true);
+    expect(atPole.lng).toBeGreaterThan(1e12);
   });
 });

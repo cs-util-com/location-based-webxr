@@ -18,6 +18,7 @@
 
 import type { LatLng } from "../model/osm-feature.js";
 import type { OsmGeometry } from "../model/osm-geometry.js";
+import { signedRingArea } from "../model/multipolygon-builder.js";
 
 export interface Bbox {
   readonly south: number;
@@ -97,6 +98,36 @@ export function padBboxByAxis(
   };
 }
 
+/** Metres per degree of latitude. The one definition in the package. */
+const METRES_PER_DEGREE_LAT = 111_320;
+
+/**
+ * A ground distance in metres, as degrees of latitude and of longitude.
+ *
+ * ONE DEFINITION, because there were two. `cellPaddingDegrees` in
+ * `resolutions.ts` and the demo worker's plate-clip box both derived this
+ * independently, each with its own `111_320` — the "two computations that agree
+ * today with nothing asserting they always will" shape that the same PR moved
+ * `TERRAIN_EXTENT_M` to avoid. Raised on PR #236.
+ *
+ * Longitude degrees shorten with latitude, so the same distance is MORE degrees
+ * the further from the equator; pass the latitude furthest from the equator that
+ * the result has to cover, or the box is short at its far edge.
+ *
+ * AT THE POLES this degrades safely rather than breaking: `cos` approaches zero
+ * (in floating point ~6.1e-17 at exactly 90°, never 0), so the longitude figure
+ * grows very large and any box built from it keeps everything. Over-keeping
+ * costs time; under-keeping would silently lose geometry, which is the failure
+ * this exists to prevent.
+ */
+export function metresToDegrees(
+  latitudeDeg: number,
+  metres: number,
+): { lat: number; lng: number } {
+  const lat = metres / METRES_PER_DEGREE_LAT;
+  return { lat, lng: lat / Math.cos((latitudeDeg * Math.PI) / 180) };
+}
+
 export function bboxesIntersect(a: Bbox, b: Bbox): boolean {
   return (
     a.west <= b.east &&
@@ -113,10 +144,19 @@ export function bboxesIntersect(a: Bbox, b: Bbox): boolean {
  * polygons by Sutherland–Hodgman against each of the four edges.
  *
  * **Sutherland–Hodgman is convex-clip-only, which is exactly this case** (a
- * bbox is convex). It can produce degenerate "seams" for concave subjects — an
- * artefact that matters for rendering and does not matter here, because the
- * result is immediately rasterised to cells and a zero-width seam covers the
- * cells its neighbours already cover.
+ * bbox is convex). It can produce degenerate "seams" for concave subjects.
+ *
+ * **THAT ARTEFACT USED TO BE HARMLESS AND NO LONGER IS.** Until 2026-07-31 the
+ * only consumer was h3 coverage, where the result is immediately rasterised to
+ * cells and a zero-width seam covers cells its neighbours already cover. Since
+ * `2262e6a`, `mesh/plates.ts` clips and hands the result STRAIGHT TO
+ * `triangulate` — the rendering path the artefact does matter for. A seam there
+ * is a visible sliver rather than a no-op.
+ *
+ * The sharpest form of that, where the two consumers genuinely disagreed, is
+ * handled in `clipRings`: independently clipped outer and inner rings can come
+ * back coincident, which rasterises to nothing but TRIANGULATES to a solid fill.
+ * Reported on PR #236.
  */
 export function clipToBbox(
   geometry: OsmGeometry,
@@ -326,6 +366,25 @@ function clipEndpointToEdge(
     : undefined;
 }
 
+/**
+ * Clips one polygon's rings, or `undefined` when nothing of it survives.
+ *
+ * OUTER AND HOLES ARE CLIPPED INDEPENDENTLY, and that needs a guard. Take
+ * `outer ⊇ hole ⊇ bbox` — a landuse or natural relation whose inner ring (a
+ * clearing, a lake) is bigger than the box, with the box inside that hole.
+ * Sutherland–Hodgman clips BOTH rings to the box rectangle, so the naive result
+ * is `[box, box]`: a hole exactly coincident with its own outer ring. The true
+ * intersection is empty, but downstream that is not what happens —
+ * `triangulate` bridges the coincident hole and emits a SOLID FILL, and h3
+ * would cover the box rather than nothing.
+ *
+ * Since `hole ⊆ outer` before clipping and clipping is an intersection, it
+ * still holds after, so `Σ area(holes) ≤ area(outer)` always. Equality is
+ * exactly the "holes swallow the outer" case, and that is what this rejects.
+ * Reported on PR #236 against the rendering path; it is fixed here rather than
+ * in `plates.ts` because the coverage path clips through the same function and
+ * would mis-index the same feature.
+ */
 function clipRings(
   rings: readonly (readonly LatLng[])[],
   bbox: Bbox,
@@ -340,6 +399,18 @@ function clipRings(
     .slice(1)
     .map((ring) => clipRing(ring, bbox))
     .filter((ring) => ring.length >= 3);
+
+  // Areas are in squared degrees and only ever compared with each other here,
+  // never reported — the same caveat `signedRingArea` carries at its source.
+  const outerArea = Math.abs(signedRingArea(clippedOuter));
+  const holeArea = holes.reduce(
+    (total, hole) => total + Math.abs(signedRingArea(hole)),
+    0,
+  );
+  // A RELATIVE epsilon, so a hole leaving a genuine sliver still survives: the
+  // case being rejected is exact coincidence, which arises from both rings
+  // clipping to the identical box rectangle.
+  if (outerArea <= 0 || holeArea >= outerArea * (1 - 1e-9)) return undefined;
 
   return [clippedOuter, ...holes];
 }

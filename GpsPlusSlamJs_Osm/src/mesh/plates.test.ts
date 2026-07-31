@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 
 import { enuFrameAt } from "./enu.js";
 import { mergeMeshes } from "./extrude.js";
-import { buildAreaPlates, isPlateArea } from "./plates.js";
+import { buildAreaPlates, isPlateArea, type AreaPlate } from "./plates.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
 import type { Bbox } from "../spatial/clip.js";
@@ -335,5 +335,185 @@ describe("clipTo — bounding the quadratic (2026-07-31 perf loop)", () => {
 
     expect(plates.length).toBeGreaterThan(0);
     expect(elapsed).toBeLessThan(500);
+  });
+});
+
+describe("clipTo — a hole that swallows the clip box (PR #236 review)", () => {
+  /**
+   * Why this test matters: clipping outer and inner rings INDEPENDENTLY is
+   * correct for h3 coverage — the only previous consumer — and wrong for
+   * rendering. Take outer ⊇ hole ⊇ box, i.e. a big landuse/natural relation
+   * whose inner ring (a clearing, a lake) is larger than the rendered extent,
+   * with the user standing inside that hole. Sutherland-Hodgman clips BOTH
+   * rings to the box rectangle, so the result is [box, box]: a hole exactly
+   * coincident with its own outer ring. `triangulate` bridges it and emits a
+   * solid fill, when the true intersection is EMPTY.
+   *
+   * The visible symptom is the whole ground plate painted as forest while the
+   * user stands in the clearing. Before the 2026-07-31 clip the hole was carved
+   * correctly, so this is a regression the clip introduced and the presence /
+   * absence / wall-clock tests above could never have caught — all three pass
+   * just as happily if the clip returned the box for every feature.
+   */
+  const ringAround = (halfLat: number, halfLng: number) => [
+    { lat: ORIGIN.lat - halfLat, lng: ORIGIN.lng - halfLng },
+    { lat: ORIGIN.lat - halfLat, lng: ORIGIN.lng + halfLng },
+    { lat: ORIGIN.lat + halfLat, lng: ORIGIN.lng + halfLng },
+    { lat: ORIGIN.lat + halfLat, lng: ORIGIN.lng - halfLng },
+    { lat: ORIGIN.lat - halfLat, lng: ORIGIN.lng - halfLng },
+  ];
+
+  it("draws NOTHING when the user stands inside a hole bigger than the clip box", () => {
+    // outer (0.05°) ⊇ hole (0.02°) ⊇ box (0.005°), all centred on the user.
+    const donut: OsmFeature = {
+      type: "relation",
+      id: 99,
+      tags: { type: "multipolygon", landuse: "forest" },
+      members: [
+        {
+          type: "way",
+          ref: 1,
+          role: "outer",
+          geometry: ringAround(0.05, 0.05),
+        },
+        {
+          type: "way",
+          ref: 2,
+          role: "inner",
+          geometry: ringAround(0.02, 0.02),
+        },
+      ],
+    };
+    const clipTo: Bbox = {
+      south: ORIGIN.lat - 0.005,
+      north: ORIGIN.lat + 0.005,
+      west: ORIGIN.lng - 0.005,
+      east: ORIGIN.lng + 0.005,
+    };
+
+    // Unclipped, the hole is carved and the user's position is not covered.
+    expect(buildAreaPlates([donut], { frame: FRAME })).toHaveLength(1);
+
+    // Clipped, the intersection of (outer minus hole) with the box is EMPTY,
+    // so nothing may be drawn. A solid box here is the bug.
+    expect(buildAreaPlates([donut], { frame: FRAME, clipTo })).toEqual([]);
+  });
+});
+
+describe("clipTo — the clip preserves area, it does not fabricate or lose it", () => {
+  /**
+   * Why these tests matter: the presence / absence / wall-clock tests above all
+   * pass just as happily if `clipToBbox` returned the box rectangle for every
+   * feature — so none of them can tell "the clip worked" from "the clip
+   * replaced the geometry". That is the one risk clipping-before-triangulating
+   * introduces, and it is exactly the claim the PR body makes. Raised on
+   * PR #236; the hole-swallows-the-box bug above is what happens when nothing
+   * checks it.
+   *
+   * The measure is the triangulated AREA in ENU metres, which `triangulatedArea`
+   * already computes for the triangulator's own tests.
+   */
+  const areaOf = (plates: readonly AreaPlate[]): number => {
+    // Shoelace per triangle, through the INDEX buffer -- the vertex buffer is
+    // deduplicated, so reading it as triangle soup silently measures something
+    // else (which it did on the first attempt at this helper). The plate is flat
+    // and upward-facing, so the x/z projection is the true area in metres.
+    let total = 0;
+    for (const plate of plates) {
+      const { positions, indices } = plate.mesh;
+      for (let i = 0; i + 2 < indices.length; i += 3) {
+        const a = indices[i]! * 3;
+        const b = indices[i + 1]! * 3;
+        const c = indices[i + 2]! * 3;
+        const ax = positions[a]!,
+          az = positions[a + 2]!;
+        const bx = positions[b]!,
+          bz = positions[b + 2]!;
+        const cx = positions[c]!,
+          cz = positions[c + 2]!;
+        total += Math.abs((bx - ax) * (cz - az) - (cx - ax) * (bz - az)) / 2;
+      }
+    }
+    return total;
+  };
+
+  const box = (halfLat: number, halfLng: number): Bbox => ({
+    south: ORIGIN.lat - halfLat,
+    north: ORIGIN.lat + halfLat,
+    west: ORIGIN.lng - halfLng,
+    east: ORIGIN.lng + halfLng,
+  });
+
+  it("leaves a plate wholly INSIDE the box byte-for-byte unchanged in area", () => {
+    // The clip must be a no-op here. If it returned the box instead, the area
+    // would jump to the box's, which is far larger than a 30 m square.
+    const feature = square(1, { amenity: "parking" });
+    const unclipped = buildAreaPlates([feature], { frame: FRAME });
+    const clipped = buildAreaPlates([feature], {
+      frame: FRAME,
+      clipTo: box(0.01, 0.01),
+    });
+
+    expect(clipped).toHaveLength(1);
+    expect(areaOf(clipped)).toBeCloseTo(areaOf(unclipped), 3);
+  });
+
+  it("keeps exactly the part of a STRADDLING plate that is inside the box", () => {
+    // Half the square is cut away, so the area must halve — not stay whole (no
+    // clip) and not become the box (geometry replaced).
+    const feature = square(1, { amenity: "parking" });
+    const whole = areaOf(buildAreaPlates([feature], { frame: FRAME }));
+
+    // The square spans lng [ORIGIN.lng, +0.00043]; cut it at the midpoint.
+    const half = buildAreaPlates([feature], {
+      frame: FRAME,
+      clipTo: {
+        south: ORIGIN.lat - 1,
+        north: ORIGIN.lat + 1,
+        west: ORIGIN.lng - 1,
+        east: ORIGIN.lng + 0.000215,
+      },
+    });
+
+    expect(half).toHaveLength(1);
+    expect(areaOf(half)).toBeCloseTo(whole / 2, 1);
+  });
+
+  it("keeps a HOLE a hole when the box cuts through it", () => {
+    // The regression that the hole-swallowing bug is the extreme form of: a
+    // clipped polygon whose hole is dropped would gain area rather than lose it.
+    const ring = (halfLat: number, halfLng: number) => [
+      { lat: ORIGIN.lat - halfLat, lng: ORIGIN.lng - halfLng },
+      { lat: ORIGIN.lat - halfLat, lng: ORIGIN.lng + halfLng },
+      { lat: ORIGIN.lat + halfLat, lng: ORIGIN.lng + halfLng },
+      { lat: ORIGIN.lat + halfLat, lng: ORIGIN.lng - halfLng },
+      { lat: ORIGIN.lat - halfLat, lng: ORIGIN.lng - halfLng },
+    ];
+    const donut: OsmFeature = {
+      type: "relation",
+      id: 42,
+      tags: { type: "multipolygon", landuse: "grass" },
+      members: [
+        { type: "way", ref: 1, role: "outer", geometry: ring(0.001, 0.001) },
+        { type: "way", ref: 2, role: "inner", geometry: ring(0.0005, 0.0005) },
+      ],
+    };
+
+    // A box larger than the outer ring: the clip changes nothing at all.
+    const clipped = buildAreaPlates([donut], {
+      frame: FRAME,
+      clipTo: box(0.01, 0.01),
+    });
+    const unclipped = buildAreaPlates([donut], { frame: FRAME });
+
+    expect(areaOf(clipped)).toBeCloseTo(areaOf(unclipped), 3);
+    // And the hole is genuinely subtracted: outer area is 4x the inner, so the
+    // filled ring is 3/4 of the outer. A dropped hole would give the full outer.
+    const outerOnly = areaOf(
+      buildAreaPlates([{ ...donut, members: [donut.members[0]!] }], {
+        frame: FRAME,
+      }),
+    );
+    expect(areaOf(clipped)).toBeLessThan(outerOnly * 0.8);
   });
 });

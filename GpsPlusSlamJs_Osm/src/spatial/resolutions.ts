@@ -17,6 +17,7 @@ import {
   getHexagonEdgeLengthAvg,
   UNITS,
 } from "h3-js";
+import { metresToDegrees } from "./clip.js";
 
 /**
  * The unit of network fetching and raw-data caching.
@@ -204,9 +205,6 @@ export function fetchTilesForScoreWorkingSet(
   return [...tiles];
 }
 
-/** Metres per degree of latitude. Constant enough for a padding bound. */
-const METRES_PER_DEGREE_LAT = 111_320;
-
 /**
  * How far, in DEGREES, a cell at `resolution` can reach beyond its own centre.
  *
@@ -243,9 +241,7 @@ export function cellPaddingDegrees(
   worstLatitudeDeg: number,
 ): { lat: number; lng: number } {
   const reach = 2 * getHexagonEdgeLengthAvg(resolution, UNITS.m);
-  const lat = reach / METRES_PER_DEGREE_LAT;
-  return {
-    lat,
-    lng: lat / Math.cos((worstLatitudeDeg * Math.PI) / 180),
-  };
+  // The metres→degrees conversion itself lives in `clip.ts`, so this function
+  // and the demo's plate-clip box cannot drift apart (PR #236).
+  return metresToDegrees(worstLatitudeDeg, reach);
 }

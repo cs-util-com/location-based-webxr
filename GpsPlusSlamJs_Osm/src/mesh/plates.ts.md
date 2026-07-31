@@ -90,3 +90,17 @@ survive while those entirely outside are dropped, and one is a wall-clock budget
 silently ceasing to apply fails at the gate. The budget is absolute rather than a
 ratio, and deliberately does not time the unclipped path — asserting that would
 make the test itself take four seconds.
+
+**Two more added after the PR #236 review**, which pointed out that the tests
+above assert presence, absence and wall-clock time — all of which pass just as
+happily if the clip returned the box rectangle for every feature, i.e. none of
+them could tell "the clip worked" from "the clip replaced the geometry":
+
+- **Area equivalence**, measured through the index buffer with a shoelace: a
+  plate wholly inside the box is unchanged; a straddling plate keeps exactly
+  half; a polygon with a hole keeps its hole. (The first attempt at that helper
+  read the vertex buffer as triangle soup and silently measured something else —
+  `MeshData` is indexed.)
+- **The hole that swallows the box**: `outer ⊇ hole ⊇ bbox` must draw NOTHING.
+  It drew a solid 8-triangle plate before the `clipRings` fix, which is the
+  concrete failure the equivalence gap was hiding.

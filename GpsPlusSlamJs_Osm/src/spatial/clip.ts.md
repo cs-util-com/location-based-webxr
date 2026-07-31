@@ -14,6 +14,12 @@ interest rather than by the feature.
   quantities.
 - `padBboxByAxis(bbox, { lat, lng })` — per-axis, for margins derived from a
   real-world size, which are necessarily asymmetric away from the equator.
+- `metresToDegrees(latitudeDeg, metres)` → `{ lat, lng }`. The one definition of
+  metres-per-degree in the package. `cellPaddingDegrees` (`resolutions.ts`) and
+  the demo worker's plate-clip box both derived this independently, each with its
+  own `111_320`, until PR #236; pass the latitude furthest from the equator that
+  the result must cover. At the poles it returns a very large longitude figure
+  rather than dividing by zero, which keeps everything — the safe direction.
 - `bboxesIntersect(a, b)`
 
 ## Invariants & assumptions
@@ -24,9 +30,22 @@ interest rather than by the feature.
   per-chunk cost test hanging, not by review.
 - **Sutherland–Hodgman, which is convex-clip-only — and a bbox is convex**, so
   that limitation does not apply here. It can emit degenerate "seams" for concave
-  subjects; that is a rendering artefact and is irrelevant here, because the
-  result is immediately rasterised to cells and a zero-width seam covers only
-  cells its neighbours already cover.
+  subjects.
+  - **THAT ARTEFACT IS NO LONGER IRRELEVANT.** This bullet used to end "and a
+    zero-width seam covers only cells its neighbours already cover", which was
+    true while h3 coverage was the only consumer. Since `2262e6a`,
+    `mesh/plates.ts` clips and triangulates the result — the rendering path the
+    artefact does matter for. Withdrawn rather than deleted, so a reader who
+    remembers the old guarantee sees that it was retired on purpose.
+  - **`clipRings` guards the case where the two consumers actually disagreed.**
+    Outer and inner rings are clipped independently, so `outer ⊇ hole ⊇ bbox`
+    clips BOTH to the box rectangle: a hole coincident with its own outer ring.
+    That covers nothing when rasterised but triangulates to a SOLID FILL — the
+    whole ground plate painted as forest while the user stands in the clearing.
+    Since `hole ⊆ outer` survives clipping, `Σ area(holes) ≤ area(outer)` always,
+    and equality is exactly this case; the polygon is dropped. Found on PR #236,
+    fixed here rather than in `plates.ts` because the coverage path would
+    mis-index the same feature.
 - **Linestring clipping is a deliberately coarse SEGMENT test**: a segment is
   kept, with both its endpoints, when Cohen–Sutherland says it touches the box —
   not the exact intersection points, and not a test on the vertices. The earlier
