@@ -156,11 +156,43 @@ const IDLE: OsmViewLoading = { phase: 'idle', message: '' };
  * would have to guess it, and guessing it wrongly fails at runtime rather than
  * at compile time.
  */
+/**
+ * A position with signed zero normalised away.
+ *
+ * WHY THE STORE CANNOT HOLD `-0`. This state is persisted and inspected through
+ * devtools, so it must survive a JSON round-trip — and `-0` does not:
+ * `JSON.stringify(-0)` is `"0"`, so a `-0` latitude reloads as `0` and the state
+ * that comes back is not the state that went in. RTK's serialisability check
+ * does not catch it, because `-0` IS serialisable; it simply is not
+ * round-trippable, which is the stronger property the store actually needs.
+ *
+ * Nothing is lost by normalising: `-0 === 0` is true and both denote the same
+ * point on the equator or the prime meridian, so no consumer can tell them
+ * apart except by `Object.is`.
+ *
+ * Found 2026-07-31 by `osm-view-slice.property.test.ts`, which generates
+ * latitudes with `fc.double` and therefore reaches `-0` roughly one run in
+ * fifty — it had passed on the same code an hour earlier. `snapshotReady` is
+ * the only other numeric payload and takes `fc.nat()`, which cannot produce a
+ * negative zero, so this is the sole source.
+ */
+function withoutSignedZero(position: OsmViewLatLng): OsmViewLatLng {
+  return {
+    // `x === 0` is true for BOTH zeroes, so this maps -0 to +0 and leaves every
+    // other value untouched.
+    lat: position.lat === 0 ? 0 : position.lat,
+    lng: position.lng === 0 ? 0 : position.lng,
+  };
+}
+
 export function createOsmViewSlice<TSnapshot>(
   options: CreateOsmViewSliceOptions
 ) {
   const initialState: OsmViewState<TSnapshot> = {
-    position: options.initialPosition,
+    // Normalised here too, not only in `positionChanged`: `initialPosition` is
+    // consumer input, so without this the very first state could violate the
+    // round-trip invariant before any action was ever dispatched.
+    position: withoutSignedZero(options.initialPosition),
     category: options.initialCategory,
     showBelowThreshold: false,
     layers: options.initialLayers ?? {},
@@ -184,7 +216,7 @@ export function createOsmViewSlice<TSnapshot>(
       positionChanged(state, action: PayloadAction<OsmViewLatLng>) {
         return {
           ...state,
-          position: action.payload,
+          position: withoutSignedZero(action.payload),
           selectedCell: undefined,
           selectedFeature: undefined,
         };

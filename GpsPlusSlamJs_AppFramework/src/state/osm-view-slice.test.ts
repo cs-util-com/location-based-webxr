@@ -264,6 +264,53 @@ describe('createOsmViewSlice — serialisability', () => {
     );
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
   });
+
+  it('normalises a NEGATIVE ZERO position, which JSON does not round-trip', () => {
+    // Why this test matters: `JSON.stringify(-0)` is `"0"`, so a -0 latitude
+    // reloads as 0 and the state that comes back is not the state that went in.
+    // RTK's serialisability check does not catch it — `-0` IS serialisable, it
+    // is simply not round-trippable, which is the stronger property a persisted,
+    // devtools-inspected store actually needs.
+    //
+    // Kept as an EXAMPLE alongside the property test that found it: that
+    // generator reaches -0 roughly one run in fifty, so without this the
+    // regression would be a seed lottery rather than a gate.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.positionChanged({ lat: -0, lng: -0 })
+    );
+
+    expect(Object.is(state.position.lat, -0)).toBe(false);
+    expect(Object.is(state.position.lng, -0)).toBe(false);
+    expect(state.position).toEqual({ lat: 0, lng: 0 });
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it('normalises the INITIAL position too, before any action is dispatched', () => {
+    // `initialPosition` is consumer input, so without this the very first state
+    // would already violate the round-trip invariant. The property test cannot
+    // reach this — it constructs the slice with a fixed position of its own.
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: -0, lng: -0 },
+      initialCategory: 'walkable',
+    });
+    const state = slice.reducer(undefined, { type: '@@INIT' });
+
+    expect(Object.is(state.position.lat, -0)).toBe(false);
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it('leaves every other coordinate exactly as given', () => {
+    // The normalisation must touch ONLY the zeroes — a rounding or clamping bug
+    // here would silently move the user, which is far worse than the -0 it fixes.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.positionChanged({ lat: -50.9413, lng: 6.9583 })
+    );
+    expect(state.position).toEqual({ lat: -50.9413, lng: 6.9583 });
+  });
 });
 
 describe('createOsmViewSlice — the layer set', () => {
