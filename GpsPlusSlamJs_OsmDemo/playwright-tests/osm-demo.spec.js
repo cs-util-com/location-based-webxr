@@ -40,6 +40,7 @@ const REPAINT = { timeout: 15000 };
 
 import {
   AT_FIXTURE,
+  countNonSkyPixels,
   expectCanvasFillsContainer,
   recordStatus,
   stubNetwork,
@@ -2739,27 +2740,98 @@ test.describe("No ground", () => {
       if (await box.isChecked()) await box.uncheck();
     }
 
-    const neutral = await page.evaluate(() => {
-      const el = document.querySelector("#scene canvas");
-      if (!(el instanceof HTMLCanvasElement)) return -1;
-      const probe = document.createElement("canvas");
-      probe.width = el.width;
-      probe.height = el.height;
-      const ctx = probe.getContext("2d");
-      if (ctx === null) return -1;
-      ctx.drawImage(el, 0, 0);
-      const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-      let count = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i] ?? 0;
-        const g = data[i + 1] ?? 0;
-        const b = data[i + 2] ?? 0;
-        // The sky is blue-dominant everywhere; a surface is not.
-        if (b - r < 12 && r + g + b > 90) count++;
-      }
-      return count;
-    });
+    // EXACTLY the sky, pixel for pixel — see `countNonSkyPixels`. A heuristic
+    // ("is it blue-dominant?") reads as sufficient here and is not: it also
+    // classifies the building material as sky, so it would pass over a scene
+    // full of geometry.
+    const { count } = await countNonSkyPixels(page);
 
-    expect(neutral).toBe(0);
+    expect(count).toBe(0);
+  });
+});
+
+/**
+ * From UNDER the world, with `No ground` (reported after the round-3 deploy).
+ *
+ * The report was "I turned off ground and looked at the 3D world from below,
+ * and there was still some additional ground layer rendered — basically a full
+ * black plane". This block is the reproduction, and what it establishes is that
+ * **no geometry is drawn under the scene at all**: what fills the view is the
+ * sky background, whose zenith end is a near-black blue and whose lower half is
+ * a flat mid blue-grey. Both read as a surface and neither is one.
+ *
+ * The camera can get there because `MapControls` inherits `OrbitControls`'
+ * default `maxPolarAngle` of PI — nothing stops it going under the world.
+ */
+test.describe("under the world", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  /** Rotates the camera down by `dy` pointer-pixels (MapControls: RIGHT = ROTATE). */
+  const rotateUnder = async (page, dy) => {
+    const box = await page.locator("#scene canvas").boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down({ button: "right" });
+    for (let i = 1; i <= 8; i++) await page.mouse.move(cx, cy + (dy * i) / 8);
+    await page.mouse.up({ button: "right" });
+    // Damping eases over several frames; wait for the picture to stop moving.
+    let previous = "";
+    await expect
+      .poll(
+        async () => {
+          const now = await page.evaluate(() => {
+            const el = document.querySelector("#scene canvas");
+            return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+          });
+          const stable = now === previous;
+          previous = now;
+          return stable;
+        },
+        { timeout: 15000, intervals: [300] },
+      )
+      .toBe(true);
+  };
+
+  test("shows the buildings from beneath, and no ground under them", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    await page.locator("#ground-mode").selectOption("none");
+    // The affordance grid is DoubleSide and traces the terrain, so it is the one
+    // thing that DOES look like ground from below. Off, so what is left is the
+    // question actually being asked.
+    await page.locator("#layer-cells").uncheck();
+
+    // ROTATED IN STEPS UNTIL THE CAMERA IS DEMONSTRABLY UNDER THE SCENE, rather
+    // than by a magic number of pointer-pixels. `OrbitControls` maps a full
+    // canvas height to 2*PI, so a fixed drag means a different angle at every
+    // viewport — the first version of this test used 90 px, worked at one size
+    // and put the buildings out of frame at another.
+    //
+    // The stop condition is the proof: the buildings are in frame AND their
+    // centre of mass is in the upper third, which is what "looking up at them
+    // from underneath" means and what looking down at them cannot produce.
+    let withBuildings = { count: 0, meanY: 1 };
+    for (let step = 0; step < 8; step++) {
+      await rotateUnder(page, 40);
+      withBuildings = await countNonSkyPixels(page);
+      if (withBuildings.count > 1000 && withBuildings.meanY < 0.35) break;
+    }
+    expect(withBuildings.count).toBeGreaterThan(1000);
+    expect(withBuildings.meanY).toBeLessThan(0.35);
+
+    // AND NOTHING ELSE IS THERE. With the buildings and trees off too, every
+    // remaining pixel is sky — so the "ground layer" seen from below is the
+    // background, not a surface. If a ground plane were ever drawn under the
+    // world, this is what would catch it.
+    await page.locator("#layer-buildings").uncheck();
+    await page.locator("#layer-trees").uncheck();
+    await expect
+      .poll(async () => (await countNonSkyPixels(page)).count)
+      .toBe(0);
   });
 });

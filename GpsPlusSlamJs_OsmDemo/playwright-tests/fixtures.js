@@ -291,6 +291,58 @@ export async function recordStatus(page) {
 }
 
 /**
+ * Counts the pixels of the 3D pane that are NOT the sky, and says where they are.
+ *
+ * EXACT RATHER THAN HEURISTIC. The background is a two-colour ramp between the
+ * zenith (16,22,42) and the horizon (92,108,140) — see `sky-gradient.ts` — so
+ * every sky pixel lies on that segment: solve `t` from red, and green and blue
+ * must follow. Measured agreement is within one level at both ends of the ramp.
+ *
+ * The first version of this predicate was "blue-dominant", which is the kind of
+ * heuristic that looks right and fails in the direction that matters: the
+ * building material `0xc8ccd8` has `b - r = 16` and was classified as sky, so a
+ * test reported zero surface pixels while pointing straight at a row of
+ * buildings.
+ *
+ * `meanY` is the vertical centre of mass, 0 at the top of the canvas and 1 at the
+ * bottom — which is how a test can tell "looking UP at the buildings from
+ * underneath" from "looking down at them".
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<{ count: number, meanY: number }>}
+ */
+export function countNonSkyPixels(page) {
+  return page.evaluate(() => {
+    const el = document.querySelector("#scene canvas");
+    if (!(el instanceof HTMLCanvasElement)) return { count: -1, meanY: -1 };
+    const probe = document.createElement("canvas");
+    probe.width = el.width;
+    probe.height = el.height;
+    const ctx = probe.getContext("2d");
+    if (ctx === null) return { count: -1, meanY: -1 };
+    ctx.drawImage(el, 0, 0);
+    const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+    const onSkyLine = (r, g, b) => {
+      if (r < 12 || r > 96) return false;
+      const t = (r - 16) / (92 - 16);
+      return (
+        Math.abs(g - (22 + t * (108 - 22))) <= 4 &&
+        Math.abs(b - (42 + t * (140 - 42))) <= 4
+      );
+    };
+    let count = 0;
+    let sumY = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (!onSkyLine(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0)) {
+        count++;
+        sumY += Math.floor(i / 4 / probe.width);
+      }
+    }
+    return { count, meanY: count === 0 ? -1 : sumY / count / probe.height };
+  });
+}
+
+/**
  * Asserts the 3D canvas is laid out at its CONTAINER's size (finding R3-2, W1).
  *
  * WHY THIS IS A SHARED HELPER AND NOT TWO COPIES. The same assertion has to run
