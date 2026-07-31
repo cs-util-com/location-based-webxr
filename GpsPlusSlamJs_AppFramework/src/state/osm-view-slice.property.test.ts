@@ -112,11 +112,24 @@ describe('createOsmViewSlice invariants', () => {
         const lastCategory = [...sequence]
           .reverse()
           .find((a) => a.type === actions.categoryChanged.type);
-        expect(state.position).toEqual(
-          lastPosition === undefined
-            ? COLOGNE
-            : (lastPosition as ReturnType<typeof actions.positionChanged>)
-                .payload
+        // SIGNED ZERO IS NORMALISED AWAY ON BOTH SIDES before comparing, with
+        // `+ 0` mapping -0 to +0. `positionChanged` normalises the payload (see
+        // the JSON round-trip invariant — `JSON.stringify(-0)` is `"0"`, so a
+        // -0 latitude would not survive a reload), and `toEqual` distinguishes
+        // the two zeroes, so a raw structural comparison fails on a difference
+        // no consumer can observe. What this invariant is actually about is
+        // WHICH action last set the position, not its bit pattern.
+        const sameCoordinate = (p: { lat: number; lng: number }) => ({
+          lat: p.lat + 0,
+          lng: p.lng + 0,
+        });
+        expect(sameCoordinate(state.position)).toEqual(
+          sameCoordinate(
+            lastPosition === undefined
+              ? COLOGNE
+              : (lastPosition as ReturnType<typeof actions.positionChanged>)
+                  .payload
+          )
         );
         expect(state.category).toBe(
           lastCategory === undefined

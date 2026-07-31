@@ -90,6 +90,8 @@ export interface HeightfieldData {
 }
 
 /** Radius treated as "around the user" for {@link HeightfieldData.nearReliefM}. */
+export const NEAR_FIELD_M = 300;
+
 /**
  * Half-width of the ground plane and of the terrain sampled under it, metres.
  *
@@ -120,8 +122,6 @@ export interface HeightfieldData {
  * finding, so it lives once, in the module both sides already share.
  */
 export const TERRAIN_EXTENT_M = 1400;
-
-export const NEAR_FIELD_M = 300;
 
 export interface Heightfield extends HeightfieldData {
   /** Relief in metres at an ENU point, relative to the frame origin. */

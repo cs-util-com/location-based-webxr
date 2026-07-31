@@ -13,9 +13,6 @@ map scored.
   `renderCells(mesh)`, `setTerrain(field | undefined)`,
   `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`.
   Navigation is `MapControls`, attached internally; there is nothing to call.
-- `TERRAIN_EXTENT_M` — re-exported location moved to `heightfield.ts` on 2026-07-31 (the worker needs it and must not import three); half-width of the ground plane and of the terrain sampled
-  under it. **1400 m, i.e. a 2.8 km plane (DEC-R2-8, which overrides DEC-15's
-  600 m).**
 - `TERRAIN_SPACING_M` — 12 m, the Terrarium z13 pixel pitch at this latitude.
 - `MeshLayers` and `BuildingStats` — **re-exported from `mesh-layers.ts`**, which
   owns them because it owns what they describe. `BuildingStats` is `volumes`,
@@ -28,6 +25,11 @@ map scored.
 
 ## Invariants & assumptions
 
+- **`TERRAIN_EXTENT_M` is imported from `heightfield.ts`, not owned here.** It
+  moved on 2026-07-31 because the worker needs the same number (to clip ground
+  plates before triangulating) and must not import three. This file uses it for
+  the ground plane's size and the terrain grid; there is no re-export, so other
+  consumers import it from `heightfield.js` directly.
 - **Frames are scheduled ON DEMAND, never in a permanent loop.** The scene is
   static except while the camera is moving, so `requestFrame()` coalesces to one
   pending rAF and the `controls` `change` event drives it. A permanent loop was

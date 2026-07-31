@@ -379,11 +379,22 @@ function clipEndpointToEdge(
  * would cover the box rather than nothing.
  *
  * Since `hole ⊆ outer` before clipping and clipping is an intersection, it
- * still holds after, so `Σ area(holes) ≤ area(outer)` always. Equality is
- * exactly the "holes swallow the outer" case, and that is what this rejects.
- * Reported on PR #236 against the rendering path; it is fixed here rather than
- * in `plates.ts` because the coverage path clips through the same function and
- * would mis-index the same feature.
+ * still holds after, so `Σ area(holes) ≤ area(outer)` **for disjoint holes**.
+ * Equality is exactly the "holes swallow the outer" case, and that is what this
+ * rejects. Reported on PR #236 against the rendering path; it is fixed here
+ * rather than in `plates.ts` because the coverage path clips through the same
+ * function and would mis-index the same feature.
+ *
+ * **RESIDUAL, on invalid input (PR #237).** The bound assumes the holes do not
+ * overlap EACH OTHER, which nothing enforces: `groupRingsIntoPolygons` assigns a
+ * hole to its smallest containing outer by a single probe vertex and never
+ * rejects two overlapping inner rings. On such data — invalid, but real — the
+ * sum can exceed the outer's area while a non-empty remainder genuinely exists,
+ * and this drops the whole polygon from BOTH the render and the coverage path,
+ * where before it rendered wrongly but visibly. Accepted deliberately: dropping
+ * a malformed multipolygon is the same call `groupRingsIntoPolygons` already
+ * makes when it discards a hole contained by nothing, and the alternative is a
+ * true polygon-boolean, which is a different piece of work entirely.
  */
 function clipRings(
   rings: readonly (readonly LatLng[])[],

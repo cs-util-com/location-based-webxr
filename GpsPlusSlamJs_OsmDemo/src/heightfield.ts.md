@@ -11,6 +11,8 @@
   - `heightAt` is **relative** to the frame origin and always finite.
   - `hasData: false` means flat zero everywhere.
   - `reliefM` is peak-to-trough across the field; `nearReliefM` is the same within `NEAR_FIELD_M` of the origin (DEC-R2-22 — over a 2.8 km field the whole-field number stops describing the ground the user is standing on).
+- `TERRAIN_EXTENT_M = 1400` — half-width of the ground plane and of the terrain sampled under it, i.e. a 2.8 km square matching the geometry actually rendered. **Moved here from `building-view.ts` on 2026-07-31** because the worker also needs it (to clip ground plates before triangulating) and must not import three.
+- `NEAR_FIELD_M = 300` — radius treated as "around the user" for `nearReliefM`. Always lived here; listed now because PR #237 pointed out neither constant was.
 - `peakToTrough(values)` — a fold, never a spread into `Math.max`, which throws above ~100 k elements. Exported because `terrain-field.ts` needs exactly this and two copies is two chances for someone to "simplify" one back into a spread.
 
 ## Invariants & assumptions

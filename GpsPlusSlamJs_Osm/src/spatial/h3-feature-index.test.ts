@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { latLngToCell } from "h3-js";
+import { latLngToCell, gridDisk } from "h3-js";
 import {
   buildFeatureIndex,
   featuresAt,
@@ -284,5 +284,86 @@ describe("a feature too large to cover does not hang the index", () => {
     const index = buildFeatureIndex([node(1), way(2)]);
     expect(index.failed).toEqual([]);
     expect(index.features.size).toBe(2);
+  });
+});
+
+describe("a hole that swallows the restriction (PR #237)", () => {
+  /**
+   * Why this test matters: the guard for this lives in `clipRings`
+   * (`clip.ts`) rather than in `plates.ts`, and the stated reason is that the
+   * COVERAGE path clips through the same function and would mis-index the same
+   * feature. Until now only the rendering half was tested, through
+   * `buildAreaPlates` — so someone "simplifying" the guard down into
+   * `plates.ts` would keep every test green and silently regress the scorer.
+   * That is the same shape of gap the clip tests had in the first place.
+   *
+   * The feature is a donut whose hole entirely contains the restriction, so the
+   * true intersection is empty and it must be indexed into NO cells at all.
+   *
+   * MEASURED, so this is not a hypothetical: fed the geometry the unguarded clip
+   * produced (outer and hole the same box), `coverCells` returns **68 cells**
+   * rather than none — `containmentOverlapping` picks up every cell the
+   * coincident ring's edges graze. So the scorer really would have attributed a
+   * forest to ground the user is standing clear of.
+   */
+  const ring = (
+    centre: { lat: number; lng: number },
+    half: number,
+  ): { lat: number; lng: number }[] => [
+    { lat: centre.lat - half, lng: centre.lng - half },
+    { lat: centre.lat - half, lng: centre.lng + half },
+    { lat: centre.lat + half, lng: centre.lng + half },
+    { lat: centre.lat + half, lng: centre.lng - half },
+    { lat: centre.lat - half, lng: centre.lng - half },
+  ];
+
+  it("indexes the feature into NO cells, rather than over the whole working set", () => {
+    const centre = { lat: 50.9413, lng: 6.9583 };
+    // A restriction a few cells wide, sitting deep inside the hole.
+    const cells = gridDisk(
+      latLngToCell(centre.lat, centre.lng, AFFORDANCE_RES),
+      2,
+    );
+
+    const donut: OsmFeature = {
+      type: "relation",
+      id: 4242,
+      tags: { type: "multipolygon", landuse: "forest" },
+      members: [
+        { type: "way", ref: 1, role: "outer", geometry: ring(centre, 0.05) },
+        { type: "way", ref: 2, role: "inner", geometry: ring(centre, 0.02) },
+      ],
+    };
+
+    const index = buildFeatureIndex([donut], { restrictTo: cells });
+
+    // The user is standing in the clearing: the forest covers none of it.
+    expect(index.byCell.size).toBe(0);
+    expect(index.byFeature.size).toBe(0);
+    expect(index.features.size).toBe(0);
+  });
+
+  it("still indexes the ring itself, where the feature really is", () => {
+    // The complement, so the test above cannot pass by the clip dropping
+    // everything: put the restriction BETWEEN the two rings and it must hit.
+    const centre = { lat: 50.9413, lng: 6.9583 };
+    const inRing = { lat: centre.lat + 0.035, lng: centre.lng };
+    const cells = gridDisk(
+      latLngToCell(inRing.lat, inRing.lng, AFFORDANCE_RES),
+      2,
+    );
+
+    const donut: OsmFeature = {
+      type: "relation",
+      id: 4243,
+      tags: { type: "multipolygon", landuse: "forest" },
+      members: [
+        { type: "way", ref: 1, role: "outer", geometry: ring(centre, 0.05) },
+        { type: "way", ref: 2, role: "inner", geometry: ring(centre, 0.02) },
+      ],
+    };
+
+    const index = buildFeatureIndex([donut], { restrictTo: cells });
+    expect(index.byCell.size).toBeGreaterThan(0);
   });
 });

@@ -193,7 +193,15 @@ function clipBoxAround(
   centre: LatLng,
   halfWidthM: number,
 ): { south: number; west: number; north: number; east: number } {
-  const { lat, lng } = metresToDegrees(centre.lat, halfWidthM * CLIP_SLACK);
+  const reach = halfWidthM * CLIP_SLACK;
+  const { lat } = metresToDegrees(centre.lat, reach);
+  // `metresToDegrees` asks for the latitude FURTHEST from the equator that the
+  // result must cover, and that is the box's poleward edge, not its centre —
+  // passing `centre.lat` would make the far edge slightly short (PR #237).
+  // Negligible here (~0.16 % at 85 deg, many times covered by CLIP_SLACK), but
+  // honouring the contract costs one extra call and removes the need for the
+  // next reader to redo that arithmetic.
+  const { lng } = metresToDegrees(Math.abs(centre.lat) + lat, reach);
   return {
     south: centre.lat - lat,
     north: centre.lat + lat,

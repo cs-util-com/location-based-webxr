@@ -189,8 +189,17 @@ function indexEndpoints(
  * different segment wherever more than one fits, which is observable on
  * branching data.
  *
- * Buckets are compacted in place as consumed entries are found, so repeated
- * lookups do not keep re-walking dead indices.
+ * A FRONT CURSOR, not a full-bucket compaction, and that is a real difference
+ * rather than a tidy-up (PR #237). `indexEndpoints` pushes in ascending pool
+ * order and the bucket only ever shrinks from the front, so the lowest live
+ * index is simply the first entry that survives a front scan — no min-scan
+ * needed. Compacting the whole bucket instead re-walked every LIVE entry on
+ * every call, and `growChain` calls this on BOTH chain ends every iteration,
+ * including the end that loses. A high-degree node (a branching fan, which the
+ * differential generator produces) leaves a large live bucket that never wins
+ * and was re-walked once per attach — a smaller quadratic hiding inside the fix
+ * for the big one. Skipping from the front makes it O(1) amortized: each dead
+ * entry is stepped over exactly once, ever.
  */
 function candidateAt(
   byEndpoint: Map<string, number[]>,
@@ -202,15 +211,10 @@ function candidateAt(
   const bucket = byEndpoint.get(key);
   if (bucket === undefined) return undefined;
 
-  let best: number | undefined;
-  let live = 0;
-  for (const index of bucket) {
-    if (pool[index] === undefined) continue;
-    bucket[live++] = index;
-    if (best === undefined || index < best) best = index;
-  }
-  bucket.length = live;
-  return best;
+  let dead = 0;
+  while (dead < bucket.length && pool[bucket[dead]!] === undefined) dead++;
+  if (dead > 0) bucket.splice(0, dead);
+  return bucket[0];
 }
 
 /** The smaller of two optional pool indices. */
@@ -252,7 +256,16 @@ function growChain(
     }
     const segment = pool[index]!;
     pool[index] = undefined;
-    attach(chain, segment);
+    if (!attach(chain, segment)) {
+      // Unreachable by construction (see `attach`), but if the endpoint index
+      // and `positionsEqual` ever disagreed, DROPPING the segment here would be
+      // invisible — a missing ring with nothing to point at. Putting it back
+      // makes it a seed for the outer loop instead, so it surfaces through the
+      // module's existing failure channel as an `unclosed` chain. Raised on
+      // PR #237.
+      pool[index] = segment;
+      break;
+    }
   }
 
   return materialise(chain);
@@ -265,15 +278,20 @@ function growChain(
  * The four cases are tried in the order the previous linear scan used, so a
  * segment that could attach at both ends still attaches the same way.
  *
- * The final fall-through is unreachable by construction — `candidateAt` only
- * ever returns a segment indexed under one of the two chain endpoints, and
- * `endpointKey` is built to agree with `positionsEqual` in both directions. It
- * returns rather than throws anyway: this module's contract is that a broken
- * relation is REPORTED, never thrown (one bad relation must not kill a tile),
- * and the caller has already consumed the segment, so falling through drops
- * exactly that segment and lets the chain close or be reported unclosed.
+ * @returns whether it attached. **False is unreachable by construction** —
+ * `candidateAt` only ever returns a segment indexed under one of the two chain
+ * endpoints, and `endpointKey` is built to agree with `positionsEqual` in both
+ * directions — so this is a report, not an error path. It does not throw:
+ * this module's contract is that a broken relation is REPORTED (one bad
+ * relation must not kill a tile).
+ *
+ * The caller RETURNS THE SEGMENT TO THE POOL on false rather than dropping it
+ * (PR #237). Dropping was the earlier behaviour and it was invisible: a
+ * key/`positionsEqual` disagreement would have shown up only as a ring that
+ * quietly lacked a piece. Returned to the pool it becomes a seed instead, so it
+ * surfaces through the existing `unclosed` channel where someone can see it.
  */
-function attach(chain: Chain, segment: readonly LatLng[]): void {
+function attach(chain: Chain, segment: readonly LatLng[]): boolean {
   const start = chainStart(chain);
   const end = chainEnd(chain);
   const segStart = segment[0]!;
@@ -282,22 +300,25 @@ function attach(chain: Chain, segment: readonly LatLng[]): void {
   // chain -> segment
   if (positionsEqual(end, segStart)) {
     for (let i = 1; i < segment.length; i++) chain.tail.push(segment[i]!);
-    return;
+    return true;
   }
   // chain -> reversed(segment)
   if (positionsEqual(end, segEnd)) {
     for (let i = segment.length - 2; i >= 0; i--) chain.tail.push(segment[i]!);
-    return;
+    return true;
   }
   // segment -> chain
   if (positionsEqual(segEnd, start)) {
     for (let i = segment.length - 2; i >= 0; i--) chain.head.push(segment[i]!);
-    return;
+    return true;
   }
   // reversed(segment) -> chain
   if (positionsEqual(segStart, start)) {
     for (let i = 1; i < segment.length; i++) chain.head.push(segment[i]!);
+    return true;
   }
+
+  return false;
 }
 
 /** A ring is closed when it has real extent and its ends coincide. */

@@ -66,12 +66,29 @@ The two terms, and what replaced each:
     first segment matching any of `attach`'s four cases, so preferring (say)
     tail matches globally would pick differently wherever more than one
     segment fits.
-  - Buckets are compacted in place as consumed entries are found, so repeated
-    lookups do not re-walk dead indices.
+  - Dead entries are skipped with a FRONT CURSOR, not compacted (PR #237).
+    Buckets are built in ascending pool order and only shrink from the front, so
+    the lowest live index is just the first survivor — no min-scan. Compaction
+    re-walked every LIVE entry on every call, and `growChain` queries both chain
+    ends each iteration including the one that loses.
+    - **Justified by the worst case, not by the fixtures.** Measured in
+      isolation over 20 000 calls on an all-live bucket: 8 entries 2.20 → 0.22 ms,
+      64 entries 5.02 → 0.11 ms, 512 entries 26.61 → 0.12 ms — flat instead of
+      linear. On the captured fixtures it is a wash, because a well-formed ring
+      gives every endpoint a bucket of 2; the case it protects is a branching
+      fan, which the differential generator produces and real data occasionally
+      does.
+    - Equivalence re-checked after the change: the same 40 000-case differential
+      run against the pre-rewrite implementation, zero differences.
   - `endpointKey` returns `undefined` for NaN, because `positionsEqual` is
     `===` and `NaN !== NaN` — stringifying would give every NaN endpoint the
     same key and fabricate joins. Infinity stays keyed: `Infinity === Infinity`,
     and the old scan did join on it.
+- **A segment that cannot attach is returned to the pool, not dropped** (PR #237).
+  The fall-through in `attach` is unreachable by construction, but dropping the
+  segment made a hypothetical key/`positionsEqual` disagreement invisible — a
+  ring quietly missing a piece. Returned to the pool it becomes a seed, so it
+  surfaces through the existing `unclosed` failure channel instead.
 - **The chain copy.** `attach` rebuilt `[...chain, ...segment]` on every join,
   copying the whole accumulated chain — so the last attaches of a 26 778-point
   relation each copied ~26 000 points. Replaced by `Chain`, held open at both
