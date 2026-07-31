@@ -106,7 +106,20 @@ function labelFor(layer: LayerKind): string {
     case "trees":
       return "trees";
     case "plates":
-      return "ground";
+      // "landuse", NOT "ground" and NOT "OSM areas", and both rejections are the
+      // point. It said "ground" until the ground-mode picker landed beside it
+      // (W11), and two controls labelled "ground" meaning different things — one
+      // a layer of OSM landuse/amenity/leisure/natural polygons, the other which
+      // SURFACE is drawn — is unreadable: picking "No ground" while something
+      // labelled "ground" is still on screen looks like the picker failed. The
+      // picker owns the word, because it is the one with a "none".
+      //
+      // "OSM areas" was the first replacement and it collided with the
+      // `areas` layer — the merged affordance regions — for a human reading the
+      // bar and for two e2e locators addressing "areas" by accessible name. What
+      // the builder actually selects is `PLATE_KEYS`: amenity, landuse, leisure,
+      // natural. "landuse" is the honest short name for that set.
+      return "landuse";
     case "roads":
       return "roads";
     case "poi":

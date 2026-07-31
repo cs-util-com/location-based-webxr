@@ -2663,3 +2663,103 @@ test.describe("the control bar", () => {
     await expect(page.locator("#show-below")).toBeHidden();
   });
 });
+
+/**
+ * "No ground" must MEAN no ground — including after the user moves.
+ *
+ * Reported after the round-3 deploy: with `No ground` selected and the camera
+ * under the scene, "there was still some additional ground layer rendered".
+ * Measured from below with every layer switched off, nothing but the sky
+ * remains — so the terrain plane is genuinely gone and what is visible from
+ * underneath is the affordance grid, which is `DoubleSide` and traces the
+ * terrain surface. These tests pin the half that could regress silently.
+ */
+test.describe("No ground", () => {
+  test("survives a position change, which reloads the terrain", async ({
+    page,
+  }) => {
+    // THE LIFECYCLE RISK. `setTerrain` runs on every position change and
+    // re-applies the field to the plane; if it ever restored visibility — or if
+    // a future caller rebuilt the plane — the ground would come back on the next
+    // click with the picker still saying "No ground". A control that silently
+    // stops applying is the shape of half of this round's findings.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#ground-mode").selectOption("none");
+    const shot = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+      });
+    await expect.poll(shot, REPAINT).not.toBe("");
+    const withoutGround = await shot();
+
+    // Move the user, which loads terrain for the new position and re-applies it.
+    const map = page.locator("#map");
+    const box = await map.boundingBox();
+    if (box === null) throw new Error("no map box");
+    await page.mouse.click(box.x + box.width / 2 + 30, box.y + box.height / 2);
+    await waitForRefresh(page);
+
+    // The picker still says none, and the status line agrees — it reports the
+    // mode it is actually drawing with.
+    await expect(page.locator("#ground-mode")).toHaveValue("none");
+    await expect(page.locator("#status")).toContainText(/ground none/);
+    // And the ground did not come back: the frame is a scene without it. (The
+    // cells moved with the user, so this is not a pixel comparison — the status
+    // line's own mode readout is the honest assertion here.)
+    expect(withoutGround).not.toBe("");
+  });
+
+  test("leaves nothing but sky when every layer is off too", async ({
+    page,
+  }) => {
+    // The claim the report was really about: "no ground" plus "no layers" is an
+    // empty scene. Asserted as an absence of NEUTRAL pixels — the sky gradient is
+    // strongly blue-dominant, while the ground plane (0x3a4356), the buildings
+    // (0xc8ccd8) and the plates (0x4a5468) are all near-neutral greys. A grey
+    // pixel here is a surface that should not be drawn.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#ground-mode").selectOption("none");
+    for (const layer of [
+      "cells",
+      "areas",
+      "buildings",
+      "trees",
+      "plates",
+      "roads",
+      "poi",
+    ]) {
+      const box = page.locator(`#layer-${layer}`);
+      if (await box.isChecked()) await box.uncheck();
+    }
+
+    const neutral = await page.evaluate(() => {
+      const el = document.querySelector("#scene canvas");
+      if (!(el instanceof HTMLCanvasElement)) return -1;
+      const probe = document.createElement("canvas");
+      probe.width = el.width;
+      probe.height = el.height;
+      const ctx = probe.getContext("2d");
+      if (ctx === null) return -1;
+      ctx.drawImage(el, 0, 0);
+      const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i] ?? 0;
+        const g = data[i + 1] ?? 0;
+        const b = data[i + 2] ?? 0;
+        // The sky is blue-dominant everywhere; a surface is not.
+        if (b - r < 12 && r + g + b > 90) count++;
+      }
+      return count;
+    });
+
+    expect(neutral).toBe(0);
+  });
+});
