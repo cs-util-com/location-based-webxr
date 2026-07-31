@@ -371,18 +371,21 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
 });
 
 describe("drawMeshLayers — POI markers", () => {
-  it("carries the marker itself, so a pick can name what was clicked", () => {
-    // The identity that reaches the details panel. Stored ON the object rather
-    // than in a side table keyed by index: `clear()` and the next render rebuild
-    // the scene, and an index-keyed table survives that silently while pointing at
-    // the PREVIOUS working set — a panel confidently describing the wrong feature,
-    // which is the half-swapped scene in its most damaging form.
+  it("carries the markers IN INSTANCE ORDER, so a pick can name what was clicked", () => {
+    // The identity that reaches the details panel. Since W7 the pins share one
+    // `InstancedMesh`, so there is nowhere per-object left to put it — the table
+    // is an array and the hit's `instanceId` indexes it.
+    //
+    // ORDER IS THE ASSERTION, not presence. The table is built in the same loop
+    // as the instance matrices precisely so the two cannot disagree; a table
+    // assembled anywhere else would survive a `clear()` and the next render
+    // while pointing at the PREVIOUS working set, which is a panel confidently
+    // describing the wrong feature.
     const { objects } = drawMeshLayers(fullMesh(), ALL_ON);
-    const pin = objects.find((o) => o.userData["poi"] !== undefined);
+    const pin = objects.find((o) => o.userData["poiInstances"] !== undefined);
     expect(pin).toBeDefined();
-    expect((pin?.userData["poi"] as { label: string }).label).toBe(
-      "Café Schmitz",
-    );
+    const markers = pin?.userData["poiInstances"] as { label: string }[];
+    expect(markers.map((m) => m.label)).toEqual(["Café Schmitz"]);
   });
 
   it("SHARES one geometry and material, and flags them so nothing disposes them", () => {
@@ -397,10 +400,10 @@ describe("drawMeshLayers — POI markers", () => {
     // the markers, and the layer simply stops appearing. The flag is what lets
     // `clear()` tell "mine to free" from "borrowed".
     const first = drawMeshLayers(fullMesh(), ALL_ON).objects.find(
-      (o) => o.userData["poi"] !== undefined,
+      (o) => o.userData["poiInstances"] !== undefined,
     );
     const second = drawMeshLayers(fullMesh(), ALL_ON).objects.find(
-      (o) => o.userData["poi"] !== undefined,
+      (o) => o.userData["poiInstances"] !== undefined,
     );
     expect(first).toBeInstanceOf(THREE.Mesh);
     const a = first as THREE.Mesh;

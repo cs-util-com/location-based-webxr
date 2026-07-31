@@ -643,7 +643,10 @@ export class BuildingView {
     const targets: THREE.Object3D[] = [];
     if (this.cellMesh !== undefined) targets.push(this.cellMesh);
     for (const child of this.group.children) {
-      if (child.userData["poi"] !== undefined) targets.push(child);
+      // `poiInstances` since W7: the markers share one `InstancedMesh`, so the
+      // raycast set gains one object rather than one per marker — which is also
+      // why picking got cheaper rather than more expensive.
+      if (child.userData["poiInstances"] !== undefined) targets.push(child);
     }
     if (targets.length === 0) return undefined;
     // Reduced to what the decision reads. `Intersection` nests `userData` under
@@ -653,6 +656,7 @@ export class BuildingView {
       this.raycaster.intersectObjects(targets, false).map((hit) => ({
         distance: hit.distance,
         faceIndex: hit.faceIndex,
+        instanceId: hit.instanceId,
         userData: hit.object.userData,
       })),
       this.cellForTriangle,

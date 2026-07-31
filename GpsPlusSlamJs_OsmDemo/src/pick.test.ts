@@ -35,9 +35,20 @@ function cellHit(distance: number, faceIndex: number): PickCandidate {
   return { distance, faceIndex, userData: { cellGrid: true } };
 }
 
-/** A hit on a POI pin at `distance`. */
-function poiHit(distance: number, marker = MARKER): PickCandidate {
-  return { distance, userData: { poi: marker } };
+/**
+ * A hit on a POI pin at `distance`.
+ *
+ * INSTANCED since W7: the markers share one `InstancedMesh`, so `userData` can
+ * no longer carry "the" marker — it carries the whole list, and the hit's
+ * `instanceId` selects one. Exactly the shape the cell grid already uses, where
+ * `faceIndex` indexes `cellForTriangle`.
+ */
+function poiHit(
+  distance: number,
+  instanceId = 0,
+  markers = [MARKER],
+): PickCandidate {
+  return { distance, instanceId, userData: { poiInstances: markers } };
 }
 
 const CELLS = ["cell-a", "cell-b", "cell-c"];
@@ -119,5 +130,53 @@ describe("resolvePick", () => {
         CELLS,
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("resolvePick — instanced POI markers (W7)", () => {
+  const A = { ...MARKER, feature: "node/1", label: "Bakery" };
+  const B = { ...MARKER, feature: "node/2", label: "Bench" };
+  const C = { ...MARKER, feature: "node/3", label: "Bin" };
+
+  it("names the marker the instance id points at, not the first one", () => {
+    // WHY THIS TEST MATTERS. Instancing collapses N objects onto one, so the
+    // identity that used to sit on the clicked object now has to be recovered
+    // from an index. Getting that wrong does not break the click — it opens the
+    // details panel on a confidently WRONG place, which is the half-swapped
+    // scene in its most damaging form. Asserting the middle instance is what
+    // separates a real lookup from "return markers[0]".
+    const pick = resolvePick([poiHit(3, 1, [A, B, C])], CELLS);
+    expect(pick).toEqual({ kind: "poi", marker: B });
+  });
+
+  it("skips a hit whose instance id has no marker", () => {
+    // The same rule the cell grid follows for a drifted `cellForTriangle`: a
+    // lookup miss means the table and the geometry have diverged, and answering
+    // from a diverged table is worse than answering nothing. The click keeps
+    // looking behind it rather than dying.
+    expect(resolvePick([poiHit(3, 7, [A])], CELLS)).toBeUndefined();
+  });
+
+  it("survives a null instanceId, which is what three's types say for a Mesh", () => {
+    // `Intersection.instanceId` is `number | undefined`, and it is absent for
+    // every hit on a non-instanced object — including the cell grid, which is
+    // in the same raycast set.
+    expect(
+      resolvePick([{ distance: 1, userData: { poiInstances: [A] } }], CELLS),
+    ).toBeUndefined();
+  });
+
+  it("still lets distance decide between a marker and the grid", () => {
+    // The tie-break DEC-R3-21 depends on: a marker stands ON the grid, so a
+    // click hits both. Preferring a KIND would make one of them unclickable
+    // wherever they overlap.
+    expect(resolvePick([poiHit(9, 0, [A]), cellHit(2, 1)], CELLS)).toEqual({
+      kind: "cell",
+      cell: "cell-b",
+    });
+    expect(resolvePick([poiHit(2, 0, [A]), cellHit(9, 1)], CELLS)).toEqual({
+      kind: "poi",
+      marker: A,
+    });
   });
 });

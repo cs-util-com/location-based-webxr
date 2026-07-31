@@ -463,23 +463,43 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // OFF by default. Every layer added after the W10 baseline is, so that an
     // omitted selection still reproduces the picture the demo shipped with.
     defaultOn: false,
-    build: (mesh) =>
-      mesh.poi.map((marker) => {
-        const pin = new THREE.Mesh(POI_GEOMETRY, POI_MATERIAL);
-        pin.position.set(...poiMarkerPosition(marker));
-        // The identity a pick reads back. Stored on the object rather than in a
-        // side table keyed by index, because `clear()` and the next render
-        // rebuild the scene and an index-keyed table survives that silently while
-        // pointing at the previous working set — the half-swapped scene, in its
-        // most damaging form: a panel confidently describing the wrong feature.
-        // `sharedResources` tells the scene owner this object's geometry and
-        // material are BORROWED, not its own to free. `BuildingView.clear()`
-        // disposes both for every child it removes, which for a shared resource
-        // means the first refresh destroys it and every later frame silently draws
-        // nothing — three.js does not throw for a disposed geometry.
-        pin.userData = { poi: marker, sharedResources: true };
-        return pin;
-      }),
+    build: (mesh) => {
+      if (mesh.poi.length === 0) return [];
+      // ONE InstancedMesh for every marker (W7), like the trees. It was one
+      // `Mesh` each — cheap while `poi` was off by default, and 50x worse the
+      // moment W9 switches it on and Stage 2 gives each kind its own model.
+      const pins = new THREE.InstancedMesh(
+        POI_GEOMETRY,
+        POI_MATERIAL,
+        mesh.poi.length,
+      );
+      const matrix = new THREE.Matrix4();
+      mesh.poi.forEach((marker, i) => {
+        pins.setMatrixAt(
+          i,
+          matrix.makeTranslation(...poiMarkerPosition(marker)),
+        );
+      });
+      pins.instanceMatrix.needsUpdate = true;
+      // THE IDENTITY A PICK READS BACK, now an array indexed by instance rather
+      // than a field on the object — instancing collapses N objects onto one, so
+      // there is nowhere per-object left to put it.
+      //
+      // BUILT IN THIS FUNCTION, with the geometry, and that is the whole
+      // guarantee: an index-keyed table assembled anywhere else survives a
+      // `clear()` and the next render while pointing at the PREVIOUS working
+      // set, which is a panel confidently describing the wrong feature. Here the
+      // table and the matrices come from one loop over one array, so they cannot
+      // disagree.
+      //
+      // `sharedResources` tells the scene owner the geometry and material are
+      // BORROWED. `BuildingView.clear()` disposes both for every child it
+      // removes, which for a shared resource means the first refresh destroys it
+      // and every later frame silently draws nothing — three.js does not throw
+      // for a disposed geometry.
+      pins.userData = { poiInstances: mesh.poi, sharedResources: true };
+      return [pins];
+    },
     counters: (mesh) => ({ poi: mesh.poi.length }),
   },
 ];

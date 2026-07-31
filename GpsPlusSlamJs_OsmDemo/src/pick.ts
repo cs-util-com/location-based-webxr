@@ -44,6 +44,15 @@ export interface PickCandidate {
    * possibly-`undefined` rather than as optional.
    */
   readonly faceIndex?: number | null | undefined;
+  /**
+   * Which instance of an `InstancedMesh` was hit (W7).
+   *
+   * `number | undefined` in three's own types — absent for every hit on a
+   * non-instanced object, which includes the cell grid sharing this raycast set.
+   * Spelled out as `| undefined` as well as `?` for the same
+   * `exactOptionalPropertyTypes` reason as `faceIndex`.
+   */
+  readonly instanceId?: number | null | undefined;
   readonly userData: Record<string, unknown>;
 }
 
@@ -74,9 +83,19 @@ export function resolvePick(
   cellForTriangle: readonly string[],
 ): Pick | undefined {
   for (const hit of [...hits].sort((a, b) => a.distance - b.distance)) {
-    const marker = hit.userData["poi"];
-    if (marker !== undefined) {
-      return { kind: "poi", marker: marker as PoiMarker };
+    // POI MARKERS ARE INSTANCED (W7), so the identity is no longer on the
+    // object — one `InstancedMesh` carries every marker and the hit's
+    // `instanceId` selects one. Structurally identical to the cell grid's
+    // `faceIndex -> cellForTriangle`, and it fails the same way: a lookup miss
+    // means the table and the geometry have drifted, and answering from a
+    // drifted table opens the details panel on a confidently wrong place.
+    const markers = hit.userData["poiInstances"];
+    if (Array.isArray(markers)) {
+      const instance = hit.instanceId;
+      if (instance === undefined || instance === null) continue;
+      const marker = (markers as PoiMarker[])[instance];
+      if (marker === undefined) continue;
+      return { kind: "poi", marker };
     }
     if (hit.userData["cellGrid"] !== true) continue;
     // `faceIndex` IS the triangle index for an indexed BufferGeometry, which is

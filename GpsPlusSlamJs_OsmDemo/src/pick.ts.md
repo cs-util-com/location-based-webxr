@@ -8,7 +8,7 @@ Decides what a click in the 3D view selected (W12). The raycast stays in
 
 ## Public API
 
-- `PickCandidate` — `{ distance, faceIndex?, userData }`. Deliberately not
+- `PickCandidate` — `{ distance, faceIndex?, instanceId?, userData }`. Deliberately not
   `THREE.Intersection`: the three fields below are the whole of what the decision
   reads, and a test must be able to construct one without a renderer.
 - `Pick` — `{ kind: "cell", cell }` or `{ kind: "poi", marker }`.
@@ -37,6 +37,16 @@ Decides what a click in the 3D view selected (W12). The raycast stays in
   built in the same pass as the geometry, so a miss means the two have drifted —
   and a drifted lookup opens the panel on a confidently wrong cell, worse than
   opening nothing. The H3 ragged-boundary fix landed for this exact class.
+- **POI markers are INSTANCED (W7), so their identity is an index too.** One
+  `InstancedMesh` carries every marker and the hit's `instanceId` selects one out
+  of `userData.poiInstances`. Structurally identical to the grid's
+  `faceIndex → cellForTriangle`, including the failure: a lookup miss means the
+  table and the matrices have drifted, and answering from a drifted table opens
+  the details panel on a confidently wrong place. The table is built in the same
+  loop as the instance matrices, in `mesh-layers.ts`, so it cannot.
+  - A hit with no `instanceId` is skipped rather than defaulting to instance 0 —
+    every hit on a non-instanced object (the cell grid shares the raycast set)
+    has none, and "the first marker" would be a confident wrong answer.
 - **`faceIndex` is `number | null | undefined`.** `null` is three's own type when
   the hit object is unindexed; the explicit `| undefined` alongside the `?` is
   needed because `exactOptionalPropertyTypes` is on.
