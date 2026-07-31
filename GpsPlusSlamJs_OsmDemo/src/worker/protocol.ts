@@ -60,11 +60,14 @@ export interface TransferableMesh {
   readonly buildings: readonly MeshChunk[];
   readonly trees: readonly TreePlacement[];
   /**
-   * Ground areas, one merged mesh.
+   * Ground areas, CHUNKED like the buildings and for the same reason (W20).
    *
-   * MERGED rather than one mesh per plate: a working set has hundreds of small
-   * areas, and a draw call each would dominate the frame. The buildings take the
-   * same trade for the same reason.
+   * This said "one merged mesh" until PR #239, which is what it was before W20:
+   * a working set has hundreds of small areas and a draw call each would
+   * dominate the frame, so they were merged into one. W20 reversed exactly that
+   * rationale — one mesh is one cull unit, so a merged tile could not be culled
+   * at all. Chunks trade a handful of draw calls back for the ability to drop
+   * the ones off screen.
    */
   readonly plates: readonly MeshChunk[];
   readonly plateCount: number;
@@ -78,21 +81,23 @@ export interface TransferableMesh {
    */
   readonly poi: readonly PoiMarker[];
   /**
-   * Roads, one merged mesh (W13).
+   * Roads (W13), CHUNKED like the plates and for the same reason (W20).
    *
-   * MERGED like the plates and for the same reason: a working set has hundreds
-   * of ways and a draw call each would dominate the frame.
+   * Also said "one merged mesh" until PR #239. See `plates` above: merging was
+   * right when a draw call per way was the cost that mattered, and wrong once
+   * the cost that mattered was drawing a kilometre of road behind the camera.
    */
   readonly roads: readonly MeshChunk[];
   readonly roadCount: number;
   /**
    * Merged affordance regions as slabs (W14), one entry per region.
    *
-   * NOT merged into a single mesh, unlike the plates and the roads, and the
-   * difference is the colour: every region is drawn in the shade of its own
-   * `medianScore`, so merging them would need per-vertex colours computed
+   * ONE ENTRY PER REGION, and NOT chunked like the plates and the roads. The
+   * reason is the colour: every region is drawn in the shade of its own
+   * `medianScore`, so batching them would need per-vertex colours computed
    * against a scale the worker does not have. There are a handful of regions per
-   * working set, not hundreds, so a draw call each is affordable.
+   * working set, not hundreds, so a draw call each is affordable — but note
+   * that means a very large region is still one uncullable object (F27).
    *
    * The score rides along UNCOLOURED on purpose — see `region-slabs.ts.md`.
    */

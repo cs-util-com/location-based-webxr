@@ -68,7 +68,7 @@ import { buildCellMesh } from "../cell-mesh.js";
 import { DemoPipeline } from "../demo-pipeline.js";
 import { describeTerrain } from "../terrain-note.js";
 import {
-  heightfieldFrom,
+  createHeightfieldCache,
   TERRAIN_EXTENT_M,
   type HeightfieldData,
 } from "../heightfield.js";
@@ -174,9 +174,19 @@ const terrainGate = createTerrainGate();
  */
 const CELL_MESH_CATEGORY = "score";
 
+/**
+ * The sampler for whatever terrain is currently held.
+ *
+ * Both readers below go through this rather than calling `heightfieldFrom`
+ * themselves: `heightAtEnu` is invoked PER VERTEX of the affordance grid, and
+ * rebuilding the sampler inside it allocated a `HeightfieldData` spread and a
+ * closure for every one of them (PR #239).
+ */
+const fieldFor = createHeightfieldCache();
+
 /** The current terrain sampler in ENU, or flat. Used by the cell-mesh call. */
 function heightAtEnu(point: { x: number; y: number }): number {
-  const field = terrain === undefined ? undefined : heightfieldFrom(terrain);
+  const field = fieldFor(terrain);
   return field === undefined ? 0 : field.heightAt(point);
 }
 
@@ -185,7 +195,7 @@ function meshOptions(centre: LatLng): {
   groundHeightM?: (position: LatLng) => number;
 } {
   const frame = enuFrameAt(centre);
-  const field = terrain === undefined ? undefined : heightfieldFrom(terrain);
+  const field = fieldFor(terrain);
   if (field === undefined) return { frame };
   return {
     frame,

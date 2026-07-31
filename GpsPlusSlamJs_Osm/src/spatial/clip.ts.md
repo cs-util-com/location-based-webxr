@@ -20,6 +20,11 @@ interest rather than by the feature.
   own `111_320`, until PR #236; pass the latitude furthest from the equator that
   the result must cover. At the poles it returns a very large longitude figure
   rather than dividing by zero, which keeps everything — the safe direction.
+  - **The latitude is clamped to ±90 before the cosine** (PR #237). Callers
+    compute the poleward edge as `|centre| + halfWidth`, which crosses 90° near
+    the pole; past 90° `cos` goes negative and the margin inverts, producing a
+    box whose `west` is east of its `east` — a clip that keeps nothing, in the
+    one place on earth where an empty result looks entirely plausible.
 - `bboxesIntersect(a, b)`
 
 ## Invariants & assumptions

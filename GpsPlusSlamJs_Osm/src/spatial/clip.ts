@@ -119,13 +119,22 @@ const METRES_PER_DEGREE_LAT = 111_320;
  * grows very large and any box built from it keeps everything. Over-keeping
  * costs time; under-keeping would silently lose geometry, which is the failure
  * this exists to prevent.
+ *
+ * PAST THE POLE IT IS CLAMPED, and that is not hypothetical (PR #237). Asking
+ * for the poleward edge means callers compute `|centre| + halfWidth`, which
+ * crosses 90° for any box near the pole — and beyond 90° `cos` goes NEGATIVE,
+ * so the margin inverts and the "box" it builds has `west` east of `east`. A
+ * clip against that keeps nothing, and an empty result near the pole reads as
+ * "no OSM data here", which is exactly plausible enough to never be
+ * investigated. Clamping keeps the contract above true for every input.
  */
 export function metresToDegrees(
   latitudeDeg: number,
   metres: number,
 ): { lat: number; lng: number } {
   const lat = metres / METRES_PER_DEGREE_LAT;
-  return { lat, lng: lat / Math.cos((latitudeDeg * Math.PI) / 180) };
+  const poleward = Math.min(Math.abs(latitudeDeg), 90);
+  return { lat, lng: lat / Math.cos((poleward * Math.PI) / 180) };
 }
 
 export function bboxesIntersect(a: Bbox, b: Bbox): boolean {

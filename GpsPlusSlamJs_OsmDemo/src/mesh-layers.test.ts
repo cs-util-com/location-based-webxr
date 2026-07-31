@@ -385,6 +385,50 @@ describe("materials — what the light has to work with (W13)", () => {
     expect(materialOf("plates").roughness).toBeGreaterThan(0.8);
     expect(materialOf("roads").roughness).toBeGreaterThan(0.8);
   });
+
+  it("gives every chunk its OWN material, and hands all of them to `clear()`", () => {
+    // WHY THIS TEST MATTERS — it is the pairing, not either half.
+    //
+    // PR #239 read a comment here claiming the material was shared across
+    // chunks; it never was, since `new MeshStandardMaterial` sits inside the
+    // `.map()`. That is fine — identical materials share one compiled program,
+    // so a material per chunk costs a small object and no draw call. What is
+    // NOT fine is hoisting it to a module constant on its own: `clear()` skips
+    // a child entirely when `sharedResources` is set, so a hoisted material
+    // either gets destroyed on the first refresh (no flag) or takes the chunk's
+    // per-render GEOMETRY with it into a leak (flag set, since the flag is
+    // all-or-nothing). Both failures are silent — three.js does not throw for a
+    // disposed material and the counters keep reporting the geometry.
+    //
+    // So this asserts the shape the disposal path actually assumes: owned
+    // material, owned geometry, no borrow flag. Anyone hoisting the material
+    // has to come here and teach `clear()` about a material-only borrow first.
+    const twoChunks = [
+      { key: "0,0", mesh: triangle() },
+      { key: "1,0", mesh: triangle() },
+    ];
+    for (const layer of ["buildings", "plates", "roads"] as const) {
+      const { objects } = drawMeshLayers(
+        { ...fullMesh(), [layer]: twoChunks },
+        {
+          buildings: false,
+          trees: false,
+          plates: false,
+          roads: false,
+          poi: false,
+          areas: false,
+          [layer]: true,
+        },
+      );
+      expect(objects).toHaveLength(2);
+      const [first, second] = objects as THREE.Mesh[];
+      expect(first?.material).not.toBe(second?.material);
+      expect(first?.geometry).not.toBe(second?.geometry);
+      for (const chunk of objects) {
+        expect(chunk.userData["sharedResources"]).toBeUndefined();
+      }
+    }
+  });
 });
 
 describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", () => {

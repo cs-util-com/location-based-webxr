@@ -163,6 +163,34 @@ export function heightfieldFrom(data: HeightfieldData): Heightfield {
 }
 
 /**
+ * A `heightfieldFrom` that rebuilds only when the DATA changes.
+ *
+ * `heightfieldFrom` is cheap but not free — an object spread plus a closure —
+ * and the worker's per-vertex samplers used to call it INSIDE the sampler, so
+ * the affordance grid paid for one throwaway `Heightfield` per sampled vertex
+ * (~931 cells' worth, per rebuild). PR #239 caught it.
+ *
+ * Keyed on OBJECT IDENTITY, not on contents: `HeightfieldData` is replaced
+ * wholesale when the terrain is reloaded, never mutated in place, so identity is
+ * the exact question "is this still the same terrain". A deep comparison would
+ * be more expensive than the rebuild it saves.
+ */
+export function createHeightfieldCache(): (
+  data: HeightfieldData | undefined,
+) => Heightfield | undefined {
+  let source: HeightfieldData | undefined;
+  let field: Heightfield | undefined;
+  return (data) => {
+    if (data === undefined) return undefined;
+    if (data !== source) {
+      source = data;
+      field = heightfieldFrom(data);
+    }
+    return field;
+  };
+}
+
+/**
  * Loads a heightfield over a square centred on the frame's origin.
  *
  * Never rejects. A DEM outage should cost the relief, not the 3D view — the

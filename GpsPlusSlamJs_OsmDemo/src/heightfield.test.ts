@@ -27,6 +27,7 @@ import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 import {
   buildHeightfield,
   buildHeightfieldData,
+  createHeightfieldCache,
   NEAR_FIELD_M,
 } from "./heightfield.js";
 
@@ -289,5 +290,50 @@ describe("buildHeightfieldData — nearReliefM is the NEAR field (PR #231)", () 
     });
     expect(field.nearReliefM).toBe(field.reliefM);
     expect(field.nearReliefM).toBeGreaterThan(0);
+  });
+});
+
+describe("createHeightfieldCache — one sampler per terrain (PR #239)", () => {
+  /** Minimal real data: a 2×2 field, so `hasData` takes the sampling branch. */
+  function dataOf(datum: number) {
+    return {
+      heights: new Float32Array([0, 1, 2, 3]),
+      side: 2,
+      extentM: 100,
+      datum,
+      hasData: true,
+      missing: 0,
+      total: 4,
+      reliefM: 3,
+      nearReliefM: 3,
+    };
+  }
+
+  it("rebuilds the sampler only when the DATA changes, not per sample", () => {
+    // WHY THIS TEST MATTERS. `heightAtEnu` in `demo-worker.ts` called
+    // `heightfieldFrom(terrain)` inside itself, so the whole affordance grid —
+    // ~931 cells, several vertices each — allocated a fresh spread of
+    // `HeightfieldData` plus a closure PER SAMPLED VERTEX, on every rebuild.
+    // Identity is the assertion because it is the only thing that distinguishes
+    // "cached" from "cheap enough that nobody noticed": a value-equal sampler
+    // rebuilt every call would pass any assertion about the heights it returns.
+    const cache = createHeightfieldCache();
+    const data = dataOf(0);
+    expect(cache(data)).toBe(cache(data));
+    // A NEW terrain must not be answered from the old sampler — that would show
+    // as relief lagging one position behind the user, which reads as a DEM
+    // problem rather than as a cache bug.
+    const next = dataOf(10);
+    const before = cache(data);
+    expect(cache(next)).not.toBe(before);
+    expect(cache(next)?.datum).toBe(10);
+  });
+
+  it("passes `undefined` through, because no terrain is a legitimate state", () => {
+    // A DEM outage costs the relief and nothing else (see `buildHeightfieldData`),
+    // so the absent case must stay absent rather than becoming a flat sampler the
+    // callers can no longer tell apart from real flat ground.
+    const cache = createHeightfieldCache();
+    expect(cache(undefined)).toBeUndefined();
   });
 });

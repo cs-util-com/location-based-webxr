@@ -354,8 +354,16 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   {
     layer: "buildings",
     // ONE MESH PER CHUNK (W20). Each is frustum-culled on its own, which one
-    // merged city could not be — see `chunk-meshes.ts`. The material is shared
-    // across chunks, so this costs draw calls and not memory.
+    // merged city could not be — see `chunk-meshes.ts`.
+    //
+    // A MATERIAL PER CHUNK, and deliberately so — this said "the material is
+    // shared across chunks" until PR #239 pointed out that the constructor is
+    // inside the `.map()`. Identical materials share one compiled program in
+    // three, so the cost is a small object per chunk and never a draw call.
+    // Hoisting it to a module constant is NOT a free improvement: `clear()`
+    // skips a child wholesale when `sharedResources` is set, so a hoisted
+    // material is either disposed on the first refresh or drags the chunk's
+    // owned geometry into a leak. `mesh-layers.test.ts` pins the pairing.
     build: (mesh) =>
       mesh.buildings.map(
         (chunk) =>

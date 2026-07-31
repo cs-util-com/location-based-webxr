@@ -516,4 +516,25 @@ describe("metresToDegrees (PR #236 — one definition, not two)", () => {
     expect(Number.isFinite(atPole.lng)).toBe(true);
     expect(atPole.lng).toBeGreaterThan(1e12);
   });
+
+  it("never returns a NEGATIVE longitude margin, however far past the pole it is asked (PR #237)", () => {
+    // WHY THIS TEST MATTERS. Callers pass the POLEWARD EDGE of a box, not its
+    // centre — the docstring above asks them to — and that edge is computed as
+    // `|centre| + halfWidth`, which sails past 90 for a box near the pole.
+    // Beyond 90 `cos` turns NEGATIVE, so the margin inverts: `west` ends up east
+    // of `east` and the clip keeps nothing. That is precisely the silent
+    // geometry loss this function's "degrades safely, over-keeps" contract
+    // exists to rule out, and it is invisible everywhere else — an empty result
+    // reads as "no OSM data here", which near the poles is entirely plausible.
+    for (const latitude of [90.0001, 91, 120, 180, 270, -95]) {
+      const margin = metresToDegrees(latitude, 1000);
+      expect(margin.lng).toBeGreaterThan(0);
+      expect(Number.isFinite(margin.lng)).toBe(true);
+    }
+    // And clamping, not wrapping: past the pole it is at least as generous as AT
+    // the pole, so the safe direction stays the safe direction.
+    expect(metresToDegrees(95, 1000).lng).toBeGreaterThanOrEqual(
+      metresToDegrees(90, 1000).lng,
+    );
+  });
 });

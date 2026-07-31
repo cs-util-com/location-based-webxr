@@ -6,6 +6,7 @@
 
 - `buildHeightfieldData(provider, { frame, extentM, spacingM, signal? }): Promise<HeightfieldData>` — **never rejects.** Plain, cloneable data; this is what the worker calls and what crosses the boundary.
 - `heightfieldFrom(data): Heightfield` — rebuilds the synchronous sampler. The ONE place `heightAt` is created, so the worker and the main thread cannot disagree about what a post means.
+- `createHeightfieldCache(): (data | undefined) => Heightfield | undefined` — a `heightfieldFrom` that rebuilds only when the data OBJECT changes. Identity, not contents: `HeightfieldData` is replaced wholesale on reload and never mutated, so identity answers "is this still the same terrain" exactly, and a deep compare would cost more than the rebuild it saves. Exists because the worker's per-vertex samplers called `heightfieldFrom` inside themselves, allocating a spread plus a closure per sampled vertex of the ~931-cell affordance grid (PR #239).
 - `buildHeightfield(provider, options): Promise<Heightfield>` — the main-thread convenience form, exactly `heightfieldFrom(await buildHeightfieldData(...))`. **Never rejects.**
 - `Heightfield` — `HeightfieldData` plus `heightAt({x, y})`, where `HeightfieldData` is `{ heights, side, extentM, datum, hasData, missing, total, reliefM, nearReliefM }`.
   - `heightAt` is **relative** to the frame origin and always finite.
