@@ -152,3 +152,33 @@ describing the average.
 `building:part` at 24 % confirms the plan's other claim: honouring
 `building:part` and `min_height` is where the quality/effort ratio is best, and
 it is worth doing from day one.
+
+## The six-site corpus (`sites/`)
+
+**Separate from the four fixtures above, and captured differently.** Added
+2026-07-31 for round 4 (DEC-R4-1/R4-2): the demo had been looked at in exactly
+one place for three rounds, which is the condition that let a fix ship for a
+defect that was not the reported one.
+
+- **The sites come from `src/places/sites.ts`**, which the demo's location picker
+  also reads — one table, so the places a human can reach are the places the
+  suite covers. Capture with `pnpm run capture:sites [id ...]`.
+- **Res 9 (~348 m across), per site.** Res 10 was tried first and is too small
+  for the purpose: Berlin returned 5 buildings, Manhattan 10, and Sylt a single
+  coastline way.
+- **Non-areal relations are dropped**, and the count is recorded in each
+  extract's `droppedNonArealRelations`. This is the only reason the corpus fits
+  in the repo: the unfiltered res-9 Cologne capture is ~35 MB, of which 97 % is
+  international train-route relations passing Köln Hbf, printed in full by
+  `out geom`. `toGeometry` turns a non-areal relation into no geometry at all,
+  so nothing any consumer could have used is lost. Filtered, all six sites total
+  4.5 MB.
+- **`capture-fixtures.mjs` imports the site table directly** via Node's type
+  stripping, so there is no second copy of the coordinates and no dependency on
+  a built `dist`. Its areal-relation list is pinned to the package's own
+  predicate by `src/source/capture-script-query.test.ts`.
+
+What the corpus found on its first run: `roof:shape=pyramidal` with no tagged
+roof height produced a ZERO-height roof — a flat cap over the full footprint.
+That is the Cologne Cathedral finding (R3-1/R4-7) that three rounds of reading
+the source did not settle. See `src/mesh/building-heights.ts`.

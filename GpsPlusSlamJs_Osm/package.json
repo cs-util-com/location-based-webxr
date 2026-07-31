@@ -43,7 +43,8 @@
     "bench": "vitest bench --run --config config/vitest.bench.config.ts",
     "import:rule-table": "node scripts/import-rule-table.mjs",
     "import:geoid-grid": "node scripts/import-geoid-grid.mjs",
-    "capture:fixtures": "node scripts/capture-fixtures.mjs"
+    "capture:fixtures": "node --experimental-strip-types scripts/capture-fixtures.mjs",
+    "capture:sites": "node --experimental-strip-types scripts/capture-fixtures.mjs --sites"
   },
   "engines": {
     "node": ">=22.14.0"

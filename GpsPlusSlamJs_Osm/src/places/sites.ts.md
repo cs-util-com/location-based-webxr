@@ -17,6 +17,9 @@ cannot drift apart.
   - `captureRes` is the H3 resolution of that site's captured extract, and it is
     **per site** rather than global — see the invariant below.
 - `CORPUS_SITES: readonly CorpusSite[]` — the six, in no significant order.
+  Sylt sits on the promenade rather than on the open beach: centred on the sand
+  the extract contained one coastline way and no buildings, which is a coastline
+  but not a testable one.
 - `siteById(id): CorpusSite | undefined` — `undefined` for an unknown id, never
   a throw, because the id may arrive from a URL and "unknown" means "use the
   default position".
@@ -29,12 +32,19 @@ cannot drift apart.
 - **`cologne-cathedral` must stay.** It is the only site that can reproduce the
   open R3-1/R4-7 finding; removing it silently makes that finding
   irreproducible. Asserted by name.
-- **`captureRes` is per site because one site does not fit the default.** A
-  res-10 cell is ~114 m across the flats; Cologne Cathedral's footprint is
-  144 x 86 m. Capturing it at res 10 would clip the very building whose clipping
-  is under investigation, so it is captured at res 9 (~348 m across). Everything
-  else stays at res 10, matching the existing four fixtures, because a res-9
-  extract in a dense centre is roughly 7x the bytes.
+- **`captureRes` is per site, and every site is currently res 9 (~348 m).** It
+  started as "res 10 like the existing four fixtures, res 9 for the cathedral
+  because its 144 x 86 m footprint does not fit a ~114 m cell" — and the first
+  capture showed res 10 is too small for the corpus's _purpose_: Berlin came back
+  with 5 buildings, Manhattan with 10, and Sylt with a single coastline way and
+  nothing else. A geometry corpus needs enough geometry to assert over.
+  - The field stays per-site rather than becoming a constant, because the reason
+    it varies is a property of the PLACE and the next awkward site may need
+    res 8.
+  - The bytes are affordable only because of the non-areal relation filter (see
+    `scripts/capture-fixtures.mjs`): the unfiltered res-9 cathedral capture is
+    ~35 MB, of which 97 % is international train-route relations the package
+    turns into no geometry at all. Filtered, the whole six-site corpus is 4.5 MB.
 - **Coordinates are the plan's call, traits are the owner's.** DEC-R4-2 fixed
   _what kinds of place_; which coastline and which high-rise city is taste and
   may be changed without reopening the decision.

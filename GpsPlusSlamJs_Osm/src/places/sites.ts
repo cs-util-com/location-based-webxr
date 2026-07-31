@@ -98,7 +98,7 @@ export const CORPUS_SITES: readonly CorpusSite[] = [
     trait: "relief",
     reason:
       "The old town sits under a castle hillside with tens of metres of relief inside one tile — the terrain case Cologne's flat centre cannot exercise, and where per-part building bases actually differ.",
-    captureRes: 10,
+    captureRes: 9,
   },
   {
     id: "berlin-alexanderplatz",
@@ -107,16 +107,16 @@ export const CORPUS_SITES: readonly CorpusSite[] = [
     trait: "messy-tagging",
     reason:
       "Stacked U-Bahn and S-Bahn infrastructure with real `layer`, `tunnel` and `covered` values over multipolygon buildings — the site F16 needs, since `plates.ts` handles none of those tags today.",
-    captureRes: 10,
+    captureRes: 9,
   },
   {
     id: "sylt-westerland",
     name: "Sylt — Westerland beach",
-    position: { lat: 54.9079, lng: 8.2946 },
+    position: { lat: 54.907, lng: 8.2985 },
     trait: "coastline",
     reason:
       "`natural=coastline` with `natural=beach` and `surface=sand` behind it — where the ground stops being ground, and already the package's surface oracle as the `beach` fixture.",
-    captureRes: 10,
+    captureRes: 9,
   },
   {
     id: "manhattan-midtown",
@@ -125,7 +125,7 @@ export const CORPUS_SITES: readonly CorpusSite[] = [
     trait: "dense-highrise",
     reason:
       "Tall buildings packed at a density no European centre reaches — the worst case for the far field, for the draw-call budget, and for buildings whose tagged height dwarfs everything around them.",
-    captureRes: 10,
+    captureRes: 9,
   },
   {
     id: "tokyo-shinjuku",
@@ -134,7 +134,7 @@ export const CORPUS_SITES: readonly CorpusSite[] = [
     trait: "non-european-tagging",
     reason:
       "A different tagging culture: multilingual names, different amenity and building value distributions, and address conventions no fixture captured in Germany exercises.",
-    captureRes: 10,
+    captureRes: 9,
   },
 ];
 

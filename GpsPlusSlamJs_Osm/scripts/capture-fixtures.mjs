@@ -4,16 +4,33 @@
  *
  * Run on demand only — it hits donated public infrastructure:
  *
- *   pnpm run capture:fixtures            # all fixtures
+ *   pnpm run capture:fixtures            # the four everyday fixtures
  *   pnpm run capture:fixtures beach      # one, by slug
+ *   pnpm run capture:sites               # the six corpus sites (W2/DEC-R4-2)
+ *   pnpm run capture:sites tokyo-shinjuku
  *
- * Each capture writes `src/testdata/<slug>.json`, containing the raw payload
- * plus the provenance the plan requires (bbox, query, capture date, the exact
- * command to regenerate) and the S3DB census that gates the plan's §8.
+ * Each capture writes a JSON file containing the raw payload plus the
+ * provenance the plan requires (bbox, query, capture date, the exact command to
+ * regenerate) and the S3DB census that gates the plan's §8.
  *
  * Deliberately a plain `.mjs` script rather than a test: fixtures are captured
  * a handful of times in the package's life, and a test that touches the network
  * is a test that fails when a public server is down.
+ *
+ * TWO CORPORA, ONE SCRIPT, and that is the point rather than convenience. The
+ * six-site corpus (W2) needed the same bbox arithmetic, the same key filter and
+ * the same union query as the four everyday fixtures, and a second script would
+ * have been a THIRD copy of the key list — which is precisely the duplication
+ * `src/source/capture-script-query.test.ts` exists to catch, and precisely the
+ * mistake that cost this project a day. So the spec grew a `res` and an
+ * `outDir` and the query path stayed single.
+ *
+ * THE SITE LIST IS IMPORTED, NOT COPIED. `src/places/sites.ts` is the one table
+ * the demo's picker and this script both read (DEC-R4-11); duplicating six
+ * coordinates here would rebuild the drift that table exists to prevent. Node
+ * strips the types at import (`--experimental-strip-types`, hence the flag in
+ * the `capture:sites` script), so this needs no build step and cannot read a
+ * stale `dist` — the failure mode the key-list test rejects `dist` imports for.
  */
 
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -21,8 +38,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { latLngToCell, cellToBoundary } from "h3-js";
 
+import { CORPUS_SITES } from "../src/places/sites.ts";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, "..", "src", "testdata");
+const SITES_OUT_DIR = join(OUT_DIR, "sites");
 
 /**
  * Fixtures are captured at res 10, NOT at the `FETCH_RES` (res-7) fetch
@@ -64,26 +84,52 @@ const FIXTURES = [
     label: "Cologne Volksgarten — a park with mixed landuse",
     lat: 50.9231,
     lng: 6.9445,
+    res: FETCH_RES,
+    outDir: OUT_DIR,
   },
   {
     slug: "street-corner",
     label: "Cologne Neumarkt — urban corner: roads, footways, crossings",
     lat: 50.9355,
     lng: 6.9459,
+    res: FETCH_RES,
+    outDir: OUT_DIR,
   },
   {
     slug: "beach",
     label: "Sylt Westerland beach — the surface=sand + natural=beach oracle",
     lat: 54.9079,
     lng: 8.2946,
+    res: FETCH_RES,
+    outDir: OUT_DIR,
   },
   {
     slug: "building-block",
     label: "Cologne Altstadt — dense block, multipolygons, building:part",
     lat: 50.9384,
     lng: 6.9598,
+    res: FETCH_RES,
+    outDir: OUT_DIR,
   },
 ];
+
+/**
+ * The six corpus sites (W2, DEC-R4-2), derived from the shared table.
+ *
+ * `captureRes` is per site and comes from the table rather than from this
+ * script, because the reason it varies is a property of the PLACE: Cologne
+ * Cathedral's 144 x 86 m footprint does not fit a res-10 cell, and capturing
+ * the one site the corpus exists for at a resolution that clips it would be a
+ * fixture that cannot answer the question it was captured for.
+ */
+const SITES = CORPUS_SITES.map((site) => ({
+  slug: site.id,
+  label: `${site.name} — ${site.trait}`,
+  lat: site.position.lat,
+  lng: site.position.lng,
+  res: site.captureRes,
+  outDir: SITES_OUT_DIR,
+}));
 
 function bboxOf(cell) {
   const boundary = cellToBoundary(cell);
@@ -178,6 +224,41 @@ function buildQuery(bbox) {
 }
 
 /**
+ * Relation types this package can turn into geometry.
+ *
+ * MUST equal `AREAL_RELATION_TYPES` in `src/model/osm-geometry.ts`, and
+ * `src/source/capture-script-query.test.ts` pins it — the same duplication and
+ * the same guard as `SELECT_KEYS`, for the same reason: this is a plain `.mjs`
+ * script and Node's type stripping cannot resolve the package's `.js`
+ * specifiers, so it cannot import the predicate.
+ *
+ * WHY SITE EXTRACTS DROP EVERYTHING ELSE — measured, not assumed. `out geom`
+ * prints the FULL geometry of every element intersecting the bbox, and a bbox
+ * beside Cologne Hbf intersects dozens of international train-route relations
+ * (`type=route`), each carrying every point of a line across Europe. Measured on
+ * the res-9 cathedral tile: **1365 elements, 24.64 MB — of which 84 non-areal
+ * relations were 23.91 MB, i.e. 97 % of the bytes.** Dropping exactly them
+ * leaves 1281 elements and 0.73 MB, with all 162 buildings/parts and all 12
+ * areal relations intact.
+ *
+ * This is LOSSLESS with respect to everything the package does: `toGeometry`
+ * turns a non-areal relation into no geometry at all, so such an element can
+ * never cover a cell, never contribute a score and never produce a triangle.
+ * The count that was dropped is recorded in each extract's provenance, so the
+ * filter is a stated property of the fixture rather than an invisible edit.
+ *
+ * The four legacy fixtures are NOT filtered — they are the corpus other tests
+ * already assert exact counts against, and rewriting them is a separate change.
+ */
+const AREAL_RELATION_TYPES = ["multipolygon", "boundary"];
+
+/** True for an element a site extract keeps. See `AREAL_RELATION_TYPES`. */
+function isUsableGeometry(element) {
+  if (element.type !== "relation") return true;
+  return AREAL_RELATION_TYPES.includes((element.tags ?? {})["type"]);
+}
+
+/**
  * The S3DB census the plan makes a gate on §8: if `roof:shape` and `height` are
  * near zero in the areas we actually target, the entire roof-geometry pipeline
  * is dead weight and flat extrusions are indistinguishable at walking distance.
@@ -217,7 +298,7 @@ async function post(endpoint, query) {
 }
 
 async function capture(spec) {
-  const tile = latLngToCell(spec.lat, spec.lng, FETCH_RES);
+  const tile = latLngToCell(spec.lat, spec.lng, spec.res);
   const bbox = bboxOf(tile);
   const query = buildQuery(bbox);
 
@@ -226,31 +307,50 @@ async function capture(spec) {
     try {
       process.stdout.write(`  ${spec.slug}: ${endpoint} ... `);
       const { payload, bytes } = await post(endpoint, query);
-      const elements = payload.elements ?? [];
+      const received = payload.elements ?? [];
+      const isSite = spec.outDir === SITES_OUT_DIR;
+      // Site extracts only. See `AREAL_RELATION_TYPES` for why, and for the
+      // measurement — this is the difference between 24.64 MB and 0.73 MB.
+      const elements = isSite ? received.filter(isUsableGeometry) : received;
+      const dropped = received.length - elements.length;
       const census = s3dbCensus(elements);
       console.log(
-        `${elements.length} elements, ${(bytes / 1024 / 1024).toFixed(2)} MB`,
+        `${elements.length} elements, ${(bytes / 1024 / 1024).toFixed(2)} MB received` +
+          (dropped > 0 ? `, ${dropped} non-areal relation(s) dropped` : ""),
       );
 
       const fixture = {
         name: spec.slug,
         label: spec.label,
         tile,
+        // The REQUESTED centre and resolution, recorded rather than derivable.
+        // `src/testdata/sites/site-extracts.test.ts` compares these against the
+        // shared table, which is what makes a capture taken from a stale or
+        // hand-edited table fail loudly instead of shipping the wrong place
+        // under the right name.
         centre: { lat: spec.lat, lng: spec.lng },
+        captureRes: spec.res,
         bbox,
         query,
         capturedAt: Date.now(),
         capturedFrom: endpoint,
         rawBytes: bytes,
         elementCount: elements.length,
+        // What the filter removed, so the extract STATES that it is a subset
+        // rather than being a quietly edited capture. Zero for the four legacy
+        // fixtures, which are unfiltered.
+        droppedNonArealRelations: dropped,
         s3dbCensus: census,
-        regenerateWith: `pnpm run capture:fixtures ${spec.slug}`,
-        payload,
+        regenerateWith: `pnpm run ${isSite ? "capture:sites" : "capture:fixtures"} ${spec.slug}`,
+        payload: isSite ? { ...payload, elements } : payload,
       };
-      mkdirSync(OUT_DIR, { recursive: true });
+      mkdirSync(spec.outDir, { recursive: true });
       writeFileSync(
-        join(OUT_DIR, `${spec.slug}.json`),
-        JSON.stringify(fixture, null, 1),
+        join(spec.outDir, `${spec.slug}.json`),
+        // NOT pretty-printed for sites. Indentation is ~25 % of an OSM geometry
+        // payload's bytes and these are committed files; the four legacy
+        // fixtures keep their formatting so this change does not rewrite them.
+        isSite ? JSON.stringify(fixture) : JSON.stringify(fixture, null, 1),
       );
       return { ...census, slug: spec.slug, bytes, elements: elements.length };
     } catch (error) {
@@ -261,15 +361,18 @@ async function capture(spec) {
   throw lastError;
 }
 
-const wanted = process.argv.slice(2);
+const argv = process.argv.slice(2);
+// `--sites` chooses the corpus; anything else is a slug filter. A flag rather
+// than a second script, so there is one query path and one key list.
+const wantsSites = argv.includes("--sites");
+const corpus = wantsSites ? SITES : FIXTURES;
+const wanted = argv.filter((arg) => arg !== "--sites");
 const selected =
-  wanted.length > 0
-    ? FIXTURES.filter((f) => wanted.includes(f.slug))
-    : FIXTURES;
+  wanted.length > 0 ? corpus.filter((f) => wanted.includes(f.slug)) : corpus;
 
 if (selected.length === 0) {
   console.error(
-    `No fixture matched ${wanted.join(", ")}. Known: ${FIXTURES.map((f) => f.slug).join(", ")}`,
+    `No fixture matched ${wanted.join(", ")}. Known: ${corpus.map((f) => f.slug).join(", ")}`,
   );
   process.exit(1);
 }
@@ -302,7 +405,7 @@ if (failed.length > 0) {
     console.log(`  ${f.slug.padEnd(16)} ${f.message}`);
   }
   console.log(
-    `  retry with: pnpm run capture:fixtures ${failed.map((f) => f.slug).join(" ")}`,
+    `  retry with: pnpm run ${wantsSites ? "capture:sites" : "capture:fixtures"} ${failed.map((f) => f.slug).join(" ")}`,
   );
 }
 

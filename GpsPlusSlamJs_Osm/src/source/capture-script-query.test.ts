@@ -36,6 +36,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { OVERPASS_SELECT_KEYS } from "./overpass-query.js";
+import { isArealRelation } from "../model/osm-geometry.js";
 
 const scriptPath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -102,5 +103,60 @@ describe("scripts/capture-fixtures.mjs", () => {
     // "the union duplicates elements" claim. One trailing `out` is the fix.
     const outStatements = buildQueryBody().match(/"out geom;"/g) ?? [];
     expect(outStatements).toHaveLength(1);
+  });
+
+  /**
+   * WHY THIS SECOND PIN EXISTS (W2). The site extracts drop every relation the
+   * package cannot turn into geometry, because `out geom` beside a major
+   * station prints every international train route in full — measured on the
+   * res-9 cathedral tile at 23.91 MB of 24.64 MB, i.e. 97 % of the payload.
+   *
+   * That filter is only defensible while it is EXACTLY the package's own
+   * areal-relation rule: drop what `toGeometry` would produce nothing for, and
+   * the extract loses nothing any consumer could have used. If the two lists
+   * ever diverge, the fixtures silently start missing features the package
+   * WOULD have used, and the absence would be indistinguishable from "that is
+   * not mapped there" — the same ambiguity the key-list pin exists to prevent.
+   *
+   * The script cannot import the predicate: it is a plain `.mjs`, and Node's
+   * type stripping cannot resolve the package's `.js` import specifiers.
+   */
+  function arealTypesFromScript(): string[] {
+    const match = /const AREAL_RELATION_TYPES = \[([\s\S]*?)\];/.exec(script);
+    if (match?.[1] === undefined) {
+      throw new Error(
+        "Could not find `const AREAL_RELATION_TYPES = [...]` in capture-fixtures.mjs. " +
+          "If the script was restructured, update this test rather than deleting it.",
+      );
+    }
+    return [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
+  }
+
+  it("keeps exactly the relation types the package treats as areal", () => {
+    const scriptTypes = arealTypesFromScript();
+    // Asserted through the exported predicate rather than against a copied
+    // list, so this stays true if `AREAL_RELATION_TYPES` is ever restructured.
+    for (const type of scriptTypes) {
+      expect(
+        isArealRelation({
+          type: "relation",
+          id: 1,
+          tags: { type },
+          members: [],
+        }),
+      ).toBe(true);
+    }
+    // And the other direction: a type the script keeps must not be missing, so
+    // a package that gained a third areal type fails here rather than silently
+    // dropping it from every future capture.
+    for (const type of ["multipolygon", "boundary", "route", "site"]) {
+      const packageSaysAreal = isArealRelation({
+        type: "relation",
+        id: 1,
+        tags: { type },
+        members: [],
+      });
+      expect(scriptTypes.includes(type)).toBe(packageSaysAreal);
+    }
   });
 });
