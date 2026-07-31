@@ -33,7 +33,9 @@
 import * as THREE from "three";
 import {
   packInstances,
+  poiModelFor,
   type MeshData,
+  type PoiModel,
   type TreeVariant,
 } from "gps-plus-slam-osm";
 
@@ -170,17 +172,68 @@ export interface MeshLayerDescriptor {
  */
 export function poiMarkerPosition(
   marker: TransferableMesh["poi"][number],
+  /**
+   * Half-height for the FALLBACK cone, which is centred on its origin.
+   *
+   * Zero for a real model (W19): every one is built with its base at `y = 0`
+   * (`poi-primitives.ts`, asserted in `poi-models.test.ts`), so the sampled
+   * ground height IS the answer. The old unconditional `POI_HEIGHT_M / 2` is
+   * gone rather than parameterised per kind, because "the base is at zero" is a
+   * contract the models satisfy rather than a number to look up.
+   */
+  centreOffsetM = 0,
 ): [x: number, y: number, z: number] {
   return [
     marker.position.x,
-    marker.groundHeightM + POI_HEIGHT_M / 2,
+    marker.groundHeightM + centreOffsetM,
     -marker.position.y,
   ];
 }
 
-/** Height of a marker pin, metres. Tall enough to clear a hedge, short enough
- * not to compete with the buildings. */
+/**
+ * Height of the FALLBACK pin, metres — the long tail with no model of its own.
+ *
+ * Tall enough to clear a hedge, short enough not to compete with the buildings.
+ * It stays a deliberately abstract cone rather than a generic box, because an
+ * obviously-abstract marker is a better claim than a plausible-looking wrong one.
+ */
 const POI_HEIGHT_M = 6;
+
+/**
+ * Per-kind geometry and material, built once and shared by every instance.
+ *
+ * CACHED ACROSS RENDERS, and that is the reason W7 had to land before Stage 2:
+ * fifty kinds means up to fifty `InstancedMesh` objects per publish, and
+ * rebuilding their geometry each time would be exactly the per-publish
+ * allocation instancing removed — fifty times over.
+ *
+ * Everything in here is BORROWED by the scene (`sharedResources`), so
+ * `BuildingView.clear()` must not dispose it.
+ */
+const modelResources = new Map<
+  string,
+  { geometry: THREE.BufferGeometry; material: THREE.MeshStandardMaterial }
+>();
+
+function resourcesFor(model: PoiModel): {
+  geometry: THREE.BufferGeometry;
+  material: THREE.MeshStandardMaterial;
+} {
+  const cached = modelResources.get(model.kind);
+  if (cached !== undefined) return cached;
+  const built = {
+    geometry: geometryFrom(model.mesh),
+    material: new THREE.MeshStandardMaterial({
+      color: model.colour,
+      flatShading: true,
+      // Slightly reflective, like the buildings (W13) — a fully matte marker
+      // sits oddly in a scene where everything else catches the moving sun.
+      roughness: 0.75,
+    }),
+  };
+  modelResources.set(model.kind, built);
+  return built;
+}
 
 /**
  * UNIT tree geometries — one per variant, built once, shared by every instance.
@@ -459,40 +512,68 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     layer: "poi",
     build: (mesh) => {
       if (mesh.poi.length === 0) return [];
-      // ONE InstancedMesh for every marker (W7), like the trees. It was one
-      // `Mesh` each — cheap while `poi` was off by default, and 50x worse the
-      // moment W9 switches it on and Stage 2 gives each kind its own model.
-      const pins = new THREE.InstancedMesh(
-        POI_GEOMETRY,
-        POI_MATERIAL,
-        mesh.poi.length,
-      );
+      // ONE InstancedMesh PER KIND — W7 made it instanced, W19 gave each kind
+      // its own model. Grouping first is what keeps fifty models a handful of
+      // draw calls rather than one per marker, and it is why W7 had to land
+      // before Stage 2 rather than after it.
+      //
+      // THE FALLBACK SHARES ONE BUCKET, keyed by the empty string. Fifty kinds
+      // are modelled and roughly 650 are not, so the long tail is the common
+      // case: giving it a bucket per kind would be 650 draw calls for the
+      // markers that look identical anyway.
+      const byKind = new Map<string, TransferableMesh["poi"][number][]>();
+      for (const marker of mesh.poi) {
+        const bucket =
+          poiModelFor(marker.kind) === undefined ? "" : marker.kind;
+        const list = byKind.get(bucket) ?? [];
+        list.push(marker);
+        byKind.set(bucket, list);
+      }
+
+      const objects: THREE.Object3D[] = [];
       const matrix = new THREE.Matrix4();
-      mesh.poi.forEach((marker, i) => {
-        pins.setMatrixAt(
-          i,
-          matrix.makeTranslation(...poiMarkerPosition(marker)),
+      for (const [bucket, markers] of byKind) {
+        const model = bucket === "" ? undefined : poiModelFor(bucket);
+        const { geometry, material } =
+          model === undefined
+            ? { geometry: POI_GEOMETRY, material: POI_MATERIAL }
+            : resourcesFor(model);
+        const pins = new THREE.InstancedMesh(
+          geometry,
+          material,
+          markers.length,
         );
-      });
-      pins.instanceMatrix.needsUpdate = true;
-      // THE IDENTITY A PICK READS BACK, now an array indexed by instance rather
-      // than a field on the object — instancing collapses N objects onto one, so
-      // there is nowhere per-object left to put it.
-      //
-      // BUILT IN THIS FUNCTION, with the geometry, and that is the whole
-      // guarantee: an index-keyed table assembled anywhere else survives a
-      // `clear()` and the next render while pointing at the PREVIOUS working
-      // set, which is a panel confidently describing the wrong feature. Here the
-      // table and the matrices come from one loop over one array, so they cannot
-      // disagree.
-      //
-      // `sharedResources` tells the scene owner the geometry and material are
-      // BORROWED. `BuildingView.clear()` disposes both for every child it
-      // removes, which for a shared resource means the first refresh destroys it
-      // and every later frame silently draws nothing — three.js does not throw
-      // for a disposed geometry.
-      pins.userData = { poiInstances: mesh.poi, sharedResources: true };
-      return [pins];
+        // The fallback cone is centred on its origin; every MODEL is built with
+        // its base at y = 0 by contract, so it needs no offset at all. That
+        // contract is asserted in `poi-models.test.ts`, which is what lets this
+        // be a zero rather than a per-kind lookup.
+        const centreOffsetM = model === undefined ? POI_HEIGHT_M / 2 : 0;
+        markers.forEach((marker, i) => {
+          pins.setMatrixAt(
+            i,
+            matrix.makeTranslation(...poiMarkerPosition(marker, centreOffsetM)),
+          );
+        });
+        pins.instanceMatrix.needsUpdate = true;
+        // THE IDENTITY A PICK READS BACK, an array indexed by instance —
+        // instancing collapses N objects onto one, so there is nowhere
+        // per-object left to put it. Per BUCKET now, so the array a hit indexes
+        // is the array that produced that mesh's matrices.
+        //
+        // BUILT IN THIS LOOP, with the geometry, and that is the whole
+        // guarantee: an index-keyed table assembled anywhere else survives a
+        // `clear()` and the next render while pointing at the PREVIOUS working
+        // set, which is a panel confidently describing the wrong feature.
+        //
+        // `sharedResources` tells the scene owner the geometry and material are
+        // BORROWED. `BuildingView.clear()` disposes both for every child it
+        // removes, which for a shared resource means the first refresh destroys
+        // it and every later frame silently draws nothing — three.js does not
+        // throw for a disposed geometry.
+        pins.userData = { poiInstances: markers, sharedResources: true };
+        objects.push(pins);
+      }
+      return objects;
     },
     counters: (mesh) => ({ poi: mesh.poi.length }),
   },

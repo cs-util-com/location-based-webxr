@@ -1736,29 +1736,57 @@ test.describe("the 3D view", () => {
     await expect(page.locator("#status")).toContainText(/\d+ POI/);
 
     // BUILT is not VISIBLE — the lesson from the plates layer, which was counted
-    // and reported for ten work items while nothing was drawn. The pins are a
-    // saturated amber against a scene that is otherwise blue-grey.
-    const amber = () =>
+    // and reported for ten work items while nothing was drawn.
+    //
+    // THIS USED TO COUNT SATURATED AMBER, because every marker was one shared
+    // orange cone. W19 gave the fifty most common kinds their own models in
+    // muted material colours — timber, steel, stone — so the amber count went to
+    // ZERO with the markers drawn perfectly. That is the second time this round
+    // a colour-band proxy broke because the colours deliberately changed (the
+    // road-layer test was the first), so this counts pixels that CHANGED against
+    // the markers-off frame instead. A palette cannot break it.
+    const frame = () =>
       page.evaluate(() => {
         const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return -1;
+        if (!(el instanceof HTMLCanvasElement)) return null;
         const probe = document.createElement("canvas");
         probe.width = el.width;
         probe.height = el.height;
         const ctx = probe.getContext("2d");
-        if (ctx === null) return -1;
+        if (ctx === null) return null;
         ctx.drawImage(el, 0, 0);
-        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-        let count = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i] ?? 0;
-          const g = data[i + 1] ?? 0;
-          const b = data[i + 2] ?? 0;
-          if (r > 140 && g > 80 && b < g - 30) count += 1;
-        }
-        return count;
+        return [...ctx.getImageData(0, 0, probe.width, probe.height).data];
       });
-    await expect.poll(amber, REPAINT).toBeGreaterThan(50);
+
+    await page.getByRole("checkbox", { name: "POI" }).uncheck();
+    const withoutMarkers = await frame();
+    expect(withoutMarkers).not.toBeNull();
+    await page.getByRole("checkbox", { name: "POI" }).check();
+    await expect(page.locator("#status")).toContainText(/[0-9]+ POI/);
+
+    const changed = async () => {
+      const now = await frame();
+      if (now === null || withoutMarkers === null) return -1;
+      let count = 0;
+      for (let i = 0; i < now.length; i += 4) {
+        const dr = Math.abs((now[i] ?? 0) - (withoutMarkers[i] ?? 0));
+        const dg = Math.abs((now[i + 1] ?? 0) - (withoutMarkers[i + 1] ?? 0));
+        const db = Math.abs((now[i + 2] ?? 0) - (withoutMarkers[i + 2] ?? 0));
+        if (dr + dg + db > 24) count += 1;
+      }
+      return count;
+    };
+    // TEN, not the fifty the amber count used, and the drop is the finding
+    // rather than a weakened test: a real-scale bench is 1.8 x 0.85 m where the
+    // old pin was a 6 m cone, so the markers now cover a fraction of the pixels
+    // they did. Measured at 29 on the park fixture. What this still guards
+    // against — a layer that reports its count and draws nothing — produces
+    // exactly zero.
+    //
+    // It is also worth knowing: at the demo's default camera height, correctly
+    // sized street furniture is genuinely small. That is honest rather than
+    // wrong, but it is a thing to look at rather than assume.
+    await expect.poll(changed, REPAINT).toBeGreaterThan(10);
   });
 
   test("a building stays unpickable, which W12 must not have undone", async ({

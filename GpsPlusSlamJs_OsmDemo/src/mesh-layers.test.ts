@@ -243,13 +243,21 @@ describe("poiMarkerPosition", () => {
     expect(poiMarkerPosition(marker)[0]).toBe(30);
   });
 
-  it("stands the pin ON the ground rather than centred in it", () => {
-    // A cone is centred on its origin, so a marker placed at the sampled ground
-    // height is half buried — which at this pin size looks like a shorter pin
-    // rather than like a bug.
+  it("puts a MODEL on the ground exactly, with no offset (W19)", () => {
+    // Every model is built with its base at y = 0 (asserted in the package's
+    // poi-models.test.ts), so the sampled ground height IS the answer. The old
+    // unconditional half-height offset would now float every one of the fifty
+    // models half its own height above the terrain.
     const [, y] = poiMarkerPosition(marker);
-    expect(y).toBeGreaterThan(53);
-    expect(y).toBeLessThan(53 + 6);
+    expect(y).toBe(53);
+  });
+
+  it("still lifts the FALLBACK cone, which is centred on its origin", () => {
+    // The long tail keeps the abstract pin, and a cone placed at the sampled
+    // ground height is half buried — which at that size looks like a shorter
+    // pin rather than like a bug.
+    const [, y] = poiMarkerPosition(marker, 3);
+    expect(y).toBe(56);
   });
 });
 
@@ -426,6 +434,90 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
 
   it("draws nothing at all when there are no trees", () => {
     expect(treeMeshes({ ...fullMesh(), trees: [] })).toHaveLength(0);
+  });
+});
+
+describe("drawMeshLayers — POI markers get their own models (W19)", () => {
+  function poiMesh(kinds: string[]): THREE.InstancedMesh[] {
+    const mesh = {
+      ...fullMesh(),
+      poi: kinds.map((kind, i) => ({
+        feature: `node/${i}`,
+        position: { x: i, y: -i },
+        groundHeightM: 53,
+        kind,
+        label: kind,
+      })),
+    } as TransferableMesh;
+    const { objects } = drawMeshLayers(mesh, {
+      buildings: false,
+      trees: false,
+      plates: false,
+      roads: false,
+      poi: true,
+      areas: false,
+    });
+    return objects as THREE.InstancedMesh[];
+  }
+
+  it("draws one mesh PER KIND, so a bench is not a waste basket", () => {
+    // The whole of W19 in one assertion. Before it, every marker shared a single
+    // orange cone — a bench, a hospital entrance and a fountain all identical.
+    const meshes = poiMesh(["amenity=bench", "amenity=waste_basket"]);
+    expect(meshes).toHaveLength(2);
+    expect(new Set(meshes.map((m) => m.geometry)).size).toBe(2);
+  });
+
+  it("groups instances of the SAME kind into one mesh", () => {
+    // The draw-call budget: fifty kinds is a handful of meshes only if repeats
+    // share one. Ten benches must not be ten meshes.
+    const meshes = poiMesh(Array.from({ length: 10 }, () => "amenity=bench"));
+    expect(meshes).toHaveLength(1);
+    expect(meshes[0]?.count).toBe(10);
+  });
+
+  it("puts the whole unmodelled tail in ONE fallback mesh", () => {
+    // Fifty kinds are modelled and roughly 650 are not, so the tail is the
+    // common case. A bucket per unmodelled kind would be hundreds of draw calls
+    // for markers that look identical anyway.
+    const meshes = poiMesh([
+      "amenity=nonexistent_a",
+      "amenity=nonexistent_b",
+      "shop=nonexistent_c",
+    ]);
+    expect(meshes).toHaveLength(1);
+    expect(meshes[0]?.count).toBe(3);
+  });
+
+  it("keeps each mesh's identity table aligned with its own instances", () => {
+    // Instancing indexes identity by position in the array that built the
+    // matrices. Per-kind meshes mean per-kind arrays, and handing any mesh the
+    // WHOLE marker list would make every pick after the first bucket name the
+    // wrong place — confidently, and only for some kinds.
+    const meshes = poiMesh([
+      "amenity=bench",
+      "amenity=waste_basket",
+      "amenity=bench",
+    ]);
+    for (const mesh of meshes) {
+      const markers = mesh.userData["poiInstances"] as { kind: string }[];
+      expect(markers).toHaveLength(mesh.count);
+      for (const marker of markers) {
+        expect(marker.kind).toBe(markers[0]?.kind);
+      }
+    }
+  });
+
+  it("shares geometry across renders, so a rebuild allocates nothing", () => {
+    // W7's instancing removed the per-marker allocation; fifty kinds would put
+    // it straight back if each render rebuilt their geometry. The cache is what
+    // makes Stage 2 affordable, and `sharedResources` is what stops `clear()`
+    // destroying it.
+    const first = poiMesh(["amenity=bench"])[0];
+    const second = poiMesh(["amenity=bench"])[0];
+    expect(first?.geometry).toBe(second?.geometry);
+    expect(first?.material).toBe(second?.material);
+    expect(first?.userData["sharedResources"]).toBe(true);
   });
 });
 
