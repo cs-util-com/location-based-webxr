@@ -78,6 +78,7 @@ export function buildBuildings(
 ): BuildingVolume[] {
   const { outlines, parts } = collectFootprints(features, options.frame);
   const { claimed, partsByOutline } = assignPartsToOutlines(outlines, parts);
+  const nestedInModelled = outlinesInsideModelledBuildings(outlines, claimed);
 
   const volumes: BuildingVolume[] = [];
 
@@ -86,6 +87,14 @@ export function buildBuildings(
     // A building WITH parts is not extruded itself — the parts replace it.
     // Drawing both is the most visible S3DB mistake there is.
     if (claimed.has(key)) continue;
+    // ...and neither is a building INSIDE one that has parts (R5-7, DEC-R5-2).
+    // Cologne Cathedral carries `way/645732604` — `building=tower`, height 157,
+    // "Nordturm" — nested inside its own outline. The tower owns no parts of its
+    // own, so the rule above does not reach it, and it drew as a solid 157 m
+    // prism straight through the modelled cathedral. That is the same S3DB
+    // mistake one level up: the enclosing building's parts already describe this
+    // volume, in detail, and the outline is a coarse duplicate of them.
+    if (nestedInModelled.has(key)) continue;
     volumes.push(
       volumeFor(
         outline.feature,
@@ -179,11 +188,25 @@ function collectFootprints(
 }
 
 /**
- * Assigns each part to the outline containing it.
+ * Assigns each part to the SMALLEST outline containing it.
  *
  * Containment is tested on a REPRESENTATIVE POINT rather than on every vertex:
  * parts routinely share an edge with their outline, so an all-vertices test
  * would reject the common case on a floating-point tie.
+ *
+ * SMALLEST, NOT FIRST (R5-7, DEC-R5-2). This was `outlines.find(...)`, and with
+ * NESTED outlines that made the answer depend on the order Overpass happened to
+ * serialise the payload in. Cologne Cathedral has `way/645732604` (the Nordturm,
+ * `building=tower`) inside `way/4532022` (`building=cathedral`); the cathedral
+ * sorts first, so it claimed the tower's own `building:part` volumes and the
+ * tower was left owning nothing to suppress it with. Area expresses what is
+ * actually meant — "the most specific claim about this piece of ground" — where
+ * "first" expresses nothing at all.
+ *
+ * ORDER-INDEPENDENCE IS PART OF THE CONTRACT (N3), not a side effect: equal
+ * areas break the tie on the feature key, so the same tile builds identically
+ * whatever order its elements arrived in. Without that, a smallest-area rule is
+ * still a coin flip wherever two containing outlines are the same size.
  */
 function assignPartsToOutlines(
   outlines: readonly Footprint[],
@@ -196,12 +219,11 @@ function assignPartsToOutlines(
   const partsByOutline = new Map<OsmFeatureKey, Footprint[]>();
 
   for (const part of parts) {
-    const inside = outlines.find((outline) =>
-      containsPoint(
-        outline.rings[0] ?? [],
-        representativePoint(part.rings[0] ?? []),
-      ),
+    const point = representativePoint(part.rings[0] ?? []);
+    const containing = outlines.filter((outline) =>
+      containsPoint(outline.rings[0] ?? [], point),
     );
+    const inside = smallestFootprint(containing);
     if (inside === undefined) continue;
     const key = featureKey(inside.feature);
     claimed.add(key);
@@ -210,6 +232,105 @@ function assignPartsToOutlines(
     partsByOutline.set(key, list);
   }
   return { claimed, partsByOutline };
+}
+
+/**
+ * The smallest of a set of footprints, ties broken on the feature key.
+ *
+ * The tie-break is arbitrary and that is the point: it has to be SOMETHING
+ * stable, and the feature key is the only property of a footprint that cannot
+ * depend on how the payload was serialised.
+ */
+function smallestFootprint(
+  footprints: readonly Footprint[],
+): Footprint | undefined {
+  let best: Footprint | undefined;
+  let bestArea = Infinity;
+  for (const footprint of footprints) {
+    const area = ringArea(footprint.rings[0] ?? []);
+    if (
+      area < bestArea ||
+      (area === bestArea &&
+        best !== undefined &&
+        featureKey(footprint.feature) < featureKey(best.feature))
+    ) {
+      best = footprint;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
+/** Absolute shoelace area of a ring, in square metres of the ENU frame. */
+function ringArea(ring: readonly EnuPoint[]): number {
+  if (ring.length < 3) return 0;
+  let twice = 0;
+  for (let i = 0; i < ring.length; i += 1) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    if (a === undefined || b === undefined) continue;
+    twice += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(twice) / 2;
+}
+
+/**
+ * Outlines that sit inside another outline which owns parts (R5-7, DEC-R5-2).
+ *
+ * These are the coarse duplicates: an enclosing building is already modelled in
+ * detail by its `building:part` volumes, so a whole-building outline standing
+ * inside it describes the same mass a second time and at a fraction of the
+ * fidelity. Drawing it is the reported cathedral defect.
+ *
+ * THE ACCEPTED COST, stated rather than discovered: OSM does contain legitimate
+ * nesting — a small `building=yes` shed inside a large campus outline that has
+ * parts would now vanish. That is judged the better failure, because the
+ * alternative is a box through every modelled building and it is the one three
+ * rounds of testing have actually reported. **It is a behaviour change beyond
+ * the cathedral**, so the human pass covers the other five corpus sites too.
+ *
+ * Containment is again a representative point, for the same tie reason, and the
+ * containing outline must be strictly LARGER — otherwise two identical outlines
+ * would suppress each other and the building would disappear entirely.
+ */
+function outlinesInsideModelledBuildings(
+  outlines: readonly Footprint[],
+  claimed: ReadonlySet<OsmFeatureKey>,
+): Set<OsmFeatureKey> {
+  const suppressed = new Set<OsmFeatureKey>();
+  const modelled = outlines.filter((outline) =>
+    claimed.has(featureKey(outline.feature)),
+  );
+  if (modelled.length === 0) return suppressed;
+
+  for (const outline of outlines) {
+    const key = featureKey(outline.feature);
+    if (claimed.has(key)) continue;
+    if (isInsideLargerOutline(outline, modelled)) suppressed.add(key);
+  }
+  return suppressed;
+}
+
+/**
+ * Whether `outline` sits inside one of `hosts` that is strictly larger.
+ *
+ * STRICTLY larger matters: two identical outlines would otherwise suppress each
+ * other and the building would vanish entirely — the failure that is worse than
+ * the one being fixed.
+ */
+function isInsideLargerOutline(
+  outline: Footprint,
+  hosts: readonly Footprint[],
+): boolean {
+  const key = featureKey(outline.feature);
+  const point = representativePoint(outline.rings[0] ?? []);
+  const area = ringArea(outline.rings[0] ?? []);
+  return hosts.some(
+    (host) =>
+      featureKey(host.feature) !== key &&
+      ringArea(host.rings[0] ?? []) > area &&
+      containsPoint(host.rings[0] ?? [], point),
+  );
 }
 
 /**
