@@ -8,13 +8,15 @@
   "plannedCells": 84,
   "complete": false,
   "cooldownMs": 60000,
-  "notes": [],
+  "notes": [
+    "lz4.overpass-api.de dropped after 2 refusals (504 Gateway Timeout)"
+  ],
   "totals": {
-    "bytes": 132372303,
-    "requests": 7,
+    "bytes": 143465647,
+    "requests": 9,
     "byOperator": {
-      "fossgis": 72110299,
-      "private.coffee": 29918585,
+      "fossgis": 72110994,
+      "private.coffee": 41011234,
       "vk-maps": 30343419
     }
   },
@@ -1217,6 +1219,36 @@
       "firstByteMs": 12780,
       "totalMs": 13241,
       "bytes": 11422764
+    },
+    {
+      "id": "clipped:res8:private.coffee:overpass.private.coffee",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "clipped",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 220122,
+      "totalMs": 221349,
+      "bytes": 11092649
+    },
+    {
+      "id": "clipped:res8:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "clipped",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 10322,
+      "totalMs": 10322,
+      "bytes": 695
     }
   ]
 }

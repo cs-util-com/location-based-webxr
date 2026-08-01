@@ -72,6 +72,35 @@ OSM features to building volumes, honouring `building:part`.
   routinely share an edge with their outline, so an all-vertices test would
   reject the common case on a floating-point tie. A concave part whose centroid
   falls outside is extruded standalone — visible, and not wrong.
+- **A part goes to the SMALLEST containing outline, ties broken on feature key
+  (R5-7, DEC-R5-2, N3).** This was "the first containing outline", which with
+  NESTED outlines made the result depend on the order Overpass serialised the
+  payload in. Area expresses what is meant — the most specific claim about this
+  piece of ground — and the key tie-break makes the build a property of the data
+  rather than of its transport.
+  - **`buildings.property.test.ts` is what keeps that true**, and it goes red the
+    moment the rule is replaced by "first" again.
+- **An outline nested inside a strictly larger outline that owns parts is NOT
+  extruded (R5-7, DEC-R5-2).** This is the S3DB rule one level up: the enclosing
+  building's parts already describe that volume in detail, so a whole-building
+  outline standing inside them is a coarse duplicate. Cologne Cathedral's
+  `way/645732604` (`building=tower`, height 157, "Nordturm") is the reported
+  instance — it drew as a solid 157 m prism through the modelled cathedral.
+  - **Strictly larger** matters: two identical outlines would otherwise suppress
+    each other and the building would vanish entirely.
+  - **Accepted cost:** a small `building=yes` inside a large modelled outline now
+    vanishes. Judged the better failure than a box through every modelled
+    building, but it **is** a behaviour change beyond the cathedral.
+  - **Measured while fixing it, and it contradicts the obvious guess:** the
+    Nordturm's `Sockel` part (5.146e-8 deg²) is **wider** than the tower way
+    above it (2.970e-8) and its centroid falls outside the tower ring. So the
+    Sockel correctly belongs to the cathedral and it is the containment rule, not
+    the smallest-container rule, that suppresses the tower here.
+- **`man_made=tower` without a `building` tag draws nothing** — `isBuilding` keys
+  only on `building`. Cologne's Südturm (`way/645732603`, height 157) is exactly
+  this and is invisible, which is the other half of the reported asymmetry.
+  Deliberately not changed (N4, DEC-R5-13): admitting `man_made` widens what gets
+  drawn at every site, which is a look rather than a refactor.
 - **A multipolygon contributes only its first polygon.** A building mapped as
   several disjoint polygons is a data error rather than a shape, and extruding
   all of them under one set of heights would be inventing buildings.
@@ -91,6 +120,15 @@ const batch = mergeMeshes(volumes.map((v) => v.mesh));
 
 ## Tests
 
-`buildings.test.ts` — the outline-with-parts suppression, an outline with no
-parts, a part with no parent, the part carrying its own height, and non-building
-features being ignored.
+- `buildings.test.ts` — the outline-with-parts suppression, an outline with no
+  parts, a part with no parent, the part carrying its own height, and
+  non-building features being ignored.
+- `nested-outlines.test.ts` — the nested case, against the checked-in
+  `cologne-cathedral` extract plus synthetic three-level nesting. The two rules
+  are asserted **separately**, so a failure names which one broke.
+- `buildings.property.test.ts` — the build is invariant under permutation of its
+  input. Shuffles the real fixture rather than generating nested OSM buildings,
+  because a generator for that would be a larger and less trustworthy artefact
+  than the extract this project already captured.
+- `../testdata/sites/site-geometry.test.ts` — the coarse geometry gate across all
+  six corpus sites; the cathedral's volume count moves by one with this change.
