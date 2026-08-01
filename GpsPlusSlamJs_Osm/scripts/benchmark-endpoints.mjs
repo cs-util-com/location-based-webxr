@@ -293,17 +293,7 @@ async function runMatrix() {
   // collapses, the relation hypothesis is PROVED rather than assumed. Last, so a
   // run cut short still has the primary matrix.
   if (process.argv.includes("--second-city")) {
-    // One host, and lz4 specifically: every earlier per-resolution measurement
-    // in this repo was taken there, so this leg stays comparable to them.
-    const host = ENDPOINTS.find((e) => e.url.includes("lz4"));
-    cells.push(
-      ...planCells({ hosts: [host], resolutions }).map((cell) => ({
-        ...cell,
-        id: `${SECOND_CITY.label}:${cell.id}`,
-        centre: { lat: SECOND_CITY.lat, lng: SECOND_CITY.lng },
-        site: SECOND_CITY.label,
-      })),
-    );
+    cells.push(...secondCityCells(resolutions));
   }
 
   const outDir = join(__dirname, "..", "docs");
@@ -341,7 +331,16 @@ async function runMatrix() {
   console.log(
     `per-operator cooldown ${OPERATOR_COOLDOWN_MS / 1000}s · budget ${budgetMs / 60_000} min · writing ${outPath} after every cell\n`,
   );
-  write();
+  // NO WRITE HERE. An empty document written before the first request destroys
+  // the artefact that incremental writing exists to protect: kill a long run at
+  // hour two, restart it, and the previous results are gone at t=0 — before the
+  // new run has produced anything to replace them. The first write now happens
+  // after the first cell resolves, so a restart can only ever overwrite a
+  // document with one that has real content in it.
+  //
+  // (There is still no RESUME path — nothing reads this file back. That is F30's
+  // neighbour and is filed rather than pretended: the stable cell ids exist so a
+  // resume can be written, not because one exists.)
 
   for (const cell of cells) {
     const elapsed = Date.now() - startedAt;
@@ -380,26 +379,45 @@ async function runMatrix() {
     process.stdout.write(
       `[${results.length + 1}/${cells.length}] ${cell.form} res${cell.res} ${hostname} … `,
     );
-    lastRequestAt[cell.operator] = Date.now();
     const measured = await timeEndpoint(cell, query);
+    // STAMPED WHEN THE RESPONSE FINISHES, not when the request starts. Set
+    // before the await, the cooldown is start-to-start: a cell whose download
+    // takes longer than the cooldown leaves ZERO quiet before that operator's
+    // next hit, and it is the heaviest cells that do that. The recorded sweep
+    // had ten of thirty-eight attempted cells over 60 s, the longest 221 s — so
+    // the "60 s between hits" the file claims was not what the heaviest cells
+    // got. End-to-start is what the narrative says and what a server feels.
+    lastRequestAt[cell.operator] = Date.now();
     const mb = (measured.bytes / 1_000_000).toFixed(2);
     console.log(`${measured.status} · ${measured.totalMs} ms · ${mb} MB`);
 
     if (isRefusal(measured)) {
-      refusals[hostname] = (refusals[hostname] ?? 0) + 1;
-      if (refusals[hostname] >= GIVE_UP_AFTER_REFUSALS) {
+      // COUNTED PER OPERATOR, NOT PER HOSTNAME, and that is the whole thesis of
+      // `benchmark-matrix.mjs` applied to the one place that had missed it. The
+      // cooldown and the backoff already key on the operator; this counter did
+      // not, so FOSSGIS's three hostnames were each allowed two refusals — six
+      // before the operator was fully out. The recorded 2026-08-01 sweep shows
+      // exactly that: FOSSGIS said no four times and private.coffee four times,
+      // ten refusals absorbed where the documented rule allows six.
+      //
+      // The GIVE-UP still drops the HOSTNAME, because "this name is down" and
+      // "this operator is refusing" are different results and the sweep should
+      // record both — but the budget that triggers it is the operator's.
+      refusals[cell.operator] = (refusals[cell.operator] ?? 0) + 1;
+      const count = refusals[cell.operator];
+      if (count >= GIVE_UP_AFTER_REFUSALS) {
         dropped.add(hostname);
         notes.push(
-          `${hostname} dropped after ${refusals[hostname]} refusals (${measured.status})`,
+          `${hostname} dropped after ${count} refusals against ${cell.operator} (${measured.status})`,
         );
         console.log(
-          `  ${hostname} refused twice — dropped for the rest of the run`,
+          `  ${cell.operator} has refused ${count}x — dropping ${hostname} for the rest of the run`,
         );
       } else {
         // Back off the OPERATOR, not the hostname: a 429 from lz4 is FOSSGIS
         // saying no, and immediately querying z.overpass-api.de would be
         // ignoring a refusal from the same servers.
-        const delay = backoffDelayMs(refusals[hostname] - 1, {
+        const delay = backoffDelayMs(count - 1, {
           retryAfterSeconds: Number(measured.retryAfter),
         });
         lastRequestAt[cell.operator] =
@@ -422,6 +440,28 @@ async function runMatrix() {
     `\n${results.length}/${cells.length} cells · ${gb} GB moved · ${Math.round((Date.now() - startedAt) / 60_000)} min`,
   );
   console.log(`wrote ${outPath}`);
+}
+
+/**
+ * The optional final leg: the same form x resolution sweep at a site with almost
+ * no non-areal relations. If Heidelberg barely moves while Cologne collapses,
+ * the relation hypothesis is PROVED rather than assumed.
+ */
+function secondCityCells(resolutions) {
+  // One host, and lz4 specifically: every earlier per-resolution measurement
+  // in this repo was taken there, so this leg stays comparable to them.
+  const host = ENDPOINTS.find((e) => e.url.includes("lz4")) ?? ENDPOINTS[0];
+  if (host === undefined) {
+    throw new Error("--second-city needs at least one endpoint to run on");
+  }
+  return [
+    ...planCells({ hosts: [host], resolutions }).map((cell) => ({
+      ...cell,
+      id: `${SECOND_CITY.label}:${cell.id}`,
+      centre: { lat: SECOND_CITY.lat, lng: SECOND_CITY.lng },
+      site: SECOND_CITY.label,
+    })),
+  ];
 }
 
 /** The plan fields copied onto every result, so a row is readable on its own. */

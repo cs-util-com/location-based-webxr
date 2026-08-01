@@ -78,23 +78,27 @@ export function buildBuildings(
 ): BuildingVolume[] {
   const { outlines, parts } = collectFootprints(features, options.frame);
   const { claimed, partsByOutline } = assignPartsToOutlines(outlines, parts);
-  const nestedInModelled = outlinesInsideModelledBuildings(outlines, claimed);
 
   const volumes: BuildingVolume[] = [];
 
   for (const outline of outlines) {
     const key = featureKey(outline.feature);
     // A building WITH parts is not extruded itself — the parts replace it.
-    // Drawing both is the most visible S3DB mistake there is.
+    // Drawing both is the most visible S3DB mistake there is, and since R5-7 it
+    // is also what fixes the NESTED case: `assignPartsToOutlines` gives each part
+    // to the smallest outline containing it, so Cologne Cathedral's
+    // `way/645732604` (`building=tower`, height 157, "Nordturm") now owns
+    // `way/207377042` and is suppressed right here.
+    //
+    // A SECOND RULE WAS TRIED AND REMOVED, and the reason is worth keeping:
+    // "suppress any outline nested inside a larger outline that owns parts"
+    // sounds like the same idea one level up, and it is not. Measured on this
+    // repo's own corpus it suppressed NOTHING that the line above had not
+    // already suppressed, cost 0.8-4.6 s per build at res-7 scale, and deleted
+    // four legitimate buildings — an `industrial` under the cathedral and three
+    // `kiosk`s in Heidelberg. Nesting inside a modelled building simply does not
+    // imply duplicating it: a kiosk in a station concourse is a real building.
     if (claimed.has(key)) continue;
-    // ...and neither is a building INSIDE one that has parts (R5-7, DEC-R5-2).
-    // Cologne Cathedral carries `way/645732604` — `building=tower`, height 157,
-    // "Nordturm" — nested inside its own outline. The tower owns no parts of its
-    // own, so the rule above does not reach it, and it drew as a solid 157 m
-    // prism straight through the modelled cathedral. That is the same S3DB
-    // mistake one level up: the enclosing building's parts already describe this
-    // volume, in detail, and the outline is a coarse duplicate of them.
-    if (nestedInModelled.has(key)) continue;
     volumes.push(
       volumeFor(
         outline.feature,
@@ -207,6 +211,26 @@ function collectFootprints(
  * areas break the tie on the feature key, so the same tile builds identically
  * whatever order its elements arrived in. Without that, a smallest-area rule is
  * still a coin flip wherever two containing outlines are the same size.
+ *
+ * WHY IT IS ONE PASS WITH A BOX REJECT, and the numbers are the argument.
+ * `parts x outlines x vertices` is the shape however it is written, but the
+ * first version of this change wrote it as `filter(...)` followed by an argmin
+ * over the result — a full scan of every outline for every part, plus a
+ * throwaway array each time, where the `find` it replaced had at least stopped
+ * early. Measured on a res-7-scale input (each corpus fixture tiled 7x7, since
+ * `buildBuildings` has no distance filter and a whole fetch tile really does go
+ * in), total build time:
+ *
+ *   site                  before    filter+argmin    this
+ *   heidelberg-altstadt   4699 ms       10 671 ms   630 ms
+ *   manhattan-midtown     2580 ms        5 707 ms   328 ms
+ *   cologne-cathedral     2018 ms        2 855 ms   344 ms
+ *
+ * So the naive form was a 2-4x regression, and precomputing each outline's
+ * bounding box and area ONCE — then rejecting on the box, and on "cannot beat
+ * the best area so far", before running any point-in-polygon test — is 4-7x
+ * faster than the code this round started from. Two float comparisons discard
+ * the overwhelming majority of (part, outline) pairs on a city tile.
  */
 function assignPartsToOutlines(
   outlines: readonly Footprint[],
@@ -218,47 +242,94 @@ function assignPartsToOutlines(
   const claimed = new Set<OsmFeatureKey>();
   const partsByOutline = new Map<OsmFeatureKey, Footprint[]>();
 
+  // Once per outline, not once per (part, outline) pair.
+  const indexed = outlines.map((outline) => {
+    const ring = outline.rings[0] ?? [];
+    return {
+      outline,
+      ring,
+      area: ringArea(ring),
+      bounds: ringBounds(ring),
+      key: featureKey(outline.feature),
+    };
+  });
+
   for (const part of parts) {
     const point = representativePoint(part.rings[0] ?? []);
-    const containing = outlines.filter((outline) =>
-      containsPoint(outline.rings[0] ?? [], point),
-    );
-    const inside = smallestFootprint(containing);
-    if (inside === undefined) continue;
-    const key = featureKey(inside.feature);
-    claimed.add(key);
-    const list = partsByOutline.get(key) ?? [];
+    const best = smallestContaining(indexed, point);
+    if (best === undefined) continue;
+    claimed.add(best);
+    const list = partsByOutline.get(best) ?? [];
     list.push(part);
-    partsByOutline.set(key, list);
+    partsByOutline.set(best, list);
   }
   return { claimed, partsByOutline };
 }
 
-/**
- * The smallest of a set of footprints, ties broken on the feature key.
- *
- * The tie-break is arbitrary and that is the point: it has to be SOMETHING
- * stable, and the feature key is the only property of a footprint that cannot
- * depend on how the payload was serialised.
- */
-function smallestFootprint(
-  footprints: readonly Footprint[],
-): Footprint | undefined {
-  let best: Footprint | undefined;
+/** The key of the smallest indexed outline containing `point`, ties on key. */
+function smallestContaining(
+  indexed: readonly IndexedOutline[],
+  point: EnuPoint,
+): OsmFeatureKey | undefined {
+  let bestKey: OsmFeatureKey | undefined;
   let bestArea = Infinity;
-  for (const footprint of footprints) {
-    const area = ringArea(footprint.rings[0] ?? []);
+
+  for (const candidate of indexed) {
+    if (!withinBounds(candidate.bounds, point)) continue;
+    // A strictly larger area cannot win, and an equal one only wins on the key
+    // tie-break — so in neither case is the polygon test worth running.
+    if (candidate.area > bestArea) continue;
     if (
-      area < bestArea ||
-      (area === bestArea &&
-        best !== undefined &&
-        featureKey(footprint.feature) < featureKey(best.feature))
+      candidate.area === bestArea &&
+      bestKey !== undefined &&
+      candidate.key >= bestKey
     ) {
-      best = footprint;
-      bestArea = area;
+      continue;
     }
+    if (!containsPoint(candidate.ring, point)) continue;
+    bestKey = candidate.key;
+    bestArea = candidate.area;
   }
-  return best;
+  return bestKey;
+}
+
+function withinBounds(bounds: RingBounds, point: EnuPoint): boolean {
+  return (
+    point.x >= bounds.minX &&
+    point.x <= bounds.maxX &&
+    point.y >= bounds.minY &&
+    point.y <= bounds.maxY
+  );
+}
+
+interface RingBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+interface IndexedOutline {
+  readonly outline: Footprint;
+  readonly ring: readonly EnuPoint[];
+  readonly area: number;
+  readonly bounds: RingBounds;
+  readonly key: OsmFeatureKey;
+}
+
+/** Axis-aligned bounds of a ring, for rejecting a point cheaply. */
+function ringBounds(ring: readonly EnuPoint[]): RingBounds {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const point of ring) {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
+  }
+  return { minX, maxX, minY, maxY };
 }
 
 /** Absolute shoelace area of a ring, in square metres of the ENU frame. */
@@ -272,65 +343,6 @@ function ringArea(ring: readonly EnuPoint[]): number {
     twice += a.x * b.y - b.x * a.y;
   }
   return Math.abs(twice) / 2;
-}
-
-/**
- * Outlines that sit inside another outline which owns parts (R5-7, DEC-R5-2).
- *
- * These are the coarse duplicates: an enclosing building is already modelled in
- * detail by its `building:part` volumes, so a whole-building outline standing
- * inside it describes the same mass a second time and at a fraction of the
- * fidelity. Drawing it is the reported cathedral defect.
- *
- * THE ACCEPTED COST, stated rather than discovered: OSM does contain legitimate
- * nesting — a small `building=yes` shed inside a large campus outline that has
- * parts would now vanish. That is judged the better failure, because the
- * alternative is a box through every modelled building and it is the one three
- * rounds of testing have actually reported. **It is a behaviour change beyond
- * the cathedral**, so the human pass covers the other five corpus sites too.
- *
- * Containment is again a representative point, for the same tie reason, and the
- * containing outline must be strictly LARGER — otherwise two identical outlines
- * would suppress each other and the building would disappear entirely.
- */
-function outlinesInsideModelledBuildings(
-  outlines: readonly Footprint[],
-  claimed: ReadonlySet<OsmFeatureKey>,
-): Set<OsmFeatureKey> {
-  const suppressed = new Set<OsmFeatureKey>();
-  const modelled = outlines.filter((outline) =>
-    claimed.has(featureKey(outline.feature)),
-  );
-  if (modelled.length === 0) return suppressed;
-
-  for (const outline of outlines) {
-    const key = featureKey(outline.feature);
-    if (claimed.has(key)) continue;
-    if (isInsideLargerOutline(outline, modelled)) suppressed.add(key);
-  }
-  return suppressed;
-}
-
-/**
- * Whether `outline` sits inside one of `hosts` that is strictly larger.
- *
- * STRICTLY larger matters: two identical outlines would otherwise suppress each
- * other and the building would vanish entirely — the failure that is worse than
- * the one being fixed.
- */
-function isInsideLargerOutline(
-  outline: Footprint,
-  hosts: readonly Footprint[],
-): boolean {
-  const key = featureKey(outline.feature);
-  const point = representativePoint(outline.rings[0] ?? []);
-  const area = ringArea(outline.rings[0] ?? []);
-  return hosts.some(
-    (host) =>
-      featureKey(host.feature) !== key &&
-      ringArea(host.rings[0] ?? []) > area &&
-      containsPoint(host.rings[0] ?? [], point),
-  );
 }
 
 /**

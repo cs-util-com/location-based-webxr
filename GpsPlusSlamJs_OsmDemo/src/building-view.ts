@@ -25,7 +25,7 @@ import {
 } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
 
 import type { CellMesh } from "./cell-mesh.js";
-import type { GroundMode } from "./ground-mode.js";
+import type { GroundStrategy } from "./ground-mode.js";
 import { TERRAIN_EXTENT_M, type Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
 import { drawMeshLayers } from "./mesh-layers.js";
@@ -53,12 +53,14 @@ export type { Pick } from "./pick.js";
 /**
  * Which path displaces the ground plane, or `none` to hide it (W23, W11).
  *
- * Re-exported from `ground-mode.ts`, which owns the union because it also owns
- * parsing it out of the store's plain string and deciding what a mode disables.
- * Two definitions of "the ground modes" is the shape of drift this demo keeps
- * finding.
+ * THE STRATEGY, NOT THE MODE, and the difference is a real trap. This aliased
+ * `GroundMode` until W6 gave that union its ramp entries — after which passing
+ * "cpu-ramp" here type-checked and then silently FLATTENED the terrain, because
+ * both `uDisplace` and `setTerrain`'s CPU walk compare against the literal
+ * "cpu"/"gpu". Nothing would have reported it. `ground-mode.ts` already names the
+ * three-value union this actually means; use it.
  */
-export type GroundDisplacement = GroundMode;
+export type GroundDisplacement = GroundStrategy;
 
 /**
  * Metres between terrain posts. Terrarium z13 is ~12 m per pixel at this latitude.
@@ -763,10 +765,28 @@ export class BuildingView {
               y: source[i * 3 + 1] ?? 0,
             });
     }
-    this.ground.geometry.setAttribute(
-      "color",
-      new THREE.BufferAttribute(heightRampColours(heights), 3),
-    );
+    // WRITTEN INTO THE EXISTING ATTRIBUTE, NOT REPLACED WITH A NEW ONE. three
+    // keys its `WebGLBuffer`s off the attribute OBJECT, and only deletes the
+    // buffers of the attributes a geometry still holds when it is disposed — so
+    // every replaced attribute leaks its buffer until the context goes away.
+    // This runs on every terrain load, and since W6 the ramp is the DEFAULT, so
+    // that would be ~1.9 MB of VRAM abandoned per position change (160 801
+    // vertices x 3 floats) for every user rather than only for someone who had
+    // opted into a diagnostic.
+    const colours = heightRampColours(heights);
+    const existing = this.ground.geometry.getAttribute("color");
+    if (
+      existing instanceof THREE.BufferAttribute &&
+      existing.array.length === colours.length
+    ) {
+      (existing.array as Float32Array).set(colours);
+      existing.needsUpdate = true;
+    } else {
+      this.ground.geometry.setAttribute(
+        "color",
+        new THREE.BufferAttribute(colours, 3),
+      );
+    }
   }
 
   /**

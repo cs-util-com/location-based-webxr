@@ -188,14 +188,46 @@ describe("createTerrainField", () => {
     // The cache has to be bounded or a session that crosses a city accumulates
     // every post it ever saw. Eviction is by distance from the current centre,
     // which is the same shape the OSM chunk LRU uses.
+    //
+    // `maxPosts` is ABOVE one view here (a 300 m radius at Cologne's 12.04 m
+    // pixel pitch is 53 x 53 = 2809 posts) so that this tests the walking bound
+    // rather than the view floor below. It used to be 400 — under one view —
+    // which meant it was passing for the wrong reason: it asserted the cache
+    // evicting the ground the user was standing on.
     const { provider } = rampProvider();
-    const field = createTerrainField({ provider, maxPosts: 400 });
+    const field = createTerrainField({ provider, maxPosts: 4000 });
 
     await field.ensureAround(COLOGNE, 300);
     // Several kilometres away: nothing from the first area can still be useful.
     await field.ensureAround({ lat: 51.05, lng: 7.1 }, 300);
 
-    expect(field.postCount).toBeLessThanOrEqual(400);
+    expect(field.postCount).toBeLessThanOrEqual(4000);
+  });
+
+  it("never evicts the view it just fetched, however low the cap", async () => {
+    // WHY THIS TEST MATTERS. A cap below one view turns the cache into a
+    // treadmill: `ensureAround` fetches the lattice, eviction immediately drops
+    // the far half of it, and the next load — even standing perfectly still —
+    // re-fetches what was just thrown away. That is the exact opposite of this
+    // module's reason to exist, and it is silent: nothing fails, the terrain is
+    // correct, it just costs a full re-fetch and a full sort every time.
+    //
+    // It is not hypothetical. Raising `TERRAIN_EXTENT_M` to 2400 m put one view
+    // at 321 489 posts against a flat 250 000 constant, and the caller was also
+    // asking for `extentM * SQRT2` — a square lattice sized by a circle's
+    // radius — which doubled it for ground nothing samples.
+    const { provider, asked } = rampProvider();
+    const field = createTerrainField({ provider, maxPosts: 10 });
+
+    await field.ensureAround(COLOGNE, 300);
+    const afterFirst = field.postCount;
+    expect(afterFirst).toBe(2809);
+
+    const fetchesAfterFirst = totalAsked(asked);
+    // Standing still: every post is already held, so nothing may be re-fetched.
+    await field.ensureAround(COLOGNE, 300);
+    expect(field.postCount).toBe(afterFirst);
+    expect(totalAsked(asked)).toBe(fetchesAfterFirst);
   });
 
   it("fills a gap OUTSIDE the ensured area from the mean, never with zero", async () => {

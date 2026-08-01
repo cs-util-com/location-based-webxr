@@ -75,12 +75,26 @@ export const BACKOFF_BASE_MS = OPERATOR_COOLDOWN_MS;
 export const BACKOFF_MAX_MS = 15 * 60_000;
 
 /**
- * How many refusals an operator gets before its hostname is dropped.
+ * How many refusals an OPERATOR gets before the refusing hostname is dropped.
  *
  * DEC-R5-1: _"a host that says no twice is dropped from the remainder of the run
  * and recorded as such"_. A 429 is DATA — "this host refuses this query form at
  * this size" is one of the answers the sweep exists to produce — but continuing
  * past a second one is not persistence, it is ignoring a documented policy.
+ *
+ * THE BUDGET IS THE OPERATOR'S AND THE DROP IS THE HOSTNAME'S, which is not a
+ * hedge — they answer different questions. Counting per hostname let FOSSGIS's
+ * three names absorb two refusals each, six before the operator was out; the
+ * 2026-08-01 sweep recorded ten refusals where the rule allows six. Dropping per
+ * operator instead would lose "this particular name is down", which the sweep is
+ * also trying to measure.
+ *
+ * **A CONSEQUENCE WORTH KNOWING: with this at 2, the exponential in
+ * {@link backoffDelayMs} is unreachable.** The first refusal backs off at
+ * `attempt = 0` and the second gives up, so only the base delay (or a longer
+ * `Retry-After`) can ever be used. The schedule is kept because it is the thing
+ * that has to be right if this constant is ever raised, and its tests document
+ * the shape rather than the current reachability.
  */
 export const GIVE_UP_AFTER_REFUSALS = 2;
 
@@ -103,14 +117,18 @@ const OPERATOR_BY_HOSTNAME = Object.freeze({
   "maps.mail.ru": "vk-maps",
 });
 
-/** The operator behind a URL. Never throws — an unparseable URL is its own key. */
-export function operatorForUrl(url) {
-  let hostname;
+/** The hostname of a URL, or the URL itself when it will not parse. */
+export function hostnameOf(url) {
   try {
-    hostname = new URL(url).hostname;
+    return new URL(url).hostname;
   } catch {
     return url;
   }
+}
+
+/** The operator behind a URL. Never throws — an unparseable URL is its own key. */
+export function operatorForUrl(url) {
+  const hostname = hostnameOf(url);
   return OPERATOR_BY_HOSTNAME[hostname] ?? hostname;
 }
 
@@ -219,7 +237,10 @@ export function planCells({ hosts, resolutions, forms = QUERY_FORMS }) {
   for (const form of ordered) {
     for (const res of resolutions) {
       const group = hosts.map((host) => ({
-        id: `${form}:res${res}:${operatorForUrl(host.url)}:${new URL(host.url).hostname}`,
+        // `operatorForUrl` for BOTH halves of the id. It promises never to throw
+        // — an unparseable URL becomes its own key — and a bare `new URL(...)`
+        // one expression later defeated exactly that guarantee.
+        id: `${form}:res${res}:${operatorForUrl(host.url)}:${hostnameOf(host.url)}`,
         url: host.url,
         note: host.note,
         operator: operatorForUrl(host.url),

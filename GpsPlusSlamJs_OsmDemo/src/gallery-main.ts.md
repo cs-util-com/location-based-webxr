@@ -23,8 +23,11 @@ None — it is a side effect.
   logged — losing a context that way is the collector doing its job, not an
   error. `main.ts` avoids the same trap by accident: its `BuildingView` stays
   reachable through the store subscriptions it registers.
-- **Released on `pagehide`, not `unload`.** `unload` is deprecated and does not
-  fire for the back/forward cache.
+- **The disposer is HELD, not wired to a lifecycle event.** An earlier version
+  called it on `pagehide`, which also fires when the page enters the
+  back/forward cache — so navigating BACK restored a document whose renderer and
+  controls were already disposed: a frozen canvas with nothing logged. A real
+  teardown reclaims the GL context anyway.
 
 ## Examples
 

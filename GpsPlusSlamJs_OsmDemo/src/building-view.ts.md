@@ -208,21 +208,28 @@ file owns the material swap and when the colours are refreshed.
   material multiplies the vertex colour by the incoming light, so the ramp would
   be modulated by exactly the shading it exists to see past — ground in shadow
   would read as low, the precise misreading the layer is here to eliminate.
-- **The heights are read back out of the POSITION buffer**, not kept alongside
-  it, so the colours cannot disagree with the surface they describe. There is one
-  source of truth and it is the geometry actually being drawn. The plane is built
-  in its own XY space, so height lives in `z`.
+- **The heights are SAMPLED FROM THE FIELD, not read back out of the position
+  buffer.** This bullet said the opposite until W10; the code's own comment at
+  `applyGroundRamp` has been explicit about it for longer. Reading the buffer
+  back would only work on the CPU path, since GPU-mode positions stay flat.
+- **The colour attribute is WRITTEN INTO, never replaced.** three keys its
+  `WebGLBuffer`s off the attribute object and only frees the attributes a
+  geometry still holds at dispose time, so replacing it every terrain load
+  abandons ~1.9 MB of VRAM per position change — and since the ramp became the
+  default (DEC-R5-4) that would be every user, not only someone who opted into a
+  diagnostic.
 - **`setTerrain` recolours while the ramp is showing.** The ramp is normalised
   over the field's own range, so a new field is a new range; leaving the old
   colours would show the previous position's relief over this position's ground —
   the half-swapped scene this demo has twice had to engineer away.
-- **It has no entry in the `layer-order.ts` ladder (returns 0).** It re-colours
-  the ground plane in place rather than adding a surface above it, so there is
-  nothing to lift; a lifted copy would z-fight with the plane it replaces.
-- **`main.ts` applies it unconditionally, ahead of the mesh layers.** It
-  describes the ground plane, which exists whether or not any mesh layer is on —
-  behind `wantsMeshLayers` it would vanish when the user switched everything else
-  off, which is when a diagnostic is most likely to be wanted.
-- **DEC-R2-1 is not violated.** That decision rejected a hypsometric ramp as the
-  _primary_ look and said nothing about a debug view; the layer defaults to off
-  and the e2e asserts it can be switched back off again.
+- **It is a GROUND MODE, not a layer (W6, DEC-R5-4).** It used to be
+  `terrainDebug` in `ALL_LAYERS`, applied from the layer set in `main.ts`, with a
+  bespoke `layer-order.ts` entry returning 0 and a bespoke "greyed out under No
+  ground" rule — four special cases for one entry, which is what finally said it
+  did not belong there. `ground-mode.ts` owns it now, and `main.ts` drives it
+  from `groundShowsRamp(mode)`.
+- **DEC-R2-1 is not violated, and the argument changed.** That decision rejected
+  a hypsometric ramp as the _primary_ look. It **is** the default appearance now
+  (DEC-R5-4, which overrides DEC-R4-5), so what keeps the decision intact is that
+  the plain reflective ground stays one click away and the e2e asserts the
+  round-trip — not that the ramp is off.

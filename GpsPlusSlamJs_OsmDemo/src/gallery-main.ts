@@ -36,8 +36,14 @@ if (container === null) {
  */
 const dispose = buildGallery(container);
 
-// Released on navigation away rather than left to the collector — which is the
-// same thing the module-scope reference above exists to prevent happening
-// unpredictably. `pagehide` rather than `unload`: it fires for the back/forward
-// cache too, and `unload` is deprecated.
-window.addEventListener("pagehide", dispose, { once: true });
+// NOT RELEASED ON `pagehide`, and that is deliberate after a second look. An
+// earlier version did exactly that, reasoning that `pagehide` is the modern
+// `unload`. It also fires when the page enters the BACK/FORWARD CACHE — and with
+// no `pageshow` counterpart to rebuild, navigating back to the gallery restores
+// a document whose renderer and controls are already disposed: a frozen,
+// non-interactive canvas with nothing logged. Precisely the failure this file's
+// other comment is about, reintroduced by the cleanup meant to be tidy.
+//
+// A real teardown reclaims the context anyway. So the disposer is HELD rather
+// than wired to anything — which is also what keeps the renderer reachable.
+void dispose;

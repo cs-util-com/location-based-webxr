@@ -574,7 +574,19 @@ async function loadTerrain(
   // GROW the cache to cover the view, then RENDER a bounded grid from it.
   // The split is the whole point: the growth is incremental and permanent,
   // while what crosses the boundary stays a fixed-shape grid.
-  await terrainField.ensureAround(centre, extentM * Math.SQRT2);
+  // `extentM`, NOT `extentM * SQRT2`. `ensureAround` builds a SQUARE lattice of
+  // half-width `radiusM`, and `sampleGrid` reads a SQUARE of half-width
+  // `extentM` — so the circumscribed-circle radius over-built by √2 per axis,
+  // i.e. twice the posts, for ground nothing ever samples.
+  //
+  // Harmless while the extent was 1400 m (110 889 posts, under the cache cap)
+  // and NOT harmless at 2400 m: it put the lattice at 321 489 posts against a
+  // 250 000 cap, so eviction ran on every load and threw away ~71 000 posts that
+  // the next load immediately re-fetched — the exact opposite of what
+  // `terrain-field.ts` exists to do. The 5 % margin covers the Mercator pitch
+  // changing slightly across the square; `ensureAround`'s own `+1` covers the
+  // bilinear read at the very edge.
+  await terrainField.ensureAround(centre, extentM * 1.05);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const field = terrainField.sampleGrid({
     frame: enuFrameAt(centre),

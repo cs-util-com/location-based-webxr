@@ -231,8 +231,12 @@ export function buildGallery(container: HTMLElement): () => void {
   // The demo does not hit this only because its async boot (rule table, worker,
   // fetch, terrain) schedules frames for a second or two afterwards.
   //
-  // `preventDefault` on the loss is what makes restoration possible at all; the
-  // spec requires it before the browser will send `webglcontextrestored`.
+  // `preventDefault` on the loss is what allows the browser to restore at all,
+  // but three registers its own handler first and already calls it — so the one
+  // below is belt-and-braces, not the thing that enables restoration. **The
+  // handler that actually matters is the RESTORED one**: three re-creates its GL
+  // resources, and has no opinion about when a page that paints on demand should
+  // schedule its next frame.
   renderer.domElement.addEventListener("webglcontextlost", (event) => {
     event.preventDefault();
   });
@@ -258,6 +262,9 @@ export function buildGallery(container: HTMLElement): () => void {
   }
 
   return () => {
+    // Cancel first: a frame queued by a controls  immediately before
+    // teardown would otherwise call  against a disposed renderer.
+    if (pending !== 0) cancelAnimationFrame(pending);
     observer.disconnect();
     controls.dispose();
     renderer.dispose();

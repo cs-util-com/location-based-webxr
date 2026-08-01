@@ -125,6 +125,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     const reach = Math.ceil(radiusM / perPixel) + 1;
     const origin = pixelOf(centre);
 
+    const viewPosts = (2 * reach + 1) ** 2;
     const missing: { x: number; y: number }[] = [];
     for (let dy = -reach; dy <= reach; dy++) {
       for (let dx = -reach; dx <= reach; dx++) {
@@ -136,7 +137,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       }
     }
     if (missing.length === 0) {
-      evictBeyond(origin);
+      evictBeyond(origin, viewPosts);
       return;
     }
 
@@ -170,7 +171,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       );
     });
 
-    evictBeyond(origin);
+    evictBeyond(origin, viewPosts);
   }
 
   /**
@@ -179,9 +180,23 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
    * By distance rather than by insertion order: a user who walks out and back
    * should not lose the posts they are standing on just because they are old,
    * which is the same reasoning the OSM chunk LRU records.
+   *
+   * THE CAP IS A FLOOR OF "ONE VIEW", NOT A FLAT CONSTANT, and that is a
+   * correctness property rather than a tuning one. A cap below the lattice
+   * `ensureAround` just built evicts posts the CURRENT view needs, so the next
+   * load re-fetches them and the cache stops being a cache — standing still
+   * starts costing what moving costs. That is not hypothetical: raising
+   * `TERRAIN_EXTENT_M` to 2400 m put one view at 321 489 posts against a 250 000
+   * constant, and every load paid a full re-fetch plus a 320 k-entry sort
+   * (~180 ms) for it.
+   *
+   * `keep` is therefore whichever is larger. The constant still bounds the
+   * WALKING history, which is what it was for; the view can never be sacrificed
+   * to it.
    */
-  function evictBeyond(origin: { x: number; y: number }): void {
-    if (posts.size <= maxPosts) return;
+  function evictBeyond(origin: { x: number; y: number }, viewPosts = 0): void {
+    const keep = Math.max(maxPosts, viewPosts);
+    if (posts.size <= keep) return;
     const ranked = [...posts.keys()]
       .map((k) => {
         const [x = 0, y = 0] = k.split("/").map(Number);
@@ -191,7 +206,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       })
       .sort((a, b) => b.distance - a.distance);
     for (const entry of ranked) {
-      if (posts.size <= maxPosts) break;
+      if (posts.size <= keep) break;
       posts.delete(entry.k);
     }
   }

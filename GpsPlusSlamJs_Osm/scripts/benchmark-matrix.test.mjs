@@ -189,6 +189,17 @@ describe("backoffDelayMs", () => {
     // ignoring a documented usage policy.
     expect(GIVE_UP_AFTER_REFUSALS).toBe(2);
   });
+
+  it("documents a schedule that only matters if the give-up is raised", () => {
+    // HONESTY ABOUT REACH, because the tests above look like they describe live
+    // behaviour and do not. With the give-up at 2, `backoffDelayMs` is only ever
+    // called with attempt 0 — the second refusal drops the host instead of
+    // waiting — so the exponential and BACKOFF_MAX_MS are unreachable today.
+    // They are kept and tested because they are what has to be correct the
+    // moment the constant changes, and a reader deserves to know which of these
+    // assertions is load-bearing right now.
+    expect(backoffDelayMs(0)).toBe(BACKOFF_BASE_MS);
+  });
 });
 
 describe("planCells", () => {

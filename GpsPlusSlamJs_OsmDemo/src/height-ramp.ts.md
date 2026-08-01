@@ -74,10 +74,12 @@ geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
   drag the range; an all-missing field is entirely no-data.
 
 The pixel half — that the ramp reaches the screen — is
-`osm-demo.spec.js` › "shows the terrain as a height ramp when that layer is on".
+`osm-demo.spec.js` › "shows the terrain as a height ramp, which is the default ground".
 It counts the ramp's **two ends** (blue-dominant for the floor, bright-neutral
-for the top) and asserts both are present, plus that unchecking the box returns
-the scene to neither.
+for the top) and asserts both are present from a fresh load, that selecting the
+plain `cpu` ground entry returns the scene to neither, and that `gpu-ramp`
+brings them back — the ramp is an appearance of the ground mode since W6, not a
+checkbox.
 
 **The first version of that test counted "saturated pixels" and was wrong in a
 way worth recording**: a ground rendered entirely in `NO_DATA_RGB` magenta is

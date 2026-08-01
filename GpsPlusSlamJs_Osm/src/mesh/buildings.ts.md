@@ -80,22 +80,28 @@ OSM features to building volumes, honouring `building:part`.
   rather than of its transport.
   - **`buildings.property.test.ts` is what keeps that true**, and it goes red the
     moment the rule is replaced by "first" again.
-- **An outline nested inside a strictly larger outline that owns parts is NOT
-  extruded (R5-7, DEC-R5-2).** This is the S3DB rule one level up: the enclosing
-  building's parts already describe that volume in detail, so a whole-building
-  outline standing inside them is a coarse duplicate. Cologne Cathedral's
-  `way/645732604` (`building=tower`, height 157, "Nordturm") is the reported
-  instance — it drew as a solid 157 m prism through the modelled cathedral.
-  - **Strictly larger** matters: two identical outlines would otherwise suppress
-    each other and the building would vanish entirely.
-  - **Accepted cost:** a small `building=yes` inside a large modelled outline now
-    vanishes. Judged the better failure than a box through every modelled
-    building, but it **is** a behaviour change beyond the cathedral.
-  - **Measured while fixing it, and it contradicts the obvious guess:** the
-    Nordturm's `Sockel` part (5.146e-8 deg²) is **wider** than the tower way
-    above it (2.970e-8) and its centroid falls outside the tower ring. So the
-    Sockel correctly belongs to the cathedral and it is the containment rule, not
-    the smallest-container rule, that suppresses the tower here.
+- **The nested case (R5-7, DEC-R5-2) is fixed by the smallest-container rule
+  ALONE**, through the pre-existing "an outline with parts is not extruded" line.
+  Cologne Cathedral's `way/645732604` (`building=tower`, height 157, "Nordturm")
+  drew as a solid 157 m prism through the modelled cathedral because the
+  cathedral had claimed the tower's parts; once each part goes to its smallest
+  container, the tower owns `way/207377042` and is suppressed like any other
+  modelled building.
+  - **A SECOND RULE WAS WRITTEN AND REMOVED, and the reason is the useful part.**
+    "Suppress any outline nested inside a strictly larger outline that owns
+    parts" reads like the same idea one level up. Measured on this repo's corpus
+    it suppressed **nothing** the line above had not already suppressed, cost
+    **0.8–4.6 s per build** at res-7 scale, and **deleted four legitimate
+    buildings**: an `industrial` under the cathedral and three Heidelberg
+    `kiosk`s. It also treated a courtyard as solid, so a building in the hole of
+    a modelled multipolygon vanished.
+  - **Nesting does not imply duplication**, which is the whole error. A kiosk in a
+    station concourse is a building.
+  - **The measurement that misled the first attempt is still true and is not the
+    point:** the Nordturm's `Sockel` (`way/206020152`, 5.146e-8 deg²) is wider
+    than the tower way above it (2.970e-8) and stays with the cathedral. The part
+    that decides the outcome is the **unnamed** `way/207377042` — searching the
+    fixture by the name "Nordturm" is what hid it.
 - **`man_made=tower` without a `building` tag draws nothing** — `isBuilding` keys
   only on `building`. Cologne's Südturm (`way/645732603`, height 157) is exactly
   this and is invisible, which is the other half of the reported asymmetry.
@@ -131,4 +137,4 @@ const batch = mergeMeshes(volumes.map((v) => v.mesh));
   because a generator for that would be a larger and less trustworthy artefact
   than the extract this project already captured.
 - `../testdata/sites/site-geometry.test.ts` — the coarse geometry gate across all
-  six corpus sites; the cathedral's volume count moves by one with this change.
+  six corpus sites. The cathedral's volume count moves by one with this change (156 to 155): the Nordturm outline stops being drawn.

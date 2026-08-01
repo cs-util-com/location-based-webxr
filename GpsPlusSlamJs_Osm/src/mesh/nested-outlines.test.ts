@@ -30,9 +30,12 @@ import { CORPUS_SITES } from "../places/sites.js";
  * from the same cause — see the follow-up on `man_made` (N4/DEC-R5-13) for the
  * missing half, which is deliberately NOT fixed here.
  *
- * Two rules cover it, and they are tested SEPARATELY on purpose: a green suite
- * that merged them would not say which one is load-bearing, and the Sockel
- * parts may legitimately fall outside the tower ring they belong to.
+ * ONE RULE COVERS IT, and finding that out cost a wrong turn worth recording. A
+ * second rule — "suppress any outline nested inside a larger outline that owns
+ * parts" — was written alongside, on the belief that the tower owned no parts.
+ * It owns one: the unnamed `way/207377042`. Measured on the corpus, the second
+ * rule suppressed nothing the first had not already suppressed, cost 0.8-4.6 s
+ * per build at res-7 scale, and deleted four legitimate buildings. It is gone.
  */
 
 const CATHEDRAL = CORPUS_SITES.find((site) => site.id === "cologne-cathedral");
@@ -70,23 +73,27 @@ describe("nested building outlines", () => {
     expect(nordturm).toEqual([]);
   });
 
-  it("keeps the Nordturm Sockel with the cathedral, because the Sockel is WIDER than the tower", () => {
-    // THE ASSIGNMENT HALF, separate from the suppression half, and it records a
-    // measurement that decides which of DEC-R5-2's two rules actually fixes
-    // Cologne. The plan left this open: if the Sockel's representative point
-    // falls inside `way/645732604`'s ring, the smallest-container rule claims
-    // the tower and suppresses it; if not, the containment rule does.
+  it("gives the tower the part that is actually inside it, which is what suppresses it", () => {
+    // THE MECHANISM, pinned explicitly — and it is NOT the one this test claimed
+    // when it was written. The first version asserted that the "Nordturm
+    // (Sockel)" parts stay with the cathedral and concluded that a separate
+    // containment rule was therefore doing the work. The first half is true and
+    // the conclusion was wrong, because it was drawn from a search filtered on
+    // the NAME "Nordturm" — and the part that matters is unnamed.
     //
-    // MEASURED FROM THIS FIXTURE — the Sockel is the larger footprint:
-    //   tower  way/645732604   2.970e-8 deg²
-    //   Sockel way/206020152   5.146e-8 deg²   ← wider, and its centroid is
-    //   cathedral way/4532022  1.019e-6 deg²      OUTSIDE the tower ring
+    // `way/207377042` — no name, `height=157.38`, `min_height=71` — is the tower
+    // shaft, and its representative point IS inside `way/645732604`. So the
+    // smallest-container rule hands it to the tower, the tower becomes
+    // `claimed`, and the pre-existing "an outline with parts is not extruded"
+    // rule suppresses it. One rule, not two.
     //
-    // So a tower base genuinely IS wider than the tower above it, the Sockel is
-    // not inside the tower at all, and assigning it there would be wrong. The
-    // CONTAINMENT rule is what is load-bearing here; the smallest-container rule
-    // is exercised by the synthetic tests below. Asserting the two together
-    // would have hidden this entirely.
+    // Measured from this fixture, and still true:
+    //   tower     way/645732604   2.970e-8 deg²
+    //   Sockel    way/206020152   5.146e-8 deg²  ← wider than the tower, so it
+    //   cathedral way/4532022     1.019e-6 deg²    correctly stays with the dom
+    const shaft = volumes.find((volume) => volume.feature === "way/207377042");
+    expect(shaft?.parentFeature).toBe(NORDTURM_KEY);
+
     const sockel = volumes.find((volume) => volume.feature === "way/206020152");
     expect(sockel?.parentFeature).toBe(CATHEDRAL_KEY);
   });
@@ -119,6 +126,7 @@ describe("nested building outlines", () => {
 });
 
 describe("nested outlines, synthetic", () => {
+  // These exercise the smallest-container rule directly, without the fixture.
   // Cologne only exercises TWO levels. The rule is written for the general case,
   // so the general case needs a test that does not depend on a 1.1 MB fixture.
   const ring = (size: number, offset = 0): [number, number][] => [
@@ -154,10 +162,13 @@ describe("nested outlines, synthetic", () => {
     expect(part?.parentFeature).toBe("way/2");
   });
 
-  it("suppresses a nested outline that owns no parts at all", () => {
-    // The reported defect in miniature: a small `building=*` outline sitting
-    // inside a big one that is modelled with parts. Drawing it puts a box
-    // through the model.
+  it("suppresses a nested outline once a part lands inside IT rather than its host", () => {
+    // The reported defect in miniature, and the mechanism named correctly: the
+    // part's representative point falls inside the inner outline, so the inner
+    // outline claims it and the pre-existing rule stops drawing the inner
+    // outline. This test was originally titled "…that owns no parts at all",
+    // which described a rule that has since been removed — and, on this fixture,
+    // was never the rule doing the work.
     const features: OsmFeature[] = [
       wayAt(1, { building: "cathedral" }, ring(0.01)),
       wayAt(2, { building: "tower", height: "157" }, ring(0.004, 0.001)),
@@ -166,11 +177,42 @@ describe("nested outlines, synthetic", () => {
     const volumes = buildBuildings(features, {
       frame: enuFrameAt({ lat: 0, lng: 0 }),
     });
+    expect(
+      volumes.find((volume) => volume.feature === "way/3")?.parentFeature,
+    ).toBe("way/2");
     const nested = volumes.filter(
       (volume) =>
         volume.feature === "way/2" && volume.parentFeature === undefined,
     );
     expect(nested).toEqual([]);
+  });
+
+  it("STILL DRAWS a nested outline that owns no part anywhere", () => {
+    // THE DELIBERATE BEHAVIOUR CHANGE, pinned so it cannot drift back silently.
+    // A rule suppressing every outline nested inside a modelled building was
+    // written and removed: measured on the corpus it suppressed nothing the
+    // smallest-container rule had not already suppressed, and it deleted four
+    // real buildings — an `industrial` under Cologne Cathedral and three
+    // Heidelberg `kiosk`s.
+    //
+    // Nesting does not imply duplication. A kiosk inside a station concourse is
+    // a building, and the cost of drawing it is a small box that is genuinely
+    // there; the cost of the rule was seconds per build plus four deletions.
+    const features: OsmFeature[] = [
+      wayAt(1, { building: "train_station" }, ring(0.01)),
+      // A part of the BIG building only — nothing lands inside the kiosk.
+      wayAt(2, { "building:part": "yes", height: "30" }, ring(0.009, 0.0005)),
+      wayAt(3, { building: "kiosk", height: "3" }, ring(0.0004, 0.0002)),
+    ];
+    const volumes = buildBuildings(features, {
+      frame: enuFrameAt({ lat: 0, lng: 0 }),
+    });
+    expect(
+      volumes.some(
+        (volume) =>
+          volume.feature === "way/3" && volume.parentFeature === undefined,
+      ),
+    ).toBe(true);
   });
 
   it("still draws a standalone building that contains nothing and is inside nothing", () => {
