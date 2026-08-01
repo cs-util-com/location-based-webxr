@@ -7,7 +7,16 @@ export default defineConfig({
     // (OPFS, Worker) lives in the consumer's bridge, not here — see the plan's
     // §4.2 dependency rules.
     environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.spec.ts"],
+    // `scripts/**` is here for ONE reason and it is worth stating, because the
+    // package is otherwise strictly `src`-only: `scripts/benchmark-matrix.mjs`
+    // decides how hard this project hits donated public infrastructure, and a
+    // politeness rule that is only a comment is not a rule. Its tests cannot
+    // live in `src` — a `.test.ts` importing a `.mjs` would need `allowJs`, and
+    // the script cannot be TypeScript because it must run under plain `node`
+    // (the same constraint F23 records for `capture-fixtures.mjs`). So the tests
+    // are `.test.mjs` next to the thing they test, and this line is what runs
+    // them. Nothing else in `scripts/` is under test.
+    include: ["src/**/*.test.ts", "src/**/*.spec.ts", "scripts/**/*.test.mjs"],
     silent: true,
     // The default 5 s timeout stands for this package. The one suite that
     // needed more asks for it itself — `cell-coverage.property.test.ts` — rather
