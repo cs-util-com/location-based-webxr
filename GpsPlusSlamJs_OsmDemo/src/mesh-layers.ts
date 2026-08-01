@@ -403,10 +403,24 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
               // lobe at all. Nothing in the record says buildings should stay
               // matte.
               //
-              // 0.65, NOT the ground's 0.42. A building at 0.42 reads as glass
-              // or polished stone, which for a residential block is a
-              // different kind of wrong — the ground gets away with it because
-              // wet-ish ground is plausible.
+              // 0.45, DOWN FROM 0.65 (DEC-S3). The round-5 owner asked for as
+              // much of the scene as possible to carry the shiny-tile look, and
+              // facades are the largest surface in it — at 0.65 they were the
+              // one thing in the frame with no highlight to catch as the sun
+              // swings with the camera.
+              //
+              // STILL NOT the ground's 0.42, and the old reasoning holds: a
+              // building much below this reads as glass or polished stone, which
+              // for a residential block is a different kind of wrong. The ground
+              // gets away with 0.42 because wet-ish ground is plausible.
+              //
+              // THE RISK THIS CARRIES, and it is the reason DEC-S3 made this a
+              // step of its own: DEC-R4-5 requires the affordance heat ramp to
+              // stay the loudest thing on screen, and R4-14 warned the scene was
+              // close to too colourful before the height ramp became the default
+              // surface. Shiny cells over shiny buildings over a ramped ground is
+              // three competing speculars. Reverting THIS line alone is the
+              // intended way back.
               roughness: 0.65,
               metalness: 0,
             }),
@@ -508,12 +522,29 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
               // region that reads as "good" in 2D and "poor" in 3D is the exact
               // cross-view disagreement the store was introduced to prevent.
               color: context.colourForScore(slab.medianScore),
-              roughness: 0.8,
+              // EMISSIVE FROM THE SAME SCORE COLOUR, at the same weight the cell
+              // grid uses. A slab and the cells inside it are the same claim at
+              // two grains, so a slab lit and a grid self-lit would have made
+              // them disagree about their own value under the same sun.
+              //
+              // Cheap here where it needed a shader patch on the grid: a slab is
+              // ONE colour, so `emissive` — which is a uniform — can just carry
+              // it, while the grid's colour is per-vertex and never reaches
+              // `emissive` through `vertexColors`.
+              emissive: context.colourForScore(slab.medianScore),
+              emissiveIntensity: 0.5,
+              // 0.8 -> 0.25, matching the grid (DEC-S1). A region was the one
+              // score-coloured surface with no specular at all, which read as a
+              // duller cousin of the cells rather than as a coarser claim.
+              roughness: 0.25,
               flatShading: true,
               transparent: true,
               // Translucent so the ground and the buildings inside a region stay
               // readable through it — a region is a claim ABOUT the ground, not
-              // a replacement for it.
+              // a replacement for it. Deliberately NOT raised to the grid's 0.8:
+              // a slab covers far more ground than a cell does, and DEC-S1's
+              // trade — hiding the surface beneath — is only bearable because
+              // the grid's coverage is a ~250 m disc.
               opacity: 0.55,
               side: THREE.DoubleSide,
             }),
