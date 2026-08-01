@@ -31,9 +31,24 @@ import { metresToDegrees } from "./clip.js";
  * of res-8 cells covered, so this is one request per move instead of seven —
  * and moves are ~7x rarer because a res-7 cell is crossed far less often.
  *
- * Measured the same day: a res-7 tile fetches in 18.2 s and 28.31 MB of
- * decompressed JSON (21,847 elements, Cologne). That 28 MB — not the request —
- * is the number to design against; it is why parsing belongs in a worker.
+ * **A res-7 tile is ~68 MB of decompressed JSON and 23–110 s depending on the
+ * host** (Cologne). That figure — not the request — is the number to design
+ * against; it is why parsing belongs in a worker.
+ *
+ * CORRECTED FROM "18.2 s and 28.31 MB (21,847 elements)" (N2, W2). That number
+ * was under half the real payload and had no host, query or artefact behind it,
+ * so where it came from is not recoverable — most plausibly a narrower key list
+ * than `OVERPASS_SELECT_KEYS` at the time. Three independent measurements agree
+ * on ~68 MB: the six-host sweep in `docs/overpass-endpoint-benchmark.json`
+ * (66.35–67.97 MB), `fetch-extent.ts`'s note, and the 2026-08-01 matrix sweep
+ * (67.9 MB). See `GpsPlusSlamJs_Docs/docs/2026-08-01-1324-overpass-matrix-sweep-results.md`.
+ *
+ * **AND THE PAYLOAD IS MOSTLY AVOIDABLE, which is the newer and more useful
+ * fact.** Selecting only areal relations returns 21.1 MB for the same tile, and
+ * — the part that matters — makes payload track AREA again: res 7 to res 9 is
+ * 21x under that form against 1.76x under this one. Adopting it is its own
+ * investigation (it drops route/waterway/power relations that currently arrive
+ * carrying scoring tags), not a query tweak.
  *
  * One res-7 tile contains ~117,649 (7^6) res-13 cells, so scoring must NEVER be
  * eager over a whole fetch tile.
