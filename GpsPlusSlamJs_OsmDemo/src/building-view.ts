@@ -363,8 +363,24 @@ export class BuildingView {
     // "21 volumes" and the suite stayed green — every pixel assertion was satisfied
     // by the one surviving `MeshBasicMaterial`, the affordance grid.
     //
-    // PMREM-processing it was tried and does NOT help here: the gradient is one
-    // pixel wide, which is degenerate for the equirect-to-cube-UV projection.
+    // THE REASON PMREM WAS UNAVAILABLE HAS EXPIRED, AND SAYING SO IS THE POINT
+    // OF THIS PARAGRAPH (N1, W10). It used to read: "PMREM-processing it was
+    // tried and does NOT help here: the gradient is one pixel wide, which is
+    // degenerate for the equirect-to-cube-UV projection." **W14 widened the sky
+    // to SKY_GRADIENT_COLUMNS x SKY_GRADIENT_ROWS = 256 x 64 the same day**, so
+    // it is no longer degenerate and a `PMREMGenerator` pass is available again.
+    //
+    // It is NOT taken, and that is a DEFERRAL rather than an impossibility
+    // (DEC-R5-8): the round-5 notes ask for a better-looking ground, and the
+    // answer is being searched for by prompt rather than guessed at here — see
+    // `2026-08-01-1356-terrain-shader-prototype-prompt.md`. Doing the lighting
+    // twice is the thing being avoided.
+    //
+    // IF IT IS PICKED UP, the test that must come with it is a DRAWS-ANYTHING
+    // check — a difference count against a materials-off frame — not an
+    // assertion that the field was set. The outage above was invisible to
+    // property assertions: every pixel test in the suite stayed green while the
+    // buildings, the trees, the ground and the plates were all absent.
     //
     // Removing it costs almost nothing against DEC-R2-1. That decision asked for a
     // surface reflective enough that facet edges show as the camera moves, and the

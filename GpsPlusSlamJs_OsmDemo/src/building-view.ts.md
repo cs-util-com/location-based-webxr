@@ -92,8 +92,17 @@ map scored.
     green, because every pixel assertion was satisfied by the one surviving
     `MeshBasicMaterial`, the affordance grid. This is also the real cause of what
     W11 recorded as the plates "known gap".
-  - PMREM-processing the gradient does **not** rescue it: the texture is one
-    pixel wide, which is degenerate for the equirect-to-cube-UV projection.
+  - **PMREM was ruled out for a reason that has since expired (N1).** The note
+    here read _"PMREM-processing the gradient does not rescue it: the texture is
+    one pixel wide, which is degenerate for the equirect-to-cube-UV
+    projection"_ — and **W14 widened the sky to 256 × 64 the same day**, so it is
+    no longer degenerate. A `PMREMGenerator` pass is available again.
+    - **Not taken, deferred (DEC-R5-8).** The round-5 notes ask for a
+      better-looking ground and the answer is being searched for by prompt rather
+      than guessed at; doing the lighting twice is what is being avoided.
+    - **If it is picked up, it needs a draws-anything test** — a difference count
+      against a materials-off frame, not an assertion that the field was set. The
+      outage was invisible to property assertions.
   - Three other comments in the tree repeated the same wrong claim and were
     corrected with it: `sky-gradient.ts`'s header, the `sky` field docstring, and
     the constructor comment. All three told the next reader to re-add it.
