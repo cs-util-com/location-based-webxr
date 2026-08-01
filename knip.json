@@ -104,7 +104,8 @@
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs",
-        "src/worker/demo-worker.ts"
+        "src/worker/demo-worker.ts",
+        "src/gallery-main.ts"
       ],
       "project": [
         "src/**/*.ts"

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>POI model gallery — OSM affordance demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+        background: #11131a;
+        color: #e6e8ef;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100dvh;
+      }
+      header {
+        padding: 0.6rem 0.9rem;
+        border-bottom: 1px solid #2a2f3d;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: baseline;
+      }
+      h1 {
+        font-size: 1rem;
+        margin: 0;
+      }
+      #gallery-status,
+      a {
+        color: #9aa3b8;
+        font-size: 0.8rem;
+      }
+      #gallery {
+        position: relative;
+        min-height: 0;
+      }
+      #gallery canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      THE CONTACT SHEET DEC-R4-14 DECLINED AND F28 ASKED FOR (W7, DEC-R5-5).
+
+      Its own page rather than a button in the demo: the models are pure data
+      from `gps-plus-slam-osm`, so this needs no store, no worker and no network,
+      and keeping it out of the live scene keeps the draw-call readout and the
+      e2e pixel proxies measuring what they were written to measure.
+
+      Reached at /gallery.html — deliberately not linked from the demo header,
+      which the same round's feedback already calls too busy.
+    -->
+    <header>
+      <h1>POI model gallery</h1>
+      <span id="gallery-status">loading…</span>
+      <a href="./index.html">← back to the demo</a>
+    </header>
+    <div id="gallery"></div>
+    <script type="module" src="/src/gallery-main.ts"></script>
+  </body>
+</html>

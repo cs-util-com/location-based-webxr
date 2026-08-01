@@ -3010,3 +3010,71 @@ test.describe("the rule table cache", () => {
     expect(counts.ruleSheet).toBe(fetchedOnce);
   });
 });
+
+/**
+ * W7 / DEC-R5-5 — the POI model gallery, which closes F28.
+ *
+ * WHY THIS BLOCK IS SHORT, and deliberately so. The page exists for a HUMAN to
+ * look at fifty procedural models at true relative scale — DEC-R4-14 declined a
+ * contact sheet and F28 recorded the consequence: _"the fifty POI models were
+ * judged by no one."_ No assertion can replace that look.
+ *
+ * What it CAN assert is that the look is possible: the page loads, draws
+ * something, and does not log a shader or module error. The gallery imports
+ * `POI_MODELS` and builds fifty `MeshStandardMaterial`s — the exact surface that
+ * silently took the whole demo scene off screen for ten work items when
+ * `scene.environment` was set — so "renders nothing while reporting success" is
+ * a real failure mode here rather than a hypothetical one.
+ */
+test.describe("the POI model gallery", () => {
+  test("draws every model, and the console stays clean", async ({ page }) => {
+    const errors = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(String(error)));
+
+    // NO NETWORK STUB NEEDED, which is the point of the separate page: no store,
+    // no worker, no Overpass, no rule table. If this ever starts needing one,
+    // the page has grown a dependency it was built to avoid.
+    await page.goto("/gallery.html");
+
+    // The status line reports the count from the data rather than from a
+    // hard-coded number, so this catches "the map came back empty" too.
+    await expect(page.locator("#gallery-status")).toContainText(
+      /\d+ POI models/,
+    );
+    const status = await page.locator("#gallery-status").textContent();
+    expect(Number(/(\d+) POI models/.exec(status ?? "")?.[1])).toBe(50);
+
+    // PIXELS, not "a canvas exists". A present canvas of the right size is
+    // equally consistent with an empty scene, a camera inside the ground, or a
+    // render that never ran — the same reason the demo's own boot test counts
+    // non-background pixels.
+    const litPixels = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#gallery canvas");
+        if (!(el instanceof HTMLCanvasElement)) return -1;
+        const probe = document.createElement("canvas");
+        probe.width = el.width;
+        probe.height = el.height;
+        const ctx = probe.getContext("2d");
+        if (ctx === null) return -1;
+        ctx.drawImage(el, 0, 0);
+        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+        let lit = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          // The background is #1b1e26. Anything clearly brighter is geometry.
+          if ((data[i] ?? 0) > 60 || (data[i + 1] ?? 0) > 60) lit += 1;
+        }
+        return lit;
+      });
+    // POLLED, like every other pixel assertion in this suite. It also covers a
+    // real asynchrony: Chromium can bring the GPU context up AFTER the first
+    // frame, so the page draws once, loses that context and redraws on
+    // `webglcontextrestored` — see `gallery.ts` for the measurement behind that.
+    await expect.poll(litPixels, REPAINT).toBeGreaterThan(5000);
+
+    expect(errors).toEqual([]);
+  });
+});
