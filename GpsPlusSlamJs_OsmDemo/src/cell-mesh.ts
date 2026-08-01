@@ -27,6 +27,7 @@ import { cellToBoundary } from "h3-js";
 import type { EnuFrame } from "gps-plus-slam-osm";
 
 import { type HeatScale } from "./heat-colours.js";
+import { bevelNormals } from "./cell-bevel.js";
 import { groundLift } from "./layer-order.js";
 import { bandTreatment, classifyScore } from "./legend-model.js";
 
@@ -111,6 +112,14 @@ export interface CellMesh {
    * Alpha 0 is a face that is present and invisible.
    */
   readonly colors: Float32Array;
+  /**
+   * Per-vertex normals carrying the faked rim bevel (DEC-S2).
+   *
+   * Present because the grid material became LIT: a flat-up normal everywhere
+   * would give every tile the same constant shade and none of the edge highlight
+   * the bevel exists for. `cell-bevel.ts` owns the arithmetic and the bound.
+   */
+  readonly normals: Float32Array;
   readonly indices: Uint32Array;
   /** Triangle index → cell id. What a raycast's `faceIndex` is looked up in. */
   readonly cellForTriangle: readonly string[];
@@ -148,6 +157,7 @@ export const EMPTY_CELL_MESH: CellMesh = {
   cells: [],
   positions: new Float32Array(0),
   colors: new Float32Array(0),
+  normals: new Float32Array(0),
   indices: new Uint32Array(0),
   cellForTriangle: [],
   linePositions: new Float32Array(0),
@@ -192,6 +202,7 @@ export function buildCellMesh(
   const positions = new Float32Array(vertexCount * 3);
   // FOUR components: see `CellMesh.colors` for why an alpha channel exists.
   const colors = new Float32Array(vertexCount * 4);
+  const normals = new Float32Array(vertexCount * 3);
   const indices = new Uint32Array(triangleCount * 3);
   const cellForTriangle: string[] = [];
 
@@ -237,6 +248,14 @@ export function buildCellMesh(
       c += 4;
     }
 
+    // THE FAKED BEVEL (DEC-S2). Written per cell rather than per vertex because
+    // the lean is relative to THIS cell centroid, which only exists once the
+    // whole ring is collected. See cell-bevel.ts for what the lie costs.
+    const cellNormals = bevelNormals(corners);
+    for (let k = 0; k < cellNormals.length; k += 1) {
+      normals[v - cellNormals.length + k] = cellNormals[k] ?? 0;
+    }
+
     if (treatment.kind === "outline") {
       for (let k = 0; k < corners.length; k++) {
         const from = corners[k];
@@ -265,6 +284,7 @@ export function buildCellMesh(
     cells: drawn.map((d) => d.cell),
     positions,
     colors,
+    normals,
     indices,
     cellForTriangle,
     linePositions: new Float32Array(linePoints),

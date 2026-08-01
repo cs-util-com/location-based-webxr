@@ -71,6 +71,18 @@ export type GroundDisplacement = GroundStrategy;
 export const TERRAIN_SPACING_M = 12;
 
 /**
+ * How much of the score colour is added back as emissive on the cells (DEC-S1).
+ *
+ * TUNED BY LOOKING, which is the only way this could have been settled. At 0
+ * the grid read visibly darker than the same cells on the 2D map beside it — the
+ * diffuse term dimming the data. At 0.85 the value matched and the rim bevel
+ * vanished, because emissive is unlit and a large constant flattens exactly the
+ * shading the bevel exists to create. 0.5 is the point where the grid reads at
+ * roughly the map's value and the facets are still there.
+ */
+const CELL_EMISSIVE_INTENSITY = 0.5;
+
+/**
  * How far the camera can see, metres (W21, R4-16; W5, R5-4, DEC-R5-3).
  *
  * THE HISTORY IS THE ARGUMENT, because this number has now been set three times
@@ -900,18 +912,47 @@ export class BuildingView {
     // FOUR components. An outline-treated cell carries alpha 0, so its face is
     // present for picking and invisible on screen (DEC-R3-21).
     geometry.setAttribute("color", new THREE.BufferAttribute(mesh.colors, 4));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
     geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     this.cellMesh = new THREE.Mesh(
       geometry,
-      new THREE.MeshBasicMaterial({
-        vertexColors: true,
-        transparent: true,
-        // Matches the 2D map's fill opacity, so the same cell reads as the same
-        // strength of claim in both views.
-        opacity: 0.55,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      }),
+      // LIT SINCE DEC-S1/S2, and it was `MeshBasicMaterial` before. That choice
+      // was not an oversight — an unlit material draws the vertex colour and
+      // stops, so the score colour could not be dimmed by lighting and the
+      // picture could not lie about the analysis.
+      //
+      // WHAT MAKES LIGHTING SAFE HERE, and it is worth checking before anyone
+      // "restores" the old material: every cell is horizontal and coplanar with
+      // every other, there are no shadow maps (DEC-R4-6 deferred them), and the
+      // sun holds a fixed elevation while only its azimuth follows the camera.
+      // So the diffuse term is the SAME CONSTANT for every cell and stays
+      // constant as the camera orbits — the ramp is scaled, never reordered.
+      // What the lighting adds on top is the specular, which is the whole point.
+      //
+      // The rim normals from `cell-bevel.ts` deliberately break that flatness at
+      // the corners. That is decoration on the edge; the tile's face keeps its
+      // value, and the bevel is symmetric so no cell picks up a net tilt.
+      installCellEmissive(
+        new THREE.MeshStandardMaterial({
+          vertexColors: true,
+          transparent: true,
+          // 0.8, UP FROM 0.55 (DEC-S1). The specular is exactly the part alpha
+          // eats, so at 0.55 the highlight this material exists for was 55 % of a
+          // highlight. Two costs were accepted with it: the ground beneath — the
+          // height ramp included, which is the default surface since DEC-R5-4 — is
+          // largely hidden where cells cover it, and the 2D map stays at 0.55, so
+          // "the same cell reads as the same strength of claim in both views" is
+          // no longer literally true. The overlap is a ~250 m disc on a 4.8 km
+          // plane, which is what makes the first cost bearable.
+          opacity: 0.8,
+          // Low, for a tight specular lobe — the same mechanism DEC-R2-1 chose for
+          // the ground, where it is 0.42.
+          roughness: 0.2,
+          metalness: 0,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      ),
     );
     // How `resolvePick` recognises the grid. A flag rather than an identity
     // comparison, so the decision stays a pure function of the hits and can be
@@ -1275,4 +1316,57 @@ function installGroundDisplacement(
   // Materials are cached by program; changing the compile hook has to invalidate
   // that cache or the patch never reaches the GPU.
   material.needsUpdate = true;
+}
+
+/**
+ * Routes the per-vertex score colour into EMISSIVE as well as diffuse.
+ *
+ * WHY A SHADER PATCH RATHER THAN A MATERIAL PROPERTY. `emissive` is a single
+ * uniform `Color`; `vertexColors` modulates `diffuseColor` and nothing else. So
+ * "emissive = the score colour" — which is what DEC-S1's whole argument rests on
+ * — is not expressible as a material option. Setting `emissive` to white instead
+ * would lift every cell towards white and wash the ramp out, which is the
+ * opposite of the goal.
+ *
+ * WHY IT IS NEEDED AT ALL, discovered by looking rather than by reasoning. The
+ * lit material dims the score colour by the diffuse term, and the first
+ * screenshot showed the 3D cells reading visibly darker than the same cells on
+ * the 2D map. The colour IS the data, so a uniform dimming is still a picture
+ * that disagrees with the legend beside it. Adding the colour back as emissive
+ * restores the value while leaving the specular — which is the whole point of
+ * the lit material — untouched.
+ *
+ * THE RISK, NAMED. `onBeforeCompile` is the surface that took the entire scene
+ * off screen for ten work items when `scene.environment` was set: three logs a
+ * shader-compilation failure and then silently does not draw the material. This
+ * patch is one additive line against `totalEmissiveRadiance`, which is a
+ * `vec3` that exists in every lit fragment shader, and `installGroundDisplacement`
+ * below establishes the same pattern. The e2e that counts cell pixels is what
+ * catches it if that stops being true.
+ */
+function installCellEmissive(
+  material: THREE.MeshStandardMaterial,
+): THREE.MeshStandardMaterial {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms["uCellEmissive"] = { value: CELL_EMISSIVE_INTENSITY };
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform float uCellEmissive;`,
+      )
+      // AFTER the emissive chunk, so this adds to whatever it produced rather
+      // than being overwritten by it.
+      .replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+        #ifdef USE_COLOR_ALPHA
+          totalEmissiveRadiance += vColor.rgb * uCellEmissive;
+        #endif`,
+      );
+  };
+  // Changing `onBeforeCompile` after a program exists needs this; harmless here
+  // because the material is new, and correct if this is ever reused.
+  material.needsUpdate = true;
+  return material;
 }

@@ -256,6 +256,8 @@ interface TransferableCellMesh {
   readonly cells: readonly string[];
   readonly positions: Float32Array;
   readonly colors: Float32Array;
+  /** Per-vertex normals carrying the faked rim bevel (DEC-S2). */
+  readonly normals: Float32Array;
   readonly indices: Uint32Array;
   readonly cellForTriangle: readonly string[];
   readonly linePositions: Float32Array;
