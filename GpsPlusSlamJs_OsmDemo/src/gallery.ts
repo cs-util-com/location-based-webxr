@@ -262,8 +262,8 @@ export function buildGallery(container: HTMLElement): () => void {
   }
 
   return () => {
-    // Cancel first: a frame queued by a controls  immediately before
-    // teardown would otherwise call  against a disposed renderer.
+    // Cancel first: a frame queued by a controls `change` immediately before
+    // teardown would otherwise call `draw()` against a disposed renderer.
     if (pending !== 0) cancelAnimationFrame(pending);
     observer.disconnect();
     controls.dispose();

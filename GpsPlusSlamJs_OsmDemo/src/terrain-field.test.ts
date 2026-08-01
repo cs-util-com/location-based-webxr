@@ -230,6 +230,42 @@ describe("createTerrainField", () => {
     expect(totalAsked(asked)).toBe(fetchesAfterFirst);
   });
 
+  it("keeps the view's CORNERS too, once a walk has filled the cache", async () => {
+    // WHY THIS TEST EXISTS, and why the one above could not catch it. The floor
+    // guarantees a COUNT; this guarantees the SET. Eviction ranked by Euclidean
+    // distance while `ensureAround` builds a SQUARE lattice, so it kept a DISC —
+    // and a disc of the same area is narrower than the square at its corners.
+    // Measured at the demo's real numbers, 1 200 posts of the view being fetched
+    // fell outside the kept disc and were dropped in favour of nearer HISTORICAL
+    // posts, so the four corner regions were re-fetched and re-dropped on every
+    // load. The test above uses `maxPosts: 10`, where the floor binds and there
+    // is no history, which is exactly the case that cannot see this.
+    //
+    // The numbers here reproduce the shape: a 300 m radius at Cologne is 53 x 53
+    // = 2809 posts with corners at 26 x sqrt(2) = 36.8 lattice units, while a
+    // Euclidean disc holding 3000 posts reaches only sqrt(3000 / pi) = 30.9, so
+    // 40 of the view's own posts rank outside it. maxPosts is deliberately just
+    // ABOVE viewPosts (2809) so the count floor does not bind and only the
+    // metric is under test.
+    const { provider, asked } = rampProvider();
+    const field = createTerrainField({ provider, maxPosts: 3000 });
+
+    await field.ensureAround(COLOGNE, 300);
+    // A 640 m walk east — 53 lattice units, so the two views just stop
+    // overlapping and the cache exceeds the cap. It must be a WALK rather than a
+    // teleport: posts left behind only compete with the new view's corners if
+    // they are nearby, and a 15 km jump puts all of them so far away that the
+    // whole new view survives whatever metric is used.
+    const elsewhere = { lat: 50.9413, lng: 6.967424 };
+    await field.ensureAround(elsewhere, 300);
+
+    const settled = totalAsked(asked);
+    // Standing still at the NEW centre must cost nothing. Before the metric was
+    // fixed this re-fetched the corners every time.
+    await field.ensureAround(elsewhere, 300);
+    expect(totalAsked(asked)).toBe(settled);
+  });
+
   it("fills a gap OUTSIDE the ensured area from the mean, never with zero", async () => {
     // RAISED IN REVIEW ON PR #231, and confirmed against the code. `sampleGrid`
     // wrote `height ?? 0` into the buffer and then tried to repair gaps with

@@ -166,8 +166,15 @@ export const MAX_GROUND_SEGMENTS = 480;
  * error. Deriving it enforces the relationship the comment only described.
  *
  * The cap is a ceiling against a much larger extent; see `MAX_GROUND_SEGMENTS`.
- * At the current 2.8 km extent it does not bind, so the DEM pitch is matched
- * exactly and every quad of the ground plane carries real data.
+ * At the current 4.8 km plane (`TERRAIN_EXTENT_M = 2400`) the derived value is
+ * 400 against a cap of 480, so it does not bind: the DEM pitch is matched
+ * exactly and every quad of the ground plane carries real data. `far-field.
+ * test.ts` asserts the inequality STRICTLY, so the next extent change fails a
+ * gate rather than silently coarsening the ground.
+ *
+ * (This paragraph said "at the current 2.8 km extent" one commit after the
+ * extent became 4.8 km — the same trap the first paragraph is about, in the same
+ * docstring.)
  */
 export const GROUND_SEGMENTS = Math.min(
   MAX_GROUND_SEGMENTS,
@@ -738,12 +745,13 @@ export class BuildingView {
   }
 
   /**
-   * Writes a `color` attribute from the plane's current displaced heights.
+   * Writes a `color` attribute over the ground plane, from the terrain field.
    *
-   * The heights are read back out of the POSITION buffer rather than kept
-   * alongside it, so the colours cannot disagree with the surface they describe —
-   * there is one source of truth and it is the geometry that is actually drawn.
-   * The plane is built in its own XY space, so height lives in `z`.
+   * The mechanics — where the heights come from, and why the attribute is
+   * written into rather than replaced — are in the body, next to the code they
+   * describe. This header said the heights were read back out of the POSITION
+   * buffer until W10 corrected the body three lines below it and left the header
+   * alone; a summary that contradicts its own function is worse than no summary.
    */
   private applyGroundRamp(): void {
     // SAMPLED FROM THE FIELD, not read back out of the position buffer. The

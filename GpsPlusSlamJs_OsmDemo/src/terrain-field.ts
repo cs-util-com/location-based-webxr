@@ -202,7 +202,20 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
         const [x = 0, y = 0] = k.split("/").map(Number);
         const dx = x - origin.x;
         const dy = y - origin.y;
-        return { k, distance: dx * dx + dy * dy };
+        // CHEBYSHEV (max-norm), NOT EUCLIDEAN, and the floor above depends on
+        // it. `ensureAround` builds a SQUARE lattice, so the current view is
+        // exactly the max-norm ball of radius `reach`. Ranking by Euclidean
+        // distance keeps a DISC instead, and a disc of the same area is narrower
+        // than the square at its corners — measured at the demo's real numbers,
+        // 1 200 posts of the view being fetched sit outside the kept disc and
+        // were evicted in favour of nearer HISTORICAL posts. `keep >= viewPosts`
+        // then guaranteed a count without guaranteeing the view survived, which
+        // is a treadmill in miniature: the four corner regions re-fetched and
+        // re-dropped on every load.
+        //
+        // With the max-norm the metric matches the shape the lattice is built
+        // in, so keeping the nearest `keep` really does keep the whole view.
+        return { k, distance: Math.max(Math.abs(dx), Math.abs(dy)) };
       })
       .sort((a, b) => b.distance - a.distance);
     for (const entry of ranked) {

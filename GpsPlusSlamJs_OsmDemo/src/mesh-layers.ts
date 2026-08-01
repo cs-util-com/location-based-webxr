@@ -47,8 +47,9 @@ import type { TransferableMesh } from "./worker/protocol.js";
  * The layers whose geometry comes out of the worker's mesh.
  *
  * The rest of `ALL_LAYERS` is drawn by other means — `cells` and `areas` are the
- * affordance overlays built by `cell-mesh.ts`, `terrainDebug` re-colours the ground
- * plane, and `roads` has no builder yet. This constant is the declared truth the
+ * affordance overlays built by `cell-mesh.ts`. (`terrainDebug` used to be listed
+ * here too; since W6 the height ramp is a ground MODE rather than a layer, and
+ * `ALL_LAYERS` holds only things that are in the world.) This constant is the declared truth the
  * table is checked against, so adding a builder means adding its id HERE and the
  * test tells you the row is missing. That is not hypothetical: adding `poi` here
  * before writing its row turned the coverage test red, which is the guard working.
