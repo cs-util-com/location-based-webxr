@@ -403,16 +403,19 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
               // lobe at all. Nothing in the record says buildings should stay
               // matte.
               //
-              // 0.45, DOWN FROM 0.65 (DEC-S3). The round-5 owner asked for as
+              // 0.55, DOWN FROM 0.65 (DEC-S3). The round-5 owner asked for as
               // much of the scene as possible to carry the shiny-tile look, and
               // facades are the largest surface in it — at 0.65 they were the
               // one thing in the frame with no highlight to catch as the sun
               // swings with the camera.
               //
-              // STILL NOT the ground's 0.42, and the old reasoning holds: a
-              // building much below this reads as glass or polished stone, which
-              // for a residential block is a different kind of wrong. The ground
-              // gets away with 0.42 because wet-ish ground is plausible.
+              // 0.55 AND NOT 0.45, WHICH IS WHERE THIS FIRST LANDED. A W13 guard
+              // asserts buildings stay above 0.5 so they do not read as glass,
+              // and 0.45 broke it. The guard is right and the fix was to move
+              // this value rather than loosen it: 0.45 is only 0.03 from the
+              // ground's 0.42, so it was very nearly the polished-stone look that
+              // decision exists to prevent. 0.55 still tightens the lobe usefully
+              // against the old 0.65.
               //
               // THE RISK THIS CARRIES, and it is the reason DEC-S3 made this a
               // step of its own: DEC-R4-5 requires the affordance heat ramp to
@@ -421,7 +424,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
               // surface. Shiny cells over shiny buildings over a ramped ground is
               // three competing speculars. Reverting THIS line alone is the
               // intended way back.
-              roughness: 0.65,
+              roughness: 0.55,
               metalness: 0,
             }),
           ),
