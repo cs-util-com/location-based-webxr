@@ -69,18 +69,32 @@ export type GroundDisplacement = GroundMode;
 export const TERRAIN_SPACING_M = 12;
 
 /**
- * How far the camera can see, metres (W21, R4-16).
+ * How far the camera can see, metres (W21, R4-16; W5, R5-4, DEC-R5-3).
  *
- * WAS 4000, which put every building in a res-7 fetch tile inside the frustum —
- * so the demo drew geometry three to five kilometres away, which is what the
- * notes saw. The destination is AR, where the other apps in this workspace run a
- * far plane of 200-300 m.
+ * THE HISTORY IS THE ARGUMENT, because this number has now been set three times
+ * and each move was right for what was known then:
  *
- * 1200 rather than 300 because this is the DESKTOP view and seeing the city you
- * are inspecting is its point; AR will want its own number, chosen against the
- * draw-call readout rather than guessed.
+ * - **4000** put every building in a res-7 fetch tile inside the frustum, so the
+ *   demo drew geometry three to five kilometres away. The whole tile was ONE
+ *   merged mesh, so nothing could be culled and all of it was really drawn.
+ * - **1200** fixed that, and the next testing session said the world now felt
+ *   claustrophobic on the desktop — _"mindestens doppelt so weit"_.
+ * - **2400** is that request, and it is affordable now for a reason that has
+ *   nothing to do with taste: **W20 chunked the geometry**, so the frustum
+ *   actually culls and distance costs what is VISIBLE rather than everything
+ *   fetched. The trade the 1200 was priced against no longer exists.
+ *
+ * **IT IS EXACTLY `TERRAIN_EXTENT_M`, and that is the constraint rather than a
+ * coincidence.** The ground plane reaches `TERRAIN_EXTENT_M` along each axis and
+ * then stops; a far plane beyond it lets the default view see the edge of the
+ * world, which is finding R2-9 (buildings standing on nothing) returning. The
+ * three constants move together or not at all — `far-field.test.ts` asserts it.
+ *
+ * AR will still want its own number: `AR_CAMERA_FAR` is 200 in the framework,
+ * nothing in this demo enters AR yet, and the draw-call readout is how that gets
+ * chosen on evidence rather than guessed.
  */
-export const FAR_PLANE_M = 1200;
+export const FAR_PLANE_M = 2400;
 
 /**
  * Where the haze starts, metres.
@@ -112,16 +126,33 @@ export const FOG_NEAR_M = FAR_PLANE_M * 0.66;
  * around the same time, or the shader outage that ran from W20 until 2026-07-30
  * and made every ground-touching test behave oddly.
  *
- * 256 is a CEILING, not a target: at the current 2.8 km extent the derived value
- * is 233 and this does not bind at all, so the plane now matches the DEM's own
- * ~12 m pitch exactly. It still bounds the quadratic growth if `TERRAIN_EXTENT_M`
- * ever grows — 4x the extent is 16x the vertices, which is where a real cost
- * starts. **If you raise the extent, re-measure rather than trusting this number.**
+ * RAISED AGAIN, 256 -> 480, WITH THE RE-MEASUREMENT THAT COMMENT DEMANDED (W5,
+ * DEC-R5-3, DEC-R5-12). The extent grew from 1400 to 2400 m so the far plane
+ * could double, which takes the derived count from 233 to 400. Measured the way
+ * the last entry was — the per-call vertex walk plus `computeVertexNormals`, at
+ * the sizes actually in play, median of seven:
+ *
+ *   233 segments (54 756 vertices, extent 1400)   14.3 ms
+ *   400 segments (160 801 vertices, extent 2400)  44.4 ms
+ *   480 segments (231 361 vertices, extent 2880)  42.3 ms
+ *
+ * **~3x, once per terrain load rather than per frame**, which is the number that
+ * makes this affordable: 44 ms on a position change is a hitch, not a frame-rate
+ * cost. (The 480 row measuring the same as 400 is JIT warmth, not a discovery —
+ * it is listed because leaving it out would imply a cleaner curve than there is.)
+ *
+ * 480 is a CEILING, not a target, and it is deliberately STRICTLY above the
+ * derived 400. A cap equal to the value it bounds is a ceiling only until someone
+ * nudges the extent, and the failure is silent: the plane quietly becomes coarser
+ * than the height field, which is the very relief R5-2 reports as invisible.
+ * `far-field.test.ts` asserts the strict inequality so that nudge fails a gate
+ * instead of costing detail. **If you raise the extent again, re-measure rather
+ * than trusting this number.**
  *
  * This also removes the measured payoff that motivated GPU displacement (W23,
  * DEC-R2-24); see the round-2 plan for the deferral and its reasoning.
  */
-const MAX_GROUND_SEGMENTS = 256;
+export const MAX_GROUND_SEGMENTS = 480;
 
 /**
  * Plane subdivisions per axis, DERIVED and then CAPPED.
@@ -392,13 +423,19 @@ export class BuildingView {
     // A ground plane, so a building with no neighbours still reads as standing
     // on something rather than floating in the void.
     //
-    // 600 m across, not 2000 (DEC-15). The scoring working set reaches ~128 m
-    // from the user, so a 2 km plane is mostly ground no cell is ever scored
-    // on — and once it carries terrain, sampling all of it would fetch DEM
-    // tiles for exactly that unscored ground, while sampling only the working
-    // set would leave a flat-to-relief cliff at the seam. 600 m covers the
-    // working set with margin and has no seam. The accepted cost is a visible
-    // plane edge at the horizon.
+    // SIZED BY `TERRAIN_EXTENT_M`, which is 2400 m — a 4.8 km plane (W5, N6).
+    // This comment used to argue for 600 m on the grounds that "the scoring
+    // working set reaches ~128 m from the user, so a 2 km plane is mostly ground
+    // no cell is ever scored on". **Every number in that argument had expired**:
+    // the plane has been `TERRAIN_EXTENT_M * 2` since round 3, the working set
+    // reaches ~250 m (`SCORE_DISK_MAX_RADIUS = 4`), and the decision it defended
+    // was reversed twice — first by DEC-R2-8, then by DEC-R5-3.
+    //
+    // The size is not a scoring question at all any more, and that is the useful
+    // correction: it is a RENDERING one. The plane has to reach at least as far
+    // as the camera can see, or the default view looks past the edge of the
+    // world. `heightfield.ts` owns the constant and `far-field.test.ts` pins the
+    // relationship.
     this.ground = new THREE.Mesh(
       new THREE.PlaneGeometry(
         TERRAIN_EXTENT_M * 2,
@@ -444,14 +481,14 @@ export class BuildingView {
     installGroundDisplacement(this.groundRampMaterial, this.groundUniforms);
     this.scene.add(this.ground);
 
-    // FAR PLANE 1200 m, DOWN FROM 4000 (W21, R4-16). A res-7 fetch tile is
-    // kilometres across and everything in it was inside the frustum, so the demo
-    // drew buildings three to five kilometres away — in an app whose destination
-    // is AR, where the other apps in this workspace run 200-300 m.
+    // FAR PLANE 2400 m — 4000, then 1200, now 2400. See `FAR_PLANE_M` for why
+    // each move was right at the time; the short version is that W20's chunking
+    // changed what distance COSTS, so the 1200 was priced against a trade that no
+    // longer exists. The ceiling is now the terrain extent rather than a guess.
     //
-    // 1200 rather than 300: this is the DESKTOP view, where seeing the city you
-    // are inspecting is the point. AR will want its own number, and `draw-cost`
-    // in the status line is how that choice gets made on evidence.
+    // 55° FOV is unchanged and is a different knob: the round-5 note said "field
+    // of view" and then corrected itself to the far plane, which was the right
+    // correction.
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.5, FAR_PLANE_M);
     this.camera.position.set(140, 110, 140);
     this.camera.lookAt(0, 10, 0);

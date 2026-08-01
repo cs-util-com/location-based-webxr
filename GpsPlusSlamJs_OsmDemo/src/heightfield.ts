@@ -95,17 +95,29 @@ export const NEAR_FIELD_M = 300;
 /**
  * Half-width of the ground plane and of the terrain sampled under it, metres.
  *
- * 1400 m — a 2.8 km plane — which matches the extent of the geometry actually
- * being rendered. **This overrides DEC-15's 600 m** (see DEC-R2-8).
+ * 2400 m — a 4.8 km plane — which is **exactly `FAR_PLANE_M`**, and that equality
+ * is the constraint rather than a coincidence (W5, DEC-R5-3/R5-12). The plane
+ * ends here; a camera that can see further looks past the edge of the world, and
+ * a default view that does is finding R2-9 (buildings standing on nothing)
+ * coming back. `far-field.test.ts` asserts `FAR_PLANE_M <= TERRAIN_EXTENT_M` so
+ * the two cannot be edited apart. **This overrides DEC-15's 600 m** (DEC-R2-8)
+ * and the 1400 m that replaced it.
  *
- * WHY IT HAD TO GROW. `buildBuildings` applies no distance filter: it extrudes
- * every merged feature, i.e. everything in the res-7 fetch tile, 2.81 km across,
- * and the camera's far plane is 4000 m. So a 600 m terrain square sat under
- * ~2.8 km of city — and the buildings outside it were not left flat, they were
- * offset by `bilinear`'s per-axis CLAMP, which extrudes the edge profile outward
- * as stripes. That is fabricated height presented as data (finding R2-9), and
- * sizing the field to the geometry is what makes it unrepresentable rather than
- * merely unlikely.
+ * WHY IT HAD TO GROW, TWICE.
+ *
+ * - **600 -> 1400:** `buildBuildings` applies no distance filter — it extrudes
+ *   everything in the res-7 fetch tile, 2.81 km across — so a 600 m terrain
+ *   square sat under ~2.8 km of city, and the buildings outside it were not left
+ *   flat: `bilinear`'s per-axis CLAMP extruded the edge profile outward as
+ *   stripes. That is fabricated height presented as data (finding R2-9), and
+ *   sizing the field to the geometry makes it unrepresentable rather than merely
+ *   unlikely.
+ * - **1400 -> 2400:** the far plane doubled to 2400 (R5-4), and the ground has to
+ *   reach at least as far as the camera can see. 2400 rather than 2800 is the
+ *   SMALLEST value satisfying that — corner reach is still 3394 m, so the
+ *   diagonal keeps margin, and the accepted cost is ~3x the ground vertices
+ *   (54 756 -> 160 801) rather than ~4x. See `MAX_GROUND_SEGMENTS` for the
+ *   measurement.
  *
  * WHY THE COST OBJECTION DID NOT HOLD. DEC-15 costed this in Terrarium tiles,
  * and a z13 tile is ~3.1 km of ground at Cologne — so covering the whole
@@ -121,7 +133,7 @@ export const NEAR_FIELD_M = 300;
  * agree today with nothing asserting they always will" shape this demo keeps
  * finding, so it lives once, in the module both sides already share.
  */
-export const TERRAIN_EXTENT_M = 1400;
+export const TERRAIN_EXTENT_M = 2400;
 
 export interface Heightfield extends HeightfieldData {
   /** Relief in metres at an ENU point, relative to the frame origin. */
