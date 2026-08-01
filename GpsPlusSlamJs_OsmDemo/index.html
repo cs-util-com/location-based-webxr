@@ -272,11 +272,6 @@
         white-space: nowrap;
       }
 
-      /* A switch that cannot do anything in the current mode (DEC-R3-17).
-         Dimmed rather than hidden: a control that disappears reads as a bug. */
-      .layer-toggle-off {
-        opacity: 0.45;
-      }
       .hint {
         color: #6f7995;
         font-size: 0.78rem;
@@ -476,9 +471,10 @@
         ground
         <select id="ground-mode"></select>
       </label>
-      <!-- A DIAGNOSTIC, beside the height ramp rather than inside the layer
-           registry: it draws nothing in the scene. Off by default (DEC-R3-18) so
-           the demo's default picture is unchanged. -->
+      <!-- A DIAGNOSTIC, outside the layer registry because it draws nothing in
+           the scene. Off by default (DEC-R3-18) so the demo's default picture is
+           unchanged. Since W6 it is the only member of the debug group — the
+           height ramp that used to sit beside it is now a ground mode. -->
       <label class="layer-toggle" id="perf-stats-label">
         <input type="checkbox" id="perf-stats" />
         perf

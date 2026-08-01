@@ -420,8 +420,9 @@ test.describe("the layer toggles", () => {
     // plain JS running in node and `layers.ts` is TypeScript served by vite —
     // there is no import that reaches it. The duplication is tolerable precisely
     // because it fails loudly and immediately: adding `terrainDebug` turned this
-    // red on the very next gate run, which is the whole value of asserting a
-    // count. `layers.test.ts` pins the actual list.
+    // red on the very next gate run, and REMOVING it (W6, DEC-R5-4) turned it red
+    // again — which is the whole value of asserting a count. `layers.test.ts`
+    // pins the actual list.
     // `[data-layer]` RATHER THAN EVERY CHECKBOX IN THE CONTAINER. W15 grouped
     // the switches and put the perf toggle inside the diagnostics group, and it
     // is deliberately NOT a layer — so the loose selector started counting 9 and
@@ -429,11 +430,12 @@ test.describe("the layer toggles", () => {
     // The attribute is what "is a layer switch" actually means.
     await expect(
       page.locator("#layers input[type=checkbox][data-layer]"),
-    ).toHaveCount(8);
+    ).toHaveCount(7);
 
-    // EVERY layer starts on since W9 except the height ramp, which is a
-    // diagnostic rather than a thing in the world (DEC-R4-4, DEC-R3-17).
-    await expect(page.locator("#layer-terrainDebug")).not.toBeChecked();
+    // EVERY layer starts on, with no exception left (DEC-R4-4, DEC-R5-4). The
+    // height ramp used to be the one switch that started off; it is now an
+    // appearance of the ground mode and has no switch here at all.
+    await expect(page.locator("#layer-terrainDebug")).toHaveCount(0);
     await expect(page.locator("#layer-cells")).toBeChecked();
     await expect(page.locator("#layer-buildings")).toBeChecked();
     await expect(page.locator("#layer-trees")).toBeChecked();
@@ -1345,7 +1347,7 @@ test.describe("the 3D view", () => {
     await expect.poll(buildingPixels, REPAINT).toBeGreaterThan(2000);
   });
 
-  test("shows the terrain as a height ramp when that layer is on", async ({
+  test("shows the terrain as a height ramp, which is the default ground", async ({
     page,
   }) => {
     // WHY THIS TEST MATTERS (W24, DEC-R2-25). The ramp exists to answer "did the
@@ -1403,27 +1405,34 @@ test.describe("the 3D view", () => {
         return { cool, bright };
       });
 
-    const before = await rampEnds();
-    // The untinted scene has essentially none of either.
-    expect(before.cool).toBeLessThan(2000);
-
-    await page.getByRole("checkbox", { name: "height ramp" }).check();
-
-    // Both ends present, so the ramp spans rather than washing out. Generous
-    // floors: what this guards against produces zero of one or both.
+    // THE RAMP IS NOW THE DEFAULT (W6, DEC-R5-4), and this is where that is
+    // asserted on PIXELS rather than on a picker value. The test used to start
+    // from an untinted scene and check the box; it now starts from the ramp,
+    // which is the more valuable direction — "the default actually reaches the
+    // screen" is the claim R5-3 was really making.
     await expect
       .poll(async () => (await rampEnds()).cool, REPAINT)
       .toBeGreaterThan(20_000);
+    // Both ends present, so the ramp spans rather than washing out. Generous
+    // floors: what this guards against produces zero of one or both.
     await expect
       .poll(async () => (await rampEnds()).bright, REPAINT)
       .toBeGreaterThan(500);
 
-    // And it goes away again: a debug layer that cannot be switched off is a
-    // change to the primary look, which is what DEC-R2-1 forbids.
-    await page.getByRole("checkbox", { name: "height ramp" }).uncheck();
+    // And it goes away again on the plain entry: an appearance that cannot be
+    // turned off is a change to the primary look, which is what DEC-R2-1 forbids
+    // — the neutral ground has to stay reachable for the comparison R5-2 is about.
+    await page.locator("#ground-mode").selectOption("cpu");
     await expect
       .poll(async () => (await rampEnds()).cool, REPAINT)
       .toBeLessThan(2000);
+
+    // ...and comes back, on the OTHER strategy, which is the five-way form's
+    // whole point: the ramp is not tied to one displacement path.
+    await page.locator("#ground-mode").selectOption("gpu-ramp");
+    await expect
+      .poll(async () => (await rampEnds()).cool, REPAINT)
+      .toBeGreaterThan(20_000);
   });
 
   test("displaces the ground on the GPU, and it matches the CPU path", async ({
@@ -1480,12 +1489,19 @@ test.describe("the 3D view", () => {
         );
       });
 
+    // BOTH APPEARANCES MUST MATCH, or this compares colours instead of geometry.
+    // The picker gained a ramp axis in W6 and the DEFAULT is now `cpu-ramp`, so
+    // taking the "CPU" frame from the default and the "GPU" frame from `gpu` was
+    // comparing ramp-coloured ground against neutral ground — thousands of
+    // differing pixels, and nothing to do with displacement. Pinning the plain
+    // entry on both sides keeps the A/B about the thing it is named after.
+    await page.locator("#ground-mode").selectOption("cpu");
     const onCpu = await framePixels();
     expect(onCpu.length).toBeGreaterThan(0);
     await expect(page.locator("#status")).toContainText(/ground cpu \d/);
 
-    // The A/B switch is a three-state picker since W11; "GPU ground" is one of
-    // its options rather than a checkbox of its own.
+    // The A/B switch is a five-state picker since W6; "GPU ground" is one of its
+    // options rather than a checkbox of its own.
     await page.locator("#ground-mode").selectOption("gpu");
     await expect(page.locator("#status")).toContainText(/ground gpu \d/);
     const onGpu = await framePixels();
@@ -2517,28 +2533,35 @@ test.describe("the ground mode picker", () => {
     await expect(page.locator("#status")).toContainText(/ground cpu \d/);
   });
 
-  test("disables the height ramp when there is no ground to colour", async ({
+  test("offers the height ramp on both strategies and on neither without ground", async ({
     page,
   }) => {
-    // DEC-R3-17. The ramp re-colours the ground plane IN PLACE, so with the plane
-    // hidden the switch is a control that does nothing — the shape of half of
-    // this round's findings. Disabled rather than hidden, and its value survives
-    // the return, so the user's choice is not silently discarded.
+    // WHAT THIS REPLACES, and why the replacement is a stronger claim. It used to
+    // assert that the `terrainDebug` SWITCH was disabled under `No ground`
+    // (DEC-R3-17) — a runtime guard against offering a control that does nothing.
+    // W6 folds the ramp into the ground mode, so the guard is now structural:
+    // there is no `none-ramp` entry to choose. Asserting the picker's contents
+    // tests the property directly instead of testing the guard that used to
+    // approximate it.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const ramp = page.locator("#layer-terrainDebug");
-    await ramp.check();
-    await expect(ramp).toBeEnabled();
+    const picker = page.locator("#ground-mode");
+    await expect(picker.locator("option")).toHaveCount(5);
+    // Both strategies keep both appearances, which is what keeps the CPU-vs-GPU
+    // A/B reachable while the ramp is on (DEC-R3-3).
+    for (const value of ["cpu", "cpu-ramp", "gpu", "gpu-ramp", "none"]) {
+      await expect(picker.locator(`option[value="${value}"]`)).toHaveCount(1);
+    }
+    // ...and no combination of "no ground" with a ramp exists to be chosen.
+    await expect(picker.locator('option[value="none-ramp"]')).toHaveCount(0);
 
-    await page.locator("#ground-mode").selectOption("none");
-    await expect(ramp).toBeDisabled();
-    await expect(ramp).toBeChecked();
+    // The ramp is the DEFAULT (DEC-R5-4), which is the visible half of R5-3.
+    await expect(picker).toHaveValue("cpu-ramp");
 
-    await page.locator("#ground-mode").selectOption("gpu");
-    await expect(ramp).toBeEnabled();
-    await expect(ramp).toBeChecked();
+    await picker.selectOption("gpu-ramp");
+    await expect(page.locator("#status")).toContainText(/ground gpu \d/);
   });
 });
 

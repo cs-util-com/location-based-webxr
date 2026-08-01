@@ -49,8 +49,6 @@ function groupOf(layer: LayerKind): LayerGroup {
     case "roads":
     case "poi":
       return "world";
-    case "terrainDebug":
-      return "diagnostics";
   }
 }
 
@@ -80,17 +78,15 @@ export interface LayerTogglesOptions {
 export interface LayerToggles {
   /** Brings the switches in line with the store. Safe to call on every change. */
   render(layers: LayerSet): void;
-  /**
-   * Greys out a switch that cannot currently do anything (DEC-R3-17).
-   *
-   * DISABLED, NEVER HIDDEN, and its stored value is untouched: a control that
-   * disappears reads as a bug, and one whose value is silently reset loses the
-   * user's choice on the way back. The live case is `terrainDebug` under the
-   * `No ground` mode — the ramp re-colours the ground plane in place, so with the
-   * plane hidden the switch would be a control that does nothing, which is the
-   * shape of half of round 3's findings.
-   */
-  setAvailable(layer: LayerKind, available: boolean): void;
+  // `setAvailable` USED TO LIVE HERE and was removed with its only caller (W6,
+  // DEC-R5-4). It greyed out a switch that could not currently do anything, and
+  // `terrainDebug` under `No ground` was the only such case in the demo. Folding
+  // the ramp into the ground mode makes DEC-R3-17 true by construction — there is
+  // no `none-ramp` entry to offer — so the capability had nothing left to
+  // describe. If a layer ever genuinely needs disabling again, the rule it
+  // enforced is worth restoring verbatim: DISABLED, never hidden, with the stored
+  // value untouched, because a control that disappears reads as a bug and one
+  // whose value is silently reset loses the user's choice on the way back.
   dispose(): void;
 }
 
@@ -124,8 +120,6 @@ function labelFor(layer: LayerKind): string {
       return "roads";
     case "poi":
       return "POI";
-    case "terrainDebug":
-      return "height ramp";
   }
 }
 
@@ -187,14 +181,6 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
         // dispatch again — that is a loop, and a subtle one.
         if (input.checked !== enabled) input.checked = enabled;
       }
-    },
-    setAvailable(layer, available) {
-      const input = inputs.get(layer);
-      if (input === undefined) return;
-      input.disabled = !available;
-      // The LABEL is dimmed with it, or the text stays at full contrast beside a
-      // greyed box and the control reads as broken rather than as unavailable.
-      input.parentElement?.classList.toggle("layer-toggle-off", !available);
     },
     dispose() {
       container.removeEventListener("change", onInput);

@@ -39,13 +39,23 @@ describe("the layer set", () => {
       "plates",
       "roads",
       "poi",
-      // W24's diagnostic. Last because it is the only entry that answers a
-      // question about the DATA rather than showing a thing that is in the world.
-      "terrainDebug",
+      // `terrainDebug` USED TO BE HERE and is now a ground mode (W6, DEC-R5-4).
+      // Its removal is asserted rather than merely absent, because "the list no
+      // longer contains X" is the kind of change that a re-added entry would
+      // silently undo.
     ]);
   });
 
-  it("starts with EVERY layer on except the diagnostic (W9)", () => {
+  it("contains only things that are IN the world", () => {
+    // The point of removing the ramp (W6, DEC-R5-4): it re-coloured the ground
+    // plane in place rather than adding a surface, which is why it alone needed a
+    // "greyed out when there is no ground" rule. A registry whose entries are all
+    // the same KIND of thing is what lets `layer-order.ts` and `layer-toggles.ts`
+    // stay exhaustive without special cases.
+    expect([...ALL_LAYERS]).not.toContain("terrainDebug");
+  });
+
+  it("starts with EVERY layer on (W9, W6)", () => {
     // REPLACES "the layers the demo shipped with". That default existed so the
     // W10 registry migration had a known-good before to compare against; the
     // migration is complete, and what survived it was the historical order in
@@ -53,19 +63,22 @@ describe("the layer set", () => {
     // should see. The feedback: "standardmäßig sollten alle an sein".
     //
     // Derived from ALL_LAYERS rather than listed, so a new layer is on by
-    // default and this test cannot go stale by omission.
+    // default and this test cannot go stale by omission. There is no longer an
+    // exception to skip: W6 removed the only one by taking the diagnostic out of
+    // the registry entirely.
     for (const layer of ALL_LAYERS) {
-      if (layer === "terrainDebug") continue;
       expect(isLayerEnabled(DEFAULT_LAYERS, layer)).toBe(true);
     }
   });
 
-  it("keeps the height ramp OFF, which is the one exclusion", () => {
-    // It re-colours the ground rather than adding a thing to the world, the
-    // notes ask for it to stay off, and DEC-R3-17 already disables it outright
-    // when there is no ground to colour. Asserted separately so a bulk flip of
-    // the defaults cannot quietly take it with them.
-    expect(isLayerEnabled(DEFAULT_LAYERS, "terrainDebug")).toBe(false);
+  it("has no exclusions left to keep track of", () => {
+    // This used to assert that `terrainDebug` stayed OFF while everything else
+    // was on. DEC-R5-4 answered that question by moving the ramp out of the
+    // registry and turning it on by default as a ground appearance, so the claim
+    // worth pinning now is that DEFAULT_LAYERS is not quietly filtering anything
+    // — the filter was the whole reason this constant needed watching.
+    expect(Object.values(DEFAULT_LAYERS).every(Boolean)).toBe(true);
+    expect(Object.keys(DEFAULT_LAYERS)).toHaveLength(ALL_LAYERS.length);
   });
 
   it("toggles one layer without disturbing the others", () => {

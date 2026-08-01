@@ -2,9 +2,12 @@
 
 ## Purpose
 
-Turns terrain heights in metres into per-vertex colours for the `terrainDebug`
-layer (W24, DEC-R2-25) — the diagnostic view that answers "did the DEM load, or
-is this place simply flat?".
+Turns terrain heights in metres into per-vertex colours for the ground's height
+ramp (W24, DEC-R2-25) — the view that answers "did the DEM load, or is this place
+simply flat?".
+
+It was the `terrainDebug` LAYER until W6 (DEC-R5-4) folded it into the ground mode
+as an appearance and made it the default; the colour arithmetic here is unchanged.
 
 ## Public API
 

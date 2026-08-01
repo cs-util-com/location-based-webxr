@@ -55,8 +55,9 @@ import { attachHeaderCollapse } from "./header-collapse.js";
 import { createExplainCycle } from "./explain-cycle.js";
 import {
   GROUND_MODES,
-  groundDebugAvailable,
   groundModeLabel,
+  groundShowsRamp,
+  groundStrategy,
   parseGroundMode,
 } from "./ground-mode.js";
 import { attachLayerToggles } from "./layer-toggles.js";
@@ -495,11 +496,10 @@ async function main(): Promise<void> {
     // rebuilds the building and tree geometry it did not need to. Distinguishing
     // "layers changed" from "only the draw filter changed" would avoid it and is a
     // follow-up, not a correctness issue.
-    // Applied before the mesh, and unconditionally: the ramp re-colours the
-    // GROUND PLANE, which exists whether or not any mesh layer is on. Putting it
-    // behind `wantsMeshLayers` would make switching every other layer off also
-    // silently switch off the diagnostic.
-    buildingView.setGroundDebug(isLayerEnabled(layers, "terrainDebug"));
+    // The height ramp USED TO BE APPLIED HERE, from the layer set. It is now an
+    // appearance of the ground mode (W6, DEC-R5-4), so it is driven by the ground
+    // subscription below — which is also the only place that knows whether there
+    // is a plane to colour at all.
     // ASKED OF THE TABLE, not hand-listed. Both of these used to enumerate the
     // three mesh layers by name, so adding one meant remembering two places and
     // forgetting either gave a layer that toggles in the UI but never draws.
@@ -711,22 +711,34 @@ async function main(): Promise<void> {
 
   subscribe((view) => view.showBelowThreshold, redrawFromSnapshot);
 
-  subscribe(
-    (view) => view.groundMode,
-    (mode) => {
-      const ground = parseGroundMode(mode);
-      groundPicker.value = ground;
-      buildingView.setGroundDisplacement(ground);
-      // DEC-R3-17: the height ramp re-colours the ground plane IN PLACE, so with
-      // no plane it is a switch that does nothing. Disabled rather than hidden,
-      // and its stored value is untouched, so the choice survives the return.
-      layerToggles.setAvailable("terrainDebug", groundDebugAvailable(ground));
-      // The status line reports `ground <mode> <ms>`, which is W23's whole
-      // measurement — it has to follow the picker rather than the last terrain
-      // load.
-      writeStatus();
-    },
-  );
+  /**
+   * Puts the view in line with a ground mode. Both axes, from one value.
+   *
+   * `setGroundDisplacement` takes the STRATEGY only — the ramp is a material swap
+   * on the same plane and both materials carry the displacement, so an
+   * appearance change must not re-apply the terrain.
+   */
+  const applyGroundMode = (mode: string): void => {
+    const ground = parseGroundMode(mode);
+    groundPicker.value = ground;
+    buildingView.setGroundDisplacement(groundStrategy(ground));
+    buildingView.setGroundDebug(groundShowsRamp(ground));
+    // The status line reports `ground <mode> <ms>`, which is W23's whole
+    // measurement — it has to follow the picker rather than the last terrain
+    // load.
+    writeStatus();
+  };
+
+  subscribe((view) => view.groundMode, applyGroundMode);
+
+  // AND ONCE AT BOOT, which is new and is a defect fix rather than tidiness (W6).
+  // `subscribe` fires on CHANGE only, so nothing ever applied the initial mode —
+  // it worked because three independent defaults happened to agree: the store's
+  // seed, `GROUND_MODES[0]` (which is what a `<select>` shows when nothing sets
+  // its value) and `building-view`'s own initial field. DEC-R5-4 makes the
+  // default `cpu-ramp`, which is not `GROUND_MODES[0]`, so the coincidence
+  // breaks: the picker would have read "CPU ground" over a ramped scene.
+  applyGroundMode(selectOsmView(store.getState()).groundMode);
 
   /**
    * The details panel follows the selection, from whichever view produced it.

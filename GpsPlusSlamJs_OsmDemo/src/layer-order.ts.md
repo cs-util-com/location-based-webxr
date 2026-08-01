@@ -7,7 +7,7 @@
 - `groundLift(layer: LayerKind): number` — metres above the terrain surface for that layer. Total over `LayerKind`: every kind returns a number, and the `switch` is exhaustive with no `default`, so **adding a layer kind without deciding its lift is a compile error** rather than a silent 0.
   - Ground layers, lowest first: `plates` 0.04, `roads` 0.08, `areas` 0.12, `cells` 0.16.
   - `buildings`, `trees`, `poi` → **0**. They stand up from the ground and are separated by their own geometry; lifting them would only make them float.
-  - `terrainDebug` → **0**, for a different reason with the same answer: it re-colours the ground plane _in place_ rather than adding a surface above it, so a lifted copy would z-fight with the plane it replaces.
+  - `terrainDebug` used to be here at **0**, for a different reason with the same answer: it re-coloured the ground plane _in place_ rather than adding a surface above it, so a lifted copy would z-fight with the plane it replaced. It is now a ground mode rather than a layer (W6, DEC-R5-4) — and needing a bespoke reason to sit in this table was one of the signs it never belonged in the registry.
 - `GROUND_LAYERS` — the four lifted layers, lowest first. Exported so a test can assert the ladder is strictly increasing **without re-listing it**; a second list would be the thing that drifts.
 
 `STEP_M = 0.04` is deliberately not exported. Callers ask for a layer's lift, they do not do the arithmetic.

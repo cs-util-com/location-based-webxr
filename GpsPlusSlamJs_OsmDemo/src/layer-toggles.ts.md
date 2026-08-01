@@ -24,7 +24,7 @@ switch without depending on DOM order.
 - **THE IDS ARE THE CONTRACT.** Every switch keeps `#layer-<name>`; the e2e suite
   locates them that way, so the regrouping moved elements without renaming any.
 - **`extras` puts a non-layer control in a group.** The perf panel is a
-  diagnostic and belongs beside the height ramp, but it draws nothing in the
+  diagnostic and is now the ONLY member of that group, but it draws nothing in the
   scene so it is deliberately not in `ALL_LAYERS` (DEC-R3-18). Handing the
   element in beats a second registry or moving DOM after the fact.
 

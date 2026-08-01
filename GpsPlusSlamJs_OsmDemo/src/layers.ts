@@ -41,11 +41,12 @@ export const ALL_LAYERS = [
   "plates",
   "roads",
   "poi",
-  // A DIAGNOSTIC layer, not part of the scene's look (DEC-R2-25, W24). Last in
-  // the list because it is the only entry that answers a question about the data
-  // rather than showing a thing that is in the world.
-  "terrainDebug",
 ] as const;
+// `terrainDebug` USED TO BE HERE and is now a ground MODE (W6, DEC-R5-4). It was
+// always the odd entry — it re-coloured the ground plane in place rather than
+// adding a thing to the scene, which is why it alone needed a "greyed out when
+// there is no ground" rule. Every layer here is now a thing in the world, which
+// is what this list is supposed to mean. See `ground-mode.ts`.
 
 export type LayerKind = (typeof ALL_LAYERS)[number];
 
@@ -64,7 +65,7 @@ function setOf(enabled: Iterable<LayerKind>): LayerSet {
 }
 
 /**
- * EVERYTHING except the diagnostic (W9, R4-2, DEC-R4-4).
+ * EVERYTHING — and since W6 that is literally every layer (R4-2, DEC-R4-4).
  *
  * It used to be `cells`, `buildings`, `trees` — the three the demo shipped with —
  * and the reason was a migration reason: _"a default that switched new layers on
@@ -74,20 +75,20 @@ function setOf(enabled: Iterable<LayerKind>): LayerSet {
  * which is not a fact about what a user should see. The feedback put it plainly:
  * _"standardmäßig sollten alle an sein, also auch Landuse, Roads, POI"_.
  *
- * `terrainDebug` STAYS OFF, and it is the one exclusion. It is a diagnostic that
- * re-colours the ground rather than a thing in the world, the notes ask for it to
- * stay off, and DEC-R3-17 already disables it outright when there is no ground to
- * colour.
+ * **The one exclusion has been REMOVED, not switched on** (W6, DEC-R5-4). This
+ * used to filter out `terrainDebug`, and that filter was the only thing making
+ * this constant interesting. The height ramp is now an appearance of the ground
+ * mode rather than a layer, so there is nothing left to exclude and this is
+ * simply "all of them" — which is what the round-4 feedback asked for and what
+ * the list now honestly means.
  *
  * COST, STATED RATHER THAN DISCOVERED (N7): every layer on multiplies the
  * per-publish rebuild, and the 30 FPS the notes accept was measured with three
- * layers on, not seven. That is why W6 and W7 (instancing the trees and the POI
- * markers) land BEFORE this, and why W10's draw-call readout does too — so the
- * change can be measured rather than felt.
+ * layers on, not seven. That is why round 4's W6 and W7 (instancing the trees
+ * and the POI markers) landed BEFORE this, and why the draw-call readout did too
+ * — so the change can be measured rather than felt.
  */
-export const DEFAULT_LAYERS: LayerSet = setOf(
-  ALL_LAYERS.filter((layer) => layer !== "terrainDebug"),
-);
+export const DEFAULT_LAYERS: LayerSet = setOf(ALL_LAYERS);
 
 export function isLayerEnabled(layers: LayerSet, layer: LayerKind): boolean {
   return layers[layer];

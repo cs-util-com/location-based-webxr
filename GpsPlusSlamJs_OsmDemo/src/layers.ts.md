@@ -8,7 +8,7 @@ Names every render layer, and holds the enabled set as plain, immutable data.
 
 - `ALL_LAYERS` — the ordered tuple; `LayerKind` is derived from it.
 - `LayerSet` — `Readonly<Record<LayerKind, boolean>>`, exhaustive by construction.
-- `DEFAULT_LAYERS` — every layer except `terrainDebug` (W9).
+- `DEFAULT_LAYERS` — every layer, with no exclusion (W9, W6).
 - `isLayerEnabled`, `toggleLayer` (returns a new set), `serialiseLayers`,
   `parseLayers`.
 
@@ -23,16 +23,19 @@ Names every render layer, and holds the enabled set as plain, immutable data.
   impossible to view a merged area _over_ the cells that produced it — the first
   check anyone runs when a region looks wrong. One mechanism therefore covers both
   the layer question and the cells/areas question.
-- **`DEFAULT_LAYERS` is everything except the diagnostic (W9, DEC-R4-4).** It used
+- **`DEFAULT_LAYERS` is everything, full stop (W9, DEC-R4-4; W6, DEC-R5-4).** It used
   to be `cells`, `buildings`, `trees` — the three the demo shipped with — because
   the W10 registry migration needed a known-good baseline to compare against. That
   migration is complete, so what remained was the historical order in which builders
   happened to be written, which is not a fact about what a user should see.
   - It is DERIVED from `ALL_LAYERS` rather than listed, so a new layer is on by
     default and the test cannot go stale by omission.
-  - `terrainDebug` is the one exclusion, asserted separately so a bulk flip cannot
-    quietly take it along: it re-colours the ground rather than adding a thing to
-    the world, and DEC-R3-17 already disables it when there is no ground to colour.
+  - **The one exclusion was REMOVED rather than switched on.** `terrainDebug` used
+    to be filtered out here, and that filter was the only thing making this
+    constant interesting. It is now an appearance of the ground mode
+    (`ground-mode.ts`), so there is nothing left to exclude — and every remaining
+    entry in `ALL_LAYERS` is a thing in the world, which is what the list is
+    supposed to mean.
   - **Cost, stated rather than discovered (N7):** every layer on multiplies the
     per-publish rebuild, which is why W6/W7 (instancing) and W10 (the draw-call
     readout) land before this.
