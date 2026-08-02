@@ -51,111 +51,98 @@ import {
 } from "./fixtures.js";
 
 test.describe("the demo boots", () => {
-  test("loads the rule table and populates the category picker", async ({
+  test("loads the rule table, draws a basemap, reports its scale, and says when it is still widening", async ({
     page,
   }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    // The categories come from the rule table, not from a hardcoded list, so a
-    // populated picker is evidence the table parsed. `walkable` is the C#
-    // vocabulary's own category and the demo's default.
-    const options = page.locator("#category option");
-    await expect(options).not.toHaveCount(0);
-    await expect(page.locator("#category")).toHaveValue("walkable");
-
-    // WHICH TIER the table came from is displayed on purpose: a demo silently
-    // running on the checked-in snapshot looks identical to one on the live
-    // sheet, and they are different claims about what is being judged. The
-    // suite blocks the sheet, so `snapshot` is the correct answer here.
-    await expect(page.locator("#status")).toContainText("rules: snapshot");
-  });
-
-  test("requests basemap tiles, so the grid has something to sit on", async ({
-    page,
-  }) => {
+    // FOUR BEHAVIOURS, ONE BOOT. All four assert on the SAME boot and none of
+    // them mutates anything, so paying for four boots bought nothing but wall
+    // clock. `test.step` keeps each one separately named in the report, which is
+    // what stops a failure from pointing at a group instead of at a behaviour.
+    //
+    // The status observer is installed AFTER `goto` and BEFORE `waitForRefresh`:
+    // it lives in the page, so navigating destroys it, and the widening step
+    // needs it recording across the very boot the other three then assert on.
     const counts = await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    // `counts.basemap` was incremented and never read by anything — and unlike
-    // an unused TypeScript export, nothing in the gate would say so: knip does
-    // not reach into `playwright-tests/`, and this project has no lint stage.
-    // Spending it is better than deleting it: a Leaflet tile layer that never
-    // requests a tile still renders a perfectly convincing empty map, and
-    // "the affordance cells are drawn" would keep passing over a blank canvas.
-    expect(counts.basemap).toBeGreaterThan(0);
-  });
-
-  test("reports the scale it is drawing with, as a legend", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    // Without this the demo answers "does it look plausible?" instead of "is 1
-    // really the identity here?" — and only the second is worth a session.
-    //
-    // The claim moved from a sentence to a swatch strip on 2026-07-29 (DEC-13):
-    // the sentence was reported as unreadable, but it is the on-screen answer to
-    // iteration 8's second question, so it was replaced pictorially rather than
-    // deleted. It survives verbatim as the strip's accessible text, which is
-    // what the `title` assertion below pins — a legend that dropped it would
-    // pass a "there are swatches" test while losing the answer.
-    const legend = page.locator("#legend");
-    await expect(legend).toBeVisible();
-    await expect(legend.locator(".legend-swatch")).not.toHaveCount(0);
-    await expect(legend.locator(".legend-strip")).toHaveAttribute(
-      "title",
-      /identity is 1.*log scale/s,
-    );
-
-    // The ends of the ramp are labelled with real numbers, or the colours are
-    // a gradient with no units.
-    await expect(legend.locator(".legend-min")).toHaveText("1");
-    await expect(legend.locator(".legend-max")).not.toBeEmpty();
-  });
-
-  test("says it is still widening, and then stops saying it", async ({
-    page,
-  }) => {
-    // F42, and this is the USER-FACING half of that fix rather than a test
-    // convenience. Scoring widens over three rings and publishes after each one,
-    // and `snapshotReady` sets `loading: idle` every time — so the status line
-    // presented ring 2's cell, region and triangle counts exactly as it presents
-    // the final ones. A user watched a settled-looking answer silently change
-    // twice with nothing to say more was coming. The counts were never wrong;
-    // the impression that they were final was.
-    //
-    // THROUGH THE MUTATION OBSERVER, not a poll. The widening marker is on
-    // screen only between the first ring publishing and the last, and a poll
-    // interval wide enough to be cheap is wide enough to miss it entirely —
-    // which would mean this test passes on the bug it exists to catch. That is
-    // the same reason `recordStatus` exists for the superseded-refresh test.
-    // AFTER `goto`, not before: the observer lives in the page, so navigating
-    // destroys it. Installing it first recorded nothing at all and the test
-    // failed for a reason that had nothing to do with the widening. There is no
-    // race in doing it here — `goto` resolves on load and the first ring is
-    // several seconds of fetching and scoring away.
-    await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     const history = await recordStatus(page);
     await waitForRefresh(page);
 
-    const seen = await history();
-    // It appeared at least once, alongside a real cell count — a marker on an
-    // empty status line would prove nothing about which snapshot it qualified.
-    expect(
-      seen.filter((t) => /widening/.test(t) && /\d+ cells/.test(t)),
-    ).not.toHaveLength(0);
+    await test.step("loads the rule table and populates the category picker", async () => {
+      // The categories come from the rule table, not from a hardcoded list, so a
+      // populated picker is evidence the table parsed. `walkable` is the C#
+      // vocabulary's own category and the demo's default.
+      const options = page.locator("#category option");
+      await expect(options).not.toHaveCount(0);
+      await expect(page.locator("#category")).toHaveValue("walkable");
 
-    // And it is GONE at the end. `waitForRefresh` now waits for exactly this, so
-    // a marker that never cleared would hang the whole suite rather than fail
-    // here — but asserting it keeps the reason visible at the point of the claim.
-    await expect(page.locator("#status")).not.toContainText("widening");
-    await expect(page.locator("#status")).toContainText(/\d+ cells/);
+      // WHICH TIER the table came from is displayed on purpose: a demo silently
+      // running on the checked-in snapshot looks identical to one on the live
+      // sheet, and they are different claims about what is being judged. The
+      // suite blocks the sheet, so `snapshot` is the correct answer here.
+      await expect(page.locator("#status")).toContainText("rules: snapshot");
+    });
+
+    await test.step("requests basemap tiles, so the grid has something to sit on", async () => {
+      // `counts.basemap` was incremented and never read by anything — and unlike
+      // an unused TypeScript export, nothing in the gate would say so: knip does
+      // not reach into `playwright-tests/`, and this project has no lint stage.
+      // Spending it is better than deleting it: a Leaflet tile layer that never
+      // requests a tile still renders a perfectly convincing empty map, and
+      // "the affordance cells are drawn" would keep passing over a blank canvas.
+      expect(counts.basemap).toBeGreaterThan(0);
+    });
+
+    await test.step("reports the scale it is drawing with, as a legend", async () => {
+      // Without this the demo answers "does it look plausible?" instead of "is 1
+      // really the identity here?" — and only the second is worth a session.
+      //
+      // The claim moved from a sentence to a swatch strip on 2026-07-29 (DEC-13):
+      // the sentence was reported as unreadable, but it is the on-screen answer to
+      // iteration 8's second question, so it was replaced pictorially rather than
+      // deleted. It survives verbatim as the strip's accessible text, which is
+      // what the `title` assertion below pins — a legend that dropped it would
+      // pass a "there are swatches" test while losing the answer.
+      const legend = page.locator("#legend");
+      await expect(legend).toBeVisible();
+      await expect(legend.locator(".legend-swatch")).not.toHaveCount(0);
+      await expect(legend.locator(".legend-strip")).toHaveAttribute(
+        "title",
+        /identity is 1.*log scale/s,
+      );
+
+      // The ends of the ramp are labelled with real numbers, or the colours are
+      // a gradient with no units.
+      await expect(legend.locator(".legend-min")).toHaveText("1");
+      await expect(legend.locator(".legend-max")).not.toBeEmpty();
+    });
+
+    await test.step("says it is still widening, and then stops saying it", async () => {
+      // F42, and this is the USER-FACING half of that fix rather than a test
+      // convenience. Scoring widens over three rings and publishes after each one,
+      // and `snapshotReady` sets `loading: idle` every time — so the status line
+      // presented ring 2's cell, region and triangle counts exactly as it presents
+      // the final ones. A user watched a settled-looking answer silently change
+      // twice with nothing to say more was coming. The counts were never wrong;
+      // the impression that they were final was.
+      //
+      // THROUGH THE MUTATION OBSERVER, not a poll. The widening marker is on
+      // screen only between the first ring publishing and the last, and a poll
+      // interval wide enough to be cheap is wide enough to miss it entirely —
+      // which would mean this test passes on the bug it exists to catch. That is
+      // the same reason `recordStatus` exists for the superseded-refresh test.
+      const seen = await history();
+      // It appeared at least once, alongside a real cell count — a marker on an
+      // empty status line would prove nothing about which snapshot it qualified.
+      expect(
+        seen.filter((t) => /widening/.test(t) && /\d+ cells/.test(t)),
+      ).not.toHaveLength(0);
+
+      // And it is GONE at the end. `waitForRefresh` now waits for exactly this, so
+      // a marker that never cleared would hang the whole suite rather than fail
+      // here — but asserting it keeps the reason visible at the point of the claim.
+      await expect(page.locator("#status")).not.toContainText("widening");
+      await expect(page.locator("#status")).toContainText(/\d+ cells/);
+    });
   });
 });
 
@@ -458,643 +445,644 @@ test.describe("the header", () => {
 });
 
 test.describe("the layer toggles", () => {
-  test("switch geometry off and on without refetching", async ({ page }) => {
-    // WHY THIS TEST MATTERS (W10, DEC-R2-10/12). The registry's whole purpose is
-    // that a later AR mode can ask for buildings + POI markers and skip ground
-    // plates. That is only true if a switch actually changes what is BUILT — and
-    // the cheap mistake is to gate the drawing while still doing all the work, or
-    // to trigger a refetch for a presentation-only change.
-    //
-    // Asserted through the status line's own counters rather than pixels: they are
-    // reported from what was drawn, so they cannot agree with a wrong picture.
+  test("switch geometry, draw plates, and clear the grid in both views", async ({
+    page,
+  }) => {
     const counts = await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    // Generated from ALL_LAYERS, so a new builder cannot arrive without a switch.
-    //
-    // The number is DUPLICATED here rather than derived, because this file is
-    // plain JS running in node and `layers.ts` is TypeScript served by vite —
-    // there is no import that reaches it. The duplication is tolerable precisely
-    // because it fails loudly and immediately: adding `terrainDebug` turned this
-    // red on the very next gate run, and REMOVING it (W6, DEC-R5-4) turned it red
-    // again — which is the whole value of asserting a count. `layers.test.ts`
-    // pins the actual list.
-    // `[data-layer]` RATHER THAN EVERY CHECKBOX IN THE CONTAINER. W15 grouped
-    // the switches and put the perf toggle inside the diagnostics group, and it
-    // is deliberately NOT a layer — so the loose selector started counting 9 and
-    // this assertion failed for a reason that had nothing to do with the layers.
-    // The attribute is what "is a layer switch" actually means.
-    await expect(
-      page.locator("#layers input[type=checkbox][data-layer]"),
-    ).toHaveCount(7);
+    await test.step("switch geometry off and on without refetching", async () => {
+      // WHY THIS TEST MATTERS (W10, DEC-R2-10/12). The registry's whole purpose is
+      // that a later AR mode can ask for buildings + POI markers and skip ground
+      // plates. That is only true if a switch actually changes what is BUILT — and
+      // the cheap mistake is to gate the drawing while still doing all the work, or
+      // to trigger a refetch for a presentation-only change.
+      //
+      // Asserted through the status line's own counters rather than pixels: they are
+      // reported from what was drawn, so they cannot agree with a wrong picture.
+      //
+      // Generated from ALL_LAYERS, so a new builder cannot arrive without a switch.
+      //
+      // The number is DUPLICATED here rather than derived, because this file is
+      // plain JS running in node and `layers.ts` is TypeScript served by vite —
+      // there is no import that reaches it. The duplication is tolerable precisely
+      // because it fails loudly and immediately: adding `terrainDebug` turned this
+      // red on the very next gate run, and REMOVING it (W6, DEC-R5-4) turned it red
+      // again — which is the whole value of asserting a count. `layers.test.ts`
+      // pins the actual list.
+      // `[data-layer]` RATHER THAN EVERY CHECKBOX IN THE CONTAINER. W15 grouped
+      // the switches and put the perf toggle inside the diagnostics group, and it
+      // is deliberately NOT a layer — so the loose selector started counting 9 and
+      // this assertion failed for a reason that had nothing to do with the layers.
+      // The attribute is what "is a layer switch" actually means.
+      await expect(
+        page.locator("#layers input[type=checkbox][data-layer]"),
+      ).toHaveCount(7);
 
-    // EVERY layer starts on, with no exception left (DEC-R4-4, DEC-R5-4). The
-    // height ramp used to be the one switch that started off; it is now an
-    // appearance of the ground mode and has no switch here at all.
-    await expect(page.locator("#layer-terrainDebug")).toHaveCount(0);
-    await expect(page.locator("#layer-cells")).toBeChecked();
-    await expect(page.locator("#layer-buildings")).toBeChecked();
-    await expect(page.locator("#layer-trees")).toBeChecked();
-    // W9 turned every layer on by default, so a test about switching a layer ON
-    // has to switch it OFF first. Asserting the "off" state is still worth doing
-    // — it is what proves the toggle works in both directions rather than only
-    // in the one the test happens to exercise.
-    await expect(page.locator("#layer-roads")).toBeChecked();
-    await page.locator("#layer-roads").uncheck();
-    await expect(page.locator("#layer-roads")).not.toBeChecked();
+      // EVERY layer starts on, with no exception left (DEC-R4-4, DEC-R5-4). The
+      // height ramp used to be the one switch that started off; it is now an
+      // appearance of the ground mode and has no switch here at all.
+      await expect(page.locator("#layer-terrainDebug")).toHaveCount(0);
+      await expect(page.locator("#layer-cells")).toBeChecked();
+      await expect(page.locator("#layer-buildings")).toBeChecked();
+      await expect(page.locator("#layer-trees")).toBeChecked();
+      // W9 turned every layer on by default, so a test about switching a layer ON
+      // has to switch it OFF first. Asserting the "off" state is still worth doing
+      // — it is what proves the toggle works in both directions rather than only
+      // in the one the test happens to exercise.
+      await expect(page.locator("#layer-roads")).toBeChecked();
+      await page.locator("#layer-roads").uncheck();
+      await expect(page.locator("#layer-roads")).not.toBeChecked();
 
-    const status = page.locator("#status");
-    await expect(status).toContainText(/\d+ volumes/);
-    const before = counts.overpassQuery;
+      const status = page.locator("#status");
+      await expect(status).toContainText(/\d+ volumes/);
+      const before = counts.overpassQuery;
 
-    await page.locator("#layer-buildings").uncheck();
+      await page.locator("#layer-buildings").uncheck();
 
-    // The counters must drop to zero volumes: the layer is genuinely not built,
-    // not merely hidden.
-    await expect(status).not.toContainText(/[1-9]\d* volumes/);
-    // NO REFETCH. Layers are presentation; the snapshot in the store is reused.
-    expect(counts.overpassQuery).toBe(before);
+      // The counters must drop to zero volumes: the layer is genuinely not built,
+      // not merely hidden.
+      await expect(status).not.toContainText(/[1-9]\d* volumes/);
+      // NO REFETCH. Layers are presentation; the snapshot in the store is reused.
+      expect(counts.overpassQuery).toBe(before);
 
-    // And the cells are independent — switching buildings off must not disturb them.
-    await expect(
-      page.locator("#map path.affordance-cell").first(),
-    ).toBeVisible();
+      // And the cells are independent — switching buildings off must not disturb them.
+      await expect(
+        page.locator("#map path.affordance-cell").first(),
+      ).toBeVisible();
 
-    await page.locator("#layer-buildings").check();
-    await expect(status).toContainText(/[1-9]\d* volumes/);
-    expect(counts.overpassQuery).toBe(before);
-  });
+      await page.locator("#layer-buildings").check();
+      await expect(status).toContainText(/[1-9]\d* volumes/);
+      expect(counts.overpassQuery).toBe(before);
 
-  test("draws ground plates when the layer is switched on", async ({
-    page,
-  }) => {
-    // WHY THIS TEST MATTERS (W11). The feedback asked for ground areas as real
-    // geometry — "flache Platten quasi im 3D-Raum" — and the registry only earns
-    // its keep if a NEW builder is reachable through it without touching the ones
-    // already there. So this asserts the default is OFF (the shipped picture must
-    // stay reproducible) and that switching it on changes what is DRAWN.
-    //
-    // This test previously asserted only that plates were BUILT and counted, with a
-    // long note recording that the pixels never changed and I could not find why.
-    // The cause was the shader outage: plates are `MeshStandardMaterial`, so they
-    // were compiled-out along with the buildings, the trees and the ground plane.
-    // Every experiment I ran — lifting them 100 m, colouring them bright red — was
-    // testing geometry that the renderer was silently refusing to draw.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+      // Roads back on, so the next step starts from the boot state this one did.
+      await page.locator("#layer-roads").check();
+      await expect(page.locator("#layer-roads")).toBeChecked();
+    });
 
-    // W9 turned every layer on by default, so a test about switching a layer ON
-    // has to switch it OFF first. Asserting the "off" state is still worth doing
-    // — it is what proves the toggle works in both directions rather than only
-    // in the one the test happens to exercise.
-    await expect(page.locator("#layer-plates")).toBeChecked();
-    await page.locator("#layer-plates").uncheck();
-    await expect(page.locator("#layer-plates")).not.toBeChecked();
-    await expect(page.locator("#status")).not.toContainText(/ground areas/);
+    await test.step("draws ground plates when the layer is switched on", async () => {
+      // WHY THIS TEST MATTERS (W11). The feedback asked for ground areas as real
+      // geometry — "flache Platten quasi im 3D-Raum" — and the registry only earns
+      // its keep if a NEW builder is reachable through it without touching the ones
+      // already there. So this asserts the default is OFF (the shipped picture must
+      // stay reproducible) and that switching it on changes what is DRAWN.
+      //
+      // This test previously asserted only that plates were BUILT and counted, with a
+      // long note recording that the pixels never changed and I could not find why.
+      // The cause was the shader outage: plates are `MeshStandardMaterial`, so they
+      // were compiled-out along with the buildings, the trees and the ground plane.
+      // Every experiment I ran — lifting them 100 m, colouring them bright red — was
+      // testing geometry that the renderer was silently refusing to draw.
+      //
+      // W9 turned every layer on by default, so a test about switching a layer ON
+      // has to switch it OFF first. Asserting the "off" state is still worth doing
+      // — it is what proves the toggle works in both directions rather than only
+      // in the one the test happens to exercise.
+      await expect(page.locator("#layer-plates")).toBeChecked();
+      await page.locator("#layer-plates").uncheck();
+      await expect(page.locator("#layer-plates")).not.toBeChecked();
+      await expect(page.locator("#status")).not.toContainText(/ground areas/);
 
-    const shot = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-      });
+      const shot = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+        });
 
-    // Wait for the scene to settle, or the startup terrain frame is what gets
-    // compared rather than the layer change (the same trap as R2-3's test).
-    let previous = await shot();
-    await expect
-      .poll(async () => {
-        const current = await shot();
-        const stable = current === previous;
-        previous = current;
-        return stable;
-      }, REPAINT)
-      .toBe(true);
-    const before = previous;
+      // Wait for the scene to settle, or the startup terrain frame is what gets
+      // compared rather than the layer change (the same trap as R2-3's test).
+      let previous = await shot();
+      await expect
+        .poll(async () => {
+          const current = await shot();
+          const stable = current === previous;
+          previous = current;
+          return stable;
+        }, REPAINT)
+        .toBe(true);
+      const before = previous;
 
-    await page.locator("#layer-plates").check();
-    await expect(page.locator("#layer-plates")).toBeChecked();
+      await page.locator("#layer-plates").check();
+      await expect(page.locator("#layer-plates")).toBeChecked();
 
-    // The fixture is Cologne Volksgarten: 3 `amenity=parking` areas, landuse, a
-    // park, a garden and playgrounds. Both halves are asserted — that the geometry
-    // was built, and that it reached the screen.
-    // `\d`, not a bare `d`: the missing backslash made this match a literal "d",
-    // so it could not match a two-digit count — and this fixture builds 11 plates.
-    await expect(page.locator("#status")).toContainText(
-      /[1-9]\d* ground areas/,
-    );
-    await expect.poll(shot, REPAINT).not.toBe(before);
-  });
+      // The fixture is Cologne Volksgarten: 3 `amenity=parking` areas, landuse, a
+      // park, a garden and playgrounds. Both halves are asserted — that the geometry
+      // was built, and that it reached the screen.
+      // `\d`, not a bare `d`: the missing backslash made this match a literal "d",
+      // so it could not match a two-digit count — and this fixture builds 11 plates.
+      await expect(page.locator("#status")).toContainText(
+        /[1-9]\d* ground areas/,
+      );
+      await expect.poll(shot, REPAINT).not.toBe(before);
+    });
 
-  test("switching the cells layer off clears the grid in BOTH views", async ({
-    page,
-  }) => {
-    // The registry has to reach every view, or one of them keeps drawing a layer
-    // the store says is off — the cross-view disagreement the store exists to
-    // prevent, reintroduced by the mechanism meant to prevent it.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+    await test.step("switching the cells layer off clears the grid in BOTH views", async () => {
+      // The registry has to reach every view, or one of them keeps drawing a layer
+      // the store says is off — the cross-view disagreement the store exists to
+      // prevent, reintroduced by the mechanism meant to prevent it.
+      await expect(
+        page.locator("#map path.affordance-cell").first(),
+      ).toBeVisible();
 
-    await expect(
-      page.locator("#map path.affordance-cell").first(),
-    ).toBeVisible();
+      await page.locator("#layer-cells").uncheck();
 
-    await page.locator("#layer-cells").uncheck();
-
-    await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
-    // The 3D grid is inside a canvas, so it is asserted through the click it would
-    // otherwise answer: with no grid there is nothing to pick.
-    const canvas = page.locator("#scene canvas");
-    const box = await canvas.boundingBox();
-    if (box === null) throw new Error("no canvas box");
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await expect(page.locator("#details")).toBeHidden();
+      await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
+      // The 3D grid is inside a canvas, so it is asserted through the click it would
+      // otherwise answer: with no grid there is nothing to pick.
+      const canvas = page.locator("#scene canvas");
+      const box = await canvas.boundingBox();
+      if (box === null) throw new Error("no canvas box");
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await expect(page.locator("#details")).toBeHidden();
+    });
   });
 });
 
 test.describe("the affordance map", () => {
-  test("draws res-13 cells over the basemap", async ({ page }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    // The class exists so this assertion cannot be satisfied by the region
-    // outlines: Leaflet renders every polygon as an indistinguishable <path>,
-    // and a test matching all of them would pass with an empty grid.
-    const cells = page.locator("#map path.affordance-cell");
-    await expect(cells.first()).toBeVisible();
-    expect(await cells.count()).toBeGreaterThan(10);
-  });
-
-  test("draws the fetched extent as a box, and says how big it is", async ({
+  test("draws the cells, the extent, the outlines, the popup — and redraws on a category switch", async ({
     page,
   }) => {
-    // WHY THIS MATTERS. "One res-7 tile" is the unit the whole plan is written
-    // in, and it stays an abstraction until it is drawn over a city. The box is
-    // also NOT the hexagon — Overpass has no hexagon primitive, so the query
-    // covers the tile's bounding box and we pay ~39% over-fetch on every tile.
-    // Both shapes are asserted because drawing only the box would confirm the
-    // exact misreading the display exists to correct.
+    // FIVE BEHAVIOURS, ONE BOOT, and the plan for this budgeted two tests here.
+    // One is enough: the first four are read-only, and the category switch is the
+    // only mutation, so it simply goes last. The ordering rule does the work that
+    // a second boot would have.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await expect(page.locator("#map path.fetch-extent").first()).toBeVisible();
-    await expect(
-      page.locator("#map path.fetch-tile-hex").first(),
-    ).toBeVisible();
-
-    // The picture answers "how big" only roughly; the status line has to carry
-    // the number, or the over-fetch stays invisible on a zoomed-out map.
-    const status = await page.locator("#status").textContent();
-    expect(status).toMatch(/box per tile/);
-    expect(status).toMatch(/hexagon/);
-    expect(status).not.toMatch(/NaN|Infinity/);
-  });
-
-  test("draws region outlines, and draws them OVER the cells", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const outlines = page.locator("#map path.region-outline");
-    await expect(outlines.first()).toBeVisible();
-
-    // Paint order is invisible to every unit test and decides whether the
-    // boundary is legible: a 2 px dashed stroke under 55 %-opacity fills is
-    // washed out exactly where it matters. Leaflet's default renderer puts all
-    // vectors in one shared <svg>, so DOCUMENT ORDER is paint order — the
-    // outlines must come last.
-    //
-    // This assertion earned its place immediately: the source comment claimed
-    // regions were drawn underneath while the code drew them on top, and
-    // nothing else in the suite could have noticed.
-    const order = await page.evaluate(() => {
-      const paths = [...document.querySelectorAll("#map svg path")];
-      return {
-        lastCell: paths.findLastIndex((p) =>
-          p.classList.contains("affordance-cell"),
-        ),
-        firstRegion: paths.findIndex((p) =>
-          p.classList.contains("region-outline"),
-        ),
-      };
+    await test.step("draws res-13 cells over the basemap", async () => {
+      // The class exists so this assertion cannot be satisfied by the region
+      // outlines: Leaflet renders every polygon as an indistinguishable <path>,
+      // and a test matching all of them would pass with an empty grid.
+      const cells = page.locator("#map path.affordance-cell");
+      await expect(cells.first()).toBeVisible();
+      expect(await cells.count()).toBeGreaterThan(10);
     });
-    expect(order.firstRegion).toBeGreaterThanOrEqual(0);
-    expect(order.firstRegion).toBeGreaterThan(order.lastCell);
-  });
 
-  test("a cell popup names the OSM elements that produced its score, and they are clickable", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+    await test.step("draws the fetched extent as a box, and says how big it is", async () => {
+      // WHY THIS MATTERS. "One res-7 tile" is the unit the whole plan is written
+      // in, and it stays an abstraction until it is drawn over a city. The box is
+      // also NOT the hexagon — Overpass has no hexagon primitive, so the query
+      // covers the tile's bounding box and we pay ~39% over-fetch on every tile.
+      // Both shapes are asserted because drawing only the box would confirm the
+      // exact misreading the display exists to correct.
+      await expect(
+        page.locator("#map path.fetch-extent").first(),
+      ).toBeVisible();
+      await expect(
+        page.locator("#map path.fetch-tile-hex").first(),
+      ).toBeVisible();
 
-    // Any new tab must land on a fixture, never on openstreetmap.org: this
-    // suite is offline by policy, and that is about not hammering donated
-    // infrastructure before it is about determinism. Routed on the CONTEXT, not
-    // the page, so it also covers the tab the link opens.
-    await page
-      .context()
-      .route("https://www.openstreetmap.org/**", (route) =>
-        route.fulfill({ contentType: "text/html", body: "<html>osm</html>" }),
+      // The picture answers "how big" only roughly; the status line has to carry
+      // the number, or the over-fetch stays invisible on a zoomed-out map.
+      const status = await page.locator("#status").textContent();
+      expect(status).toMatch(/box per tile/);
+      expect(status).toMatch(/hexagon/);
+      expect(status).not.toMatch(/NaN|Infinity/);
+    });
+
+    await test.step("draws region outlines, and draws them OVER the cells", async () => {
+      const outlines = page.locator("#map path.region-outline");
+      await expect(outlines.first()).toBeVisible();
+
+      // Paint order is invisible to every unit test and decides whether the
+      // boundary is legible: a 2 px dashed stroke under 55 %-opacity fills is
+      // washed out exactly where it matters. Leaflet's default renderer puts all
+      // vectors in one shared <svg>, so DOCUMENT ORDER is paint order — the
+      // outlines must come last.
+      //
+      // This assertion earned its place immediately: the source comment claimed
+      // regions were drawn underneath while the code drew them on top, and
+      // nothing else in the suite could have noticed.
+      const order = await page.evaluate(() => {
+        const paths = [...document.querySelectorAll("#map svg path")];
+        return {
+          lastCell: paths.findLastIndex((p) =>
+            p.classList.contains("affordance-cell"),
+          ),
+          firstRegion: paths.findIndex((p) =>
+            p.classList.contains("region-outline"),
+          ),
+        };
+      });
+      expect(order.firstRegion).toBeGreaterThanOrEqual(0);
+      expect(order.firstRegion).toBeGreaterThan(order.lastCell);
+    });
+
+    await test.step("a cell popup names the OSM elements that produced its score, and they are clickable", async () => {
+      // Any new tab must land on a fixture, never on openstreetmap.org: this
+      // suite is offline by policy, and that is about not hammering donated
+      // infrastructure before it is about determinism. Routed on the CONTEXT, not
+      // the page, so it also covers the tab the link opens.
+      await page
+        .context()
+        .route("https://www.openstreetmap.org/**", (route) =>
+          route.fulfill({ contentType: "text/html", body: "<html>osm</html>" }),
+        );
+
+      const cell = page.locator("#map path.affordance-cell").first();
+      await cell.hover();
+
+      // HOVER gives the number. That is all it can give: Leaflet tooltips are
+      // non-interactive by design.
+      const tooltip = page.locator(".leaflet-tooltip").first();
+      await expect(tooltip).toBeVisible();
+      await expect(tooltip).toContainText("walkable =");
+
+      // CLICK gives the evidence. Provenance is the whole reason the C# reference
+      // kept a contributing-entries map: it turns "that cell looks wrong" into
+      // "that cell is wrong BECAUSE of way/12345" in one click.
+      await cell.click();
+      const popup = page.locator(".leaflet-popup");
+      await expect(popup).toBeVisible();
+
+      // It STAYS open when the pointer leaves — the whole difference from a
+      // tooltip, and what makes the links reachable at all.
+      await page.mouse.move(0, 0);
+      await expect(popup).toBeVisible();
+
+      // THE ASSERTION THAT WAS MISSING, and the reason this shipped broken. The
+      // old test asserted the link was PRESENT (`toHaveCount(1)`) — which a dead
+      // link satisfies exactly as well as a live one. These links lived in a
+      // tooltip, which Leaflet renders with `pointer-events: none`, so the demo's
+      // advertised core debugging affordance had never once been clickable while
+      // the suite stayed green. Presence is not reachability: click it.
+      const link = popup.locator('a[href*="openstreetmap.org/"]').first();
+      await expect(link).toHaveAttribute(
+        "href",
+        /openstreetmap\.org\/(node|way|relation)\/\d+/,
+      );
+      const opened = await Promise.all([
+        page.waitForEvent("popup"),
+        link.click(),
+      ]);
+      expect(opened[0].url()).toMatch(/openstreetmap\.org\//);
+
+      // CLOSED before the next step. A Leaflet popup is an overlay pane above the
+      // cells, and the step below hovers one to read its tooltip — an open popup
+      // left behind would swallow that hover and fail a step that is not about
+      // popups at all.
+      await page.locator(".leaflet-popup-close-button").click();
+      await expect(popup).toHaveCount(0);
+    });
+
+    await test.step("switching category redraws the grid", async () => {
+      const other = await page.evaluate(() => {
+        const select = document.getElementById("category");
+        const values = [...(select?.querySelectorAll("option") ?? [])].map(
+          (o) => o.value,
+        );
+        return values.find((v) => v !== "walkable") ?? "";
+      });
+      test.skip(other === "", "rule table declares only one category");
+
+      await page.locator("#category").selectOption(other);
+      await expect(page.locator("#status")).toContainText(`${other} regions`);
+
+      // A category switch that rescored but never repainted would leave the map
+      // showing `walkable` under a `restingArea` label — the exact kind of stale
+      // view a status-line-only assertion cannot see.
+      //
+      // ASSERTED VIA THE TOOLTIP, not the fill. The earlier version read the fill
+      // before and after and then only checked both for non-nullness, so a cell
+      // that kept its exact `walkable` colour passed — which is precisely the
+      // failure the comment claims to catch. Comparing the fills instead would be
+      // legitimately flaky, because two categories can land a given cell in the
+      // same colour bucket. The tooltip cannot be stale: `map-view.ts` rebuilds it
+      // per render with `tooltipFor(cell, category, score)`, so it NAMES the
+      // category the paths were drawn for.
+      const cell = page.locator("#map path.affordance-cell").first();
+      await expect(cell).toBeVisible();
+      await cell.hover();
+      await expect(page.locator(".leaflet-tooltip").first()).toContainText(
+        `${other} =`,
       );
 
-    const cell = page.locator("#map path.affordance-cell").first();
-    await cell.hover();
-
-    // HOVER gives the number. That is all it can give: Leaflet tooltips are
-    // non-interactive by design.
-    const tooltip = page.locator(".leaflet-tooltip").first();
-    await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText("walkable =");
-
-    // CLICK gives the evidence. Provenance is the whole reason the C# reference
-    // kept a contributing-entries map: it turns "that cell looks wrong" into
-    // "that cell is wrong BECAUSE of way/12345" in one click.
-    await cell.click();
-    const popup = page.locator(".leaflet-popup");
-    await expect(popup).toBeVisible();
-
-    // It STAYS open when the pointer leaves — the whole difference from a
-    // tooltip, and what makes the links reachable at all.
-    await page.mouse.move(0, 0);
-    await expect(popup).toBeVisible();
-
-    // THE ASSERTION THAT WAS MISSING, and the reason this shipped broken. The
-    // old test asserted the link was PRESENT (`toHaveCount(1)`) — which a dead
-    // link satisfies exactly as well as a live one. These links lived in a
-    // tooltip, which Leaflet renders with `pointer-events: none`, so the demo's
-    // advertised core debugging affordance had never once been clickable while
-    // the suite stayed green. Presence is not reachability: click it.
-    const link = popup.locator('a[href*="openstreetmap.org/"]').first();
-    await expect(link).toHaveAttribute(
-      "href",
-      /openstreetmap\.org\/(node|way|relation)\/\d+/,
-    );
-    const opened = await Promise.all([
-      page.waitForEvent("popup"),
-      link.click(),
-    ]);
-    expect(opened[0].url()).toMatch(/openstreetmap\.org\//);
-  });
-
-  test("switching category redraws the grid", async ({ page }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const other = await page.evaluate(() => {
-      const select = document.getElementById("category");
-      const values = [...(select?.querySelectorAll("option") ?? [])].map(
-        (o) => o.value,
-      );
-      return values.find((v) => v !== "walkable") ?? "";
+      // W2, added 2026-07-29. Everything above proves the map REDREW; none of it
+      // proves a person could tell. Until the legend landed, the only place the
+      // app named the current category was inside a tooltip, so the reported
+      // symptom — "switching category did not reset the map" — was reachable with
+      // this test passing: every category scores nearly every rule, and
+      // `heatScale` re-normalises to each category's own maximum, so the same
+      // hexagons come back in similar colours. The legend is the fix, and this is
+      // the assertion that keeps it honest.
+      await expect(page.locator("#legend .legend-category")).toHaveText(other);
     });
-    test.skip(other === "", "rule table declares only one category");
-
-    await page.locator("#category").selectOption(other);
-    await expect(page.locator("#status")).toContainText(`${other} regions`);
-
-    // A category switch that rescored but never repainted would leave the map
-    // showing `walkable` under a `restingArea` label — the exact kind of stale
-    // view a status-line-only assertion cannot see.
-    //
-    // ASSERTED VIA THE TOOLTIP, not the fill. The earlier version read the fill
-    // before and after and then only checked both for non-nullness, so a cell
-    // that kept its exact `walkable` colour passed — which is precisely the
-    // failure the comment claims to catch. Comparing the fills instead would be
-    // legitimately flaky, because two categories can land a given cell in the
-    // same colour bucket. The tooltip cannot be stale: `map-view.ts` rebuilds it
-    // per render with `tooltipFor(cell, category, score)`, so it NAMES the
-    // category the paths were drawn for.
-    const cell = page.locator("#map path.affordance-cell").first();
-    await expect(cell).toBeVisible();
-    await cell.hover();
-    await expect(page.locator(".leaflet-tooltip").first()).toContainText(
-      `${other} =`,
-    );
-
-    // W2, added 2026-07-29. Everything above proves the map REDREW; none of it
-    // proves a person could tell. Until the legend landed, the only place the
-    // app named the current category was inside a tooltip, so the reported
-    // symptom — "switching category did not reset the map" — was reachable with
-    // this test passing: every category scores nearly every rule, and
-    // `heatScale` re-normalises to each category's own maximum, so the same
-    // hexagons come back in similar colours. The legend is the fix, and this is
-    // the assertion that keeps it honest.
-    await expect(page.locator("#legend .legend-category")).toHaveText(other);
   });
 });
 
 test.describe("explaining one cell", () => {
-  test("clicking a cell opens a details panel explaining its score", async ({
+  test("opens a panel, reveals the bands, explains a veto, and follows the selection", async ({
     page,
   }) => {
+    // FOUR BEHAVIOURS, ONE BOOT. The plan budgeted two tests here; one is enough
+    // because the only genuinely irreversible act — MOVING the user, which drops
+    // the selection — is the last thing the last step does. Everything before it
+    // either reads or toggles a switch it puts back.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
     const panel = page.locator("#details");
-    await expect(panel).toBeHidden();
 
-    await page.locator("#map path.affordance-cell").first().click();
-    await expect(panel).toBeVisible();
+    await test.step("clicking a cell opens a details panel explaining its score", async () => {
+      await expect(panel).toBeHidden();
 
-    // The panel must carry what the popup cannot: every contributing feature,
-    // expandable to its individual TAGS. "Which element made this 9?" was
-    // already answerable; "which TAG made it 0?" is what this exists for.
-    const feature = panel.locator("details.panel-feature").first();
-    await expect(feature).toBeVisible();
-    await feature.locator("summary").click();
-    await expect(feature.locator("tr.panel-tag").first()).toBeVisible();
+      await page.locator("#map path.affordance-cell").first().click();
+      await expect(panel).toBeVisible();
 
-    // Dismissing it deselects, rather than merely hiding a still-selected cell
-    // — otherwise re-clicking the same cell would appear to do nothing.
-    await panel.locator(".panel-close").click();
-    await expect(panel).toBeHidden();
-    await page.locator("#map path.affordance-cell").first().click();
-    await expect(panel).toBeVisible();
-  });
+      // The panel must carry what the popup cannot: every contributing feature,
+      // expandable to its individual TAGS. "Which element made this 9?" was
+      // already answerable; "which TAG made it 0?" is what this exists for.
+      const feature = panel.locator("details.panel-feature").first();
+      await expect(feature).toBeVisible();
+      await feature.locator("summary").click();
+      await expect(feature.locator("tr.panel-tag").first()).toBeVisible();
 
-  test("the checkbox reveals sub-threshold cells in three distinct bands", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+      // Dismissing it deselects, rather than merely hiding a still-selected cell
+      // — otherwise re-clicking the same cell would appear to do nothing.
+      await panel.locator(".panel-close").click();
+      await expect(panel).toBeHidden();
+      await page.locator("#map path.affordance-cell").first().click();
+      await expect(panel).toBeVisible();
 
-    const cells = page.locator("#map path.affordance-cell");
-    const before = await cells.count();
-
-    await page.locator("#show-below").check();
-
-    // More cells, and specifically the two the old single skip made
-    // indistinguishable: a hard veto and "no rule said anything here". Being
-    // able to tell those apart is the entire point of the checkbox — and the
-    // vetoed cell was previously the one cell that could not be clicked to ask
-    // why it was vetoed, because it was not drawn.
-    await expect
-      .poll(async () => cells.count(), REPAINT)
-      .toBeGreaterThan(before);
-    // BOTH of the two that were previously indistinguishable, not just one.
-    // Asserting only the identity band would pass on a fixture with no vetoed
-    // cells at all — and the vetoed cell is the one the checkbox exists for.
-    // The park fixture carries 15 of them against the checked-in rule table.
-    await expect(
-      page.locator("#map path.affordance-cell-identity").first(),
-    ).toBeAttached();
-    await expect(
-      page.locator("#map path.affordance-cell-veto").first(),
-    ).toBeAttached();
-
-    // The legend grows the three band swatches with it: colours on screen that
-    // the legend does not explain are worse than no legend.
-    await expect(page.locator("#legend .legend-band")).toHaveCount(3);
-  });
-
-  test("a vetoed cell explains WHY it is zero, which is the whole round", async ({
-    page,
-  }) => {
-    // THE HEADLINE CLAIM, asserted end to end for the first time. Everything
-    // else in this round is scaffolding for one question the owner asked of a
-    // cemetery tile: "why is this zero when it is also a park and a meadow?"
-    //
-    // Answering it needs four separate pieces to line up — the cell must be
-    // DRAWN (W7), be CLICKABLE, open a panel (W6), and that panel must name the
-    // vetoing element and mark the tag that did it (explainCell). Each of those
-    // is unit-tested in isolation; nothing until now proved they connect.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    await page.locator("#show-below").check();
-    const vetoed = page.locator("#map path.affordance-cell-veto").first();
-    await expect(vetoed).toBeVisible();
-    await vetoed.click();
-
-    const panel = page.locator("#details");
-    await expect(panel).toBeVisible();
-
-    // The sentence a table of numbers cannot say. "Nothing is mapped here",
-    // "something vetoed it" and "it scored but under the bar" all render as
-    // near-identical rows; the summary is what separates them.
-    await expect(panel.locator(".panel-summary")).toContainText(/vetoed/i);
-
-    // The vetoing FEATURE is marked, and open by default — the reader should
-    // not have to guess which of several rows holds the answer.
-    const vetoFeature = panel.locator("details.panel-feature-veto").first();
-    await expect(vetoFeature).toBeVisible();
-    await expect(vetoFeature).toHaveAttribute("open", "");
-
-    // And the vetoing TAG inside it, which is the actual answer: not "some
-    // element zeroed this" but "this key=value did".
-    await expect(
-      vetoFeature.locator("tr.panel-tag-veto").first(),
-    ).toBeVisible();
-
-    // THE OTHER HALF OF THE QUESTION, and the reason a tree was built rather
-    // than a one-line "vetoed by X" banner. The owner asked to see that it
-    // "was a meadow and a park and maybe even had a bench, but that the
-    // cemetery reset it to zero regardless of how high the other ratings
-    // were" — so the outvoted contributors must still be listed under the veto.
-    expect(
-      await panel.locator("details.panel-feature").count(),
-    ).toBeGreaterThan(1);
-
-    // And "what about the bench?" — the tags the veto short-circuit never
-    // evaluated, rendered struck through. That row class exists for exactly
-    // this sentence and had never been looked at outside a unit test. Every
-    // vetoed cell in the park fixture carries between one and five of them.
-    await expect(panel.locator("tr.panel-tag-skipped").first()).toBeVisible();
-  });
-
-  test("the selection follows a category switch and is dropped when the user moves", async ({
-    page,
-  }) => {
-    // The store's central promise: the panel can never describe a cell in a
-    // category the map is no longer showing, and can never describe a cell
-    // belonging to a place the user has left. Both rules live in one reducer,
-    // one line apart, and both are invisible to every other test here.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    await page.locator("#map path.affordance-cell").first().click();
-    const panel = page.locator("#details");
-    await expect(panel).toBeVisible();
-    await expect(panel.locator(".panel-header strong")).toContainText(
-      "walkable",
-    );
-
-    // A category change KEEPS the selection — "what does this same cell score
-    // for battleArea?" is the obvious next click, and clearing it would make
-    // that question impossible to ask.
-    const other = await page.evaluate(() => {
-      const select = document.getElementById("category");
-      const values = [...(select?.querySelectorAll("option") ?? [])].map(
-        (o) => o.value,
-      );
-      return values.find((v) => v !== "walkable") ?? "";
+      // Deselected again, so the next step starts where a fresh boot would.
+      await panel.locator(".panel-close").click();
+      await expect(panel).toBeHidden();
     });
-    test.skip(other === "", "rule table declares only one category");
-    await page.locator("#category").selectOption(other);
-    // A category change starts its OWN progressive refresh (W16), and the panel
-    // is re-explained on each ring. Capturing state before that settles races
-    // three republishes — which is what made this test flaky in the suite while
-    // passing standalone.
-    await waitForRefresh(page);
 
-    await expect(panel).toBeVisible();
-    // Re-explained in the NEW category, not left showing the old answer.
-    await expect(panel.locator(".panel-header strong")).toContainText(other);
+    await test.step("the checkbox reveals sub-threshold cells in three distinct bands", async () => {
+      const cells = page.locator("#map path.affordance-cell");
+      const before = await cells.count();
 
-    // Moving the user DROPS it: the cell belongs to the place being left.
-    //
-    // The click has to land on BARE map, and that is not incidental. A click on
-    // a cell selects without moving — Leaflet's `bindPopup` stops propagation,
-    // so the map's own click handler never fires — while a click on empty map
-    // moves without selecting. Asserting the precondition means a fixture whose
-    // grid grows to cover this point fails loudly here rather than quietly
-    // passing for the wrong reason.
-    const point = { x: 60, y: 60 };
-    const box = await page.locator("#map").boundingBox();
-    if (box === null) throw new Error("no map box");
-    const onCell = await page.evaluate(
-      ([x, y]) =>
-        document
-          .elementFromPoint(x, y)
-          ?.classList.contains("affordance-cell") === true,
-      [box.x + point.x, box.y + point.y],
-    );
-    expect(onCell).toBe(false);
+      await page.locator("#show-below").check();
 
-    await page.locator("#map").click({ position: point });
-    await expect(panel).toBeHidden();
+      // More cells, and specifically the two the old single skip made
+      // indistinguishable: a hard veto and "no rule said anything here". Being
+      // able to tell those apart is the entire point of the checkbox — and the
+      // vetoed cell was previously the one cell that could not be clicked to ask
+      // why it was vetoed, because it was not drawn.
+      await expect
+        .poll(async () => cells.count(), REPAINT)
+        .toBeGreaterThan(before);
+      // BOTH of the two that were previously indistinguishable, not just one.
+      // Asserting only the identity band would pass on a fixture with no vetoed
+      // cells at all — and the vetoed cell is the one the checkbox exists for.
+      // The park fixture carries 15 of them against the checked-in rule table.
+      await expect(
+        page.locator("#map path.affordance-cell-identity").first(),
+      ).toBeAttached();
+      await expect(
+        page.locator("#map path.affordance-cell-veto").first(),
+      ).toBeAttached();
+
+      // The legend grows the three band swatches with it: colours on screen that
+      // the legend does not explain are worse than no legend.
+      await expect(page.locator("#legend .legend-band")).toHaveCount(3);
+    });
+
+    await test.step("a vetoed cell explains WHY it is zero, which is the whole round", async () => {
+      // THE HEADLINE CLAIM, asserted end to end for the first time. Everything
+      // else in this round is scaffolding for one question the owner asked of a
+      // cemetery tile: "why is this zero when it is also a park and a meadow?"
+      //
+      // Answering it needs four separate pieces to line up — the cell must be
+      // DRAWN (W7), be CLICKABLE, open a panel (W6), and that panel must name the
+      // vetoing element and mark the tag that did it (explainCell). Each of those
+      // is unit-tested in isolation; nothing until now proved they connect.
+      //
+      // The reveal switch is already on from the step above, which is the state
+      // this step needs — it is checked again rather than assumed, because a step
+      // that silently depends on its predecessor is the coupling fusion has to
+      // avoid.
+      await page.locator("#show-below").check();
+      const vetoed = page.locator("#map path.affordance-cell-veto").first();
+      await expect(vetoed).toBeVisible();
+      await vetoed.click();
+
+      await expect(panel).toBeVisible();
+
+      // The sentence a table of numbers cannot say. "Nothing is mapped here",
+      // "something vetoed it" and "it scored but under the bar" all render as
+      // near-identical rows; the summary is what separates them.
+      await expect(panel.locator(".panel-summary")).toContainText(/vetoed/i);
+
+      // The vetoing FEATURE is marked, and open by default — the reader should
+      // not have to guess which of several rows holds the answer.
+      const vetoFeature = panel.locator("details.panel-feature-veto").first();
+      await expect(vetoFeature).toBeVisible();
+      await expect(vetoFeature).toHaveAttribute("open", "");
+
+      // And the vetoing TAG inside it, which is the actual answer: not "some
+      // element zeroed this" but "this key=value did".
+      await expect(
+        vetoFeature.locator("tr.panel-tag-veto").first(),
+      ).toBeVisible();
+
+      // THE OTHER HALF OF THE QUESTION, and the reason a tree was built rather
+      // than a one-line "vetoed by X" banner. The owner asked to see that it
+      // "was a meadow and a park and maybe even had a bench, but that the
+      // cemetery reset it to zero regardless of how high the other ratings
+      // were" — so the outvoted contributors must still be listed under the veto.
+      expect(
+        await panel.locator("details.panel-feature").count(),
+      ).toBeGreaterThan(1);
+
+      // And "what about the bench?" — the tags the veto short-circuit never
+      // evaluated, rendered struck through. That row class exists for exactly
+      // this sentence and had never been looked at outside a unit test. Every
+      // vetoed cell in the park fixture carries between one and five of them.
+      await expect(panel.locator("tr.panel-tag-skipped").first()).toBeVisible();
+
+      // Back to the boot state: the reveal off, and nothing selected.
+      await panel.locator(".panel-close").click();
+      await page.locator("#show-below").uncheck();
+    });
+
+    await test.step("the selection follows a category switch and is dropped when the user moves", async () => {
+      // The store's central promise: the panel can never describe a cell in a
+      // category the map is no longer showing, and can never describe a cell
+      // belonging to a place the user has left. Both rules live in one reducer,
+      // one line apart, and both are invisible to every other test here.
+      await page.locator("#map path.affordance-cell").first().click();
+      await expect(panel).toBeVisible();
+      await expect(panel.locator(".panel-header strong")).toContainText(
+        "walkable",
+      );
+
+      // A category change KEEPS the selection — "what does this same cell score
+      // for battleArea?" is the obvious next click, and clearing it would make
+      // that question impossible to ask.
+      const other = await page.evaluate(() => {
+        const select = document.getElementById("category");
+        const values = [...(select?.querySelectorAll("option") ?? [])].map(
+          (o) => o.value,
+        );
+        return values.find((v) => v !== "walkable") ?? "";
+      });
+      test.skip(other === "", "rule table declares only one category");
+      await page.locator("#category").selectOption(other);
+      // A category change starts its OWN progressive refresh (W16), and the panel
+      // is re-explained on each ring. Capturing state before that settles races
+      // three republishes — which is what made this test flaky in the suite while
+      // passing standalone.
+      await waitForRefresh(page);
+
+      await expect(panel).toBeVisible();
+      // Re-explained in the NEW category, not left showing the old answer.
+      await expect(panel.locator(".panel-header strong")).toContainText(other);
+
+      // Moving the user DROPS it: the cell belongs to the place being left.
+      //
+      // The click has to land on BARE map, and that is not incidental. A click on
+      // a cell selects without moving — Leaflet's `bindPopup` stops propagation,
+      // so the map's own click handler never fires — while a click on empty map
+      // moves without selecting. Asserting the precondition means a fixture whose
+      // grid grows to cover this point fails loudly here rather than quietly
+      // passing for the wrong reason.
+      const point = { x: 60, y: 60 };
+      const box = await page.locator("#map").boundingBox();
+      if (box === null) throw new Error("no map box");
+      const onCell = await page.evaluate(
+        ([x, y]) =>
+          document
+            .elementFromPoint(x, y)
+            ?.classList.contains("affordance-cell") === true,
+        [box.x + point.x, box.y + point.y],
+      );
+      expect(onCell).toBe(false);
+
+      await page.locator("#map").click({ position: point });
+      await expect(panel).toBeHidden();
+    });
   });
 });
 
 test.describe("the mobile layout", () => {
   test.use({ viewport: { width: 390, height: 780 } });
 
-  test("puts the 3D view behind a draggable map sheet", async ({ page }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const scene = page.locator("#scene");
-    const map = page.locator("#map");
-    const main = page.locator("main");
-
-    const [sceneBox, mapBox, mainBox] = await Promise.all([
-      scene.boundingBox(),
-      map.boundingBox(),
-      main.boundingBox(),
-    ]);
-    if (sceneBox === null || mapBox === null || mainBox === null) {
-      throw new Error("no layout boxes");
-    }
-
-    // DEC-10: the 3D view fills the viewport rather than taking half of it.
-    // The old layout gave each view half the height, which is what made the 3D
-    // pane a letterbox on a phone.
-    expect(sceneBox.height).toBeGreaterThan(mainBox.height * 0.9);
-    // The map sits over it as a bottom sheet, not beside it.
-    expect(mapBox.width).toBeCloseTo(mainBox.width, 0);
-    expect(mapBox.y + mapBox.height).toBeCloseTo(mainBox.y + mainBox.height, 0);
-
-    // And it can be dragged, which is the whole of D8's resizing ask — the
-    // sheet IS the splitter, so there is no second affordance to find.
-    const handle = page.locator("#sheet-handle");
-    await expect(handle).toBeVisible();
-    const handleBox = await handle.boundingBox();
-    if (handleBox === null) throw new Error("no handle box");
-
-    // THE GRAB BAR MUST START ON THE SHEET'S EDGE, before any drag. It is
-    // absolutely positioned, and while its offset was set only by the drag
-    // handler it fell back to its static position — the TOP of the grid
-    // container — leaving a 24 px bar floating over the 3D view ~400 px from
-    // the sheet it resizes. The drag test could not see it: it grabs the bar
-    // wherever it is and the first move snaps the sheet to the clamp anyway.
-    expect(
-      Math.abs(handleBox.y + handleBox.height / 2 - mapBox.y),
-    ).toBeLessThan(handleBox.height);
-
-    await page.mouse.move(
-      handleBox.x + handleBox.width / 2,
-      handleBox.y + handleBox.height / 2,
-    );
-    await page.mouse.down();
-    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y - 150);
-    await page.mouse.up();
-
-    await expect
-      .poll(async () => (await map.boundingBox())?.height ?? 0, {
-        timeout: 5000,
-      })
-      .toBeGreaterThan(mapBox.height + 50);
-  });
-
-  test("keeps the 3D view painted while the sheet is dragged", async ({
+  test("puts the 3D view behind a draggable sheet, and keeps it painted", async ({
     page,
   }) => {
-    // WHY THIS TEST MATTERS (finding N1, the second half of R2-3). The sheet
-    // drag is the OTHER caller of `BuildingView.resize()`, and it is the harsh
-    // one: the window path calls resize once, this path calls it on every
-    // pointer move. Each call reallocates and therefore CLEARS the drawing
-    // buffer, so without a repaint the 3D backdrop goes blank the instant the
-    // sheet starts moving and stays blank — on the one layout where the 3D view
-    // is the full-screen background.
-    //
-    // The existing drag test above cannot see this: it asserts the sheet's
-    // HEIGHT, never the canvas contents, so a blank backdrop passes it.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const painted = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return -1;
-        const probe = document.createElement("canvas");
-        probe.width = el.width;
-        probe.height = el.height;
-        const ctx = probe.getContext("2d");
-        if (ctx === null) return -1;
-        ctx.drawImage(el, 0, 0);
-        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-        let count = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i] + data[i + 1] + data[i + 2] > 0x11 + 0x13 + 0x1a + 60) {
-            count++;
+    // THE LAYOUT STEP RUNS FIRST because it asserts the sheet's RESTING
+    // position, and the step after it drags the sheet somewhere else.
+    await test.step("puts the 3D view behind a draggable map sheet", async () => {
+      const scene = page.locator("#scene");
+      const map = page.locator("#map");
+      const main = page.locator("main");
+
+      const [sceneBox, mapBox, mainBox] = await Promise.all([
+        scene.boundingBox(),
+        map.boundingBox(),
+        main.boundingBox(),
+      ]);
+      if (sceneBox === null || mapBox === null || mainBox === null) {
+        throw new Error("no layout boxes");
+      }
+
+      // DEC-10: the 3D view fills the viewport rather than taking half of it.
+      // The old layout gave each view half the height, which is what made the 3D
+      // pane a letterbox on a phone.
+      expect(sceneBox.height).toBeGreaterThan(mainBox.height * 0.9);
+      // The map sits over it as a bottom sheet, not beside it.
+      expect(mapBox.width).toBeCloseTo(mainBox.width, 0);
+      expect(mapBox.y + mapBox.height).toBeCloseTo(
+        mainBox.y + mainBox.height,
+        0,
+      );
+
+      // And it can be dragged, which is the whole of D8's resizing ask — the
+      // sheet IS the splitter, so there is no second affordance to find.
+      const handle = page.locator("#sheet-handle");
+      await expect(handle).toBeVisible();
+      const handleBox = await handle.boundingBox();
+      if (handleBox === null) throw new Error("no handle box");
+
+      // THE GRAB BAR MUST START ON THE SHEET'S EDGE, before any drag. It is
+      // absolutely positioned, and while its offset was set only by the drag
+      // handler it fell back to its static position — the TOP of the grid
+      // container — leaving a 24 px bar floating over the 3D view ~400 px from
+      // the sheet it resizes. The drag test could not see it: it grabs the bar
+      // wherever it is and the first move snaps the sheet to the clamp anyway.
+      expect(
+        Math.abs(handleBox.y + handleBox.height / 2 - mapBox.y),
+      ).toBeLessThan(handleBox.height);
+
+      await page.mouse.move(
+        handleBox.x + handleBox.width / 2,
+        handleBox.y + handleBox.height / 2,
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        handleBox.x + handleBox.width / 2,
+        handleBox.y - 150,
+      );
+      await page.mouse.up();
+
+      await expect
+        .poll(async () => (await map.boundingBox())?.height ?? 0, {
+          timeout: 5000,
+        })
+        .toBeGreaterThan(mapBox.height + 50);
+    });
+
+    await test.step("keeps the 3D view painted while the sheet is dragged", async () => {
+      // WHY THIS TEST MATTERS (finding N1, the second half of R2-3). The sheet
+      // drag is the OTHER caller of `BuildingView.resize()`, and it is the harsh
+      // one: the window path calls resize once, this path calls it on every
+      // pointer move. Each call reallocates and therefore CLEARS the drawing
+      // buffer, so without a repaint the 3D backdrop goes blank the instant the
+      // sheet starts moving and stays blank — on the one layout where the 3D view
+      // is the full-screen background.
+      //
+      // The step above cannot see this: it asserts the sheet's HEIGHT, never the
+      // canvas contents, so a blank backdrop passes it. It also leaves the sheet
+      // already dragged, which does not weaken this step — the claim is that the
+      // canvas survives a drag, and it is measured across a drag either way.
+      const painted = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return -1;
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return -1;
+          ctx.drawImage(el, 0, 0);
+          const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+          let count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i] + data[i + 1] + data[i + 2] > 0x11 + 0x13 + 0x1a + 60) {
+              count++;
+            }
           }
-        }
-        return count;
-      });
+          return count;
+        });
 
-    expect(await painted()).toBeGreaterThan(500);
+      expect(await painted()).toBeGreaterThan(500);
 
-    const handle = page.locator("#sheet-handle");
-    const handleBox = await handle.boundingBox();
-    if (handleBox === null) throw new Error("no handle box");
+      const handle = page.locator("#sheet-handle");
+      const handleBox = await handle.boundingBox();
+      if (handleBox === null) throw new Error("no handle box");
 
-    // A MULTI-STEP drag, so `resize()` is called repeatedly rather than once —
-    // that is the coalescing path, and a per-event repaint would show up here
-    // as a timeout rather than as a wrong picture.
-    const x = handleBox.x + handleBox.width / 2;
-    await page.mouse.move(x, handleBox.y + handleBox.height / 2);
-    await page.mouse.down();
-    for (const dy of [30, 60, 90, 120, 150]) {
-      await page.mouse.move(x, handleBox.y - dy);
-    }
-    await page.mouse.up();
+      // A MULTI-STEP drag, so `resize()` is called repeatedly rather than once —
+      // that is the coalescing path, and a per-event repaint would show up here
+      // as a timeout rather than as a wrong picture.
+      const x = handleBox.x + handleBox.width / 2;
+      await page.mouse.move(x, handleBox.y + handleBox.height / 2);
+      await page.mouse.down();
+      for (const dy of [30, 60, 90, 120, 150]) {
+        await page.mouse.move(x, handleBox.y - dy);
+      }
+      await page.mouse.up();
 
-    await expect.poll(painted, REPAINT).toBeGreaterThan(500);
+      await expect.poll(painted, REPAINT).toBeGreaterThan(500);
+    });
   });
 });
 
@@ -1164,78 +1152,77 @@ test.describe("my location", () => {
     );
   });
 
-  test("is a square pin in the bottom-right, and still names its state", async ({
-    page,
-  }) => {
-    // WHY THIS TEST MATTERS (DEC-R2-3). Going icon-only removes the visible text
-    // that used to carry every state, and the easy mistake is to remove the text
-    // and forget that it WAS the accessible name — leaving a button that says
-    // nothing to a screen reader and nothing on touch, where `title` never shows.
-    // So the label is asserted as an attribute, not as content.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const button = page.locator(".locate-button");
-    await expect(button).toBeVisible();
-
-    // SQUARE, and therefore stable: the old button's width swung from
-    // "my location" to "location permission denied", i.e. it changed size when it
-    // failed.
-    const box = await button.boundingBox();
-    if (box === null) throw new Error("no button box");
-    expect(Math.abs(box.width - box.height)).toBeLessThan(2);
-
-    // An inline SVG pin, not an image request and not an emoji.
-    await expect(button.locator("svg path")).toHaveCount(1);
-
-    // The wording moved to `title`/`aria-label` rather than being deleted.
-    await expect(button).toHaveAttribute("aria-label", /location/i);
-    await expect(button).toHaveAttribute("title", /location/i);
-
-    // BOTTOM RIGHT, and above the attribution rather than over it — the ODbL
-    // credit has to stay visible.
-    const [mapBox, attribution] = await Promise.all([
-      page.locator("#map").boundingBox(),
-      page.locator("#map .leaflet-control-attribution").boundingBox(),
-    ]);
-    if (mapBox === null) throw new Error("no map box");
-    expect(box.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
-    expect(box.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
-    if (attribution !== null) {
-      // Strictly above it, not overlapping it.
-      expect(box.y + box.height).toBeLessThanOrEqual(attribution.y + 1);
-    }
-    await expect(
-      page.locator("#map .leaflet-control-attribution"),
-    ).toContainText("OpenStreetMap");
-  });
-
-  test("reports a denied permission instead of hanging on 'locating…'", async ({
+  test("is a square pin that names its state, and reports a denied permission", async ({
     page,
     context,
   }) => {
-    // The failure path is half of `CLAUDE.md`'s async-feedback rule, and it is
-    // the half that gets skipped: a button stuck on "locating…" forever looks
-    // exactly like a slow GPS fix, so nobody reports it as a bug.
-    await context.clearPermissions();
+    // TWO BEHAVIOURS, ONE BOOT. The third `my location` test keeps its own,
+    // because it needs a granted permission and starts at `/` rather than at the
+    // fixture — the boot itself is different, so there is nothing to share.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await page.locator(".locate-button").click();
+    await test.step("is a square pin in the bottom-right, and still names its state", async () => {
+      // WHY THIS TEST MATTERS (DEC-R2-3). Going icon-only removes the visible text
+      // that used to carry every state, and the easy mistake is to remove the text
+      // and forget that it WAS the accessible name — leaving a button that says
+      // nothing to a screen reader and nothing on touch, where `title` never shows.
+      // So the label is asserted as an attribute, not as content.
+      const button = page.locator(".locate-button");
+      await expect(button).toBeVisible();
 
-    await expect
-      .poll(
-        async () => page.locator(".locate-button").getAttribute("data-state"),
-        {
-          timeout: 10000,
-        },
-      )
-      .toMatch(/denied|unavailable|timeout|idle/);
-    await expect(page.locator("#status")).toContainText(
-      /denied|unavailable|timed out/,
-    );
+      // SQUARE, and therefore stable: the old button's width swung from
+      // "my location" to "location permission denied", i.e. it changed size when it
+      // failed.
+      const box = await button.boundingBox();
+      if (box === null) throw new Error("no button box");
+      expect(Math.abs(box.width - box.height)).toBeLessThan(2);
+
+      // An inline SVG pin, not an image request and not an emoji.
+      await expect(button.locator("svg path")).toHaveCount(1);
+
+      // The wording moved to `title`/`aria-label` rather than being deleted.
+      await expect(button).toHaveAttribute("aria-label", /location/i);
+      await expect(button).toHaveAttribute("title", /location/i);
+
+      // BOTTOM RIGHT, and above the attribution rather than over it — the ODbL
+      // credit has to stay visible.
+      const [mapBox, attribution] = await Promise.all([
+        page.locator("#map").boundingBox(),
+        page.locator("#map .leaflet-control-attribution").boundingBox(),
+      ]);
+      if (mapBox === null) throw new Error("no map box");
+      expect(box.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
+      expect(box.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
+      if (attribution !== null) {
+        // Strictly above it, not overlapping it.
+        expect(box.y + box.height).toBeLessThanOrEqual(attribution.y + 1);
+      }
+      await expect(
+        page.locator("#map .leaflet-control-attribution"),
+      ).toContainText("OpenStreetMap");
+    });
+
+    await test.step("reports a denied permission instead of hanging on 'locating…'", async () => {
+      // The failure path is half of `CLAUDE.md`'s async-feedback rule, and it is
+      // the half that gets skipped: a button stuck on "locating…" forever looks
+      // exactly like a slow GPS fix, so nobody reports it as a bug.
+      await context.clearPermissions();
+      await page.locator(".locate-button").click();
+
+      await expect
+        .poll(
+          async () => page.locator(".locate-button").getAttribute("data-state"),
+          {
+            timeout: 10000,
+          },
+        )
+        .toMatch(/denied|unavailable|timeout|idle/);
+      await expect(page.locator("#status")).toContainText(
+        /denied|unavailable|timed out/,
+      );
+    });
   });
 });
 
@@ -2268,182 +2255,185 @@ test.describe("a superseded refresh", () => {
     return other;
   };
 
-  test("never reports a failure, and never blanks what is drawn", async ({
+  test("reports no failure, blanks nothing, and keeps the panel and camera", async ({
     page,
   }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const cells = page.locator("#map path.affordance-cell");
-    expect(await cells.count()).toBeGreaterThan(0);
+    await test.step("never reports a failure, and never blanks what is drawn", async () => {
+      const cells = page.locator("#map path.affordance-cell");
+      expect(await cells.count()).toBeGreaterThan(0);
 
-    const statusHistory = await recordStatus(page);
+      const statusHistory = await recordStatus(page);
 
-    // TWO CHANGES IN QUICK SUCCESSION, with no wait between them: the second
-    // supersedes the first while it is still in flight, which is the whole
-    // input. A test that waited between them would exercise nothing.
-    const picker = page.locator("#category");
-    const started = await picker.inputValue();
-    await picker.selectOption(await otherCategory(page, started));
-    await picker.selectOption(started);
-    await waitForRefresh(page);
+      // TWO CHANGES IN QUICK SUCCESSION, with no wait between them: the second
+      // supersedes the first while it is still in flight, which is the whole
+      // input. A test that waited between them would exercise nothing.
+      const picker = page.locator("#category");
+      const started = await picker.inputValue();
+      await picker.selectOption(await otherCategory(page, started));
+      await picker.selectOption(started);
+      await waitForRefresh(page);
 
-    // The status line is where `fetchFailed` becomes visible, and the message it
-    // would carry is the RPC's own. Neither may ever have appeared.
-    const history = await statusHistory();
-    expect(history.join(" | ")).not.toMatch(/Failed|superseded/);
+      // The status line is where `fetchFailed` becomes visible, and the message it
+      // would carry is the RPC's own. Neither may ever have appeared.
+      const history = await statusHistory();
+      expect(history.join(" | ")).not.toMatch(/Failed|superseded/);
 
-    // And the picture survived: the grid is still there, drawn for the category
-    // the picker ended on.
-    expect(await cells.count()).toBeGreaterThan(0);
-  });
+      // And the picture survived: the grid is still there, drawn for the category
+      // the picker ended on.
+      expect(await cells.count()).toBeGreaterThan(0);
+    });
 
-  test("keeps the details panel open, and does not move the camera", async ({
-    page,
-  }) => {
-    // TWO INVARIANTS IN ONE TEST because they share an expensive setup and both
-    // are about what a supersede must NOT touch. The selection half is
-    // `fetchFailed` clearing `selectedCell` — the panel dismissing itself while
-    // it is being read. The camera half is DEC-R3-1: the owner could not confirm
-    // whether the camera reset too, so nothing was fixed for it and this asserts
-    // it cannot start happening unnoticed.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+    await test.step("keeps the details panel open, and does not move the camera", async () => {
+      // TWO INVARIANTS IN ONE STEP because they share an expensive setup and both
+      // are about what a supersede must NOT touch. The selection half is
+      // `fetchFailed` clearing `selectedCell` — the panel dismissing itself while
+      // it is being read. The camera half is DEC-R3-1: the owner could not confirm
+      // whether the camera reset too, so nothing was fixed for it and this asserts
+      // it cannot start happening unnoticed.
+      //
+      // Move the camera off its default pose first, or "the camera did not move"
+      // is satisfied by a camera that was reset TO the pose it was already in.
+      const canvas = page.locator("#scene canvas");
+      const box = await canvas.boundingBox();
+      if (box === null) throw new Error("no canvas box");
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 - 70, box.y + box.height / 2);
+      await page.mouse.up();
 
-    // Move the camera off its default pose first, or "the camera did not move"
-    // is satisfied by a camera that was reset TO the pose it was already in.
-    const canvas = page.locator("#scene canvas");
-    const box = await canvas.boundingBox();
-    if (box === null) throw new Error("no canvas box");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 - 70, box.y + box.height / 2);
-    await page.mouse.up();
+      await page.locator("#map path.affordance-cell").first().click();
+      await expect(page.locator("#details")).toBeVisible();
 
-    await page.locator("#map path.affordance-cell").first().click();
-    await expect(page.locator("#details")).toBeVisible();
+      /**
+       * The drawing buffer stands in for the camera matrix, which is not exposed.
+       *
+       * BOTH THE CAPTURE AND THE COMPARISON HAPPEN IN THE PAGE. The first version
+       * returned the pixels — a ~4 million element array per call — and marshalling
+       * that over CDP took seconds under a loaded three-worker run, so two
+       * "consecutive" reads spanned a progressive ring landing and the stability
+       * poll could never converge. It was green standalone and timed out in the
+       * full suite, which is the signature of a test measuring the machine.
+       */
+      const capture = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return false;
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return false;
+          ctx.drawImage(el, 0, 0);
+          /** @type {Record<string, unknown>} */ (window).__frame =
+            ctx.getImageData(0, 0, probe.width, probe.height).data;
+          return true;
+        });
 
-    /**
-     * The drawing buffer stands in for the camera matrix, which is not exposed.
-     *
-     * BOTH THE CAPTURE AND THE COMPARISON HAPPEN IN THE PAGE. The first version
-     * returned the pixels — a ~4 million element array per call — and marshalling
-     * that over CDP took seconds under a loaded three-worker run, so two
-     * "consecutive" reads spanned a progressive ring landing and the stability
-     * poll could never converge. It was green standalone and timed out in the
-     * full suite, which is the signature of a test measuring the machine.
-     */
-    const capture = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return false;
-        const probe = document.createElement("canvas");
-        probe.width = el.width;
-        probe.height = el.height;
-        const ctx = probe.getContext("2d");
-        if (ctx === null) return false;
-        ctx.drawImage(el, 0, 0);
-        /** @type {Record<string, unknown>} */ (window).__frame =
-          ctx.getImageData(0, 0, probe.width, probe.height).data;
-        return true;
-      });
-
-    /** Fraction of RGB samples differing from the captured frame by > 2 levels. */
-    const diffFromCapture = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        const previous = /** @type {Record<string, unknown>} */ (window)
-          .__frame;
-        if (
-          !(el instanceof HTMLCanvasElement) ||
-          !(previous instanceof Uint8ClampedArray)
-        ) {
-          return 1;
-        }
-        const probe = document.createElement("canvas");
-        probe.width = el.width;
-        probe.height = el.height;
-        const ctx = probe.getContext("2d");
-        if (ctx === null) return 1;
-        ctx.drawImage(el, 0, 0);
-        const now = ctx.getImageData(0, 0, probe.width, probe.height).data;
-        if (now.length !== previous.length) return 1;
-        let changed = 0;
-        for (let i = 0; i < now.length; i += 4) {
+      /** Fraction of RGB samples differing from the captured frame by > 2 levels. */
+      const diffFromCapture = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          const previous = /** @type {Record<string, unknown>} */ (window)
+            .__frame;
           if (
-            Math.abs((now[i] ?? 0) - (previous[i] ?? 0)) > 2 ||
-            Math.abs((now[i + 1] ?? 0) - (previous[i + 1] ?? 0)) > 2 ||
-            Math.abs((now[i + 2] ?? 0) - (previous[i + 2] ?? 0)) > 2
+            !(el instanceof HTMLCanvasElement) ||
+            !(previous instanceof Uint8ClampedArray)
           ) {
-            changed++;
+            return 1;
           }
-        }
-        return changed / (now.length / 4);
-      });
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return 1;
+          ctx.drawImage(el, 0, 0);
+          const now = ctx.getImageData(0, 0, probe.width, probe.height).data;
+          if (now.length !== previous.length) return 1;
+          let changed = 0;
+          for (let i = 0; i < now.length; i += 4) {
+            if (
+              Math.abs((now[i] ?? 0) - (previous[i] ?? 0)) > 2 ||
+              Math.abs((now[i + 1] ?? 0) - (previous[i + 1] ?? 0)) > 2 ||
+              Math.abs((now[i + 2] ?? 0) - (previous[i + 2] ?? 0)) > 2
+            ) {
+              changed++;
+            }
+          }
+          return changed / (now.length / 4);
+        });
 
-    // SWITCH OFF EVERYTHING THAT CAN CHANGE ON ITS OWN, so that what remains in
-    // the canvas is the ground plane and the sky — neither of which a scoring
-    // pass touches. What is left of any difference is then the VIEWPOINT, which
-    // is the only thing this test is about.
-    //
-    // This is the second attempt at making it robust and the first one that
-    // addresses the real cause. Comparing the full scene meant comparing the
-    // affordance grid, and `waitForRefresh` returns on three stable status reads
-    // 250 ms apart — on a loaded machine running three browsers a progressive
-    // ring can take longer than that, so the reference frame could be captured
-    // mid-widening and the comparison then failed at ~13 % PERSISTENTLY. Waiting
-    // harder is a race against the machine; removing the moving parts is not.
-    await page.locator("#layer-cells").uncheck();
-    await page.locator("#layer-buildings").uncheck();
-    await page.locator("#layer-trees").uncheck();
-    // `areas` JOINS THE LIST BECAUSE THE SLABS BECAME SHINY. Region slabs went to
-    // roughness 0.25 with emissive, and a tight specular lobe turns sub-pixel
-    // camera drift — damping is on, and the sun's azimuth follows the camera —
-    // into visibly different pixels. Measured: 0.08 % of the frame differed
-    // between two captures of a scene nobody had touched, against an assertion
-    // that demands EXACTLY zero.
-    //
-    // Loosening the threshold was the alternative and is worse: this test's
-    // whole point is that a superseded refresh moves the camera by nothing at
-    // all, and a real move differs by tens of percent (the comment above records
-    // ~13 % for a mid-widening mismatch). Removing one more moving part keeps
-    // the assertion exact.
-    await page.locator("#layer-areas").uncheck();
+      // SWITCH OFF EVERYTHING THAT CAN CHANGE ON ITS OWN, so that what remains in
+      // the canvas is the ground plane and the sky — neither of which a scoring
+      // pass touches. What is left of any difference is then the VIEWPOINT, which
+      // is the only thing this test is about.
+      //
+      // This is the second attempt at making it robust and the first one that
+      // addresses the real cause. Comparing the full scene meant comparing the
+      // affordance grid, and `waitForRefresh` used to return on three stable status
+      // reads 250 ms apart — on a loaded machine running three browsers a
+      // progressive ring can take longer than that, so the reference frame could be
+      // captured mid-widening and the comparison then failed at ~13 % PERSISTENTLY.
+      // Waiting harder is a race against the machine; removing the moving parts is
+      // not.
+      //
+      // That helper no longer guesses (F42): the app says `widening…` until the
+      // last ring lands and `waitForRefresh` waits for it to clear. The layers stay
+      // switched off anyway — this step's assertion is EXACTLY zero changed pixels,
+      // and fewer moving parts is still the reason it can be.
+      await page.locator("#layer-cells").uncheck();
+      await page.locator("#layer-buildings").uncheck();
+      await page.locator("#layer-trees").uncheck();
+      // `areas` JOINS THE LIST BECAUSE THE SLABS BECAME SHINY. Region slabs went to
+      // roughness 0.25 with emissive, and a tight specular lobe turns sub-pixel
+      // camera drift — damping is on, and the sun's azimuth follows the camera —
+      // into visibly different pixels. Measured: 0.08 % of the frame differed
+      // between two captures of a scene nobody had touched, against an assertion
+      // that demands EXACTLY zero.
+      //
+      // Loosening the threshold was the alternative and is worse: this test's
+      // whole point is that a superseded refresh moves the camera by nothing at
+      // all, and a real move differs by tens of percent (the comment above records
+      // ~13 % for a mid-widening mismatch). Removing one more moving part keeps
+      // the assertion exact.
+      await page.locator("#layer-areas").uncheck();
 
-    await capture();
-    await expect
-      .poll(async () => {
-        const moved = await diffFromCapture();
-        await capture();
-        return moved;
-      }, REPAINT)
-      .toBe(0);
+      await capture();
+      await expect
+        .poll(async () => {
+          const moved = await diffFromCapture();
+          await capture();
+          return moved;
+        }, REPAINT)
+        .toBe(0);
 
-    // Supersede: two category changes with no wait, then back to where it
-    // started so the scene is comparable again.
-    const picker = page.locator("#category");
-    const started = await picker.inputValue();
-    await picker.selectOption(await otherCategory(page, started));
-    await picker.selectOption(started);
-    await waitForRefresh(page);
+      // Supersede: two category changes with no wait, then back to where it
+      // started so the scene is comparable again.
+      const picker = page.locator("#category");
+      const started = await picker.inputValue();
+      await picker.selectOption(await otherCategory(page, started));
+      await picker.selectOption(started);
+      await waitForRefresh(page);
 
-    // A category change KEEPS the selection by design (`categoryChanged` in the
-    // slice) — "what does this same cell score for the other category?" is the
-    // obvious next question. Only `fetchFailed` cleared it.
-    await expect(page.locator("#details")).toBeVisible();
+      // A category change KEEPS the selection by design (`categoryChanged` in the
+      // slice) — "what does this same cell score for the other category?" is the
+      // obvious next question. Only `fetchFailed` cleared it.
+      await expect(page.locator("#details")).toBeVisible();
 
-    // A FRACTION of changed pixels against the parked frame, not equality. Same
-    // position, same category and the same scored chunks, so the scene is the
-    // same scene — but the two frames are not bit-identical, and chasing that
-    // would be chasing the wrong thing: what this asserts is that the VIEWPOINT
-    // did not change, and a camera reset to the default pose moves essentially
-    // every pixel of a city. The scale is known from having got this wrong:
-    // selecting the wrong category for the return leg changed 43 % of pixels,
-    // which is the order a genuine viewpoint change lands at. 5 % is far below
-    // that and far above frame-to-frame noise.
-    await expect.poll(diffFromCapture, REPAINT).toBeLessThan(0.05);
+      // A FRACTION of changed pixels against the parked frame, not equality. Same
+      // position, same category and the same scored chunks, so the scene is the
+      // same scene — but the two frames are not bit-identical, and chasing that
+      // would be chasing the wrong thing: what this asserts is that the VIEWPOINT
+      // did not change, and a camera reset to the default pose moves essentially
+      // every pixel of a city. The scale is known from having got this wrong:
+      // selecting the wrong category for the return leg changed 43 % of pixels,
+      // which is the order a genuine viewpoint change lands at. 5 % is far below
+      // that and far above frame-to-frame noise.
+      await expect.poll(diffFromCapture, REPAINT).toBeLessThan(0.05);
+    });
   });
 });
 
