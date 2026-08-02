@@ -19,7 +19,11 @@ import { describe, it, expect, vi } from "vitest";
 import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 import { createDemoStore, selectOsmView } from "./osm-store.js";
-import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
+import {
+  createRefreshCycle,
+  isFinalRing,
+  renderSafely,
+} from "./refresh-cycle.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
@@ -28,6 +32,9 @@ const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 /** `radius` cells, so a wider pass is observably a bigger working set. */
 const snapshotAt = (category: string, radius: number): DemoSnapshot => ({
   ...snapshot(category),
+  // The pass's own ring, which is what the fake worker is being asked for and
+  // what the real pipeline now reports back (F42).
+  radius,
   cells: Array.from({ length: radius }, (_, i) => ({
     cell: `cell-${i}`,
     scores: { [category]: 3 },
@@ -50,6 +57,9 @@ const snapshot = (category: string): DemoSnapshot => ({
   missingTiles: [],
   loadedTiles: ["871fa199affffff"],
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 0 },
+  // A FINAL snapshot by default: these tests are about failure handling and
+  // ordering, not about widening, so the base should not look half-delivered.
+  radius: SCORE_DISK_MAX_RADIUS,
 });
 
 /** One empty buffer set, for the layers that are still a single mesh. */
@@ -620,5 +630,33 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
     expect(kinds.filter((kind) => kind === "regions")).toHaveLength(
       SCORE_DISK_MAX_RADIUS - SCORE_DISK_RADIUS,
     );
+  });
+});
+
+/**
+ * The end of the widening has to be a FACT the app states, not one inferred.
+ *
+ * Why this test matters (F42): scoring publishes once per ring and each publish
+ * sets `loading: idle`, so "the status line stopped changing" was the only
+ * available signal that widening had finished — and it is a bad one. Under
+ * worker contention the gap between rings exceeds the window that was watching
+ * for it, so one e2e run read 845 cells where another read 1692 from the same
+ * fixture, and the UI meanwhile told the user a final-looking answer three
+ * times.
+ *
+ * `isFinalRing` lives next to `PROGRESSIVE_RADII` precisely so that changing the
+ * ring list cannot leave a stale definition of "last" behind somewhere else.
+ */
+describe("isFinalRing", () => {
+  it("is true for the last radius the cycle scores and false for the others", () => {
+    expect(isFinalRing(SCORE_DISK_MAX_RADIUS)).toBe(true);
+    expect(isFinalRing(SCORE_DISK_RADIUS)).toBe(false);
+  });
+
+  it("stays true above the last radius, so an unexpected value never hides the end", () => {
+    // Defensive: a caller passing a radius the cycle never scores must not leave
+    // the UI stuck in "still widening" forever. Erring towards "finished" keeps
+    // a wrong radius a cosmetic bug rather than a permanent spinner.
+    expect(isFinalRing(SCORE_DISK_MAX_RADIUS + 1)).toBe(true);
   });
 });

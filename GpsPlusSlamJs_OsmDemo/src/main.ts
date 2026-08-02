@@ -65,7 +65,11 @@ import { attachSitePicker } from "./site-picker.js";
 import { isLayerEnabled } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
-import { createRefreshCycle, renderSafely } from "./refresh-cycle.js";
+import {
+  createRefreshCycle,
+  isFinalRing,
+  renderSafely,
+} from "./refresh-cycle.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 import { createRpcClient, workerTransport } from "./worker/rpc-client.js";
 
@@ -570,6 +574,14 @@ async function main(): Promise<void> {
     }
     const terrainCost = buildingView.terrainCost();
     status.textContent = [
+      // FIRST, because it qualifies every count after it (F42). Scoring widens
+      // over three rings and publishes after each, and `snapshotReady` sets
+      // `loading: idle` every time — so this line used to present ring 2's cell,
+      // region and triangle counts exactly as it presents the final ones, and a
+      // user watched a settled-looking answer silently change twice with no
+      // indication that more was coming. The numbers were never wrong; the
+      // impression that they were final was.
+      isFinalRing(snapshot.radius) ? "" : "widening…",
       `${snapshot.cells.length} cells`,
       `${snapshot.regions.length} ${view.category} regions`,
       `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,

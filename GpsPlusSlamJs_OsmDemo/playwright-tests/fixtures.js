@@ -235,7 +235,7 @@ export async function waitForRefresh(page) {
     .first()
     .waitFor({ state: "visible", timeout: 60000 });
 
-  // AND THEN WAIT FOR THE WIDENING TO SETTLE (W16). Scoring is progressive: the
+  // AND THEN WAIT FOR THE WIDENING TO FINISH (W16). Scoring is progressive: the
   // first emission is the ring-2 working set and rings 3 and 4 follow, each
   // republishing a larger snapshot. So the status line appearing no longer means
   // the refresh has FINISHED — only that it has started delivering.
@@ -247,28 +247,23 @@ export async function waitForRefresh(page) {
   // was about scoring, which is why the helper is the right place to fix it
   // rather than each call site.
   //
-  // QUIESCENCE rather than a ring counter: it needs no new instrumentation and
-  // stays correct if the number of rings ever changes.
-  // THREE consecutive identical reads, not two, and the interval is pinned.
-  // Two reads 100 ms apart can both land in the gap between rings and report a
-  // settled scene that is still growing — which showed up as a Leaflet popup
-  // being closed by `clearLayers()` on the next republish, and as a frame
-  // captured mid-widening. Three reads at 250 ms span 500 ms, comfortably wider
-  // than the gap.
-  let previous = "";
-  let stableReads = 0;
-  await expect
-    .poll(
-      async () => {
-        const current = (await page.locator("#status").textContent()) ?? "";
-        stableReads =
-          current !== "" && current === previous ? stableReads + 1 : 0;
-        previous = current;
-        return stableReads;
-      },
-      { timeout: 30000, intervals: [250] },
-    )
-    .toBeGreaterThanOrEqual(3);
+  // THE APP NOW SAYS SO, so this asks instead of inferring (F42). This used to
+  // watch for QUIESCENCE — three identical reads 250 ms apart — on the argument
+  // that it "needs no new instrumentation and stays correct if the number of
+  // rings ever changes". Both halves of that argument were true and the
+  // conclusion was still wrong: under worker contention the gap between rings
+  // exceeds 500 ms, so the helper declared a settled scene during ring 2 and
+  // every test in the file could proceed against a half-widened working set.
+  // Measured: one run scored `845 cells · 19 chunks scored / 0 reused` where
+  // another scored `1692 cells · 37 scored / 19 reused`, from the same fixture.
+  //
+  // `widening…` is written by `writeStatus` while `snapshot.radius` is below the
+  // last ring, and it exists for the USER first — the app was announcing a
+  // final-looking answer three times. Waiting for its absence is exact, and it
+  // is also faster than waiting out 750 ms of stability the app never needed.
+  await expect(page.locator("#status")).not.toContainText("widening", {
+    timeout: 30000,
+  });
 }
 
 /**

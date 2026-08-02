@@ -66,6 +66,26 @@ export interface DemoSnapshot {
     readonly chunksReused: number;
     readonly geometryBuilt: number;
   };
+  /**
+   * How many rings of chunks this snapshot covers — which ring of the widening
+   * it is (F42).
+   *
+   * WHY THE SNAPSHOT CARRIES IT. Scoring is progressive: `refresh-cycle.ts`
+   * scores `PROGRESSIVE_RADII` = 2, 3, 4 and publishes after each, and
+   * `snapshotReady` sets `loading: idle` every time. So the app announced a
+   * final-looking answer THREE times and nothing downstream could tell an
+   * intermediate ring from the last one. A user watched a cell count, a region
+   * count and a triangle count settle and then silently change twice, and the
+   * e2e helper had to infer the end of widening from 500 ms of status
+   * quiescence — which contention defeats, so one run read 845 cells where
+   * another read 1692 from the same fixture.
+   *
+   * Compared against `SCORE_DISK_MAX_RADIUS` rather than carrying an `isFinal`
+   * flag: a snapshot describing a disc of radius N should say N, and a boolean
+   * would have to be recomputed by whoever changes the ring list. The radius was
+   * already a parameter of `update` — it simply never came back out.
+   */
+  readonly radius: number;
 }
 
 /**
@@ -149,10 +169,12 @@ export class DemoPipeline {
     //
     // `radius` is the pass's own ring, and `undefined` means the first pass, so
     // the fallback has to be the SCORING default rather than this function's.
-    for (const tile of fetchTilesForScoreWorkingSet(
-      chunk,
-      radius ?? SCORE_DISK_RADIUS,
-    )) {
+    //
+    // NORMALISED ONCE, here, because the snapshot reports it too (see
+    // `DemoSnapshot.radius`). Two `?? SCORE_DISK_RADIUS` expressions could drift
+    // into a snapshot claiming a ring the fetch never covered.
+    const scoredRadius = radius ?? SCORE_DISK_RADIUS;
+    for (const tile of fetchTilesForScoreWorkingSet(chunk, scoredRadius)) {
       if (this.loaded.has(tile)) continue;
       // CHECKED PER TILE, which is the granularity that matters: a tile is
       // 28-68 MB, so stopping between tiles is most of the saving available from
@@ -216,6 +238,7 @@ export class DemoPipeline {
         chunksReused: this.index.stats.chunksReused,
         geometryBuilt: this.index.stats.geometryBuilt,
       },
+      radius: scoredRadius,
     };
   }
 

@@ -22,6 +22,8 @@ import {
 } from "./osm-store.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 
+import { SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
+
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 
 const snapshot = (cells: number): DemoSnapshot => ({
@@ -37,6 +39,9 @@ const snapshot = (cells: number): DemoSnapshot => ({
   missingTiles: [],
   loadedTiles: ["871fa199affffff"],
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 1 },
+  // The last ring: these tests are about the store, and a half-widened fixture
+  // would say something this file is not trying to say.
+  radius: SCORE_DISK_MAX_RADIUS,
 });
 
 describe("createDemoStore", () => {

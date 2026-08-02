@@ -117,6 +117,46 @@ test.describe("the demo boots", () => {
     await expect(legend.locator(".legend-min")).toHaveText("1");
     await expect(legend.locator(".legend-max")).not.toBeEmpty();
   });
+
+  test("says it is still widening, and then stops saying it", async ({
+    page,
+  }) => {
+    // F42, and this is the USER-FACING half of that fix rather than a test
+    // convenience. Scoring widens over three rings and publishes after each one,
+    // and `snapshotReady` sets `loading: idle` every time — so the status line
+    // presented ring 2's cell, region and triangle counts exactly as it presents
+    // the final ones. A user watched a settled-looking answer silently change
+    // twice with nothing to say more was coming. The counts were never wrong;
+    // the impression that they were final was.
+    //
+    // THROUGH THE MUTATION OBSERVER, not a poll. The widening marker is on
+    // screen only between the first ring publishing and the last, and a poll
+    // interval wide enough to be cheap is wide enough to miss it entirely —
+    // which would mean this test passes on the bug it exists to catch. That is
+    // the same reason `recordStatus` exists for the superseded-refresh test.
+    // AFTER `goto`, not before: the observer lives in the page, so navigating
+    // destroys it. Installing it first recorded nothing at all and the test
+    // failed for a reason that had nothing to do with the widening. There is no
+    // race in doing it here — `goto` resolves on load and the first ring is
+    // several seconds of fetching and scoring away.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    const history = await recordStatus(page);
+    await waitForRefresh(page);
+
+    const seen = await history();
+    // It appeared at least once, alongside a real cell count — a marker on an
+    // empty status line would prove nothing about which snapshot it qualified.
+    expect(
+      seen.filter((t) => /widening/.test(t) && /\d+ cells/.test(t)),
+    ).not.toHaveLength(0);
+
+    // And it is GONE at the end. `waitForRefresh` now waits for exactly this, so
+    // a marker that never cleared would hang the whole suite rather than fail
+    // here — but asserting it keeps the reason visible at the point of the claim.
+    await expect(page.locator("#status")).not.toContainText("widening");
+    await expect(page.locator("#status")).toContainText(/\d+ cells/);
+  });
 });
 
 test.describe("the browser console", () => {

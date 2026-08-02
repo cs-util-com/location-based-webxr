@@ -10,7 +10,13 @@ path, with no DOM in it.
 - `class DemoPipeline` — `update(position, category, signal?): Promise<DemoSnapshot>` (the signal is checked PER TILE, which is where the saving is: a tile is 28-68 MB), `scoreFor(cell): CellScore | undefined` (so `explainCell` can be answered inside the worker, where the merged features already are),
   `features()`, static `chunkFor(position)`
 - `interface DemoSnapshot` — `cells`, `regions`, `threshold`, `missingTiles`,
-  `loadedTiles`, `stats`
+  `loadedTiles`, `stats`, `radius`
+  - `radius` is which ring of the progressive widening this snapshot describes,
+    normalised from `update`'s optional `radius` argument in ONE place so the
+    snapshot cannot claim a ring the fetch loop never covered. Compare it against
+    `SCORE_DISK_MAX_RADIUS` — or better, against `isFinalRing` in
+    `refresh-cycle.ts`, which lives next to the list that defines "last" — to ask
+    whether more snapshots are coming. See `refresh-cycle.ts.md`.
   - `loadedTiles` are the res-7 tiles currently held, surfaced so the map can
     DRAW the downloaded extent. "One res-7 tile" stays an abstraction until it
     is a box over a city — and the query covers the tile's bounding box, not the

@@ -405,4 +405,49 @@ describe("the fetch set follows the ring being scored (W4, finding N1)", () => {
         expect([...asked].sort()).toEqual([...NEAR_A_BOUNDARY.narrow].sort());
       });
   });
+
+  /**
+   * The snapshot has to say which ring it describes (F42).
+   *
+   * WHY THIS MATTERS ENOUGH TO BE A TEST. `refresh-cycle.ts` scores three rings
+   * and publishes after each one, and `snapshotReady` sets `loading: idle` every
+   * time — so the app announced a final-looking answer three times and nothing
+   * downstream could tell an intermediate ring from the last one. That was two
+   * separate defects wearing one costume: the status line claimed a finished
+   * scoring while it was still growing, and the e2e helper had to GUESS the end of
+   * widening from 500 ms of status quiescence, which worker contention defeated —
+   * one run read 845 cells where another read 1692, from the same fixture.
+   *
+   * The radius was already a parameter of `update`; it simply never came back out.
+   */
+  describe("the snapshot's radius", () => {
+    it("is the radius that was asked for", async () => {
+      const { source } = recordingSource();
+      const pipeline = new DemoPipeline({ source, table: TABLE });
+
+      const snapshot = await pipeline.update(
+        NEAR_A_BOUNDARY.position,
+        "walkable",
+        undefined,
+        SCORE_DISK_MAX_RADIUS,
+      );
+
+      expect(snapshot.radius).toBe(SCORE_DISK_MAX_RADIUS);
+    });
+
+    it("falls back to the first pass's radius when none was asked for", async () => {
+      // `undefined` means the first pass everywhere else in this file, and the
+      // snapshot must agree rather than reporting a radius of `undefined` that a
+      // `< SCORE_DISK_MAX_RADIUS` comparison would silently read as false.
+      const { source } = recordingSource();
+      const pipeline = new DemoPipeline({ source, table: TABLE });
+
+      const snapshot = await pipeline.update(
+        NEAR_A_BOUNDARY.position,
+        "walkable",
+      );
+
+      expect(snapshot.radius).toBe(SCORE_DISK_RADIUS);
+    });
+  });
 });

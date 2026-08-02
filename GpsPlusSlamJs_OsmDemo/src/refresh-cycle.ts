@@ -69,6 +69,25 @@ const PROGRESSIVE_RADII: readonly number[] = Array.from(
   (_, step) => SCORE_DISK_RADIUS + step,
 );
 
+/**
+ * Whether a snapshot of this radius is the LAST one a refresh will publish (F42).
+ *
+ * EXPORTED FROM HERE, next to the list that defines "last". The cycle publishes
+ * once per ring and `snapshotReady` sets `loading: idle` every time, so without
+ * this the app announced a final-looking answer three times: a user watched the
+ * cell, region and triangle counts settle and then silently change twice, and
+ * the e2e helper could only infer the end of widening from the status line
+ * holding still — which worker contention defeats, so one run scored 845 cells
+ * where another scored 1692 from the same fixture.
+ *
+ * `>=` rather than `===`, deliberately. A radius the cycle never scores must not
+ * leave the UI claiming "still widening" forever; erring towards finished makes
+ * an unexpected value a cosmetic bug instead of a permanent spinner.
+ */
+export function isFinalRing(radius: number): boolean {
+  return radius >= (PROGRESSIVE_RADII.at(-1) ?? SCORE_DISK_MAX_RADIUS);
+}
+
 /** The store handles the cycle writes through. */
 export interface StoreAccess {
   readonly store: DemoStore["store"];
