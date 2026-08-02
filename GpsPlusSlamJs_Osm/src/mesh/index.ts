@@ -82,6 +82,13 @@ export { POI_KEYS, buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";
 
 export type { PoiModel } from "./poi-models.js";
 export { POI_MODELS, poiModelFor } from "./poi-models.js";
+export type { PoiFootprintMarker } from "./poi-building-overlap.js";
+export {
+  BUILDING_SCALE_POI_HEIGHT_M,
+  isBuildingScalePoi,
+  suppressPoiInsideBuildings,
+} from "./poi-building-overlap.js";
+export { TALL_STRUCTURE_KINDS, isTallStructure } from "./tall-structures.js";
 export {
   box,
   canopy,

@@ -58,6 +58,16 @@ export interface BuildingVolume {
    * is the common case §8's approximation trade rests on.
    */
   readonly roofIsApproximate: boolean;
+  /**
+   * The OUTER ring in ENU metres, kept so a consumer can ask what ground this
+   * volume covers (F33, §5).
+   *
+   * Carried rather than recomputed: the rings already exist at the point this is
+   * built, and re-deriving them would repeat the whole geometry conversion.
+   * `poi-building-overlap.ts` is the consumer — it suppresses POI markers that
+   * duplicate a building already standing here.
+   */
+  readonly footprint: readonly EnuPoint[];
 }
 
 export interface BuildBuildingsOptions {
@@ -506,12 +516,20 @@ function volumeFor(
   });
 
   const roofIsApproximate = mesh.roofIsApproximate;
+  const footprint = rings[0] ?? [];
   return parentFeature === undefined
-    ? { feature: featureKey(feature), heights, mesh, roofIsApproximate }
+    ? {
+        feature: featureKey(feature),
+        heights,
+        mesh,
+        roofIsApproximate,
+        footprint,
+      }
     : {
         feature: featureKey(feature),
         parentFeature,
         heights,
+        footprint,
         mesh,
         roofIsApproximate,
       };

@@ -42,6 +42,7 @@ import {
   buildAreaPlates,
   buildBuildings,
   buildPoiMarkers,
+  suppressPoiInsideBuildings,
   buildRegionSlabs,
   type SlabRegion,
   buildRoads,
@@ -271,7 +272,19 @@ function buildMesh(
   const trees = buildTrees(all, options);
   // Same options as the trees: a marker floating over sloped ground reads as a
   // placement bug, and the sampler is the one already built for this frame.
-  const poi = buildPoiMarkers(all, options);
+  // F33: a POI node that duplicates a building already extruded is suppressed
+  // (§5, DEC-R6-17). Four kinds are buildings in their own right at real-world
+  // scale — hospital 15.3 m, hotel 13.5, place_of_worship 12.0,
+  // sports_centre 9.0 — and a hospital is routinely mapped as BOTH a node and a
+  // building way, so the marker stands inside the building.
+  //
+  // APPLIED HERE because this is the only place that has both answers. Neither
+  // builder can see the other, and giving either one a dependency on the other
+  // would be a cycle.
+  const poi = suppressPoiInsideBuildings(
+    buildPoiMarkers(all, options),
+    volumes.map((volume) => volume.footprint),
+  );
   // PER-VERTEX terrain, like the plates: a road is a long surface, and one
   // sample would cut into the hill at one end and float at the other.
   const roads = buildRoads(all, options);
