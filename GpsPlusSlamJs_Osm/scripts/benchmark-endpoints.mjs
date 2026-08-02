@@ -50,6 +50,8 @@ import { latLngToCell, cellToBoundary } from "h3-js";
 
 import {
   GIVE_UP_AFTER_REFUSALS,
+  activeRefusals,
+  REFUSAL_DECAY_MS,
   OPERATOR_COOLDOWN_MS,
   backoffDelayMs,
   buildMatrixDocument,
@@ -273,6 +275,29 @@ const SECOND_CITY = { lat: 49.4122, lng: 8.7101, label: "heidelberg-altstadt" };
  * unattended hours cannot be lost to a laptop sleep, and **stop cleanly at a
  * runtime budget** rather than at the end of the matrix.
  */
+/**
+ * Lets a dropped host back in once its operator has been quiet (F29).
+ *
+ * RE-ADMISSION IS THE POINT, not the decay on its own. A decaying counter beside
+ * a permanent drop would be decoration: the host would still never be tried
+ * again. A host stays out only while its operator’s refusals are still recent;
+ * once they age past `REFUSAL_DECAY_MS` it is tried again.
+ *
+ * Its own function because `runMatrix` is already at the complexity ceiling, and
+ * because "when does a host come back" is a rule worth being able to point at.
+ */
+function readmitIfQuiet({ hostname, cell, dropped, refusals, notes }) {
+  if (!dropped.has(hostname)) return;
+  const recent = activeRefusals(refusals[cell.operator], { now: Date.now() });
+  if (recent >= GIVE_UP_AFTER_REFUSALS) return;
+  dropped.delete(hostname);
+  const minutes = Math.round(REFUSAL_DECAY_MS / 60000);
+  notes.push(
+    `${hostname} re-admitted: ${cell.operator} has not refused in the last ${minutes} min`,
+  );
+  console.log(`  ${hostname} re-admitted after a quiet ${minutes} min`);
+}
+
 async function runMatrix() {
   const centre = {
     lat: arg("lat", DEFAULT_CENTRE.lat),
@@ -353,10 +378,14 @@ async function runMatrix() {
     }
 
     const hostname = new URL(cell.url).hostname;
+    readmitIfQuiet({ hostname, cell, dropped, refusals, notes });
     if (dropped.has(hostname)) {
       // Recorded rather than silently skipped: "this host refused and was
       // dropped" is one of the answers the sweep exists to produce, and a gap in
       // the results would otherwise read as a cell nobody thought to run.
+      //
+      // Reached only while the refusals are still RECENT — see the re-admission
+      // above.
       results.push({
         ...cellRecord(cell),
         skipped: "host dropped after refusals",
@@ -403,12 +432,23 @@ async function runMatrix() {
       // The GIVE-UP still drops the HOSTNAME, because "this name is down" and
       // "this operator is refusing" are different results and the sweep should
       // record both — but the budget that triggers it is the operator's.
-      refusals[cell.operator] = (refusals[cell.operator] ?? 0) + 1;
-      const count = refusals[cell.operator];
+      // TIMESTAMPS, NOT A COUNTER (F29). The budget DECAYS: a refusal older
+      // than `REFUSAL_DECAY_MS` no longer counts, so two refusals close
+      // together still drop the host — DEC-R5-1 unchanged — while a 504 at
+      // minute two stops holding a host out at minute thirty. Under the old
+      // permanent rule that cost 46 of 84 cells on a 34-minute sweep, including
+      // the whole second-city leg.
+      refusals[cell.operator] = [
+        ...(refusals[cell.operator] ?? []),
+        { at: Date.now() },
+      ];
+      const count = activeRefusals(refusals[cell.operator], {
+        now: Date.now(),
+      });
       if (count >= GIVE_UP_AFTER_REFUSALS) {
         dropped.add(hostname);
         notes.push(
-          `${hostname} dropped after ${count} refusals against ${cell.operator} (${measured.status})`,
+          `${hostname} dropped after ${count} recent refusals against ${cell.operator} (${measured.status})`,
         );
         console.log(
           `  ${cell.operator} has refused ${count}x — dropping ${hostname} for the rest of the run`,

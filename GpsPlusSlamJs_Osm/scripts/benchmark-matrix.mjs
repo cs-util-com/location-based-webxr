@@ -39,7 +39,18 @@
  *   ones this package actually renders, so dropping them would measure a query
  *   nobody would ship.
  */
-export const QUERY_FORMS = Object.freeze(["plain", "clipped", "areal-only"]);
+export const QUERY_FORMS = Object.freeze([
+  "plain",
+  "clipped",
+  "areal-only",
+  // ADDED BY F31, and predicted by the sweep it follows rather than guessed at.
+  // §2.1 of the results doc reasons that the two levers attack DIFFERENT things:
+  // clipping still PRINTS a clipped fragment of every giant relation that
+  // touches the box, while areal-only removes those relations from the result
+  // set entirely. If that is right the combination should beat both, and it is
+  // one more form in the same runner rather than a new investigation.
+  "clipped-areal",
+]);
 
 /**
  * The order the forms are actually RUN in, which is not their definition order.
@@ -51,7 +62,12 @@ export const QUERY_FORMS = Object.freeze(["plain", "clipped", "areal-only"]);
  * already answered. Running the control first would spend the most bytes to
  * learn the least.
  */
-export const FORM_RUN_ORDER = Object.freeze(["clipped", "areal-only", "plain"]);
+export const FORM_RUN_ORDER = Object.freeze([
+  "clipped",
+  "areal-only",
+  "clipped-areal",
+  "plain",
+]);
 
 /** Relation types this package treats as areal — mirrors `AREAL_RELATION_TYPES`. */
 const AREAL_RELATION_TYPES = Object.freeze(["multipolygon", "boundary"]);
@@ -97,6 +113,43 @@ export const BACKOFF_MAX_MS = 15 * 60_000;
  * the shape rather than the current reachability.
  */
 export const GIVE_UP_AFTER_REFUSALS = 2;
+
+/**
+ * How long a refusal counts against an operator's budget, in milliseconds
+ * (F29).
+ *
+ * **THE RATE WAS NEVER THE PROBLEM; THE PERMANENCE WAS.** Under the original
+ * rule a hostname dropped on its second refusal stayed dropped for the whole
+ * run, and over the 34-minute 2026-08-01 sweep that cost **46 of 84 cells** —
+ * including the ENTIRE second-city leg, which was the clean test of the relation
+ * hypothesis (F30). A 504 at minute two was still holding a host out at minute
+ * thirty, by which point it says nothing about the server's current state.
+ *
+ * Decaying the budget keeps the politeness per unit time exactly as DEC-R5-1
+ * specified — two refusals close together still drops the host — while letting a
+ * long sweep recover from a transient failure.
+ *
+ * TEN MINUTES, bounded from both sides by the run this is for. Requests to one
+ * operator are already a minute apart ({@link OPERATOR_COOLDOWN_MS}), so a
+ * window of seconds would forget a genuine refusal between consecutive attempts
+ * and amount to no rule at all; a window at or above the 34-minute run length
+ * would decay nothing and change nothing.
+ */
+export const REFUSAL_DECAY_MS = 10 * 60_000;
+
+/**
+ * How many of an operator's refusals still count, given when they happened.
+ *
+ * A PURE FUNCTION OF TIMESTAMPS rather than a counter that is incremented and
+ * never decremented, which is what makes the decay testable without waiting ten
+ * minutes — and testing a give-up rule by actually waiting is how a rule ends up
+ * untested.
+ */
+export function activeRefusals(refusals, { now }) {
+  if (!Array.isArray(refusals)) return 0;
+  return refusals.filter((refusal) => now - refusal.at < REFUSAL_DECAY_MS)
+    .length;
+}
 
 /**
  * Hostname → operator.
@@ -155,23 +208,23 @@ export function buildMatrixQuery({ bbox, keys, form }) {
   // NEVER the key-regex form. Measured 2026-07-28: the union of exact-key
   // statements returns 200 in 18.2 s where `[~"^(a|b|…)$"~"."]` 504s in 8 s on
   // the same tile, because the regex is a full-table scan.
-  const selection =
-    form === "areal-only"
-      ? keys
-          .map(
-            (key) =>
-              `nw["${key}"];` +
-              AREAL_RELATION_TYPES.map(
-                (type) => `relation["${key}"]["type"="${type}"];`,
-              ).join(""),
-          )
-          .join("")
-      : keys.map((key) => `nwr["${key}"];`).join("");
+  const areal = form === "areal-only" || form === "clipped-areal";
+  const clipped = form === "clipped" || form === "clipped-areal";
+  const selection = areal
+    ? keys
+        .map(
+          (key) =>
+            `nw["${key}"];` +
+            AREAL_RELATION_TYPES.map(
+              (type) => `relation["${key}"]["type"="${type}"];`,
+            ).join(""),
+        )
+        .join("")
+    : keys.map((key) => `nwr["${key}"];`).join("");
 
-  const out =
-    form === "clipped"
-      ? `out geom(${bbox.south},${bbox.west},${bbox.north},${bbox.east});`
-      : "out geom;";
+  const out = clipped
+    ? `out geom(${bbox.south},${bbox.west},${bbox.north},${bbox.east});`
+    : "out geom;";
 
   return [header, `(${selection});`, out].join("\n");
 }

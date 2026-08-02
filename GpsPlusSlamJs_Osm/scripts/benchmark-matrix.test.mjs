@@ -25,8 +25,11 @@ import { describe, expect, it } from "vitest";
 import {
   BACKOFF_BASE_MS,
   GIVE_UP_AFTER_REFUSALS,
+  FORM_RUN_ORDER,
   OPERATOR_COOLDOWN_MS,
   QUERY_FORMS,
+  REFUSAL_DECAY_MS,
+  activeRefusals,
   backoffDelayMs,
   buildMatrixDocument,
   buildMatrixQuery,
@@ -44,7 +47,16 @@ describe("buildMatrixQuery", () => {
     // not to matter (res 9 returned 38.7 MB against res 7's ~68 MB for 49x less
     // ground). If the form axis silently collapsed to one entry the run would be
     // 24 expensive cells re-measuring the axis that has no answer in it.
-    expect([...QUERY_FORMS]).toEqual(["plain", "clipped", "areal-only"]);
+    // FOUR SINCE F31. The combined form was added because §2.1 of the results
+    // doc reasons the two levers attack different things and should compose —
+    // clipping still prints a fragment of every giant relation touching the box,
+    // while areal-only removes those relations from the result set entirely.
+    expect([...QUERY_FORMS]).toEqual([
+      "plain",
+      "clipped",
+      "areal-only",
+      "clipped-areal",
+    ]);
   });
 
   it("builds the plain form as today's production query", () => {
@@ -387,5 +399,101 @@ describe("buildMatrixDocument", () => {
     });
     expect(doc.totals.bytes).toBe(3_500_000);
     expect(doc.totals.byOperator).toBeDefined();
+  });
+});
+
+/**
+ * The fourth query form, and a refusal budget that decays — F31 and F29.
+ *
+ * BOTH COME FROM THE 2026-08-01 SWEEP'S OWN RESULTS rather than from taste.
+ *
+ * F31: `clipped` and `areal-only` each cut the res-7 payload substantially
+ * (67.9 MB -> 30.3 and 21.1), and §2.1 of the results doc reasons that they
+ * attack different things — clipping still PRINTS a fragment of every giant
+ * relation that touches the box, while areal-only removes those relations from
+ * the result set. If that reasoning holds, the combination should beat both, and
+ * it is one more form in the same runner.
+ *
+ * F29: two refusals dropped a hostname for the remainder, and over a 34-minute
+ * run that cost 46 of 84 cells — including the entire second-city leg. **The
+ * rate is not the problem; the permanence is.** A budget that decays with time
+ * keeps the same politeness per minute while letting a long sweep recover from a
+ * transient 504.
+ */
+describe("the combined query form (F31)", () => {
+  it("is offered as a fourth form", () => {
+    expect(QUERY_FORMS).toContain("clipped-areal");
+  });
+
+  it("selects like areal-only AND prints like clipped", () => {
+    // The whole point of the form: the two levers are independent, so the
+    // combination must show both. A form that only did one would produce a row
+    // indistinguishable from an existing one and the sweep would report a
+    // confident non-result.
+    const query = buildMatrixQuery({
+      bbox: { south: 1, west: 2, north: 3, east: 4 },
+      keys: ["amenity"],
+      form: "clipped-areal",
+    });
+    // areal-only selection: `nw[...]` plus typed relations, never bare `nwr`.
+    expect(query).toContain('nw["amenity"];');
+    expect(query).not.toContain('nwr["amenity"];');
+    // clipped printing.
+    expect(query).toContain("out geom(1,2,3,4);");
+  });
+
+  it("runs LAST of the cheap forms but before the control", () => {
+    // The run order exists so that if the budget runs out, the cheap forms have
+    // already answered and only the control is missing — and the control is the
+    // one with independent measurements to fall back on.
+    const order = [...FORM_RUN_ORDER];
+    expect(order).toContain("clipped-areal");
+    expect(order.indexOf("clipped-areal")).toBeLessThan(order.indexOf("plain"));
+  });
+
+  it("keeps every form in the run order, so none is silently unrunnable", () => {
+    // A form present in QUERY_FORMS but absent from FORM_RUN_ORDER would never
+    // be scheduled, and the sweep would report "no data" for it rather than
+    // "never asked".
+    expect([...FORM_RUN_ORDER].sort()).toEqual([...QUERY_FORMS].sort());
+  });
+});
+
+describe("the refusal budget decays (F29)", () => {
+  it("forgets a refusal after the decay window", () => {
+    // The fix for the permanence. A host that said no once an hour ago is not
+    // the same evidence as a host that said no twice in a minute.
+    expect(activeRefusals([{ at: 0 }], { now: REFUSAL_DECAY_MS + 1 })).toBe(0);
+  });
+
+  it("still counts refusals inside the window", () => {
+    expect(activeRefusals([{ at: 0 }, { at: 1000 }], { now: 2000 })).toBe(2);
+  });
+
+  it("drops a host on two refusals CLOSE TOGETHER, exactly as before", () => {
+    // F29 must not become "be less polite". Two refusals inside the window is
+    // still a drop, which is DEC-R5-1 unchanged.
+    const recent = [{ at: 1000 }, { at: 2000 }];
+    expect(activeRefusals(recent, { now: 2000 })).toBeGreaterThanOrEqual(
+      GIVE_UP_AFTER_REFUSALS,
+    );
+  });
+
+  it("lets a host back in after a long quiet period", () => {
+    // The 34-minute sweep is the case: a 504 at minute 2 must not still be
+    // holding a host out at minute 30.
+    const old = [{ at: 0 }, { at: 60_000 }];
+    expect(
+      activeRefusals(old, { now: 60_000 + REFUSAL_DECAY_MS + 1 }),
+    ).toBeLessThan(GIVE_UP_AFTER_REFUSALS);
+  });
+
+  it("uses a window shorter than a long sweep but longer than a burst", () => {
+    // Bounded from both sides by the run it is for: the recorded sweep took
+    // 34 minutes, so a window at or above that decays nothing; a window of
+    // seconds would forget a genuine refusal between consecutive requests, which
+    // are spaced a minute apart by OPERATOR_COOLDOWN_MS.
+    expect(REFUSAL_DECAY_MS).toBeGreaterThan(OPERATOR_COOLDOWN_MS * 2);
+    expect(REFUSAL_DECAY_MS).toBeLessThan(30 * 60_000);
   });
 });
