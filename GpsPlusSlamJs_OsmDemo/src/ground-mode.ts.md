@@ -14,7 +14,9 @@ DEC-R5-4).
 - `DEFAULT_GROUND_MODE` — `"cpu-ramp"`.
 - `groundModeLabel(mode)` — what the picker shows.
 - `groundStrategy(mode)` — which displacement path the mode drives.
-- `groundShowsRamp(mode)` — whether the ramp material is used.
+- `groundAppearance(mode)` — `plain` | `slope` | `ramp`.
+- `groundShowsRamp(mode)` — whether the ramp material is used (now derived from
+  `groundAppearance`).
 - `parseGroundMode(value)` — narrows an untrusted string, falling back to the
   default.
 
@@ -76,7 +78,7 @@ for (const mode of GROUND_MODES) picker.append(optionFor(mode));
 
 const ground = parseGroundMode(store.getState().osmView.groundMode);
 buildingView.setGroundDisplacement(groundStrategy(ground));
-buildingView.setGroundDebug(groundShowsRamp(ground));
+buildingView.setGroundAppearance(groundAppearance(ground));
 ```
 
 ## Tests
