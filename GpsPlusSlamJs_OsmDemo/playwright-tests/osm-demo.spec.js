@@ -1073,6 +1073,17 @@ test.describe("my location", () => {
 
     // And the fix actually drove a refresh — the status line reports the new
     // working set rather than the one it booted with.
+    //
+    // THROUGH THE HELPER, NOT A BARE `toContainText`. The button reaching a
+    // terminal state says the FIX arrived; the pipeline it kicks off is a
+    // separate, much longer job, and the bare assertion above it only allowed
+    // Playwright's default 5 s. Under worker contention that expires while the
+    // status line still reads "Fetching and scoring around 50.92310, 6.94450…",
+    // which is the pipeline working correctly and slowly rather than a defect —
+    // captured exactly that way in a gate run on 2026-08-02. `waitForRefresh`
+    // allows 60 s and additionally waits for the progressive widening to settle,
+    // which every other test in this file already relies on.
+    await waitForRefresh(page);
     await expect(page.locator("#status")).toContainText("cells");
 
     // THE VIEWPORT MUST MOVE TOO, and asserting the status line alone missed
@@ -1972,21 +1983,48 @@ test.describe("the 3D view", () => {
     const panel = page.locator("#details");
     await expect(panel).toBeHidden();
 
-    // Sweep a short arc through the middle of the scene: the fixture's grid
-    // covers the centre, but the exact pixel depends on the camera.
-    for (const [dx, dy] of [
-      [0, 0],
-      [-40, 20],
-      [40, 20],
-      [0, 60],
-      [-80, 60],
-    ]) {
-      await page.mouse.click(
-        box.x + box.width / 2 + dx,
-        box.y + box.height / 2 + dy,
-      );
-      if (await panel.isVisible()) break;
-    }
+    // Sweep an arc through the middle of the scene: the fixture's grid covers the
+    // centre, but the exact pixel depends on the camera.
+    //
+    // WHY THE WHOLE SWEEP RETRIES, from a captured failure (2026-08-02). The
+    // scene was fully built and the grid plainly drawn, but that run had scored a
+    // SMALLER working set than a passing one — `845 cells · 1 walkable regions ·
+    // 19 chunks scored / 0 reused` against the usual `1692 cells · 3 walkable
+    // regions · 37 scored / 19 reused`. A smaller set is a smaller grid, and a
+    // fixed arc of five offsets can then sit past its far edge, which is what the
+    // screenshot shows. A republish landing under the sweep produces the same
+    // symptom, and one screenshot cannot separate the two.
+    //
+    // So this asserts the claim rather than a mechanism: "a click on the grid
+    // opens the panel" is not weakened by trying more than once, and repeating
+    // costs nothing in the common case because the first offset usually hits.
+    // Two earlier hypotheses were written and then DISPROVED — that
+    // `isVisible()` races the on-demand repaint (a single-offset sweep passed
+    // 5/5 with the old instant check), and that no cell was drawn at all (the
+    // screenshot shows one). Do not replace this with a longer timeout.
+    //
+    // The offsets also now reach further DOWN the view, which is nearer the
+    // camera and inside the grid in every run observed.
+    const sweep = async () => {
+      for (const [dx, dy] of [
+        [0, 0],
+        [-40, 20],
+        [40, 20],
+        [0, 60],
+        [-80, 60],
+        [0, 120],
+        [-60, 140],
+        [60, 140],
+      ]) {
+        await page.mouse.click(
+          box.x + box.width / 2 + dx,
+          box.y + box.height / 2 + dy,
+        );
+        if (await panel.isVisible()) return true;
+      }
+      return false;
+    };
+    await expect.poll(sweep, { timeout: 20_000 }).toBe(true);
 
     await expect(panel).toBeVisible();
     // The SAME panel a 2D click opens — one selection, one explanation, and the

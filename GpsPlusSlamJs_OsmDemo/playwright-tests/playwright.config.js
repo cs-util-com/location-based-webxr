@@ -35,6 +35,19 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
+  // THREE, ON AN EIGHT-CORE MACHINE, AND THE HEADROOM IS AN ILLUSION. Raising this
+  // to 5 was measured: no wall-clock gain (4.8 min against a 4.6 min mean) and two
+  // grid tests failed that pass at 3.
+  //
+  // Each worker is a headless Chromium doing software-rasterised WebGL, which
+  // saturates the machine long before the worker count reaches the core count. The
+  // demo reports its own terrain cost, and the same boot on the same fixture reads
+  // `ground cpu 77.2 ms` at --workers=1 and `ground cpu 1659.6 ms` under 3-5 — a 21x
+  // inflation of identical work. That is also why the timeout above is 90 s.
+  //
+  // So the suite is CONTENTION-bound, not work-bound: more workers buy queueing, not
+  // throughput, and the only lever left is removing work. Full findings in
+  // GpsPlusSlamJs_Docs/docs/2026-08-02-0455-osm-demo-e2e-suite-speed-findings.md.
   workers: process.env.CI ? 1 : 3,
   reporter: process.env.CI
     ? [["github"], ["json", { outputFile: "../test-results/results.json" }]]
