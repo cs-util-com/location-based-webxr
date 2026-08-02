@@ -449,3 +449,80 @@ function crc32(buffer) {
   }
   return ~crc;
 }
+
+/**
+ * Installs an in-page frame probe on the 3D canvas, and why it has to be
+ * in-page.
+ *
+ * Three tests compared rendered frames by pulling the whole buffer into Node —
+ * `[...ctx.getImageData(...).data]` is 1280 x 720 x 4 = 3 686 400 array elements
+ * across the CDP bridge. Two of them did it inside an `expect.poll`, so they
+ * paid it on every poll iteration. Those were the three slowest tests in the
+ * suite: 53 s, 37 s and 31 s.
+ *
+ * Nothing about what they assert needs the pixels in Node. Stashing a reference
+ * frame on `window` and running the comparison in the page ships ONE INTEGER,
+ * and the arithmetic is character-for-character the same.
+ *
+ * Call once per test, after the page is loaded.
+ */
+export async function installFrameProbe(page) {
+  await page.evaluate(() => {
+    const w = /** @type {any} */ (window);
+    const read = () => {
+      const el = document.querySelector("#scene canvas");
+      if (!(el instanceof HTMLCanvasElement)) return undefined;
+      const probe = document.createElement("canvas");
+      probe.width = el.width;
+      probe.height = el.height;
+      const ctx = probe.getContext("2d");
+      if (ctx === null) return undefined;
+      ctx.drawImage(el, 0, 0);
+      return ctx.getImageData(0, 0, probe.width, probe.height).data;
+    };
+    /** Captures the current frame as the reference. Returns its length, or 0. */
+    w.__e2eStash = () => {
+      const data = read();
+      w.__e2eFrame = data;
+      return data === undefined ? 0 : data.length;
+    };
+    /**
+     * Pixels differing from the stash by more than `threshold`.
+     *
+     * `redOnly` picks the metric the caller's assertion was written against:
+     * the ground A/B compares the red channel alone, the layer tests sum all
+     * three. Returns `-1` when there is no canvas or no stash, so a missing
+     * probe FAILS rather than reading as "nothing changed".
+     */
+    w.__e2eDiff = (threshold, redOnly) => {
+      const now = read();
+      const previous = w.__e2eFrame;
+      if (now === undefined || previous === undefined) {
+        return { differing: -1, anyLit: false };
+      }
+      let differing = 0;
+      let lit = 0;
+      for (let i = 0; i < now.length; i += 4) {
+        const dr = Math.abs(now[i] - previous[i]);
+        const delta = redOnly
+          ? dr
+          : dr +
+            Math.abs(now[i + 1] - previous[i + 1]) +
+            Math.abs(now[i + 2] - previous[i + 2]);
+        if (delta > threshold) differing += 1;
+        lit += now[i];
+      }
+      return { differing, anyLit: lit > 0 };
+    };
+  });
+}
+
+/** Captures the reference frame. Returns its byte length, or 0 if absent. */
+export const stashFrame = (page) => page.evaluate(() => window.__e2eStash());
+
+/** `{ differing, anyLit }` against the stashed frame. */
+export const diffFromStash = (page, threshold, redOnly = false) =>
+  page.evaluate(
+    ([t, r]) => window.__e2eDiff(t, r),
+    /** @type {[number, boolean]} */ ([threshold, redOnly]),
+  );

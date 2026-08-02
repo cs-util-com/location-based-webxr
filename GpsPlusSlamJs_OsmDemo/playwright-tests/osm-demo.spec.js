@@ -41,8 +41,11 @@ const REPAINT = { timeout: 15000 };
 import {
   AT_FIXTURE,
   countNonSkyPixels,
+  diffFromStash,
   expectCanvasFillsContainer,
+  installFrameProbe,
   recordStatus,
+  stashFrame,
   stubNetwork,
   waitForRefresh,
 } from "./fixtures.js";
@@ -1479,67 +1482,24 @@ test.describe("the 3D view", () => {
     // which made this the slowest test in the suite by a wide margin at 53 s.
     // Stashing the first frame on `window` and doing the comparison in the page
     // ships one integer instead, and asserts exactly the same thing.
-    // Installs the reader ONCE, so capture and compare share one definition of
-    // "read the scene canvas" instead of two copies that could drift.
-    const installReader = () =>
-      page.evaluate(() => {
-        /** @type {any} */ (window).__e2eReadFrame = () => {
-          const el = document.querySelector("#scene canvas");
-          if (!(el instanceof HTMLCanvasElement)) return undefined;
-          const probe = document.createElement("canvas");
-          probe.width = el.width;
-          probe.height = el.height;
-          const ctx = probe.getContext("2d");
-          if (ctx === null) return undefined;
-          ctx.drawImage(el, 0, 0);
-          return ctx.getImageData(0, 0, probe.width, probe.height).data;
-        };
-      });
-
-    const captureFrame = () =>
-      page.evaluate(() => {
-        const w = /** @type {any} */ (window);
-        const data = w.__e2eReadFrame?.();
-        w.__e2eFrame = data;
-        return data === undefined ? 0 : data.length;
-      });
-
-    /** Pixels whose RED differs from the stashed frame by more than 3 levels. */
-    const compareToStashed = () =>
-      page.evaluate(() => {
-        const w = /** @type {any} */ (window);
-        const now = w.__e2eReadFrame?.();
-        const previous = w.__e2eFrame;
-        if (now === undefined || previous === undefined) {
-          return { differing: -1, anyLit: false };
-        }
-        // No `?? 0` guards: both are `Uint8ClampedArray`s of the same canvas
-        // size, so every index below  exists by construction.
-        let differing = 0;
-        let lit = 0;
-        for (let i = 0; i < now.length; i += 4) {
-          if (Math.abs(previous[i] - now[i]) > 3) differing += 1;
-          lit += now[i];
-        }
-        return { differing, anyLit: lit > 0 };
-      });
-
+    // The probe itself lives in `fixtures.js`, because three tests wanted it and
+    // three inline copies is three places for the metric to drift.
     // BOTH APPEARANCES MUST MATCH, or this compares colours instead of geometry.
     // The picker gained a ramp axis in W6 and the DEFAULT is now `cpu-ramp`, so
     // taking the "CPU" frame from the default and the "GPU" frame from `gpu` was
     // comparing ramp-coloured ground against neutral ground — thousands of
     // differing pixels, and nothing to do with displacement. Pinning the plain
     // entry on both sides keeps the A/B about the thing it is named after.
-    await installReader();
+    await installFrameProbe(page);
     await page.locator("#ground-mode").selectOption("cpu");
-    expect(await captureFrame()).toBeGreaterThan(0);
+    expect(await stashFrame(page)).toBeGreaterThan(0);
     await expect(page.locator("#status")).toContainText(/ground cpu \d/);
 
     // The A/B switch is a five-state picker since W6; "GPU ground" is one of its
     // options rather than a checkbox of its own.
     await page.locator("#ground-mode").selectOption("gpu");
     await expect(page.locator("#status")).toContainText(/ground gpu \d/);
-    const { differing, anyLit } = await compareToStashed();
+    const { differing, anyLit } = await diffFromStash(page, 3, true);
 
     // SAME GROUND. If the two disagreed, switching the toggle would move the
     // buildings relative to the terrain and the GPU would be a second source of
@@ -1718,50 +1678,28 @@ test.describe("the 3D view", () => {
     // A difference count is immune to both: it asserts what the layer actually
     // claims — that switching it on changes a large part of the picture and
     // switching it off puts it back — without pinning a palette or a light.
-    const frame = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return null;
-        const probe = document.createElement("canvas");
-        probe.width = el.width;
-        probe.height = el.height;
-        const ctx = probe.getContext("2d");
-        if (ctx === null) return null;
-        ctx.drawImage(el, 0, 0);
-        return [...ctx.getImageData(0, 0, probe.width, probe.height).data];
-      });
-
-    /** Pixels differing from `baseline` by more than antialiasing noise. */
-    const changedFrom = (baseline) => async () => {
-      const now = await frame();
-      if (now === null || baseline === null) return -1;
-      let count = 0;
-      for (let i = 0; i < now.length; i += 4) {
-        const dr = Math.abs((now[i] ?? 0) - (baseline[i] ?? 0));
-        const dg = Math.abs((now[i + 1] ?? 0) - (baseline[i + 1] ?? 0));
-        const db = Math.abs((now[i + 2] ?? 0) - (baseline[i + 2] ?? 0));
-        if (dr + dg + db > 24) count += 1;
-      }
-      return count;
-    };
+    // THE FRAME STAYS IN THE PAGE — see `installFrameProbe`. This used to pull
+    // 3 686 400 array elements across the CDP bridge, once per poll iteration.
+    await installFrameProbe(page);
+    const changedFromStash = async () =>
+      (await diffFromStash(page, 24)).differing;
 
     // Off first: roads draw by default since W9, so a "before" frame with them
     // already on would make the difference this measures zero.
     await page.getByRole("checkbox", { name: "roads" }).uncheck();
-    const withoutRoads = await frame();
-    expect(withoutRoads).not.toBeNull();
+    expect(await stashFrame(page)).toBeGreaterThan(0);
 
     await page.getByRole("checkbox", { name: "roads" }).check();
     await expect(page.locator("#status")).toContainText(/[0-9]+ roads/);
     // ~6900 pixels of road were measured when this counted a tone band, and a
     // difference count sees at least as many. 3000 is a floor with room for a
     // re-captured fixture; the failure it guards against produces ZERO.
-    await expect.poll(changedFrom(withoutRoads), REPAINT).toBeGreaterThan(3000);
+    await expect.poll(changedFromStash, REPAINT).toBeGreaterThan(3000);
 
     // And back off again, so the layer is a toggle rather than a one-way door.
     // Back to the original frame means back to almost no differing pixels.
     await page.getByRole("checkbox", { name: "roads" }).uncheck();
-    await expect.poll(changedFrom(withoutRoads), REPAINT).toBeLessThan(3000);
+    await expect.poll(changedFromStash, REPAINT).toBeLessThan(3000);
   });
 
   test("marks POIs, and clicking one says what it is", async ({ page }) => {
@@ -1796,37 +1734,16 @@ test.describe("the 3D view", () => {
     // a colour-band proxy broke because the colours deliberately changed (the
     // road-layer test was the first), so this counts pixels that CHANGED against
     // the markers-off frame instead. A palette cannot break it.
-    const frame = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return null;
-        const probe = document.createElement("canvas");
-        probe.width = el.width;
-        probe.height = el.height;
-        const ctx = probe.getContext("2d");
-        if (ctx === null) return null;
-        ctx.drawImage(el, 0, 0);
-        return [...ctx.getImageData(0, 0, probe.width, probe.height).data];
-      });
+    // The frame never leaves the page — see `installFrameProbe`. Shipping it
+    // across CDP once per poll iteration was 3 686 400 array elements a go.
+    await installFrameProbe(page);
 
     await page.getByRole("checkbox", { name: "POI" }).uncheck();
-    const withoutMarkers = await frame();
-    expect(withoutMarkers).not.toBeNull();
+    expect(await stashFrame(page)).toBeGreaterThan(0);
     await page.getByRole("checkbox", { name: "POI" }).check();
     await expect(page.locator("#status")).toContainText(/[0-9]+ POI/);
 
-    const changed = async () => {
-      const now = await frame();
-      if (now === null || withoutMarkers === null) return -1;
-      let count = 0;
-      for (let i = 0; i < now.length; i += 4) {
-        const dr = Math.abs((now[i] ?? 0) - (withoutMarkers[i] ?? 0));
-        const dg = Math.abs((now[i + 1] ?? 0) - (withoutMarkers[i + 1] ?? 0));
-        const db = Math.abs((now[i + 2] ?? 0) - (withoutMarkers[i + 2] ?? 0));
-        if (dr + dg + db > 24) count += 1;
-      }
-      return count;
-    };
+    const changed = async () => (await diffFromStash(page, 24)).differing;
     // TEN, not the fifty the amber count used, and the drop is the finding
     // rather than a weakened test: a real-scale bench is 1.8 x 0.85 m where the
     // old pin was a 6 m cone, so the markers now cover a fraction of the pixels
