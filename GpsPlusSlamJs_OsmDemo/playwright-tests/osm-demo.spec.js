@@ -46,6 +46,7 @@ import {
   installFrameProbe,
   recordStatus,
   stashFrame,
+  stashStableFrame,
   stubNetwork,
   waitForRefresh,
 } from "./fixtures.js";
@@ -1284,12 +1285,20 @@ test.describe("the 3D view", () => {
       // camera — which is exactly how it was reported ("bis zum nächsten Mal,
       // wenn ich die Kamera dragge, dann ist es wieder da").
       //
-      // The existing pixel test cannot catch this: it only ever runs at one
+      // The pixel step above cannot catch this: it only ever looks at one
       // viewport. The assertion has to be "resize, then look, WITHOUT touching
       // the camera" — any pointer interaction repairs the symptom and makes a
       // broken build pass.
-      await page.setViewportSize({ width: 1280, height: 800 });
-
+      //
+      // NO PRE-RESIZE TO A "KNOWN DESKTOP WIDTH" HERE, and the missing line is a
+      // fix rather than an omission. While this was its own test that
+      // `setViewportSize` ran BEFORE `goto`, so the scene was painted once at a
+      // stable size and the reading below was safe. Sharing a boot moved it
+      // AFTER the paint, where resizing clears the drawing buffer and the very
+      // next `painted()` races the repaint that refills it — it read 0 against a
+      // `> 500` floor, in a serial run, with the scene plainly on screen. The
+      // boot viewport is already a known desktop width, so the line bought
+      // nothing and cost a race.
       const canvas = page.locator("#scene canvas");
       await expect(canvas).toBeVisible();
 
@@ -1672,7 +1681,7 @@ test.describe("the 3D view", () => {
       // one without them or the difference this measures is zero.
       await page.getByRole("checkbox", { name: "areas" }).uncheck();
       await expect(page.locator("#status")).not.toContainText(/\d+ area slabs/);
-      expect(await stashFrame(page)).toBeGreaterThan(0);
+      await stashStableFrame(page);
 
       const changed = async () => (await diffFromStash(page, 24)).differing;
 
@@ -1739,7 +1748,17 @@ test.describe("the 3D view", () => {
       // Off first: roads draw by default since W9, so a "before" frame with them
       // already on would make the difference this measures zero.
       await page.getByRole("checkbox", { name: "roads" }).uncheck();
-      expect(await stashFrame(page)).toBeGreaterThan(0);
+      // THE APP'S OWN SIGNAL FIRST. `stashStableFrame` is a settle, not a
+      // barrier — it cannot know which change it is waiting for, and the status
+      // line drops the road counter exactly when the layer stops being built.
+      await expect(page.locator("#status")).not.toContainText(/\d+ roads/);
+      // SETTLED, not merely captured — see `stashStableFrame`. A baseline taken
+      // while the terrain or a scoring ring was still arriving is a baseline of a
+      // scene that had not finished, and the "switch it back off" assertion then
+      // never returns to zero. Measured that way once these four layer steps
+      // began sharing a boot: 8100 differing pixels against a `< 3000` floor,
+      // held for the full 15 s timeout, with the layer correctly off.
+      await stashStableFrame(page);
 
       await page.getByRole("checkbox", { name: "roads" }).check();
       await expect(page.locator("#status")).toContainText(/[0-9]+ roads/);
@@ -1788,7 +1807,10 @@ test.describe("the 3D view", () => {
       await installFrameProbe(page);
 
       await page.getByRole("checkbox", { name: "POI" }).uncheck();
-      expect(await stashFrame(page)).toBeGreaterThan(0);
+      // The app-level barrier before the settle, for the reason in the roads
+      // step above: the counter disappears when the layer stops being built.
+      await expect(page.locator("#status")).not.toContainText(/\d+ POI/);
+      await stashStableFrame(page);
       await page.getByRole("checkbox", { name: "POI" }).check();
       await expect(page.locator("#status")).toContainText(/[0-9]+ POI/);
 

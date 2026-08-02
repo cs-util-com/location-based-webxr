@@ -521,3 +521,52 @@ export const diffFromStash = (page, threshold, redOnly = false) =>
     ([t, r]) => window.__e2eDiff(t, r),
     /** @type {[number, boolean]} */ ([threshold, redOnly]),
   );
+
+/**
+ * Waits until the scene stops repainting, and leaves that settled frame stashed.
+ *
+ * WHY A BASELINE HAS TO BE SETTLED. Every layer test here works the same way:
+ * stash a frame with the layer off, switch it on, assert a large difference,
+ * switch it off, assert the difference goes away. That last assertion is only
+ * meaningful if NOTHING ELSE changed the picture in between — and plenty can. The
+ * terrain load, a progressive scoring ring and the layer's own repaint all land on
+ * their own schedule, so a baseline captured a moment too early is a baseline of a
+ * scene that was still arriving, and the difference never returns to zero.
+ *
+ * Observed exactly that way: the roads step held at 8100 differing pixels against
+ * a `< 3000` floor for the full 15 s timeout, in a serial run, with the layer
+ * correctly off. Two tests in the demo spec had already grown their own private
+ * version of this wait ("wait for the scene to settle, or the startup terrain
+ * frame is what gets compared") — this is that pattern, once, where the probe it
+ * depends on already lives.
+ *
+ * Convergence is THREE identical consecutive frames, re-stashing each round: the
+ * first round has no stash and reports `-1`, and the loop ends holding the frame
+ * that proved itself stable, which is exactly the baseline the caller wants.
+ *
+ * THREE, NOT TWO, and the difference is a bug this had when it was written. The
+ * scene renders ON DEMAND (DEC-R3-9), so a layer switch schedules a frame rather
+ * than drawing one — and two reads taken before that frame is presented are
+ * identical, so the wait "converged" on the picture from BEFORE the change and
+ * stashed it. The caller then switched the layer back on and measured no
+ * difference at all: `> 3000` against a received 0, held for the full timeout.
+ *
+ * This is a settle, not a barrier. It cannot know which change it is waiting
+ * for, so a caller that has an app-level signal for the change — the status line
+ * dropping a layer's counter, say — should assert THAT first and use this to
+ * absorb what follows.
+ */
+export async function stashStableFrame(page, threshold = 24) {
+  let stable = 0;
+  await expect
+    .poll(
+      async () => {
+        const { differing } = await diffFromStash(page, threshold);
+        await stashFrame(page);
+        stable = differing === 0 ? stable + 1 : 0;
+        return stable;
+      },
+      { timeout: 15000, intervals: [250] },
+    )
+    .toBeGreaterThanOrEqual(3);
+}
