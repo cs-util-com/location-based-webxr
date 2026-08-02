@@ -2081,13 +2081,21 @@ test.describe("the 3D view", () => {
       const canvas = page.locator("#scene canvas");
       const box = await canvas.boundingBox();
       if (box === null) throw new Error("no canvas box");
-      // A small orbit — enough to move the highlight, not enough to leave the city.
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      // DRAGGED AT THE LEFT QUARTER, NOT THE CENTRE, and this is a real bug in
+      // the test rather than a tweak. The step above can legitimately select a
+      // cell, and the details panel then covers the RIGHT HALF of the 3D pane —
+      // including its centre. A drag starting there lands on the panel, so
+      // MapControls never sees it and the camera does not move at all.
+      //
+      // It passed anyway until §1 because the sun followed the camera: the
+      // damping settle alone changed the lighting enough to change the strip.
+      // With a physical sun (DEC-R6-3) an unmoved camera gives a byte-identical
+      // strip, so the test finally reported what was always true.
+      const dragX = box.x + box.width * 0.25;
+      const dragY = box.y + box.height / 2;
+      await page.mouse.move(dragX, dragY);
       await page.mouse.down();
-      await page.mouse.move(
-        box.x + box.width / 2 - 40,
-        box.y + box.height / 2 - 20,
-      );
+      await page.mouse.move(dragX - 40, dragY - 20);
       await page.mouse.up();
 
       await expect.poll(groundBand, REPAINT).not.toBe(before);
@@ -2522,6 +2530,21 @@ test.describe("a superseded refresh", () => {
       // the assertion exact.
       await page.locator("#layer-areas").uncheck();
 
+      // NO LONGER EXACTLY ZERO (§1, DEC-R6-2), and this IS the loosening the
+      // comment above argued against — so the reason is on the record.
+      //
+      // That argument was "remove one more moving part rather than raise the
+      // threshold", and it worked while the shiny surfaces were switchable
+      // layers. §1 gave the scene an environment map, so the GROUND PLANE is now
+      // specular too, and its reflection depends on the view direction:
+      // sub-pixel camera drift from damping changes pixels. The ground cannot be
+      // switched off the way a layer can without gutting what this test is
+      // about, so the "remove a moving part" lever is exhausted.
+      //
+      // Measured at 0.06 % of the frame against a real superseded-refresh
+      // mismatch of ~13 % (recorded above). The separation is still more than
+      // two orders of magnitude, which is what makes the bound meaningful rather
+      // than merely passing.
       await capture();
       await expect
         .poll(async () => {
@@ -2529,7 +2552,7 @@ test.describe("a superseded refresh", () => {
           await capture();
           return moved;
         }, REPAINT)
-        .toBe(0);
+        .toBeLessThan(0.002);
 
       // Supersede: two category changes with no wait, then back to where it
       // started so the scene is comparable again.
@@ -3020,13 +3043,20 @@ test.describe("No ground", () => {
         if (await box.isChecked()) await box.uncheck();
       }
 
-      // EXACTLY the sky, pixel for pixel — see `countNonSkyPixels`. A heuristic
-      // ("is it blue-dominant?") reads as sufficient here and is not: it also
+      // NO GEOMETRY LEFT, measured as hard edges rather than as colours — see
+      // `countNonSkyPixels`, whose predicate changed in §1 because the sky is no
+      // longer two hard-coded colours. A colour heuristic ("is it
+      // blue-dominant?") reads as sufficient here and is not: it also
       // classifies the building material as sky, so it would pass over a scene
-      // full of geometry.
+      // full of geometry. An edge count never asks what colour anything is.
+      //
+      // The bound is small but not zero: a scattering sky carries a sun disc and
+      // a tone-mapped gradient can step by a level here and there. A city fills
+      // this frame with tens of thousands of edge pixels, so the separation is
+      // three orders of magnitude rather than a tuned margin.
       const { count } = await countNonSkyPixels(page);
 
-      expect(count).toBe(0);
+      expect(count).toBeLessThan(2000);
 
       for (const layer of LAYERS) {
         const box = page.locator(`#layer-${layer}`);
@@ -3149,15 +3179,21 @@ test.describe("under the world", () => {
     expect(withBuildings.count).toBeGreaterThan(1000);
     expect(withBuildings.meanY).toBeLessThan(0.35);
 
-    // AND NOTHING ELSE IS THERE. With the buildings and trees off too, every
-    // remaining pixel is sky — so the "ground layer" seen from below is the
-    // background, not a surface. If a ground plane were ever drawn under the
-    // world, this is what would catch it.
+    // AND NOTHING ELSE IS THERE. With the buildings and trees off too, the frame
+    // has essentially no hard edges left — so the "ground layer" seen from below
+    // is the background, not a surface. If a ground plane were ever drawn under
+    // the world, its silhouette would put edges straight back.
+    //
+    // A RATIO RATHER THAN ZERO (§1). The old helper matched the painted sky.s
+    // exact colours, so "not sky" could be exactly 0. An edge count cannot be:
+    // a scattering sky carries a sun, and tone mapping can steepen a gradient
+    // enough to trip a step here and there. What is being claimed is that the
+    // geometry is gone, and a 20x drop says that without depending on a palette.
     await page.locator("#layer-buildings").uncheck();
     await page.locator("#layer-trees").uncheck();
     await expect
       .poll(async () => (await countNonSkyPixels(page)).count)
-      .toBe(0);
+      .toBeLessThan(withBuildings.count / 20);
   });
 });
 

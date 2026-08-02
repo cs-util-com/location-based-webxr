@@ -300,18 +300,34 @@ export async function recordStatus(page) {
 }
 
 /**
- * Counts the pixels of the 3D pane that are NOT the sky, and says where they are.
+ * Counts the pixels of the 3D pane that sit on a HARD EDGE, and says where they
+ * are — the palette-independent way of asking "is there geometry on screen?".
  *
- * EXACT RATHER THAN HEURISTIC. The background is a two-colour ramp between the
- * zenith (16,22,42) and the horizon (92,108,140) — see `sky-gradient.ts` — so
- * every sky pixel lies on that segment: solve `t` from red, and green and blue
- * must follow. Measured agreement is within one level at both ends of the ramp.
+ * WHAT IT USED TO DO, AND WHY THAT HAD TO CHANGE (§1, DEC-R6-2/R6-4). It matched
+ * every pixel against the exact colour ramp of the old painted sky — zenith
+ * (16,22,42) to horizon (92,108,140) — and counted the misses. That was exact
+ * rather than heuristic, which was the right call while the sky was two
+ * hard-coded colours. Round 6 replaced it with a scattering shader whose colours
+ * change with the sun, and added ACES tone mapping on top, so NO pixel matches
+ * the old ramp any more: the helper reported the entire canvas as non-sky and
+ * four tests failed at once.
  *
- * The first version of this predicate was "blue-dominant", which is the kind of
- * heuristic that looks right and fails in the direction that matters: the
- * building material `0xc8ccd8` has `b - r = 16` and was classified as sky, so a
- * test reported zero surface pixels while pointing straight at a row of
- * buildings.
+ * WHY EDGES ARE THE RIGHT INVARIANT. The background — under any sky, at any time
+ * of day, before or after tone mapping — is SMOOTH: it is a gradient, so
+ * neighbouring pixels differ by a level or two. Geometry is what puts a STEP in
+ * it, at every silhouette and every facet boundary. So "how much of this frame
+ * is geometry" is answerable without knowing a single colour, which is what
+ * makes this survive the next palette change as well as this one.
+ *
+ * The predicate it replaced a "blue-dominant" heuristic for is still worth
+ * remembering: that one classified the building material `0xc8ccd8` as sky and
+ * reported zero surface pixels while pointing straight at a row of buildings.
+ * An edge count cannot make that mistake, because it never asks what colour
+ * anything is.
+ *
+ * **The count is NOT a pixel area** — it is roughly a perimeter, so callers
+ * comparing "with buildings" against "without" should compare orders of
+ * magnitude or ratios, not absolute areas.
  *
  * `meanY` is the vertical centre of mass, 0 at the top of the canvas and 1 at the
  * bottom — which is how a test can tell "looking UP at the buildings from
@@ -331,20 +347,26 @@ export function countNonSkyPixels(page) {
     if (ctx === null) return { count: -1, meanY: -1 };
     ctx.drawImage(el, 0, 0);
     const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-    const onSkyLine = (r, g, b) => {
-      if (r < 12 || r > 96) return false;
-      const t = (r - 16) / (92 - 16);
-      return (
-        Math.abs(g - (22 + t * (108 - 22))) <= 4 &&
-        Math.abs(b - (42 + t * (140 - 42))) <= 4
-      );
-    };
+    // A HARD HORIZONTAL EDGE, not a colour. See the doc comment: the sky is a
+    // smooth gradient in every direction, and geometry is what puts a step in
+    // it. 12 is well above the dithering and antialiasing noise of a gradient
+    // and well below the step from sky to any surface.
+    const STEP = 12;
     let count = 0;
     let sumY = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      if (!onSkyLine(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0)) {
-        count++;
-        sumY += Math.floor(i / 4 / probe.width);
+    for (let y = 0; y < probe.height; y++) {
+      for (let x = 1; x < probe.width; x++) {
+        const i = (y * probe.width + x) * 4;
+        const j = i - 4;
+        const d = Math.max(
+          Math.abs((data[i] ?? 0) - (data[j] ?? 0)),
+          Math.abs((data[i + 1] ?? 0) - (data[j + 1] ?? 0)),
+          Math.abs((data[i + 2] ?? 0) - (data[j + 2] ?? 0)),
+        );
+        if (d > STEP) {
+          count++;
+          sumY += y;
+        }
       }
     }
     return { count, meanY: count === 0 ? -1 : sumY / count / probe.height };

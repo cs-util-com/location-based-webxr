@@ -32,16 +32,10 @@ import { drawMeshLayers } from "./mesh-layers.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { resolvePick, type Pick } from "./pick.js";
-import { SUN_ELEVATION_RAD, cameraAzimuth, sunDirection } from "./sun.js";
+import { DEFAULT_TIME_OF_DAY, sunAt } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
-import {
-  HORIZON_RGB,
-  SKY_GRADIENT_COLUMNS,
-  SKY_GRADIENT_ROWS,
-  skyGradientPixels,
-  skyRotationForSun,
-} from "./sky-gradient.js";
+import { FOG_RGB, TONE_MAPPING_EXPOSURE, SkyRig } from "./sky-rig.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 // Re-exported so the many call sites that import these from the view keep working.
@@ -253,8 +247,22 @@ export class BuildingView {
   private readonly onPointerDown: (event: PointerEvent) => void;
   private readonly onPointerStart: (event: PointerEvent) => void;
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
-  /** The sky gradient. BACKGROUND ONLY — never `scene.environment`, see below. */
-  private readonly sky: THREE.DataTexture;
+  /**
+   * The scattering sky and the environment map derived from it (§1).
+   *
+   * Owns both, because they have one invariant between them: the environment is
+   * regenerated whenever the sun moves, and the previous render target must be
+   * released when it is. See `sky-rig.ts`.
+   */
+  private readonly skyRig: SkyRig;
+  /**
+   * Where the sun is, in `0..1` across the day (DEC-R6-3).
+   *
+   * A FIELD RATHER THAN A CONSTANT because it is now a control. It replaces the
+   * camera-derived azimuth that DEC-R4-6 introduced; see `sun-position.ts` for
+   * why that had to go and what pays for it.
+   */
+  private timeOfDay = DEFAULT_TIME_OF_DAY;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
   /** The current field, so a mode switch and the ramp can re-read it. */
@@ -338,79 +346,38 @@ export class BuildingView {
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     options.container.appendChild(this.renderer.domElement);
 
-    // The sky is the BACKGROUND, and only the background (DEC-R2-2). It replaces
-    // the near-black that the ground could not lift off.
+    // THE SKY IS NOW A SCATTERING SHADER, AND IT LIGHTS THE SCENE (§1, DEC-R6-2).
     //
-    // This comment used to say it was "both the background and the environment
-    // map... one texture, two jobs", and that second job took the whole scene down
-    // for ten work items — see the block at the `scene.background` assignment
-    // below, and `building-view.ts.md`'s lighting invariant.
-    // 256 x 64 since W14, not 1 x 64. A one-column equirectangular map has no
-    // azimuth at all, so it could not hold the sun the notes asked for.
-    this.sky = new THREE.DataTexture(
-      skyGradientPixels({ sunElevationRad: SUN_ELEVATION_RAD }),
-      SKY_GRADIENT_COLUMNS,
-      SKY_GRADIENT_ROWS,
-      THREE.RGBAFormat,
-    );
-    this.sky.mapping = THREE.EquirectangularReflectionMapping;
-    this.sky.colorSpace = THREE.SRGBColorSpace;
-    // `flipY` DEFAULTS TO FALSE ON `DataTexture` — unlike an image-backed texture,
-    // where it is true. So row 0 of the array lands at `v = 0`, which on an
-    // equirectangular map is the NADIR, and the sky comes out upside down: bright
-    // overhead, dark at the horizon. Measured before fixing: 63.5 luma at the top
-    // against 52.9 near the horizon, i.e. exactly reversed.
+    // WHAT WAS HERE. A hand-painted 256 x 64 equirect `DataTexture` assigned to
+    // `scene.background` and — deliberately — to nothing else, under a long
+    // comment explaining why `scene.environment` had to stay unset. That comment
+    // was right about the mechanism and its reason has now expired, so the short
+    // version stays here and the rest moved to `sky-rig.ts`:
     //
-    // Corrected here rather than by reversing `skyGradientPixels`, so the pure
-    // function keeps the contract its tests assert ("top row first", which is the
-    // intuitive reading) and the three.js-specific quirk stays in the three.js
-    // file.
-    this.sky.flipY = true;
-    this.sky.needsUpdate = true;
-    this.scene.background = this.sky;
-    // NO `scene.environment`, AND THAT IS THE FIX FOR A REAL OUTAGE.
+    // W20 set `scene.environment` to that RAW equirect texture. three routes any
+    // environment map through its CubeUV path, which expects PMREM-processed
+    // input, and with a raw one it emits integer `CUBEUV_*` defines into float
+    // assignments. Every `MeshStandardMaterial` then fails to compile, three logs
+    // it and silently DOES NOT DRAW the material — so the buildings, the trees,
+    // the ground and the plates vanished for ten work items while the status line
+    // still reported "21 volumes" and every pixel assertion stayed green.
     //
-    // W20 set `scene.environment = this.sky` — a raw equirect `DataTexture`.
-    // three.js routes any environment map through its CubeUV path, which expects a
-    // PMREM-processed texture, and with a raw one it emits integer `CUBEUV_*`
-    // defines into float assignments. Every `MeshStandardMaterial` fragment shader
-    // then fails to compile:
+    // THE FIX IS NOT "LEAVE IT UNSET", IT IS "PMREM IT FIRST", which is what
+    // `SkyRig` does. The environment map is what actually makes surfaces shiny —
+    // the ingredient DEC-R5-8 deferred to "the shader round", which this is.
     //
-    //   ERROR: 0:439: 'assign' : cannot convert from 'const int' to 'highp float'
-    //
-    // three.js does not throw for that. It logs to the console and simply DOES NOT
-    // DRAW the material. So the buildings, the trees, the ground plane and the
-    // plates all disappeared from the demo, while the status line still reported
-    // "21 volumes" and the suite stayed green — every pixel assertion was satisfied
-    // by the one surviving `MeshBasicMaterial`, the affordance grid.
-    //
-    // THE REASON PMREM WAS UNAVAILABLE HAS EXPIRED, AND SAYING SO IS THE POINT
-    // OF THIS PARAGRAPH (N1, W10). It used to read: "PMREM-processing it was
-    // tried and does NOT help here: the gradient is one pixel wide, which is
-    // degenerate for the equirect-to-cube-UV projection." **W14 widened the sky
-    // to SKY_GRADIENT_COLUMNS x SKY_GRADIENT_ROWS = 256 x 64 the same day**, so
-    // it is no longer degenerate and a `PMREMGenerator` pass is available again.
-    //
-    // It is NOT taken, and that is a DEFERRAL rather than an impossibility
-    // (DEC-R5-8): the round-5 notes ask for a better-looking ground, and the
-    // answer is being searched for by prompt rather than guessed at here — see
-    // `2026-08-01-1356-terrain-shader-prototype-prompt.md`. Doing the lighting
-    // twice is the thing being avoided.
-    //
-    // IF IT IS PICKED UP, the test that must come with it is a DRAWS-ANYTHING
-    // check — a difference count against a materials-off frame — not an
-    // assertion that the field was set. The outage above was invisible to
-    // property assertions: every pixel test in the suite stayed green while the
-    // buildings, the trees, the ground and the plates were all absent.
-    //
-    // Removing it costs almost nothing against DEC-R2-1. That decision asked for a
-    // surface reflective enough that facet edges show as the camera moves, and the
-    // mechanism for that is the SPECULAR HIGHLIGHT from the directional light
-    // sliding across per-facet normals — which needs low roughness, not an
-    // environment map. My original note here claimed a lone directional light
-    // "produces a lobe narrow enough to miss almost every facet"; that was wrong,
-    // and it cost the entire scene. The hemisphere light below supplies the
-    // sky-tinted fill the environment map was actually contributing.
+    // The guard that must come with it is a DRAWS-ANYTHING check in the e2e
+    // suite, not an assertion that the field was set: the outage above was
+    // invisible to property assertions.
+    this.skyRig = new SkyRig({ renderer: this.renderer, scene: this.scene });
+
+    // ACES FILMIC TONE MAPPING (DEC-R6-4), and it is not optional alongside a
+    // scattering sky: unmapped, such a sky blows out to white, because its
+    // radiance range is far wider than the display's. It re-maps EVERY colour in
+    // the scene, which is why the e2e suite's absolute-colour assertions had to
+    // become palette-independent claims BEFORE this landed.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = TONE_MAPPING_EXPOSURE;
 
     // DISTANCE HAZE, and this REVERSES a round-2 decision on its own terms.
     // Fog was offered then and rejected because it would have hidden finding
@@ -423,9 +390,9 @@ export class BuildingView {
     // the fade reads as a grey band in front of the sky rather than as distance.
     this.scene.fog = new THREE.Fog(
       new THREE.Color(
-        (HORIZON_RGB[0] ?? 0) / 255,
-        (HORIZON_RGB[1] ?? 0) / 255,
-        (HORIZON_RGB[2] ?? 0) / 255,
+        (FOG_RGB[0] ?? 0) / 255,
+        (FOG_RGB[1] ?? 0) / 255,
+        (FOG_RGB[2] ?? 0) / 255,
       ),
       FOG_NEAR_M,
       FAR_PLANE_M,
@@ -437,19 +404,18 @@ export class BuildingView {
     // washing out the only cue that distinguishes one ground facet from the next.
     // The environment map now supplies the soft fill it used to.
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-    // Sky above, ground below — the directional fill the environment map used to
-    // contribute, from a LIGHT rather than from a texture the PBR shader has to
-    // sample. Colours match the sky gradient's horizon and the ground, so the scene
-    // still reads as lit by its own sky, with no shader-compilation surface at all.
-    this.scene.add(new THREE.HemisphereLight(0x5c6c8c, 0x3a4356, 0.55));
-    // THE SUN FOLLOWS THE CAMERA'S AZIMUTH (W12, DEC-R4-6). It was fixed at
-    // (60, 120, 40), which is why the reflective ground only showed its relief
-    // from some angles: a highlight appears where the half-vector between light
-    // and eye aligns with a facet normal, so with a still light and a moving eye
-    // the condition is met over a band of azimuths and missed everywhere else.
+    // THE HEMISPHERE LIGHT IS GONE (§1), and its own comment said why it would
+    // be. It read: "the directional fill the environment map used to contribute,
+    // from a LIGHT rather than from a texture" — it was a stand-in for the
+    // environment map that could not be used, and `SkyRig` now supplies the real
+    // thing. Keeping both would double-count the sky's fill and wash out exactly
+    // the facet contrast DEC-R2-1 exists to produce.
     //
-    // NOT a headlight — see `sun.ts` for why that would make it worse, and for
-    // the property test that keeps it from drifting into one.
+    // THE SUN IS PHYSICAL NOW (DEC-R6-3, reversing DEC-R4-6). Its azimuth used
+    // to follow the camera's so a specular highlight was never lost as the eye
+    // orbited; that is incompatible with a scattering sky, which would then spin
+    // as you pan. `sun-position.ts` carries the full argument and the two things
+    // that pay for the reversal.
     this.sun = new THREE.DirectionalLight(0xffffff, 1.1);
     this.scene.add(this.sun);
     // NOT aimed here: `aimSun` reads `this.controls`, which is constructed
@@ -541,8 +507,11 @@ export class BuildingView {
     this.controls.enableDamping = true;
     this.controls.target.set(0, 0, 0);
     this.controls.update();
-    // The sun's azimuth is derived from the camera-to-target offset (W12), so it
-    // can only be aimed once the controls own that target.
+    // AIMED ONCE, HERE. It used to be re-aimed on every camera change because
+    // the azimuth was derived from the camera; the sun is physical since
+    // DEC-R6-3, so it only moves when the time does. It must still run before
+    // the first frame, or the scene has no environment map and every PBR
+    // surface renders unlit.
     this.aimSun();
 
     this.resize();
@@ -555,8 +524,11 @@ export class BuildingView {
     this.containerResize.observe(this.container);
     // Repaint when the camera moves — and ONLY then. See `requestFrame`.
     this.controls.addEventListener("change", () => {
-      // The sun first, so the frame this schedules is drawn with it (W12).
-      this.aimSun();
+      // NO LONGER RE-AIMS THE SUN, and that is a saving rather than an omission.
+      // Under DEC-R4-6 the sun tracked the camera so every drag moved it; the
+      // sun is physical since DEC-R6-3. Re-aiming here would now call
+      // `PMREMGenerator.fromScene` on every drag — exactly the per-frame
+      // main-thread cost DEC-R3-9's on-demand renderer exists to avoid.
       this.requestFrame();
     });
 
@@ -973,13 +945,44 @@ export class BuildingView {
    * direction matters — but it must be large enough to sit outside the scene if
    * a shadow camera is ever added.
    */
+  /**
+   * Moves the sun to a time of day in `0..1` (§1, DEC-R6-3).
+   *
+   * THE COST LIVES HERE, DELIBERATELY. Each call regenerates the PMREM
+   * environment map, which is a render pass. That is affordable precisely
+   * because this is a deliberate user action rather than something a drag
+   * triggers — see `aimSun` and `sun-position.ts`.
+   *
+   * Out-of-range values are handled by `sunAt`, which clamps rather than
+   * extrapolating: a sun below the horizon puts the scattering shader outside
+   * its defined range, where its output is undefined rather than merely dark.
+   */
+  setTimeOfDay(timeOfDay: number): void {
+    this.timeOfDay = timeOfDay;
+    this.aimSun();
+    // On-demand rendering: without this the new sun is invisible until the
+    // camera moves, which is finding R2-3 in a new place.
+    this.requestFrame();
+  }
+
+  /** Where the sun currently is, in `0..1`. */
+  timeOfDayValue(): number {
+    return this.timeOfDay;
+  }
+
   private aimSun(): void {
-    const azimuth = cameraAzimuth(this.camera.position, this.controls.target);
-    const direction = sunDirection(azimuth);
-    // THE SAME VECTOR TURNS THE SKY (W14). The disc is baked at one azimuth and
-    // the whole background is rotated, so the painted sun and the light cannot
-    // disagree — and it costs a uniform rather than a texture upload per drag.
-    this.scene.backgroundRotation.y = skyRotationForSun(azimuth);
+    // ONE VECTOR, TWO CONSUMERS, and it now comes back from the rig rather than
+    // being derived twice: `setSun` points the sky shader and returns the same
+    // unit direction the light is placed along. Two independently-derived sun
+    // positions would be visible as a sun in the sky that disagrees with where
+    // the highlights fall.
+    //
+    // THIS NO LONGER READS THE CAMERA. It used to derive the azimuth from
+    // `cameraAzimuth(...)` (DEC-R4-6); the sun is physical since DEC-R6-3, so
+    // the only input is the time of day. That is also what makes the PMREM
+    // regeneration inside `setSun` affordable — it runs when the user changes
+    // the time, not on every drag.
+    const direction = this.skyRig.setSun(sunAt(this.timeOfDay));
     const distance = 1000;
     this.sun.position.set(
       direction.x * distance,
@@ -1202,12 +1205,13 @@ export class BuildingView {
     // form that does not depend on which mode the view happened to be in.
     this.ground.geometry.dispose();
     this.groundMaterial.dispose();
-    // The sky is a GPU texture like any other and nothing else frees it. It is
-    // small, but `scene.background` holds it, so leaving it behind keeps the
-    // whole scene reachable. (It is no longer also `scene.environment` — that
-    // assignment took every `MeshStandardMaterial` off screen and was removed;
-    // this comment still named it.)
-    this.sky.dispose();
+    // The sky owns a PMREM render target as well as its own geometry and
+    // material, and it is now BOTH `scene.background` and `scene.environment` —
+    // so leaving it behind keeps the whole scene reachable AND abandons GPU
+    // memory. `SkyRig.dispose()` clears both fields as well as freeing, because
+    // a disposed texture left assigned is a use-after-free three does not
+    // report: it silently stops drawing the materials that sample it.
+    this.skyRig.dispose();
     this.perfStats?.dispose();
     this.perfStats = undefined;
     this.groundRampMaterial.dispose();
