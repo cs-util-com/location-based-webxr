@@ -81,6 +81,8 @@ function fullMesh(): TransferableMesh {
         groundHeightM: 53,
         kind: "amenity=cafe",
         label: "Café Schmitz",
+        rotationY: 0,
+        scale: 1,
       },
     ],
     volumes: 21,
@@ -226,6 +228,8 @@ describe("poiMarkerPosition", () => {
     groundHeightM: 53,
     kind: "amenity=cafe",
     label: "Café",
+    rotationY: 0,
+    scale: 1,
   } satisfies TransferableMesh["poi"][number];
 
   it("REFLECTS ENU north onto the scene's -z", () => {
@@ -569,6 +573,8 @@ describe("drawMeshLayers — POI markers get their own models (W19)", () => {
         groundHeightM: 53,
         kind,
         label: kind,
+        rotationY: 0,
+        scale: 1,
       })),
     } as TransferableMesh;
     const { objects } = drawMeshLayers(mesh, {

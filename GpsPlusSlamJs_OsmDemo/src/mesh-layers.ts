@@ -638,11 +638,31 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         // contract is asserted in `poi-models.test.ts`, which is what lets this
         // be a zero rather than a per-kind lookup.
         const centreOffsetM = model === undefined ? POI_HEIGHT_M / 2 : 0;
+        // COMPOSE, NOT `makeTranslation` (§4a, DEC-R6-18/R6-20). This was a
+        // translation alone, which meant every bench in the city faced exactly
+        // the same direction — at street level a far louder repetition cue than
+        // any difference between two models of the same kind. The yaw and the
+        // scale are computed in the package from the feature key (`poi.ts`), so
+        // they are stable across the republish that happens on every move; this
+        // is only the application of them, exactly as the `trees` builder above
+        // already does.
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        const up = new THREE.Vector3(0, 1, 0);
         markers.forEach((marker, i) => {
-          pins.setMatrixAt(
-            i,
-            matrix.makeTranslation(...poiMarkerPosition(marker, centreOffsetM)),
+          // The cone's lift is HALF ITS HEIGHT, so it has to scale with the
+          // cone. Leaving it fixed sinks or floats every unmodelled marker by a
+          // few centimetres, which reads as terrain error rather than as a bug
+          // — and unmodelled is the common case, ~650 kinds against fifty.
+          const [x, y, z] = poiMarkerPosition(
+            marker,
+            centreOffsetM * marker.scale,
           );
+          position.set(x, y, z);
+          quaternion.setFromAxisAngle(up, marker.rotationY);
+          scale.setScalar(marker.scale);
+          pins.setMatrixAt(i, matrix.compose(position, quaternion, scale));
         });
         pins.instanceMatrix.needsUpdate = true;
         // THE IDENTITY A PICK READS BACK, an array indexed by instance —

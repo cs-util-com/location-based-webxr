@@ -29,6 +29,8 @@
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import { featureKey, type OsmFeatureKey } from "../model/osm-feature.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
+import { GROUND_ALIGNED_KINDS } from "./poi-models.js";
+import { stablePoiScale, stableRotationY } from "./stable-jitter.js";
 
 /**
  * The tag keys that make a node a place worth marking, in PRECEDENCE ORDER.
@@ -66,6 +68,32 @@ export interface PoiMarker {
   readonly kind: string;
   /** A short human label: the `name` tag, else the primary tag's value. */
   readonly label: string;
+  /**
+   * Yaw about the vertical axis, radians in `[0, 2π)` (§4a, DEC-R6-18/R6-20).
+   *
+   * WHY IT IS HERE AND NOT IN THE VIEW. Until §4a the consumer placed markers
+   * by translation alone, so every bench in the city faced the same direction —
+   * at street level a far louder repetition cue than any difference between two
+   * models of the same kind. Deriving the yaw here rather than in
+   * `mesh-layers.ts` keeps it a pure function of the feature key, testable
+   * without `three`, and stops "where does this marker point" having two
+   * sources. `TreePlacement.rotationY` has worked exactly this way since W6.
+   *
+   * **0 for the ground-aligned kinds** ({@link GROUND_ALIGNED_KINDS}): a
+   * painted parking bay or a pitch reads as aligned to something real, so a
+   * random spin reads as a defect rather than as variety.
+   */
+  readonly rotationY: number;
+  /**
+   * A uniform size multiplier around 1, within ±`POI_SCALE_JITTER`.
+   *
+   * DELIBERATELY NARROW. DEC-R6-8 keeps these models at real-world scale so a
+   * marker is evidence about the extruder — a bench that measures 1.8 m says
+   * the ENU frame and the ground sampling are right. Jitter wide enough to be
+   * obvious would destroy that evidence, so it stays inside the range real
+   * tagging already varies by.
+   */
+  readonly scale: number;
 }
 
 export interface BuildPoiOptions {
@@ -118,8 +146,9 @@ export function buildPoiMarkers(
     // consumer of the placement.
     if (kind === undefined) continue;
 
+    const key = featureKey(feature);
     markers.push({
-      feature: featureKey(feature),
+      feature: key,
       position: options.frame.toEnu(feature.position),
       // Not NaN when unsampled: NaN propagates into the instance transform and
       // removes the object from the scene with nothing reported.
@@ -128,6 +157,10 @@ export function buildPoiMarkers(
       // The VALUE rather than the whole `key=value` — a marker labelled
       // "amenity=cafe" reads as debug output rather than as a place.
       label: tags["name"] ?? kind.slice(kind.indexOf("=") + 1),
+      // Ground markings keep their zero. See `GROUND_ALIGNED_KINDS` for why
+      // this is a per-KIND opt-out and not a per-instance one.
+      rotationY: GROUND_ALIGNED_KINDS.has(kind) ? 0 : stableRotationY(key),
+      scale: stablePoiScale(key),
     });
   }
 

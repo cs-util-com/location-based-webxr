@@ -105,5 +105,13 @@ export {
   buildTrees,
   isTree,
   packInstances,
-  stableHash,
 } from "./trees.js";
+// The shared deterministic hash. It lived in `trees.ts` until §4a gave POI
+// markers the same variation; see `stable-jitter.ts` for why one copy matters.
+export {
+  POI_SCALE_JITTER,
+  stableHash,
+  stablePoiScale,
+  stableRotationY,
+  unit,
+} from "./stable-jitter.js";

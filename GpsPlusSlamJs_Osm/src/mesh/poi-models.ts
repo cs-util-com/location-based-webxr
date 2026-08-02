@@ -394,6 +394,34 @@ function models(): PoiModel[] {
   ];
 }
 
+/**
+ * Kinds whose orientation is MEANINGFUL, so §4a's per-instance yaw must not
+ * touch them (DEC-R6-18).
+ *
+ * Every entry is a flat ground marking — a painted bay, a playing surface, a
+ * pool, a ramp mouth. These read as aligned to something real (a kerb, a
+ * street, a building line), so a random spin reads as a defect rather than as
+ * variety, in a way that a randomly-facing bench does not.
+ *
+ * AN OPT-OUT LIST RATHER THAN A PER-MODEL FLAG, and the trade is worth stating
+ * because the plan asked for the opposite. A required field on all fifty models
+ * would force each author to decide, which is the stronger design — but §4 is
+ * about to rewrite thirty-four of those models, so fifty new declarations would
+ * be written twice. The guard instead is a test: every kind named here must
+ * exist in {@link POI_MODELS}, so a typo fails rather than silently leaving a
+ * car park spinning.
+ *
+ * **A model added later gets rotation by default.** That is the accepted risk of
+ * the opt-out form; if a future model is a ground marking, it belongs here.
+ */
+export const GROUND_ALIGNED_KINDS: ReadonlySet<string> = new Set([
+  "amenity=parking",
+  "amenity=parking_space",
+  "amenity=parking_entrance",
+  "leisure=pitch",
+  "leisure=swimming_pool",
+]);
+
 /** Every model, keyed by `key=value`. */
 export const POI_MODELS: ReadonlyMap<string, PoiModel> = new Map(
   models().map((entry) => [entry.kind, entry]),

@@ -20,7 +20,8 @@ import {
 } from "./building-heights.js";
 import { extrudeBuilding, mergeMeshes } from "./extrude.js";
 import { buildBuildings } from "./buildings.js";
-import { buildTrees, packInstances, stableHash } from "./trees.js";
+import { stableHash } from "./stable-jitter.js";
+import { buildTrees, packInstances } from "./trees.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 
 const ORIGIN = { lat: 50.9413, lng: 6.9583 };

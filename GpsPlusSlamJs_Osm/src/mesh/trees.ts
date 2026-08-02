@@ -17,7 +17,13 @@
  * run. We do the same, for a sharper reason: this is an AR overlay used to
  * judge pose accuracy, and a forest that reshuffles itself between frames — or
  * between two devices looking at the same place — is useless for that. The hash
- * below is therefore part of the contract, not an implementation detail.
+ * is therefore part of the contract, not an implementation detail.
+ *
+ * THE HASH MOVED TO `stable-jitter.ts` (§4a, DEC-R6-20) and is no longer
+ * declared here. It was written for trees; POI markers now need exactly the
+ * same thing, and two copies of a hash are two hashes that can drift apart
+ * invisibly — both would still look random. The salt constants live there too,
+ * so `poi.ts` and this file cannot disagree about which salt means "yaw".
  *
  * @see trees.ts.md
  */
@@ -28,6 +34,7 @@ import type {
   OsmFeatureKey,
 } from "../model/osm-feature.js";
 import { featureKey } from "../model/osm-feature.js";
+import { stableRotationY, unit } from "./stable-jitter.js";
 import { parseLengthMetres } from "./building-heights.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 
@@ -50,28 +57,6 @@ export interface TreePlacement {
 
 export const DEFAULT_TREE_HEIGHT_M = 8;
 export const DEFAULT_CROWN_RATIO = 0.6;
-
-/**
- * A stable 32-bit hash of a string.
- *
- * FNV-1a: small, fast, no dependency, and — the property that matters —
- * deterministic across runs, devices and platforms. `Math.random()` here would
- * make the same street look different on two phones standing next to each
- * other, which defeats the overlay's whole purpose.
- */
-export function stableHash(text: string): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
-}
-
-/** A deterministic value in [0, 1) from a key and a salt. */
-function unit(key: string, salt: string): number {
-  return stableHash(`${key}#${salt}`) / 0x1_0000_0000;
-}
 
 /**
  * Values that name a leaf type, across both keys that carry one.
@@ -156,7 +141,10 @@ export function buildTrees(
       groundHeightM: options.groundHeightM?.(feature.position) ?? 0,
       heightM,
       crownDiameterM,
-      rotationY: unit(key, "r") * Math.PI * 2,
+      // The shared helper, not `unit(key, "r")` spelled out again: `poi.ts`
+      // must produce the same yaw from the same key, and a duplicated
+      // expression is where that quietly stops being true.
+      rotationY: stableRotationY(key),
       variant: variantOf(tags),
     });
   }
