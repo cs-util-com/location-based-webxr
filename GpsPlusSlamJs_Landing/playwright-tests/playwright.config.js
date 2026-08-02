@@ -14,8 +14,9 @@ import { defineConfig, devices } from "@playwright/test";
  * - Reduced-motion still presents every chapter readable.
  *
  * Chromium-only, matching the sibling apps. The dev server runs on the
- * landing's dedicated port 5182 so it can coexist with the minimal
- * example (5180), the starter (5181) and the recorder (5173).
+ * The port is allocated in docs/dev-server-ports.md, which is the ONLY place
+ * that knows the whole set — three packages once shared 5182 while all three
+ * comments named their siblings and asserted distinctness.
  */
 const captureArtifacts = process.env.PLAYWRIGHT_CAPTURE === "1";
 

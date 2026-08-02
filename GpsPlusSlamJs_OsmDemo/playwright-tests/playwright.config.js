@@ -4,9 +4,11 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright configuration for the OSM affordance demo.
  *
- * Chromium-only, on the demo's dedicated port 5186 so it coexists with the
- * minimal example (5180), the anchor starter (5181), the QR demo (5182) and the
- * recorder (5173).
+ * Chromium-only.
+ *
+ * The port is allocated in docs/dev-server-ports.md, which is the ONLY place
+ * that knows the whole set — three packages once shared 5182 while all three
+ * comments named their siblings and asserted distinctness.
  *
  * **This suite never touches the network.** Both external dependencies — the
  * Overpass API and the published Google Sheet — are intercepted in `fixtures.js`

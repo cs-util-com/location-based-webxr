@@ -39,7 +39,7 @@ and its `…-0751-…-summary-and-followups.md` companion.
 
 ```bash
 cd GpsPlusSlamJs_PhysicsDemo
-pnpm run dev     # builds the framework, serves on http://localhost:5182
+pnpm run dev     # builds the framework, serves on http://localhost:5184
 pnpm test        # format + lint + typecheck + unit + e2e
 pnpm run test:unit
 pnpm run test:e2e

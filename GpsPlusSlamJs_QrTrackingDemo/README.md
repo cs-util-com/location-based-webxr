@@ -45,7 +45,7 @@ cd c:\gps\location-based-webxr\GpsPlusSlamJs_QrTrackingDemo
 pnpm test            # full gate: format + lint + checks + typecheck + unit + e2e
 pnpm run test:unit   # vitest unit tests only
 pnpm run test:e2e    # Playwright e2e only
-pnpm dev             # run on a device (port 5182) for the §5 manual gate
+pnpm dev             # run on a device (port 5185) for the §5 manual gate
 ```
 
 Never call `vitest` or `playwright` directly — use the pnpm scripts.
