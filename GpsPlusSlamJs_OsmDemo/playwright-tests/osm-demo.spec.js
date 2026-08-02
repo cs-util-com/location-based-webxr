@@ -340,106 +340,120 @@ test.describe("the location picker", () => {
 test.describe("the header", () => {
   test.use({ viewport: { width: 390, height: 780 } });
 
-  test("collapses to give its height back to the 3D view", async ({ page }) => {
-    // WHY THIS TEST MATTERS, and why it asserts HEIGHT rather than visibility.
-    // The feedback assumed the header already floats over the 3D view. It does
-    // not — it is a grid row, so on a phone its wrapped lines are taken OUT of
-    // the 3D view's height. That makes collapsing a real win rather than a
-    // cosmetic one, and "the bar got shorter" is the only assertion that shows it.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const header = page.locator("#header-bar");
-    const scene = page.locator("#scene");
-    const before = await header.boundingBox();
-    const sceneBefore = await scene.boundingBox();
-    if (before === null || sceneBefore === null) throw new Error("no boxes");
-
-    await page.locator("#header-toggle").click();
-
-    await expect(header).toHaveAttribute("data-collapsed", "true");
-    await expect(page.locator("#header-toggle")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-
-    const after = await header.boundingBox();
-    const sceneAfter = await scene.boundingBox();
-    if (after === null || sceneAfter === null) throw new Error("no boxes");
-    expect(after.height).toBeLessThan(before.height);
-    // The height went to the 3D view rather than nowhere.
-    expect(sceneAfter.height).toBeGreaterThan(sceneBefore.height);
-
-    // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4). Collapsing the
-    // category picker away would put a primary input two taps from reach, and
-    // hiding the legend would re-create the round-1 problem it was added to fix.
-    await expect(page.locator("#category")).toBeVisible();
-    await expect(page.locator("#legend")).toBeVisible();
-
-    await page.locator("#header-toggle").click();
-    await expect(header).toHaveAttribute("data-collapsed", "false");
-  });
-
-  test("expands itself when an error needs to be read", async ({
+  test("collapses, expands itself for an error, and never hides attribution", async ({
     page,
     context,
   }) => {
-    // DEC-R2-15. The status line lives inside the header, and failures are
-    // reported into it — so a collapsed header would swallow the message and the
-    // demo would look like it did nothing. Driven through a REAL failure (a
-    // refused geolocation permission) rather than by dispatching by hand, because
-    // the wiring from reporter to reveal is the part that can be missing.
-    await context.clearPermissions();
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await page.locator("#header-toggle").click();
-    await expect(page.locator("#header-bar")).toHaveAttribute(
-      "data-collapsed",
-      "true",
-    );
+    /**
+     * Puts the bar in a known state before each step.
+     *
+     * NECESSARY BECAUSE `#header-toggle` TOGGLES. Each of these behaviours was
+     * written against a fresh boot, where the bar starts expanded, and each does
+     * its own `click()` to collapse. Sharing one boot means a step can inherit a
+     * collapsed bar from the step before and have its click EXPAND instead —
+     * which would not fail loudly, it would assert the opposite of the intent.
+     * Restoring the boot state is the exact translation.
+     */
+    const expandHeader = async () => {
+      const bar = page.locator("#header-bar");
+      if ((await bar.getAttribute("data-collapsed")) === "true") {
+        await page.locator("#header-toggle").click();
+      }
+      await expect(bar).toHaveAttribute("data-collapsed", "false");
+    };
 
-    await page.locator(".locate-button").click();
+    await test.step("collapses to give its height back to the 3D view", async () => {
+      // WHY THIS TEST MATTERS, and why it asserts HEIGHT rather than visibility.
+      // The feedback assumed the header already floats over the 3D view. It does
+      // not — it is a grid row, so on a phone its wrapped lines are taken OUT of
+      // the 3D view's height. That makes collapsing a real win rather than a
+      // cosmetic one, and "the bar got shorter" is the only assertion that shows it.
+      await expandHeader();
+      const header = page.locator("#header-bar");
+      const scene = page.locator("#scene");
+      const before = await header.boundingBox();
+      const sceneBefore = await scene.boundingBox();
+      if (before === null || sceneBefore === null) throw new Error("no boxes");
 
-    await expect(page.locator("#header-bar")).toHaveAttribute(
-      "data-collapsed",
-      "false",
-    );
-    // And the message is actually legible, not merely present in the DOM.
-    await expect(page.locator("#status")).toBeVisible();
-    await expect(page.locator("#status")).toContainText(
-      /denied|unavailable|timed out/,
-    );
-  });
+      await page.locator("#header-toggle").click();
 
-  test("keeps the terrain attribution visible even when collapsed", async ({
-    page,
-  }) => {
-    // Attribution is required wherever the data is shown, so it may not be
-    // collapsed away. It moved out of the header into Leaflet's attribution
-    // control (DEC-R2-4), which is always visible.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+      await expect(header).toHaveAttribute("data-collapsed", "true");
+      await expect(page.locator("#header-toggle")).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
 
-    const attribution = page.locator("#map .leaflet-control-attribution");
-    await expect(attribution).toContainText("OpenStreetMap");
-    await expect(attribution).toContainText(
-      /Mapzen|Terrarium|Tilezen|elevation/i,
-    );
+      const after = await header.boundingBox();
+      const sceneAfter = await scene.boundingBox();
+      if (after === null || sceneAfter === null) throw new Error("no boxes");
+      expect(after.height).toBeLessThan(before.height);
+      // The height went to the 3D view rather than nowhere.
+      expect(sceneAfter.height).toBeGreaterThan(sceneBefore.height);
 
-    await page.locator("#header-toggle").click();
-    await expect(page.locator("#header-bar")).toHaveAttribute(
-      "data-collapsed",
-      "true",
-    );
-    // Still there with the bar collapsed — the whole point.
-    await expect(attribution).toContainText("OpenStreetMap");
-    await expect(attribution).toContainText(
-      /Mapzen|Terrarium|Tilezen|elevation/i,
-    );
+      // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4). Collapsing the
+      // category picker away would put a primary input two taps from reach, and
+      // hiding the legend would re-create the round-1 problem it was added to fix.
+      await expect(page.locator("#category")).toBeVisible();
+      await expect(page.locator("#legend")).toBeVisible();
+
+      await page.locator("#header-toggle").click();
+      await expect(header).toHaveAttribute("data-collapsed", "false");
+    });
+
+    await test.step("expands itself when an error needs to be read", async () => {
+      // DEC-R2-15. The status line lives inside the header, and failures are
+      // reported into it — so a collapsed header would swallow the message and the
+      // demo would look like it did nothing. Driven through a REAL failure (a
+      // refused geolocation permission) rather than by dispatching by hand, because
+      // the wiring from reporter to reveal is the part that can be missing.
+      await context.clearPermissions();
+      await expandHeader();
+
+      await page.locator("#header-toggle").click();
+      await expect(page.locator("#header-bar")).toHaveAttribute(
+        "data-collapsed",
+        "true",
+      );
+
+      await page.locator(".locate-button").click();
+
+      await expect(page.locator("#header-bar")).toHaveAttribute(
+        "data-collapsed",
+        "false",
+      );
+      // And the message is actually legible, not merely present in the DOM.
+      await expect(page.locator("#status")).toBeVisible();
+      await expect(page.locator("#status")).toContainText(
+        /denied|unavailable|timed out/,
+      );
+    });
+
+    await test.step("keeps the terrain attribution visible even when collapsed", async () => {
+      // Attribution is required wherever the data is shown, so it may not be
+      // collapsed away. It moved out of the header into Leaflet's attribution
+      // control (DEC-R2-4), which is always visible.
+      await expandHeader();
+      const attribution = page.locator("#map .leaflet-control-attribution");
+      await expect(attribution).toContainText("OpenStreetMap");
+      await expect(attribution).toContainText(
+        /Mapzen|Terrarium|Tilezen|elevation/i,
+      );
+
+      await page.locator("#header-toggle").click();
+      await expect(page.locator("#header-bar")).toHaveAttribute(
+        "data-collapsed",
+        "true",
+      );
+      // Still there with the bar collapsed — the whole point.
+      await expect(attribution).toContainText("OpenStreetMap");
+      await expect(attribution).toContainText(
+        /Mapzen|Terrarium|Tilezen|elevation/i,
+      );
+    });
   });
 });
 
@@ -1635,52 +1649,46 @@ test.describe("the 3D view", () => {
     // ground pixel; the slab is what is under test.
     await page.getByRole("checkbox", { name: "cells", exact: true }).uncheck();
 
-    // MEASURED, not guessed, and the first attempt shows why that matters. It
-    // required saturation > 45 and green > 60, on the reasoning that the heat
-    // ramp is vivid — but this fixture's single region scores at the LOW end of
-    // the ramp, where the colour is a dark violet. The filter matched zero pixels
-    // while 177 961 of them had changed.
+    // A DIFFERENCE COUNT, NOT A COLOUR FILTER — and this is the THIRD test in
+    // this file to make that move for the same reason, after the road layer and
+    // the POI markers.
     //
-    // Histogram of the lower scene, with the layer off and on:
+    // What was here counted "vivid" pixels as `r > g + 4 && b > r + 8`, measured
+    // against a histogram of the scene as it looked then:
     //
     //   off   rgb(40,40,56) x375362      the ground
     //   on    rgb(40,32,64) x177961      the slab over it
     //
-    // Red LEADS green on the slab and equals it on the ground, which separates
-    // the two cleanly and does not depend on where in the ramp a region lands.
-    const vivid = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return -1;
-        const probe = document.createElement("canvas");
-        probe.width = el.width;
-        probe.height = el.height;
-        const ctx = probe.getContext("2d");
-        if (ctx === null) return -1;
-        ctx.drawImage(el, 0, 0);
-        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-        let count = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i] ?? 0;
-          const g = data[i + 1] ?? 0;
-          const b = data[i + 2] ?? 0;
-          if (r > g + 4 && b > r + 8) count += 1;
-        }
-        return count;
-      });
+    // Red led green on the slab and equalled it on the ground, which separated
+    // the two cleanly. The shiny-surfaces work then made the GROUND violet as
+    // well, so the filter now matches the ground it was supposed to exclude:
+    // switching the slabs on swaps violet pixels for other violet pixels and the
+    // `+20 000` margin is not reached. It failed about one run in four, always
+    // with the slab drawn correctly and the status line reporting it.
+    //
+    // Counting pixels that CHANGED cannot be broken by a palette, which is the
+    // whole point — the claim being made is "switching this layer on changes a
+    // large part of the picture, and switching it off puts it back", and that
+    // claim never depended on which colours were involved.
+    await installFrameProbe(page);
 
-    // Off first: W9 draws the slabs by default, so "before" has to be a frame
-    // without them or the difference this measures is zero.
+    // Off first: W9 draws the slabs by default, so the stashed frame has to be
+    // one without them or the difference this measures is zero.
     await page.getByRole("checkbox", { name: "areas" }).uncheck();
-    const before = await vivid();
+    await expect(page.locator("#status")).not.toContainText(/\d+ area slabs/);
+    expect(await stashFrame(page)).toBeGreaterThan(0);
+
+    const changed = async () => (await diffFromStash(page, 24)).differing;
+
     await page.getByRole("checkbox", { name: "areas" }).check();
     await expect(page.locator("#status")).toContainText(/\d+ area slabs/);
-    // ~178 000 pixels measured; 20 000 is a floor with a wide margin, and what
-    // it guards against produces zero.
-    await expect.poll(vivid, REPAINT).toBeGreaterThan(before + 20_000);
+    // ~178 000 pixels of slab were measured when this counted a colour band, and
+    // a difference count sees at least as many. 20 000 is a floor with a wide
+    // margin, and what it guards against produces ZERO.
+    await expect.poll(changed, REPAINT).toBeGreaterThan(20_000);
 
     await page.getByRole("checkbox", { name: "areas" }).uncheck();
-    await expect.poll(vivid, REPAINT).toBeLessThan(before + 20_000);
+    await expect.poll(changed, REPAINT).toBeLessThan(20_000);
   });
 
   test("draws roads, and the ground changes when they come on", async ({
@@ -2483,62 +2491,60 @@ test.describe("the terrain load and the refresh", () => {
  * prefetched tile is genuinely reused rather than fetched twice.
  */
 test.describe("the background ring prefetch", () => {
-  test("warms the neighbours, and never more than one at a time", async ({
+  test("warms the neighbours, and reuses them instead of refetching", async ({
     page,
   }) => {
+    // ONE BOOT, and here the sharing is more than a saving: both steps assert on
+    // the SAME request counter, and the second one's claim — that moving does not
+    // refetch what the ring already pulled — is only meaningful against a ring
+    // the first step has just established. Two boots asserted that twice from
+    // scratch.
     const counts = await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    // The user's own tile, plus the ring arriving behind it. The count is what
-    // proves the ring is being pulled at all — the map looks identical either
-    // way, which is the same reason the OPFS cache test counts requests.
-    await expect
-      .poll(() => counts.overpassQuery, { timeout: 30000 })
-      .toBeGreaterThan(1);
+    await test.step("warms the neighbours, and never more than one at a time", async () => {
+      // The user's own tile, plus the ring arriving behind it. The count is what
+      // proves the ring is being pulled at all — the map looks identical either
+      // way, which is the same reason the OPFS cache test counts requests.
+      await expect
+        .poll(() => counts.overpassQuery, { timeout: 30000 })
+        .toBeGreaterThan(1);
 
-    // AT MOST SEVEN: the tile the user is in plus its six neighbours
-    // (`fetchWorkingSet`). More than that would mean the queue is following the
-    // ring of a ring, which is how a background loader becomes a crawler.
-    expect(counts.overpassQuery).toBeLessThanOrEqual(7);
-  });
+      // AT MOST SEVEN: the tile the user is in plus its six neighbours
+      // (`fetchWorkingSet`). More than that would mean the queue is following the
+      // ring of a ring, which is how a background loader becomes a crawler.
+      expect(counts.overpassQuery).toBeLessThanOrEqual(7);
+    });
 
-  test("a prefetched neighbour is reused, not fetched again", async ({
-    page,
-  }) => {
-    // The payoff, and the only way to see it is a request count. Without the
-    // prefetch this click is an 18–110 s fetch; with it, the tile is already in
-    // OPFS and the click costs nothing on the wire.
-    const counts = await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+    await test.step("a prefetched neighbour is reused, not fetched again", async () => {
+      // The payoff, and the only way to see it is a request count. Without the
+      // prefetch this click is an 18–110 s fetch; with it, the tile is already in
+      // OPFS and the click costs nothing on the wire.
+      // Let the ring settle, then remember what has been spent.
+      let previous = -1;
+      await expect
+        .poll(
+          () => {
+            const settled = counts.overpassQuery === previous;
+            previous = counts.overpassQuery;
+            return settled;
+          },
+          { timeout: 30000, intervals: [500] },
+        )
+        .toBe(true);
+      const spent = counts.overpassQuery;
 
-    // Let the ring settle, then remember what has been spent.
-    await expect
-      .poll(() => counts.overpassQuery, { timeout: 30000 })
-      .toBeGreaterThan(1);
-    let previous = -1;
-    await expect
-      .poll(
-        () => {
-          const settled = counts.overpassQuery === previous;
-          previous = counts.overpassQuery;
-          return settled;
-        },
-        { timeout: 30000, intervals: [500] },
-      )
-      .toBe(true);
-    const spent = counts.overpassQuery;
+      // Move far enough to need a different fetch tile — the fixture answers every
+      // tile, so what is being asserted is the COUNT, not the content.
+      await page.goto(`/?lat=${50.9231 + 0.02}&lng=${6.9445 + 0.02}`);
+      await waitForRefresh(page);
 
-    // Move far enough to need a different fetch tile — the fixture answers every
-    // tile, so what is being asserted is the COUNT, not the content.
-    await page.goto(`/?lat=${50.9231 + 0.02}&lng=${6.9445 + 0.02}`);
-    await waitForRefresh(page);
-
-    // Some of the new ring will be fetched; what must NOT happen is a refetch of
-    // a tile already in the store. Bounded by one fresh working set plus its
-    // ring rather than by everything all over again.
-    expect(counts.overpassQuery - spent).toBeLessThanOrEqual(7);
+      // Some of the new ring will be fetched; what must NOT happen is a refetch of
+      // a tile already in the store. Bounded by one fresh working set plus its
+      // ring rather than by everything all over again.
+      expect(counts.overpassQuery - spent).toBeLessThanOrEqual(7);
+    });
   });
 });
 
@@ -2546,65 +2552,67 @@ test.describe("the background ring prefetch", () => {
  * W11 / DEC-R3-3 — the ground picker, including the state that hides the ground.
  */
 test.describe("the ground mode picker", () => {
-  test("draws nothing as ground on 'No ground', and comes back", async ({
+  test("offers the right modes, and 'No ground' really draws none", async ({
     page,
   }) => {
-    // WHY THIS TEST MATTERS. `No ground` is the state the round-3 notes asked
-    // for — a way to look at the OSM ground areas without the terrain over them
-    // — and the way it fails is silently: a mode switch that cleared the whole
-    // scene would look exactly like the blanking bug W2 fixed, and a mode that
-    // did nothing would look like the picker was decorative.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const shot = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return "";
-        return el.toDataURL();
-      });
+    // THE PICKER-CONTENTS STEP RUNS FIRST because it asserts the DEFAULT
+    // selection, and the step below changes it. Fusing does not get to reorder
+    // an assertion about an initial state to after something has moved it.
+    await test.step("offers the height ramp on both strategies and on neither without ground", async () => {
+      // WHAT THIS REPLACES, and why the replacement is a stronger claim. It used to
+      // assert that the `terrainDebug` SWITCH was disabled under `No ground`
+      // (DEC-R3-17) — a runtime guard against offering a control that does nothing.
+      // W6 folds the ramp into the ground mode, so the guard is now structural:
+      // there is no `none-ramp` entry to choose. Asserting the picker's contents
+      // tests the property directly instead of testing the guard that used to
+      // approximate it.
+      const picker = page.locator("#ground-mode");
+      await expect(picker.locator("option")).toHaveCount(5);
+      // Both strategies keep both appearances, which is what keeps the CPU-vs-GPU
+      // A/B reachable while the ramp is on (DEC-R3-3).
+      for (const value of ["cpu", "cpu-ramp", "gpu", "gpu-ramp", "none"]) {
+        await expect(picker.locator(`option[value="${value}"]`)).toHaveCount(1);
+      }
+      // ...and no combination of "no ground" with a ramp exists to be chosen.
+      await expect(picker.locator('option[value="none-ramp"]')).toHaveCount(0);
 
-    const withGround = await shot();
-    await page.locator("#ground-mode").selectOption("none");
-    await expect.poll(shot, REPAINT).not.toBe(withGround);
+      // The ramp is the DEFAULT (DEC-R5-4), which is the visible half of R5-3.
+      await expect(picker).toHaveValue("cpu-ramp");
 
-    // The mesh layers are untouched — the buildings are still there.
-    await expect(page.locator("#status")).toContainText(/\d+ volumes/);
+      await picker.selectOption("gpu-ramp");
+      await expect(page.locator("#status")).toContainText(/ground gpu \d/);
+    });
 
-    await page.locator("#ground-mode").selectOption("cpu");
-    await expect(page.locator("#status")).toContainText(/ground cpu \d/);
-  });
+    await test.step("draws nothing as ground on 'No ground', and comes back", async () => {
+      // WHY THIS TEST MATTERS. `No ground` is the state the round-3 notes asked
+      // for — a way to look at the OSM ground areas without the terrain over them
+      // — and the way it fails is silently: a mode switch that cleared the whole
+      // scene would look exactly like the blanking bug W2 fixed, and a mode that
+      // did nothing would look like the picker was decorative.
+      const shot = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return "";
+          return el.toDataURL();
+        });
 
-  test("offers the height ramp on both strategies and on neither without ground", async ({
-    page,
-  }) => {
-    // WHAT THIS REPLACES, and why the replacement is a stronger claim. It used to
-    // assert that the `terrainDebug` SWITCH was disabled under `No ground`
-    // (DEC-R3-17) — a runtime guard against offering a control that does nothing.
-    // W6 folds the ramp into the ground mode, so the guard is now structural:
-    // there is no `none-ramp` entry to choose. Asserting the picker's contents
-    // tests the property directly instead of testing the guard that used to
-    // approximate it.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+      // Taken here rather than at boot: the step above left the picker on
+      // `gpu-ramp`, and the claim is "switching to none changes the picture",
+      // which has to be measured from whatever ground is actually drawn now.
+      const withGround = await shot();
+      await page.locator("#ground-mode").selectOption("none");
+      await expect.poll(shot, REPAINT).not.toBe(withGround);
 
-    const picker = page.locator("#ground-mode");
-    await expect(picker.locator("option")).toHaveCount(5);
-    // Both strategies keep both appearances, which is what keeps the CPU-vs-GPU
-    // A/B reachable while the ramp is on (DEC-R3-3).
-    for (const value of ["cpu", "cpu-ramp", "gpu", "gpu-ramp", "none"]) {
-      await expect(picker.locator(`option[value="${value}"]`)).toHaveCount(1);
-    }
-    // ...and no combination of "no ground" with a ramp exists to be chosen.
-    await expect(picker.locator('option[value="none-ramp"]')).toHaveCount(0);
+      // The mesh layers are untouched — the buildings are still there.
+      await expect(page.locator("#status")).toContainText(/\d+ volumes/);
 
-    // The ramp is the DEFAULT (DEC-R5-4), which is the visible half of R5-3.
-    await expect(picker).toHaveValue("cpu-ramp");
-
-    await picker.selectOption("gpu-ramp");
-    await expect(page.locator("#status")).toContainText(/ground gpu \d/);
+      await page.locator("#ground-mode").selectOption("cpu");
+      await expect(page.locator("#status")).toContainText(/ground cpu \d/);
+    });
   });
 });
 
@@ -2612,64 +2620,72 @@ test.describe("the ground mode picker", () => {
  * W12 / finding R3-8 — one scale, and a legend that says when there is no ramp.
  */
 test.describe("the legend", () => {
-  test("keeps its scale when the cells layer is switched off", async ({
-    page,
-  }) => {
-    // THE DEFECT, and it is not in the notes: the scale was derived from the
-    // cells the MAP was handed, and those are filtered by this switch. So
-    // switching it off collapsed the ramp — the legend went to "1 to 1" and the
-    // 2D region fills were coloured on an empty scale while the 3D slabs used a
-    // different one. Two views, two scales, the same regions.
+  test("keeps its scale, and says when nothing qualifies", async ({ page }) => {
+    // TWO BEHAVIOURS, ONE BOOT. The boot is ~4.8 s of a ~6.5 s test and both of
+    // these want the identical one, so paying it twice bought nothing. They stay
+    // separately named through `test.step`, which is what keeps a failure
+    // pointing at one behaviour rather than at a pair — see
+    // GpsPlusSlamJs_Docs/docs/2026-08-02-0612-osm-demo-e2e-fusion-plan.md.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const legend = page.locator("#legend");
-    const before = await legend.textContent();
-    expect(before).not.toBeNull();
+    await test.step("keeps its scale when the cells layer is switched off", async () => {
+      // THE DEFECT, and it is not in the notes: the scale was derived from the
+      // cells the MAP was handed, and those are filtered by this switch. So
+      // switching it off collapsed the ramp — the legend went to "1 to 1" and the
+      // 2D region fills were coloured on an empty scale while the 3D slabs used a
+      // different one. Two views, two scales, the same regions.
+      const legend = page.locator("#legend");
+      const before = await legend.textContent();
+      expect(before).not.toBeNull();
 
-    await page.locator("#layer-cells").uncheck();
-    await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
+      await page.locator("#layer-cells").uncheck();
+      await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
 
-    // The cells are gone from the map; the scale describes the data, not the
-    // drawing, so the legend must be unchanged.
-    await expect(legend).toHaveText(before ?? "");
-  });
+      // The cells are gone from the map; the scale describes the data, not the
+      // drawing, so the legend must be unchanged.
+      await expect(legend).toHaveText(before ?? "");
 
-  test("says nothing qualifies instead of showing a 1-to-1 ramp", async ({
-    page,
-  }) => {
-    // The reported symptom, as an assertion. Any category with no cell above the
-    // bar produces a degenerate scale; the fixture's own categories are used
-    // rather than a hardcoded name, so this stays true if the rule table moves.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const picker = page.locator("#category");
-    const values = await page
-      .locator("#category option")
-      .evaluateAll((nodes) =>
-        nodes.map((node) => /** @type {HTMLOptionElement} */ (node).value),
+      // RESTORED before the next step. This step's own claim is that the legend
+      // does not depend on the switch, so leaving it off would be harmless here —
+      // but a step that hands the next one a state it did not ask for is how
+      // fused tests start failing for reasons that are not about them.
+      await page.locator("#layer-cells").check();
+      await expect(page.locator("#map path.affordance-cell")).not.toHaveCount(
+        0,
       );
+    });
 
-    for (const value of values) {
-      await picker.selectOption(value);
-      await waitForRefresh(page);
-      const text = (await page.locator("#legend").textContent()) ?? "";
-      // Either there is a real ramp, or there is a sentence — never a ramp whose
-      // two ends carry the same number.
-      const min = await page.locator("#legend .legend-min").count();
-      if (min === 0) {
-        expect(text).toContain("no cell scores above");
-        return;
+    await test.step("says nothing qualifies instead of showing a 1-to-1 ramp", async () => {
+      // The reported symptom, as an assertion. Any category with no cell above the
+      // bar produces a degenerate scale; the fixture's own categories are used
+      // rather than a hardcoded name, so this stays true if the rule table moves.
+      const picker = page.locator("#category");
+      const values = await page
+        .locator("#category option")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => /** @type {HTMLOptionElement} */ (node).value),
+        );
+
+      for (const value of values) {
+        await picker.selectOption(value);
+        await waitForRefresh(page);
+        const text = (await page.locator("#legend").textContent()) ?? "";
+        // Either there is a real ramp, or there is a sentence — never a ramp whose
+        // two ends carry the same number.
+        const min = await page.locator("#legend .legend-min").count();
+        if (min === 0) {
+          expect(text).toContain("no cell scores above");
+          return;
+        }
       }
-    }
-    // Not a failure: this fixture may have data for every category. Recorded so
-    // a green run cannot be mistaken for proof that the empty state was reached.
-    test.info().annotations.push({
-      type: "note",
-      description: "every category had cells above the bar in this fixture",
+      // Not a failure: this fixture may have data for every category. Recorded so
+      // a green run cannot be mistaken for proof that the empty state was reached.
+      test.info().annotations.push({
+        type: "note",
+        description: "every category had cells above the bar in this fixture",
+      });
     });
   });
 });
@@ -2682,54 +2698,59 @@ test.describe("the legend", () => {
  * sub-threshold cell painted at the ramp's darkest stop over dark ground.
  */
 test.describe("revealing the sub-threshold cells", () => {
-  test("changes BOTH views, in both directions", async ({ page }) => {
+  test("changes BOTH views, and the cells it reveals are interrogable", async ({
+    page,
+  }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    const canvas = page.locator("#scene canvas");
-    const shot = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-      });
-    await expect(canvas).toBeVisible();
+    await test.step("changes BOTH views, in both directions", async () => {
+      const canvas = page.locator("#scene canvas");
+      const shot = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+        });
+      await expect(canvas).toBeVisible();
 
-    const cells = page.locator("#map path.affordance-cell");
-    const before2d = await cells.count();
-    const before3d = await shot();
+      const cells = page.locator("#map path.affordance-cell");
+      const before2d = await cells.count();
+      const before3d = await shot();
 
-    await page.locator("#show-below").check();
+      await page.locator("#show-below").check();
 
-    // 2D: more cells on screen. 3D: a different picture. Both halves, because
-    // the reported symptom was that nothing appeared to happen at all.
-    await expect.poll(() => cells.count()).toBeGreaterThan(before2d);
-    await expect.poll(shot, REPAINT).not.toBe(before3d);
+      // 2D: more cells on screen. 3D: a different picture. Both halves, because
+      // the reported symptom was that nothing appeared to happen at all.
+      await expect.poll(() => cells.count()).toBeGreaterThan(before2d);
+      await expect.poll(shot, REPAINT).not.toBe(before3d);
 
-    // AND BACK, which is the half that catches a redraw that only ever adds.
-    await page.locator("#show-below").uncheck();
-    await expect.poll(() => cells.count()).toBe(before2d);
-  });
+      // AND BACK, which is the half that catches a redraw that only ever adds.
+      await page.locator("#show-below").uncheck();
+      await expect.poll(() => cells.count()).toBe(before2d);
+    });
 
-  test("an identity cell can still be clicked to ask why", async ({ page }) => {
-    // DEC-7's stated reason for revealing these cells at all: a hidden cell is
-    // the one cell you cannot click to ask why. W13 changes the identity band's
-    // TREATMENT — outline, not fill — and DEC-R3-21 keeps it interrogable.
-    //
-    // ASSERTED ON THE MAP, where a specific band can be addressed by class. The
-    // 3D half of the same guarantee is the invisible pick face, which
-    // `cell-mesh.test.ts` pins directly: a canvas click cannot be aimed at a
-    // particular band without solving for the projection first.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+    await test.step("an identity cell can still be clicked to ask why", async () => {
+      // DEC-7's stated reason for revealing these cells at all: a hidden cell is
+      // the one cell you cannot click to ask why. W13 changes the identity band's
+      // TREATMENT — outline, not fill — and DEC-R3-21 keeps it interrogable.
+      //
+      // ASSERTED ON THE MAP, where a specific band can be addressed by class. The
+      // 3D half of the same guarantee is the invisible pick face, which
+      // `cell-mesh.test.ts` pins directly: a canvas click cannot be aimed at a
+      // particular band without solving for the projection first.
+      //
+      // The switch is checked again here rather than inherited: the step above
+      // ends by unchecking it, because "and back" is half of ITS claim.
+      await page.locator("#show-below").check();
+      const identity = page
+        .locator("#map path.affordance-cell-identity")
+        .first();
+      await expect(identity).toBeVisible();
 
-    await page.locator("#show-below").check();
-    const identity = page.locator("#map path.affordance-cell-identity").first();
-    await expect(identity).toBeVisible();
-
-    await identity.click({ force: true });
-    await expect(page.locator("#details")).toBeVisible();
+      await identity.click({ force: true });
+      await expect(page.locator("#details")).toBeVisible();
+    });
   });
 });
 
@@ -2789,54 +2810,57 @@ test.describe("the perf overlay", () => {
  * switch.
  */
 test.describe("the control bar", () => {
-  test("gives every layer exactly one visible switch", async ({ page }) => {
-    // THE REGISTRY'S OWN GUARANTEE, asserted through the UI: a builder that
-    // arrives without a switch is a layer that renders and cannot be turned off,
-    // which is the state `ALL_LAYERS` exists to prevent. Grouping the switches
-    // moved every one of them, so this is also the regression guard for that.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const switches = page.locator("#layers input[type=checkbox][data-layer]");
-    const count = await switches.count();
-    expect(count).toBeGreaterThan(0);
-
-    const layers = await switches.evaluateAll((nodes) =>
-      nodes.map((node) => node.getAttribute("data-layer")),
-    );
-    expect(new Set(layers).size).toBe(count);
-    for (const layer of layers) {
-      await expect(page.locator(`#layer-${layer}`)).toBeVisible();
-    }
-
-    // And the groups exist, with the perf switch inside the diagnostics one —
-    // it is not a layer, so nothing else would put it there.
-    await expect(page.locator("#layer-group-overlays")).toBeVisible();
-    await expect(page.locator("#layer-group-world")).toBeVisible();
-    await expect(
-      page.locator("#layer-group-diagnostics #perf-stats"),
-    ).toBeVisible();
-  });
-
-  test("still collapses to the title, picker, switches and legend", async ({
+  test("gives every layer one switch, and collapses to the essentials", async ({
     page,
   }) => {
-    // DEC-R2-4 is not negotiable here: the collapsed bar keeps the two primary
-    // inputs and the legend, and hides the hint, the status string and the
-    // show-below toggle. Restyling must not have moved anything across that line.
     await stubNetwork(page);
-    await page.setViewportSize({ width: 390, height: 780 });
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await page.locator("#header-toggle").click();
+    await test.step("gives every layer exactly one visible switch", async () => {
+      // THE REGISTRY'S OWN GUARANTEE, asserted through the UI: a builder that
+      // arrives without a switch is a layer that renders and cannot be turned off,
+      // which is the state `ALL_LAYERS` exists to prevent. Grouping the switches
+      // moved every one of them, so this is also the regression guard for that.
+      const switches = page.locator("#layers input[type=checkbox][data-layer]");
+      const count = await switches.count();
+      expect(count).toBeGreaterThan(0);
 
-    await expect(page.locator("#category")).toBeVisible();
-    await expect(page.locator("#legend")).toBeVisible();
-    await expect(page.locator("#layer-cells")).toBeVisible();
-    await expect(page.locator("#status")).toBeHidden();
-    await expect(page.locator("#show-below")).toBeHidden();
+      const layers = await switches.evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute("data-layer")),
+      );
+      expect(new Set(layers).size).toBe(count);
+      for (const layer of layers) {
+        await expect(page.locator(`#layer-${layer}`)).toBeVisible();
+      }
+
+      // And the groups exist, with the perf switch inside the diagnostics one —
+      // it is not a layer, so nothing else would put it there.
+      await expect(page.locator("#layer-group-overlays")).toBeVisible();
+      await expect(page.locator("#layer-group-world")).toBeVisible();
+      await expect(
+        page.locator("#layer-group-diagnostics #perf-stats"),
+      ).toBeVisible();
+    });
+
+    await test.step("still collapses to the title, picker, switches and legend", async () => {
+      // DEC-R2-4 is not negotiable here: the collapsed bar keeps the two primary
+      // inputs and the legend, and hides the hint, the status string and the
+      // show-below toggle. Restyling must not have moved anything across that line.
+      //
+      // The narrow viewport is set HERE rather than at the top, so the step above
+      // still runs at the desktop width it was written for. A resize is a repaint,
+      // not a reload — the scene and the working set survive it, which is the
+      // whole reason these two can share a boot.
+      await page.setViewportSize({ width: 390, height: 780 });
+      await page.locator("#header-toggle").click();
+
+      await expect(page.locator("#category")).toBeVisible();
+      await expect(page.locator("#legend")).toBeVisible();
+      await expect(page.locator("#layer-cells")).toBeVisible();
+      await expect(page.locator("#status")).toBeHidden();
+      await expect(page.locator("#show-below")).toBeHidden();
+    });
   });
 });
 
@@ -2851,58 +2875,20 @@ test.describe("the control bar", () => {
  * terrain surface. These tests pin the half that could regress silently.
  */
 test.describe("No ground", () => {
-  test("survives a position change, which reloads the terrain", async ({
+  test("is empty sky with the layers off, and survives a position change", async ({
     page,
   }) => {
-    // THE LIFECYCLE RISK. `setTerrain` runs on every position change and
-    // re-applies the field to the plane; if it ever restored visibility — or if
-    // a future caller rebuilt the plane — the ground would come back on the next
-    // click with the picker still saying "No ground". A control that silently
-    // stops applying is the shape of half of this round's findings.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
-
     await page.locator("#ground-mode").selectOption("none");
-    const shot = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-      });
-    await expect.poll(shot, REPAINT).not.toBe("");
-    const withoutGround = await shot();
 
-    // Move the user, which loads terrain for the new position and re-applies it.
-    const map = page.locator("#map");
-    const box = await map.boundingBox();
-    if (box === null) throw new Error("no map box");
-    await page.mouse.click(box.x + box.width / 2 + 30, box.y + box.height / 2);
-    await waitForRefresh(page);
-
-    // The picker still says none, and the status line agrees — it reports the
-    // mode it is actually drawing with.
-    await expect(page.locator("#ground-mode")).toHaveValue("none");
-    await expect(page.locator("#status")).toContainText(/ground none/);
-    // And the ground did not come back: the frame is a scene without it. (The
-    // cells moved with the user, so this is not a pixel comparison — the status
-    // line's own mode readout is the honest assertion here.)
-    expect(withoutGround).not.toBe("");
-  });
-
-  test("leaves nothing but sky when every layer is off too", async ({
-    page,
-  }) => {
-    // The claim the report was really about: "no ground" plus "no layers" is an
-    // empty scene. Asserted as an absence of NEUTRAL pixels — the sky gradient is
-    // strongly blue-dominant, while the ground plane (0x3a4356), the buildings
-    // (0xc8ccd8) and the plates (0x4a5468) are all near-neutral greys. A grey
-    // pixel here is a surface that should not be drawn.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    await page.locator("#ground-mode").selectOption("none");
-    for (const layer of [
+    // THE SKY STEP RUNS FIRST, and the order is the fusion's own rule rather
+    // than taste: it is fully reversible (seven switches back on), while the step
+    // below MOVES THE USER, which reloads the terrain and cannot be undone. An
+    // irreversible step goes last or it hands every later step a world it did
+    // not ask for.
+    const LAYERS = [
       "cells",
       "areas",
       "buildings",
@@ -2910,18 +2896,66 @@ test.describe("No ground", () => {
       "plates",
       "roads",
       "poi",
-    ]) {
-      const box = page.locator(`#layer-${layer}`);
-      if (await box.isChecked()) await box.uncheck();
-    }
+    ];
 
-    // EXACTLY the sky, pixel for pixel — see `countNonSkyPixels`. A heuristic
-    // ("is it blue-dominant?") reads as sufficient here and is not: it also
-    // classifies the building material as sky, so it would pass over a scene
-    // full of geometry.
-    const { count } = await countNonSkyPixels(page);
+    await test.step("leaves nothing but sky when every layer is off too", async () => {
+      // The claim the report was really about: "no ground" plus "no layers" is an
+      // empty scene. Asserted as an absence of NEUTRAL pixels — the sky gradient is
+      // strongly blue-dominant, while the ground plane (0x3a4356), the buildings
+      // (0xc8ccd8) and the plates (0x4a5468) are all near-neutral greys. A grey
+      // pixel here is a surface that should not be drawn.
+      for (const layer of LAYERS) {
+        const box = page.locator(`#layer-${layer}`);
+        if (await box.isChecked()) await box.uncheck();
+      }
 
-    expect(count).toBe(0);
+      // EXACTLY the sky, pixel for pixel — see `countNonSkyPixels`. A heuristic
+      // ("is it blue-dominant?") reads as sufficient here and is not: it also
+      // classifies the building material as sky, so it would pass over a scene
+      // full of geometry.
+      const { count } = await countNonSkyPixels(page);
+
+      expect(count).toBe(0);
+
+      for (const layer of LAYERS) {
+        const box = page.locator(`#layer-${layer}`);
+        if (!(await box.isChecked())) await box.check();
+      }
+    });
+
+    await test.step("survives a position change, which reloads the terrain", async () => {
+      // THE LIFECYCLE RISK. `setTerrain` runs on every position change and
+      // re-applies the field to the plane; if it ever restored visibility — or if
+      // a future caller rebuilt the plane — the ground would come back on the next
+      // click with the picker still saying "No ground". A control that silently
+      // stops applying is the shape of half of this round's findings.
+      const shot = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+        });
+      await expect.poll(shot, REPAINT).not.toBe("");
+      const withoutGround = await shot();
+
+      // Move the user, which loads terrain for the new position and re-applies it.
+      const map = page.locator("#map");
+      const box = await map.boundingBox();
+      if (box === null) throw new Error("no map box");
+      await page.mouse.click(
+        box.x + box.width / 2 + 30,
+        box.y + box.height / 2,
+      );
+      await waitForRefresh(page);
+
+      // The picker still says none, and the status line agrees — it reports the
+      // mode it is actually drawing with.
+      await expect(page.locator("#ground-mode")).toHaveValue("none");
+      await expect(page.locator("#status")).toContainText(/ground none/);
+      // And the ground did not come back: the frame is a scene without it. (The
+      // cells moved with the user, so this is not a pixel comparison — the status
+      // line's own mode readout is the honest assertion here.)
+      expect(withoutGround).not.toBe("");
+    });
   });
 });
 
