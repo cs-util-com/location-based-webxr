@@ -1551,11 +1551,15 @@ test.describe("the 3D view", () => {
           return count;
         });
 
-      // THE RAMP IS NOW THE DEFAULT (W6, DEC-R5-4), and this is where that is
-      // asserted on PIXELS rather than on a picker value. The test used to start
-      // from an untinted scene and check the box; it now starts from the ramp,
-      // which is the more valuable direction — "the default actually reaches the
-      // screen" is the claim R5-3 was really making.
+      // THE RAMP IS NO LONGER THE DEFAULT (§2, DEC-R6-5 reversing DEC-R5-4), so
+      // it has to be selected before it can be asserted on pixels.
+      //
+      // The claim this step makes is unchanged and is still the valuable one —
+      // "choosing the ramp actually reaches the screen", which is what R5-3 was
+      // really about. What changed is only that the ramp is now one mode among
+      // three appearances rather than the state a fresh load lands in; the
+      // default is asserted by the ground-mode picker test instead.
+      await page.locator("#ground-mode").selectOption("cpu-ramp");
       await expect
         .poll(async () => (await rampEnds()).cool, REPAINT)
         .toBeGreaterThan(20_000);
@@ -2529,6 +2533,13 @@ test.describe("a superseded refresh", () => {
       // ~13 % for a mid-widening mismatch). Removing one more moving part keeps
       // the assertion exact.
       await page.locator("#layer-areas").uncheck();
+      // AND THE GROUND GOES PLAIN (§2). The slope treatment adds a rim light,
+      // and a rim term is view-dependent by definition — it is `1 − dot(V, N)` —
+      // so sub-pixel camera drift moves it and the frame stops being stable.
+      // This is the "remove one more moving part" lever the comment below says
+      // is exhausted, applied once more: the ground can lose its APPEARANCE
+      // without disappearing, which is different from switching it off.
+      await page.locator("#ground-mode").selectOption("cpu");
 
       // NO LONGER EXACTLY ZERO (§1, DEC-R6-2), and this IS the loosening the
       // comment above argued against — so the reason is on the record.
@@ -2541,10 +2552,18 @@ test.describe("a superseded refresh", () => {
       // switched off the way a layer can without gutting what this test is
       // about, so the "remove a moving part" lever is exhausted.
       //
-      // Measured at 0.06 % of the frame against a real superseded-refresh
-      // mismatch of ~13 % (recorded above). The separation is still more than
-      // two orders of magnitude, which is what makes the bound meaningful rather
-      // than merely passing.
+      // Measured across §1 and §2 as the scene gained view-dependent shading:
+      // 0.06 % with the environment map alone, 0.23 % once the ground was also
+      // specular under it. A real superseded-refresh mismatch is ~13 %
+      // (recorded above), so the bound below sits about 4x above the observed
+      // noise and 13x below a genuine failure.
+      //
+      // THE GENERAL FACT, which is worth stating once rather than rediscovering
+      // each stage: **a frame containing a specular surface lit by an
+      // environment map cannot be byte-stable under damping drift**, because
+      // the reflection is a function of view direction and the camera never
+      // exactly stops. Exactly-zero is not available again for any scene with
+      // the ground switched on.
       await capture();
       await expect
         .poll(async () => {
@@ -2552,7 +2571,7 @@ test.describe("a superseded refresh", () => {
           await capture();
           return moved;
         }, REPAINT)
-        .toBeLessThan(0.002);
+        .toBeLessThan(0.01);
 
       // Supersede: two category changes with no wait, then back to where it
       // started so the scene is comparable again.
@@ -2607,7 +2626,16 @@ test.describe("the terrain load and the refresh", () => {
 
     // The DEM cannot have answered — nothing has released it — so a query here
     // proves the two are in flight together.
-    await expect.poll(() => counts.overpassQuery).toBeGreaterThan(0);
+    //
+    // GIVEN THE REPAINT BUDGET RATHER THAN Playwright's default 5 s (§2). The
+    // ordering claim is unchanged; what changed is how long the page takes to
+    // GET to its first Overpass call. §2 added a shader to the default ground,
+    // and headless Chromium compiles and rasterises on the CPU — so under
+    // three-worker contention the boot no longer fits in five seconds. It
+    // passes standalone in 22 s. Raising a *timeout* is safe here in a way that
+    // raising a *threshold* would not be: the assertion is "greater than zero",
+    // so a longer wait cannot make a wrong answer look right.
+    await expect.poll(() => counts.overpassQuery, REPAINT).toBeGreaterThan(0);
 
     counts.releaseTerrain();
     await waitForRefresh(page);
@@ -2705,17 +2733,30 @@ test.describe("the ground mode picker", () => {
       // tests the property directly instead of testing the guard that used to
       // approximate it.
       const picker = page.locator("#ground-mode");
-      await expect(picker.locator("option")).toHaveCount(5);
-      // Both strategies keep both appearances, which is what keeps the CPU-vs-GPU
-      // A/B reachable while the ramp is on (DEC-R3-3).
-      for (const value of ["cpu", "cpu-ramp", "gpu", "gpu-ramp", "none"]) {
+      // SEVEN since §2 (DEC-R6-16): a third appearance — the slope treatment —
+      // across two displacement strategies, plus "none".
+      await expect(picker.locator("option")).toHaveCount(7);
+      // Every strategy keeps every appearance, which is what keeps the CPU-vs-GPU
+      // A/B reachable whichever appearance is chosen (DEC-R3-3).
+      for (const value of [
+        "cpu",
+        "cpu-slope",
+        "cpu-ramp",
+        "gpu",
+        "gpu-slope",
+        "gpu-ramp",
+        "none",
+      ]) {
         await expect(picker.locator(`option[value="${value}"]`)).toHaveCount(1);
       }
-      // ...and no combination of "no ground" with a ramp exists to be chosen.
+      // ...and no combination of "no ground" with an appearance exists to be
+      // chosen, which is DEC-R3-17 held structurally rather than by a guard.
       await expect(picker.locator('option[value="none-ramp"]')).toHaveCount(0);
+      await expect(picker.locator('option[value="none-slope"]')).toHaveCount(0);
 
-      // The ramp is the DEFAULT (DEC-R5-4), which is the visible half of R5-3.
-      await expect(picker).toHaveValue("cpu-ramp");
+      // SLOPE is the default since DEC-R6-5, reversing DEC-R5-4 — see
+      // `ground-mode.ts` for the measurement behind the reversal.
+      await expect(picker).toHaveValue("cpu-slope");
 
       await picker.selectOption("gpu-ramp");
       await expect(page.locator("#status")).toContainText(/ground gpu \d/);

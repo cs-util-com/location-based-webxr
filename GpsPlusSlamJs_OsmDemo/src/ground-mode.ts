@@ -32,6 +32,20 @@
  * CONSTRUCTION: there is no `none-ramp` entry to choose, so no control can be
  * offered that does nothing.
  *
+ * WHY IT IS NOW SEVEN (§2, DEC-R6-16). The slope treatment is a third
+ * APPEARANCE — normal-space isoclines plus an aspect tint — and it becomes the
+ * default (DEC-R6-5), demoting the height ramp to a mode. Splitting appearance
+ * and strategy into two pickers was offered and REJECTED for the reason the
+ * paragraph above already gives: enumerating combinations is what makes
+ * DEC-R3-17 true by construction, and two independent controls would reintroduce
+ * the greying-out rule this design exists to make unrepresentable.
+ *
+ * **The accepted cost is a seven-entry picker in a header round 5 already calls
+ * busy.** The rejected alternative worth remembering is moving the CPU/GPU axis
+ * behind a debug hotkey — it is a diagnostic wearing a user control's clothes —
+ * which would shrink the picker to three entries at the price of making the
+ * on-device comparison it exists for harder to reach.
+ *
  * @see ground-mode.ts.md
  */
 
@@ -44,39 +58,66 @@
  */
 export const GROUND_MODES = [
   "cpu",
+  "cpu-slope",
   "cpu-ramp",
   "gpu",
+  "gpu-slope",
   "gpu-ramp",
   "none",
 ] as const;
 
 export type GroundMode = (typeof GROUND_MODES)[number];
 
-/** Which path displaces the plane. The ramp is a material, not a strategy. */
+/** Which path displaces the plane. Appearance is not a strategy. */
 export type GroundStrategy = "cpu" | "gpu" | "none";
 
 /**
- * The mode a session starts in (DEC-R5-4).
+ * How the ground is COLOURED, independently of how it is displaced.
  *
- * CPU because that is the strategy that shipped; the ramp because the owner
- * asked for it after looking at the plain ground during the long first load.
- * **This overrides DEC-R4-5's standing "the height ramp stays off by default"**,
- * taken twenty hours earlier — and the reason that decision gave has not
- * expired, so the palette is the thing to watch: the affordance heat ramp must
- * still be the loudest thing on screen now that building and road colours have
- * landed.
+ * `plain` is the lit surface on its own; `slope` adds §2's isoclines and aspect
+ * tint on top of it; `ramp` swaps in the unlit hypsometric material.
+ *
+ * Named as its own union so `building-view` can switch on the appearance
+ * without re-deriving it from the mode string in two places — the shape that
+ * produced the `GroundDisplacement` type hole round 5 had to fix.
  */
-export const DEFAULT_GROUND_MODE: GroundMode = "cpu-ramp";
+export type GroundAppearance = "plain" | "slope" | "ramp";
+
+/**
+ * The mode a session starts in (§2, DEC-R6-5).
+ *
+ * CPU because that is the strategy that shipped; SLOPE because it answers the
+ * standing complaint the ramp does not. R5-2 reports that the terrain reads as
+ * flat; a height ramp recolours flat-looking ground and leaves it looking flat
+ * in a different colour, while contour lines of slope make the SHAPE legible.
+ *
+ * **THIS REVERSES DEC-R5-4**, which made the ramp the default barely a day
+ * earlier — and there is now a measurement behind the reversal rather than only
+ * a preference. The DEC-R4-5 gate added in §1 found that with the height ramp
+ * on, the ground OUT-SATURATES the affordance grid: the ramp is a deliberately
+ * loud blue-to-white scale with magenta for missing DEM, and DEC-R4-5 says the
+ * heat ramp must stay the loudest thing on screen. The diagnostic was breaching
+ * the constraint it was supposed to sit beneath.
+ *
+ * The ramp is NOT deleted. "Did the DEM load, or is this place just flat?" is a
+ * real question and the ramp answers it best; it is a mode now rather than the
+ * default.
+ */
+export const DEFAULT_GROUND_MODE: GroundMode = "cpu-slope";
 
 /** Human-readable, for the picker. */
 export function groundModeLabel(mode: GroundMode): string {
   switch (mode) {
     case "cpu":
       return "CPU ground";
+    case "cpu-slope":
+      return "CPU ground + slope";
     case "cpu-ramp":
       return "CPU ground + height ramp";
     case "gpu":
       return "GPU ground";
+    case "gpu-slope":
+      return "GPU ground + slope";
     case "gpu-ramp":
       return "GPU ground + height ramp";
     case "none":
@@ -94,9 +135,11 @@ export function groundModeLabel(mode: GroundMode): string {
 export function groundStrategy(mode: GroundMode): GroundStrategy {
   switch (mode) {
     case "cpu":
+    case "cpu-slope":
     case "cpu-ramp":
       return "cpu";
     case "gpu":
+    case "gpu-slope":
     case "gpu-ramp":
       return "gpu";
     case "none":
@@ -104,9 +147,25 @@ export function groundStrategy(mode: GroundMode): GroundStrategy {
   }
 }
 
+/** How a mode colours the ground. */
+export function groundAppearance(mode: GroundMode): GroundAppearance {
+  switch (mode) {
+    case "cpu-slope":
+    case "gpu-slope":
+      return "slope";
+    case "cpu-ramp":
+    case "gpu-ramp":
+      return "ramp";
+    case "cpu":
+    case "gpu":
+    case "none":
+      return "plain";
+  }
+}
+
 /** Whether the height-ramp material is used. */
 export function groundShowsRamp(mode: GroundMode): boolean {
-  return mode === "cpu-ramp" || mode === "gpu-ramp";
+  return groundAppearance(mode) === "ramp";
 }
 
 /**

@@ -25,9 +25,10 @@ import {
 } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
 
 import type { CellMesh } from "./cell-mesh.js";
-import type { GroundStrategy } from "./ground-mode.js";
+import type { GroundAppearance, GroundStrategy } from "./ground-mode.js";
 import { TERRAIN_EXTENT_M, type Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
+import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
@@ -282,6 +283,8 @@ export class BuildingView {
   private readonly groundRampMaterial: THREE.MeshBasicMaterial;
   /** Whether the ramp is showing, so a terrain update knows to recolour. */
   private groundDebug = false;
+  /** Which appearance is showing, so a repeated set is a no-op (§2). */
+  private groundAppearance: GroundAppearance = "plain";
   /**
    * Which path displaces the ground (W23, DEC-R2-24 as revised).
    *
@@ -303,6 +306,14 @@ export class BuildingView {
     uSide: { value: 0 },
     /** 1 while the GPU path owns displacement, 0 while the CPU path does. */
     uDisplace: { value: 0 },
+    /**
+     * 1 while the slope treatment is drawn, 0 for the plain lit ground (§2).
+     *
+     * A UNIFORM RATHER THAN A SECOND MATERIAL, for the reason the displacement
+     * pair already establishes: switching it must not recompile a shader, or
+     * every toggle costs a program build and the picker stutters.
+     */
+    uSlope: { value: 0 },
   };
   /**
    * What the last frame cost the GPU (W10, N5).
@@ -465,8 +476,20 @@ export class BuildingView {
       // Accepted, and correct: in genuinely flat terrain this still looks flat.
       // `terrain ±N m` in the status line is the only remaining signal separating
       // that from "the DEM did not load" — see `terrain-note.ts`.
+      // LIGHTER AND MORE NEUTRAL SINCE §2 (DEC-R6-6): `0x3a4356` -> `0x6b7280`.
+      // The owner liked the prototype's untreated mode, which is a plain mid-grey
+      // lambert, and the argument is the same one that lifted this colour out of
+      // near-black the first time: a dark surface has almost no dynamic range for
+      // a highlight to live in. One step further, and less blue, so the aspect
+      // tint §2 adds has somewhere to show rather than fighting a blue base.
+      //
+      // WHAT THIS TRADES. `sky-gradient.ts` used to guarantee the horizon was
+      // lighter than the ground so the plane's far edge silhouetted against the
+      // sky; that was two constants and is now a scattering shader, so the
+      // relationship is measured from the rendered frame instead of asserted
+      // between two arrays.
       new THREE.MeshStandardMaterial({
-        color: 0x3a4356,
+        color: 0x6b7280,
         flatShading: true,
         roughness: 0.42,
         metalness: 0.0,
@@ -482,6 +505,15 @@ export class BuildingView {
     // rather than being a CPU-only debug view.
     installGroundDisplacement(this.groundMaterial, this.groundUniforms);
     installGroundDisplacement(this.groundRampMaterial, this.groundUniforms);
+    // THE SLOPE TREATMENT GOES ON THE LIT MATERIAL ONLY (§2, DEC-R6-7). The ramp
+    // material is `MeshBasicMaterial` — unlit on purpose, so the hypsometric
+    // colour cannot be modulated by shading — and it has no `outgoingLight` to
+    // patch. Putting isoclines on it would also be answering two questions with
+    // one surface.
+    //
+    // CHAINED onto the displacement hook rather than replacing it; see
+    // `ground-slope-shader.ts` for why that is the failure worth guarding.
+    installGroundSlope(this.groundMaterial, this.groundUniforms);
     this.scene.add(this.ground);
 
     // FAR PLANE 2400 m — 4000, then 1200, now 2400. See `FAR_PLANE_M` for why
@@ -717,10 +749,25 @@ export class BuildingView {
    * carrying alone, and which a picture answers better.
    */
   setGroundDebug(enabled: boolean): void {
-    if (enabled === this.groundDebug) return;
-    this.groundDebug = enabled;
-    if (enabled) this.applyGroundRamp();
-    this.ground.material = enabled
+    this.setGroundAppearance(enabled ? "ramp" : "plain");
+  }
+
+  /**
+   * Chooses how the ground is coloured (§2, DEC-R6-5/R6-16).
+   *
+   * THREE APPEARANCES ON TWO MATERIALS, which is worth stating because the
+   * asymmetry looks like an oversight and is not. `plain` and `slope` are the
+   * SAME lit material with a uniform flipped — so switching between them costs
+   * no shader recompile — while `ramp` is a genuinely different material,
+   * unlit, because the hypsometric colour must not be modulated by lighting.
+   */
+  setGroundAppearance(appearance: GroundAppearance): void {
+    if (appearance === this.groundAppearance) return;
+    this.groundAppearance = appearance;
+    this.groundDebug = appearance === "ramp";
+    if (this.groundDebug) this.applyGroundRamp();
+    this.groundUniforms.uSlope.value = appearance === "slope" ? 1 : 0;
+    this.ground.material = this.groundDebug
       ? this.groundRampMaterial
       : this.groundMaterial;
     // On demand rendering: without this the swap is invisible until the camera

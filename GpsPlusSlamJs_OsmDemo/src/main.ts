@@ -57,7 +57,7 @@ import { createExplainCycle } from "./explain-cycle.js";
 import {
   GROUND_MODES,
   groundModeLabel,
-  groundShowsRamp,
+  groundAppearance,
   groundStrategy,
   parseGroundMode,
 } from "./ground-mode.js";
@@ -799,7 +799,10 @@ async function main(): Promise<void> {
     const ground = parseGroundMode(mode);
     groundPicker.value = ground;
     buildingView.setGroundDisplacement(groundStrategy(ground));
-    buildingView.setGroundDebug(groundShowsRamp(ground));
+    // THE APPEARANCE, not a boolean (§2, DEC-R6-16). There are three of them
+    // now — plain, slope, ramp — and `setGroundDebug(boolean)` could only ever
+    // express two, so a `cpu-slope` mode would silently have rendered plain.
+    buildingView.setGroundAppearance(groundAppearance(ground));
     // The status line reports `ground <mode> <ms>`, which is W23's whole
     // measurement — it has to follow the picker rather than the last terrain
     // load.

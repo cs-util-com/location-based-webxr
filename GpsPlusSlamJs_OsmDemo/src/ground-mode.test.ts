@@ -1,5 +1,6 @@
 /**
- * The ground mode — five states enumerating strategy x appearance (W6, DEC-R5-4).
+ * The ground mode — SEVEN states enumerating strategy x appearance (W6/§2,
+ * DEC-R5-4 then DEC-R6-16).
  *
  * Why these tests matter:
  * This control used to be three states plus a `terrainDebug` layer switch, and
@@ -23,6 +24,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_GROUND_MODE,
   GROUND_MODES,
+  groundAppearance,
   groundModeLabel,
   groundShowsRamp,
   groundStrategy,
@@ -55,22 +57,33 @@ describe("parseGroundMode", () => {
     expect(parseGroundMode("terrainDebug")).toBe(DEFAULT_GROUND_MODE);
   });
 
-  it("defaults to the CPU path WITH the ramp (DEC-R5-4)", () => {
-    // The owner's call, and it overrides DEC-R4-5's "the height ramp stays off by
-    // default". CPU because that is the existing default strategy, so this
-    // changes exactly one thing.
-    expect(DEFAULT_GROUND_MODE).toBe("cpu-ramp");
+  it("defaults to the CPU path WITH the slope treatment (DEC-R6-5)", () => {
+    // REVERSES DEC-R5-4, which made the height ramp the default a day earlier,
+    // and there is a measurement behind the reversal rather than a preference:
+    // §1's DEC-R4-5 gate found that with the ramp on, the ground OUT-SATURATES
+    // the affordance grid that constraint exists to protect. The ramp is a
+    // deliberately loud blue-to-white scale with magenta for missing DEM, and it
+    // was breaching the rule it was supposed to sit beneath.
+    //
+    // Slope answers R5-2 ("the terrain reads as flat") where the ramp does not:
+    // a ramp recolours flat-looking ground, contour lines make the shape
+    // legible. CPU because that is still the strategy that shipped.
+    expect(DEFAULT_GROUND_MODE).toBe("cpu-slope");
   });
 });
 
 describe("the two axes stay independent", () => {
   it("offers every combination of strategy and appearance", () => {
-    // The five-way form IS the decision (DEC-R5-4). Enumerating the combinations
-    // is what keeps the CPU/GPU comparison reachable while the ramp is on.
+    // The SEVEN-way form is the decision (DEC-R6-16). Enumerating rather than
+    // splitting into two pickers is what makes DEC-R3-17 true by construction:
+    // there is no "none-slope" entry to choose, so no control can be offered
+    // that does nothing.
     expect([...GROUND_MODES]).toEqual([
       "cpu",
+      "cpu-slope",
       "cpu-ramp",
       "gpu",
+      "gpu-slope",
       "gpu-ramp",
       "none",
     ]);
@@ -108,14 +121,40 @@ describe("the two axes stay independent", () => {
     expect(rampWithNoGround).toEqual([]);
   });
 
-  it("covers both appearances for both strategies", () => {
-    // The guard against someone "simplifying" the list back to four entries.
+  it("covers all THREE appearances for both displacement strategies", () => {
+    // The guard against someone "simplifying" the list back down. Each
+    // displacement path must reach plain, slope AND ramp, or the CPU/GPU
+    // comparison stops being available under some appearance — the exact trap
+    // DEC-R5-4's five-way form was built to avoid, and which a third appearance
+    // makes easier to fall into.
     for (const strategy of ["cpu", "gpu"] as const) {
       const forStrategy = GROUND_MODES.filter(
         (mode) => groundStrategy(mode) === strategy,
       );
-      expect(forStrategy.map(groundShowsRamp).sort()).toEqual([false, true]);
+      expect(forStrategy.map(groundAppearance).sort()).toEqual([
+        "plain",
+        "ramp",
+        "slope",
+      ]);
     }
+  });
+
+  it("gives the slope treatment to both strategies, not only the CPU one", () => {
+    // The shader patch is on the lit material, which both paths share — so a
+    // slope entry missing for GPU would mean the treatment silently vanished
+    // when someone switched path to measure the A/B.
+    expect(groundAppearance("cpu-slope")).toBe("slope");
+    expect(groundAppearance("gpu-slope")).toBe("slope");
+  });
+
+  it("leaves `none` with no appearance to offer", () => {
+    // DEC-R3-17 by construction, restated for the third appearance: "No ground
+    // + slope" would be a mode that draws nothing while claiming to do
+    // something.
+    expect(
+      GROUND_MODES.filter((mode) => groundStrategy(mode) === "none"),
+    ).toEqual(["none"]);
+    expect(groundAppearance("none")).toBe("plain");
   });
 });
 

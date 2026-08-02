@@ -33,7 +33,21 @@ export default defineConfig({
   // measured at 3-4x its own recorded median — at which point a 30 s budget is
   // measuring the machine. It cost two or three failures per run, a different two
   // or three each time, with every one of them passing standalone.
-  timeout: 90_000,
+  //
+  // RAISED 90 s -> 120 s BY §2, and the reason is worth recording because it
+  // reads like slack for slow code and is not. The slope treatment (DEC-R6-5)
+  // adds per-fragment work — `fwidth`, an aspect tint and a rim term — to the
+  // DEFAULT ground, which is a 4.8 km plane with heavy overdraw at grazing
+  // angles. Measured effect on this suite: **5.5 min -> 8.3 min**, and two tests
+  // that pass standalone in ~50-60 s began timing out under contention.
+  //
+  // **That number mostly measures the wrong machine.** Headless Chromium here
+  // rasterises on the CPU (SwiftShader), where extra per-fragment maths is far
+  // more expensive than on the GPU this demo actually runs on. The instrument
+  // that matters is the perf overlay's frame-ms readout on a real device, which
+  // is F39 and is still not taken — so the honest position is that the e2e cost
+  // is real, is measured, and is an upper bound rather than the answer.
+  timeout: 120_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
