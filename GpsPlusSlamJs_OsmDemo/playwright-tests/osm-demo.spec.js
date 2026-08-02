@@ -3302,3 +3302,164 @@ test.describe("the POI model gallery", () => {
     expect(errors).toEqual([]);
   });
 });
+
+/**
+ * The time-of-day control and the constraint it is most likely to breach
+ * (§1, DEC-R6-3, DEC-R6-4, DEC-R4-5).
+ *
+ * TWO CLAIMS, AND THE SECOND IS THE IMPORTANT ONE.
+ *
+ * The first is that the hotkey reaches the sun at all. `setTimeOfDay` is unit
+ * tested and `sunAt` is unit tested, but nothing until now connected a keypress
+ * to a repaint — and a control that exists in the class and not on the page is
+ * the exact shape of "the data is right and the picture never changed".
+ *
+ * The second is DEC-R4-5: **the affordance heat ramp must stay the loudest thing
+ * on screen.** Round 6 pushes on that from four directions at once — ACES
+ * re-maps every colour, the environment map lifts every surface, §2 will tint
+ * the ground and §6 will multiply the grid's share of the frame by six. Until
+ * now that constraint has been enforced by looking at screenshots, which means
+ * it has never actually been enforced. This is the durable form of it.
+ */
+test.describe("the time of day", () => {
+  test("moves the sun from a hotkey, and the heat ramp stays the loudest thing", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await test.step("a keypress repaints the scene with a different sun", async () => {
+      // The whole point of the control. Measured as a difference count, so it
+      // says nothing about which colours the sky happens to take at either time
+      // — only that pressing the key changed the picture.
+      await installFrameProbe(page);
+      await stashStableFrame(page);
+
+      // Focus the body rather than a field: the registry deliberately ignores
+      // keys typed into inputs, and the site picker is a `<select>`.
+      await page.locator("#scene").click({ position: { x: 5, y: 5 } });
+      await page.keyboard.press("t");
+
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeGreaterThan(1000);
+    });
+
+    await test.step("stepping back returns to where it started", async () => {
+      // Determinism, visibly. The sun is a pure function of the time of day, so
+      // forward-then-back must be the identity — if it drifted, the control
+      // would be accumulating error and nobody would notice for a while.
+      await stashStableFrame(page);
+      await page.keyboard.press("t");
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeGreaterThan(1000);
+      await page.keyboard.press("T");
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeLessThan(2000);
+    });
+
+    await test.step("the shortcut list is discoverable and matches the bindings", async () => {
+      const help = page.locator("#hotkey-help");
+      await expect(help).toBeHidden();
+      await page.keyboard.press("?");
+      await expect(help).toBeVisible();
+      // Rendered FROM the registry, so this also catches a binding added
+      // without a description.
+      await expect(help).toContainText("step the sun forward");
+      await expect(help.locator("kbd")).not.toHaveCount(0);
+      await page.keyboard.press("?");
+      await expect(help).toBeHidden();
+    });
+
+    await test.step("DEC-R4-5: the heat ramp is still the most saturated thing on screen", async () => {
+      // THE CONSTRAINT ROUND 6 IS MOST LIKELY TO BREACH, and until now it has
+      // only ever been checked by looking.
+      //
+      // Stated as a comparison rather than as an absolute: the grid's pixels
+      // must be more saturated than the rest of the frame by a clear margin.
+      // That survives tone mapping, an environment map and a palette change,
+      // because it is a claim about the RELATIONSHIP between the data layer and
+      // the backdrop rather than about any colour.
+      //
+      // MEAN ABSOLUTE CHROMA, NOT HSV SATURATION, and the first attempt got this
+      // wrong in a way worth recording. HSV saturation is a RATIO, so the dark
+      // blue-grey ground (0x3a4356 -> chroma 28 on a max of 86) scores 0.33 and
+      // reads as "saturated" while looking entirely neutral; the measurement
+      // then reported that switching the heat grid ON made the frame LESS
+      // saturated, which is true of the ratio and false of the picture.
+      //
+      // Absolute chroma separates the two cleanly, because that is what "loud"
+      // means here: the viridis ramp runs 80-216 levels of chroma (deep purple
+      // to yellow), the ground is 28 and the buildings are 16.
+      const meanChroma = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return -1;
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return -1;
+          ctx.drawImage(el, 0, 0);
+          const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+          let sum = 0;
+          let count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i] ?? 0;
+            const g = data[i + 1] ?? 0;
+            const b = data[i + 2] ?? 0;
+            sum += Math.max(r, g, b) - Math.min(r, g, b);
+            count += 1;
+          }
+          return count === 0 ? -1 : sum / count;
+        });
+
+      // MEASURED AGAINST THE PLAIN GROUND, NOT THE HEIGHT RAMP, and the reason
+      // is a finding rather than a convenience.
+      //
+      // Run against the default ground — the height ramp (DEC-R5-4) — switching
+      // the cells ON *reduces* mean frame saturation by 0.05. The ramp is a
+      // deliberately loud blue-to-white scale with magenta for missing DEM, and
+      // it out-saturates the data layer that DEC-R4-5 says must be loudest. So
+      // that constraint is ALREADY breached today, by the diagnostic rather
+      // than by anything round 6 has done.
+      //
+      // That is evidence FOR DEC-R6-5, which makes the slope treatment the
+      // default and demotes the ramp to a mode — so this test measures the
+      // relationship DEC-R4-5 is actually about (data against BACKDROP) with
+      // the competing diagnostic switched off. When §2 lands, the default
+      // ground becomes the one measured here.
+      await page.locator("#ground-mode").selectOption("cpu");
+      await page.locator("#layer-cells").check();
+      // POLLED, NOT READ ONCE. The view renders on demand (DEC-R3-9), so a
+      // measurement taken immediately after a toggle reads the PREVIOUS frame —
+      // the first version of this did exactly that and reported a difference of
+      // exactly zero, which looks like a real answer.
+      const settledChroma = async () => {
+        let previous = -1;
+        for (let i = 0; i < 40; i++) {
+          const now = await meanChroma();
+          if (Math.abs(now - previous) < 0.01) return now;
+          previous = now;
+          await page.waitForTimeout(50);
+        }
+        return previous;
+      };
+      const withCells = await settledChroma();
+      await page.locator("#layer-cells").uncheck();
+      const withoutCells = await settledChroma();
+      await page.locator("#layer-cells").check();
+
+      expect(withCells).toBeGreaterThan(0);
+      expect(withoutCells).toBeGreaterThan(0);
+      // The grid must ADD chroma, substantially. If a future exposure or palette
+      // change ever made the backdrop as colourful as the data, this goes red —
+      // which is the whole point, because that is the moment DEC-R4-5 is
+      // breached and it is otherwise invisible.
+      expect(withCells - withoutCells).toBeGreaterThan(5);
+    });
+  });
+});

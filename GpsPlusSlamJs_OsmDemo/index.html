@@ -85,6 +85,33 @@
       #details[hidden] {
         display: none;
       }
+      /* Bottom-LEFT, so it cannot sit under the details panel and cannot be
+         mistaken for it. Same surface treatment, deliberately: it is the same
+         kind of thing — an overlay that explains the view. */
+      #hotkey-help {
+        position: absolute;
+        left: 0.5rem;
+        bottom: 0.5rem;
+        z-index: 1000;
+        padding: 0.5rem 0.7rem;
+        background: #171b26f2;
+        border: 1px solid #2a2f3d;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        line-height: 1.5;
+      }
+      #hotkey-help[hidden] {
+        display: none;
+      }
+      #hotkey-help kbd {
+        display: inline-block;
+        min-width: 1.1em;
+        text-align: center;
+        padding: 0 0.3em;
+        border: 1px solid #3a4152;
+        border-radius: 3px;
+        background: #232838;
+      }
       .panel-header {
         display: flex;
         justify-content: space-between;
@@ -491,6 +518,12 @@
            the 3D pane useless on a phone. -->
       <div id="sheet-handle" aria-hidden="true"></div>
       <aside id="details" hidden></aside>
+      <!-- The keyboard shortcuts, listed by the registry that owns them (§1).
+           An undocumented hotkey is a feature only its author has, so "?"
+           toggles this and it is populated from `hotkeys.bindings()` rather
+           than hand-written — a list that can disagree with the bindings is
+           worse than none. -->
+      <aside id="hotkey-help" hidden></aside>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

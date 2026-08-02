@@ -32,6 +32,7 @@ import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { describeDrawCost } from "./draw-cost.js";
 import { describeExtent } from "./fetch-extent.js";
+import { HotkeyRegistry } from "./hotkeys.js";
 import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
@@ -72,6 +73,15 @@ import {
 } from "./refresh-cycle.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 import { createRpcClient, workerTransport } from "./worker/rpc-client.js";
+
+/**
+ * How far one press of the time key moves the sun, as a fraction of the day.
+ *
+ * 1/24 — an hour a press, so a full day is 24 presses and holding the key sweeps
+ * it in a few seconds. Small enough that the golden-hour band can be found, large
+ * enough that reaching noon is not a chore.
+ */
+const TIME_STEP = 1 / 24;
 
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id);
@@ -164,6 +174,11 @@ async function main(): Promise<void> {
     // The map reports a selection; it does not know the panel exists.
     onCellClick: (cell) => store.dispatch(actions.cellSelected(cell)),
   });
+  // ONE REGISTRY FOR THE WHOLE DEMO (§1.4 step 5). Built here so §3's look
+  // presets and §6's event clock reuse it rather than each attaching their own
+  // listener — a duplicate key would otherwise be silent. See `hotkeys.ts`.
+  const hotkeys = new HotkeyRegistry(document);
+
   const buildingView = new BuildingView({
     container: el("scene"),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
@@ -202,6 +217,56 @@ async function main(): Promise<void> {
   const perfToggle = el<HTMLInputElement>("perf-stats");
   perfToggle.addEventListener("change", () => {
     buildingView.setPerfOverlay(perfToggle.checked);
+  });
+
+  // THE TIME OF DAY (§1, DEC-R6-3). A HOTKEY rather than a control in the
+  // header, and the reason is the header itself: round 5's feedback already
+  // calls it busy, and DEC-R6-16 has just committed to a seven-entry ground
+  // picker there. A shortcut costs no layout.
+  //
+  // The sun is physical now, so this is the only thing that moves it — and
+  // each press regenerates the environment map, which is a render pass. That is
+  // affordable precisely because it is a deliberate press rather than something
+  // a drag triggers; see `sun-position.ts`.
+  const stepTime = (by: number) => () => {
+    // WRAPPED, not clamped, so holding the key walks through a whole day and
+    // comes back. `sunAt` clamps its input, so an unwrapped step would park the
+    // sun at midnight and look broken.
+    const next = (buildingView.timeOfDayValue() + by + 1) % 1;
+    buildingView.setTimeOfDay(next);
+  };
+  hotkeys.add({
+    key: "t",
+    description: "step the sun forward (time of day)",
+    handler: stepTime(TIME_STEP),
+  });
+  hotkeys.add({
+    key: "T",
+    description: "step the sun back",
+    handler: stepTime(-TIME_STEP),
+  });
+
+  // DISCOVERABILITY, and it is rendered FROM the registry rather than written
+  // out by hand: a help list that can disagree with the actual bindings is
+  // worse than no list at all, because it is believed.
+  const hotkeyHelp = el("hotkey-help");
+  hotkeys.add({
+    key: "?",
+    description: "show or hide this list",
+    handler: () => {
+      if (hotkeyHelp.hidden) {
+        hotkeyHelp.replaceChildren(
+          ...hotkeys.bindings().map((binding) => {
+            const row = document.createElement("div");
+            const key = document.createElement("kbd");
+            key.textContent = binding.key;
+            row.append(key, ` ${binding.description}`);
+            return row;
+          }),
+        );
+      }
+      hotkeyHelp.hidden = !hotkeyHelp.hidden;
+    },
   });
 
   const legendView = new LegendView({ container: el("legend") });
