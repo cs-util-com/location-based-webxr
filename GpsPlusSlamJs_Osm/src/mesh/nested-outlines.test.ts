@@ -244,3 +244,89 @@ describe("nested outlines, synthetic", () => {
     expect(part?.parentFeature).toBe("way/1");
   });
 });
+
+/**
+ * The OTHER tower — F34, closed by §5.
+ *
+ * The suite above deliberately left this half open: `way/645732603` ("Südturm")
+ * carries `man_made=tower` with NO `building` tag, so `isBuilding` is false and
+ * a 157 m landmark was extruded as nothing. One tower boxed and one tower
+ * missing, from two different causes; the first was fixed in round 5 and this is
+ * the second.
+ *
+ * **Checked against streets-gl before building it, and the reference does NOT
+ * help here** — its `OSMAreaQualifierFactory` has no `man_made` branch either,
+ * so its Südturm is missing too. That is why these assertions are ours to get
+ * right and why the negative ones outnumber the positive one.
+ */
+describe("the Südturm — `man_made=tower` with no `building` tag (F34)", () => {
+  /** `man_made=tower`, height 157, name "Südturm", NO `building` tag. */
+  const SÜDTURM_KEY = "way/645732603";
+
+  const features = cathedralFeatures();
+  const volumes = buildCathedral(features);
+
+  it("is extruded, at roughly its tagged height", () => {
+    // THE REPORTED DEFECT'S SECOND HALF. Before this, the cathedral had one
+    // tower and the absence read as a failed fetch.
+    const südturm = volumes.filter((volume) => volume.feature === SÜDTURM_KEY);
+    expect(südturm).toHaveLength(1);
+    expect(südturm[0]?.heights.totalHeightM).toBeGreaterThan(150);
+  });
+
+  it("does NOT report its height as guessed", () => {
+    // `height=157` is tagged. If this said guessed, the status line's
+    // "N guessed building heights" would over-count and the one number that
+    // says how much of the skyline is real would be wrong.
+    const südturm = volumes.find((volume) => volume.feature === SÜDTURM_KEY);
+    expect(südturm?.heights.heightIsGuessed).toBe(false);
+  });
+
+  it("leaves the NORDTURM drawn exactly once", () => {
+    // THE ASSERTION THAT CATCHES THE LIKELY MISTAKE. The Nordturm carries BOTH
+    // `building=tower` and `man_made=tower`. A tall-structure selector that did
+    // not exclude what `isBuilding` already claims would extrude it a second
+    // time, in the same place, at the same height — invisible until it z-fights,
+    // and by then the cause is several commits back.
+    //
+    // It is currently drawn ZERO times as an outline, because it owns a part
+    // that suppresses it (the round-5 fix above). What must not happen is the
+    // tall-structure path reviving it.
+    const asOutline = volumes.filter(
+      (volume) =>
+        volume.feature === NORDTURM_KEY && volume.parentFeature === undefined,
+    );
+    expect(asOutline).toEqual([]);
+  });
+
+  it("leaves the Südturm's five `Sockel` parts alone", () => {
+    // They are `building:part`s reaching 70.95 m and belong to the part path.
+    // A tall-structure rule that also claimed them would double the lower two
+    // thirds of the tower.
+    const parts = volumes.filter(
+      (volume) => volume.parentFeature !== undefined,
+    );
+    expect(parts.some((volume) => volume.feature === SÜDTURM_KEY)).toBe(false);
+  });
+
+  it("does not extrude the fixture's street furniture", () => {
+    // THE HAZARD OF A PERMISSIVE RULE, measured on real data rather than
+    // imagined: this fixture carries 36 `man_made=surveillance`, plus `column`,
+    // `street_cabinet`, `pipeline`, `water_well` and a bare `yes`. Extruding
+    // those would fill the cathedral square with boxes.
+    const furniture = new Set(
+      features
+        .filter((feature) => {
+          const value = feature.tags["man_made"];
+          return (
+            value !== undefined &&
+            !["tower", "chimney", "mast", "silo"].includes(value)
+          );
+        })
+        .map((feature) => `${feature.type}/${feature.id}`),
+    );
+    for (const volume of volumes) {
+      expect(furniture.has(volume.feature)).toBe(false);
+    }
+  });
+});

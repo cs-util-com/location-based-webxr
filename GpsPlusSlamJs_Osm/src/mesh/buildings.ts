@@ -32,6 +32,7 @@ import { toGeometry } from "../model/osm-geometry.js";
 import type { OsmGeometry } from "../model/osm-geometry.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { ringToEnu } from "./enu.js";
+import { isTallStructure, tallStructureHeightM } from "./tall-structures.js";
 import {
   isBuilding,
   isBuildingPart,
@@ -156,6 +157,18 @@ export function buildBuildings(
     );
   }
 
+  // TALL STRUCTURES THAT ARE NOT BUILDINGS (F34, §5). Cologne's Südturm is
+  // `man_made=tower` with no `building` tag, so nothing above selects it and a
+  // 157 m landmark renders as nothing — which reads as a failed fetch rather
+  // than as a tagging distinction.
+  //
+  // LAST, AND WITH ITS OWN EXCLUSIONS. `isTallStructure` refuses anything
+  // `isBuilding` or `isBuildingPart` already claimed, so the Nordturm — which
+  // carries BOTH `building=tower` and `man_made=tower` — is extruded exactly
+  // once. Without that the two selectors would each produce a 157 m prism in the
+  // same place, which is invisible until it z-fights.
+  volumes.push(...tallStructureVolumes(features, options));
+
   return volumes;
 }
 
@@ -171,6 +184,45 @@ function outlineOf(
 interface Footprint {
   readonly feature: OsmFeature;
   readonly rings: EnuPoint[][];
+}
+
+/**
+ * Volumes for tall structures that are not tagged as buildings (F34, §5).
+ *
+ * ITS OWN FUNCTION rather than a fourth loop inside `buildBuildings`, which the
+ * complexity gate insisted on and which is right independently: this selects on
+ * a different key, resolves height by a different rule, and has no relationship
+ * with the outline/part pairing the rest of that function is about.
+ *
+ * Cologne's Südturm is the case that named it — `man_made=tower` with no
+ * `building` tag, a 157 m landmark that rendered as nothing.
+ */
+function tallStructureVolumes(
+  features: Iterable<OsmFeature>,
+  options: BuildBuildingsOptions,
+): BuildingVolume[] {
+  const volumes: BuildingVolume[] = [];
+  for (const feature of features) {
+    if (!isTallStructure(feature)) continue;
+    // NO FALLBACK HEIGHT, deliberately — see `tall-structures.ts`. A tower with
+    // no height tag could be 5 m or 300 m, and a guess at that scale is a
+    // landmark-sized lie in a view whose whole job is being checked by eye.
+    const heightM = tallStructureHeightM(feature);
+    if (heightM === undefined) continue;
+    const rings = toEnuRings(feature, options.frame);
+    if (rings === undefined) continue;
+    volumes.push(
+      volumeFor(
+        feature,
+        rings,
+        undefined,
+        options,
+        groundUnder([{ feature, rings }], options),
+        heightM,
+      ),
+    );
+  }
+  return volumes;
 }
 
 /** Splits the input into building outlines and `building:part` volumes. */
@@ -409,8 +461,31 @@ function volumeFor(
    * the parts of one building relative to each other.
    */
   ground: { lowest: number; rise: number },
+  /**
+   * An externally-resolved total height, metres (F34, §5).
+   *
+   * Only the tall-structure path passes one. A `man_made=tower` has no
+   * `building` tag, so `resolveHeights` would treat it as an untagged building
+   * and hand back `DEFAULT_BUILDING_HEIGHT_M` — a 157 m landmark drawn 6 m
+   * tall, which is a worse answer than not drawing it. Passing the height in
+   * keeps the S3DB resolution untouched for everything that really is a
+   * building.
+   */
+  overrideHeightM?: number,
 ): BuildingVolume {
-  const heights = resolveHeights(feature.tags);
+  const resolved = resolveHeights(feature.tags);
+  const heights =
+    overrideHeightM === undefined
+      ? resolved
+      : {
+          ...resolved,
+          eaveHeightM: overrideHeightM,
+          totalHeightM: overrideHeightM,
+          // A tower is a shaft: no roof shape is claimed, and the height is
+          // tagged rather than guessed, so neither flag should say otherwise.
+          roofShape: "flat" as const,
+          heightIsGuessed: false,
+        };
 
   const mesh = extrudeBuilding(rings, {
     minHeightM: heights.minHeightM,
