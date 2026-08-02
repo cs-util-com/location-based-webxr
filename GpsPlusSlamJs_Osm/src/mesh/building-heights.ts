@@ -170,7 +170,7 @@ const SINGLE_LEVEL_RIDGE_HEIGHT_M = 1;
 export function resolveHeights(tags: OsmTags): BuildingHeights {
   const roofShape = normaliseRoofShape(tags["roof:shape"]);
 
-  const minHeightM =
+  let minHeightM =
     parseLengthMetres(tags["min_height"]) ??
     (parseLevels(tags["building:min_level"]) ?? 0) * DEFAULT_LEVEL_HEIGHT_M;
 
@@ -183,10 +183,37 @@ export function resolveHeights(tags: OsmTags): BuildingHeights {
 
   if (tagged !== undefined && tagged > 0) {
     totalHeightM = tagged;
+    // A `min_height` AT OR ABOVE the tagged height is a contradiction, and the
+    // tagged height wins (§5, DEC-R6-12). Measured on this code before the fix:
+    // `height=10, min_height=100` produced minHeight 100 AND total 100 — a
+    // zero-height volume floating a hundred metres up, with the one figure the
+    // mapper certainly meant silently discarded.
+    //
+    // WHY `height` IS THE ONE TO TRUST. It is far more widely and more carefully
+    // tagged than `min_height`, which is hand-entered on parts of large
+    // buildings where a transposed digit is the ordinary failure. Dropping the
+    // base to zero draws the building as tagged; the alternative — raising the
+    // total to meet the base, which is what used to happen — invents a
+    // skyscraper out of a typo.
+    //
+    // This is the piece of streets-gl's `getBuildingParamsFromOSMTags` that
+    // genuinely transfers. Most of that function derives `building:levels`,
+    // which this package does not model at all.
+    if (minHeightM >= totalHeightM) minHeightM = 0;
   } else if (levels !== undefined && levels > 0) {
     totalHeightM = levels * DEFAULT_LEVEL_HEIGHT_M + roofHeightM;
   } else {
     totalHeightM = DEFAULT_BUILDING_HEIGHT_M + roofHeightM;
+    heightIsGuessed = true;
+  }
+
+  // WITH NO TAGGED HEIGHT, `min_height` is the only evidence about scale, so it
+  // is trusted — but the volume still has to HAVE a height. `min_height=30` on
+  // an otherwise untagged part used to give total 30 and base 30: a wall of no
+  // height, which renders as nothing, so the part silently disappeared. Worse
+  // than drawing it wrong, because there is nothing left to question.
+  if (totalHeightM <= minHeightM) {
+    totalHeightM = minHeightM + DEFAULT_BUILDING_HEIGHT_M + roofHeightM;
     heightIsGuessed = true;
   }
 
