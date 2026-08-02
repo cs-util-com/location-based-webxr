@@ -1474,19 +1474,54 @@ test.describe("the 3D view", () => {
     // 116 are real and expected: the CPU path interpolates in float64 and the GPU
     // path samples a half-float texture, so bit-identical output was never the
     // claim. The claim is that they describe the same ground.
-    const framePixels = () =>
+    // THE FRAME STAYS IN THE PAGE. This used to return the whole buffer as a JS
+    // array — 1280 x 720 x 4 = 3 686 400 elements, serialised over CDP, twice —
+    // which made this the slowest test in the suite by a wide margin at 53 s.
+    // Stashing the first frame on `window` and doing the comparison in the page
+    // ships one integer instead, and asserts exactly the same thing.
+    // Installs the reader ONCE, so capture and compare share one definition of
+    // "read the scene canvas" instead of two copies that could drift.
+    const installReader = () =>
       page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return [];
-        const probe = document.createElement("canvas");
-        probe.width = el.width;
-        probe.height = el.height;
-        const ctx = probe.getContext("2d");
-        if (ctx === null) return [];
-        ctx.drawImage(el, 0, 0);
-        return Array.from(
-          ctx.getImageData(0, 0, probe.width, probe.height).data,
-        );
+        /** @type {any} */ (window).__e2eReadFrame = () => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return undefined;
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return undefined;
+          ctx.drawImage(el, 0, 0);
+          return ctx.getImageData(0, 0, probe.width, probe.height).data;
+        };
+      });
+
+    const captureFrame = () =>
+      page.evaluate(() => {
+        const w = /** @type {any} */ (window);
+        const data = w.__e2eReadFrame?.();
+        w.__e2eFrame = data;
+        return data === undefined ? 0 : data.length;
+      });
+
+    /** Pixels whose RED differs from the stashed frame by more than 3 levels. */
+    const compareToStashed = () =>
+      page.evaluate(() => {
+        const w = /** @type {any} */ (window);
+        const now = w.__e2eReadFrame?.();
+        const previous = w.__e2eFrame;
+        if (now === undefined || previous === undefined) {
+          return { differing: -1, anyLit: false };
+        }
+        // No `?? 0` guards: both are `Uint8ClampedArray`s of the same canvas
+        // size, so every index below  exists by construction.
+        let differing = 0;
+        let lit = 0;
+        for (let i = 0; i < now.length; i += 4) {
+          if (Math.abs(previous[i] - now[i]) > 3) differing += 1;
+          lit += now[i];
+        }
+        return { differing, anyLit: lit > 0 };
       });
 
     // BOTH APPEARANCES MUST MATCH, or this compares colours instead of geometry.
@@ -1495,30 +1530,30 @@ test.describe("the 3D view", () => {
     // comparing ramp-coloured ground against neutral ground — thousands of
     // differing pixels, and nothing to do with displacement. Pinning the plain
     // entry on both sides keeps the A/B about the thing it is named after.
+    await installReader();
     await page.locator("#ground-mode").selectOption("cpu");
-    const onCpu = await framePixels();
-    expect(onCpu.length).toBeGreaterThan(0);
+    expect(await captureFrame()).toBeGreaterThan(0);
     await expect(page.locator("#status")).toContainText(/ground cpu \d/);
 
     // The A/B switch is a five-state picker since W6; "GPU ground" is one of its
     // options rather than a checkbox of its own.
     await page.locator("#ground-mode").selectOption("gpu");
     await expect(page.locator("#status")).toContainText(/ground gpu \d/);
-    const onGpu = await framePixels();
+    const { differing, anyLit } = await compareToStashed();
 
-    let differing = 0;
-    for (let i = 0; i < onCpu.length; i += 4) {
-      if (Math.abs((onCpu[i] ?? 0) - (onGpu[i] ?? 0)) > 3) differing += 1;
-    }
     // SAME GROUND. If the two disagreed, switching the toggle would move the
     // buildings relative to the terrain and the GPU would be a second source of
     // truth for ground height — the defect DEC-R2-21 rejected geo-three for, and
     // it would be self-inflicted here. The arithmetic is asserted exactly in
     // terrain-texture.test.ts; this proves the SHADER implements that arithmetic.
+    //
+    // `-1` means the stash or the canvas was missing, which must fail rather
+    // than sail through as "fewer than 2000 differing pixels".
+    expect(differing).toBeGreaterThanOrEqual(0);
     expect(differing).toBeLessThan(2000);
 
-    // And something was actually drawn, in both modes.
-    expect(onGpu.some((value) => value > 0)).toBe(true);
+    // And something was actually drawn, in the GPU frame.
+    expect(anyLit).toBe(true);
 
     const noise =
       /Rule table fetch failed|net::ERR_FAILED|Failed to load resource/;
@@ -2360,6 +2395,19 @@ test.describe("a superseded refresh", () => {
     await page.locator("#layer-cells").uncheck();
     await page.locator("#layer-buildings").uncheck();
     await page.locator("#layer-trees").uncheck();
+    // `areas` JOINS THE LIST BECAUSE THE SLABS BECAME SHINY. Region slabs went to
+    // roughness 0.25 with emissive, and a tight specular lobe turns sub-pixel
+    // camera drift — damping is on, and the sun's azimuth follows the camera —
+    // into visibly different pixels. Measured: 0.08 % of the frame differed
+    // between two captures of a scene nobody had touched, against an assertion
+    // that demands EXACTLY zero.
+    //
+    // Loosening the threshold was the alternative and is worse: this test's
+    // whole point is that a superseded refresh moves the camera by nothing at
+    // all, and a real move differs by tens of percent (the comment above records
+    // ~13 % for a mid-widening mismatch). Removing one more moving part keeps
+    // the assertion exact.
+    await page.locator("#layer-areas").uncheck();
 
     await capture();
     await expect
