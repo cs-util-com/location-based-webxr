@@ -44,6 +44,16 @@ export interface CellMeshRequest {
   readonly threshold: number;
   readonly scale: { readonly threshold: number; readonly max: number };
   readonly showBelowThreshold: boolean;
+  /**
+   * The look preset's two GEOMETRY axes (§3, DEC-R6-9).
+   *
+   * Only the axes that change the vertex buffers travel to the worker. Opacity,
+   * fog and the lift are a material and a transform, applied by the view — and
+   * routing them through here would make every cosmetic keypress wait on a
+   * republish over up to ~2 989 cells.
+   */
+  readonly extrude?: boolean;
+  readonly heightByScore?: boolean;
 }
 
 export interface CellMeshCycleOptions {

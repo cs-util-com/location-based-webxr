@@ -223,6 +223,16 @@ export interface WorkerCalls {
       readonly threshold: number;
       readonly scale: { readonly threshold: number; readonly max: number };
       readonly showBelowThreshold: boolean;
+      /**
+       * The look preset’s two geometry axes (§3, DEC-R6-9).
+       *
+       * Only the two that change the VERTEX BUFFERS cross the boundary.
+       * Opacity, fog and the lift are material and transform settings the view
+       * applies on its own, and sending them here would make every cosmetic
+       * keypress wait on a worker republish.
+       */
+      readonly extrude?: boolean;
+      readonly heightByScore?: boolean;
     };
     readonly result: TransferableCellMesh;
   };

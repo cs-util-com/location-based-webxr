@@ -26,7 +26,8 @@
 import { cellToBoundary } from "h3-js";
 import type { EnuFrame } from "gps-plus-slam-osm";
 
-import { type HeatScale } from "./heat-colours.js";
+import { heatFraction, type HeatScale } from "./heat-colours.js";
+import { CELL_BAR_MAX_HEIGHT_M, CELL_PRISM_HEIGHT_M } from "./cell-presets.js";
 import { bevelNormals } from "./cell-bevel.js";
 import { groundLift } from "./layer-order.js";
 import { bandTreatment, classifyScore } from "./legend-model.js";
@@ -48,6 +49,48 @@ import { bandTreatment, classifyScore } from "./legend-model.js";
  */
 function fanTriangles(corners: number): number {
   return Math.max(0, corners - 2);
+}
+
+/** The mean of a ring's corners — which way "out" is, for the side normals. */
+function ringCentre(corners: readonly { x: number; z: number }[]): {
+  x: number;
+  z: number;
+} {
+  let x = 0;
+  let z = 0;
+  for (const corner of corners) {
+    x += corner.x;
+    z += corner.z;
+  }
+  const count = corners.length || 1;
+  return { x: x / count, z: z / count };
+}
+
+/**
+ * How deep an extruded cell is, metres (§3, DEC-R6-9).
+ *
+ * A CONSTANT unless the bar-field axis is on, in which case it is the score's
+ * position on the SAME ramp that decides the colour. Both come from
+ * `heatFraction`, and that is the point rather than a convenience: colour and
+ * height then encode one value, so they cannot contradict each other. Two
+ * mappings would produce a tall cell in a cool colour, which reads as a
+ * rendering artefact rather than as a wrong answer.
+ *
+ * FLOORED AT THE PLAIN PRISM HEIGHT, so the lowest bar is still an object. A bar
+ * field that drops its smallest values is a bar field that lies about coverage.
+ */
+function prismHeightM(score: number, options: CellMeshOptions): number {
+  if (options.heightByScore !== true) return CELL_PRISM_HEIGHT_M;
+  const fraction = heatFraction(score, options.scale);
+  // INTERPOLATED BETWEEN the floor and the ceiling rather than added to the
+  // floor, so `CELL_BAR_MAX_HEIGHT_M` is genuinely the maximum. Adding would
+  // make the tallest bar exceed the constant that declares the limit — a small
+  // discrepancy, and exactly the kind that makes a later reader distrust the
+  // name rather than the number.
+  return (
+    CELL_PRISM_HEIGHT_M +
+    fraction * (CELL_BAR_MAX_HEIGHT_M - CELL_PRISM_HEIGHT_M)
+  );
 }
 
 /**
@@ -95,6 +138,24 @@ export interface CellMeshOptions {
    * is judging whether the scored ground matches the real ground.
    */
   readonly heightAt?: (point: { x: number; y: number }) => number;
+  /**
+   * Give each cell real thickness with side faces (§3, DEC-R6-9).
+   *
+   * TWO RINGS, NOT PER-FACE SIDES. A top ring and a bottom ring, with the side
+   * quads indexing both — 2x the vertices rather than the 5x that per-face side
+   * normals would need. The cost of that choice is that the vertical edges shade
+   * as a rounded bevel rather than as crisp facets, which is a real difference
+   * from the prototype and the thing to look at if the preset disappoints.
+   */
+  readonly extrude?: boolean;
+  /**
+   * Scale each cell's height by its score, making the overlay a bar field.
+   *
+   * Requires {@link extrude}: a bar needs sides. Ignored without it, rather than
+   * lifting a flat fan to a random height — which would look like a levitating
+   * grid rather than like a setting that did nothing.
+   */
+  readonly heightByScore?: boolean;
 }
 
 export interface CellMesh {
@@ -193,9 +254,19 @@ export function buildCellMesh(
     score,
     boundary: cellToBoundary(cell),
   }));
-  const vertexCount = boundaries.reduce((sum, c) => sum + c.boundary.length, 0);
+  // EXTRUSION DOUBLES THE RINGS AND ADDS TWO TRIANGLES PER EDGE (§3). Sized up
+  // front for the same reason the flat case is: the buffers are ragged, because
+  // an H3 boundary is usually six corners and sometimes five.
+  const extrude = options.extrude === true;
+  const vertexCount = boundaries.reduce(
+    (sum, c) => sum + c.boundary.length * (extrude ? 2 : 1),
+    0,
+  );
   const triangleCount = boundaries.reduce(
-    (sum, c) => sum + fanTriangles(c.boundary.length),
+    (sum, c) =>
+      sum +
+      fanTriangles(c.boundary.length) +
+      (extrude ? c.boundary.length * 2 : 0),
     0,
   );
 
@@ -255,6 +326,11 @@ export function buildCellMesh(
     for (let k = 0; k < cellNormals.length; k += 1) {
       normals[v - cellNormals.length + k] = cellNormals[k] ?? 0;
     }
+    // The ring's centre, for the side normals below. Derived here rather than
+    // inside the extrusion branch so it is computed from the SAME corners the
+    // bevel leaned away from — two centroids would be two answers to "which way
+    // is out", and they would disagree at the corners where it matters.
+    const centroid = ringCentre(corners);
 
     if (treatment.kind === "outline") {
       for (let k = 0; k < corners.length; k++) {
@@ -277,7 +353,61 @@ export function buildCellMesh(
       i += 3;
       cellForTriangle.push(cell);
     }
-    base += boundary.length;
+
+    if (extrude) {
+      // THE BOTTOM RING, written after the top one so `base` still points at the
+      // top ring's first vertex and the side quads can index both by offset.
+      const ring = boundary.length;
+      const depth = prismHeightM(score, options);
+      for (let k = 0; k < ring; k++) {
+        const top = corners[k];
+        if (top === undefined) continue;
+        positions[v] = top.x;
+        positions[v + 1] = top.y - depth;
+        positions[v + 2] = top.z;
+        // OUTWARD AND HORIZONTAL, so the side shades as a wall rather than as
+        // more floor. Derived from the corner's offset from the cell centroid,
+        // which is the same quantity `bevelNormals` already leans the top ring
+        // by — so the two agree about which way "out" is.
+        const outX = top.x - centroid.x;
+        const outZ = top.z - centroid.z;
+        const outLength = Math.hypot(outX, outZ) || 1;
+        normals[v] = outX / outLength;
+        normals[v + 1] = 0;
+        normals[v + 2] = outZ / outLength;
+        colors[c] = rgb.r / 255;
+        colors[c + 1] = rgb.g / 255;
+        colors[c + 2] = rgb.b / 255;
+        // The SIDES stay opaque even when the top does not. An outline-treated
+        // cell has no face to speak of, and giving its walls alpha 0 too keeps
+        // "invisible but pickable" meaning exactly what it did before.
+        colors[c + 3] = alpha;
+        v += 3;
+        c += 4;
+      }
+      // One quad per edge, wound so the outside faces out.
+      for (let k = 0; k < ring; k++) {
+        const nextK = (k + 1) % ring;
+        const topA = base + k;
+        const topB = base + nextK;
+        const bottomA = base + ring + k;
+        const bottomB = base + ring + nextK;
+        indices[i] = topA;
+        indices[i + 1] = bottomA;
+        indices[i + 2] = topB;
+        indices[i + 3] = topB;
+        indices[i + 4] = bottomA;
+        indices[i + 5] = bottomB;
+        i += 6;
+        // BOTH new triangles get the cell id. Picking resolves `faceIndex`
+        // against this array, so a side triangle with no entry would make every
+        // pick after it name the wrong cell.
+        cellForTriangle.push(cell, cell);
+      }
+      base += ring * 2;
+    } else {
+      base += boundary.length;
+    }
   }
 
   return {

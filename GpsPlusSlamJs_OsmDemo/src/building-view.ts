@@ -28,6 +28,11 @@ import type { CellMesh } from "./cell-mesh.js";
 import type { GroundAppearance, GroundStrategy } from "./ground-mode.js";
 import { TERRAIN_EXTENT_M, type Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
+import {
+  DEFAULT_CELL_PRESET,
+  cellPreset,
+  type CellPreset,
+} from "./cell-presets.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
@@ -285,6 +290,14 @@ export class BuildingView {
   private groundDebug = false;
   /** Which appearance is showing, so a repeated set is a no-op (§2). */
   private groundAppearance: GroundAppearance = "plain";
+  /**
+   * The affordance grid's look (§3, DEC-R6-9/10).
+   *
+   * Held so a rebuilt grid comes back with the look already chosen: the mesh is
+   * replaced on every publish, so a preset applied only at the moment of the
+   * keypress would silently revert on the next position change.
+   */
+  private cellLook: CellPreset = cellPreset(DEFAULT_CELL_PRESET);
   /**
    * Which path displaces the ground (W23, DEC-R2-24 as revised).
    *
@@ -753,6 +766,38 @@ export class BuildingView {
   }
 
   /**
+   * Applies an affordance-tile look preset (§3, DEC-R6-9/10).
+   *
+   * THE CHEAP HALF ONLY. Opacity, fog and the lift are a material and a
+   * transform, so they are applied here and cost nothing. The geometry axes —
+   * real extrusion and score-as-height — change the vertex buffers, which are
+   * built in the worker; the caller republishes for those and NOT for these,
+   * because a republish over ~2 989 cells on every keypress would make the
+   * hotkey feel broken.
+   *
+   * The preset is HELD as well as applied: the grid mesh is replaced on every
+   * publish, so a look applied only at the moment of the keypress would revert
+   * on the next position change.
+   */
+  setCellPreset(preset: CellPreset): void {
+    this.cellLook = preset;
+    const mesh = this.cellMesh;
+    if (mesh === undefined) return;
+    const material = mesh.material as THREE.MeshStandardMaterial;
+    material.opacity = preset.opacity;
+    material.transparent = preset.opacity < 1;
+    material.depthWrite = preset.opacity >= 1;
+    material.fog = preset.fog;
+    // `needsUpdate` because `transparent` and `fog` are both compile-time
+    // switches in three: changing either without invalidating the program
+    // leaves the old shader running, so the preset would appear to do nothing
+    // for exactly the two axes that are hardest to see.
+    material.needsUpdate = true;
+    mesh.position.y = preset.liftM;
+    this.requestFrame();
+  }
+
+  /**
    * Chooses how the ground is coloured (§2, DEC-R6-5/R6-16).
    *
    * THREE APPEARANCES ON TWO MATERIALS, which is worth stating because the
@@ -954,7 +999,6 @@ export class BuildingView {
       installCellEmissive(
         new THREE.MeshStandardMaterial({
           vertexColors: true,
-          transparent: true,
           // 0.8, UP FROM 0.55 (DEC-S1). The specular is exactly the part alpha
           // eats, so at 0.55 the highlight this material exists for was 55 % of a
           // highlight. Two costs were accepted with it: the ground beneath — the
@@ -963,16 +1007,33 @@ export class BuildingView {
           // "the same cell reads as the same strength of claim in both views" is
           // no longer literally true. The overlap is a ~250 m disc on a 4.8 km
           // plane, which is what makes the first cost bearable.
-          opacity: 0.8,
+          // FROM THE PRESET SINCE §3 (DEC-R6-9). 0.8 is the shipped default and
+          // stays the default; the other values are reachable by hotkey so the
+          // trade can be judged by looking rather than argued.
+          opacity: this.cellLook.opacity,
           // Low, for a tight specular lobe — the same mechanism DEC-R2-1 chose for
           // the ground, where it is 0.42.
           roughness: 0.2,
           metalness: 0,
           side: THREE.DoubleSide,
-          depthWrite: false,
+          // FOG IS AN AXIS (§3). It is a no-op today — the cells reach ~250 m and
+          // the haze starts at 1584 m — and stops being one after §6 widens the
+          // radius, which is exactly why DEC-R6-22 keeps the presets alive until
+          // then.
+          fog: this.cellLook.fog,
+          // TRANSPARENT ONLY WHEN IT HAS TO BE. A fully opaque preset that still
+          // declared `transparent: true` would keep paying the transparent
+          // render pass — no depth write, no early-z, sorted every frame — for
+          // nothing, which is exactly the +30 % the shiny-surfaces work measured
+          // and did not address.
+          transparent: this.cellLook.opacity < 1,
+          depthWrite: this.cellLook.opacity >= 1,
         }),
       ),
     );
+    // THE LIFT (§3). Applied to the mesh rather than baked into the vertices,
+    // so cycling it costs a transform instead of a worker republish.
+    this.cellMesh.position.y = this.cellLook.liftM;
     // How `resolvePick` recognises the grid. A flag rather than an identity
     // comparison, so the decision stays a pure function of the hits and can be
     // tested without a renderer.

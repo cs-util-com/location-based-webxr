@@ -32,6 +32,12 @@ import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { describeDrawCost } from "./draw-cost.js";
 import { describeExtent } from "./fetch-extent.js";
+import {
+  DEFAULT_CELL_PRESET,
+  cellPreset,
+  needsMeshRebuild,
+  nextCellPreset,
+} from "./cell-presets.js";
 import { HotkeyRegistry } from "./hotkeys.js";
 import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
@@ -178,6 +184,15 @@ async function main(): Promise<void> {
   // presets and §6's event clock reuse it rather than each attaching their own
   // listener — a duplicate key would otherwise be silent. See `hotkeys.ts`.
   const hotkeys = new HotkeyRegistry(document);
+  /**
+   * Which affordance-tile look is showing (§3, DEC-R6-10).
+   *
+   * A local `let` rather than store state, for the same reason the perf overlay
+   * is: nothing else has to agree about it. It starts at the DEFAULT, which is
+   * the look that shipped and the one the e2e suite pins — so the hotkey walks
+   * away from what was reviewed rather than towards it.
+   */
+  let activePreset = cellPreset(DEFAULT_CELL_PRESET);
 
   const buildingView = new BuildingView({
     container: el("scene"),
@@ -244,6 +259,30 @@ async function main(): Promise<void> {
     key: "T",
     description: "step the sun back",
     handler: stepTime(-TIME_STEP),
+  });
+
+  // THE LOOK PRESETS (§3, DEC-R6-9/10). One key cycles whole looks rather than
+  // four keys toggling four axes: sixteen combinations means no combination is
+  // tested, the e2e suite can only pin one, and these axes interact — opacity
+  // changes what the bevel is worth, height changes what opacity is worth.
+  //
+  // LOCAL, not in the store, like the perf overlay: nothing else has to agree
+  // about it. The ground mode is in the store because the layer switches read
+  // it too.
+  hotkeys.add({
+    key: "p",
+    description: "cycle the affordance-tile look preset",
+    handler: () => {
+      const previous = activePreset;
+      activePreset = cellPreset(nextCellPreset(activePreset.name));
+      buildingView.setCellPreset(activePreset);
+      // ONLY WHEN THE BUFFERS ACTUALLY CHANGE. Opacity, fog and lift are
+      // material and transform settings the view applies itself; republishing
+      // for them would make every press wait on the worker over up to ~2 989
+      // cells, and the hotkey would feel broken.
+      if (needsMeshRebuild(previous, activePreset)) redrawFromSnapshot();
+      writeStatus();
+    },
   });
 
   // DISCOVERABILITY, and it is rendered FROM the registry rather than written
@@ -619,6 +658,13 @@ async function main(): Promise<void> {
         // because each view stays self-consistent.
         scale: scaleFor(snapshot, view.category),
         showBelowThreshold: view.showBelowThreshold,
+        // THE TWO GEOMETRY AXES OF THE LOOK PRESET (§3). Read from the module
+        // holder rather than the store: the preset is a local experiment
+        // control, like the perf overlay, and nothing else has to agree about
+        // it. If it ever becomes a shared setting it moves to the store, as the
+        // ground mode did.
+        extrude: activePreset.extrude,
+        heightByScore: activePreset.heightByScore,
       });
     }
   }
@@ -670,6 +716,12 @@ async function main(): Promise<void> {
       // the same" is not a measurement — this repo has already had one constant
       // justified by a remembered figure that did not reproduce.
       `ground ${terrainCost.mode} ${terrainCost.ms} ms`,
+      // WHICH LOOK IS ACTIVE (§3). Reported for the same reason the ground mode
+      // is: an experiment you cannot name is an experiment whose result you
+      // cannot record. It also lets the e2e assert WHICH preset is showing
+      // separately from whether it reached the screen — conflating the two
+      // would make a failure ambiguous.
+      `tiles ${activePreset.name}`,
       // W10 (N5). Every other counter here describes what was BUILT; this is
       // what the GPU was actually asked to do, which is the number R4-17's
       // "are the meshes as efficient as possible" turns on and the one Stage 3

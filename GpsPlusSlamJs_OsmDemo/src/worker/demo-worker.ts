@@ -527,6 +527,8 @@ async function handle<K extends WorkerCallKind>(
           threshold: request.threshold,
           scale: request.scale,
           showBelowThreshold: request.showBelowThreshold,
+          extrude: request.extrude === true,
+          heightByScore: request.heightByScore === true,
           ...(options.groundHeightM === undefined
             ? {}
             : {

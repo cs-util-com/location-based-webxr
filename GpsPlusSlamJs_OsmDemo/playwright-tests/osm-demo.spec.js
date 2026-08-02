@@ -3504,3 +3504,79 @@ test.describe("the time of day", () => {
     });
   });
 });
+
+/**
+ * The affordance-tile look presets (§3, DEC-R6-9/10/22).
+ *
+ * WHY THIS TEST EXISTS RATHER THAN A SCREENSHOT. §3 is an experiment, so what
+ * can be asserted is not which look is right — that is what the owner decides by
+ * looking — but that the experiment WORKS: the key cycles, each preset actually
+ * changes the picture, and the default is the look that shipped.
+ *
+ * The last of those is the one that protects the round. DEC-R6-22 keeps the
+ * losing branches alive until §6 has landed, because two axes are premised on
+ * the wider heat radius. Until then a preset accidentally becoming the default
+ * would ship an experiment, and nothing else would notice.
+ */
+test.describe("the affordance-tile look presets", () => {
+  test("cycle from a hotkey, change the picture, and start at the shipped look", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await test.step("the default is the look that shipped", async () => {
+      // Asserted on the STATUS LINE rather than on pixels: "which preset is
+      // active" is a fact about state, and pixels are how the next step checks
+      // that the state reaches the screen. Conflating them would make a
+      // failure ambiguous.
+      await expect(page.locator("#status")).toContainText("tiles current");
+    });
+
+    await test.step("pressing the key changes the picture", async () => {
+      await installFrameProbe(page);
+      await stashStableFrame(page);
+
+      await page.locator("#scene").click({ position: { x: 5, y: 5 } });
+      await page.keyboard.press("p");
+
+      // The first step away from `current` is `opaque`, which only changes
+      // alpha — so this also proves the cheap axes reach the material without a
+      // republish.
+      await expect(page.locator("#status")).toContainText("tiles opaque");
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeGreaterThan(1000);
+    });
+
+    await test.step("a geometry preset rebuilds the grid rather than failing", async () => {
+      // `prototype` and `bars` change the VERTEX BUFFERS, so they go through the
+      // worker. The risk is not that they look wrong — it is that the rebuild
+      // throws on an indexing mistake and the grid silently disappears, which a
+      // cell-count assertion catches and a screenshot would not.
+      for (const expected of ["prototype", "bars"]) {
+        await page.keyboard.press("p");
+        await expect(page.locator("#status")).toContainText(
+          `tiles ${expected}`,
+        );
+        await expect(page.locator("#status")).toContainText(/\d+ cells/);
+      }
+    });
+
+    await test.step("the cycle returns to the default", async () => {
+      // Pressing through the whole list must come back, or the shipped look
+      // becomes unreachable once someone has pressed the key.
+      await page.keyboard.press("p");
+      await expect(page.locator("#status")).toContainText("tiles translucent");
+      await page.keyboard.press("p");
+      await expect(page.locator("#status")).toContainText("tiles current");
+    });
+
+    await test.step("the preset is listed in the shortcut help", async () => {
+      await page.keyboard.press("?");
+      await expect(page.locator("#hotkey-help")).toContainText("preset");
+      await page.keyboard.press("?");
+    });
+  });
+});
