@@ -1480,6 +1480,77 @@ test.describe("the 3D view", () => {
           return { cool, bright };
         });
 
+      // THE SPAN, MEASURED RELATIVE TO THE FRAME ITSELF (§1 prerequisite).
+      //
+      // `bright` above is an ABSOLUTE band (`r > 190 && g > 190 && b > 170`) and
+      // round 6 §1 adopts ACESFilmicToneMapping, which re-maps every colour in
+      // the scene. An absolute band is exactly the assertion that then goes red
+      // for the right reason and gets "fixed" by lowering the number until it
+      // passes again — which ends with a suite that cannot detect anything.
+      //
+      // The claim being made is "the ramp SPANS rather than washing out", and
+      // that claim never depended on the top stop being at 190. Measuring the
+      // spread of the frame's own luma says the same thing and survives any
+      // exposure change. The absolute counts are kept alongside as a floor of
+      // zero — they still catch "nothing was drawn" — but the span is what
+      // carries the meaning.
+      const rampSpan = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return -1;
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return -1;
+          ctx.drawImage(el, 0, 0);
+          const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+          const lumas = [];
+          for (let i = 0; i < data.length; i += 4) {
+            lumas.push(
+              0.2126 * (data[i] ?? 0) +
+                0.7152 * (data[i + 1] ?? 0) +
+                0.0722 * (data[i + 2] ?? 0),
+            );
+          }
+          lumas.sort((a, b) => a - b);
+          // p95 − p5, not max − min: one stray specular highlight or one dark
+          // window would otherwise decide the answer.
+          const at = (q) => lumas[Math.floor(lumas.length * q)] ?? 0;
+          return at(0.95) - at(0.05);
+        });
+
+      // THE MAGENTA GUARD, STATED DIRECTLY (§1 prerequisite).
+      //
+      // The comment above explains that the first version of this test counted
+      // saturation and would have passed on a ground rendered entirely in
+      // `NO_DATA_RGB` magenta — the exact failure the ramp exists to make
+      // visible. That guard was implicit in the two-ended band test. Now it is
+      // its own assertion, so it cannot be lost when a band is re-tuned.
+      const magenta = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return -1;
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return -1;
+          ctx.drawImage(el, 0, 0);
+          const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+          let count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i] ?? 0;
+            const g = data[i + 1] ?? 0;
+            const b = data[i + 2] ?? 0;
+            // Red and blue both high, green absent — the shape of magenta at
+            // any exposure, which is why it is written as a relationship rather
+            // than as three thresholds.
+            if (r > g + 80 && b > g + 80) count += 1;
+          }
+          return count;
+        });
+
       // THE RAMP IS NOW THE DEFAULT (W6, DEC-R5-4), and this is where that is
       // asserted on PIXELS rather than on a picker value. The test used to start
       // from an untinted scene and check the box; it now starts from the ramp,
@@ -1493,6 +1564,13 @@ test.describe("the 3D view", () => {
       await expect
         .poll(async () => (await rampEnds()).bright, REPAINT)
         .toBeGreaterThan(500);
+      // The same claim, made without an absolute band so it survives §1's tone
+      // mapping. 40 luma of spread is far below what a working ramp produces and
+      // far above what a flat wash does.
+      await expect.poll(rampSpan, REPAINT).toBeGreaterThan(40);
+      // And it is a RAMP, not the no-data colour. A ground that failed to fetch
+      // its DEM is entirely magenta, which the two bands above cannot see.
+      await expect.poll(magenta, REPAINT).toBeLessThan(20_000);
 
       // And it goes away again on the plain entry: an appearance that cannot be
       // turned off is a change to the primary look, which is what DEC-R2-1 forbids
@@ -1928,10 +2006,23 @@ test.describe("the 3D view", () => {
       // NOT the old near-black. 0x11131a is luma ~19, and that flat dark background
       // against a barely-lighter ground is the whole reported symptom.
       expect(sky.luma).toBeGreaterThan(40);
-      // And it is SKY-coloured rather than grey: the gradient is a desaturated blue,
-      // so blue leads red by a clear margin. A flat grey or a black clear-colour
-      // would not.
-      expect(sky.b).toBeGreaterThan(sky.r + 20);
+      // And it is SKY-coloured rather than grey. This asserted `b > r + 20` — the
+      // gradient is a desaturated blue, so blue led red by a clear margin.
+      //
+      // THAT FORM CANNOT SURVIVE §1 (round 6, DEC-R6-3/R6-2), and it is worth
+      // saying why rather than just widening it. The sky becomes three's `Sky`
+      // shader driven by a real sun elevation, defaulting to a low golden-hour
+      // sun — at which point the sky is legitimately WARM and red leads blue.
+      // "Blue leads red" was never the claim; it was one time of day's version
+      // of the claim.
+      //
+      // What is actually being asserted is that the background is CHROMATIC
+      // rather than the flat near-neutral it replaced. Channel spread says that
+      // at any hour, and it fails on exactly what it should: a grey wash, a
+      // black clear colour, or a canvas that was never painted.
+      const spread =
+        Math.max(sky.r, sky.g, sky.b) - Math.min(sky.r, sky.g, sky.b);
+      expect(spread).toBeGreaterThan(20);
     });
 
     await test.step("the ground redraws when the camera moves", async () => {
