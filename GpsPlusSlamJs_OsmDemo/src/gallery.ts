@@ -29,7 +29,7 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
-import { POI_MODELS, type PoiModel } from "gps-plus-slam-osm";
+import { POI_MODELS, poiVariantsFor, type MeshData } from "gps-plus-slam-osm";
 
 /** Metres between pad centres. Wide enough that a fuel canopy cannot overlap. */
 const PITCH_M = 8;
@@ -41,36 +41,63 @@ const HUMAN_HEIGHT_M = 1.8;
 const PAD_M = 6.4;
 
 /**
- * Lays the models out in a square-ish grid, in RANKING order.
+ * Where every kind and every one of its variants stands (DEC-R6-32).
  *
- * Ranking order, not alphabetical: `poi-ranking.ts` chose these fifty by global
- * usage count, so reading left-to-right and top-to-bottom is reading
- * most-common to least — which is the order in which a wrong model matters.
+ * KINDS STAY IN RANKING ORDER along x: `poi-ranking.ts` chose these fifty by
+ * global usage count, so reading left to right is reading most-common to least
+ * — which is the order in which a wrong model matters.
+ *
+ * **ONE COLUMN PER KIND ON X, VARIANTS RECEDING ON Z, and the up axis unused.**
+ * The owner chose this after the shipped models were rejected: comparing three
+ * versions of a cafe needs them adjacent and at the same scale, and the axis has
+ * to be a dedicated one or "next model" and "next variant" become the same
+ * movement.
+ *
+ * **THIS REVERSES THE SQUARE GRID, whose reason has NOT expired.** The previous
+ * layout kept the sheet roughly square because "a 1x50 strip cannot be framed,
+ * and comparing the first model with the last needs a camera journey" — which is
+ * still true, and at a 8 m pitch fifty kinds is a 400 m row. The trade was taken
+ * anyway because the grid used Z for its own rows, so variants had nowhere
+ * unambiguous to go: a variant behind a kind would sit on top of the kind in the
+ * next row. **Panning is now part of using this page**, and that is the accepted
+ * cost rather than an oversight.
+ *
+ * Variants recede along −z, away from the default camera, so index 0 — the
+ * shipped model — is the one nearest the viewer.
  */
-export function gridPositions(count: number): { x: number; z: number }[] {
-  const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
-  return Array.from({ length: count }, (_, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    // Centred on the origin, so the default camera frames the whole grid.
-    return {
-      x: (column - (columns - 1) / 2) * PITCH_M,
-      z: (row - Math.floor((count - 1) / columns) / 2) * PITCH_M,
-    };
+export function galleryPositions(
+  variantCounts: readonly number[],
+): { x: number; z: number }[][] {
+  const deepest = Math.max(0, ...variantCounts);
+  // Centred on both axes, so the default camera frames the sheet rather than
+  // opening on a quarter of it.
+  const halfDepth = ((deepest - 1) * PITCH_M) / 2;
+  return variantCounts.map((count, kindIndex) => {
+    const x = (kindIndex - (variantCounts.length - 1) / 2) * PITCH_M;
+    return Array.from({ length: count }, (_, variantIndex) => ({
+      x,
+      z: halfDepth - variantIndex * PITCH_M,
+    }));
   });
 }
 
-function geometryFor(model: PoiModel): THREE.BufferGeometry {
+/**
+ * Takes a `MeshData` rather than a `PoiModel`, because a variant is not one.
+ *
+ * Carries the per-face colours through when the mesh has them (§4's painting),
+ * so a variant that paints its parts reads here the way it will in the demo.
+ */
+function geometryFor(mesh: MeshData): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
     "position",
-    new THREE.BufferAttribute(model.mesh.positions, 3),
+    new THREE.BufferAttribute(mesh.positions, 3),
   );
-  geometry.setAttribute(
-    "normal",
-    new THREE.BufferAttribute(model.mesh.normals, 3),
-  );
-  geometry.setIndex(new THREE.BufferAttribute(model.mesh.indices, 1));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
+  if (mesh.colours !== undefined) {
+    geometry.setAttribute("color", new THREE.BufferAttribute(mesh.colours, 3));
+  }
+  geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
   return geometry;
 }
 
@@ -134,8 +161,24 @@ export function buildGallery(container: HTMLElement): () => void {
   key.position.set(30, 60, 40);
   scene.add(key);
 
+  // EVERY KIND KEEPS ITS COLUMN, and its liked alternatives recede behind it
+  // (DEC-R6-32). The shipped model is always index 0 so the incumbent is the
+  // nearest of each row — Q-V1 of the variant plan notes that a liked
+  // alternative may still lose to what is already there, which cannot be judged
+  // if the incumbent is not in the comparison.
   const models = [...POI_MODELS.values()];
-  const positions = gridPositions(models.length);
+  const rows = models.map((model) => {
+    const alternatives = poiVariantsFor(model.kind).filter(
+      // The seven §4 rebuilds are re-exposed as their own `L` variant, so
+      // skipping any variant that shares the shipped mesh keeps a kind from
+      // showing the same geometry twice under two labels.
+      (variant) => variant.mesh !== model.mesh,
+    );
+    return { model, alternatives };
+  });
+  const positions = galleryPositions(
+    rows.map((row) => 1 + row.alternatives.length),
+  );
 
   const padGeometry = new THREE.BoxGeometry(PAD_M, 0.08, PAD_M);
   const padMaterial = new THREE.MeshStandardMaterial({
@@ -148,38 +191,67 @@ export function buildGallery(container: HTMLElement): () => void {
     roughness: 0.8,
   });
 
-  models.forEach((model, index) => {
-    const at = positions[index];
-    if (at === undefined) return;
-    const group = new THREE.Group();
-    group.position.set(at.x, 0, at.z);
+  rows.forEach((row, kindIndex) => {
+    const slots = positions[kindIndex];
+    if (slots === undefined) return;
+    // The shipped model first, then each alternative receding behind it.
+    const entries = [
+      {
+        mesh: row.model.mesh,
+        colour: row.model.colour,
+        heightM: row.model.heightM,
+        label: "shipped",
+      },
+      ...row.alternatives.map((variant) => ({
+        mesh: variant.mesh,
+        colour: variant.colour,
+        heightM: variant.heightM,
+        label: variant.source,
+      })),
+    ];
 
-    const pad = new THREE.Mesh(padGeometry, padMaterial);
-    pad.position.y = -0.04;
-    group.add(pad);
+    entries.forEach((entry, variantIndex) => {
+      const at = slots[variantIndex];
+      if (at === undefined) return;
+      const group = new THREE.Group();
+      group.position.set(at.x, 0, at.z);
 
-    const mesh = new THREE.Mesh(
-      geometryFor(model),
-      new THREE.MeshStandardMaterial({
-        color: model.colour,
-        roughness: 0.65,
-        metalness: 0.05,
-      }),
-    );
-    group.add(mesh);
+      const pad = new THREE.Mesh(padGeometry, padMaterial);
+      pad.position.y = -0.04;
+      group.add(pad);
 
-    // THE SCALE REFERENCE, and it is the reason this page exists rather than a
-    // screenshot: "is this bench too tall" is unanswerable without a human beside
-    // it, and unanswerable in a city because nothing there is a known size.
-    const human = new THREE.Mesh(humanGeometry, humanMaterial);
-    human.position.set(-PAD_M / 2 + 0.5, HUMAN_HEIGHT_M / 2, PAD_M / 2 - 0.5);
-    group.add(human);
+      const mesh = new THREE.Mesh(
+        geometryFor(entry.mesh),
+        new THREE.MeshStandardMaterial({
+          color: entry.colour,
+          roughness: 0.65,
+          metalness: 0.05,
+          ...(entry.mesh.colours === undefined ? {} : { vertexColors: true }),
+        }),
+      );
+      group.add(mesh);
 
-    const label = labelFor(model.kind, `${model.heightM.toFixed(2)} m`);
-    label.position.set(0, -1.2, PAD_M / 2);
-    group.add(label);
+      // THE SCALE REFERENCE, and it is the reason this page exists rather than a
+      // screenshot: "is this bench too tall" is unanswerable without a human
+      // beside it, and unanswerable in a city because nothing there is a known
+      // size. Every variant gets its own, because comparing two variants is also
+      // comparing each against real scale.
+      const human = new THREE.Mesh(humanGeometry, humanMaterial);
+      human.position.set(-PAD_M / 2 + 0.5, HUMAN_HEIGHT_M / 2, PAD_M / 2 - 0.5);
+      group.add(human);
 
-    scene.add(group);
+      // THE SOURCE IS ON THE LABEL, and it has to be: once these are rendered
+      // they are indistinguishable, and "which file was that one from" is
+      // exactly the question the comparison has to answer.
+      const label = labelFor(
+        `${row.model.kind}${entries.length > 1 ? ` · ${entry.label}` : ""}`,
+        `${entry.heightM.toFixed(2)} m`,
+      );
+      label.position.set(0, -1.2, PAD_M / 2);
+      group.add(label);
+
+      scene.add(group);
+    });
   });
 
   const camera = new THREE.PerspectiveCamera(

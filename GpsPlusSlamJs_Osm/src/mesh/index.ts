@@ -82,6 +82,14 @@ export { POI_KEYS, buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";
 
 export type { PoiModel } from "./poi-models.js";
 export { POI_MODELS, poiModelFor } from "./poi-models.js";
+export {
+  LIKED_VARIANTS,
+  POI_VARIANTS,
+  VARIANT_SOURCES,
+  poiVariantsFor,
+  type PoiVariant,
+  type VariantSource,
+} from "./poi-variants.js";
 export type { PoiFootprintMarker } from "./poi-building-overlap.js";
 export {
   BUILDING_SCALE_POI_HEIGHT_M,
