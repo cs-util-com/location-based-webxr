@@ -318,6 +318,53 @@ describe("the §4 rebuilt models", () => {
     expect(distinctColours("historic=wayside_cross").size).toBe(2);
   });
 
+  it("builds the second batch at the source's heights", () => {
+    // Ported from `poi-markers-gallery (2)` with the plinth stripped and every
+    // centre-y converted to a base-y. Heights are the source's own, so a
+    // mistake in that conversion — the one transformation applied by hand —
+    // shows up here rather than as a model that merely looks a bit off.
+    for (const [kind, height] of [
+      ["amenity=waste_basket", 0.9025],
+      ["amenity=post_box", 1.045],
+      ["historic=memorial", 1.12],
+      ["amenity=drinking_water", 1.025],
+    ] as const) {
+      // Named in the object so a failure says WHICH kind drifted, rather than
+      // reporting a bare number four models could have produced.
+      expect({ kind, height: poiModelFor(kind)?.heightM }).toEqual({
+        kind,
+        height: expect.closeTo(height, 3),
+      });
+    }
+  });
+
+  it("tilts the information board, which is the point of it", () => {
+    // THE FIRST MODEL TO USE DEC-R6-26's ROTATION. `k_information` tilts its
+    // whole board by rx -0.14; untilted it is a fence panel, which is exactly
+    // what our previous model was (three boxes, one of them upright).
+    //
+    // The tilt is asserted through the GEOMETRY rather than by trusting the
+    // call: the board's front face must vary in z as it rises, which an
+    // axis-aligned box cannot do. A rotation applied to positions but not to
+    // normals would still pass a bounds check, so this is checked by the
+    // registry-wide winding guard above rather than here.
+    const mesh = poiModelFor("tourism=information")?.mesh;
+    if (mesh === undefined) throw new Error("no model");
+    let minZAtLow = Infinity;
+    let minZAtHigh = Infinity;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const y = mesh.positions[i + 1] as number;
+      const z = mesh.positions[i + 2] as number;
+      if (y > 0.85 && y < 0.95) minZAtLow = Math.min(minZAtLow, z);
+      if (y > 1.15 && y < 1.25) minZAtHigh = Math.min(minZAtHigh, z);
+    }
+    expect(Number.isFinite(minZAtLow)).toBe(true);
+    expect(Number.isFinite(minZAtHigh)).toBe(true);
+    // Leaning BACK: the top of the board is further from the viewer than its
+    // foot. In the render frame north is -z, so "further back" is less negative.
+    expect(minZAtHigh).toBeGreaterThan(minZAtLow);
+  });
+
   it("gives the bench slats rather than one solid slab", () => {
     // The slatting IS the detail. A single box of the same bounds passes every
     // other assertion here and looks like a plinth — which is what the previous

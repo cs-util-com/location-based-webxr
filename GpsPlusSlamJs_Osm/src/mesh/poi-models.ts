@@ -34,9 +34,11 @@ import {
   box,
   canopy,
   composed,
+  disc,
   hut,
   postWithHead,
   prism,
+  quad,
   slabOnLegs,
 } from "./poi-primitives.js";
 
@@ -69,6 +71,20 @@ export interface PoiModel {
  * names for one value is how a palette starts drifting.
  */
 const STONE_MID = 0x6e7b85;
+
+/**
+ * House accents with no equivalent among our material names, added as the
+ * rebuild reaches models that need them (§4, DEC-R6-27).
+ *
+ * Kept separate from the material constants above because they are IDENTITY
+ * colours in the source's own grouping — a post box's yellow, a memorial's
+ * verdigris — rather than "what this object is made of". R4-14 warns the scene's
+ * palette budget is nearly spent, so each one is added only when a model that
+ * was liked actually uses it, never speculatively.
+ */
+const MUSTARD = 0xd9b64e;
+const COPPER = 0x4e8c86;
+const WATER_BRIGHT = 0x2fb3b0;
 
 /**
  * The material palette, REPOINTED AT THE HOUSE VALUES (§4, DEC-R6-27).
@@ -203,10 +219,44 @@ function models(): PoiModel[] {
       prism(b, 1.4, 0, 2.9, 7, 1.66);
     }),
     // 10 — an information board on two posts.
-    model("tourism=information", TIMBER, (b) => {
-      box(b, 0.09, 1.5, 0.09, 0, -0.45);
-      box(b, 0.09, 1.5, 0.09, 0, 0.45);
-      box(b, 1.2, 0.8, 0.08, 1.1);
+    // REBUILT (§4). SOURCE: `k_information`, and **the first model to use the
+    // rotation DEC-R6-26 added** — its whole board is `rx: -0.14`, and an
+    // information board that is not tilted back is a fence panel.
+    //
+    // `pushTransform` rotates about the part's OWN origin and then offsets, so
+    // the board's centre is given as the offset and its geometry is built
+    // around zero. That is why the boxes below are at base `-h/2` rather than
+    // at their final height.
+    model("tourism=information", 0x6b4e3d, (b) => {
+      for (const s of [-1, 1]) box(b, 0.06, 0.92, 0.06, 0, s * 0.24, 0);
+      b.pushTransform({ rotateX: -0.14, y: 1.02 });
+      box(b, 0.64, 0.44, 0.06, -0.22);
+      // The panel face and two markings on it, standing just proud of the board
+      // so they do not z-fight with it.
+      b.paint(0xedede4);
+      quad(b, [
+        [-0.27, -0.17, 0.037],
+        [0.27, -0.17, 0.037],
+        [0.27, 0.17, 0.037],
+        [-0.27, 0.17, 0.037],
+      ]);
+      b.paint(GLASS);
+      quad(b, [
+        [-0.025, 0.092, 0.042],
+        [0.025, 0.092, 0.042],
+        [0.025, 0.142, 0.042],
+        [-0.025, 0.142, 0.042],
+      ]);
+      quad(b, [
+        [-0.025, -0.094, 0.042],
+        [0.025, -0.094, 0.042],
+        [0.025, 0.056, 0.042],
+        [-0.025, 0.056, 0.042],
+      ]);
+      b.popTransform();
+      // The rain hood sits above the board and is NOT tilted with it.
+      b.paint(STEEL);
+      box(b, 0.7, 0.05, 0.16, 1.255, 0, -0.02);
     }),
     // 11 — a garden: a bed edged in stone, with a shrub.
     model("leisure=garden", PAINT_GREEN, (b) => {
@@ -224,9 +274,24 @@ function models(): PoiModel[] {
       box(b, 0.7, 0.1, 2.4, 0.8, 0, 1.6);
     }),
     // 13 — THE WASTE BASKET the notes name: a tapered bin on a post.
-    model("amenity=waste_basket", DARK_STEEL, (b) => {
-      box(b, 0.08, 0.6, 0.08);
-      prism(b, 0.2, 0.24, 0.45, 8, 0.6);
+    // REBUILT (§4, DEC-R6-15/28). SOURCE: `k_waste_basket`. §4.3 lists this
+    // under G; DEC-R6-28 takes the house file's version because it has one.
+    //
+    // NOTE THE ARGUMENT ORDER, which is the trap in every `cyl` port: three's
+    // `CylinderGeometry(radiusTop, radiusBottom, ...)` puts the TOP first and
+    // our `prism(bottomRadius, topRadius, ...)` puts the bottom first. A bin
+    // that tapers the wrong way still looks like a bin, so nothing catches it.
+    model("amenity=waste_basket", STEEL, (b) => {
+      b.paint(STONE_MID);
+      box(b, 0.07, 0.62, 0.07, 0);
+      b.paint(STEEL);
+      prism(b, 0.13, 0.15, 0.34, 8, 0.55);
+      // The opening, as a dark disc set into the rim rather than a hole — a
+      // real hole would show the inside of the bin, which is not modelled.
+      b.paint(GLASS);
+      disc(b, 0.135, 0.84, 8, true);
+      b.paint(DARK_STEEL);
+      prism(b, 0.16, 0.16, 0.035, 8, 0.8675);
     }),
     // 14 — a fuel station: a canopy over a pump.
     model("amenity=fuel", STEEL, (b) => {
@@ -289,15 +354,48 @@ function models(): PoiModel[] {
       box(b, 0.35, 1.2, 0.12, 3.15);
     }),
     // 24 — a post box: a rounded pillar with a slot hood.
-    model("amenity=post_box", PAINT_RED, (b) => {
-      prism(b, 0.28, 0.28, 1.1, 8);
-      prism(b, 0.3, 0.22, 0.2, 8, 1.1);
+    // REBUILT (§4). SOURCE: `k_post_box`. §4.3 lists it under B; DEC-R6-28
+    // takes the house file's, which has one.
+    model("amenity=post_box", STONE, (b) => {
+      prism(b, 0.16, 0.16, 0.94, 8, 0);
+      // A cone cap, which `prism` gives at a zero top radius.
+      b.paint(MUSTARD);
+      prism(b, 0.18, 0, 0.11, 8, 0.935);
+      // The slot and the collection plate, on the north face.
+      b.paint(GLASS);
+      quad(b, [
+        [-0.085, 0.7375, 0.152],
+        [0.085, 0.7375, 0.152],
+        [0.085, 0.7825, 0.152],
+        [-0.085, 0.7825, 0.152],
+      ]);
+      b.paint(MUSTARD);
+      quad(b, [
+        [-0.06, 0.455, 0.152],
+        [0.06, 0.455, 0.152],
+        [0.06, 0.545, 0.152],
+        [-0.06, 0.545, 0.152],
+      ]);
     }),
     // 25 — a memorial: a plinth carrying a stele.
+    // REBUILT (§4). SOURCE: `k_memorial`. A stepped base, a stele, an inscribed
+    // plate and a verdigris cap — where the old model was three plain boxes.
     model("historic=memorial", STONE, (b) => {
-      box(b, 1.4, 0.35, 1.4);
-      box(b, 1, 0.25, 1, 0.35);
-      box(b, 0.7, 2, 0.4, 0.6);
+      b.paint(STONE_MID);
+      box(b, 0.58, 0.1, 0.44, 0);
+      box(b, 0.44, 0.09, 0.34, 0.1);
+      b.paint(STONE);
+      box(b, 0.28, 0.86, 0.2, 0.19);
+      // The inscription plate, on the north face of the stele.
+      b.paint(DARK_STEEL);
+      quad(b, [
+        [-0.085, 0.45, 0.104],
+        [0.085, 0.45, 0.104],
+        [0.085, 0.75, 0.104],
+        [-0.085, 0.75, 0.104],
+      ]);
+      b.paint(COPPER);
+      box(b, 0.3, 0.07, 0.22, 1.05);
     }),
     // 26 — a kindergarten: a low bright block with a pitched roof.
     model("amenity=kindergarten", PAINT_BLUE, (b) => {
@@ -305,9 +403,19 @@ function models(): PoiModel[] {
       box(b, 1, 2, 0.12, 0, -2, 3.05);
     }),
     // 27 — drinking water: a fountain bowl on a column.
-    model("amenity=drinking_water", STEEL, (b) => {
-      prism(b, 0.14, 0.11, 0.85, 6);
-      prism(b, 0.26, 0.3, 0.2, 8, 0.85);
+    // REBUILT (§4). SOURCE: `k_drinking_water`. §4.3 lists it under D (as the
+    // typo'd `drinking_walter`); DEC-R6-28 takes the house file's version.
+    model("amenity=drinking_water", STONE, (b) => {
+      box(b, 0.15, 0.8, 0.15, 0);
+      b.paint(STONE_MID);
+      prism(b, 0.16, 0.19, 0.12, 8, 0.8);
+      // The water surface in the basin — the one bright note, and the reason
+      // this reads as a fountain rather than as a bollard.
+      b.paint(WATER_BRIGHT);
+      disc(b, 0.165, 0.895, 8, true);
+      b.paint(STEEL);
+      box(b, 0.05, 0.05, 0.14, 0.975, 0, 0.09);
+      box(b, 0.05, 0.1, 0.05, 0.91, 0, 0.13);
     }),
     // 28 — a picnic table: a table slab with a bench each side.
     model("leisure=picnic_table", TIMBER, (b) => {
