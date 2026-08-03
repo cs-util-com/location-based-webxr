@@ -36,6 +36,7 @@
 
 import type { MeshData } from "./mesh-data.js";
 import { POI_MODELS } from "./poi-models.js";
+import { B_VARIANTS } from "./poi-variants-b.js";
 import { D_VARIANTS } from "./poi-variants-d.js";
 
 /**
@@ -289,11 +290,15 @@ function variants(): PoiVariant[] {
   // porting its numbers verbatim would put a 1.9 m church beside a 1.8 m human.
   // Uniform scaling preserves every internal proportion, which is the thing
   // being judged.
-  const fromD = (kind: string): PoiVariant => {
-    const build = D_VARIANTS.get(kind);
+  const fromDiorama = (
+    kind: string,
+    source: VariantSource,
+    table: ReadonlyMap<string, () => MeshData>,
+  ): PoiVariant => {
+    const build = table.get(kind);
     const model = POI_MODELS.get(kind);
     if (build === undefined || model === undefined) {
-      throw new Error(`no D variant or no shipped model for "${kind}"`);
+      throw new Error(`no ${source} variant or no shipped model for "${kind}"`);
     }
     // GROUND FIRST, THEN SCALE. `scaledToHeight` scales about the origin and
     // assumes the base is already there; scaling an un-grounded mesh would
@@ -303,11 +308,12 @@ function variants(): PoiVariant[] {
     for (let i = 1; i < mesh.positions.length; i += 3) {
       heightM = Math.max(heightM, mesh.positions[i] as number);
     }
-    return { kind, source: "D", colour: model.colour, heightM, mesh };
+    return { kind, source, colour: model.colour, heightM, mesh };
   };
 
   return [
-    ...[...D_VARIANTS.keys()].map(fromD),
+    ...[...D_VARIANTS.keys()].map((k) => fromDiorama(k, "D", D_VARIANTS)),
+    ...[...B_VARIANTS.keys()].map((k) => fromDiorama(k, "B", B_VARIANTS)),
     // The §4 rebuild's seven, which were ported from the house-style file and
     // are therefore already the `L` variant of their kind.
     fromShipped("amenity=bench", "L"),

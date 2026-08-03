@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { MeshBuilder } from "./mesh-data.js";
 import { POI_MODELS } from "./poi-models.js";
+import { B_PALETTE } from "./poi-variants-b.js";
 import { D_PALETTE } from "./poi-variants-d.js";
 import {
   LIKED_VARIANTS,
@@ -250,7 +251,7 @@ describe("the D port's palette agrees with the house one", () => {
    * they are being compared against — and colour is the one thing DEC-R6-30
    * normalises specifically so it CANNOT confound the comparison.
    */
-  it("paints D variants only in colours D's own palette declares", () => {
+  it("paints D and B variants only in colours their palettes declare", () => {
     // NOT "colours the shipped models use", which was the first version of this
     // and was wrong: D and the house-style file share ONE source palette, and D
     // legitimately reaches parts of it we have not adopted yet — `terracotta`,
@@ -268,7 +269,7 @@ describe("the D port's palette agrees with the house one", () => {
     const key = (r: number, g: number, b: number): string =>
       `${Math.fround(r)},${Math.fround(g)},${Math.fround(b)}`;
     const housePalette = new Set(
-      Object.values(D_PALETTE).map((hex) =>
+      [...Object.values(D_PALETTE), ...Object.values(B_PALETTE)].map((hex) =>
         key(
           ((hex >> 16) & 0xff) / 255,
           ((hex >> 8) & 0xff) / 255,
@@ -279,7 +280,7 @@ describe("the D port's palette agrees with the house one", () => {
 
     const strays: string[] = [];
     for (const variant of [...POI_VARIANTS.values()].flat()) {
-      if (variant.source !== "D") continue;
+      if (variant.source !== "D" && variant.source !== "B") continue;
       const colours = variant.mesh.colours;
       if (colours === undefined) continue;
       for (let i = 0; i < colours.length; i += 3) {
@@ -290,7 +291,7 @@ describe("the D port's palette agrees with the house one", () => {
         );
         // White is the unpainted identity, always legitimate.
         if (seen === "1,1,1" || housePalette.has(seen)) continue;
-        if (!strays.includes(`${variant.kind}#D ${seen}`)) {
+        if (!strays.includes(`${variant.kind}#${variant.source} ${seen}`)) {
           strays.push(`${variant.kind}#D ${seen}`);
         }
       }
