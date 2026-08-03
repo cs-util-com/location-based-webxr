@@ -21,7 +21,9 @@ composition into a `MeshData`.
   derived from the corner order unless given.
 - `pyramid(builder, width, depth, height, base?, offsetX?, offsetZ?)` — a
   rectangular-based spire, which `prism`'s cone is not.
-- `sphere(builder, radius, centreY, segments?, rings?, offsetX?, offsetZ?)`
+- `sphere(builder, radius, centreY, segments?, rings?, offsetX?, offsetZ?,
+radiusY?)` — `radiusY` squashes it along Y into an ellipsoid of revolution,
+  defaulting to `radius`.
 - `slabOnLegs(builder, width, depth, seatHeight, slabThickness?, legThickness?)`
 - `postWithHead(builder, postHeight, postRadius, headWidth, headHeight)`
 - `canopy(builder, width, depth, height, roofThickness?, postThickness?)`
@@ -81,6 +83,14 @@ composition into a `MeshData`.
   to learn this for its cone case.
 - **`quad` falls back to `+y` for a degenerate quad** rather than emitting a NaN
   normal, for the same reason.
+- **A squashed `sphere` carries the ELLIPSOID's normal, not the unit sphere's.**
+  Under a `(1, k, 1)` scale positions scale by `k` but normals scale by the
+  inverse transpose, `1/k`, renormalised. Reusing the sphere direction would
+  leave every normal tilted toward the poles — shading a flattened canopy as
+  though it were still round, with no change to the silhouette, so it would
+  survive a screenshot review. `radiusY` exists because four of the six POI
+  prototypes build rounded parts from an icosahedron under a non-uniform scale,
+  and the owner is judging exactly those shape differences.
 
 ## Examples
 

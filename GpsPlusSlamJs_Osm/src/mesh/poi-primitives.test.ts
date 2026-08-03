@@ -5,6 +5,7 @@ import {
   box,
   composed,
   disc,
+  gable,
   prism,
   pyramid,
   quad,
@@ -228,6 +229,137 @@ describe("sphere", () => {
       );
       expect(area).toBeGreaterThan(1e-9);
     }
+  });
+
+  it("squashes to `radiusY` when one is given, leaving x and z alone", () => {
+    // WHY THIS EXISTS AT ALL. Four of the six prototypes build their rounded
+    // parts from `IcosahedronGeometry` under a NON-UNIFORM scale — P's tree
+    // canopies are `(1, .85, 1)`, its sculpture blob `(1, .7, 1)`, D's
+    // headstone caps `(1, .7, .45)`. The first ports approximated all of them
+    // with a round sphere and recorded that as a known loss. The owner's
+    // verdict on the gallery was specifically that "the 3d models/shapes I
+    // liked look very different", so a squash that flattens a canopy by 30 %
+    // is exactly the class of difference being judged, not a rounding detail.
+    //
+    // Only the Y axis is parameterised: every non-uniform `ico` in the four
+    // liked P kinds squashes Y alone, and a primitive with three radii would be
+    // an ellipsoid nobody has a caller for.
+    const { lo, hi } = bounds(
+      composed((b) => sphere(b, 1, 2, 12, 6, 0, 0, 0.5)),
+    );
+    expect(hi.x - lo.x).toBeCloseTo(2, 4);
+    expect(hi.z - lo.z).toBeCloseTo(2, 4);
+    expect(hi.y - lo.y).toBeCloseTo(1, 4);
+    // Still centred where it was put — a squash must not also move it.
+    expect((hi.y + lo.y) / 2).toBeCloseTo(2, 4);
+  });
+
+  it("carries the ELLIPSOID's normal, not the sphere's, when squashed", () => {
+    // THE INVISIBLE HALF OF A NON-UNIFORM SCALE. Positions scale by `(1, k, 1)`
+    // but normals scale by the INVERSE TRANSPOSE — `(1, 1/k, 1)`, renormalised.
+    // Reusing the unit-sphere direction leaves every normal tilted toward the
+    // poles, which shades a flattened canopy as though it were still round.
+    // Nothing about the silhouette changes, so this is the failure mode that
+    // survives a screenshot review; §4's winding bug was the same shape of bug.
+    const radiusY = 0.5;
+    const mesh = composed((b) => sphere(b, 1, 0, 16, 8, 0, 0, radiusY));
+    for (let i = 0; i < mesh.positions.length / 3; i++) {
+      const p = vertexAt(mesh, i);
+      const n = {
+        x: mesh.normals[i * 3] as number,
+        y: mesh.normals[i * 3 + 1] as number,
+        z: mesh.normals[i * 3 + 2] as number,
+      };
+      expect(Math.hypot(n.x, n.y, n.z)).toBeCloseTo(1, 5);
+      // Gradient of x^2/a^2 + y^2/b^2 + z^2/c^2 = 1 at the surface point.
+      const g = { x: p.x, y: p.y / (radiusY * radiusY), z: p.z };
+      const len = Math.hypot(g.x, g.y, g.z);
+      expect(n.x).toBeCloseTo(g.x / len, 5);
+      expect(n.y).toBeCloseTo(g.y / len, 5);
+      expect(n.z).toBeCloseTo(g.z / len, 5);
+    }
+  });
+
+  it("is still a closed solid wound outward once squashed", () => {
+    // The squash must not flip anything: the volume of an ellipsoid of
+    // revolution is the sphere's times `radiusY / radius`, and it stays
+    // inscribed, so the same band applies scaled by that factor.
+    const mesh = composed((b) => sphere(b, 1, 1, 12, 6, 0, 0, 0.4));
+    const volume = signedVolume6(mesh) / 6;
+    const analytic = (4 / 3) * Math.PI * 0.4;
+    expect(volume).toBeGreaterThan(analytic * 0.8);
+    expect(volume).toBeLessThan(analytic);
+    expect(allFinite(mesh)).toBe(true);
+  });
+});
+
+describe("gable", () => {
+  /**
+   * WHY THIS IS A PRIMITIVE NOW. It was always inside `hut`, and this sidecar
+   * said so — _"if a later model needs a true gable it is `hut`'s roof half"_.
+   * `poi-variants-l.ts` is that later model: L's church puts a gable on a nave
+   * and a hip roof on its tower, and the two are the whole read of the
+   * silhouette. The `D` port approximated its gable with `pyramid`, which turns
+   * a ridged roof into a pyramid — acceptable on a 20 cm weather hood, not on
+   * a church.
+   *
+   * Extracting it rather than copying it is what keeps `hut` and the standalone
+   * roof from drifting: `hut` now calls this, so `hut`'s own tests cover it too.
+   */
+  it("puts its ridge along Z, spanning the full depth", () => {
+    const { lo, hi } = bounds(composed((b) => gable(b, 2, 6, 1, 0.5)));
+    expect(hi.x - lo.x).toBeCloseTo(2, 6);
+    expect(hi.z - lo.z).toBeCloseTo(6, 6);
+    expect(lo.y).toBeCloseTo(0.5, 6);
+    expect(hi.y).toBeCloseTo(1.5, 6);
+  });
+
+  it("sits where it is put, in ENU, which the builder reflects", () => {
+    // THE OFFSET IS ENU (`+z` north) AND THE BUILT MESH IS RENDER-FRAME
+    // (`-z` north): `MeshBuilder.vertex` applies the reflection. So an ENU
+    // `offsetZ` of -3 reads back as +3, and x is untouched. Pinning it here
+    // rather than asserting a symmetric case is the point — a primitive that
+    // pre-reflected its own z would double-apply it, which mirrors every
+    // asymmetric model about the north axis and reads as "the door is on the
+    // wrong side" rather than as a bug.
+    const { lo, hi } = bounds(composed((b) => gable(b, 2, 2, 1, 0, 5, -3)));
+    expect((lo.x + hi.x) / 2).toBeCloseTo(5, 6);
+    expect((lo.z + hi.z) / 2).toBeCloseTo(3, 6);
+  });
+
+  it("winds every triangle to agree with its own normal", () => {
+    // THE INVARIANT §4's inversion bug broke across all fifty models. A gable
+    // is `FrontSide` + `flatShading` like everything else, so a reversed slope
+    // draws the roof's underside: unchanged silhouette, wrong shading, and it
+    // vanishes the moment culling is on. Only `hut`'s SLOPES were reversed and
+    // its gable ends were not, so the two halves have to be checked together.
+    const mesh = composed((b) => gable(b, 2, 3, 1.2));
+    for (let t = 0; t * 3 < mesh.indices.length; t++) {
+      const ia = mesh.indices[t * 3] as number;
+      const a = vertexAt(mesh, ia);
+      const b2 = vertexAt(mesh, mesh.indices[t * 3 + 1] as number);
+      const c = vertexAt(mesh, mesh.indices[t * 3 + 2] as number);
+      const ux = b2.x - a.x;
+      const uy = b2.y - a.y;
+      const uz = b2.z - a.z;
+      const vx = c.x - a.x;
+      const vy = c.y - a.y;
+      const vz = c.z - a.z;
+      const wx = uy * vz - uz * vy;
+      const wy = uz * vx - ux * vz;
+      const wz = ux * vy - uy * vx;
+      const nx = mesh.normals[ia * 3] as number;
+      const ny = mesh.normals[ia * 3 + 1] as number;
+      const nz = mesh.normals[ia * 3 + 2] as number;
+      expect(wx * nx + wy * ny + wz * nz).toBeGreaterThan(0);
+    }
+  });
+
+  it("closes both gable ends rather than leaving a tent", () => {
+    // Six triangles: two per slope, one per end. An open end is a hole
+    // straight through the building from a low camera, which is every camera
+    // in an AR overlay.
+    expect(composed((b) => gable(b, 2, 3, 1)).triangleCount).toBe(6);
   });
 });
 

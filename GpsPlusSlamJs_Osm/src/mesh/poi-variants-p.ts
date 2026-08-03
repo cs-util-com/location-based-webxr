@@ -1,0 +1,214 @@
+/**
+ * The `P` variants — ported from `procedural-poi-marker-gallery(1)`
+ * (DEC-R6-30…33).
+ *
+ * Four of the owner's 51 liked pairs come from this file. Its own header calls
+ * it "civic maquettes — literal miniature payloads on one shared display
+ * plinth", and every kind is fitted to the same 1.46 × 1.10 × 2.65 m envelope
+ * with no real-world scale, so DEC-V5's rescale applies as it does to `D`.
+ *
+ * WHAT HAS TO BE UNDONE, and each is a place a port goes wrong silently:
+ *
+ * 1. **The plinth, and the `T = 0.18` its top sits at.** P's parts are placed in
+ *    ABSOLUTE coordinates that include the plinth, so every `y` loses `T`.
+ *    Its own sub-assemblies round that to `+.20` — `headstone` and `treeParts`
+ *    both build from `.20` — a 2 cm embed that `groundedMesh` absorbs.
+ * 2. **Centre-`y` to base-`y`**, three's `BoxGeometry`/`CylinderGeometry` being
+ *    centred where our `box`/`prism` take a base.
+ * 3. **Top-radius-first cylinders**, as in `D` and unlike `B`. `cylP` swaps them
+ *    once so a port reads straight off the source. A cup that tapers the wrong
+ *    way is still a cup, which is why no assertion catches this one.
+ *
+ * **Rotations transfer unchanged.** P composes `T · R · S` about each part's own
+ * centre, which is what `pushTransform`'s offset-plus-rotation does, and its `rz`
+ * turns +x toward +y exactly as ours does. All four kinds here use `rz` only.
+ *
+ * @see poi-variants-p.ts.md
+ */
+
+import type { MeshBuilder, MeshData } from "./mesh-data.js";
+import { box, composed, prism, sphere } from "./poi-primitives.js";
+
+/**
+ * P's palette, under the source's own names, restricted to what these four
+ * models paint with. Byte-identical to `D`'s where they overlap — the two files
+ * share one palette — and pinned against it in `poi-variants.test.ts`.
+ */
+const P = {
+  stoneLight: 0x8894a0,
+  wallCream: 0xe8dcc8,
+  wallSage: 0x9baf8e,
+  woodMid: 0x8a6a4f,
+  woodDark: 0x6b4e3d,
+  roofTeal: 0x3e7a80,
+} as const;
+
+/** The height of P's shared plinth, whose top every part is measured from. */
+const T = 0.18;
+
+/** An `rz`-style turn about a part's own centre, in the source's terms. */
+interface Turn {
+  readonly rx?: number;
+  readonly ry?: number;
+  readonly rz?: number;
+}
+
+/** Runs `build` at the origin under a turn about `(x, y, z)`. */
+function turned(
+  b: MeshBuilder,
+  x: number,
+  y: number,
+  z: number,
+  o: Turn,
+  build: () => void,
+): void {
+  b.pushTransform({
+    ...(o.rx === undefined ? {} : { rotateX: o.rx }),
+    ...(o.ry === undefined ? {} : { rotateY: o.ry }),
+    ...(o.rz === undefined ? {} : { rotateZ: o.rz }),
+    x,
+    y,
+    z,
+  });
+  build();
+  b.popTransform();
+}
+
+/** `box(w,h,d, x,y,z, colour, rz)` in P's order, with `y` as the CENTRE. */
+function bxP(
+  b: MeshBuilder,
+  w: number,
+  h: number,
+  d: number,
+  x: number,
+  y: number,
+  z: number,
+  colour: number,
+  o?: Turn,
+): void {
+  b.paint(colour);
+  if (o === undefined) {
+    box(b, w, h, d, y - T - h / 2, x, z);
+    return;
+  }
+  turned(b, x, y - T, z, o, () => {
+    box(b, w, h, d, -h / 2, 0, 0);
+  });
+}
+
+/** `cyl(radiusTop, radiusBottom, h, seg, x,y,z, colour)` — P's order. */
+function cylP(
+  b: MeshBuilder,
+  radiusTop: number,
+  radiusBottom: number,
+  h: number,
+  seg: number,
+  x: number,
+  y: number,
+  z: number,
+  colour: number,
+): void {
+  b.paint(colour);
+  // SWAPPED: P gives top first, `prism` takes bottom first.
+  prism(b, radiusBottom, radiusTop, h, seg, y - T - h / 2, x, z);
+}
+
+/**
+ * `ico(radius, x,y,z, colour, 1, sy, 1)` — a rounded blob, squashed along Y.
+ *
+ * P's blobs are icosahedra under a non-uniform scale and we have no
+ * icosahedron, so a low-ring UV sphere stands in — the same read at a marker's
+ * screen size. The SQUASH, though, is carried faithfully: `sphere`'s `radiusY`
+ * exists for this, because a canopy flattened to 85 % rebuilt as a round ball
+ * is exactly the kind of shape difference this gallery is being judged on.
+ */
+function icoP(
+  b: MeshBuilder,
+  radius: number,
+  x: number,
+  y: number,
+  z: number,
+  colour: number,
+  sy = 1,
+): void {
+  b.paint(colour);
+  sphere(b, radius, y - T, 8, 4, x, z, radius * sy);
+}
+
+/**
+ * `treeParts(x, z, s)` — P's shared trunk-and-canopy sub-assembly.
+ *
+ * **THE TRUNK FLOATS IN THE SOURCE, and that is ported rather than corrected.**
+ * P places the trunk centre at `.50 s + .20` with a height of `.62 s`, so its
+ * base lands at `.39` — 21 cm above the plinth top, where every other P
+ * sub-assembly (`headstone`, and the bench legs of this same model) is built to
+ * sit at `.20`. It reads as an off-by-one against its own convention.
+ *
+ * It is kept because the owner's instruction was to keep the originals' 3D
+ * structure as close as possible, and because a silent fix here would make the
+ * gallery compare my correction rather than P's model. Recorded so the gap is
+ * attributable to the source when it shows up on screen.
+ */
+function treeP(b: MeshBuilder, x: number, z: number, s: number): void {
+  cylP(b, 0.08 * s, 0.1 * s, 0.62 * s, 6, x, 0.5 * s + 0.2, z, P.woodDark);
+  icoP(b, 0.42 * s, x, 0.98 * s + 0.2, z, P.wallSage, 0.85);
+  icoP(b, 0.3 * s, x - 0.2 * s, 1.1 * s + 0.2, z + 0.06 * s, P.wallSage, 0.9);
+}
+
+/** Every P model, keyed by kind. Built at P's own scale; the registry rescales. */
+export const P_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
+  string,
+  () => MeshData
+>([
+  [
+    "leisure=park",
+    (): MeshData =>
+      composed((b) => {
+        treeP(b, -0.2, -0.06, 1);
+        // A bench beside the tree — seat plus two legs.
+        bxP(b, 0.78, 0.1, 0.28, 0.3, 0.53, 0.28, P.woodMid);
+        bxP(b, 0.08, 0.3, 0.08, 0.04, 0.36, 0.28, P.woodDark);
+        bxP(b, 0.08, 0.3, 0.08, 0.56, 0.36, 0.28, P.woodDark);
+      }),
+  ],
+  [
+    "amenity=cafe",
+    (): MeshData =>
+      composed((b) => {
+        // A cup on a saucer: the cup flares upward, so its TOP radius is the
+        // larger one — the case `cylP`'s swap exists for.
+        cylP(b, 0.48, 0.4, 0.72, 8, -0.05, 0.66, 0, P.wallCream);
+        cylP(b, 0.58, 0.58, 0.1, 8, -0.05, 0.28, 0, P.woodDark);
+        bxP(b, 0.16, 0.44, 0.24, 0.48, 0.7, 0, P.wallCream);
+        // Two wisps of steam, each tilted the other way.
+        bxP(b, 0.1, 0.36, 0.1, -0.18, 1.18, 0, P.roofTeal, { rz: 0.18 });
+        bxP(b, 0.1, 0.3, 0.1, 0.12, 1.25, 0, P.roofTeal, { rz: -0.16 });
+      }),
+  ],
+  [
+    "leisure=picnic_table",
+    (): MeshData =>
+      composed((b) => {
+        bxP(b, 1.24, 0.14, 0.62, 0, 0.84, 0, P.woodMid);
+        bxP(b, 1.24, 0.12, 0.26, 0, 0.55, -0.64, P.woodMid);
+        bxP(b, 1.24, 0.12, 0.26, 0, 0.55, 0.64, P.woodMid);
+        // The splayed A-frame legs, which is the whole read of a picnic table.
+        bxP(b, 0.12, 0.62, 0.12, -0.36, 0.48, 0, P.woodDark, { rz: 0.3 });
+        bxP(b, 0.12, 0.62, 0.12, 0.36, 0.48, 0, P.woodDark, { rz: -0.3 });
+      }),
+  ],
+  [
+    "tourism=artwork",
+    (): MeshData =>
+      composed((b) => {
+        // Three stone shafts leaning at different angles, topped by a blob.
+        bxP(b, 0.2, 1.42, 0.2, -0.28, 0.94, 0, P.stoneLight, { rz: 0.38 });
+        bxP(b, 0.2, 1.18, 0.2, 0.18, 0.88, 0, P.stoneLight, { rz: -0.48 });
+        bxP(b, 0.2, 0.88, 0.2, 0.4, 0.94, 0, P.stoneLight, { rz: 0.68 });
+        icoP(b, 0.24, -0.02, 1.78, 0, P.roofTeal, 0.7);
+      }),
+  ],
+]);
+
+/** The palette values a P port may paint with. Pinned in the tests. */
+export const P_PALETTE = P;

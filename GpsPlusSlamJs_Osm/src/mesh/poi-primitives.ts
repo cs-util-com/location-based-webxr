@@ -333,13 +333,27 @@ export function pyramid(
 }
 
 /**
- * A low-polygon UV sphere centred at `(offsetX, centreY, offsetZ)`.
+ * A low-polygon UV sphere centred at `(offsetX, centreY, offsetZ)`, optionally
+ * squashed along Y to `radiusY`.
  *
  * POLES ARE FANS, NOT QUADS, and that is the whole subtlety. A naive latitude
  * loop emits a quad per segment at the top and bottom rings, where one edge has
  * collapsed to a point — so each is a zero-area triangle, and `three` turns
  * those into NaN normals which remove the entire object from the scene with
  * nothing logged. `prism` already had to learn this for its cone case.
+ *
+ * `radiusY` EXISTS FOR THE PORTS. Four of the six prototypes build rounded parts
+ * from an icosahedron under a non-uniform scale — tree canopies at `(1, .85, 1)`,
+ * a sculpture blob at `(1, .7, 1)` — and a flattened canopy rebuilt as a round
+ * one is precisely the kind of shape difference the gallery is being judged on.
+ * Only Y is parameterised because only Y is ever squashed by the liked models;
+ * a three-radius ellipsoid would have no caller.
+ *
+ * **The normal is the ELLIPSOID's, not the unit sphere's.** Under a `(1, k, 1)`
+ * scale, positions scale by `k` but normals scale by the inverse transpose —
+ * `1/k`, renormalised. Reusing the sphere direction leaves every normal tilted
+ * toward the poles, which shades a flattened canopy as if it were still round:
+ * no silhouette changes, so it survives a screenshot review.
  */
 export function sphere(
   builder: MeshBuilder,
@@ -349,6 +363,7 @@ export function sphere(
   rings = 6,
   offsetX = 0,
   offsetZ = 0,
+  radiusY = radius,
 ): void {
   const point = (
     ring: number,
@@ -359,13 +374,17 @@ export function sphere(
     const nx = Math.sin(phi) * Math.cos(theta);
     const ny = Math.cos(phi);
     const nz = Math.sin(phi) * Math.sin(theta);
+    // Inverse-transpose of diag(radius, radiusY, radius), dropping the common
+    // 1/radius factor that renormalising removes anyway.
+    const gy = (ny * radius) / radiusY;
+    const length = Math.hypot(nx, gy, nz);
     return [
       offsetX + nx * radius,
-      centreY + ny * radius,
+      centreY + ny * radiusY,
       offsetZ + nz * radius,
-      nx,
-      ny,
-      nz,
+      nx / length,
+      gy / length,
+      nz / length,
     ];
   };
 
@@ -546,33 +565,40 @@ export function canopy(
   }
 }
 
-/** A pitched roof over a box — the "small building" family. */
-export function hut(
+/**
+ * A ridged roof, its RIDGE ALONG Z, sitting on `base`.
+ *
+ * Two slopes facing ±x and two closing triangles at ±z. This was `hut`'s roof
+ * half and is now a primitive of its own because the ports need a bare gable:
+ * `poi-variants-l.ts` puts one on a church nave and a hip roof (`pyramid`) on
+ * its tower, and the difference between the two IS the silhouette. `hut` calls
+ * this, so the two cannot drift apart.
+ */
+export function gable(
   builder: MeshBuilder,
   width: number,
   depth: number,
-  wallHeight: number,
-  ridgeHeight: number,
-  /** Where the walls start. Non-zero for a cabin raised on legs. */
+  height: number,
   base = 0,
+  offsetX = 0,
+  offsetZ = 0,
 ): void {
-  box(builder, width, wallHeight, depth, base);
-  const x0 = -width / 2;
-  const x1 = width / 2;
-  const z0 = -depth / 2;
-  const z1 = depth / 2;
-  const y0 = base + wallHeight;
-  const y1 = base + wallHeight + ridgeHeight;
-  const slope = Math.hypot(ridgeHeight, width / 2);
+  const x0 = offsetX - width / 2;
+  const x1 = offsetX + width / 2;
+  const z0 = offsetZ - depth / 2;
+  const z1 = offsetZ + depth / 2;
+  const y0 = base;
+  const y1 = base + height;
+  const slope = Math.hypot(height, width / 2);
   const ny = width / 2 / slope;
-  const nx = ridgeHeight / slope;
+  const nx = height / slope;
 
   for (const side of [1, -1]) {
     const eaveX = side > 0 ? x1 : x0;
     const a = builder.vertex(eaveX, y0, z0, side * nx, ny, 0);
     const b = builder.vertex(eaveX, y0, z1, side * nx, ny, 0);
-    const c = builder.vertex(0, y1, z1, side * nx, ny, 0);
-    const d = builder.vertex(0, y1, z0, side * nx, ny, 0);
+    const c = builder.vertex(offsetX, y1, z1, side * nx, ny, 0);
+    const d = builder.vertex(offsetX, y1, z0, side * nx, ny, 0);
     // Reversed on both branches, for the same reason as `box`'s faces. The
     // GABLE triangles below are NOT reversed and are already correct — they
     // were written with the opposite corner order, which is why only half of
@@ -587,16 +613,31 @@ export function hut(
       builder.triangle(a, c, d);
     }
   }
-  // The two gable triangles, so the roof is closed rather than a tent with open
-  // ends — which from a low camera is a hole straight through the building.
+  // The two closing triangles, so the roof is closed rather than a tent with
+  // open ends — which from a low camera is a hole straight through the
+  // building.
   for (const z of [z0, z1]) {
-    const facing = z > 0 ? 1 : -1;
+    const facing = z > offsetZ ? 1 : -1;
     const a = builder.vertex(x0, y0, z, 0, 0, facing);
     const b = builder.vertex(x1, y0, z, 0, 0, facing);
-    const c = builder.vertex(0, y1, z, 0, 0, facing);
+    const c = builder.vertex(offsetX, y1, z, 0, 0, facing);
     if (facing > 0) builder.triangle(a, b, c);
     else builder.triangle(a, c, b);
   }
+}
+
+/** A pitched roof over a box — the "small building" family. */
+export function hut(
+  builder: MeshBuilder,
+  width: number,
+  depth: number,
+  wallHeight: number,
+  ridgeHeight: number,
+  /** Where the walls start. Non-zero for a cabin raised on legs. */
+  base = 0,
+): void {
+  box(builder, width, wallHeight, depth, base);
+  gable(builder, width, depth, ridgeHeight, base + wallHeight);
 }
 
 /** Builds one mesh from a composition function. */

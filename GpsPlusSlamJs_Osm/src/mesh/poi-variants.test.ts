@@ -5,6 +5,9 @@ import { POI_MODELS } from "./poi-models.js";
 import { B_PALETTE } from "./poi-variants-b.js";
 import { G_PALETTE } from "./poi-variants-g.js";
 import { D_PALETTE } from "./poi-variants-d.js";
+import { P_PALETTE } from "./poi-variants-p.js";
+import { M_PALETTE } from "./poi-variants-m.js";
+import { L_PALETTE } from "./poi-variants-l.js";
 import {
   LIKED_VARIANTS,
   POI_VARIANTS,
@@ -197,27 +200,28 @@ describe("LIKED_VARIANTS — the owner's notes as a checked-in table", () => {
     }
   });
 
-  it("reports which liked pairs are not yet built, without failing", () => {
-    // A PROGRESS READOUT RATHER THAN A GATE, deliberately. The port is done in
-    // batches by source file, so a red test for "not all 51 exist yet" would be
-    // red for the whole job and would tell nobody anything on the way. What
-    // matters is that the remaining set is VISIBLE — a pair silently dropped is
-    // how §4.3's mapping would rot.
+  it("builds every liked pair the owner named — all 51", () => {
+    // NOW A GATE, AND IT WAS NOT ONE BEFORE. While the port ran source file by
+    // source file this was a progress readout that could not fail, because a
+    // red test for "not all 51 exist yet" would have been red for the whole job
+    // and told nobody anything on the way. All six files are ported, so the
+    // ratchet closes: from here, a pair that disappears is a REGRESSION, and a
+    // pair silently dropped is exactly how §4.3's mapping would rot.
     const built = new Set(
       [...POI_VARIANTS.values()].flat().map((e) => `${e.kind}#${e.source}`),
     );
     const missing = LIKED_VARIANTS.filter(
       (v) => !built.has(`${v.kind}#${v.source}`),
     ).map((v) => `${v.kind}#${v.source}`);
-    // BOTH NUMBERS, because they are not the same and the first version of this
-    // line conflated them: `built.size` counts every variant in the registry,
-    // including the four ported from the house file under DEC-R6-28 whose LIKED
-    // source is something else. Only the matched ones count as progress.
+    // ASSERT THE LIST, NOT THE COUNT, so a failure names the pairs.
+    expect(missing).toEqual([]);
+    // BOTH NUMBERS, because they are not the same: `built.size` counts every
+    // variant in the registry, including the four ported from the house file
+    // under DEC-R6-28 whose LIKED source is something else.
     console.log(
-      `POI variants: ${LIKED_VARIANTS.length - missing.length} of ${LIKED_VARIANTS.length} liked pairs built ` +
-        `(${missing.length} remaining); ${built.size} variants in the registry`,
+      `POI variants: ${LIKED_VARIANTS.length} of ${LIKED_VARIANTS.length} liked pairs built; ` +
+        `${built.size} variants in the registry`,
     );
-    expect(missing.length).toBeLessThanOrEqual(LIKED_VARIANTS.length);
   });
 
   it("agrees with the per-source counts in the owner's notes", () => {
@@ -274,6 +278,9 @@ describe("the D port's palette agrees with the house one", () => {
         ...Object.values(D_PALETTE),
         ...Object.values(B_PALETTE),
         ...Object.values(G_PALETTE),
+        ...Object.values(P_PALETTE),
+        ...Object.values(M_PALETTE),
+        ...Object.values(L_PALETTE),
       ].map((hex) =>
         key(
           ((hex >> 16) & 0xff) / 255,
@@ -285,7 +292,7 @@ describe("the D port's palette agrees with the house one", () => {
 
     const strays: string[] = [];
     for (const variant of [...POI_VARIANTS.values()].flat()) {
-      if (!["D", "B", "G"].includes(variant.source)) continue;
+      if (!["D", "B", "G", "P", "M", "L"].includes(variant.source)) continue;
       const colours = variant.mesh.colours;
       if (colours === undefined) continue;
       for (let i = 0; i < colours.length; i += 3) {
@@ -297,7 +304,7 @@ describe("the D port's palette agrees with the house one", () => {
         // White is the unpainted identity, always legitimate.
         if (seen === "1,1,1" || housePalette.has(seen)) continue;
         if (!strays.includes(`${variant.kind}#${variant.source} ${seen}`)) {
-          strays.push(`${variant.kind}#D ${seen}`);
+          strays.push(`${variant.kind}#${variant.source} ${seen}`);
         }
       }
     }

@@ -39,6 +39,9 @@ import { POI_MODELS } from "./poi-models.js";
 import { B_VARIANTS } from "./poi-variants-b.js";
 import { G_VARIANTS } from "./poi-variants-g.js";
 import { D_VARIANTS } from "./poi-variants-d.js";
+import { P_VARIANTS } from "./poi-variants-p.js";
+import { M_VARIANTS } from "./poi-variants-m.js";
+import { L_VARIANTS } from "./poi-variants-l.js";
 
 /**
  * The six prototype files, by the letters §4.3 of the round-6 plan assigned.
@@ -316,6 +319,9 @@ function variants(): PoiVariant[] {
     ...[...D_VARIANTS.keys()].map((k) => fromDiorama(k, "D", D_VARIANTS)),
     ...[...B_VARIANTS.keys()].map((k) => fromDiorama(k, "B", B_VARIANTS)),
     ...[...G_VARIANTS.keys()].map((k) => fromDiorama(k, "G", G_VARIANTS)),
+    ...[...P_VARIANTS.keys()].map((k) => fromDiorama(k, "P", P_VARIANTS)),
+    ...[...M_VARIANTS.keys()].map((k) => fromDiorama(k, "M", M_VARIANTS)),
+    ...[...L_VARIANTS.keys()].map((k) => fromDiorama(k, "L", L_VARIANTS)),
     // The §4 rebuild's seven, which were ported from the house-style file and
     // are therefore already the `L` variant of their kind.
     fromShipped("amenity=bench", "L"),
