@@ -125,9 +125,55 @@ export function toHex({ r, g, b }: Rgb): string {
  */
 export function describeScale(scale: HeatScale): string {
   return (
-    `above ${scale.threshold} (the identity is 1) up to ${round(scale.max)}, ` +
+    `above ${formatScore(scale.threshold)} (the identity is 1) up to ${formatScore(scale.max)}, ` +
     `log scale — each colour step is an equal RATIO, because the score is a product`
   );
+}
+
+/**
+ * Above this, a score is printed as a magnitude rather than as a number.
+ *
+ * 1e4 rather than 1e5 (DEC-R6b-6). The legend's job is to make "1 is the
+ * identity, 10 is one strong rule, 100 is two" checkable; past four digits the
+ * value has stopped being something a human reads and become a magnitude, and a
+ * stable line width matters more there than the extra precision. The cost, taken
+ * knowingly: `12000` prints as `1.2e4`, which is arguably worse than the plain
+ * number — a narrow band, against a tail that runs to 1e13.
+ */
+const EXPONENTIAL_ABOVE = 1e4;
+
+/**
+ * A score, as the legend should print it.
+ *
+ * WHY THIS IS NOT JUST `round`. The sixth session read the legend as "von 1 bis"
+ * followed by a very long number — a screenshot showed
+ * `walkable 1 … 27992463056732.17`. That is not an outlier: the score is a
+ * PRODUCT of rule factors and products compound, so round 6's corpus measurement
+ * found `walkable` at Cologne spanning twelve orders of magnitude (p99 = 8.1e6,
+ * max = 1.4e12). Full precision is the wrong presentation for that quantity at
+ * almost any position.
+ *
+ * Applied to the THRESHOLD as well as the max, because both come off the same
+ * compounding scale — abbreviating only one would leave the identical defect one
+ * field to the left.
+ *
+ * **EXPORTED, and that is the point.** `legend-model.ts` builds the labels the
+ * user actually reads (`describeScale` is only the strip's title and
+ * screen-reader text) and used to carry its own copy of `round`. Two formatters
+ * meant fixing one and leaving the other printing the reported number unchanged.
+ * There is now one.
+ */
+export function formatScore(value: number): string {
+  // Defensive: `heatScale` filters non-finite scores, but this function is
+  // reachable from an exported one and "Infinity" in the legend would read as a
+  // broken demo rather than as a broken input.
+  if (!Number.isFinite(value)) return "—";
+  if (Math.abs(value) < EXPONENTIAL_ABOVE) return String(round(value));
+
+  // One decimal on the mantissa, and no trailing `.0`: the whole point is a
+  // short, stable line, and `1.234568e5` would reproduce the problem in a new
+  // notation. `toExponential` gives `2.8e+13`; the `+` buys nothing here.
+  return value.toExponential(1).replace("e+", "e").replace(".0e", "e");
 }
 
 function round(value: number): number {

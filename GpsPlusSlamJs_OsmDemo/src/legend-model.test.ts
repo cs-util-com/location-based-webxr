@@ -45,6 +45,40 @@ describe("legendModel — the ramp", () => {
     ).toBe("3.6");
   });
 
+  it("abbreviates a huge max — THIS is the number the session actually saw", () => {
+    // DEC-R6b-6. The sixth session reported "von 1 bis" followed by a very long
+    // number, from a screenshot reading `walkable 1 … 27992463056732.17`.
+    //
+    // WHY THIS TEST IS HERE AND NOT ONLY IN `heat-colours.test.ts`: the visible
+    // strip is `maxLabel`, built here. `describeScale` is only the strip's title
+    // and screen-reader text. Fixing the formatter in `heat-colours.ts` alone
+    // would have abbreviated the tooltip and left the number on screen exactly
+    // as reported — which is why this file had its own `round` and why that copy
+    // is now gone.
+    expect(
+      legendModel({ threshold: 1, max: 27992463056732.17 }, "walkable", false)
+        .maxLabel,
+    ).toBe("2.8e13");
+  });
+
+  it("uses ONE formatter for the label and the description", () => {
+    // The duplicate `round` in this file is what let the two drift apart. They
+    // are now the same function, and this pins that rather than the coincidence
+    // that both currently abbreviate.
+    const model = legendModel({ threshold: 1, max: 1.4e12 }, "walkable", false);
+    expect(model.maxLabel).toBe("1.4e12");
+    expect(model.description).toContain("1.4e12");
+  });
+
+  it("abbreviates the empty-state message too, so no path prints the long number", () => {
+    // `emptyMessage` names the threshold, and a large threshold off the rule
+    // sheet would otherwise reproduce the defect on the one screen where there
+    // is nothing else to look at.
+    const model = legendModel({ threshold: 250000, max: 250000 }, "x", false);
+    expect(model.emptyMessage).toContain("2.5e5");
+    expect(model.emptyMessage).not.toContain("250000");
+  });
+
   it("gives every ramp swatch a distinct colour, low to high", () => {
     const swatches = legendModel(SCALE, "walkable", false).ramp;
     expect(swatches.length).toBeGreaterThanOrEqual(5);

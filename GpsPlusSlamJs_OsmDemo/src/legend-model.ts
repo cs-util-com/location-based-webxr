@@ -26,6 +26,7 @@
 
 import {
   describeScale,
+  formatScore,
   heatColour,
   toHex,
   type HeatScale,
@@ -170,10 +171,12 @@ const BELOW_THRESHOLD_COLOUR = "#3a3358";
 // looks like, so the raw constants have no caller outside this file. Exporting
 // them again would be re-opening the second colour path this item closed.
 
-/** Multiplicative scores produce 3.6000000000000005; round for display only. */
-function round(value: number): number {
-  return Math.round(value * 100) / 100;
-}
+// FORMATTING LIVES IN `heat-colours.ts` (DEC-R6b-6). This file used to carry its
+// own `round`, and the duplication had a cost rather than being untidy: the
+// sixth session's "von 1 bis <very long number>" is `maxLabel`, built HERE, while
+// `describeScale` is only the strip's title. Fixing one copy would have
+// abbreviated the tooltip and left the number on screen exactly as reported.
+// One `formatScore`, used by both.
 
 /**
  * Builds the legend for one scale and category.
@@ -215,13 +218,13 @@ export function legendModel(
   return {
     category,
     ramp,
-    minLabel: String(round(scale.threshold)),
-    maxLabel: String(round(scale.max)),
+    minLabel: formatScore(scale.threshold),
+    maxLabel: formatScore(scale.max),
     bands: showBelowThreshold ? bandsFor(scale) : [],
     description: describeScale(scale),
     ...(empty
       ? {
-          emptyMessage: `no cell scores above ${round(scale.threshold)} for ${category} here`,
+          emptyMessage: `no cell scores above ${formatScore(scale.threshold)} for ${category} here`,
         }
       : {}),
   };
@@ -253,7 +256,7 @@ function bandsFor(scale: HeatScale): LegendStop[] {
       kind: "below",
       colour: BELOW_THRESHOLD_COLOUR,
       fill: true,
-      label: `up to ${round(scale.threshold)} — below the bar`,
+      label: `up to ${formatScore(scale.threshold)} — below the bar`,
     },
   ];
 }

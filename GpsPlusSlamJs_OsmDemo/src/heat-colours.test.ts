@@ -121,6 +121,81 @@ describe("describeScale", () => {
   });
 });
 
+describe("abbreviating the tail (DEC-R6b-6)", () => {
+  /**
+   * WHY THIS EXISTS. The sixth session read the legend as "von 1 bis" followed
+   * by a very long number: a screenshot showed `walkable 1 … 27992463056732.17`.
+   * That is not an outlier — the score is a PRODUCT of rule factors and products
+   * compound, so round 6's corpus measurement found `walkable` at Cologne
+   * spanning twelve orders of magnitude (p99 = 8.1e6, max = 1.4e12).
+   *
+   * A full-precision decimal is the wrong presentation for that quantity at
+   * almost any position, so above 1e4 the legend switches to exponential.
+   */
+
+  it("leaves ordinary scores alone, because they are what the legend is FOR", () => {
+    // "1 is the identity, 10 is one strong rule, 100 is two" has to stay
+    // readable — abbreviating those would trade the legend's whole purpose for
+    // a tidier tail.
+    expect(describeScale({ threshold: 1, max: 1 })).toContain("1");
+    expect(describeScale({ threshold: 1, max: 9 })).toContain("9");
+    expect(describeScale({ threshold: 1, max: 100 })).toContain("100");
+    expect(describeScale({ threshold: 1, max: 3500 })).toContain("3500");
+  });
+
+  it("never renders the identity as 1.00", () => {
+    // The rejected "always 3 significant figures" option would have. `1` is the
+    // number the legend names as the identity, and `1.00` reads as a measurement
+    // rather than as the reference point.
+    const text = describeScale({ threshold: 1, max: 1 });
+    expect(text).not.toContain("1.00");
+  });
+
+  it("abbreviates the session's actual number", () => {
+    // The screenshot value, which is what made this a finding at all.
+    const text = describeScale({ threshold: 1, max: 27992463056732.17 });
+    expect(text).toMatch(/2\.8e13/);
+    expect(text).not.toContain("27992463056732");
+  });
+
+  it("abbreviates the measured corpus maximum", () => {
+    expect(describeScale({ threshold: 1, max: 1.4e12 })).toMatch(/1\.4e12/);
+    expect(describeScale({ threshold: 1, max: 8.1e6 })).toMatch(/8\.1e6/);
+  });
+
+  it("switches exactly at 1e4, pinned from BOTH sides", () => {
+    // The boundary is the part a later reader cannot infer, and the part most
+    // likely to drift. 1e4 rather than 1e5 (DEC-R6b-6): past four digits the
+    // number has stopped being one a human reads and become a magnitude.
+    expect(describeScale({ threshold: 1, max: 9999 })).toContain("9999");
+    expect(describeScale({ threshold: 1, max: 10000 })).toMatch(/1e4/);
+  });
+
+  it("keeps the abbreviation short — mantissa to one decimal, no padding", () => {
+    // The point is a stable, short legend line. `1.0e5` and `1e5` are both fine;
+    // `1.234568e5` is not, because it reproduces the problem in a new notation.
+    const text = describeScale({ threshold: 1, max: 123456.789 });
+    expect(text).toMatch(/1\.2e5/);
+    expect(text).not.toMatch(/\d{5}/);
+  });
+
+  it("abbreviates the THRESHOLD too when the rule sheet makes it large", () => {
+    // The threshold is printed by the same line and comes from the same
+    // compounding scale, so an abbreviation that only covered `max` would leave
+    // the identical defect one field to the left.
+    const text = describeScale({ threshold: 250000, max: 1.4e12 });
+    expect(text).toMatch(/2\.5e5/);
+    expect(text).not.toContain("250000");
+  });
+
+  it("survives a non-finite max without printing Infinity at the user", () => {
+    // Defensive: `heatScale` filters non-finite scores, but `describeScale` is
+    // exported and a caller could hand it anything.
+    const text = describeScale({ threshold: 1, max: Number.POSITIVE_INFINITY });
+    expect(text).not.toContain("Infinity");
+  });
+});
+
 describe("a non-positive threshold from the rule table", () => {
   /**
    * WHY THIS MATTERS. Thresholds come from the live Google Sheet through

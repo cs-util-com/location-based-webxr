@@ -22,7 +22,13 @@
 - **`0` is not the bottom of the ramp.** `VETO_COLOUR` is deliberately outside the viridis palette: a hard veto is a categorical statement ("never here"), not a low score, and colouring it as the ramp's dark end would put it on the same axis as a merely-weak cell. Telling those two apart is the entire point of DEC-7.
 - **Total over every scale the sheet can produce.** Thresholds come from a publicly editable Google Sheet via `toNumber`, which accepts `0` and negatives — and `heatFraction` has a documented `#NaNNaNNaN` scar from exactly that. A property test asserts no colour is ever malformed and no label ever contains `NaN` or `Infinity`, for hostile scales including `threshold = 0` and `max < threshold`.
 - **The category string is passed through verbatim, never sanitised.** `legend-view.ts` avoids the HTML sink entirely by building nodes with `textContent`; a model that rewrote the name would make the on-screen label disagree with the `<select>`.
-- Labels round to 2 decimals: multiplicative scores print as `3.6000000000000005`.
+- **Labels go through `heat-colours.ts`'s `formatScore`, not a local `round`.**
+  Two decimals below 1e4 (multiplicative scores print as `3.6000000000000005`),
+  exponential above it (DEC-R6b-6). **`minLabel` and `maxLabel` are the numbers
+  the user actually reads** — `description` is only the strip's title — which is
+  why this file having its own copy of `round` meant the sixth session's
+  over-long number survived a fix applied to `describeScale` alone. The copy is
+  gone; do not add another.
 
 ## Examples
 

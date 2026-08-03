@@ -10,9 +10,24 @@ read — and stating the scale so the picture can be checked.
 - `heatScale(scores, threshold): HeatScale`
 - `heatFraction(score, scale): number` — 0..1, logarithmic
 - `heatColour(score, scale): Rgb`, `toHex(rgb): string`
-- `describeScale(scale): string`
+- `describeScale(scale): string` — the strip's **title and screen-reader text**,
+  not the numbers on screen. Those are `legend-model.ts`'s `minLabel`/`maxLabel`.
+- `formatScore(value): string` — one score, as the legend prints it. Plain to two
+  decimals below 1e4, exponential with a one-decimal mantissa above it, `"—"` for
+  a non-finite value.
 
 ## Invariants & assumptions
+
+- **`formatScore` is the single formatter, and the duplication it replaced was a
+  live defect (DEC-R6b-6).** `legend-model.ts` carried its own `round`, so the
+  sixth session's "von 1 bis 27992463056732.17" lived in a different file from
+  `describeScale`. Abbreviating only here would have fixed the tooltip and left
+  the reported number on screen unchanged. Do not reintroduce a second copy.
+- **The switch is at 1e4, and it applies to the threshold as well as the max.**
+  Both come off the same compounding scale — the score is a product of rule
+  factors, measured at twelve orders of magnitude across one site — so
+  abbreviating one field would leave the identical defect in the other. The
+  accepted cost is that `12000` prints as `1.2e4`.
 
 - **The ramp is LOGARITHMIC above the threshold, and that is the whole point.**
   The score is a product, so equal ratios must get equal colour steps. A linear
