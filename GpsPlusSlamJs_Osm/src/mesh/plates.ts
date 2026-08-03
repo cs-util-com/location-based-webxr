@@ -199,7 +199,17 @@ function plateMesh(
     const b = indices[triangulated.indices[i + 1] ?? 0];
     const c = indices[triangulated.indices[i + 2] ?? 0];
     if (a === undefined || b === undefined || c === undefined) continue;
-    builder.triangle(a, b, c);
+    // REVERSED relative to the triangulator's output, exactly as
+    // `region-slabs.ts` does and for the same reason: `flatShading` recomputes
+    // the face normal from the WINDING and ignores the per-vertex normals, so
+    // an unreversed plate is lit from beneath — black under a low sun whatever
+    // its material colour says. That is very likely what the sixth testing
+    // session saw as huge black polygons on the Heidelberg hills.
+    //
+    // The straight-up normal written below is therefore not what was keeping
+    // plates lit, and never was. It is dead data (see `plateVertex`), and the
+    // winding is the thing that matters.
+    builder.triangle(a, c, b);
   }
 
   // `forcedEars` FORWARDED, not dropped. It is the triangulator's honesty flag —

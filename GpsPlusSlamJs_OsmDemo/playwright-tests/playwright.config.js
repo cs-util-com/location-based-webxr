@@ -47,7 +47,30 @@ export default defineConfig({
   // that matters is the perf overlay's frame-ms readout on a real device, which
   // is F39 and is still not taken — so the honest position is that the e2e cost
   // is real, is measured, and is an upper bound rather than the answer.
-  timeout: 120_000,
+  // RAISED 120 s -> 180 s ON 2026-08-03, on an owner decision, and the reason to
+  // record it is that this is the SECOND raise and it is treating a symptom.
+  //
+  // Measured across five full gate runs in one day, same machine, same commit
+  // range: three were RED, a different victim each time, every one green
+  // standalone. Wall-clock swung 7.6 -> 9.9 -> 11.5 -> 8.4 min. Two distinct
+  // failure modes appeared:
+  //
+  // - The known widening race (F42) — an assertion comparing a stashed frame
+  //   against a later one while the scored working set is still filling rings.
+  //   A longer budget does not fix this; it only gives the widening more time
+  //   to finish, which happens to make it pass more often.
+  // - **`Tearing down "context" exceeded the test timeout`** — new, and NOT an
+  //   assertion. Three tests hit it in one run. A teardown that outruns the
+  //   budget points at WebGL context cleanup under contention rather than at
+  //   anything the app asserts.
+  //
+  // **What this raise buys and what it hides.** It buys a gate that goes green
+  // often enough to be usable while §4's model rebuild lands, which is why it
+  // was taken. It hides the trend: the budget went 90 -> 120 in §2 and now
+  // 120 -> 180, while the honest instrument — F39's frame-ms readout on a real
+  // device — has still never been taken. **If a third raise is ever proposed,
+  // that is the signal to fix the suite instead.**
+  timeout: 180_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

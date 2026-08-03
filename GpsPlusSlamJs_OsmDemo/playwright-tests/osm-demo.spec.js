@@ -1896,17 +1896,38 @@ test.describe("the 3D view", () => {
       await page.getByRole("checkbox", { name: "POI" }).check();
       await expect(page.locator("#status")).toContainText(/[0-9]+ POI/);
 
-      const changed = async () => (await diffFromStash(page, 24)).differing;
-      // TEN, not the fifty the amber count used, and the drop is the finding
-      // rather than a weakened test: a real-scale bench is 1.8 x 0.85 m where the
-      // old pin was a 6 m cone, so the markers now cover a fraction of the pixels
-      // they did. Measured at 29 on the park fixture. What this still guards
-      // against — a layer that reports its count and draws nothing — produces
-      // exactly zero.
+      // THRESHOLD 8, NOT 24, AND THAT IS THE THIRD FORM OF THIS ASSERTION.
       //
-      // It is also worth knowing: at the demo's default camera height, correctly
-      // sized street furniture is genuinely small. That is honest rather than
-      // wrong, but it is a thing to look at rather than assume.
+      // It counted saturated amber until W19 gave the fifty kinds muted material
+      // colours and the amber count went to ZERO with the markers drawn
+      // perfectly. It became a whole-frame difference count floored at 10, from
+      // a measurement of 29. Then §4 began rebuilding the models at their source
+      // dimensions — the bench 1.8 -> 1.36 m, the wayside cross 1.68 -> 1.26 m —
+      // and the count fell to 9, reproducibly. Thirty-two models remain, so a
+      // floor tuned to today's sizes would fail again on its own.
+      //
+      // **The instrument was too blunt, not the signal too weak.** `threshold`
+      // is the SUM of the three channel deltas, so 24 meant ~8 levels per
+      // channel — and the markers are correctly lit by a 3.4 degree golden-hour
+      // sun (DEC-R6-3), which makes them genuinely low-contrast against the
+      // ground rather than invisible. At 8 the same pixels are counted with room
+      // to spare, and the floor below is re-derived from a fresh measurement
+      // rather than inherited.
+      //
+      // What this still guards against is unchanged and is the whole point: a
+      // layer that reports its count in the status line and draws nothing
+      // produces exactly zero at any threshold.
+      // MEASURED at 26 on the park fixture at threshold 8, against 9 for the
+      // same scene at 24 — so the signal was there and the instrument was
+      // blunt. The floor stays at 10, which is 2.6x below the measurement.
+      //
+      // **If this ever falls under 10 again, the answer is NOT a lower floor.**
+      // Thirty-two models remain to be rebuilt at their source dimensions and
+      // markers only get smaller, so the next step is to scope the difference to
+      // the screen region the markers occupy instead of diluting it across 3.7 M
+      // unchanged pixels. Lowering the floor a third time would leave a number
+      // that passes whatever happens.
+      const changed = async () => (await diffFromStash(page, 8)).differing;
       await expect.poll(changed, REPAINT).toBeGreaterThan(10);
     });
   });

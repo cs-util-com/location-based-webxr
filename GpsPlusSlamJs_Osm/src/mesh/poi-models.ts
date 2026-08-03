@@ -61,37 +61,50 @@ export interface PoiModel {
 }
 
 /**
- * The HOUSE-STYLE palette (§4, DEC-R6-15), from `poi-markers-gallery (2)`.
+ * The one house colour with no equivalent among our material names.
  *
- * ADOPTED WHOLESALE RATHER THAN BLENDED WITH OURS, because a shared palette is
- * most of what makes fifty markers look like siblings — §4.5 records that a
- * large part of what distinguished one gallery's model from another's was
- * palette and lighting rather than shape. Values are that prototype's own, so a
- * rebuilt model can be compared against its source without a colour conversion
- * standing between them.
- *
- * The prototype's own note is worth carrying: these are sRGB hex literals. Our
- * `paint()` divides by 255 into the same sRGB space three's `Color` uses for a
- * hex, so the two agree; do NOT "correct" this to a linear conversion.
- *
- * Used by the models §4 rebuilds. The older constants below stay for the
- * sixteen kinds §4.3 leaves alone, so an untouched model is untouched.
+ * The rest of the house palette is reachable through the repointed constants
+ * below — `TIMBER` is `woodMid`, `DARK_STEEL` is `metalDark`, `STONE` is
+ * `stoneLight` — so only the second stone tone needs a name of its own. Two
+ * names for one value is how a palette starts drifting.
  */
-const H_WOOD_MID = 0x8a6a4f;
-const H_METAL_DARK = 0x5a6167;
+const STONE_MID = 0x6e7b85;
 
-/** Muted material palette — timber, steel, paint, stone, water, greenery. */
-const TIMBER = 0x9c7b4f;
-const STEEL = 0x8d949e;
-const DARK_STEEL = 0x5d636d;
-const PAINT_RED = 0xa8503f;
-const PAINT_BLUE = 0x4a6c8c;
-const PAINT_GREEN = 0x5a7d55;
-const STONE = 0xa8a49b;
-const GLASS = 0x7f97a8;
-const WATER = 0x4f7f9c;
-const ASPHALT = 0x6d7078;
-const SAND = 0xbfae86;
+/**
+ * The material palette, REPOINTED AT THE HOUSE VALUES (§4, DEC-R6-27).
+ *
+ * These names are ours and the values are now `poi-markers-gallery (2)`'s. The
+ * rename rather than a redesign is the point: our constants were already the
+ * same materials by name — timber, steel, stone, water — so pointing each at
+ * its house equivalent moves all FIFTY models onto one palette in one edit,
+ * including the sixteen §4.3 leaves alone geometrically.
+ *
+ * **WHY ALL FIFTY AND NOT JUST THE REBUILT 34.** DEC-R6-11 rejected copying
+ * each model from its own source precisely to avoid "five palettes and five
+ * primitive libraries in one scene", and leaving sixteen kinds on the old
+ * constants would have reintroduced two of them for the whole duration of the
+ * rebuild — in the gallery that §4.6 says is the surface for judging every
+ * model against its source.
+ *
+ * **Accepted cost:** the sixteen untouched kinds change colour without
+ * individual judgement. A few may have been deliberately tuned away from their
+ * material default, so `/gallery.html` is worth one look for a kind that now
+ * reads wrong.
+ *
+ * sRGB hex, as three's `Color` and our `MeshBuilder.paint` both read it. Do NOT
+ * convert these to linear.
+ */
+const TIMBER = 0x8a6a4f;
+const STEEL = 0xa6adb2;
+const DARK_STEEL = 0x5a6167;
+const PAINT_RED = 0xa8543f;
+const PAINT_BLUE = 0x55697c;
+const PAINT_GREEN = 0x9baf8e;
+const STONE = 0x8894a0;
+const GLASS = 0x2b3540;
+const WATER = 0x17878a;
+const ASPHALT = 0xa99e8c;
+const SAND = 0xc4b9a6;
 
 /** Every model, in ranking order. Built once at module load. */
 function models(): PoiModel[] {
@@ -139,7 +152,7 @@ function models(): PoiModel[] {
     //
     // Three slats, not one slab: the slatting IS the detail, and the previous
     // model (a `slabOnLegs` plus one backrest box) read as a plinth.
-    model("amenity=bench", H_WOOD_MID, (b) => {
+    model("amenity=bench", TIMBER, (b) => {
       // Seat: three slats running the length, with gaps between them.
       for (let i = 0; i < 3; i++) {
         box(b, 1.36, 0.05, 0.11, 0.415, 0, -0.13 + i * 0.13);
@@ -150,7 +163,7 @@ function models(): PoiModel[] {
       }
       // The frame, in metal rather than timber — which is the whole reason this
       // model needs per-face painting and could not be expressed before §4.
-      b.paint(H_METAL_DARK);
+      b.paint(DARK_STEEL);
       for (const s of [-1, 1]) {
         box(b, 0.06, 0.44, 0.4, 0, s * 0.58, -0.03);
         box(b, 0.06, 0.32, 0.05, 0.44, s * 0.58, -0.2);
@@ -404,11 +417,31 @@ function models(): PoiModel[] {
       box(b, 1.4, 1, 1.6, 5.2, -1.6, 1.4);
     }),
     // 45 — a wayside cross: a cross on a stepped base.
+    // REBUILT IN THE HOUSE STYLE (§4, DEC-R6-15).
+    //
+    // SOURCE: `poi-markers-gallery (2)`'s `k_wayside_cross`. §4.3 lists this
+    // kind under D and L; DEC-R6-15 resolves the tie to L, whose vocabulary is
+    // the one being adopted.
+    //
+    // Plinth stripped and every `y` converted from the source's box CENTRE to
+    // our BASE. This one ports EXACTLY — it is pure boxes with no rotated
+    // parts, which is why it went in the first batch (see §14.16).
+    //
+    // The stepped base and the two-tone stone are the detail the old model had
+    // none of: it was four boxes in one colour, which reads as a signpost.
     model("historic=wayside_cross", STONE, (b) => {
-      box(b, 0.8, 0.2, 0.8);
-      box(b, 0.6, 0.2, 0.6, 0.2);
-      box(b, 0.2, 1.7, 0.16, 0.4);
-      box(b, 0.9, 0.18, 0.16, 1.5);
+      // A two-step stone base, darker than the shaft above it.
+      b.paint(STONE_MID);
+      box(b, 0.46, 0.09, 0.38, 0);
+      box(b, 0.34, 0.08, 0.28, 0.09);
+      // The pedestal, the shaft and the cross-arm, in lighter stone.
+      b.paint(STONE);
+      box(b, 0.17, 0.32, 0.15, 0.17);
+      box(b, 0.13, 0.72, 0.12, 0.49);
+      box(b, 0.44, 0.13, 0.12, 0.955);
+      // The capstone, back to the darker stone.
+      b.paint(STONE_MID);
+      box(b, 0.15, 0.05, 0.13, 1.21);
     }),
     // 46 — `historic=yes`, unspecified: a plain marker stone. Deliberately
     // featureless, because the tag itself says nothing more than "old".

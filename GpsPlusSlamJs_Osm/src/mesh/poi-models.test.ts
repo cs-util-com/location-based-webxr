@@ -297,6 +297,27 @@ describe("the §4 rebuilt models", () => {
     expect(distinctColours("amenity=bench").size).toBeGreaterThanOrEqual(2);
   });
 
+  it("builds `historic=wayside_cross` as a stepped, two-tone stone", () => {
+    // Ported EXACTLY from `poi-markers-gallery (2)`'s `k_wayside_cross` — pure
+    // boxes, no rotated parts, so nothing had to be approximated. Six boxes:
+    // a two-step base, a pedestal, a shaft, a cross-arm and a capstone,
+    // reaching 1.26 m.
+    //
+    // The old model was four boxes in one colour and 1.68 m tall, which reads
+    // as a signpost rather than as a wayside cross. The cross-arm is what makes
+    // it legible, and it has to be WIDER than the shaft to read at all.
+    const { lo, hi } = boundsOf("historic=wayside_cross");
+    expect(hi[Y] as number).toBeCloseTo(1.26, 2);
+    expect(lo[Y] as number).toBeCloseTo(0, 6);
+    // The arm spans 0.44 m against a 0.13 m shaft.
+    expect((hi[X] as number) - (lo[X] as number)).toBeCloseTo(0.46, 2);
+    expect(poiModelFor("historic=wayside_cross")?.mesh.triangleCount).toBe(
+      6 * 12,
+    );
+    // Two stone tones, which is the detail one colour per model could not say.
+    expect(distinctColours("historic=wayside_cross").size).toBe(2);
+  });
+
   it("gives the bench slats rather than one solid slab", () => {
     // The slatting IS the detail. A single box of the same bounds passes every
     // other assertion here and looks like a plinth — which is what the previous

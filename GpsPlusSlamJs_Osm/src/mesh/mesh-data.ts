@@ -140,6 +140,86 @@ export class MeshBuilder {
     return this.cx;
   }
 
+  /**
+   * How a part is placed: rotated about its own origin, then offset.
+   *
+   * ROTATE-THEN-TRANSLATE, in that order, matching the `Matrix4` the house-style
+   * prototype composes. The other order swings a part around the MODEL origin
+   * instead of its own, which puts a tilted board a metre from where its source
+   * has it — geometry that looks deliberate and is simply misplaced.
+   */
+  private transforms: {
+    rotateX?: number;
+    rotateY?: number;
+    x?: number;
+    y?: number;
+    z?: number;
+  }[] = [];
+
+  /**
+   * Places every following `vertex` under a rotation and offset (§4, DEC-R6-26).
+   *
+   * WHY THE BUILDER AND NOT EACH PRIMITIVE. The house style places parts with a
+   * full transform and 13 of its 52 builders use one; putting it here gives
+   * every primitive rotation at once, with no signature changes and no second
+   * copy of the arithmetic. It is also the same shape as the source, which is
+   * what keeps the remaining ports mechanical.
+   *
+   * **Costs nothing when unused, and that is tested rather than assumed.** With
+   * an empty stack `vertex` takes the identical path it always did, so
+   * buildings, roads, plates and slabs are bit-for-bit unchanged.
+   */
+  pushTransform(transform: {
+    rotateX?: number;
+    rotateY?: number;
+    x?: number;
+    y?: number;
+    z?: number;
+  }): void {
+    this.transforms.push(transform);
+  }
+
+  /** Ends the innermost `pushTransform`. */
+  popTransform(): void {
+    this.transforms.pop();
+  }
+
+  /** Applies the active transform to a direction or a point, in ENU. */
+  private place(
+    x: number,
+    y: number,
+    z: number,
+    isPoint: boolean,
+  ): [number, number, number] {
+    let [px, py, pz] = [x, y, z];
+    // Innermost last, so an outer transform composes over an inner one the way
+    // a nested matrix stack does.
+    for (let i = this.transforms.length - 1; i >= 0; i--) {
+      const t = this.transforms[i] as (typeof this.transforms)[number];
+      const rx = t.rotateX ?? 0;
+      if (rx !== 0) {
+        const c = Math.cos(rx);
+        const s = Math.sin(rx);
+        [py, pz] = [py * c - pz * s, py * s + pz * c];
+      }
+      const ry = t.rotateY ?? 0;
+      if (ry !== 0) {
+        const c = Math.cos(ry);
+        const s = Math.sin(ry);
+        [px, pz] = [px * c + pz * s, -px * s + pz * c];
+      }
+      // A NORMAL IS A DIRECTION, so it rotates but never translates. Offsetting
+      // it would leave a unit vector pointing at wherever the part happens to
+      // sit, which shades every tilted part as though lit from the origin.
+      if (isPoint) {
+        px += t.x ?? 0;
+        py += t.y ?? 0;
+        pz += t.z ?? 0;
+      }
+    }
+    return [px, py, pz];
+  }
+
   vertex(
     x: number,
     y: number,
@@ -149,6 +229,14 @@ export class MeshBuilder {
     nzv: number,
   ): number {
     const index = this.px.length / 3;
+    // THE IDENTITY PATH IS THE ORIGINAL PATH, byte for byte. Every non-POI mesh
+    // in the package builds with an empty stack, and routing those through the
+    // rotation arithmetic would drift each coordinate by a rounding error that
+    // no test names and every pixel assertion eventually feels.
+    if (this.transforms.length > 0) {
+      [x, y, z] = this.place(x, y, z, true);
+      [nxv, nyv, nzv] = this.place(nxv, nyv, nzv, false);
+    }
     // ENU north arrives as +z and is stored as -z: emitters work in the ENU
     // frame, the buffers are in the RIGHT-HANDED render frame. See the class
     // docstring for why the reflection also forces the winding reversal below.

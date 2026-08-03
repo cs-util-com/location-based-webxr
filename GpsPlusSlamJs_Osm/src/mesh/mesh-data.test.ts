@@ -20,6 +20,131 @@ import { MeshBuilder } from "./mesh-data.js";
  * paints the wrong faces, which looks like a modelling mistake rather than a
  * buffer bug.
  */
+describe("MeshBuilder transforms", () => {
+  /**
+   * WHY THIS EXISTS (§4, DEC-R6-26). The house style places parts with a full
+   * transform — `Parts.push` composes a `Matrix4` from position AND rotation —
+   * and 13 of its 52 builders use one. The tilts are structural rather than
+   * decorative: an information board that is not tilted is a fence panel, and a
+   * viewpoint telescope at 31 degrees becomes a pipe lying on a post.
+   *
+   * THE RISK IS NOT ROTATION, IT IS THE MESHES THAT DO NOT USE IT. Buildings,
+   * roads, plates and slabs all run through this builder, so the identity case
+   * must be a genuine no-op — not "close enough after a matrix multiply". A
+   * silent 1e-16 drift in every building vertex is the kind of change that
+   * shows up as a failing pixel assertion three rounds later.
+   *
+   * The other half is NORMALS. A rotated part whose normals were not rotated
+   * with it is lit as though it were still axis-aligned — the same class of
+   * silent wrongness as the winding inversion §4 just fixed, and invisible in
+   * every count-based assertion.
+   */
+  const cube = (builder: MeshBuilder): void => {
+    const a = builder.vertex(0, 0, 1, 0, 0, 1);
+    const b = builder.vertex(1, 0, 1, 0, 0, 1);
+    const c = builder.vertex(1, 1, 1, 0, 0, 1);
+    builder.triangle(a, b, c);
+  };
+
+  it("is a bit-exact no-op when nothing is rotated", () => {
+    // THE GUARD THAT MATTERS MOST. Every mesh in the package that is not a POI
+    // model goes through here untransformed, and "almost identical" is not good
+    // enough for a buffer that pixel assertions are compared against.
+    const plain = new MeshBuilder();
+    cube(plain);
+    const transformed = new MeshBuilder();
+    transformed.pushTransform({});
+    cube(transformed);
+    transformed.popTransform();
+    expect([...transformed.build().positions]).toEqual([
+      ...plain.build().positions,
+    ]);
+    expect([...transformed.build().normals]).toEqual([
+      ...plain.build().normals,
+    ]);
+  });
+
+  it("rotates positions about X by the RIGHT-HANDED angle given", () => {
+    // THE HANDEDNESS IS PINNED HERE ON PURPOSE, and the first version of this
+    // test had it backwards. A right-handed quarter turn about +X sends
+    // `y' = y cos - z sin`, `z' = y sin + z cos`, so ENU +z (north) goes to
+    // **-y**, not +y. That is three's convention and therefore what the source
+    // prototype's `rx` values mean — porting them against the opposite sign
+    // would tilt every board the wrong way, which reads as a modelling choice
+    // rather than as an error.
+    //
+    // Checked in the BUILT buffer, so it includes the builder's own ENU->render
+    // reflection; asserting on the input would prove nothing about what ships.
+    const builder = new MeshBuilder();
+    builder.pushTransform({ rotateX: Math.PI / 2 });
+    builder.vertex(0, 0, 1, 0, 0, 1);
+    builder.popTransform();
+    const mesh = builder.build();
+    expect(mesh.positions[0]).toBeCloseTo(0, 6);
+    expect(mesh.positions[1]).toBeCloseTo(-1, 6);
+    expect(mesh.positions[2]).toBeCloseTo(0, 6);
+  });
+
+  it("rotates NORMALS with the positions, not just the geometry", () => {
+    // The silent half. A tilted board whose normals stayed axis-aligned is lit
+    // as though it were upright — geometry right, picture wrong, and no
+    // count-based assertion can see it.
+    const builder = new MeshBuilder();
+    builder.pushTransform({ rotateX: Math.PI / 2 });
+    builder.vertex(0, 0, 0, 0, 0, 1);
+    builder.popTransform();
+    const mesh = builder.build();
+    expect(mesh.normals[0]).toBeCloseTo(0, 6);
+    expect(mesh.normals[1]).toBeCloseTo(-1, 6);
+    expect(mesh.normals[2]).toBeCloseTo(0, 6);
+  });
+
+  it("keeps a rotated normal unit length", () => {
+    // A rotation preserves length by definition, so a non-unit result means the
+    // maths is wrong rather than the input. Cheap, and it pins the whole
+    // arithmetic rather than one axis of it.
+    const builder = new MeshBuilder();
+    builder.pushTransform({ rotateX: 0.37, rotateY: -1.1 });
+    builder.vertex(0, 0, 0, 0.6, 0.8, 0);
+    builder.popTransform();
+    const mesh = builder.build();
+    const [nx = 0, ny = 0, nz = 0] = mesh.normals;
+    expect(Math.hypot(nx, ny, nz)).toBeCloseTo(1, 6);
+  });
+
+  it("restores the previous transform on pop, so parts do not accumulate", () => {
+    // A model tilts one part and then carries on with the rest. If `pop` did
+    // not restore, every part after the first tilted one would inherit the
+    // tilt — which looks like a modelling mistake in the parts that follow
+    // rather than a bug in the builder.
+    const builder = new MeshBuilder();
+    builder.pushTransform({ rotateX: Math.PI / 2 });
+    builder.vertex(0, 0, 1, 0, 0, 1);
+    builder.popTransform();
+    builder.vertex(0, 0, 1, 0, 0, 1);
+    const mesh = builder.build();
+    // The second vertex is untouched: ENU +z stored as render -z.
+    expect(mesh.positions[3]).toBeCloseTo(0, 6);
+    expect(mesh.positions[4]).toBeCloseTo(0, 6);
+    expect(mesh.positions[5]).toBeCloseTo(-1, 6);
+  });
+
+  it("offsets a rotated part so it can be placed as well as tilted", () => {
+    // The source composes position AND rotation in one matrix, and the order is
+    // rotate-then-translate. Applying them the other way round swings a part
+    // around the model origin instead of its own, which puts a tilted board a
+    // metre from where the source has it.
+    const builder = new MeshBuilder();
+    builder.pushTransform({ rotateX: Math.PI / 2, y: 2 });
+    builder.vertex(0, 0, 1, 0, 0, 1);
+    builder.popTransform();
+    const mesh = builder.build();
+    // Rotate first: ENU +z -> -y. Then offset: -1 + 2 = 1. Translating BEFORE
+    // rotating would give -2 instead, swinging the part around the model origin.
+    expect(mesh.positions[1]).toBeCloseTo(1, 6);
+  });
+});
+
 describe("MeshBuilder colours", () => {
   const triangle = (builder: MeshBuilder): void => {
     const a = builder.vertex(0, 0, 0, 0, 1, 0);

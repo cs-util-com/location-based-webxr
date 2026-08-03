@@ -10,7 +10,8 @@ What a mesh IS — the buffer type and the builder that accumulates one.
   (`Uint32Array`), `triangleCount`, `forcedEars`, and the optional
   `colours` (`Float32Array | undefined`)
 - `class MeshBuilder` — `vertex(x,y,z,nx,ny,nz)`, `triangle(a,b,c)`,
-  `paint(0xrrggbb)`, `append(mesh)`, `build(forcedEars?)`
+  `paint(0xrrggbb)`, `pushTransform({rotateX?, rotateY?, x?, y?, z?})`,
+  `popTransform()`, `append(mesh)`, `build(forcedEars?)`
 
 ## Invariants & assumptions
 
@@ -51,6 +52,29 @@ What a mesh IS — the buffer type and the builder that accumulates one.
   flat. Buildings are all hard edges; shared vertices would mean either smeared
   shading or a second pass to undo it.
 - `append` re-bases indices, so merging never produces an out-of-range index.
+- **A part can be ROTATED as well as placed (§4, DEC-R6-26).**
+  `pushTransform`/`popTransform` are a stack that `vertex` applies, mirroring the
+  `Matrix4` the house-style prototype composes in `Parts.push` — 13 of its 52
+  builders use a rotation, and the tilts are structural (an untilted information
+  board is a fence panel).
+  - **At the BUILDER rather than on each primitive**, so every primitive gains
+    rotation at once with no signature changes and no second copy of the
+    arithmetic. It is also the same shape as the source, which keeps ports
+    mechanical.
+  - **ROTATE, THEN TRANSLATE.** The other order swings a part around the MODEL
+    origin instead of its own, which misplaces a tilted part rather than
+    mis-orienting it — so it looks deliberate.
+  - **Normals rotate but never translate.** A direction that had an offset added
+    would point at wherever the part happens to sit, shading every tilted part
+    as though lit from the origin.
+  - **`rotateX` is RIGHT-HANDED**, matching three and therefore the source's
+    `rx` values: a quarter turn about `+x` sends ENU `+z` to `−y`. The first
+    version of the test asserted the opposite sign; porting against the wrong
+    one tilts every board the wrong way, which reads as a modelling choice.
+  - **The identity path is bit-exact and that is tested, not assumed.** With an
+    empty stack `vertex` takes the path it always did, so buildings, roads,
+    plates and slabs are unchanged to the last bit — "almost identical" is not
+    good enough for buffers that pixel assertions compare against.
 - **Per-face colour is OPT-IN and costs nothing when unused (§4, DEC-R6-11).**
   `paint(0xrrggbb)` sets the colour every subsequent `vertex` carries; until it
   is called, no colour array is allocated at all and `build()` returns

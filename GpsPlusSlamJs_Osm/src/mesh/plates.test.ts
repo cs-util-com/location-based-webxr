@@ -101,6 +101,42 @@ describe("buildAreaPlates", () => {
     expect(plates.map((plate) => plate.feature)).toEqual(["way/1", "way/3"]);
   });
 
+  it("winds every triangle so its face normal points UP", () => {
+    // THE BUG THIS WAS WRITTEN FOR, and it is very likely what the sixth
+    // testing session reported as "riesige schwarze Polygone" on the Heidelberg
+    // hills.
+    //
+    // `flatShading: true` makes three recompute the face normal from the
+    // WINDING and ignore the per-vertex normals entirely — so `plates.ts`
+    // writing a hardcoded straight-up normal proves nothing about how a plate
+    // is lit. Emitted unreversed, every plate's face normal pointed DOWN, which
+    // means the surface is lit from beneath: black under a low sun, whatever
+    // its material colour is.
+    //
+    // `region-slabs.ts` already reverses its triangulator output for exactly
+    // this reason and carries a comment saying so; `plates.ts` never got the
+    // same treatment, and nothing compared them. Same defect class as the POI
+    // primitives' inverted winding (see `poi-primitives.test.ts`) — three
+    // emitters, one property, and only some of them were checked.
+    const [plate] = buildAreaPlates([square(1, { landuse: "grass" })], {
+      frame: FRAME,
+    });
+    if (plate === undefined) throw new Error("no plate built");
+    const mesh = plate.mesh;
+    expect(mesh.triangleCount).toBeGreaterThan(0);
+    for (let i = 0; i + 2 < mesh.indices.length; i += 3) {
+      const xz = (offset: number): [number, number] => {
+        const base = (mesh.indices[i + offset] ?? 0) * 3;
+        return [mesh.positions[base] ?? 0, mesh.positions[base + 2] ?? 0];
+      };
+      const [ax, az] = xz(0);
+      const [bx, bz] = xz(1);
+      const [cx, cz] = xz(2);
+      // The y component of the winding's cross product. Positive is up.
+      expect((bz - az) * (cx - ax) - (bx - ax) * (cz - az)).toBeGreaterThan(0);
+    }
+  });
+
   it("produces real triangles, not an empty mesh", () => {
     const [plate] = buildAreaPlates([square(1, { amenity: "parking" })], {
       frame: FRAME,
