@@ -105,7 +105,7 @@ describe("buildTileQuery", () => {
 
   it("emits a UNION of exact-key statements, not a key regex", () => {
     const q = buildTileQuery(bbox);
-    expect(q).toContain('nwr["highway"];');
+    expect(q).toContain('nw["highway"];');
     expect(q).not.toMatch(/\[~"\^\(/); // the regex form that 504s
   });
 
@@ -121,16 +121,34 @@ describe("buildTileQuery", () => {
     expect(q.match(/^out /gm)).toHaveLength(1);
   });
 
-  it("covers every key in the pinned list, once each", () => {
+  it("covers every key in the pinned list, once each, on BOTH statements", () => {
     const q = buildTileQuery(bbox);
     for (const key of OVERPASS_SELECT_KEYS) {
-      expect(q).toContain(`nwr["${key}"];`);
+      expect(q).toContain(`nw["${key}"];`);
+      expect(q).toContain(
+        `relation["${key}"]["type"~"^(multipolygon|boundary)$"];`,
+      );
     }
-    expect(q.match(/nwr\[/g)).toHaveLength(OVERPASS_SELECT_KEYS.length);
+    expect(q.match(/nw\[/g)).toHaveLength(OVERPASS_SELECT_KEYS.length);
+    expect(q.match(/relation\[/g)).toHaveLength(OVERPASS_SELECT_KEYS.length);
   });
 
-  it("selects nodes, ways and relations in each statement", () => {
-    expect(buildTileQuery(bbox)).toContain("nwr");
+  it("takes only AREAL relations, which is the F32 saving", () => {
+    // THIS REPLACES "selects nodes, ways and relations in each statement", and
+    // the reversal is deliberate rather than a loosening. That rule came from
+    // the `nwr` form, which fetched every relation touching the bbox —
+    // including the route, waterway and power relations that make a res-7 tile
+    // 68.0 MB instead of 21.1 MB.
+    //
+    // `buildFeatureIndex` has ALWAYS refused a relation whose `type` is not
+    // areal, so those bytes were fetched, parsed and discarded on the next line.
+    // `score/areal-only-differential.test.ts` pins the consequence against a
+    // captured companion fixture: over the Cologne extract — the corpus's worst
+    // case at 85 dropped relations — 0 of 86 172 cell-category scores change,
+    // and buildings, plates and roads come out bit-identical.
+    const q = buildTileQuery(bbox);
+    expect(q).not.toContain("nwr[");
+    expect(q).toContain('["type"~"^(multipolygon|boundary)$"]');
   });
 
   it("uses `out geom`, so no node-reference resolution is ever needed", () => {
@@ -153,9 +171,9 @@ describe("buildTileQuery", () => {
 
   it("accepts an overridden key list, for a self-hosted or narrowed instance", () => {
     const q = buildTileQuery(bbox, 180, ["building", "highway"]);
-    expect(q).toContain('nwr["building"];');
-    expect(q).toContain('nwr["highway"];');
-    expect(q).not.toContain('nwr["landuse"];');
+    expect(q).toContain('nw["building"];');
+    expect(q).toContain('nw["highway"];');
+    expect(q).not.toContain('nw["landuse"];');
   });
 
   it("rejects an empty key list rather than fetching the whole planet's tags", () => {

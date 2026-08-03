@@ -107,7 +107,7 @@ describe("the request itself", () => {
     expect(body).toContain("[out:json]");
     // A UNION of exact-key statements, not a key regex — the regex form was
     // measured to 504 on every tile size tried (see overpass-query.ts).
-    expect(body).toContain('nwr["highway"];');
+    expect(body).toContain(String.raw`nw["highway"];`);
     expect(body).not.toContain('[~"^(');
     expect(body).toContain("out geom;");
     expect(body).toMatch(/\[bbox:[-\d.]+,[-\d.]+,[-\d.]+,[-\d.]+\]/);
@@ -678,8 +678,8 @@ describe("the select-key list is overridable", () => {
     await source.fetchTile(TILE);
     const init = fetchImpl.mock.calls[0]![1];
     const body = new URLSearchParams(init.body as string).get("data")!;
-    expect(body).toContain('nwr["building"];');
-    expect(body).not.toContain('nwr["landuse"];');
+    expect(body).toContain(String.raw`nw["building"];`);
+    expect(body).not.toContain(String.raw`nw["landuse"];`);
   });
 });
 

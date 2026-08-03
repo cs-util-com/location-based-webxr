@@ -14,7 +14,7 @@ import { cellToBoundary } from "h3-js";
  * keep serving old, wider tiles — or worse, widening it would keep serving old,
  * narrower ones and the missing features would look like unmapped ground.
  */
-export const OVERPASS_SCHEMA_VERSION = 2;
+export const OVERPASS_SCHEMA_VERSION = 3;
 
 /**
  * The OSM keys whose elements are worth fetching.
@@ -157,7 +157,7 @@ export function cellToBoundingBox(cell: string): BoundingBox {
  *
  * ```
  * [out:json][timeout:180][bbox:{south},{west},{north},{east}];
- * (nwr["highway"];nwr["surface"];...);
+ * (nw["highway"];...;relation["highway"]["type"~"^(multipolygon|boundary)$"];...);
  * out geom;
  * ```
  *
@@ -170,7 +170,11 @@ export function cellToBoundingBox(cell: string): BoundingBox {
  * statements use the key index. This one query form is why the project spent a
  * day believing public Overpass instances were saturated.
  *
- * - `nwr` selects nodes, ways and relations in each statement.
+ * - **`nw` for nodes and ways, plus a SEPARATE areal-relation statement per key**
+ *   (F32, adopted 2026-08-03). It was `nwr`, which took every relation touching
+ *   the bbox — and that is the whole difference between 68.0 MB and 21.1 MB per
+ *   res-7 tile. See the body for the measurement and for why it is provably a
+ *   no-op on output.
  * - **One union block, one trailing `out`** — the union is a set, so each
  *   element is returned exactly once. (An earlier measurement recorded the
  *   union as duplicating elements; that was an artefact of running the
@@ -207,7 +211,32 @@ export function buildTileQuery(
   const { south, west, north, east } = bbox;
   return [
     `[out:json][timeout:${timeoutSeconds}][bbox:${south},${west},${north},${east}];`,
-    `(${keys.map((key) => `nwr["${key}"];`).join("")});`,
+    // AREAL-ONLY (F32, adopted 2026-08-03). `nw[key]` selects nodes and ways;
+    // relations are taken only when they are `multipolygon` or `boundary`.
+    //
+    // **MEASURED 3.2x SMALLER AT THE SAME LATENCY.** The 2026-08-03 sweep put
+    // this at 21.1 MB per res-7 tile against the previous `nwr` form's 68.0 MB,
+    // with a median total time of 20 s against 23 s — and two independent sweep
+    // runs agreed on both figures to three significant figures.
+    //
+    // **AND IT IS PROVABLY A NO-OP ON OUTPUT**, which is the part that made it
+    // adoptable rather than merely attractive. §0.3 of the round-6 plan named
+    // the hazard as "drops route, waterway and power relations that currently
+    // arrive carrying scoring tags" — but `buildFeatureIndex` ALREADY refuses
+    // any relation whose `type` is not areal, so the scorer never saw one.
+    // `areal-only-differential.test.ts` reconstructs the old payload from a
+    // captured companion fixture and pins the result: over the Cologne extract,
+    // the worst case in the corpus at 85 dropped relations, **0 of 86 172
+    // cell-category scores change, and buildings, plates and roads come out
+    // bit-identical.** The bytes this removes were fetched, parsed and thrown
+    // away on the next line.
+    //
+    // The one thing to watch: if a future rule ever needs a `type=route`,
+    // `waterway` or `power` relation, this query stops delivering it and the
+    // differential test is what will say so.
+    `(${keys.map((key) => `nw["${key}"];`).join("")}${keys
+      .map((key) => `relation["${key}"]["type"~"^(multipolygon|boundary)$"];`)
+      .join("")});`,
     "out geom;",
   ].join("\n");
 }
