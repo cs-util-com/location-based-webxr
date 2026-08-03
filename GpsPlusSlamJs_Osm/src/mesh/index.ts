@@ -83,9 +83,11 @@ export { POI_KEYS, buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";
 export type { PoiModel } from "./poi-models.js";
 export { POI_MODELS, poiModelFor } from "./poi-models.js";
 export {
+  CHOSEN_VARIANTS,
   LIKED_VARIANTS,
   POI_VARIANTS,
   VARIANT_SOURCES,
+  markerHeightFor,
   poiVariantsFor,
   type PoiVariant,
   type VariantSource,

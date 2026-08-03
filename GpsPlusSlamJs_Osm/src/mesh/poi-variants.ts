@@ -157,6 +157,130 @@ export const LIKED_VARIANTS: readonly {
 ]);
 
 /**
+ * Kinds whose SHIPPED model is a ground marking rather than an object, with the
+ * height of the object a marker actually depicts (DEC-V6).
+ *
+ * WHY THIS TABLE EXISTS, AND WHY IT MUST STAY SHORT. DEC-V5 scales every variant
+ * to the shipped model's height, reasoning that the shipped models are the ones
+ * with a plausibility contract behind them. **That holds only while the shipped
+ * model is an object.** `amenity=parking` ships as a painted bay 0.12 m tall;
+ * its height is not "how tall a parking marker is", and scaling a 3 m sign post
+ * to 0.12 m shrank it by 25x. The owner saw it immediately — _"Faktor 30, 40
+ * kleiner"_ — and two kinds could not be judged at all because of it.
+ *
+ * Every value below is a MEASURED CORRECTION rather than an invented constant:
+ * `grave_yard` and `historic=yes` are the owner's own multipliers ("ein Drittel
+ * so gross", "mindestens dreimal so gross") applied to the shipped height, and
+ * the other two are the real height of the object their liked variants depict.
+ *
+ * **Four entries, and it should stay near four.** A table that grew to cover
+ * every kind would be a second source of truth for how tall things are —
+ * exactly what deriving `heightM` from the geometry was introduced to prevent.
+ */
+const MARKER_HEIGHT_M: Readonly<Record<string, number>> = Object.freeze({
+  // A parking sign on its post, not the bay it stands beside.
+  "amenity=parking": 2.5,
+  // A poolside handrail, not the water surface.
+  "leisure=swimming_pool": 1.0,
+  // "die ist ein Drittel so gross" — 0.86 x 3.
+  "amenity=grave_yard": 0.86 * 3,
+  // "die sollte mindestens dreimal so gross sein" — 1.40 x 3.
+  "historic=yes": 1.4 * 3,
+});
+
+/**
+ * The height a variant of `kind` is scaled to — the shipped model's, unless the
+ * shipped model is a ground marking (DEC-V6).
+ *
+ * Returns 0 for an unknown kind, which `scaledToHeight` treats as "leave it
+ * alone" rather than dividing by it.
+ */
+export function markerHeightFor(kind: string): number {
+  return MARKER_HEIGHT_M[kind] ?? POI_MODELS.get(kind)?.heightM ?? 0;
+}
+
+/**
+ * **The owner's verdict on the gallery** — which version of each kind wins.
+ *
+ * THIS IS THE SPECIFICATION, not a record of one opinion. The whole point of
+ * porting 51 variants was to replace a rule with a look, and this is the answer
+ * that came back: 31 of the 34 contested kinds decided in one pass, spoken
+ * aloud while reading the gallery left to right.
+ *
+ * `"shipped"` means the incumbent won, which Q-V1 anticipated and which happened
+ * twice — `amenity=bench` and `historic=wayside_cross`.
+ *
+ * THREE KINDS ARE STILL UNDECIDED, and two of them for a reason that was our
+ * fault rather than a hard choice:
+ *
+ * - `amenity=parking` and `leisure=swimming_pool` were **unjudgeable** because
+ *   DEC-V6's scale defect crushed their variants. They need a second look once
+ *   that is fixed.
+ * - `amenity=pharmacy` was simply not mentioned.
+ *
+ * `note` carries a requested CHANGE to the winner rather than a reason for
+ * choosing it — those are tracked as work, not as commentary.
+ */
+export const CHOSEN_VARIANTS: readonly {
+  readonly kind: string;
+  /** The winning source, or `"shipped"` when the incumbent won. */
+  readonly winner: VariantSource | "shipped";
+  readonly note?: string;
+}[] = Object.freeze([
+  { kind: "leisure=pitch", winner: "M" },
+  { kind: "amenity=bench", winner: "shipped" },
+  { kind: "amenity=place_of_worship", winner: "L" },
+  {
+    kind: "leisure=park",
+    winner: "D",
+    note: "with the bench from P — the only requested HYBRID of two sources",
+  },
+  { kind: "tourism=information", winner: "D" },
+  {
+    kind: "leisure=playground",
+    winner: "D",
+    note: "the slide sits too high and must come down",
+  },
+  { kind: "amenity=waste_basket", winner: "G" },
+  { kind: "amenity=fuel", winner: "D" },
+  { kind: "amenity=bicycle_parking", winner: "M" },
+  { kind: "amenity=cafe", winner: "L" },
+  { kind: "amenity=fast_food", winner: "M" },
+  { kind: "amenity=shelter", winner: "L" },
+  { kind: "amenity=bank", winner: "D" },
+  { kind: "amenity=recycling", winner: "D" },
+  { kind: "amenity=post_box", winner: "B" },
+  { kind: "historic=memorial", winner: "D" },
+  { kind: "amenity=drinking_water", winner: "D" },
+  { kind: "leisure=picnic_table", winner: "P" },
+  { kind: "tourism=attraction", winner: "L" },
+  { kind: "tourism=artwork", winner: "P" },
+  { kind: "amenity=vending_machine", winner: "D" },
+  { kind: "amenity=bar", winner: "D" },
+  {
+    kind: "amenity=hunting_stand",
+    winner: "L",
+    note: "the ladder is on the wrong side — it is not against the hut",
+  },
+  { kind: "tourism=viewpoint", winner: "L" },
+  { kind: "amenity=waste_disposal", winner: "L" },
+  {
+    kind: "amenity=grave_yard",
+    winner: "D",
+    note: "a third of the size it should be, and the headstones float",
+  },
+  { kind: "historic=archaeological_site", winner: "M" },
+  { kind: "historic=wayside_cross", winner: "shipped" },
+  {
+    kind: "historic=yes",
+    winner: "B",
+    note: "at least three times bigger",
+  },
+  { kind: "amenity=fountain", winner: "D" },
+  { kind: "amenity=parking_entrance", winner: "L" },
+]);
+
+/**
  * The built variants, keyed by kind.
  *
  * EMPTY ENTRIES ARE NOT STORED: a kind with no liked alternative is simply
@@ -307,7 +431,12 @@ function variants(): PoiVariant[] {
     // GROUND FIRST, THEN SCALE. `scaledToHeight` scales about the origin and
     // assumes the base is already there; scaling an un-grounded mesh would
     // multiply its negative dip as well as its height.
-    const mesh = scaledToHeight(groundedMesh(build()), model.heightM);
+    //
+    // THE TARGET IS THE MARKER HEIGHT, NOT THE SHIPPED HEIGHT (DEC-V6). They
+    // are the same for 30 of the 34 kinds; for the four whose shipped model is
+    // a ground marking they are not, and using the shipped height there crushed
+    // the variant by up to 25x.
+    const mesh = scaledToHeight(groundedMesh(build()), markerHeightFor(kind));
     let heightM = 0;
     for (let i = 1; i < mesh.positions.length; i += 3) {
       heightM = Math.max(heightM, mesh.positions[i] as number);

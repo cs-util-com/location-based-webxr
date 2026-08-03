@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { MeshBuilder } from "./mesh-data.js";
+import { MeshBuilder, type MeshData } from "./mesh-data.js";
 import { POI_MODELS } from "./poi-models.js";
 import { B_PALETTE } from "./poi-variants-b.js";
 import { G_PALETTE } from "./poi-variants-g.js";
-import { D_PALETTE } from "./poi-variants-d.js";
+import { D_PALETTE, D_VARIANTS } from "./poi-variants-d.js";
 import { P_PALETTE } from "./poi-variants-p.js";
 import { M_PALETTE } from "./poi-variants-m.js";
-import { L_PALETTE } from "./poi-variants-l.js";
+import { markerHeightFor } from "./poi-variants.js";
+import { L_PALETTE, L_VARIANTS } from "./poi-variants-l.js";
 import {
   LIKED_VARIANTS,
   POI_VARIANTS,
@@ -393,5 +394,231 @@ describe("poiVariantsFor", () => {
     // Sixteen of the fifty are in no liked list. The gallery asks about every
     // kind it draws, so "none" has to be an ordinary answer rather than a throw.
     expect(poiVariantsFor("amenity=nonexistent")).toEqual([]);
+  });
+});
+
+describe("DEC-V6 — the scale target, and the defect that produced it", () => {
+  /**
+   * WHY THIS SUITE EXISTS. DEC-V5 scaled every variant uniformly to the SHIPPED
+   * model's height, on the reasoning that the shipped models are the ones with a
+   * plausibility contract behind them, so taking the target from them makes a
+   * variant real-scale by construction.
+   *
+   * **That reasoning has a hole, and the owner found it by looking.** It holds
+   * only while the shipped model is an OBJECT. For an area kind the shipped
+   * model is a ground MARKING — `amenity=parking` is a painted bay 0.12 m tall —
+   * and its height is not "how tall this thing is". Scaling a 3 m sign post to
+   * 0.12 m shrinks it by 25x. The owner's words were "Faktor 30, 40 kleiner",
+   * and the same defect hit `swimming_pool`, `grave_yard` and `historic=yes`.
+   *
+   * Two of the 34 kinds could not be judged at all because of it, so this was
+   * not a cosmetic bug — it cost a round of review.
+   *
+   * **The height assertion could never have caught this**, because the height is
+   * correct by construction: the variant IS the target height. What is wrong is
+   * that the target was the wrong lever. The FOOTPRINT is what exposes it.
+   */
+  const footprintOf = (mesh: MeshData): number => {
+    let loX = Infinity;
+    let hiX = -Infinity;
+    let loZ = Infinity;
+    let hiZ = -Infinity;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const x = mesh.positions[i] as number;
+      const z = mesh.positions[i + 2] as number;
+      loX = Math.min(loX, x);
+      hiX = Math.max(hiX, x);
+      loZ = Math.min(loZ, z);
+      hiZ = Math.max(hiZ, z);
+    }
+    return Math.max(hiX - loX, hiZ - loZ);
+  };
+
+  it("never scales a variant to a footprint absurdly unlike the shipped one", () => {
+    // THE GUARD THAT WOULD HAVE CAUGHT IT. A variant and the shipped model are
+    // the same real-world thing, so once scaled they should occupy comparable
+    // ground. A factor of 8 is deliberately loose — a diorama vignette legibly
+    // spreads wider than a single post, and this is a smell detector, not a
+    // style rule. All four defects were 20x or worse.
+    const strays: string[] = [];
+    for (const [kind, list] of POI_VARIANTS) {
+      const shipped = POI_MODELS.get(kind);
+      if (shipped === undefined) continue;
+      const base = footprintOf(shipped.mesh);
+      for (const variant of list) {
+        if (variant.mesh === shipped.mesh) continue;
+        const ratio = footprintOf(variant.mesh) / base;
+        if (ratio > 8 || ratio < 1 / 8) {
+          strays.push(`${kind}#${variant.source} ${ratio.toFixed(2)}x`);
+        }
+      }
+    }
+    expect(strays).toEqual([]);
+  });
+
+  it("gives an area kind a marker height rather than its ground marking's", () => {
+    // The four kinds whose shipped model is flat or low enough that its height
+    // says nothing about the object a marker depicts. Pinned as VALUES because
+    // each came from the owner naming the error — "ein Drittel so gross",
+    // "mindestens dreimal so gross" — and a later reader should be able to see
+    // that these are measured corrections rather than invented constants.
+    expect(markerHeightFor("amenity=parking")).toBeGreaterThan(2);
+    expect(markerHeightFor("leisure=swimming_pool")).toBeGreaterThan(0.8);
+    expect(markerHeightFor("amenity=grave_yard")).toBeCloseTo(0.86 * 3, 5);
+    expect(markerHeightFor("historic=yes")).toBeCloseTo(1.4 * 3, 5);
+  });
+
+  it("leaves every other kind on the shipped model's height", () => {
+    // THE OVERRIDE MUST STAY SMALL. DEC-V5's reasoning is still right for the
+    // 30 kinds where the shipped model is an object, and a table that grew to
+    // cover every kind would be a second source of truth for how tall things
+    // are — exactly what `heightM` being DERIVED was introduced to prevent.
+    let overridden = 0;
+    for (const [kind, model] of POI_MODELS) {
+      if (markerHeightFor(kind) !== model.heightM) overridden += 1;
+    }
+    expect(overridden).toBe(4);
+  });
+});
+
+describe("D's transform datum — one bug behind two of the owner's reports", () => {
+  /**
+   * WHAT WENT WRONG, and why it produced two unrelated-looking complaints.
+   *
+   * Every D coordinate is written in the SOURCE's frame, where the plinth top is
+   * at `T = 0.10`, and `bx`/`cylD`/`coneD` strip that `T` as they emit. Six
+   * places also needed a rotation, and each pushed a transform with the source's
+   * absolute `y` — `{ rotateX: 0.6, y: T + 0.36 }` — while the part inside was
+   * still emitted through `bx`, which stripped `T` again. **The transform's own
+   * `T` was never stripped**, so every tilted part in the file sat exactly
+   * `T = 0.10` too high.
+   *
+   * At D's diorama scale that is a sixth of a model, and the registry then
+   * scales it up: on the playground, 0.10 becomes ~0.45 m in the world. The
+   * owner reported it twice without any way to know it was one bug —
+   * _"die Grabsteine fliegen in der Luft"_ and _"die Rutsche ist da zu hoch"_ —
+   * and it also hit the information board's roof and the shelter's roof panels,
+   * which nobody had reached yet.
+   *
+   * These tests run against the RAW `D_VARIANTS` build, before the registry
+   * grounds and rescales, so the numbers are the source's own.
+   *
+   * **`z` IS NEGATED IN THE BUILT BUFFER.** `MeshBuilder.vertex` reflects ENU
+   * onto the render frame, so a part written at `z = 0.1` is selected at
+   * `z = -0.1` below.
+   */
+  // SEPARATE RADII, because a box's vertices sit at its CORNERS rather than at
+  // its centre: selecting the headstone needs an x window wide enough to reach
+  // its corners (0.088) while keeping z tight enough to exclude the footstone
+  // sharing its centre (0.05 against the stone's 0.03).
+  const columnYs = (
+    mesh: MeshData,
+    x: number,
+    z: number,
+    xRadius: number,
+    zRadius: number,
+  ): number[] => {
+    const ys: number[] = [];
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const dx = (mesh.positions[i] as number) - x;
+      const dz = (mesh.positions[i + 2] as number) - z;
+      if (Math.abs(dx) <= xRadius && Math.abs(dz) <= zRadius) {
+        ys.push(mesh.positions[i + 1] as number);
+      }
+    }
+    return ys.sort((a, b) => a - b);
+  };
+
+  it("rests the graveyard's headstones on the grass rather than floating them", () => {
+    // THE STONE IS ISOLATED BY ITS DEPTH. The footstone below it shares the same
+    // x and z centre, so only the 0.06 depth (against the footstone's 0.10)
+    // separates them — hence the tight z window, which keeps the footstone's
+    // faces at |dz| = 0.05 out and the stone's at |dz| = 0.03 in.
+    const build = D_VARIANTS.get("amenity=grave_yard");
+    expect(build).toBeDefined();
+    const ys = columnYs(build?.() as MeshData, -0.26, -0.1, 0.095, 0.031);
+    expect(ys.length).toBeGreaterThan(0);
+    // The grass plate tops out at 0.05, so that is where the stone's foot
+    // belongs — give or take the few millimetres its lean drops one corner by.
+    // With the bug it began at 0.15: the whole `T` in the air.
+    expect(ys[0] as number).toBeGreaterThan(0.02);
+    expect(ys[0] as number).toBeLessThan(0.09);
+  });
+
+  it("puts the playground's slide at the height its source asked for", () => {
+    // The slide bed is the only mustard part, which selects it without guessing
+    // at coordinates. It is symmetric about its own local origin, so however far
+    // it is pitched, its MEAN y is exactly the transform's y — which makes the
+    // mean the precise statement of "the datum is right", where the extremes
+    // also move with the tilt and prove nothing on their own.
+    const build = D_VARIANTS.get("leisure=playground");
+    expect(build).toBeDefined();
+    const mesh = build?.() as MeshData;
+    const colours = mesh.colours;
+    expect(colours).toBeDefined();
+    const target = Math.fround(0xd9 / 255);
+    let total = 0;
+    let count = 0;
+    for (let v = 0; v * 3 < mesh.positions.length; v++) {
+      if (Math.fround(colours?.[v * 3] as number) !== target) continue;
+      total += mesh.positions[v * 3 + 1] as number;
+      count += 1;
+    }
+    expect(count).toBeGreaterThan(0);
+    // The source says `y: T + 0.36`, which is 0.36 once `T` is stripped. The
+    // bug stripped it nowhere and put the bed at 0.46 — and after the registry
+    // scales the playground to 2.72 m that 0.10 becomes ~0.45 m in the world,
+    // which is what the owner saw.
+    expect(total / count).toBeCloseTo(0.36, 2);
+  });
+});
+
+describe("L's hunting stand leans its ladder against the hut", () => {
+  /**
+   * THE OWNER'S REPORT: _"da müsste man allerdings die Leiter spiegeln, die ist
+   * da irgendwie falsch rum, also die ist nicht an dem Häuschen dran"_ — the
+   * ladder is turned the wrong way and does not touch the hut.
+   *
+   * They were right, and the sign is the whole of it. The source tilts the
+   * ladder `rx: 0.22`, which in ENU sends its top toward `+z` — AWAY from the
+   * hut it stands at `z = 0`. A ladder leaning the wrong way still reads as a
+   * ladder from most angles, which is why it survived the port review.
+   *
+   * The assertion is a RELATION, not a coordinate: whatever the tilt and offset
+   * end up being, the top must be nearer the hut than the base, and must reach
+   * it. That survives someone re-tuning the lean later.
+   */
+  it("puts the ladder's top against the hut and its feet out on the ground", () => {
+    const build = L_VARIANTS.get("amenity=hunting_stand");
+    expect(build).toBeDefined();
+    const mesh = build?.() as MeshData;
+    const colours = mesh.colours;
+    expect(colours).toBeDefined();
+
+    // SELECTED BY X, NOT BY COLOUR ALONE. The hut's four legs and its roof are
+    // woodDark too, and the legs run the ladder's whole height — a first version
+    // of this test picked up a leg's foot and compared it against the ladder's
+    // top. The ladder is the only woodDark part centred on x = 0: the legs sit
+    // at x = ±0.13, the roof spans ±0.15, the rung is 0.14 wide.
+    const dark = Math.fround(0x6b / 255);
+    let top = { y: -Infinity, z: 0 };
+    let bottom = { y: Infinity, z: 0 };
+    for (let v = 0; v * 3 < mesh.positions.length; v++) {
+      if (Math.fround(colours?.[v * 3] as number) !== dark) continue;
+      if (Math.abs(mesh.positions[v * 3] as number) > 0.06) continue;
+      const y = mesh.positions[v * 3 + 1] as number;
+      const z = mesh.positions[v * 3 + 2] as number;
+      if (y > top.y) top = { y, z };
+      if (y < bottom.y) bottom = { y, z };
+    }
+    expect(top.y).toBeGreaterThan(bottom.y);
+
+    // The hut is 0.22 deep about z = 0, so its near face is at z = -0.11 in the
+    // built (render-frame) buffer. The ladder's top must reach it; its feet
+    // must stand clear of it, which is what makes it a ladder rather than a
+    // plank glued to a wall.
+    expect(top.z).toBeGreaterThan(bottom.z);
+    expect(top.z).toBeGreaterThan(-0.14);
+    expect(bottom.z).toBeLessThan(-0.15);
   });
 });

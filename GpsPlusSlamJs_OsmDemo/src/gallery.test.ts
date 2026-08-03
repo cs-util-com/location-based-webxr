@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { POI_MODELS, poiVariantsFor } from "gps-plus-slam-osm";
 
-import { galleryPositions } from "./gallery.js";
+import { galleryPositions, rowLabel } from "./gallery.js";
 
 /**
  * The gallery's layout arithmetic (W7, DEC-R6-32).
@@ -28,7 +28,7 @@ describe("galleryPositions", () => {
   });
 
   it("keeps pads from overlapping, on BOTH axes", () => {
-    // The pad is 6.4 m and the pitch is 8 m, so no two centres may be closer
+    // The pad is 6.4 m and the pitch is 11.2 m, so no two centres may be closer
     // than the pad width. A fuel-station canopy overhanging its neighbour's
     // bench is exactly the confusion this page exists to remove — and with
     // variants on z that now has to hold between a kind and its own alternatives
@@ -85,17 +85,21 @@ describe("galleryPositions", () => {
     //   "A 1x50 strip is a valid grid and a useless one: it cannot be framed,
     //    and comparing the first model with the last needs a camera journey."
     //
-    // That is still true — fifty kinds at an 8 m pitch is a 400 m row. It was
-    // reversed under DEC-R6-32 because the square grid used Z for its own rows,
-    // so variants had nowhere unambiguous to go: a variant placed behind a kind
-    // would land on the kind in the next row. Panning is now part of using the
-    // page, accepted deliberately.
+    // That is still true, and MORE so since the owner asked for three times the
+    // clear ground: fifty kinds at an 11.2 m pitch is a 549 m row, up from 400.
+    // It was reversed under DEC-R6-32 because the square grid used Z for its own
+    // rows, so variants had nowhere unambiguous to go: a variant placed behind a
+    // kind would land on the kind in the next row. Panning is now part of using
+    // the page, accepted deliberately — and the wider gaps make it more panning,
+    // which is the trade the owner chose knowing the page.
     const flat = galleryPositions(fifty).flat();
     const width =
       Math.max(...flat.map((at) => at.x)) - Math.min(...flat.map((at) => at.x));
     const depth =
       Math.max(...flat.map((at) => at.z)) - Math.min(...flat.map((at) => at.z));
-    expect(width).toBeCloseTo(49 * 8, 6);
+    // Spelled as pad + gap rather than as a pitch constant, so this reads as the
+    // same arithmetic the layout does instead of as a number to re-copy.
+    expect(width).toBeCloseTo(49 * (6.4 + 1.6 * 3), 6);
     expect(depth).toBe(0);
   });
 
@@ -160,5 +164,76 @@ describe("what the gallery actually offers to compare", () => {
   it("leaves no kind without at least the shipped model", () => {
     expect(rows.every((r) => r.depth >= 1)).toBe(true);
     expect(rows).toHaveLength(50);
+  });
+});
+
+describe("pad spacing", () => {
+  it("leaves three times the clear ground the first layout did", () => {
+    // THE OWNER'S ONE GLOBAL NOTE on the first gallery: "insgesamt bitte mehr
+    // Abstand zwischen den Kacheln, mindestens dreimal so viel Platz lassen".
+    // The original pitch was 8 m over a 6.4 m pad — a 1.6 m gap, which reads as
+    // a grid of touching tiles rather than as one candidate per pad.
+    //
+    // Asserted as a GAP rather than as a pitch, because the pitch is meaningless
+    // without the pad size beside it: someone who later grows the pad would
+    // satisfy a pitch assertion while closing the gap back up.
+    const rows = galleryPositions([1, 1, 1]);
+    const first = rows[0]?.[0];
+    const second = rows[1]?.[0];
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    const gap = Math.abs((second?.x as number) - (first?.x as number)) - 6.4;
+    expect(gap).toBeGreaterThanOrEqual(1.6 * 3);
+  });
+
+  it("opens up the receding axis by the same amount, not just the row", () => {
+    // Variants recede on Z, so a gap widened only on X would leave each kind's
+    // own alternatives as cramped as before — and those are the ones actually
+    // being compared against each other.
+    const slots = galleryPositions([3])[0];
+    expect(slots).toBeDefined();
+    const gap =
+      Math.abs((slots?.[1]?.z as number) - (slots?.[0]?.z as number)) - 6.4;
+    expect(gap).toBeGreaterThanOrEqual(1.6 * 3);
+  });
+});
+
+describe("rowLabel — showing the owner's verdict back to them", () => {
+  /**
+   * WHY THE PAGE CARRIES THE VERDICT. 34 kinds were decided aloud in one pass
+   * and transcribed by ear. A mis-transcription is invisible in a table and
+   * obvious on the model it is attached to, so marking the chosen row makes the
+   * next look at the gallery a check of the RECORD as well as of the models.
+   */
+  it("marks the row the owner chose", () => {
+    expect(rowLabel("amenity=cafe", "L", 4)).toContain("← chosen");
+    expect(rowLabel("amenity=cafe", "D", 4)).not.toContain("← chosen");
+  });
+
+  it("marks the incumbent when the incumbent won", () => {
+    // Q-V1 anticipated this and it happened twice. "shipped" has to be markable
+    // or those two kinds would read as undecided.
+    expect(rowLabel("amenity=bench", "shipped", 2)).toContain("← chosen");
+    expect(rowLabel("amenity=bench", "D", 2)).not.toContain("← chosen");
+  });
+
+  it("leaves an undecided kind unmarked rather than defaulting to shipped", () => {
+    // `amenity=parking` and `leisure=swimming_pool` were unjudgeable because of
+    // the DEC-V6 scale defect, and `amenity=pharmacy` was never mentioned.
+    // "Not yet decided" and "the incumbent won" are different states, and
+    // collapsing them would quietly manufacture three verdicts.
+    for (const kind of [
+      "amenity=parking",
+      "leisure=swimming_pool",
+      "amenity=pharmacy",
+    ]) {
+      expect(rowLabel(kind, "shipped", 3)).not.toContain("← chosen");
+    }
+  });
+
+  it("drops the source suffix for a kind with nothing to compare", () => {
+    // A single-row kind has no alternative, so " · shipped" would be noise on
+    // 16 of the 50 pads.
+    expect(rowLabel("amenity=toilets", "shipped", 1)).toBe("amenity=toilets");
   });
 });

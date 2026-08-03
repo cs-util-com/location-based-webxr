@@ -29,16 +29,34 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
-import { POI_MODELS, poiVariantsFor, type MeshData } from "gps-plus-slam-osm";
-
-/** Metres between pad centres. Wide enough that a fuel canopy cannot overlap. */
-const PITCH_M = 8;
+import {
+  CHOSEN_VARIANTS,
+  POI_MODELS,
+  poiVariantsFor,
+  type MeshData,
+} from "gps-plus-slam-osm";
 
 /** A human, for scale. The one reference that makes every model readable. */
 const HUMAN_HEIGHT_M = 1.8;
 
-/** Pad edge, metres. Slightly under the pitch so the gaps read as gaps. */
+/** Pad edge, metres. Comfortably under the pitch so the gaps read as gaps. */
 const PAD_M = 6.4;
+
+/**
+ * Clear ground between one pad and the next, metres.
+ *
+ * **TRIPLED ON THE OWNER'S FIRST LOOK** — _"insgesamt bitte mehr Abstand
+ * zwischen den Kacheln, mindestens dreimal so viel Platz lassen"_. The original
+ * 1.6 m was derived from the pads not overlapping, which is the wrong bar: at a
+ * 6.4 m pad a 1.6 m gap reads as a grid of touching tiles, and the eye groups
+ * neighbouring kinds together instead of reading each pad as one candidate. The
+ * gap is what separates one comparison from the next, so it is the number that
+ * belongs in a constant of its own.
+ */
+const PAD_GAP_M = 1.6 * 3;
+
+/** Metres between pad centres. Derived, so the gap above is the real control. */
+const PITCH_M = PAD_M + PAD_GAP_M;
 
 /**
  * Where every kind and every one of its variants stands (DEC-R6-32).
@@ -79,6 +97,25 @@ export function galleryPositions(
       z: halfDepth - variantIndex * PITCH_M,
     }));
   });
+}
+
+/**
+ * How one row is labelled — the source, plus a mark when it is the one chosen.
+ *
+ * WHY THE GALLERY SHOWS THE VERDICT BACK. The owner went through 34 kinds in one
+ * pass and named a winner for each; that was transcribed by ear into
+ * `CHOSEN_VARIANTS`, and a mis-transcription is invisible in a table and obvious
+ * on the page. Marking the chosen row turns the next look at the gallery into a
+ * check of the record as well as of the models.
+ *
+ * A kind with no verdict is left unmarked rather than defaulting to the shipped
+ * model, because "not yet decided" and "the incumbent won" are different states
+ * and three kinds really are still undecided.
+ */
+export function rowLabel(kind: string, source: string, rows: number): string {
+  const chosen = CHOSEN_VARIANTS.find((entry) => entry.kind === kind);
+  const mark = chosen?.winner === source ? " ← chosen" : "";
+  return `${kind}${rows > 1 ? ` · ${source}` : ""}${mark}`;
 }
 
 /**
@@ -244,7 +281,7 @@ export function buildGallery(container: HTMLElement): () => void {
       // they are indistinguishable, and "which file was that one from" is
       // exactly the question the comparison has to answer.
       const label = labelFor(
-        `${row.model.kind}${entries.length > 1 ? ` · ${entry.label}` : ""}`,
+        rowLabel(row.model.kind, entry.label, entries.length),
         `${entry.heightM.toFixed(2)} m`,
       );
       label.position.set(0, -1.2, PAD_M / 2);

@@ -520,8 +520,14 @@ export const L_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         bxL(b, 0.28, 0.22, 0.22, L.woodMid, { y: y + 0.45 });
         bxL(b, 0.3, 0.04, 0.24, L.woodDark, { y: y + 0.58, rx: -0.16 });
         qdL(b, 0.2, 0.07, L.windowDark, { y: y + 0.48, z: 0.114 });
-        bxL(b, 0.1, 0.36, 0.02, L.woodDark, { z: 0.2, y: y + 0.2, rx: 0.22 });
-        bxL(b, 0.14, 0.02, 0.02, L.woodDark, { z: 0.185, y: y + 0.14 });
+        // THE LADDER'S LEAN IS INVERTED FROM THE SOURCE (owner's report). L
+        // tilts it `rx: 0.22`, which sends the top toward +z — away from the hut
+        // at z = 0 — so it stood with its head out and its feet under the cabin.
+        // Negating the tilt leans it the way a ladder leans, and the offset
+        // comes in from 0.20 to 0.15 so the top actually reaches the hut's face
+        // rather than stopping 5 cm short of it.
+        bxL(b, 0.1, 0.36, 0.02, L.woodDark, { z: 0.15, y: y + 0.2, rx: -0.22 });
+        bxL(b, 0.14, 0.02, 0.02, L.woodDark, { z: 0.163, y: y + 0.14 });
       }),
   ],
   [

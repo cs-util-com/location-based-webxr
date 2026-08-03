@@ -78,6 +78,41 @@ const D = {
 /** The plinth thickness every D part is offset by. Stripped on port. */
 const T = 0.1;
 
+/**
+ * Runs `build` rotated about a pivot given in **D's own coordinates**.
+ *
+ * WHY THIS EXISTS RATHER THAN A BARE `pushTransform`, and it is the fix for a
+ * bug that produced two separate complaints from the owner. Every D coordinate
+ * is written in the source's frame, where the plinth top is `T`, and `bx` and
+ * friends strip that `T` as they emit. Six places also needed a rotation and
+ * pushed the transform with the source's absolute `y` — `{ rotateX: 0.6,
+ * y: T + 0.36 }` — while the part inside was STILL emitted through `bx`, which
+ * stripped `T` a second time. The transform's own `T` was stripped nowhere, so
+ * every tilted part in the file sat exactly `T` too high: the graveyard's
+ * headstones floated, the playground's slide rode up, and the information
+ * board's and shelter's roofs went with them.
+ *
+ * Routing every transform through here strips `T` in ONE place and lets each
+ * call keep the source's own `T + …` reading, so a port stays checkable against
+ * the prototype line by line. The pivot defaults to the plinth-top origin,
+ * which is what the rotation-only sites want.
+ */
+function turnedD(
+  b: MeshBuilder,
+  turn: { rotateX?: number; rotateY?: number; rotateZ?: number },
+  pivot: { x?: number; y?: number; z?: number },
+  build: () => void,
+): void {
+  b.pushTransform({
+    ...turn,
+    x: pivot.x ?? 0,
+    y: (pivot.y ?? T) - T,
+    z: pivot.z ?? 0,
+  });
+  build();
+  b.popTransform();
+}
+
 /** `box(w,h,d, x,y,z, colour)` in D's order, with `y` as the CENTRE. */
 function bx(
   b: MeshBuilder,
@@ -364,9 +399,9 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         quadD(b, 0.88, 0.07, 0, T + 0.82, 0.251, D.rust);
         // The rear fascia is the same band turned to face the other way. The
         // source spells it `ry: Math.PI`; ours is a transform around the part.
-        b.pushTransform({ rotateY: Math.PI });
-        quadD(b, 0.88, 0.07, 0, T + 0.82, 0.371, D.rust);
-        b.popTransform();
+        turnedD(b, { rotateY: Math.PI }, {}, () => {
+          quadD(b, 0.88, 0.07, 0, T + 0.82, 0.371, D.rust);
+        });
         bx(b, 0.26, 0.44, 0.2, 0, T + 0.22, 0.02, D.metalGalv);
         quadD(b, 0.16, 0.14, 0, T + 0.32, 0.122, D.windowDark);
         bx(b, 0.05, 0.16, 0.05, 0.17, T + 0.44, 0.02, D.metalGalv);
@@ -387,9 +422,9 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         quadD(b, 0.24, 0.05, 0.14, T + 0.66, 0.041, D.windowDark);
         // The little roof is tilted, `rx: -0.24` in the source — an information
         // board's roof that is flat reads as a shelf.
-        b.pushTransform({ rotateX: -0.24, y: T + 0.96, z: 0.02 });
-        bx(b, 0.7, 0.07, 0.16, 0, T, 0, D.roofTeal);
-        b.popTransform();
+        turnedD(b, { rotateX: -0.24 }, { y: T + 0.96, z: 0.02 }, () => {
+          bx(b, 0.7, 0.07, 0.16, 0, T, 0, D.roofTeal);
+        });
       }),
   ],
   [
@@ -399,10 +434,10 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         bx(b, 0.54, 0.09, 0.54, 0, T + 0.045, 0, D.stoneMid);
         bx(b, 0.42, 0.09, 0.42, 0, T + 0.135, 0, D.stoneMid);
         // A four-sided prism turned 45 degrees is the obelisk's diamond plan.
-        b.pushTransform({ rotateY: Math.PI / 4 });
-        cylD(b, 0.1, 0.15, 0.7, 4, 0, T + 0.53, 0, D.stoneLight);
-        coneD(b, 0.145, 0.16, 4, 0, T + 0.96, 0, D.stoneLight);
-        b.popTransform();
+        turnedD(b, { rotateY: Math.PI / 4 }, {}, () => {
+          cylD(b, 0.1, 0.15, 0.7, 4, 0, T + 0.53, 0, D.stoneLight);
+          coneD(b, 0.145, 0.16, 4, 0, T + 0.96, 0, D.stoneLight);
+        });
         quadD(b, 0.14, 0.2, 0, T + 0.5, 0.112, D.ochre);
         bx(b, 0.3, 0.08, 0.14, 0, T + 0.22, 0.26, D.stoneMid);
       }),
@@ -449,13 +484,13 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         bx(b, 0.3, 0.05, 0.3, -0.2, T + 0.44, -0.1, D.metalGalv);
         // THE SLIDE IS THE MODEL. Its bed and rails are pitched `rx: 0.60`;
         // flat, a playground is a deck with three bars beside it.
-        b.pushTransform({ rotateX: 0.6, y: T + 0.36, z: 0.06 });
-        bx(b, 0.24, 0.05, 0.72, 0.14, T, 0, D.mustard);
-        b.popTransform();
-        b.pushTransform({ rotateX: 0.6, y: T + 0.4, z: 0.06 });
-        bx(b, 0.05, 0.15, 0.72, 0.25, T, 0, D.metalGalv);
-        bx(b, 0.05, 0.15, 0.72, 0.03, T, 0, D.metalGalv);
-        b.popTransform();
+        turnedD(b, { rotateX: 0.6 }, { y: T + 0.36, z: 0.06 }, () => {
+          bx(b, 0.24, 0.05, 0.72, 0.14, T, 0, D.mustard);
+        });
+        turnedD(b, { rotateX: 0.6 }, { y: T + 0.4, z: 0.06 }, () => {
+          bx(b, 0.05, 0.15, 0.72, 0.25, T, 0, D.metalGalv);
+          bx(b, 0.05, 0.15, 0.72, 0.03, T, 0, D.metalGalv);
+        });
       }),
   ],
   [
@@ -467,9 +502,9 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         // EACH HEADSTONE LEANS, and the lean is why this reads as a graveyard
         // rather than a car park. `rotateZ` was added for exactly this.
         const stone = (x: number, z: number, h: number, tilt: number): void => {
-          b.pushTransform({ rotateZ: tilt, x, y: T + 0.05 + h / 2, z });
-          bx(b, 0.16, h, 0.06, 0, T, 0, D.stoneLight);
-          b.popTransform();
+          turnedD(b, { rotateZ: tilt }, { x, y: T + 0.05 + h / 2, z }, () => {
+            bx(b, 0.16, h, 0.06, 0, T, 0, D.stoneLight);
+          });
           bx(b, 0.2, 0.05, 0.1, x, T + 0.06, z, D.stoneLight);
         };
         stone(-0.26, 0.1, 0.34, 0.05);
@@ -514,9 +549,9 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         bx(b, 0.34, 1.16, 0.34, -0.26, T + 0.58, 0, D.wallCream);
         bx(b, 0.38, 0.07, 0.38, -0.26, T + 1.19, 0, D.wallCream);
         // A four-sided cone turned 45 degrees is the spire's diamond plan.
-        b.pushTransform({ rotateY: Math.PI / 4 });
-        coneD(b, 0.26, 0.42, 4, -0.26, T + 1.44, 0, D.spireCopper);
-        b.popTransform();
+        turnedD(b, { rotateY: Math.PI / 4 }, {}, () => {
+          coneD(b, 0.26, 0.42, 4, -0.26, T + 1.44, 0, D.spireCopper);
+        });
         crossPlateD(b, 0.11, 0.035, 0.15, -0.26, T + 1.72, 0, D.spireCopper);
         quadD(b, 0.12, 0.24, -0.26, T + 0.42, 0.172, D.windowDark);
         quadD(b, 0.1, 0.16, -0.26, T + 1.0, 0.172, D.windowDark);
@@ -560,12 +595,12 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         bx(b, 0.06, 0.76, 0.06, 0.36, T + 0.38, -0.26, D.metalDark);
         // The roof panels are pitched `rx: 0.14` — a shelter with a flat roof
         // is a table.
-        b.pushTransform({ rotateX: 0.14, y: T + 0.8, z: -0.16 });
-        bx(b, 0.86, 0.09, 0.32, 0, T, 0, D.metalGalv);
-        b.popTransform();
-        b.pushTransform({ rotateX: 0.14, y: T + 0.72, z: 0.16 });
-        bx(b, 0.86, 0.09, 0.32, 0, T, 0, D.metalGalv);
-        b.popTransform();
+        turnedD(b, { rotateX: 0.14 }, { y: T + 0.8, z: -0.16 }, () => {
+          bx(b, 0.86, 0.09, 0.32, 0, T, 0, D.metalGalv);
+        });
+        turnedD(b, { rotateX: 0.14 }, { y: T + 0.72, z: 0.16 }, () => {
+          bx(b, 0.86, 0.09, 0.32, 0, T, 0, D.metalGalv);
+        });
         quadD(b, 0.86, 0.06, 0, T + 0.7, 0.325, D.roofTeal);
         bx(b, 0.74, 0.54, 0.05, 0, T + 0.35, -0.3, D.windowDark);
         bx(b, 0.62, 0.05, 0.16, 0, T + 0.26, -0.2, D.metalGalv);
