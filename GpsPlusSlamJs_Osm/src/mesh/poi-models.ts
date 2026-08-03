@@ -60,6 +60,26 @@ export interface PoiModel {
   readonly mesh: MeshData;
 }
 
+/**
+ * The HOUSE-STYLE palette (§4, DEC-R6-15), from `poi-markers-gallery (2)`.
+ *
+ * ADOPTED WHOLESALE RATHER THAN BLENDED WITH OURS, because a shared palette is
+ * most of what makes fifty markers look like siblings — §4.5 records that a
+ * large part of what distinguished one gallery's model from another's was
+ * palette and lighting rather than shape. Values are that prototype's own, so a
+ * rebuilt model can be compared against its source without a colour conversion
+ * standing between them.
+ *
+ * The prototype's own note is worth carrying: these are sRGB hex literals. Our
+ * `paint()` divides by 255 into the same sRGB space three's `Color` uses for a
+ * hex, so the two agree; do NOT "correct" this to a linear conversion.
+ *
+ * Used by the models §4 rebuilds. The older constants below stay for the
+ * sixteen kinds §4.3 leaves alone, so an untouched model is untouched.
+ */
+const H_WOOD_MID = 0x8a6a4f;
+const H_METAL_DARK = 0x5a6167;
+
 /** Muted material palette — timber, steel, paint, stone, water, greenery. */
 const TIMBER = 0x9c7b4f;
 const STEEL = 0x8d949e;
@@ -101,10 +121,40 @@ function models(): PoiModel[] {
       box(b, 0.12, 2.3, 0.12, 0, -1.5, -2.4);
       box(b, 0.12, 2.3, 0.12, 0, 1.5, -2.4);
     }),
-    // 3 — THE BENCH the notes name: a seat, a back and four legs.
-    model("amenity=bench", TIMBER, (b) => {
-      slabOnLegs(b, 1.8, 0.5, 0.45);
-      box(b, 1.8, 0.4, 0.06, 0.45, 0, -0.22);
+    // 3 — THE BENCH the notes name, REBUILT IN THE HOUSE STYLE (§4, DEC-R6-15).
+    //
+    // SOURCE: `poi-markers-gallery (2)`'s `k_bench`, which the owner rated
+    // "nice details, best version so far" — the only kind in §4.3 with a stated
+    // winner, and the model to study first when learning the vocabulary.
+    //
+    // WHAT WAS STRIPPED: its `plinth(p, 1.56, 0.62)` and the `PL_H` offset on
+    // every part. DEC-R6-8 keeps real-world scale, so the bench stands on the
+    // ground rather than on a 9 cm display slab. Nothing else changed.
+    //
+    // WHAT WAS CONVERTED: the prototype's `y` is a box CENTRE (three's
+    // `BoxGeometry` is centred); our `box` takes a BASE. Every `y` below is
+    // therefore the source's minus half its height — the one transformation
+    // that had to be applied by hand, and the one to check first if this looks
+    // wrong.
+    //
+    // Three slats, not one slab: the slatting IS the detail, and the previous
+    // model (a `slabOnLegs` plus one backrest box) read as a plinth.
+    model("amenity=bench", H_WOOD_MID, (b) => {
+      // Seat: three slats running the length, with gaps between them.
+      for (let i = 0; i < 3; i++) {
+        box(b, 1.36, 0.05, 0.11, 0.415, 0, -0.13 + i * 0.13);
+      }
+      // Backrest: two slats, leaning at the back edge.
+      for (let i = 0; i < 2; i++) {
+        box(b, 1.36, 0.11, 0.05, 0.525 + i * 0.14, 0, -0.2);
+      }
+      // The frame, in metal rather than timber — which is the whole reason this
+      // model needs per-face painting and could not be expressed before §4.
+      b.paint(H_METAL_DARK);
+      for (const s of [-1, 1]) {
+        box(b, 0.06, 0.44, 0.4, 0, s * 0.58, -0.03);
+        box(b, 0.06, 0.32, 0.05, 0.44, s * 0.58, -0.2);
+      }
     }),
     // 4 — a pool: water inset in a surround.
     model("leisure=swimming_pool", WATER, (b) => {

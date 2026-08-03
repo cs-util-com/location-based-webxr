@@ -229,6 +229,85 @@ describe("the POI model registry", () => {
   });
 });
 
+describe("the §4 rebuilt models", () => {
+  /**
+   * WHY THESE ARE PINNED INDIVIDUALLY when the registry contract already
+   * iterates everything. The contract tests catch a model that is broken —
+   * empty, buried, inside out, absurdly sized. They cannot catch a model that
+   * is merely WRONG: a bench with no backrest is a perfectly valid mesh of a
+   * plausible size sitting correctly on the ground.
+   *
+   * So each rebuilt kind gets a few assertions about the thing it is supposed
+   * to be, drawn from the source prototype's own dimensions. These are also the
+   * only place the port is checked against its source at all — §4.3's mapping
+   * says which prototype each kind came from, but nothing else compares the
+   * result to it.
+   */
+  /** Per-axis `[x, y, z]` extents of a kind's mesh, in metres. */
+  const boundsOf = (kind: string): { lo: number[]; hi: number[] } => {
+    const mesh = poiModelFor(kind)?.mesh;
+    if (mesh === undefined) throw new Error(`no model for ${kind}`);
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < mesh.positions.length; i++) {
+      const axis = i % 3;
+      const value = mesh.positions[i] as number;
+      lo[axis] = Math.min(lo[axis] as number, value);
+      hi[axis] = Math.max(hi[axis] as number, value);
+    }
+    return { lo, hi };
+  };
+  const [X, Y, Z] = [0, 1, 2];
+
+  /** The distinct RGB triples a kind's mesh is painted with. */
+  const distinctColours = (kind: string): Set<string> => {
+    const colours = poiModelFor(kind)?.mesh.colours;
+    const seen = new Set<string>();
+    if (colours === undefined) return seen;
+    for (let i = 0; i < colours.length; i += 3) {
+      seen.add(`${colours[i]},${colours[i + 1]},${colours[i + 2]}`);
+    }
+    return seen;
+  };
+
+  it("builds `amenity=bench` at the source's real dimensions", () => {
+    // THE MODEL THE OWNER RATED BEST — "nice details, best version so far" —
+    // and the one §4.3 names as the model to study first, since it is the one
+    // already judged best in the vocabulary being adopted.
+    //
+    // Dimensions come from `poi-markers-gallery (2)`'s `k_bench`, with the
+    // plinth tier stripped per DEC-R6-15 and DEC-R6-8's real-world scale: 1.36 m
+    // of slat, a seat surface at ~0.465 m, a backrest reaching ~0.775 m.
+    const { lo, hi } = boundsOf("amenity=bench");
+    expect((hi[X] as number) - (lo[X] as number)).toBeCloseTo(1.36, 2);
+    expect(hi[Y] as number).toBeCloseTo(0.775, 2);
+    expect(lo[Y] as number).toBeCloseTo(0, 6);
+    // A bench is much wider than it is deep, and deeper than it is thick.
+    const depth = (hi[Z] as number) - (lo[Z] as number);
+    expect(depth).toBeGreaterThan(0.3);
+    expect(depth).toBeLessThan(0.6);
+  });
+
+  it("paints the bench's metal frame apart from its timber", () => {
+    // THE WHOLE REASON DEC-R6-15 CHOSE THIS PROTOTYPE. A bench is a wooden seat
+    // in a metal frame, and until §4 our vocabulary could only say one colour
+    // per model — so the frame and the slats were the same timber and the
+    // detail the owner liked was not expressible at all.
+    expect(poiModelFor("amenity=bench")?.mesh.colours).toBeDefined();
+    expect(distinctColours("amenity=bench").size).toBeGreaterThanOrEqual(2);
+  });
+
+  it("gives the bench slats rather than one solid slab", () => {
+    // The slatting IS the detail. A single box of the same bounds passes every
+    // other assertion here and looks like a plinth — which is what the previous
+    // model effectively was (`slabOnLegs` plus one backrest box).
+    const mesh = poiModelFor("amenity=bench")?.mesh;
+    // Three seat slats, two back slats, four frame pieces: nine boxes at 12
+    // triangles each.
+    expect(mesh?.triangleCount).toBe(9 * 12);
+  });
+});
+
 describe("parseUsageCount", () => {
   it("reads the space-grouped number and ignores the percentage", () => {
     // The live sheet writes `"6 109 792\n30.12%"`. `Number` gives NaN, which
