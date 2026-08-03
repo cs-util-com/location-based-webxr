@@ -35,6 +35,7 @@ import {
 } from "./cell-presets.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
+import { GROUND_COLOUR } from "./surface-colours.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { resolvePick, type Pick } from "./pick.js";
@@ -502,7 +503,10 @@ export class BuildingView {
       // relationship is measured from the rendered frame instead of asserted
       // between two arrays.
       new THREE.MeshStandardMaterial({
-        color: 0x6b7280,
+        // Paired with `PLATE_COLOUR` (DEC-R6b-7): moving this one alone is what
+        // inverted the two in round 6, so the relationship is now asserted in
+        // `surface-colours.test.ts` rather than left to whoever edits next.
+        color: GROUND_COLOUR,
         flatShading: true,
         roughness: 0.42,
         metalness: 0.0,

@@ -41,6 +41,7 @@ import {
 
 import { groundLift } from "./layer-order.js";
 import type { LayerSet } from "./layers.js";
+import { PLATE_COLOUR } from "./surface-colours.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 /**
@@ -454,7 +455,12 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         const plate = new THREE.Mesh(
           geometryFrom(chunk.mesh),
           new THREE.MeshStandardMaterial({
-            color: 0x4a5468,
+            // LIGHTER THAN THE GROUND, and that ordering is asserted rather than
+            // hoped for — see `surface-colours.ts`. DEC-R6-6 lightened the ground
+            // and left this literal behind, which inverted the pair and is half
+            // of what the sixth session saw as black polygons (the other and
+            // larger half was the inverted winding, fixed in `plates.ts`).
+            color: PLATE_COLOUR,
             roughness: 0.85,
             flatShading: true,
             // SINGLE-SIDED. A plate is horizontal with an upward normal by
