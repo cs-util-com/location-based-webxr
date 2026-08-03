@@ -3458,23 +3458,6 @@ test.describe("the time of day", () => {
           return count === 0 ? -1 : sum / count;
         });
 
-      // MEASURED AGAINST THE PLAIN GROUND, NOT THE HEIGHT RAMP, and the reason
-      // is a finding rather than a convenience.
-      //
-      // Run against the default ground — the height ramp (DEC-R5-4) — switching
-      // the cells ON *reduces* mean frame saturation by 0.05. The ramp is a
-      // deliberately loud blue-to-white scale with magenta for missing DEM, and
-      // it out-saturates the data layer that DEC-R4-5 says must be loudest. So
-      // that constraint is ALREADY breached today, by the diagnostic rather
-      // than by anything round 6 has done.
-      //
-      // That is evidence FOR DEC-R6-5, which makes the slope treatment the
-      // default and demotes the ramp to a mode — so this test measures the
-      // relationship DEC-R4-5 is actually about (data against BACKDROP) with
-      // the competing diagnostic switched off. When §2 lands, the default
-      // ground becomes the one measured here.
-      await page.locator("#ground-mode").selectOption("cpu");
-      await page.locator("#layer-cells").check();
       // POLLED, NOT READ ONCE. The view renders on demand (DEC-R3-9), so a
       // measurement taken immediately after a toggle reads the PREVIOUS frame —
       // the first version of this did exactly that and reported a difference of
@@ -3489,18 +3472,98 @@ test.describe("the time of day", () => {
         }
         return previous;
       };
-      const withCells = await settledChroma();
-      await page.locator("#layer-cells").uncheck();
-      const withoutCells = await settledChroma();
-      await page.locator("#layer-cells").check();
 
-      expect(withCells).toBeGreaterThan(0);
-      expect(withoutCells).toBeGreaterThan(0);
-      // The grid must ADD chroma, substantially. If a future exposure or palette
-      // change ever made the backdrop as colourful as the data, this goes red —
-      // which is the whole point, because that is the moment DEC-R4-5 is
-      // breached and it is otherwise invisible.
-      expect(withCells - withoutCells).toBeGreaterThan(5);
+      // How much chroma the heat grid ADDS, against one named ground mode.
+      const marginFor = async (mode) => {
+        await page.locator("#ground-mode").selectOption(mode);
+        await page.locator("#layer-cells").check();
+        const withCells = await settledChroma();
+        await page.locator("#layer-cells").uncheck();
+        const withoutCells = await settledChroma();
+        await page.locator("#layer-cells").check();
+        expect(
+          withCells,
+          `${mode}: frame has chroma with cells`,
+        ).toBeGreaterThan(0);
+        expect(
+          withoutCells,
+          `${mode}: frame has chroma without cells`,
+        ).toBeGreaterThan(0);
+        return withCells - withoutCells;
+      };
+
+      // BOTH THE ISOLATED BACKDROP AND THE ONE A USER ACTUALLY SEES (F49), and
+      // asserting only one of them is how this gate grew a hole.
+      //
+      // `cpu` is the plain lit ground. It isolates the relationship DEC-R4-5 is
+      // about — data against BACKDROP — with every competing element switched
+      // off, and it is what the first version of this test measured.
+      //
+      // WHY IT WAS NOT MEASURED AGAINST THE DEFAULT, originally, and the reason
+      // is a finding rather than a convenience: run against round 5's default —
+      // the height ramp (DEC-R5-4) — switching the cells ON *reduces* mean frame
+      // chroma by 0.05. The ramp is a deliberately loud blue-to-white scale with
+      // magenta for missing DEM, and it out-saturates the data layer DEC-R4-5
+      // says must be loudest. **That constraint was ALREADY breached, by the
+      // diagnostic, before round 6 touched anything** — which is direct evidence
+      // for DEC-R6-5 demoting the ramp to a mode.
+      //
+      // THE HOLE THAT LEFT, AND WHY IT IS NOT ALLOWED BACK. The original carried
+      // a comment promising "when §2 lands, the default ground becomes the one
+      // measured here". §2 landed and made the default `cpu-slope`, not `cpu`,
+      // so for one round the only durable defence of DEC-R4-5 measured a
+      // configuration nobody sees. The slope treatment adds an aspect tint,
+      // isoclines and a rim light, all of which put chroma into the backdrop.
+      // A promise about a future default cannot live in a comment; it has to be
+      // an assertion, so both modes are now named and a future default change
+      // that breaks the constraint goes red instead of quietly stepping outside
+      // the measurement.
+      //
+      // The default is spelled as a LITERAL, matching the rest of this suite,
+      // and it is not floating free: `ground-mode.test.ts` pins
+      // `DEFAULT_GROUND_MODE`, and the ground-mode picker spec above asserts the
+      // control boots showing `cpu-slope`. A default change that missed this
+      // line would fail there first.
+      const DEFAULT_MODE = "cpu-slope";
+      const plainMargin = await marginFor("cpu");
+      const defaultMargin = await marginFor(DEFAULT_MODE);
+
+      // The grid must ADD chroma, substantially, in BOTH. If a future exposure,
+      // palette or ground-appearance change ever made the backdrop as colourful
+      // as the data, this goes red — which is the whole point, because that is
+      // the moment DEC-R4-5 is breached and it is otherwise invisible.
+      //
+      // MEASURED, by mutating each bound to an unreachable value and reading
+      // what came back — an assertion nobody has watched fail is worth nothing,
+      // and this suite has already shipped one vacuous test (§14.5's isocline
+      // check, which asserted a constant against an argument it never took):
+      //
+      //   plain `cpu`   -> 9.285
+      //   `cpu-slope`   -> 9.302  (the default)
+      //
+      // **The two agree to within 0.02, and that is the honest reading of F49:
+      // the gate WAS sound at the default — by accident.** The aspect tint is
+      // blended proportionally to steepness and the fixture site (Cologne) is
+      // nearly flat, so the slope treatment puts almost no chroma into the
+      // backdrop HERE. On a site with real relief, or after a default change, it
+      // need not be. The second assertion costs one more measurement and removes
+      // the accident; it is not carrying its weight in this number today, and
+      // that is fine — it is carrying it against the change nobody has made yet.
+      //
+      // The bound of 5 therefore sits at ~54 % of the observed margin in both.
+      //
+      // **The wrong response to a red here is lowering the margin.** It is
+      // either fixing the backdrop or re-judging the decision that made it the
+      // default (DEC-R6-5 for `cpu-slope`), which is exactly the call the ramp
+      // measurement above already forced once.
+      expect(
+        plainMargin,
+        "plain ground: heat grid adds chroma",
+      ).toBeGreaterThan(5);
+      expect(
+        defaultMargin,
+        `${DEFAULT_MODE} (the default): heat grid adds chroma`,
+      ).toBeGreaterThan(5);
     });
   });
 });
