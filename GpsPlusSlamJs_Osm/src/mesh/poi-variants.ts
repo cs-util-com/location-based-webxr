@@ -36,6 +36,7 @@
 
 import type { MeshData } from "./mesh-data.js";
 import { POI_MODELS } from "./poi-models.js";
+import { D_VARIANTS } from "./poi-variants-d.js";
 
 /**
  * The six prototype files, by the letters §4.3 of the round-6 plan assigned.
@@ -172,6 +173,75 @@ export function poiVariantsFor(kind: string): readonly PoiVariant[] {
 }
 
 /**
+ * The same mesh scaled UNIFORMLY so its height becomes `targetHeightM`
+ * (DEC-V5).
+ *
+ * WHY ANY SCALING AT ALL. The `D` prototype is a diorama — every kind fits one
+ * display envelope, tiers at 0.35–0.7 m, 0.8–1.2 m and 1.35–1.9 m "above the
+ * plinth", whatever the thing really is. Its `place_of_worship` is ~1.9 m where
+ * the shipped model is 12 m. DEC-R6-8 keeps real-world scale and §4 of the
+ * variant plan compares at true size, so porting D's numbers verbatim would put
+ * a 1.9 m church beside a 1.8 m human and call it a comparison.
+ *
+ * WHY UNIFORM, and why to the SHIPPED model's height. Uniform preserves every
+ * proportion inside the model, which is precisely what the owner said they are
+ * judging. Taking the target from the shipped model rather than inventing one
+ * per kind means the variant is real-scale by construction — the shipped models
+ * are the ones with a plausibility contract test behind them — and it isolates
+ * SHAPE as the only difference between the two things standing side by side.
+ *
+ * **Normals are NOT touched.** A uniform scale turns no direction, so scaling
+ * them would be a no-op at best and a denormalisation at worst — and a
+ * denormalised normal shades wrong without changing any silhouette, which is
+ * this round's recurring class of invisible defect.
+ *
+ * A mesh with no height is returned unchanged rather than divided by zero: a
+ * ground marking is flat on purpose, and Infinity in a position removes the
+ * object from the scene with nothing reported.
+ */
+/**
+ * The same mesh lifted so its lowest point sits at `y = 0`.
+ *
+ * WHY THE PORTS NEED IT, and it was found by the contract test rather than by
+ * reading. Several `D` models have parts that extend DOWN INTO the plinth —
+ * `leisure=picnic_table`'s A-frames are 0.50 m tall centred 0.22 m above the
+ * plinth top, so they reach 3 cm below it. That is invisible in the source,
+ * where the plinth hides them. Strip the plinth and they hang below ground.
+ *
+ * Grounding rather than clamping: the model is correct, its datum is not, so
+ * moving it is right and truncating it would silently shorten a leg.
+ */
+function groundedMesh(mesh: MeshData): MeshData {
+  let lowest = Infinity;
+  for (let i = 1; i < mesh.positions.length; i += 3) {
+    lowest = Math.min(lowest, mesh.positions[i] as number);
+  }
+  if (!Number.isFinite(lowest) || Math.abs(lowest) < 1e-9) return mesh;
+  const positions = new Float32Array(mesh.positions);
+  for (let i = 1; i < positions.length; i += 3) {
+    positions[i] = (positions[i] as number) - lowest;
+  }
+  return { ...mesh, positions };
+}
+
+export function scaledToHeight(
+  mesh: MeshData,
+  targetHeightM: number,
+): MeshData {
+  let peak = 0;
+  for (let i = 1; i < mesh.positions.length; i += 3) {
+    peak = Math.max(peak, mesh.positions[i] as number);
+  }
+  if (!(peak > 0) || !(targetHeightM > 0)) return mesh;
+  const factor = targetHeightM / peak;
+  const positions = new Float32Array(mesh.positions.length);
+  for (let i = 0; i < mesh.positions.length; i++) {
+    positions[i] = (mesh.positions[i] as number) * factor;
+  }
+  return { ...mesh, positions };
+}
+
+/**
  * Groups the built variants by kind.
  *
  * The SHIPPED model is included as its own entry under the source it was built
@@ -214,7 +284,30 @@ function variants(): PoiVariant[] {
     };
   };
 
+  // THE `D` PORTS, scaled to the shipped model's height (DEC-V5). D is a
+  // diorama — every kind fits one display envelope whatever its real size — so
+  // porting its numbers verbatim would put a 1.9 m church beside a 1.8 m human.
+  // Uniform scaling preserves every internal proportion, which is the thing
+  // being judged.
+  const fromD = (kind: string): PoiVariant => {
+    const build = D_VARIANTS.get(kind);
+    const model = POI_MODELS.get(kind);
+    if (build === undefined || model === undefined) {
+      throw new Error(`no D variant or no shipped model for "${kind}"`);
+    }
+    // GROUND FIRST, THEN SCALE. `scaledToHeight` scales about the origin and
+    // assumes the base is already there; scaling an un-grounded mesh would
+    // multiply its negative dip as well as its height.
+    const mesh = scaledToHeight(groundedMesh(build()), model.heightM);
+    let heightM = 0;
+    for (let i = 1; i < mesh.positions.length; i += 3) {
+      heightM = Math.max(heightM, mesh.positions[i] as number);
+    }
+    return { kind, source: "D", colour: model.colour, heightM, mesh };
+  };
+
   return [
+    ...[...D_VARIANTS.keys()].map(fromD),
     // The §4 rebuild's seven, which were ported from the house-style file and
     // are therefore already the `L` variant of their kind.
     fromShipped("amenity=bench", "L"),

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { MeshBuilder } from "./mesh-data.js";
 import { POI_MODELS } from "./poi-models.js";
+import { D_PALETTE } from "./poi-variants-d.js";
 import {
   LIKED_VARIANTS,
   POI_VARIANTS,
   poiVariantsFor,
+  scaledToHeight,
   type VariantSource,
 } from "./poi-variants.js";
 
@@ -204,8 +207,13 @@ describe("LIKED_VARIANTS — the owner's notes as a checked-in table", () => {
     const missing = LIKED_VARIANTS.filter(
       (v) => !built.has(`${v.kind}#${v.source}`),
     ).map((v) => `${v.kind}#${v.source}`);
+    // BOTH NUMBERS, because they are not the same and the first version of this
+    // line conflated them: `built.size` counts every variant in the registry,
+    // including the four ported from the house file under DEC-R6-28 whose LIKED
+    // source is something else. Only the matched ones count as progress.
     console.log(
-      `POI variants: ${built.size} of ${LIKED_VARIANTS.length} liked pairs built; ${missing.length} remaining`,
+      `POI variants: ${LIKED_VARIANTS.length - missing.length} of ${LIKED_VARIANTS.length} liked pairs built ` +
+        `(${missing.length} remaining); ${built.size} variants in the registry`,
     );
     expect(missing.length).toBeLessThanOrEqual(LIKED_VARIANTS.length);
   });
@@ -224,6 +232,146 @@ describe("LIKED_VARIANTS — the owner's notes as a checked-in table", () => {
     };
     for (const { source } of LIKED_VARIANTS) counts[source] += 1;
     expect(counts).toEqual({ D: 18, G: 5, P: 4, L: 13, B: 7, M: 4 });
+  });
+});
+
+describe("the D port's palette agrees with the house one", () => {
+  /**
+   * WHY THE DUPLICATION IS ALLOWED, AND WHAT KEEPS IT HONEST. `poi-variants-d.ts`
+   * re-declares the prototype's palette under the SOURCE's names (`woodMid`,
+   * `metalDark`) rather than importing ours (`TIMBER`, `DARK_STEEL`), so a port
+   * can be checked against the prototype line by line without translating every
+   * colour in your head.
+   *
+   * That is a second copy of the same values, and a second copy drifts. This is
+   * the assertion that stops it: the values a D model actually paints with must
+   * be values the house palette contains. If someone re-tunes the house palette
+   * and forgets this file, the variants would quietly stop matching the models
+   * they are being compared against — and colour is the one thing DEC-R6-30
+   * normalises specifically so it CANNOT confound the comparison.
+   */
+  it("paints D variants only in colours D's own palette declares", () => {
+    // NOT "colours the shipped models use", which was the first version of this
+    // and was wrong: D and the house-style file share ONE source palette, and D
+    // legitimately reaches parts of it we have not adopted yet — `terracotta`,
+    // `rust`, `wallDusty`, `foliageTeal`. Asserting against our subset flagged
+    // ten of those as strays, which would have pushed the port towards
+    // recolouring models to fit a palette that was never the constraint.
+    //
+    // What IS worth pinning is that no port invents a colour: every painted
+    // value must be one this file declares, so a mistyped hex fails here rather
+    // than shipping as a shade nobody chose.
+    // `Math.fround` ON BOTH SIDES. Colours live in a `Float32Array`, so the
+    // stored value is the float32 nearest to `hex / 255` — comparing it against
+    // the float64 division fails for almost every colour, and the first version
+    // of this test reported 20 strays that were all just rounding.
+    const key = (r: number, g: number, b: number): string =>
+      `${Math.fround(r)},${Math.fround(g)},${Math.fround(b)}`;
+    const housePalette = new Set(
+      Object.values(D_PALETTE).map((hex) =>
+        key(
+          ((hex >> 16) & 0xff) / 255,
+          ((hex >> 8) & 0xff) / 255,
+          (hex & 0xff) / 255,
+        ),
+      ),
+    );
+
+    const strays: string[] = [];
+    for (const variant of [...POI_VARIANTS.values()].flat()) {
+      if (variant.source !== "D") continue;
+      const colours = variant.mesh.colours;
+      if (colours === undefined) continue;
+      for (let i = 0; i < colours.length; i += 3) {
+        const seen = key(
+          colours[i] as number,
+          colours[i + 1] as number,
+          colours[i + 2] as number,
+        );
+        // White is the unpainted identity, always legitimate.
+        if (seen === "1,1,1" || housePalette.has(seen)) continue;
+        if (!strays.includes(`${variant.kind}#D ${seen}`)) {
+          strays.push(`${variant.kind}#D ${seen}`);
+        }
+      }
+    }
+    expect(strays).toEqual([]);
+  });
+});
+
+describe("scaledToHeight", () => {
+  /**
+   * WHY THIS EXISTS (DEC-V5). The `D` prototype is a DIORAMA: every kind fits a
+   * common display envelope, with tiers at 0.35–0.7 m, 0.8–1.2 m and 1.35–1.9 m
+   * "above the plinth" regardless of what the thing really is. Its
+   * `place_of_worship` is ~1.9 m where the shipped one is 12 m.
+   *
+   * DEC-R6-8 keeps real-world scale, and §4 of this plan compares variants at
+   * true size because that is part of what is being judged. Porting D's numbers
+   * verbatim would put a 1.9 m church next to a 1.8 m human reference, which is
+   * not a comparison of shapes — it is a comparison of one shape against a
+   * mistake.
+   *
+   * So D's models are scaled UNIFORMLY to the height of the model already
+   * shipped for that kind. Uniform is the whole point: it preserves every
+   * proportion inside the model, which is exactly what the owner said they are
+   * judging — _"I dont care about lighting or colors but the 3d models/shapes
+   * ... look very different to each other"_.
+   */
+  it("scales a mesh uniformly to a target height", () => {
+    const builder = new MeshBuilder();
+    builder.vertex(1, 0, 0, 0, 1, 0);
+    builder.vertex(0, 2, 0, 0, 1, 0);
+    builder.vertex(0, 0, 1, 0, 1, 0);
+    const scaled = scaledToHeight(builder.build(), 6);
+    // Height 2 -> 6, so every coordinate triples.
+    expect(scaled.positions[0]).toBeCloseTo(3, 6);
+    expect(scaled.positions[4]).toBeCloseTo(6, 6);
+  });
+
+  it("leaves NORMALS untouched, because a uniform scale does not turn them", () => {
+    // A non-uniform scale would need the inverse transpose; a uniform one does
+    // not change any direction. Scaling the normals as well would be a no-op at
+    // best and a denormalisation at worst — and a denormalised normal shades
+    // wrong without changing any silhouette, which is this round's recurring
+    // class of invisible defect.
+    const builder = new MeshBuilder();
+    builder.vertex(0, 1, 0, 0.6, 0.8, 0);
+    const scaled = scaledToHeight(builder.build(), 5);
+    expect(scaled.normals[0]).toBeCloseTo(0.6, 6);
+    expect(scaled.normals[1]).toBeCloseTo(0.8, 6);
+  });
+
+  it("keeps the base on the ground", () => {
+    // The contract every model and variant is held to. Scaling about the origin
+    // preserves a zero base; scaling about the centre would not, and would bury
+    // or float every ported model by half its height.
+    const builder = new MeshBuilder();
+    builder.vertex(0, 0, 0, 0, 1, 0);
+    builder.vertex(0, 3, 0, 0, 1, 0);
+    const scaled = scaledToHeight(builder.build(), 9);
+    expect(scaled.positions[1]).toBeCloseTo(0, 6);
+    expect(scaled.positions[4]).toBeCloseTo(9, 6);
+  });
+
+  it("returns the mesh unchanged when it has no height to scale", () => {
+    // A flat model — a ground marking — has zero height, and dividing by it
+    // would put Infinity into every position and remove the object from the
+    // scene with nothing reported.
+    const builder = new MeshBuilder();
+    builder.vertex(0, 0, 0, 0, 1, 0);
+    builder.vertex(1, 0, 1, 0, 1, 0);
+    const mesh = builder.build();
+    expect(scaledToHeight(mesh, 5)).toBe(mesh);
+  });
+
+  it("carries the colours through", () => {
+    const builder = new MeshBuilder();
+    builder.paint(0xff0000);
+    builder.vertex(0, 0, 0, 0, 1, 0);
+    builder.vertex(0, 1, 0, 0, 1, 0);
+    const scaled = scaledToHeight(builder.build(), 2);
+    expect(scaled.colours?.[0]).toBe(1);
   });
 });
 
