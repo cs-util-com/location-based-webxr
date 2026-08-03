@@ -6,7 +6,7 @@
   },
   "keyCount": 32,
   "plannedCells": 112,
-  "complete": false,
+  "complete": true,
   "cooldownMs": 60000,
   "notes": [
     "overpass.private.coffee dropped after 2 recent refusals against private.coffee (504 Gateway Timeout)",
@@ -26,15 +26,16 @@
     "z.overpass-api.de dropped after 2 recent refusals against fossgis (504 Gateway Timeout)",
     "overpass.private.coffee dropped after 2 recent refusals against private.coffee (504 Gateway Timeout)",
     "overpass.kumi.systems dropped after 3 recent refusals against private.coffee (504 Gateway Timeout)",
-    "z.overpass-api.de re-admitted: fossgis has not refused in the last 10 min"
+    "z.overpass-api.de re-admitted: fossgis has not refused in the last 10 min",
+    "lz4.overpass-api.de dropped after 2 recent refusals against fossgis (504 Gateway Timeout)"
   ],
   "totals": {
-    "bytes": 858604910,
-    "requests": 92,
+    "bytes": 864533506,
+    "requests": 112,
     "byOperator": {
-      "fossgis": 473584162,
+      "fossgis": 479082228,
       "private.coffee": 134875300,
-      "vk-maps": 250145448
+      "vk-maps": 250575978
     }
   },
   "cells": [
@@ -2682,6 +2683,234 @@
       "res": 10,
       "form": "plain",
       "site": "cologne-cathedral",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "plain:res10:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 10,
+      "form": "plain",
+      "site": "cologne-cathedral",
+      "tile": "8a1fa19991b7fff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 12594,
+      "totalMs": 12720,
+      "bytes": 430531
+    },
+    {
+      "id": "plain:res10:private.coffee:overpass.kumi.systems",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "operator": "private.coffee",
+      "res": 10,
+      "form": "plain",
+      "site": "cologne-cathedral",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "plain:res10:fossgis:z.overpass-api.de",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 10,
+      "form": "plain",
+      "site": "cologne-cathedral",
+      "tile": "8a1fa19991b7fff",
+      "note": "FOSSGIS backend — likewise",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 9585,
+      "totalMs": 9687,
+      "bytes": 430531
+    },
+    {
+      "id": "plain:res10:vk-maps:maps.mail.ru",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "operator": "vk-maps",
+      "res": 10,
+      "form": "plain",
+      "site": "cologne-cathedral",
+      "tile": "8a1fa19991b7fff",
+      "note": "VK Maps",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 32966,
+      "totalMs": 33057,
+      "bytes": 430530
+    },
+    {
+      "id": "heidelberg-altstadt:clipped:res7:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "clipped",
+      "site": "heidelberg-altstadt",
+      "tile": "871faa990ffffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 9154,
+      "totalMs": 9154,
+      "bytes": 695
+    },
+    {
+      "id": "heidelberg-altstadt:clipped:res8:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "clipped",
+      "site": "heidelberg-altstadt",
+      "tile": "881faa990dfffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 8632,
+      "totalMs": 8902,
+      "bytes": 3319604
+    },
+    {
+      "id": "heidelberg-altstadt:clipped:res9:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 9,
+      "form": "clipped",
+      "site": "heidelberg-altstadt",
+      "tile": "891faa990cbffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 10307,
+      "totalMs": 10492,
+      "bytes": 1067695
+    },
+    {
+      "id": "heidelberg-altstadt:clipped:res10:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 10,
+      "form": "clipped",
+      "site": "heidelberg-altstadt",
+      "tile": "8a1faa990c9ffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 14181,
+      "totalMs": 14244,
+      "bytes": 248315
+    },
+    {
+      "id": "heidelberg-altstadt:areal-only:res7:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "site": "heidelberg-altstadt",
+      "tile": "871faa990ffffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 11464,
+      "totalMs": 11464,
+      "bytes": 695
+    },
+    {
+      "id": "heidelberg-altstadt:areal-only:res8:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:areal-only:res9:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 9,
+      "form": "areal-only",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:areal-only:res10:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 10,
+      "form": "areal-only",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:clipped-areal:res7:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "clipped-areal",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:clipped-areal:res8:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "clipped-areal",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:clipped-areal:res9:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 9,
+      "form": "clipped-areal",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:clipped-areal:res10:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 10,
+      "form": "clipped-areal",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:plain:res7:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "plain",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:plain:res8:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "plain",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:plain:res9:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 9,
+      "form": "plain",
+      "site": "heidelberg-altstadt",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "heidelberg-altstadt:plain:res10:fossgis:lz4.overpass-api.de",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 10,
+      "form": "plain",
+      "site": "heidelberg-altstadt",
       "skipped": "host dropped after refusals"
     }
   ]
