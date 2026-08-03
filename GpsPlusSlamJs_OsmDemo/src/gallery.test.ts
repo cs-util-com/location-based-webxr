@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { POI_MODELS, poiVariantsFor } from "gps-plus-slam-osm";
+
 import { galleryPositions } from "./gallery.js";
 
 /**
@@ -103,5 +105,60 @@ describe("galleryPositions", () => {
     expect(galleryPositions([])).toEqual([]);
     expect(galleryPositions([1])).toEqual([[{ x: 0, z: 0 }]]);
     expect(galleryPositions([0])).toEqual([[]]);
+  });
+});
+
+describe("what the gallery actually offers to compare", () => {
+  /**
+   * WHY THIS TEST EXISTS, and it is not a layout test. The 51 ported variants
+   * are worth exactly what the owner can SEE side by side, and the thing that
+   * decides that is how many rows deep each kind goes. A kind with one row is a
+   * model nobody is choosing between; a kind with four is a real comparison.
+   *
+   * The port is finished, so this pins the shape of the comparison the owner is
+   * being asked to judge. If a later change to `POI_VARIANTS` or to the
+   * shared-mesh filter quietly collapses a multi-row kind back to one, the
+   * gallery would still render and still look correct — and the comparison
+   * would simply be gone. That is the failure this catches.
+   */
+  const rows = [...POI_MODELS.values()].map((model) => ({
+    kind: model.kind,
+    // The same filter `buildGallery` applies: the seven §4 rebuilds are
+    // re-exposed as their own `L` variant, and showing one mesh twice under two
+    // labels is not a comparison.
+    depth:
+      1 +
+      poiVariantsFor(model.kind).filter((v) => v.mesh !== model.mesh).length,
+  }));
+
+  it("gives 34 of the 50 kinds more than one model to choose between", () => {
+    // 34 is every kind the owner named, which is the whole point: each one gets
+    // its liked version(s) standing beside the incumbent. The remaining 16 were
+    // never mentioned, so there is nothing to compare and one row is correct.
+    // A FLOOR rather than an equality — adding a variant is progress, losing
+    // one is the regression this guards.
+    const multi = rows.filter((r) => r.depth > 1);
+    expect(multi.length).toBeGreaterThanOrEqual(34);
+  });
+
+  it("puts four rows on the kind three prototypes disagreed about", () => {
+    // `amenity=fast_food` is liked from B, G and M — the deepest disagreement
+    // in the owner's notes, and therefore the single best test of DEC-V5: if
+    // scaling a diorama model to the shipped height preserves what was liked,
+    // it has to hold across three sources at once.
+    const fastFood = rows.find((r) => r.kind === "amenity=fast_food");
+    expect(fastFood?.depth).toBe(4);
+  });
+
+  it("never shows one kind more rows than the sheet can lay out", () => {
+    // `galleryPositions` recedes variants along Z from a shared origin, so an
+    // unbounded depth would push a row into the next kind's pad. Six is well
+    // inside the pitch; this is the guard, not a prediction.
+    for (const row of rows) expect(row.depth).toBeLessThanOrEqual(6);
+  });
+
+  it("leaves no kind without at least the shipped model", () => {
+    expect(rows.every((r) => r.depth >= 1)).toBe(true);
+    expect(rows).toHaveLength(50);
   });
 });
