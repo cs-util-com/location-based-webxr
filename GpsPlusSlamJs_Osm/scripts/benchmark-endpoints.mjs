@@ -58,6 +58,7 @@ import {
   buildMatrixQuery,
   operatorForUrl,
   planCells,
+  QUERY_FORMS,
   waitMsBeforeRequest,
 } from "./benchmark-matrix.mjs";
 
@@ -249,6 +250,32 @@ function listArg(name, fallback) {
   return parsed.length > 0 ? parsed : fallback;
 }
 
+/**
+ * Comma-separated STRING CLI list, e.g. `--forms clipped,areal-only`.
+ *
+ * Separate from `listArg` rather than generalised, because that one coerces
+ * with `Number` and filters on `Number.isFinite` — handed a form name it would
+ * silently return the fallback, i.e. the full matrix, which is the opposite of
+ * what a narrowing flag must do when it is mistyped.
+ */
+function stringListArg(name, fallback) {
+  const at = process.argv.indexOf(`--${name}`);
+  if (at === -1) return fallback;
+  const parsed = String(process.argv[at + 1] ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const unknown = parsed.filter((value) => !QUERY_FORMS.includes(value));
+  if (unknown.length > 0) {
+    // LOUD, not a silent fallback to everything. A typo here would otherwise
+    // spend the full 112-cell budget when ~12 was intended.
+    throw new Error(
+      `Unknown query form(s): ${unknown.join(", ")}. Known: ${QUERY_FORMS.join(", ")}`,
+    );
+  }
+  return parsed.length > 0 ? parsed : fallback;
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -307,11 +334,27 @@ async function runMatrix() {
   const budgetMs = arg("budget-minutes", 180) * 60_000;
   const keys = selectKeysFromCaptureScript();
 
-  const cells = planCells({ hosts: ENDPOINTS, resolutions }).map((cell) => ({
-    ...cell,
-    centre,
-    site: "cologne-cathedral",
-  }));
+  // `--forms areal-only` narrows the sweep to one query form.
+  //
+  // ADDED AFTER THE 2026-08-03 RUN, and the reason is a gap that run left: the
+  // full matrix spends most of its budget on forms already decided, and the
+  // form actually ADOPTED (`areal-only`) came out with n=1 at res 7, n=1 at
+  // res 8 and no successful res-9 sample at all — because every other host was
+  // in a refusal cooldown during its legs. A 112-cell run cannot be repeated to
+  // fix that; a one-form run of ~12 cells can.
+  //
+  // It also breaks the position confound the full run has: forms run in a fixed
+  // order, so the one scheduled first gets the freshest hosts and the one
+  // scheduled last inherits every refusal. A single-form run gives that form the
+  // whole budget.
+  const forms = stringListArg("forms", [...QUERY_FORMS]);
+  const cells = planCells({ hosts: ENDPOINTS, resolutions, forms }).map(
+    (cell) => ({
+      ...cell,
+      centre,
+      site: "cologne-cathedral",
+    }),
+  );
 
   // The optional final leg (plan §3): the same form x resolution sweep at a site
   // with almost no non-areal relations. If Heidelberg barely moves while Cologne
