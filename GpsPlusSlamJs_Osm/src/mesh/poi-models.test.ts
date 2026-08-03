@@ -131,6 +131,57 @@ describe("the POI model registry", () => {
     }
   });
 
+  it("winds every triangle of every model to agree with its own normal", () => {
+    // THE GUARD THAT WAS MISSING FOR ALL OF W16–§4, and its absence cost every
+    // marker in the demo. `box` and `prism` emitted every face wound against
+    // its own normal, so with the POI material at `FrontSide` — three's default,
+    // and nothing overrides it for markers — what was drawn was each object's
+    // far INTERIOR wall rather than its near face.
+    //
+    // WHY NOTHING CAUGHT IT. The silhouette is identical, lighting comes from
+    // the assigned normals so it still looks lit, and a bench still reads as a
+    // bench. `mesh-orientation.test.ts` pins exactly this property, but only for
+    // `extrude.ts` and `roof.ts` — the two emitters already caught getting it
+    // wrong once. Everything asserted here was count, bounds or finiteness, and
+    // a reversed winding disturbs none of them.
+    //
+    // AT THE REGISTRY RATHER THAN THE PRIMITIVE, deliberately, and in addition
+    // to the per-primitive suite: `hut`, `canopy`, `slabOnLegs` and
+    // `postWithHead` compose the others and emit their own gable triangles, and
+    // a model can also emit geometry inline. This covers whatever a model
+    // actually built, which is the thing that ships.
+    for (const entry of entries) {
+      const mesh = entry.mesh;
+      const disagreeing: number[] = [];
+      for (let t = 0; t * 3 < mesh.indices.length; t++) {
+        const ia = mesh.indices[t * 3] as number;
+        const ib = mesh.indices[t * 3 + 1] as number;
+        const ic = mesh.indices[t * 3 + 2] as number;
+        const at = (i: number, o: number): number =>
+          mesh.positions[i * 3 + o] as number;
+        const ux = at(ib, 0) - at(ia, 0);
+        const uy = at(ib, 1) - at(ia, 1);
+        const uz = at(ib, 2) - at(ia, 2);
+        const vx = at(ic, 0) - at(ia, 0);
+        const vy = at(ic, 1) - at(ia, 1);
+        const vz = at(ic, 2) - at(ia, 2);
+        const wx = uy * vz - uz * vy;
+        const wy = uz * vx - ux * vz;
+        const wz = ux * vy - uy * vx;
+        // A degenerate sliver carries no orientation, so it cannot be judged.
+        if (Math.hypot(wx, wy, wz) < 1e-9) continue;
+        const nx = mesh.normals[ia * 3] as number;
+        const ny = mesh.normals[ia * 3 + 1] as number;
+        const nz = mesh.normals[ia * 3 + 2] as number;
+        if (wx * nx + wy * ny + wz * nz <= 0) disagreeing.push(t);
+      }
+      expect({ kind: entry.kind, disagreeing }).toEqual({
+        kind: entry.kind,
+        disagreeing: [],
+      });
+    }
+  });
+
   it("keeps any per-face painting aligned to the geometry it paints", () => {
     // §4's per-face painting is being introduced model by model, so at any
     // moment some entries carry a colour buffer and some do not. Both are

@@ -29,7 +29,29 @@
 
 import { MeshBuilder, type MeshData } from "./mesh-data.js";
 
-/** A box, base at `y = base`, centred on the origin in `x`/`z`. */
+/**
+ * The six faces of a `box`, by the direction they face in ENU.
+ *
+ * NAMED RATHER THAN INDEXED, unlike the prototype's `FACE` table of vertex
+ * ranges. A range is what you need when you paint an already-built geometry;
+ * here the box is built face by face anyway, so a name is both safer and
+ * readable at the call site — `{ top: SEAT }` says what it does and cannot
+ * silently point at the wrong six vertices after an edit.
+ */
+export type BoxFace = "top" | "bottom" | "north" | "south" | "east" | "west";
+
+/** White — the identity under `vertexColors`, so an unnamed face is unchanged. */
+const UNPAINTED = 0xffffff;
+
+/**
+ * A box, base at `y = base`, centred on the origin in `x`/`z`.
+ *
+ * `faces` paints individual sides (§4, DEC-R6-15). **Passing it at all means
+ * taking control of every face**: the ones not named are explicitly set to
+ * white rather than left carrying whatever colour was last painted into the
+ * builder. That is what makes `{ top: SEAT }` mean "the top, and nothing else"
+ * regardless of what the model did before this call.
+ */
 export function box(
   builder: MeshBuilder,
   width: number,
@@ -38,6 +60,7 @@ export function box(
   base = 0,
   offsetX = 0,
   offsetZ = 0,
+  faces?: Partial<Record<BoxFace, number>>,
 ): void {
   const x0 = offsetX - width / 2;
   const x1 = offsetX + width / 2;
@@ -49,19 +72,28 @@ export function box(
   // Six faces, each with its own four vertices, so the normals stay flat rather
   // than being averaged across an edge — the low-polygon look depends on it.
   const face = (
+    name: BoxFace,
     corners: readonly [number, number, number][],
     normal: readonly [number, number, number],
   ): void => {
+    if (faces !== undefined) builder.paint(faces[name] ?? UNPAINTED);
     const [nx = 0, ny = 0, nz = 0] = normal;
     const indices = corners.map(([x, y, z]) =>
       builder.vertex(x, y, z, nx, ny, nz),
     );
     const [a, b, c, d] = indices as [number, number, number, number];
-    builder.triangle(a, b, c);
-    builder.triangle(a, c, d);
+    // REVERSED, AND THIS WAS A BUG UNTIL §4. The corner lists below read
+    // clockwise when seen from OUTSIDE the box, so emitting them in order wound
+    // every face against its own normal — see the winding suite in
+    // `poi-primitives.test.ts` for what that did to all fifty markers. The
+    // corner lists are left as they are and the emission is reversed, because
+    // rewriting six corner lists is six chances to get one wrong.
+    builder.triangle(a, c, b);
+    builder.triangle(a, d, c);
   };
 
   face(
+    "top",
     [
       [x0, y1, z0],
       [x1, y1, z0],
@@ -71,6 +103,7 @@ export function box(
     [0, 1, 0],
   );
   face(
+    "bottom",
     [
       [x0, y0, z1],
       [x1, y0, z1],
@@ -80,6 +113,7 @@ export function box(
     [0, -1, 0],
   );
   face(
+    "north",
     [
       [x0, y0, z1],
       [x0, y1, z1],
@@ -89,6 +123,7 @@ export function box(
     [0, 0, 1],
   );
   face(
+    "south",
     [
       [x1, y0, z0],
       [x1, y1, z0],
@@ -98,6 +133,7 @@ export function box(
     [0, 0, -1],
   );
   face(
+    "east",
     [
       [x1, y0, z1],
       [x1, y1, z1],
@@ -107,6 +143,7 @@ export function box(
     [1, 0, 0],
   );
   face(
+    "west",
     [
       [x0, y0, z0],
       [x0, y1, z0],
@@ -115,6 +152,239 @@ export function box(
     ],
     [-1, 0, 0],
   );
+}
+
+/**
+ * A flat horizontal n-gon at `y`, facing up or down.
+ *
+ * SHARED RIM VERTICES, which no other primitive here does and which is safe
+ * only because a disc is FLAT: every vertex carries the same normal, so there
+ * is no edge for sharing to smear across. `prism`'s caps do the same for the
+ * same reason.
+ */
+export function disc(
+  builder: MeshBuilder,
+  radius: number,
+  y: number,
+  sides = 12,
+  up = true,
+  offsetX = 0,
+  offsetZ = 0,
+): void {
+  const ny = up ? 1 : -1;
+  const centre = builder.vertex(offsetX, y, offsetZ, 0, ny, 0);
+  const rim: number[] = [];
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2;
+    rim.push(
+      builder.vertex(
+        offsetX + Math.cos(a) * radius,
+        y,
+        offsetZ + Math.sin(a) * radius,
+        0,
+        ny,
+        0,
+      ),
+    );
+  }
+  for (let i = 0; i < sides; i++) {
+    const a = rim[i] as number;
+    const b = rim[(i + 1) % sides] as number;
+    // The order flips with the facing, so the winding agrees with the normal.
+    // Disagreement is the "lit right, culled backwards" failure — a table top
+    // that is a hole from above.
+    if (up) builder.triangle(centre, b, a);
+    else builder.triangle(centre, a, b);
+  }
+}
+
+/**
+ * An arbitrary planar quad over four corners, in ENU.
+ *
+ * THE ESCAPE HATCH the vocabulary needed. Everything else here is axis-aligned
+ * or a solid of revolution, and the prototypes' detail comes largely from
+ * panels at angles — a sign face, a pitched solar panel, a lectern. Without
+ * this each of those would be a bespoke vertex list in the model.
+ *
+ * The normal is DERIVED from the corner order by default, `(p1 − p0) × (p3 −
+ * p0)`, so a model cannot silently light a tilted panel as though it were flat.
+ * Pass one to override for a deliberately faceted look.
+ */
+export function quad(
+  builder: MeshBuilder,
+  corners: readonly [number, number, number][],
+  normal?: readonly [number, number, number],
+): void {
+  // `p2` is deliberately not read: the derived normal comes from `p0 → p1` and
+  // `p0 → p3`, the two edges that meet at the first corner. Using `p2` instead
+  // would fold the quad's far corner into the normal and give a non-planar quad
+  // a direction that matches neither of its triangles.
+  const [p0, p1, , p3] = corners as [
+    [number, number, number],
+    [number, number, number],
+    [number, number, number],
+    [number, number, number],
+  ];
+  let [nx, ny, nz] = normal ?? [0, 0, 0];
+  if (normal === undefined) {
+    const ux = p1[0] - p0[0];
+    const uy = p1[1] - p0[1];
+    const uz = p1[2] - p0[2];
+    const vx = p3[0] - p0[0];
+    const vy = p3[1] - p0[1];
+    const vz = p3[2] - p0[2];
+    nx = uy * vz - uz * vy;
+    ny = uz * vx - ux * vz;
+    nz = ux * vy - uy * vx;
+    const length = Math.hypot(nx, ny, nz);
+    // A degenerate quad has no direction to face. Emitting NaN here would
+    // propagate into the instance transform and remove the whole marker.
+    if (length > 1e-9) {
+      nx /= length;
+      ny /= length;
+      nz /= length;
+    } else {
+      nx = 0;
+      ny = 1;
+      nz = 0;
+    }
+  }
+  const indices = corners.map(([x, y, z]) =>
+    builder.vertex(x, y, z, nx, ny, nz),
+  );
+  const [a, b, c, d] = indices as [number, number, number, number];
+  // NOT reversed, unlike `box`'s faces, and the difference is the corner
+  // convention rather than an inconsistency in the builder. This function's
+  // contract is the natural one — **corners counter-clockwise as seen from the
+  // direction the normal points** — which is also what the derived normal
+  // assumes. `box`'s six corner lists predate that and run the other way, so
+  // they need the reversal and this does not. Both are pinned by the winding
+  // suite, which is the only reason either can be trusted.
+  builder.triangle(a, b, c);
+  builder.triangle(a, c, d);
+}
+
+/**
+ * A rectangular pyramid — spires, tent roofs, obelisk caps.
+ *
+ * `prism(..., topRadius = 0)` already gives a CONE, but a square-based spire is
+ * a different shape and `amenity=place_of_worship` needs the square one.
+ */
+export function pyramid(
+  builder: MeshBuilder,
+  width: number,
+  depth: number,
+  height: number,
+  base = 0,
+  offsetX = 0,
+  offsetZ = 0,
+): void {
+  const x0 = offsetX - width / 2;
+  const x1 = offsetX + width / 2;
+  const z0 = offsetZ - depth / 2;
+  const z1 = offsetZ + depth / 2;
+  const y0 = base;
+  const apex: [number, number, number] = [offsetX, base + height, offsetZ];
+
+  const corners: [number, number, number][] = [
+    [x0, y0, z0],
+    [x1, y0, z0],
+    [x1, y0, z1],
+    [x0, y0, z1],
+  ];
+  for (let i = 0; i < 4; i++) {
+    const p = corners[i] as [number, number, number];
+    const q = corners[(i + 1) % 4] as [number, number, number];
+    // `(apex − p) × (q − p)`, in that order. The other order points the side
+    // normals DOWN and inward, which shades a spire as though it were lit from
+    // under the ground — and with the winding matching it, the whole cone of
+    // sides is culled away from any camera that can see it.
+    const ux = apex[0] - p[0];
+    const uy = apex[1] - p[1];
+    const uz = apex[2] - p[2];
+    const vx = q[0] - p[0];
+    const vy = q[1] - p[1];
+    const vz = q[2] - p[2];
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const length = Math.hypot(nx, ny, nz) || 1;
+    nx /= length;
+    ny /= length;
+    nz /= length;
+    const a = builder.vertex(p[0], p[1], p[2], nx, ny, nz);
+    const b = builder.vertex(q[0], q[1], q[2], nx, ny, nz);
+    const c = builder.vertex(apex[0], apex[1], apex[2], nx, ny, nz);
+    builder.triangle(a, c, b);
+  }
+  // The base, wound the other way so it faces down and the solid is closed. An
+  // open bottom reads as a hole the moment the camera drops below the marker,
+  // which on a slope it does.
+  quad(
+    builder,
+    [
+      [x0, y0, z0],
+      [x1, y0, z0],
+      [x1, y0, z1],
+      [x0, y0, z1],
+    ],
+    [0, -1, 0],
+  );
+}
+
+/**
+ * A low-polygon UV sphere centred at `(offsetX, centreY, offsetZ)`.
+ *
+ * POLES ARE FANS, NOT QUADS, and that is the whole subtlety. A naive latitude
+ * loop emits a quad per segment at the top and bottom rings, where one edge has
+ * collapsed to a point — so each is a zero-area triangle, and `three` turns
+ * those into NaN normals which remove the entire object from the scene with
+ * nothing logged. `prism` already had to learn this for its cone case.
+ */
+export function sphere(
+  builder: MeshBuilder,
+  radius: number,
+  centreY: number,
+  segments = 12,
+  rings = 6,
+  offsetX = 0,
+  offsetZ = 0,
+): void {
+  const point = (
+    ring: number,
+    segment: number,
+  ): [number, number, number, number, number, number] => {
+    const phi = (ring / rings) * Math.PI;
+    const theta = (segment / segments) * Math.PI * 2;
+    const nx = Math.sin(phi) * Math.cos(theta);
+    const ny = Math.cos(phi);
+    const nz = Math.sin(phi) * Math.sin(theta);
+    return [
+      offsetX + nx * radius,
+      centreY + ny * radius,
+      offsetZ + nz * radius,
+      nx,
+      ny,
+      nz,
+    ];
+  };
+
+  for (let ring = 0; ring < rings; ring++) {
+    for (let segment = 0; segment < segments; segment++) {
+      const a = point(ring, segment);
+      const b = point(ring, segment + 1);
+      const c = point(ring + 1, segment + 1);
+      const d = point(ring + 1, segment);
+      const ia = builder.vertex(...a);
+      const ib = builder.vertex(...b);
+      const ic = builder.vertex(...c);
+      const id = builder.vertex(...d);
+      // The top ring's a/b coincide at the pole and the bottom ring's c/d do,
+      // so one triangle of each cap quad is degenerate and is skipped.
+      if (ring > 0) builder.triangle(ia, ib, ic);
+      if (ring < rings - 1) builder.triangle(ia, ic, id);
+    }
+  }
 }
 
 /**
@@ -170,11 +440,14 @@ export function prism(
     const v1 = builder.vertex(...(p1 as [number, number, number]), nx, 0, nz);
     const v2 = builder.vertex(...(p2 as [number, number, number]), nx, 0, nz);
     const v3 = builder.vertex(...(p3 as [number, number, number]), nx, 0, nz);
-    builder.triangle(v0, v1, v2);
+    // Reversed for the same reason as `box`'s faces — the four points below run
+    // clockwise seen from outside, so emitting them in order wound every side
+    // against its own normal.
+    builder.triangle(v0, v2, v1);
     // A cone has no top edge, so its upper "quad" is degenerate — emitting the
     // second triangle anyway would add a zero-area face per side, which
     // `computeVertexNormals` turns into NaN normals downstream.
-    if (topRadius > 0) builder.triangle(v0, v2, v3);
+    if (topRadius > 0) builder.triangle(v0, v3, v2);
   }
 
   // Caps, as fans. The bottom is included even though it is usually against the
@@ -199,8 +472,8 @@ export function prism(
     for (let i = 0; i < sides; i++) {
       const a = rim[i] as number;
       const b = rim[(i + 1) % sides] as number;
-      if (ny > 0) builder.triangle(centre, a, b);
-      else builder.triangle(centre, b, a);
+      if (ny > 0) builder.triangle(centre, b, a);
+      else builder.triangle(centre, a, b);
     }
   };
   cap(bottomRadius, y0, -1);
@@ -300,12 +573,18 @@ export function hut(
     const b = builder.vertex(eaveX, y0, z1, side * nx, ny, 0);
     const c = builder.vertex(0, y1, z1, side * nx, ny, 0);
     const d = builder.vertex(0, y1, z0, side * nx, ny, 0);
+    // Reversed on both branches, for the same reason as `box`'s faces. The
+    // GABLE triangles below are NOT reversed and are already correct — they
+    // were written with the opposite corner order, which is why only half of
+    // `hut` was wrong and why `amenity=place_of_worship` was the one model the
+    // registry-wide winding guard still flagged after the primitives were
+    // fixed.
     if (side > 0) {
+      builder.triangle(a, c, b);
+      builder.triangle(a, d, c);
+    } else {
       builder.triangle(a, b, c);
       builder.triangle(a, c, d);
-    } else {
-      builder.triangle(a, d, c);
-      builder.triangle(a, c, b);
     }
   }
   // The two gable triangles, so the roof is closed rather than a tent with open
