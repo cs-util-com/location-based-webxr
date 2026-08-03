@@ -304,12 +304,32 @@
         font-size: 0.78rem;
       }
 
-      /* COLLAPSED (DEC-R2-4): the title, the category picker and the legend stay.
-         The picker is one of the demo's two primary inputs, and the legend exists
-         because nothing else on screen names the current category (DEC-1) — so a
-         collapsed bar without it re-creates the round-1 confusion.
+      /* COLLAPSED (DEC-R2-4, redrawn by DEC-R6b-5): the title, the CATEGORY
+         picker, the legend and the whole affordance block stay.
 
-         Hidden: the hint, the eight-fact status string and the show-below toggle.
+         WHY THE CATEGORY PICKER AND NOT THE GROUND PICKER, since this comment
+         used to justify keeping both as "the two primary inputs". The category
+         picker stays because the legend NAMES the current category (DEC-1) and
+         nothing else on screen does — a legend with no way to change what it is
+         describing re-creates the round-1 confusion. The ground mode is not in
+         that relationship with the legend: nothing in the collapsed bar claims
+         anything about it, so hiding it leaves no dangling claim. The sixth
+         session asked for it to collapse and Q-R6b-3 chose the note over the
+         older wording.
+
+         WHY THE AFFORDANCE BLOCK STAYS AND THE OTHERS GO. The legend describes
+         the affordance layers, so those switches are the ones it would be
+         strange to hide — same argument as the category picker. World, Debug and
+         Ground make no appearance in the collapsed bar's claims.
+
+         Hidden: the hint, the eight-fact status string, and the World, Debug and
+         Ground controls. `show-below` is NO LONGER LISTED HERE — it moved inside
+         `#layer-group-overlays` (see `main.ts`'s `extras`), so it now collapses
+         and expands with the affordance block it belongs to, which is to say it
+         stays visible. That reverses its old behaviour deliberately: it was the
+         ONLY setting that used to collapse, which is exactly backwards from what
+         the sixth session reported.
+
          The Terrarium attribution is NOT hidden — it moved to Leaflet's own
          attribution control, which is always visible, because attribution may not
          be collapsed away.
@@ -319,7 +339,9 @@
          and these override them. */
       header[data-collapsed="true"] .hint,
       header[data-collapsed="true"] #status,
-      header[data-collapsed="true"] label:has(#show-below) {
+      header[data-collapsed="true"] #ground-mode-label,
+      header[data-collapsed="true"] #layer-group-world,
+      header[data-collapsed="true"] #layer-group-diagnostics {
         display: none;
       }
 
@@ -472,7 +494,13 @@
         >category
         <select id="category"></select
       ></label>
-      <label
+      <!-- MOVED INTO THE AFFORDANCE GROUP AT RUNTIME (DEC-R6b-5). It stays here
+           in the source because this is where the header's own controls live and
+           `layer-toggles.ts` builds `#layers` from scratch; `main.ts` hands the
+           label over as an `overlays` extra, the same seam the perf switch uses.
+           The `id` exists so it can be handed over by name rather than by
+           walking up from the checkbox. -->
+      <label class="layer-toggle" id="show-below-label"
         ><input type="checkbox" id="show-below" /> show cells below the
         threshold</label
       >

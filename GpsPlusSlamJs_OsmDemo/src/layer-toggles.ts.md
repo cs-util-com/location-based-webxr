@@ -23,10 +23,17 @@ switch without depending on DOM order.
   what am I inspecting the renderer with.
 - **THE IDS ARE THE CONTRACT.** Every switch keeps `#layer-<name>`; the e2e suite
   locates them that way, so the regrouping moved elements without renaming any.
-- **`extras` puts a non-layer control in a group.** The perf panel is a
-  diagnostic and is now the ONLY member of that group, but it draws nothing in the
-  scene so it is deliberately not in `ALL_LAYERS` (DEC-R3-18). Handing the
-  element in beats a second registry or moving DOM after the fact.
+- **`extras` puts a non-layer control in a group.** Two use it. The perf panel is
+  a diagnostic and is the only member of that group, but it draws nothing in the
+  scene so it is deliberately not in `ALL_LAYERS` (DEC-R3-18). The `show-below`
+  checkbox joins the **affordance** group (DEC-R6b-5): it is not a layer either —
+  it changes which cells an existing layer draws — but it is a property of the
+  affordance heat grid and belongs with its switches. Handing the element in
+  beats a second registry or moving DOM after the fact.
+  - **Group membership is load-bearing, not cosmetic.** The collapsed header
+    hides whole groups, so being a real child of `#layer-group-overlays` is what
+    keeps `show-below` on screen when the bar collapses. A sibling styled to look
+    adjacent would render identically and behave wrongly.
 
 - **Generated from `ALL_LAYERS`, never hand-written.** A hand-written row is a second
   list of layers, and the two drift the moment a builder is added — leaving a layer

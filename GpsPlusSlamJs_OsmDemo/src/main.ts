@@ -121,6 +121,9 @@ async function main(): Promise<void> {
   const status = el("status");
   const categorySelect = el<HTMLSelectElement>("category");
   const showBelow = el<HTMLInputElement>("show-below");
+  // The label around it, handed to `attachLayerToggles` as an affordance-group
+  // extra (DEC-R6b-5) so the checkbox lives inside the block it belongs to.
+  const showBelowLabel = el("show-below-label");
 
   status.textContent = "Loading the rule table…";
 
@@ -431,7 +434,17 @@ async function main(): Promise<void> {
     // draws nothing in the scene so it is deliberately not a layer (W15,
     // DEC-R3-18). Handing the element over puts it in the right group without a
     // second registry or DOM moved after the fact.
-    extras: { diagnostics: [el("perf-stats-label")] },
+    //
+    // `show-below` joins the AFFORDANCE group the same way (DEC-R6b-5). It is
+    // not a layer either — it changes which cells an existing layer draws — but
+    // it is a property of the affordance heat grid and belongs with its
+    // switches. Being a real child of `#layer-group-overlays` rather than a
+    // sibling styled to look adjacent is what makes it collapse and expand with
+    // that block, which is the behaviour the sixth session asked for.
+    extras: {
+      diagnostics: [el("perf-stats-label")],
+      overlays: [showBelowLabel],
+    },
   });
   layerToggles.render(selectLayers(store.getState()));
 

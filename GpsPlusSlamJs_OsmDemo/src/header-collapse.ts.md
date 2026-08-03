@@ -35,10 +35,27 @@ State lives in `header[data-collapsed]`, so the CSS, the tests and
   lives inside the header and every reporter — fetch, either view, the locate
   button, a dead worker — writes there. Auto-collapsing again would race the user
   reading it. This keeps one error channel rather than growing a second.
-- **What stays visible when collapsed (DEC-R2-4):** title, category picker,
-  legend. The picker is one of two primary inputs; the legend exists because
-  nothing else names the current category (round-1 DEC-1), so hiding it would
-  re-create the confusion it was added to fix.
+- **What stays visible when collapsed (DEC-R2-4, redrawn by DEC-R6b-5):** title,
+  category picker, legend, and the whole **affordance** group — which since
+  round 7 includes the `show-below` checkbox. The legend NAMES the current
+  category (round-1 DEC-1) and describes the affordance layers, so hiding either
+  the picker or those switches would leave the collapsed bar making a claim with
+  no way to act on it.
+- **What collapses:** the hint, the status string, and the **World**, **Debug**
+  and **Ground** controls. Before round 7 exactly one setting collapsed —
+  `show-below` — while those three stayed, which is backwards from what the bar
+  is for and is what the sixth session reported.
+- **The ground picker collapses, and that reversed an earlier rationale
+  (Q-R6b-3).** `index.html` used to call the ground surface one of "the two
+  primary inputs" alongside the category picker. The owner chose the session's
+  note over that wording, so the comment was reworded rather than left
+  describing a rule the code no longer follows: the category picker stays
+  because the legend names the category, and the ground mode is not in that
+  relationship with anything in the collapsed bar.
+- **Nothing here implements any of that** — `header-collapse.ts` sets
+  `data-collapsed` and stops. Every decision about what disappears is CSS in
+  `index.html`, and the assertions live in the e2e suite, because jsdom does not
+  apply that stylesheet.
 - **Attribution is never collapsed away.** The Terrarium credit moved into
   Leaflet's attribution control (`MapView.setTerrainAttribution`), which is always
   visible. The header span was REMOVED rather than kept as a mirror: two copies of

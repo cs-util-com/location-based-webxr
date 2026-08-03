@@ -391,9 +391,11 @@ test.describe("the header", () => {
       // The height went to the 3D view rather than nowhere.
       expect(sceneAfter.height).toBeGreaterThan(sceneBefore.height);
 
-      // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4). Collapsing the
-      // category picker away would put a primary input two taps from reach, and
-      // hiding the legend would re-create the round-1 problem it was added to fix.
+      // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4, narrowed by
+      // DEC-R6b-5). Collapsing the category picker away would put a primary
+      // input two taps from reach, and hiding the legend would re-create the
+      // round-1 problem it was added to fix. The GROUND picker is no longer on
+      // this list — see the dedicated collapse step below for why.
       await expect(page.locator("#category")).toBeVisible();
       await expect(page.locator("#legend")).toBeVisible();
 
@@ -3051,10 +3053,19 @@ test.describe("the control bar", () => {
       ).toBeVisible();
     });
 
-    await test.step("still collapses to the title, picker, switches and legend", async () => {
-      // DEC-R2-4 is not negotiable here: the collapsed bar keeps the two primary
-      // inputs and the legend, and hides the hint, the status string and the
-      // show-below toggle. Restyling must not have moved anything across that line.
+    await test.step("collapses to the title, category, affordance block and legend", async () => {
+      // DEC-R6b-5 REDREW THIS LINE, and the shape of the change is the point.
+      // Before round 7 exactly ONE setting collapsed — `show-below` — while the
+      // World, Debug and Ground controls stayed on screen. That is backwards
+      // from what the bar is for, and it is what the sixth session reported.
+      //
+      // Collapsed now keeps: the category picker, the legend, and the whole
+      // affordance block INCLUDING `show-below`, which moved into that group.
+      // Collapsed now hides: the hint, the status string, World, Debug, Ground.
+      //
+      // `show-below` being VISIBLE here is a deliberate reversal. The session's
+      // first impression was that its disappearing was a bug; moving it into the
+      // block the legend describes is what makes it stop disappearing.
       //
       // The narrow viewport is set HERE rather than at the top, so the step above
       // still runs at the desktop width it was written for. A resize is a repaint,
@@ -3066,8 +3077,35 @@ test.describe("the control bar", () => {
       await expect(page.locator("#category")).toBeVisible();
       await expect(page.locator("#legend")).toBeVisible();
       await expect(page.locator("#layer-cells")).toBeVisible();
+      await expect(page.locator("#show-below")).toBeVisible();
+
       await expect(page.locator("#status")).toBeHidden();
-      await expect(page.locator("#show-below")).toBeHidden();
+      await expect(page.locator("#layer-group-world")).toBeHidden();
+      await expect(page.locator("#layer-group-diagnostics")).toBeHidden();
+      // The ground picker goes too (Q-R6b-3). It is the one control here that
+      // changes what is DRAWN rather than whether it is drawn, and `index.html`
+      // used to call it one of "the two primary inputs" — the owner chose the
+      // session's note over that precedent, so the comment was reworded rather
+      // than left describing a rule the code no longer follows.
+      await expect(page.locator("#ground-mode-label")).toBeHidden();
+
+      // And expanding brings all three back, so this is a collapse rather than
+      // a removal.
+      await page.locator("#header-toggle").click();
+      await expect(page.locator("#layer-group-world")).toBeVisible();
+      await expect(page.locator("#layer-group-diagnostics")).toBeVisible();
+      await expect(page.locator("#ground-mode-label")).toBeVisible();
+    });
+
+    await test.step("puts show-below inside the affordance group, not beside it", async () => {
+      // The MOVE, asserted structurally rather than by position on screen —
+      // `layer-toggles.ts` has an `extras` hook for exactly this (the perf
+      // switch already uses it), so the checkbox is a child of the group rather
+      // than a sibling that happens to render nearby. A CSS-only fix would look
+      // identical collapsed and wrong the moment the groups are reordered.
+      await expect(
+        page.locator("#layer-group-overlays #show-below"),
+      ).toBeAttached();
     });
   });
 });
