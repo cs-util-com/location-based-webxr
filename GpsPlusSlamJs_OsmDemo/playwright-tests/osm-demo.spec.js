@@ -293,10 +293,15 @@ test.describe("the location picker", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    // The placeholder plus the six corpus sites. Counted here rather than
-    // named, because WHICH six is the unit test's assertion against the shared
-    // table; this only has to know the markup carries no place names of its own.
-    await expect(page.locator("#site option")).toHaveCount(7);
+    // The markup carries no place names of its own — `index.html` ships an
+    // EMPTY `<select>` and `attachSitePicker` fills it. WHICH places, and how
+    // many, is `picker-places.test.ts`'s assertion against the list; repeating
+    // a count here only bought a second place to update, and duly broke when
+    // DEC-R6b-4 took the list from six to fourteen. What this has to catch is
+    // the picker never running at all, which leaves the placeholder alone.
+    const options = page.locator("#site option");
+    await expect(options).not.toHaveCount(1);
+    await expect(options.first()).toHaveValue("");
 
     /** Basemap tiles requested from the moment the choice is made. */
     const tilesAfter = [];
@@ -308,9 +313,13 @@ test.describe("the location picker", () => {
     });
     for (const url of tilesAfter.splice(0)) tilesBefore.add(url);
 
-    await page.selectOption("#site", "heidelberg-altstadt");
+    // Porto, since DEC-R6b-1 dropped Heidelberg from the dropdown. It has to be
+    // a place the picker actually OFFERS: `selectOption` on a value with no
+    // matching option throws, so this line is itself a check that the id in the
+    // list and the id used here have not drifted apart.
+    await page.selectOption("#site", "porto-ribeira");
 
-    // Leaflet requests tiles for wherever it now is. Heidelberg is ~200 km from
+    // Leaflet requests tiles for wherever it now is. Porto is ~1500 km from
     // Cologne, so at zoom 18 not one tile of the previous view can be reused —
     // a map that did not move would request nothing new at all.
     await expect
@@ -1098,7 +1107,10 @@ test.describe("my location", () => {
     await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
     await stubNetwork(page);
     // Deliberately NOT `AT_FIXTURE`: starting at the default proves the button
-    // moved the user, rather than confirming where they already were.
+    // moved the user, rather than confirming where they already were. Since
+    // DEC-R6b-3 the default is Manhattan, so the opening view is a whole ocean
+    // away from the geolocation fix below — this test got STRONGER when the
+    // default moved, not weaker.
     await page.goto("/");
     await waitForRefresh(page);
 

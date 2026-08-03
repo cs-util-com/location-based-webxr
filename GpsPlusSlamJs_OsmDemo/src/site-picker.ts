@@ -7,12 +7,18 @@
  * cathedral finding: a defect that could not be reproduced because there was
  * nowhere else to look.
  *
- * WHY IT READS THE PACKAGE'S TABLE RATHER THAN ITS OWN LIST. The same six sites
- * are the offline fixture corpus (DEC-R4-1/R4-2). Two lists would drift, and the
- * drift has a specific cost: the places a human can reach would stop being the
- * places the suite covers, which is exactly the blind spot the corpus was built
- * to close. So there is one table, in `gps-plus-slam-osm`, and this file renders
- * it.
+ * WHY IT READS `PICKER_PLACES` AND NOT THE PACKAGE'S CORPUS TABLE (DEC-R6b-1).
+ * It used to read the corpus, because two lists drift and the drift's cost is
+ * that the places a human can reach stop being the places the suite covers. The
+ * sixth session made that untenable: a corpus site earns its place by being
+ * **awkward to render**, and several are deliberately unphotogenic — the owner
+ * asked for a dropdown of famous places instead.
+ *
+ * **The anti-drift guarantee moved rather than disappeared.** Every corpus site
+ * stays reachable through `?site=<id>`, which `start-position.test.ts` asserts
+ * for the whole table; the dropdown is free to list what a visitor wants to
+ * click. Reachability rather than membership is what lets "Sylt auf jeden Fall
+ * raus" and "the tested places stay visitable" both be true.
  *
  * WHY IT REPORTS A POSITION RATHER THAN DOING ANYTHING. Choosing a site is the
  * same intent as clicking the map and the same intent as the locate button: the
@@ -31,7 +37,9 @@
  * @see site-picker.ts.md
  */
 
-import { CORPUS_SITES, siteById, type LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "gps-plus-slam-osm";
+
+import { PICKER_PLACES, placeById } from "./picker-places.js";
 
 export interface SitePickerOptions {
   /** The `<select>` to populate. Emptied first, so a re-attach is idempotent. */
@@ -49,18 +57,20 @@ export interface SitePicker {
  *
  * Empty string rather than a sentinel id, because an empty `<select>` value is
  * what a browser reports for "nothing selected" anyway — one representation
- * instead of two, and `siteById("")` is already `undefined`.
+ * instead of two, and `placeById("")` is already `undefined`.
  */
 const NO_SITE = "";
 
 /**
  * Populates the picker and reports choices.
  *
- * NOTHING IS PRESELECTED. The demo may have started from `?lat=&lng=`, from the
- * locate button, or from a map click, none of which are corpus sites — and a
- * picker reading "Cologne Cathedral" while the view is in Heidelberg is the
- * control contradicting the picture, which is the defect class round 1 was
- * about. The placeholder stays selected until the user chooses.
+ * NOTHING IS PRESELECTED, and that stayed true when the default moved to
+ * Manhattan (DEC-R6b-3). The demo may have started from `?lat=&lng=`, from
+ * `?site=`, from the locate button or from a map click, and only some of those
+ * are places in this list — a picker reading "Cologne — Cathedral" while the
+ * view is in Porto is the control contradicting the picture, which is the
+ * defect class round 1 was about. The placeholder stays selected until the user
+ * chooses, even though entry 0 is now where the demo opens.
  */
 export function attachSitePicker(options: SitePickerOptions): SitePicker {
   const { select, onChoose } = options;
@@ -72,13 +82,14 @@ export function attachSitePicker(options: SitePickerOptions): SitePicker {
   placeholder.textContent = "jump to…";
   select.append(placeholder);
 
-  for (const site of CORPUS_SITES) {
+  for (const place of PICKER_PLACES) {
     const option = document.createElement("option");
-    option.value = site.id;
-    option.textContent = site.name;
-    // The corpus reason, as a tooltip. It is the one place a user can find out
-    // why these six places and not six prettier ones.
-    option.title = site.reason;
+    option.value = place.id;
+    option.textContent = place.name;
+    // The note, as a tooltip. It is the one place a user finds out what is
+    // worth looking at there before paying for a cold fetch — which is why
+    // `picker-places.test.ts` requires every entry to carry one.
+    option.title = place.note;
     select.append(option);
   }
 
@@ -86,13 +97,13 @@ export function attachSitePicker(options: SitePickerOptions): SitePicker {
   // rule every listener in `building-view.ts` follows: an orphaned listener
   // keeps the whole view graph reachable.
   const onChange = (): void => {
-    const site = siteById(select.value);
+    const place = placeById(select.value);
     // Unknown ids are ignored rather than reported or thrown. A browser
     // restores a stale `<select>` value across a reload when the option list
     // has changed, and moving the demo to `undefined` would be worse than
     // doing nothing for a control that is a convenience.
-    if (site === undefined) return;
-    onChoose(site.position);
+    if (place === undefined) return;
+    onChoose(place.position);
   };
   select.addEventListener("change", onChange);
 

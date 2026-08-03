@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Populates the header's location `<select>` from the shared corpus table and
-reports the chosen site's position, so the demo can be moved to any of the six
-places it is tested at without editing a URL.
+Populates the header's location `<select>` from `PICKER_PLACES` and reports the
+chosen place's position, so the demo can be moved to any of fourteen famous
+places without editing a URL.
 
 ## Public API
 
@@ -17,13 +17,21 @@ places it is tested at without editing a URL.
 
 ## Invariants & assumptions
 
-- **The options ARE `CORPUS_SITES`, in order.** A hand-written list here would
-  look identical on screen and silently undo DEC-R4-11 — the places a human can
-  reach would stop being the places the fixture suite covers, which is the blind
-  spot that produced the round-3 cathedral finding. `site-picker.test.ts`
-  asserts identity with the table, not a count.
-- **Nothing is preselected.** The demo may have started from `?lat=&lng=`, from
-  the locate button, or from a map click, none of which are corpus sites. A
+- **The options ARE `PICKER_PLACES`, in order, tooltips included.** A
+  hand-written list inside this file would look identical on screen and silently
+  reintroduce drift. `site-picker.test.ts` asserts identity with the list, not a
+  count.
+- **It no longer reads `CORPUS_SITES` (DEC-R6b-1), and the guarantee that
+  change gave up is enforced elsewhere.** Until round 7 the picker rendered the
+  fixture corpus so that the reachable places were the covered places. The sixth
+  session made that untenable — corpus sites are chosen for being awkward to
+  render, several deliberately unphotogenic. The property is preserved by
+  `?site=<id>` reaching every corpus site whether or not it is in the dropdown,
+  asserted in `start-position.test.ts`. **If you are looking for the anti-drift
+  test, it is there, not here.**
+- **Nothing is preselected**, even though option 1 is now where the demo opens.
+  The demo may have started from `?lat=&lng=`, from `?site=`, from the locate
+  button or from a map click, and only some of those are places in the list. A
   picker naming a place the view is not at is the control contradicting the
   picture. Option 0 is a `"jump to…"` placeholder with an empty value.
 - **An unknown value is ignored** — not reported, not thrown. A browser restores

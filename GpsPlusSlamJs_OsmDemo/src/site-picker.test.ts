@@ -7,17 +7,23 @@
  * leaving the part that can — that the DOM the user actually touches is built
  * from the shared table — covered by nothing.
  *
- * WHY THESE TESTS MATTER (W5, DEC-R4-11). The picker and the offline fixture
- * corpus read ONE table so that the places a human can reach are exactly the
- * places the suite covers. That guarantee is worth precisely as much as its
- * weakest link, and the weakest link is here: a picker populated from a
- * hand-written list would look identical on screen and silently reintroduce the
- * drift the shared table exists to remove. So the assertion is not "the picker
- * has six options", it is "the picker's options ARE the table".
+ * WHY THESE TESTS MATTER (W5, DEC-R4-11, and DEC-R6b-1 which revised it). The
+ * picker used to read the fixture corpus itself, so that the places a human
+ * could reach were exactly the places the suite covered. **Round 7 split the
+ * two** — the corpus earns entries by being awkward to render, and the sixth
+ * session asked the dropdown for the opposite.
+ *
+ * The anti-drift guarantee therefore moved rather than disappeared, and it is
+ * important to know where: it now lives in `start-position.test.ts`, which
+ * asserts every `CORPUS_SITES` entry stays reachable through `?site=`. What is
+ * pinned HERE is the other half — that the DOM the user touches is built from
+ * `PICKER_PLACES` and not from a hand-written list that would look identical on
+ * screen. So the assertion is not "the picker has fourteen options", it is "the
+ * picker's options ARE the list", tooltips included.
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { CORPUS_SITES } from "gps-plus-slam-osm";
+import { PICKER_PLACES } from "./picker-places.js";
 
 import { attachSitePicker } from "./site-picker.js";
 
@@ -39,15 +45,17 @@ describe("attachSitePicker", () => {
     // Identity with the table, in order — not a count, and not a set. A count
     // passes when a site is duplicated and another is missing.
     expect(sites.map((option) => option.value)).toEqual(
-      CORPUS_SITES.map((site) => site.id),
+      PICKER_PLACES.map((place) => place.id),
     );
     expect(sites.map((option) => option.textContent)).toEqual(
-      CORPUS_SITES.map((site) => site.name),
+      PICKER_PLACES.map((place) => place.name),
     );
-    // The corpus reason travels with the option, so "why these six places" is
-    // discoverable from the UI rather than only from a doc.
+    // The note travels with the option as its tooltip, so "what will I see
+    // there" is answerable from the UI rather than only from a doc. This is
+    // also why `picker-places.test.ts` requires every entry to have one
+    // (Q-R6b-1) — a missing note is a silently tooltip-less row.
     expect(sites.map((option) => option.title)).toEqual(
-      CORPUS_SITES.map((site) => site.reason),
+      PICKER_PLACES.map((place) => place.note),
     );
   });
 
@@ -56,8 +64,8 @@ describe("attachSitePicker", () => {
     const onChoose = vi.fn();
     attachSitePicker({ select, onChoose });
 
-    const target = CORPUS_SITES[2];
-    if (target === undefined) throw new Error("corpus is empty");
+    const target = PICKER_PLACES[2];
+    if (target === undefined) throw new Error("the picker list is empty");
     select.value = target.id;
     select.dispatchEvent(new Event("change"));
 
@@ -102,8 +110,8 @@ describe("attachSitePicker", () => {
     const picker = attachSitePicker({ select, onChoose });
     picker.dispose();
 
-    const target = CORPUS_SITES[0];
-    if (target === undefined) throw new Error("corpus is empty");
+    const target = PICKER_PLACES[0];
+    if (target === undefined) throw new Error("the picker list is empty");
     select.value = target.id;
     select.dispatchEvent(new Event("change"));
 

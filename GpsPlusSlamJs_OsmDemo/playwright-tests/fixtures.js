@@ -30,21 +30,30 @@ const here = dirname(fileURLToPath(import.meta.url));
 /**
  * The app URL that puts the simulated user ON the fixture.
  *
- * The park capture is centred ~2 km from the demo default, and at that distance
- * the working set overlaps none of it — the app renders "0 cells" and every
- * assertion about the grid is vacuously about an empty map. The `?lat=&lng=`
- * override exists so the test can say exactly where it stands.
+ * The park capture is in Cologne and the demo default is now Manhattan
+ * (DEC-R6b-3), so from the default the working set overlaps none of it — the app
+ * renders "0 cells" and every assertion about the grid is vacuously about an
+ * empty map. The `?lat=&lng=` override exists so the test can say exactly where
+ * it stands.
+ *
+ * **The distance is not the point and never was**; before round 7 the default
+ * was Cologne Cathedral and ~2 km was already enough. What matters is that the
+ * default is not ON the fixture, which is now true by a much larger margin.
  */
 export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}`;
 
 /**
  * A real captured Overpass response from the OSM package's fixture corpus.
  *
- * `park` is Cologne Volksgarten — ~2 km from `main.ts`'s default start, which
- * is the whole reason `AT_FIXTURE` exists: served from the default position the
- * features overlap none of the working set and the app renders 0 cells. Read
- * from the sibling package rather than copied, so a re-capture cannot leave this
- * suite asserting stale data.
+ * `park` is Cologne Volksgarten, which is nowhere near `main.ts`'s default start
+ * (Manhattan since DEC-R6b-3) — the whole reason `AT_FIXTURE` exists: served
+ * from the default position the features overlap none of the working set and the
+ * app renders 0 cells. Read from the sibling package rather than copied, so a
+ * re-capture cannot leave this suite asserting stale data.
+ *
+ * **This payload answers every Overpass query regardless of bbox**, so a test
+ * that navigates to the default and then locates into Cologne still finds data
+ * when it arrives.
  */
 export function parkPayload() {
   const path = join(

@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Parses the demo's `?lat=&lng=` start-position override.
+Parses the demo's start-position override: `?lat=&lng=` or `?site=<id>`.
 
 ## Public API
 
 - `parseStartPosition(search: string): LatLng`
-- `DEFAULT_START` — Cologne
+- `DEFAULT_START` — Manhattan at the Central Park edge, taken from `PICKER_PLACES[0]` (DEC-R6b-3)
 
 ## Invariants & assumptions
 
