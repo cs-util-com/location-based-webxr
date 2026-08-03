@@ -42,6 +42,7 @@ import { D_VARIANTS } from "./poi-variants-d.js";
 import { P_VARIANTS } from "./poi-variants-p.js";
 import { M_VARIANTS } from "./poi-variants-m.js";
 import { L_VARIANTS } from "./poi-variants-l.js";
+import { H_VARIANTS } from "./poi-variants-hybrid.js";
 
 /**
  * The six prototype files, by the letters §4.3 of the round-6 plan assigned.
@@ -51,7 +52,7 @@ import { L_VARIANTS } from "./poi-variants-l.js";
  * spaces and parentheses, and two of them differ only by a numeric suffix.
  * The mapping is written out once, here, and nowhere else.
  */
-export type VariantSource = "D" | "G" | "P" | "L" | "B" | "M";
+export type VariantSource = "D" | "G" | "P" | "L" | "B" | "M" | "H";
 
 /** What each source letter refers to. Shown in the gallery beside a variant. */
 export const VARIANT_SOURCES: Readonly<Record<VariantSource, string>> =
@@ -62,6 +63,10 @@ export const VARIANT_SOURCES: Readonly<Record<VariantSource, string>> =
     L: "poi-markers-gallery (2)",
     B: "poi-markers-plinth-and-payload",
     M: "poi-markers.html",
+    // NOT A FILE, unlike the other six. `H` is a model the owner asked to be
+    // combined from two sources — so far only `leisure=park`, D's version with
+    // P's bench.
+    H: "hybrid — combined from two sources on request",
   });
 
 /** One alternative model for a kind. */
@@ -231,9 +236,12 @@ export const CHOSEN_VARIANTS: readonly {
   { kind: "amenity=bench", winner: "shipped" },
   { kind: "amenity=place_of_worship", winner: "L" },
   {
+    // Built as the `H` variant: D's ground with P's bench. The winner is that
+    // combination rather than D itself, so it points at what was actually asked
+    // for instead of at a model plus a note nobody would apply.
     kind: "leisure=park",
-    winner: "D",
-    note: "with the bench from P — the only requested HYBRID of two sources",
+    winner: "H",
+    note: "D's park with the bench from P — the only requested hybrid",
   },
   { kind: "tourism=information", winner: "D" },
   {
@@ -451,6 +459,7 @@ function variants(): PoiVariant[] {
     ...[...P_VARIANTS.keys()].map((k) => fromDiorama(k, "P", P_VARIANTS)),
     ...[...M_VARIANTS.keys()].map((k) => fromDiorama(k, "M", M_VARIANTS)),
     ...[...L_VARIANTS.keys()].map((k) => fromDiorama(k, "L", L_VARIANTS)),
+    ...[...H_VARIANTS.keys()].map((k) => fromDiorama(k, "H", H_VARIANTS)),
     // The §4 rebuild's seven, which were ported from the house-style file and
     // are therefore already the `L` variant of their kind.
     fromShipped("amenity=bench", "L"),

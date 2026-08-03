@@ -59,3 +59,15 @@ stripped.
   positions, outward winding, height matching the shipped model) plus the
   palette assertion that keeps `D_PALETTE` from drifting from the house one.
 - `poi-primitives.test.ts` — the primitives each port composes.
+
+## Exported for the hybrid
+
+`parkGroundD(builder)` — D's park **without its bench**: grass, path, two trees.
+The plate's top is at `0.05` in builder coordinates, which is where anything
+standing in this park belongs.
+
+It exists because the owner's verdict on `leisure=park` was D's model _"mit der
+Bank von Variante P"_, so the ground has two consumers and the bench has none in
+common. Splitting exactly at that seam keeps
+[`poi-variants-hybrid.ts`](./poi-variants-hybrid.ts.md) from becoming a second
+copy of the park that could drift from this one.

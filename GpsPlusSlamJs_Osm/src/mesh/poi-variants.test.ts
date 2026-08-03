@@ -9,6 +9,7 @@ import { P_PALETTE } from "./poi-variants-p.js";
 import { M_PALETTE } from "./poi-variants-m.js";
 import { markerHeightFor } from "./poi-variants.js";
 import { L_PALETTE, L_VARIANTS } from "./poi-variants-l.js";
+import { H_VARIANTS } from "./poi-variants-hybrid.js";
 import {
   LIKED_VARIANTS,
   POI_VARIANTS,
@@ -236,9 +237,15 @@ describe("LIKED_VARIANTS — the owner's notes as a checked-in table", () => {
       L: 0,
       B: 0,
       M: 0,
+      H: 0,
     };
     for (const { source } of LIKED_VARIANTS) counts[source] += 1;
-    expect(counts).toEqual({ D: 18, G: 5, P: 4, L: 13, B: 7, M: 4 });
+    // `H` IS ZERO HERE ON PURPOSE, and the zero is the point. `LIKED_VARIANTS`
+    // records what the owner picked out of the six PROTOTYPES; a hybrid is
+    // something they asked to be built afterwards, out of two of those picks.
+    // Counting it here would inflate the totals above and break the one thing
+    // this table is for — sending a later reader to the right source file.
+    expect(counts).toEqual({ D: 18, G: 5, P: 4, L: 13, B: 7, M: 4, H: 0 });
   });
 });
 
@@ -620,5 +627,71 @@ describe("L's hunting stand leans its ladder against the hut", () => {
     expect(top.z).toBeGreaterThan(bottom.z);
     expect(top.z).toBeGreaterThan(-0.14);
     expect(bottom.z).toBeLessThan(-0.15);
+  });
+});
+
+describe("the H hybrid — D's park with P's bench", () => {
+  /**
+   * THE OWNER'S ONE REQUEST FOR A COMBINATION: _"Bei dem Park ist die Variante D
+   * am besten. Am besten die Variante D mit dem, mit der Bank von Variante P."_
+   *
+   * A hybrid is the easiest kind of model to get quietly wrong, because it looks
+   * right if it is simply one parent: drop the bench and it is D's park, which
+   * reads fine and is not what was asked for. These tests pin that BOTH parents
+   * are present and that D's own bench is gone.
+   */
+  const park = (): MeshData => {
+    const build = H_VARIANTS.get("leisure=park");
+    if (build === undefined) throw new Error("no hybrid park");
+    return build();
+  };
+
+  it("keeps D's ground — the grass plate is still 0.8 m across", () => {
+    let widest = 0;
+    const mesh = park();
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      widest = Math.max(widest, Math.abs(mesh.positions[i] as number));
+    }
+    expect(widest).toBeCloseTo(0.4, 2);
+  });
+
+  it("carries a bench with two legs, which D's park did not have", () => {
+    // D's bench is a plank plus a stub: no part of it descends to the grass.
+    // P's stands on two legs from the grass up, so vertices at the plate top
+    // (0.05) away from the plate's own rim are the signature of the graft.
+    const mesh = park();
+    let legVertices = 0;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const x = mesh.positions[i] as number;
+      const y = mesh.positions[i + 1] as number;
+      if (Math.abs(y - 0.05) > 1e-3) continue;
+      if (Math.abs(x) > 0.39) continue; // the plate's own rim
+      legVertices += 1;
+    }
+    expect(legVertices).toBeGreaterThanOrEqual(8); // two legs, four corners each
+  });
+
+  it("scales P's bench to D's park rather than dropping it in raw", () => {
+    // THE TRAP THIS CATCHES. P's bench is 0.78 m long and D's park plate is
+    // 0.80 m — a raw graft spans the whole park, and after the registry scales
+    // the park to 4.56 m it is a five-metre bench. The seat must stay a
+    // bench-sized fraction of the plate.
+    const mesh = park();
+    // The seat is the only woodMid part; the plate is wallSage and the trees
+    // and legs woodDark.
+    const colours = mesh.colours;
+    expect(colours).toBeDefined();
+    const woodMid = Math.fround(0x8a / 255);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let v = 0; v * 3 < mesh.positions.length; v++) {
+      if (Math.fround(colours?.[v * 3] as number) !== woodMid) continue;
+      const x = mesh.positions[v * 3] as number;
+      lo = Math.min(lo, x);
+      hi = Math.max(hi, x);
+    }
+    const seatLength = hi - lo;
+    expect(seatLength).toBeGreaterThan(0.15);
+    expect(seatLength).toBeLessThan(0.35);
   });
 });

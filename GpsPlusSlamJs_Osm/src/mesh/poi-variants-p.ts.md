@@ -63,3 +63,14 @@ const mesh = scaledToHeight(groundedMesh(build!()), 2.4); // what the registry d
   and the palette assertion that keeps `P_PALETTE` from drifting.
 - `poi-primitives.test.ts` — `sphere`'s `radiusY`, including that a squashed
   blob carries the **ellipsoid's** normal rather than the unit sphere's.
+
+## Exported for the hybrid
+
+`benchP(builder, baseY, x, z, s)` — P's park bench, a seat on two legs, grounded
+and centred on its own footprint so any model can place it.
+
+P's own park calls it at `baseY = 0.03, x = 0.30, z = 0.28, s = 1`, which
+reproduces the source's three boxes exactly.
+[`poi-variants-hybrid.ts`](./poi-variants-hybrid.ts.md) calls it at about a third
+of that size, because D's park is a much tighter vignette — see that sidecar for
+why the scale is arithmetic rather than taste.

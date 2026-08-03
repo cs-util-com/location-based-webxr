@@ -267,6 +267,24 @@ function crossPlateD(
 }
 
 /**
+ * D's park WITHOUT its bench — grass, path and two trees.
+ *
+ * **EXPORTED FOR THE HYBRID.** The owner's verdict on `leisure=park` was D's
+ * model _"mit der Bank von Variante P"_, so the ground has two consumers and the
+ * bench has none in common. Splitting exactly at that seam keeps the hybrid from
+ * being a second copy of the park that could drift from this one.
+ *
+ * **The plate's top is at 0.05** in builder coordinates, which is where anything
+ * standing in this park belongs.
+ */
+export function parkGroundD(b: MeshBuilder): void {
+  bx(b, 0.8, 0.05, 0.8, 0, T + 0.025, 0, D.wallSage);
+  flatD(b, 0.2, 0.76, 0.24, T + 0.056, 0, D.paving);
+  treeD(b, -0.16, -0.06, 1.15);
+  treeD(b, 0.02, 0.26, 0.72);
+}
+
+/**
  * Every D model, keyed by kind. Built at D's own scale; the registry rescales.
  *
  * **TWO ENTRIES ARE NOT IN THE OWNER'S LIKED LIST FOR D** — `amenity=post_box`
@@ -462,10 +480,10 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
     "leisure=park",
     (): MeshData =>
       composed((b) => {
-        bx(b, 0.8, 0.05, 0.8, 0, T + 0.025, 0, D.wallSage);
-        flatD(b, 0.2, 0.76, 0.24, T + 0.056, 0, D.paving);
-        treeD(b, -0.16, -0.06, 1.15);
-        treeD(b, 0.02, 0.26, 0.72);
+        parkGroundD(b);
+        // D's own bench: a plank and a stub. The owner chose this park but P's
+        // bench, which is why the ground above is a shared function and these
+        // two boxes are not — see `poi-variants-hybrid.ts`.
         bx(b, 0.26, 0.05, 0.09, -0.3, T + 0.1, 0.28, D.woodDark);
         bx(b, 0.05, 0.1, 0.09, -0.3, T + 0.1, 0.24, D.woodDark);
       }),

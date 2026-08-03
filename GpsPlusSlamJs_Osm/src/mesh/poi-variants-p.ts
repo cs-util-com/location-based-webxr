@@ -155,6 +155,34 @@ function treeP(b: MeshBuilder, x: number, z: number, s: number): void {
   icoP(b, 0.3 * s, x - 0.2 * s, 1.1 * s + 0.2, z + 0.06 * s, P.wallSage, 0.9);
 }
 
+/**
+ * P's park bench — a seat on two legs — grounded and centred on its own
+ * footprint so any model can place it.
+ *
+ * **EXPORTED FOR THE HYBRID.** The owner chose D's park _"mit der Bank von
+ * Variante P"_, so this one sub-assembly has two consumers: P's own park, where
+ * it reproduces the source exactly, and `poi-variants-hybrid.ts`. Factoring it
+ * out rather than copying it is what stops the two benches drifting into
+ * different shapes under the same name.
+ *
+ * `baseY` is where the legs stand, `s` scales the whole bench — the hybrid needs
+ * it at about a third of P's size because D's park is a much tighter vignette.
+ */
+export function benchP(
+  b: MeshBuilder,
+  baseY: number,
+  x: number,
+  z: number,
+  s = 1,
+): void {
+  b.paint(P.woodMid);
+  box(b, 0.78 * s, 0.1 * s, 0.28 * s, baseY + 0.27 * s, x, z);
+  b.paint(P.woodDark);
+  for (const side of [-1, 1]) {
+    box(b, 0.08 * s, 0.3 * s, 0.08 * s, baseY, x + side * 0.26 * s, z);
+  }
+}
+
 /** Every P model, keyed by kind. Built at P's own scale; the registry rescales. */
 export const P_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
   string,
@@ -165,10 +193,10 @@ export const P_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
     (): MeshData =>
       composed((b) => {
         treeP(b, -0.2, -0.06, 1);
-        // A bench beside the tree — seat plus two legs.
-        bxP(b, 0.78, 0.1, 0.28, 0.3, 0.53, 0.28, P.woodMid);
-        bxP(b, 0.08, 0.3, 0.08, 0.04, 0.36, 0.28, P.woodDark);
-        bxP(b, 0.08, 0.3, 0.08, 0.56, 0.36, 0.28, P.woodDark);
+        // A bench beside the tree. The source's three boxes, unchanged: its
+        // legs stand at 0.03 above the stripped plinth and its seat at 0.30,
+        // which is exactly what `benchP` emits at `baseY = 0.03`.
+        benchP(b, 0.03, 0.3, 0.28);
       }),
   ],
   [
