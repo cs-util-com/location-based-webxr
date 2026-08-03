@@ -10,9 +10,29 @@ Two views of the same OSM data, side by side:
 ```bash
 pnpm run dev            # http://127.0.0.1:5186
                         # ?lat=&lng= points it anywhere you like
+                        # ?site=<id>  jumps to a named place
 pnpm test               # typecheck + unit + e2e
 pnpm run test:e2e:headed  # watch the e2e suite drive it
 ```
+
+It opens on **Manhattan at the Central Park edge**, and the header's `location`
+dropdown offers fourteen places worth looking at (`src/picker-places.ts`).
+
+**`?site=<id>` reaches more than the dropdown lists, and that is deliberate.** It
+resolves any picker id _and_ any id in the package's fixture corpus
+(`CORPUS_SITES`), including the three the dropdown does not offer:
+
+```
+?site=sylt-westerland        # natural=coastline, where the ground stops being ground
+?site=heidelberg-altstadt    # real terrain relief inside one tile
+?site=berlin-alexanderplatz  # stacked U-Bahn/S-Bahn tagging with real layer values
+```
+
+Those three are the offline fixture corpus but not places anyone wants in a
+dropdown, so the picker dropped them while this route kept them **reachable** —
+which is what stops the places under test from drifting away from the places you
+can look at. An unrecognised id falls back to the default rather than erroring.
+`?lat=&lng=` wins if you pass both.
 
 ## What this demo is for
 

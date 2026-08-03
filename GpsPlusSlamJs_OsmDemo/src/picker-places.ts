@@ -83,6 +83,18 @@ function fromCorpus(id: string, fallback: LatLng): LatLng {
  * on.
  *
  * The coordinates are this file's call. The SELECTION is the owner's.
+ *
+ * **NO TEST CAN CHECK A COORDINATE, and it is worth knowing why before trusting
+ * a green run.** The suite asserts these positions are on Earth, unique, and not
+ * one of the three places the owner removed — none of which catches a digit
+ * typed wrong. `rome-colosseum` shipped at 41.809 in this file's first revision,
+ * 9 km south of the Colosseum and comfortably inside every assertion. Anything
+ * tighter would just be the coordinate written twice, agreeing with itself.
+ *
+ * What actually catches it is the `note`: it says what you should SEE on
+ * arrival, so a wrong coordinate presents as "the tooltip promised the Colosseum
+ * and there is no Colosseum here". That is a reason to keep the notes concrete
+ * about landmarks rather than atmospheric.
  */
 export const PICKER_PLACES: readonly PickerPlace[] = [
   {
@@ -146,7 +158,7 @@ export const PICKER_PLACES: readonly PickerPlace[] = [
   {
     id: "rome-colosseum",
     name: "Rome — Colosseum",
-    position: { lat: 41.809, lng: 12.4922 },
+    position: { lat: 41.8902, lng: 12.4922 },
     note: "A ring of tiered arcades with a hollow centre — a large multipolygon whose interior is genuinely a hole.",
   },
   {
