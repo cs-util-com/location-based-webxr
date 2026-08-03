@@ -31,7 +31,15 @@
  */
 
 import type { MeshBuilder, MeshData } from "./mesh-data.js";
-import { box, composed, disc, prism, pyramid, quad } from "./poi-primitives.js";
+import {
+  box,
+  composed,
+  disc,
+  prism,
+  pyramid,
+  quad,
+  sphere,
+} from "./poi-primitives.js";
 
 /**
  * D's palette, which is byte-identical to the house style's.
@@ -59,6 +67,9 @@ const D = {
   terracotta: 0xc97b62,
   mustard: 0xd9b64e,
   rust: 0xc4622a,
+  ochre: 0xa8871f,
+  roofTeal: 0x3e7a80,
+  pavingDark: 0xa99e8c,
 } as const;
 
 /** The plinth thickness every D part is offset by. Stripped on port. */
@@ -274,6 +285,106 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         quadD(b, 0.17, 0.045, 0, T + 0.42, 0.152, D.windowDark);
         quadD(b, 0.15, 0.1, 0, T + 0.28, 0.152, D.windowDark);
         cylD(b, 0.19, 0.19, 0.05, 8, 0, T + 0.025, 0, D.stoneDark);
+      }),
+  ],
+  [
+    "amenity=vending_machine",
+    (): MeshData =>
+      composed((b) => {
+        bx(b, 0.44, 0.66, 0.26, 0, T + 0.33, 0, D.metalGalv);
+        quadD(b, 0.28, 0.44, -0.06, T + 0.42, 0.132, D.windowDark);
+        for (let i = 0; i < 3; i++) {
+          quadD(b, 0.24, 0.05, -0.06, T + 0.26 + i * 0.14, 0.134, D.mustard);
+        }
+        quadD(b, 0.1, 0.26, 0.14, T + 0.46, 0.132, D.windowDark);
+        quadD(b, 0.3, 0.07, -0.06, T + 0.14, 0.134, D.windowDark);
+        bx(b, 0.46, 0.05, 0.28, 0, T + 0.02, 0, D.metalDark);
+        bx(b, 0.46, 0.05, 0.28, 0, T + 0.685, 0, D.metalDark);
+      }),
+  ],
+  [
+    "amenity=recycling",
+    (): MeshData =>
+      composed((b) => {
+        // Three colour-coded banks, exactly as the source composes them.
+        const bank = (x: number, z: number, colour: number): void => {
+          cylD(b, 0.115, 0.145, 0.52, 6, x, T + 0.26, z, D.metalGalv);
+          cylD(b, 0.125, 0.125, 0.05, 6, x, T + 0.545, z, colour);
+          quadD(b, 0.1, 0.045, x, T + 0.44, z + 0.128, D.windowDark);
+        };
+        bank(-0.26, 0.14, D.roofTeal);
+        bank(0.02, -0.14, D.mustard);
+        bank(0.3, 0.14, D.rust);
+        bx(b, 0.86, 0.05, 0.86, 0, T + 0.025, 0, D.pavingDark);
+      }),
+  ],
+  [
+    "amenity=fuel",
+    (): MeshData =>
+      composed((b) => {
+        bx(b, 0.11, 0.7, 0.11, -0.28, T + 0.35, -0.1, D.trimWhite);
+        bx(b, 0.11, 0.7, 0.11, 0.28, T + 0.35, -0.1, D.trimWhite);
+        bx(b, 0.88, 0.14, 0.62, 0, T + 0.77, -0.06, D.trimWhite);
+        quadD(b, 0.88, 0.07, 0, T + 0.82, 0.251, D.rust);
+        // The rear fascia is the same band turned to face the other way. The
+        // source spells it `ry: Math.PI`; ours is a transform around the part.
+        b.pushTransform({ rotateY: Math.PI });
+        quadD(b, 0.88, 0.07, 0, T + 0.82, 0.371, D.rust);
+        b.popTransform();
+        bx(b, 0.26, 0.44, 0.2, 0, T + 0.22, 0.02, D.metalGalv);
+        quadD(b, 0.16, 0.14, 0, T + 0.32, 0.122, D.windowDark);
+        bx(b, 0.05, 0.16, 0.05, 0.17, T + 0.44, 0.02, D.metalGalv);
+        bx(b, 0.3, 0.05, 0.24, 0, T + 0.025, 0.02, D.pavingDark);
+      }),
+  ],
+  [
+    "tourism=information",
+    (): MeshData =>
+      composed((b) => {
+        bx(b, 0.06, 0.56, 0.06, -0.24, T + 0.28, 0, D.woodMid);
+        bx(b, 0.06, 0.56, 0.06, 0.24, T + 0.28, 0, D.woodMid);
+        bx(b, 0.66, 0.42, 0.07, 0, T + 0.72, 0, D.woodMid);
+        quadD(b, 0.56, 0.32, 0, T + 0.72, 0.038, D.trimWhite);
+        quadD(b, 0.22, 0.26, -0.14, T + 0.72, 0.041, D.windowDark);
+        quadD(b, 0.24, 0.05, 0.14, T + 0.82, 0.041, D.windowDark);
+        quadD(b, 0.24, 0.05, 0.14, T + 0.74, 0.041, D.windowDark);
+        quadD(b, 0.24, 0.05, 0.14, T + 0.66, 0.041, D.windowDark);
+        // The little roof is tilted, `rx: -0.24` in the source — an information
+        // board's roof that is flat reads as a shelf.
+        b.pushTransform({ rotateX: -0.24, y: T + 0.96, z: 0.02 });
+        bx(b, 0.7, 0.07, 0.16, 0, T, 0, D.roofTeal);
+        b.popTransform();
+      }),
+  ],
+  [
+    "historic=memorial",
+    (): MeshData =>
+      composed((b) => {
+        bx(b, 0.54, 0.09, 0.54, 0, T + 0.045, 0, D.stoneMid);
+        bx(b, 0.42, 0.09, 0.42, 0, T + 0.135, 0, D.stoneMid);
+        // A four-sided prism turned 45 degrees is the obelisk's diamond plan.
+        b.pushTransform({ rotateY: Math.PI / 4 });
+        cylD(b, 0.1, 0.15, 0.7, 4, 0, T + 0.53, 0, D.stoneLight);
+        coneD(b, 0.145, 0.16, 4, 0, T + 0.96, 0, D.stoneLight);
+        b.popTransform();
+        quadD(b, 0.14, 0.2, 0, T + 0.5, 0.112, D.ochre);
+        bx(b, 0.3, 0.08, 0.14, 0, T + 0.22, 0.26, D.stoneMid);
+      }),
+  ],
+  [
+    "amenity=fountain",
+    (): MeshData =>
+      composed((b) => {
+        cylD(b, 0.4, 0.4, 0.16, 8, 0, T + 0.08, 0, D.stoneLight);
+        discD(b, 0.4, 8, 0, T + 0.135, 0, D.waterTeal);
+        cylD(b, 0.42, 0.42, 0.05, 8, 0, T + 0.185, 0, D.stoneMid);
+        cylD(b, 0.13, 0.16, 0.3, 8, 0, T + 0.31, 0, D.stoneLight);
+        discD(b, 0.2, 8, 0, T + 0.475, 0, D.stoneMid);
+        cylD(b, 0.05, 0.05, 0.34, 6, 0, T + 0.63, 0, D.waterTeal);
+        // The source's `ico` — a faceted blob at the top of the jet. `sphere`
+        // at a low segment count is the same read; we have no icosahedron.
+        b.paint(D.waterTeal);
+        sphere(b, 0.1, T + 0.82 - T, 6, 3);
       }),
   ],
   [
