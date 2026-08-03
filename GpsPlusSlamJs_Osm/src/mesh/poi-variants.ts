@@ -37,6 +37,7 @@
 import type { MeshData } from "./mesh-data.js";
 import { POI_MODELS } from "./poi-models.js";
 import { B_VARIANTS } from "./poi-variants-b.js";
+import { G_VARIANTS } from "./poi-variants-g.js";
 import { D_VARIANTS } from "./poi-variants-d.js";
 
 /**
@@ -314,6 +315,7 @@ function variants(): PoiVariant[] {
   return [
     ...[...D_VARIANTS.keys()].map((k) => fromDiorama(k, "D", D_VARIANTS)),
     ...[...B_VARIANTS.keys()].map((k) => fromDiorama(k, "B", B_VARIANTS)),
+    ...[...G_VARIANTS.keys()].map((k) => fromDiorama(k, "G", G_VARIANTS)),
     // The §4 rebuild's seven, which were ported from the house-style file and
     // are therefore already the `L` variant of their kind.
     fromShipped("amenity=bench", "L"),
