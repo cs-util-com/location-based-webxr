@@ -10,6 +10,40 @@
  * @see mesh-data.ts.md
  */
 
+/**
+ * One vector turned about X, then Y, then Z — all right-handed.
+ *
+ * A FREE FUNCTION rather than three branches inside `place`, which the
+ * complexity rule flagged the moment Z was added for D's leaning headstones.
+ * Each axis is a no-op at zero, so an unrotated transform costs three
+ * comparisons and nothing else — which matters because every non-POI mesh in
+ * the package passes through the same call.
+ */
+function rotated(
+  v: readonly [number, number, number],
+  rx: number,
+  ry: number,
+  rz: number,
+): [number, number, number] {
+  let [x, y, z] = v;
+  if (rx !== 0) {
+    const c = Math.cos(rx);
+    const s = Math.sin(rx);
+    [y, z] = [y * c - z * s, y * s + z * c];
+  }
+  if (ry !== 0) {
+    const c = Math.cos(ry);
+    const s = Math.sin(ry);
+    [x, z] = [x * c + z * s, -x * s + z * c];
+  }
+  if (rz !== 0) {
+    const c = Math.cos(rz);
+    const s = Math.sin(rz);
+    [x, y] = [x * c - y * s, x * s + y * c];
+  }
+  return [x, y, z];
+}
+
 /** A renderable mesh, in the local ENU frame, metres. */
 export interface MeshData {
   /**
@@ -151,6 +185,7 @@ export class MeshBuilder {
   private transforms: {
     rotateX?: number;
     rotateY?: number;
+    rotateZ?: number;
     x?: number;
     y?: number;
     z?: number;
@@ -172,6 +207,7 @@ export class MeshBuilder {
   pushTransform(transform: {
     rotateX?: number;
     rotateY?: number;
+    rotateZ?: number;
     x?: number;
     y?: number;
     z?: number;
@@ -191,33 +227,20 @@ export class MeshBuilder {
     z: number,
     isPoint: boolean,
   ): [number, number, number] {
-    let [px, py, pz] = [x, y, z];
+    let v: [number, number, number] = [x, y, z];
     // Innermost last, so an outer transform composes over an inner one the way
     // a nested matrix stack does.
     for (let i = this.transforms.length - 1; i >= 0; i--) {
       const t = this.transforms[i] as (typeof this.transforms)[number];
-      const rx = t.rotateX ?? 0;
-      if (rx !== 0) {
-        const c = Math.cos(rx);
-        const s = Math.sin(rx);
-        [py, pz] = [py * c - pz * s, py * s + pz * c];
-      }
-      const ry = t.rotateY ?? 0;
-      if (ry !== 0) {
-        const c = Math.cos(ry);
-        const s = Math.sin(ry);
-        [px, pz] = [px * c + pz * s, -px * s + pz * c];
-      }
+      v = rotated(v, t.rotateX ?? 0, t.rotateY ?? 0, t.rotateZ ?? 0);
       // A NORMAL IS A DIRECTION, so it rotates but never translates. Offsetting
       // it would leave a unit vector pointing at wherever the part happens to
       // sit, which shades every tilted part as though lit from the origin.
       if (isPoint) {
-        px += t.x ?? 0;
-        py += t.y ?? 0;
-        pz += t.z ?? 0;
+        v = [v[0] + (t.x ?? 0), v[1] + (t.y ?? 0), v[2] + (t.z ?? 0)];
       }
     }
-    return [px, py, pz];
+    return v;
   }
 
   vertex(

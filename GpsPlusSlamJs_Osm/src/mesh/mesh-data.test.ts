@@ -99,6 +99,24 @@ describe("MeshBuilder transforms", () => {
     expect(mesh.normals[2]).toBeCloseTo(0, 6);
   });
 
+  it("rotates about Z, which the leaning-headstone case needs", () => {
+    // ADDED FOR THE `D` PORT. Its `grave_yard` tilts each headstone a few
+    // degrees about Z (`rz: 0.05`, `-0.04`) and that lean IS the model — a
+    // graveyard of perfectly upright stones reads as a car park. The stack had
+    // X and Y only, so this was the first source detail our vocabulary could
+    // not express at all.
+    //
+    // Right-handed like the others: a quarter turn about +x sends +y to −x.
+    const builder = new MeshBuilder();
+    builder.pushTransform({ rotateZ: Math.PI / 2 });
+    builder.vertex(0, 1, 0, 0, 1, 0);
+    builder.popTransform();
+    const mesh = builder.build();
+    expect(mesh.positions[0]).toBeCloseTo(-1, 6);
+    expect(mesh.positions[1]).toBeCloseTo(0, 6);
+    expect(mesh.normals[0]).toBeCloseTo(-1, 6);
+  });
+
   it("keeps a rotated normal unit length", () => {
     // A rotation preserves length by definition, so a non-unit result means the
     // maths is wrong rather than the input. Cheap, and it pins the whole
