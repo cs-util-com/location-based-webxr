@@ -7,9 +7,10 @@ What a mesh IS — the buffer type and the builder that accumulates one.
 ## Public API
 
 - `interface MeshData` — `positions`, `normals` (`Float32Array`), `indices`
-  (`Uint32Array`), `triangleCount`, `forcedEars`
+  (`Uint32Array`), `triangleCount`, `forcedEars`, and the optional
+  `colours` (`Float32Array | undefined`)
 - `class MeshBuilder` — `vertex(x,y,z,nx,ny,nz)`, `triangle(a,b,c)`,
-  `append(mesh)`, `build(forcedEars?)`
+  `paint(0xrrggbb)`, `append(mesh)`, `build(forcedEars?)`
 
 ## Invariants & assumptions
 
@@ -50,6 +51,29 @@ What a mesh IS — the buffer type and the builder that accumulates one.
   flat. Buildings are all hard edges; shared vertices would mean either smeared
   shading or a second pass to undo it.
 - `append` re-bases indices, so merging never produces an out-of-range index.
+- **Per-face colour is OPT-IN and costs nothing when unused (§4, DEC-R6-11).**
+  `paint(0xrrggbb)` sets the colour every subsequent `vertex` carries; until it
+  is called, no colour array is allocated at all and `build()` returns
+  `colours: undefined`. That matters because buildings, roads, plates and region
+  slabs all build through here on the chunk-meshing hot path and none of them
+  paint per face — they are coloured per feature by an array the consumer builds.
+  - **Stateful rather than a seventh argument to `vertex`**, because the
+    emitters paint per FACE: `box` writes four vertices per face through one
+    helper, and threading a colour through every primitive's signature would
+    touch code with no interest in colour.
+  - **Values MULTIPLY the material colour** (three's `vertexColors`), so white
+    is the identity — an unpainted vertex in a partly-painted mesh renders as
+    the model's own `colour`. This is what lets a model be painted one face at a
+    time rather than all at once, which is how the §4 rebuild proceeds.
+  - **`paint` backfills earlier vertices WHITE, not with the new colour**, so
+    painting from the third face does not retro-paint the first two.
+  - **`append` is where the three parallel arrays can desynchronise**, and both
+    directions are handled: a painted mesh joining an unpainted one backfills the
+    target, and an unpainted mesh joining a painted one contributes white. The
+    colour bookkeeping runs BEFORE the positions are pushed — doing it after
+    makes the backfill count the incoming vertices and leaves the array too long.
+    A misaligned colour buffer paints the wrong faces rather than throwing, so
+    both directions are pinned by tests.
 
 ## Examples
 
@@ -63,3 +87,10 @@ const mesh = builder.build();
 
 Exercised through `buildings.test.ts` — wall and cap triangle counts, normal
 directions, and merging with index re-basing.
+
+`mesh-data.test.ts` covers the colour half directly: that an unpainted mesh
+allocates no array (the cost guard, and the reason it is the first test), that
+painting yields one RGB triple per vertex, that two faces can differ, that
+unpainted vertices are white, that the packed hex decodes in the right channel
+order, and that `append` keeps colours aligned in BOTH mixed directions plus the
+unpainted/unpainted case.

@@ -131,6 +131,27 @@ describe("the POI model registry", () => {
     }
   });
 
+  it("keeps any per-face painting aligned to the geometry it paints", () => {
+    // §4's per-face painting is being introduced model by model, so at any
+    // moment some entries carry a colour buffer and some do not. Both are
+    // valid; a buffer that does not match its positions is not.
+    //
+    // WHY THIS IS AN ITERATION TEST RATHER THAN A PER-MODEL ONE. A misaligned
+    // colour array paints the WRONG faces — it does not throw, does not change
+    // the silhouette, and looks exactly like the model was authored that way.
+    // Nobody reviewing a new model would catch it by reading the composition.
+    for (const entry of entries) {
+      const colours = entry.mesh.colours;
+      if (colours === undefined) continue;
+      expect(colours.length).toBe(entry.mesh.positions.length);
+      for (const value of colours) {
+        expect(Number.isFinite(value)).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(0);
+        expect(value).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
   it("stays low-polygon, which is the house style and the AR budget", () => {
     // A marker is a few metres of screen space in AR. The ceiling is generous
     // enough for a church with a spire and tight enough that nobody quietly

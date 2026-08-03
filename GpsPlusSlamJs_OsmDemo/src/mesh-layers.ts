@@ -222,11 +222,21 @@ function resourcesFor(model: PoiModel): {
 } {
   const cached = modelResources.get(model.kind);
   if (cached !== undefined) return cached;
+  // PER-FACE PAINTING, WHEN THE MODEL HAS IT (§4, DEC-R6-11). `MeshData.colours`
+  // is undefined for a model painted in one colour, which is most of them while
+  // the rebuild is in progress — so both paths stay live and the attribute is
+  // only attached when there is something to attach.
+  //
+  // `vertexColors` MULTIPLIES `color`, so an unpainted vertex in a painted model
+  // is white and renders as `model.colour` unchanged. That is what lets a model
+  // be painted one face at a time instead of all at once.
+  const colours = model.mesh.colours;
   const built = {
-    geometry: geometryFrom(model.mesh),
+    geometry: geometryFrom(model.mesh, colours),
     material: new THREE.MeshStandardMaterial({
       color: model.colour,
       flatShading: true,
+      ...(colours === undefined ? {} : { vertexColors: true }),
       // Slightly reflective, like the buildings (W13) — a fully matte marker
       // sits oddly in a scene where everything else catches the moving sun.
       roughness: 0.75,
