@@ -750,6 +750,19 @@ test.describe("the affordance map", () => {
       test.skip(other === "", "rule table declares only one category");
 
       await page.locator("#category").selectOption(other);
+
+      // THROUGH THE HELPER, NOT A BARE `toContainText` — the second instance of
+      // a flake this file has already diagnosed once (see the "my location"
+      // test, fixed 2026-08-02 with the same reasoning). Choosing a category
+      // kicks off a full rescore; the bare assertion allowed only Playwright's
+      // default 5 s, which under the ROOT cascade's contention expires while the
+      // status line still reads "Fetching and scoring around 50.92310,
+      // 6.94450…" — the pipeline working correctly and slowly, not a defect.
+      // Captured exactly that way on 2026-08-04, having passed the package's own
+      // gate twice; the extra load of the other seven packages is the difference.
+      // `waitForRefresh` allows 60 s and waits for the progressive widening to
+      // settle, which nearly every other test here already relies on.
+      await waitForRefresh(page);
       await expect(page.locator("#status")).toContainText(`${other} regions`);
 
       // A category switch that rescored but never repainted would leave the map
