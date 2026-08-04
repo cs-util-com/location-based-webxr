@@ -451,3 +451,123 @@ describe("the fetch set follows the ring being scored (W4, finding N1)", () => {
     });
   });
 });
+
+/**
+ * WHY THIS TEST MATTERS (round 9 §6a). The geo-event is the first algorithm that
+ * reads the heat field somewhere the user is NOT, and the ordering it needs is
+ * the round's central constraint (DEC-R9-4): derive the reachable cells, ensure
+ * and pin them, and only then climb — with no I/O once the climb starts, because
+ * `acceptTile` deletes chunks regardless of pins.
+ *
+ * The pipeline is where that ordering lives; `geo-event.ts` is pure and cannot
+ * enforce it.
+ */
+describe("DemoPipeline.geoEvent", () => {
+  const AT = { lat: 50.9413, lng: 6.9583 };
+
+  /** A park covering a wide area, so candidates land on scoreable ground. */
+  const wideSource = (): OsmDataSource => ({
+    attribution: "© OpenStreetMap contributors",
+    sourceId: "fixture:geo-event",
+    fetchTile: (tile) =>
+      Promise.resolve({
+        tile,
+        features: [
+          {
+            type: "way" as const,
+            id: 1,
+            geometry: [
+              { lat: AT.lat - 0.05, lng: AT.lng - 0.05 },
+              { lat: AT.lat - 0.05, lng: AT.lng + 0.05 },
+              { lat: AT.lat + 0.05, lng: AT.lng + 0.05 },
+              { lat: AT.lat + 0.05, lng: AT.lng - 0.05 },
+              { lat: AT.lat - 0.05, lng: AT.lng - 0.05 },
+            ],
+            tags: { leisure: "park" },
+          },
+        ],
+        fetchedAt: 0,
+        sourceId: "fixture:geo-event",
+        schemaVersion: 1,
+        skipped: [],
+      }),
+  });
+
+  const TABLE = parseRuleTable(
+    ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join("\n"),
+    { source: "test", fetchedAt: 0 },
+  );
+
+  it("returns an event whose picks sit on scored ground", async () => {
+    const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+    await pipeline.update(AT, "walkable");
+
+    const event = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+
+    expect(event.picks.length).toBeGreaterThan(0);
+    // Not `unknown`: the ensure step must have covered wherever the climb
+    // settled, or the answer depended on what happened to be loaded.
+    for (const pick of event.picks) {
+      expect(pipeline.cellState(pick.cell).state).not.toBe("unknown");
+    }
+  });
+
+  it("survives a fetch failure without placing a pick on unscored ground", () => {
+    // GRACEFUL DEGRADATION, which is what this can honestly pin. A tile that
+    // will not load must not fail the whole event.
+    //
+    // WHAT IT DOES NOT PIN, recorded rather than implied: mapping `unknown` to
+    // `undefined` rather than to the identity. Returning 1 there passes every
+    // test in this file, because the ensure step covers everything the climb can
+    // reach, so `unknown` never occurs -- and even if it did, a neighbourhood of
+    // pure identity cannot clear the gate. Two mechanisms independently prevent
+    // the rim bug and the gate is the stronger one. The mapping is kept as
+    // defence in depth and is covered directly at the unit level by
+    // `climbToLocalMaximum`'s own left-the-field tests. Found by mutation.
+    return (async () => {
+      let calls = 0;
+      const flaky: OsmDataSource = {
+        ...wideSource(),
+        fetchTile: (tile) => {
+          calls += 1;
+          if (calls > 1) return Promise.reject(new Error("offline"));
+          return wideSource().fetchTile(tile);
+        },
+      };
+      const pipeline = new DemoPipeline({ source: flaky, table: TABLE });
+      await pipeline.update(AT, "walkable");
+
+      const event = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+
+      for (const pick of event.picks) {
+        expect(pipeline.cellState(pick.cell).state).not.toBe("unknown");
+      }
+    })();
+  });
+
+  it("holds no pins once it has returned", async () => {
+    // The leak assertion. A pin left behind makes the cache cap permanently
+    // unenforceable, and nothing else would report it.
+    const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+    await pipeline.update(AT, "walkable");
+    await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+
+    expect(pipeline.stats().chunksPinned).toBe(0);
+  });
+
+  it("gives the same answer whatever was scored beforehand", async () => {
+    // DEC-R9-4 stated as a test: two clients that have explored differently must
+    // still agree. One pipeline has scored a wide disc around the user, the
+    // other has scored nothing at all.
+    const warm = new DemoPipeline({ source: wideSource(), table: TABLE });
+    await warm.update(AT, "walkable");
+    await warm.update({ lat: AT.lat + 0.002, lng: AT.lng }, "walkable");
+
+    const cold = new DemoPipeline({ source: wideSource(), table: TABLE });
+
+    const a = await warm.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const b = await cold.geoEvent(AT, "walkable", 1_700_000_000_000);
+
+    expect(a.picks.map((p) => p.cell)).toEqual(b.picks.map((p) => p.cell));
+  });
+});

@@ -26,14 +26,59 @@ import {
   type OsmTileResult,
   type Region,
   type RuleTable,
+  type CellState,
+  type GeoEvent,
   type LatLng,
 } from "gps-plus-slam-osm";
 import {
+  AFFORDANCE_RES,
+  EVENT_TILE_RES,
+  eventCandidates,
   fetchTilesForScoreWorkingSet,
   fetchWorkingSet,
+  newGeoEventFor,
+  nextEventTime,
   toFetchTile,
 } from "gps-plus-slam-osm";
-import { latLngToCell } from "h3-js";
+import { cellToBoundary, gridDisk, latLngToCell } from "h3-js";
+
+/**
+ * The seed every device shares (DEC-R9-7).
+ *
+ * ONE FIXED CONSTANT IN SOURCE, not build-injected and not configurable. Two
+ * devices on different app versions must still agree, and a release must not
+ * silently relocate every event in the world. Changing it is a deliberate,
+ * breaking act.
+ */
+const GEO_EVENT_SEED = 20260804;
+
+/** Candidates evaluated per batch, matching the C#s COUNT. */
+const GEO_EVENT_BATCH = 10;
+
+/**
+ * Climb steps, matching the C#s five unrolled moves.
+ *
+ * At res 13 a step is sqrt(3) x 4.09 = 7.09 m, so five moves reach ~35 m --
+ * against the C#s ~24 m over geohash-9. The reach is a re-expression rather than
+ * a port; see resolutions.ts.
+ */
+const CLIMB_STEPS = 5;
+
+/** A cells bounding box as [south, west, north, east]. */
+function boundsOfCell(cell: string): [number, number, number, number] {
+  const ring = cellToBoundary(cell);
+  let south = Infinity;
+  let west = Infinity;
+  let north = -Infinity;
+  let east = -Infinity;
+  for (const [lat, lng] of ring) {
+    south = Math.min(south, lat);
+    north = Math.max(north, lat);
+    west = Math.min(west, lng);
+    east = Math.max(east, lng);
+  }
+  return [south, west, north, east];
+}
 import { SCORE_CHUNK_RES, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 export interface DemoPipelineOptions {
@@ -291,6 +336,113 @@ export class DemoPipeline {
    */
   scoreFor(cell: string): CellScore | undefined {
     return this.index.scoresByCell().get(cell);
+  }
+
+  /** What is known about one cell — see `AffordanceIndex.cellState`. */
+  cellState(cell: string): CellState {
+    return this.index.cellState(cell);
+  }
+
+  /** The index's counters, for the status line and for leak assertions. */
+  stats(): AffordanceIndex["stats"] {
+    return this.index.stats;
+  }
+
+  /**
+   * The geo-event for a moment and a place (round 9 §6a).
+   *
+   * THIS METHOD IS THE ORDERING, and the ordering is the round's central
+   * constraint. DEC-R9-4 requires every device to compute the same event
+   * whatever it happens to have scored, which forbids climbing over "whatever is
+   * in the cache". So:
+   *
+   * 1. **Derive** the cells the climb could possibly reach — from the step
+   *    count, not by walking. A derived set is the same on every device; a
+   *    discovered one is not.
+   * 2. **Ensure** them, fetching whatever tiles that needs.
+   * 3. **Pin** them, and only then climb — with NO I/O once the climb starts,
+   *    because `acceptTile` deletes chunks regardless of pins, so a tile landing
+   *    mid-climb would drop the very ground being walked.
+   *
+   * `geo-event.ts` is pure and cannot enforce any of this; it is enforced here
+   * and asserted by "gives the same answer whatever was scored beforehand".
+   *
+   * **ONE TILE, NOT THE C#'s FOUR.** The C# takes the centre tile plus its three
+   * nearest neighbours; under fetch-on-demand that is up to four Overpass
+   * fetches and minutes of waiting. The centre tile's data is already loaded by
+   * definition — the user is standing in it — so this is the zero-fetch case.
+   * `newGeoEventFor` takes the tile list, so widening later changes only this
+   * call (DEC-R9-12 records the retry asymmetry that goes with it).
+   */
+  async geoEvent(
+    position: LatLng,
+    category: string,
+    now: number,
+    signal?: AbortSignal,
+  ): Promise<GeoEvent> {
+    const eventTime = nextEventTime(now);
+    const tile = latLngToCell(position.lat, position.lng, EVENT_TILE_RES);
+    const [south, west, north, east] = boundsOfCell(tile);
+
+    const toCell = (at: LatLng): string =>
+      latLngToCell(at.lat, at.lng, AFFORDANCE_RES);
+
+    // STEP 1 — derive. `gridDisk(steps + 1)` because the climb may move `steps`
+    // cells and then needs its destination's own neighbourhood to decide it is a
+    // peak; without the extra ring the last comparison reads `unknown` and the
+    // climb reports `left` at the edge of the ensured set rather than of the map.
+    const candidates = eventCandidates({
+      bbox: { south, west, north, east },
+      globalSeed: GEO_EVENT_SEED,
+      eventTime,
+      count: GEO_EVENT_BATCH,
+    });
+    const reach = new Set<string>();
+    for (const candidate of candidates) {
+      for (const cell of gridDisk(toCell(candidate), CLIMB_STEPS + 1)) {
+        reach.add(cell);
+      }
+    }
+
+    // STEP 2 — ensure, fetching what is missing. Only this first batch may
+    // fetch (DEC-R9-12): ten sequential fetch rounds would be minutes.
+    const { missingTiles } = this.index.ensureScored(reach);
+    for (const missing of missingTiles) {
+      if (signal?.aborted === true) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      try {
+        this.index.acceptTile(await this.source.fetchTile(missing, signal));
+        this.loaded.add(missing);
+      } catch {
+        // A tile that will not load leaves its candidates unscored, and the
+        // climb reports `left` for them rather than guessing. Silence here is
+        // deliberate: one unreachable tile must not fail the whole event.
+      }
+    }
+    this.index.ensureScored(reach);
+
+    // STEP 3 — pin, then climb. Nothing awaits inside this callback.
+    return this.index.withPinned(reach, () =>
+      newGeoEventFor({
+        user: position,
+        tiles: [{ bbox: { south, west, north, east } }],
+        globalSeed: GEO_EVENT_SEED,
+        eventTime,
+        toCell,
+        heatAt: (cell) => {
+          const state = this.index.cellState(cell);
+          // `unknown` becomes `undefined`, which is what tells the climb it has
+          // run out of map. An `empty` cell is genuinely known and its heat is
+          // the multiplicative identity — collapsing the two is the ambiguity
+          // this whole round removed.
+          if (state.state === "unknown") return undefined;
+          return state.state === "empty" ? 1 : (state.score[category] ?? 1);
+        },
+        neighbours: (cell) => gridDisk(cell, 1),
+        steps: CLIMB_STEPS,
+      }),
+    );
   }
 
   /**

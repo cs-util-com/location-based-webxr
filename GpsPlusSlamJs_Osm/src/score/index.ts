@@ -21,6 +21,7 @@ export type {
 export { explainCell } from "./explain-cell.js";
 export type {
   AffordanceIndexOptions,
+  CellState,
   ChangeListener,
   ScoredChunk,
   UpdateResult,
