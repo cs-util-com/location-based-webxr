@@ -127,16 +127,26 @@ describe("buildRegionSlabs", () => {
     expect(coversPoint(mesh, 50, 50)).toBe(false);
   });
 
-  it("stands the slab up, so it does not vanish edge-on", () => {
-    // DEC-R2-11 asked for a body rather than an overlay. A zero-thickness
-    // surface disappears at a shallow angle, which is the angle this demo is
-    // usually viewed at.
-    const slabs = buildRegionSlabs([region([[square(100)]])], {
-      ...options,
-      wallHeightM: 0.5,
-    });
+  it("lies flat ON the ground, with no extrusion and no lift of its own", () => {
+    // REVERSES DEC-R2-11 (DEC-R7b-7a). A region used to be a body: a 0.5 m
+    // boundary wall, so it did not vanish edge-on. The owner asked for the
+    // extrusion to go — a region is an overlay on the ground, not an object
+    // standing on it.
+    //
+    // WHY THIS IS ASSERTED AT ALL, when "the walls are gone" sounds like it
+    // needs no test. The wall height was doing DOUBLE DUTY: `addTopSurface`
+    // raised every vertex by it, so deleting the walls also drops the surface
+    // 0.5 m. "Drop the walls" reads as a pure deletion and is not one, and the
+    // difference is the whole visible change.
+    //
+    // Separation from the other ground layers is the DEMO's job
+    // (`layer-order.ts` puts `areas` at 0.12 m). Lifting here as well would
+    // double-count it, which is exactly the class of bug that ladder exists to
+    // prevent.
+    const slabs = buildRegionSlabs([region([[square(100)]])], options);
     const { min, max } = heightRange(slabs[0]?.mesh as MeshData);
-    expect(max - min).toBeCloseTo(0.5, 6);
+    expect(max - min).toBeCloseTo(0, 6);
+    expect(min).toBeCloseTo(0, 6);
   });
 
   it("drapes the top on the terrain, per vertex", () => {

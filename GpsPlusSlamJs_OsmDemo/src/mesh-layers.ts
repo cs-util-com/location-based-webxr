@@ -39,7 +39,7 @@ import {
   type TreeVariant,
 } from "gps-plus-slam-osm";
 
-import { groundLift } from "./layer-order.js";
+import { RENDER_ORDER, groundLift } from "./layer-order.js";
 import type { LayerSet } from "./layers.js";
 import { PLATE_COLOUR } from "./surface-colours.js";
 import type { TransferableMesh } from "./worker/protocol.js";
@@ -565,10 +565,27 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
               // trade — hiding the surface beneath — is only bearable because
               // the grid's coverage is a ~250 m disc.
               opacity: 0.55,
-              side: THREE.DoubleSide,
+              // PAIRED WITH `transparent`, which it was not (DEC-R7b-7).
+              // three's default is `depthWrite: true`, so this translucent
+              // surface was writing depth and occluding transparent geometry
+              // drawn after it — which is what "the alpha breaks from some
+              // angles" was. The cell grid gets this right in `building-view.ts`
+              // and the slab simply never did.
+              depthWrite: false,
+              // `FrontSide` now the walls are gone (DEC-R7b-7a): there is no
+              // self-blending geometry left to sort against, and a two-sided
+              // translucent surface blends against its own far face.
+              side: THREE.FrontSide,
             }),
           );
           object.position.y = groundLift("areas");
+          // AFTER the opaque world, before nothing in particular. With
+          // `depthWrite` off, a transparent surface is at the mercy of three's
+          // default sort, which orders by distance and knows nothing about which
+          // of two overlapping claims is the coarser one. An explicit order is
+          // the only way the grid and the slabs composite the same way from
+          // every camera; there was none anywhere in the demo before this.
+          object.renderOrder = RENDER_ORDER.areas;
           return object;
         }),
     counters: (mesh) => ({ areas: mesh.regions.length }),

@@ -7,9 +7,19 @@
  * hole, and two cells that score but do not touch are two polygons of one region
  * — both are the ordinary shape of the data rather than edge cases.
  *
- * WHY A SLAB AND NOT A FLAT OVERLAY (DEC-R2-11). A zero-thickness surface
- * disappears edge-on, which is the angle this demo is usually viewed at. A short
- * wall makes the region read as a body without competing with the buildings.
+ * WHY IT IS A FLAT SHEET AGAIN (DEC-R7b-7a, round 8). It was a slab: DEC-R2-11
+ * gave every region a 0.5 m boundary wall because a zero-thickness surface
+ * disappears edge-on, which is the angle this demo is usually viewed at. The
+ * owner asked for the extrusion to go — a region is an overlay on the ground,
+ * not a body standing on it — so the walls are gone and the top sits on the
+ * layer ladder's own `areas` rung.
+ *
+ * **DEC-R2-11's objection was never answered, only accepted.** The plan paired
+ * this with lifting the sheet 2-3 m clear of the ground, which is what would
+ * have made a flat surface visible edge-on; that lift was then cancelled because
+ * it broke three `layer-order.ts` invariants. So a region CAN still vanish at a
+ * grazing angle, and if it does the escalation is opacity, then a separate
+ * outline — not the walls, which is where this started.
  *
  * WHY THE COLOUR IS NOT COMPUTED HERE, and this is the load-bearing decision.
  * The 2D map and the 3D view must never be able to disagree about what a score
@@ -43,21 +53,12 @@ export interface SlabRegion {
 export interface BuildRegionSlabsOptions {
   readonly frame: EnuFrame;
   readonly groundHeightM?: (position: LatLng) => number;
-  /**
-   * Height of the boundary wall, metres.
-   *
-   * 0.5 m by default (the plan's proposal, `[confirm]`): tall enough to read at
-   * a shallow angle, short enough not to occlude buildings on a slope.
-   */
-  readonly wallHeightM?: number;
 }
 
 export interface RegionSlab {
   readonly medianScore: number;
   readonly mesh: MeshData;
 }
-
-const DEFAULT_WALL_HEIGHT_M = 0.5;
 
 /** One slab per region, in input order. Never throws. */
 export function buildRegionSlabs(
@@ -79,7 +80,6 @@ function slabMesh(
   options: BuildRegionSlabsOptions,
 ): MeshData {
   const builder = new MeshBuilder();
-  const wallHeightM = options.wallHeightM ?? DEFAULT_WALL_HEIGHT_M;
   const sample = options.groundHeightM;
 
   /** Ground under an ENU point, defaulting to 0 rather than to NaN. */
@@ -92,7 +92,7 @@ function slabMesh(
     const rings = polygon.map((ring) =>
       ring.map((position) => options.frame.toEnu(position)),
     );
-    addPolygon(builder, rings, groundAt, wallHeightM);
+    addPolygon(builder, rings, groundAt);
   }
 
   return builder.build();
@@ -103,7 +103,6 @@ function addPolygon(
   builder: MeshBuilder,
   rings: readonly (readonly EnuPoint[])[],
   groundAt: (point: EnuPoint) => number,
-  wallHeightM: number,
 ): void {
   const outer = rings[0];
   // A ring with fewer than three points cannot be triangulated, and pushing on
@@ -114,14 +113,7 @@ function addPolygon(
   const triangulated = triangulate(rings);
   if (triangulated.indices.length === 0) return;
 
-  addTopSurface(builder, triangulated, groundAt, wallHeightM);
-
-  // BOUNDARY WALL, around every ring including the holes — a hole's edge is just
-  // as much a boundary of the region as its outside.
-  for (const ring of rings) {
-    if (ring.length < 3) continue;
-    addWall(builder, ring, groundAt, wallHeightM);
-  }
+  addTopSurface(builder, triangulated, groundAt);
 }
 
 /**
@@ -135,10 +127,15 @@ function addTopSurface(
   builder: MeshBuilder,
   triangulated: ReturnType<typeof triangulate>,
   groundAt: (point: EnuPoint) => number,
-  wallHeightM: number,
 ): void {
+  // ON the ground, not above it. The wall height used to double as this lift, so
+  // deleting the walls also drops the surface by 0.5 m — deliberate, and the
+  // reason `region-slabs.test.ts` asserts the resulting height rather than
+  // trusting that "drop the walls" was a pure deletion. Separation from the
+  // other ground layers is the demo's `layer-order.ts` ladder, which puts
+  // `areas` at 0.12 m; doing it here as well would double-count it.
   const top = triangulated.vertices.map((point) =>
-    builder.vertex(point.x, groundAt(point) + wallHeightM, point.y, 0, 1, 0),
+    builder.vertex(point.x, groundAt(point), point.y, 0, 1, 0),
   );
   const { indices } = triangulated;
   for (let i = 0; i + 2 < indices.length; i += 3) {
@@ -152,36 +149,5 @@ function addTopSurface(
     // culled while every counter still reports it. Pinned by "winds every TOP
     // triangle so its face normal points up".
     builder.triangle(a, c, b);
-  }
-}
-
-/** A vertical quad strip around one ring. */
-function addWall(
-  builder: MeshBuilder,
-  ring: readonly EnuPoint[],
-  groundAt: (point: EnuPoint) => number,
-  wallHeightM: number,
-): void {
-  for (let i = 0; i < ring.length; i += 1) {
-    const a = ring[i];
-    const b = ring[(i + 1) % ring.length];
-    if (a === undefined || b === undefined) continue;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const length = Math.hypot(dx, dy);
-    // A closing point repeats the first, so the last segment is zero-length.
-    // Its normal would be 0/0.
-    if (length < 1e-9) continue;
-    const nx = dy / length;
-    const ny = -dx / length;
-
-    const aGround = groundAt(a);
-    const bGround = groundAt(b);
-    const a0 = builder.vertex(a.x, aGround, a.y, nx, 0, ny);
-    const a1 = builder.vertex(a.x, aGround + wallHeightM, a.y, nx, 0, ny);
-    const b0 = builder.vertex(b.x, bGround, b.y, nx, 0, ny);
-    const b1 = builder.vertex(b.x, bGround + wallHeightM, b.y, nx, 0, ny);
-    builder.triangle(a0, b0, a1);
-    builder.triangle(a1, b0, b1);
   }
 }

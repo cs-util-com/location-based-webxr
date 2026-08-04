@@ -16,7 +16,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { groundLift } from "./layer-order.js";
+import { RENDER_ORDER, groundLift } from "./layer-order.js";
 import { ALL_LAYERS, type LayerKind } from "./layers.js";
 import {
   MESH_LAYERS,
@@ -827,5 +827,66 @@ describe("meshLayerSelection", () => {
     expect(Object.keys(selection).sort()).toEqual([...DRAWN_BY_MESH].sort());
     expect(selection.plates).toBe(false);
     expect(selection.buildings).toBe(true);
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (DEC-R7b-7). The region slab shipped for six rounds
+ * with `transparent: true` and three's default `depthWrite: true`. A translucent
+ * surface that writes depth occludes transparent geometry drawn after it, so the
+ * slabs and the affordance grid composited differently depending on which
+ * happened to be drawn first — reported from a testing session as "the alpha
+ * transparency is suddenly broken from some angles".
+ *
+ * THE POINT IS THAT THIS NEEDED NO SCREENSHOT. The defect is a property of the
+ * material, visible to a unit test, and the cell grid in `building-view.ts` had
+ * always paired the two correctly. Nothing compared them.
+ */
+describe("the transparent layers composite deterministically", () => {
+  const areaMaterial = (): THREE.MeshStandardMaterial => {
+    const { objects } = drawMeshLayers(fullMesh(), {
+      buildings: false,
+      trees: false,
+      plates: false,
+      poi: false,
+      roads: false,
+      areas: true,
+    });
+    const mesh = objects[0] as THREE.Mesh;
+    return mesh.material as THREE.MeshStandardMaterial;
+  };
+
+  it("never lets a translucent surface write depth", () => {
+    // The pairing itself. `transparent` without `depthWrite: false` is the bug;
+    // asserting the RELATIONSHIP rather than the literal means a future change to
+    // the opacity cannot reintroduce it while both values still look deliberate.
+    const material = areaMaterial();
+    expect(material.transparent).toBe(true);
+    expect(material.depthWrite).toBe(false);
+  });
+
+  it("draws a region single-sided, now that it has no walls to blend against", () => {
+    // DoubleSide made every slab blend against its own far face. That was the
+    // price of the boundary walls (DEC-R2-11); with those gone it is pure cost.
+    const material = areaMaterial();
+    expect(material.side).toBe(THREE.FrontSide);
+  });
+
+  it("orders regions under the cells, so the finer claim wins", () => {
+    // Without an explicit order, three sorts transparent objects back-to-front by
+    // distance — which flips as the camera moves, and reads as flicker rather
+    // than as a decision about which claim is on top.
+    const material = areaMaterial();
+    expect(material).toBeDefined();
+    const { objects } = drawMeshLayers(fullMesh(), {
+      buildings: false,
+      trees: false,
+      plates: false,
+      poi: false,
+      roads: false,
+      areas: true,
+    });
+    expect(objects[0]?.renderOrder).toBe(RENDER_ORDER.areas);
+    expect(RENDER_ORDER.areas).toBeLessThan(RENDER_ORDER.cells);
   });
 });

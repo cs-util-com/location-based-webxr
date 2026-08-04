@@ -75,3 +75,27 @@ export function groundLift(layer: LayerKind): number {
  * re-listing it — a second list would be the thing that drifts.
  */
 export const GROUND_LAYERS = ["plates", "roads", "areas", "cells"] as const;
+
+/**
+ * Draw order for the TRANSPARENT layers (DEC-R7b-7).
+ *
+ * WHY THIS EXISTS AT ALL. Until round 8 nothing in the demo set `renderOrder`,
+ * so every translucent surface was ordered by three's default — back-to-front by
+ * distance from the camera. That is the right rule for unrelated transparent
+ * objects and the wrong one for two surfaces making the SAME claim at different
+ * grains: whether a region slab composites over or under the cells inside it
+ * would flip as the camera moved, which reads as flicker rather than as a
+ * decision.
+ *
+ * THE ORDER IS THE LADDER'S ORDER, coarse to fine, so the finer claim always
+ * wins. It mirrors `groundLift` deliberately — a reader who changes one and not
+ * the other should find them obviously adjacent.
+ *
+ * Only the layers that are actually translucent appear here. An opaque mesh does
+ * not need an order, and giving it one would opt it out of the depth-sorted
+ * batch it belongs in.
+ */
+export const RENDER_ORDER = Object.freeze({
+  areas: 1,
+  cells: 2,
+});

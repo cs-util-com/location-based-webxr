@@ -11,7 +11,8 @@ edge-on.
 - `SlabRegion` — `{ outline, medianScore }`. Structural rather than the full
   `Region`, so this module does not depend on the region builder and a test can
   construct one in three lines.
-- `BuildRegionSlabsOptions` — `{ frame, groundHeightM?, wallHeightM? }`.
+- `BuildRegionSlabsOptions` — `{ frame, groundHeightM? }`. **`wallHeightM` was
+  removed in round 8** (DEC-R7b-7a) along with the walls it sized.
 - `RegionSlab` — `{ medianScore, mesh }`.
 - `buildRegionSlabs(regions, options) → RegionSlab[]` — one slab per region, in
   input order. Never throws; a degenerate outline yields an empty mesh.
@@ -44,9 +45,21 @@ edge-on.
 - **A ring with fewer than three points is skipped, never triangulated.** Pushing
   on produces `NaN`, and one `NaN` deletes the entire draw call in three.js with
   no error.
-- **`wallHeightM` defaults to 0.5 m** — the plan's proposal, still marked
-  `[confirm]`. Tall enough to read at a shallow angle, short enough not to
-  occlude buildings on a slope.
+- **The slab is FLAT and sits at `y = 0`** (DEC-R7b-7a, round 8). It used to be a
+  body with a 0.5 m boundary wall (DEC-R2-11), because a zero-thickness surface
+  disappears edge-on. The owner asked for the extrusion to go: a region is an
+  overlay on the ground, not an object standing on it.
+  - **The wall height was also the top surface's lift**, so removing the walls
+    lowered the surface by 0.5 m as well. Deliberate, and asserted — "drop the
+    walls" reads as a pure deletion and is not one.
+  - **Separation from the other ground layers is the CALLER's job.** The demo's
+    `layer-order.ts` ladder puts `areas` at 0.12 m; lifting here too would
+    double-count it.
+  - **DEC-R2-11's objection stands unanswered, not refuted.** The plan paired
+    this with a 2–3 m lift that would have kept a flat sheet visible edge-on, and
+    that lift was cancelled because it broke three `layer-order.ts` invariants.
+    If a region reads as absent at a grazing angle, the escalation is opacity,
+    then a separate outline — **not** the walls.
 
 ## Examples
 
