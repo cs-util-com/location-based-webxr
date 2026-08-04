@@ -555,10 +555,17 @@ describe("DemoPipeline.geoEvent", () => {
     expect(pipeline.stats().chunksPinned).toBe(0);
   });
 
-  it("gives the same answer whatever was scored beforehand", async () => {
-    // DEC-R9-4 stated as a test: two clients that have explored differently must
-    // still agree. One pipeline has scored a wide disc around the user, the
-    // other has scored nothing at all.
+  it("gives a device with less data a SUBSET, never a different answer", async () => {
+    // DEC-R9-4 AS DEC-R9-15 REFINES IT, and the refinement is the whole point.
+    // Each tile's event is a pure function of (tile, time), identical on every
+    // device forever. What varies with how much you have downloaded is only
+    // WHICH tiles you can see: a device holding neighbour data considers those
+    // tiles too, one holding none considers just its own.
+    //
+    // So the invariant is CONVERGENCE, not equality: a device with less data
+    // sees a subset of the same events, never a contradicting one. Asserting
+    // equality here is what the first version did, and it failed the moment
+    // neighbours were added -- correctly, because equality was the wrong claim.
     const warm = new DemoPipeline({ source: wideSource(), table: TABLE });
     await warm.update(AT, "walkable");
     await warm.update({ lat: AT.lat + 0.002, lng: AT.lng }, "walkable");
@@ -568,6 +575,9 @@ describe("DemoPipeline.geoEvent", () => {
     const a = await warm.geoEvent(AT, "walkable", 1_700_000_000_000);
     const b = await cold.geoEvent(AT, "walkable", 1_700_000_000_000);
 
-    expect(a.picks.map((p) => p.cell)).toEqual(b.picks.map((p) => p.cell));
+    expect(b.picks.length).toBeGreaterThan(0);
+    const warmCells = new Set(a.picks.map((p) => p.cell));
+    for (const pick of b.picks) expect(warmCells.has(pick.cell)).toBe(true);
+    expect(a.eventTime).toBe(b.eventTime);
   });
 });

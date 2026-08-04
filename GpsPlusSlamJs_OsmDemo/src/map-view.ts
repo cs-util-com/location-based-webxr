@@ -18,7 +18,7 @@
 
 import L from "leaflet";
 import { cellToBoundary } from "h3-js";
-import type { CellScore, Region } from "gps-plus-slam-osm";
+import type { CellScore, GeoEvent, Region } from "gps-plus-slam-osm";
 
 import { describeScale, type HeatScale } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
@@ -60,6 +60,7 @@ export class MapView {
   private readonly cellLayer: L.LayerGroup;
   private readonly regionLayer: L.LayerGroup;
   private readonly fetchLayer: L.LayerGroup;
+  private readonly eventLayer: L.LayerGroup;
   private readonly userMarker: L.CircleMarker;
   private readonly onCellClick: ((cell: string) => void) | undefined;
   private readonly onRegionClick: ((region: string) => void) | undefined;
@@ -114,6 +115,7 @@ export class MapView {
     // being on top costs nothing and being underneath would hide it behind ~931
     // filled cells — which is exactly where it is most worth seeing.
     this.fetchLayer = L.layerGroup().addTo(this.map);
+    this.eventLayer = L.layerGroup().addTo(this.map);
 
     this.userMarker = L.circleMarker([options.centre.lat, options.centre.lng], {
       radius: 6,
@@ -210,6 +212,42 @@ export class MapView {
    * display exists to correct — that the red box IS the tile. The hexagon is
    * dashed and dimmer: it is the reference, the box is the subject.
    */
+  /**
+   * Draws a geo-event: the candidates it weighed, and the one it chose.
+   *
+   * WHY THE DECIDING BATCH AND NOT ALL 100 (DEC-R9-8). The algorithm stops at
+   * the first batch with a passing candidate, so those ten plus the winner are
+   * the honest picture of what it actually did — about eleven markers rather
+   * than four hundred, on a map whose cell layer was defaulted off for exactly
+   * that cost.
+   *
+   * RED, because the heat ramp is Viridis — purple through yellow, with no warm
+   * hues at all — so an event marker cannot be mistaken for a score.
+   */
+  renderGeoEvent(event: GeoEvent | undefined): void {
+    this.eventLayer.clearLayers();
+    if (event === undefined) return;
+
+    for (const pick of event.picks) {
+      for (const candidate of pick.evaluated) {
+        L.circleMarker([candidate.lat, candidate.lng], {
+          radius: 3,
+          className: "geo-candidate",
+          interactive: false,
+        }).addTo(this.eventLayer);
+      }
+      // The winner last, so it draws over its own batch.
+      L.circleMarker([pick.candidate.lat, pick.candidate.lng], {
+        radius: 7,
+        className: "geo-winner",
+      })
+        .bindTooltip(
+          `event at ${new Date(event.eventTime).toLocaleTimeString()} · heat ${Math.round(pick.heat)}`,
+        )
+        .addTo(this.eventLayer);
+    }
+  }
+
   renderFetchTiles(tiles: readonly string[]): void {
     this.fetchLayer.clearLayers();
 

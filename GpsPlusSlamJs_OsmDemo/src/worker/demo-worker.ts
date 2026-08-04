@@ -552,6 +552,17 @@ async function handle<K extends WorkerCallKind>(
       );
     }
 
+    case "geoEvent": {
+      const { position, category, now } =
+        payload as WorkerCalls["geoEvent"]["request"];
+      const { pipeline } = requireState();
+      // IT HAS TO RUN HERE. The index is private inside the pipeline inside this
+      // worker, the climb reads it through SYNCHRONOUS callbacks that cannot
+      // cross a structured clone, and the ensure step needs the same fetch
+      // machinery `update` uses. Only the finished result goes back.
+      return pipeline.geoEvent(position, category, now, signal);
+    }
+
     case "explain": {
       const { cell, category } = payload as WorkerCalls["explain"]["request"];
       const { pipeline, table } = requireState();

@@ -382,25 +382,53 @@ export class DemoPipeline {
   ): Promise<GeoEvent> {
     const eventTime = nextEventTime(now);
     const tile = latLngToCell(position.lat, position.lng, EVENT_TILE_RES);
-    const [south, west, north, east] = boundsOfCell(tile);
 
     const toCell = (at: LatLng): string =>
       latLngToCell(at.lat, at.lng, AFFORDANCE_RES);
 
-    // STEP 1 — derive. `gridDisk(steps + 1)` because the climb may move `steps`
-    // cells and then needs its destination's own neighbourhood to decide it is a
-    // peak; without the extra ring the last comparison reads `unknown` and the
-    // climb reports `left` at the edge of the ensured set rather than of the map.
-    const candidates = eventCandidates({
-      bbox: { south, west, north, east },
-      globalSeed: GEO_EVENT_SEED,
-      eventTime,
-      count: GEO_EVENT_BATCH,
+    // STEP 0 — which tiles (DEC-R9-15). Standing near a tile edge, your own
+    // tile's event can be 500 m away while a neighbour's sits 50 m across the
+    // boundary, invisible — so one tile is a real quality loss. But a neighbour
+    // whose data is missing costs an 18–110 s download, and the C#'s four-tile
+    // answer could mean several of them.
+    //
+    // The app downloads in RES-7 UNITS, each covering seven event tiles, so
+    // several neighbours are usually already in memory. Those are free; the
+    // rest are skipped.
+    //
+    // **THIS DOES NOT WEAKEN DEC-R9-4, and the distinction is the whole
+    // justification.** Every tile's event stays a pure function of (tile, time)
+    // — identical on every device, forever. What varies with what you have
+    // downloaded is only WHICH of them you can currently see. Two people who
+    // walk to the same place find the same event; a device that has loaded more
+    // discovers more of them, and they converge. The divergence is "you have not
+    // loaded that area yet", not "we disagree about where the event is".
+    const tiles = [tile];
+    for (const neighbour of gridDisk(tile, 1)) {
+      if (neighbour === tile) continue;
+      if (this.loaded.has(toFetchTile(neighbour))) tiles.push(neighbour);
+    }
+    const boxes = tiles.map((each) => {
+      const [s, w, n, e] = boundsOfCell(each);
+      return { south: s, west: w, north: n, east: e };
     });
+
+    // STEP 1 — derive, over EVERY tile. `gridDisk(steps + 1)` because the climb
+    // may move `steps` cells and then needs its destination's own neighbourhood
+    // to decide it is a peak; without the extra ring the last comparison reads
+    // `unknown` and the climb reports `left` at the edge of the ensured set
+    // rather than of the map.
     const reach = new Set<string>();
-    for (const candidate of candidates) {
-      for (const cell of gridDisk(toCell(candidate), CLIMB_STEPS + 1)) {
-        reach.add(cell);
+    for (const bbox of boxes) {
+      for (const candidate of eventCandidates({
+        bbox,
+        globalSeed: GEO_EVENT_SEED,
+        eventTime,
+        count: GEO_EVENT_BATCH,
+      })) {
+        for (const cell of gridDisk(toCell(candidate), CLIMB_STEPS + 1)) {
+          reach.add(cell);
+        }
       }
     }
 
@@ -426,7 +454,7 @@ export class DemoPipeline {
     return this.index.withPinned(reach, () =>
       newGeoEventFor({
         user: position,
-        tiles: [{ bbox: { south, west, north, east } }],
+        tiles: boxes.map((bbox) => ({ bbox })),
         globalSeed: GEO_EVENT_SEED,
         eventTime,
         toCell,

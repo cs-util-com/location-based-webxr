@@ -318,6 +318,45 @@ async function main(): Promise<void> {
   });
 
   const legendView = new LegendView({ container: el("legend") });
+  /**
+   * The geo-event trigger (DEC-R9-13).
+   *
+   * A BUTTON, not a position subscriber: computing an event scores hundreds of
+   * chunks and may download a tile, and clicking around the map is this demo's
+   * primary interaction. It also makes WHEN it ran visible, which matters on a
+   * diagnostic surface.
+   *
+   * The in-progress state is not decoration — the operation can take seconds,
+   * and the root CLAUDE.md requires an async control to show one.
+   */
+  const geoEventButton = el<HTMLButtonElement>("geo-event");
+  geoEventButton.addEventListener("click", () => {
+    const view = selectOsmView(store.getState());
+    geoEventButton.disabled = true;
+    geoEventButton.textContent = "Finding…";
+    void worker
+      .call("geoEvent", {
+        position: view.position,
+        category: view.category,
+        now: Date.now(),
+      })
+      .then((event) => {
+        mapView.renderGeoEvent(event);
+        const at = new Date(event.eventTime).toLocaleTimeString();
+        geoEventButton.textContent =
+          event.picks.length === 0 ? "No event nearby" : "Event at " + at;
+      })
+      .catch((error: unknown) => {
+        // Through the same channel every other failure uses, so a geo-event
+        // failure is as visible as a fetch failure rather than silent.
+        const message = error instanceof Error ? error.message : String(error);
+        store.dispatch(actions.fetchFailed("geo-event failed: " + message));
+        geoEventButton.textContent = "Next geo-event";
+      })
+      .finally(() => {
+        geoEventButton.disabled = false;
+      });
+  });
   const detailsPanel = new DetailsPanel({
     container: el("details"),
     onClose: () => store.dispatch(actions.cellSelected(undefined)),

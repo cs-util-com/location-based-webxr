@@ -3875,3 +3875,57 @@ test.describe("selecting a region", () => {
     await expect(panel.locator(".panel-stats")).toHaveCount(0);
   });
 });
+
+test.describe("the geo-event", () => {
+  /**
+   * WHY THIS TEST EXISTS (round 9). Everything below the button is unit-tested —
+   * the seeded candidates, the climb, the gate, the ensure-then-pin ordering —
+   * but none of that proves the worker call, the button state and the drawing
+   * are wired to each other. This is the only assertion that the feature exists
+   * from a user's point of view.
+   *
+   * It also pins the in-progress state, which the root CLAUDE.md requires of an
+   * async control and which is easy to omit: the operation can score hundreds of
+   * chunks, so a button that looked inert while it worked would read as broken.
+   */
+  test("finds an event from the button and draws it on the map", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const button = page.locator("#geo-event");
+    await expect(button).toHaveText(/Next geo-event/);
+
+    await button.click();
+
+    // The label must reach a terminal state. Either outcome is a pass — a
+    // fixture with no qualifying ground genuinely has no event, and asserting
+    // "an event was found" would make this test depend on the fixture's heat
+    // rather than on the wiring.
+    await expect(button).toHaveText(/Event at|No event nearby/, {
+      timeout: 30_000,
+    });
+    await expect(button).toBeEnabled();
+
+    // And nothing failed: a geo-event error routes through the same channel a
+    // fetch failure does, so the header would be showing it.
+    await expect(page.locator("#status")).not.toContainText("geo-event failed");
+
+    // If it found one, it is on the map. The winner carries a class of its own
+    // so this cannot pass on a candidate marker.
+    const label = await button.textContent();
+    if (label?.includes("Event at") === true) {
+      // PRESENT, not VISIBLE, and the difference is a real property of the
+      // feature rather than a test convenience. An event tile is ~900 m across
+      // and the demo opens at zoom 18, which shows a couple of hundred metres --
+      // so the winner is very often outside the viewport, and Leaflet renders an
+      // off-screen path as , which reads as hidden. Asserting
+      // visibility would make this test pass or fail on where the seeded
+      // candidate happened to land.
+      await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+      await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
+    }
+  });
+});

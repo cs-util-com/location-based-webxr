@@ -29,6 +29,7 @@
 import type {
   MeshChunk,
   CellExplanation,
+  GeoEvent,
   LatLng,
   MeshData,
   PoiMarker,
@@ -243,6 +244,23 @@ export interface WorkerCalls {
     /** `undefined` when the cell is not in the current snapshot. */
     readonly result: CellExplanation | undefined;
   };
+  /**
+   * The geo-event for a moment and a place (round 9).
+   *
+   * IT RUNS IN THE WORKER, and it has to: the index is private inside
+   * DemoPipeline inside the worker, the climb reads it through SYNCHRONOUS
+   * callbacks that cannot cross a structured clone, and the ensure step needs
+   * the same fetch machinery updates use. Only the finished result crosses.
+   */
+  readonly geoEvent: {
+    readonly request: {
+      readonly position: LatLng;
+      readonly category: string;
+      /** Epoch ms. Passed in so a test can pin a quarter-hour. */
+      readonly now: number;
+    };
+    readonly result: GeoEvent;
+  };
   readonly terrain: {
     readonly request: {
       readonly centre: LatLng;
@@ -313,6 +331,7 @@ const CALL_KINDS = new Set<string>([
   "init",
   "update",
   "explain",
+  "geoEvent",
   "terrain",
   "cellMesh",
 ] satisfies WorkerCallKind[]);

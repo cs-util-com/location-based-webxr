@@ -364,6 +364,32 @@
       /* The locate button (DEC-R2-3): a SQUARE icon, bottom-right, so it matches
          the maps convention and — unlike the old text button — does not change
          size when it fails. */
+      .geo-event-button {
+        font: inherit;
+        color: #e6e8ef;
+        background: #2a2f3d;
+        border: 1px solid #3a4152;
+        border-radius: 4px;
+        padding: 0.15rem 0.5rem;
+        cursor: pointer;
+      }
+      .geo-event-button:disabled {
+        opacity: 0.6;
+        cursor: progress;
+      }
+      /* The seeded candidates and the winner. Red is unused by the Viridis heat
+         ramp, so an event marker cannot be mistaken for a score. */
+      .geo-candidate {
+        fill: #ff3860;
+        fill-opacity: 0.5;
+        stroke: none;
+      }
+      .geo-winner {
+        fill: #ff3860;
+        fill-opacity: 1;
+        stroke: #fff;
+        stroke-width: 2;
+      }
       .locate-button {
         width: 2rem;
         height: 2rem;
@@ -526,6 +552,16 @@
            region looks wrong. Populated from ALL_LAYERS so a new builder cannot
            arrive without a switch. -->
       <div id="layers" class="layer-toggles"></div>
+      <!--
+        THE GEO-EVENT TRIGGER (round 9, DEC-R9-13). A BUTTON rather than firing on
+        every position change: computing an event can score hundreds of chunks and
+        may download a tile, and clicking around the map is this demo primary
+        interaction. It also makes WHEN it ran visible, which matters on a
+        diagnostic surface.
+      -->
+      <button type="button" id="geo-event" class="geo-event-button">
+        Next geo-event
+      </button>
       <!--
         THE GROUND MODE (W11, DEC-R3-3). NOT a layer — it does not add or remove
         anything from the scene, it chooses which surface is drawn as the ground:
