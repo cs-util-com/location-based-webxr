@@ -20,7 +20,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { cellToLatLng, gridDisk, latLngToCell } from "h3-js";
+import { cellToChildren, cellToLatLng, gridDisk, latLngToCell } from "h3-js";
 
 import { AffordanceIndex } from "./affordance-index.js";
 import type { OsmFeature } from "../model/osm-feature.js";
@@ -28,6 +28,7 @@ import { parseRuleTable } from "../rules/rule-table.js";
 import type { OsmTileResult } from "../source/osm-data-source.js";
 import { OVERPASS_SCHEMA_VERSION } from "../source/overpass-query.js";
 import {
+  AFFORDANCE_RES,
   FETCH_RES,
   SCORE_CHUNK_RES,
   SCORE_DISK_MAX_RADIUS,
@@ -713,5 +714,80 @@ describe("scoresByCell is cached, and the INVALIDATION is the point (W9)", () =>
     index.update({ lat: AT.lat + 0.05, lng: AT.lng + 0.05 });
 
     expect(index.scoresByCell()).not.toBe(first);
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (DEC-R7b-10, round 9 §3). The lazy store is about to
+ * let algorithms read cells that were never scored, and today an unscored cell
+ * and a genuinely empty one give the SAME answer: the multiplicative identity.
+ * `resolutions.ts:207` already names the consequence — "an unfetched cell scores
+ * as the identity, which reads as 'nothing is mapped here'" — and a hill-climb
+ * that believes it would walk to the rim of the scored field and stop there,
+ * every time, with nothing reporting it.
+ *
+ * The distinction already exists one level up: `chunk()` returns `undefined`
+ * for unscored versus a `ScoredChunk` with `featureCount === 0` for
+ * scored-and-empty. This surfaces it at the cell level; it does not invent it.
+ */
+describe("cellState — telling 'nothing here' from 'not looked yet'", () => {
+  it("reports a scored cell with features as `scored`, carrying its score", () => {
+    const index = newIndex();
+    index.update(HOME);
+    const scored = index.cellsAbove("walkable", 1);
+    const cell = scored[0];
+    expect(cell).toBeDefined();
+
+    const state = index.cellState(cell as string);
+    expect(state.state).toBe("scored");
+    if (state.state !== "scored") throw new Error("expected scored");
+    expect(state.score["walkable"]).toBeGreaterThan(1);
+  });
+
+  it("reports a cell in a SCORED chunk with no features as `empty`", () => {
+    // The distinction this whole stage exists for. Scoring a working set covers
+    // ~931 cells; only the handful the grass patch touches get a record, and the
+    // rest are `empty` — mapped-and-nothing-there — not `unknown`.
+    const index = newIndex();
+    const { workingSet } = index.update(HOME);
+    const covered = new Set(index.cellsAbove("walkable", 0));
+    const emptyCell = workingSet
+      .flatMap((chunk) => cellToChildren(chunk, AFFORDANCE_RES))
+      .find((cell) => !covered.has(cell));
+    expect(
+      emptyCell,
+      "the fixture must leave some cell uncovered",
+    ).toBeDefined();
+
+    expect(index.cellState(emptyCell as string).state).toBe("empty");
+  });
+
+  it("reports a cell in no scored chunk as `unknown`", () => {
+    // Far enough away that no working set reaches it. This is the state the
+    // geo-event climb must never silently read as a low score.
+    const index = newIndex();
+    index.update(HOME);
+    const faraway = latLngToCell(
+      HOME.lat + 0.5,
+      HOME.lng + 0.5,
+      AFFORDANCE_RES,
+    );
+
+    expect(index.cellState(faraway).state).toBe("unknown");
+  });
+
+  it("gives every cell EXACTLY ONE state", () => {
+    // The guard that stops `unknown` quietly becoming "score 1 with a flag".
+    // A read that could be both, or neither, is the ambiguity this replaces.
+    const index = newIndex();
+    const { workingSet } = index.update(HOME);
+    const sample = [
+      ...workingSet.flatMap((chunk) => cellToChildren(chunk, AFFORDANCE_RES)),
+      latLngToCell(HOME.lat + 0.5, HOME.lng + 0.5, AFFORDANCE_RES),
+    ];
+    for (const cell of sample) {
+      const state = index.cellState(cell).state;
+      expect(["scored", "empty", "unknown"]).toContain(state);
+    }
   });
 });

@@ -34,7 +34,13 @@
  * @see affordance-index.ts.md
  */
 
-import { cellToBoundary, cellToChildren, gridDisk, latLngToCell } from "h3-js";
+import {
+  cellToBoundary,
+  cellToChildren,
+  cellToParent,
+  gridDisk,
+  latLngToCell,
+} from "h3-js";
 
 import type {
   LatLng,
@@ -150,6 +156,27 @@ export interface ScoredChunk {
   /** Features considered. Exposed because "0 features" and "no data" differ. */
   readonly featureCount: number;
 }
+
+/**
+ * What is known about one cell (round 9 §3, DEC-R7b-10).
+ *
+ * THREE STATES BECAUSE TWO WERE A BUG. Every other read on this class answers an
+ * unscored cell with the multiplicative identity — the same answer a genuinely
+ * empty cell gives — so "nothing is mapped here" and "nobody has looked here
+ * yet" were indistinguishable to every caller. That is tolerable while scoring
+ * only ever happens in a disc around the user, and load-bearing the moment an
+ * algorithm may read outside it.
+ *
+ * `unknown` is a fact about the field, not a request: reading it never triggers
+ * scoring or fetching.
+ */
+export type CellState =
+  | {
+      readonly state: "scored";
+      readonly score: Readonly<Record<string, number>>;
+    }
+  | { readonly state: "empty" }
+  | { readonly state: "unknown" };
 
 export interface UpdateResult {
   /** The 19 chunks now covering the user. */
@@ -398,6 +425,46 @@ export class AffordanceIndex {
   /** Every currently-held scored chunk. */
   scoredChunks(): readonly ScoredChunk[] {
     return [...this.chunks.values()];
+  }
+
+  /**
+   * What is known about one cell — scored, empty, or not looked at yet.
+   *
+   * WHY THIS EXISTS, and it is the difference between a correct algorithm and a
+   * confidently wrong one. Every other read here answers an unscored cell with
+   * the multiplicative identity, which is the same answer a genuinely empty cell
+   * gives. `resolutions.ts` already names the cost: _"an unfetched cell scores
+   * as the identity, which reads as 'nothing is mapped here'"_. A hill-climb
+   * that believes it walks to the edge of the scored field and stops, every
+   * time, and nothing reports it.
+   *
+   * **The distinction is not invented here, only surfaced.** `chunk()` already
+   * separates the two — `undefined` for unscored against a `ScoredChunk` whose
+   * `featureCount` may be 0 — and that field's doc says why it is exposed.
+   * What was missing is a path from a CELL to that fact.
+   *
+   * **`empty` cannot come from the score map**, which is why this is a
+   * membership check rather than a lookup with a default. `distribute` only
+   * creates an entry for a cell some feature actually covered, so a scored chunk
+   * with nothing in it publishes no cell records at all. Materialising them
+   * would mean ~2 989 records of pure absence per working set, inflating every
+   * snapshot that crosses the worker boundary to say nothing.
+   *
+   * **Coarsening a cell to its chunk is safe here**, unlike deriving a chunk
+   * from a POSITION: `distribute` attributes cells through this same index
+   * partition, so a cell's res-11 parent is by construction the chunk that would
+   * have scored it. (`demo-pipeline.ts` records the position-derived version
+   * disagreeing at four of sixty sweep points.)
+   *
+   * Reads only. It never scores, never fetches and never awaits — `unknown` is a
+   * fact about the field, not a request to change it.
+   */
+  cellState(cell: string): CellState {
+    const scored = this.scoresByCell().get(cell);
+    if (scored !== undefined) return { state: "scored", score: scored.scores };
+    return this.chunks.has(cellToParent(cell, SCORE_CHUNK_RES))
+      ? { state: "empty" }
+      : { state: "unknown" };
   }
 
   /** Every held cell whose score in `category` is strictly above `threshold`. */

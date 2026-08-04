@@ -25,6 +25,24 @@ the package that remembers anything.
 
 `ScoredChunk`: `{ chunk, cells, tiles, featureCount }`, frozen.
 
+### `cellState(cell)` — the tri-state read (round 9 §3)
+
+Returns `{state:"scored", score}`, `{state:"empty"}` or `{state:"unknown"}`.
+
+- **Three states because two were a bug.** Every other read answers an unscored
+  cell with the multiplicative identity — the same answer a genuinely empty cell
+  gives — so "nothing is mapped here" and "nobody has looked yet" were
+  indistinguishable. Tolerable while scoring only ever happened in a disc around
+  the user; load-bearing the moment an algorithm reads outside it.
+- **It surfaces a distinction that already existed**, one level up: `chunk()`
+  returns `undefined` for unscored against a `ScoredChunk` whose `featureCount`
+  may be 0. What was missing was a path from a CELL to that fact.
+- **`empty` is a chunk-membership check, not a lookup with a default.**
+  `distribute` only records a cell some feature covered, so a scored-but-empty
+  chunk publishes no cell records at all. Materialising them would mean ~2 989
+  records of pure absence per working set crossing the worker boundary.
+- **Read-only.** Never scores, never fetches, never awaits.
+
 ## Invariants & assumptions
 
 - **A move inside the current res-11 chunk does nothing at all.** This is the C#
