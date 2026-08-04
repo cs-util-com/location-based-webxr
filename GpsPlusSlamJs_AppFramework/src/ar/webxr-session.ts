@@ -576,28 +576,13 @@ export function resetWebXRState(): void {
   activeSession = defaultArSessionHandle();
 }
 
-// The scene graph (renderer, scene, camera, arWorldGroup, CSS3D manager),
-// the XRSession, and the latest raw AR pose live on
-// `activeSession.sceneGraph` / `.xrSession` / `.latestArPose` (Stage 3) —
-// see the ArSessionHandle field docs.
-//
-// NOTE: the live session keeps NO reference to the arpose node (the
-// intermediate Object3D between basisChangeNode and the camera). It stays at
-// identity during recording and lives purely in the scene graph built by
-// createSceneHierarchy(); its only reader was the replay-injection getter
-// getArPose(), deleted by surface-reduction step 2 — replay now uses its own
-// arpose from replay-scene's getReplayState().
-
-// The image-capture cluster (manager, blit, callback slots incl. the injected
-// quality analyzer) lives on `activeSession.imageCapture` (Stage 1) — see the
-// ArSessionHandle field docs.
-
-// The tracking cluster (store, phase subscription, host callbacks) lives on
-// `activeSession.tracking` (Stage 2) — see the ArSessionHandle field docs.
-// When the store is present, `onXRFrame` dispatches `poseReceived`/`poseLost`,
-// the XR reference-space reset listener dispatches `originReset`, and a
-// subscription translates phase transitions back into the host's callbacks;
-// when absent the tracking pipeline simply no-ops.
+// THE LIVE SESSION KEEPS NO REFERENCE TO THE ARPOSE NODE (the intermediate
+// Object3D between basisChangeNode and the camera). It stays at identity during
+// recording and lives purely in the scene graph built by createSceneHierarchy();
+// its only reader was the replay-injection getter getArPose(), deleted by
+// surface-reduction step 2 — replay now uses its own arpose from replay-scene's
+// getReplayState(). Kept as a comment because it is a deliberate ABSENCE: there
+// is no handle field to hang it on, so nothing else can record it.
 
 /**
  * Info passed to the session-end callback (F3, 2026-07-04 user feedback).
@@ -610,30 +595,8 @@ export interface SessionEndInfo {
   requestedByApp: boolean;
 }
 
-// The session-end callback + app-initiated-end discriminator live on
-// `activeSession` (Stage 0) — see the ArSessionHandle field docs.
-
-// The depth-sampling cluster (sampler, rgb blit, callbacks) lives on
-// `activeSession.depth` (Stage 1) — see the ArSessionHandle field docs.
-
-// The per-frame host callback lives on `activeSession.onFrame` (Stage 3);
-// the CSS3D renderer manager on `activeSession.sceneGraph.css3d` — see the
-// ArSessionHandle field docs.
-
-// The camera-frame CV cluster (source, blit, capture size, callback) lives on
-// `activeSession.cameraFrame` (Stage 1). SINGLE consumer by design: one
-// source, one callback, one blit — one CV consumer at a time (QR *or* object
-// detection). To run two live CV consumers simultaneously at independent
-// cadences/resolutions, replace the single-callback wiring with a small
-// registry (e.g. `registerCameraFrameConsumer({ intervalMs, captureSize,
-// onFrame })`) holding a `CameraFrameSource` per consumer — the class is
-// already per-instance. See the SCOPE note in `camera-frame-source.ts`.
-
 /** Readback size for the depth-RGB blit (plan §5: "e.g. 256×192 suffices"). */
 const DEPTH_RGB_BLIT_CONFIG = { width: 256, height: 192 };
-
-// The per-frame camera texture/dimensions and the camera-access diagnostic
-// latches live on `activeSession` (Stage 0) — see the ArSessionHandle docs.
 
 const GET_CAMERA_TEXTURE_LOG_THRESHOLD = 5;
 

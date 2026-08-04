@@ -139,7 +139,7 @@ async function discoverFlatRecordings(
  * folder cancels further emission and stops pulling new legacy zips, so a torn
  * -down map never receives stray tiles. Nothing is written to disk.
  *
- * @see ./recording-index.md
+ * @see ./recording-index.ts.md
  */
 export async function streamRecordingIndex(
   rootHandle: FileSystemDirectoryHandle,
