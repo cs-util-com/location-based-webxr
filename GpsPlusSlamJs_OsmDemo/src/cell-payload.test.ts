@@ -39,7 +39,7 @@ const cell = (
   id: string,
   scores: Record<string, number>,
   contributors: Record<string, Record<string, number>> = {},
-): CellScore => ({ cell: id, scores, contributors }) as CellScore;
+): CellScore => ({ cell: id, scores, contributors });
 
 describe("packCells / unpackCells", () => {
   it("round-trips ids, scores and contributors", () => {
@@ -137,7 +137,9 @@ describe("packCells / unpackCells", () => {
 
     fc.assert(
       fc.property(
-        fc.uniqueArray(fc.constantFrom(...H3_IDS), { maxLength: H3_IDS.length }),
+        fc.uniqueArray(fc.constantFrom(...H3_IDS), {
+          maxLength: H3_IDS.length,
+        }),
         scoreArb,
         (ids, scores) => {
           const cells = ids.map((id) =>

@@ -63,7 +63,7 @@ contributor block — `contributorOffsets` (`cells + 1`), `contributorCategories
   transferred for that reason.
 - **H3 ids are padded back to width on unpack.** An H3 index is a 64-bit integer
   written as hex, and `BigInt.prototype.toString(16)` drops leading zeros. An id
-  that returns one character short is a *different cell*: the map would colour a
+  that returns one character short is a _different cell_: the map would colour a
   hexagon that does not exist, and nothing would throw. `idWidth` defaults to 15
   (res 13) and is a parameter rather than a constant because the width is a
   property of the resolution.
@@ -77,7 +77,7 @@ contributor block — `contributorOffsets` (`cells + 1`), `contributorCategories
   per-payload dictionaries of a few dozen short strings; encoding them into
   buffers would add a decoder for no measurable gain.
 - **`cellPayloadBuffers` is derived, not enumerated.** A buffer left out of the
-  transfer list is silently *copied* rather than moved — invisible except as the
+  transfer list is silently _copied_ rather than moved — invisible except as the
   cost this module removes. A hand-written list would go stale the first time a
   field is added.
 

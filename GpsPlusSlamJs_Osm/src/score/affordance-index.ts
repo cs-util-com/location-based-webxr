@@ -255,7 +255,6 @@ export class AffordanceIndex {
 
   /** The last `scoresByCell` result, and the version it was built from. */
   private scoresByCellCache: Map<string, CellScore> | undefined;
-  private scoresByCellVersion = -1;
 
   /** The user's last res-11 cell. The `oldUserTile` short-circuit. */
   private lastChunk: string | undefined;
@@ -353,8 +352,7 @@ export class AffordanceIndex {
     for (const [chunk, scored] of this.chunks) {
       const overlaps = bboxesIntersect(bbox, chunkBbox(chunk));
       if (!overlaps && !scored.tiles.includes(tile.tile)) continue;
-      this.chunks.delete(chunk);
-      this.chunkVersion += 1;
+      this.dropChunk(chunk);
       invalidated.push(chunk);
     }
 
@@ -432,8 +430,7 @@ export class AffordanceIndex {
     // `scored` keeps the nearest-first order of `ordered`, so a consumer still
     // learns which chunks were computed in the order they matter.
     for (const [target, result] of this.scoreChunks(scored)) {
-      this.chunks.set(target, result);
-      this.chunkVersion += 1;
+      this.retainChunk(target, result);
     }
 
     this.evictBeyond(workingSet);
@@ -483,13 +480,12 @@ export class AffordanceIndex {
     }
 
     for (const [target, result] of this.scoreChunks(targets)) {
-      this.chunks.set(target, result);
-      // THE LINE MOST EASILY MISSED. `scoreChunks` does not bump this; `update`
-      // does. Writing chunks without it leaves `scoresByCell` serving its cached
-      // map, so every cell scored here is invisible until an unrelated mutation
-      // happens to bump the counter — presenting as "the map stopped updating",
-      // with nothing thrown.
-      this.chunkVersion += 1;
+      // THROUGH `retainChunk`, which is what keeps `scoresByCell` in step. The
+      // previous version set the chunk here and bumped the version by hand, and
+      // the comment warned that forgetting the bump made every cell scored here
+      // invisible. Routing every writer through one method removes the class of
+      // mistake rather than warning about it.
+      this.retainChunk(target, result);
       this.stats.chunksScored++;
     }
 
@@ -619,31 +615,81 @@ export class AffordanceIndex {
    * that size the rebuild is the single most expensive read on this class, and
    * nothing about it changes between two calls with no mutation in between.
    *
-   * **The invalidation is the part that matters, not the cache.** A stale map
-   * here would show as a map that stops updating — far worse than the cost it
-   * removes — so it is keyed on a counter bumped by every path that can add,
-   * replace or drop a chunk (`scoreChunks`, `acceptTile`'s invalidation, and
-   * eviction), rather than on anything derived from the contents.
+   * **MAINTAINED, NOT REBUILT (round 10, stage A).** It was previously derived
+   * on demand and invalidated by a version counter, which meant a move — three
+   * progressive rings, each scoring new chunks — rebuilt the whole map three
+   * times to deliver one ring of new cells. At the 488-chunk cap that is
+   * ~24 000 cells walked per ring, and DEC-R9-14 named it as the reason the cap
+   * could not simply be raised.
    *
-   * The returned map is the CACHED INSTANCE, not a copy: callers read it, and
-   * copying it per call would give back most of the saving. It is invalidated
-   * rather than mutated, so a caller holding one across a mutation keeps a
-   * consistent old snapshot instead of a half-updated one.
+   * Now every path that adds, replaces or drops a chunk goes through
+   * {@link retainChunk} / {@link dropChunk}, which update this map by the cells
+   * that actually changed. The build below runs at most once per index.
+   *
+   * **THE RETURNED MAP IS LIVE.** It used to be replaced wholesale on
+   * invalidation, so a caller could hold one across a mutation and keep a
+   * consistent old snapshot; now it is the map itself and later mutations are
+   * visible through it. Every caller in this repo reads it immediately
+   * (`update` spreads it into an array in the same statement), so this costs
+   * nothing today — but a caller that retains it across a scoring pass would
+   * now see the new state, and that is a real behavioural change rather than a
+   * refactor.
    */
   scoresByCell(): Map<string, CellScore> {
-    if (
-      this.scoresByCellCache !== undefined &&
-      this.scoresByCellVersion === this.chunkVersion
-    ) {
-      return this.scoresByCellCache;
+    if (this.scoresByCellCache === undefined) {
+      const byCell = new Map<string, CellScore>();
+      for (const scored of this.chunks.values()) {
+        for (const cell of scored.cells) byCell.set(cell.cell, cell);
+      }
+      this.scoresByCellCache = byCell;
     }
-    const byCell = new Map<string, CellScore>();
-    for (const scored of this.chunks.values()) {
-      for (const cell of scored.cells) byCell.set(cell.cell, cell);
+    return this.scoresByCellCache;
+  }
+
+  /**
+   * Adds or replaces a chunk, keeping {@link scoresByCell} in step.
+   *
+   * THE ONLY WAY A CHUNK MAY ENTER `this.chunks`. Routing every writer through
+   * here is what makes the incremental map safe: a path that set the chunk
+   * directly would leave the map missing those cells, and the symptom would be
+   * ground that is scored but draws unscored — invisible until someone compared
+   * the two.
+   *
+   * A REPLACEMENT DROPS THE OLD CELLS FIRST. Chunks partition cells by
+   * `cellToParent`, so a rescore should produce the same cell set and the
+   * delete should be redundant — but "should be" is not a guarantee this map
+   * can afford, and a stale cell here outlives every later pass because nothing
+   * rescores a chunk that already exists.
+   */
+  private retainChunk(chunk: string, result: ScoredChunk): void {
+    const cache = this.scoresByCellCache;
+    if (cache !== undefined) {
+      const previous = this.chunks.get(chunk);
+      if (previous !== undefined) {
+        for (const cell of previous.cells) cache.delete(cell.cell);
+      }
+      for (const cell of result.cells) cache.set(cell.cell, cell);
     }
-    this.scoresByCellCache = byCell;
-    this.scoresByCellVersion = this.chunkVersion;
-    return byCell;
+    this.chunks.set(chunk, result);
+    this.chunkVersion += 1;
+  }
+
+  /**
+   * Removes a chunk and its cells. The counterpart to {@link retainChunk}.
+   *
+   * Returns whether anything was removed, so callers can keep their own counters
+   * honest rather than assuming the chunk was there.
+   */
+  private dropChunk(chunk: string): boolean {
+    const previous = this.chunks.get(chunk);
+    if (previous === undefined) return false;
+    const cache = this.scoresByCellCache;
+    if (cache !== undefined) {
+      for (const cell of previous.cells) cache.delete(cell.cell);
+    }
+    this.chunks.delete(chunk);
+    this.chunkVersion += 1;
+    return true;
   }
 
   /** Features currently merged in, for callers that need the raw data. */
@@ -842,8 +888,7 @@ export class AffordanceIndex {
 
     for (const chunk of candidates) {
       if (this.chunks.size <= this.maxChunks) break;
-      this.chunks.delete(chunk);
-      this.chunkVersion += 1;
+      this.dropChunk(chunk);
       this.stats.chunksEvicted++;
     }
 

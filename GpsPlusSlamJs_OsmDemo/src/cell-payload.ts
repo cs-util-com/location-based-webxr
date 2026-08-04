@@ -177,7 +177,8 @@ export function unpackCells(packed: PackedCells, idWidth = 15): CellScore[] {
     const from = packed.contributorOffsets[n] ?? 0;
     const to = packed.contributorOffsets[n + 1] ?? from;
     for (let entry = from; entry < to; entry += 1) {
-      const category = packed.categories[packed.contributorCategories[entry] ?? 0];
+      const category =
+        packed.categories[packed.contributorCategories[entry] ?? 0];
       const key = packed.featureKeys[packed.contributorKeys[entry] ?? 0];
       const factor = packed.contributorFactors[entry];
       if (category === undefined || key === undefined || factor === undefined) {
@@ -190,7 +191,7 @@ export function unpackCells(packed: PackedCells, idWidth = 15): CellScore[] {
       cell: decodeCellId(packed.ids[n] ?? 0n, idWidth),
       scores,
       contributors,
-    } as CellScore);
+    });
   }
 
   return cells;

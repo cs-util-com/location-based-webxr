@@ -659,15 +659,22 @@ describe("the default chunk cache holds a walk, not just one working set (W7)", 
   });
 });
 
-describe("scoresByCell is cached, and the INVALIDATION is the point (W9)", () => {
+describe("scoresByCell reflects every mutation immediately (W9, round 10)", () => {
   /**
    * Why these tests matter:
    * The demo asks for this map once per scoring pass — three times per click —
-   * and again for every `explain`, and it walks every retained chunk: up to
-   * eight working sets of 49 cells. Caching it is worth real time. But a stale
-   * cache here is a map that stops updating, which is far worse than the cost it
-   * removes, so the invalidation gets a test per mutation path rather than one
-   * test for the cache.
+   * and again for every `explain`. A map that stops reflecting the chunk store
+   * is a map that stops updating, so each mutation path gets its own test.
+   *
+   * REWRITTEN IN ROUND 10, AND THE REASON MATTERS. These asserted
+   * `scoresByCell() !== previousInstance` — a proxy for "the data is fresh"
+   * that held only because the map was REBUILT on invalidation. Stage A made it
+   * maintained in place, so the instance is now stable by design and the proxy
+   * became false while the property it stood for stayed true.
+   *
+   * They now assert the property directly: the CONTENTS change. That is
+   * strictly stronger — an identity check passes for a rebuilt map that is
+   * rebuilt wrongly.
    */
   const AT = HOME;
 
@@ -679,47 +686,75 @@ describe("scoresByCell is cached, and the INVALIDATION is the point (W9)", () =>
     expect(index.scoresByCell()).toBe(index.scoresByCell());
   });
 
-  it("rebuilds after new chunks are scored", () => {
+  it("shows newly scored chunks' cells", () => {
     // The mutation that happens on every move.
+    //
+    // THE DESTINATION NEEDS ITS OWN FEATURE, and the first version of this test
+    // did not give it one. A `patch` spans 0.00025 deg (~28 m), so a move of
+    // 0.01 deg (~1.1 km) lands on empty ground: chunks are scored, `scored` is
+    // non-empty, and NOT ONE CELL is produced — an empty chunk contributes no
+    // `CellScore`. The assertion then failed against a correct implementation,
+    // which is the round-9 smell (a fixture that makes the thing under test
+    // constant) appearing in a test written to guard against it.
+    const destination = { lat: AT.lat + 0.01, lng: AT.lng + 0.01 };
     const index = new AffordanceIndex({ table: TABLE });
-    index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })]));
+    index.acceptTile(
+      tile(AT, [
+        patch(1, AT, { landuse: "grass" }),
+        patch(2, destination, { landuse: "grass" }),
+      ]),
+    );
     index.update(AT);
-    const first = index.scoresByCell();
+    const before = new Set(index.scoresByCell().keys());
 
-    index.update({ lat: AT.lat + 0.01, lng: AT.lng + 0.01 });
+    const moved = index.update(destination);
+    expect(moved.scored.length).toBeGreaterThan(0);
 
-    expect(index.scoresByCell()).not.toBe(first);
+    const after = new Set(index.scoresByCell().keys());
+    const added = [...after].filter((cell) => !before.has(cell));
+    expect(added.length).toBeGreaterThan(0);
+    // And every added cell really is scored, not merely present.
+    for (const cell of added) {
+      expect(index.cellState(cell).state).toBe("scored");
+    }
   });
 
-  it("rebuilds after a late tile invalidates chunks", () => {
+  it("stops showing cells of chunks a late tile invalidated", () => {
     // THE ONE THAT WOULD HURT MOST. A tile arriving late drops the chunks it
-    // contradicts; serving the previous map afterwards would show scores the
-    // index itself has already disowned.
+    // contradicts; continuing to serve their cells would show scores the index
+    // itself has already disowned — and with a MAINTAINED map that is a stale
+    // entry rather than a stale cache, which no later pass clears.
     const index = new AffordanceIndex({ table: TABLE });
     index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })]));
     index.update(AT);
-    const first = index.scoresByCell();
+    const before = new Set(index.scoresByCell().keys());
+    expect(before.size).toBeGreaterThan(0);
 
     index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })], 2_000));
 
-    expect(index.scoresByCell()).not.toBe(first);
+    // The invalidated chunks' cells are gone, and `cellState` agrees they are
+    // no longer scored — the two readers must not disagree.
+    for (const cell of index.scoresByCell().keys()) {
+      expect(index.cellState(cell).state).toBe("scored");
+    }
+    expect(index.scoresByCell().size).toBeLessThan(before.size);
   });
 
-  it("rebuilds after a move that evicts", () => {
+  it("stops showing cells of evicted chunks", () => {
     // HONEST ABOUT WHAT THIS COVERS: eviction only ever happens at the end of an
-    // `update` that also scored, so the scoring bump alone would satisfy this
-    // test. The version bump inside `evictBeyond` is therefore defensive — it is
-    // there so a future path that drops chunks WITHOUT scoring (a memory-pressure
-    // trim, say) cannot silently serve cells it has just discarded. Recorded
-    // rather than dressed up as a stronger assertion than it is.
+    // `update` that also scored, so this cannot isolate eviction from scoring.
+    // What it does prove is the direction that matters for a maintained map —
+    // no cell survives its chunk.
     const index = new AffordanceIndex({ table: TABLE, maxChunks: 1 });
     index.acceptTile(tile(AT, [patch(1, AT, { landuse: "grass" })]));
     index.update(AT);
-    const first = index.scoresByCell();
 
     index.update({ lat: AT.lat + 0.05, lng: AT.lng + 0.05 });
+    expect(index.stats.chunksEvicted).toBeGreaterThan(0);
 
-    expect(index.scoresByCell()).not.toBe(first);
+    for (const cell of index.scoresByCell().keys()) {
+      expect(index.cellState(cell).state).toBe("scored");
+    }
   });
 });
 
@@ -964,5 +999,138 @@ describe("withPinned — keeping a chunk alive across a refresh", () => {
       index.update(HOME);
       expect(index.stats.pinnedOverCap).toBeGreaterThan(0);
     });
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (round 10, stage A).
+ *
+ * `scoresByCell()` rebuilds over EVERY retained chunk and is invalidated by any
+ * scoring, so a move — which runs three progressive rings — pays for the whole
+ * map three times to deliver one ring of new cells. At the 488-chunk cap that is
+ * ~24 000 cells rebuilt per ring. DEC-R9-14 named this as the reason the cap
+ * could not simply be raised.
+ *
+ * Making it incremental means the map is no longer DERIVED on demand but
+ * MAINTAINED, and a maintained cache can drift from the thing it mirrors. The
+ * whole correctness burden is therefore one invariant: the map must always say
+ * exactly what the chunk store says. These tests cross-check it against
+ * `cellState()`, which reads the chunks directly and is the authority.
+ */
+describe("scoresByCell stays exactly in step with the chunk store", () => {
+  /** Every cell the index could possibly know about, from the chunks it holds. */
+  const cellsOf = (chunks: readonly string[]) =>
+    chunks.flatMap((chunk) => cellToChildren(chunk, AFFORDANCE_RES));
+
+  /**
+   * The invariant, checked through the public surface only.
+   *
+   * Both directions matter and they fail differently: a map with a STALE entry
+   * shows a colour on ground that is no longer scored (an evicted chunk that
+   * kept its cells), and a map MISSING an entry drops ground that is scored (a
+   * newly scored chunk whose cells never landed).
+   */
+  /**
+   * PRIMES THE MAP, and without this most of these tests prove nothing.
+   *
+   * The map is built LAZILY on the first `scoresByCell()` call and maintained
+   * from then on. A test that only reads it after its mutations gets a
+   * from-scratch build, which is correct by construction — so the incremental
+   * path it means to test never runs. Mutating `retainChunk` to stop adding
+   * cells left four of the five tests here green until this existed.
+   *
+   * That is the round-9 smell once more: a fixture that makes the thing under
+   * test constant, this time by never letting it be reached.
+   */
+  const prime = (index: AffordanceIndex) => {
+    index.scoresByCell();
+    return index;
+  };
+
+  function expectAgreement(
+    index: AffordanceIndex,
+    workingSet: readonly string[],
+  ) {
+    const byCell = index.scoresByCell();
+
+    for (const [cell, score] of byCell) {
+      expect(index.cellState(cell)).toEqual({
+        state: "scored",
+        score: score.scores,
+      });
+    }
+    for (const cell of cellsOf(workingSet)) {
+      const state = index.cellState(cell);
+      if (state.state === "scored") {
+        expect(byCell.get(cell)?.scores).toEqual(state.score);
+      } else {
+        expect(byCell.has(cell)).toBe(false);
+      }
+    }
+  }
+
+  it("agrees after a first scoring pass", () => {
+    const index = prime(newIndex());
+    const result = index.update(HOME);
+    expect(result.scored.length).toBeGreaterThan(0);
+    expectAgreement(index, result.workingSet);
+  });
+
+  it("agrees across the three progressive rings", () => {
+    // The real refresh sequence. Each ring scores chunks the previous did not,
+    // which is exactly the incremental path.
+    const index = prime(newIndex());
+    for (const radius of [2, 3, 4]) {
+      expectAgreement(index, index.update(HOME, radius).workingSet);
+    }
+  });
+
+  it("drops a chunk's cells when a late tile invalidates it", () => {
+    // `acceptTile` DELETES every chunk the arriving tile overlaps, regardless of
+    // pins. A maintained map that kept those cells would keep serving scores
+    // computed without the tile -- stale colour that no later pass corrects,
+    // because nothing rescored those chunks.
+    const index = prime(newIndex());
+    const first = index.update(HOME);
+    expectAgreement(index, first.workingSet);
+
+    index.acceptTile(tile(HOME, [patch(2, HOME, { leisure: "park" })], 2_000));
+    expectAgreement(index, first.workingSet);
+
+    const second = index.update(HOME);
+    expectAgreement(index, second.workingSet);
+  });
+
+  it("drops evicted chunks' cells rather than keeping them alive", () => {
+    // THE STALE-ENTRY DIRECTION, forced by a cap small enough to evict. Without
+    // eviction in the fixture this whole class of bug is unreachable -- the
+    // round-9 lesson about a fixture that makes the thing under test constant.
+    const index = new AffordanceIndex({ table: TABLE, maxChunks: 20 });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+    prime(index);
+
+    index.update(HOME);
+    const home = latLngToCell(HOME.lat, HOME.lng, SCORE_CHUNK_RES);
+    const far = gridDisk(home, 6).at(-1);
+    expect(far).toBeDefined();
+
+    const moved = index.update(positionIn(far!));
+    expect(index.stats.chunksEvicted).toBeGreaterThan(0);
+    expectAgreement(index, moved.workingSet);
+  });
+
+  it("agrees after ensureScored, which writes chunks outside any working set", () => {
+    // `ensureScored` is the other writer, and it is the one that does NOT go
+    // through `update` -- so a map maintained only on the update path would be
+    // silently incomplete exactly where the geo-event reads.
+    const index = prime(newIndex());
+    const first = index.update(HOME);
+
+    const home = latLngToCell(HOME.lat, HOME.lng, SCORE_CHUNK_RES);
+    const outside = gridDisk(home, 5).at(-1);
+    expect(outside).toBeDefined();
+    index.ensureScored(cellToChildren(outside!, AFFORDANCE_RES));
+
+    expectAgreement(index, [...first.workingSet, outside!]);
   });
 });
