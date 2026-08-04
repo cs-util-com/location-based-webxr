@@ -20,7 +20,13 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { cellToChildren, cellToLatLng, gridDisk, latLngToCell } from "h3-js";
+import {
+  cellToChildren,
+  cellToLatLng,
+  cellToParent,
+  gridDisk,
+  latLngToCell,
+} from "h3-js";
 
 import { AffordanceIndex } from "./affordance-index.js";
 import type { OsmFeature } from "../model/osm-feature.js";
@@ -789,5 +795,174 @@ describe("cellState — telling 'nothing here' from 'not looked yet'", () => {
       const state = index.cellState(cell).state;
       expect(["scored", "empty", "unknown"]).toContain(state);
     }
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (round 9 §4, DEC-R9-10/11). `update` is the only way to
+ * make a cell exist — "move the user here and score a whole disc" — and it also
+ * evicts. The geo-event climb needs cells around a candidate that may be 600 m
+ * from the user, which is precisely what `update` would evict on its next call:
+ * the demo issues three per user action.
+ *
+ * The bookkeeping is the dangerous part, not the scoring. `chunkVersion` is
+ * bumped by `update`, NOT by `scoreChunks`, so a second write path that forgets
+ * it hands back the stale `scoresByCell` cache and every newly scored cell is
+ * invisible — presenting as "the map stopped updating", with nothing thrown.
+ */
+const FAR = { lat: HOME.lat + 0.005, lng: HOME.lng + 0.005 };
+
+describe("ensureScored — scoring somewhere the user is not", () => {
+  /** A cell far enough from HOME that no working set around it reaches HOME. */
+  // 0.005 degrees: ring distance 15 from HOME's chunk, so far outside the
+  // radius-4 scored disk, while staying inside the SAME res-7 fetch tile the
+  // fixture loaded. Both halves matter -- further out and it is legitimately
+  // unfetched, which is a different test.
+  const farCell = () =>
+    latLngToCell(HOME.lat + 0.005, HOME.lng + 0.005, AFFORDANCE_RES);
+
+  it("scores the chunks the given cells fall in, and nothing else", () => {
+    const index = newIndex();
+    index.update(HOME);
+    const before = index.scoredChunks().length;
+
+    const cell = farCell();
+    index.ensureScored([cell]);
+
+    // Exactly one chunk more: the one containing that cell.
+    expect(index.scoredChunks().length).toBe(before + 1);
+    expect(index.cellState(cell).state).not.toBe("unknown");
+  });
+
+  it("makes the new cells visible through `scoresByCell` immediately", () => {
+    // THE HIGHEST-RISK LINE IN THE STAGE. `chunkVersion` is bumped by `update`,
+    // not by `scoreChunks`; a write path that forgets it returns the cached map
+    // and the new cells simply are not there, with nothing reported.
+    //
+    // THE FIXTURE NEEDS A FEATURE OUT THERE, and the first version of this test
+    // did not have one. An empty chunk publishes NO cell records, so the loop
+    // below ran zero times and the test passed with the bump deleted — caught by
+    // the mutation check, not by reading it.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(
+      tile(HOME, [
+        patch(1, HOME, { landuse: "grass" }),
+        patch(2, FAR, { landuse: "grass" }),
+      ]),
+    );
+    index.update(HOME);
+    index.scoresByCell(); // populate the cache
+
+    const cell = farCell();
+    index.ensureScored([cell]);
+
+    const after = index.scoresByCell();
+    const chunk = index.chunk(cellToParent(cell, SCORE_CHUNK_RES));
+    expect(
+      chunk?.cells.length,
+      "the fixture must score real cells out there",
+    ).toBeGreaterThan(0);
+    for (const scored of chunk?.cells ?? []) {
+      expect(after.has(scored.cell)).toBe(true);
+    }
+  });
+
+  it("does NOT disturb the user-position short-circuit", () => {
+    // `lastChunk`/`lastRadius` mean "how far the USER's position has been
+    // scored". Writing them here would make the next `update` skip real work.
+    const index = newIndex();
+    index.update(HOME);
+    index.ensureScored([farCell()]);
+
+    const before = index.stats.movesIgnored;
+    index.update(HOME);
+    expect(index.stats.movesIgnored).toBe(before + 1);
+  });
+
+  it("reports the fetch tiles it could not cover, rather than fetching", () => {
+    // DEC-R9-10: the index stays synchronous and network-free. A cell whose
+    // fetch tile never arrived cannot be scored, and saying so is the whole
+    // contract — silently scoring it as empty is the bug this round exists to
+    // remove.
+    const index = newIndex();
+    const remote = latLngToCell(HOME.lat + 5, HOME.lng + 5, AFFORDANCE_RES);
+
+    const { missingTiles } = index.ensureScored([remote]);
+
+    expect(missingTiles).toContain(toFetchTile(remote));
+    expect(index.cellState(remote).state).toBe("unknown");
+  });
+
+  it("asks for nothing once the data has arrived", () => {
+    const index = newIndex();
+    const cell = farCell();
+    expect(index.ensureScored([cell]).missingTiles).toEqual([]);
+  });
+});
+
+/**
+ * WHY PINNING EXISTS (DEC-R9-11). `update` calls `evictBeyond` unconditionally
+ * and the demo issues three `update`s per user action, so a chunk scored for a
+ * candidate 600 m away is in the first-to-go bucket. Without a pin it would be
+ * scored, evicted and re-scored on every ring — the thrash the whole lazy path
+ * exists to avoid.
+ */
+describe("withPinned — keeping a chunk alive across a refresh", () => {
+  const tinyCacheIndex = () => {
+    const index = new AffordanceIndex({ table: TABLE, maxChunks: 1 });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+    return index;
+  };
+
+  it("keeps a pinned chunk that eviction would otherwise drop", () => {
+    const index = tinyCacheIndex();
+    const cell = latLngToCell(
+      HOME.lat + 0.005,
+      HOME.lng + 0.005,
+      AFFORDANCE_RES,
+    );
+    const pinnedChunk = cellToParent(cell, SCORE_CHUNK_RES);
+
+    index.withPinned([cell], () => {
+      index.ensureScored([cell]);
+      // A full refresh at the user's position, which evicts down to maxChunks.
+      index.update(HOME);
+      expect(index.chunk(pinnedChunk)).toBeDefined();
+    });
+  });
+
+  it("releases the pin even when the body throws", () => {
+    // The leak assertion, and the one most likely to be omitted. An abandoned
+    // climb that keeps its pins makes the cache cap unenforceable for good.
+    const index = tinyCacheIndex();
+    const cell = latLngToCell(
+      HOME.lat + 0.005,
+      HOME.lng + 0.005,
+      AFFORDANCE_RES,
+    );
+
+    expect(() =>
+      index.withPinned([cell], () => {
+        throw new Error("climb abandoned");
+      }),
+    ).toThrow("climb abandoned");
+
+    expect(index.stats.chunksPinned).toBe(0);
+  });
+
+  it("counts how far past the cap the pins pushed the cache", () => {
+    // DEC-R9-11: pins win over the cap, because an algorithm mid-climb must not
+    // have its data pulled away. The overrun is COUNTED rather than thrown or
+    // silently absorbed, so a leak shows up instead of hiding.
+    const index = tinyCacheIndex();
+    const cells = [0.005, 0.006, 0.007].map((d) =>
+      latLngToCell(HOME.lat + d, HOME.lng + d, AFFORDANCE_RES),
+    );
+
+    index.withPinned(cells, () => {
+      index.ensureScored(cells);
+      index.update(HOME);
+      expect(index.stats.pinnedOverCap).toBeGreaterThan(0);
+    });
   });
 });

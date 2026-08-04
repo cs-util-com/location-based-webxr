@@ -50,6 +50,38 @@ Returns `{state:"scored", score}`, `{state:"empty"}` or `{state:"unknown"}`.
   cannot be invalidated.
 - **Read-only.** Never scores, never fetches, never awaits.
 
+### `ensureScored(cells)` and `withPinned(cells, body)` — the lazy path (round 9 §4)
+
+- `ensureScored` scores the chunks those cells fall in and **nothing else**, and
+  returns `{ missingTiles }` — the fetch tiles it could not cover. **It does not
+  fetch**: this class is push-only and synchronous by design, which is what keeps
+  it worker-safe and testable with no network (DEC-R9-10). The caller fetches and
+  calls again, and reporting what was actually missing cannot drift from what was
+  actually needed.
+  - **It does not evict.** Eviction belongs to `update`, the only call that knows
+    where the user is and therefore what "far away" means.
+  - **It does not write `lastChunk` / `lastRadius`.** Those mean how far the
+    USER's position has been scored; writing them would make the next `update`
+    short-circuit past real work.
+  - **It bumps `chunkVersion`.** `scoreChunks` does not — `update` does — so a
+    second write path that forgets it hands back the stale `scoresByCell` map and
+    every newly scored cell is invisible, presenting as "the map stopped
+    updating". This is the highest-risk line in the lazy path, and its test is
+    mutation-checked because the first version of that test passed with the bump
+    deleted.
+- `withPinned` exempts those chunks from eviction for the duration of `body`,
+  releasing them in a `finally` so a throwing algorithm cannot leave the cap
+  permanently unenforceable.
+  - **Pinning is not an optimisation here.** `update` calls `evictBeyond`
+    unconditionally and the demo issues three `update`s per user action, so a
+    chunk scored far from the user would otherwise be scored, evicted and
+    re-scored on every ring.
+  - **Pins win over `maxChunks`, and the overrun is counted** in
+    `stats.pinnedOverCap` (DEC-R9-11). Losing data mid-algorithm is the failure
+    pinning exists to prevent; exceeding the cap requires several batches held at
+    once without releasing, which is a bug, and counting makes it visible rather
+    than silent.
+
 ## Invariants & assumptions
 
 - **A move inside the current res-11 chunk does nothing at all.** This is the C#

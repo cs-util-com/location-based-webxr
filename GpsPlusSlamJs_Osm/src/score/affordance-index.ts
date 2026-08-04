@@ -68,6 +68,7 @@ import {
   SCORE_DISK_MAX_RADIUS,
   SCORE_DISK_RADIUS,
   scoreWorkingSet,
+  toFetchTile,
 } from "../spatial/resolutions.js";
 import type { RuleTable } from "../rules/rule-table.js";
 import { scoreCells } from "./affordance-scorer.js";
@@ -228,6 +229,15 @@ export class AffordanceIndex {
   private readonly bounds = new Map<OsmFeatureKey, Bbox | null>();
 
   private readonly chunks = new Map<string, ScoredChunk>();
+
+  /**
+   * Chunks an in-flight algorithm has asked not to be evicted (round 9 §4).
+   *
+   * Held rather than counted, because eviction needs to test membership. Always
+   * emptied by the `finally` in {@link withPinned}, so a thrown algorithm cannot
+   * leave the cap permanently unenforceable.
+   */
+  private readonly pinned = new Set<string>();
   private readonly listeners = new Set<ChangeListener>();
 
   /**
@@ -236,7 +246,9 @@ export class AffordanceIndex {
    * A COUNTER RATHER THAN A DIRTY FLAG, so a cache can record which version it
    * was built from and a future second cache cannot be reset by the first one
    * clearing the flag. The three writers are `scoreChunks`, `acceptTile`'s
-   * invalidation and `evictBeyond`; missing one would produce a stale read that
+   * invalidation, `evictBeyond` and `ensureScored` — note it is `update` rather
+   * than `scoreChunks` that bumps it on the scoring path; missing one would
+   * produce a stale read that
    * looks like the map has stopped updating.
    */
   private chunkVersion = 0;
@@ -264,6 +276,17 @@ export class AffordanceIndex {
     geometryReused: 0,
     /** Times `update` returned without scoring because the chunk was the same. */
     movesIgnored: 0,
+    /** Chunks currently pinned against eviction. Zero unless a climb is running. */
+    chunksPinned: 0,
+    /**
+     * How far the pinned set has pushed the cache past its cap (DEC-R9-11).
+     *
+     * Non-zero means something is holding several batches at once without
+     * releasing — a bug rather than normal use, since one batch is ~190 chunks
+     * against a 488 cap. Counted rather than thrown so a leak is visible in the
+     * status line instead of crashing the demo.
+     */
+    pinnedOverCap: 0,
   };
 
   constructor(options: AffordanceIndexOptions) {
@@ -415,6 +438,101 @@ export class AffordanceIndex {
 
     this.evictBeyond(workingSet);
     return { workingSet, scored, reused };
+  }
+
+  /**
+   * Scores the chunks these cells fall in, and nothing else (round 9 §4).
+   *
+   * WHY A SECOND WRITE PATH EXISTS. `update` is "move the user here and score a
+   * whole disc", and it also evicts. An algorithm that reads around a point 600 m
+   * from the user — a geo-event candidate — cannot express that as a user
+   * position without moving the user, and would have its chunks evicted by the
+   * next refresh regardless. This scores exactly what was asked for.
+   *
+   * **It does not evict**, deliberately: eviction is `update`'s, because only
+   * `update` knows where the user is and therefore what "far away" means.
+   *
+   * **It does not touch `lastChunk` / `lastRadius`.** Those mean "how far the
+   * USER's position has been scored"; writing them here would make the next
+   * `update` short-circuit past real work.
+   *
+   * **It returns the fetch tiles it could not cover rather than fetching them**
+   * (DEC-R9-10). This class is push-only and synchronous by design — that is
+   * what keeps it worker-safe and testable with no network — so the caller
+   * fetches and calls again. Reporting what was actually missing also cannot
+   * drift from what was actually needed, which deriving the tiles separately
+   * can: `demo-pipeline.ts` measures that drift at four of sixty sweep points.
+   */
+  ensureScored(cells: Iterable<string>): { missingTiles: string[] } {
+    const wanted = new Set<string>();
+    for (const cell of cells) wanted.add(cellToParent(cell, SCORE_CHUNK_RES));
+
+    const missing = new Set<string>();
+    const targets: string[] = [];
+    for (const chunk of wanted) {
+      if (this.chunks.has(chunk)) continue;
+      // A chunk whose fetch tile never arrived cannot be scored, and scoring it
+      // anyway would publish an empty chunk — indistinguishable from genuinely
+      // empty ground, which is the ambiguity `cellState` exists to remove.
+      const tile = toFetchTile(chunk);
+      if (!this.tiles.has(tile)) {
+        missing.add(tile);
+        continue;
+      }
+      targets.push(chunk);
+    }
+
+    for (const [target, result] of this.scoreChunks(targets)) {
+      this.chunks.set(target, result);
+      // THE LINE MOST EASILY MISSED. `scoreChunks` does not bump this; `update`
+      // does. Writing chunks without it leaves `scoresByCell` serving its cached
+      // map, so every cell scored here is invisible until an unrelated mutation
+      // happens to bump the counter — presenting as "the map stopped updating",
+      // with nothing thrown.
+      this.chunkVersion += 1;
+      this.stats.chunksScored++;
+    }
+
+    return { missingTiles: [...missing] };
+  }
+
+  /**
+   * Runs `body` with the chunks containing `cells` exempt from eviction.
+   *
+   * WHY PINNING IS NOT AN OPTIMISATION HERE. `update` calls `evictBeyond`
+   * unconditionally and the demo issues three `update`s per user action
+   * (`refresh-cycle.ts`, radii 2 → 3 → 4). A chunk scored for a candidate far
+   * from the user sits in the first-to-go bucket, so without a pin it would be
+   * scored, evicted and re-scored on every ring.
+   *
+   * **Scoped rather than a pin/unpin pair** so ordinary code cannot forget —
+   * including on a throw. An abandoned algorithm that kept its pins would make
+   * the cache cap permanently unenforceable, which is the leak the cap exists to
+   * prevent, reintroduced through its own exemption.
+   *
+   * **Pins WIN over the cap, and the overrun is counted** (DEC-R9-11). Having an
+   * algorithm's data evicted mid-run is the thing this prevents, so the pin must
+   * take precedence; exceeding the cap then requires holding several batches at
+   * once without releasing, which is a bug rather than normal use. Throwing was
+   * rejected — it turns memory pressure into a crash in front of whoever runs
+   * the demo rather than whoever wrote the leak — and silently growing the cap
+   * was rejected because it makes a leak invisible.
+   */
+  withPinned<T>(cells: Iterable<string>, body: () => T): T {
+    const pinned: string[] = [];
+    for (const cell of cells) {
+      const chunk = cellToParent(cell, SCORE_CHUNK_RES);
+      if (this.pinned.has(chunk)) continue;
+      this.pinned.add(chunk);
+      pinned.push(chunk);
+    }
+    this.stats.chunksPinned = this.pinned.size;
+    try {
+      return body();
+    } finally {
+      for (const chunk of pinned) this.pinned.delete(chunk);
+      this.stats.chunksPinned = this.pinned.size;
+    }
   }
 
   /** A scored chunk, if it is currently held. */
@@ -714,7 +832,12 @@ export class AffordanceIndex {
     if (centre === undefined) return;
 
     const candidates = [...this.chunks.keys()]
-      .filter((chunk) => !keep.has(chunk))
+      // PINNED CHUNKS ARE NOT CANDIDATES (round 9 §4, DEC-R9-11). An algorithm
+      // reading around a point far from the user holds exactly the chunks this
+      // sort puts first, and the demo calls `update` three times per action — so
+      // without the exemption they would be scored, evicted and re-scored on
+      // every ring.
+      .filter((chunk) => !keep.has(chunk) && !this.pinned.has(chunk))
       .sort((a, b) => ringDistance(centre, b) - ringDistance(centre, a));
 
     for (const chunk of candidates) {
@@ -722,6 +845,16 @@ export class AffordanceIndex {
       this.chunks.delete(chunk);
       this.chunkVersion += 1;
       this.stats.chunksEvicted++;
+    }
+
+    // THE EXEMPTION HAS TO BE REPORTED, or it becomes the leak the cap exists to
+    // prevent. Reaching here still over the cap means the un-evictable set —
+    // pins plus the current working set — is larger than the cap allows. For one
+    // candidate batch (~190 against 488) that cannot happen; several batches
+    // held at once without releasing is a bug, and this is what makes it visible
+    // rather than silent memory growth.
+    if (this.chunks.size > this.maxChunks) {
+      this.stats.pinnedOverCap = this.chunks.size - this.maxChunks;
     }
   }
 }
