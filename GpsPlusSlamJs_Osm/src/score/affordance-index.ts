@@ -286,6 +286,17 @@ export class AffordanceIndex {
      * status line instead of crashing the demo.
      */
     pinnedOverCap: 0,
+    /**
+     * Times the cell map was built from scratch (round 10, stage A).
+     *
+     * THE METRIC THE STAGE IS FOR, not a diagnostic. Before stage A this was
+     * effectively one per scoring pass — three per move, each walking every
+     * retained chunk — and the whole change is that it should now be **at most
+     * one for the lifetime of the index**. A test asserts that across the three
+     * progressive rings; without a counter the improvement would be asserted by
+     * comment rather than measured.
+     */
+    scoresByCellBuilds: 0,
   };
 
   constructor(options: AffordanceIndexOptions) {
@@ -642,6 +653,7 @@ export class AffordanceIndex {
         for (const cell of scored.cells) byCell.set(cell.cell, cell);
       }
       this.scoresByCellCache = byCell;
+      this.stats.scoresByCellBuilds++;
     }
     return this.scoresByCellCache;
   }

@@ -1134,3 +1134,50 @@ describe("scoresByCell stays exactly in step with the chunk store", () => {
     expectAgreement(index, [...first.workingSet, outside!]);
   });
 });
+
+describe("the incremental map is measurably incremental, not just correct", () => {
+  /**
+   * WHY THIS TEST EXISTS SEPARATELY FROM THE AGREEMENT TESTS.
+   *
+   * Those prove the map says the right thing. None of them would notice if it
+   * went back to rebuilding from scratch on every read — it would still be
+   * correct, and still cost ~24 000 cells per ring at the cap, which is the
+   * entire reason stage A exists. A performance change needs an assertion about
+   * the WORK DONE, or the next refactor quietly gives it back.
+   */
+  it("builds the map once across a full three-ring refresh", () => {
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+
+    for (const radius of [2, 3, 4]) {
+      index.update(HOME, radius);
+      index.scoresByCell();
+    }
+
+    // ONE, not three. Before stage A each ring scored new chunks, bumped the
+    // version and invalidated the cache the previous ring had just built.
+    expect(index.stats.scoresByCellBuilds).toBe(1);
+  });
+
+  it("does not rebuild after eviction or a late tile either", () => {
+    // The two mutation paths that DROP chunks. A version-counter design
+    // invalidated on these as well, so they are where a partial revert would
+    // show up first.
+    const index = new AffordanceIndex({ table: TABLE, maxChunks: 20 });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+    index.update(HOME);
+    index.scoresByCell();
+
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })], 2_000));
+    index.update(HOME);
+    index.scoresByCell();
+
+    const home = latLngToCell(HOME.lat, HOME.lng, SCORE_CHUNK_RES);
+    const far = gridDisk(home, 6).at(-1);
+    index.update(positionIn(far as string));
+    index.scoresByCell();
+
+    expect(index.stats.chunksEvicted).toBeGreaterThan(0);
+    expect(index.stats.scoresByCellBuilds).toBe(1);
+  });
+});
