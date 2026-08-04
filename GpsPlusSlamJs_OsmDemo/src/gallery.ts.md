@@ -6,6 +6,13 @@ Draws every procedural POI model on its own neutral pad, at true relative scale,
 with a human-height reference beside each one (W7, DEC-R5-5). It is the contact
 sheet DEC-R4-14 declined and **F28** asked for.
 
+**It is a CATALOGUE, not a comparison (DEC-R7b-2a, round 8).** For one round it
+also showed each kind's liked alternatives receding behind the shipped model, so
+the owner could choose between them. They chose; the 29 winners were adopted into
+`POI_MODELS`; the losing geometry was deleted. One pad, one model, one label —
+and this page is now the only place in the repo that shows what every POI kind
+actually looks like at real scale.
+
 ## Public API
 
 - `buildGallery(container: HTMLElement): () => void` — builds the scene into

@@ -258,6 +258,3 @@ export const M_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
       }),
   ],
 ]);
-
-/** The palette values an M port may paint with. Pinned in the tests. */
-export const M_PALETTE = M;

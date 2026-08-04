@@ -82,16 +82,11 @@ export { POI_KEYS, buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";
 
 export type { PoiModel } from "./poi-models.js";
 export { POI_MODELS, poiModelFor } from "./poi-models.js";
-export {
-  CHOSEN_VARIANTS,
-  LIKED_VARIANTS,
-  POI_VARIANTS,
-  VARIANT_SOURCES,
-  markerHeightFor,
-  poiVariantsFor,
-  type PoiVariant,
-  type VariantSource,
-} from "./poi-variants.js";
+// The variant registry (`CHOSEN_VARIANTS`, `POI_VARIANTS`, `poiVariantsFor`,
+// `markerHeightFor`, `LIKED_VARIANTS`, `VARIANT_SOURCES`) was DELETED once the
+// owner's verdict was adopted into `POI_MODELS` (DEC-R7b-2a). It existed to let
+// the gallery show candidate models beside the shipped ones; the choice is made,
+// the winners are the shipped models, and the losers are in git history.
 export type { PoiFootprintMarker } from "./poi-building-overlap.js";
 export {
   BUILDING_SCALE_POI_HEIGHT_M,

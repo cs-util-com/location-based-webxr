@@ -29,12 +29,7 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
-import {
-  CHOSEN_VARIANTS,
-  POI_MODELS,
-  poiVariantsFor,
-  type MeshData,
-} from "gps-plus-slam-osm";
+import { POI_MODELS, type MeshData } from "gps-plus-slam-osm";
 
 /** A human, for scale. The one reference that makes every model readable. */
 const HUMAN_HEIGHT_M = 1.8;
@@ -100,22 +95,19 @@ export function galleryPositions(
 }
 
 /**
- * How one row is labelled — the source, plus a mark when it is the one chosen.
+ * How one entry is labelled.
  *
- * WHY THE GALLERY SHOWS THE VERDICT BACK. The owner went through 34 kinds in one
- * pass and named a winner for each; that was transcribed by ear into
- * `CHOSEN_VARIANTS`, and a mis-transcription is invisible in a table and obvious
- * on the page. Marking the chosen row turns the next look at the gallery into a
- * check of the record as well as of the models.
+ * WAS A COMPARISON, IS NOW A CATALOGUE (DEC-R7b-2a). This used to append the
+ * source letter and a `← chosen` mark, because every kind showed the shipped
+ * model beside its liked alternatives and the page doubled as a check that the
+ * owner's spoken verdict had been transcribed correctly.
  *
- * A kind with no verdict is left unmarked rather than defaulting to the shipped
- * model, because "not yet decided" and "the incumbent won" are different states
- * and three kinds really are still undecided.
+ * That verdict has been adopted — the winners ARE the shipped models now — so
+ * there is nothing left to compare and no second table to check against. The
+ * kind is the whole label.
  */
-export function rowLabel(kind: string, source: string, rows: number): string {
-  const chosen = CHOSEN_VARIANTS.find((entry) => entry.kind === kind);
-  const mark = chosen?.winner === source ? " ← chosen" : "";
-  return `${kind}${rows > 1 ? ` · ${source}` : ""}${mark}`;
+export function rowLabel(kind: string): string {
+  return kind;
 }
 
 /**
@@ -198,24 +190,14 @@ export function buildGallery(container: HTMLElement): () => void {
   key.position.set(30, 60, 40);
   scene.add(key);
 
-  // EVERY KIND KEEPS ITS COLUMN, and its liked alternatives recede behind it
-  // (DEC-R6-32). The shipped model is always index 0 so the incumbent is the
-  // nearest of each row — Q-V1 of the variant plan notes that a liked
-  // alternative may still lose to what is already there, which cannot be judged
-  // if the incumbent is not in the comparison.
+  // ONE COLUMN PER KIND, one model per column (DEC-R7b-2a). The page used to
+  // put each kind's liked alternatives behind it so the two could be judged side
+  // by side; the owner has since chosen, the winners have been adopted, and the
+  // losing geometry is deleted. What remains is the catalogue — the only place
+  // in the repo that shows what every POI kind actually looks like at real scale
+  // beside a human.
   const models = [...POI_MODELS.values()];
-  const rows = models.map((model) => {
-    const alternatives = poiVariantsFor(model.kind).filter(
-      // The seven §4 rebuilds are re-exposed as their own `L` variant, so
-      // skipping any variant that shares the shipped mesh keeps a kind from
-      // showing the same geometry twice under two labels.
-      (variant) => variant.mesh !== model.mesh,
-    );
-    return { model, alternatives };
-  });
-  const positions = galleryPositions(
-    rows.map((row) => 1 + row.alternatives.length),
-  );
+  const positions = galleryPositions(models.map(() => 1));
 
   const padGeometry = new THREE.BoxGeometry(PAD_M, 0.08, PAD_M);
   const padMaterial = new THREE.MeshStandardMaterial({
@@ -228,27 +210,11 @@ export function buildGallery(container: HTMLElement): () => void {
     roughness: 0.8,
   });
 
-  rows.forEach((row, kindIndex) => {
+  models.forEach((entry, kindIndex) => {
     const slots = positions[kindIndex];
     if (slots === undefined) return;
-    // The shipped model first, then each alternative receding behind it.
-    const entries = [
-      {
-        mesh: row.model.mesh,
-        colour: row.model.colour,
-        heightM: row.model.heightM,
-        label: "shipped",
-      },
-      ...row.alternatives.map((variant) => ({
-        mesh: variant.mesh,
-        colour: variant.colour,
-        heightM: variant.heightM,
-        label: variant.source,
-      })),
-    ];
-
-    entries.forEach((entry, variantIndex) => {
-      const at = slots[variantIndex];
+    {
+      const at = slots[0];
       if (at === undefined) return;
       const group = new THREE.Group();
       group.position.set(at.x, 0, at.z);
@@ -277,18 +243,18 @@ export function buildGallery(container: HTMLElement): () => void {
       human.position.set(-PAD_M / 2 + 0.5, HUMAN_HEIGHT_M / 2, PAD_M / 2 - 0.5);
       group.add(human);
 
-      // THE SOURCE IS ON THE LABEL, and it has to be: once these are rendered
-      // they are indistinguishable, and "which file was that one from" is
-      // exactly the question the comparison has to answer.
+      // THE HEIGHT IS ON THE LABEL because the scale reference beside it only
+      // answers "does this look right"; the number answers "how tall is it",
+      // which is the question a model's own contract test asserts.
       const label = labelFor(
-        rowLabel(row.model.kind, entry.label, entries.length),
+        rowLabel(entry.kind),
         `${entry.heightM.toFixed(2)} m`,
       );
       label.position.set(0, -1.2, PAD_M / 2);
       group.add(label);
 
       scene.add(group);
-    });
+    }
   });
 
   const camera = new THREE.PerspectiveCamera(

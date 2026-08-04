@@ -5,6 +5,14 @@
 One procedural low-polygon model per POI kind, for the fifty kinds the weighting
 sheet says are most common worldwide.
 
+**Twenty-nine of the fifty are PORTED, not hand-authored (DEC-R7b-2, round 8).**
+The owner compared 51 candidate models from seven prototype files against the
+shipped set and named a winner per kind; 29 winners were not the incumbent. Those
+are built by `adopted()` from the surviving `poi-variants-*.ts` maps; the other
+21 are built by `model()` from primitives inline. Both produce the same
+`PoiModel`, and every registry-wide contract test runs over both without knowing
+the difference.
+
 ## Public API
 
 - `PoiModel` — `{ kind, colour, heightM, mesh }`.
@@ -12,6 +20,26 @@ sheet says are most common worldwide.
   string `poiKind` returns.
 - `poiModelFor(kind): PoiModel | undefined` — `undefined` for the long tail,
   which falls back to the generic pin.
+
+### The two builders, and why a ported model declares a target height
+
+- `model(kind, colour, build)` — geometry authored here at real-world scale.
+  `heightM` falls out of the mesh.
+- `adopted(kind, colour, variants, targetHeightM)` — geometry ported from a
+  prototype. The prototypes are **dioramas**: every kind was drawn to one display
+  envelope whatever the thing really is, so `D`'s `place_of_worship` is ~1.9 m
+  where a church is 12 m. The shape is right and the scale is not, so the mesh is
+  grounded and then scaled uniformly to `targetHeightM`.
+  - **`heightM` is still derived**, from the built mesh. The target is declared;
+    the height is measured. They agree by construction, and
+    `poi-models.test.ts` asserts it for every model either way.
+  - **The targets are measured values, not round numbers**, and that is
+    deliberate: each is the height the winning variant already had, so the
+    adoption is a fixed point rather than a resize.
+  - **Two targets are 3× their shipped model** — `amenity=grave_yard` and
+    `historic=yes`. Their shipped models are ground markings, and the owner
+    asked for both to be "at least three times bigger". Scaling to the shipped
+    height would silently undo that.
 
 ## Invariants & assumptions
 

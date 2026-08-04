@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { POI_MODELS, poiVariantsFor } from "gps-plus-slam-osm";
+import { POI_MODELS } from "gps-plus-slam-osm";
 
 import { galleryPositions, rowLabel } from "./gallery.js";
 
@@ -112,128 +112,56 @@ describe("galleryPositions", () => {
   });
 });
 
-describe("what the gallery actually offers to compare", () => {
+describe("what the catalogue shows", () => {
   /**
-   * WHY THIS TEST EXISTS, and it is not a layout test. The 51 ported variants
-   * are worth exactly what the owner can SEE side by side, and the thing that
-   * decides that is how many rows deep each kind goes. A kind with one row is a
-   * model nobody is choosing between; a kind with four is a real comparison.
+   * WHY THIS TEST EXISTS, and it is not a layout test. The page's whole job is
+   * to show EVERY modelled kind — it is the only place in the repo where a
+   * human can see what a "bicycle parking" or a "hunting stand" actually looks
+   * like at real scale. A kind silently missing from the sheet is invisible:
+   * the page still renders, still looks correct, and simply does not contain
+   * the thing you went there to check.
    *
-   * The port is finished, so this pins the shape of the comparison the owner is
-   * being asked to judge. If a later change to `POI_VARIANTS` or to the
-   * shared-mesh filter quietly collapses a multi-row kind back to one, the
-   * gallery would still render and still look correct — and the comparison
-   * would simply be gone. That is the failure this catches.
+   * It used to assert the shape of a COMPARISON — how many liked alternatives
+   * stood behind each kind — because the page existed to help the owner choose.
+   * They chose (DEC-R7b-2a), the winners were adopted, and the losers are
+   * deleted, so what is worth pinning now is coverage rather than depth.
    */
-  const rows = [...POI_MODELS.values()].map((model) => ({
-    kind: model.kind,
-    // The same filter `buildGallery` applies: the seven §4 rebuilds are
-    // re-exposed as their own `L` variant, and showing one mesh twice under two
-    // labels is not a comparison.
-    depth:
-      1 +
-      poiVariantsFor(model.kind).filter((v) => v.mesh !== model.mesh).length,
-  }));
+  const kinds = [...POI_MODELS.values()].map((model) => model.kind);
 
-  it("gives 34 of the 50 kinds more than one model to choose between", () => {
-    // 34 is every kind the owner named, which is the whole point: each one gets
-    // its liked version(s) standing beside the incumbent. The remaining 16 were
-    // never mentioned, so there is nothing to compare and one row is correct.
-    // A FLOOR rather than an equality — adding a variant is progress, losing
-    // one is the regression this guards.
-    const multi = rows.filter((r) => r.depth > 1);
-    expect(multi.length).toBeGreaterThanOrEqual(34);
+  it("gives every modelled kind exactly one pad", () => {
+    const positions = galleryPositions(kinds.map(() => 1));
+    expect(positions).toHaveLength(kinds.length);
+    for (const slots of positions) expect(slots).toHaveLength(1);
   });
 
-  it("puts four rows on the kind three prototypes disagreed about", () => {
-    // `amenity=fast_food` is liked from B, G and M — the deepest disagreement
-    // in the owner's notes, and therefore the single best test of DEC-V5: if
-    // scaling a diorama model to the shipped height preserves what was liked,
-    // it has to hold across three sources at once.
-    const fastFood = rows.find((r) => r.kind === "amenity=fast_food");
-    expect(fastFood?.depth).toBe(4);
-  });
-
-  it("never shows one kind more rows than the sheet can lay out", () => {
-    // `galleryPositions` recedes variants along Z from a shared origin, so an
-    // unbounded depth would push a row into the next kind's pad. Six is well
-    // inside the pitch; this is the guard, not a prediction.
-    for (const row of rows) expect(row.depth).toBeLessThanOrEqual(6);
-  });
-
-  it("leaves no kind without at least the shipped model", () => {
-    expect(rows.every((r) => r.depth >= 1)).toBe(true);
-    expect(rows).toHaveLength(50);
+  it("shows all fifty kinds, so nothing is unreviewable", () => {
+    // A floor rather than an equality: adding a model should not fail this, but
+    // dropping one from the registry without noticing should.
+    expect(kinds.length).toBeGreaterThanOrEqual(50);
+    expect(new Set(kinds).size).toBe(kinds.length);
   });
 });
 
-describe("pad spacing", () => {
-  it("leaves three times the clear ground the first layout did", () => {
-    // THE OWNER'S ONE GLOBAL NOTE on the first gallery: "insgesamt bitte mehr
-    // Abstand zwischen den Kacheln, mindestens dreimal so viel Platz lassen".
-    // The original pitch was 8 m over a 6.4 m pad — a 1.6 m gap, which reads as
-    // a grid of touching tiles rather than as one candidate per pad.
-    //
-    // Asserted as a GAP rather than as a pitch, because the pitch is meaningless
-    // without the pad size beside it: someone who later grows the pad would
-    // satisfy a pitch assertion while closing the gap back up.
-    const rows = galleryPositions([1, 1, 1]);
-    const first = rows[0]?.[0];
-    const second = rows[1]?.[0];
-    expect(first).toBeDefined();
-    expect(second).toBeDefined();
-    const gap = Math.abs((second?.x as number) - (first?.x as number)) - 6.4;
-    expect(gap).toBeGreaterThanOrEqual(1.6 * 3);
-  });
-
-  it("opens up the receding axis by the same amount, not just the row", () => {
-    // Variants recede on Z, so a gap widened only on X would leave each kind's
-    // own alternatives as cramped as before — and those are the ones actually
-    // being compared against each other.
-    const slots = galleryPositions([3])[0];
-    expect(slots).toBeDefined();
-    const gap =
-      Math.abs((slots?.[1]?.z as number) - (slots?.[0]?.z as number)) - 6.4;
-    expect(gap).toBeGreaterThanOrEqual(1.6 * 3);
-  });
-});
-
-describe("rowLabel — showing the owner's verdict back to them", () => {
+describe("rowLabel — the catalogue's label", () => {
   /**
-   * WHY THE PAGE CARRIES THE VERDICT. 34 kinds were decided aloud in one pass
-   * and transcribed by ear. A mis-transcription is invisible in a table and
-   * obvious on the model it is attached to, so marking the chosen row makes the
-   * next look at the gallery a check of the RECORD as well as of the models.
+   * WHY THIS SHRANK TO ONE LINE (DEC-R7b-2a). The page used to show every kind's
+   * liked alternatives beside the shipped model, and the label carried the
+   * source letter plus a `← chosen` mark so the next look at the gallery
+   * double-checked a verdict that had been transcribed by ear.
+   *
+   * The verdict has been adopted — the winners ARE the shipped models — and the
+   * losing geometry is deleted, so there is no second thing on the pad to name
+   * and no second table to check against. What is left is a catalogue, and a
+   * catalogue entry is its kind.
    */
-  it("marks the row the owner chose", () => {
-    expect(rowLabel("amenity=cafe", "L", 4)).toContain("← chosen");
-    expect(rowLabel("amenity=cafe", "D", 4)).not.toContain("← chosen");
+  it("labels an entry with its kind and nothing else", () => {
+    expect(rowLabel("amenity=toilets")).toBe("amenity=toilets");
+    expect(rowLabel("amenity=cafe")).toBe("amenity=cafe");
   });
 
-  it("marks the incumbent when the incumbent won", () => {
-    // Q-V1 anticipated this and it happened twice. "shipped" has to be markable
-    // or those two kinds would read as undecided.
-    expect(rowLabel("amenity=bench", "shipped", 2)).toContain("← chosen");
-    expect(rowLabel("amenity=bench", "D", 2)).not.toContain("← chosen");
-  });
-
-  it("leaves an undecided kind unmarked rather than defaulting to shipped", () => {
-    // `amenity=parking` and `leisure=swimming_pool` were unjudgeable because of
-    // the DEC-V6 scale defect, and `amenity=pharmacy` was never mentioned.
-    // "Not yet decided" and "the incumbent won" are different states, and
-    // collapsing them would quietly manufacture three verdicts.
-    for (const kind of [
-      "amenity=parking",
-      "leisure=swimming_pool",
-      "amenity=pharmacy",
-    ]) {
-      expect(rowLabel(kind, "shipped", 3)).not.toContain("← chosen");
-    }
-  });
-
-  it("drops the source suffix for a kind with nothing to compare", () => {
-    // A single-row kind has no alternative, so " · shipped" would be noise on
-    // 16 of the 50 pads.
-    expect(rowLabel("amenity=toilets", "shipped", 1)).toBe("amenity=toilets");
+  it("adds no marker, because there is nothing left to mark", () => {
+    // Guards against the old behaviour coming back by accident: a "← chosen"
+    // mark would now be claiming a comparison that no longer exists.
+    expect(rowLabel("amenity=bench")).not.toContain("←");
   });
 });

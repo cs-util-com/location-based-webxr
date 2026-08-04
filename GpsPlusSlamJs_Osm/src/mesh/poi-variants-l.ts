@@ -305,33 +305,6 @@ function tierB(b: MeshBuilder, groundHex: number = L.paving): number {
   return TB;
 }
 
-/** `stripe(p,w,d,x,z,base,hex)` — a line painted on a model tile. */
-function stripe(
-  b: MeshBuilder,
-  w: number,
-  d: number,
-  x: number,
-  z: number,
-  base: number,
-  hex: number = L.trimWhite,
-): void {
-  qdL(b, w, d, hex, { x, z, y: base + 0.005, rx: -Math.PI / 2 });
-}
-
-/** `tree(p,x,z,base,s)` — L's shared trunk-and-cone sub-assembly. */
-function tree(b: MeshBuilder, x: number, z: number, base: number, s = 1): void {
-  bxL(b, 0.05 * s, 0.15 * s, 0.05 * s, L.woodDark, {
-    x,
-    z,
-    y: base + 0.075 * s,
-  });
-  coL(b, 0.13 * s, 0.28 * s, 6, L.foliageTeal, {
-    x,
-    z,
-    y: base + 0.15 * s + 0.14 * s,
-  });
-}
-
 /** `doorQuad(p,base,z,w,h,x)` — a dark opening just proud of a wall. */
 function doorQuad(
   b: MeshBuilder,
@@ -372,59 +345,6 @@ export const L_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         qdL(b, 0.08, 0.13, L.windowDark, { x: -0.2, y: y + 0.075, z: 0.084 });
         qdL(b, 0.06, 0.1, L.windowDark, { x: 0, y: y + 0.13, z: 0.124 });
         qdL(b, 0.06, 0.1, L.windowDark, { x: 0.14, y: y + 0.13, z: 0.124 });
-      }),
-  ],
-  [
-    "leisure=park",
-    (): MeshData =>
-      composed((b) => {
-        // Grass tile, a path, three trees at different sizes, a bench.
-        const y = tierB(b, L.wallSage);
-        stripe(b, 0.62, 0.09, 0, 0.06, y, L.paving);
-        tree(b, -0.19, -0.14, y, 1.05);
-        tree(b, 0.06, -0.19, y, 0.8);
-        tree(b, 0.24, -0.06, y, 0.95);
-        bxL(b, 0.16, 0.02, 0.05, L.woodMid, { z: 0.22, y: y + 0.05 });
-        bxL(b, 0.16, 0.06, 0.02, L.woodMid, { z: 0.19, y: y + 0.09 });
-      }),
-  ],
-  [
-    "amenity=fuel",
-    (): MeshData =>
-      composed((b) => {
-        // Canopy on two posts, two pumps, a kiosk. The canopy's four SIDES are
-        // rust and its faces are not — `face()` on four names at once.
-        const y = tierB(b, L.pavingDark);
-        for (const s of [-1, 1]) {
-          bxL(b, 0.04, 0.3, 0.04, L.metalGalv, {
-            x: s * 0.22,
-            z: 0.02,
-            y: y + 0.15,
-          });
-        }
-        bxL(
-          b,
-          0.62,
-          0.05,
-          0.34,
-          L.trimWhite,
-          { z: 0.02, y: y + 0.325 },
-          { front: L.rust, back: L.rust, left: L.rust, right: L.rust },
-        );
-        for (const s of [-1, 1]) {
-          bxL(b, 0.08, 0.17, 0.1, L.metalGalv, {
-            x: s * 0.13,
-            z: 0.02,
-            y: y + 0.085,
-          });
-          qdL(b, 0.05, 0.06, L.windowDark, {
-            x: s * 0.13,
-            z: 0.072,
-            y: y + 0.13,
-          });
-        }
-        bxL(b, 0.2, 0.16, 0.14, L.wallCream, { x: 0, z: -0.26, y: y + 0.08 });
-        qdL(b, 0.14, 0.08, L.windowDark, { z: -0.186, y: y + 0.1 });
       }),
   ],
   [
@@ -611,6 +531,3 @@ export const L_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
       }),
   ],
 ]);
-
-/** The palette values an L port may paint with. Pinned in the tests. */
-export const L_PALETTE = L;

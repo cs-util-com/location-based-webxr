@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { MeshData } from "./mesh-data.js";
+import { MeshBuilder, type MeshData } from "./mesh-data.js";
 import {
   box,
   composed,
@@ -9,6 +9,7 @@ import {
   prism,
   pyramid,
   quad,
+  scaledToHeight,
   sphere,
 } from "./poi-primitives.js";
 
@@ -498,5 +499,88 @@ describe("the primitives that already shipped", () => {
     const cyl = signedVolume6(composed((b) => prism(b, 1, 1, 2, 16))) / 6;
     expect(cyl).toBeLessThan(Math.PI * 2);
     expect(cyl).toBeGreaterThan(Math.PI * 2 * 0.9);
+  });
+});
+
+/**
+ * WHY THESE LIVE HERE NOW. `scaledToHeight` and `groundedMesh` moved out of
+ * `poi-variants.ts` when the gallery verdict was adopted (DEC-R7b-2a) — they are
+ * mesh transforms with no opinion about variants, and the registry that needs
+ * them could not import that file without a cycle. These tests came with them;
+ * the file they were written in no longer exists.
+ */
+describe("scaledToHeight", () => {
+  /**
+   * WHY THIS EXISTS (DEC-V5). The `D` prototype is a DIORAMA: every kind fits a
+   * common display envelope, with tiers at 0.35–0.7 m, 0.8–1.2 m and 1.35–1.9 m
+   * "above the plinth" regardless of what the thing really is. Its
+   * `place_of_worship` is ~1.9 m where the shipped one is 12 m.
+   *
+   * DEC-R6-8 keeps real-world scale, and §4 of this plan compares variants at
+   * true size because that is part of what is being judged. Porting D's numbers
+   * verbatim would put a 1.9 m church next to a 1.8 m human reference, which is
+   * not a comparison of shapes — it is a comparison of one shape against a
+   * mistake.
+   *
+   * So D's models are scaled UNIFORMLY to the height of the model already
+   * shipped for that kind. Uniform is the whole point: it preserves every
+   * proportion inside the model, which is exactly what the owner said they are
+   * judging — _"I dont care about lighting or colors but the 3d models/shapes
+   * ... look very different to each other"_.
+   */
+  it("scales a mesh uniformly to a target height", () => {
+    const builder = new MeshBuilder();
+    builder.vertex(1, 0, 0, 0, 1, 0);
+    builder.vertex(0, 2, 0, 0, 1, 0);
+    builder.vertex(0, 0, 1, 0, 1, 0);
+    const scaled = scaledToHeight(builder.build(), 6);
+    // Height 2 -> 6, so every coordinate triples.
+    expect(scaled.positions[0]).toBeCloseTo(3, 6);
+    expect(scaled.positions[4]).toBeCloseTo(6, 6);
+  });
+
+  it("leaves NORMALS untouched, because a uniform scale does not turn them", () => {
+    // A non-uniform scale would need the inverse transpose; a uniform one does
+    // not change any direction. Scaling the normals as well would be a no-op at
+    // best and a denormalisation at worst — and a denormalised normal shades
+    // wrong without changing any silhouette, which is this round's recurring
+    // class of invisible defect.
+    const builder = new MeshBuilder();
+    builder.vertex(0, 1, 0, 0.6, 0.8, 0);
+    const scaled = scaledToHeight(builder.build(), 5);
+    expect(scaled.normals[0]).toBeCloseTo(0.6, 6);
+    expect(scaled.normals[1]).toBeCloseTo(0.8, 6);
+  });
+
+  it("keeps the base on the ground", () => {
+    // The contract every model and variant is held to. Scaling about the origin
+    // preserves a zero base; scaling about the centre would not, and would bury
+    // or float every ported model by half its height.
+    const builder = new MeshBuilder();
+    builder.vertex(0, 0, 0, 0, 1, 0);
+    builder.vertex(0, 3, 0, 0, 1, 0);
+    const scaled = scaledToHeight(builder.build(), 9);
+    expect(scaled.positions[1]).toBeCloseTo(0, 6);
+    expect(scaled.positions[4]).toBeCloseTo(9, 6);
+  });
+
+  it("returns the mesh unchanged when it has no height to scale", () => {
+    // A flat model — a ground marking — has zero height, and dividing by it
+    // would put Infinity into every position and remove the object from the
+    // scene with nothing reported.
+    const builder = new MeshBuilder();
+    builder.vertex(0, 0, 0, 0, 1, 0);
+    builder.vertex(1, 0, 1, 0, 1, 0);
+    const mesh = builder.build();
+    expect(scaledToHeight(mesh, 5)).toBe(mesh);
+  });
+
+  it("carries the colours through", () => {
+    const builder = new MeshBuilder();
+    builder.paint(0xff0000);
+    builder.vertex(0, 0, 0, 0, 1, 0);
+    builder.vertex(0, 1, 0, 0, 1, 0);
+    const scaled = scaledToHeight(builder.build(), 2);
+    expect(scaled.colours?.[0]).toBe(1);
   });
 });

@@ -72,37 +72,11 @@ function cyG(
   prism(b, r, r, h, seg, y - h / 2, x, z);
 }
 
-/** `cross(x,y,z,s,c)` — G's shared plus-sign, two crossed boxes. */
-function crossG(
-  b: MeshBuilder,
-  x: number,
-  y: number,
-  z: number,
-  s: number,
-  colour: number,
-): void {
-  bxG(b, s * 0.3, s, s * 0.3, colour, y, x, z);
-  bxG(b, s, s * 0.3, s * 0.3, colour, y, x, z);
-}
-
 /** Every G model, keyed by kind. Built at G's own scale; the registry rescales. */
 export const G_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
   string,
   () => MeshData
 >([
-  [
-    "amenity=parking",
-    (): MeshData =>
-      composed((b) => {
-        cyG(b, 0.1, 2, 6, G.mG);
-        bxG(b, 1, 1, 0.1, G.rT, 2.5);
-        // The "P", as five strokes on the sign face.
-        bxG(b, 0.2, 0.5, 0.15, G.tW, 2.5, -0.15);
-        bxG(b, 0.4, 0.15, 0.15, G.tW, 2.675, 0.05);
-        bxG(b, 0.4, 0.15, 0.15, G.tW, 2.425, 0.05);
-        bxG(b, 0.15, 0.25, 0.15, G.tW, 2.55, 0.2);
-      }),
-  ],
   [
     "amenity=waste_basket",
     (): MeshData =>
@@ -112,48 +86,4 @@ export const G_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         bxG(b, 0.3, 0.15, 0.45, G.win, 1.1);
       }),
   ],
-  [
-    "amenity=fast_food",
-    (): MeshData =>
-      composed((b) => {
-        cyG(b, 0.15, 2, 4, G.mG);
-        cyG(b, 0.6, 0.3, 8, G.mu, 2.4);
-        cyG(b, 0.65, 0.2, 8, G.ruB, 2.65);
-        cyG(b, 0.6, 0.3, 8, G.mu, 2.9);
-      }),
-  ],
-  [
-    "amenity=pharmacy",
-    (): MeshData =>
-      composed((b) => {
-        cyG(b, 0.15, 2, 6, G.mD);
-        crossG(b, 0, 2.6, 0, 1, G.fT);
-      }),
-  ],
-  [
-    "leisure=swimming_pool",
-    (): MeshData =>
-      composed((b) => {
-        bxG(b, 4, 0.3, 3, G.pavD);
-        bxG(b, 3.5, 0.31, 2.5, G.wT);
-        // THE LADDER IS AN ADDITION, NOT A PORT (Q-V2). It is the owner's only
-        // requested CHANGE to a model rather than a choice between models —
-        // _"swimming_pool (maybe a ladder missing that you could add?)"_ — so it
-        // is built into this variant rather than offered as a further one.
-        //
-        // Two uprights and two rungs at the deep end, in galvanised metal
-        // against the deck's paving. Sized off the pool itself so it stays
-        // proportional through DEC-V5's rescale rather than drifting when the
-        // target height changes.
-        for (const x of [-0.2, 0.2]) {
-          cyG(b, 0.05, 0.7, 6, G.mG, 0.55, x, 1.35);
-        }
-        for (const y of [0.45, 0.75]) {
-          bxG(b, 0.5, 0.06, 0.06, G.mG, y, 0, 1.35);
-        }
-      }),
-  ],
 ]);
-
-/** The palette values a G port may paint with. Pinned in the tests. */
-export const G_PALETTE = G;

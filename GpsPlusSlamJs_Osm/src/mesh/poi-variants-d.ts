@@ -301,30 +301,6 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
   () => MeshData
 >([
   [
-    "amenity=bench",
-    (): MeshData =>
-      composed((b) => {
-        bx(b, 0.76, 0.06, 0.24, 0, T + 0.3, 0.03, D.woodMid);
-        bx(b, 0.76, 0.18, 0.05, 0, T + 0.44, -0.09, D.woodMid);
-        bx(b, 0.06, 0.3, 0.24, -0.32, T + 0.15, 0.03, D.metalDark);
-        bx(b, 0.06, 0.3, 0.24, 0.32, T + 0.15, 0.03, D.metalDark);
-        bx(b, 0.05, 0.22, 0.05, -0.32, T + 0.4, -0.09, D.metalDark);
-        bx(b, 0.05, 0.22, 0.05, 0.32, T + 0.4, -0.09, D.metalDark);
-      }),
-  ],
-  [
-    "leisure=picnic_table",
-    (): MeshData =>
-      composed((b) => {
-        bx(b, 0.74, 0.06, 0.32, 0, T + 0.42, 0, D.woodMid);
-        bx(b, 0.74, 0.05, 0.14, 0, T + 0.26, 0.3, D.woodMid);
-        bx(b, 0.74, 0.05, 0.14, 0, T + 0.26, -0.3, D.woodMid);
-        bx(b, 0.06, 0.5, 0.72, -0.3, T + 0.22, 0, D.woodDark);
-        bx(b, 0.06, 0.5, 0.72, 0.3, T + 0.22, 0, D.woodDark);
-        bx(b, 0.66, 0.05, 0.06, 0, T + 0.2, 0, D.woodDark);
-      }),
-  ],
-  [
     "amenity=drinking_water",
     (): MeshData =>
       composed((b) => {
@@ -334,46 +310,6 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         bx(b, 0.05, 0.16, 0.05, 0, T + 0.6, -0.1, D.stoneMid);
         bx(b, 0.05, 0.05, 0.1, 0, T + 0.66, -0.05, D.stoneMid);
         cylD(b, 0.21, 0.21, 0.05, 8, 0, T + 0.025, 0, D.stoneLight);
-      }),
-  ],
-  [
-    "historic=wayside_cross",
-    (): MeshData =>
-      composed((b) => {
-        bx(b, 0.34, 0.07, 0.3, 0, T + 0.035, 0, D.stoneMid);
-        bx(b, 0.26, 0.07, 0.24, 0, T + 0.105, 0, D.stoneMid);
-        bx(b, 0.13, 0.3, 0.12, 0, T + 0.28, 0, D.stoneLight);
-        crossPlateD(b, 0.3, 0.1, 0.34, 0, T + 0.53, 0, D.stoneLight);
-        gableD(b, 0.36, 0.09, 0.2, 0, T + 0.7, 0, D.stoneDark);
-      }),
-  ],
-  [
-    "amenity=cafe",
-    (): MeshData =>
-      composed((b) => {
-        cylD(b, 0.19, 0.19, 0.045, 8, 0, T + 0.29, 0.02, D.wallCream);
-        bx(b, 0.06, 0.28, 0.06, 0, T + 0.15, 0.02, D.metalDark);
-        cylD(b, 0.17, 0.17, 0.03, 6, 0, T + 0.005, 0.02, D.metalDark);
-        bx(b, 0.15, 0.04, 0.15, -0.3, T + 0.22, 0.16, D.metalDark);
-        bx(b, 0.15, 0.16, 0.04, -0.3, T + 0.32, 0.09, D.metalDark);
-        bx(b, 0.15, 0.04, 0.15, 0.3, T + 0.22, -0.1, D.metalDark);
-        bx(b, 0.15, 0.16, 0.04, 0.3, T + 0.32, -0.17, D.metalDark);
-        cylD(b, 0.045, 0.035, 0.06, 6, 0, T + 0.34, 0.02, D.wallCream);
-        bx(b, 0.045, 0.86, 0.045, 0.02, T + 0.43, -0.02, D.metalDark);
-        coneD(b, 0.4, 0.2, 8, 0.02, T + 0.94, -0.02, D.wallCream);
-        cylD(b, 0.395, 0.4, 0.05, 8, 0.02, T + 0.865, -0.02, D.terracotta);
-      }),
-  ],
-  [
-    "amenity=post_box",
-    (): MeshData =>
-      composed((b) => {
-        cylD(b, 0.15, 0.16, 0.5, 8, 0, T + 0.25, 0, D.wallDusty);
-        cylD(b, 0.175, 0.175, 0.032, 8, 0, T + 0.516, 0, D.rust);
-        coneD(b, 0.16, 0.075, 8, 0, T + 0.57, 0, D.rust);
-        quadD(b, 0.17, 0.045, 0, T + 0.42, 0.152, D.windowDark);
-        quadD(b, 0.15, 0.1, 0, T + 0.28, 0.152, D.windowDark);
-        cylD(b, 0.19, 0.19, 0.05, 8, 0, T + 0.025, 0, D.stoneDark);
       }),
   ],
   [
@@ -477,18 +413,6 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
       }),
   ],
   [
-    "leisure=park",
-    (): MeshData =>
-      composed((b) => {
-        parkGroundD(b);
-        // D's own bench: a plank and a stub. The owner chose this park but P's
-        // bench, which is why the ground above is a shared function and these
-        // two boxes are not — see `poi-variants-hybrid.ts`.
-        bx(b, 0.26, 0.05, 0.09, -0.3, T + 0.1, 0.28, D.woodDark);
-        bx(b, 0.05, 0.1, 0.09, -0.3, T + 0.1, 0.24, D.woodDark);
-      }),
-  ],
-  [
     "leisure=playground",
     (): MeshData =>
       composed((b) => {
@@ -559,24 +483,6 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
       }),
   ],
   [
-    "amenity=place_of_worship",
-    (): MeshData =>
-      composed((b) => {
-        bx(b, 0.46, 0.72, 0.66, 0.14, T + 0.36, 0, D.wallCream);
-        gableD(b, 0.5, 0.21, 0.7, 0.14, T + 0.72, 0, D.roofTeal);
-        bx(b, 0.34, 1.16, 0.34, -0.26, T + 0.58, 0, D.wallCream);
-        bx(b, 0.38, 0.07, 0.38, -0.26, T + 1.19, 0, D.wallCream);
-        // A four-sided cone turned 45 degrees is the spire's diamond plan.
-        turnedD(b, { rotateY: Math.PI / 4 }, {}, () => {
-          coneD(b, 0.26, 0.42, 4, -0.26, T + 1.44, 0, D.spireCopper);
-        });
-        crossPlateD(b, 0.11, 0.035, 0.15, -0.26, T + 1.72, 0, D.spireCopper);
-        quadD(b, 0.12, 0.24, -0.26, T + 0.42, 0.172, D.windowDark);
-        quadD(b, 0.1, 0.16, -0.26, T + 1.0, 0.172, D.windowDark);
-        quadD(b, 0.14, 0.28, 0.14, T + 0.4, 0.332, D.windowDark);
-      }),
-  ],
-  [
     "amenity=bank",
     (): MeshData =>
       composed((b) => {
@@ -603,39 +509,4 @@ export const D_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         gableD(b, 0.78, 0.24, 0.46, 0, T + 1.02, -0.02, D.trimWhite);
       }),
   ],
-  [
-    "amenity=shelter",
-    (): MeshData =>
-      composed((b) => {
-        bx(b, 0.06, 0.72, 0.06, -0.36, T + 0.36, 0.26, D.metalDark);
-        bx(b, 0.06, 0.72, 0.06, 0.36, T + 0.36, 0.26, D.metalDark);
-        bx(b, 0.06, 0.76, 0.06, -0.36, T + 0.38, -0.26, D.metalDark);
-        bx(b, 0.06, 0.76, 0.06, 0.36, T + 0.38, -0.26, D.metalDark);
-        // The roof panels are pitched `rx: 0.14` — a shelter with a flat roof
-        // is a table.
-        turnedD(b, { rotateX: 0.14 }, { y: T + 0.8, z: -0.16 }, () => {
-          bx(b, 0.86, 0.09, 0.32, 0, T, 0, D.metalGalv);
-        });
-        turnedD(b, { rotateX: 0.14 }, { y: T + 0.72, z: 0.16 }, () => {
-          bx(b, 0.86, 0.09, 0.32, 0, T, 0, D.metalGalv);
-        });
-        quadD(b, 0.86, 0.06, 0, T + 0.7, 0.325, D.roofTeal);
-        bx(b, 0.74, 0.54, 0.05, 0, T + 0.35, -0.3, D.windowDark);
-        bx(b, 0.62, 0.05, 0.16, 0, T + 0.26, -0.2, D.metalGalv);
-        bx(b, 0.06, 0.24, 0.14, 0, T + 0.14, -0.2, D.metalDark);
-      }),
-  ],
-  [
-    "amenity=waste_basket",
-    (): MeshData =>
-      composed((b) => {
-        cylD(b, 0.15, 0.115, 0.34, 8, 0, T + 0.34, 0, D.metalDark);
-        discD(b, 0.145, 8, 0, T + 0.505, 0, D.windowDark);
-        cylD(b, 0.155, 0.155, 0.022, 8, 0, T + 0.522, 0, D.rust);
-        bx(b, 0.08, 0.34, 0.08, 0, T + 0.17, -0.02, D.metalDark);
-      }),
-  ],
 ]);
-
-/** The palette values a D port may paint with. Pinned in the tests. */
-export const D_PALETTE = D;

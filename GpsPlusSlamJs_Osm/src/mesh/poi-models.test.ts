@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { DEFAULT_RULE_TABLE_CSV } from "../rules/default-rules.js";
 import { POI_MODELS, poiModelFor } from "./poi-models.js";
-import { CHOSEN_VARIANTS, poiVariantsFor } from "./poi-variants.js";
 import {
   POI_MODEL_LIMIT,
   parseUsageCount,
@@ -421,46 +420,4 @@ describe("rankPoiKinds", () => {
     const b = rankPoiKinds(DEFAULT_RULE_TABLE_CSV, POI_MODEL_LIMIT);
     expect(a.map((entry) => entry.kind)).toEqual(b.map((entry) => entry.kind));
   });
-});
-
-/**
- * WHY THIS TEST MATTERS — and why it is deliberately temporary.
- *
- * The gallery's verdict (`CHOSEN_VARIANTS`) and the runtime registry
- * (`POI_MODELS`) were two tables that had to agree, and NOTHING forced them to.
- * They diverged on 29 of 31 kinds for a month without a single test noticing:
- * the gallery drew a "← chosen" label next to a model the demo never rendered.
- *
- * This is the reproduction. It fails on every kind whose winner has not been
- * adopted, and it is the guard for the adoption itself.
- *
- * **It is a scaffold, not a permanent guard.** DEC-R7b-2a deletes
- * `CHOSEN_VARIANTS` and the variant files once the adoption is verified, and
- * this test goes with them — a test cannot outlive one of the two things it
- * compares. The order matters and is the whole point: red here → adopt → green
- * here → delete both together. Deleting the oracle first would make the
- * adoption unfalsifiable.
- */
-describe("the gallery verdict has been adopted (DEC-R7b-2, scaffold)", () => {
-  const decided = CHOSEN_VARIANTS.filter((entry) => entry.winner !== "shipped");
-
-  it("names a winner that was actually built, for every decided kind", () => {
-    // Guards the guard: if a winner names a (kind, source) pair that no variant
-    // file builds, the adoption test below would pass vacuously.
-    for (const { kind, winner } of decided) {
-      const variant = poiVariantsFor(kind).find((v) => v.source === winner);
-      expect(variant, `${kind} has no ${String(winner)} variant`).toBeDefined();
-    }
-  });
-
-  it.each(decided.map((entry) => [entry.kind, entry.winner] as const))(
-    "%s renders the %s variant the owner chose",
-    (kind, winner) => {
-      const variant = poiVariantsFor(kind).find((v) => v.source === winner);
-      const model = POI_MODELS.get(kind);
-      expect(model, `${kind} is not in POI_MODELS`).toBeDefined();
-      expect(variant).toBeDefined();
-      expect(model?.mesh).toEqual(variant?.mesh);
-    },
-  );
 });

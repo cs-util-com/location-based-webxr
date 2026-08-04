@@ -27,7 +27,7 @@
  */
 
 import type { MeshBuilder, MeshData } from "./mesh-data.js";
-import { box, composed, prism, sphere } from "./poi-primitives.js";
+import { box, composed, sphere } from "./poi-primitives.js";
 
 /**
  * P's palette, under the source's own names, restricted to what these four
@@ -96,23 +96,6 @@ function bxP(
   });
 }
 
-/** `cyl(radiusTop, radiusBottom, h, seg, x,y,z, colour)` — P's order. */
-function cylP(
-  b: MeshBuilder,
-  radiusTop: number,
-  radiusBottom: number,
-  h: number,
-  seg: number,
-  x: number,
-  y: number,
-  z: number,
-  colour: number,
-): void {
-  b.paint(colour);
-  // SWAPPED: P gives top first, `prism` takes bottom first.
-  prism(b, radiusBottom, radiusTop, h, seg, y - T - h / 2, x, z);
-}
-
 /**
  * `ico(radius, x,y,z, colour, 1, sy, 1)` — a rounded blob, squashed along Y.
  *
@@ -133,26 +116,6 @@ function icoP(
 ): void {
   b.paint(colour);
   sphere(b, radius, y - T, 8, 4, x, z, radius * sy);
-}
-
-/**
- * `treeParts(x, z, s)` — P's shared trunk-and-canopy sub-assembly.
- *
- * **THE TRUNK FLOATS IN THE SOURCE, and that is ported rather than corrected.**
- * P places the trunk centre at `.50 s + .20` with a height of `.62 s`, so its
- * base lands at `.39` — 21 cm above the plinth top, where every other P
- * sub-assembly (`headstone`, and the bench legs of this same model) is built to
- * sit at `.20`. It reads as an off-by-one against its own convention.
- *
- * It is kept because the owner's instruction was to keep the originals' 3D
- * structure as close as possible, and because a silent fix here would make the
- * gallery compare my correction rather than P's model. Recorded so the gap is
- * attributable to the source when it shows up on screen.
- */
-function treeP(b: MeshBuilder, x: number, z: number, s: number): void {
-  cylP(b, 0.08 * s, 0.1 * s, 0.62 * s, 6, x, 0.5 * s + 0.2, z, P.woodDark);
-  icoP(b, 0.42 * s, x, 0.98 * s + 0.2, z, P.wallSage, 0.85);
-  icoP(b, 0.3 * s, x - 0.2 * s, 1.1 * s + 0.2, z + 0.06 * s, P.wallSage, 0.9);
 }
 
 /**
@@ -189,31 +152,6 @@ export const P_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
   () => MeshData
 >([
   [
-    "leisure=park",
-    (): MeshData =>
-      composed((b) => {
-        treeP(b, -0.2, -0.06, 1);
-        // A bench beside the tree. The source's three boxes, unchanged: its
-        // legs stand at 0.03 above the stripped plinth and its seat at 0.30,
-        // which is exactly what `benchP` emits at `baseY = 0.03`.
-        benchP(b, 0.03, 0.3, 0.28);
-      }),
-  ],
-  [
-    "amenity=cafe",
-    (): MeshData =>
-      composed((b) => {
-        // A cup on a saucer: the cup flares upward, so its TOP radius is the
-        // larger one — the case `cylP`'s swap exists for.
-        cylP(b, 0.48, 0.4, 0.72, 8, -0.05, 0.66, 0, P.wallCream);
-        cylP(b, 0.58, 0.58, 0.1, 8, -0.05, 0.28, 0, P.woodDark);
-        bxP(b, 0.16, 0.44, 0.24, 0.48, 0.7, 0, P.wallCream);
-        // Two wisps of steam, each tilted the other way.
-        bxP(b, 0.1, 0.36, 0.1, -0.18, 1.18, 0, P.roofTeal, { rz: 0.18 });
-        bxP(b, 0.1, 0.3, 0.1, 0.12, 1.25, 0, P.roofTeal, { rz: -0.16 });
-      }),
-  ],
-  [
     "leisure=picnic_table",
     (): MeshData =>
       composed((b) => {
@@ -237,6 +175,3 @@ export const P_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
       }),
   ],
 ]);
-
-/** The palette values a P port may paint with. Pinned in the tests. */
-export const P_PALETTE = P;

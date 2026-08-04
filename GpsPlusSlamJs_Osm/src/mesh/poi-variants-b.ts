@@ -30,7 +30,7 @@
  */
 
 import type { MeshBuilder, MeshData } from "./mesh-data.js";
-import { box, composed, prism, pyramid, quad } from "./poi-primitives.js";
+import { box, composed, prism, quad } from "./poi-primitives.js";
 
 /** B's palette — the same values D and the house style use. */
 const B = {
@@ -129,21 +129,6 @@ function cy(
   });
 }
 
-/** `cn(r,h,seg,hex, x,y,z)` — `y` is the BASE. */
-function cn(
-  b: MeshBuilder,
-  r: number,
-  h: number,
-  seg: number,
-  colour: number,
-  x: number,
-  y: number,
-  z: number,
-): void {
-  b.paint(colour);
-  prism(b, r, 0, h, seg, y, x, z);
-}
-
 /** `qd(w,h,hex, x,y,z, o)` — a panel facing +z; `y` is the CENTRE. */
 function qd(
   b: MeshBuilder,
@@ -167,65 +152,11 @@ function qd(
   });
 }
 
-/** `FLAT` — the source's "quad laid face-up". */
-const FLAT: Turn = { rx: -Math.PI / 2 };
-
-/**
- * `pr(w,h,d,hex, x,y,z)` — a triangular prism, ridge along z, `y` the BASE.
- *
- * Approximated by a square pyramid, as `D`'s `gable` is: our vocabulary has no
- * ridged prism. Recorded rather than hidden — it costs one ridge edge on a
- * roof, and every model using it is a small building at marker scale.
- */
-function pr(
-  b: MeshBuilder,
-  w: number,
-  h: number,
-  d: number,
-  colour: number,
-  x: number,
-  y: number,
-  z: number,
-): void {
-  b.paint(colour);
-  pyramid(b, w, d, h, y, x, z);
-}
-
 /** Every B model, keyed by kind. Built at B's own scale; the registry rescales. */
 export const B_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
   string,
   () => MeshData
 >([
-  [
-    "amenity=parking",
-    (): MeshData =>
-      composed((b) => {
-        bx(b, 0.74, 0.05, 0.72, B.stoneDark, 0, 0, 0);
-        qd(b, 0.03, 0.56, B.trimWhite, -0.2, 0.055, -0.02, FLAT);
-        qd(b, 0.03, 0.56, B.trimWhite, 0.02, 0.055, -0.02, FLAT);
-        cy(b, 0.035, 0.6, 6, B.metalGalv, 0.28, 0.05, 0.24);
-        bx(b, 0.3, 0.3, 0.06, B.roofSlate, 0.28, 0.6, 0.24);
-        // The "P" on the sign, four strokes — the detail that says parking
-        // rather than "a board on a post".
-        qd(b, 0.045, 0.18, B.trimWhite, 0.215, 0.75, 0.272);
-        qd(b, 0.11, 0.04, B.trimWhite, 0.29, 0.82, 0.272);
-        qd(b, 0.11, 0.04, B.trimWhite, 0.29, 0.735, 0.272);
-        qd(b, 0.045, 0.09, B.trimWhite, 0.34, 0.7775, 0.272);
-      }),
-  ],
-  [
-    "amenity=fast_food",
-    (): MeshData =>
-      composed((b) => {
-        bx(b, 0.46, 0.36, 0.34, B.wallSlate, -0.08, 0, -0.04);
-        bx(b, 0.52, 0.06, 0.4, B.stoneDark, -0.08, 0.36, -0.04);
-        qd(b, 0.3, 0.14, B.windowDark, -0.08, 0.26, 0.132);
-        bx(b, 0.34, 0.04, 0.14, B.mustard, -0.08, 0.34, 0.2);
-        cy(b, 0.04, 0.7, 6, B.stoneDark, 0.3, 0, 0.04);
-        bx(b, 0.24, 0.26, 0.07, B.mustard, 0.3, 0.7, 0.04);
-        qd(b, 0.12, 0.12, B.stoneDark, 0.3, 0.83, 0.076);
-      }),
-  ],
   [
     "amenity=post_box",
     (): MeshData =>
@@ -235,50 +166,6 @@ export const B_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         bx(b, 0.37, 0.05, 0.27, B.stoneDark, 0, 0.74, 0);
         qd(b, 0.26, 0.28, B.ochre, 0, 0.51, 0.121);
         qd(b, 0.18, 0.03, B.windowDark, 0, 0.68, 0.121);
-      }),
-  ],
-  [
-    "leisure=picnic_table",
-    (): MeshData =>
-      composed((b) => {
-        bx(b, 0.72, 0.05, 0.32, B.woodMid, 0, 0.42, 0);
-        bx(b, 0.72, 0.04, 0.13, B.woodMid, 0, 0.26, -0.26);
-        bx(b, 0.72, 0.04, 0.13, B.woodMid, 0, 0.26, 0.26);
-        // SPLAYED A-FRAME LEGS — `rx: ±0.48`. Upright, this is a table with
-        // two planks beside it rather than a picnic table.
-        bx(b, 0.05, 0.5, 0.05, B.woodDark, -0.26, 0, -0.13, { rx: -0.48 });
-        bx(b, 0.05, 0.5, 0.05, B.woodDark, -0.26, 0, 0.13, { rx: 0.48 });
-        bx(b, 0.05, 0.5, 0.05, B.woodDark, 0.26, 0, -0.13, { rx: -0.48 });
-        bx(b, 0.05, 0.5, 0.05, B.woodDark, 0.26, 0, 0.13, { rx: 0.48 });
-      }),
-  ],
-  [
-    "amenity=hunting_stand",
-    (): MeshData =>
-      composed((b) => {
-        // FOUR LEGS SPLAYED ON TWO AXES AT ONCE (`rx` and `rz` together) — the
-        // taper is the whole silhouette of a hunting stand.
-        bx(b, 0.06, 0.7, 0.06, B.woodDark, -0.21, 0, -0.19, {
-          rx: -0.06,
-          rz: -0.07,
-        });
-        bx(b, 0.06, 0.7, 0.06, B.woodDark, 0.21, 0, -0.19, {
-          rx: -0.06,
-          rz: 0.07,
-        });
-        bx(b, 0.06, 0.7, 0.06, B.woodDark, -0.21, 0, 0.19, {
-          rx: 0.06,
-          rz: -0.07,
-        });
-        bx(b, 0.06, 0.7, 0.06, B.woodDark, 0.21, 0, 0.19, {
-          rx: 0.06,
-          rz: 0.07,
-        });
-        bx(b, 0.42, 0.32, 0.38, B.woodMid, 0, 0.7, -0.02);
-        pr(b, 0.46, 0.14, 0.42, B.woodDark, 0, 1.02, -0.02);
-        qd(b, 0.26, 0.13, B.windowDark, 0, 0.9, 0.171);
-        bx(b, 0.03, 0.74, 0.03, B.woodDark, -0.1, 0, 0.28, { rx: -0.2 });
-        bx(b, 0.03, 0.74, 0.03, B.woodDark, 0.1, 0, 0.28, { rx: -0.2 });
       }),
   ],
   [
@@ -309,19 +196,4 @@ export const B_VARIANTS: ReadonlyMap<string, () => MeshData> = new Map<
         qd(b, 0.14, 0.09, B.terracotta, 0.08, 0.99, 0);
       }),
   ],
-  [
-    "amenity=fountain",
-    (): MeshData =>
-      composed((b) => {
-        cy(b, 0.38, 0.14, 8, B.stoneLight, 0, 0, 0);
-        cy(b, 0.32, 0.03, 6, B.waterTeal, 0, 0.12, 0);
-        cy(b, 0.1, 0.26, 6, B.stoneLight, 0, 0.15, 0);
-        cy(b, 0.2, 0.05, 6, B.stoneLight, 0, 0.41, 0);
-        cy(b, 0.16, 0.03, 6, B.waterTeal, 0, 0.45, 0);
-        cn(b, 0.06, 0.18, 6, B.waterTeal, 0, 0.48, 0);
-      }),
-  ],
 ]);
-
-/** The palette values a B port may paint with. Pinned in the tests. */
-export const B_PALETTE = B;

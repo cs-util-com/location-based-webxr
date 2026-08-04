@@ -1,5 +1,12 @@
 # `mesh/poi-variants-hybrid.ts`
 
+> **Pruned to the winners (DEC-R7b-2a, round 8).** This file was one of
+> seven candidate sets the owner compared in the gallery. They chose, the winners
+> were adopted into `POI_MODELS`, and every kind in this file that LOST was
+> deleted. What remains is the geometry the demo actually renders, so this is now
+> a model source rather than a variant source. The registry that used to consume
+> it (`poi-variants.ts`) is gone; `poi-models.ts` imports the map directly.
+
 ## Purpose
 
 Models the owner asked to be **combined** from two prototypes, rather than picked
