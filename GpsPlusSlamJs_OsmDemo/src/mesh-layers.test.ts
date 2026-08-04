@@ -887,7 +887,17 @@ describe("the transparent layers composite deterministically", () => {
       areas: true,
     });
     expect(objects[0]?.renderOrder).toBe(RENDER_ORDER.areas);
-    expect(RENDER_ORDER.areas).toBeLessThan(RENDER_ORDER.cells);
+    // NOT `expect(RENDER_ORDER.areas).toBeLessThan(RENDER_ORDER.cells)`. That
+    // compared two frozen literals from the same object, so it could never
+    // fail — and it passed for the whole time the invariant was actually
+    // INVERTED in the scene, because `RENDER_ORDER.cells` was never assigned to
+    // anything. The grid sat at three's default 0 and the slab drew over it.
+    //
+    // The grid is built by `building-view.ts`, which needs a WebGL context, so
+    // the object-level assertion lives in `building-view` territory rather than
+    // here. What this file can honestly claim is the half it draws: the slab
+    // takes the rung it was given.
+    expect(objects[0]?.renderOrder).toBeGreaterThan(0);
   });
 });
 

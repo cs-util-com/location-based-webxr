@@ -2227,6 +2227,13 @@ test.describe("the 3D view", () => {
     const counts = await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    // CELLS ON: they start OFF since DEC-R7b-6, and this test's first step is
+    // ABOUT the grid. Without this the sweep still passes -- by picking the
+    // region slab that lies under the grid -- so the M3 regression it was
+    // written to catch could come back green. The panel it opened would also be
+    // `renderRegion`, whose `.panel-summary` only exists when the region's
+    // spread is wide enough, making the closing assertion fixture-dependent.
+    await page.locator("#layer-cells").check();
 
     await test.step("draws the affordance grid too, and a click on it opens the panel", async () => {
       // Finding M3: the 3D pane showed buildings and nothing else, so the two
@@ -2263,22 +2270,22 @@ test.describe("the 3D view", () => {
       //
       // The offsets also now reach further DOWN the view, which is nearer the
       // camera and inside the grid in every run observed.
-      // A GRID, not a handful of offsets. The affordance grid covers every
-      // scored cell; a REGION covers only the above-threshold components, which
-      // is a strictly smaller and fixture-dependent part of the same disc. Five
-      // points chosen for the grid miss it more often than not.
       const sweep = async () => {
-        for (let dy = -60; dy <= 160; dy += 40) {
-          for (let dx = -180; dx <= 180; dx += 45) {
-            await page.mouse.click(
-              box.x + box.width / 2 + dx,
-              box.y + box.height / 2 + dy,
-            );
-            if (await panel.isVisible()) {
-              console.log("PANEL HTML:", await panel.innerHTML());
-              return true;
-            }
-          }
+        for (const [dx, dy] of [
+          [0, 0],
+          [-40, 20],
+          [40, 20],
+          [0, 60],
+          [-80, 60],
+          [0, 120],
+          [-60, 140],
+          [60, 140],
+        ]) {
+          await page.mouse.click(
+            box.x + box.width / 2 + dx,
+            box.y + box.height / 2 + dy,
+          );
+          if (await panel.isVisible()) return true;
         }
         return false;
       };

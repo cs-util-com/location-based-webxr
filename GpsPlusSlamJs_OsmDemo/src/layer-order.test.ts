@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { GROUND_LAYERS, groundLift } from "./layer-order.js";
+import { GROUND_LAYERS, RENDER_ORDER, groundLift } from "./layer-order.js";
 import { ALL_LAYERS } from "./layers.js";
 
 describe("groundLift", () => {
@@ -57,6 +57,41 @@ describe("groundLift", () => {
     // affordance grid visibly above the ground it describes.
     for (const layer of ALL_LAYERS) {
       expect(groundLift(layer)).toBeLessThan(0.3);
+    }
+  });
+});
+
+/**
+ * WHY THIS EXISTS (DEC-R7b-7, and a review finding on PR #250). The transparent
+ * layers are ordered coarse-to-fine so the finer claim composites on top. That
+ * shipped half-applied: `RENDER_ORDER.areas` was assigned to the slab and
+ * `RENDER_ORDER.cells` was assigned to NOTHING, so the grid kept three's default
+ * `0` — below the slab — and the documented invariant was inverted in the scene
+ * while a test compared the two constants to each other and passed.
+ *
+ * The lesson is in the second test below: the failure was possible because `0`
+ * is both "the default" and "a legal-looking value", so a rung that was never
+ * applied is indistinguishable from one applied and set to the bottom.
+ *
+ * The APPLICATION is not asserted here — the grid is built by `building-view.ts`,
+ * which needs a WebGL context. That gap is real and recorded in the round-8
+ * summary rather than papered over.
+ */
+describe("RENDER_ORDER", () => {
+  it("orders coarse before fine, so the finer claim draws last", () => {
+    // Larger `renderOrder` draws later, and later means on top for transparent
+    // geometry. A region is a flood fill OVER cells, so the cells are the finer
+    // claim and must win.
+    expect(RENDER_ORDER.areas).toBeLessThan(RENDER_ORDER.cells);
+  });
+
+  it("gives every layer a NON-ZERO rung", () => {
+    // The guard that would have caught the shipped bug. `0` is three's default,
+    // so a layer that is never assigned looks exactly like one deliberately
+    // placed at the bottom. Keeping every rung above 0 means "unset" and "set
+    // low" stop being the same observable state.
+    for (const [layer, order] of Object.entries(RENDER_ORDER)) {
+      expect(order, layer).toBeGreaterThan(0);
     }
   });
 });

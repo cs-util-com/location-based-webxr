@@ -38,6 +38,7 @@ import { drawMeshLayers } from "./mesh-layers.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
+import { RENDER_ORDER } from "./layer-order.js";
 import { resolvePick, type Pick } from "./pick.js";
 import { DEFAULT_TIME_OF_DAY, sunAt } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
@@ -1044,6 +1045,12 @@ export class BuildingView {
     // THE LIFT (§3). Applied to the mesh rather than baked into the vertices,
     // so cycling it costs a transform instead of a worker republish.
     this.cellMesh.position.y = this.cellLook.liftM;
+    // THE OTHER HALF OF THE TRANSPARENT ORDER (DEC-R7b-7). The region slab takes
+    // `RENDER_ORDER.areas`; without this the grid keeps three's default 0, which
+    // is LOWER — so the coarse slab drew over the fine grid, the exact inversion
+    // `layer-order.ts` documents itself as preventing. Pinning one end of a
+    // two-ended invariant leaves it stated rather than enforced.
+    this.cellMesh.renderOrder = RENDER_ORDER.cells;
     // How `resolvePick` recognises the grid. A flag rather than an identity
     // comparison, so the decision stays a pure function of the hits and can be
     // tested without a renderer.

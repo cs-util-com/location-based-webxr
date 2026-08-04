@@ -2,18 +2,24 @@
 
 ## Purpose
 
-Turns merged affordance regions into low 3D slabs (W14, DEC-R2-11) — a body the
-camera can see at a shallow angle rather than a flat overlay that vanishes
-edge-on.
+Turns merged affordance regions into flat ground overlays (W14; DEC-R2-11 as
+reversed by DEC-R7b-7a). It built low SLABS -- a body with a boundary wall, so it
+read at a shallow camera angle -- until round 8 removed the extrusion: a region
+is a claim about the ground, not an object standing on it.
 
 ## Public API
 
-- `SlabRegion` — `{ outline, medianScore }`. Structural rather than the full
+- `SlabRegion` — `{ outline, medianScore, id }`. Structural rather than the full
   `Region`, so this module does not depend on the region builder and a test can
   construct one in three lines.
+  - **`id` is load-bearing** (DEC-R7b-3a): it is the only thing that lets a click
+    on a slab resolve back to the region it draws. Carried through opaquely —
+    this module does not know how ids are formed and must not, or it becomes a
+    second place that decides region identity.
 - `BuildRegionSlabsOptions` — `{ frame, groundHeightM? }`. **`wallHeightM` was
   removed in round 8** (DEC-R7b-7a) along with the walls it sized.
-- `RegionSlab` — `{ medianScore, mesh }`.
+- `RegionSlab` — `{ medianScore, id, mesh }`. The `id` is the region's, carried
+  through so the caller can resolve a click on the mesh back to it.
 - `buildRegionSlabs(regions, options) → RegionSlab[]` — one slab per region, in
   input order. Never throws; a degenerate outline yields an empty mesh.
 
@@ -34,8 +40,6 @@ edge-on.
   scores", a confidently wrong claim rather than a visible glitch.
 - **A region can be several polygons.** Two cells that score but do not touch are
   one region with two polygons; taking only the first would silently shrink it.
-- **The wall surrounds every ring, holes included.** A hole's edge is as much a
-  boundary of the region as its outside.
 - **The top surface is wound so its face normal points UP.** `flatShading`
   recomputes the normal from the winding and ignores the per-vertex normals, so
   an inverted top is lit from beneath and culled while every counter still
@@ -74,11 +78,12 @@ const colour = heatColour(scale, slab.medianScore);
 
 ## Tests
 
-`region-slabs.test.ts` — 7 tests: one slab per region carrying its score; **a
+`region-slabs.test.ts` — 8 tests: one slab per region carrying its score; **a
 hole stays a hole** (covered inside the outer ring, not covered at the hole's
-centre); the slab has vertical extent; the top drapes per vertex; a multi-polygon
-region covers both parts and not the gap; a degenerate outline stays finite; the
-top surface's face normals point up.
+centre); **the slab is flat and sits at y = 0**; the top drapes per vertex; a
+multi-polygon region covers both parts and not the gap; a degenerate outline
+stays finite; the top surface's face normals point up; each slab carries its
+region id.
 
 Coverage is asserted by plan-view point-in-triangle rather than by triangle
 counts — a count passes on geometry full of holes, which is the one thing this
