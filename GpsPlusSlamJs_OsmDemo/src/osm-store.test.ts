@@ -38,6 +38,8 @@ const snapshot = (cells: number): DemoSnapshot => ({
   regions: [],
   missingTiles: [],
   loadedTiles: ["871fa199affffff"],
+  cellCount: cells,
+  heatMax: 2,
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 1 },
   // The last ring: these tests are about the store, and a half-widened fixture
   // would say something this file is not trying to say.

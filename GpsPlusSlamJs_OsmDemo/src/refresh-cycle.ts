@@ -30,7 +30,8 @@
 import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
-import { selectOsmView, type DemoStore } from "./osm-store.js";
+import { isLayerEnabled } from "./layers.js";
+import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
 import type { MeshUpdate, UpdateResult } from "./worker/protocol.js";
 
 /**
@@ -47,6 +48,8 @@ interface RefreshWorker {
       position: { lat: number; lng: number };
       category: string;
       radius: number;
+      /** Round 10, stage B -- see the call site. */
+      includeCells: boolean;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -148,9 +151,17 @@ export function createRefreshCycle(
       // kind of reply to send and the callback merges it — see `MeshUpdate`.
       // This was recorded here as a known cost for one round.
       for (const radius of PROGRESSIVE_RADII) {
+        // THE CELL ARRAY ONLY TRAVELS IF SOMETHING DRAWS IT (round 10, stage B).
+        // Read per ring rather than captured once, so toggling the layer
+        // mid-widening takes effect on the next ring instead of being decided by
+        // whatever was true when the click landed.
+        const includeCells = isLayerEnabled(
+          selectLayers(store.getState()),
+          "cells",
+        );
         const { snapshot, mesh } = await worker.call(
           "update",
-          { position, category, radius },
+          { position, category, radius, includeCells },
           { signal },
         );
         // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the

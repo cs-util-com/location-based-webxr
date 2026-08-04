@@ -41,6 +41,7 @@ import {
   toFetchTile,
 } from "gps-plus-slam-osm";
 import { cellToBoundary, cellToLatLng, gridDisk, latLngToCell } from "h3-js";
+import { heatScale } from "./heat-colours.js";
 
 /**
  * The seed every device shares (DEC-R9-7).
@@ -106,6 +107,25 @@ export interface DemoSnapshot {
    * than being told.
    */
   readonly loadedTiles: readonly string[];
+  /**
+   * How many cells are scored, whether or not `cells` carries them.
+   *
+   * Separate from `cells.length` because that array is now OMITTABLE (see
+   * `update`'s `includeCells`), and the status line reports this number in
+   * every configuration.
+   */
+  readonly cellCount: number;
+  /**
+   * The top of the heat ramp for `category` — `heatScale(...).max`.
+   *
+   * COMPUTED HERE BECAUSE IT IS WHY THE CELLS TRAVELLED (round 10, stage B).
+   * The page derived this by mapping every cell's score for the current
+   * category and taking the maximum — which meant ~24 000 cells crossed the
+   * worker boundary, at a measured 27–35 ms each of three passes per move, to
+   * produce ONE NUMBER. The regions were already computed here; this was the
+   * only other thing the default configuration used the array for.
+   */
+  readonly heatMax: number;
   readonly stats: {
     readonly chunksScored: number;
     readonly chunksReused: number;
@@ -193,6 +213,25 @@ export class DemoPipeline {
      * did not, so the reach is progressive rather than paid for up front.
      */
     radius?: number,
+    /**
+     * Whether the cell array travels back (round 10, stage B).
+     *
+     * DEFAULTS TO TRUE so every existing caller is unchanged. Pass `false` when
+     * nothing on the page draws cells — which is the DEFAULT configuration of
+     * the demo, since the `cells` layer is off (DEC-R7b-5/R7b-6: the map would
+     * draw one Leaflet polygon per cell).
+     *
+     * The regions, the threshold, `heatMax` and `cellCount` are all still
+     * reported, so the visible surface is identical either way. What is skipped
+     * is only the raw material the page had no use for.
+     *
+     * **This does not withhold cells from anything that needs them.** Cell-level
+     * algorithms run HERE, against the index, exactly as the geo-event's hill
+     * climb does — its thousands of `cellState` reads are synchronous callbacks
+     * that cannot cross a structured clone, so it returns a finished event
+     * rather than the field it walked. NPC navigation is designed the same way.
+     */
+    options?: { readonly includeCells?: boolean },
   ): Promise<DemoSnapshot> {
     const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
     const missingTiles: string[] = [];
@@ -270,11 +309,22 @@ export class DemoPipeline {
       scoresByCell,
     );
 
+    const cells = [...scoresByCell.values()];
+    // OVER THE SAME VALUES THE PAGE USED, including the `?? 1` identity for a
+    // cell with no entry for this category — the ramp must not shift because
+    // the computation moved.
+    const { max: heatMax } = heatScale(
+      cells.map((cell) => cell.scores[category] ?? 1),
+      threshold,
+    );
+
     return {
       position,
       category,
       threshold,
-      cells: [...scoresByCell.values()],
+      cells: options?.includeCells === false ? [] : cells,
+      cellCount: cells.length,
+      heatMax,
       regions,
       missingTiles,
       loadedTiles: [...this.loaded],

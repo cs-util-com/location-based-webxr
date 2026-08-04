@@ -49,6 +49,7 @@ import {
   stashStableFrame,
   stubNetwork,
   waitForRefresh,
+  enableCellLayer,
 } from "./fixtures.js";
 
 test.describe("the demo boots", () => {
@@ -648,7 +649,7 @@ test.describe("the affordance map", () => {
     // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
     // grid. Switching them on here rather than changing the default keeps the
     // default itself asserted in one place (the layer-toggle test).
-    await page.locator("#layer-cells").check();
+    await enableCellLayer(page); // async since round 10 stage B
 
     await test.step("draws res-13 cells over the basemap", async () => {
       // The class exists so this assertion cannot be satisfied by the region
@@ -838,7 +839,7 @@ test.describe("explaining one cell", () => {
     // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
     // grid. Switching them on here rather than changing the default keeps the
     // default itself asserted in one place (the layer-toggle test).
-    await page.locator("#layer-cells").check();
+    await enableCellLayer(page); // async since round 10 stage B
 
     const panel = page.locator("#details");
 
@@ -2233,7 +2234,7 @@ test.describe("the 3D view", () => {
     // written to catch could come back green. The panel it opened would also be
     // `renderRegion`, whose `.panel-summary` only exists when the region's
     // spread is wide enough, making the closing assertion fixture-dependent.
-    await page.locator("#layer-cells").check();
+    await enableCellLayer(page); // async since round 10 stage B
 
     await test.step("draws the affordance grid too, and a click on it opens the panel", async () => {
       // Finding M3: the 3D pane showed buildings and nothing else, so the two
@@ -2360,6 +2361,28 @@ test.describe("caching and failure", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
+    // WAIT FOR THE BACKGROUND PREFETCH TO GO QUIET FIRST, or the baseline is a
+    // moving target. `prefetch.replace(...)` queues tile fetches AFTER the
+    // visible work (W8), so queries keep arriving once `waitForRefresh` has
+    // returned -- and any that land after this capture are counted against the
+    // RELOAD, failing the test with "the cache missed" when the cache was fine.
+    //
+    // Seen under full-suite load; it passes 3/3 standalone, because the window
+    // only opens when the machine is busy. Moving the capture later does NOT
+    // fix it -- it was already immediately before the reload -- so the fix has
+    // to be waiting for quiescence rather than picking a better moment.
+    let previousCount = -1;
+    await expect
+      .poll(
+        () => {
+          const settled = counts.overpassQuery === previousCount;
+          previousCount = counts.overpassQuery;
+          return settled;
+        },
+        { timeout: 30000, intervals: [500] },
+      )
+      .toBe(true);
+
     const queriesAfterFirst = counts.overpassQuery;
     expect(queriesAfterFirst).toBeGreaterThan(0);
 
@@ -2386,6 +2409,8 @@ test.describe("caching and failure", () => {
     // grid. Switching them on here rather than changing the default keeps the
     // default itself asserted in one place (the layer-toggle test).
     await page.locator("#layer-cells").check();
+    // NOT `enableCellLayer` HERE, deliberately: every tile is refused, so the
+    // grid must stay EMPTY and a helper that waits for cells would hang.
 
     // A blank map with no message looks exactly like "there is no data at this
     // location" — the one reading that would send someone debugging the wrong
@@ -2487,7 +2512,11 @@ test.describe("a superseded refresh", () => {
     // CELLS ON: they start OFF since DEC-R7b-6, and the grid is what this test
     // watches for blanking. With the layer off it would compare zero against
     // zero and pass for the wrong reason once the assertion below was relaxed.
-    await page.locator("#layer-cells").check();
+    //
+    // Through the helper because the cells now ARRIVE ASYNCHRONOUSLY (round 10,
+    // stage B): the array is not sent while the layer is off, so switching it on
+    // is a refresh rather than a redraw.
+    await enableCellLayer(page);
 
     await test.step("never reports a failure, and never blanks what is drawn", async () => {
       const cells = page.locator("#map path.affordance-cell");
@@ -2976,7 +3005,11 @@ test.describe("revealing the sub-threshold cells", () => {
     // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
     // grid. Switching them on here rather than changing the default keeps the
     // default itself asserted in one place (the layer-toggle test).
-    await page.locator("#layer-cells").check();
+    // Through the helper: the cells arrive asynchronously since round 10 stage
+    // B, and `before2d` is captured immediately below. Without the wait it was
+    // captured as ZERO -- so the "and back" assertion compared 1387 against 0
+    // and the test failed for a reason that had nothing to do with show-below.
+    await enableCellLayer(page);
 
     await test.step("changes BOTH views, in both directions", async () => {
       const canvas = page.locator("#scene canvas");
@@ -3610,7 +3643,11 @@ test.describe("the time of day", () => {
       // How much chroma the heat grid ADDS, against one named ground mode.
       const marginFor = async (mode) => {
         await page.locator("#ground-mode").selectOption(mode);
-        await page.locator("#layer-cells").check();
+        // WAITS for the cells, which now arrive asynchronously (round 10, stage
+        // B). `settledChroma` polls for STABILITY, and an unchanged pre-toggle
+        // frame is perfectly stable -- so without this it settles on the
+        // WITHOUT-cells picture and compares it against itself.
+        await enableCellLayer(page);
         const withCells = await settledChroma();
         await page.locator("#layer-cells").uncheck();
         const withoutCells = await settledChroma();
@@ -3726,7 +3763,7 @@ test.describe("the affordance-tile look presets", () => {
     // through the canvas rather than through the Leaflet DOM — so with the
     // layer off it compares two identical pictures and reports 0 changed
     // pixels, which looks like a broken repaint rather than a hidden layer.
-    await page.locator("#layer-cells").check();
+    await enableCellLayer(page); // async since round 10 stage B
 
     await test.step("the default is the look that shipped", async () => {
       // Asserted on the STATUS LINE rather than on pixels: "which preset is
@@ -3868,7 +3905,7 @@ test.describe("selecting a region", () => {
     await region.click({ force: true });
     await expect(panel.locator(".panel-stats")).toBeVisible();
 
-    await page.locator("#layer-cells").check();
+    await enableCellLayer(page); // async since round 10 stage B
     const cell = page.locator("#map .affordance-cell").first();
     await cell.click({ force: true });
     await expect(panel).toBeVisible();

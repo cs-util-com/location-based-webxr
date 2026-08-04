@@ -139,3 +139,26 @@ export function parseLayers(serialised: string): LayerSet {
       .filter((part): part is LayerKind => known.has(part)),
   );
 }
+
+/**
+ * Whether a layer change needs a REFETCH rather than just a redraw.
+ *
+ * Almost every layer only decides what is drawn from data the snapshot already
+ * carries, so switching one on is a render. `cells` is the exception since
+ * round 10 stage B: the snapshot deliberately arrives WITHOUT the cell array
+ * while that layer is off — ~24 000 cells that would structured-clone in a
+ * measured 27–35 ms to be drawn by nobody — so switching it on has nothing to
+ * draw and needs the data fetched.
+ *
+ * A FUNCTION RATHER THAN AN `if` AT THE CALL SITE, because the defect it fixes
+ * was invisible to unit tests: the refresh cycle asked correctly and the
+ * pipeline answered correctly, and nothing owned the transition between them.
+ * Nine e2e tests failed and no unit test did. This is the seam that makes the
+ * rule assertable.
+ *
+ * ONE-WAY ON PURPOSE. Switching `cells` OFF needs no refetch — the data is
+ * already held and simply stops being drawn.
+ */
+export function needsRefetch(previous: LayerSet, next: LayerSet): boolean {
+  return !isLayerEnabled(previous, "cells") && isLayerEnabled(next, "cells");
+}

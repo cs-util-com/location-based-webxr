@@ -18,7 +18,7 @@ import { describe, it, expect, vi } from "vitest";
 
 import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
-import { createDemoStore, selectOsmView } from "./osm-store.js";
+import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import {
   createRefreshCycle,
   isFinalRing,
@@ -56,6 +56,8 @@ const snapshot = (category: string): DemoSnapshot => ({
   regions: [],
   missingTiles: [],
   loadedTiles: ["871fa199affffff"],
+  cellCount: 1,
+  heatMax: 3,
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 0 },
   // A FINAL snapshot by default: these tests are about failure handling and
   // ordering, not about widening, so the base should not look half-delivered.
@@ -664,5 +666,73 @@ describe("isFinalRing", () => {
     // the UI stuck in "still widening" forever. Erring towards "finished" keeps
     // a wrong radius a cosmetic bug rather than a permanent spinner.
     expect(isFinalRing(SCORE_DISK_MAX_RADIUS + 1)).toBe(true);
+  });
+});
+
+/**
+ * WHY THIS TEST MATTERS (round 10, stage B).
+ *
+ * The cell array structured-clones across the worker boundary in a measured
+ * 27–35 ms at the 488-chunk cap, three times per move — and in the DEFAULT
+ * configuration the page draws none of it, because the `cells` layer is off
+ * (DEC-R7b-5/R7b-6). The regions are computed in the worker and the ramp's `max`
+ * now arrives as a number, so nothing on the page needs the array.
+ *
+ * The saving is entirely in ASKING for it correctly. `demo-pipeline` honouring
+ * `includeCells` is unit-tested there; what nothing else covers is that the
+ * cycle actually sets the flag from the live layer state — and a cycle that
+ * always asked for cells would be invisible except as the cost this stage
+ * exists to remove.
+ */
+describe("the refresh cycle asks for cells only when they are drawn", () => {
+  const requestFor = async (cellsLayerOn: boolean) => {
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    // `cells` is OFF in DEFAULT_LAYERS, so the ON case is the one that needs a
+    // dispatch. Getting this backwards made the first version of these tests
+    // assert the same state twice.
+    if (cellsLayerOn) {
+      demo.store.dispatch(
+        demo.actions.layersChanged({
+          ...selectLayers(demo.store.getState()),
+          cells: true,
+        }),
+      );
+    }
+    const asked: boolean[] = [];
+
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      worker: {
+        // Not `async`: there is nothing to await, and the rule is right that an
+        // async function without one is a promise wrapper pretending to be work.
+        call: (_kind, payload) => {
+          asked.push(payload.includeCells);
+          return Promise.resolve({
+            snapshot: snapshot("walkable"),
+            mesh: { kind: "regions" as const, regions: [] },
+          });
+        },
+      },
+      onMesh: () => {},
+    });
+
+    await refresh();
+    return asked;
+  };
+
+  it("does not ask for cells while the layer is off", async () => {
+    // The default configuration, and the whole point of the stage.
+    const asked = await requestFor(false);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked).not.toContain(true);
+  });
+
+  it("asks for cells once the layer is on", async () => {
+    // THE OTHER DIRECTION, and it is what stops this being a deletion. Turning
+    // the layer on must bring the array back, or the map draws nothing.
+    const asked = await requestFor(true);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked).not.toContain(false);
   });
 });

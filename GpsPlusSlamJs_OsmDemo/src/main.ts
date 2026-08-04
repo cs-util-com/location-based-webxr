@@ -54,7 +54,7 @@ import {
   type Heightfield,
 } from "./heightfield.js";
 import { createTerrainCycle } from "./terrain-cycle.js";
-import { heatColour, heatScale } from "./heat-colours.js";
+import { heatColour } from "./heat-colours.js";
 import {
   BuildingView,
   TERRAIN_SPACING_M,
@@ -71,7 +71,7 @@ import {
 } from "./ground-mode.js";
 import { attachLayerToggles } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
-import { isLayerEnabled } from "./layers.js";
+import { isLayerEnabled, needsRefetch } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import {
@@ -477,7 +477,23 @@ async function main(): Promise<void> {
   // replaces the set rather than patching one layer).
   const layerToggles = attachLayerToggles({
     container: el("layers"),
-    onChange: (next) => store.dispatch(actions.layersChanged(next)),
+    onChange: (next) => {
+      const previous = selectLayers(store.getState());
+      store.dispatch(actions.layersChanged(next));
+      // TURNING THE CELL LAYER ON HAS TO FETCH THE CELLS (round 10, stage B).
+      //
+      // Every other layer toggle only changes what is drawn from data already
+      // held, so re-rendering the current snapshot is enough. `cells` is now
+      // different: the snapshot deliberately arrives WITHOUT the cell array
+      // while the layer is off, so switching it on has nothing to draw and the
+      // views would render an empty grid until some unrelated refresh happened
+      // to bring the data.
+      //
+      // Nine e2e tests caught this; no unit test did, because each half is
+      // individually correct — the cycle asks correctly, the pipeline answers
+      // correctly, and nothing owned the transition between them.
+      if (needsRefetch(previous, next)) void refresh();
+    },
     // The perf panel is a diagnostic and belongs beside the height ramp, but it
     // draws nothing in the scene so it is deliberately not a layer (W15,
     // DEC-R3-18). Handing the element over puts it in the right group without a
@@ -570,11 +586,17 @@ async function main(): Promise<void> {
    * defect this demo keeps finding: two computations that agree today and have
    * nothing asserting they always will.
    */
-  function scaleFor(snapshot: DemoSnapshot, category: string) {
-    return heatScale(
-      snapshot.cells.map((cell) => cell.scores[category] ?? 1),
-      snapshot.threshold,
-    );
+  function scaleFor(snapshot: DemoSnapshot) {
+    // READ, NOT DERIVED (round 10, stage B). This used to map every cell's
+    // score and take the maximum — which is the ONLY thing the default
+    // configuration did with the cell array, since the `cells` layer is off and
+    // the regions are computed in the worker. So ~24 000 cells crossed the
+    // boundary, three times per move at a measured 27–35 ms each, to produce
+    // one number. The worker now sends the number.
+    //
+    // Still the ONE derivation both views read; it simply arrives instead of
+    // being recomputed here.
+    return { threshold: snapshot.threshold, max: snapshot.heatMax };
   }
 
   function drawMap(snapshot: DemoSnapshot | undefined): void {
@@ -593,7 +615,7 @@ async function main(): Promise<void> {
     // deriving the scale from them made switching `cells` off collapse the legend
     // to "1 to 1" and colour the 2D regions on an empty ramp while the 3D slabs
     // used a different one.
-    const scale = scaleFor(snapshot, view.category);
+    const scale = scaleFor(snapshot);
     // THE REGISTRY REACHES BOTH VIEWS. Gating only the 3D side would leave the map
     // drawing a layer the store says is off — the cross-view disagreement the store
     // exists to prevent, reintroduced by the mechanism meant to prevent it.
@@ -679,7 +701,7 @@ async function main(): Promise<void> {
       // by construction, but by construction is not the same as by design: two
       // derivations of the identical thing is how they eventually differ, and
       // the failure would be silent because each view stays self-consistent.
-      const scale = scaleFor(snapshot, view.category);
+      const scale = scaleFor(snapshot);
       mesh = buildingView.render(latestMesh, meshLayerSelection(layers), {
         colourForScore: (score) => {
           const { r, g, b } = heatColour(score, scale);
@@ -717,7 +739,7 @@ async function main(): Promise<void> {
         // copy of the same expression; three copies agreeing today is three
         // chances to disagree tomorrow, and the disagreement would be silent
         // because each view stays self-consistent.
-        scale: scaleFor(snapshot, view.category),
+        scale: scaleFor(snapshot),
         showBelowThreshold: view.showBelowThreshold,
         // THE TWO GEOMETRY AXES OF THE LOOK PRESET (§3). Read from the module
         // holder rather than the store: the preset is a local experiment
@@ -754,7 +776,7 @@ async function main(): Promise<void> {
       // indication that more was coming. The numbers were never wrong; the
       // impression that they were final was.
       isFinalRing(snapshot.radius) ? "" : "widening…",
-      `${snapshot.cells.length} cells`,
+      `${snapshot.cellCount} cells`,
       `${snapshot.regions.length} ${view.category} regions`,
       `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,
       mesh === undefined

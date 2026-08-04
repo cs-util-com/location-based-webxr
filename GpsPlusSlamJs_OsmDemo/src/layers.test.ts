@@ -21,6 +21,7 @@ import {
   ALL_LAYERS,
   DEFAULT_LAYERS,
   isLayerEnabled,
+  needsRefetch,
   parseLayers,
   serialiseLayers,
   toggleLayer,
@@ -154,5 +155,46 @@ describe("the layer set", () => {
     for (const layer of layers) {
       expect(typeof isLayerEnabled(DEFAULT_LAYERS, layer)).toBe("boolean");
     }
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (round 10, stage B).
+ *
+ * `needsRefetch` exists because of a regression that unit tests could not see.
+ * Stage B stopped sending the cell array while its layer is off, and each half
+ * of that was individually correct — but switching the layer on then had
+ * nothing to draw, and the demo showed an empty grid until an unrelated refresh
+ * happened to bring the data. Nine e2e tests caught it.
+ */
+describe("needsRefetch", () => {
+  const off = { ...DEFAULT_LAYERS, cells: false };
+  const on = { ...DEFAULT_LAYERS, cells: true };
+
+  it("refetches when the cell layer is switched ON", () => {
+    // The regression. Without this the grid stays empty until something else
+    // triggers a refresh.
+    expect(needsRefetch(off, on)).toBe(true);
+  });
+
+  it("does NOT refetch when it is switched off", () => {
+    // One-way: the data is already held and simply stops being drawn. A
+    // symmetric implementation would refetch for nothing on every hide.
+    expect(needsRefetch(on, off)).toBe(false);
+  });
+
+  it("does not refetch while it stays on or stays off", () => {
+    expect(needsRefetch(on, on)).toBe(false);
+    expect(needsRefetch(off, off)).toBe(false);
+  });
+
+  it("ignores every OTHER layer, which only ever needs a redraw", () => {
+    // THE FIXTURE THAT MAKES THIS BITE: `cells` is held constant while another
+    // layer changes, so an implementation that refetched on any change would
+    // fail here rather than passing by luck.
+    expect(needsRefetch(off, { ...off, buildings: !off.buildings })).toBe(
+      false,
+    );
+    expect(needsRefetch(on, { ...on, buildings: !on.buildings })).toBe(false);
   });
 });

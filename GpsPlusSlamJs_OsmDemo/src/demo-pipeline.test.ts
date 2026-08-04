@@ -24,6 +24,7 @@ import {
   type OsmDataSource,
 } from "gps-plus-slam-osm";
 import { DemoPipeline } from "./demo-pipeline.js";
+import { heatScale } from "./heat-colours.js";
 
 describe("chunkFor names the chunk that was actually scored", () => {
   /**
@@ -579,5 +580,114 @@ describe("DemoPipeline.geoEvent", () => {
     const warmCells = new Set(a.picks.map((p) => p.cell));
     for (const pick of b.picks) expect(warmCells.has(pick.cell)).toBe(true);
     expect(a.eventTime).toBe(b.eventTime);
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (round 10, stage B).
+ *
+ * Measured: the snapshot's cell array structured-clones across the worker
+ * boundary in 27-35 ms at the 488-chunk cap, three times per move
+ * (`refresh-payload.test.ts`). And in the DEFAULT configuration the page draws
+ * none of it: the `cells` layer is off (DEC-R7b-5/R7b-6, because the map would
+ * draw one Leaflet polygon per cell), the regions are already computed here in
+ * the worker, and the only thing the page derives from the cells is
+ * `heatScale`'s `max` -- a single number.
+ *
+ * So the array is sent to compute one number. These tests pin the two halves of
+ * fixing that: the number must be computed here and be EXACTLY what the page
+ * would have computed, and the array must be omittable without changing it.
+ */
+describe("the snapshot carries the heat max, so the cells need not travel", () => {
+  const AT = { lat: 50.9375, lng: 6.9603 };
+
+  const source: OsmDataSource = {
+    attribution: "© OpenStreetMap contributors",
+    sourceId: "fixture:heat-max",
+    fetchTile: (tile) =>
+      Promise.resolve({
+        tile,
+        features: [
+          {
+            type: "way" as const,
+            id: 1,
+            geometry: [
+              { lat: AT.lat - 0.002, lng: AT.lng - 0.002 },
+              { lat: AT.lat - 0.002, lng: AT.lng + 0.002 },
+              { lat: AT.lat + 0.002, lng: AT.lng + 0.002 },
+              { lat: AT.lat + 0.002, lng: AT.lng - 0.002 },
+              { lat: AT.lat - 0.002, lng: AT.lng - 0.002 },
+            ],
+            tags: { leisure: "park", surface: "grass" },
+          },
+        ],
+        fetchedAt: 0,
+        sourceId: "fixture:heat-max",
+        schemaVersion: 1,
+        skipped: [],
+      }),
+  };
+
+  const table = parseRuleTable(
+    [
+      "id,Key,Value,walkable",
+      "leisure_park,leisure,park,3",
+      "surface_grass,surface,grass,2",
+    ].join("\n"),
+    { source: "test", fetchedAt: 0 },
+  );
+
+  it("reports the max the page would have computed from the full array", () => {
+    // THE INVARIANT. The page's colour ramp must not change because the raw
+    // material stopped travelling -- if this number differs by any amount the
+    // regions are drawn on a different ramp, which is a visible regression that
+    // no cell-count assertion would catch.
+    return new DemoPipeline({ source, table })
+      .update(AT, "walkable")
+      .then((snapshot) => {
+        expect(snapshot.cells.length).toBeGreaterThan(0);
+        const onThePage = heatScale(
+          snapshot.cells.map((cell) => cell.scores["walkable"] ?? 1),
+          snapshot.threshold,
+        );
+        expect(snapshot.heatMax).toBe(onThePage.max);
+      });
+  });
+
+  it("reports the same max when the cells are withheld", async () => {
+    // The whole point: omitting the array must be invisible to the ramp. The
+    // fixture has to produce a max ABOVE the threshold, or both branches return
+    // the threshold and this cannot fail -- the smell this round keeps meeting.
+    const withCells = await new DemoPipeline({ source, table }).update(
+      AT,
+      "walkable",
+    );
+    expect(withCells.heatMax).toBeGreaterThan(withCells.threshold);
+
+    const without = await new DemoPipeline({ source, table }).update(
+      AT,
+      "walkable",
+      undefined,
+      undefined,
+      { includeCells: false },
+    );
+
+    expect(without.cells).toEqual([]);
+    expect(without.heatMax).toBe(withCells.heatMax);
+    // And the count survives, because the status line reports it.
+    expect(without.cellCount).toBe(withCells.cells.length);
+  });
+
+  it("still carries the regions when the cells are withheld", async () => {
+    // The page draws regions BY DEFAULT and derives them from nothing -- they
+    // are computed here. Withholding cells must not withhold them too.
+    const without = await new DemoPipeline({ source, table }).update(
+      AT,
+      "walkable",
+      undefined,
+      undefined,
+      { includeCells: false },
+    );
+    expect(without.regions.length).toBeGreaterThan(0);
   });
 });

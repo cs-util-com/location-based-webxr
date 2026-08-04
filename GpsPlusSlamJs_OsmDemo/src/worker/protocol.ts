@@ -192,6 +192,15 @@ export interface WorkerCalls {
        * free, and a superseded ring is simply a call that never happens.
        */
       readonly radius?: number;
+      /**
+       * Whether the cell array travels back (round 10, stage B).
+       *
+       * Omitted means yes, so nothing that does not opt out changes. The demo
+       * passes `false` whenever the `cells` layer is off -- the default -- and
+       * the page then reads `heatMax` and `cellCount` instead of deriving them
+       * from ~24 000 cells it does not draw.
+       */
+      readonly includeCells?: boolean;
     };
     readonly result: UpdateResult;
   };

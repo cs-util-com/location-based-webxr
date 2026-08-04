@@ -461,7 +461,7 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "update": {
-      const { position, category, radius } =
+      const { position, category, radius, includeCells } =
         payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
       const snapshot = await pipeline.update(
@@ -469,6 +469,9 @@ async function handle<K extends WorkerCallKind>(
         category,
         signal,
         radius,
+        {
+          includeCells: includeCells !== false,
+        },
       );
       // THE JOIN (W3). The fetch and the scoring above ran while the DEM grid
       // for this position was still being sampled — that concurrency is the

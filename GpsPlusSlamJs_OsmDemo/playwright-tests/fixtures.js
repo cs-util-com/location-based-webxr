@@ -601,3 +601,26 @@ export async function stashStableFrame(page, threshold = 24) {
     )
     .toBeGreaterThanOrEqual(3);
 }
+
+/**
+ * Switches the cell layer on and waits for the cells to actually arrive.
+ *
+ * WHY THIS EXISTS (round 10, stage B). The snapshot no longer carries the cell
+ * array while the layer is off — ~24 000 cells that structured-clone in a
+ * measured 27–35 ms to be drawn by nobody. So switching the layer ON now
+ * triggers a refresh and the cells arrive ASYNCHRONOUSLY, where they used to be
+ * redrawn from data already held.
+ *
+ * `waitForRefresh` is the wrong tool for this: it waits for the ABSENCE of
+ * "widening", which is still true in the moment between the click and the
+ * refresh starting, so it returns immediately and the test races anyway. The
+ * cells themselves are the direct observable.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function enableCellLayer(page) {
+  await page.locator("#layer-cells").check();
+  await expect(page.locator("#map path.affordance-cell")).not.toHaveCount(0, {
+    timeout: 30000,
+  });
+}

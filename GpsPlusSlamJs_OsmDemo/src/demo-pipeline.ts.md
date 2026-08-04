@@ -66,11 +66,43 @@ path, with no DOM in it.
   index way names a different chunk than the one that was scored — and making
   the chunk grid legible is this view's entire job.
 
+## The cell array is optional (round 10, stage B)
+
+`update`'s fifth argument takes `{ includeCells }`, defaulting to `true`.
+
+**Why it exists.** The array structured-clones across the worker boundary in a
+measured 27–35 ms at the 488-chunk cap, three times per move — and in the
+**default configuration the page draws none of it**. The `cells` layer is off
+(DEC-R7b-5/R7b-6, because the map would draw one Leaflet polygon per cell), the
+regions are computed here, and the only other thing the page did with the array
+was derive `heatScale`'s `max`. So ~24 000 cells travelled to produce one number.
+
+The snapshot now reports that number as `heatMax`, plus `cellCount` for the
+status line, and the array is skipped when nothing draws it. `regions`,
+`threshold`, `heatMax` and `cellCount` are reported either way, so the visible
+surface is identical.
+
+**This withholds nothing from anything that needs cells.** Cell-level algorithms
+run _here_, against the index: the geo-event's hill climb makes thousands of
+`cellState` reads as synchronous callbacks that cannot cross a structured clone,
+so it returns a finished event rather than the field it walked. NPC navigation is
+designed the same way — its plan notes that `connectedComponents` produces
+"coloured slabs for display, not a traversal graph". The rule both follow is
+**compute where the data lives, send the answer**, and `includeCells` is a flag
+rather than a deletion because the cells layer still needs the array when it is
+switched on.
+
 ## Examples
 
 ```ts
 const pipeline = new DemoPipeline({ source, table });
 const snapshot = await pipeline.update({ lat: 50.94, lng: 6.96 }, "walkable");
+
+// The default configuration: regions, threshold, heatMax and cellCount, but no
+// ~24 000-cell array to clone.
+const lean = await pipeline.update(at, "walkable", undefined, undefined, {
+  includeCells: false,
+});
 ```
 
 ## Tests
