@@ -17,9 +17,24 @@
  * becomes an ordinary offline unit test.
  *
  * WHY ONLY THE DROPPED HALF IS STORED. The full `plain` payload at res 9 is
- * ~37 MB and cannot be committed; the dropped relations are a few hundred kB.
- * Storing the difference rather than both sides keeps the corpus small AND
- * makes the thing under test explicit — this file IS the hazard.
+ * ~37 MB and cannot be committed. Storing the difference rather than both sides
+ * keeps the corpus small AND makes the thing under test explicit — this file IS
+ * the hazard.
+ *
+ * WHY THE MEMBER LISTS ARE EMPTIED. This header used to estimate the dropped
+ * relations at "a few hundred kB". It wrote 24.9 MB, and prettier committed
+ * 41.4 MB across 1 128 493 lines — two thirds of PR #249's entire diff. The
+ * bulk is `out geom` printing 590 061 member positions for international route
+ * relations passing Köln Hbf, and NOTHING downstream reads one of them:
+ * `relationToGeometry` checks `isArealRelation` before it ever calls
+ * `memberGeometries`, so all 85 are rejected as `unsupported-relation-type`
+ * first. The member ARRAYS stay present but empty, because `parseRelation`
+ * skips a relation whose `members` is not an array while explicitly keeping one
+ * whose members are unusable — dropping the key would take `elementCount` to
+ * zero and make the differential's assertions pass vacuously.
+ *
+ * A capture script's own size estimate is a guess until a file exists. See
+ * `GpsPlusSlamJs_Docs/docs/2026-08-04-0709-pr-249-diff-weight-audit.md`.
  *
  * ONE REQUEST, ON DEMAND. It hits donated public infrastructure, so it is a
  * script and never a gate — the same rule `capture-fixtures.mjs` and
@@ -35,6 +50,13 @@ const SITES_DIR = join(__dirname, "..", "src", "testdata", "sites");
 
 /** Mirrors `capture-fixtures.mjs` — a relation a site extract KEEPS. */
 const AREAL_RELATION_TYPES = ["multipolygon", "boundary"];
+
+/**
+ * Empties a relation's member list, keeping the key. See the header for why the
+ * key must survive. Everything else — id, tags, bounds — is preserved, because
+ * the tags are what decide the relation's fate and the diagnostics quote the id.
+ */
+const withoutMembers = (relation) => ({ ...relation, members: [] });
 
 const ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -111,8 +133,15 @@ for (const endpoint of ENDPOINTS) {
       // two different worlds — worth seeing rather than absorbing.
       expectedCount: fixture.droppedNonArealRelations,
       elementCount: nonAreal.length,
+      // Recorded rather than silently discarded: a reader must not conclude
+      // these relations genuinely have no members. It is also the number that
+      // makes the size of what was thrown away visible.
+      membersOmitted: nonAreal.reduce(
+        (total, relation) => total + (relation.members ?? []).length,
+        0,
+      ),
       regenerateWith: `node scripts/capture-non-areal.mjs ${slug}`,
-      elements: nonAreal,
+      elements: nonAreal.map(withoutMembers),
     };
     writeFileSync(
       join(SITES_DIR, `${slug}.non-areal.json`),

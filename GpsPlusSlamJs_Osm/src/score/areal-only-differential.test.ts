@@ -53,7 +53,9 @@ interface NonArealCapture {
   readonly of: string;
   readonly elementCount: number;
   readonly expectedCount: number;
-  readonly elements: readonly unknown[];
+  /** Members dropped at capture time. See the shrink-invariant test below. */
+  readonly membersOmitted: number;
+  readonly elements: readonly { readonly members?: readonly unknown[] }[];
 }
 
 const capture = JSON.parse(
@@ -99,6 +101,33 @@ describe("areal-only vs plain, scored over the Cologne fixture", () => {
     expect(
       Math.abs(capture.elementCount - capture.expectedCount),
     ).toBeLessThanOrEqual(5);
+  });
+
+  it("carries no member geometry — the shrink invariant", () => {
+    // WHY THIS TEST MATTERS. As first captured this file was 24.9 MB written
+    // and 41.4 MB committed across 1 128 493 lines — two thirds of PR #249's
+    // entire diff — and every byte beyond ~50 kB was `out geom` printing
+    // 590 061 member positions that NOTHING here reads: `relationToGeometry`
+    // checks `isArealRelation` before it ever calls `memberGeometries`, so all
+    // 85 are rejected on `type` first (proved by the last test in this file).
+    // `capture-non-areal.mjs` therefore empties the member lists.
+    //
+    // This assertion is what stops a re-capture silently putting the 41 MB
+    // back. It is the outcome, not the script, so it also catches a fixture
+    // restored from an old copy.
+    for (const element of capture.elements) {
+      expect(element.members).toEqual([]);
+    }
+    // The arrays must still EXIST. `parseRelation` skips a relation whose
+    // `members` is not an array, which would take `dropped.length` to 0 and
+    // make the `unsupported-relation-type` loop below iterate over nothing —
+    // passing vacuously while proving the opposite of what it claims.
+    expect(
+      capture.elements.every((element) => Array.isArray(element.members)),
+    ).toBe(true);
+    // What was thrown away is recorded rather than forgotten, so nobody reads
+    // these relations as genuinely memberless.
+    expect(capture.membersOmitted).toBe(77_381);
   });
 
   it("adds features under plain, so the comparison is not vacuous", () => {
