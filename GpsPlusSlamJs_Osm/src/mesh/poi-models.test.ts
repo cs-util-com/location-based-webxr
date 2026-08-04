@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { DEFAULT_RULE_TABLE_CSV } from "../rules/default-rules.js";
 import { POI_MODELS, poiModelFor } from "./poi-models.js";
+import { CHOSEN_VARIANTS, poiVariantsFor } from "./poi-variants.js";
 import {
   POI_MODEL_LIMIT,
   parseUsageCount,
@@ -339,15 +340,23 @@ describe("the §4 rebuilt models", () => {
   });
 
   it("tilts the information board, which is the point of it", () => {
-    // THE FIRST MODEL TO USE DEC-R6-26's ROTATION. `k_information` tilts its
-    // whole board by rx -0.14; untilted it is a fence panel, which is exactly
-    // what our previous model was (three boxes, one of them upright).
+    // THE POINT IS THAT IT IS TILTED AT ALL: untilted, an information board is a
+    // fence panel, which is exactly what the model before it was (three boxes,
+    // one of them upright).
     //
     // The tilt is asserted through the GEOMETRY rather than by trusting the
     // call: the board's front face must vary in z as it rises, which an
     // axis-aligned box cannot do. A rotation applied to positions but not to
     // normals would still pass a bounds check, so this is checked by the
     // registry-wide winding guard above rather than here.
+    //
+    // THE DIRECTION IS NO LONGER ASSERTED, and that is a deliberate loosening
+    // (DEC-R7b-2). This used to require the board to lean BACK, which described
+    // the §4 house-style rebuild — the model that LOST the gallery comparison.
+    // The adopted `D` board leans the other way, like a lectern. Pinning the
+    // direction again would be pinning a taste decision the owner already made
+    // by choosing this shape, and it would have to be re-litigated by whoever
+    // next adopts a variant rather than by whoever cares how it looks.
     const mesh = poiModelFor("tourism=information")?.mesh;
     if (mesh === undefined) throw new Error("no model");
     let minZAtLow = Infinity;
@@ -360,9 +369,11 @@ describe("the §4 rebuilt models", () => {
     }
     expect(Number.isFinite(minZAtLow)).toBe(true);
     expect(Number.isFinite(minZAtHigh)).toBe(true);
-    // Leaning BACK: the top of the board is further from the viewer than its
-    // foot. In the render frame north is -z, so "further back" is less negative.
-    expect(minZAtHigh).toBeGreaterThan(minZAtLow);
+    // Tilted, either way: the board's z must MOVE as it rises. An axis-aligned
+    // panel gives the same z at both heights, and that is the failure this
+    // catches. 1 cm is far below the ~8 cm the adopted board actually leans, so
+    // it fails on a flat panel without pinning the lean angle.
+    expect(Math.abs(minZAtHigh - minZAtLow)).toBeGreaterThan(0.01);
   });
 
   it("gives the bench slats rather than one solid slab", () => {
@@ -410,4 +421,46 @@ describe("rankPoiKinds", () => {
     const b = rankPoiKinds(DEFAULT_RULE_TABLE_CSV, POI_MODEL_LIMIT);
     expect(a.map((entry) => entry.kind)).toEqual(b.map((entry) => entry.kind));
   });
+});
+
+/**
+ * WHY THIS TEST MATTERS — and why it is deliberately temporary.
+ *
+ * The gallery's verdict (`CHOSEN_VARIANTS`) and the runtime registry
+ * (`POI_MODELS`) were two tables that had to agree, and NOTHING forced them to.
+ * They diverged on 29 of 31 kinds for a month without a single test noticing:
+ * the gallery drew a "← chosen" label next to a model the demo never rendered.
+ *
+ * This is the reproduction. It fails on every kind whose winner has not been
+ * adopted, and it is the guard for the adoption itself.
+ *
+ * **It is a scaffold, not a permanent guard.** DEC-R7b-2a deletes
+ * `CHOSEN_VARIANTS` and the variant files once the adoption is verified, and
+ * this test goes with them — a test cannot outlive one of the two things it
+ * compares. The order matters and is the whole point: red here → adopt → green
+ * here → delete both together. Deleting the oracle first would make the
+ * adoption unfalsifiable.
+ */
+describe("the gallery verdict has been adopted (DEC-R7b-2, scaffold)", () => {
+  const decided = CHOSEN_VARIANTS.filter((entry) => entry.winner !== "shipped");
+
+  it("names a winner that was actually built, for every decided kind", () => {
+    // Guards the guard: if a winner names a (kind, source) pair that no variant
+    // file builds, the adoption test below would pass vacuously.
+    for (const { kind, winner } of decided) {
+      const variant = poiVariantsFor(kind).find((v) => v.source === winner);
+      expect(variant, `${kind} has no ${String(winner)} variant`).toBeDefined();
+    }
+  });
+
+  it.each(decided.map((entry) => [entry.kind, entry.winner] as const))(
+    "%s renders the %s variant the owner chose",
+    (kind, winner) => {
+      const variant = poiVariantsFor(kind).find((v) => v.source === winner);
+      const model = POI_MODELS.get(kind);
+      expect(model, `${kind} is not in POI_MODELS`).toBeDefined();
+      expect(variant).toBeDefined();
+      expect(model?.mesh).toEqual(variant?.mesh);
+    },
+  );
 });

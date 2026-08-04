@@ -36,6 +36,7 @@
 
 import type { MeshData } from "./mesh-data.js";
 import { POI_MODELS } from "./poi-models.js";
+import { groundedMesh, scaledToHeight } from "./poi-primitives.js";
 import { B_VARIANTS } from "./poi-variants-b.js";
 import { G_VARIANTS } from "./poi-variants-g.js";
 import { D_VARIANTS } from "./poi-variants-d.js";
@@ -336,48 +337,6 @@ export function poiVariantsFor(kind: string): readonly PoiVariant[] {
  * ground marking is flat on purpose, and Infinity in a position removes the
  * object from the scene with nothing reported.
  */
-/**
- * The same mesh lifted so its lowest point sits at `y = 0`.
- *
- * WHY THE PORTS NEED IT, and it was found by the contract test rather than by
- * reading. Several `D` models have parts that extend DOWN INTO the plinth —
- * `leisure=picnic_table`'s A-frames are 0.50 m tall centred 0.22 m above the
- * plinth top, so they reach 3 cm below it. That is invisible in the source,
- * where the plinth hides them. Strip the plinth and they hang below ground.
- *
- * Grounding rather than clamping: the model is correct, its datum is not, so
- * moving it is right and truncating it would silently shorten a leg.
- */
-function groundedMesh(mesh: MeshData): MeshData {
-  let lowest = Infinity;
-  for (let i = 1; i < mesh.positions.length; i += 3) {
-    lowest = Math.min(lowest, mesh.positions[i] as number);
-  }
-  if (!Number.isFinite(lowest) || Math.abs(lowest) < 1e-9) return mesh;
-  const positions = new Float32Array(mesh.positions);
-  for (let i = 1; i < positions.length; i += 3) {
-    positions[i] = (positions[i] as number) - lowest;
-  }
-  return { ...mesh, positions };
-}
-
-export function scaledToHeight(
-  mesh: MeshData,
-  targetHeightM: number,
-): MeshData {
-  let peak = 0;
-  for (let i = 1; i < mesh.positions.length; i += 3) {
-    peak = Math.max(peak, mesh.positions[i] as number);
-  }
-  if (!(peak > 0) || !(targetHeightM > 0)) return mesh;
-  const factor = targetHeightM / peak;
-  const positions = new Float32Array(mesh.positions.length);
-  for (let i = 0; i < mesh.positions.length; i++) {
-    positions[i] = (mesh.positions[i] as number) * factor;
-  }
-  return { ...mesh, positions };
-}
-
 /**
  * Groups the built variants by kind.
  *

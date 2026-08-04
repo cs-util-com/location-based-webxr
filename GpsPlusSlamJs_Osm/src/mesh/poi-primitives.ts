@@ -646,3 +646,69 @@ export function composed(build: (builder: MeshBuilder) => void): MeshData {
   build(builder);
   return builder.build();
 }
+
+/**
+ * The same mesh lifted so its lowest point sits at `y = 0`.
+ *
+ * WHY THE PORTED MODELS NEED IT, and it was found by the contract test rather
+ * than by reading. Several `D`-sourced models have parts that extend DOWN INTO
+ * the diorama plinth they were drawn on — `leisure=picnic_table`'s A-frames are
+ * 0.50 m tall centred 0.22 m above the plinth top, so they reach 3 cm below it.
+ * That is invisible in the source, where the plinth hides them. Strip the plinth
+ * and they hang below ground.
+ *
+ * Grounding rather than clamping: the model is correct, its datum is not, so
+ * moving it is right and truncating it would silently shorten a leg.
+ *
+ * MOVED HERE FROM `poi-variants.ts` when the gallery verdict was adopted
+ * (DEC-R7b-2a). It is a mesh transform with no opinion about variants, and the
+ * registry that now needs it cannot import the file it used to live in without
+ * a cycle.
+ */
+export function groundedMesh(mesh: MeshData): MeshData {
+  let lowest = Infinity;
+  for (let i = 1; i < mesh.positions.length; i += 3) {
+    lowest = Math.min(lowest, mesh.positions[i] as number);
+  }
+  if (!Number.isFinite(lowest) || Math.abs(lowest) < 1e-9) return mesh;
+  const positions = new Float32Array(mesh.positions);
+  for (let i = 1; i < positions.length; i += 3) {
+    positions[i] = (positions[i] as number) - lowest;
+  }
+  return { ...mesh, positions };
+}
+
+/**
+ * The same mesh scaled UNIFORMLY so its height becomes `targetHeightM`.
+ *
+ * WHY ANY SCALING AT ALL (DEC-V5). The `D` prototype is a diorama — every kind
+ * fits one display envelope, whatever the thing really is; its
+ * `place_of_worship` is ~1.9 m where a church is 12 m. Uniform scaling
+ * preserves every internal proportion while putting the model at real-world
+ * scale, which DEC-R6-8 requires.
+ *
+ * **Normals are NOT touched.** A uniform scale turns no direction, so scaling
+ * them would be a no-op at best and a denormalisation at worst — and a
+ * denormalised normal shades wrong without changing any silhouette, which is an
+ * invisible defect.
+ *
+ * A mesh with no height is returned unchanged rather than divided by zero: a
+ * ground marking is flat on purpose, and Infinity in a position removes the
+ * object from the scene with nothing reported.
+ */
+export function scaledToHeight(
+  mesh: MeshData,
+  targetHeightM: number,
+): MeshData {
+  let peak = 0;
+  for (let i = 1; i < mesh.positions.length; i += 3) {
+    peak = Math.max(peak, mesh.positions[i] as number);
+  }
+  if (!(peak > 0) || !(targetHeightM > 0)) return mesh;
+  const factor = targetHeightM / peak;
+  const positions = new Float32Array(mesh.positions.length);
+  for (let i = 0; i < mesh.positions.length; i++) {
+    positions[i] = (mesh.positions[i] as number) * factor;
+  }
+  return { ...mesh, positions };
+}

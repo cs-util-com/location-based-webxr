@@ -10,11 +10,11 @@ import { M_PALETTE } from "./poi-variants-m.js";
 import { markerHeightFor } from "./poi-variants.js";
 import { L_PALETTE, L_VARIANTS } from "./poi-variants-l.js";
 import { H_VARIANTS } from "./poi-variants-hybrid.js";
+import { scaledToHeight } from "./poi-primitives.js";
 import {
   LIKED_VARIANTS,
   POI_VARIANTS,
   poiVariantsFor,
-  scaledToHeight,
   type VariantSource,
 } from "./poi-variants.js";
 
