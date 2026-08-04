@@ -49,7 +49,9 @@ is a claim about the ground, not an object standing on it.
 - **A ring with fewer than three points is skipped, never triangulated.** Pushing
   on produces `NaN`, and one `NaN` deletes the entire draw call in three.js with
   no error.
-- **The slab is FLAT and sits at `y = 0`** (DEC-R7b-7a, round 8). It used to be a
+- **The slab is FLAT, and carries no lift of its own** (DEC-R7b-7a, round 8).
+  Its vertices sit at the sampled ground height; `y = 0` is what that means only
+  when no `groundHeightM` sampler is supplied. It used to be a
   body with a 0.5 m boundary wall (DEC-R2-11), because a zero-thickness surface
   disappears edge-on. The owner asked for the extrusion to go: a region is an
   overlay on the ground, not an object standing on it.
@@ -80,7 +82,7 @@ const colour = heatColour(scale, slab.medianScore);
 
 `region-slabs.test.ts` — 8 tests: one slab per region carrying its score; **a
 hole stays a hole** (covered inside the outer ring, not covered at the hole's
-centre); **the slab is flat and sits at y = 0**; the top drapes per vertex; a
+centre); **the slab is flat, with no lift of its own**; the top drapes per vertex; a
 multi-polygon region covers both parts and not the gap; a degenerate outline
 stays finite; the top surface's face normals point up; each slab carries its
 region id.

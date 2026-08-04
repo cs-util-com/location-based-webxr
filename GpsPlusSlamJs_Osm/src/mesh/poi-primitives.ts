@@ -700,12 +700,26 @@ export function scaledToHeight(
   mesh: MeshData,
   targetHeightM: number,
 ): MeshData {
-  let peak = 0;
+  // THE EXTENT, NOT THE PEAK. These are the same number for a grounded mesh —
+  // which is every caller today, because `adopted()` runs `groundedMesh` first —
+  // and they are not the same for a mesh sitting off the ground. Reading the
+  // peak of a mesh spanning y = 10…12 as "height 12" scales a 2 m object to a
+  // sixth of its target. Now that this is exported rather than private to the
+  // variant registry, a caller that has not grounded its mesh is reachable.
+  let lowest = Infinity;
+  let peak = -Infinity;
   for (let i = 1; i < mesh.positions.length; i += 3) {
-    peak = Math.max(peak, mesh.positions[i] as number);
+    const y = mesh.positions[i] as number;
+    if (y < lowest) lowest = y;
+    if (y > peak) peak = y;
   }
-  if (!(peak > 0) || !(targetHeightM > 0)) return mesh;
-  const factor = targetHeightM / peak;
+  const extent = peak - lowest;
+  // Non-finite guards, not just positivity. `Infinity * 0` is `NaN`, and one
+  // NaN position removes the whole object from the scene with nothing reported
+  // — the failure mode `poi-models.test.ts` has a dedicated assertion for.
+  if (!Number.isFinite(extent) || !(extent > 0)) return mesh;
+  if (!Number.isFinite(targetHeightM) || !(targetHeightM > 0)) return mesh;
+  const factor = targetHeightM / extent;
   const positions = new Float32Array(mesh.positions.length);
   for (let i = 0; i < mesh.positions.length; i++) {
     positions[i] = (mesh.positions[i] as number) * factor;

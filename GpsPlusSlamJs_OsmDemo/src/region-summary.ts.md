@@ -11,7 +11,9 @@ Turns a selected affordance region into the text the details panel shows
 minScore, maxScore }`. Structural rather than the package's `Region`, so a test
   can build one in a literal and this module does not depend on the region
   builder.
-- `RegionStat` — `{ label, value }`, both already formatted for display.
+- `RegionSummary["stats"][number]` — `{ label, value }`, both already formatted
+  for display. The interface is **not exported**: it is reachable through
+  `RegionSummary`, and knip is right that a second public name earns nothing.
 - `RegionSummary` — `{ title, stats, spreadNote }`.
 - `summariseRegion(region) → RegionSummary`. Total; never throws.
 

@@ -13,8 +13,10 @@ The five POI models the owner liked in `gemini-code-1785634682505`, rebuilt on
 our primitive vocabulary — `amenity=parking`, `amenity=waste_basket`,
 `amenity=fast_food`, `amenity=pharmacy`, `leisure=swimming_pool`.
 
-See [`poi-variants.ts.md`](./poi-variants.ts.md) for why variants exist at all
-and how the registry assembles and rescales them.
+See [`poi-models.ts.md`](./poi-models.ts.md) for how these builders reach the
+scene: `poi-models.ts` imports the map directly and `adopted()` grounds and
+scales each mesh. The old `poi-variants.ts` registry that used to do that was
+deleted with the losing models (DEC-R7b-2a).
 
 ## Public API
 
@@ -50,8 +52,8 @@ than drifting when the target height changes.
 ## Examples
 
 ```ts
-const build = G_VARIANTS.get("amenity=pharmacy");
-const mesh = scaledToHeight(groundedMesh(build!()), 2.2); // what the registry does
+const build = G_VARIANTS.get("amenity=waste_basket");
+const mesh = scaledToHeight(groundedMesh(build!()), 2.2); // what `adopted()` does
 ```
 
 ## Tests

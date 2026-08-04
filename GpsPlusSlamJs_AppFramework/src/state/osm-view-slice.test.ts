@@ -507,3 +507,27 @@ describe('selecting a region', () => {
     expect(state.selectedRegion).toBeUndefined();
   });
 });
+
+describe('a failed fetch clears every selection', () => {
+  it('drops a selected region along with the snapshot', () => {
+    // WHY THIS MATTERS, and why a region is not like a cell here. A cell id is
+    // an H3 index: it means the same place in any snapshot, so keeping it
+    // across a failure is harmless. A REGION id is the lowest-sorting cell of a
+    // flood fill, so with no snapshot there is nothing it could resolve
+    // against — the panel would be holding a name for something that cannot be
+    // looked up.
+    //
+    // Found by review on PR #250: `fetchFailed` cleared the other two
+    // selections and not this one, because the field was added to the reducers
+    // that SET a selection and not to the one that discards everything.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.regionSelected('r1'),
+      slice.actions.fetchFailed('overpass timed out')
+    );
+    expect(state.selectedRegion).toBeUndefined();
+    expect(state.snapshot).toBeUndefined();
+    expect(state.loading.phase).toBe('error');
+  });
+});

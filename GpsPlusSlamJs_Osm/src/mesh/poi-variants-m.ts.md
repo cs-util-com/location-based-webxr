@@ -13,8 +13,10 @@ The four POI models the owner liked in `poi-markers.html`, rebuilt on our
 primitive vocabulary — `leisure=pitch`, `amenity=bicycle_parking`,
 `amenity=fast_food`, `historic=archaeological_site`.
 
-See [`poi-variants.ts.md`](./poi-variants.ts.md) for why variants exist at all
-and how the registry assembles and rescales them.
+See [`poi-models.ts.md`](./poi-models.ts.md) for how these builders reach the
+scene: `poi-models.ts` imports the map directly and `adopted()` grounds and
+scales each mesh. The old `poi-variants.ts` registry that used to do that was
+deleted with the losing models (DEC-R7b-2a).
 
 ## Public API
 
@@ -64,7 +66,7 @@ and how the registry assembles and rescales them.
 
 ```ts
 const build = M_VARIANTS.get("amenity=fast_food");
-const mesh = scaledToHeight(groundedMesh(build!()), 2.4); // what the registry does
+const mesh = scaledToHeight(groundedMesh(build!()), 2.4); // what `adopted()` does
 ```
 
 ## Tests

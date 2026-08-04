@@ -13,8 +13,10 @@ The four POI models the owner liked in `procedural-poi-marker-gallery(1)`,
 rebuilt on our primitive vocabulary — `leisure=park`, `amenity=cafe`,
 `leisure=picnic_table`, `tourism=artwork`.
 
-See [`poi-variants.ts.md`](./poi-variants.ts.md) for why variants exist at all
-and how the registry assembles and rescales them.
+See [`poi-models.ts.md`](./poi-models.ts.md) for how these builders reach the
+scene: `poi-models.ts` imports the map directly and `adopted()` grounds and
+scales each mesh. The old `poi-variants.ts` registry that used to do that was
+deleted with the losing models (DEC-R7b-2a).
 
 ## Public API
 
@@ -59,8 +61,8 @@ attributable to the source when it shows up on screen.
 ## Examples
 
 ```ts
-const build = P_VARIANTS.get("amenity=cafe");
-const mesh = scaledToHeight(groundedMesh(build!()), 2.4); // what the registry does
+const build = P_VARIANTS.get("leisure=picnic_table");
+const mesh = scaledToHeight(groundedMesh(build!()), 2.4); // what `adopted()` does
 ```
 
 ## Tests

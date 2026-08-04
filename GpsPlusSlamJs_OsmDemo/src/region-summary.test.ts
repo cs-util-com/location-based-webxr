@@ -93,8 +93,12 @@ describe("summariseRegion", () => {
       region({ maxScore: Number.POSITIVE_INFINITY }),
     );
     expect(summary.spreadNote).toBeUndefined();
-    expect(summary.stats.find((s) => s.label === "range")?.value).toContain(
-      "—",
-    );
+    const range =
+      summary.stats.find((stat) => stat.label === "range")?.value ?? "";
+    expect(range).toContain("—");
+    // Explicitly, because the em dash standing in for the non-finite value and
+    // the en dash separating the pair are DIFFERENT characters: a range that
+    // had leaked the word through would still satisfy toContain("—").
+    expect(range).not.toContain("Infinity");
   });
 });

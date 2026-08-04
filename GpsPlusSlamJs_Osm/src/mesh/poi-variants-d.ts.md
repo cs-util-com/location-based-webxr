@@ -12,8 +12,10 @@
 The eighteen POI models the owner liked in `poi-markers-diorama (1)`, rebuilt on
 our primitive vocabulary — more than any other source contributes.
 
-See [`poi-variants.ts.md`](./poi-variants.ts.md) for why variants exist at all
-and how the registry assembles and rescales them.
+See [`poi-models.ts.md`](./poi-models.ts.md) for how these builders reach the
+scene: `poi-models.ts` imports the map directly and `adopted()` grounds and
+scales each mesh. The old `poi-variants.ts` registry that used to do that was
+deleted with the losing models (DEC-R7b-2a).
 
 ## Public API
 
@@ -51,8 +53,8 @@ radiusBottom, …)` — where our `prism` takes bottom first. `cylD` swaps them
 ## Examples
 
 ```ts
-const build = D_VARIANTS.get("amenity=cafe");
-const mesh = scaledToHeight(groundedMesh(build!()), 3.0); // what the registry does
+const build = D_VARIANTS.get("amenity=bank");
+const mesh = scaledToHeight(groundedMesh(build!()), 3.0); // what `adopted()` does
 ```
 
 `groundedMesh` is not optional here: several D models have parts extending DOWN

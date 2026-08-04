@@ -338,41 +338,38 @@ describe("the §4 rebuilt models", () => {
     }
   });
 
-  it("tilts the information board, which is the point of it", () => {
-    // THE POINT IS THAT IT IS TILTED AT ALL: untilted, an information board is a
-    // fence panel, which is exactly what the model before it was (three boxes,
-    // one of them upright).
+  it("tilts part of the information board, which is the point of it", () => {
+    // WHAT THIS USED TO ASSERT, AND WHY IT WAS WRONG. It took the minimum z over
+    // all geometry in two y bands and required them to differ — on the theory
+    // that "the board's front face must vary in z as it rises, which an
+    // axis-aligned box cannot do".
     //
-    // The tilt is asserted through the GEOMETRY rather than by trusting the
-    // call: the board's front face must vary in z as it rises, which an
-    // axis-aligned box cannot do. A rotation applied to positions but not to
-    // normals would still pass a bounds check, so this is checked by the
-    // registry-wide winding guard above rather than here.
+    // The adopted `D` model's board panel IS an axis-aligned box
+    // (`poi-variants-d.ts`, `bx(0.66, 0.42, 0.07, …)`); only its ROOF is turned,
+    // by `rotateX: -0.24`. The two bands sampled different parts — panel below,
+    // panel-top AND the 2.3x deeper roof above — so the difference came from the
+    // depth mismatch between two parts, not from any rotation. **Deleting the
+    // rotation left it passing by a LARGER margin.** A test that names a
+    // regression it cannot catch is worse than no test; found by review on
+    // PR #250.
     //
-    // THE DIRECTION IS NO LONGER ASSERTED, and that is a deliberate loosening
-    // (DEC-R7b-2). This used to require the board to lean BACK, which described
-    // the §4 house-style rebuild — the model that LOST the gallery comparison.
-    // The adopted `D` board leans the other way, like a lectern. Pinning the
-    // direction again would be pinning a taste decision the owner already made
-    // by choosing this shape, and it would have to be re-litigated by whoever
-    // next adopts a variant rather than by whoever cares how it looks.
+    // WHAT IS ASSERTED NOW: that some face is genuinely turned. An axis-aligned
+    // box only ever emits normals along ±x, ±y, ±z, so no face of one can have
+    // BOTH a significant y and a significant z component. A box rotated about x
+    // emits exactly that. This catches the deletion of `rotateX` directly, and
+    // it does not care which part carries the tilt or how the model is scaled.
     const mesh = poiModelFor("tourism=information")?.mesh;
     if (mesh === undefined) throw new Error("no model");
-    let minZAtLow = Infinity;
-    let minZAtHigh = Infinity;
-    for (let i = 0; i < mesh.positions.length; i += 3) {
-      const y = mesh.positions[i + 1] as number;
-      const z = mesh.positions[i + 2] as number;
-      if (y > 0.85 && y < 0.95) minZAtLow = Math.min(minZAtLow, z);
-      if (y > 1.15 && y < 1.25) minZAtHigh = Math.min(minZAtHigh, z);
+
+    let turned = 0;
+    for (let i = 0; i < mesh.normals.length; i += 3) {
+      const ny = Math.abs(mesh.normals[i + 1] as number);
+      const nz = Math.abs(mesh.normals[i + 2] as number);
+      // 0.1 on both axes: `rotateX: -0.24` gives |ny| ~ 0.97 and |nz| ~ 0.24,
+      // so this clears it comfortably while no axis-aligned face can.
+      if (ny > 0.1 && nz > 0.1) turned += 1;
     }
-    expect(Number.isFinite(minZAtLow)).toBe(true);
-    expect(Number.isFinite(minZAtHigh)).toBe(true);
-    // Tilted, either way: the board's z must MOVE as it rises. An axis-aligned
-    // panel gives the same z at both heights, and that is the failure this
-    // catches. 1 cm is far below the ~8 cm the adopted board actually leans, so
-    // it fails on a flat panel without pinning the lean angle.
-    expect(Math.abs(minZAtHigh - minZAtLow)).toBeGreaterThan(0.01);
+    expect(turned).toBeGreaterThan(0);
   });
 
   it("gives the bench slats rather than one solid slab", () => {

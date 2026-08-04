@@ -584,3 +584,47 @@ describe("scaledToHeight", () => {
     expect(scaled.colours?.[0]).toBe(1);
   });
 });
+
+/**
+ * WHY THESE EXIST (review, PR #250). `scaledToHeight` read the maximum y as the
+ * mesh's height, which is only the same thing for a mesh already sitting on the
+ * ground. Every caller today grounds first, so nothing was wrong in the
+ * shipped path — but the function became a public export of this module when it
+ * moved here, and the assumption was neither stated nor enforced.
+ */
+describe("scaledToHeight — inputs the shipped path never produces", () => {
+  const spanning = (lowY: number, highY: number): MeshData => {
+    const builder = new MeshBuilder();
+    builder.vertex(0, lowY, 0, 0, 1, 0);
+    builder.vertex(0, highY, 0, 0, 1, 0);
+    builder.vertex(1, lowY, 0, 0, 1, 0);
+    return builder.build();
+  };
+
+  it("scales by the EXTENT, not the distance from the origin", () => {
+    // A 2 m object floating at y = 10. Reading the peak as its height would
+    // scale it by 2/12 and return something 0.33 m tall.
+    const scaled = scaledToHeight(spanning(10, 12), 2);
+    let lowest = Infinity;
+    let peak = -Infinity;
+    for (let i = 1; i < scaled.positions.length; i += 3) {
+      const y = scaled.positions[i] as number;
+      if (y < lowest) lowest = y;
+      if (y > peak) peak = y;
+    }
+    expect(peak - lowest).toBeCloseTo(2, 6);
+  });
+
+  it("returns the mesh unchanged for a non-finite target", () => {
+    // `Infinity * 0` is NaN, and one NaN position removes the object from the
+    // scene with nothing reported.
+    const mesh = spanning(0, 3);
+    expect(scaledToHeight(mesh, Number.POSITIVE_INFINITY)).toBe(mesh);
+    expect(scaledToHeight(mesh, Number.NaN)).toBe(mesh);
+  });
+
+  it("returns the mesh unchanged when its own extent is non-finite", () => {
+    const mesh = spanning(0, Number.POSITIVE_INFINITY);
+    expect(scaledToHeight(mesh, 5)).toBe(mesh);
+  });
+});

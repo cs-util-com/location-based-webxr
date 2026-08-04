@@ -16,7 +16,9 @@ One entry so far — `leisure=park`: _"Bei dem Park ist die Variante D am besten
 Am besten die Variante D mit dem, mit der Bank von Variante P."_ D's grass, path
 and trees, with P's bench instead of D's.
 
-See [`poi-variants.ts.md`](./poi-variants.ts.md) for the registry, and
+See [`poi-models.ts.md`](./poi-models.ts.md) for how this builder reaches the
+scene — the `poi-variants.ts` registry that used to assemble it was deleted with
+the losing models (DEC-R7b-2a) — and
 [`poi-variants-d.ts.md`](./poi-variants-d.ts.md) /
 [`poi-variants-p.ts.md`](./poi-variants-p.ts.md) for the two parents.
 

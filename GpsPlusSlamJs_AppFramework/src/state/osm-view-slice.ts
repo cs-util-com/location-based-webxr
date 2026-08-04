@@ -362,6 +362,11 @@ export function createOsmViewSlice<TSnapshot>(
           snapshot: undefined,
           selectedCell: undefined,
           selectedFeature: undefined,
+          // A REGION ID CANNOT OUTLIVE THE SNAPSHOT IT NAMES. Unlike a cell id,
+          // which is an H3 index and means the same thing in any snapshot, a
+          // region id is the lowest-sorting cell of a flood fill — so with no
+          // snapshot there is nothing it could resolve against.
+          selectedRegion: undefined,
           loading: { phase: 'error', message: action.payload },
         };
       },

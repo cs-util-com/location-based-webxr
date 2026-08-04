@@ -14,8 +14,10 @@ on our primitive vocabulary — `amenity=parking`, `amenity=fast_food`,
 `amenity=post_box`, `leisure=picnic_table`, `amenity=hunting_stand`,
 `historic=yes`, `amenity=fountain`.
 
-See [`poi-variants.ts.md`](./poi-variants.ts.md) for why variants exist at all
-and how the registry assembles and rescales them.
+See [`poi-models.ts.md`](./poi-models.ts.md) for how these builders reach the
+scene: `poi-models.ts` imports the map directly and `adopted()` grounds and
+scales each mesh. The old `poi-variants.ts` registry that used to do that was
+deleted with the losing models (DEC-R7b-2a).
 
 ## Public API
 
@@ -43,8 +45,8 @@ and how the registry assembles and rescales them.
 ## Examples
 
 ```ts
-const build = B_VARIANTS.get("amenity=fountain");
-const mesh = scaledToHeight(groundedMesh(build!()), 1.6); // what the registry does
+const build = B_VARIANTS.get("amenity=post_box");
+const mesh = scaledToHeight(groundedMesh(build!()), 1.6); // what `adopted()` does
 ```
 
 ## Tests
