@@ -262,7 +262,11 @@ function clipEars(
     const forced = sinceProgress > ring.length * 2;
     if (forced || isEar(vertices, ring, prev, curr, next)) {
       if (forced) forcedEars++;
-      indices.push(prev, curr, next);
+      // DEGENERATE TRIANGLES ARE CLIPPED BUT NOT EMITTED. The ear still has to
+      // come off the ring — skipping the splice would spin — but a zero-area
+      // face is never useful to any consumer and is actively harmful to one.
+      // See `emit` below.
+      emit(vertices, indices, prev, curr, next);
       ring.splice(i % ring.length, 1);
       sinceProgress = 0;
       i = i % Math.max(1, ring.length);
@@ -273,9 +277,75 @@ function clipEars(
   }
 
   if (ring.length === 3) {
-    indices.push(ring[0] as number, ring[1] as number, ring[2] as number);
+    emit(
+      vertices,
+      indices,
+      ring[0] as number,
+      ring[1] as number,
+      ring[2] as number,
+    );
   }
   return { indices, forcedEars };
+}
+
+/**
+ * Twice the unsigned area of a triangle, in the plane.
+ *
+ * Squared units of whatever the vertices are in — metres for a mesh ring — so
+ * the threshold below is an area rather than a length.
+ */
+function doubleArea(a: EnuPoint, b: EnuPoint, c: EnuPoint): number {
+  return Math.abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y));
+}
+
+/**
+ * Below this, a triangle is treated as having no area at all.
+ *
+ * 1e-9 m² is a square 30 µm on a side. Nothing in OSM is that small, and
+ * floating-point noise on a legitimately thin sliver stays far above it — so
+ * this rejects the genuinely collapsed without touching the merely thin.
+ */
+const MIN_DOUBLE_AREA = 1e-9;
+
+/**
+ * Appends a triangle unless it has collapsed to a line or a point.
+ *
+ * WHY THIS FILTER EXISTS (DEC-R7b-5). A zero-area triangle has no defined face
+ * normal. Under `flatShading` — which `plates.ts`, `region-slabs.ts` and the road
+ * ribbons all use — three derives the shading FROM that normal, so a collapsed
+ * face renders as a black sliver beside its correctly-lit neighbours. That is the
+ * mechanism behind a testing session's report of the Thames going black once
+ * landuse was switched on.
+ *
+ * WHERE THEY COME FROM. `spatial/clip.ts` warns that Sutherland–Hodgman "can
+ * produce degenerate 'seams' for concave subjects", and since `2262e6a`
+ * `mesh/plates.ts` clips and hands the result straight here. A river is the
+ * textbook concave subject: `plates-concave.test.ts` reproduces it and finds
+ * two collapsed triangles in one meander.
+ *
+ * WHY DROPPING IS SAFE FOR EVERY CONSUMER, not just the renderer. A zero-area
+ * triangle contributes nothing to `triangulatedArea`, covers no H3 cell, and
+ * occupies no pixels — it is invisible to everything except the shading it
+ * breaks. There is no consumer for which emitting one is better.
+ *
+ * `forcedEars` is deliberately NOT suppressed alongside it. That counter is the
+ * triangulator admitting it could not find a valid ear, which stays true whether
+ * or not the resulting triangle is kept — and it is the signal that the INPUT
+ * ring was bad, which is a different problem from this output filter.
+ */
+function emit(
+  vertices: readonly EnuPoint[],
+  indices: number[],
+  a: number,
+  b: number,
+  c: number,
+): void {
+  const pa = vertices[a];
+  const pb = vertices[b];
+  const pc = vertices[c];
+  if (pa === undefined || pb === undefined || pc === undefined) return;
+  if (doubleArea(pa, pb, pc) < MIN_DOUBLE_AREA) return;
+  indices.push(a, b, c);
 }
 
 function isEar(

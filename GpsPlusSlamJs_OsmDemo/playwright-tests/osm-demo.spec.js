@@ -492,13 +492,21 @@ test.describe("the layer toggles", () => {
         page.locator("#layers input[type=checkbox][data-layer]"),
       ).toHaveCount(7);
 
-      // EVERY layer starts on, with no exception left (DEC-R4-4, DEC-R5-4). The
-      // height ramp used to be the one switch that started off; it is now an
-      // appearance of the ground mode and has no switch here at all.
+      // FIVE OF SEVEN START ON (DEC-R7b-5, DEC-R7b-6). Round 4 turned every
+      // layer on; round 8 took landuse and cells back off after a session saw
+      // the demo with the terrain relief carrying the ground. Both halves are
+      // asserted, because an accidental flip in either direction matters and
+      // "at least one is on" would catch neither.
+      //
+      // The height ramp is not here at all: it is an appearance of the ground
+      // mode rather than a layer (DEC-R5-4).
       await expect(page.locator("#layer-terrainDebug")).toHaveCount(0);
-      await expect(page.locator("#layer-cells")).toBeChecked();
+      await expect(page.locator("#layer-cells")).not.toBeChecked();
+      await expect(page.locator("#layer-plates")).not.toBeChecked();
       await expect(page.locator("#layer-buildings")).toBeChecked();
       await expect(page.locator("#layer-trees")).toBeChecked();
+      await expect(page.locator("#layer-areas")).toBeChecked();
+      await expect(page.locator("#layer-poi")).toBeChecked();
       // W9 turned every layer on by default, so a test about switching a layer ON
       // has to switch it OFF first. Asserting the "off" state is still worth doing
       // — it is what proves the toggle works in both directions rather than only
@@ -519,10 +527,15 @@ test.describe("the layer toggles", () => {
       // NO REFETCH. Layers are presentation; the snapshot in the store is reused.
       expect(counts.overpassQuery).toBe(before);
 
-      // And the cells are independent — switching buildings off must not disturb them.
+      // And the cells are independent — switching buildings off must not disturb
+      // them. Cells start OFF since DEC-R7b-6, so this switches them on first:
+      // the claim is that the two layers do not interfere, which needs both to
+      // be observable rather than both to start in any particular state.
+      await page.locator("#layer-cells").check();
       await expect(
         page.locator("#map path.affordance-cell").first(),
       ).toBeVisible();
+      await page.locator("#layer-cells").uncheck();
 
       await page.locator("#layer-buildings").check();
       await expect(status).toContainText(/[1-9]\d* volumes/);
@@ -547,12 +560,11 @@ test.describe("the layer toggles", () => {
       // Every experiment I ran — lifting them 100 m, colouring them bright red — was
       // testing geometry that the renderer was silently refusing to draw.
       //
-      // W9 turned every layer on by default, so a test about switching a layer ON
-      // has to switch it OFF first. Asserting the "off" state is still worth doing
-      // — it is what proves the toggle works in both directions rather than only
-      // in the one the test happens to exercise.
-      await expect(page.locator("#layer-plates")).toBeChecked();
-      await page.locator("#layer-plates").uncheck();
+      // PLATES START OFF since DEC-R7b-6, which is what this step wanted all
+      // along: it used to have to switch them off first because W9 turned every
+      // layer on, and the round-8 default now provides that starting state
+      // directly. The "off" assertion is kept — it is what proves the toggle
+      // works in both directions rather than only in the one exercised below.
       await expect(page.locator("#layer-plates")).not.toBeChecked();
       await expect(page.locator("#status")).not.toContainText(/ground areas/);
 
@@ -593,6 +605,9 @@ test.describe("the layer toggles", () => {
       // The registry has to reach every view, or one of them keeps drawing a layer
       // the store says is off — the cross-view disagreement the store exists to
       // prevent, reintroduced by the mechanism meant to prevent it.
+      // ON FIRST, since DEC-R7b-6 starts them off. The claim is that switching
+      // the layer off clears BOTH views, which needs a visible "before".
+      await page.locator("#layer-cells").check();
       await expect(
         page.locator("#map path.affordance-cell").first(),
       ).toBeVisible();
@@ -630,6 +645,10 @@ test.describe("the affordance map", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
+    // grid. Switching them on here rather than changing the default keeps the
+    // default itself asserted in one place (the layer-toggle test).
+    await page.locator("#layer-cells").check();
 
     await test.step("draws res-13 cells over the basemap", async () => {
       // The class exists so this assertion cannot be satisfied by the region
@@ -816,6 +835,10 @@ test.describe("explaining one cell", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
+    // grid. Switching them on here rather than changing the default keeps the
+    // default itself asserted in one place (the layer-toggle test).
+    await page.locator("#layer-cells").check();
 
     const panel = page.locator("#details");
 
@@ -2352,6 +2375,10 @@ test.describe("caching and failure", () => {
     await stubNetwork(page, { overpassStatus: 400 });
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
+    // grid. Switching them on here rather than changing the default keeps the
+    // default itself asserted in one place (the layer-toggle test).
+    await page.locator("#layer-cells").check();
 
     // A blank map with no message looks exactly like "there is no data at this
     // location" — the one reading that would send someone debugging the wrong
@@ -2450,6 +2477,10 @@ test.describe("a superseded refresh", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    // CELLS ON: they start OFF since DEC-R7b-6, and the grid is what this test
+    // watches for blanking. With the layer off it would compare zero against
+    // zero and pass for the wrong reason once the assertion below was relaxed.
+    await page.locator("#layer-cells").check();
 
     await test.step("never reports a failure, and never blanks what is drawn", async () => {
       const cells = page.locator("#map path.affordance-cell");
@@ -2935,6 +2966,10 @@ test.describe("revealing the sub-threshold cells", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
+    // grid. Switching them on here rather than changing the default keeps the
+    // default itself asserted in one place (the layer-toggle test).
+    await page.locator("#layer-cells").check();
 
     await test.step("changes BOTH views, in both directions", async () => {
       const canvas = page.locator("#scene canvas");
@@ -3680,6 +3715,11 @@ test.describe("the affordance-tile look presets", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    // CELLS ON: they start OFF since DEC-R7b-6, and this test judges the GRID
+    // through the canvas rather than through the Leaflet DOM — so with the
+    // layer off it compares two identical pictures and reports 0 changed
+    // pixels, which looks like a broken repaint rather than a hidden layer.
+    await page.locator("#layer-cells").check();
 
     await test.step("the default is the look that shipped", async () => {
       // Asserted on the STATUS LINE rather than on pixels: "which preset is

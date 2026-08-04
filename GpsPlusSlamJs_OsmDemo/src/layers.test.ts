@@ -55,30 +55,47 @@ describe("the layer set", () => {
     expect([...ALL_LAYERS]).not.toContain("terrainDebug");
   });
 
-  it("starts with EVERY layer on (W9, W6)", () => {
-    // REPLACES "the layers the demo shipped with". That default existed so the
-    // W10 registry migration had a known-good before to compare against; the
-    // migration is complete, and what survived it was the historical order in
-    // which builders happened to be written — not a fact about what a user
-    // should see. The feedback: "standardmäßig sollten alle an sein".
+  it("starts with every layer on EXCEPT landuse and cells", () => {
+    // AN EXPLICIT EXPECTED SET, not a loosened rule. The obvious edit when this
+    // changed was to assert "at least one layer is on", which catches nothing —
+    // naming both halves means an accidental flip in either direction fails,
+    // including a new layer silently defaulting to off.
     //
-    // Derived from ALL_LAYERS rather than listed, so a new layer is on by
-    // default and this test cannot go stale by omission. There is no longer an
-    // exception to skip: W6 removed the only one by taking the diagnostic out of
-    // the registry entirely.
+    // DEC-R7b-5 and DEC-R7b-6 reverse DEC-R4-4 for exactly two layers. Landuse
+    // goes off because the terrain relief now carries the ground on its own;
+    // cells go off because the 2D map draws one Leaflet polygon per cell and the
+    // final ring is ~2 989 of them. Roads and POI stay ON, so round 4's
+    // "standardmäßig sollten alle an sein" is honoured where it still holds.
+    const on = ALL_LAYERS.filter((layer) =>
+      isLayerEnabled(DEFAULT_LAYERS, layer),
+    );
+    const off = ALL_LAYERS.filter(
+      (layer) => !isLayerEnabled(DEFAULT_LAYERS, layer),
+    );
+    expect([...off].sort()).toEqual(["cells", "plates"]);
+    expect([...on].sort()).toEqual(
+      ["areas", "buildings", "poi", "roads", "trees"].sort(),
+    );
+  });
+
+  it("keeps a key for every layer, including the ones that are off", () => {
+    // The invariant `setOf` exists for, and it survives the default change: a
+    // PARTIAL record would make `isLayerEnabled` return `undefined` for a layer
+    // nobody remembered, which reads as "off" while being a different thing.
+    // Now that two layers really are off, "off" and "absent" have to stay
+    // distinguishable.
+    expect(Object.keys(DEFAULT_LAYERS)).toHaveLength(ALL_LAYERS.length);
     for (const layer of ALL_LAYERS) {
-      expect(isLayerEnabled(DEFAULT_LAYERS, layer)).toBe(true);
+      expect(typeof isLayerEnabled(DEFAULT_LAYERS, layer)).toBe("boolean");
     }
   });
 
-  it("has no exclusions left to keep track of", () => {
-    // This used to assert that `terrainDebug` stayed OFF while everything else
-    // was on. DEC-R5-4 answered that question by moving the ramp out of the
-    // registry and turning it on by default as a ground appearance, so the claim
-    // worth pinning now is that DEFAULT_LAYERS is not quietly filtering anything
-    // — the filter was the whole reason this constant needed watching.
-    expect(Object.values(DEFAULT_LAYERS).every(Boolean)).toBe(true);
-    expect(Object.keys(DEFAULT_LAYERS)).toHaveLength(ALL_LAYERS.length);
+  it("still shows something the moment it opens", () => {
+    // The floor under the two exclusions. Turning layers off by default is a
+    // taste decision; turning ENOUGH of them off that the first frame is empty
+    // is a broken demo, and the two are one edit apart.
+    expect(isLayerEnabled(DEFAULT_LAYERS, "buildings")).toBe(true);
+    expect(isLayerEnabled(DEFAULT_LAYERS, "areas")).toBe(true);
   });
 
   it("toggles one layer without disturbing the others", () => {

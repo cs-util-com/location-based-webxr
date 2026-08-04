@@ -65,30 +65,41 @@ function setOf(enabled: Iterable<LayerKind>): LayerSet {
 }
 
 /**
- * EVERYTHING — and since W6 that is literally every layer (R4-2, DEC-R4-4).
+ * Everything EXCEPT `plates` and `cells` (DEC-R7b-5, DEC-R7b-6).
  *
- * It used to be `cells`, `buildings`, `trees` — the three the demo shipped with —
- * and the reason was a migration reason: _"a default that switched new layers on
- * as they were written would leave no before to compare the after against"_. The
- * W10 registry migration is complete, so that baseline has served its purpose,
- * and what remained was the historical order in which builders were written,
- * which is not a fact about what a user should see. The feedback put it plainly:
- * _"standardmäßig sollten alle an sein, also auch Landuse, Roads, POI"_.
+ * THIS REVERSES DEC-R4-4 FOR TWO LAYERS, and the reversal is deliberate rather
+ * than drift. Round 4 set every layer on from this user's own words —
+ * _"standardmäßig sollten alle an sein, also auch Landuse, Roads, POI"_ — and
+ * round 8's session asked for two of them back off, having seen what the demo
+ * looks like since. Roads and POI stay on, so the round-4 request is honoured
+ * where it still holds.
  *
- * **The one exclusion has been REMOVED, not switched on** (W6, DEC-R5-4). This
- * used to filter out `terrainDebug`, and that filter was the only thing making
- * this constant interesting. The height ramp is now an appearance of the ground
- * mode rather than a layer, so there is nothing left to exclude and this is
- * simply "all of them" — which is what the round-4 feedback asked for and what
- * the list now honestly means.
+ * **`plates` (landuse) off**, because the terrain relief now carries the ground
+ * on its own. That is the real change since round 4: landuse used to be the only
+ * thing giving the ground any structure, and the session's verdict on seeing it
+ * without was _"das wirkt deutlich sinnvoller"_. Note the cost — the plate
+ * colour was round 7's highest-uncertainty change and nobody will look at it
+ * again unless it is deliberately scheduled.
+ *
+ * **`cells` off**, because the 2D map draws one Leaflet polygon per cell and the
+ * final scoring ring is ~2 989 of them. The 3D grid is a single merged draw call
+ * and costs almost nothing, so this is a composition decision in 3D and a real
+ * cost in 2D.
+ *
+ * **`cells` off DEPENDS on region selection existing** (DEC-R7b-3a, landed
+ * first). The cell click used to be the only route to a score explanation, so
+ * hiding cells by default without a clickable region would have shipped a first
+ * frame with no way to ask "why does this score that" — a strictly worse demo,
+ * as an improvement.
  *
  * COST, STATED RATHER THAN DISCOVERED (N7): every layer on multiplies the
  * per-publish rebuild, and the 30 FPS the notes accept was measured with three
- * layers on, not seven. That is why round 4's W6 and W7 (instancing the trees
- * and the POI markers) landed BEFORE this, and why the draw-call readout did too
- * — so the change can be measured rather than felt.
+ * layers on. Two fewer by default moves back toward that, which is a side
+ * benefit rather than the reason.
  */
-export const DEFAULT_LAYERS: LayerSet = setOf(ALL_LAYERS);
+export const DEFAULT_LAYERS: LayerSet = setOf(
+  ALL_LAYERS.filter((layer) => layer !== "plates" && layer !== "cells"),
+);
 
 export function isLayerEnabled(layers: LayerSet, layer: LayerKind): boolean {
   return layers[layer];
