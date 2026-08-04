@@ -3,6 +3,7 @@
  */
 
 export {
+  EVENT_TILE_RES,
   FETCH_RES,
   SCORE_CHUNK_RES,
   AFFORDANCE_RES,
@@ -11,6 +12,7 @@ export {
   SCORE_DISK_RADIUS,
   RES13_CELLS_PER_CHUNK,
   AFFORDANCE_CELL_AREA_M2,
+  toEventTile,
   toFetchTile,
   toScoreChunk,
   fetchWorkingSet,

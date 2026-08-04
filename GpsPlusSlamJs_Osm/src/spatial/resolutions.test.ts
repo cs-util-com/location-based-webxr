@@ -19,10 +19,12 @@ import {
   getHexagonEdgeLengthAvg,
   getHexagonAreaAvg,
   cellToChildren,
+  getResolution,
   latLngToCell,
   UNITS,
 } from "h3-js";
 import {
+  EVENT_TILE_RES,
   FETCH_RES,
   SCORE_CHUNK_RES,
   AFFORDANCE_RES,
@@ -31,6 +33,7 @@ import {
   SCORE_DISK_MAX_RADIUS,
   RES13_CELLS_PER_CHUNK,
   AFFORDANCE_CELL_AREA_M2,
+  toEventTile,
   toFetchTile,
   toScoreChunk,
   fetchWorkingSet,
@@ -298,5 +301,40 @@ describe("scoreWorkingSet — progressive radii (W16, DEC-R2-30)", () => {
     // because DEC-R2-30 was taken on a stated cost, and a change to the radius
     // that did not change this count would mean the constant is not being read.
     expect(scoreWorkingSet(CHUNK, SCORE_DISK_MAX_RADIUS)).toHaveLength(61);
+  });
+});
+
+/**
+ * WHY THIS RUNG EXISTS (round 9 §2). A geo-event is quantised to a tile so that
+ * two devices standing in the same place compute the same event with no network
+ * between them. The tile is the agreement.
+ */
+describe("EVENT_TILE_RES — the geo-event tile", () => {
+  it("sits between the fetch tile and the score chunk", () => {
+    // The ladder must stay ordered and whole-levelled: 7 -> 8 -> 11 -> 13.
+    expect(FETCH_RES).toBeLessThan(EVENT_TILE_RES);
+    expect(EVENT_TILE_RES).toBeLessThan(SCORE_CHUNK_RES);
+  });
+
+  it("contains the scored disk it has to cover", () => {
+    // A res-8 hexagon has a ~460 m inradius and the scored disk reaches ~250 m
+    // from the user, so a climb starting anywhere in the tile stays inside the
+    // ground the ensure step can cover. If this ever inverted, candidates near
+    // a tile edge would need data from two fetch tiles to be judged at all.
+    const inradiusM =
+      (getHexagonEdgeLengthAvg(EVENT_TILE_RES, "m") * Math.sqrt(3)) / 2;
+    expect(inradiusM).toBeGreaterThan(250);
+  });
+
+  it("coarsens a score chunk to its event tile", () => {
+    const chunk = latLngToCell(50.9413, 6.9583, SCORE_CHUNK_RES);
+    expect(getResolution(toEventTile(chunk))).toBe(EVENT_TILE_RES);
+  });
+
+  it("refuses to coarsen something already coarser", () => {
+    // The same guard `toFetchTile` has: `cellToParent` only ever coarsens, and
+    // string-truncating an H3 id yields an invalid cell rather than a parent.
+    const tile = latLngToCell(50.9413, 6.9583, FETCH_RES);
+    expect(() => toEventTile(tile)).toThrow(/only coarsens/);
   });
 });

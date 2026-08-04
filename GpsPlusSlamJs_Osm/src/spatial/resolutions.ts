@@ -127,6 +127,40 @@ export function toFetchTile(cell: string): string {
   return coarsenTo(cell, FETCH_RES);
 }
 
+/**
+ * The tile a geo-event is quantised to (round 9 §2, DEC-R9-4).
+ *
+ * EVERY DEVICE IN THE SAME TILE AT THE SAME QUARTER-HOUR COMPUTES THE SAME
+ * EVENT, with no network between them. That is the whole feature, and the tile
+ * is what makes it possible: the position is drawn from a seeded hash of
+ * (tile, time, candidate), so two devices agree exactly when they agree on the
+ * tile.
+ *
+ * **Res 8 is the nearest rung, and the size is a free choice.** The C# uses
+ * geohash precision 6, and an earlier draft justified res 8 as being within
+ * ~1 % of it — which is true only at the equator. A geohash cell is a fixed
+ * 0.010986° x 0.005493°, so its width shrinks with cos(latitude): 0.743 km² at
+ * the equator but 0.468 km² at Cologne, against res 8's 0.7373 km² — about
+ * 1.58x, not 1 %. Nothing interoperates with the C# (DEC-R6-14d/e), so the
+ * comparison never mattered; what matters is that res 7 is the whole fetch tile
+ * at 5.16 km² and res 9 is 0.105 km², seven times too small.
+ *
+ * **It reintroduces a rung the package dropped**: `FETCH_RES` was 8 until
+ * 2026-07-28. The ladder is now 7 → 8 → 11 → 13, still whole levels apart.
+ *
+ * **Derive it from a POSITION, never by coarsening a res-13 cell.** H3's index
+ * hierarchy is not geometric containment, and `demo-pipeline.ts` measures that
+ * biting at four of sixty sweep points over Cologne. {@link toEventTile} exists
+ * for cells that are already coarse enough; a position goes through
+ * `latLngToCell`.
+ */
+export const EVENT_TILE_RES = 8;
+
+/** Coarsens a cell to the event-tile level. See {@link toFetchTile}. */
+export function toEventTile(cell: string): string {
+  return coarsenTo(cell, EVENT_TILE_RES);
+}
+
 /** Coarsens a cell to the score-chunk level. See {@link toFetchTile}. */
 export function toScoreChunk(cell: string): string {
   return coarsenTo(cell, SCORE_CHUNK_RES);

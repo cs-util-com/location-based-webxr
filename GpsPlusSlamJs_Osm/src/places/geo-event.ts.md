@@ -11,7 +11,7 @@ points on the heat map (§6, DEC-R6-14). Ported from
 - `climbToLocalMaximum({ start, heatAt, neighbours, steps })` — `{ cell, left,
 heat }`.
 - `bestPickForTile({ bbox, globalSeed, eventTime, toCell, heatAt, neighbours,
-  steps, batches? })` — the best position in one tile, or `undefined`.
+steps, batches? })` — the best position in one tile, or `undefined`.
 - `newGeoEventFor({ user, tiles, ... })` — `{ eventTime, picks }`, one pick per
   tile that had a valid position, NEAREST TO THE USER FIRST.
 - `QUARTER_HOUR_MS`.
