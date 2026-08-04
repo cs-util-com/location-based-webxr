@@ -30,6 +30,12 @@ to satisfy P4 of the C# port survey
 
 - Plain functions, no class. There is exactly one frame loop per
   session; a class would only add ceremony.
+- **The registry mechanics live in `utils/isolated-registry.ts`**, not here.
+  This module is the frame loop's NAME, lifetime and public signature; the
+  snapshot-and-isolate behaviour is shared with `xr-frame-loop.ts` and
+  `session-disposers.ts`, which were structurally identical modules until the
+  shape was extracted. Behaviour is pinned once, in
+  `isolated-registry.test.ts`.
 - `runFrameUpdates` snapshots the registry before iterating. A handler
   may safely register or unregister callbacks during its own tick; the
   change takes effect on the next frame. This removes a subtle
@@ -37,12 +43,11 @@ to satisfy P4 of the C# port survey
   not-yet-visited entry that an earlier handler unregistered. The
   snapshot array is **cached** between registry mutations (2026-07-04,
   PR #67 review) — same deferral semantics, without re-allocating an
-  identical array at 60–90 Hz. `xr-frame-loop.ts` mirrors this.
+  identical array at 60–90 Hz.
 - Each callback runs in its own `try/catch`. A throwing `FrameUpdate` is
-  isolated (error logged via `createLogger('FrameLoop').error`, which also
-  reports to Sentry) so it cannot abort the remaining callbacks nor propagate
-  up through `onXRFrame` and kill the scene render for the frame.
-  `runXrFrameUpdates` mirrors this.
+  isolated (error logged via the shared registry's logger, which also reports
+  to Sentry) so it cannot abort the remaining callbacks nor propagate up
+  through `onXRFrame` and kill the scene render for the frame.
 - The registry has no notion of priority or ordering beyond insertion
   order (Set iteration order in modern engines). Components MUST NOT
   depend on running before/after each other; if they do, the dependency

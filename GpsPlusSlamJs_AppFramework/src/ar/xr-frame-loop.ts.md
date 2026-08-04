@@ -30,13 +30,16 @@ the callback the live `frame`, `referenceSpace`, and `session`.
   callback**. The `XRFrame` is use-after-frame-unsafe; never stash `ctx` or its
   fields for a later tick. The API deliberately exposes no `getXrFrame()` getter
   so the stashing hazard is awkward to reach.
+- **The registry mechanics live in `utils/isolated-registry.ts`.** This module
+  contributes the `XrFrameContext` type and the safety contract around it;
+  the snapshot-and-isolate behaviour is shared with `frame-loop.ts` and
+  `session-disposers.ts` and pinned in `isolated-registry.test.ts`.
 - Snapshot-during-tick semantics match `frame-loop.ts`: handlers that
   register/unregister mid-tick take effect next frame.
 - Each callback runs in its own `try/catch`. As the public app seam, a buggy
   app-registered callback that throws every frame must not abort the remaining
   callbacks nor propagate up through `onXRFrame` and stop the scene render;
-  failures are logged via `createLogger('XrFrameLoop').error` (which also
-  reports to Sentry) and the loop continues. Mirrors `frame-loop.ts`.
+  failures are logged (and reported to Sentry) and the loop continues.
 - Pose-free periodic work should keep using `registerFrameUpdate` (`dt`/`elapsed`
   only); this registry is for handlers that genuinely need the live frame.
 - **Coordinate frames:** hit-test results are AR-local — place produced content
