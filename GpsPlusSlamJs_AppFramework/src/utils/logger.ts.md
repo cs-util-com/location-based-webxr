@@ -140,6 +140,16 @@ Unit tests in [logger.test.ts](logger.test.ts) cover:
 - Buffer entries added regardless of log level
 - Subscription and unsubscription
 - Multiple subscriber support
+- **Subscriber isolation, via `utils/isolated-registry.ts`.** The list is one of
+  the framework's isolated registries, with `console.error` as its sink — not
+  this module's own logging, which would append an entry, notify the
+  subscribers, and throw again. That hazard is why the registry requires the
+  sink rather than defaulting to one, and why it imports no logger (which would
+  also make `logger → isolated-registry → logger` a cycle).
+  - Adopting it fixed an inconsistency: the old array deferred _unsubscribes_
+    by accident (`filter` REASSIGNS, so an in-flight `for...of` kept the old
+    array) while `push` mutated in place, so a subscriber added mid-dispatch
+    received the entry it had not been subscribed for. Both now defer.
 - Safe serialization of Error instances (name, message, stack, enumerable props)
 - Safe handling of circular references
 - Graceful handling of null, undefined, BigInt, Symbol, and functions

@@ -34,23 +34,28 @@
  * @see isolated-registry.ts.md
  */
 
-import { createLogger } from './logger';
-
 export interface IsolatedRegistryOptions {
+  // NO `label` FIELD. An earlier revision carried one to name the registry in a
+  // default failure message; once `onError` became required every caller writes
+  // its own message, and a label the primitive never reads is a field that can
+  // silently disagree with the text beside it.
   /**
-   * Names this registry in the default failure log. Callers pass what the
-   * callback IS ("FrameUpdate", "session disposer") so a logged failure is
-   * attributable without a stack trace.
-   */
-  readonly label: string;
-  /**
-   * Where a thrown callback goes. Defaults to this module's logger.
+   * Where a thrown callback goes. **Required, deliberately.**
    *
-   * The hook exists because not every caller may use the logger: a registry of
-   * LOG subscribers has to report failures through `console.error`, or a
-   * throwing subscriber logs, which notifies the subscribers, which throws.
+   * **THIS MODULE IMPORTS NOTHING.** Reaching for `createLogger` here would
+   * make the framework's own logger unable to use this primitive: `logger.ts`
+   * keeps a subscriber list of exactly this shape, and
+   * `logger → isolated-registry → logger` is a cycle the `check:cycles` gate
+   * rejects.
+   *
+   * Required rather than defaulted to `console.error` for two reasons. Each
+   * registry keeps its OWN logger name ("FrameLoop", "XrFrameLoop", …) instead
+   * of collapsing every failure under one shared name; and a default would let
+   * a caller adopt this silently in a context where logging recurses — which is
+   * exactly `logger.ts`'s situation, where reporting a throwing subscriber
+   * through the logger would notify the subscribers and throw again.
    */
-  readonly onError?: (error: unknown) => void;
+  readonly onError: (error: unknown) => void;
 }
 
 export interface IsolatedRegistry<A extends readonly unknown[]> {
@@ -88,8 +93,7 @@ export interface IsolatedRegistry<A extends readonly unknown[]> {
 export function createIsolatedRegistry<A extends readonly unknown[]>(
   options: IsolatedRegistryOptions
 ): IsolatedRegistry<A> {
-  const { label, onError } = options;
-  const log = createLogger('IsolatedRegistry');
+  const { onError } = options;
   const callbacks = new Set<(...args: A) => void>();
 
   /**
@@ -115,8 +119,16 @@ export function createIsolatedRegistry<A extends readonly unknown[]>(
       try {
         fn(...args);
       } catch (error) {
-        if (onError) onError(error);
-        else log.error(`A registered ${label} threw; continuing`, error);
+        // THE SINK IS ISOLATED TOO. It is caller-supplied — `logger.ts`'s
+        // writes to `console.error`, which a test spy can make throw — and a
+        // failing report must not become the thing that aborts the dispatch it
+        // was reporting on. Swallowed rather than re-thrown because there is no
+        // second channel to report it through: the sink IS the channel.
+        try {
+          onError(error);
+        } catch {
+          // Nothing further can be done, and trying would recurse.
+        }
       }
     }
   };

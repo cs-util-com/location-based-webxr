@@ -20,11 +20,17 @@
  */
 
 import { createIsolatedRegistry } from '../utils/isolated-registry';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('FrameLoop');
 
 export type FrameUpdate = (dt: number, elapsed: number) => void;
 
 const registry = createIsolatedRegistry<[number, number]>({
-  label: 'FrameUpdate',
+  // The sink is passed rather than defaulted so failures keep reporting under
+  // THIS registry's logger name; the primitive imports no logger of its own.
+  onError: (error) =>
+    log.error('A registered FrameUpdate threw; continuing the loop', error),
 });
 
 /**

@@ -21,8 +21,15 @@
  */
 
 import { createIsolatedRegistry } from '../utils/isolated-registry';
+import { createLogger } from '../utils/logger';
 
-const registry = createIsolatedRegistry<[]>({ label: 'session disposer' });
+const log = createLogger('SessionDisposers');
+
+const registry = createIsolatedRegistry<[]>({
+  // Passed, not defaulted, so failures keep this registry's own logger name.
+  onError: (error) =>
+    log.error('A session disposer threw; continuing teardown', error),
+});
 
 /**
  * Register a session-scoped teardown function. Returns a deregister function

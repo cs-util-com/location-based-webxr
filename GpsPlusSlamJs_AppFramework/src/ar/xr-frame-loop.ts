@@ -21,6 +21,7 @@
  */
 
 import { createIsolatedRegistry } from '../utils/isolated-registry';
+import { createLogger } from '../utils/logger';
 
 /**
  * Live, frame-scoped WebXR context. Valid only synchronously inside the
@@ -42,8 +43,12 @@ export interface XrFrameContext {
 /** A per-frame callback that needs live XR access. See the safety contract. */
 export type XrFrameUpdate = (ctx: XrFrameContext) => void;
 
+const log = createLogger('XrFrameLoop');
+
 const registry = createIsolatedRegistry<[XrFrameContext]>({
-  label: 'XrFrameUpdate',
+  // Passed, not defaulted, so failures keep this registry's own logger name.
+  onError: (error) =>
+    log.error('A registered XrFrameUpdate threw; continuing the loop', error),
 });
 
 /**

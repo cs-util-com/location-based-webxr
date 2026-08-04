@@ -39,6 +39,11 @@ The module now includes:
 
 ## Invariants & Assumptions
 
+- **`subscribePermissionChanges` teardown is one-shot and isolated.** Its
+  cleanup list is a `utils/isolated-registry.ts` registry flushed with
+  `runOnce`, which empties before running — so a second `unsubscribe()` is a
+  no-op rather than a double `removeEventListener`, and one failing cleanup
+  cannot strand the rest. Previously a hand-rolled `cleanups.splice(0)` loop.
 - **Mandatory permissions**: WebXR, Geolocation, Camera, FileSystem must all be granted for AR to work
 - **Optional permission**: Device orientation (compass) is recommended but not blocking
 - **Depth-sensing probe**: `requestAllPermissions` now starts a short XR session to trigger the "3D map" permission, then immediately ends it

@@ -24,7 +24,7 @@ import { createIsolatedRegistry } from './isolated-registry';
 describe('createIsolatedRegistry', () => {
   it('invokes every registered callback with the emitted arguments', () => {
     const registry = createIsolatedRegistry<[number, string]>({
-      label: 'Test',
+      onError: () => {},
     });
     const a = vi.fn();
     const b = vi.fn();
@@ -41,7 +41,7 @@ describe('createIsolatedRegistry', () => {
     // The reason the pattern exists at all: one broken handler must not take
     // down the frame, the teardown, or the dispatch it happens to sit in.
     const onError = vi.fn();
-    const registry = createIsolatedRegistry<[]>({ label: 'Test', onError });
+    const registry = createIsolatedRegistry<[]>({ onError });
     const after = vi.fn();
     registry.register(() => {
       throw new Error('boom');
@@ -54,7 +54,7 @@ describe('createIsolatedRegistry', () => {
   });
 
   it('returns an unregister function, and registration is idempotent', () => {
-    const registry = createIsolatedRegistry<[]>({ label: 'Test' });
+    const registry = createIsolatedRegistry<[]>({ onError: () => {} });
     const fn = vi.fn();
     registry.register(fn);
     const off = registry.register(fn);
@@ -71,7 +71,7 @@ describe('createIsolatedRegistry', () => {
     // Subtlety 1. Without the snapshot the new entry would be visited in the
     // same pass, so a callback that registers a callback would run it a frame
     // early — and, if it registers unconditionally, forever.
-    const registry = createIsolatedRegistry<[]>({ label: 'Test' });
+    const registry = createIsolatedRegistry<[]>({ onError: () => {} });
     const late = vi.fn();
     registry.register(() => {
       registry.register(late);
@@ -87,7 +87,7 @@ describe('createIsolatedRegistry', () => {
   it('DEFERS an unregistration made during a run to the next run', () => {
     // The other half of subtlety 1, and the one `frame-loop.ts` warns about:
     // dropping from the live Set mid-iteration SKIPS a not-yet-visited entry.
-    const registry = createIsolatedRegistry<[]>({ label: 'Test' });
+    const registry = createIsolatedRegistry<[]>({ onError: () => {} });
     const second = vi.fn();
     let offSecond = (): void => {};
     registry.register(() => offSecond());
@@ -106,7 +106,7 @@ describe('createIsolatedRegistry', () => {
     // array every frame between (rare) registry changes was measured worth
     // avoiding. Asserted through `snapshotCount` rather than by timing, which
     // would be flaky.
-    const registry = createIsolatedRegistry<[]>({ label: 'Test' });
+    const registry = createIsolatedRegistry<[]>({ onError: () => {} });
     registry.register(() => {});
 
     registry.run();
@@ -120,7 +120,7 @@ describe('createIsolatedRegistry', () => {
   });
 
   it('clear() drops every registration without running any', () => {
-    const registry = createIsolatedRegistry<[]>({ label: 'Test' });
+    const registry = createIsolatedRegistry<[]>({ onError: () => {} });
     const fn = vi.fn();
     registry.register(fn);
 
@@ -135,7 +135,7 @@ describe('createIsolatedRegistry', () => {
     // The disposer semantics. Clearing first is what makes a second flush
     // harmless rather than a double-teardown of an already-released resource,
     // and stops a disposer that re-registers during teardown from looping.
-    const registry = createIsolatedRegistry<[]>({ label: 'Test' });
+    const registry = createIsolatedRegistry<[]>({ onError: () => {} });
     const dispose = vi.fn();
     registry.register(dispose);
 
@@ -147,7 +147,7 @@ describe('createIsolatedRegistry', () => {
   });
 
   it('runOnce() does not loop when a disposer re-registers during teardown', () => {
-    const registry = createIsolatedRegistry<[]>({ label: 'Test' });
+    const registry = createIsolatedRegistry<[]>({ onError: () => {} });
     const again = vi.fn();
     registry.register(() => {
       registry.register(again);
@@ -160,16 +160,42 @@ describe('createIsolatedRegistry', () => {
     expect(again).not.toHaveBeenCalled();
   });
 
-  it('falls back to its own logger when no onError is given', () => {
-    // Every call site names itself, so a failure is attributable without the
-    // caller having to pass a sink. `logger.ts` will need its own sink (it
-    // must use console.error to avoid recursing through itself), which is why
-    // the hook exists at all.
-    const registry = createIsolatedRegistry<[]>({ label: 'Test' });
+  it('reports through the CALLER’s sink, never a logger of its own', () => {
+    // REPLACES an earlier test for a `console.error` default. The default was
+    // removed deliberately, so asserting it would pin behaviour that no longer
+    // exists: this module must import nothing, or `logger.ts` — whose
+    // subscriber list is one of these registries — becomes a
+    // `logger → isolated-registry → logger` cycle the `check:cycles` gate
+    // rejects. A required sink also keeps each registry reporting under its own
+    // logger name instead of one shared one.
+    const sink = vi.fn();
+    const registry = createIsolatedRegistry<[string]>({ onError: sink });
+    const boom = new Error('boom');
+    registry.register(() => {
+      throw boom;
+    });
+
+    registry.run('entry');
+
+    expect(sink).toHaveBeenCalledWith(boom);
+  });
+
+  it('keeps running the remaining callbacks when the SINK itself throws', () => {
+    // Defensive: the sink is caller-supplied, and `logger.ts`'s writes to
+    // `console.error`, which a test spy can make throw. A sink failure must not
+    // become the thing that aborts the dispatch it was reporting on.
+    const registry = createIsolatedRegistry<[]>({
+      onError: () => {
+        throw new Error('sink failed');
+      },
+    });
+    const after = vi.fn();
     registry.register(() => {
       throw new Error('boom');
     });
+    registry.register(after);
 
     expect(() => registry.run()).not.toThrow();
+    expect(after).toHaveBeenCalledTimes(1);
   });
 });

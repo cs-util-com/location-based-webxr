@@ -45,6 +45,7 @@ import {
   type ArSessionCallbacks,
   type SessionFeatureOptions,
 } from './webxr-session';
+import { createIsolatedRegistry } from '../utils/isolated-registry';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('EnableGpsAr');
@@ -182,23 +183,21 @@ export function createEnableGpsArController(
   const resolved: EnableGpsArDeps = { ...defaultDeps, ...deps };
 
   let state: EnableGpsArState = { status: 'checking' };
-  const listeners = new Set<(state: EnableGpsArState) => void>();
+  const listeners = createIsolatedRegistry<[EnableGpsArState]>({
+    onError: (err) =>
+      log.error('State listener threw; continuing dispatch:', err),
+  });
   let gpsWatchActive = false;
   let orientationWatchActive = false;
 
   function setState(next: EnableGpsArState): void {
     state = next;
-    // Snapshot so a listener that (un)subscribes during dispatch cannot mutate
-    // the set mid-iteration. Each listener is isolated in a try/catch so one
-    // throwing subscriber cannot abort the dispatch and destabilize the
-    // refreshSupport()/enable() state transitions that drive it.
-    for (const listener of [...listeners]) {
-      try {
-        listener(state);
-      } catch (err) {
-        log.error('State listener threw; continuing dispatch:', err);
-      }
-    }
+    // Snapshotted so a listener that (un)subscribes during dispatch cannot
+    // mutate the set mid-iteration, and each listener isolated so one throwing
+    // subscriber cannot abort the dispatch and destabilize the
+    // refreshSupport()/enable() transitions that drive it. Both come from the
+    // shared registry rather than being re-derived here.
+    listeners.run(state);
   }
 
   async function refreshSupport(): Promise<void> {
@@ -422,12 +421,7 @@ export function createEnableGpsArController(
 
   return {
     getState: () => state,
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    subscribe: (listener) => listeners.register(listener),
     refreshSupport,
     enable,
     disable,
