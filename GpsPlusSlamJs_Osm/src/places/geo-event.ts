@@ -26,11 +26,15 @@
  *   the same positions here, forever; they will NOT match the C#.
  * - **The heat lookup may answer "no data"**, and that is not the same as low
  *   heat. See {@link climbToLocalMaximum}.
- * - **The `heat > 9` quality gate is NOT ported.** Measured over the corpus, 9
- *   selects 30–45 % of all ground in our units, because the C# heat map summed
- *   counts where this one multiplies rule factors. See
- *   `score/corpus-score-distribution.test.ts`; the replacement belongs with the
- *   caller that has a local distribution to take a quantile of.
+ * - **The `heat > 9` quality gate IS ported, TRANSLATED rather than copied**
+ *   (DEC-R9-3, round 9). An earlier version of this header said it was not
+ *   ported, on the grounds that the C# "summed counts" where this package
+ *   multiplies rule factors. THAT WAS WRONG: `HeatMapTile.Heat` starts at 1 as
+ *   the multiplication identity and accumulates with `Heat *= elemHeat` — the
+ *   same product over the same kind of rule table. So `> 9` is 9 cells at
+ *   identity, i.e. structural rather than field-tuned, and the faithful form is
+ *   `heat > neighbours(cell).length + 1`. Derived from `neighbours()` rather
+ *   than written down, which also keeps it correct at H3's twelve pentagons.
  *
  * @see geo-event.ts.md
  */
@@ -241,10 +245,26 @@ const MAX_BATCHES = 10;
 
 /** The chosen candidate, plus what it beat. */
 export interface BestPick {
-  /** The raw seeded position, before the climb. */
+  /**
+   * The raw seeded position, BEFORE the climb — the C#'s `RawStartEventPos`.
+   *
+   * **This is not where the event is.** It is the random starting point the
+   * climb walked away from, kept only because drawing it next to `position`
+   * shows what the climb did. Use `position` for anything user-facing.
+   */
   readonly candidate: LatLng;
   /** Where the climb settled. */
   readonly cell: string;
+  /**
+   * WHERE THE EVENT IS — the centre of `cell`, which is the C#'s
+   * `geohasher.ToLatLong(bestPick.ExactGeoHash)` (`GeoEvent.cs:87`).
+   *
+   * Reported rather than left for each caller to derive from `cell`, because
+   * two callers deriving it separately is how they drift apart: the demo's map
+   * marker and its button label are both built from this, and the map
+   * originally drew `candidate` while quoting `cell`'s heat.
+   */
+  readonly position: LatLng;
   /** Neighbourhood heat at `cell`. */
   readonly heat: number;
   /**
@@ -293,6 +313,7 @@ export function bestPickForTile({
   globalSeed,
   eventTime,
   toCell,
+  toLatLng,
   heatAt,
   neighbours,
   steps,
@@ -303,6 +324,8 @@ export function bestPickForTile({
   eventTime: number;
   /** Position → the cell the climb starts from. */
   toCell: (position: LatLng) => string;
+  /** Cell → its centre. The inverse of `toCell`, and where the event IS. */
+  toLatLng: (cell: string) => LatLng;
   heatAt: (cell: string) => number | undefined;
   neighbours: (cell: string) => readonly string[];
   steps: number;
@@ -340,6 +363,7 @@ export function bestPickForTile({
         best = {
           candidate,
           cell: climbed.cell,
+          position: toLatLng(climbed.cell),
           heat: climbed.heat,
           evaluated: candidates,
         };
@@ -394,6 +418,7 @@ export function newGeoEventFor({
   globalSeed,
   eventTime,
   toCell,
+  toLatLng,
   heatAt,
   neighbours,
   steps,
@@ -403,6 +428,7 @@ export function newGeoEventFor({
   globalSeed: number;
   eventTime: number;
   toCell: (position: LatLng) => string;
+  toLatLng: (cell: string) => LatLng;
   heatAt: (cell: string) => number | undefined;
   neighbours: (cell: string) => readonly string[];
   steps: number;
@@ -414,6 +440,7 @@ export function newGeoEventFor({
       globalSeed,
       eventTime,
       toCell,
+      toLatLng,
       heatAt,
       neighbours,
       steps,
@@ -434,6 +461,10 @@ export function newGeoEventFor({
     return dLat * dLat + dLng * dLng;
   };
 
-  picks.sort((a, b) => distanceTo(a.candidate) - distanceTo(b.candidate));
+  // BY THE SETTLED POSITION, not the seed. The C# orders by
+  // `ToLatLong(x.ExactGeoHash)` (`GeoEvent.cs:107`) — where the climb ended.
+  // Ordering by `candidate` ranks tiles by a point the event is not at, so a
+  // caller's "nearest event" would quote a distance to nothing.
+  picks.sort((a, b) => distanceTo(a.position) - distanceTo(b.position));
   return { eventTime, picks };
 }

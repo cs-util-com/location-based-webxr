@@ -42,6 +42,12 @@ function fieldFrom(
   return (cell) => values[cell];
 }
 
+/** The inverse of the grid `toCell`s below, so a cell has a position. */
+function gridToLatLng(cell: string): { lat: number; lng: number } {
+  const parts = cell.split(",").map(Number);
+  return { lat: (parts[1] ?? 0) * 0.001, lng: (parts[0] ?? 0) * 0.001 };
+}
+
 /** Neighbours on an integer grid, so the climb is testable without h3. */
 function gridNeighbours(cell: string): string[] {
   const parts = cell.split(",").map(Number);
@@ -331,6 +337,7 @@ describe("bestPickForTile — the candidate loop and its gate", () => {
       globalSeed: 1,
       eventTime: 0,
       toCell: toOneCell,
+      toLatLng: gridToLatLng,
       heatAt: fieldFrom(flat),
       neighbours: gridNeighbours,
       steps: 3,
@@ -348,6 +355,7 @@ describe("bestPickForTile — the candidate loop and its gate", () => {
       globalSeed: 1,
       eventTime: 0,
       toCell: toOneCell,
+      toLatLng: gridToLatLng,
       heatAt: fieldFrom(warm),
       neighbours: gridNeighbours,
       steps: 3,
@@ -368,6 +376,7 @@ describe("bestPickForTile — the candidate loop and its gate", () => {
       globalSeed: 1,
       eventTime: 0,
       toCell: toOneCell,
+      toLatLng: gridToLatLng,
       heatAt: fieldFrom(values),
       neighbours: twoCellWorld,
       steps: 1,
@@ -394,6 +403,7 @@ describe("bestPickForTile — the candidate loop and its gate", () => {
       globalSeed: 1,
       eventTime: 0,
       toCell: toOneCell,
+      toLatLng: gridToLatLng,
       heatAt: fieldFrom(island),
       neighbours: gridNeighbours,
       steps: 3,
@@ -411,6 +421,7 @@ describe("bestPickForTile — the candidate loop and its gate", () => {
       globalSeed: 7,
       eventTime: 1_700_000_000_000,
       toCell: toOneCell,
+      toLatLng: gridToLatLng,
       heatAt: fieldFrom(warm),
       neighbours: gridNeighbours,
       steps: 3,
@@ -430,6 +441,7 @@ describe("bestPickForTile — the candidate loop and its gate", () => {
       globalSeed: 1,
       eventTime: 0,
       toCell: toOneCell,
+      toLatLng: gridToLatLng,
       heatAt: fieldFrom(warm),
       neighbours: gridNeighbours,
       steps: 3,
@@ -457,6 +469,26 @@ describe("newGeoEventFor — picking across tiles, nearest first", () => {
     bbox: { south: lat, west: lng, north: lat + 0.01, east: lng + 0.01 },
   });
 
+  /**
+   * A cell mapping that PRESERVES POSITION, at 0.1-degree granularity, plus its
+   * exact inverse.
+   *
+   * The ordering tests below previously used `toCell: () => "0,0"`, which
+   * collapsed every tile onto one cell. That was invisible while the sort key
+   * was `candidate` — the seeds still differed — and became wrong the moment
+   * ordering moved to the settled position, where it made every pick land on
+   * the same point and the sort a no-op. A constant `toCell` cannot test
+   * ordering at all; this one can.
+   */
+  const toCellAt = (position: { lat: number; lng: number }): string =>
+    `${Math.round(position.lng * 10)},${Math.round(position.lat * 10)}`;
+  const toLatLngAt = (cell: string): { lat: number; lng: number } => {
+    const parts = cell.split(",").map(Number);
+    return { lat: (parts[1] ?? 0) / 10, lng: (parts[0] ?? 0) / 10 };
+  };
+  /** Warm everywhere, so no edge of the field can deflect the climb. */
+  const warmEverywhere = (): number => 3;
+
   it("orders picks by distance from the user, nearest first", () => {
     // The C#'s `OrderBy(distance to user)`. Without it the app would show an
     // arbitrary one of the four, which reads as the event jumping around.
@@ -465,14 +497,18 @@ describe("newGeoEventFor — picking across tiles, nearest first", () => {
       tiles: [tileAt(0.5, 0.5), tileAt(0, 0), tileAt(0.2, 0.2)],
       globalSeed: 1,
       eventTime: 0,
-      toCell: () => "0,0",
-      heatAt: warmField(),
+      toCell: toCellAt,
+      toLatLng: toLatLngAt,
+      heatAt: warmEverywhere,
       neighbours: gridNeighbours,
       steps: 3,
     });
 
+    expect(event.picks).toHaveLength(3);
+    // Over the SETTLED position, which is what the sort now uses and what a
+    // caller showing "nearest event" would quote.
     const distances = event.picks.map(
-      (pick) => Math.abs(pick.candidate.lat) + Math.abs(pick.candidate.lng),
+      (pick) => Math.abs(pick.position.lat) + Math.abs(pick.position.lng),
     );
     expect(distances).toEqual([...distances].sort((a, b) => a - b));
   });
@@ -495,14 +531,15 @@ describe("newGeoEventFor — picking across tiles, nearest first", () => {
       tiles: [tiny(51.6, 0), tiny(51, 0.8)],
       globalSeed: 1,
       eventTime: 0,
-      toCell: () => "0,0",
-      heatAt: warmField(),
+      toCell: toCellAt,
+      toLatLng: toLatLngAt,
+      heatAt: warmEverywhere,
       neighbours: gridNeighbours,
       steps: 3,
     });
     expect(event.picks).toHaveLength(2);
     // East first: nearer on the ground, further in raw degrees.
-    expect(event.picks[0]?.candidate.lng).toBeGreaterThan(0.5);
+    expect(event.picks[0]?.position.lng).toBeGreaterThan(0.5);
   });
 
   it("skips a tile with no valid position rather than failing the event", () => {
@@ -516,11 +553,74 @@ describe("newGeoEventFor — picking across tiles, nearest first", () => {
       globalSeed: 1,
       eventTime: 0,
       toCell: () => "0,0",
+      toLatLng: gridToLatLng,
       heatAt: fieldFrom(onlyOneCellWarm),
       neighbours: gridNeighbours,
       steps: 3,
     });
     expect(event.picks).toEqual([]);
+  });
+
+  it("orders by where the climb SETTLED, not by the seed it started from", () => {
+    // THE DEFECT THIS PINS (found against the C# reference, round 9 follow-up).
+    // `GeoEvent.cs:107` orders by `ToLatLong(x.ExactGeoHash)` -- the CLIMBED
+    // geohash -- and `:87` takes the event position from the same place. The C#
+    // even names the seed `RawStartEventPos`. Sorting by the seed instead means
+    // "nearest event" can name the wrong tile, and the label built on
+    // `picks[0]` then quotes a distance to a position no event is at.
+    //
+    // The field is flat and warm so the climb does NOT move; `toCell` and
+    // `toLatLng` alone decide the two positions. That isolates the sort key
+    // from the climb, which is the whole point -- the candidate ordering and
+    // the settled ordering are deliberately opposite here.
+    const event = newGeoEventFor({
+      user: { lat: 0, lng: 0 },
+      // The FAR tile's candidate climbs to a cell NEAR the user, and vice
+      // versa, so sorting by candidate and sorting by position disagree.
+      tiles: [tileAt(0.5, 0.5), tileAt(0.001, 0.001)],
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: (position) => (position.lat > 0.2 ? "1,0" : "0,0"),
+      toLatLng: (cell) =>
+        cell === "1,0" ? { lat: 0.01, lng: 0 } : { lat: 1, lng: 0 },
+      heatAt: warmField(),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+
+    expect(event.picks).toHaveLength(2);
+    // First by settled position: the tile whose SEED is furthest away.
+    expect(event.picks[0]?.candidate.lat).toBeGreaterThan(0.2);
+    expect(event.picks[0]?.position).toEqual({ lat: 0.01, lng: 0 });
+  });
+
+  it("reports the settled position, so callers need not re-derive it", () => {
+    // Both the map marker and the button label need "where is the event", and
+    // each deriving it from `cell` separately is how the two drift apart --
+    // which is exactly what happened: the map drew the winner at the seed.
+    const event = newGeoEventFor({
+      user: { lat: 0, lng: 0 },
+      tiles: [tileAt(0, 0)],
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: () => "2,3",
+      toLatLng: gridToLatLng,
+      heatAt: warmField(),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+
+    const pick = event.picks[0];
+    expect(pick).toBeDefined();
+    // The invariant, stated over the cell the climb ACTUALLY reached rather
+    // than a hardcoded one: the reported position is that cell's position.
+    // (Written the other way round first, and the climb walked off the warm
+    // region's edge cell -- which made the expectation wrong, not the code.)
+    expect(pick?.position).toEqual(gridToLatLng(pick?.cell ?? ""));
+    // The climb moved, so seed and settled position are genuinely different --
+    // without this the assertion above would hold trivially.
+    expect(pick?.cell).not.toBe("2,3");
+    expect(pick?.position).not.toEqual(pick?.candidate);
   });
 
   it("carries the event time, so the caller can show when it starts", () => {
@@ -530,6 +630,7 @@ describe("newGeoEventFor — picking across tiles, nearest first", () => {
       globalSeed: 1,
       eventTime: 1_700_000_000_000,
       toCell: () => "0,0",
+      toLatLng: gridToLatLng,
       heatAt: warmField(),
       neighbours: gridNeighbours,
       steps: 3,

@@ -82,8 +82,37 @@ A tile with no valid position is SKIPPED. The C# throws for the centre tile and
 logs a warning for a neighbour; a tile that is all water genuinely has no event,
 and an exception would take the other tiles down with it.
 
+## `candidate` vs `position` — the distinction to get right
+
+A `BestPick` carries **two** coordinates and they are not interchangeable:
+
+- `candidate` — the raw seeded point the climb STARTED from. The C# names this
+  `RawStartEventPos`. It is kept only so a caller can draw what the climb did.
+- `position` — the centre of `cell`, where the climb SETTLED. **This is where
+  the event is**, and it is the C#'s
+  `geohasher.ToLatLong(bestPick.ExactGeoHash)` (`GeoEvent.cs:87`).
+
+Anything user-facing — a marker, a distance, a direction — must read
+`position`. Both defects this caused have been fixed and are pinned by tests:
+the demo's map drew its winner marker at `candidate` while its tooltip quoted
+`cell`'s heat, and `newGeoEventFor` ordered picks by `candidate` where the C#
+orders by the settled position (`GeoEvent.cs:107`), so "nearest event" could
+name the wrong tile.
+
+`position` is REPORTED rather than left for each caller to derive from `cell`,
+because two callers deriving it separately is exactly how they drifted apart.
+`toLatLng` is injected alongside `toCell`, keeping the module free of H3.
+
 ## Tests
 
 `geo-event.test.ts` — the four quarter-hour branches, determinism across seed,
 time and minute-quantisation, candidate spread and containment, and the climb's
 uphill / flat / bounded / left-the-field behaviours.
+
+For `newGeoEventFor` it also pins ordering by the SETTLED position (mutating
+the sort key back to `candidate` fails exactly that test) and the longitude
+cosine at 51° N, where the correction flips the order. Note that the ordering
+tests use a position-PRESERVING `toCell`/`toLatLng` pair: an earlier
+`toCell: () => "0,0"` collapsed every tile onto one cell, which was invisible
+while the sort key was `candidate` and made the sort a no-op the moment it
+became `position`. A constant `toCell` cannot test ordering at all.

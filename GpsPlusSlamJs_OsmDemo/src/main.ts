@@ -31,6 +31,7 @@ import { TERRARIUM_ATTRIBUTION } from "gps-plus-slam-osm";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { describeDrawCost } from "./draw-cost.js";
+import { describeGeoEvent } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
 import {
   DEFAULT_CELL_PRESET,
@@ -342,9 +343,11 @@ async function main(): Promise<void> {
       })
       .then((event) => {
         mapView.renderGeoEvent(event);
-        const at = new Date(event.eventTime).toLocaleTimeString();
-        geoEventButton.textContent =
-          event.picks.length === 0 ? "No event nearby" : "Event at " + at;
+        // The distance and direction are not decoration (F56): the winner is
+        // very often outside the viewport -- an event tile is ~900 m across
+        // and the demo opens at zoom 18 -- so without them a successful search
+        // looks exactly like nothing happening.
+        geoEventButton.textContent = describeGeoEvent(view.position, event);
       })
       .catch((error: unknown) => {
         // Through the same channel every other failure uses, so a geo-event

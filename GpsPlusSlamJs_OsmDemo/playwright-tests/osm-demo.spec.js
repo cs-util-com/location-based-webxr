@@ -3917,11 +3917,17 @@ test.describe("the geo-event", () => {
     // so this cannot pass on a candidate marker.
     const label = await button.textContent();
     if (label?.includes("Event at") === true) {
+      // THE DISTANCE AND DIRECTION ARE THE POINT (F56), not decoration. The
+      // winner is usually off-screen, so this string is the only feedback the
+      // user gets; a label that lost them would look identical to a working
+      // one on a map that happens to be showing nothing.
+      expect(label).toMatch(/\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)$/);
+
       // PRESENT, not VISIBLE, and the difference is a real property of the
       // feature rather than a test convenience. An event tile is ~900 m across
       // and the demo opens at zoom 18, which shows a couple of hundred metres --
       // so the winner is very often outside the viewport, and Leaflet renders an
-      // off-screen path as , which reads as hidden. Asserting
+      // off-screen path as `d="M0 0"`, which reads as hidden. Asserting
       // visibility would make this test pass or fail on where the seeded
       // candidate happened to land.
       await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);

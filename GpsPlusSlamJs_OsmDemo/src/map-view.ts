@@ -236,8 +236,11 @@ export class MapView {
           interactive: false,
         }).addTo(this.eventLayer);
       }
-      // The winner last, so it draws over its own batch.
-      L.circleMarker([pick.candidate.lat, pick.candidate.lng], {
+      // The winner last, so it draws over its own batch — at the SETTLED
+      // position, not the seed it climbed away from. Drawing `candidate` here
+      // while the tooltip quoted `cell`'s heat put the marker tens of metres
+      // from the place whose heat it was reporting.
+      L.circleMarker([pick.position.lat, pick.position.lng], {
         radius: 7,
         className: "geo-winner",
       })

@@ -40,7 +40,7 @@ import {
   nextEventTime,
   toFetchTile,
 } from "gps-plus-slam-osm";
-import { cellToBoundary, gridDisk, latLngToCell } from "h3-js";
+import { cellToBoundary, cellToLatLng, gridDisk, latLngToCell } from "h3-js";
 
 /**
  * The seed every device shares (DEC-R9-7).
@@ -385,6 +385,13 @@ export class DemoPipeline {
 
     const toCell = (at: LatLng): string =>
       latLngToCell(at.lat, at.lng, AFFORDANCE_RES);
+    // The exact inverse, so a pick can report WHERE THE EVENT IS rather than
+    // the seed the climb started from. The map marker and the button label are
+    // both built from it; deriving it twice is how they drifted apart.
+    const toLatLng = (cell: string): LatLng => {
+      const [lat, lng] = cellToLatLng(cell);
+      return { lat, lng };
+    };
 
     // STEP 0 — which tiles (DEC-R9-15). Standing near a tile edge, your own
     // tile's event can be 500 m away while a neighbour's sits 50 m across the
@@ -458,6 +465,7 @@ export class DemoPipeline {
         globalSeed: GEO_EVENT_SEED,
         eventTime,
         toCell,
+        toLatLng,
         heatAt: (cell) => {
           const state = this.index.cellState(cell);
           // `unknown` becomes `undefined`, which is what tells the climb it has
