@@ -10,6 +10,10 @@ points on the heat map (§6, DEC-R6-14). Ported from
 - `eventCandidates({ bbox, globalSeed, eventTime, count })` — seeded positions.
 - `climbToLocalMaximum({ start, heatAt, neighbours, steps })` — `{ cell, left,
 heat }`.
+- `bestPickForTile({ bbox, globalSeed, eventTime, toCell, heatAt, neighbours,
+  steps, batches? })` — the best position in one tile, or `undefined`.
+- `newGeoEventFor({ user, tiles, ... })` — `{ eventTime, picks }`, one pick per
+  tile that had a valid position, NEAREST TO THE USER FIRST.
 - `QUARTER_HOUR_MS`.
 
 Everything takes its inputs injected — no H3, no affordance index, no knowledge
@@ -65,11 +69,18 @@ and below the identity — so the quality of the spawn choice depends on the hea
 map having broad gradients, which is worth checking on real data before relying
 on it.
 
-## Not yet built
+## Which tiles the caller offers
 
-`newGeoEventFor` — the centre tile plus its nearest neighbours, ordered by
-distance to the user. `bestPickForTile` landed in round 9 with the translated
-gate above.
+`newGeoEventFor` takes the tile list rather than deriving it, and that is a
+deliberate divergence. The C# always uses the centre tile plus its three nearest
+neighbours; under DEC-R9-4 fetch-on-demand that could mean four Overpass fetches
+and minutes of waiting. The worker starts with the CENTRE tile alone — whose data
+is already loaded, because the user is standing in it — and can widen later
+without touching this function.
+
+A tile with no valid position is SKIPPED. The C# throws for the centre tile and
+logs a warning for a neighbour; a tile that is all water genuinely has no event,
+and an exception would take the other tiles down with it.
 
 ## Tests
 

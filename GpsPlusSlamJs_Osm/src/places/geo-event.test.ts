@@ -30,6 +30,7 @@ import {
   QUARTER_HOUR_MS,
   bestPickForTile,
   climbToLocalMaximum,
+  newGeoEventFor,
   eventCandidates,
   nextEventTime,
 } from "./geo-event.js";
@@ -434,5 +435,105 @@ describe("bestPickForTile — the candidate loop and its gate", () => {
       steps: 3,
     });
     expect(pick?.evaluated.length).toBe(10);
+  });
+});
+
+/**
+ * WHY `newGeoEventFor` EXISTS (round 9 §6). `bestPickForTile` answers "where in
+ * THIS tile", and the C# then asks the same of the centre tile plus its three
+ * nearest neighbours, returning them ordered by distance to the user — so the
+ * app can show the closest event rather than an arbitrary one.
+ */
+describe("newGeoEventFor — picking across tiles, nearest first", () => {
+  const warmField = () => {
+    const values: Record<string, number> = {};
+    for (let x = -3; x <= 3; x += 1) {
+      for (let y = -3; y <= 3; y += 1) values[`${x},${y}`] = 3;
+    }
+    return fieldFrom(values);
+  };
+
+  const tileAt = (lat: number, lng: number) => ({
+    bbox: { south: lat, west: lng, north: lat + 0.01, east: lng + 0.01 },
+  });
+
+  it("orders picks by distance from the user, nearest first", () => {
+    // The C#'s `OrderBy(distance to user)`. Without it the app would show an
+    // arbitrary one of the four, which reads as the event jumping around.
+    const event = newGeoEventFor({
+      user: { lat: 0, lng: 0 },
+      tiles: [tileAt(0.5, 0.5), tileAt(0, 0), tileAt(0.2, 0.2)],
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: () => "0,0",
+      heatAt: warmField(),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+
+    const distances = event.picks.map(
+      (pick) => Math.abs(pick.candidate.lat) + Math.abs(pick.candidate.lng),
+    );
+    expect(distances).toEqual([...distances].sort((a, b) => a - b));
+  });
+
+  it("weights longitude by latitude, so east-west is not over-counted", () => {
+    // AT THE EQUATOR THIS LINE IS A NO-OP, which is why the test above cannot
+    // see it -- cos(0) is 1. At Cologne's 51 degrees a longitude degree is only
+    // ~0.63 of a latitude degree on the ground, so comparing raw degrees
+    // over-counts east-west distance by ~37% and mis-orders a tile due east
+    // against one due north. Found by mutation, not by reading.
+    //
+    // The tile due EAST is 0.8 degrees away, the one due NORTH 0.6. In raw
+    // degrees north looks nearer; on the ground east is (0.8 x 0.629 = 0.503).
+    const user = { lat: 51, lng: 0 };
+    const tiny = (lat: number, lng: number) => ({
+      bbox: { south: lat, west: lng, north: lat + 0.0001, east: lng + 0.0001 },
+    });
+    const event = newGeoEventFor({
+      user,
+      tiles: [tiny(51.6, 0), tiny(51, 0.8)],
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: () => "0,0",
+      heatAt: warmField(),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+    expect(event.picks).toHaveLength(2);
+    // East first: nearer on the ground, further in raw degrees.
+    expect(event.picks[0]?.candidate.lng).toBeGreaterThan(0.5);
+  });
+
+  it("skips a tile with no valid position rather than failing the event", () => {
+    // The C# throws when the CENTRE tile yields nothing and logs a warning for a
+    // neighbour. Neither is right here: a tile that is all water simply has no
+    // event, and an exception would take the other tiles down with it.
+    const onlyOneCellWarm: Record<string, number> = { "0,0": 1 };
+    const event = newGeoEventFor({
+      user: { lat: 0, lng: 0 },
+      tiles: [tileAt(0, 0)],
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: () => "0,0",
+      heatAt: fieldFrom(onlyOneCellWarm),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+    expect(event.picks).toEqual([]);
+  });
+
+  it("carries the event time, so the caller can show when it starts", () => {
+    const event = newGeoEventFor({
+      user: { lat: 0, lng: 0 },
+      tiles: [tileAt(0, 0)],
+      globalSeed: 1,
+      eventTime: 1_700_000_000_000,
+      toCell: () => "0,0",
+      heatAt: warmField(),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+    expect(event.eventTime).toBe(1_700_000_000_000);
   });
 });

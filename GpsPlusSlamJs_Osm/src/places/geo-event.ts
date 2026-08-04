@@ -354,3 +354,86 @@ export function bestPickForTile({
   }
   return undefined;
 }
+
+/** One tile the event may land in. */
+export interface EventTile {
+  readonly bbox: GeoBounds;
+}
+
+export interface GeoEvent {
+  /** When it starts, epoch ms. */
+  readonly eventTime: number;
+  /** One pick per tile that had a valid position, NEAREST TO THE USER FIRST. */
+  readonly picks: readonly BestPick[];
+}
+
+/**
+ * The event for a moment and a place — one pick per tile, nearest first.
+ *
+ * `bestPickForTile` answers "where in THIS tile"; this asks it of each tile the
+ * caller offers and orders the answers by distance to the user, which is the
+ * C#'s `OrderBy(distance)`. Without the ordering the app would show an arbitrary
+ * one of them, which reads as the event jumping about.
+ *
+ * **WHICH TILES IS THE CALLER'S CHOICE, deliberately.** The C# always takes the
+ * centre tile plus its three nearest neighbours, which under DEC-R9-4's
+ * fetch-on-demand could mean four Overpass fetches — minutes of waiting for one
+ * event. Taking the tile list as an argument lets the worker start with the
+ * centre alone, whose data is by definition already loaded because the user is
+ * standing in it, and widen later without changing this function.
+ *
+ * **A TILE WITH NO VALID POSITION IS SKIPPED, NOT FATAL.** The C# throws when
+ * the centre tile yields nothing (`GeoEvent.cs:83`) and logs a warning plus a
+ * `Debugger.Break()` for a neighbour. Neither survives the port: a tile that is
+ * all water genuinely has no event, and an exception would take the other tiles
+ * down with it. DEC-R6-14f already reversed the equivalent assertion.
+ */
+export function newGeoEventFor({
+  user,
+  tiles,
+  globalSeed,
+  eventTime,
+  toCell,
+  heatAt,
+  neighbours,
+  steps,
+}: {
+  user: LatLng;
+  tiles: readonly EventTile[];
+  globalSeed: number;
+  eventTime: number;
+  toCell: (position: LatLng) => string;
+  heatAt: (cell: string) => number | undefined;
+  neighbours: (cell: string) => readonly string[];
+  steps: number;
+}): GeoEvent {
+  const picks: BestPick[] = [];
+  for (const tile of tiles) {
+    const pick = bestPickForTile({
+      bbox: tile.bbox,
+      globalSeed,
+      eventTime,
+      toCell,
+      heatAt,
+      neighbours,
+      steps,
+    });
+    if (pick !== undefined) picks.push(pick);
+  }
+
+  // PLANAR, not great-circle. These are candidates inside adjacent tiles a
+  // kilometre or so apart, so the only thing the distance decides is their
+  // ORDER — and any monotonic function of true distance gives the same order at
+  // this scale. Squared degrees also avoids a sqrt per comparison.
+  const distanceTo = (position: LatLng): number => {
+    const dLat = position.lat - user.lat;
+    // Longitude degrees shrink with latitude; ignoring that would mis-order
+    // tiles east-west against north-south at high latitudes.
+    const dLng =
+      (position.lng - user.lng) * Math.cos((user.lat * Math.PI) / 180);
+    return dLat * dLat + dLng * dLng;
+  };
+
+  picks.sort((a, b) => distanceTo(a.candidate) - distanceTo(b.candidate));
+  return { eventTime, picks };
+}
