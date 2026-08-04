@@ -347,10 +347,20 @@ async function capture(spec) {
       mkdirSync(spec.outDir, { recursive: true });
       writeFileSync(
         join(spec.outDir, `${spec.slug}.json`),
-        // NOT pretty-printed for sites. Indentation is ~25 % of an OSM geometry
-        // payload's bytes and these are committed files; the four legacy
-        // fixtures keep their formatting so this change does not rewrite them.
-        isSite ? JSON.stringify(fixture) : JSON.stringify(fixture, null, 1),
+        // NEVER pretty-printed. Indentation is ~25 % of an OSM geometry
+        // payload's bytes and these are committed files.
+        //
+        // The four legacy fixtures used to be written with `null, 1` so that
+        // adding the site corpus would not rewrite them. That exemption is gone
+        // (2026-08-04): they were re-serialised minified along with the six
+        // sites, because prettier had been re-expanding ALL of them anyway —
+        // this package had no `.prettierignore` of its own, and prettier
+        // resolves that file from its cwd without walking up to the workspace
+        // root. Minifying here while `format` re-expands on the next gate run
+        // is worse than useless, so the ignore file is what makes this line
+        // mean anything. `src/testdata/fixture-formatting.test.ts` asserts the
+        // outcome, and would go red if either half were removed.
+        JSON.stringify(fixture),
       );
       return { ...census, slug: spec.slug, bytes, elements: elements.length };
     } catch (error) {
