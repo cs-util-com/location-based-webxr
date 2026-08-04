@@ -101,6 +101,21 @@ export interface OsmViewState<TSnapshot> {
    * branch of the renderer ran last.
    */
   selectedFeature: OsmViewFeature | undefined;
+  /**
+   * The affordance REGION the details panel is describing, or none.
+   *
+   * Mutually exclusive with the other two, for the same reason they are with
+   * each other: there is one panel, so there is one selection. A region is the
+   * coarse claim and a cell the fine one, and both are clickable in both views,
+   * so without exclusivity the panel's contents would depend on which branch of
+   * which renderer ran last.
+   *
+   * A REGION ID, not the region. Ids are unstable across a refresh — two regions
+   * merging as more data loads changes BOTH their ids — so the consumer resolves
+   * this against the current snapshot and drops the selection when it no longer
+   * exists. Holding the object would show numbers from a region that is gone.
+   */
+  selectedRegion: string | undefined;
   loading: OsmViewLoading;
   /** Whatever the consumer's pipeline last produced. Opaque here. */
   snapshot: TSnapshot | undefined;
@@ -199,6 +214,7 @@ export function createOsmViewSlice<TSnapshot>(
     groundMode: options.initialGroundMode ?? '',
     selectedCell: undefined,
     selectedFeature: undefined,
+    selectedRegion: undefined,
     loading: IDLE,
     snapshot: undefined,
   };
@@ -219,6 +235,7 @@ export function createOsmViewSlice<TSnapshot>(
           position: withoutSignedZero(action.payload),
           selectedCell: undefined,
           selectedFeature: undefined,
+          selectedRegion: undefined,
         };
       },
 
@@ -273,6 +290,7 @@ export function createOsmViewSlice<TSnapshot>(
           ...state,
           selectedCell: action.payload,
           selectedFeature: undefined,
+          selectedRegion: undefined,
         };
       },
 
@@ -289,6 +307,21 @@ export function createOsmViewSlice<TSnapshot>(
           ...state,
           selectedFeature: action.payload,
           selectedCell: undefined,
+          selectedRegion: undefined,
+        };
+      },
+
+      /**
+       * Select an affordance region by id, or pass `undefined` to close.
+       *
+       * CLEARS the other two, for the same reason they clear each other.
+       */
+      regionSelected(state, action: PayloadAction<string | undefined>) {
+        return {
+          ...state,
+          selectedRegion: action.payload,
+          selectedCell: undefined,
+          selectedFeature: undefined,
         };
       },
 

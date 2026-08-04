@@ -611,7 +611,13 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
                     // contiguous claim and is drawn as one slab, so it stays a
                     // single `MeshData` while buildings, plates and roads became
                     // chunk lists.
-                    regions: [{ medianScore: calls, mesh: EMPTY_MESH_DATA }],
+                    regions: [
+                      {
+                        medianScore: calls,
+                        id: `r${calls}`,
+                        mesh: EMPTY_MESH_DATA,
+                      },
+                    ],
                   },
                 },
           );

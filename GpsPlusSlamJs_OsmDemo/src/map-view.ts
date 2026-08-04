@@ -43,6 +43,16 @@ export interface MapViewOptions {
   readonly zoom?: number;
   /** Called with the H3 id when a cell is clicked. */
   readonly onCellClick?: (cell: string) => void;
+  /**
+   * Called with the region id when a region is clicked (DEC-R7b-3a).
+   *
+   * Separate from `onCellClick` rather than one "something was selected"
+   * callback, because the two carry different identifiers and the panel renders
+   * them differently. Leaflet delivers the cell click first where they overlap —
+   * the cell pane sits above the region pane — so the finer claim wins here for
+   * the same reason it does in the 3D raycast.
+   */
+  readonly onRegionClick?: (region: string) => void;
 }
 
 export class MapView {
@@ -52,11 +62,13 @@ export class MapView {
   private readonly fetchLayer: L.LayerGroup;
   private readonly userMarker: L.CircleMarker;
   private readonly onCellClick: ((cell: string) => void) | undefined;
+  private readonly onRegionClick: ((region: string) => void) | undefined;
   /** The DEM credit currently in the attribution bar, so it can be removed. */
   private terrainCredit: string | undefined;
 
   constructor(options: MapViewOptions) {
     this.onCellClick = options.onCellClick;
+    this.onRegionClick = options.onRegionClick;
     this.map = L.map(options.container).setView(
       [options.centre.lat, options.centre.lng],
       options.zoom ?? 18,
@@ -323,6 +335,13 @@ export class MapView {
             `${escapeHtml(region.category)}: ${region.cellCount} cells, ` +
               `${Math.round(region.areaM2)} m², median ${round(region.medianScore)}`,
           )
+          .on("click", (event) => {
+            // STOP THE MAP SEEING IT. The map's own click handler moves the
+            // user, and a region covers most of the screen — without this,
+            // selecting a region would also teleport you into it.
+            L.DomEvent.stopPropagation(event);
+            this.onRegionClick?.(region.id);
+          })
           .addTo(this.regionLayer);
       }
     }

@@ -432,3 +432,78 @@ describe('groundMode (W11)', () => {
     expect(after.groundMode).toBe('gpu');
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER (DEC-R7b-3a). Round 8 made affordance REGIONS
+ * clickable in both the 2D map and the 3D scene, which needed a third selection
+ * kind. There is still one details panel, so the "one panel, one selection" rule
+ * that already bound `selectedCell` and `selectedFeature` has to bind all three
+ * — and a third member is where a pairwise rule quietly stops holding, because
+ * each existing reducer has to learn about the newcomer.
+ *
+ * A region and a cell overlap EVERYWHERE on screen (a region is a flood fill
+ * over cells), so this is not a theoretical collision: without exclusivity the
+ * panel's contents would depend on which renderer branch ran last.
+ */
+describe('selecting a region', () => {
+  it('clears a selected cell', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.regionSelected('8d1fb46622d8dbf-region')
+    );
+    expect(state.selectedRegion).toBe('8d1fb46622d8dbf-region');
+    expect(state.selectedCell).toBeUndefined();
+  });
+
+  it('clears a selected feature', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.featureSelected({
+        feature: 'node/4242',
+        kind: 'amenity=cafe',
+        label: 'Café Schmitz',
+      }),
+      slice.actions.regionSelected('r1')
+    );
+    expect(state.selectedRegion).toBe('r1');
+    expect(state.selectedFeature).toBeUndefined();
+  });
+
+  it('is cleared by selecting a cell or a feature, so the rule holds both ways', () => {
+    // The half a pairwise rule loses when a third member arrives: the EXISTING
+    // reducers have to clear the newcomer too. Asserting only "region clears the
+    // others" would pass with both older reducers untouched.
+    const slice = makeSlice();
+    expect(
+      reduceAll(
+        slice,
+        slice.actions.regionSelected('r1'),
+        slice.actions.cellSelected('8d1fb46622d8dbf')
+      ).selectedRegion
+    ).toBeUndefined();
+    expect(
+      reduceAll(
+        slice,
+        slice.actions.regionSelected('r1'),
+        slice.actions.featureSelected({
+          feature: 'node/4242',
+          kind: 'amenity=cafe',
+          label: 'Café Schmitz',
+        })
+      ).selectedRegion
+    ).toBeUndefined();
+  });
+
+  it('closes the panel when passed undefined', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.regionSelected('r1'),
+      slice.actions.regionSelected(undefined)
+    );
+    expect(state.selectedRegion).toBeUndefined();
+  });
+});

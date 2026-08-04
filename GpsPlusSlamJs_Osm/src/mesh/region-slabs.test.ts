@@ -8,9 +8,12 @@
  * looks deliberate: a solid coloured surface reads as "this whole area scores",
  * which is a confidently wrong claim rather than a visible glitch.
  *
- * WHY THE WALL EXISTS. DEC-R2-11 asked for a slab rather than a flat overlay so a
- * region reads as a body at a shallow camera angle. A surface with no thickness
- * disappears edge-on, which is exactly the angle this demo is usually viewed at.
+ * WHY THERE IS NO LONGER A WALL. DEC-R2-11 asked for a slab rather than a flat
+ * overlay so a region reads as a body at a shallow camera angle. DEC-R7b-7a
+ * reversed that in round 8 — a region is an overlay on the ground, not an object
+ * standing on it — and the height assertion below is what stops "drop the walls"
+ * being read as a pure deletion, which it is not: the wall height was also the
+ * top surface's lift.
  *
  * The colour is deliberately NOT this module's business — see the sidecar.
  */
@@ -35,8 +38,12 @@ function square(size: number, offset = 0): { lat: number; lng: number }[] {
   return [at(lo, lo), at(hi, lo), at(hi, hi), at(lo, hi), at(lo, lo)];
 }
 
-function region(outline: SlabRegion["outline"], medianScore = 3): SlabRegion {
-  return { outline, medianScore };
+function region(
+  outline: SlabRegion["outline"],
+  medianScore = 3,
+  id = "r1",
+): SlabRegion {
+  return { outline, medianScore, id };
 }
 
 /** Highest and lowest `y` in the mesh. */
@@ -209,5 +216,25 @@ describe("buildRegionSlabs", () => {
       expect(faceUpness(mesh, i)).toBeGreaterThan(0);
     }
     expect(tops).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * WHY THIS TEST MATTERS (DEC-R7b-3a). A slab is what a user clicks to select a
+ * region in the 3D scene, and a click resolves to a REGION only if the slab
+ * carries its id. Dropping the id would leave the picking code with a mesh it
+ * cannot name — and the failure is silent: every slab still renders, and every
+ * click just selects nothing.
+ */
+describe("buildRegionSlabs carries the region id", () => {
+  it("puts each region's id on its own slab, in input order", () => {
+    const slabs = buildRegionSlabs(
+      [
+        region([[square(10)]], 3, "alpha"),
+        region([[square(10, 100)]], 9, "beta"),
+      ],
+      { frame: FRAME },
+    );
+    expect(slabs.map((slab) => slab.id)).toEqual(["alpha", "beta"]);
   });
 });

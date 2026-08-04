@@ -602,6 +602,14 @@ test.describe("the layer toggles", () => {
       await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
       // The 3D grid is inside a canvas, so it is asserted through the click it would
       // otherwise answer: with no grid there is nothing to pick.
+      //
+      // AREAS OFF TOO, since round 8 (DEC-R7b-3a). Region slabs became clickable,
+      // and a slab lies directly under the grid — so with only the cells hidden
+      // this click now selects the REGION and the panel legitimately opens. That
+      // is the feature working, not the grid failing to clear, and leaving the
+      // assertion as it stood would have made a working feature look like a
+      // regression in an unrelated test.
+      await page.getByRole("checkbox", { name: "areas" }).uncheck();
       const canvas = page.locator("#scene canvas");
       const box = await canvas.boundingBox();
       if (box === null) throw new Error("no canvas box");
@@ -2232,22 +2240,22 @@ test.describe("the 3D view", () => {
       //
       // The offsets also now reach further DOWN the view, which is nearer the
       // camera and inside the grid in every run observed.
+      // A GRID, not a handful of offsets. The affordance grid covers every
+      // scored cell; a REGION covers only the above-threshold components, which
+      // is a strictly smaller and fixture-dependent part of the same disc. Five
+      // points chosen for the grid miss it more often than not.
       const sweep = async () => {
-        for (const [dx, dy] of [
-          [0, 0],
-          [-40, 20],
-          [40, 20],
-          [0, 60],
-          [-80, 60],
-          [0, 120],
-          [-60, 140],
-          [60, 140],
-        ]) {
-          await page.mouse.click(
-            box.x + box.width / 2 + dx,
-            box.y + box.height / 2 + dy,
-          );
-          if (await panel.isVisible()) return true;
+        for (let dy = -60; dy <= 160; dy += 40) {
+          for (let dx = -180; dx <= 180; dx += 45) {
+            await page.mouse.click(
+              box.x + box.width / 2 + dx,
+              box.y + box.height / 2 + dy,
+            );
+            if (await panel.isVisible()) {
+              console.log("PANEL HTML:", await panel.innerHTML());
+              return true;
+            }
+          }
         }
         return false;
       };
@@ -3725,5 +3733,98 @@ test.describe("the affordance-tile look presets", () => {
       await expect(page.locator("#hotkey-help")).toContainText("preset");
       await page.keyboard.press("?");
     });
+  });
+});
+
+test.describe("selecting a region", () => {
+  /**
+   * WHY THESE TESTS EXIST (DEC-R7b-3a). A testing session asked to click a heat
+   * area and see its details, and reported that clicking one already showed a
+   * bounding box. It did not: regions had a tooltip in 2D, no click handler in
+   * either view, and were absent from the 3D raycast set by construction. What
+   * was seen was the browser's focus outline on a Leaflet `<path>`.
+   *
+   * TWO TESTS RATHER THAN TWO STEPS, and that is a correction rather than a
+   * style choice. Written as steps in one test, the 3D half ran against a panel
+   * the 2D half had already opened — so `toBeVisible` passed on stale content
+   * and the real assertion failed for a reason that had nothing to do with 3D.
+   * The two routes to `regionSelected` are independent (a Leaflet handler and a
+   * three.js raycast) and are now tested independently.
+   */
+  test("opens the details panel from the 2D map", async ({ page }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const panel = page.locator("#details");
+
+    // CELLS OFF FIRST, and that is the realistic flow rather than a test
+    // convenience: the cell layer draws in a pane ABOVE the region pane, so a
+    // click anywhere a cell covers reaches the cell. That is deliberate --
+    // `resolvePick` prefers the finer claim in 3D for the same reason -- and it
+    // means a region is reachable exactly where the grid is not.
+    await page.locator("#layer-cells").uncheck();
+
+    // The FILLED class, not the outline: an unfilled sub-threshold outline is
+    // also a `<path>`, and matching it would pass while nothing was selected.
+    const region = page.locator("#map .region-fill").first();
+    await region.waitFor({ state: "visible" });
+    await region.click({ force: true });
+
+    await expect(panel).toBeVisible();
+    const stats = panel.locator(".panel-stats");
+    await expect(stats).toBeVisible();
+    // The statistic the whole panel exists for: the colour is the median, and
+    // the range is what the colour cannot say.
+    await expect(stats).toContainText("median");
+    await expect(stats).toContainText("range");
+  });
+
+  test("opens the same panel from the 3D scene", async ({ page }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // WITH THE CELLS HIDDEN, which is the point rather than a convenience: a
+    // slab lies directly under the grid and `resolvePick` prefers the finer
+    // claim, so a region is reachable exactly where the grid is not. It is also
+    // the state DEC-R7b-6 makes the default.
+    await page.locator("#layer-cells").uncheck();
+
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+    const panel = page.locator("#details");
+    await expect(panel).toBeVisible();
+    // The SAME panel and the same mode a 2D click produces -- one selection, one
+    // explanation, and the panel does not know which view produced it.
+    await expect(panel.locator(".panel-stats")).toContainText("median");
+  });
+
+  test("replaces a region selection when a cell is selected", async ({
+    page,
+  }) => {
+    // The mutual-exclusivity rule, seen from the outside. There is one panel, so
+    // there is one selection; a region panel left under a cell selection would
+    // be a confidently wrong answer.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const panel = page.locator("#details");
+
+    await page.locator("#layer-cells").uncheck();
+    const region = page.locator("#map .region-fill").first();
+    await region.waitFor({ state: "visible" });
+    await region.click({ force: true });
+    await expect(panel.locator(".panel-stats")).toBeVisible();
+
+    await page.locator("#layer-cells").check();
+    const cell = page.locator("#map .affordance-cell").first();
+    await cell.click({ force: true });
+    await expect(panel).toBeVisible();
+    await expect(panel.locator(".panel-stats")).toHaveCount(0);
   });
 });

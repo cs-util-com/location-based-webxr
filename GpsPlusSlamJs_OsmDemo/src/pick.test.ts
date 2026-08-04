@@ -180,3 +180,67 @@ describe("resolvePick — instanced POI markers (W7)", () => {
     });
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER (DEC-R7b-3a). Region slabs became clickable in round 8,
+ * and a region is the first member of the raycast set that is not a fine-grained
+ * claim. A slab covers every cell inside it BY CONSTRUCTION — it is a flood fill
+ * over those cells — so the overlap is total rather than incidental, and the
+ * distance rule that correctly arbitrates a marker against the grid gives the
+ * wrong answer here at any angle where the slab is nearer.
+ *
+ * The failure mode is the nasty kind: correct from overhead, wrong at a grazing
+ * angle, and reported as "clicking a cell sometimes opens the wrong panel".
+ */
+describe("resolvePick with region slabs", () => {
+  const slab = (distance: number, region = "r1"): PickCandidate => ({
+    distance,
+    userData: { regionId: region },
+  });
+  const cellHit = (distance: number, faceIndex = 0): PickCandidate => ({
+    distance,
+    faceIndex,
+    userData: { cellGrid: true },
+  });
+
+  it("selects a region when nothing sharper was hit", () => {
+    expect(resolvePick([slab(5)], [])).toEqual({
+      kind: "region",
+      region: "r1",
+    });
+  });
+
+  it("prefers a CELL even when the slab is nearer", () => {
+    // The whole point. With the cells hidden the slab is the only hit and this
+    // never fires; with them shown, a click must reach the finer claim from
+    // every camera angle, not just from above.
+    expect(resolvePick([slab(1), cellHit(9)], ["8d1fb46622d8dbf"])).toEqual({
+      kind: "cell",
+      cell: "8d1fb46622d8dbf",
+    });
+  });
+
+  it("falls back to the region when the nearer cell hit is unidentifiable", () => {
+    // A drifted `cellForTriangle` skips the cell. Answering with the region is
+    // better than answering with nothing: the region is still true, and a dead
+    // click reads as a broken control.
+    expect(resolvePick([slab(5), cellHit(1, 42)], [])).toEqual({
+      kind: "region",
+      region: "r1",
+    });
+  });
+
+  it("takes the NEAREST region when slabs overlap", () => {
+    expect(resolvePick([slab(9, "far"), slab(2, "near")], [])).toEqual({
+      kind: "region",
+      region: "near",
+    });
+  });
+
+  it("ignores a slab carrying an empty id rather than selecting nothing", () => {
+    // `regionId` is built from the lowest-sorting cell, and an empty region
+    // yields "". Selecting it would open a panel on a region that cannot be
+    // found in the snapshot.
+    expect(resolvePick([slab(1, "")], [])).toBeUndefined();
+  });
+});

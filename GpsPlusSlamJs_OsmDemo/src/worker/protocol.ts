@@ -117,6 +117,8 @@ export interface TransferableMesh {
  */
 interface RegionSlabData {
   readonly medianScore: number;
+  /** So a click on the slab resolves back to the region it draws (DEC-R7b-3a). */
+  readonly id: string;
   readonly mesh: MeshData;
 }
 

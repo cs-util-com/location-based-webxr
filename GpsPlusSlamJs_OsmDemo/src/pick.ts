@@ -59,7 +59,8 @@ export interface PickCandidate {
 /** What the user selected. */
 export type Pick =
   | { readonly kind: "cell"; readonly cell: string }
-  | { readonly kind: "poi"; readonly marker: PoiMarker };
+  | { readonly kind: "poi"; readonly marker: PoiMarker }
+  | { readonly kind: "region"; readonly region: string };
 
 /**
  * The nearest hit that resolves to something selectable, or `undefined`.
@@ -68,10 +69,21 @@ export type Pick =
  * return hits in distance order, but relying on that would make this module's
  * contract depend on a detail of its caller's caller.
  *
- * Distance is the only tie-break, and that is deliberate. A marker stands on the
- * grid, so a click on a marker hits both — preferring one KIND by rule would
- * make the grid unclickable wherever a marker overlaps it, or markers
+ * Distance is the only tie-break BETWEEN PEERS, and that is deliberate. A marker
+ * stands on the grid, so a click on a marker hits both — preferring one KIND by
+ * rule would make the grid unclickable wherever a marker overlaps it, or markers
  * unclickable altogether.
+ *
+ * A REGION IS NOT A PEER, and it is the one exception (DEC-R7b-3a). A region is
+ * a flood fill OVER cells, so its slab covers every cell inside it by
+ * construction — the overlap is total rather than incidental, which is exactly
+ * the case the distance rule handles badly. The finer claim wins: a region is
+ * resolved only when nothing sharper was hit.
+ *
+ * Relying on the 4 cm the layer ladder puts between them would work from
+ * overhead and fail at a grazing angle, where the slab in front of a cell is
+ * nearer. That is a bug that appears only at certain camera angles, which is the
+ * class this round already spent a session diagnosing.
  *
  * An unidentifiable hit is SKIPPED, not fatal: the click keeps looking behind
  * it. Selecting nothing because an unselectable object was in front reads as a
@@ -82,7 +94,15 @@ export function resolvePick(
   hits: readonly PickCandidate[],
   cellForTriangle: readonly string[],
 ): Pick | undefined {
+  let region: Pick | undefined;
   for (const hit of [...hits].sort((a, b) => a.distance - b.distance)) {
+    // Remembered, not returned: the nearest region is the answer only if no cell
+    // or marker turns up behind it. See the header.
+    const regionId = hit.userData["regionId"];
+    if (typeof regionId === "string" && regionId !== "") {
+      region ??= { kind: "region", region: regionId };
+      continue;
+    }
     // POI MARKERS ARE INSTANCED (W7), so the identity is no longer on the
     // object — one `InstancedMesh` carries every marker and the hit's
     // `instanceId` selects one. Structurally identical to the cell grid's
@@ -110,5 +130,5 @@ export function resolvePick(
     if (cell === undefined) continue;
     return { kind: "cell", cell };
   }
-  return undefined;
+  return region;
 }

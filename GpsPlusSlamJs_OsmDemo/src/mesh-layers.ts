@@ -579,6 +579,10 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
             }),
           );
           object.position.y = groundLift("areas");
+          // THE ID A CLICK RESOLVES TO (DEC-R7b-3a). `building-view.ts` adds
+          // every object carrying this key to the raycast set, so the marker and
+          // the membership are one fact rather than two that can disagree.
+          object.userData["regionId"] = slab.id;
           // AFTER the opaque world, before nothing in particular. With
           // `depthWrite` off, a transparent surface is at the mercy of three's
           // default sort, which orders by distance and knows nothing about which

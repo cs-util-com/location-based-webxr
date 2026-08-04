@@ -73,7 +73,7 @@ function fullMesh(): TransferableMesh {
     plateCount: 3,
     roads: oneChunk(),
     roadCount: 2,
-    regions: [{ medianScore: 4, mesh: triangle() }],
+    regions: [{ medianScore: 4, id: "r1", mesh: triangle() }],
     poi: [
       {
         feature: "node/4242",
@@ -888,5 +888,25 @@ describe("the transparent layers composite deterministically", () => {
     });
     expect(objects[0]?.renderOrder).toBe(RENDER_ORDER.areas);
     expect(RENDER_ORDER.areas).toBeLessThan(RENDER_ORDER.cells);
+  });
+});
+
+/**
+ * WHY THIS TEST MATTERS (DEC-R7b-3a). Selecting a region in the 3D scene works
+ * only if the slab carries its id into `userData` — `building-view.ts` uses that
+ * key BOTH to decide the object is raycastable and to name what was hit, so a
+ * missing id makes the slab silently unselectable rather than throwing.
+ */
+describe("region slabs carry their identity into the scene", () => {
+  it("puts the region id on the drawn object", () => {
+    const { objects } = drawMeshLayers(fullMesh(), {
+      buildings: false,
+      trees: false,
+      plates: false,
+      poi: false,
+      roads: false,
+      areas: true,
+    });
+    expect(objects[0]?.userData["regionId"]).toBe("r1");
   });
 });

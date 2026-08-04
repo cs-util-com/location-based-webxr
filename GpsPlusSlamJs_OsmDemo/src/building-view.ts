@@ -898,6 +898,11 @@ export class BuildingView {
     // are absent from it by construction, so no amount of later logic can make
     // them selectable — which is a stronger guarantee than filtering hits after
     // the fact, and it is also much cheaper than raycasting the whole city.
+    //
+    // REGION SLABS JOINED IT IN ROUND 8 (DEC-R7b-3a), and they are the first
+    // member that is not a fine-grained claim. That matters for precedence, not
+    // for membership: a slab covers every cell inside it, so a click that hits
+    // both must resolve to the cell — see `resolvePick`.
     const targets: THREE.Object3D[] = [];
     if (this.cellMesh !== undefined) targets.push(this.cellMesh);
     for (const child of this.group.children) {
@@ -905,6 +910,7 @@ export class BuildingView {
       // raycast set gains one object rather than one per marker — which is also
       // why picking got cheaper rather than more expensive.
       if (child.userData["poiInstances"] !== undefined) targets.push(child);
+      if (child.userData["regionId"] !== undefined) targets.push(child);
     }
     if (targets.length === 0) return undefined;
     // Reduced to what the decision reads. `Intersection` nests `userData` under

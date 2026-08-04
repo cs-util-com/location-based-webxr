@@ -42,6 +42,7 @@ import { HotkeyRegistry } from "./hotkeys.js";
 import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
+import { summariseRegion } from "./region-summary.js";
 import { LocateControl } from "./locate-control.js";
 import { attachSheetDrag } from "./sheet-drag.js";
 import { EMPTY_CELL_MESH } from "./cell-mesh.js";
@@ -182,6 +183,7 @@ async function main(): Promise<void> {
     centre: start,
     // The map reports a selection; it does not know the panel exists.
     onCellClick: (cell) => store.dispatch(actions.cellSelected(cell)),
+    onRegionClick: (region) => store.dispatch(actions.regionSelected(region)),
   });
   // ONE REGISTRY FOR THE WHOLE DEMO (§1.4 step 5). Built here so §3's look
   // presets and §6's event clock reuse it rather than each attaching their own
@@ -205,6 +207,10 @@ async function main(): Promise<void> {
     onPick: (picked) => {
       if (picked.kind === "cell") {
         store.dispatch(actions.cellSelected(picked.cell));
+      } else if (picked.kind === "region") {
+        // Same action a 2D region click dispatches, for the same reason a cell
+        // selection is shared: the panel must not know which view produced it.
+        store.dispatch(actions.regionSelected(picked.region));
       } else {
         store.dispatch(actions.featureSelected(picked.marker));
       }
@@ -944,6 +950,49 @@ async function main(): Promise<void> {
       detailsPanel.renderFeature(feature);
     },
   );
+  /**
+   * The REGION half of the same panel (DEC-R7b-3a).
+   *
+   * A third subscriber, for the reason the second one gives: the three
+   * selections are mutually exclusive in the reducer, so each subscriber only
+   * ever handles "mine arrived" and "mine went away".
+   *
+   * WHY IT RESOLVES THE ID RATHER THAN HOLDING THE REGION. A region id is the
+   * lowest-sorting cell in it, and `region-builder.ts` documents that two
+   * regions merging as more data loads changes BOTH their ids. The store holds
+   * the id; the panel is rendered from whatever the CURRENT snapshot says that
+   * id means. When the id is gone — merged away, or scored out — the selection
+   * is dropped rather than left showing numbers for a region that no longer
+   * exists. Stale numbers in a details panel are worse than no panel, because
+   * they look authoritative.
+   */
+  const showRegion = (id: string | undefined): void => {
+    if (id === undefined) {
+      const view = selectOsmView(store.getState());
+      // Only clear if nothing else took over: all three subscribers fire on the
+      // same dispatch.
+      if (
+        view.selectedCell === undefined &&
+        view.selectedFeature === undefined
+      ) {
+        detailsPanel.clear();
+      }
+      return;
+    }
+    const snapshot = selectOsmView(store.getState()).snapshot;
+    const region = snapshot?.regions.find((candidate) => candidate.id === id);
+    if (region === undefined) {
+      store.dispatch(actions.regionSelected(undefined));
+      return;
+    }
+    detailsPanel.renderRegion(summariseRegion(region));
+  };
+  subscribe(
+    (view) => view.selectedRegion,
+    (id) => {
+      showRegion(id);
+    },
+  );
   // A new snapshot or a new category re-explains whatever is still selected,
   // so the panel can never describe a cell in a category the map is no longer
   // showing — the disagreement the store exists to make impossible.
@@ -951,6 +1000,9 @@ async function main(): Promise<void> {
     (view) => view.snapshot,
     () => {
       void explainSelected(selectOsmView(store.getState()).selectedCell);
+      // A region's id can change under it when regions merge, so the selection
+      // is re-resolved rather than assumed still valid.
+      showRegion(selectOsmView(store.getState()).selectedRegion);
     },
   );
   subscribe(

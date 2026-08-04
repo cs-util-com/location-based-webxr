@@ -48,6 +48,14 @@ export interface SlabRegion {
   readonly outline: readonly (readonly (readonly LatLng[])[])[];
   /** Carried through so the CALLER can colour by it. See the header. */
   readonly medianScore: number;
+  /**
+   * Carried through so a CLICK on the slab can be resolved back to the region.
+   *
+   * Opaque here, exactly like the score: this module knows nothing about how
+   * ids are formed and must not, or it would become a second place that decides
+   * region identity.
+   */
+  readonly id: string;
 }
 
 export interface BuildRegionSlabsOptions {
@@ -57,6 +65,7 @@ export interface BuildRegionSlabsOptions {
 
 export interface RegionSlab {
   readonly medianScore: number;
+  readonly id: string;
   readonly mesh: MeshData;
 }
 
@@ -69,6 +78,7 @@ export function buildRegionSlabs(
   for (const region of regions) {
     slabs.push({
       medianScore: region.medianScore,
+      id: region.id,
       mesh: slabMesh(region, options),
     });
   }

@@ -134,6 +134,22 @@
         margin: 0 0 0.6rem;
         color: #9aa3b8;
       }
+      /* The region panel's statistics. A two-column grid rather than a table:
+         the labels are one word each and the values are short, so alignment is
+         all the structure it needs. */
+      .panel-stats {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.15rem 0.75rem;
+        margin: 0.4rem 0 0.6rem;
+      }
+      .panel-stats dt {
+        color: #9aa3b8;
+      }
+      .panel-stats dd {
+        margin: 0;
+        color: #e6e8ef;
+      }
       .panel-feature {
         border-top: 1px solid #2a2f3d;
         padding: 0.3rem 0;

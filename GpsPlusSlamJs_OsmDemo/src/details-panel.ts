@@ -23,6 +23,7 @@
  */
 
 import { explanationTree, type FeatureRow } from "./explanation-tree.js";
+import type { RegionSummary } from "./region-summary.js";
 import type { CellExplanation } from "gps-plus-slam-osm";
 
 export interface DetailsPanelOptions {
@@ -96,6 +97,56 @@ export class DetailsPanel {
     // REPLACE, not append: both modes share one container, and a cell
     // explanation left under a POI heading is a confidently wrong answer.
     this.container.replaceChildren(header, kind, provenance);
+    this.container.hidden = false;
+  }
+
+  /**
+   * Describes a selected affordance REGION (DEC-R7b-3a).
+   *
+   * The third mode, and the reason the panel needed one: a region is neither an
+   * argument (a cell explanation, with factors and vetoes) nor a named thing (a
+   * POI). It is a claim about an area, and what makes it worth a panel is the
+   * SPREAD the slab's single colour cannot show — see `region-summary.ts`.
+   *
+   * Takes a rendered summary rather than a `Region`, so everything that can be
+   * wrong about the wording or the arithmetic is testable without a DOM.
+   */
+  renderRegion(summary: RegionSummary): void {
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("strong");
+    title.textContent = summary.title;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "panel-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "close details");
+    close.addEventListener("click", this.onClose);
+    header.append(title, close);
+
+    const stats = document.createElement("dl");
+    stats.className = "panel-stats";
+    for (const stat of summary.stats) {
+      const label = document.createElement("dt");
+      label.textContent = stat.label;
+      const value = document.createElement("dd");
+      // `textContent`: every one of these is derived from OSM data, and a
+      // category name comes from the publicly editable rule sheet.
+      value.textContent = stat.value;
+      stats.append(label, value);
+    }
+
+    const nodes: HTMLElement[] = [header, stats];
+    if (summary.spreadNote !== undefined) {
+      const note = document.createElement("p");
+      note.className = "panel-summary";
+      note.textContent = summary.spreadNote;
+      nodes.push(note);
+    }
+
+    // REPLACE, not append — the same rule the other two modes follow. A cell
+    // explanation left under a region heading is a confidently wrong answer.
+    this.container.replaceChildren(...nodes);
     this.container.hidden = false;
   }
 
