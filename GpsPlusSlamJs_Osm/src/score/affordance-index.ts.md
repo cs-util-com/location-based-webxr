@@ -41,6 +41,13 @@ Returns `{state:"scored", score}`, `{state:"empty"}` or `{state:"unknown"}`.
   `distribute` only records a cell some feature covered, so a scored-but-empty
   chunk publishes no cell records at all. Materialising them would mean ~2 989
   records of pure absence per working set crossing the worker boundary.
+- **It goes straight to the chunk, never through `scoresByCell()`.** That map
+  rebuilds over EVERY retained chunk (~24 000 cells) whenever `chunkVersion`
+  moves, and the geo-event climb interleaves single-cell reads with scoring that
+  bumps it — so routing through it would rebuild everything after every ensure,
+  for an algorithm whose whole point is a bounded neighbourhood. A cell's res-11
+  parent names its chunk directly, so the lookup is O(49) over one chunk and
+  cannot be invalidated.
 - **Read-only.** Never scores, never fetches, never awaits.
 
 ## Invariants & assumptions

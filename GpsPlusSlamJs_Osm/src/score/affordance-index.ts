@@ -460,11 +460,25 @@ export class AffordanceIndex {
    * fact about the field, not a request to change it.
    */
   cellState(cell: string): CellState {
-    const scored = this.scoresByCell().get(cell);
-    if (scored !== undefined) return { state: "scored", score: scored.scores };
-    return this.chunks.has(cellToParent(cell, SCORE_CHUNK_RES))
+    // STRAIGHT TO THE CHUNK, never through `scoresByCell()`. The first version
+    // of this method did go through it, and that was a real defect rather than
+    // an inefficiency: `scoresByCell` rebuilds over EVERY retained chunk
+    // (~24 000 cells) whenever `chunkVersion` moves, and the geo-event climb
+    // interleaves single-cell reads with `ensureScored` calls that bump it. Each
+    // read after each ensure would have rebuilt the whole map — O(everything
+    // retained) per step of an algorithm whose whole point is to touch a bounded
+    // neighbourhood.
+    //
+    // The spatial structure needed to avoid it was already here: chunks are
+    // keyed by their res-11 cell, so a cell's parent names its chunk directly.
+    // This is O(49) over one chunk's cells, allocates nothing, and cannot be
+    // invalidated.
+    const chunk = this.chunks.get(cellToParent(cell, SCORE_CHUNK_RES));
+    if (chunk === undefined) return { state: "unknown" };
+    const scored = chunk.cells.find((entry) => entry.cell === cell);
+    return scored === undefined
       ? { state: "empty" }
-      : { state: "unknown" };
+      : { state: "scored", score: scored.scores };
   }
 
   /** Every held cell whose score in `category` is strictly above `threshold`. */
