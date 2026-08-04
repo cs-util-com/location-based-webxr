@@ -39,6 +39,27 @@ is ~28 MB, the merge tests want a **second overlapping one**, and this corpus is
 4.8 MB today. That decision (gzip the fixtures / regenerate on demand / check in
 raw) is open — see the plan's §10.
 
+**DECIDED 2026-08-04, and the answer is "none of those three".** The corpus stays
+checked in and uncompressed, every payload is **minified** (`.prettierignore`
+keeps the format stage from re-expanding it), and a **2 MiB ceiling per tracked
+file** is now enforced by `tests/repo-config/max-file-size.test.js`. A ~28 MB
+res-7 capture is therefore uncommittable, and **no full-size fixture will be
+taken** — the six-site corpus covers the "one city only" risk better anyway, at
+four countries instead of one.
+
+Each rejected option failed on a measurement, not on taste:
+
+- **Gzip** — git already zlib-compresses every blob, so gzipping buys ~20 %, not
+  the ~8x that comparing against working-tree bytes suggests. Gzipped blobs also
+  stop delta-compressing, making the corpus _heavier_ after a single re-capture.
+- **Regenerate on demand** — costs the offline determinism this corpus exists
+  for, and OSM edits daily, so every count-pinned test starts drifting.
+- **Check in raw at 28 MB** — what the ceiling now forbids.
+
+The number that had been driving the whole discussion was also the wrong one:
+this corpus is **~1.7 MiB in git**, not the 4.8 MB of working-tree bytes quoted
+above.
+
 **These four stay the everyday corpus regardless**: small, fast in CI, and real
 OSM data with real tag distributions, real multipolygons and real long-tail
 tags, which is what fixtures are for. What they cannot give is true element
@@ -51,6 +72,13 @@ does not move every ratio — so quote their absolute numbers as "measured at re
 > rather than importing `OVERPASS_SELECT_KEYS`. Run as-is against a res-7 tile it
 > will 504, and the failure will look like a server problem rather than a query
 > problem — which is exactly how a day was lost the first time.
+>
+> **And check what it wrote against what you expected it to write.**
+> `scripts/capture-non-areal.mjs` predicted "a few hundred kB" in its own header
+> and produced **24.9 MB**, which the format stage then committed as **41.4 MB
+> across 1 128 493 lines** — two thirds of one pull request's entire diff, and
+> nothing went red for a week. Both halves of that were avoidable by looking:
+> the estimate was in the file, and so was the result.
 
 ## The query is key-filtered, and why that is safe
 
@@ -182,3 +210,32 @@ What the corpus found on its first run: `roof:shape=pyramidal` with no tagged
 roof height produced a ZERO-height roof — a flat cap over the full footprint.
 That is the Cologne Cathedral finding (R3-1/R4-7) that three rounds of reading
 the source did not settle. See `src/mesh/building-heights.ts`.
+
+## `sites/cologne-cathedral.non-areal.json` — the companion, not a site
+
+**A twelfth file that is not a fixture and must not be read as one.** Captured
+2026-08-03 by `scripts/capture-non-areal.mjs`, it holds the **85 relations the
+Cologne site extract DROPPED**, so `plain` is reconstructible offline as
+`fixture + this` and the `areal-only` query switch could be tested as a
+differential rather than argued about. Its only consumer is
+`src/score/areal-only-differential.test.ts`, and the answer it produced was
+**zero disagreement across 86 172 cell-category pairs** — structurally, because
+`buildFeatureIndex` rejects all 85 as `unsupported-relation-type` before scoring.
+
+- **It is deliberately incomplete: every relation's `members` array is EMPTIED.**
+  `out geom` prints each member's full coordinate list, and 83 of the 85 are
+  route relations (81 `route`, 2 `suspended:route`; the other 2 are `building`),
+  several spanning hundreds of km — 77 381 members and 590 061 positions, none of
+  which any consumer reads, because `relationToGeometry` checks `isArealRelation`
+  before it ever calls `memberGeometries`. The count kept is `membersOmitted`, so
+  the file states what it dropped instead of pretending to be a full capture.
+- **The arrays are emptied, never removed.** `parseRelation` skips a relation
+  whose `members` is not an array — which would take the differential's element
+  count to zero and make its `unsupported-relation-type` loop pass over nothing,
+  proving the opposite of what it claims. `areal-only-differential.test.ts` pins
+  both halves.
+- **50 kB, down from 41.4 MB as first committed** (497x). It is not a site, has
+  no `s3dbCensus` and no `captureRes`, and `loadAllFixtures` must never pick it
+  up — it lives in `sites/` only because it belongs to the Cologne extract.
+- Re-capture with `node scripts/capture-non-areal.mjs cologne-cathedral`. It hits
+  donated public infrastructure, so it is a script and never a gate.

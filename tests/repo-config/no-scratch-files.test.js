@@ -12,10 +12,17 @@
 // versions properly — so the next reader has two sources and no way to tell
 // which is authoritative.
 //
-// Coverage limits: this checks the *tracked* file list only. It cannot tell a
-// deliberate fixture from an accidental dump (that judgement is what the
-// allowlist below is for), and it says nothing about large files in general —
-// `src/testdata/*.json` are legitimately several MB and are meant to be there.
+// Coverage limits: this checks the *tracked* file list only, and by NAME. It
+// cannot tell a deliberate fixture from an accidental dump (that judgement is
+// what the allowlist below is for), and it says nothing about a file's size —
+// a well-named fixture of any size passes here.
+//
+// Size is `max-file-size.test.js`'s job, and it had to be written because that
+// gap was not hypothetical: `GpsPlusSlamJs_Osm/src/testdata/sites/cologne-cathedral.non-areal.json`
+// was committed at 41.4 MB under a perfectly reasonable name. The sentence this
+// comment replaced said `src/testdata/*.json` were "legitimately several MB and
+// are meant to be there" — true when written, and by 2026-08-04 the largest was
+// 1.25 MB after the minify pass, with 2 MiB now the enforced ceiling.
 
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
