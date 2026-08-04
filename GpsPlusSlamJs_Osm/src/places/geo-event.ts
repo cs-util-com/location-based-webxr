@@ -226,3 +226,131 @@ export function climbToLocalMaximum({
     heat: currentAt.complete ? currentAt.heat : 0,
   };
 }
+
+/**
+ * Candidates the C# evaluates per batch, and how many batches it will try.
+ *
+ * `COUNT = 10`, `RETRY_COUNT = 10` — `GeoEvent.cs:60-61`, so up to 100
+ * candidates, stopping at the first batch that yields a passing one. Kept
+ * verbatim because they are the shape of the retry, not tuning: the batch is
+ * what bounds one round of scoring work, and the retry count is how stubborn it
+ * is before giving up on a tile.
+ */
+const CANDIDATES_PER_BATCH = 10;
+const MAX_BATCHES = 10;
+
+/** The chosen candidate, plus what it beat. */
+export interface BestPick {
+  /** The raw seeded position, before the climb. */
+  readonly candidate: LatLng;
+  /** Where the climb settled. */
+  readonly cell: string;
+  /** Neighbourhood heat at `cell`. */
+  readonly heat: number;
+  /**
+   * The batch this was chosen from, in seeded order.
+   *
+   * Exposed because the demo draws the deciding batch rather than all 100
+   * candidates (DEC-R9-8) — the honest picture of what the algorithm did, and
+   * ~11 markers instead of 400 on a map that had its cell layer defaulted off
+   * for exactly that cost.
+   */
+  readonly evaluated: readonly LatLng[];
+}
+
+/**
+ * The best spawn position in one tile, or `undefined` if the tile has none.
+ *
+ * This is `CalcBestPickForGeoHashV2` — seeded candidates in batches, each
+ * climbed to a local maximum, the first batch with a passing candidate winning.
+ *
+ * **THE QUALITY GATE IS THE C# CONSTANT, TRANSLATED — not a re-tuned one.**
+ * `heat > 9` reads like a field-fitted number and is not. `HeatMapTile.Heat` is
+ * documented _"Starts at 1 as the neutral multiplication identity element"_ and
+ * accumulates with `Heat *= elemHeat` — the same product over the same rule
+ * table this package scores with — so a 9-cell sum of exactly 9 is an entirely
+ * baseline neighbourhood and `> 9` means "something is actually mapped here".
+ *
+ * H3 gives 7 cells rather than 9, so the identical rule is `> 7`. It is DERIVED
+ * from `neighbours()` rather than written down, which also makes it correct at
+ * H3's twelve pentagons, where a cell has five neighbours instead of six — a
+ * hard-coded 7 would reject good ground there, rarely enough never to be noticed
+ * and wrongly every time.
+ *
+ * **The gate is deliberately permissive**, as the C#'s is: F44 measured this
+ * threshold selecting ~45 % of ground at Cologne. Rejecting unmapped and vetoed
+ * ground is its whole job — finding the *good* spot is the climb's.
+ *
+ * **A climb that `left` the scored field is never a candidate.** `left` means
+ * "no answer", not "a weak answer"; taking it would place the event on the rim
+ * of whatever happened to be loaded, which is the failure DEC-R6-14f names.
+ *
+ * Pure, like everything else here: scoring, fetching and pinning are the
+ * caller's, which is what keeps this testable with a plain object as the field.
+ */
+export function bestPickForTile({
+  bbox,
+  globalSeed,
+  eventTime,
+  toCell,
+  heatAt,
+  neighbours,
+  steps,
+  batches = MAX_BATCHES,
+}: {
+  bbox: GeoBounds;
+  globalSeed: number;
+  eventTime: number;
+  /** Position → the cell the climb starts from. */
+  toCell: (position: LatLng) => string;
+  heatAt: (cell: string) => number | undefined;
+  neighbours: (cell: string) => readonly string[];
+  steps: number;
+  /** Batches to try before giving up on the tile. Defaults to the C#'s ten. */
+  batches?: number;
+}): BestPick | undefined {
+  for (let batch = 0; batch < batches; batch += 1) {
+    // The seed advances by whole batches, so batch N's candidates are the same
+    // ten regardless of whether earlier batches were tried — which is what keeps
+    // the result independent of how much scoring happened to be needed.
+    const candidates = eventCandidates({
+      bbox,
+      globalSeed: globalSeed + batch * CANDIDATES_PER_BATCH,
+      eventTime,
+      count: CANDIDATES_PER_BATCH,
+    });
+
+    let best: BestPick | undefined;
+    for (const candidate of candidates) {
+      const start = toCell(candidate);
+      const climbed = climbToLocalMaximum({
+        start,
+        heatAt,
+        neighbours,
+        steps,
+      });
+      if (climbed.left) continue;
+
+      // DERIVED, not a literal. See the docstring: this is the C#'s `> 9` with
+      // its 9 replaced by however many cells the neighbourhood actually has.
+      const baseline = neighbours(climbed.cell).length + 1;
+      if (!(climbed.heat > baseline)) continue;
+
+      if (best === undefined || climbed.heat > best.heat) {
+        best = {
+          candidate,
+          cell: climbed.cell,
+          heat: climbed.heat,
+          evaluated: candidates,
+        };
+      }
+    }
+
+    // FIRST PASSING BATCH WINS, as the C# does — not a global argmax over all
+    // 100. A later batch is only reached because every earlier one failed the
+    // gate, so "best overall" would mean scoring ten times the ground to improve
+    // on a choice that already cleared the bar.
+    if (best !== undefined) return best;
+  }
+  return undefined;
+}

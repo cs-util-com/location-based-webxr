@@ -44,11 +44,18 @@ what let it be written before the wide-heat work exists.
   `new Random((int)(globalSeed + nr + unixMinutes))` — .NET's subtractive
   generator, not reproducible in JS without porting a runtime's internals, and
   changed by .NET between versions. Positions will **not** match the C#.
-- **The `heat > 9` quality gate is NOT ported.** Measured over the corpus, 9
-  selects 30–45 % of all ground in our units, because the C# heat map summed
-  counts where this one multiplies rule factors. See
-  `score/corpus-score-distribution.test.ts`. The replacement belongs with the
-  caller, which has a local distribution to take a quantile of.
+- **The `heat > 9` quality gate IS ported, translated** (round 9, DEC-R9-3). An
+  earlier note here said it was not, on the grounds that "the C# heat map summed
+  counts where this one multiplies rule factors". **That is wrong**:
+  `HeatMapTile.Heat` is documented _"Starts at 1 as the neutral multiplication
+  identity element"_ and accumulates with `Heat *= elemHeat` — the same product
+  over the same rule table. So `> 9` is not a tuned number: it is 9 cells x an
+  identity of 1, i.e. "strictly above an entirely baseline neighbourhood". H3
+  gives 7 cells, so the same rule is `> 7`, and `bestPickForTile` derives it from
+  `neighbours()` rather than hard-coding it — which is also correct at H3s twelve
+  pentagons, where a cell has five neighbours. The corpus measurement showing ~45 %
+  of ground passing is what a deliberately permissive gate does; rejecting
+  unmapped and vetoed ground is its job, and finding the good spot is the climbs.
 
 ## Known limit
 
@@ -60,9 +67,9 @@ on it.
 
 ## Not yet built
 
-`bestPickForTile` (the candidate/retry loop and the quality gate) and
-`newGeoEventFor` (centre tile plus nearest neighbours, ordered by distance).
-Both need the wider heat radius and a re-derived gate first.
+`newGeoEventFor` — the centre tile plus its nearest neighbours, ordered by
+distance to the user. `bestPickForTile` landed in round 9 with the translated
+gate above.
 
 ## Tests
 

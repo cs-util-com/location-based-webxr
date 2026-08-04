@@ -28,6 +28,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   QUARTER_HOUR_MS,
+  bestPickForTile,
   climbToLocalMaximum,
   eventCandidates,
   nextEventTime,
@@ -295,5 +296,143 @@ describe("climbToLocalMaximum", () => {
     });
     expect(result.left).toBe(false);
     expect(result.cell).not.toBe("0,0");
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (round 9 §6, DEC-R9-3/12). `bestPickForTile` is the
+ * candidate/retry loop the C# calls `CalcBestPickForGeoHashV2`, and the part it
+ * was blocked on was the quality gate.
+ *
+ * THE GATE IS THE C# CONSTANT, TRANSLATED. `heat > 9` looked like a tuned
+ * number and is not: `HeatMapTile.Heat` is documented "Starts at 1 as the
+ * neutral multiplication identity element" and accumulates with `Heat *=
+ * elemHeat`, exactly as this package's scorer does — so a 9-cell sum of 9 is an
+ * entirely baseline neighbourhood, and `> 9` means "something is actually mapped
+ * here". H3 gives 7 cells, so the same rule is `> 7`, DERIVED from the
+ * neighbourhood rather than written down. Using the literal 9 would have been a
+ * ~29 % tightening arrived at by arithmetic rather than judgement.
+ */
+describe("bestPickForTile — the candidate loop and its gate", () => {
+  const BBOX = { south: 0, west: 0, north: 1, east: 1 };
+  /** Every candidate maps to the same cell, so the field decides everything. */
+  const toOneCell = () => "0,0";
+
+  it("returns nothing when every candidate sits on baseline ground", () => {
+    // The gate's whole purpose. A neighbourhood at the identity is unmapped
+    // ground, and placing an event there is what the C# refuses to do.
+    const flat: Record<string, number> = {};
+    for (let x = -2; x <= 2; x += 1) {
+      for (let y = -2; y <= 2; y += 1) flat[`${x},${y}`] = 1;
+    }
+    const pick = bestPickForTile({
+      bbox: BBOX,
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: toOneCell,
+      heatAt: fieldFrom(flat),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+    expect(pick).toBeUndefined();
+  });
+
+  it("accepts a neighbourhood that is above baseline", () => {
+    const warm: Record<string, number> = {};
+    for (let x = -2; x <= 2; x += 1) {
+      for (let y = -2; y <= 2; y += 1) warm[`${x},${y}`] = 2;
+    }
+    const pick = bestPickForTile({
+      bbox: BBOX,
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: toOneCell,
+      heatAt: fieldFrom(warm),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+    expect(pick).toBeDefined();
+    expect(pick?.cell).toBe("0,0");
+  });
+
+  it("derives the gate from the neighbourhood, not from a constant", () => {
+    // A cell with FEWER neighbours has a lower baseline, so the same heat must
+    // still pass. H3 pentagons really do have five neighbours rather than six,
+    // and a hard-coded 7 would reject perfectly good ground at twelve places on
+    // Earth -- rare enough never to be noticed and wrong every time.
+    const values: Record<string, number> = { "0,0": 1.5, "1,0": 1.5 };
+    const twoCellWorld = (cell: string) => (cell === "0,0" ? ["1,0"] : ["0,0"]);
+    const pick = bestPickForTile({
+      bbox: BBOX,
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: toOneCell,
+      heatAt: fieldFrom(values),
+      neighbours: twoCellWorld,
+      steps: 1,
+    });
+    // Sum is 3.0 over a 2-cell neighbourhood: above its baseline of 2.
+    expect(pick).toBeDefined();
+  });
+
+  it("rejects an isolated hot cell surrounded by unscored ground", () => {
+    // `left: true` is "no answer", not "a weak answer" -- taking it would place
+    // the event on the rim of whatever happened to be loaded (DEC-R6-14f).
+    //
+    // NAMED FOR THE OUTCOME, NOT THE MECHANISM, and that is deliberate. TWO
+    // things reject this candidate and no fixture can separate them:
+    // `climbToLocalMaximum` returns `heat: 0` whenever `left` is true, so the
+    // gate rejects it even with the explicit `left` check removed. The check is
+    // kept as defence in depth -- it states the intent independently of the
+    // gate's arithmetic, so lowering the baseline could not let a left climb
+    // through -- but a test claiming to pin it alone would be claiming something
+    // it cannot observe. Found by mutation, not by reading.
+    const island: Record<string, number> = { "0,0": 50 };
+    const pick = bestPickForTile({
+      bbox: BBOX,
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: toOneCell,
+      heatAt: fieldFrom(island),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+    expect(pick).toBeUndefined();
+  });
+
+  it("is deterministic for the same seed and time", () => {
+    const warm: Record<string, number> = {};
+    for (let x = -2; x <= 2; x += 1) {
+      for (let y = -2; y <= 2; y += 1) warm[`${x},${y}`] = 3;
+    }
+    const args = {
+      bbox: BBOX,
+      globalSeed: 7,
+      eventTime: 1_700_000_000_000,
+      toCell: toOneCell,
+      heatAt: fieldFrom(warm),
+      neighbours: gridNeighbours,
+      steps: 3,
+    };
+    expect(bestPickForTile(args)).toEqual(bestPickForTile(args));
+  });
+
+  it("reports which candidates it evaluated, for the demo to draw", () => {
+    // DEC-R9-8 draws the deciding batch rather than all 100, so the caller needs
+    // to know which ten those were.
+    const warm: Record<string, number> = {};
+    for (let x = -2; x <= 2; x += 1) {
+      for (let y = -2; y <= 2; y += 1) warm[`${x},${y}`] = 3;
+    }
+    const pick = bestPickForTile({
+      bbox: BBOX,
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: toOneCell,
+      heatAt: fieldFrom(warm),
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+    expect(pick?.evaluated.length).toBe(10);
   });
 });
