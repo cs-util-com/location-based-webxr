@@ -143,31 +143,46 @@ const BUILDING_MATERIAL_RGB: Readonly<Record<string, Rgb>> = {
  * Every one of these is contrast-checked against the ground.
  */
 const ROAD_CLASS_RGB: Readonly<Record<string, Rgb>> = {
-  motorway: 0xc7bda6,
-  motorway_link: 0xc7bda6,
-  trunk: 0xc4b8a4,
-  trunk_link: 0xc4b8a4,
-  primary: 0xc0b7a8,
-  primary_link: 0xc0b7a8,
-  secondary: 0xb8b2a8,
-  secondary_link: 0xb8b2a8,
-  tertiary: 0xb0aca6,
-  tertiary_link: 0xb0aca6,
+  // CAR CLASSES ARE NEAR-ACHROMATIC (DEC-R7b-4a). They used to be warm beiges,
+  // which put them in the same hue family as the paths and left the two
+  // separated only by ~2 levels of lightness. Grey has no hue to confuse, which
+  // is what makes the asymmetry work: the paths carry all the colour.
+  motorway: 0xc2c4c6,
+  motorway_link: 0xc2c4c6,
+  trunk: 0xbcbec1,
+  trunk_link: 0xbcbec1,
+  primary: 0xb6b8bc,
+  primary_link: 0xb6b8bc,
+  secondary: 0xaeb0b4,
+  secondary_link: 0xaeb0b4,
+  tertiary: 0xa8aaae,
+  tertiary_link: 0xa8aaae,
   unclassified: 0xa4a6a8,
   residential: 0xa0a3a8,
-  living_street: 0xa4a2ac,
+  living_street: 0x9fa1a6,
   // Five hex digits here (0x969aa) parsed as a dark blue and the lightness
   // band caught it — a service road would have rendered near-black against the
   // ground, which is precisely the failure DEC-R2-13 measured.
   service: 0x9699a4,
-  pedestrian: 0xb0a8b4,
-  footway: 0xb2a394,
-  path: 0xa89a8a,
-  steps: 0xb8a690,
-  track: 0x9d8f78,
-  cycleway: 0x93a0a8,
-  bridleway: 0x9d8f78,
   busway: 0x9aa4b0,
+
+  // PEDESTRIAN CLASSES ARE WARM AND SATURATED. The heat ramp is Viridis —
+  // purple through yellow, entirely cool — so a brown path cannot compete with
+  // the loudest thing on screen, which is what the muted-palette rule protects.
+  // Every one stays inside the 120–215 lightness band the buildings share; the
+  // hue does the separating, so none of them has to go dark to be legible.
+  pedestrian: 0xbfa079,
+  footway: 0xb5926a,
+  path: 0xa9855c,
+  steps: 0xc09b6e,
+  cycleway: 0xb08d5f,
+
+  // NOT pedestrian classes, and left alone. A track is an unpaved rural way and
+  // a bridleway is for horses; both already sit in this brown and neither was
+  // what the session asked about. Folding them in would answer a question
+  // nobody put.
+  track: 0x9d8f78,
+  bridleway: 0x9d8f78,
 };
 
 /**
@@ -238,16 +253,49 @@ export function buildingColour(tags: OsmTags): Rgb {
 }
 
 /**
+ * The `highway` values that are for people on foot rather than in cars.
+ *
+ * `bridleway` is NOT here, deliberately. It is a horse way, the session that
+ * asked for this was about pedestrians, and it already sits at the `track`
+ * brown — well clear of the car greys. If it belongs anywhere it belongs with
+ * `track` as a separate "unpaved rural" question, and folding it in silently
+ * would answer that question without anyone asking it.
+ */
+export const PEDESTRIAN_CLASSES = [
+  "footway",
+  "path",
+  "steps",
+  "pedestrian",
+  "cycleway",
+] as const;
+
+const PEDESTRIAN = new Set<string>(PEDESTRIAN_CLASSES);
+
+/**
  * The colour of one road.
  *
- * Precedence: `surface`, then `highway=*`, then the default. A surface is what
- * the road is made of and is the stronger claim where it exists; the class is
- * what it is for and is always present.
+ * Precedence: `surface`, then `highway=*`, then the default — EXCEPT for the
+ * pedestrian classes, where the class wins (DEC-R7b-4).
+ *
+ * WHY THE EXCEPTION, and it is the actual defect the session reported. A surface
+ * is what a road is made of and is the stronger claim about its appearance; a
+ * class is what it is FOR. Those agree for car roads and disagree for paths:
+ * `highway=footway, surface=asphalt` and `highway=residential, surface=asphalt`
+ * rendered byte-identical, so in a well-mapped city centre — where `surface` is
+ * tagged often — a footpath was simply a narrow road.
+ *
+ * **The trade is explicit**: a gravel path and a paved path now look the same.
+ * Being able to see which ways you can walk on was judged worth more than the
+ * material of the ones you can.
  */
 export function roadColour(tags: OsmTags): Rgb {
+  const highway = tags["highway"] ?? "";
+  if (PEDESTRIAN.has(highway)) {
+    return ROAD_CLASS_RGB[highway] ?? DEFAULT_ROAD_RGB;
+  }
   return (
     SURFACE_RGB[tags["surface"] ?? ""] ??
-    ROAD_CLASS_RGB[tags["highway"] ?? ""] ??
+    ROAD_CLASS_RGB[highway] ??
     DEFAULT_ROAD_RGB
   );
 }
@@ -276,6 +324,27 @@ export function luma(colour: Rgb): number {
   const g = (colour >> 8) & 0xff;
   const b = colour & 0xff;
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * How much colour a value has, 0 (grey) to 1 (fully saturated) — HSL's S.
+ *
+ * THE AXIS THE ROAD PALETTE SEPARATES ON (DEC-R7b-4a). Lightness was already
+ * spent: `allRoadColours` must stay inside a 120–215 band so nothing competes
+ * with the buildings, and the car greys occupy most of it. Hue angle is
+ * meaningless on a near-grey. What actually distinguishes a path from a lane is
+ * that one HAS colour and the other does not, and that is this number.
+ */
+export function saturation(colour: Rgb): number {
+  const r = ((colour >> 16) & 0xff) / 255;
+  const g = ((colour >> 8) & 0xff) / 255;
+  const b = (colour & 0xff) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta === 0) return 0;
+  const lightness = (max + min) / 2;
+  return delta / (1 - Math.abs(2 * lightness - 1));
 }
 
 /** Chebyshev distance between two colours, per channel. */
