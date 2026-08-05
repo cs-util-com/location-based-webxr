@@ -9,7 +9,8 @@
  * measurement first.
  *
  * MEASURED, 2026-08-02, `walkable`, one score-chunk disk at each site, against
- * the checked-in rule-table snapshot:
+ * the checked-in rule-table snapshot. **RE-MEASURED 2026-08-05 after the
+ * below-surface fix — see the note at the end of this header.**
  *
  * - **Cologne Cathedral** (n = 927): p05 = 0, p50 = **0.048**, p90 = 3.9e3,
  *   p99 = 8.1e6, max = 1.4e12. **46.3 % score above 1; 44.9 % above 9.**
@@ -36,6 +37,28 @@
  * the day and silently rots. These assertions fail when the rule table or the
  * scorer changes the distribution — which is exactly when the two answers above
  * need revisiting.
+ *
+ * AND IT FIRED, 2026-08-05, exactly as designed. Skipping below-surface features
+ * (`model/below-surface.ts`) moved Cologne`s median from 0.048 to 43.2 while
+ * leaving Heidelberg at 0.8, UNCHANGED. Heidelberg is the control: Cologne has
+ * an extensive U-Bahn whose ways were vetoing the streets above them, which is
+ * the reported Domplatte defect at city scale, and the original figure was
+ * measuring that bug as though it were a property of the rule table.
+ *
+ * BOTH CONCLUSIONS SURVIVE, which is why this is a re-baseline rather than a
+ * re-opening:
+ *
+ * - **Q-R6-4 is untouched.** `heat > 9` still selects 51.1 %% of Cologne and
+ *   29.8 %% of Heidelberg — the bulk, not the tail. DEC-R9-3, which rests on
+ *   this, needs no revisiting.
+ * - **Q-R6-3 holds at nine orders instead of twelve** at Cologne, because the
+ *   max is unchanged and only the median rose. Sum and max are still the same
+ *   statistic to within a rounding error, so a genuine average must still be
+ *   geometric. Heidelberg still spans twelve.
+ *
+ * What DID change is the argument for a quantile gate, which is now stronger:
+ * the two sites' medians differ by ~54x and the sign of the difference REVERSED,
+ * so an absolute gate is not even reliably wrong in the same direction.
  */
 
 import { describe, expect, it } from "vitest";
@@ -112,14 +135,24 @@ describe("the corpus score distribution (§6 step 0)", () => {
     expect(HEIDELBERG.length).toBeGreaterThan(500);
   });
 
-  it("has a median BELOW the identity, not at it", () => {
-    // The assumption this measurement overturned. The intuition is "most ground
-    // is mentioned by no rule, so it scores exactly 1" — but the score is a
-    // PRODUCT and plenty of rule factors are below 1, so the typical cell is
-    // suppressed rather than neutral. Measured: 0.048 at Cologne, 0.8 at
-    // Heidelberg.
-    expect(at(COLOGNE, 0.5)).toBeLessThan(1);
+  it("has a median that now DIFFERS between the sites, and why", () => {
+    // RE-MEASURED after the below-surface fix, and the change is the evidence
+    // that the fix is targeted rather than indiscriminate:
+    //
+    //   Cologne     p50 0.048 -> 43.2      (~900x)
+    //   Heidelberg  p50 0.8   -> 0.8       (UNCHANGED)
+    //
+    // Heidelberg is the control and it did not move at all. Cologne has an
+    // extensive U-Bahn and underground infrastructure whose ways were vetoing
+    // the streets above them — the reported Domplatte defect, city-wide. The
+    // original reading, "the typical cell is suppressed rather than neutral",
+    // was measuring that bug as if it were a property of the rule table.
+    //
+    // It is still true where there is little underground: Heidelberg's typical
+    // cell remains at or below the identity, because plenty of rule factors are
+    // genuinely below 1.
     expect(at(HEIDELBERG, 0.5)).toBeLessThanOrEqual(1);
+    expect(at(COLOGNE, 0.5)).toBeGreaterThan(1);
   });
 
   it("spans at least ten orders of magnitude", () => {
@@ -128,10 +161,17 @@ describe("the corpus score distribution (§6 step 0)", () => {
     // max and mean are not three meaningfully different aggregates — they are
     // one statistic and two scalings of it. A genuine average has to be
     // geometric.
+    // NINE, not ten, since the below-surface fix: the max is unchanged and the
+    // median rose ~900x, so the SPAN narrowed while the distribution itself did
+    // not change shape. The conclusion is untouched — sum and max are still the
+    // same statistic to within a rounding error at nine orders as at twelve.
     const top = COLOGNE[COLOGNE.length - 1] ?? 0;
     const p50 = at(COLOGNE, 0.5);
     expect(p50).toBeGreaterThan(0);
-    expect(Math.log10(top / p50)).toBeGreaterThan(10);
+    expect(Math.log10(top / p50)).toBeGreaterThan(9);
+    // Heidelberg, which the fix did not touch, still spans the original twelve.
+    const heidelbergTop = HEIDELBERG[HEIDELBERG.length - 1] ?? 0;
+    expect(Math.log10(heidelbergTop / at(HEIDELBERG, 0.5))).toBeGreaterThan(10);
   });
 
   it("shows `heat > 9` selecting the BULK of the ground, not the tail", () => {
@@ -162,10 +202,17 @@ describe("the corpus score distribution (§6 step 0)", () => {
   });
 
   it("differs enough between the two sites to rule out one global constant", () => {
-    // Cologne's median is 0.048 and Heidelberg's 0.8 — a factor of ~16 on the
-    // typical cell. Any absolute gate tuned on one site is wrong on the other by
-    // about that much, which is the argument for a quantile.
-    const ratio = at(HEIDELBERG, 0.5) / at(COLOGNE, 0.5);
+    // The ARGUMENT is unchanged and the direction has flipped. It used to be
+    // Heidelberg 0.8 against Cologne 0.048, a factor of ~16 the other way;
+    // after the below-surface fix it is Cologne 43.2 against Heidelberg 0.8, a
+    // factor of ~54.
+    //
+    // That the sign reversed is the point worth keeping: an absolute gate tuned
+    // on either site is wrong on the other, and it is not even reliably wrong in
+    // the same DIRECTION as the amount of underground infrastructure changes.
+    // The case for a quantile of the locally scored distribution is stronger
+    // than when this was first measured, not weaker.
+    const ratio = at(COLOGNE, 0.5) / at(HEIDELBERG, 0.5);
     expect(ratio).toBeGreaterThan(4);
   });
 });

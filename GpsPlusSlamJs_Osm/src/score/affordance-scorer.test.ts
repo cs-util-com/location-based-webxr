@@ -450,3 +450,61 @@ describe("empty and degenerate input", () => {
     expect(result.cells[0]!.scores["walkable"]).toBe(1);
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER — the reported Domplatte defect.
+ *
+ * The owner reported that a way mapped BELOW the Domplatte makes the walkable
+ * plaza above it score as not walkable. The mechanism is this file's own design:
+ * `heat` is a product over every feature covering the cell, and `0` is
+ * absorbing, so one vetoing feature sinks the whole column. The scorer is 2D and
+ * has no notion of vertical stacking.
+ *
+ * The fixtures below deliberately pair a HIGH-scoring surface feature with a
+ * VETOING underground one. Without the veto the test could not fail: an
+ * underground feature whose tags the table does not know already contributes the
+ * identity, so the fix would be indistinguishable from doing nothing — the
+ * fixture smell this repo has met five times in two rounds.
+ */
+describe("features below the surface do not veto the ground above", () => {
+  it("keeps the plaza walkable when a vetoing feature sits under it", () => {
+    // `building_house` scores 0 for `walkable`, so on today's code this cell is
+    // 0 however walkable the grass above it is. THE REPORTED BUG.
+    const score = scoreAt(
+      [at(1, { landuse: "grass" }), at(2, { building: "house", layer: "-1" })],
+      "walkable",
+    );
+
+    expect(score).toBe(9);
+  });
+
+  it("still vetoes when the SAME feature is on the surface", () => {
+    // The control, and it is what makes the test above mean anything: the veto
+    // must still work: only the `layer` differs between the two.
+    // (Written first as `expect(scoreAt([...]), "walkable")` -- which passes the
+    // category as expect's MESSAGE, leaving `scoreAt` without one, returning
+    // NaN, and making the assertion unfailable. The smell, in the test written
+    // to guard against the smell.)
+    expect(
+      scoreAt(
+        [at(1, { landuse: "grass" }), at(2, { building: "house" })],
+        "walkable",
+      ),
+    ).toBe(0);
+  });
+
+  it("does not delete a building passage, which is walkable surface", () => {
+    // THE MIRROR BUG. Treating the `tunnel` key uniformly would drop an arcade
+    // at ground level — the same defect in the opposite direction, and harder to
+    // notice because nothing looks broken, there is simply less map.
+    const score = scoreAt(
+      [
+        at(1, { landuse: "grass" }),
+        at(2, { building: "house", tunnel: "building_passage" }),
+      ],
+      "walkable",
+    );
+
+    expect(score).toBe(0);
+  });
+});

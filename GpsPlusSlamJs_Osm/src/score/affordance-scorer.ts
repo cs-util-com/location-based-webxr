@@ -17,6 +17,7 @@
  */
 
 import type { OsmFeature, OsmFeatureKey } from "../model/osm-feature.js";
+import { isBelowSurface } from "../model/below-surface.js";
 import { toRuleKey } from "../model/osm-tags.js";
 import type { RuleTable } from "../rules/rule-table.js";
 import { ruleValue } from "../rules/rule-table.js";
@@ -152,9 +153,24 @@ function featureFactors(
 ): Map<OsmFeatureKey, Record<string, number>> {
   const factors = new Map<OsmFeatureKey, Record<string, number>>();
   for (const [key, feature] of index.features) {
+    // A FEATURE UNDER THE GROUND CONTRIBUTES NOTHING, for every category.
+    //
+    // `0` is absorbing in the product below, so one vetoing feature sinks the
+    // whole cell -- correct for a wall across a path, wrong for a car park two
+    // levels beneath a plaza. This is where it is cheapest to express: the
+    // identity means "considered, contributed nothing", so neither the cell loop
+    // nor the index needs to know.
+    //
+    // SKIPPED RATHER THAN CLAMPED, and for every category rather than per
+    // category, because the claim is about geometry: "not on the surface being
+    // scored" is category-independent, and expressing it as per-category factors
+    // would let a rule-table edit quietly undo it.
+    const below = isBelowSurface(feature);
     const perCategory: Record<string, number> = {};
     for (const category of categories) {
-      perCategory[category] = scoreFeature(feature, category, table, counters);
+      perCategory[category] = below
+        ? 1
+        : scoreFeature(feature, category, table, counters);
     }
     factors.set(key, perCategory);
   }
