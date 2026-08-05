@@ -103,6 +103,7 @@ function emptyMesh(): TransferableMesh {
     plateCount: 0,
     roads: [],
     roadCount: 0,
+    underground: [],
     regions: [],
     poi: [],
     volumes: 0,

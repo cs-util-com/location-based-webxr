@@ -84,6 +84,7 @@ const NO_MESH: TransferableMesh = {
   poi: [],
   roads: [],
   roadCount: 0,
+  underground: [],
   regions: [],
   volumes: 0,
   parts: 0,
@@ -149,7 +150,10 @@ function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
         calls += 1;
         return calls === 1
           ? { snapshot, mesh: { kind: "full" as const, mesh: NO_MESH } }
-          : { snapshot, mesh: { kind: "regions" as const, regions: [] } };
+          : {
+              snapshot,
+              mesh: { kind: "regions" as const, regions: [], underground: [] },
+            };
       },
     },
     onMesh: () => {
@@ -622,6 +626,7 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
                         mesh: EMPTY_MESH_DATA,
                       },
                     ],
+                    underground: [],
                   },
                 },
           );
@@ -712,7 +717,7 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
           asked.push(payload.includeCells);
           return Promise.resolve({
             snapshot: snapshot("walkable"),
-            mesh: { kind: "regions" as const, regions: [] },
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
           });
         },
       },
@@ -770,7 +775,7 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
           );
           return Promise.resolve({
             snapshot: snapshot("walkable"),
-            mesh: { kind: "regions" as const, regions: [] },
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
           });
         },
       },

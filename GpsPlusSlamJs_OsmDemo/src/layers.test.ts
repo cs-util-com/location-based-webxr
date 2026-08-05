@@ -21,8 +21,7 @@ import {
   ALL_LAYERS,
   DEFAULT_LAYERS,
   isLayerEnabled,
-  needsRefetch,
-  needsRefetchFor,
+  layersNeedingData,
   parseLayers,
   serialiseLayers,
   toggleLayer,
@@ -178,77 +177,70 @@ describe("the layer set", () => {
 });
 
 /**
- * WHY THESE TESTS MATTER (round 10, stage B).
+ * WHY THESE TESTS MATTER (round 10 stage B, extended by the underground layer).
  *
- * `needsRefetch` exists because of a regression that unit tests could not see.
- * Stage B stopped sending the cell array while its layer is off, and each half
- * of that was individually correct — but switching the layer on then had
- * nothing to draw, and the demo showed an empty grid until an unrelated refresh
- * happened to bring the data. Nine e2e tests caught it.
+ * Some layers have their DATA omitted from the snapshot while they are off, so
+ * an array nobody draws is neither built nor copied across the worker boundary.
+ * The cost of that saving is a seam: switching such a layer on has nothing to
+ * draw until new data arrives, where every other layer needs only a redraw.
+ *
+ * That seam was a regression once already — the cells layer switched on and
+ * showed an empty grid, and nine e2e tests caught what no unit test could,
+ * because both halves were individually correct and nothing owned the
+ * transition. The underground layer was then written on the assumption that the
+ * seam did not apply to it, which was wrong the moment its outlines were gated
+ * for the same payload reason. Hence a LIST rather than a special case.
  */
-describe("needsRefetch", () => {
-  const off = { ...DEFAULT_LAYERS, cells: false };
-  const on = { ...DEFAULT_LAYERS, cells: true };
+describe("layersNeedingData", () => {
+  const off = { ...DEFAULT_LAYERS, cells: false, underground: false };
+  const on = { ...DEFAULT_LAYERS, cells: true, underground: false };
+  const undergroundOn = { ...DEFAULT_LAYERS, cells: false, underground: true };
 
-  it("refetches when the cell layer is switched ON", () => {
-    // The regression. Without this the grid stays empty until something else
-    // triggers a refresh.
-    expect(needsRefetch(off, on)).toBe(true);
+  it("names a data-gated layer that just turned on with nothing held", () => {
+    expect(layersNeedingData(off, on, {})).toEqual(["cells"]);
+    expect(layersNeedingData(off, undergroundOn, {})).toEqual(["underground"]);
   });
 
-  it("does NOT refetch when it is switched off", () => {
-    // One-way: the data is already held and simply stops being drawn. A
-    // symmetric implementation would refetch for nothing on every hide.
-    expect(needsRefetch(on, off)).toBe(false);
-  });
-
-  it("does not refetch while it stays on or stays off", () => {
-    expect(needsRefetch(on, on)).toBe(false);
-    expect(needsRefetch(off, off)).toBe(false);
-  });
-
-  it("ignores every OTHER layer, which only ever needs a redraw", () => {
-    // THE FIXTURE THAT MAKES THIS BITE: `cells` is held constant while another
-    // layer changes, so an implementation that refetched on any change would
-    // fail here rather than passing by luck.
-    expect(needsRefetch(off, { ...off, buildings: !off.buildings })).toBe(
-      false,
+  it("says nothing when the data is already held", () => {
+    // The 18-second flick: switching off does not replace the snapshot, so an
+    // off/on within one position is a redraw rather than a widening cycle.
+    expect(layersNeedingData(off, on, { cells: 931 })).toEqual([]);
+    expect(layersNeedingData(off, undergroundOn, { underground: 4 })).toEqual(
+      [],
     );
-    expect(needsRefetch(on, { ...on, buildings: !on.buildings })).toBe(false);
-  });
-});
-
-describe("needsRefetchFor", () => {
-  const off = { ...DEFAULT_LAYERS, cells: false };
-  const on = { ...DEFAULT_LAYERS, cells: true };
-
-  it("refetches when the layer goes on and nothing is held", () => {
-    expect(needsRefetchFor(off, on, 0)).toBe(true);
   });
 
-  it("does NOT refetch when the array is still held from before", () => {
-    // The 18-second flick. Switching off does not replace the snapshot, so an
-    // off/on within one position is a redraw, not a widening cycle.
-    expect(needsRefetchFor(off, on, 931)).toBe(false);
+  it("treats a missing count as nothing held, which is the strongest case", () => {
+    // No snapshot at all is the state where LEAST is in hand, and an earlier
+    // version declined to refetch in exactly that state because
+    // `snapshot?.cells.length === 0` is `undefined === 0`.
+    expect(layersNeedingData(off, on, { underground: 9 })).toEqual(["cells"]);
   });
 
-  // WHAT GUARDS THE CALLER IS THE TYPE, NOT A TEST HERE, and saying so is the
-  // honest version of a case this file used to contain. `heldCells: number`
-  // makes a MISSING `?? 0` in `main.ts` a compile error -- which is the real
-  // payoff of taking a count rather than a snapshot, since
-  // `snapshot?.cells.length === 0` is `undefined === 0` and silently declines to
-  // refetch when nothing at all is held.
-  //
-  // A WRONG default (`?? 1`) still compiles and still passes everything. That
-  // gap is real and is not closed here; it needs a test at the call site, which
-  // `main.ts` does not have.
-  //
-  // (A third `it` claimed to pin this and asserted `needsRefetchFor(off, on, 0)`
-  // -- byte-for-byte the first test. Deleting it failed nothing: a dead test, in
-  // the file the wiring audit had just edited. The audit broke PRODUCTION rules
-  // to see what failed and never broke the tests asserting them.)
-  it("stays one-way regardless of what is held", () => {
-    expect(needsRefetchFor(on, off, 0)).toBe(false);
-    expect(needsRefetchFor(on, off, 931)).toBe(false);
+  it("is one-way: switching off never needs data", () => {
+    expect(layersNeedingData(on, off, {})).toEqual([]);
+    expect(layersNeedingData(undergroundOn, off, {})).toEqual([]);
+  });
+
+  it("ignores layers that are NOT data-gated", () => {
+    // THE FIXTURE THAT MAKES THIS BITE: a data-gated layer is held constant
+    // while another changes, so an implementation that returned every changed
+    // layer fails here rather than passing by luck.
+    expect(
+      layersNeedingData(off, { ...off, buildings: !off.buildings }, {}),
+    ).toEqual([]);
+  });
+
+  it("can name more than one at once", () => {
+    // Both switched on together — a URL that restores a saved layer set does
+    // exactly this, and refetching once for the pair is the whole reason the
+    // caller gets a list rather than a boolean.
+    expect(
+      layersNeedingData(
+        off,
+        { ...DEFAULT_LAYERS, cells: true, underground: true },
+        {},
+      ).sort(),
+    ).toEqual(["cells", "underground"]);
   });
 });

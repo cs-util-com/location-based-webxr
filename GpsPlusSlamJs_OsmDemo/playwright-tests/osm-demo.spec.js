@@ -491,19 +491,21 @@ test.describe("the layer toggles", () => {
       // The attribute is what "is a layer switch" actually means.
       await expect(
         page.locator("#layers input[type=checkbox][data-layer]"),
-      ).toHaveCount(7);
+      ).toHaveCount(8);
 
-      // FIVE OF SEVEN START ON (DEC-R7b-5, DEC-R7b-6). Round 4 turned every
-      // layer on; round 8 took landuse and cells back off after a session saw
-      // the demo with the terrain relief carrying the ground. Both halves are
-      // asserted, because an accidental flip in either direction matters and
-      // "at least one is on" would catch neither.
+      // FIVE OF EIGHT START ON (DEC-R7b-5, DEC-R7b-6). Round 4 turned every
+      // layer on; round 8 took plates and cells back off after a session saw the
+      // demo with the terrain relief carrying the ground; the underground
+      // diagnostic joined them off by default. Both halves are asserted, because
+      // an accidental flip in either direction matters and "at least one is on"
+      // would catch neither.
       //
       // The height ramp is not here at all: it is an appearance of the ground
       // mode rather than a layer (DEC-R5-4).
       await expect(page.locator("#layer-terrainDebug")).toHaveCount(0);
       await expect(page.locator("#layer-cells")).not.toBeChecked();
       await expect(page.locator("#layer-plates")).not.toBeChecked();
+      await expect(page.locator("#layer-underground")).not.toBeChecked();
       await expect(page.locator("#layer-buildings")).toBeChecked();
       await expect(page.locator("#layer-trees")).toBeChecked();
       await expect(page.locator("#layer-areas")).toBeChecked();
@@ -4170,5 +4172,69 @@ test.describe("the cell layer toggle", () => {
     // so an HTTP 400 is a SUCCESSFUL, empty refresh (`refresh-cycle.ts.md` says
     // so). The `finally`-versus-`then` distinction is unreachable from a browser
     // and is unit-tested on `withLayerBusy` instead.
+  });
+});
+
+test.describe("the underground layer", () => {
+  /**
+   * WHY THESE TESTS MATTER.
+   *
+   * `isBelowSurface` removes 13.3 % of corpus features from the scores and from
+   * the mesh and says nothing. This layer exists so a human can judge WHICH
+   * features — the corpus test bounds the share, and only an eye on real ground
+   * catches the mirror bug, where too eager a predicate deletes real walkable
+   * ground and nothing looks broken because there is simply less map.
+   *
+   * BOTH VIEWS, because they answer different questions: the map says WHERE the
+   * excluded ground is, the 3D view says what SHAPE it was. And the cells layer
+   * has already taught, twice, that a layer can be registered, wired and still
+   * draw nothing.
+   */
+  test("draws the excluded features in both views, and nothing when off", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const drawn = page.locator("#map path.underground-feature");
+
+    // OFF FIRST, and this is the direction that actually broke before: a layer
+    // whose data arrives regardless draws itself before anyone asks.
+    await expect(page.locator("#layer-underground")).not.toBeChecked();
+    await expect(drawn).toHaveCount(0);
+
+    // The count is reported even with the layer off — that is the point of it.
+    await expect(page.locator("#status")).toContainText(/\d+ underground/);
+
+    const sceneBefore = await page.evaluate(() => {
+      const el = document.querySelector("#scene canvas");
+      return el instanceof HTMLCanvasElement ? el.toDataURL().length : 0;
+    });
+
+    await page.locator("#layer-underground").check();
+
+    // 2D: the outlines appear. Present rather than visible, because an excluded
+    // feature can sit outside the viewport exactly as a geo-event can.
+    await expect(drawn).not.toHaveCount(0, { timeout: 30000 });
+
+    // 3D: the picture changes. Asserted as a CHANGE rather than a colour,
+    // because what matters is that the scene incorporated the layer at all —
+    // and the fixture's ground decides where the lines land.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const el = document.querySelector("#scene canvas");
+            return el instanceof HTMLCanvasElement ? el.toDataURL().length : 0;
+          }),
+        { timeout: 30000 },
+      )
+      .not.toBe(sceneBefore);
+
+    // AND BACK OFF, which is the half a redraw-only implementation passes and a
+    // draw-once one fails.
+    await page.locator("#layer-underground").uncheck();
+    await expect(drawn).toHaveCount(0, { timeout: 30000 });
   });
 });

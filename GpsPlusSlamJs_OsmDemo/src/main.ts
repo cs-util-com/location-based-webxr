@@ -71,7 +71,7 @@ import {
 } from "./ground-mode.js";
 import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
-import { isLayerEnabled, needsRefetchFor } from "./layers.js";
+import { isLayerEnabled, layersNeedingData } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import {
@@ -450,7 +450,15 @@ async function main(): Promise<void> {
         return;
       }
       if (latestMesh === undefined) return;
-      latestMesh = { ...latestMesh, regions: built.regions };
+      // The outlines merge like the slabs, and for the same reason: both change
+      // without the features or the frame changing, so the cheap reply carries
+      // both or the layer stays empty until something unrelated forces a full
+      // rebuild.
+      latestMesh = {
+        ...latestMesh,
+        regions: built.regions,
+        underground: built.underground,
+      };
     },
   });
 
@@ -628,6 +636,12 @@ async function main(): Promise<void> {
     // The red box: what Overpass was actually asked for, drawn so "one res-7
     // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
     // and the hexagon differ and why that gap is worth showing.
+    // The excluded features, so a reader can judge WHICH 13 % vanished rather
+    // than only how many. Gated like every other layer: the registry reaches
+    // both views or neither.
+    mapView.renderUnderground(
+      isLayerEnabled(layers, "underground") ? snapshot.undergroundOutlines : [],
+    );
     mapView.renderFetchTiles(snapshot.loadedTiles);
     // Rendered from the SAME scale the map just painted with, so the two cannot
     // drift — the one way a legend becomes an active lie.
@@ -708,6 +722,19 @@ async function main(): Promise<void> {
       buildingView.clearScene();
       mesh = undefined;
     }
+
+    // The below-surface outlines, in ENU, packed by the worker alongside every
+    // other piece of scene geometry. Gated on the SAME switch the map reads, or
+    // the two views would disagree about what was excluded — the cross-view
+    // divergence the layer registry exists to prevent.
+    //
+    // OUTSIDE the `wantsMeshLayers` branch: this is a diagnostic about what is
+    // NOT in the scene, so it must still draw when every world layer is off.
+    buildingView.renderUnderground(
+      isLayerEnabled(layers, "underground") && latestMesh !== undefined
+        ? latestMesh.underground
+        : [],
+    );
     // THE GRID IS BUILT IN THE WORKER NOW (W8). It was `buildCellMesh` inline —
     // one `cellToBoundary` per drawn cell, thousands of H3 calls on the thread
     // that also has to stay responsive, on every publish. The builder itself is
@@ -776,6 +803,11 @@ async function main(): Promise<void> {
       // impression that they were final was.
       isFinalRing(snapshot.radius) ? "" : "widening…",
       `${snapshot.cellCount} cells`,
+      // ALWAYS SHOWN, even with the layer off: the exclusion is otherwise
+      // invisible, and an absurd count is the cheapest signal that the
+      // predicate has become too eager — the mirror bug, where nothing looks
+      // broken and there is simply less map.
+      `${snapshot.undergroundCount} underground`,
       // The snapshot's category: these ARE its regions, counted for it.
       `${snapshot.regions.length} ${snapshot.category} regions`,
       `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,
@@ -940,18 +972,19 @@ async function main(): Promise<void> {
       // AT THE CALL SITE rather than inside `needsRefetch`, which keeps the
       // layer rule pure: the rule answers "does this change need data", the
       // caller answers "and do we lack it". Raised in review on #254.
-      if (
-        previousLayers !== undefined &&
-        needsRefetchFor(
-          previousLayers,
-          layers,
-          // `?? 0` because NO SNAPSHOT means nothing is held -- the strongest
-          // case for refetching, not the weakest. `snapshot?.cells.length === 0`
-          // shipped for one commit and read `undefined === 0`, i.e. false, so a
-          // dead worker or an Overpass 429 left the toggle doing nothing at all.
-          selectOsmView(store.getState()).snapshot?.cells.length ?? 0,
-        )
-      ) {
+      const heldSnapshot = selectOsmView(store.getState()).snapshot;
+      // `?? 0` because NO SNAPSHOT means nothing is held -- the strongest case
+      // for refetching, not the weakest. An earlier version read
+      // `snapshot?.cells.length === 0`, i.e. `undefined === 0`, i.e. false, so a
+      // dead worker or an Overpass 429 left the toggle doing nothing at all.
+      const needData =
+        previousLayers === undefined
+          ? []
+          : layersNeedingData(previousLayers, layers, {
+              cells: heldSnapshot?.cells.length ?? 0,
+              underground: heldSnapshot?.undergroundOutlines.length ?? 0,
+            });
+      if (needData.length > 0) {
         // IN PROGRESS, because this is not a redraw. Measured at 1880 ms with
         // the tiles already held (F58), so without a cue the switch looks inert
         // for close to two seconds -- which the root CLAUDE.md requires feedback

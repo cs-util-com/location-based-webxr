@@ -233,3 +233,27 @@ file owns the material swap and when the colours are refreshed.
   (DEC-R5-4, which overrides DEC-R4-5), so what keeps the decision intact is that
   the plain reflective ground stays one click away and the e2e asserts the
   round-trip — not that the ramp is off.
+
+## The underground layer
+
+`renderUnderground(outlines)` draws the excluded features as line segments below
+the terrain. The outlines arrive **already in ENU**, packed x,y per point by the
+worker.
+
+**Why the worker converts.** The ENU frame lives there, as it does for every
+other piece of scene geometry, and `recentre` invalidates every ENU coordinate —
+so a page-side copy of the frame would go stale exactly when the user moves.
+
+**A FIXED DEPTH, not the feature's real one.** OSM's `layer` is an ordering and
+`level` is a storey index; neither is a distance, so deriving metres from them
+would be a fabricated elevation. `UNDERGROUND_DEPTH_M` is an honest "this is
+underneath".
+
+**Nodes get a vertical tick.** A node has no outline, and "a segment needs two
+ends" silently dropped them — from the one view meant to reveal what was
+dropped. The corpus fixture's only below-surface feature is exactly such a node,
+which is how the gap was found.
+
+**Depth testing is off and `RENDER_ORDER.underground` is above both affordance
+layers**, because the lines are drawn below the terrain and would otherwise be
+occluded by the very ground they exist to be seen under.

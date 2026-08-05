@@ -79,7 +79,9 @@ function outlinesOf(feature: OsmFeature): (readonly LatLng[])[] {
   if (feature.type === "way") return [feature.geometry];
   return feature.members
     .map((member) => member.geometry)
-    .filter((geometry): geometry is readonly LatLng[] => geometry !== undefined);
+    .filter(
+      (geometry): geometry is readonly LatLng[] => geometry !== undefined,
+    );
 }
 
 /** A cells bounding box as [south, west, north, east]. */
@@ -142,9 +144,12 @@ export interface DemoSnapshot {
    * stage B): it is a diagnostic that is off by default, and the array would
    * otherwise be copied across the worker boundary to be drawn by nobody.
    *
-   * UNLIKE `cells`, SWITCHING IT ON NEEDS NO REFETCH — the features are already
-   * held by the index, so the seam `needsRefetchFor` exists for does not apply
-   * here. Worth stating rather than leaving the next reader to re-derive it.
+   * IT HAS THE SAME SEAM AS `cells`, and this comment used to claim it did not.
+   * The FEATURES are held by the index, which is what made "no refetch needed"
+   * sound right — but the OUTLINES are only built when this flag is set, so a
+   * held snapshot has an empty array and switching the layer on has nothing to
+   * draw until a new one arrives. Gating the payload is what creates the seam,
+   * regardless of where the source data lives. See `DATA_GATED_LAYERS`.
    */
   readonly undergroundOutlines: readonly (readonly LatLng[])[];
   /**

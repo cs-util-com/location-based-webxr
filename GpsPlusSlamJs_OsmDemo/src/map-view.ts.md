@@ -87,3 +87,21 @@ None directly (Leaflet needs a DOM); the data it draws is tested in
 and the escaping in `escape-html.test.ts`. What only a browser can show — that
 the popup opens and its links are clickable, and that the checkbox reveals three
 distinct bands — is covered in `playwright-tests/osm-demo.spec.js`.
+
+## The underground layer
+
+`renderUnderground(outlines)` draws the features `isBelowSurface` excluded from
+scoring and from the mesh, in lat/lng, dashed and in a colour nothing else uses.
+
+**Why the map draws them at all.** This view answers **where** the excluded
+ground is — whether the thing that vanished is the U-Bahn line under the street
+or something that was on the surface all along. The 3D view answers what
+**shape** it was. Neither answers the other's question, which is why both draw
+it.
+
+**A lone point is a node**, which has no outline to trace, so it becomes a
+circle marker rather than a zero-length polyline. The 3D view has the same case
+and solves it differently (a vertical tick) for the same reason: silently
+dropping nodes would hide a whole class of excluded feature — bins, subway
+entrances, shafts — from the diagnostic whose job is showing what was silently
+dropped.

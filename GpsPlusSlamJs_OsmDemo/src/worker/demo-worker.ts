@@ -256,6 +256,14 @@ function buildMesh(
    * draws are the same region.
    */
   regions: readonly SlabRegion[] = [],
+  /**
+   * Outlines of the features excluded as below-surface, in lat/lng.
+   *
+   * EMPTY UNLESS THE LAYER IS ON. Converting and packing them costs a pass over
+   * every excluded feature, which is wasted whenever nobody is drawing them --
+   * the same rule the cell array follows since round 10 stage B.
+   */
+  undergroundOutlines: readonly (readonly LatLng[])[] = [],
 ): TransferableMesh {
   const options = meshOptions(centre);
   const all = [...features];
@@ -343,6 +351,11 @@ function buildMesh(
       (road) => roadColour(tagsByKey.get(road.feature) ?? {}),
     ),
     roadCount: roads.length,
+    // CONVERTED HERE because this is where the frame is. Every other piece of
+    // scene geometry is built in this function for the same reason, and
+    // `recentre` invalidates ENU coordinates, so a page-side copy of the frame
+    // would go stale exactly when the user moves.
+    underground: packUnderground(undergroundOutlines, options.frame),
     regions: regionSlabs,
     volumes: volumes.length,
     parts: volumes.filter((v) => v.parentFeature !== undefined).length,
@@ -371,8 +384,36 @@ let terrainStamp = 0;
  * scoring is exactly what a widening ring changes. Everything else is a product
  * of the features, the terrain and the frame origin.
  */
+/**
+ * Packs below-surface outlines into ENU x,y pairs.
+ *
+ * ONE IMPLEMENTATION FOR BOTH REPLY KINDS. The full mesh and the regions-only
+ * reply each need these, and two copies of the conversion is how they would
+ * eventually disagree about the frame.
+ */
+function packUnderground(
+  outlines: readonly (readonly LatLng[])[],
+  frame: ReturnType<typeof enuFrameAt>,
+): Float32Array[] {
+  return outlines.map((outline) => {
+    const packed = new Float32Array(outline.length * 2);
+    for (let i = 0; i < outline.length; i += 1) {
+      const point = outline[i];
+      if (point === undefined) continue;
+      const enu = frame.toEnu(point);
+      packed[i * 2] = enu.x;
+      packed[i * 2 + 1] = enu.y;
+    }
+    return packed;
+  });
+}
+
 function meshUpdateFor(
-  snapshot: { position: LatLng; regions: readonly SlabRegion[] },
+  snapshot: {
+    position: LatLng;
+    regions: readonly SlabRegion[];
+    undergroundOutlines: readonly (readonly LatLng[])[];
+  },
   pipeline: DemoPipeline,
 ): WorkerCalls["update"]["result"]["mesh"] {
   const full = meshPlanner.needsFullBuild({
@@ -382,12 +423,11 @@ function meshUpdateFor(
   });
 
   if (!full) {
+    const options = meshOptions(snapshot.position);
     return {
       kind: "regions",
-      regions: buildRegionSlabs(
-        snapshot.regions,
-        meshOptions(snapshot.position),
-      ),
+      regions: buildRegionSlabs(snapshot.regions, options),
+      underground: packUnderground(snapshot.undergroundOutlines, options.frame),
     };
   }
   return {
@@ -396,6 +436,7 @@ function meshUpdateFor(
       pipeline.features().values(),
       snapshot.position,
       snapshot.regions,
+      snapshot.undergroundOutlines,
     ),
   };
 }
@@ -461,7 +502,7 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "update": {
-      const { position, category, radius, includeCells } =
+      const { position, category, radius, includeCells, includeUnderground } =
         payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
       const snapshot = await pipeline.update(
@@ -471,6 +512,7 @@ async function handle<K extends WorkerCallKind>(
         radius,
         {
           includeCells: includeCells !== false,
+          includeUnderground: includeUnderground === true,
         },
       );
       // THE JOIN (W3). The fetch and the scoring above ran while the DEM grid

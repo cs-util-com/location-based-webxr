@@ -50,6 +50,8 @@ interface RefreshWorker {
       radius: number;
       /** Round 10, stage B -- see the call site. */
       includeCells: boolean;
+      /** The underground diagnostic layer, same rule. */
+      includeUnderground: boolean;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -159,9 +161,15 @@ export function createRefreshCycle(
           selectLayers(store.getState()),
           "cells",
         );
+        // Read per ring for the same reason `includeCells` is: intent belongs to
+        // the moment it is used, not to the moment the run was queued.
+        const includeUnderground = isLayerEnabled(
+          selectLayers(store.getState()),
+          "underground",
+        );
         const { snapshot, mesh } = await worker.call(
           "update",
-          { position, category, radius, includeCells },
+          { position, category, radius, includeCells, includeUnderground },
           { signal },
         );
         // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the

@@ -12,8 +12,10 @@ Names every render layer, and holds the enabled set as plain, immutable data.
   (DEC-R7b-5/R7b-6).
 - `isLayerEnabled`, `toggleLayer` (returns a new set), `serialiseLayers`,
   `parseLayers`.
-- `needsRefetch(previous, next)` — whether a layer change needs new DATA rather
-  than just a redraw.
+- `DATA_GATED_LAYERS` — the layers whose data is omitted from the snapshot
+  while they are off (`cells`, `underground`).
+- `layersNeedingData(previous, next, held)` — which of those just turned on
+  without their data in hand. Empty means a redraw suffices.
 
 ## Invariants & assumptions
 
@@ -21,11 +23,16 @@ Names every render layer, and holds the enabled set as plain, immutable data.
   stage B the snapshot deliberately arrives WITHOUT the cell array while that
   layer is off — ~24 000 cells that structured-clone in a measured 27–35 ms to be
   drawn by nobody — so switching it ON has nothing to draw and needs a refetch.
-  This is the module's most surprising fact -- but it is CONDITIONAL, and the
-  qualifier is easy to lose: switching it on needs a refetch **unless the array
-  is still held from before it was switched off**, which happens because the
-  snapshot is not replaced on the way off. `needsRefetchFor` is where both halves
-  live together; `needsRefetch` alone answers only "does this change need data".
+  This is the module's most surprising fact -- and it is CONDITIONAL twice over.
+  Switching such a layer on needs a refetch **unless its data is still held from
+  before it was switched off**, which happens because the snapshot is not
+  replaced on the way off. `layersNeedingData` is where both halves live.
+
+  **It applies to a LIST, not to `cells` alone.** The underground layer was
+  written on the assumption that the seam did not apply to it — the features are
+  held by the index, so a refetch sounded unnecessary — and that was wrong the
+  moment its outlines were gated for the same payload reason. Gating the payload
+  is what creates the seam, wherever the source data lives.
   - **ONE-WAY.** Switching `cells` off needs no refetch: the data is already held
     and simply stops being drawn. A symmetric implementation refetches for
     nothing on every hide, and `layers.test.ts` fails it.

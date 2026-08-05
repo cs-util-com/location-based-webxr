@@ -757,7 +757,12 @@ describe("the snapshot reports what was excluded as below-surface", () => {
         // BOTH KINDS, or "reports the excluded ones" and "reports them all" are
         // the same picture and neither assertion below can tell them apart.
         features: [
-          { type: "way" as const, id: 1, geometry: ring(0), tags: { leisure: "park" } },
+          {
+            type: "way" as const,
+            id: 1,
+            geometry: ring(0),
+            tags: { leisure: "park" },
+          },
           {
             type: "way" as const,
             id: 2,

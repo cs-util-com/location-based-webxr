@@ -100,7 +100,8 @@ function setOf(enabled: Iterable<LayerKind>): LayerSet {
  */
 export const DEFAULT_LAYERS: LayerSet = setOf(
   ALL_LAYERS.filter(
-    (layer) => layer !== "plates" && layer !== "cells" && layer !== "underground",
+    (layer) =>
+      layer !== "plates" && layer !== "cells" && layer !== "underground",
   ),
 );
 
@@ -144,57 +145,50 @@ export function parseLayers(serialised: string): LayerSet {
 }
 
 /**
- * Whether a layer change needs a REFETCH rather than just a redraw.
+ * Layers whose DATA is omitted from the snapshot while they are off.
  *
- * Almost every layer only decides what is drawn from data the snapshot already
- * carries, so switching one on is a render. `cells` is the exception since
- * round 10 stage B: the snapshot deliberately arrives WITHOUT the cell array
- * while that layer is off — ~24 000 cells that would structured-clone in a
- * measured 27–35 ms to be drawn by nobody — so switching it on has nothing to
- * draw and needs the data fetched.
+ * Round 10 stage B established the rule for `cells`: an array nobody draws
+ * should not be built or copied across the worker boundary. `underground`
+ * followed for the same reason.
  *
- * A FUNCTION RATHER THAN AN `if` AT THE CALL SITE, because the defect it fixes
- * was invisible to unit tests: the refresh cycle asked correctly and the
- * pipeline answered correctly, and nothing owned the transition between them.
- * Nine e2e tests failed and no unit test did. This is the seam that makes the
- * rule assertable.
- *
- * ONE-WAY ON PURPOSE. Switching `cells` OFF needs no refetch — the data is
- * already held and simply stops being drawn.
+ * THE COST OF THAT SAVING IS A SEAM, and it is the one this file exists to own:
+ * switching such a layer on has nothing to draw until new data arrives, so it
+ * needs a refetch where every other layer needs only a redraw. Listing them
+ * rather than special-casing one is what stopped the second one being a second
+ * bolted-on condition — and the underground layer was written on the assumption
+ * that the seam did not apply to it, which was wrong the moment its outlines
+ * were gated too.
  */
-export function needsRefetch(previous: LayerSet, next: LayerSet): boolean {
-  return !isLayerEnabled(previous, "cells") && isLayerEnabled(next, "cells");
-}
+// Module-private: `layersNeedingData` is the only thing that should read it, and
+// exporting the list invites a caller to re-implement the rule from it.
+const DATA_GATED_LAYERS: readonly LayerKind[] = ["cells", "underground"];
 
 /**
- * `needsRefetch`, AND we do not already hold the cells.
+ * Which data-gated layers just turned on WITHOUT their data already in hand.
  *
- * WHY BOTH HALVES ARE HERE. The layer rule alone says an off→on switch needs
- * data; it cannot know whether the data is already in hand. Switching `cells`
- * OFF does not refetch and dispatches nothing that replaces the snapshot, so the
- * held array survives — and an off/on flick within one position was paying a
- * whole progressive refresh (three rings, a worker mesh build, up to 18 s) to
- * arrive at cells that were already there.
+ * Empty means a redraw suffices. Non-empty means a refetch is needed, and the
+ * names are returned rather than a boolean so a caller can say which — the
+ * status line and the busy indicator both want to know.
  *
- * IT LIVED AS A CONJUNCTION AT THE CALL SITE FOR ONE COMMIT, and deleting the
- * second half passed every test: `layers.test.ts` sees the pure rule,
- * `refresh-cycle.test.ts` sees the per-ring read, and neither can see a
- * condition that exists only in `main.ts`. That is the same shape this round
- * keeps finding — a stated rule with nothing executable behind it — and it is
- * the worst kind to lose, because the symptom is an 18-second pause rather than
- * anything that looks broken.
+ * ONE-WAY BY CONSTRUCTION. Switching a layer OFF never needs data: what is held
+ * is still held, it simply stops being drawn. A symmetric implementation
+ * refetches for nothing on every hide.
  *
- * `heldCells` IS A COUNT RATHER THAN A SNAPSHOT so "there is no snapshot at all"
- * has to be answered explicitly by the caller instead of hiding in an optional
- * chain. It first shipped as `snapshot?.cells.length === 0`, which yields
- * `undefined === 0` — `false` — for a missing snapshot, i.e. it declined to
- * refetch in the one state where nothing whatsoever is held. Reachable after any
- * `fetchFailed` (a dead worker, an Overpass 429) and at boot.
+ * `held` IS A COUNT PER LAYER rather than a snapshot, so "there is no snapshot
+ * at all" has to be answered explicitly by the caller instead of hiding in an
+ * optional chain. An earlier version took `snapshot?.cells.length === 0`, which
+ * is `undefined === 0` — false — and so declined to refetch in the one state
+ * where nothing whatsoever is held.
  */
-export function needsRefetchFor(
+export function layersNeedingData(
   previous: LayerSet,
   next: LayerSet,
-  heldCells: number,
-): boolean {
-  return needsRefetch(previous, next) && heldCells === 0;
+  held: Readonly<Partial<Record<LayerKind, number>>>,
+): LayerKind[] {
+  return DATA_GATED_LAYERS.filter(
+    (layer) =>
+      !isLayerEnabled(previous, layer) &&
+      isLayerEnabled(next, layer) &&
+      (held[layer] ?? 0) === 0,
+  );
 }

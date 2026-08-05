@@ -91,6 +91,19 @@ export interface TransferableMesh {
   readonly roads: readonly MeshChunk[];
   readonly roadCount: number;
   /**
+   * The below-surface features' outlines, in ENU, packed x,y per point.
+   *
+   * HERE RATHER THAN IN THE SNAPSHOT because the frame lives in the worker, as
+   * it does for every other piece of scene geometry. A page converting lat/lng
+   * for itself would need a second copy of the frame — and `recentre`
+   * invalidates every ENU coordinate, so that copy goes stale exactly when the
+   * user moves.
+   *
+   * EMPTY UNLESS THE LAYER IS ON. Like the cell array, this is a diagnostic that
+   * is off by default and should not be built or transferred for nobody.
+   */
+  readonly underground: readonly Float32Array[];
+  /**
    * Merged affordance regions as slabs (W14), one entry per region.
    *
    * ONE ENTRY PER REGION, and NOT chunked like the plates and the roads. The
@@ -150,6 +163,17 @@ export type MeshUpdate =
   | {
       readonly kind: "regions";
       readonly regions: readonly RegionSlabData[];
+      /**
+       * The below-surface outlines, carried on the CHEAP reply as well.
+       *
+       * They belong here for the same reason the region slabs do: both change
+       * without the features, the terrain or the frame origin changing, so a
+       * reply that omitted them would leave the layer empty until something
+       * unrelated forced a full rebuild. Toggling the layer does exactly that —
+       * it refreshes at the SAME position, which is precisely when
+       * `needsFullBuild` says no.
+       */
+      readonly underground: readonly Float32Array[];
     };
 
 /** One finished data cycle. */
@@ -201,6 +225,13 @@ export interface WorkerCalls {
        * from ~24 000 cells it does not draw.
        */
       readonly includeCells?: boolean;
+      /**
+       * Whether the underground outlines are built and transferred.
+       *
+       * Omitted means NO, unlike `includeCells` — this layer has never been on
+       * by default, so nothing existing expects the data.
+       */
+      readonly includeUnderground?: boolean;
     };
     readonly result: UpdateResult;
   };

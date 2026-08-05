@@ -123,6 +123,16 @@ export const FAR_PLANE_M = 2400;
 const UNDERGROUND_DEPTH_M = -6;
 
 /**
+ * Half-height of the vertical tick that stands in for a below-surface NODE.
+ *
+ * A node has no outline, and drawing nothing would hide a whole class of
+ * excluded feature — bins, subway entrances, shafts — from the one view meant
+ * to reveal them. A short vertical mark reads as "something is here" without
+ * claiming a footprint the data does not have.
+ */
+const NODE_TICK_M = 1.5;
+
+/**
  * Where the haze starts, metres.
  *
  * Two thirds of the way out, so the fade is gradual enough to read as distance
@@ -985,10 +995,31 @@ export class BuildingView {
     // would go stale on every recentre.
     const positions: number[] = [];
     for (const outline of outlines) {
-      // A segment needs two ends; a lone point (a node) has no line to draw.
+      // A LONE POINT IS A NODE, and it gets a tick rather than being skipped.
+      //
+      // An underground bin or a subway entrance is a node, so "needs two ends
+      // to make a segment" silently drops a whole class of excluded feature —
+      // from the diagnostic whose entire job is showing what was silently
+      // dropped. The corpus fixture's only below-surface feature is exactly
+      // such a node, which is how this was found.
+      if (outline.length === 2) {
+        const x = outline[0] ?? 0;
+        const y = outline[1] ?? 0;
+        positions.push(x, UNDERGROUND_DEPTH_M - NODE_TICK_M, -y);
+        positions.push(x, UNDERGROUND_DEPTH_M + NODE_TICK_M, -y);
+        continue;
+      }
       for (let i = 0; i + 3 < outline.length; i += 2) {
-        positions.push(outline[i] ?? 0, UNDERGROUND_DEPTH_M, -(outline[i + 1] ?? 0));
-        positions.push(outline[i + 2] ?? 0, UNDERGROUND_DEPTH_M, -(outline[i + 3] ?? 0));
+        positions.push(
+          outline[i] ?? 0,
+          UNDERGROUND_DEPTH_M,
+          -(outline[i + 1] ?? 0),
+        );
+        positions.push(
+          outline[i + 2] ?? 0,
+          UNDERGROUND_DEPTH_M,
+          -(outline[i + 3] ?? 0),
+        );
       }
     }
     if (positions.length === 0) {
