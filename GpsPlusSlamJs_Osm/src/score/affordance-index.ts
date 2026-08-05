@@ -47,6 +47,7 @@ import type {
   OsmFeature,
   OsmFeatureKey,
 } from "../model/osm-feature.js";
+import { isBelowSurface } from "../model/below-surface.js";
 import { toGeometry } from "../model/osm-geometry.js";
 import type { OsmGeometry } from "../model/osm-geometry.js";
 import type { OsmTileResult } from "../source/osm-data-source.js";
@@ -707,6 +708,30 @@ export class AffordanceIndex {
   /** Features currently merged in, for callers that need the raw data. */
   mergedFeatures(): ReadonlyMap<OsmFeatureKey, OsmFeature> {
     return this.features;
+  }
+
+  /**
+   * The features excluded from scoring because they are under the surface.
+   *
+   * WHY THIS IS A SELECTOR RATHER THAN SOMETHING THE SCORER RECORDS. Skipping
+   * these is invisible by construction -- 13.3 %% of corpus features, silently
+   * absent from both the scores and the mesh -- and the mirror bug is the one
+   * that does not announce itself: a predicate that is too eager deletes real
+   * walkable ground, and nothing looks broken, there is simply less map.
+   *
+   * Recomputing `isBelowSurface` over the merged features CANNOT DISAGREE with
+   * the scorer, because it is the same function over the same input. Having the
+   * scorer record what it skipped would be truthful by construction too, but it
+   * puts a diagnostic collection in the hot loop and grows `ScoreResult` with a
+   * field every consumer must ignore. The predicate is pure and cheap, and this
+   * feeds a layer that is off by default.
+   */
+  belowSurfaceFeatures(): OsmFeature[] {
+    const excluded: OsmFeature[] = [];
+    for (const feature of this.features.values()) {
+      if (isBelowSurface(feature)) excluded.push(feature);
+    }
+    return excluded;
   }
 
   private notify(chunks: readonly string[]): void {

@@ -29,6 +29,7 @@ import {
 } from "h3-js";
 
 import { AffordanceIndex } from "./affordance-index.js";
+import { isBelowSurface } from "../model/below-surface.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { parseRuleTable } from "../rules/rule-table.js";
 import type { OsmTileResult } from "../source/osm-data-source.js";
@@ -1179,5 +1180,58 @@ describe("the incremental map is measurably incremental, not just correct", () =
 
     expect(index.stats.chunksEvicted).toBeGreaterThan(0);
     expect(index.stats.scoresByCellBuilds).toBe(1);
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER — the exclusion is invisible by construction.
+ *
+ * `isBelowSurface` removes 13.3 % of corpus features from scoring and from the
+ * mesh, and says nothing. The mirror bug is the one that does not announce
+ * itself: too eager a predicate deletes real walkable ground and nothing looks
+ * broken, there is simply less map. This selector is what lets the demo draw
+ * what it dropped so a human can judge it.
+ */
+describe("belowSurfaceFeatures — what the scorer excluded", () => {
+  const surface = patch(10, HOME, { landuse: "grass" });
+  const under = patch(11, HOME, { landuse: "grass", layer: "-1" });
+
+  it("returns the excluded features and only those", () => {
+    // BOTH KINDS IN THE FIXTURE, or "returns the excluded set" and "returns
+    // everything" are the same picture and the test cannot tell them apart.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [surface, under]));
+
+    const excluded = index.belowSurfaceFeatures();
+    expect(excluded.map((f) => f.id)).toEqual([11]);
+  });
+
+  it("is empty when nothing is underground", () => {
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [surface]));
+    expect(index.belowSurfaceFeatures()).toEqual([]);
+  });
+
+  it("agrees with the predicate the scorer uses, over every merged feature", () => {
+    // THE INVARIANT, stated over the same input rather than by restating the
+    // rule: the layer must draw exactly what scoring dropped, or it is a
+    // decorative second opinion.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(
+      tile(HOME, [
+        surface,
+        under,
+        patch(12, HOME, { tunnel: "yes", highway: "primary" }),
+        patch(13, HOME, { tunnel: "building_passage", highway: "footway" }),
+      ]),
+    );
+
+    const excluded = new Set(index.belowSurfaceFeatures().map((f) => f.id));
+    for (const feature of index.mergedFeatures().values()) {
+      expect(excluded.has(feature.id)).toBe(isBelowSurface(feature));
+    }
+    // And the fixture actually exercises both answers.
+    expect(excluded.size).toBeGreaterThan(0);
+    expect(excluded.size).toBeLessThan(index.mergedFeatures().size);
   });
 });
