@@ -18,7 +18,7 @@
 
 import L from "leaflet";
 import { cellToBoundary } from "h3-js";
-import type { CellScore, GeoEvent, Region } from "gps-plus-slam-osm";
+import type { CellScore, GeoEvent, LatLng, Region } from "gps-plus-slam-osm";
 
 import { describeScale, type HeatScale } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
@@ -60,6 +60,7 @@ export class MapView {
   private readonly cellLayer: L.LayerGroup;
   private readonly regionLayer: L.LayerGroup;
   private readonly fetchLayer: L.LayerGroup;
+  private readonly undergroundLayer: L.LayerGroup;
   private readonly eventLayer: L.LayerGroup;
   private readonly userMarker: L.CircleMarker;
   private readonly onCellClick: ((cell: string) => void) | undefined;
@@ -115,6 +116,7 @@ export class MapView {
     // being on top costs nothing and being underneath would hide it behind ~931
     // filled cells — which is exactly where it is most worth seeing.
     this.fetchLayer = L.layerGroup().addTo(this.map);
+    this.undergroundLayer = L.layerGroup().addTo(this.map);
     this.eventLayer = L.layerGroup().addTo(this.map);
 
     this.userMarker = L.circleMarker([options.centre.lat, options.centre.lng], {
@@ -248,6 +250,45 @@ export class MapView {
           `event at ${new Date(event.eventTime).toLocaleTimeString()} · heat ${Math.round(pick.heat)}`,
         )
         .addTo(this.eventLayer);
+    }
+  }
+
+  /**
+   * Draws the features `isBelowSurface` excluded from scoring and the mesh.
+   *
+   * WHY THE MAP AND NOT ONLY THE 3D VIEW. This answers WHERE the excluded ground
+   * is — whether the thing that vanished is the U-Bahn line under the street or
+   * something that was on the surface all along. The 3D view answers what SHAPE
+   * it was. Neither answers the other's question, which is why both draw it.
+   *
+   * Dashed and in a colour nothing else uses, because the whole point is
+   * comparing it against what remains: a solid fill would read as another
+   * affordance overlay.
+   */
+  renderUnderground(outlines: readonly (readonly LatLng[])[]): void {
+    this.undergroundLayer.clearLayers();
+
+    for (const outline of outlines) {
+      if (outline.length === 0) continue;
+      const points = outline.map(
+        (point) => [point.lat, point.lng] as [number, number],
+      );
+      // A single point is a node, which has no outline to trace — drawn as a
+      // marker so it is visible at all rather than silently skipped.
+      if (points.length === 1) {
+        L.circleMarker(points[0] as [number, number], {
+          radius: 4,
+          className: "underground-feature",
+          interactive: false,
+        }).addTo(this.undergroundLayer);
+        continue;
+      }
+      L.polyline(points, {
+        className: "underground-feature",
+        weight: 2,
+        dashArray: "4 3",
+        interactive: false,
+      }).addTo(this.undergroundLayer);
     }
   }
 

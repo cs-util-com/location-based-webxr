@@ -64,10 +64,10 @@ export function groundLift(layer: LayerKind): number {
     case "buildings":
     case "trees":
     case "poi":
-    // `underground` is BELOW the ground rather than on it, so it has no place
-    // on the lift ladder: it is drawn at the features' own depth, and lifting it
-    // towards the surface would defeat the one thing it exists to show.
     case "underground":
+      // `underground` is BELOW the ground rather than on it, so it has no place
+      // on the lift ladder: it is drawn at the features' own depth, and lifting
+      // it towards the surface would defeat the one thing it exists to show.
       return 0;
   }
 }
@@ -102,4 +102,9 @@ export const GROUND_LAYERS = ["plates", "roads", "areas", "cells"] as const;
 export const RENDER_ORDER = Object.freeze({
   areas: 1,
   cells: 2,
+  // ABOVE both, and deliberately: the underground outlines are a diagnostic
+  // drawn BELOW the terrain, so they would otherwise be occluded by the very
+  // ground they are meant to be seen under. Their material disables depth
+  // testing for the same reason, and render order is what then decides.
+  underground: 3,
 });

@@ -113,6 +113,16 @@ const CELL_EMISSIVE_INTENSITY = 0.5;
 export const FAR_PLANE_M = 2400;
 
 /**
+ * How far below the ground the underground outlines are drawn, in metres.
+ *
+ * A FIXED DEPTH, not the feature's real one: OSM's `layer` is an ordering
+ * rather than a distance, and `level` is a storey index. Inventing metres from
+ * either would be a fabricated elevation. Deep enough to read as "underneath"
+ * against the terrain relief, shallow enough to stay in frame.
+ */
+const UNDERGROUND_DEPTH_M = -6;
+
+/**
  * Where the haze starts, metres.
  *
  * Two thirds of the way out, so the fade is gradual enough to read as distance
@@ -247,6 +257,10 @@ export class BuildingView {
   private cellMesh: THREE.Mesh | undefined;
   /** The outline-treated cells' boundaries (W13). Lifecycle follows the grid. */
   private cellOutlines:
+    | THREE.LineSegments<THREE.BufferGeometry, THREE.Material>
+    | undefined;
+  /** The below-surface outlines, replaced wholesale like the cell grid. */
+  private undergroundLines:
     | THREE.LineSegments<THREE.BufferGeometry, THREE.Material>
     | undefined;
   /** Triangle index → cell id for the current grid. */
@@ -936,6 +950,66 @@ export class BuildingView {
    * different parts of the same snapshot and neither should depend on the
    * other's timing.
    */
+  /**
+   * Draws the outlines of features excluded as below-surface, at their depth.
+   *
+   * WHY THE 3D VIEW AND NOT ONLY THE MAP. This answers what SHAPE the excluded
+   * thing was — a silo or a building dropped wrongly reads as a hole in the
+   * skyline, which no 2D outline conveys. The map answers WHERE it is. Neither
+   * answers the other's question.
+   *
+   * DRAWN BELOW THE GROUND, at a fixed depth rather than at the feature's real
+   * one, because OSM carries no reliable depth for these: `layer=-1` is an
+   * ordering, not a distance. A fixed offset is an honest "this is underneath"
+   * rather than a fabricated elevation.
+   *
+   * Kept out of `this.group` for the same reason the cell grid is: it arrives
+   * from a different part of the snapshot and rebuilding the buildings must not
+   * silently drop it.
+   */
+  renderUnderground(outlines: readonly Float32Array[]): void {
+    if (this.undergroundLines !== undefined) {
+      this.scene.remove(this.undergroundLines);
+      this.undergroundLines.geometry.dispose();
+      this.undergroundLines.material.dispose();
+      this.undergroundLines = undefined;
+    }
+    if (outlines.length === 0) {
+      this.requestFrame();
+      return;
+    }
+
+    // EACH OUTLINE IS ALREADY IN ENU, packed x,y pairs, because the frame lives
+    // in the worker where every other piece of scene geometry is built. A page
+    // that converted lat/lng itself would need a second copy of the frame and
+    // would go stale on every recentre.
+    const positions: number[] = [];
+    for (const outline of outlines) {
+      // A segment needs two ends; a lone point (a node) has no line to draw.
+      for (let i = 0; i + 3 < outline.length; i += 2) {
+        positions.push(outline[i] ?? 0, UNDERGROUND_DEPTH_M, -(outline[i + 1] ?? 0));
+        positions.push(outline[i + 2] ?? 0, UNDERGROUND_DEPTH_M, -(outline[i + 3] ?? 0));
+      }
+    }
+    if (positions.length === 0) {
+      this.requestFrame();
+      return;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(positions), 3),
+    );
+    this.undergroundLines = new THREE.LineSegments(
+      geometry,
+      new THREE.LineBasicMaterial({ color: 0xff7ad9, depthTest: false }),
+    );
+    this.undergroundLines.renderOrder = RENDER_ORDER.underground;
+    this.scene.add(this.undergroundLines);
+    this.requestFrame();
+  }
+
   renderCells(mesh: CellMesh): void {
     if (this.cellMesh !== undefined) {
       this.scene.remove(this.cellMesh);
