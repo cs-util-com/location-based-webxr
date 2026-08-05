@@ -33,6 +33,7 @@ import type { OsmGeometry } from "../model/osm-geometry.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { ringToEnu } from "./enu.js";
 import { isBelowSurface } from "../model/below-surface.js";
+import { containsPoint } from "../spatial/point-in-ring.js";
 import { isTallStructure, tallStructureHeightM } from "./tall-structures.js";
 import {
   isBuilding,
@@ -587,19 +588,4 @@ function representativePoint(ring: readonly EnuPoint[]): EnuPoint {
   // building parts. A concave part whose centroid falls outside is assigned to
   // no outline and extruded standalone — visible, and not wrong.
   return { x: x / ring.length, y: y / ring.length };
-}
-
-/** Ray-casting point-in-ring, in the ENU frame. */
-function containsPoint(ring: readonly EnuPoint[], point: EnuPoint): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i];
-    const b = ring[j];
-    if (a === undefined || b === undefined) continue;
-    const straddles = a.y > point.y !== b.y > point.y;
-    if (!straddles) continue;
-    const x = ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
-    if (point.x < x) inside = !inside;
-  }
-  return inside;
 }

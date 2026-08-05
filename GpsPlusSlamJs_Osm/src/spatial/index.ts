@@ -48,3 +48,6 @@ export {
   featuresAt,
   indexEntryCount,
 } from "./h3-feature-index.js";
+
+export type { PlanarPoint } from "./point-in-ring.js";
+export { containsPoint } from "./point-in-ring.js";
