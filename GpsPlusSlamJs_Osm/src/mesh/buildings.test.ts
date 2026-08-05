@@ -795,3 +795,68 @@ describe("buildBuildings — one base per BUILDING, not per part (W5, R3-1)", ()
     expect(lowestY(tower.mesh)).toBeCloseTo(10 + 12, 3);
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER — the second half of the Domplatte defect.
+ *
+ * `isBelowSurface` stopped underground features vetoing the SCORES above them,
+ * but the mesh selects volumes with `isBuilding`, which is exactly
+ * `tags["building"] !== undefined && !== "no"`. So a structure tagged
+ * `building=*` with `location=underground` was still extruded as though it stood
+ * on the ground — the scorer and the geometry disagreeing about the same
+ * feature, which is the kind of split that breeds later confusion.
+ *
+ * The exclusions matter as much as the inclusion, for the same reason they do in
+ * the scorer: dropping a building that is merely COVERED, or one on an upper
+ * floor, removes real geometry and nothing looks broken — there is simply less
+ * city.
+ */
+describe("buildings below the surface are not extruded", () => {
+  const footprint = [
+    { lat: 50.9413, lng: 6.9583 },
+    { lat: 50.9413, lng: 6.9588 },
+    { lat: 50.9416, lng: 6.9588 },
+    { lat: 50.9416, lng: 6.9583 },
+    { lat: 50.9413, lng: 6.9583 },
+  ];
+  const building = (id: number, extra: Record<string, string>): OsmFeature => ({
+    type: "way",
+    id,
+    tags: { building: "yes", height: "10", ...extra },
+    geometry: footprint,
+  });
+
+  it("skips an underground building", () => {
+    // The control and the case together: identical features, one tag apart.
+    // Without the control this could pass because the fixture builds nothing.
+    const above = buildBuildings([building(1, {})], { frame });
+    expect(above).toHaveLength(1);
+
+    const below = buildBuildings([building(2, { location: "underground" })], {
+      frame,
+    });
+    expect(below).toEqual([]);
+  });
+
+  it("skips a building on a negative layer", () => {
+    expect(buildBuildings([building(3, { layer: "-1" })], { frame })).toEqual(
+      [],
+    );
+  });
+
+  it("still extrudes a COVERED building, which is on the surface", () => {
+    // The mirror bug. `covered=yes` says there is something over it, not that it
+    // is underneath something.
+    expect(
+      buildBuildings([building(4, { covered: "yes" })], { frame }),
+    ).toHaveLength(1);
+  });
+
+  it("still extrudes a building on a POSITIVE layer", () => {
+    // `layer > 0` is above the ground, not below it — and bridges are out of
+    // scope for this change either way (F59).
+    expect(
+      buildBuildings([building(5, { layer: "2" })], { frame }),
+    ).toHaveLength(1);
+  });
+});

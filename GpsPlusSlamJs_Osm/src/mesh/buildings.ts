@@ -32,6 +32,7 @@ import { toGeometry } from "../model/osm-geometry.js";
 import type { OsmGeometry } from "../model/osm-geometry.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { ringToEnu } from "./enu.js";
+import { isBelowSurface } from "../model/below-surface.js";
 import { isTallStructure, tallStructureHeightM } from "./tall-structures.js";
 import {
   isBuilding,
@@ -244,6 +245,14 @@ function collectFootprints(
   const parts: Footprint[] = [];
 
   for (const feature of features) {
+    // NOT EXTRUDED IF IT IS NOT ON THE SURFACE. The scorer stopped underground
+    // features vetoing the ground above them; without this the geometry still
+    // stands an underground structure on the street, so the two halves of the
+    // pipeline disagree about the same feature.
+    //
+    // The same predicate as the scorer, deliberately: one definition of "below
+    // the surface", or the disagreement simply moves rather than going away.
+    if (isBelowSurface(feature)) continue;
     const part = isBuildingPart(feature);
     if (!part && !isBuilding(feature)) continue;
     const rings = toEnuRings(feature, frame);

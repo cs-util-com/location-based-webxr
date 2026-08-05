@@ -77,12 +77,14 @@ inclusions:
   Skipped rather than clamped, and category-independent, because the claim is
   about geometry: expressing it as per-category factors would let a rule-table
   edit quietly undo it.
-- **This changes SCORING only.** The 3D mesh selects volumes with `isBuilding`,
-  which reads only the `building` tag — so a structure with
-  `location=underground` is still extruded as though it stood on the surface.
-  Verified, not measured across the corpus; kept separate because the
-  consequences differ in kind (a wrongly-scored cell corrupts data every other
-  feature reads; a wrongly-extruded volume misleads no algorithm).
+- **Used by BOTH the scorer and the mesh, and that is the point.** `mesh/buildings.ts`
+  skips below-surface features at the same seam where it decides what is a
+  building, so a structure with `location=underground` is neither scored on the
+  surface nor extruded onto it. Two definitions of "below the surface" would
+  simply move the disagreement rather than remove it.
+  - It was scoring-only for one commit, which left the geometry standing an
+    underground structure on the street while the scorer had stopped counting
+    it — the two halves of the pipeline disagreeing about the same feature.
 
 ## Examples
 
