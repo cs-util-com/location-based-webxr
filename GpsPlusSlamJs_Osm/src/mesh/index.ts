@@ -30,6 +30,15 @@ export {
   resolveHeights,
 } from "./building-heights.js";
 
+export type { BarrierDimensions } from "./barriers.js";
+export {
+  isSolidBarrier,
+  resolveBarrier,
+  DEFAULT_BARRIER_HEIGHT_M,
+  DEFAULT_CITY_WALL_HEIGHT_M,
+  DEFAULT_BARRIER_THICKNESS_M,
+} from "./barriers.js";
+
 export type { MeshData } from "./mesh-data.js";
 export { MeshBuilder } from "./mesh-data.js";
 export type { ExtrudeOptions } from "./extrude.js";
