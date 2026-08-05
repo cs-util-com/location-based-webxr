@@ -10,6 +10,15 @@ metres in a frame rebuilt on **every publish**, so every recentre invalidates
 every coordinate in it. An index keyed that way silently rebuilds itself, or
 worse, silently doesn't.
 
+**That justification is now weaker than when this was written (DEC-R11-8).** The
+demo's scene anchor no longer follows the user, so an ordinary step invalidates
+nothing. The decision stands on grounds that did not change — the anchor still
+moves on a declared place change or past 5 km, an index can outlive the scene
+that built it, and building from lat/lng makes the mistake _unavailable_ rather
+than merely avoided — but it is **preferred and structural, not strictly
+required.** Said plainly here because a sidecar that kept claiming a dead
+constraint would teach a future reader something false.
+
 Building from `OsmFeature` geometry instead — lat/lng, from Overpass `out geom`
 — makes the constraint structural rather than a rule to remember: **no
 publish-frame coordinate is ever in scope in this file.** A test asserts the

@@ -1169,9 +1169,20 @@ export class BuildingView {
       direction.y * distance,
       direction.z * distance,
     );
-    // The light aims at its target, which stays at the origin: the scene is
-    // re-origined on every move (see `recentre-camera.ts`), so the origin is
-    // always where the user is.
+    // THE TARGET STAYS AT THE ORIGIN, AND ONLY THE DIRECTION MATTERS.
+    //
+    // The old comment here said the origin "is always where the user is",
+    // which stopped being true when the scene gained a fixed anchor
+    // (`scene-anchor.ts`). The CODE is still right and the comment was the
+    // defect: three derives a directional light's direction as
+    // `position - target`, and there is no shadow map anywhere in this view, so
+    // nothing depends on where the pair sits — only on the vector between them.
+    //
+    // Which is why the obvious "fix" is wrong: moving the target to a user
+    // 2 km out, with `position` still at `direction * 1000`, would swing the
+    // light by tens of degrees and change the whole scene's lighting for no
+    // reason. If this ever gains shadows, position and target must move
+    // TOGETHER so the direction is preserved.
     this.sun.target.position.set(0, 0, 0);
     this.sun.target.updateMatrixWorld();
   }

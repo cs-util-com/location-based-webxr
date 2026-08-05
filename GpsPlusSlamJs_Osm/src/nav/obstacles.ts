@@ -1,13 +1,25 @@
 /**
  * The obstacle index — what blocks an agent, and at what height.
  *
- * **Keyed on H3 cells, holding lat/lng, and never ENU.** The navigation design
- * names this hazard twice: `BuildingVolume.footprint` is in ENU metres in a
- * frame rebuilt on every publish, so **every recentre invalidates every
- * coordinate in it**. Building from `OsmFeature` geometry instead — which is
- * lat/lng, from Overpass `out geom` — makes that structural rather than
- * something to remember, because no publish-frame coordinate is ever in scope
- * here.
+ * **Keyed on H3 cells, holding lat/lng, and never ENU.**
+ *
+ * The original reason was that `BuildingVolume.footprint` is in ENU metres in a
+ * frame rebuilt on every publish, so every recentre invalidated every coordinate
+ * in it. **That reason is now weaker than it was** (DEC-R11-8): the demo's scene
+ * anchor no longer follows the user, so an ordinary step invalidates nothing.
+ *
+ * The decision stands anyway, on grounds that did not change:
+ *
+ * - the anchor still moves on a declared place change or past 5 km, so ENU
+ *   coordinates still go stale — rarely rather than constantly;
+ * - an index can outlive the scene that built it, and absolute coordinates
+ *   survive what relative ones do not;
+ * - building from `OsmFeature` geometry, which is lat/lng from Overpass
+ *   `out geom`, makes it **structural**: no publish-frame coordinate is ever in
+ *   scope in this file, so the mistake is not available rather than merely
+ *   avoided.
+ *
+ * So: **preferred and structural, no longer strictly required.**
  *
  * The one place metres are unavoidable is thickness: a wall is 0.5 m wide, not
  * 0.5° wide. So each footprint is built in a frame anchored at **the feature's
