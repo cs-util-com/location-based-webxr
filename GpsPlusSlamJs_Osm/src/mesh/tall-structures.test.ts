@@ -139,3 +139,48 @@ describe("tallStructureHeightM", () => {
     }
   });
 });
+
+/**
+ * WHY THIS TEST MATTERS.
+ *
+ * This module carried its OWN underground rule — `location === "underground"` —
+ * which is a strict subset of `isBelowSurface`. So an underground silo tagged
+ * only `layer=-1` was still extruded on the street, reached through the tags
+ * `location` does not cover.
+ *
+ * That was the exact failure the buildings fix was written to remove, and the
+ * commit that removed it asserted "a second definition of below-the-surface
+ * would move the disagreement rather than remove it" — while a second definition
+ * sat eleven lines away in the same file. Raised in review on #254.
+ */
+describe("tall structures use the SAME below-surface rule as everything else", () => {
+  const silo = (extra: Record<string, string>): OsmFeature => ({
+    type: "way",
+    id: 90,
+    tags: { man_made: "silo", height: "24", ...extra },
+    geometry: [
+      { lat: 50.9413, lng: 6.9583 },
+      { lat: 50.9413, lng: 6.9586 },
+      { lat: 50.9415, lng: 6.9586 },
+      { lat: 50.9415, lng: 6.9583 },
+      { lat: 50.9413, lng: 6.9583 },
+    ],
+  });
+
+  it("refuses one on a negative layer, not just `location=underground`", () => {
+    // The control first, or a fixture that builds nothing would pass this
+    // whatever the rule said.
+    expect(isTallStructure(silo({}))).toBe(true);
+
+    expect(isTallStructure(silo({ layer: "-1" }))).toBe(false);
+    expect(isTallStructure(silo({ level: "-2" }))).toBe(false);
+    expect(isTallStructure(silo({ tunnel: "yes" }))).toBe(false);
+  });
+
+  it("still accepts one that is merely covered, or on a positive layer", () => {
+    // The mirror bug: dropping these removes real geometry and nothing looks
+    // broken, there is simply less city.
+    expect(isTallStructure(silo({ covered: "yes" }))).toBe(true);
+    expect(isTallStructure(silo({ layer: "1" }))).toBe(true);
+  });
+});

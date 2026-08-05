@@ -21,8 +21,11 @@ Names every render layer, and holds the enabled set as plain, immutable data.
   stage B the snapshot deliberately arrives WITHOUT the cell array while that
   layer is off — ~24 000 cells that structured-clone in a measured 27–35 ms to be
   drawn by nobody — so switching it ON has nothing to draw and needs a refetch.
-  This is the module's most surprising fact and the reason `needsRefetch` exists
-  as a function rather than an `if` at a call site.
+  This is the module's most surprising fact -- but it is CONDITIONAL, and the
+  qualifier is easy to lose: switching it on needs a refetch **unless the array
+  is still held from before it was switched off**, which happens because the
+  snapshot is not replaced on the way off. `needsRefetchFor` is where both halves
+  live together; `needsRefetch` alone answers only "does this change need data".
   - **ONE-WAY.** Switching `cells` off needs no refetch: the data is already held
     and simply stops being drawn. A symmetric implementation refetches for
     nothing on every hide, and `layers.test.ts` fails it.

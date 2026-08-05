@@ -22,6 +22,7 @@ import {
   DEFAULT_LAYERS,
   isLayerEnabled,
   needsRefetch,
+  needsRefetchFor,
   parseLayers,
   serialiseLayers,
   toggleLayer,
@@ -196,5 +197,33 @@ describe("needsRefetch", () => {
       false,
     );
     expect(needsRefetch(on, { ...on, buildings: !on.buildings })).toBe(false);
+  });
+});
+
+describe("needsRefetchFor", () => {
+  const off = { ...DEFAULT_LAYERS, cells: false };
+  const on = { ...DEFAULT_LAYERS, cells: true };
+
+  it("refetches when the layer goes on and nothing is held", () => {
+    expect(needsRefetchFor(off, on, 0)).toBe(true);
+  });
+
+  it("does NOT refetch when the array is still held from before", () => {
+    // The 18-second flick. Switching off does not replace the snapshot, so an
+    // off/on within one position is a redraw, not a widening cycle.
+    expect(needsRefetchFor(off, on, 931)).toBe(false);
+  });
+
+  it("treats NO SNAPSHOT as nothing held, which is the strongest case", () => {
+    // The bug the first version shipped: `snapshot?.cells.length === 0` is
+    // `undefined === 0`, so a missing snapshot declined to refetch — in the one
+    // state where nothing at all is in hand. Reachable after `fetchFailed` and
+    // at boot, so the caller passes `?? 0` and this pins what that must mean.
+    expect(needsRefetchFor(off, on, 0)).toBe(true);
+  });
+
+  it("stays one-way regardless of what is held", () => {
+    expect(needsRefetchFor(on, off, 0)).toBe(false);
+    expect(needsRefetchFor(on, off, 931)).toBe(false);
   });
 });

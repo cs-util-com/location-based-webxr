@@ -162,3 +162,36 @@ export function parseLayers(serialised: string): LayerSet {
 export function needsRefetch(previous: LayerSet, next: LayerSet): boolean {
   return !isLayerEnabled(previous, "cells") && isLayerEnabled(next, "cells");
 }
+
+/**
+ * `needsRefetch`, AND we do not already hold the cells.
+ *
+ * WHY BOTH HALVES ARE HERE. The layer rule alone says an off→on switch needs
+ * data; it cannot know whether the data is already in hand. Switching `cells`
+ * OFF does not refetch and dispatches nothing that replaces the snapshot, so the
+ * held array survives — and an off/on flick within one position was paying a
+ * whole progressive refresh (three rings, a worker mesh build, up to 18 s) to
+ * arrive at cells that were already there.
+ *
+ * IT LIVED AS A CONJUNCTION AT THE CALL SITE FOR ONE COMMIT, and deleting the
+ * second half passed every test: `layers.test.ts` sees the pure rule,
+ * `refresh-cycle.test.ts` sees the per-ring read, and neither can see a
+ * condition that exists only in `main.ts`. That is the same shape this round
+ * keeps finding — a stated rule with nothing executable behind it — and it is
+ * the worst kind to lose, because the symptom is an 18-second pause rather than
+ * anything that looks broken.
+ *
+ * `heldCells` IS A COUNT RATHER THAN A SNAPSHOT so "there is no snapshot at all"
+ * has to be answered explicitly by the caller instead of hiding in an optional
+ * chain. It first shipped as `snapshot?.cells.length === 0`, which yields
+ * `undefined === 0` — `false` — for a missing snapshot, i.e. it declined to
+ * refetch in the one state where nothing whatsoever is held. Reachable after any
+ * `fetchFailed` (a dead worker, an Overpass 429) and at boot.
+ */
+export function needsRefetchFor(
+  previous: LayerSet,
+  next: LayerSet,
+  heldCells: number,
+): boolean {
+  return needsRefetch(previous, next) && heldCells === 0;
+}

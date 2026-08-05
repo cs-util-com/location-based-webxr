@@ -70,7 +70,9 @@ The pure decisions live in `layers.test.ts`. The wiring is covered by two e2e:
 _"switch geometry off and on without refetching"_ (asserts through the status line's
 own counters that the layer is not BUILT, and that no Overpass request is made — a
 presentation change must not refetch -- TRUE OF EVERY LAYER EXCEPT `cells`, which
-since round 10 stage B is not sent while it is off and therefore DOES refetch when
-switched on; see `needsRefetch` in `layers.ts.md`) and _"switching the cells layer off clears the
+since round 10 stage B is not sent while it is off and therefore refetches when
+switched on -- UNLESS the array is still held from before it was switched off,
+which the `view.layers` subscriber checks via `needsRefetchFor`; see
+`layers.ts.md`) and _"switching the cells layer off clears the
 grid in BOTH views"_ (the registry has to reach the map as well as the scene, or one
 view keeps drawing what the store says is off).

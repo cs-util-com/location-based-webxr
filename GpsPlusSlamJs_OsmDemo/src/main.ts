@@ -71,7 +71,7 @@ import {
 } from "./ground-mode.js";
 import { attachLayerToggles } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
-import { isLayerEnabled, needsRefetch } from "./layers.js";
+import { isLayerEnabled, needsRefetchFor } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import {
@@ -942,8 +942,15 @@ async function main(): Promise<void> {
       // caller answers "and do we lack it". Raised in review on #254.
       if (
         previousLayers !== undefined &&
-        needsRefetch(previousLayers, layers) &&
-        selectOsmView(store.getState()).snapshot?.cells.length === 0
+        needsRefetchFor(
+          previousLayers,
+          layers,
+          // `?? 0` because NO SNAPSHOT means nothing is held -- the strongest
+          // case for refetching, not the weakest. `snapshot?.cells.length === 0`
+          // shipped for one commit and read `undefined === 0`, i.e. false, so a
+          // dead worker or an Overpass 429 left the toggle doing nothing at all.
+          selectOsmView(store.getState()).snapshot?.cells.length ?? 0,
+        )
       ) {
         void refresh();
       }

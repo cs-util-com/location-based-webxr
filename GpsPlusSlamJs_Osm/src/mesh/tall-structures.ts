@@ -29,6 +29,7 @@
  * @see tall-structures.ts.md
  */
 
+import { isBelowSurface } from "../model/below-surface.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 import {
   isBuilding,
@@ -72,7 +73,13 @@ export function isTallStructure(feature: OsmFeature): boolean {
   // Already someone else's. See the header — both of these prevent a DOUBLE
   // draw, which is the failure mode that hides.
   if (isBuilding(feature) || isBuildingPart(feature)) return false;
-  if (feature.tags["location"] === "underground") return false;
+  // THE SHARED PREDICATE, not a local rule. This was
+  // `tags["location"] === "underground"`, a strict SUBSET of `isBelowSurface`,
+  // so an underground silo tagged only `layer=-1` was still extruded on the
+  // street -- reached through the tags `location` does not cover. Raised in
+  // review on #254, against a commit whose own message said a second definition
+  // of "below the surface" would move the disagreement rather than remove it.
+  if (isBelowSurface(feature)) return false;
   const kind = feature.tags["man_made"];
   return kind !== undefined && TALL_STRUCTURE_KINDS.has(kind);
 }
