@@ -164,10 +164,20 @@ describe("findPath", () => {
       expect(path!.length).toBeGreaterThan(gridDistance(ORIGIN, OUTSIDE) + 1);
     });
 
-    it("accepts the column model as its predicate", () => {
-      // The integration the whole stage exists for: heights come from a
-      // lookup, and `columnsAdjacent` decides each step. The wall here is a
-      // HEIGHT, not a hole in the scope set.
+    it("routes around a SINGLE-VALUED height field", () => {
+      // NOT "the column model" — that is what this test used to claim, and
+      // review on #257 was right to reject the claim. `canStep` receives cell
+      // strings, so `heightAt` below resolves ONE height per cell: a
+      // heightfield with a step filter, which is a strictly weaker thing.
+      //
+      // The genuine two-states-in-one-cell case lives in
+      // `column-space.test.ts`, over a search keyed by `(cell, heightM)`.
+      // Under THIS composition `columnsAdjacent(foot, top)` is unreachable,
+      // because `from` and `to` are never the same cell.
+      //
+      // The test is kept because a single-valued field is a real
+      // configuration — it is what a terrain-only pass B produces — and
+      // because a route that detours purely on heights is worth pinning.
       const heightAt = (cell: string) =>
         RING_3.includes(cell) && cell !== GATE ? 8 : 0;
 
@@ -181,6 +191,26 @@ describe("findPath", () => {
 
       expect(path).toContain(GATE);
       expect(path!.length).toBeGreaterThan(gridDistance(ORIGIN, OUTSIDE) + 1);
+    });
+
+    it("is never asked about a cell that was already visited", () => {
+      // ROUGHLY FIVE CALLS IN SIX, in a flood. Every interior cell is reached
+      // once but sits in six neighbourhoods, so a predicate consulted before
+      // the visited check is asked about it six times over.
+      //
+      // Harmless while the predicate is a set lookup; pass B's does
+      // point-in-polygon and a height lookup per call, so it stops being
+      // harmless exactly when stage 3 lands. Raised in review on #257.
+      const asked: string[] = [];
+      findPath(ORIGIN, OUTSIDE, FIELD, {
+        canStep: (_from, to) => {
+          asked.push(to);
+          return true;
+        },
+      });
+
+      expect(asked.length).toBeGreaterThan(0);
+      expect(new Set(asked).size).toBe(asked.length);
     });
 
     it("is never asked about a cell outside the scope set", () => {
@@ -221,6 +251,20 @@ describe("findPath", () => {
       expect(() => findPath(ORIGIN, coarse, new Set([ORIGIN, coarse]))).toThrow(
         /resolution/i,
       );
+    });
+
+    it("refuses a cap that would silently disable the bound", () => {
+      // NaN MAKES EVERY COMPARISON FALSE, so `expansions > NaN` never fires and
+      // the safeguard is off — with no error and no way to notice except a tab
+      // that stops responding. `Infinity` removes the ceiling outright. A
+      // safeguard a caller can switch off by accident is not a safeguard.
+      // CodeRabbit raised this as Major on #257.
+      for (const cap of [NaN, Infinity, 0, -1]) {
+        expect(
+          () => findPath(ORIGIN, OUTSIDE, FIELD, { maxExpansions: cap }),
+          String(cap),
+        ).toThrow(/maxExpansions/);
+      }
     });
 
     it("throws rather than searching past the expansion cap", () => {

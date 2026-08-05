@@ -22,6 +22,21 @@ They are the same search with a different edge test. `canStep` defaults to
 admitting every neighbour (§5.3); pass B supplies one that resolves heights and
 refuses unclimbable steps (§5.4), and the identical search now detours.
 
+**But this module is the FLAT case, and that is a real limit.** A state here is
+a bare cell, so `canStep` sees only cell strings and any predicate must resolve
+**one** height per cell — a heightfield with a step filter. The column model's
+distinguishing case, two states in one cell, is not merely untested here: it is
+**inexpressible**, because `from` and `to` are never the same cell. Review on
+#257 found this, and the owner chose to generalise (DEC-R11-5) rather than
+document and defer.
+
+For a genuine `(cell, heightM)` search use
+[`column-space.ts`](./column-space.ts.md) over
+[`search.ts`](./search.ts.md). This module is now a thin wrapper over that same
+search — kept because the flat case is the design's rung 5.3, where agents
+wander over free adjacency and "will walk up the Tower walls, and that is the
+point".
+
 **Why the predicate belongs in the expansion and not in a downstream mover:** a
 pass B that merely _rejected_ steps as an agent took them yields an agent that
 walks into a wall and stops. Routing around requires the **search** to know. The
@@ -68,12 +83,17 @@ score-derived one, with no principled way to say which is right.
 
 ## Defensive behaviour
 
-- **The expansion cap throws; it does not truncate.** Returning `undefined` on
-  exhaustion would be indistinguishable from "no route exists", and the caller
-  would draw a blank and never learn the search gave up. 100 000 is ~2 orders of
-  magnitude above the demo's ~10³-cell working set: high enough never to fire on
-  real input, low enough that an unbounded scope set surfaces immediately rather
-  than as a frozen tab.
+- **The expansion cap throws, and is validated rather than merely defaulted.**
+  `NaN` makes every comparison false and `Infinity` removes the ceiling — both
+  silently disable the safeguard, whose whole purpose is preventing the one
+  failure mode with no error message. See [`search.ts.md`](./search.ts.md).
+  Returning `undefined` on exhaustion would be indistinguishable from "no route
+  exists". 100 000 is ~2 orders of magnitude above the demo's ~10³-cell working
+  set.
+- **`canStep` is called at most once per cell**, never for one already visited.
+  Every interior cell sits in six neighbourhoods, so a predicate consulted
+  before the visited check is asked about it six times over — harmless for a set
+  lookup, not for pass B's point-in-polygon.
 - **Mixed resolutions throw**, for the same reason as in
   [`column.ts.md`](./column.ts.md): a quiet `undefined` reads as "no way across".
 
@@ -91,7 +111,9 @@ what will make that need visible.
 // §5.3 — free adjacency: the agent will happily walk up a wall.
 findPath(from, to, region.cells);
 
-// §5.4 — the same search, made height-aware.
+// A SINGLE-VALUED height field — NOT the column model. `heightAt` returns one
+// height per cell, so this detours around slopes and walls that occupy whole
+// cells, but it cannot represent standing on top of one.
 findPath(from, to, region.cells, {
   canStep: (a, b) =>
     columnsAdjacent(
@@ -99,6 +121,9 @@ findPath(from, to, region.cells, {
       { cell: b, heightM: heightAt(b) },
     ),
 });
+
+// The column model proper — a different search, over states rather than cells.
+findStatePath(agent, (s) => s.cell === target, columnSpace({ levelsAt }));
 ```
 
 ## Tests
@@ -106,8 +131,10 @@ findPath(from, to, region.cells, {
 - `path.test.ts` — a ring-3 wall with a single gate around the origin. Every
   barrier case asserts the route is **strictly longer** than the unobstructed
   grid distance, which is the assertion a fixture without a real barrier cannot
-  produce. Also the predicate seam, the `columnsAdjacent` integration, scope and
-  neighbour legality, determinism, and the defensive paths.
+  produce. Also the predicate seam, a single-valued height field (explicitly
+  **not** the column model — see above), scope and neighbour legality,
+  determinism, the once-per-cell predicate guarantee, and the defensive paths
+  including cap validation.
 - `path.property.test.ts` — generated obstacle fields checked against an
   independent layered flood: reachability agreement, exact shortest length,
   step-by-step legality, no repeated cells, `findPath`/`reachableFrom`

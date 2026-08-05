@@ -27,7 +27,8 @@ passing _because of_ except the rule itself.
   - `heightM` is metres in whatever vertical datum the caller's height source
     uses. Only differences matter, so the datum never has to be pinned down —
     but it must be **consistent between the two states compared**.
-- `STEP_THRESHOLD_M = 0.5` — the default climbable height change.
+- `STEP_THRESHOLD_M = 0.5` — the default climbable height change, confirmed by
+  the owner as DEC-R11-1.
 - `columnsAdjacent(a, b, stepThresholdM?) => boolean`.
   - Throws `RangeError` if the threshold is not finite and non-negative, or if
     the two cells are at different H3 resolutions.
@@ -66,6 +67,17 @@ passing _because of_ except the rule itself.
   res-8 cell, so a mixed pair would come back non-adjacent and read as "there is
   no way across" — an answer that looks entirely plausible and is entirely
   wrong.
+
+## Using this in a search
+
+`columnsAdjacent` is the edge test, not the search. Pairing it with a
+**cell-keyed** search silently reduces it to a step filter over a single-valued
+height field: with one slot per cell, the wall foot and the wall top cannot both
+exist, and `columnsAdjacent(foot, top)` — the example above, and the design's
+motivating case — is never even asked. Review on #257 found exactly that.
+
+Use [`column-space.ts`](./column-space.ts.md), which keys states by
+`(cell, height)` and generates every standable level per cell.
 
 ## Open: the threshold value (design Q1)
 
