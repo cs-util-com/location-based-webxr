@@ -725,6 +725,13 @@ export class AffordanceIndex {
    * puts a diagnostic collection in the hot loop and grows `ScoreResult` with a
    * field every consumer must ignore. The predicate is pure and cheap, and this
    * feeds a layer that is off by default.
+   *
+   * **Call this only when the layer is ON.** For the count alone — which the
+   * status line reports unconditionally — use {@link belowSurfaceCount}: it
+   * runs the same predicate over the same features without materialising an
+   * array of ~13 % of the corpus on every `update`. The "off by default"
+   * justification above stopped covering the count the moment it became
+   * unconditional, which is what review on #256 caught.
    */
   belowSurfaceFeatures(): OsmFeature[] {
     const excluded: OsmFeature[] = [];
@@ -732,6 +739,23 @@ export class AffordanceIndex {
       if (isBelowSurface(feature)) excluded.push(feature);
     }
     return excluded;
+  }
+
+  /**
+   * How many features are excluded as below-surface.
+   *
+   * The same loop as {@link belowSurfaceFeatures} without the allocation, for
+   * the status line, which reports the number whether or not the layer is
+   * drawn. Kept as a separate method rather than `belowSurfaceFeatures().length`
+   * precisely because that spelling is what put an array of ~13 % of the corpus
+   * on a hot path.
+   */
+  belowSurfaceCount(): number {
+    let count = 0;
+    for (const feature of this.features.values()) {
+      if (isBelowSurface(feature)) count++;
+    }
+    return count;
   }
 
   private notify(chunks: readonly string[]): void {

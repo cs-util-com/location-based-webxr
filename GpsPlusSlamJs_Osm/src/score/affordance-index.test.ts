@@ -1234,4 +1234,60 @@ describe("belowSurfaceFeatures — what the scorer excluded", () => {
     expect(excluded.size).toBeGreaterThan(0);
     expect(excluded.size).toBeLessThan(index.mergedFeatures().size);
   });
+
+  describe("belowSurfaceCount — the same answer without the array", () => {
+    // WHY THIS EXISTS AT ALL. The demo's status line reports the excluded
+    // count on every update whether or not the layer is drawn, and it used to
+    // get it from `belowSurfaceFeatures().length` — materialising ~13 % of the
+    // corpus on a hot path to read one number off it. Raised in review on #256.
+    it("agrees with the length of the feature list", () => {
+      const index = new AffordanceIndex({ table: TABLE });
+      index.acceptTile(
+        tile(HOME, [
+          surface,
+          under,
+          patch(12, HOME, { tunnel: "yes", highway: "primary" }),
+        ]),
+      );
+
+      // The two must never be able to disagree — a status line that reported a
+      // different number from the layer it describes would be worse than
+      // reporting nothing.
+      expect(index.belowSurfaceCount()).toBe(
+        index.belowSurfaceFeatures().length,
+      );
+      // And the fixture is not degenerate in either direction.
+      expect(index.belowSurfaceCount()).toBeGreaterThan(0);
+      expect(index.belowSurfaceCount()).toBeLessThan(
+        index.mergedFeatures().size,
+      );
+    });
+
+    it("is zero when nothing is underground", () => {
+      const index = new AffordanceIndex({ table: TABLE });
+      index.acceptTile(tile(HOME, [surface]));
+      expect(index.belowSurfaceCount()).toBe(0);
+    });
+
+    it("tracks the merged set as more features arrive", () => {
+      // The count is DERIVED, not cached — a counter incremented at ingest
+      // would drift the moment a tile was re-accepted or merged, and would go
+      // on over-reporting with nothing to contradict it.
+      const index = new AffordanceIndex({ table: TABLE });
+      index.acceptTile(tile(HOME, [surface, under]));
+      expect(index.belowSurfaceCount()).toBe(1);
+
+      index.acceptTile(
+        tile(HOME, [
+          surface,
+          under,
+          patch(14, HOME, { location: "underground", landuse: "grass" }),
+        ]),
+      );
+      expect(index.belowSurfaceCount()).toBe(2);
+      expect(index.belowSurfaceCount()).toBe(
+        index.belowSurfaceFeatures().length,
+      );
+    });
+  });
 });
