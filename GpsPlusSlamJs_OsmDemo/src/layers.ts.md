@@ -8,7 +8,8 @@ Names every render layer, and holds the enabled set as plain, immutable data.
 
 - `ALL_LAYERS` — the ordered tuple; `LayerKind` is derived from it.
 - `LayerSet` — `Readonly<Record<LayerKind, boolean>>`, exhaustive by construction.
-- `DEFAULT_LAYERS` — every layer, with no exclusion (W9, W6).
+- `DEFAULT_LAYERS` — every layer **except `plates` and `cells`**
+  (DEC-R7b-5/R7b-6).
 - `isLayerEnabled`, `toggleLayer` (returns a new set), `serialiseLayers`,
   `parseLayers`.
 - `needsRefetch(previous, next)` — whether a layer change needs new DATA rather
@@ -41,19 +42,26 @@ Names every render layer, and holds the enabled set as plain, immutable data.
   impossible to view a merged area _over_ the cells that produced it — the first
   check anyone runs when a region looks wrong. One mechanism therefore covers both
   the layer question and the cells/areas question.
-- **`DEFAULT_LAYERS` is everything, full stop (W9, DEC-R4-4; W6, DEC-R5-4).** It used
+- **`DEFAULT_LAYERS` is everything EXCEPT `plates` and `cells`** (W9,
+  DEC-R4-4; W6, DEC-R5-4; narrowed again by DEC-R7b-5/R7b-6). It used
   to be `cells`, `buildings`, `trees` — the three the demo shipped with — because
   the W10 registry migration needed a known-good baseline to compare against. That
   migration is complete, so what remained was the historical order in which builders
   happened to be written, which is not a fact about what a user should see.
   - It is DERIVED from `ALL_LAYERS` rather than listed, so a new layer is on by
     default and the test cannot go stale by omission.
-  - **The one exclusion was REMOVED rather than switched on.** `terrainDebug` used
-    to be filtered out here, and that filter was the only thing making this
-    constant interesting. It is now an appearance of the ground mode
-    (`ground-mode.ts`), so there is nothing left to exclude — and every remaining
-    entry in `ALL_LAYERS` is a thing in the world, which is what the list is
-    supposed to mean.
+  - **`terrainDebug`'s exclusion was REMOVED rather than switched on.** It used
+    to be filtered out here; it is now an appearance of the ground mode
+    (`ground-mode.ts`), so it no longer needs to be.
+  - **But two exclusions were added afterwards and this file did not say so
+    until round 10.** `plates` and `cells` are both off by default
+    (DEC-R7b-5/R7b-6) — `cells` because the 2D map draws one Leaflet polygon
+    per cell. The sentence above used to end "there is nothing left to exclude",
+    which had been false since round 7b.
+    - It is worth more than a tidy-up: the whole justification for `needsRefetch`
+      and for round 10 stage B is **"the `cells` layer is off in the shipped
+      default"**. A reader who took the old wording at its word would conclude
+      the 27–35 ms saving does not apply to the default configuration at all.
   - **Cost, stated rather than discovered (N7):** every layer on multiplies the
     per-publish rebuild, which is why W6/W7 (instancing) and W10 (the draw-call
     readout) land before this.

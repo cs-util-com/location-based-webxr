@@ -930,9 +930,20 @@ async function main(): Promise<void> {
       // forgetting to ask. The toggle callback owned it for one commit, which
       // left the transition unowned again the moment a second dispatcher
       // appeared. Raised in review on #254.
+      // ...AND ONLY IF WE DO NOT ALREADY HOLD THEM. Switching `cells` OFF does
+      // not refetch (the rule is one-way) and dispatches nothing that replaces
+      // the snapshot, so the held array survives. Without this an off/on flick
+      // within one position pays a whole progressive refresh -- three rings, a
+      // worker mesh build, up to 18 s -- to arrive at data already in hand,
+      // where before stage B it was an instant redraw.
+      //
+      // AT THE CALL SITE rather than inside `needsRefetch`, which keeps the
+      // layer rule pure: the rule answers "does this change need data", the
+      // caller answers "and do we lack it". Raised in review on #254.
       if (
         previousLayers !== undefined &&
-        needsRefetch(previousLayers, layers)
+        needsRefetch(previousLayers, layers) &&
+        selectOsmView(store.getState()).snapshot?.cells.length === 0
       ) {
         void refresh();
       }

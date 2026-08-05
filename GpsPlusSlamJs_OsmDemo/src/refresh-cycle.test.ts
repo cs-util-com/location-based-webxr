@@ -735,4 +735,50 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
     expect(asked.length).toBeGreaterThan(0);
     expect(asked).not.toContain(false);
   });
+
+  it("re-reads the layer for each ring, so a mid-widening switch-off takes effect", async () => {
+    // THE INVARIANT THE SIDECAR PROMISES, which nothing verified. Both tests
+    // above set the layer before `refresh()` starts, so hoisting the
+    // `isLayerEnabled` call out of the ring loop passes them unchanged -- the
+    // claim had nothing behind it. Raised in review on #254.
+    //
+    // Switching OFF is the reachable direction to test: switching ON also
+    // triggers a refetch, which would abort the run being observed.
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    demo.store.dispatch(
+      demo.actions.layersChanged({
+        ...selectLayers(demo.store.getState()),
+        cells: true,
+      }),
+    );
+
+    const asked: boolean[] = [];
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      worker: {
+        call: (_kind, payload) => {
+          asked.push(payload.includeCells);
+          // Off after the first ring has been asked for.
+          demo.store.dispatch(
+            demo.actions.layersChanged({
+              ...selectLayers(demo.store.getState()),
+              cells: false,
+            }),
+          );
+          return Promise.resolve({
+            snapshot: snapshot("walkable"),
+            mesh: { kind: "regions" as const, regions: [] },
+          });
+        },
+      },
+      onMesh: () => {},
+    });
+
+    await refresh();
+
+    // A CAPTURED-ONCE implementation gives [true, true, true]; naming it is what
+    // makes this test bite rather than merely pass.
+    expect(asked).toEqual([true, false, false]);
+  });
 });

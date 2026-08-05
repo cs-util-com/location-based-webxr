@@ -9,7 +9,7 @@ scorer can let it contribute nothing.
 
 `affordance-scorer.ts` computes
 
-```
+```text
 heat(cell, category) = Π over features touching the cell ( Π over tags ( ruleValue ) )
 ```
 
