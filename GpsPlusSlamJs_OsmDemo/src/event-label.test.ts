@@ -148,7 +148,7 @@ describe("describeGeoEvent", () => {
     // the only thing telling the user the event exists and where to look.
     const label = describeGeoEvent(
       { lat: 0, lng: 0 },
-      { eventTime: 0, picks: [pickAt(0.005, 0.005)] },
+      { eventTime: 0, picks: [pickAt(0.005, 0.005)], tilesSearched: 3 },
       at,
     );
     expect(label).toContain("14:15");
@@ -163,7 +163,7 @@ describe("describeGeoEvent", () => {
     // marker in the wrong place.
     const label = describeGeoEvent(
       { lat: 0, lng: 0 },
-      { eventTime: 0, picks: [pickAt(0.005, 0)] },
+      { eventTime: 0, picks: [pickAt(0.005, 0)], tilesSearched: 3 },
       at,
     );
     // "560 m" alone is the proof: reading `candidate` would give "0 m", since
@@ -175,7 +175,11 @@ describe("describeGeoEvent", () => {
   it("uses the NEAREST pick, which is the first one", () => {
     const label = describeGeoEvent(
       { lat: 0, lng: 0 },
-      { eventTime: 0, picks: [pickAt(0.001, 0), pickAt(0.05, 0)] },
+      {
+        eventTime: 0,
+        picks: [pickAt(0.001, 0), pickAt(0.05, 0)],
+        tilesSearched: 3,
+      },
       at,
     );
     expect(label).toContain("110 m");
@@ -186,9 +190,50 @@ describe("describeGeoEvent", () => {
     // button must reach a terminal state either way.
     const label = describeGeoEvent(
       { lat: 0, lng: 0 },
-      { eventTime: 0, picks: [] },
+      { eventTime: 0, picks: [], tilesSearched: 1 },
       at,
     );
-    expect(label).toBe("No event nearby");
+    // AND HOW MUCH GROUND WAS LOOKED AT (F57). "No event nearby" alone cannot
+    // distinguish "there is none" from "you have not loaded enough to know" --
+    // and under DEC-R9-15 the second is a real, common state.
+    expect(label).toBe("No event nearby · searched 1 tile");
+  });
+});
+
+describe("describeGeoEvent — the searched area (F57)", () => {
+  const at = (): string => "14:15";
+
+  it("singularises one tile and pluralises the rest", () => {
+    // "searched 1 tiles" is the kind of detail that makes a diagnostic surface
+    // look unfinished, and it is one branch.
+    expect(
+      describeGeoEvent(
+        { lat: 0, lng: 0 },
+        { eventTime: 0, picks: [], tilesSearched: 1 },
+        at,
+      ),
+    ).toContain("searched 1 tile");
+    expect(
+      describeGeoEvent(
+        { lat: 0, lng: 0 },
+        { eventTime: 0, picks: [], tilesSearched: 4 },
+        at,
+      ),
+    ).toContain("searched 4 tiles");
+  });
+
+  it("reports it on the SUCCESS path too, not only when nothing was found", () => {
+    // THE HALF THAT IS EASY TO SKIP. Two people standing together can find
+    // different NUMBERS of events under DEC-R9-15 while agreeing about each one
+    // — so the coverage matters when something IS found, not just when nothing
+    // is. Reporting it only on the empty branch would answer the question only
+    // for the person who sees nothing.
+    const label = describeGeoEvent(
+      { lat: 0, lng: 0 },
+      { eventTime: 0, picks: [pickAt(0.005, 0.005)], tilesSearched: 7 },
+      at,
+    );
+    expect(label).toContain("Event at");
+    expect(label).toContain("searched 7 tiles");
   });
 });

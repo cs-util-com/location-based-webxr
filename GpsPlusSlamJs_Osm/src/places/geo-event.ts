@@ -421,6 +421,20 @@ export interface GeoEvent {
   readonly eventTime: number;
   /** One pick per tile that had a valid position, NEAREST TO THE USER FIRST. */
   readonly picks: readonly BestPick[];
+  /**
+   * How many tiles were SEARCHED, which is not how many yielded a pick (F57).
+   *
+   * DEC-R9-15 means the tile set is your own plus any neighbour whose ground is
+   * already downloaded, so two people standing together can legitimately see a
+   * different NUMBER of events. Each individual event is identical for both --
+   * the divergence is coverage, never disagreement -- but without this the UI
+   * cannot say which it is, and a missing event reads as "broken" rather than as
+   * "not loaded yet".
+   *
+   * `picks.length` cannot stand in: a tile that is all water is searched and
+   * yields nothing, which is a different fact from not having looked.
+   */
+  readonly tilesSearched: number;
 }
 
 /**
@@ -502,5 +516,5 @@ export function newGeoEventFor({
   // Ordering by `candidate` ranks tiles by a point the event is not at, so a
   // caller's "nearest event" would quote a distance to nothing.
   picks.sort((a, b) => distanceTo(a.position) - distanceTo(b.position));
-  return { eventTime, picks };
+  return { eventTime, picks, tilesSearched: tiles.length };
 }

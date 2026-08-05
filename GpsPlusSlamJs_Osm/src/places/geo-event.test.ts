@@ -703,3 +703,59 @@ describe("the quality gate is the neighbourhood at threshold, exactly", () => {
     expect(pickWith(4, 3)).toBeDefined();
   });
 });
+
+/**
+ * WHY THIS TEST MATTERS (F57).
+ *
+ * DEC-R9-15 makes the tile set your own plus any neighbour already downloaded,
+ * so two devices in the same place can see a different NUMBER of events while
+ * agreeing exactly about each one. Without a searched count the UI cannot tell
+ * the user which of those it is looking at, and "fewer events than my friend"
+ * reads as a bug rather than as "you have less loaded".
+ */
+describe("the event reports how much ground was searched", () => {
+  const warm = () => 3;
+  const tileAt = (lat: number, lng: number) => ({
+    bbox: { south: lat, west: lng, north: lat + 0.01, east: lng + 0.01 },
+  });
+
+  it("counts tiles SEARCHED, not tiles that yielded a pick", () => {
+    // THE DISTINCTION THE FIELD EXISTS FOR. A tile that is all water is searched
+    // and returns nothing, which is a different fact from never having looked --
+    // and `picks.length` conflates them.
+    const event = newGeoEventFor({
+      user: { lat: 0, lng: 0 },
+      tiles: [tileAt(0, 0), tileAt(0.2, 0.2), tileAt(0.5, 0.5)],
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: () => "0,0",
+      toLatLng: gridToLatLng,
+      // NOTHING passes the gate, so every pick is rejected while every tile is
+      // still searched. Without this the two numbers would coincide and the
+      // test could not tell them apart.
+      heatAt: () => 1,
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+
+    expect(event.picks).toEqual([]);
+    expect(event.tilesSearched).toBe(3);
+  });
+
+  it("counts every tile offered, including those that did yield picks", () => {
+    const event = newGeoEventFor({
+      user: { lat: 0, lng: 0 },
+      tiles: [tileAt(0, 0), tileAt(0.2, 0.2)],
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: () => "0,0",
+      toLatLng: gridToLatLng,
+      heatAt: warm,
+      neighbours: gridNeighbours,
+      steps: 3,
+    });
+
+    expect(event.picks.length).toBeGreaterThan(0);
+    expect(event.tilesSearched).toBe(2);
+  });
+});

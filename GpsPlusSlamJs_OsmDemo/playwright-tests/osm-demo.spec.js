@@ -3992,7 +3992,9 @@ test.describe("the geo-event", () => {
       // winner is usually off-screen, so this string is the only feedback the
       // user gets; a label that lost them would look identical to a working
       // one on a map that happens to be showing nothing.
-      expect(label).toMatch(/\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)$/);
+      expect(label).toMatch(
+        /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW) · searched \d+ tiles?$/,
+      );
 
       // PRESENT, not VISIBLE, and the difference is a real property of the
       // feature rather than a test convenience. An event tile is ~900 m across

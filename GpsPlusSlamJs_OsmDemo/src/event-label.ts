@@ -97,10 +97,18 @@ export function describeGeoEvent(
   formatTime: (at: number) => string = (at) =>
     new Date(at).toLocaleTimeString(),
 ): string {
+  // THE SEARCHED AREA IS PART OF THE ANSWER (F57), and it is the "nothing
+  // found" case that needs it most. DEC-R9-15 means the tile set is your own
+  // plus any neighbour already downloaded, so two people standing together can
+  // legitimately see a different number of events while agreeing about each one.
+  // "No event nearby" alone cannot distinguish "there is none" from "you have
+  // not loaded enough to know", and the second reads as a bug.
+  const searched = `searched ${event.tilesSearched} tile${event.tilesSearched === 1 ? "" : "s"}`;
+
   const nearest = event.picks[0];
-  if (nearest === undefined) return "No event nearby";
+  if (nearest === undefined) return `No event nearby · ${searched}`;
 
   const metres = distanceMetres(user, nearest.position);
   const where = compassPoint(bearingDegrees(user, nearest.position));
-  return `Event at ${formatTime(event.eventTime)} · ${formatDistance(metres)} ${where}`;
+  return `Event at ${formatTime(event.eventTime)} · ${formatDistance(metres)} ${where} · ${searched}`;
 }
