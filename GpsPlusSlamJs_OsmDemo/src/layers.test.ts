@@ -57,16 +57,21 @@ describe("the layer set", () => {
     expect([...ALL_LAYERS]).not.toContain("terrainDebug");
   });
 
-  it("starts with every layer on EXCEPT landuse and cells", () => {
+  it("starts with every layer on EXCEPT plates and cells", () => {
     // AN EXPLICIT EXPECTED SET, not a loosened rule. The obvious edit when this
     // changed was to assert "at least one layer is on", which catches nothing —
     // naming both halves means an accidental flip in either direction fails,
     // including a new layer silently defaulting to off.
     //
-    // DEC-R7b-5 and DEC-R7b-6 reverse DEC-R4-4 for exactly two layers. Landuse
-    // goes off because the terrain relief now carries the ground on its own;
-    // cells go off because the 2D map draws one Leaflet polygon per cell and the
-    // final ring is ~2 989 of them. Roads and POI stay ON, so round 4's
+    // DEC-R7b-5 and DEC-R7b-6 reverse DEC-R4-4 for exactly two layers. Ground
+    // PLATES go off because the terrain relief now carries the ground on its
+    // own; cells go off because the 2D map draws one Leaflet polygon per cell
+    // and the final ring is ~2 989 of them.
+    //
+    // (Named "landuse" here until 2026-08-05, after that layer had been renamed
+    // `plates`. The assertion was right the whole time; the title and this
+    // comment named a layer that no longer exists, which is the kind of stale
+    // prose a reader trusts precisely because the test passes.) Roads and POI stay ON, so round 4's
     // "standardmäßig sollten alle an sein" is honoured where it still holds.
     const on = ALL_LAYERS.filter((layer) =>
       isLayerEnabled(DEFAULT_LAYERS, layer),
