@@ -34,10 +34,11 @@ describe("createMeshPlanner", () => {
     expect(planner.needsFullBuild(AT)).toBe(false);
   });
 
-  it("rebuilds when the user moves, because the ENU frame is anchored there", () => {
-    // The dangerous direction. The mesh is built in a frame anchored at the
-    // position, so EVERY vertex moves when the position does — a slabs-only
-    // reply here would leave the whole city drawn where the user used to be.
+  it("rebuilds when the user moves far enough to change what is drawn", () => {
+    // The dangerous direction. Content is clipped to a box around the position
+    // (`clipBoxAround(centre, TERRAIN_EXTENT_M)`), so a user who has moved a
+    // long way needs geometry the last build never included — a slabs-only
+    // reply would leave them looking at the edge of the old window.
     const planner = createMeshPlanner();
     planner.needsFullBuild(AT);
 
@@ -46,6 +47,62 @@ describe("createMeshPlanner", () => {
     ).toBe(true);
     expect(
       planner.needsFullBuild({ ...AT, position: { lat: 50.95, lng: 6.96 } }),
+    ).toBe(true);
+  });
+
+  it("does NOT rebuild for a step, now that the frame no longer moves", () => {
+    // THE WIN. The frame used to be anchored at the position, so every vertex
+    // moved when the user did and any move meant a full re-extrude. With a
+    // fixed scene anchor the coordinates stand still, and a step only needs a
+    // rebuild if it changed what should be *drawn* — which a few metres does
+    // not.
+    const planner = createMeshPlanner();
+    planner.needsFullBuild(AT);
+
+    // ~2 m north. Well inside the quantisation bucket.
+    expect(
+      planner.needsFullBuild({
+        ...AT,
+        position: { lat: AT.position.lat + 0.00002, lng: AT.position.lng },
+      }),
+    ).toBe(false);
+  });
+
+  it("still rebuilds once the steps accumulate past the bucket", () => {
+    // THE COUNTER-CASE THAT MATTERS, and the one that catches the tempting
+    // wrong fix: dropping position from the key entirely. That would make a
+    // step cheap AND freeze the clipped content forever, so the user would
+    // eventually walk off the edge of the drawn world with nothing rebuilding.
+    const planner = createMeshPlanner();
+    planner.needsFullBuild(AT);
+
+    // ~500 m north — beyond the bucket, well inside the clip extent.
+    expect(
+      planner.needsFullBuild({
+        ...AT,
+        position: { lat: AT.position.lat + 0.0045, lng: AT.position.lng },
+      }),
+    ).toBe(true);
+  });
+
+  it("quantises longitude as well as latitude", () => {
+    // Both axes, or a bucket that only coarsened one would rebuild on every
+    // eastward step while ignoring northward ones — which would look like an
+    // intermittent bug rather than a missing clause.
+    const planner = createMeshPlanner();
+    planner.needsFullBuild(AT);
+
+    expect(
+      planner.needsFullBuild({
+        ...AT,
+        position: { lat: AT.position.lat, lng: AT.position.lng + 0.00002 },
+      }),
+    ).toBe(false);
+    expect(
+      planner.needsFullBuild({
+        ...AT,
+        position: { lat: AT.position.lat, lng: AT.position.lng + 0.0075 },
+      }),
     ).toBe(true);
   });
 

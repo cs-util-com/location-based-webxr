@@ -245,7 +245,18 @@ function clipBoxAround(
 /** Builds the scene geometry for the current features, on the current terrain. */
 function buildMesh(
   features: Iterable<OsmFeature>,
+  /**
+   * Where the user is — what to CLIP to, not what the coordinates mean.
+   *
+   * Kept separate from `frameOrigin` below. Conflating the two is what made
+   * every vertex move whenever the user did.
+   */
   centre: LatLng,
+  /**
+   * Where the scene's ENU frame is anchored. Defaults to `centre`, which is the
+   * pre-anchor behaviour.
+   */
+  frameOrigin: LatLng,
   /**
    * The scored regions.
    *
@@ -265,7 +276,7 @@ function buildMesh(
    */
   undergroundOutlines: readonly (readonly LatLng[])[] = [],
 ): TransferableMesh {
-  const options = meshOptions(centre);
+  const options = meshOptions(frameOrigin);
   const all = [...features];
   // Areas are clipped to what is actually rendered before they are triangulated.
   // WHY ONLY THE PLATES: ear clipping is O(n²) in ring size and OSM area size is
@@ -415,6 +426,7 @@ function meshUpdateFor(
     undergroundOutlines: readonly (readonly LatLng[])[];
   },
   pipeline: DemoPipeline,
+  frameOrigin: LatLng,
 ): WorkerCalls["update"]["result"]["mesh"] {
   const full = meshPlanner.needsFullBuild({
     position: snapshot.position,
@@ -423,7 +435,7 @@ function meshUpdateFor(
   });
 
   if (!full) {
-    const options = meshOptions(snapshot.position);
+    const options = meshOptions(frameOrigin);
     return {
       kind: "regions",
       regions: buildRegionSlabs(snapshot.regions, options),
@@ -435,6 +447,7 @@ function meshUpdateFor(
     mesh: buildMesh(
       pipeline.features().values(),
       snapshot.position,
+      frameOrigin,
       snapshot.regions,
       snapshot.undergroundOutlines,
     ),
@@ -502,8 +515,14 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "update": {
-      const { position, category, radius, includeCells, includeUnderground } =
-        payload as WorkerCalls["update"]["request"];
+      const {
+        position,
+        frameOrigin,
+        category,
+        radius,
+        includeCells,
+        includeUnderground,
+      } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
       const snapshot = await pipeline.update(
         position,
@@ -536,7 +555,7 @@ async function handle<K extends WorkerCallKind>(
       prefetch.replace(pipeline.neighbourTilesFor(position));
       return {
         snapshot,
-        mesh: meshUpdateFor(snapshot, pipeline),
+        mesh: meshUpdateFor(snapshot, pipeline, frameOrigin ?? position),
       };
     }
 

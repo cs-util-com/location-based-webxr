@@ -205,6 +205,23 @@ export interface WorkerCalls {
   readonly update: {
     readonly request: {
       readonly position: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored.
+       *
+       * **SEPARATE FROM `position`, and that separation is the point.** The
+       * frame used to be derived from `position` on every publish, so every
+       * vertex in the scene moved whenever the user did — which no AR content
+       * can live with, because the framework's own origin is set once per
+       * session and never again.
+       *
+       * `position` still says where the user is and therefore what to fetch and
+       * what to clip to; this says what the coordinates MEAN. Conflating them
+       * is the defect. See `scene-anchor.ts`.
+       *
+       * Omitted falls back to `position`, so a caller that has not adopted an
+       * anchor yet behaves exactly as before.
+       */
+      readonly frameOrigin?: LatLng;
       readonly category: string;
       /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.

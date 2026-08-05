@@ -50,11 +50,33 @@ export interface MeshPlanner {
   needsFullBuild(inputs: MeshInputs): boolean;
 }
 
-/** `lat,lng,tiles,stamp` — an exact identity, not a fuzzy one. */
+/**
+ * How far the user may move before the drawn content is considered stale, in
+ * degrees.
+ *
+ * ~0.001° ≈ 110 m of latitude, and less of longitude at this latitude — an
+ * order of magnitude inside the ~2 400 m clip extent, so the window is refreshed
+ * long before the user can approach its edge, while an ordinary step costs
+ * nothing.
+ *
+ * **A coarsened position, NOT a dropped one.** Dropping it would make steps free
+ * and freeze the clipped content forever: geometry is clipped to a box around
+ * the position (`demo-worker.ts`, `clipBoxAround(centre, TERRAIN_EXTENT_M)`), so
+ * a key without position leaves the plates at wherever the scene started and
+ * the user eventually walks off the edge of the drawn world.
+ */
+const POSITION_BUCKET_DEG = 0.001;
+
+/** The position coarsened to its bucket, so a step is not a new identity. */
+function bucket(value: number): number {
+  return Math.round(value / POSITION_BUCKET_DEG);
+}
+
+/** `latBucket,lngBucket,tiles,stamp` — coarse in space, exact in the rest. */
 function keyOf(inputs: MeshInputs): string {
   return [
-    inputs.position.lat,
-    inputs.position.lng,
+    bucket(inputs.position.lat),
+    bucket(inputs.position.lng),
     inputs.loadedTileCount,
     inputs.terrainStamp,
   ].join("|");
