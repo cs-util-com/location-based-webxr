@@ -789,3 +789,67 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
     expect(asked).toEqual([true, false, false]);
   });
 });
+
+describe("the scene anchor", () => {
+  /** Runs the cycle at each position in turn, recording the frameOrigin sent. */
+  async function originsFor(
+    positions: readonly { lat: number; lng: number }[],
+  ): Promise<({ lat: number; lng: number } | undefined)[]> {
+    const demo = createDemoStore({
+      start: positions[0]!,
+      category: "walkable",
+    });
+    const sent: ({ lat: number; lng: number } | undefined)[] = [];
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      worker: {
+        call: (_kind, payload) => {
+          sent.push(payload.frameOrigin);
+          return Promise.resolve({
+            snapshot: snapshot("walkable"),
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+          });
+        },
+      },
+      onMesh: () => {},
+    });
+
+    for (const position of positions) {
+      demo.store.dispatch(demo.actions.positionChanged(position));
+      await refresh();
+    }
+    return sent;
+  }
+
+  it("keeps ONE frame origin across a walk", async () => {
+    // THE REGRESSION THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT. The frame used
+    // to be derived from the position on every publish, so every vertex in the
+    // scene moved whenever the user did — which no AR content can live with,
+    // the framework's own origin being fixed for the session.
+    //
+    // Three steps of roughly 20 m, which is a walk, not travel.
+    const walk = [
+      COLOGNE,
+      { lat: COLOGNE.lat + 0.0002, lng: COLOGNE.lng },
+      { lat: COLOGNE.lat + 0.0004, lng: COLOGNE.lng },
+    ];
+
+    const origins = await originsFor(walk);
+
+    expect(origins.length).toBeGreaterThanOrEqual(3);
+    for (const origin of origins) expect(origin).toEqual(COLOGNE);
+  });
+
+  it("re-anchors once the user travels past the threshold", async () => {
+    // The counterweight. Without it "the origin never moves" would also pass
+    // for a scene that ignored position entirely — and the frame's fixed
+    // longitude scale really does need re-taking eventually.
+    const origins = await originsFor([
+      COLOGNE,
+      { lat: COLOGNE.lat + 0.1, lng: COLOGNE.lng },
+    ]);
+
+    expect(origins.at(-1)).not.toEqual(COLOGNE);
+  });
+});

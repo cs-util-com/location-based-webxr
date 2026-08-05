@@ -31,6 +31,7 @@ import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import { isLayerEnabled } from "./layers.js";
+import { nextAnchor, type AnchorDecision } from "./scene-anchor.js";
 import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
 import type { MeshUpdate, UpdateResult } from "./worker/protocol.js";
 
@@ -46,6 +47,14 @@ interface RefreshWorker {
     kind: "update",
     payload: {
       position: { lat: number; lng: number };
+      /**
+       * Where the scene's ENU frame is anchored — see `scene-anchor.ts`.
+       *
+       * Separate from `position`, which still says what to fetch and clip to.
+       * Without this the frame follows the user and every vertex moves when
+       * they do, which no AR content can live with.
+       */
+      frameOrigin: { lat: number; lng: number };
       category: string;
       radius: number;
       /** Round 10, stage B -- see the call site. */
@@ -131,8 +140,14 @@ export function createRefreshCycle(
 ): LatestOnly<void> {
   const { store, actions, worker, onMesh } = options;
 
+  // THE SCENE ANCHOR IS HELD ACROSS RUNS, which is the whole point: the ENU
+  // frame belongs to the scene, not to the current position. It moves only on a
+  // declared place change or past REANCHOR_THRESHOLD_M — see `scene-anchor.ts`.
+  let anchor: AnchorDecision | undefined;
+
   return latestOnly(async (_input, signal) => {
     const { position, category } = selectOsmView(store.getState());
+    anchor = nextAnchor(anchor?.origin, position);
     store.dispatch(
       actions.fetchStarted(
         `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`,
@@ -169,7 +184,14 @@ export function createRefreshCycle(
         );
         const { snapshot, mesh } = await worker.call(
           "update",
-          { position, category, radius, includeCells, includeUnderground },
+          {
+            position,
+            frameOrigin: anchor.origin,
+            category,
+            radius,
+            includeCells,
+            includeUnderground,
+          },
           { signal },
         );
         // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the
