@@ -25,10 +25,20 @@ fetch rather than as a tagging distinction.
   branch, so its Südturm is missing too. Nothing external supplies the tag list
   or the height conventions — this is our design and is validated only by the
   fixture assertions.
-- **Two exclusions prevent a DOUBLE draw, not a wrong one.** Anything
-  `isBuilding` or `isBuildingPart` already claims is refused, so the Nordturm
-  (which carries both tags) is extruded exactly once. Two coincident 157 m
-  prisms are invisible until they z-fight.
+- **THREE exclusions, and they are not all the same kind.** The sidecar said
+  "two … prevent a DOUBLE draw, not a wrong one" and never mentioned the third,
+  which is now the one that matters most.
+  - **Two prevent a DOUBLE draw.** Anything `isBuilding` or `isBuildingPart`
+    already claims is refused, so the Nordturm (which carries both tags) is
+    extruded exactly once. Two coincident 157 m prisms are invisible until they
+    z-fight.
+  - **One prevents a WRONG draw:** `isBelowSurface`. A structure under the
+    ground is not extruded onto it. This was `tags["location"] === "underground"`
+    — a strict subset — until 2026-08-05, so an underground silo tagged only
+    `layer=-1` stood on the street.
+  - The distinction matters to whoever is debugging "why is my silo missing?":
+    with only the double-draw exclusions listed, the closed kind list looks like
+    the culprit.
 - **The kind list is closed, and an unlisted value draws nothing.** `man_made`
   is one of OSM's broadest keys — the Cologne fixture carries 36
   `man_made=surveillance` plus `column`, `street_cabinet`, `pipeline`,

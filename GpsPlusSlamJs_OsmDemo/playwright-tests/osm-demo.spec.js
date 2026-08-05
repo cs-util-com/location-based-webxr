@@ -4114,18 +4114,61 @@ test.describe("the cell layer toggle", () => {
 
     const toggle = page.locator("#layer-cells");
     const row = page.locator("label.layer-toggle", { has: toggle });
+
+    // INSTALLED BEFORE THE CLICK. The busy window opens and closes inside the
+    // operation, so an observer attached afterwards sees nothing and reports
+    // "never busy" — which is what happened on the first attempt at this, for
+    // the third time in this file.
+    const seenBusy = await page.evaluate(() => {
+      const input = document.getElementById("layer-cells");
+      const label = input?.closest("label");
+      if (label === null || label === undefined) return false;
+      /** @type {boolean[]} */
+      const seen = [];
+      const observer = new MutationObserver(() => {
+        seen.push(label.classList.contains("layer-busy"));
+      });
+      observer.observe(label, { attributes: true, subtree: true });
+      const w = /** @type {Record<string, unknown>} */ (window);
+      w["__stopFailBusy"] = () => {
+        observer.disconnect();
+        return seen;
+      };
+      return true;
+    });
+    expect(seenBusy).toBe(true);
+
     await toggle.check();
 
-    // However it settles, the control comes back.
+    // However it settles, the control comes back — AND WAS BUSY IN BETWEEN.
     //
-    // NOTE ON WHAT THIS DOES NOT COVER. `refresh()` does not reject here --
-    // `update` collects refused tiles into `missingTiles` rather than throwing,
-    // so an HTTP 400 is a SUCCESSFUL, empty refresh (`refresh-cycle.ts.md` says
-    // so). The `finally`-versus-`then` distinction is therefore unreachable from
-    // a browser and is unit-tested on `withLayerBusy` instead. What this asserts
-    // is the reachable half: a refresh over refused tiles still returns the
-    // control.
+    // `not.toHaveClass` alone cannot tell "cleared" from "never applied": it
+    // succeeds on its first sample, so the assertion passed with
+    // `withLayerBusy` deleted from `main.ts` entirely. The rewrite that fixed
+    // the no-op `__failWorker` hook replaced an unfailable MECHANISM and kept an
+    // unfailable ASSERTION, which is the same defect one level down.
+    //
+    // So the observer from the success test is installed here too, and the
+    // busy state has to have been REACHED before it is allowed to be gone.
     await expect(row).not.toHaveClass(/layer-busy/, { timeout: 30000 });
     await expect(toggle).toBeEnabled();
+
+    const failSamples = await page.evaluate(() => {
+      const w = /** @type {Record<string, unknown>} */ (window);
+      const stop = w["__stopFailBusy"];
+      return typeof stop === "function"
+        ? /** @type {() => boolean[]} */ (stop)()
+        : [];
+    });
+    expect(
+      failSamples.some((busy) => busy),
+      "the switch never entered the busy state, so 'not busy' proves nothing",
+    ).toBe(true);
+
+    // NOTE ON WHAT THIS STILL DOES NOT COVER. `refresh()` does not reject here:
+    // `update` collects refused tiles into `missingTiles` rather than throwing,
+    // so an HTTP 400 is a SUCCESSFUL, empty refresh (`refresh-cycle.ts.md` says
+    // so). The `finally`-versus-`then` distinction is unreachable from a browser
+    // and is unit-tested on `withLayerBusy` instead.
   });
 });

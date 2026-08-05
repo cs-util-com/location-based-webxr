@@ -77,11 +77,17 @@ inclusions:
   Skipped rather than clamped, and category-independent, because the claim is
   about geometry: expressing it as per-category factors would let a rule-table
   edit quietly undo it.
-- **Used by BOTH the scorer and the mesh, and that is the point.** `mesh/buildings.ts`
-  skips below-surface features at the same seam where it decides what is a
-  building, so a structure with `location=underground` is neither scored on the
-  surface nor extruded onto it. Two definitions of "below the surface" would
-  simply move the disagreement rather than remove it.
+- **THREE callers, and the count matters because they are reached separately.**
+  One definition, because two would simply move the disagreement rather than
+  remove it.
+  - `score/affordance-scorer.ts` — `featureFactors`, so a below-surface feature
+    contributes the identity for every category.
+  - `mesh/buildings.ts` — `collectFootprints`, covering outlines and parts.
+  - `mesh/tall-structures.ts` — `isTallStructure`, which `buildBuildings`
+    reaches **from inside itself** via `tallStructureVolumes`. So "the buildings
+    path is covered" is only true because of BOTH mesh callers; crediting the
+    footprint seam alone gives the right answer for the wrong reason, which is
+    how the tall-structures gap survived a commit that claimed to close it.
   - It was scoring-only for one commit, which left the geometry standing an
     underground structure on the street while the scorer had stopped counting
     it — the two halves of the pipeline disagreeing about the same feature.

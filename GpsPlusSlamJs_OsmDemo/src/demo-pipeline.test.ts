@@ -513,6 +513,43 @@ describe("DemoPipeline.geoEvent", () => {
     }
   });
 
+  it("refuses ground the MAP would not draw, at the table's own threshold", async () => {
+    // THE CALLER, not the parameter. `bestPickForTile` accepting a `threshold`
+    // is unit-tested in the package; what was NOT tested is that this pipeline
+    // passes `thresholdFor(table, category)` into it — and deleting that line
+    // passed the entire suite, because the shipped table declares no
+    // `__threshold__` and `DEFAULT_THRESHOLD` is 1, so the wiring was
+    // indistinguishable from the old hardcoded identity.
+    //
+    // A declared threshold of 4 puts the bar at 7 cells x 4 = 28 while the park
+    // scores 3, so 7 x 3 = 21 is below it: an event that the default table finds
+    // must disappear when the map's own bar is raised. That is the whole claim —
+    // the geo-event must not place an event on ground the map calls unusable.
+    const HIGH_THRESHOLD = parseRuleTable(
+      [
+        "id,Key,Value,walkable",
+        "leisure_park,leisure,park,3",
+        "__threshold__,,,4",
+      ].join("\n"),
+      { source: "test", fetchedAt: 0 },
+    );
+
+    // The control first: with the default threshold this fixture DOES yield an
+    // event, so the absence below is the threshold and not the fixture.
+    const permissive = new DemoPipeline({ source: wideSource(), table: TABLE });
+    await permissive.update(AT, "walkable");
+    const found = await permissive.geoEvent(AT, "walkable", 1_700_000_000_000);
+    expect(found.picks.length).toBeGreaterThan(0);
+
+    const strict = new DemoPipeline({
+      source: wideSource(),
+      table: HIGH_THRESHOLD,
+    });
+    await strict.update(AT, "walkable");
+    const none = await strict.geoEvent(AT, "walkable", 1_700_000_000_000);
+    expect(none.picks).toEqual([]);
+  });
+
   it("survives a fetch failure without placing a pick on unscored ground", () => {
     // GRACEFUL DEGRADATION, which is what this can honestly pin. A tile that
     // will not load must not fail the whole event.

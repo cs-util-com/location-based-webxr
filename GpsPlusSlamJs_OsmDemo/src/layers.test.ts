@@ -68,10 +68,17 @@ describe("the layer set", () => {
     // own; cells go off because the 2D map draws one Leaflet polygon per cell
     // and the final ring is ~2 989 of them.
     //
-    // (Named "landuse" here until 2026-08-05, after that layer had been renamed
-    // `plates`. The assertion was right the whole time; the title and this
-    // comment named a layer that no longer exists, which is the kind of stale
-    // prose a reader trusts precisely because the test passes.) Roads and POI stay ON, so round 4's
+    // (Named "landuse" here until 2026-08-05, after the LayerKind was renamed
+    // `plates`. The assertion was right the whole time; the title named an id
+    // that no longer exists.
+    //
+    // THE WORD IS NOT GONE, though, and the first correction over-claimed that
+    // it was: `layer-toggles.ts:118` still LABELS this switch "landuse" in the
+    // bar, deliberately -- "ground" collided with the ground-mode picker and
+    // "OSM areas" with the `areas` layer, for readers and for e2e locators
+    // addressing it by accessible name. So the next person sweeping stale
+    // `landuse` prose should leave that string alone: it is a decision, and
+    // changing it moves user-visible text.) Roads and POI stay ON, so round 4's
     // "standardmäßig sollten alle an sein" is honoured where it still holds.
     const on = ALL_LAYERS.filter((layer) =>
       isLayerEnabled(DEFAULT_LAYERS, layer),
@@ -219,14 +226,21 @@ describe("needsRefetchFor", () => {
     expect(needsRefetchFor(off, on, 931)).toBe(false);
   });
 
-  it("treats NO SNAPSHOT as nothing held, which is the strongest case", () => {
-    // The bug the first version shipped: `snapshot?.cells.length === 0` is
-    // `undefined === 0`, so a missing snapshot declined to refetch — in the one
-    // state where nothing at all is in hand. Reachable after `fetchFailed` and
-    // at boot, so the caller passes `?? 0` and this pins what that must mean.
-    expect(needsRefetchFor(off, on, 0)).toBe(true);
-  });
-
+  // WHAT GUARDS THE CALLER IS THE TYPE, NOT A TEST HERE, and saying so is the
+  // honest version of a case this file used to contain. `heldCells: number`
+  // makes a MISSING `?? 0` in `main.ts` a compile error -- which is the real
+  // payoff of taking a count rather than a snapshot, since
+  // `snapshot?.cells.length === 0` is `undefined === 0` and silently declines to
+  // refetch when nothing at all is held.
+  //
+  // A WRONG default (`?? 1`) still compiles and still passes everything. That
+  // gap is real and is not closed here; it needs a test at the call site, which
+  // `main.ts` does not have.
+  //
+  // (A third `it` claimed to pin this and asserted `needsRefetchFor(off, on, 0)`
+  // -- byte-for-byte the first test. Deleting it failed nothing: a dead test, in
+  // the file the wiring audit had just edited. The audit broke PRODUCTION rules
+  // to see what failed and never broke the tests asserting them.)
   it("stays one-way regardless of what is held", () => {
     expect(needsRefetchFor(on, off, 0)).toBe(false);
     expect(needsRefetchFor(on, off, 931)).toBe(false);

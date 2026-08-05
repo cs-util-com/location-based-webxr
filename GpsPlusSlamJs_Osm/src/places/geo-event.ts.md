@@ -10,10 +10,19 @@ points on the heat map (§6, DEC-R6-14). Ported from
 - `eventCandidates({ bbox, globalSeed, eventTime, count })` — seeded positions.
 - `climbToLocalMaximum({ start, heatAt, neighbours, steps })` — `{ cell, left,
 heat }`.
-- `bestPickForTile({ bbox, globalSeed, eventTime, toCell, heatAt, neighbours,
-steps, batches? })` — the best position in one tile, or `undefined`.
-- `newGeoEventFor({ user, tiles, ... })` — `{ eventTime, picks }`, one pick per
-  tile that had a valid position, NEAREST TO THE USER FIRST.
+- `bestPickForTile({ bbox, globalSeed, eventTime, toCell, toLatLng, heatAt,
+neighbours, steps, threshold?, batches? })` — the best position in one tile,
+  or `undefined`.
+  - `toLatLng` inverts `toCell`; it is what lets a pick report WHERE THE EVENT
+    IS rather than the seed the climb started from.
+  - `threshold` is the per-cell bar, from the rule table's `__threshold__` for
+    the category. Defaults to the multiplicative identity.
+- `newGeoEventFor({ user, tiles, ... })` — `{ eventTime, picks, tilesSearched }`,
+  one pick per tile that had a valid position, NEAREST TO THE USER FIRST.
+  - `tilesSearched` is how many tiles were LOOKED AT, which is not
+    `picks.length`: a tile that is all water is searched and yields nothing.
+    Under DEC-R9-15 two devices can search different numbers, so the UI needs
+    this to say "you have less loaded" rather than looking broken.
 - `QUARTER_HOUR_MS`.
 
 Everything takes its inputs injected — no H3, no affordance index, no knowledge
@@ -54,12 +63,33 @@ what let it be written before the wide-heat work exists.
   `HeatMapTile.Heat` is documented _"Starts at 1 as the neutral multiplication
   identity element"_ and accumulates with `Heat *= elemHeat` — the same product
   over the same rule table. So `> 9` is not a tuned number: it is 9 cells x an
-  identity of 1, i.e. "strictly above an entirely baseline neighbourhood". H3
-  gives 7 cells, so the same rule is `> 7`, and `bestPickForTile` derives it from
-  `neighbours()` rather than hard-coding it — which is also correct at H3s twelve
-  pentagons, where a cell has five neighbours. The corpus measurement showing ~45 %
-  of ground passing is what a deliberately permissive gate does; rejecting
-  unmapped and vetoed ground is its job, and finding the good spot is the climbs.
+  identity of 1, i.e. "strictly above an entirely baseline neighbourhood".
+
+  The rule is now `heat > neighbours(cell).length * threshold`, derived rather
+  than hard-coded — correct at H3's twelve pentagons too, where a cell has five
+  neighbours. TWO CORRECTIONS LANDED 2026-08-05 and this paragraph used to state
+  the pre-correction version:
+  - **It said `> 7` while the code computed `neighbours().length + 1` = 8.**
+    `gridDisk(cell, 1)` returns seven cells INCLUDING the centre and the sum is
+    over exactly those seven, so the `+ 1` — written as though `neighbours()`
+    excluded self — made the gate ~14 % stricter than this file claimed. Code
+    and docstring disagreed for a round.
+  - **The identity was hard-coded.** `threshold` now comes from the rule table's
+    `__threshold__`, the same constant the MAP uses to call a cell usable
+    ground. The shipped table declares none, so both are 1 and the two used to
+    agree by coincidence rather than by construction.
+
+  The corpus measurement showing ~45–51 % of ground passing is what a
+  deliberately permissive gate does; rejecting unmapped and vetoed ground is its
+  job, and finding the good spot is the climb's.
+
+  **The gate assumes a SELF-INCLUSIVE `neighbours()`, and nothing enforces it.**
+  `climbToLocalMaximum` sums `heatAt(cell)` plus each `around` while skipping
+  `around === cell`, so it tolerates either convention — n cells for a
+  self-inclusive one, n + 1 for a self-exclusive one — while the gate divides by
+  `neighbours().length` as though the first were guaranteed. Correct for
+  `gridDisk`; off by one cell for any injected `neighbours()` that excludes
+  self, which is exactly what the old `+ 1` was written for.
 
 ## Known limit
 
