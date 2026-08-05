@@ -25,6 +25,26 @@ already transfers mesh geometry; this brings the cell array to the same footing.
 asynchronous and moved provenance out of a click that answers "why is this
 hexagon warm?". Packing keeps every field, so that trade is never needed.
 
+## STATUS: NOT WIRED, and the measurement says why (F60, 2026-08-05)
+
+This module is complete, tested and NOT used in production. That is a decision,
+not an oversight, and the arithmetic is:
+
+- The clone it would replace measures **27.1 ms** at the 488-chunk cap, so about
+  **81 ms** across a move's three progressive rings.
+- The path it sits on -- enabling the cell layer, the only configuration where
+  the array travels at all since round 10 stage B — measures **1880 ms** end to
+  end (F58).
+- So wiring it recovers **under 5 %%** of that path, in exchange for every cell
+  consumer reading typed-array columns instead of objects.
+
+**Kept rather than deleted** because it is correct and measured, and because the
+decision reverses cleanly if the cell layer ever becomes default-on or the
+payload grows. **Delete it rather than leave it half-wired** if that never
+happens -- a complete, tested module that nothing calls reads as "in use" to the
+next person, which is the same misleading-by-omission this branch has been
+fixing all round.
+
 ## The design rule measurement forced
 
 At 24 206 cells: **structuredClone 27.1 ms, pack 17.3 ms, unpack 10.8 ms.**

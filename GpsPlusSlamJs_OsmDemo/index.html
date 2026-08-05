@@ -314,6 +314,13 @@
       .layer-toggle {
         white-space: nowrap;
       }
+      /* IN PROGRESS (F58): enabling the cell layer refetches, measured at ~1.9 s.
+         Dimmed and non-interactive, never hidden -- a control that disappears
+         reads as a bug. */
+      .layer-toggle.layer-busy {
+        opacity: 0.55;
+        cursor: progress;
+      }
 
       .hint {
         color: #6f7995;

@@ -525,7 +525,14 @@ test.describe("the layer toggles", () => {
       // The counters must drop to zero volumes: the layer is genuinely not built,
       // not merely hidden.
       await expect(status).not.toContainText(/[1-9]\d* volumes/);
-      // NO REFETCH. Layers are presentation; the snapshot in the store is reused.
+      // NO NETWORK REFETCH. Layers are presentation, so no Overpass query is
+      // issued -- and that stays true even for `cells`, which since round 10
+      // stage B DOES trigger a refresh when switched on. That refresh re-scores
+      // from tiles the worker already holds, so the query count is untouched.
+      //
+      // The distinction is worth the words: "layers never refetch" was true when
+      // this was written and is now true only of the NETWORK. Raised by this
+      // comment surviving a change that falsified half of it.
       expect(counts.overpassQuery).toBe(before);
 
       // And the cells are independent — switching buildings off must not disturb
@@ -3997,5 +4004,126 @@ test.describe("the geo-event", () => {
       await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
       await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
     }
+  });
+});
+
+test.describe("the cell layer toggle", () => {
+  /**
+   * WHY THIS TEST EXISTS (F58).
+   *
+   * Round 10 stage B made switching the cell layer ON asynchronous: the snapshot
+   * omits the array while the layer is off, so the toggle triggers a refresh
+   * rather than a redraw. The round-10 summary ESTIMATED that this stays under
+   * the "few hundred milliseconds" at which the root `CLAUDE.md` requires an
+   * in-progress state, and flagged the estimate as an estimate.
+   *
+   * MEASURED AT ~1880 ms with the tiles already held — about 5x over. So the
+   * switch needs a transitional state, and this asserts it is reached rather
+   * than asserting a latency bound, which would be a machine-speed test.
+   *
+   * The rule the removed `setAvailable` left behind applies: DISABLED, never
+   * hidden, stored value untouched. A control that disappears reads as a bug,
+   * and one whose value is silently reset loses the choice just made.
+   */
+  test("shows an in-progress state while the cells are fetched", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const toggle = page.locator("#layer-cells");
+    const row = page.locator("label.layer-toggle", { has: toggle });
+
+    // OBSERVED, NOT POLLED. The busy state is transient — on a warm fixture it
+    // can close in a few milliseconds — and a poll interval wide enough to be
+    // cheap is wide enough to miss it entirely. That is the same reasoning
+    // `recordStatus` gives for watching `#status` with a MutationObserver, and
+    // the same technique.
+    //
+    // Two sequential `expect`s were the first attempt and were worse than
+    // wrong: they sampled two different instants, so the class check passed and
+    // the disabled check then failed against a state that had already cleared.
+    const observed = await page.evaluate(() => {
+      const input = document.getElementById("layer-cells");
+      const label = input?.closest("label");
+      if (label === null || label === undefined) return Promise.resolve(null);
+      /** @type {{busy: boolean, disabled: boolean}[]} */
+      const seen = [];
+      const sample = () => {
+        seen.push({
+          busy: label.classList.contains("layer-busy"),
+          disabled: input instanceof HTMLInputElement ? input.disabled : false,
+        });
+      };
+      const observer = new MutationObserver(sample);
+      observer.observe(label, { attributes: true, subtree: true });
+      const w = /** @type {Record<string, unknown>} */ (window);
+      w["__busySamples"] = seen;
+      w["__stopBusy"] = () => {
+        observer.disconnect();
+        return seen;
+      };
+      return Promise.resolve(true);
+    });
+    expect(observed).toBe(true);
+
+    await toggle.check();
+
+    // AND LEFT: the terminal state is the switch usable again, with the choice
+    // preserved — not reset, which is the half a naive implementation loses.
+    await expect(row).not.toHaveClass(/layer-busy/, { timeout: 30000 });
+    await expect(toggle).toBeEnabled();
+    await expect(toggle).toBeChecked();
+    await expect(page.locator("#map path.affordance-cell")).not.toHaveCount(0);
+
+    // AND THE TRANSITIONAL STATE WAS ACTUALLY REACHED. Read only now, because
+    // the observer had to outlive the whole operation — this is the assertion
+    // the two racing `expect`s were trying and failing to make.
+    const samples = await page.evaluate(() => {
+      const w = /** @type {Record<string, unknown>} */ (window);
+      const stop = w["__stopBusy"];
+      return typeof stop === "function"
+        ? /** @type {() => {busy: boolean, disabled: boolean}[]} */ (stop)()
+        : [];
+    });
+    expect(
+      samples.some((sample) => sample.busy && sample.disabled),
+      "never saw the row busy AND the input disabled at the same moment",
+    ).toBe(true);
+  });
+
+  test("leaves the switch usable when the refresh fails", async ({ page }) => {
+    // THE FAILURE PATH, which `CLAUDE.md` requires alongside the success one.
+    // A busy state that only clears on success strands the control forever, and
+    // that is exactly the shape a `.then()` instead of a `.finally()` produces.
+    // EVERY TILE REFUSED, from the start. `fetchFailed` then CLEARS the
+    // snapshot, so the toggle sees nothing held, asks for a refresh, and that
+    // refresh fails too -- which is the state the busy flag has to survive.
+    //
+    // (Written first as a `page.evaluate` calling a `__failWorker` hook that does
+    // not exist, so the evaluate was a no-op and the test silently re-ran the
+    // success path. An unfailable test, in the file where this round has been
+    // cataloguing unfailable tests.)
+    await stubNetwork(page, { overpassStatus: 400 });
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    await expect(page.locator("#status")).toContainText(/unavailable|Failed/);
+
+    const toggle = page.locator("#layer-cells");
+    const row = page.locator("label.layer-toggle", { has: toggle });
+    await toggle.check();
+
+    // However it settles, the control comes back.
+    //
+    // NOTE ON WHAT THIS DOES NOT COVER. `refresh()` does not reject here --
+    // `update` collects refused tiles into `missingTiles` rather than throwing,
+    // so an HTTP 400 is a SUCCESSFUL, empty refresh (`refresh-cycle.ts.md` says
+    // so). The `finally`-versus-`then` distinction is therefore unreachable from
+    // a browser and is unit-tested on `withLayerBusy` instead. What this asserts
+    // is the reachable half: a refresh over refused tiles still returns the
+    // control.
+    await expect(row).not.toHaveClass(/layer-busy/, { timeout: 30000 });
+    await expect(toggle).toBeEnabled();
   });
 });

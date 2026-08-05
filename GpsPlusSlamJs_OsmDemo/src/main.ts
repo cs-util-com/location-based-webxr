@@ -69,7 +69,7 @@ import {
   groundStrategy,
   parseGroundMode,
 } from "./ground-mode.js";
-import { attachLayerToggles } from "./layer-toggles.js";
+import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
 import { isLayerEnabled, needsRefetchFor } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
@@ -952,7 +952,12 @@ async function main(): Promise<void> {
           selectOsmView(store.getState()).snapshot?.cells.length ?? 0,
         )
       ) {
-        void refresh();
+        // IN PROGRESS, because this is not a redraw. Measured at 1880 ms with
+        // the tiles already held (F58), so without a cue the switch looks inert
+        // for close to two seconds -- which the root CLAUDE.md requires feedback
+        // for, and which the round-10 summary wrongly estimated was under the
+        // threshold.
+        void withLayerBusy(layerToggles, "cells", refresh);
       }
       redrawFromSnapshot();
     },

@@ -87,6 +87,22 @@ export interface LayerToggles {
   // enforced is worth restoring verbatim: DISABLED, never hidden, with the stored
   // value untouched, because a control that disappears reads as a bug and one
   // whose value is silently reset loses the user's choice on the way back.
+  /**
+   * Marks one switch as WORKING, so an async toggle does not look inert.
+   *
+   * WHY IT EXISTS (F58). Since round 10 stage B, switching `cells` ON triggers a
+   * refresh rather than a redraw -- the snapshot omits the array while the layer
+   * is off. MEASURED at 1880 ms with the tiles already held, which is far over
+   * the "few hundred milliseconds" at which the root `CLAUDE.md` requires a
+   * control to show an in-progress state. The round-10 summary ESTIMATED this
+   * was comfortably under; the estimate was wrong by about 5x.
+   *
+   * DISABLED, NEVER HIDDEN, AND THE STORED VALUE IS UNTOUCHED -- the rule the
+   * removed `setAvailable` left behind, and it applies unchanged here: a control
+   * that disappears reads as a bug, and one whose value is silently reset loses
+   * the choice the user just made.
+   */
+  setBusy(layer: LayerKind, busy: boolean): void;
   dispose(): void;
 }
 
@@ -182,8 +198,43 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
         if (input.checked !== enabled) input.checked = enabled;
       }
     },
+    setBusy(layer, busy) {
+      const input = inputs.get(layer);
+      if (input === undefined) return;
+      input.disabled = busy;
+      // On the LABEL, so the cue is the whole row rather than a checkbox a
+      // finger is covering.
+      input.closest("label")?.classList.toggle("layer-busy", busy);
+    },
     dispose() {
       container.removeEventListener("change", onInput);
     },
   };
+}
+
+/**
+ * Runs an async action with one switch marked busy, and ALWAYS clears it.
+ *
+ * EXTRACTED SO THE `finally` CAN BE TESTED. Inline in `main.ts` the distinction
+ * between `.then` and `.finally` is unreachable: the e2e cannot produce a
+ * rejecting refresh, because `DemoPipeline.update` collects refused tiles into
+ * `missingTiles` rather than throwing — an HTTP 400 is a SUCCESSFUL, empty
+ * refresh, which `refresh-cycle.ts.md` states outright. So a `then` would leave
+ * the control stranded on exactly the path nothing could exercise, which is the
+ * worst place for an untested branch.
+ *
+ * Takes only the capability it needs (`Pick<…, "setBusy">`) so a test can pass a
+ * two-line stub rather than a DOM.
+ */
+export async function withLayerBusy(
+  toggles: Pick<LayerToggles, "setBusy">,
+  layer: LayerKind,
+  run: () => Promise<unknown>,
+): Promise<void> {
+  toggles.setBusy(layer, true);
+  try {
+    await run();
+  } finally {
+    toggles.setBusy(layer, false);
+  }
 }
