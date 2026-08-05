@@ -531,6 +531,13 @@ export class DemoPipeline {
         },
         neighbours: (cell) => gridDisk(cell, 1),
         steps: CLIMB_STEPS,
+        // THE SAME CONSTANT THE MAP DRAWS WITH. `thresholdFor` is what decides
+        // whether a cell counts as usable ground and becomes part of a region,
+        // so an event should not be placed where the map itself says it is not.
+        // Both were the identity by default, so they agreed by coincidence; now
+        // they agree by construction, and a `__threshold__` row in the rule
+        // table moves both together.
+        threshold: thresholdFor(this.table, category),
       }),
     );
   }

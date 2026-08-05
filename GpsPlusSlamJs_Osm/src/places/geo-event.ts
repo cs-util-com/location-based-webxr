@@ -33,8 +33,16 @@
  *   the multiplication identity and accumulates with `Heat *= elemHeat` — the
  *   same product over the same kind of rule table. So `> 9` is 9 cells at
  *   identity, i.e. structural rather than field-tuned, and the faithful form is
- *   `heat > neighbours(cell).length + 1`. Derived from `neighbours()` rather
- *   than written down, which also keeps it correct at H3's twelve pentagons.
+ *   `heat > neighbours(cell).length * threshold`. Derived from `neighbours()`
+ *   rather than written down, which also keeps it correct at H3`s twelve
+ *   pentagons.
+ *   - It read `.length + 1` until 2026-08-05, which was an off-by-one:
+ *     `gridDisk(cell, 1)` returns seven cells INCLUDING the centre and the sum
+ *     is over exactly those seven, so the `+ 1` -- which assumed `neighbours()`
+ *     excluded self -- made the gate ~14 %% stricter than this paragraph claims.
+ *   - `threshold` is the rule table`s per-category `__threshold__`, i.e. the same
+ *     constant the MAP uses to call ground usable, rather than a hardcoded
+ *     identity. Both default to 1, so they used to agree by coincidence.
  *
  * @see geo-event.ts.md
  */
@@ -317,6 +325,7 @@ export function bestPickForTile({
   heatAt,
   neighbours,
   steps,
+  threshold = 1,
   batches = MAX_BATCHES,
 }: {
   bbox: GeoBounds;
@@ -329,7 +338,16 @@ export function bestPickForTile({
   heatAt: (cell: string) => number | undefined;
   neighbours: (cell: string) => readonly string[];
   steps: number;
-  /** Batches to try before giving up on the tile. Defaults to the C#'s ten. */
+  /**
+   * The per-cell bar a neighbourhood must clear on AVERAGE, from the rule
+   * table's `__threshold__` for this category.
+   *
+   * Defaults to the multiplicative identity, which is `DEFAULT_THRESHOLD` and
+   * what the shipped table falls back to -- so passing nothing reproduces
+   * today's behaviour exactly.
+   */
+  threshold?: number;
+  /** Batches to try before giving up on the tile. Defaults to the C#`s ten. */
   batches?: number;
 }): BestPick | undefined {
   for (let batch = 0; batch < batches; batch += 1) {
@@ -354,9 +372,23 @@ export function bestPickForTile({
       });
       if (climbed.left) continue;
 
-      // DERIVED, not a literal. See the docstring: this is the C#'s `> 9` with
-      // its 9 replaced by however many cells the neighbourhood actually has.
-      const baseline = neighbours(climbed.cell).length + 1;
+      // DERIVED, not a literal. This is the C#'s `> 9` with its 9 replaced by
+      // however many cells the neighbourhood actually has, times the threshold
+      // the MAP uses to call ground usable.
+      //
+      // NO `+ 1`. It was there until 2026-08-05 and was an off-by-one:
+      // `gridDisk(cell, 1)` returns SEVEN cells INCLUDING the centre, and
+      // `climbToLocalMaximum` sums exactly those seven, so the baseline is 7 and
+      // not 8. The `+ 1` assumed `neighbours()` excluded self, which made the
+      // gate ~14 %% stricter than the docstring above says it is.
+      //
+      // THE THRESHOLD COMES FROM THE CALLER rather than being the hardcoded
+      // identity. The rule table can declare a per-category `__threshold__`, and
+      // that is what decides whether a cell is drawn as usable ground -- so an
+      // event should not be placed where the map itself says it is unusable.
+      // The shipped table declares none, so both are 1 today and the two agreed
+      // by COINCIDENCE rather than by construction.
+      const baseline = neighbours(climbed.cell).length * threshold;
       if (!(climbed.heat > baseline)) continue;
 
       if (best === undefined || climbed.heat > best.heat) {
@@ -422,6 +454,7 @@ export function newGeoEventFor({
   heatAt,
   neighbours,
   steps,
+  threshold,
 }: {
   user: LatLng;
   tiles: readonly EventTile[];
@@ -432,6 +465,8 @@ export function newGeoEventFor({
   heatAt: (cell: string) => number | undefined;
   neighbours: (cell: string) => readonly string[];
   steps: number;
+  /** The category threshold the MAP uses. See `bestPickForTile`. */
+  threshold?: number;
 }): GeoEvent {
   const picks: BestPick[] = [];
   for (const tile of tiles) {
@@ -444,6 +479,7 @@ export function newGeoEventFor({
       heatAt,
       neighbours,
       steps,
+      ...(threshold === undefined ? {} : { threshold }),
     });
     if (pick !== undefined) picks.push(pick);
   }

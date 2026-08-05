@@ -638,3 +638,68 @@ describe("newGeoEventFor — picking across tiles, nearest first", () => {
     expect(event.eventTime).toBe(1_700_000_000_000);
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER — the gate is the C# constant TRANSLATED, and the
+ * translation had an off-by-one plus a hardcoded threshold.
+ *
+ * DEC-R9-3 ports `heat > 9` by replacing the 9 with the neighbourhood's actual
+ * cell count, because the C#'s 9 IS "nine cells at the multiplicative identity".
+ * `bestPickForTile`'s own docstring says so: *"H3 gives 7 cells rather than 9, so
+ * the identical rule is `> 7`"*.
+ *
+ * The code computed `neighbours(cell).length + 1`. `gridDisk(cell, 1)` returns
+ * SEVEN cells INCLUDING the centre, so that is 8 — while `climbToLocalMaximum`
+ * sums exactly those 7. The `+ 1` assumed `neighbours()` excluded self. The gate
+ * was ~14 % stricter than the rule it claims to be.
+ *
+ * And the identity was hardcoded. The rule table can declare a per-category
+ * `__threshold__`, which is what the MAP uses to decide whether a cell is usable
+ * ground; the shipped table declares none, so both are 1 today and the two agree
+ * by coincidence rather than by construction. Two definitions of "usable ground"
+ * that happen to match is the same shape as the three definitions of "below the
+ * surface" found earlier this round.
+ */
+describe("the quality gate is the neighbourhood at threshold, exactly", () => {
+  const warmAt = (value: number) => () => value;
+
+  const pickWith = (cellHeat: number, threshold?: number) =>
+    bestPickForTile({
+      bbox: { south: 0, west: 0, north: 0.01, east: 0.01 },
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: () => "0,0",
+      toLatLng: gridToLatLng,
+      heatAt: warmAt(cellHeat),
+      neighbours: gridNeighbours,
+      steps: 3,
+      ...(threshold === undefined ? {} : { threshold }),
+    });
+
+  it("accepts a neighbourhood exactly above the identity, not one seventh above", () => {
+    // `gridNeighbours` returns 9 cells (a 3x3 block including self), so the sum
+    // is 9 x cellHeat and the baseline must be 9. At cellHeat slightly above 1
+    // the neighbourhood is above the identity and MUST pass.
+    //
+    // With the `+ 1` the baseline was 10 against a 9-cell sum, so this failed:
+    // 9 x 1.05 = 9.45, which is above 9 and below 10.
+    expect(pickWith(1.05)).toBeDefined();
+  });
+
+  it("still rejects a neighbourhood exactly at the identity", () => {
+    // The other half, and it is what stops the fix becoming "accept everything":
+    // 9 x 1 = 9 is not ABOVE 9.
+    expect(pickWith(1)).toBeUndefined();
+  });
+
+  it("scales with the category threshold the MAP uses, not a hardcoded 1", () => {
+    // The rule table can declare `__threshold__` per category, and that is what
+    // decides whether a cell is drawn as usable ground. An event should not be
+    // placed on ground the map itself calls unusable.
+    //
+    // At threshold 3 the bar is 9 x 3 = 27, so a uniform 2 is below it and a
+    // uniform 4 is above.
+    expect(pickWith(2, 3)).toBeUndefined();
+    expect(pickWith(4, 3)).toBeDefined();
+  });
+});
