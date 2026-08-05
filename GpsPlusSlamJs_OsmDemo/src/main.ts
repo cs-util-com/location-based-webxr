@@ -477,23 +477,7 @@ async function main(): Promise<void> {
   // replaces the set rather than patching one layer).
   const layerToggles = attachLayerToggles({
     container: el("layers"),
-    onChange: (next) => {
-      const previous = selectLayers(store.getState());
-      store.dispatch(actions.layersChanged(next));
-      // TURNING THE CELL LAYER ON HAS TO FETCH THE CELLS (round 10, stage B).
-      //
-      // Every other layer toggle only changes what is drawn from data already
-      // held, so re-rendering the current snapshot is enough. `cells` is now
-      // different: the snapshot deliberately arrives WITHOUT the cell array
-      // while the layer is off, so switching it on has nothing to draw and the
-      // views would render an empty grid until some unrelated refresh happened
-      // to bring the data.
-      //
-      // Nine e2e tests caught this; no unit test did, because each half is
-      // individually correct — the cycle asks correctly, the pipeline answers
-      // correctly, and nothing owned the transition between them.
-      if (needsRefetch(previous, next)) void refresh();
-    },
+    onChange: (next) => store.dispatch(actions.layersChanged(next)),
     // The perf panel is a diagnostic and belongs beside the height ramp, but it
     // draws nothing in the scene so it is deliberately not a layer (W15,
     // DEC-R3-18). Handing the element over puts it in the right group without a
@@ -615,6 +599,18 @@ async function main(): Promise<void> {
     // deriving the scale from them made switching `cells` off collapse the legend
     // to "1 to 1" and colour the 2D regions on an empty ramp while the 3D slabs
     // used a different one.
+    // EVERYTHING DRAWN COMES FROM ONE SNAPSHOT (raised in review on #254).
+    // `heatMax` is computed for `snapshot.category`, so colouring by
+    // `view.category` mismatches the ramp in one real window: a category change
+    // dispatches `categoryChanged`, which fires `refresh()` and leaves the
+    // PREVIOUS snapshot in the store for the length of the fetch -- up to 18 s.
+    // Toggling a layer or `showBelowThreshold` in that window would colour the
+    // new category's scores against the old category's ramp.
+    //
+    // Reading it from the snapshot makes the consistency structural rather than
+    // timing-dependent. Before stage B this was masked, because `scaleFor` took
+    // the category and recomputed the max from the cell array every draw.
+    const drawnCategory = snapshot.category;
     const scale = scaleFor(snapshot);
     // THE REGISTRY REACHES BOTH VIEWS. Gating only the 3D side would leave the map
     // drawing a layer the store says is off — the cross-view disagreement the store
@@ -622,7 +618,7 @@ async function main(): Promise<void> {
     mapView.render(
       isLayerEnabled(layers, "cells") ? snapshot.cells : [],
       snapshot.regions,
-      view.category,
+      drawnCategory,
       snapshot.threshold,
       scale,
       view.showBelowThreshold,
@@ -635,7 +631,7 @@ async function main(): Promise<void> {
     mapView.renderFetchTiles(snapshot.loadedTiles);
     // Rendered from the SAME scale the map just painted with, so the two cannot
     // drift — the one way a legend becomes an active lie.
-    legendView.render(scale, view.category, view.showBelowThreshold);
+    legendView.render(scale, drawnCategory, view.showBelowThreshold);
   }
 
   /**
@@ -731,7 +727,10 @@ async function main(): Promise<void> {
           // Resolved HERE rather than in the worker: the category is already
           // known on this side, and sending every category's score for every
           // cell would be most of the payload for data the grid cannot use.
-          score: cell.scores[view.category] ?? 1,
+          // THE SNAPSHOT'S category, not the view's -- the scores being read
+          // are this snapshot's, and during a category change the store holds
+          // the previous one for the length of the fetch (#254).
+          score: cell.scores[snapshot.category] ?? 1,
         })),
         centre: snapshot.position,
         threshold: snapshot.threshold,
@@ -777,7 +776,8 @@ async function main(): Promise<void> {
       // impression that they were final was.
       isFinalRing(snapshot.radius) ? "" : "widening…",
       `${snapshot.cellCount} cells`,
-      `${snapshot.regions.length} ${view.category} regions`,
+      // The snapshot's category: these ARE its regions, counted for it.
+      `${snapshot.regions.length} ${snapshot.category} regions`,
       `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,
       mesh === undefined
         ? ""
@@ -915,8 +915,27 @@ async function main(): Promise<void> {
 
   subscribe(
     (view) => view.layers,
-    () => {
-      layerToggles.render(selectLayers(store.getState()));
+    (layers, previousLayers) => {
+      layerToggles.render(layers);
+      // TURNING THE CELL LAYER ON HAS TO FETCH THE CELLS (round 10, stage B).
+      // Every other layer only changes what is drawn from data already held, so
+      // a redraw is enough; `cells` is different because the snapshot
+      // deliberately arrives WITHOUT the array while that layer is off.
+      //
+      // HERE RATHER THAN IN THE TOGGLE CALLBACK, and that is the point of
+      // extracting the rule at all. This subscriber fires on EVERY
+      // `layersChanged` dispatch and is handed `(current, previous)` -- exactly
+      // `needsRefetch`s signature -- so a future dispatcher (URL sync, a
+      // preset, a site-picker default) cannot reintroduce the defect by
+      // forgetting to ask. The toggle callback owned it for one commit, which
+      // left the transition unowned again the moment a second dispatcher
+      // appeared. Raised in review on #254.
+      if (
+        previousLayers !== undefined &&
+        needsRefetch(previousLayers, layers)
+      ) {
+        void refresh();
+      }
       redrawFromSnapshot();
     },
   );

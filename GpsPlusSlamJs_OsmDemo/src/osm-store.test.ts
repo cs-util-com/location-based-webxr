@@ -98,6 +98,20 @@ describe("summariseSnapshot", () => {
     expect(sanitised.osmView.category).toBe("walkable");
   });
 
+  it("reports the count even when the cell array was not sent", () => {
+    // THE SHIPPED DEFAULT since round 10 stage B: the `cells` layer is off, so
+    // the snapshot carries `cellCount` and an EMPTY array. A summariser reading
+    // `cells.length` says "0 cells" for every real snapshot while the status
+    // line reports thousands -- and the test above cannot catch it, because its
+    // fixture populates `cells` directly. Raised in review on #254.
+    const withheld: DemoSnapshot = { ...snapshot(931), cells: [] };
+    const sanitised = summariseSnapshot({
+      osmView: { snapshot: withheld, category: "walkable" },
+    }) as unknown as { osmView: { snapshot: string } };
+
+    expect(sanitised.osmView.snapshot).toBe("«931 cells, 0 regions»");
+  });
+
   it("survives an empty state, because devtools sanitises before the first dispatch", () => {
     // A sanitiser that throws takes the whole app down through a devtools
     // extension the developer may not even know is installed.

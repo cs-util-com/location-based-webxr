@@ -298,8 +298,13 @@ export class DemoPipeline {
 
     const threshold = thresholdFor(this.table, category);
     const scoresByCell = this.index.scoresByCell();
+    // MATERIALISED ONCE. This used to be spread here AND again below for the
+    // heat scale -- two full copies of ~24 000 cells, in the round whose whole
+    // subject is not copying them. Small beside the structured clone stage B
+    // removes, and on the same hot path. Raised in review on #254.
+    const cells = [...scoresByCell.values()];
     const above = cellsAboveThreshold(
-      { cells: [...scoresByCell.values()], unmappedTagCounts: {}, lookups: 0 },
+      { cells, unmappedTagCounts: {}, lookups: 0 },
       category,
       threshold,
     );
@@ -309,7 +314,6 @@ export class DemoPipeline {
       scoresByCell,
     );
 
-    const cells = [...scoresByCell.values()];
     // OVER THE SAME VALUES THE PAGE USED, including the `?? 1` identity for a
     // cell with no entry for this category — the ramp must not shift because
     // the computation moved.

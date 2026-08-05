@@ -95,7 +95,13 @@ export function summariseSnapshot<S>(state: S): S {
       snapshot:
         snapshot === undefined
           ? undefined
-          : `«${snapshot.cells.length} cells, ${snapshot.regions.length} regions»`,
+          : // `cellCount`, NOT `cells.length` (round 10, stage B). The array is
+            // omitted from the snapshot whenever the `cells` layer is off, which
+            // is the shipped default — so `cells.length` reads 0 for every real
+            // snapshot while the status line reports thousands. A summariser
+            // exists precisely to say how big the thing is, and that one would
+            // have said zero forever. Raised in review on #254.
+            `«${snapshot.cellCount} cells, ${snapshot.regions.length} regions»`,
     },
   } as S;
 }

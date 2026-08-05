@@ -3641,17 +3641,44 @@ test.describe("the time of day", () => {
       };
 
       // How much chroma the heat grid ADDS, against one named ground mode.
+      //
+      // STARTS FROM A KNOWN STATE rather than inheriting one. An earlier version
+      // measured "before" first and restored the layer to ON at the end, so the
+      // SECOND call's baseline was already the with-cells picture, the toggle
+      // was a no-op, and the chroma never moved. Unchecking first makes each
+      // call self-contained and the two measurements unambiguous.
       const marginFor = async (mode) => {
         await page.locator("#ground-mode").selectOption(mode);
-        // WAITS for the cells, which now arrive asynchronously (round 10, stage
-        // B). `settledChroma` polls for STABILITY, and an unchanged pre-toggle
-        // frame is perfectly stable -- so without this it settles on the
-        // WITHOUT-cells picture and compares it against itself.
-        await enableCellLayer(page);
-        const withCells = await settledChroma();
+
         await page.locator("#layer-cells").uncheck();
         const withoutCells = await settledChroma();
-        await page.locator("#layer-cells").check();
+
+        // THE CELLS NOW ARRIVE ASYNCHRONOUSLY (round 10, stage B): the snapshot
+        // omits the array while the layer is off, so switching it on is a
+        // refresh rather than a redraw.
+        //
+        // AND THE MAP IS THE WRONG SURFACE TO WAIT ON, which cost a gate run to
+        // learn: `enableCellLayer` waits for Leaflet `.affordance-cell` paths,
+        // but everything measured here is the 3D CANVAS, whose grid comes from a
+        // separate async `buildGrid` worker call. Map cells present does not
+        // mean the scene has redrawn, so `settledChroma` could still read the
+        // without-cells picture -- and the margin came out exactly 0.
+        //
+        // Waiting for the SCENE CHROMA TO MOVE is the non-circular signal: it
+        // says the scene incorporated the toggle, without assuming which way.
+        // `meanChroma` rather than a canvas dataURL, because an image
+        // comparison answers the same question but dumps ~440 KB of base64 into
+        // the failure message, which made the first attempt's own failure
+        // unreadable.
+        //
+        // 30 s rather than `REPAINT`'s 15 s: this waits on a full refresh --
+        // fetch loop, three progressive rings, a worker mesh build -- not on a
+        // repaint. 15 s passed 3/3 standalone and failed under full-suite load.
+        const settle = { timeout: 30000 };
+        await enableCellLayer(page);
+        await expect.poll(meanChroma, settle).not.toBe(withoutCells);
+        const withCells = await settledChroma();
+
         expect(
           withCells,
           `${mode}: frame has chroma with cells`,

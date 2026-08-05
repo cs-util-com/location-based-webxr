@@ -11,8 +11,26 @@ Names every render layer, and holds the enabled set as plain, immutable data.
 - `DEFAULT_LAYERS` — every layer, with no exclusion (W9, W6).
 - `isLayerEnabled`, `toggleLayer` (returns a new set), `serialiseLayers`,
   `parseLayers`.
+- `needsRefetch(previous, next)` — whether a layer change needs new DATA rather
+  than just a redraw.
 
 ## Invariants & assumptions
+
+- **Almost every layer is a presentation switch; `cells` is not.** Since round 10
+  stage B the snapshot deliberately arrives WITHOUT the cell array while that
+  layer is off — ~24 000 cells that structured-clone in a measured 27–35 ms to be
+  drawn by nobody — so switching it ON has nothing to draw and needs a refetch.
+  This is the module's most surprising fact and the reason `needsRefetch` exists
+  as a function rather than an `if` at a call site.
+  - **ONE-WAY.** Switching `cells` off needs no refetch: the data is already held
+    and simply stops being drawn. A symmetric implementation refetches for
+    nothing on every hide, and `layers.test.ts` fails it.
+  - **Ask it from the store subscriber, not from the toggle callback.** The
+    `view.layers` subscriber fires on EVERY `layersChanged` dispatch and is handed
+    `(current, previous)` — exactly this signature. Wiring it into the toggle's
+    `onChange` works only while the toggle is the sole dispatcher, and leaves the
+    transition unowned again the moment a URL sync, a preset or a site-picker
+    default appears. Raised in review on #254.
 
 - **This seam is the deliverable, not the builders (DEC-R2-12).** The feedback asked
   for modularity so a later AR mode can request buildings + POI markers and skip
