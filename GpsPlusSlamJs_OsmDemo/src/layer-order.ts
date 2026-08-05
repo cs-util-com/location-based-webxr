@@ -98,6 +98,13 @@ export const GROUND_LAYERS = ["plates", "roads", "areas", "cells"] as const;
  * Only the layers that are actually translucent appear here. An opaque mesh does
  * not need an order, and giving it one would opt it out of the depth-sorted
  * batch it belongs in.
+ *
+ * THAT IS A REQUIREMENT ON THE MATERIAL, not a description of one. `WebGLRenderer`
+ * splits its render list into opaque / transmissive / transparent and draws
+ * opaque first; `renderOrder` only sorts WITHIN a list. So an opaque material
+ * with a high rung still draws before every translucent layer and gets blended
+ * over — it ranks above them in this table and loses to them on screen. Review
+ * on #256 found exactly that: the underground lines shipped opaque.
  */
 export const RENDER_ORDER = Object.freeze({
   areas: 1,

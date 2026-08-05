@@ -52,6 +52,35 @@ export const GROUND_COLOUR = 0x6b7280;
 export const PLATE_COLOUR = 0x848d9e;
 
 /**
+ * The below-surface diagnostic lines, in both the 3D scene and the 2D map.
+ *
+ * SHARED SO THE TWO VIEWS AGREE. Each view had its own literal, and the map's
+ * was not a colour at all — the polylines carried a `className` with no CSS
+ * rule behind it anywhere, so Leaflet fell back to its `Path` default and the
+ * "a colour nothing else uses" claim in both sidecars was simply untrue. Review
+ * on #256 caught it.
+ *
+ * A SATURATED PINK, deliberately outside every other palette here: the ground
+ * and plates are desaturated greys, the heat ramp runs yellow-to-red, and
+ * region outlines are white. The layer exists to be compared against what
+ * remains on screen, so reading as "another affordance overlay" would defeat
+ * it. A test pins the separation rather than trusting the eye.
+ */
+export const UNDERGROUND_COLOUR = 0xff7ad9;
+
+/**
+ * `#rrggbb` for a packed colour, for Leaflet and CSS.
+ *
+ * Exists so a colour used by both a three.js material (which wants the number)
+ * and a Leaflet path option (which wants the string) has ONE definition. Two
+ * constants would drift, and the drift would be invisible until someone
+ * compared screenshots of the two views.
+ */
+export function cssColour(colour: number): string {
+  return `#${colour.toString(16).padStart(6, "0")}`;
+}
+
+/**
  * Relative luminance of a packed `0xrrggbb`, per WCAG's sRGB formula.
  *
  * Exported because the assertion about these two colours is the reason the file

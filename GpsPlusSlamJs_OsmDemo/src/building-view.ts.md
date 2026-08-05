@@ -240,6 +240,17 @@ file owns the material swap and when the colours are refreshed.
 the terrain. The outlines arrive **already in ENU**, packed x,y per point by the
 worker.
 
+**The geometry and material are built in [`underground-lines.ts`](./underground-lines.ts.md)**,
+not here. This view needs a WebGL context to construct, so anything assembled
+inside it can only be checked by an e2e — and an e2e can see that lines appeared
+without being able to say whether they are transparent, at the right depth, or
+whether a node became a tick rather than nothing. Each of those broke once.
+
+**Cleanup is shared by three callers** — `renderUnderground`, `clearScene` and
+`dispose` — through one private helper. These lines live outside `this.group`,
+so they escape the group teardown; three copies of the same four lines is how
+one of them ends up missing, which is what review on #256 found.
+
 **Why the worker converts.** The ENU frame lives there, as it does for every
 other piece of scene geometry, and `recentre` invalidates every ENU coordinate —
 so a page-side copy of the frame would go stale exactly when the user moves.
@@ -256,4 +267,7 @@ which is how the gap was found.
 
 **Depth testing is off and `RENDER_ORDER.underground` is above both affordance
 layers**, because the lines are drawn below the terrain and would otherwise be
-occluded by the very ground they exist to be seen under.
+occluded by the very ground they exist to be seen under. The material is also
+**transparent**, and that is load-bearing: three draws the opaque list first and
+`renderOrder` only sorts within a list, so an opaque line outranked the
+affordance slabs in the table while losing to them on screen.

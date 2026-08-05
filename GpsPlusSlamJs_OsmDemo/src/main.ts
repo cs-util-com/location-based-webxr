@@ -633,15 +633,15 @@ async function main(): Promise<void> {
       // W15: the same switch that draws the 3D slabs. One claim, both views.
       isLayerEnabled(layers, "areas"),
     );
-    // The red box: what Overpass was actually asked for, drawn so "one res-7
-    // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
-    // and the hexagon differ and why that gap is worth showing.
     // The excluded features, so a reader can judge WHICH 13 % vanished rather
     // than only how many. Gated like every other layer: the registry reaches
     // both views or neither.
     mapView.renderUnderground(
       isLayerEnabled(layers, "underground") ? snapshot.undergroundOutlines : [],
     );
+    // The red box: what Overpass was actually asked for, drawn so "one res-7
+    // tile" stops being an abstraction. See `fetch-extent.ts` for why the box
+    // and the hexagon differ and why that gap is worth showing.
     mapView.renderFetchTiles(snapshot.loadedTiles);
     // Rendered from the SAME scale the map just painted with, so the two cannot
     // drift — the one way a legend becomes an active lie.
@@ -990,7 +990,12 @@ async function main(): Promise<void> {
         // for close to two seconds -- which the root CLAUDE.md requires feedback
         // for, and which the round-10 summary wrongly estimated was under the
         // threshold.
-        void withLayerBusy(layerToggles, "cells", refresh);
+        //
+        // EVERY LAYER THAT NEEDS THE FETCH, not a hard-coded name.
+        // `layersNeedingData` returns names rather than a boolean precisely so
+        // the caller can say WHICH — and while `cells` was the only gated layer
+        // the literal was indistinguishable from the right answer.
+        void withLayerBusy(layerToggles, needData, refresh);
       }
       redrawFromSnapshot();
     },

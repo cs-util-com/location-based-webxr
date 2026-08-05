@@ -24,6 +24,7 @@ import { describeScale, type HeatScale } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
 import { escapeHtml } from "./escape-html.js";
 import { regionStyle } from "./region-style.js";
+import { UNDERGROUND_COLOUR, cssColour } from "./surface-colours.js";
 import { rankContributors } from "./contributor-order.js";
 import {
   bandTreatment,
@@ -193,6 +194,10 @@ export class MapView {
     this.cellLayer.clearLayers();
     this.regionLayer.clearLayers();
     this.fetchLayer.clearLayers();
+    // The underground features describe the same scored working set as the
+    // cells do — they are the features that set EXCLUDED — so leaving them up
+    // after a failed refresh is the same defect this method exists to prevent.
+    this.undergroundLayer.clearLayers();
   }
 
   /**
@@ -261,9 +266,11 @@ export class MapView {
    * something that was on the surface all along. The 3D view answers what SHAPE
    * it was. Neither answers the other's question, which is why both draw it.
    *
-   * Dashed and in a colour nothing else uses, because the whole point is
-   * comparing it against what remains: a solid fill would read as another
-   * affordance overlay.
+   * Dashed and in `UNDERGROUND_COLOUR`, because the whole point is comparing it
+   * against what remains: a solid fill would read as another affordance
+   * overlay. The colour is SHARED WITH THE 3D VIEW rather than written twice —
+   * this view previously carried only a `className` with no CSS rule behind it,
+   * so Leaflet drew its default blue while the docs claimed otherwise.
    */
   renderUnderground(outlines: readonly (readonly LatLng[])[]): void {
     this.undergroundLayer.clearLayers();
@@ -279,12 +286,14 @@ export class MapView {
         L.circleMarker(points[0] as [number, number], {
           radius: 4,
           className: "underground-feature",
+          color: cssColour(UNDERGROUND_COLOUR),
           interactive: false,
         }).addTo(this.undergroundLayer);
         continue;
       }
       L.polyline(points, {
         className: "underground-feature",
+        color: cssColour(UNDERGROUND_COLOUR),
         weight: 2,
         dashArray: "4 3",
         interactive: false,

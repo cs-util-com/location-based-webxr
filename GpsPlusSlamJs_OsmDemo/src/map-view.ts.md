@@ -91,7 +91,18 @@ distinct bands — is covered in `playwright-tests/osm-demo.spec.js`.
 ## The underground layer
 
 `renderUnderground(outlines)` draws the features `isBelowSurface` excluded from
-scoring and from the mesh, in lat/lng, dashed and in a colour nothing else uses.
+scoring and from the mesh, in lat/lng, dashed and in `UNDERGROUND_COLOUR` —
+**shared with the 3D view** rather than written twice.
+
+**The colour was previously a claim, not an implementation.** The paths carried a
+`className` with no CSS rule behind it anywhere — the demo has no stylesheet, and
+`index.html`'s `<style>` block has no such rule — so Leaflet drew its `Path`
+default blue while this very sidecar said otherwise. Review on #256 caught it.
+A unit test now pins the colour's distinctness from the rest of the palette.
+
+**`clear()` clears this layer too.** The underground features describe the same
+scored working set the cells do, so leaving them up after a failed refresh is
+precisely the defect `clear()` exists to prevent.
 
 **Why the map draws them at all.** This view answers **where** the excluded
 ground is — whether the thing that vanished is the U-Bahn line under the street

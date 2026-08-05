@@ -235,13 +235,21 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
  */
 export async function withLayerBusy(
   toggles: Pick<LayerToggles, "setBusy">,
-  layer: LayerKind,
+  layers: LayerKind | readonly LayerKind[],
   run: () => Promise<unknown>,
 ): Promise<void> {
-  toggles.setBusy(layer, true);
+  // TAKES A LIST, because more than one layer can need the same fetch. While
+  // `cells` was the only data-gated layer the caller could name it literally;
+  // adding `underground` made that spin the WRONG checkbox — the cells switch
+  // went disabled for ~1.9 s while the switch the user actually clicked showed
+  // nothing at all. Raised in review on #256.
+  const busy = Array.isArray(layers)
+    ? (layers as readonly LayerKind[])
+    : [layers as LayerKind];
+  for (const layer of busy) toggles.setBusy(layer, true);
   try {
     await run();
   } finally {
-    toggles.setBusy(layer, false);
+    for (const layer of busy) toggles.setBusy(layer, false);
   }
 }

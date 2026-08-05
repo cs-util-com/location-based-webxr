@@ -8,14 +8,16 @@ Names every render layer, and holds the enabled set as plain, immutable data.
 
 - `ALL_LAYERS` — the ordered tuple; `LayerKind` is derived from it.
 - `LayerSet` — `Readonly<Record<LayerKind, boolean>>`, exhaustive by construction.
-- `DEFAULT_LAYERS` — every layer **except `plates` and `cells`**
-  (DEC-R7b-5/R7b-6).
+- `DEFAULT_LAYERS` — every layer **except `plates`, `cells` and `underground`**
+  (DEC-R7b-5/R7b-6; `underground` is a diagnostic and joins them off).
 - `isLayerEnabled`, `toggleLayer` (returns a new set), `serialiseLayers`,
   `parseLayers`.
-- `DATA_GATED_LAYERS` — the layers whose data is omitted from the snapshot
-  while they are off (`cells`, `underground`).
-- `layersNeedingData(previous, next, held)` — which of those just turned on
-  without their data in hand. Empty means a redraw suffices.
+- `layersNeedingData(previous, next, held)` — which data-gated layer just turned
+  on without its data in hand. Empty means a redraw suffices.
+  - **The gated list itself stays module-private** (`cells`, `underground`).
+    Exporting it invites a caller to re-implement the rule from it, which is the
+    whole thing `layersNeedingData` exists to prevent — so it is deliberately
+    not public API and is not listed as such here.
 
 ## Invariants & assumptions
 

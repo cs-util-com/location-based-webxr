@@ -4207,9 +4207,14 @@ test.describe("the underground layer", () => {
     // The count is reported even with the layer off — that is the point of it.
     await expect(page.locator("#status")).toContainText(/\d+ underground/);
 
+    // THE FULL DATA URL, not its length. A base64 PNG length is a coarse hash
+    // — a scene that gained a few thin lines can encode to the same byte count
+    // — so comparing lengths is the one assertion here that could stop biting
+    // without failing. Every other canvas comparison in this file (584, 1410,
+    // 2214, 2907, 3028, 3293, 3353) compares the whole string.
     const sceneBefore = await page.evaluate(() => {
       const el = document.querySelector("#scene canvas");
-      return el instanceof HTMLCanvasElement ? el.toDataURL().length : 0;
+      return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
     });
 
     await page.locator("#layer-underground").check();
@@ -4226,7 +4231,7 @@ test.describe("the underground layer", () => {
         () =>
           page.evaluate(() => {
             const el = document.querySelector("#scene canvas");
-            return el instanceof HTMLCanvasElement ? el.toDataURL().length : 0;
+            return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
           }),
         { timeout: 30000 },
       )

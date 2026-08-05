@@ -36,6 +36,7 @@ import {
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
+import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { RENDER_ORDER } from "./layer-order.js";
@@ -111,26 +112,6 @@ const CELL_EMISSIVE_INTENSITY = 0.5;
  * chosen on evidence rather than guessed.
  */
 export const FAR_PLANE_M = 2400;
-
-/**
- * How far below the ground the underground outlines are drawn, in metres.
- *
- * A FIXED DEPTH, not the feature's real one: OSM's `layer` is an ordering
- * rather than a distance, and `level` is a storey index. Inventing metres from
- * either would be a fabricated elevation. Deep enough to read as "underneath"
- * against the terrain relief, shallow enough to stay in frame.
- */
-const UNDERGROUND_DEPTH_M = -6;
-
-/**
- * Half-height of the vertical tick that stands in for a below-surface NODE.
- *
- * A node has no outline, and drawing nothing would hide a whole class of
- * excluded feature — bins, subway entrances, shafts — from the one view meant
- * to reveal them. A short vertical mark reads as "something is here" without
- * claiming a footprint the data does not have.
- */
-const NODE_TICK_M = 1.5;
 
 /**
  * Where the haze starts, metres.
@@ -977,67 +958,36 @@ export class BuildingView {
    * from a different part of the snapshot and rebuilding the buildings must not
    * silently drop it.
    */
+  /**
+   * Removes and frees the underground lines, if any are up.
+   *
+   * SHARED BY THREE CALLERS, and that is the point. `renderUnderground` needs
+   * it to replace the previous draw, `clearScene` needs it because underground
+   * features describe a specific scored working set and outliving that set
+   * makes the scene assert a state nothing produced, and `dispose` needs it
+   * because these live outside `this.group` and so escape the group teardown.
+   * Three copies of the same four lines is how one of them ends up missing —
+   * which is exactly what review found here.
+   */
+  private clearUnderground(): void {
+    if (this.undergroundLines === undefined) return;
+    this.scene.remove(this.undergroundLines);
+    this.undergroundLines.geometry.dispose();
+    this.undergroundLines.material.dispose();
+    this.undergroundLines = undefined;
+  }
+
   renderUnderground(outlines: readonly Float32Array[]): void {
+    this.clearUnderground();
+    // BUILT IN `underground-lines.ts`, not here. This view needs a WebGL
+    // context to construct, so anything assembled inside it can only be checked
+    // by an e2e — and an e2e can see that lines appeared without being able to
+    // say whether they are transparent, at the right depth, or whether a node
+    // became a tick rather than nothing at all. Each of those has broken once.
+    this.undergroundLines = buildUndergroundLines(outlines);
     if (this.undergroundLines !== undefined) {
-      this.scene.remove(this.undergroundLines);
-      this.undergroundLines.geometry.dispose();
-      this.undergroundLines.material.dispose();
-      this.undergroundLines = undefined;
+      this.scene.add(this.undergroundLines);
     }
-    if (outlines.length === 0) {
-      this.requestFrame();
-      return;
-    }
-
-    // EACH OUTLINE IS ALREADY IN ENU, packed x,y pairs, because the frame lives
-    // in the worker where every other piece of scene geometry is built. A page
-    // that converted lat/lng itself would need a second copy of the frame and
-    // would go stale on every recentre.
-    const positions: number[] = [];
-    for (const outline of outlines) {
-      // A LONE POINT IS A NODE, and it gets a tick rather than being skipped.
-      //
-      // An underground bin or a subway entrance is a node, so "needs two ends
-      // to make a segment" silently drops a whole class of excluded feature —
-      // from the diagnostic whose entire job is showing what was silently
-      // dropped. The corpus fixture's only below-surface feature is exactly
-      // such a node, which is how this was found.
-      if (outline.length === 2) {
-        const x = outline[0] ?? 0;
-        const y = outline[1] ?? 0;
-        positions.push(x, UNDERGROUND_DEPTH_M - NODE_TICK_M, -y);
-        positions.push(x, UNDERGROUND_DEPTH_M + NODE_TICK_M, -y);
-        continue;
-      }
-      for (let i = 0; i + 3 < outline.length; i += 2) {
-        positions.push(
-          outline[i] ?? 0,
-          UNDERGROUND_DEPTH_M,
-          -(outline[i + 1] ?? 0),
-        );
-        positions.push(
-          outline[i + 2] ?? 0,
-          UNDERGROUND_DEPTH_M,
-          -(outline[i + 3] ?? 0),
-        );
-      }
-    }
-    if (positions.length === 0) {
-      this.requestFrame();
-      return;
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(new Float32Array(positions), 3),
-    );
-    this.undergroundLines = new THREE.LineSegments(
-      geometry,
-      new THREE.LineBasicMaterial({ color: 0xff7ad9, depthTest: false }),
-    );
-    this.undergroundLines.renderOrder = RENDER_ORDER.underground;
-    this.scene.add(this.undergroundLines);
     this.requestFrame();
   }
 
@@ -1360,6 +1310,12 @@ export class BuildingView {
 
   clearScene(): void {
     this.clear();
+    // `clear()` only walks `this.group`, and the underground lines are added
+    // straight to the scene — so a failed refresh left them on screen,
+    // describing a scored working set that no longer exists. Cleared HERE
+    // rather than at the call site so the next direct-scene layer does not
+    // have to remember to add a line to `drawScene`.
+    this.clearUnderground();
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1446,6 +1402,7 @@ export class BuildingView {
     this.perfStats = undefined;
     this.groundRampMaterial.dispose();
     this.heightTexture?.dispose();
+    this.clearUnderground();
     if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
     this.cellMesh = undefined;
     if (this.cellOutlines !== undefined) {

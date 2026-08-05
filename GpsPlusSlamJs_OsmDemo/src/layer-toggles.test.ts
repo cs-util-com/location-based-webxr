@@ -51,4 +51,63 @@ describe("withLayerBusy", () => {
       ["cells", false],
     ]);
   });
+
+  describe("more than one layer at a time", () => {
+    // WHY THIS MATTERS (#256). `underground` joined `cells` as a data-gated
+    // layer, and the call site still named `"cells"` literally — so clicking
+    // the underground switch disabled the CELLS checkbox for ~1.9 s and gave
+    // the clicked switch no feedback at all. The e2e passed throughout: it
+    // asserts a busy state appears, not that it appears on the right control.
+    // That is exactly the gap a unit test closes.
+    it("marks every layer in the list, and clears every one", async () => {
+      const toggles = spy();
+      await withLayerBusy(toggles, ["cells", "underground"], () =>
+        Promise.resolve(),
+      );
+      expect(toggles.calls).toEqual([
+        ["cells", true],
+        ["underground", true],
+        ["cells", false],
+        ["underground", false],
+      ]);
+    });
+
+    it("marks the underground switch when only underground needs data", async () => {
+      // The regression stated directly: the layer that needs the fetch is the
+      // layer that spins, and no other one is touched.
+      const toggles = spy();
+      await withLayerBusy(toggles, ["underground"], () => Promise.resolve());
+      expect(toggles.calls).toEqual([
+        ["underground", true],
+        ["underground", false],
+      ]);
+    });
+
+    it("clears them all when the action rejects", async () => {
+      const toggles = spy();
+      await expect(
+        withLayerBusy(toggles, ["cells", "underground"], () =>
+          Promise.reject(new Error("worker died")),
+        ),
+      ).rejects.toThrow("worker died");
+
+      // Neither switch is stranded — a `finally` that only covered the first
+      // would leave the second disabled forever.
+      expect(toggles.calls).toEqual([
+        ["cells", true],
+        ["underground", true],
+        ["cells", false],
+        ["underground", false],
+      ]);
+    });
+
+    it("touches nothing when the list is empty", async () => {
+      // `layersNeedingData` returns `[]` in the common case, and the caller
+      // guards on length — but a helper that spun something for an empty list
+      // would be a bug waiting for that guard to be relaxed.
+      const toggles = spy();
+      await withLayerBusy(toggles, [], () => Promise.resolve());
+      expect(toggles.calls).toEqual([]);
+    });
+  });
 });

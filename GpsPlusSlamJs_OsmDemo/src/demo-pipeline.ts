@@ -351,8 +351,18 @@ export class DemoPipeline {
     // heat scale -- two full copies of ~24 000 cells, in the round whose whole
     // subject is not copying them. Small beside the structured clone stage B
     // removes, and on the same hot path. Raised in review on #254.
-    const underground = this.index.belowSurfaceFeatures();
     const cells = [...scoresByCell.values()];
+    // THE COUNT IS ALWAYS WANTED; THE FEATURES ALMOST NEVER ARE. The status
+    // line reports how many features were excluded whether or not the layer is
+    // drawn, so calling `belowSurfaceFeatures()` here put an array of ~13 % of
+    // the corpus on this path on every update, three lines under the comment
+    // about not copying things on it. Raised in review on #256.
+    const undergroundOutlines =
+      options?.includeUnderground === true
+        ? this.index
+            .belowSurfaceFeatures()
+            .flatMap((feature) => outlinesOf(feature))
+        : [];
     const above = cellsAboveThreshold(
       { cells, unmappedTagCounts: {}, lookups: 0 },
       category,
@@ -378,11 +388,8 @@ export class DemoPipeline {
       threshold,
       cells: options?.includeCells === false ? [] : cells,
       cellCount: cells.length,
-      undergroundCount: underground.length,
-      undergroundOutlines:
-        options?.includeUnderground === true
-          ? underground.flatMap((feature) => outlinesOf(feature))
-          : [],
+      undergroundCount: this.index.belowSurfaceCount(),
+      undergroundOutlines,
       heatMax,
       regions,
       missingTiles,
