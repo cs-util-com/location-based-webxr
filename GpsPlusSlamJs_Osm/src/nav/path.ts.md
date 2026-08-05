@@ -60,8 +60,10 @@ score-derived one, with no principled way to say which is right.
   - Every reachable cell including `start`; empty when `start` is out of scope,
     which is a meaningful answer rather than an error — an agent standing on
     unscored ground can go nowhere.
-- `PathOptions` — `canStep?`, `maxExpansions?`.
-- `DEFAULT_MAX_EXPANSIONS = 100_000`.
+- `PathOptions` — `canStep?`, plus `maxExpansions?` inherited from
+  `SearchOptions`. `DEFAULT_MAX_EXPANSIONS` lives in
+  [`search.ts`](./search.ts.md) and is exported from the module barrel there;
+  re-exporting it here would be a second name for one constant.
 
 ## Invariants
 

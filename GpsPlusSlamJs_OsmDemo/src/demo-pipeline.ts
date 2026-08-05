@@ -357,12 +357,19 @@ export class DemoPipeline {
     // drawn, so calling `belowSurfaceFeatures()` here put an array of ~13 % of
     // the corpus on this path on every update, three lines under the comment
     // about not copying things on it. Raised in review on #256.
-    const undergroundOutlines =
+    //
+    // WHEN THE LAYER IS ON, THE ARRAY IS ALREADY IN HAND, so the count comes
+    // off its length rather than walking the feature map a second time — the
+    // first fix for this traded one wasted walk for another on the drawn path
+    // (#257).
+    const undergroundFeatures =
       options?.includeUnderground === true
-        ? this.index
-            .belowSurfaceFeatures()
-            .flatMap((feature) => outlinesOf(feature))
-        : [];
+        ? this.index.belowSurfaceFeatures()
+        : undefined;
+    const undergroundOutlines =
+      undergroundFeatures?.flatMap((feature) => outlinesOf(feature)) ?? [];
+    const undergroundCount =
+      undergroundFeatures?.length ?? this.index.belowSurfaceCount();
     const above = cellsAboveThreshold(
       { cells, unmappedTagCounts: {}, lookups: 0 },
       category,
@@ -388,7 +395,7 @@ export class DemoPipeline {
       threshold,
       cells: options?.includeCells === false ? [] : cells,
       cellCount: cells.length,
-      undergroundCount: this.index.belowSurfaceCount(),
+      undergroundCount,
       undergroundOutlines,
       heatMax,
       regions,

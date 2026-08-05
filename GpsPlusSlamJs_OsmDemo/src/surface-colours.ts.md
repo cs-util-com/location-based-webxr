@@ -12,6 +12,11 @@ so that relationship can be asserted instead of assumed.
 - `relativeLuminance(colour: number): number` — WCAG sRGB relative luminance of a
   packed `0xrrggbb`, 0–1.
 - `chroma(colour: number): number` — max channel minus min, 0–255.
+- `UNDERGROUND_COLOUR` — `0xff7ad9`, the below-surface diagnostic lines, shared
+  by the 3D scene and the 2D map (DEC-R11 review, #256).
+- `cssColour(colour: number): string` — `#rrggbb` for a packed colour, so a
+  value used by a three.js material (which wants the number) and a Leaflet path
+  option (which wants the string) has ONE definition.
 
 ## Invariants & assumptions
 
@@ -60,3 +65,14 @@ for a deliberate re-tune and tight enough that lightening one constant alone
 cannot pass), the chroma ceiling against `0x4a5468` and against viridis, and
 anchor checks on `relativeLuminance` so it cannot agree with itself while
 disagreeing with the standard.
+
+`underground-lines.test.ts` covers `UNDERGROUND_COLOUR` and `cssColour`: the
+colour's distinctness from the rest of the palette, its `#rrggbb` rendering, and
+zero-padding — `toString(16)` drops leading zeros, which would silently produce
+a five-character string that CSS ignores.
+
+**Why the underground colour lives here rather than beside its geometry.** It
+was previously written twice, and the map's copy was not a colour at all: a
+`className` with no CSS rule anywhere behind it, so Leaflet drew its default
+blue while two sidecars claimed "a colour nothing else uses". One definition in
+the palette module is what makes that claim checkable.

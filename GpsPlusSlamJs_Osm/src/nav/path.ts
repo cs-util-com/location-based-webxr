@@ -30,8 +30,6 @@ import {
   type StateSpace,
 } from "./search.js";
 
-export { DEFAULT_MAX_EXPANSIONS } from "./search.js";
-
 /** How a search may be narrowed beyond the scope set. */
 export interface PathOptions extends SearchOptions {
   /**
