@@ -30,7 +30,7 @@ export {
   resolveHeights,
 } from "./building-heights.js";
 
-export { barrierFootprints, ringArea } from "./barrier-shape.js";
+export { barrierFootprints } from "./barrier-shape.js";
 
 export type { BarrierDimensions } from "./barriers.js";
 export {

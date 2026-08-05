@@ -50,3 +50,17 @@ adjudicate; a state a millimetre either way is, and that one is well defined.
 C shape, where the bite is inside the bounding box and outside the ring — this
 is what separates ray casting from a box test), winding independence, explicit
 and implicit closure, degenerate rings, and containment in degrees.
+
+`point-in-ring.property.test.ts` — **affine invariance stated directly**, which
+is the claim `obstacles.ts` rests on when it asks in degrees. The example suite
+backed it with a single 10⁻⁴° square; the property checks random rings, random
+probes and random invertible maps. Also winding and start-vertex independence,
+plus two **absolute** anchors — a far-outside point is out, a triangle's
+centroid is in — because every other property is a self-consistency claim that
+a constantly-`true` or constantly-`false` predicate would satisfy.
+
+The property generators exclude probes lying ON an edge, and that exclusion is
+**the scope of the claim rather than a convenience**: an affine map moves the
+floating-point comparison, so an on-edge probe can legitimately flip. fast-check
+found those immediately, which is how the scope came to be stated rather than
+assumed.

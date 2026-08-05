@@ -33,7 +33,14 @@ walls and harmless for a point-in-polygon test that asks "any of them".
 
 - `barrierFootprints(line, thicknessM) => EnuPoint[][]` — one 4-point ring per
   non-degenerate segment.
-- `ringArea(ring) => number` — signed shoelace area, positive counter-clockwise.
+
+**No area helper is exported.** An earlier draft exported a `ringArea`, which
+review on #259 rejected on two counts: `signedArea2` in
+[`enu.ts`](./enu.ts.md) already has the identical convention, and
+`buildings.ts` has a **private `ringArea` that returns the UNSIGNED value** — so
+a second exported `ringArea` with opposite semantics was a name collision
+waiting to hand a caller a sign it did not expect. The tests use
+`signedArea2(ring) / 2`.
 
 ## Invariants
 
@@ -46,11 +53,17 @@ walls and harmless for a point-in-polygon test that asks "any of them".
   which reads as a rendering bug rather than a geometry one. The vertex order is
   expressed in the segment's own frame, so it is counter-clockwise for every
   segment regardless of direction.
-- **Zero-length segments are skipped, not normalised.** A segment with no
-  direction has no normal, and dividing by its length yields `NaN` vertices —
-  which propagate into the mesh, where three.js draws nothing and reports no
-  error. Duplicated consecutive nodes are ordinary in OSM, so this is a live
-  path rather than a defensive formality.
+- **Segments below `MIN_SEGMENT_M` (1 nm) are skipped, not normalised.** A
+  segment with no direction has no normal, and dividing by its length yields
+  `NaN` vertices — which propagate into the mesh, where three.js draws nothing
+  and reports no error. Duplicated consecutive nodes are ordinary in OSM, so
+  this is a live path rather than a defensive formality.
+  - **The bound is a threshold rather than `=== 0`, and a property test is why.**
+    A segment of _subnormal_ length (1e-322 m) is not zero, so it passed an
+    exact check — and `dx / length` then lost all precision, producing a quad
+    whose area sign disagreed with its neighbours' and therefore extruded with
+    inverted faces. No hand-written fixture would have reached that, and no real
+    way contains such a segment, but the failure was silent.
 
 ## Defensive behaviour
 
@@ -68,10 +81,17 @@ walls and harmless for a point-in-polygon test that asks "any of them".
 offsetting, per-segment quads for a polyline, the hairpin locality bound, zero-
 length segments, degenerate ways, thickness validation, and winding consistency.
 
+`barrier-shape.property.test.ts` — the locality bound as a **property over
+arbitrary polylines** rather than one hairpin (which is the shape of evidence a
+mitred implementation would also pass), per-quad area against segment length ×
+thickness, winding consistency across arbitrary segment directions, and
+finiteness. Added after review on #259 noted the package applies property tests
+consistently and this module had none.
+
 **Mutation-checked**, all seven caught: offsetting to one side, using the full
 thickness as the half-offset, dropping the zero-length guard, accepting a
 non-positive thickness, flipping the winding on alternate segments, failing to
-normalise the segment normal, and making `ringArea` unsigned.
+normalise the segment normal, and making the area unsigned.
 
 **What these do NOT cover:** the extrusion itself, and whether a point is inside
 the footprint. Both are the next slice.

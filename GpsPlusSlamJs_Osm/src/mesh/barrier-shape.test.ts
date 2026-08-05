@@ -18,8 +18,20 @@
 
 import { describe, expect, it } from "vitest";
 
-import { barrierFootprints, ringArea } from "./barrier-shape.js";
-import type { EnuPoint } from "./enu.js";
+import { barrierFootprints } from "./barrier-shape.js";
+import { signedArea2, type EnuPoint } from "./enu.js";
+
+/**
+ * Signed ring area, from the package's own shoelace.
+ *
+ * NOT a local reimplementation, and not a fourth copy in `barrier-shape.ts`
+ * either. The first draft exported one from there, which review on #259 caught:
+ * `signedArea2` already had the identical convention, and `buildings.ts` has a
+ * private `ringArea` that returns the UNSIGNED value — so a second exported
+ * `ringArea` with the opposite semantics was a name collision waiting to hand
+ * someone a sign they did not expect.
+ */
+const ringArea = (ring: readonly EnuPoint[]): number => signedArea2(ring) / 2;
 
 const p = (x: number, y: number): EnuPoint => ({ x, y });
 
@@ -121,11 +133,11 @@ describe("barrierFootprints", () => {
   });
 });
 
-describe("ringArea", () => {
-  it("gives the signed shoelace area", () => {
-    // Exported because the assertions above depend on it, and a helper that
-    // reimplemented the shoelace inside the test could agree with itself while
-    // disagreeing with the geometry.
+describe("the shoelace this file measures with", () => {
+  it("is signed, so the winding assertion above means something", () => {
+    // The area assertions rest on `signedArea2`'s convention. Stating it here
+    // keeps the winding test honest: against an UNSIGNED area, every ring
+    // would agree and "consistent winding" would assert nothing.
     const square = [p(0, 0), p(2, 0), p(2, 2), p(0, 2)];
     expect(ringArea(square)).toBeCloseTo(4, 9);
     expect(ringArea([...square].reverse())).toBeCloseTo(-4, 9);

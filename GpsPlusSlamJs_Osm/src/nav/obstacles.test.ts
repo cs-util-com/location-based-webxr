@@ -14,8 +14,16 @@
  *
  * The other thing pinned here is the pairing with `levelsAt`. An obstacle that
  * only ever *removes* levels would make a walled cell unstandable, and an agent
- * cannot walk beside a wall it is standing inside. The wall's own footprint is
- * blocked; the ground beside it is not.
+ * cannot walk beside a wall it is standing inside — so the ground level is
+ * always offered alongside the wall top.
+ *
+ * **NOTHING HERE BLOCKS ANYTHING YET.** `Obstacle.rings` is built and stored,
+ * but no code in this slice asks `containsPoint` about it: `obstacleLevelsAt`
+ * only ADDS a level. Wired into `columnSpace` as it stands, an agent gets the
+ * wall top as an extra state and the ground beneath the wall stays fully
+ * traversable. An earlier draft of this comment claimed the footprint was
+ * blocked, which review on #259 correctly called out as describing behaviour
+ * that does not exist. The footprint test is the next slice.
  *
  * @see obstacles.ts.md
  */

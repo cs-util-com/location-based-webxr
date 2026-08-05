@@ -71,6 +71,26 @@ unusable geometry, and every `obstacleLevelsAt` invariant above.
 **Mutation-checked**, all eight caught, including the one that only became
 catchable after a bent-barrier fixture was added.
 
-**What these do NOT cover:** buildings. Only barriers are indexed so far — the
-building half of the obstacle set is the next slice, and until it lands an agent
-will walk through walls that happen to be houses.
+**What these do NOT cover — and this is the larger gap:**
+
+- **Nothing blocks anything yet.** `Obstacle.rings` is built, stored and
+  exported, but no code in this slice ever asks `containsPoint` about it. The
+  only consumer surface is `obstacleLevelsAt`, which **adds** a level and never
+  removes one. So wiring this into `columnSpace` today gives an agent the wall
+  top as an extra state and leaves the ground under the wall fully traversable
+  — agents walk through walls that are walls, not merely through walls that are
+  houses. Review on #259 caught an earlier version of this section claiming
+  otherwise. **The footprint test is the next slice.**
+- **Buildings are not indexed at all.** Only barriers are, so even once the
+  footprint test lands, a house is not an obstacle until the building half is
+  built.
+- **The antimeridian.** A barrier crossing ±180° would be treated as spanning
+  almost the whole world, because `enuFrameAt` and the stored rings both use
+  canonical longitudes. This matches the package's existing stance rather than
+  departing from it: `overpass-query.ts` **throws** `AntimeridianCellError` for
+  a cell straddling the date line, so such data cannot reach this index through
+  the normal ingest path at all, and `multipolygon-builder.ts` documents the
+  same non-handling. Raised by CodeRabbit on #259; fixing it here alone would
+  add wrap-aware coordinates to one module while every other module around it
+  still refuses or ignores the case, which buys false confidence rather than
+  correctness.

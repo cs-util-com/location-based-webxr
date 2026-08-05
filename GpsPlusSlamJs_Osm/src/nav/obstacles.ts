@@ -15,6 +15,14 @@
  * property of the feature, not of the current view, so nothing about it moves
  * when the user does.
  *
+ * **The antimeridian is not handled**, and that matches the package rather than
+ * departing from it: `overpass-query.ts` throws `AntimeridianCellError` for a
+ * cell straddling the date line, so such data cannot reach this index through
+ * the normal ingest path at all, and `multipolygon-builder.ts` documents the
+ * same non-handling. Raised by CodeRabbit on #259; making this one module
+ * wrap-aware while every module around it still refuses or ignores the case
+ * would buy false confidence rather than correctness.
+ *
  * @see obstacles.ts.md
  */
 
@@ -58,12 +66,22 @@ function barrierLine(feature: OsmFeature): readonly PlanarPoint[] | undefined {
   if (!result.ok) return undefined;
 
   const geometry = result.geometry;
+  // MULTIPOLYGON IS HANDLED, not silently dropped. A `barrier=wall` mapped as a
+  // multipolygon relation is rare, but it is neither "not a barrier" nor
+  // "unusable geometry" — it would have been a barrier the index simply did not
+  // see, which is the one skip reason with no stated rationale. Raised in
+  // review on #259. Only the first polygon's outer ring is used: a barrier's
+  // holes are not something to walk through.
   const positions =
     geometry.kind === "linestring"
       ? geometry.positions
       : geometry.kind === "polygon"
         ? geometry.rings[0]
-        : undefined;
+        : geometry.kind === "multipolygon"
+          ? geometry.polygons[0]?.[0]
+          : geometry.kind === "multilinestring"
+            ? geometry.lines[0]
+            : undefined;
   if (positions === undefined || positions.length < 2) return undefined;
 
   return positions.map((p) => ({ x: p.lng, y: p.lat }));
@@ -112,19 +130,25 @@ export function buildObstacleIndex(
       rings,
     };
 
+    // THE FEATURE'S CELLS COLLECTED ONCE, then appended once. A city wall is
+    // routinely a few hundred nodes, so appending per ring meant a few hundred
+    // `polygonToCellsExperimental` calls plus an `includes` rescan of every
+    // cell's list on top — and `polygonToCells` is already the measured hot
+    // spot of the whole scoring path. The union also makes "one obstacle per
+    // cell" structural instead of a linear scan. Raised in review on #259.
+    const cells = new Set<string>();
     for (const ring of rings) {
       const coverage = coverCells(
         { kind: "polygon", rings: [ring.map((v) => ({ lat: v.y, lng: v.x }))] },
         resolution,
       );
-      for (const covered of coverage) {
-        const existing = byCell.get(covered.cell);
-        if (existing === undefined) {
-          byCell.set(covered.cell, [obstacle]);
-        } else if (!existing.includes(obstacle)) {
-          existing.push(obstacle);
-        }
-      }
+      for (const covered of coverage) cells.add(covered.cell);
+    }
+
+    for (const cell of cells) {
+      const existing = byCell.get(cell);
+      if (existing === undefined) byCell.set(cell, [obstacle]);
+      else existing.push(obstacle);
     }
   }
 

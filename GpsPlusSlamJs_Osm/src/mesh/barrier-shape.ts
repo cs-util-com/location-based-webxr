@@ -23,22 +23,13 @@
 import type { EnuPoint } from "./enu.js";
 
 /**
- * Signed shoelace area of a ring, in square metres.
+ * Shortest segment that gets a quad, in metres.
  *
- * Positive is counter-clockwise. Exported because the barrier tests assert
- * against it, and a helper reimplemented inside a test could agree with itself
- * while disagreeing with the geometry it is checking.
+ * A nanometre — far below any distinction OSM geometry can carry, and far above
+ * the scale at which normalising a segment's direction stops being meaningful.
+ * Segments shorter than this are dropped exactly like zero-length ones.
  */
-export function ringArea(ring: readonly EnuPoint[]): number {
-  if (ring.length < 3) return 0;
-  let twice = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i]!;
-    const b = ring[(i + 1) % ring.length]!;
-    twice += a.x * b.y - b.x * a.y;
-  }
-  return twice / 2;
-}
+const MIN_SEGMENT_M = 1e-9;
 
 /**
  * One rectangle per segment of `line`, each `thicknessM` wide and centred on
@@ -76,7 +67,14 @@ export function barrierFootprints(
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const length = Math.hypot(dx, dy);
-    if (length === 0) continue;
+    // A THRESHOLD, NOT `=== 0`. A segment of subnormal length (1e-322 m) is not
+    // zero, so it passed an exact check — and then `dx / length` loses all
+    // precision, producing a quad whose area sign disagrees with its
+    // neighbours'. That inverts its faces on extrusion. Found by a property
+    // test over arbitrary polylines; no hand-written fixture would have
+    // reached it, and no real way contains such a segment, but the guard costs
+    // nothing and the failure was silent.
+    if (!(length > MIN_SEGMENT_M)) continue;
 
     // The left-hand normal, scaled to half the thickness.
     const nx = (-dy / length) * half;
