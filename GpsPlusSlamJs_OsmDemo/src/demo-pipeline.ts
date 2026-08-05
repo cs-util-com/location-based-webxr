@@ -29,6 +29,7 @@ import {
   type CellState,
   type GeoEvent,
   type LatLng,
+  type OsmFeature,
 } from "gps-plus-slam-osm";
 import {
   AFFORDANCE_RES,
@@ -64,6 +65,22 @@ const GEO_EVENT_BATCH = 10;
  * a port; see resolutions.ts.
  */
 const CLIMB_STEPS = 5;
+
+/**
+ * A feature's outlines, for drawing it without knowing what kind it is.
+ *
+ * ONE OUTLINE PER RELATION MEMBER rather than a merged ring: a multipolygon's
+ * members are separate boundaries, and concatenating them draws a line between
+ * two unrelated rings. A node becomes a single point, which Leaflet and the
+ * mesh both handle as a degenerate polyline.
+ */
+function outlinesOf(feature: OsmFeature): (readonly LatLng[])[] {
+  if (feature.type === "node") return [[feature.position]];
+  if (feature.type === "way") return [feature.geometry];
+  return feature.members
+    .map((member) => member.geometry)
+    .filter((geometry): geometry is readonly LatLng[] => geometry !== undefined);
+}
 
 /** A cells bounding box as [south, west, north, east]. */
 function boundsOfCell(cell: string): [number, number, number, number] {
@@ -107,6 +124,29 @@ export interface DemoSnapshot {
    * than being told.
    */
   readonly loadedTiles: readonly string[];
+  /**
+   * How many features `isBelowSurface` excluded from scoring and from the mesh.
+   *
+   * ALWAYS REPORTED, even when the outlines are not. The exclusion is invisible
+   * by construction — 13.3 % of corpus features on the shipped table — and the
+   * mirror bug is the one that does not announce itself: too eager a predicate
+   * deletes real walkable ground and nothing looks broken, there is simply less
+   * map. A number on the status line makes an absurd count noticeable without
+   * anyone switching the layer on.
+   */
+  readonly undergroundCount: number;
+  /**
+   * The excluded features' outlines, for the `underground` layer.
+   *
+   * Omitted unless that layer is on, for the same reason `cells` is (round 10,
+   * stage B): it is a diagnostic that is off by default, and the array would
+   * otherwise be copied across the worker boundary to be drawn by nobody.
+   *
+   * UNLIKE `cells`, SWITCHING IT ON NEEDS NO REFETCH — the features are already
+   * held by the index, so the seam `needsRefetchFor` exists for does not apply
+   * here. Worth stating rather than leaving the next reader to re-derive it.
+   */
+  readonly undergroundOutlines: readonly (readonly LatLng[])[];
   /**
    * How many cells are scored, whether or not `cells` carries them.
    *
@@ -231,7 +271,11 @@ export class DemoPipeline {
      * that cannot cross a structured clone, so it returns a finished event
      * rather than the field it walked. NPC navigation is designed the same way.
      */
-    options?: { readonly includeCells?: boolean },
+    options?: {
+      readonly includeCells?: boolean;
+      /** Whether the underground outlines travel. Defaults to false. */
+      readonly includeUnderground?: boolean;
+    },
   ): Promise<DemoSnapshot> {
     const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
     const missingTiles: string[] = [];
@@ -302,6 +346,7 @@ export class DemoPipeline {
     // heat scale -- two full copies of ~24 000 cells, in the round whose whole
     // subject is not copying them. Small beside the structured clone stage B
     // removes, and on the same hot path. Raised in review on #254.
+    const underground = this.index.belowSurfaceFeatures();
     const cells = [...scoresByCell.values()];
     const above = cellsAboveThreshold(
       { cells, unmappedTagCounts: {}, lookups: 0 },
@@ -328,6 +373,11 @@ export class DemoPipeline {
       threshold,
       cells: options?.includeCells === false ? [] : cells,
       cellCount: cells.length,
+      undergroundCount: underground.length,
+      undergroundOutlines:
+        options?.includeUnderground === true
+          ? underground.flatMap((feature) => outlinesOf(feature))
+          : [],
       heatMax,
       regions,
       missingTiles,

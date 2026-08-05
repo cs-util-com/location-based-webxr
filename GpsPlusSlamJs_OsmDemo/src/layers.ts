@@ -41,6 +41,7 @@ export const ALL_LAYERS = [
   "plates",
   "roads",
   "poi",
+  "underground",
 ] as const;
 // `terrainDebug` USED TO BE HERE and is now a ground MODE (W6, DEC-R5-4). It was
 // always the odd entry — it re-coloured the ground plane in place rather than
@@ -98,7 +99,9 @@ function setOf(enabled: Iterable<LayerKind>): LayerSet {
  * benefit rather than the reason.
  */
 export const DEFAULT_LAYERS: LayerSet = setOf(
-  ALL_LAYERS.filter((layer) => layer !== "plates" && layer !== "cells"),
+  ALL_LAYERS.filter(
+    (layer) => layer !== "plates" && layer !== "cells" && layer !== "underground",
+  ),
 );
 
 export function isLayerEnabled(layers: LayerSet, layer: LayerKind): boolean {

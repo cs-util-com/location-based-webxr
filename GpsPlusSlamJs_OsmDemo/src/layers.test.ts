@@ -41,6 +41,11 @@ describe("the layer set", () => {
       "plates",
       "roads",
       "poi",
+      // A DIAGNOSTIC, unlike everything above it: `underground` draws what the
+      // scorer REFUSED to look at, so a reader can judge whether
+      // `isBelowSurface` dropped the right 13 % of features. Everything else in
+      // this list is a thing in the world.
+      "underground",
       // `terrainDebug` USED TO BE HERE and is now a ground mode (W6, DEC-R5-4).
       // Its removal is asserted rather than merely absent, because "the list no
       // longer contains X" is the kind of change that a re-added entry would
@@ -57,13 +62,14 @@ describe("the layer set", () => {
     expect([...ALL_LAYERS]).not.toContain("terrainDebug");
   });
 
-  it("starts with every layer on EXCEPT plates and cells", () => {
+  it("starts with every layer on EXCEPT plates, cells and underground", () => {
     // AN EXPLICIT EXPECTED SET, not a loosened rule. The obvious edit when this
     // changed was to assert "at least one layer is on", which catches nothing —
     // naming both halves means an accidental flip in either direction fails,
     // including a new layer silently defaulting to off.
     //
-    // DEC-R7b-5 and DEC-R7b-6 reverse DEC-R4-4 for exactly two layers. Ground
+    // DEC-R7b-5 and DEC-R7b-6 reverse DEC-R4-4 for two layers, and the
+    // underground diagnostic makes a third. Ground
     // PLATES go off because the terrain relief now carries the ground on its
     // own; cells go off because the 2D map draws one Leaflet polygon per cell
     // and the final ring is ~2 989 of them.
@@ -86,7 +92,7 @@ describe("the layer set", () => {
     const off = ALL_LAYERS.filter(
       (layer) => !isLayerEnabled(DEFAULT_LAYERS, layer),
     );
-    expect([...off].sort()).toEqual(["cells", "plates"]);
+    expect([...off].sort()).toEqual(["cells", "plates", "underground"]);
     expect([...on].sort()).toEqual(
       ["areas", "buildings", "poi", "roads", "trees"].sort(),
     );

@@ -728,3 +728,79 @@ describe("the snapshot carries the heat max, so the cells need not travel", () =
     expect(without.regions.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER — the exclusion is invisible by construction.
+ *
+ * `isBelowSurface` drops 13.3 % of corpus features from scoring and from the
+ * mesh and says nothing. The count exists so an absurd number is noticeable
+ * without switching a layer on; the outlines exist so a human can judge WHICH
+ * features, which is the only way to catch the mirror bug — a predicate so eager
+ * it deletes real walkable ground, where nothing looks broken and there is
+ * simply less map.
+ */
+describe("the snapshot reports what was excluded as below-surface", () => {
+  const AT_UG = { lat: 50.9375, lng: 6.9603 };
+  const ring = (dLat: number) => [
+    { lat: AT_UG.lat + dLat, lng: AT_UG.lng },
+    { lat: AT_UG.lat + dLat, lng: AT_UG.lng + 0.001 },
+    { lat: AT_UG.lat + dLat + 0.001, lng: AT_UG.lng + 0.001 },
+    { lat: AT_UG.lat + dLat, lng: AT_UG.lng },
+  ];
+
+  const source: OsmDataSource = {
+    attribution: "© OpenStreetMap contributors",
+    sourceId: "fixture:underground",
+    fetchTile: (tile) =>
+      Promise.resolve({
+        tile,
+        // BOTH KINDS, or "reports the excluded ones" and "reports them all" are
+        // the same picture and neither assertion below can tell them apart.
+        features: [
+          { type: "way" as const, id: 1, geometry: ring(0), tags: { leisure: "park" } },
+          {
+            type: "way" as const,
+            id: 2,
+            geometry: ring(0.002),
+            tags: { leisure: "park", layer: "-1" },
+          },
+        ],
+        fetchedAt: 0,
+        sourceId: "fixture:underground",
+        schemaVersion: 1,
+        skipped: [],
+      }),
+  };
+
+  const table = parseRuleTable(
+    ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join("\n"),
+    { source: "test", fetchedAt: 0 },
+  );
+
+  it("always counts them, even with the layer off", () => {
+    return new DemoPipeline({ source, table })
+      .update(AT_UG, "walkable")
+      .then((snapshot) => {
+        expect(snapshot.undergroundCount).toBe(1);
+        // The outlines are the payload and stay behind unless asked for — the
+        // same rule as `cells`.
+        expect(snapshot.undergroundOutlines).toEqual([]);
+      });
+  });
+
+  it("sends the outlines when the layer asks for them", async () => {
+    const snapshot = await new DemoPipeline({ source, table }).update(
+      AT_UG,
+      "walkable",
+      undefined,
+      undefined,
+      { includeUnderground: true },
+    );
+
+    // ONE outline, for the ONE excluded way — not two, which is what a missing
+    // filter would give.
+    expect(snapshot.undergroundOutlines).toHaveLength(1);
+    expect(snapshot.undergroundOutlines[0]).toEqual(ring(0.002));
+    expect(snapshot.undergroundCount).toBe(1);
+  });
+});

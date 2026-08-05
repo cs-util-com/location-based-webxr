@@ -64,6 +64,10 @@ export function groundLift(layer: LayerKind): number {
     case "buildings":
     case "trees":
     case "poi":
+    // `underground` is BELOW the ground rather than on it, so it has no place
+    // on the lift ladder: it is drawn at the features' own depth, and lifting it
+    // towards the surface would defeat the one thing it exists to show.
+    case "underground":
       return 0;
   }
 }

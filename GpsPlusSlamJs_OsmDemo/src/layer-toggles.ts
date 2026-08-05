@@ -49,6 +49,11 @@ function groupOf(layer: LayerKind): LayerGroup {
     case "roads":
     case "poi":
       return "world";
+    // A DIAGNOSTIC, not a thing in the world: it draws what the scorer REFUSED
+    // to look at, so it belongs beside the other "why does it look like that"
+    // switches rather than among the buildings and trees.
+    case "underground":
+      return "diagnostics";
   }
 }
 
@@ -136,6 +141,8 @@ function labelFor(layer: LayerKind): string {
       return "roads";
     case "poi":
       return "POI";
+    case "underground":
+      return "underground";
   }
 }
 

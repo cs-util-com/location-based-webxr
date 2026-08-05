@@ -58,6 +58,8 @@ const snapshot = (category: string): DemoSnapshot => ({
   loadedTiles: ["871fa199affffff"],
   cellCount: 1,
   heatMax: 3,
+  undergroundCount: 0,
+  undergroundOutlines: [],
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 0 },
   // A FINAL snapshot by default: these tests are about failure handling and
   // ordering, not about widening, so the base should not look half-delivered.
