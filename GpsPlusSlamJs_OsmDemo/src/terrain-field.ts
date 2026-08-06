@@ -46,6 +46,7 @@ import {
 import {
   NEAR_FIELD_M,
   peakToTrough,
+  type EnuPoint,
   type HeightfieldData,
 } from "./heightfield.js";
 
@@ -73,6 +74,14 @@ interface SampleGridOptions {
   readonly extentM: number;
   /** Distance between output posts, metres. */
   readonly spacingM: number;
+  /**
+   * Where that square sits in the frame. Defaults to the frame origin.
+   *
+   * The window follows the USER while the frame stands still — see
+   * `terrain-window.ts`. Before the scene had a fixed anchor the two were the
+   * same point, which is why this could not exist and did not need to.
+   */
+  readonly centreEnu?: EnuPoint;
 }
 
 export interface TerrainField {
@@ -87,6 +96,21 @@ export interface TerrainField {
   sampleGrid(options: SampleGridOptions): HeightfieldData;
   /** Posts currently held. Exposed so the eviction bound is testable. */
   readonly postCount: number;
+}
+
+/**
+ * Whether a post counts as "around the user" for `nearReliefM`.
+ *
+ * AROUND THE WINDOW'S CENTRE (DEC-R11-10), which is where the user is. Measured
+ * around the frame origin instead, the status line's "relief around you" would
+ * describe somewhere they walked away from — and the number's whole job is to
+ * distinguish "this place is hilly" from "somewhere in view is".
+ */
+function isNearField(enu: EnuPoint, centreEnu: EnuPoint): boolean {
+  return (
+    Math.abs(enu.x - centreEnu.x) <= NEAR_FIELD_M &&
+    Math.abs(enu.y - centreEnu.y) <= NEAR_FIELD_M
+  );
 }
 
 /** Metres per Mercator pixel at a latitude — how wide one lattice step is. */
@@ -254,6 +278,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
 
   function sampleGrid(gridOptions: SampleGridOptions): HeightfieldData {
     const { frame, extentM, spacingM } = gridOptions;
+    const centreEnu = gridOptions.centreEnu ?? { x: 0, y: 0 };
     // `+1` because the posts include both edges: a 600 m span at 50 m spacing is
     // 13 posts, not 12. Off by one here tilts the whole surface.
     const side = Math.max(2, Math.round((extentM * 2) / spacingM) + 1);
@@ -266,18 +291,13 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     for (let row = 0; row < side; row++) {
       for (let col = 0; col < side; col++) {
         const enu = {
-          x: -extentM + (col / (side - 1)) * extentM * 2,
-          y: -extentM + (row / (side - 1)) * extentM * 2,
+          x: centreEnu.x - extentM + (col / (side - 1)) * extentM * 2,
+          y: centreEnu.y - extentM + (row / (side - 1)) * extentM * 2,
         };
         const height = heightAtPosition(frame.toLatLng(enu));
         if (height !== undefined) {
           values.push(height);
-          if (
-            Math.abs(enu.x) <= NEAR_FIELD_M &&
-            Math.abs(enu.y) <= NEAR_FIELD_M
-          ) {
-            near.push(height);
-          }
+          if (isNearField(enu, centreEnu)) near.push(height);
         }
         // NaN, NOT 0, and the difference is the whole gap-fill below. Zero is
         // finite, so `?? 0` sailed straight through the `!Number.isFinite`
@@ -294,6 +314,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
         heights: new Float32Array(0),
         side: 0,
         extentM,
+        centreEnu,
         datum: 0,
         hasData: false,
         missing: total,
@@ -313,9 +334,13 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       heights,
       side,
       extentM,
-      // The origin's height, subtracted on every read so the surface is relief
-      // rather than altitude — the datum then cancels exactly.
-      datum: heightAtPosition(frame.toLatLng({ x: 0, y: 0 })) ?? mean,
+      centreEnu,
+      // The height at the WINDOW'S CENTRE, subtracted on every read so the
+      // surface is relief rather than altitude — the datum then cancels exactly
+      // under the user. Taken at the frame origin instead, a user who has walked
+      // 40 m uphill stands 40 m above the scene's zero plane with the camera
+      // still framed at y ~ 10.
+      datum: heightAtPosition(frame.toLatLng(centreEnu)) ?? mean,
       hasData: true,
       missing: total - values.length,
       total,

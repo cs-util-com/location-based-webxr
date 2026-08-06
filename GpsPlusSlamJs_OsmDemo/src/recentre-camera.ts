@@ -1,17 +1,21 @@
 /**
- * Bringing the orbit target back to the scene origin, without rotating (W11).
+ * Moving the orbit pivot onto a point, without rotating (W11).
  *
- * THE DEFECT THIS FIXES (R4-12). The demo simulates walking by re-origining the
- * world: every refresh rebuilds the mesh in an ENU frame centred on the new
- * position, so the place the user clicked is always at the scene origin. Nothing
- * touches the camera, which is correct — a click must not spin the view.
+ * THE DEFECT THIS FIXES (R4-12). A click must bring the chosen place back to the
+ * middle of the 3D view, and must not spin it. `controls.target.set(0, 0, 0)`
+ * runs exactly once, in `BuildingView`'s constructor, and `MapControls` pans by
+ * moving the camera **and** its target together — so after any pan the target is
+ * at some `(dx, 0, dz)` and the chosen point renders `|d|` metres off-centre,
+ * potentially off screen. The demo reads as having ignored the click, and the
+ * further the user has explored the worse it gets.
  *
- * But `controls.target.set(0, 0, 0)` runs exactly once, in `BuildingView`'s
- * constructor, and `MapControls` pans by moving the camera **and** its target
- * together. So after any pan the target is at some `(dx, 0, dz)`, the new content
- * is still built at the origin, and the clicked point renders `|d|` metres
- * off-centre — potentially off screen. The demo reads as having ignored the
- * click, and the further the user has explored the worse it gets.
+ * **THE PIVOT IS THE USER, NOT THE SCENE ORIGIN.** Those were the same point
+ * while the demo simulated walking by re-origining the world — every refresh
+ * rebuilt the mesh in an ENU frame centred on the new position, so the clicked
+ * place always sat at the origin. `scene-anchor.ts` fixed the frame, and the two
+ * diverged: recentring on the origin drags the camera back to the session start
+ * on every step, steadily further away the more the user walks. Hence the `at`
+ * parameter, and hence the tests that pin it.
  *
  * WHY TRANSLATION-ONLY IS THE WHOLE POINT, AND WHY IT IS FREE. The requirement in
  * the notes is precise: _"man darf quasi nur ihre Translation ändern, sodass die

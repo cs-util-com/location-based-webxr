@@ -114,6 +114,29 @@ const CELL_EMISSIVE_INTENSITY = 0.5;
 export const FAR_PLANE_M = 2400;
 
 /**
+ * Where the ground plane sits, given the window the terrain was sampled in.
+ *
+ * ENU `(x, y)` becomes scene `(x, 0, -y)` — the same axis convention every other
+ * piece of scene geometry uses. `y` stays 0: the plane's own vertices carry the
+ * relief, and the datum is taken at the window's centre, so the surface is zero
+ * there by construction.
+ *
+ * **EXPORTED SO THE RELATIONSHIP IS TESTABLE.** `FAR_PLANE_M <= TERRAIN_EXTENT_M`
+ * only means "the ground reaches as far as the camera can see" while the plane
+ * is centred under the camera. That used to be true because both sat at the
+ * scene origin; since the frame was fixed it is true because the plane follows
+ * the sampled window and `recentreOn` puts the orbit target on the same point.
+ * A constant cannot notice if that stops holding — this function can, and
+ * `far-field.test.ts` asks it.
+ */
+export function groundPositionFor(centreEnu: {
+  readonly x: number;
+  readonly y: number;
+}): { x: number; y: number; z: number } {
+  return { x: centreEnu.x, y: 0, z: -centreEnu.y };
+}
+
+/**
  * Where the haze starts, metres.
  *
  * Two thirds of the way out, so the fade is gradual enough to read as distance
@@ -625,6 +648,16 @@ export class BuildingView {
   setTerrain(field: Heightfield | undefined): void {
     const started = performance.now();
     this.terrain = field;
+    // THE PLANE FOLLOWS THE WINDOW. The field is sampled around the USER while
+    // the ENU frame stays anchored to the scene, so a plane left at the origin
+    // would stop covering the ground under the user as soon as they walked
+    // `extentM` — and `surfaceHeight`'s per-axis clamp then extrudes the edge
+    // profile outward as stripes that look like terrain and are not (R2-9).
+    //
+    // Positioning it AT `centreEnu` is also what keeps the shader free of an
+    // origin-offset uniform: a plane-local vertex coordinate is then exactly
+    // grid-local, which is the space the height texture is indexed in.
+    this.moveGroundTo(field);
     this.uploadHeightTexture(field);
     const attribute = this.ground.geometry.getAttribute("position");
     const positions = attribute.array as Float32Array;
@@ -640,8 +673,18 @@ export class BuildingView {
       const planeY = flat[i + 1] ?? 0;
       // The plane's +y becomes the scene's -z under the -90° x rotation, and
       // `cell-mesh.ts` uses the same north convention.
+      //
+      // PLANE-LOCAL PLUS THE PLANE'S CENTRE, because `heightAt` is in the
+      // scene's frame while these vertices are grid-local. Feeding the local
+      // coordinates straight in silently desynchronises the plane from the
+      // field by exactly the walked distance.
       positions[i + 2] =
-        field === undefined || !onCpu ? 0 : field.heightAt({ x, y: planeY });
+        field === undefined || !onCpu
+          ? 0
+          : field.heightAt({
+              x: x + field.centreEnu.x,
+              y: planeY + field.centreEnu.y,
+            });
     }
     attribute.needsUpdate = true;
     this.ground.geometry.computeVertexNormals();
@@ -652,6 +695,19 @@ export class BuildingView {
     if (this.groundDebug) this.applyGroundRamp();
     this.lastTerrainMs = performance.now() - started;
     this.requestFrame();
+  }
+
+  /**
+   * Puts the ground plane where the field was sampled.
+   *
+   * A field that failed to load leaves the plane where it is rather than
+   * snapping it back to the origin. Moving a flat plane is invisible, and "the
+   * DEM is missing here" is not a reason to reposition the world.
+   */
+  private moveGroundTo(field: Heightfield | undefined): void {
+    if (field === undefined) return;
+    const at = groundPositionFor(field.centreEnu);
+    this.ground.position.set(at.x, at.y, at.z);
   }
 
   /**
@@ -851,12 +907,15 @@ export class BuildingView {
     const heights = new Float32Array(positions.length / 3);
     for (let i = 0; i < heights.length; i += 1) {
       const source = flat ?? positions;
+      // GRID-LOCAL VERTEX PLUS THE PLANE'S CENTRE — the same conversion
+      // `setTerrain` makes, and for the same reason: these coordinates are the
+      // plane's own, and `heightAt` speaks the scene's frame.
       heights[i] =
         field === undefined
           ? 0
           : field.heightAt({
-              x: source[i * 3] ?? 0,
-              y: source[i * 3 + 1] ?? 0,
+              x: (source[i * 3] ?? 0) + field.centreEnu.x,
+              y: (source[i * 3 + 1] ?? 0) + field.centreEnu.y,
             });
     }
     // WRITTEN INTO THE EXISTING ATTRIBUTE, NOT REPLACED WITH A NEW ONE. three
@@ -1345,8 +1404,11 @@ export class BuildingView {
    * diverge — and recentring on the origin now drags the camera back to the
    * session start on every step, steadily further away the more the user walks.
    *
-   * The position arrives in ENU FROM THE WORKER, because that is where the frame
-   * lives; a page-side copy of the frame is exactly what this round removed.
+   * The position arrives in ENU FROM THE PAGE, converted there rather than
+   * fetched: the user's position comes from the store and the anchor from
+   * `scene-anchor.ts`'s holder, both of which `main.ts` already has, so the
+   * conversion is a pure function of two local values. This was first scoped as
+   * a worker round-trip and did not need to be one.
    *
    * The camera is not rotated and the viewing distance is unchanged; see
    * `recentre-camera.ts` for why that is by construction rather than by care.

@@ -9,7 +9,7 @@ one.
 ## Public API
 
 - `FETCH_SLACK = 1.05` — how far past the sampled square the lattice is grown.
-- `TerrainWindow` — `{ frame, fetchCentre, fetchRadiusM }`.
+- `TerrainWindow` — `{ frame, sampleCentreEnu, fetchCentre, fetchRadiusM }`.
 - `terrainWindowFor({ frameOrigin, centre, extentM }) => TerrainWindow`. Throws
   `RangeError` on a non-finite input.
 
@@ -43,11 +43,11 @@ frames the subsystems then use.
   around the user while sampling around the anchor reads posts that were never
   fetched and mean-fills them: a flat plateau where real relief exists, reported
   nowhere.
-- **The sampled square is still symmetric about the frame origin**, which is why
-  `fetchCentre` is the anchor rather than the user. Threading the window's offset
-  through `HeightfieldData`, both terrain shaders and the ground plane is the
-  second half of round 5B; until it lands, the covered ground is the anchor's
-  rather than the user's.
+- **`sampleCentreEnu` is the user, in the frame's metres.** It threads through
+  `HeightfieldData`, the datum, the near-field measurement and the ground plane's
+  position — the whole of "the window follows the user while the coordinate
+  system does not". It is `frame.toEnu(centre)` rather than an independent
+  derivation, so it cannot drift from the frame the rest of the scene uses.
 - **`fetchRadiusM` is a SQUARE half-width, not a disc radius.** `ensureAround`
   builds a square lattice, and the grid reads a square — so treating the radius
   as a circumscribed circle over-builds by `sqrt(2)` per axis. That is measured,
@@ -70,6 +70,7 @@ const window = terrainWindowFor({
 await terrainField.ensureAround(window.fetchCentre, window.fetchRadiusM);
 const field = terrainField.sampleGrid({
   frame: window.frame,
+  centreEnu: window.sampleCentreEnu,
   extentM,
   spacingM,
 });
@@ -83,6 +84,9 @@ const field = terrainField.sampleGrid({
   maps a fixed landmark to a bit-identical ENU point.
 - **The counterweight** — a moved anchor _does_ move it, so "the frame never
   moves" cannot pass for an implementation that ignores its inputs.
+- **The window follows the user** while the frame does not — the counterweight
+  to the guard above, without which a window that never moved would satisfy "the
+  frame never moves" and quietly stop covering the ground under the user.
 - **Coverage** — every corner of the sampled square is inside the fetched
   lattice, asserted per axis because the lattice is a square.
 - **The slack** — `fetchRadiusM` is `extentM × FETCH_SLACK`, not a `sqrt(2)`

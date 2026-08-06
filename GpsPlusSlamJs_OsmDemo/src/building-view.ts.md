@@ -222,6 +222,24 @@ file owns the material swap and when the colours are refreshed.
   over the field's own range, so a new field is a new range; leaving the old
   colours would show the previous position's relief over this position's ground —
   the half-swapped scene this demo has twice had to engineer away.
+- **The ground plane FOLLOWS the sampled window, and that is what keeps the GLSL
+  offset-free.** `setTerrain` positions the plane at the field's `centreEnu`
+  (`groundPositionFor`, exported so `far-field.test.ts` can assert the
+  relationship rather than restate it). Two consequences, and both are the
+  reason it is done this way:
+  - **A plane-local vertex is exactly grid-local**, which is the space the
+    height texture is indexed in — so the vertex shader needs no origin-offset
+    uniform, and `terrain-texture.ts`'s CPU mirror needs no matching one. The
+    plan expected a `uOriginOffsetM` in three places at once; positioning the
+    plane removes the question instead of answering it three times.
+  - **`heightAt` still speaks the SCENE's frame**, so `setTerrain` and
+    `applyGroundRamp` add `centreEnu` back before querying it. Feeding
+    plane-local coordinates straight in is precisely the desynchronisation that
+    made this worth threading through, and it is silent: each surface stays
+    internally smooth while the two part company by the walked distance.
+  - A field that failed to load leaves the plane where it is. Moving a flat
+    plane is invisible, and "the DEM is missing here" is not a reason to
+    reposition the world.
 - **It is a GROUND MODE, not a layer (W6, DEC-R5-4).** It used to be
   `terrainDebug` in `ALL_LAYERS`, applied from the layer set in `main.ts`, with a
   bespoke `layer-order.ts` entry returning 0 and a bespoke "greyed out under No

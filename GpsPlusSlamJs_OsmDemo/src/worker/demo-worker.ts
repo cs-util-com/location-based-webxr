@@ -615,6 +615,17 @@ async function handle<K extends WorkerCallKind>(
       // Skipped when the held field already belongs here, which is every
       // category change and every widening ring: those never move the user, so
       // there is nothing to wait for and waiting would give back what W3 won.
+      // KEYED ON THE POSITION, NOT ON THE FRAME ORIGIN, and that is safe only
+      // because of an invariant held on the page: the anchor advances ONLY in
+      // the position subscriber, which drives this call and the terrain load
+      // from the same value in the same tick (`scene-anchor.ts`'s holder). So
+      // the held field cannot be in a different frame than this build without
+      // the position having changed too, which this check already catches.
+      //
+      // If the anchor ever gains a second mover — an AR session adopting the
+      // framework's `zero`, say — this has to key on the frame origin as well,
+      // or a mesh will be built in one frame on ground sampled in another. That
+      // is the exact defect round 5B removed, and it is silent.
       if (needsTerrainFor(terrainCentre, position)) {
         await terrainGate.waitFor(position, signal);
       }
@@ -754,6 +765,7 @@ async function loadTerrain(
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const field = terrainField.sampleGrid({
     frame: window.frame,
+    centreEnu: window.sampleCentreEnu,
     extentM,
     spacingM,
   });

@@ -10,7 +10,7 @@ pixel grid, fetched once each and reused as the user moves.
 - `createTerrainField({ provider, zoom?, maxPosts? }): TerrainField`
   - `ensureAround(centre, radiusM)` — fetches only the **missing** posts, in one
     batch. Never rejects.
-  - `sampleGrid({ frame, extentM, spacingM })` → `HeightfieldData` — a bounded,
+  - `sampleGrid({ frame, extentM, spacingM, centreEnu? })` → `HeightfieldData` — a bounded,
     fixed-shape grid rendered from the lattice, for crossing the worker boundary.
   - `postCount` — held posts, so the eviction bound is testable.
 

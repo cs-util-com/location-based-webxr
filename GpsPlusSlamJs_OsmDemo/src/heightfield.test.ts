@@ -28,6 +28,7 @@ import {
   buildHeightfield,
   buildHeightfieldData,
   createHeightfieldCache,
+  heightfieldFrom,
   NEAR_FIELD_M,
 } from "./heightfield.js";
 
@@ -300,6 +301,7 @@ describe("createHeightfieldCache — one sampler per terrain (PR #239)", () => {
       heights: new Float32Array([0, 1, 2, 3]),
       side: 2,
       extentM: 100,
+      centreEnu: { x: 0, y: 0 },
       datum,
       hasData: true,
       missing: 0,
@@ -335,5 +337,89 @@ describe("createHeightfieldCache — one sampler per terrain (PR #239)", () => {
     // callers can no longer tell apart from real flat ground.
     const cache = createHeightfieldCache();
     expect(cache(undefined)).toBeUndefined();
+  });
+});
+
+describe("buildHeightfieldData — a window that is NOT at the frame origin", () => {
+  /**
+   * WHY THESE TESTS MATTER. Once the scene has a fixed anchor, the sampled
+   * window has to follow the user while the coordinates stay in the scene's
+   * frame — otherwise the ground the user is standing on is only covered until
+   * they walk `extentM` from where the session started. The window's centre is
+   * therefore an input, and every piece of grid arithmetic has to respect it:
+   * where the posts are, where the datum is taken, which posts count as "near",
+   * and how an ENU query maps to a grid index.
+   *
+   * Getting any one of them wrong is silent. A datum taken at the wrong place
+   * offsets the entire surface; an ENU-to-index mapping that ignores the centre
+   * reads the wrong post and draws plausible terrain from the wrong place.
+   */
+  const CENTRE = { x: 1_000, y: -600 };
+  /** East-west ramp: 1 m of height per 1 m of easting, exactly. */
+  const rampEast = (position: LatLng) => FRAME.toEnu(position).x;
+
+  it("samples the square around centreEnu, not around the frame origin", async () => {
+    const data = await buildHeightfieldData(providerOf(rampEast), {
+      ...OPTIONS,
+      centreEnu: CENTRE,
+    });
+    const field = heightfieldFrom(data);
+
+    // The ramp is exact, so the relief between the window's own edges is the
+    // window's width — and it is only that if the posts were placed around
+    // CENTRE. A window still at the origin would cover the same span but
+    // `heightAt` at CENTRE.x would then be reading a clamped edge.
+    expect(field.heightAt(CENTRE)).toBeCloseTo(0, 6);
+    expect(field.heightAt({ x: CENTRE.x + 200, y: CENTRE.y })).toBeCloseTo(
+      200,
+      3,
+    );
+    expect(field.heightAt({ x: CENTRE.x - 200, y: CENTRE.y })).toBeCloseTo(
+      -200,
+      3,
+    );
+  });
+
+  it("takes the datum at centreEnu, so the user stands on y = 0", async () => {
+    // The datum is what makes the surface RELIEF rather than altitude. Taken at
+    // the frame origin while the window sits 1 km east, a user who has walked
+    // there stands at the height difference between the two — the ground
+    // silently dropping away beneath them the further they go.
+    const data = await buildHeightfieldData(providerOf(rampEast), {
+      ...OPTIONS,
+      centreEnu: CENTRE,
+    });
+
+    expect(data.centreEnu).toEqual(CENTRE);
+    expect(heightfieldFrom(data).heightAt(CENTRE)).toBeCloseTo(0, 6);
+  });
+
+  it("measures nearReliefM around centreEnu, so 'relief around you' stays true", async () => {
+    // DEC-R11-10. The status line says "around you"; measured around the scene
+    // anchor it would describe somewhere the user may have left long ago.
+    //
+    // The ramp makes this checkable in closed form: near relief is the ramp
+    // across the near field, whole-field relief the ramp across the extent.
+    const data = await buildHeightfieldData(providerOf(rampEast), {
+      frame: FRAME,
+      extentM: 1_000,
+      spacingM: 100,
+      centreEnu: CENTRE,
+    });
+
+    expect(data.reliefM).toBeCloseTo(2_000, 0);
+    expect(data.nearReliefM).toBeCloseTo(NEAR_FIELD_M * 2, 0);
+    // And strictly less than the whole field, which is the point of having both.
+    expect(data.nearReliefM).toBeLessThan(data.reliefM);
+  });
+
+  it("defaults to the frame origin when no centre is given", async () => {
+    // Every existing caller and test omits it, and the pre-5B behaviour is a
+    // window centred on the frame origin. The default has to BE that, or this
+    // change becomes a rewrite of every call site rather than an extension.
+    const data = await buildHeightfieldData(providerOf(rampEast), OPTIONS);
+
+    expect(data.centreEnu).toEqual({ x: 0, y: 0 });
+    expect(heightfieldFrom(data).heightAt({ x: 0, y: 0 })).toBeCloseTo(0, 6);
   });
 });

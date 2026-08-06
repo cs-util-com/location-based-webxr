@@ -16,6 +16,22 @@ None. Entry point only, loaded by `index.html`.
   failure kinds), `osm-store.ts` (shared state) and `heat-colours.ts`, all pure
   and tested. When the demo misbehaves, the question should be answerable
   without reading this file.
+- **The scene anchor is advanced ONCE per position change, at the top of the
+  position subscriber, before anything reads it.** Three consumers of the frame
+  hang off that subscriber — the camera pivot, the terrain load and the refresh —
+  and the refresh runs last, so while it owned the decision the other two used
+  the OUTGOING anchor whenever it moved: after a Cologne→Tokyo pick the camera
+  pivoted ~9 000 km from the scene it was looking at. `createAnchorHolder` makes
+  it one value everything reads; see `scene-anchor.ts.md`.
+- **`#scene` carries `data-frame-origin` and `data-ground-centre` for the e2e.**
+  "The scene does not jump" has no other machine-readable definition here: a
+  canvas diff cannot supply one, because the user moved so the picture MUST
+  change, and an identical-pixels assertion would also pass for a scene that had
+  stopped drawing. The frame origin must be unchanged across a step; the ground
+  centre must follow the user, which is the counterweight that stops "nothing
+  moved" passing for "nothing is sampled where you are". `data-*` rather than a
+  `window` global, matching `data-state` on the locate button and
+  `data-collapsed` on the header.
 - **The views are subscribers, not callees.** Since the round-1 store migration
   (2026-07-29, DEC-4) nothing here decides who draws first: `main.ts` dispatches
   intent, and each view redraws when the state it reads changes. It still owns

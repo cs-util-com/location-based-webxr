@@ -34,6 +34,7 @@ function field(
   side: number,
   datum = 53,
   shape = (col: number, row: number) => col + row * 2,
+  centreEnu = { x: 0, y: 0 },
 ): HeightfieldData {
   const heights = new Float32Array(side * side);
   for (let row = 0; row < side; row += 1) {
@@ -45,6 +46,7 @@ function field(
     heights,
     side,
     extentM: 100,
+    centreEnu,
     datum,
     hasData: true,
     missing: 0,
@@ -53,6 +55,15 @@ function field(
     nearReliefM: 0,
   };
 }
+
+/**
+ * A window that has walked away from the frame origin.
+ *
+ * Deliberately NOT a round multiple of the post spacing (200 m / 8 posts = 25 m
+ * here), so an implementation that quietly rounded the offset to whole posts
+ * would still be caught.
+ */
+const WALKED = { x: 137, y: -412 };
 
 describe("terrainTextureFrom", () => {
   it("stores DATUM-RELATIVE heights, not the absolute metres it is given", () => {
@@ -93,6 +104,31 @@ describe("terrainTextureFrom", () => {
 });
 
 describe("sampleTerrainTexture — agrees with heightAt", () => {
+  /**
+   * THE TEXTURE IS GRID-LOCAL; `heightAt` IS IN THE SCENE'S FRAME.
+   *
+   * That is the one coordinate distinction in this file, and it is deliberate:
+   * the ground plane is POSITIONED at the field's `centreEnu`, so a plane-local
+   * vertex coordinate — which is what the vertex shader reads as `position.xy`
+   * — is already grid-local. Keeping the texture in that space is what lets the
+   * GLSL stay free of an origin-offset uniform: there is nothing left to offset.
+   *
+   * So a comparison against `heightAt` has to add the window's centre back, and
+   * this helper is the single place that says so — it returns both readings
+   * rather than asserting, so the assertion stays visible at each call site.
+   */
+  const bothAt = (
+    data: HeightfieldData,
+    texture: NonNullable<ReturnType<typeof terrainTextureFrom>>,
+    local: { x: number; y: number },
+  ) => ({
+    fromTexture: sampleTerrainTexture(texture, local.x, local.y),
+    fromSampler: heightfieldFrom(data).heightAt({
+      x: local.x + data.centreEnu.x,
+      y: local.y + data.centreEnu.y,
+    }),
+  });
+
   it("matches heightAt across the field, which is the whole contract", () => {
     // THE ASSERTION THE GPU PATH RESTS ON. Both displacement paths ship, so the
     // same ground has to come out of both; if they disagree, toggling the mode
@@ -100,14 +136,31 @@ describe("sampleTerrainTexture — agrees with heightAt", () => {
     const data = field(9);
     const texture = terrainTextureFrom(data);
     if (texture === undefined) throw new Error("no texture");
-    const sampler = heightfieldFrom(data);
 
     for (let x = -100; x <= 100; x += 7) {
       for (let y = -100; y <= 100; y += 7) {
-        expect(sampleTerrainTexture(texture, x, y)).toBeCloseTo(
-          sampler.heightAt({ x, y }),
-          5,
-        );
+        const { fromTexture, fromSampler } = bothAt(data, texture, { x, y });
+        expect(fromTexture).toBeCloseTo(fromSampler, 5);
+      }
+    }
+  });
+
+  it("still matches once the window has WALKED away from the frame origin", () => {
+    // WHY THIS TEST MATTERS. This is the CPU/GPU agreement that round 5B could
+    // have broken silently. `heightAt` now subtracts the window's centre before
+    // indexing the grid; the texture does not, because the plane carries that
+    // offset in its transform. Get the split wrong in either direction and the
+    // two paths disagree by the walked distance — the GPU ground sliding under
+    // buildings placed by the CPU sampler, which is exactly the class of defect
+    // DEC-R2-21 rejected `geo-three` for.
+    const data = field(9, 53, (col, row) => col + row * 2, WALKED);
+    const texture = terrainTextureFrom(data);
+    if (texture === undefined) throw new Error("no texture");
+
+    for (let x = -100; x <= 100; x += 7) {
+      for (let y = -100; y <= 100; y += 7) {
+        const { fromTexture, fromSampler } = bothAt(data, texture, { x, y });
+        expect(fromTexture).toBeCloseTo(fromSampler, 5);
       }
     }
   });
@@ -118,14 +171,14 @@ describe("sampleTerrainTexture — agrees with heightAt", () => {
     const data = field(5);
     const texture = terrainTextureFrom(data);
     if (texture === undefined) throw new Error("no texture");
-    const sampler = heightfieldFrom(data);
 
     for (let i = 0; i < 5; i += 1) {
       const v = -100 + (i / 4) * 200;
-      expect(sampleTerrainTexture(texture, v, v)).toBeCloseTo(
-        sampler.heightAt({ x: v, y: v }),
-        5,
-      );
+      const { fromTexture, fromSampler } = bothAt(data, texture, {
+        x: v,
+        y: v,
+      });
+      expect(fromTexture).toBeCloseTo(fromSampler, 5);
     }
   });
 

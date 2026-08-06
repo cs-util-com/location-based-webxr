@@ -75,20 +75,54 @@ describe("terrainWindowFor", () => {
       extentM: EXTENT_M,
     });
 
-    // Expressed as an offset FROM THE FETCH CENTRE, measured in the window's own
-    // frame, so the assertion keeps its meaning once the sampled square starts
-    // following the user rather than sitting on the anchor.
+    // The sampled square's real corners, against the fetch centre, both
+    // measured in the window's own frame — so this stays an assertion about the
+    // two centres agreeing rather than about either one's value.
     const fetchCentreEnu = window.frame.toEnu(window.fetchCentre);
-    for (const x of [-EXTENT_M, EXTENT_M]) {
-      for (const y of [-EXTENT_M, EXTENT_M]) {
-        expect(Math.abs(x - fetchCentreEnu.x)).toBeLessThanOrEqual(
+    for (const dx of [-EXTENT_M, EXTENT_M]) {
+      for (const dy of [-EXTENT_M, EXTENT_M]) {
+        const corner = {
+          x: window.sampleCentreEnu.x + dx,
+          y: window.sampleCentreEnu.y + dy,
+        };
+        expect(Math.abs(corner.x - fetchCentreEnu.x)).toBeLessThanOrEqual(
           window.fetchRadiusM,
         );
-        expect(Math.abs(y - fetchCentreEnu.y)).toBeLessThanOrEqual(
+        expect(Math.abs(corner.y - fetchCentreEnu.y)).toBeLessThanOrEqual(
           window.fetchRadiusM,
         );
       }
     }
+  });
+
+  it("moves the sampled window to the USER while the frame stays put", () => {
+    // WHY THIS TEST MATTERS. This is the counterweight to "the frame never
+    // moves": a window that also never moved would satisfy that invariant and
+    // stop covering the ground the user stands on as soon as they walked
+    // `extentM` from where the session started — at which point `surfaceHeight`
+    // clamps, and its per-axis clamp extrudes the edge profile outward as
+    // stripes that look like terrain and are not (finding R2-9).
+    const here = terrainWindowFor({
+      frameOrigin: COLOGNE,
+      centre: COLOGNE,
+      extentM: EXTENT_M,
+    });
+    const stepped = terrainWindowFor({
+      frameOrigin: COLOGNE,
+      centre: A_STEP_AWAY,
+      extentM: EXTENT_M,
+    });
+
+    expect(here.sampleCentreEnu.x).toBeCloseTo(0, 9);
+    expect(here.sampleCentreEnu.y).toBeCloseTo(0, 9);
+    // ~110 m north and ~70 m east, expressed in the SAME frame both times.
+    expect(stepped.sampleCentreEnu.y).toBeGreaterThan(100);
+    expect(stepped.sampleCentreEnu.x).toBeGreaterThan(50);
+    // Exactly where the frame says the user is — not an independent derivation
+    // that could drift from the one the rest of the scene uses.
+    expect(stepped.sampleCentreEnu).toStrictEqual(
+      stepped.frame.toEnu(A_STEP_AWAY),
+    );
   });
 
   it("keeps the fetch radius proportional to the extent", () => {

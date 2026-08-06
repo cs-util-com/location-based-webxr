@@ -58,6 +58,14 @@ export interface TerrainWindow {
    * rather than approximately.
    */
   readonly frame: EnuFrame;
+  /**
+   * Where the sampled square sits IN {@link frame} — the user, in scene metres.
+   *
+   * This is the value that threads through `HeightfieldData`, the ground plane
+   * and the datum. It is the whole of "the window follows the user while the
+   * coordinate system does not".
+   */
+  readonly sampleCentreEnu: { readonly x: number; readonly y: number };
   /** What `ensureAround` grows the post lattice around. */
   readonly fetchCentre: LatLng;
   /** Half-width of that lattice, metres. Square, not a disc — see the slack. */
@@ -68,15 +76,10 @@ export interface TerrainWindowOptions {
   /** Where the scene's ENU frame is anchored — `scene-anchor.ts` decides it. */
   readonly frameOrigin: LatLng;
   /**
-   * Where the user is.
+   * Where the user is — the centre of the sampled square, and of the fetch.
    *
    * Carried separately from `frameOrigin` because the window follows the user
-   * while the frame does not. It does not move the sampled square yet: the
-   * square is still symmetric about the frame origin, which is why the fetch
-   * centre is the anchor rather than the user. Threading the offset through
-   * `HeightfieldData` and both terrain shaders is the second half of this work,
-   * and until it lands the covered ground is the anchor's rather than the
-   * user's.
+   * while the frame does not.
    */
   readonly centre: LatLng;
   /** Half-width of the sampled square, metres. */
@@ -102,14 +105,16 @@ export function terrainWindowFor(options: TerrainWindowOptions): TerrainWindow {
     );
   }
 
+  const frame = enuFrameAt(frameOrigin);
   return {
-    frame: enuFrameAt(frameOrigin),
-    // THE ANCHOR, NOT THE USER, and deliberately so while the sampled square is
-    // still symmetric about the frame origin. Fetching around the user and
-    // sampling around the anchor would read posts that were never fetched and
-    // mean-fill them — a flat plateau where real relief exists, reported
-    // nowhere. The two move together or not at all.
-    fetchCentre: frameOrigin,
+    frame,
+    // BOTH DERIVED FROM `centre`, and that is the invariant rather than a
+    // coincidence: fetching around one point while sampling around another
+    // reads posts that were never fetched and mean-fills them — a flat plateau
+    // where real relief exists, reported nowhere. They move together or not at
+    // all, and `terrain-window.test.ts` pins the containment.
+    sampleCentreEnu: frame.toEnu(centre),
+    fetchCentre: centre,
     fetchRadiusM: extentM * FETCH_SLACK,
   };
 }

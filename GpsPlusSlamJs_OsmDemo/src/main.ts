@@ -571,6 +571,46 @@ async function main(): Promise<void> {
   // own copy because the mesh build needs it — one owner per side, and the same
   // numbers on both, so the surface the buildings stand on cannot disagree with
   // the surface the ground plane draws.
+  /**
+   * Publishes the scene's frame state onto `#scene`, for the e2e to read.
+   *
+   * WHY THIS EXISTS. "The scene does not jump" needs a MACHINE-READABLE
+   * definition, and the obvious ones do not work: a screenshot diff also passes
+   * for a scene that renders nothing, and comparing full canvases across a
+   * position change is wrong by construction — the user moved, so the picture
+   * must change. What must NOT change is the frame those pixels are expressed
+   * in, and that is not otherwise observable from outside.
+   *
+   * Two values, because they answer opposite halves of the same question:
+   *
+   * - `data-frame-origin` must be UNCHANGED across a step. Every published
+   *   vertex is expressed in this frame, so if it holds, nothing moved
+   *   underneath the user.
+   * - `data-ground-centre` must FOLLOW the user. Without this counterweight
+   *   "the frame never moves" would also pass for a scene that stopped
+   *   sampling the ground the user is standing on.
+   *
+   * Attributes rather than a `window` global: this app already uses `data-*` to
+   * expose state the e2e asserts on (`data-state` on the locate button,
+   * `data-collapsed` on the header), and an attribute cannot be read before it
+   * is written by mistake.
+   */
+  const publishFrameState = (
+    origin: { lat: number; lng: number },
+    centreEnu: { x: number; y: number } | undefined,
+  ): void => {
+    const scene = document.querySelector("#scene");
+    if (!(scene instanceof HTMLElement)) return;
+    scene.dataset["frameOrigin"] =
+      `${origin.lat.toFixed(6)},${origin.lng.toFixed(6)}`;
+    // Whole metres: the assertion is about hundreds of metres of drift, and a
+    // full-precision float would make the attribute churn on every repaint.
+    scene.dataset["groundCentre"] =
+      centreEnu === undefined
+        ? "none"
+        : `${Math.round(centreEnu.x)},${Math.round(centreEnu.y)}`;
+  };
+
   const loadTerrain = createTerrainCycle({
     worker,
     extentM: TERRAIN_EXTENT_M,
@@ -593,6 +633,7 @@ async function main(): Promise<void> {
       mapView.setTerrainAttribution(
         terrain === undefined ? undefined : TERRARIUM_ATTRIBUTION,
       );
+      publishFrameState(anchors.origin, terrain?.centreEnu);
     },
   });
 

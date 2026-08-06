@@ -26,12 +26,32 @@
 
 import type { ElevationProvider, EnuFrame, LatLng } from "gps-plus-slam-osm";
 
+/** A point in the frame's ENU metres. Structural, so nothing imports three. */
+export interface EnuPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** The window centred on the frame origin — the shape before it could move. */
+const AT_ORIGIN: EnuPoint = { x: 0, y: 0 };
+
 export interface HeightfieldOptions {
   readonly frame: EnuFrame;
-  /** Half-width in metres: the field covers `[-extentM, +extentM]` on both axes. */
+  /**
+   * Half-width in metres: the field covers `centreEnu ± extentM` on both axes.
+   */
   readonly extentM: number;
   /** Distance between posts, metres. Match the DEM's own resolution. */
   readonly spacingM: number;
+  /**
+   * Where the sampled square sits IN THE FRAME. Defaults to the origin.
+   *
+   * The window follows the user; the frame does not. Before the scene had a
+   * fixed anchor these were the same point and this could not exist — which is
+   * exactly why the ground stopped covering the user as soon as the anchor
+   * stood still.
+   */
+  readonly centreEnu?: EnuPoint;
   readonly signal?: AbortSignal;
 }
 
@@ -56,10 +76,25 @@ export interface HeightfieldData {
   /** Half-width of the sampled square, metres. */
   readonly extentM: number;
   /**
-   * The origin's height, subtracted from every read.
+   * Where that square sits in the frame — the field covers `centreEnu ±
+   * extentM`.
+   *
+   * CARRIED WITH THE DATA, not re-derived by the reader. `heightAt` takes ENU
+   * in the scene's frame, so it needs the window's offset to find the right
+   * post; a consumer that assumed `{0, 0}` would read plausible terrain from
+   * the wrong place, which is a silent failure rather than a visible one.
+   */
+  readonly centreEnu: EnuPoint;
+  /**
+   * The height at `centreEnu`, subtracted from every read.
    *
    * Kept rather than pre-subtracted from `heights` so the datum stays visible
    * and the arithmetic is identical on both sides of the boundary.
+   *
+   * AT THE WINDOW'S CENTRE, NOT THE FRAME ORIGIN. The datum is what makes the
+   * surface relief rather than altitude, and the user stands at the window's
+   * centre — taken at a frame origin they walked away from, the ground would
+   * silently sink or rise beneath them by the height difference between the two.
    */
   readonly datum: number;
   /** False when nothing usable arrived — `heightAt` is then flat zero. */
@@ -78,7 +113,7 @@ export interface HeightfieldData {
    */
   readonly reliefM: number;
   /**
-   * Relief within {@link NEAR_FIELD_M} of the origin, metres.
+   * Relief within {@link NEAR_FIELD_M} of {@link centreEnu}, metres.
    *
    * REPORTED SEPARATELY BECAUSE THE FIELD GREW (DEC-R2-22). Over a 2.8 km square
    * `reliefM` can be tens of metres while the ground under the user is flat, so on
@@ -141,11 +176,16 @@ export interface Heightfield extends HeightfieldData {
 }
 
 /** What a failed or empty load produces: flat, and honest about it. */
-function flat(total: number, extentM: number): HeightfieldData {
+function flat(
+  total: number,
+  extentM: number,
+  centreEnu: EnuPoint,
+): HeightfieldData {
   return {
     heights: new Float32Array(0),
     side: 0,
     extentM,
+    centreEnu,
     datum: 0,
     hasData: false,
     missing: total,
@@ -168,9 +208,19 @@ export function heightfieldFrom(data: HeightfieldData): Heightfield {
   }
   return {
     ...data,
+    // THE QUERY IS IN THE SCENE'S FRAME; the grid is indexed from the window's
+    // centre. Subtracting here rather than at every call site is what keeps
+    // `heightAt` a single contract — buildings, trees, POI markers, the ground
+    // plane and the affordance grid all pass plain ENU and none of them has to
+    // know where the window happens to be sitting.
     heightAt: (point) =>
-      surfaceHeight(data.heights, data.side, data.extentM, point.x, point.y) -
-      data.datum,
+      surfaceHeight(
+        data.heights,
+        data.side,
+        data.extentM,
+        point.x - data.centreEnu.x,
+        point.y - data.centreEnu.y,
+      ) - data.datum,
   };
 }
 
@@ -214,20 +264,22 @@ export async function buildHeightfieldData(
   options: HeightfieldOptions,
 ): Promise<HeightfieldData> {
   const { frame, extentM, spacingM } = options;
+  const centreEnu = options.centreEnu ?? AT_ORIGIN;
   // `+1` because the posts include both edges: a 600 m span at 50 m spacing is
   // 13 posts, not 12. Off by one here tilts the whole surface.
   const side = Math.max(2, Math.round((extentM * 2) / spacingM) + 1);
   const total = side * side;
 
+  /** Grid index to ENU, stated ONCE — the near-field pass below reuses it. */
+  const enuAt = (col: number, row: number): EnuPoint => ({
+    x: centreEnu.x - extentM + (col / (side - 1)) * extentM * 2,
+    y: centreEnu.y - extentM + (row / (side - 1)) * extentM * 2,
+  });
+
   const positions: LatLng[] = [];
   for (let row = 0; row < side; row++) {
     for (let col = 0; col < side; col++) {
-      positions.push(
-        frame.toLatLng({
-          x: -extentM + (col / (side - 1)) * extentM * 2,
-          y: -extentM + (row / (side - 1)) * extentM * 2,
-        }),
-      );
+      positions.push(frame.toLatLng(enuAt(col, row)));
     }
   }
 
@@ -238,13 +290,13 @@ export async function buildHeightfieldData(
     // of requests for one view.
     raw = await provider.elevationAt(positions, options.signal);
   } catch {
-    return flat(total, extentM);
+    return flat(total, extentM, centreEnu);
   }
 
   const known = raw.filter(
     (v): v is number => v !== undefined && Number.isFinite(v),
   );
-  if (known.length === 0) return flat(total, extentM);
+  if (known.length === 0) return flat(total, extentM, centreEnu);
 
   // Missing posts take the mean of what did arrive. Not zero — see the module
   // header — and not a neighbour scan either: at this grid size the mean keeps
@@ -259,11 +311,14 @@ export async function buildHeightfieldData(
     const value = raw[i];
     heights[i] = value === undefined || !Number.isFinite(value) ? mean : value;
     if (value === undefined || !Number.isFinite(value)) continue;
-    const col = i % side;
-    const row = Math.floor(i / side);
-    const east = -extentM + (col / (side - 1)) * extentM * 2;
-    const north = -extentM + (row / (side - 1)) * extentM * 2;
-    if (Math.abs(east) <= NEAR_FIELD_M && Math.abs(north) <= NEAR_FIELD_M) {
+    const enu = enuAt(i % side, Math.floor(i / side));
+    // AROUND THE WINDOW'S CENTRE (DEC-R11-10), which is where the user is —
+    // the status line says "relief around you" and measuring it around a scene
+    // anchor they walked away from makes that sentence false.
+    if (
+      Math.abs(enu.x - centreEnu.x) <= NEAR_FIELD_M &&
+      Math.abs(enu.y - centreEnu.y) <= NEAR_FIELD_M
+    ) {
       near.push(value);
     }
   }
@@ -272,9 +327,11 @@ export async function buildHeightfieldData(
     heights,
     side,
     extentM,
-    // The origin's height, subtracted from every read so the surface is relief
-    // rather than altitude. Sampled through the same bilinear path as everything
-    // else, so it is exactly what an undatumed `heightAt({x: 0, y: 0})` returns.
+    centreEnu,
+    // The height at the WINDOW'S CENTRE, subtracted from every read so the
+    // surface is relief rather than altitude. Sampled through the same bilinear
+    // path as everything else, so it is exactly what an undatumed
+    // `heightAt(centreEnu)` returns. Grid-local, hence `(0, 0)`.
     datum: surfaceHeight(heights, side, extentM, 0, 0),
     hasData: true,
     missing: total - known.length,

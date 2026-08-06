@@ -33,7 +33,11 @@ import {
 
 /** A field with deliberate TWIST, which is the only thing that separates the two
  * interpolations: a plane or a pure ramp is bilinear and barycentric alike. */
-function twistedField(side: number, extentM: number): HeightfieldData {
+function twistedField(
+  side: number,
+  extentM: number,
+  centreEnu = { x: 0, y: 0 },
+): HeightfieldData {
   const heights = new Float32Array(side * side);
   for (let row = 0; row < side; row++) {
     for (let col = 0; col < side; col++) {
@@ -48,6 +52,7 @@ function twistedField(side: number, extentM: number): HeightfieldData {
     heights,
     side,
     extentM,
+    centreEnu,
     datum: 0,
     hasData: true,
     missing: 0,
@@ -80,11 +85,26 @@ function drawnHeightAt(
   const index = geometry.getIndex();
   if (index === null) throw new Error("PlaneGeometry has no index buffer");
 
-  /** Plane-local (x, y) and the height the view would displace it by. */
+  /**
+   * Plane-local (x, y) and the height the view would displace it by.
+   *
+   * THE PLANE'S CENTRE IS ADDED BACK, exactly as `BuildingView.setTerrain`
+   * does: the plane is positioned AT the field's `centreEnu`, so a plane-local
+   * vertex is grid-local, while `heightAt` takes ENU in the scene's frame.
+   * Feeding plane-local coordinates straight in is precisely the
+   * desynchronisation that made this offset worth threading through.
+   */
   const vertex = (i: number): { x: number; y: number; h: number } => {
     const vx = position.getX(i);
     const vy = position.getY(i);
-    return { x: vx, y: vy, h: field.heightAt({ x: vx, y: vy }) };
+    return {
+      x: vx,
+      y: vy,
+      h: field.heightAt({
+        x: vx + field.centreEnu.x,
+        y: vy + field.centreEnu.y,
+      }),
+    };
   };
 
   for (let t = 0; t < index.count; t += 3) {
@@ -108,23 +128,44 @@ describe("heightAt reads the same surface the ground plane draws", () => {
   const SIDE = 6;
   const EXTENT = 50;
   const SEGMENTS = SIDE - 1;
+  /**
+   * Both window placements, because the offset must not change the surface.
+   *
+   * The walked centre is deliberately not a whole number of posts (the step here
+   * is 20 m), so an implementation that rounded the offset to the lattice would
+   * still be caught.
+   */
+  const WINDOWS = [
+    { name: "at the frame origin", centreEnu: { x: 0, y: 0 } },
+    { name: "after the user has walked away", centreEnu: { x: 137, y: -412 } },
+  ];
 
-  it("agrees with the drawn triangle everywhere, not only at the posts", () => {
-    // THE PROPERTY. Sampled off the posts, a bilinear read differs from the drawn
-    // surface by the quad's twist term — which is what sank the plates.
-    const field = heightfieldFrom(twistedField(SIDE, EXTENT));
+  it.each(WINDOWS)(
+    "agrees with the drawn triangle everywhere, not only at the posts ($name)",
+    ({ centreEnu }) => {
+      // THE PROPERTY. Sampled off the posts, a bilinear read differs from the
+      // drawn surface by the quad's twist term — which is what sank the plates.
+      //
+      // RUN FOR BOTH WINDOWS because round 5B split plane-local from ENU: the
+      // plane is positioned at the field's centre, so a vertex's own coordinates
+      // are grid-local while `heightAt` is in the scene's frame. If the two ever
+      // disagree about that offset, the ground the plane DRAWS and the ground
+      // the buildings STAND ON part company by the walked distance — silently,
+      // because each remains internally smooth and plausible.
+      const field = heightfieldFrom(twistedField(SIDE, EXTENT, centreEnu));
 
-    for (let i = 0; i < 40; i++) {
-      // Deliberately irrational-ish offsets so no sample lands on a post or on a
-      // diagonal, where every interpolation agrees and the test proves nothing.
-      const x = -EXTENT + ((i * 7.37) % (EXTENT * 2));
-      const y = -EXTENT + ((i * 11.13) % (EXTENT * 2));
-      expect(field.heightAt({ x, y })).toBeCloseTo(
-        drawnHeightAt(field, SEGMENTS, x, y),
-        6,
-      );
-    }
-  });
+      for (let i = 0; i < 40; i++) {
+        // Deliberately irrational-ish offsets so no sample lands on a post or on
+        // a diagonal, where every interpolation agrees and the test proves
+        // nothing.
+        const x = -EXTENT + ((i * 7.37) % (EXTENT * 2));
+        const y = -EXTENT + ((i * 11.13) % (EXTENT * 2));
+        expect(
+          field.heightAt({ x: x + centreEnu.x, y: y + centreEnu.y }),
+        ).toBeCloseTo(drawnHeightAt(field, SEGMENTS, x, y), 6);
+      }
+    },
+  );
 
   it("pins the DIAGONAL, so a three upgrade cannot flip it silently", () => {
     // The one assumption `heightfield.ts` has to restate because it may not
@@ -159,25 +200,29 @@ describe("heightAt reads the same surface the ground plane draws", () => {
     expect(corner(5)).toEqual([0, 2]);
   });
 
-  it("still returns the post value exactly AT a post", () => {
-    // The regression guard for everything that was already right: both
-    // interpolations agree at the posts, and they must keep agreeing there or
-    // the whole field has shifted.
-    const data = twistedField(SIDE, EXTENT);
-    const field = heightfieldFrom(data);
-    const step = (EXTENT * 2) / (SIDE - 1);
+  it.each(WINDOWS)(
+    "still returns the post value exactly AT a post ($name)",
+    ({ centreEnu }) => {
+      // The regression guard for everything that was already right: both
+      // interpolations agree at the posts, and they must keep agreeing there or
+      // the whole field has shifted. With a moved window it is also the check
+      // that the posts themselves moved with it rather than only the query.
+      const data = twistedField(SIDE, EXTENT, centreEnu);
+      const field = heightfieldFrom(data);
+      const step = (EXTENT * 2) / (SIDE - 1);
 
-    for (let row = 0; row < SIDE; row++) {
-      for (let col = 0; col < SIDE; col++) {
-        expect(
-          field.heightAt({
-            x: -EXTENT + col * step,
-            y: -EXTENT + row * step,
-          }),
-        ).toBeCloseTo(data.heights[row * SIDE + col] ?? 0, 5);
+      for (let row = 0; row < SIDE; row++) {
+        for (let col = 0; col < SIDE; col++) {
+          expect(
+            field.heightAt({
+              x: centreEnu.x - EXTENT + col * step,
+              y: centreEnu.y - EXTENT + row * step,
+            }),
+          ).toBeCloseTo(data.heights[row * SIDE + col] ?? 0, 5);
+        }
       }
-    }
-  });
+    },
+  );
 
   it("keeps a lifted layer ABOVE the drawn ground, which is the whole point", () => {
     // The reported symptom, stated as a property. A plate vertex is placed at
