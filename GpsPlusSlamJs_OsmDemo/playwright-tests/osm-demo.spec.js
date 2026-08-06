@@ -3063,7 +3063,21 @@ test.describe("revealing the sub-threshold cells", () => {
         .first();
       await expect(identity).toBeVisible();
 
-      await identity.click({ force: true });
+      // NOT `force: true`, and that is the diagnostic.
+      //
+      // `force` skips the actionability check — including "is this element
+      // covered by another one?" — and dispatches at the coordinates anyway. So
+      // an intercepted click looked identical to a click that landed and did
+      // nothing, which is exactly the ambiguity that has cost four wrong
+      // diagnoses of this CI-only failure.
+      //
+      // Without force, Playwright NAMES the element it is waiting for instead of
+      // silently clicking through it. The status line printed on failure is a
+      // full healthy refresh, and the "worker no longer holds this cell"
+      // message is absent — so the explain call is not failing; either the
+      // click never selected anything, or the reply was dropped. This tells
+      // those apart.
+      await identity.click();
 
       // ASSERTED THROUGH THE APP'S OWN STATE, not just on the panel.
       //
