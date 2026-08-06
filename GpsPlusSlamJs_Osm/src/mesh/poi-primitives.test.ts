@@ -5,7 +5,13 @@ import {
   box,
   composed,
   disc,
+  fittedSymbol,
   gable,
+  liftedMesh,
+  POI_COLUMN_HEIGHT_M,
+  POI_SYMBOL_HEIGHT_M,
+  POI_SYMBOL_SPAN_M,
+  poiColumn,
   prism,
   pyramid,
   quad,
@@ -626,5 +632,133 @@ describe("scaledToHeight — inputs the shipped path never produces", () => {
   it("returns the mesh unchanged when its own extent is non-finite", () => {
     const mesh = spanning(0, Number.POSITIVE_INFINITY);
     expect(scaledToHeight(mesh, 5)).toBe(mesh);
+  });
+});
+
+/**
+ * The family-S marker parts (DEC-S21).
+ *
+ * WHY THESE TESTS MATTER. `fittedSymbol` is a reproduction of something four
+ * other people wrote — the `prepare`/`normalise`/`fitSymbol` step every one of
+ * the five prototype galleries applies before drawing a symbol. The owner picked
+ * 27 winners while looking at its OUTPUT, so a port that skips it, or gets its
+ * clamp backwards, ships 27 markers that are not the ones that were chosen. The
+ * defect would be invisible per model and obvious across the set: everything
+ * subtly the wrong size relative to everything else.
+ *
+ * The width-clamp case is the one to keep. It is the behaviour that made
+ * DEC-S3's flat 2.5 m impossible and turned it into an envelope, so a future
+ * change that quietly drops the clamp would also quietly re-break that.
+ */
+describe("the family-S marker parts", () => {
+  const boundsOf = (
+    mesh: MeshData,
+  ): { minY: number; maxY: number; spanX: number; spanZ: number } => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const x = mesh.positions[i] as number;
+      const y = mesh.positions[i + 1] as number;
+      const z = mesh.positions[i + 2] as number;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    return { minY, maxY, spanX: maxX - minX, spanZ: maxZ - minZ };
+  };
+
+  it("stands the column on the ground at its declared height", () => {
+    // The declared constant is what every model composes against and what the
+    // contract test measures the total from. If the geometry and the constant
+    // disagree, every family-S marker is off by that difference and nothing
+    // says so.
+    const mesh = composed((b) => poiColumn(b));
+    const bounds = boundsOf(mesh);
+    expect(bounds.minY).toBeCloseTo(0, 6);
+    expect(bounds.maxY).toBeCloseTo(POI_COLUMN_HEIGHT_M, 6);
+  });
+
+  it("scales a tall narrow symbol to the full envelope height", () => {
+    // The ordinary case: nothing is near the span limit, so the height target
+    // is what binds and the symbol fills its slot exactly.
+    const tall = composed((b) => box(b, 0.1, 0.4, 0.1));
+    const bounds = boundsOf(fittedSymbol(tall));
+    expect(bounds.maxY).toBeCloseTo(POI_SYMBOL_HEIGHT_M, 6);
+  });
+
+  it("lets the SPAN clamp win for a wide symbol, leaving it shorter", () => {
+    // THE CASE THAT CHANGED DEC-S3, and the reason marker totals are a range
+    // rather than a constant. A 2:1 wide symbol scaled to 0.9 m tall would be
+    // 1.8 m across — wider than the column is tall, which reads as a billboard
+    // rather than a sign. The span limit binds first and the symbol ends up
+    // BELOW the full height, on purpose.
+    const wide = composed((b) => box(b, 1, 0.5, 0.2));
+    const fitted = fittedSymbol(wide);
+    const bounds = boundsOf(fitted);
+    expect(bounds.spanX).toBeCloseTo(POI_SYMBOL_SPAN_M, 6);
+    expect(bounds.maxY).toBeLessThan(POI_SYMBOL_HEIGHT_M);
+    // Uniform, so the source's proportions survive: 1 x 0.5 stays 2:1.
+    expect(bounds.spanX / bounds.maxY).toBeCloseTo(2, 6);
+  });
+
+  it("floors the symbol at y = 0 and centres it, whatever datum it was drawn on", () => {
+    // The sources author from whatever origin suited the drawing — A's fork sits
+    // above zero, others straddle it. The marker needs the base on the column
+    // top and the mass over the shaft, or the symbol hangs off its own stand.
+    // Built 3 m east, 4 m north and half a metre below ground, which is a far
+    // worse datum than any real source uses — deliberately, so a fit that only
+    // half-corrects cannot pass.
+    const offset = composed((b) => box(b, 0.2, 0.2, 0.2, -0.5, 3, -4));
+    const fitted = fittedSymbol(offset);
+    const bounds = boundsOf(fitted);
+    expect(bounds.minY).toBeCloseTo(0, 6);
+    // The X/Z MIDPOINT is the assertion, not the span: a span survives any
+    // translation, so asserting it would pass on an uncentred symbol.
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < fitted.positions.length; i += 3) {
+      minX = Math.min(minX, fitted.positions[i] as number);
+      maxX = Math.max(maxX, fitted.positions[i] as number);
+      minZ = Math.min(minZ, fitted.positions[i + 2] as number);
+      maxZ = Math.max(maxZ, fitted.positions[i + 2] as number);
+    }
+    expect((minX + maxX) / 2).toBeCloseTo(0, 6);
+    expect((minZ + maxZ) / 2).toBeCloseTo(0, 6);
+  });
+
+  it("returns a degenerate symbol unchanged rather than dividing by zero", () => {
+    // A build that produced nothing has no extent. Infinity in a position
+    // removes the whole object from the scene with nothing reported — the
+    // silent-absence failure this file keeps meeting.
+    const flat = composed((b) => disc(b, 0.3, 0));
+    const fitted = fittedSymbol(flat);
+    expect([...fitted.positions].every(Number.isFinite)).toBe(true);
+  });
+
+  it("lifts a mesh along Y without touching X, Z or the normals", () => {
+    // Composing a standalone marker means lifting the SAME symbol mesh onto the
+    // column, not re-authoring it at a different datum — two sources of truth
+    // for one shape is what DEC-S4 exists to prevent. A translation turns
+    // nothing, so a rotated normal here would be a silent shading defect.
+    const mesh = composed((b) => box(b, 0.2, 0.2, 0.2));
+    const lifted = liftedMesh(mesh, POI_COLUMN_HEIGHT_M);
+    expect(boundsOf(lifted).minY).toBeCloseTo(POI_COLUMN_HEIGHT_M, 6);
+    expect([...lifted.normals]).toEqual([...mesh.normals]);
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      expect(lifted.positions[i]).toBeCloseTo(mesh.positions[i] as number, 6);
+      expect(lifted.positions[i + 2]).toBeCloseTo(
+        mesh.positions[i + 2] as number,
+        6,
+      );
+    }
   });
 });

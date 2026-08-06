@@ -31,6 +31,15 @@ radiusY?)` — `radiusY` squashes it along Y into an ellipsoid of revolution,
 - `composed(build): MeshData`
 - `type BoxFace`
 
+### The family-S marker parts (DEC-S21)
+
+- `poiColumn(builder, stone?, concrete?)` — the shared 1.605 m stand.
+- `POI_COLUMN_HEIGHT_M`, `POI_SYMBOL_HEIGHT_M` (0.9), `POI_SYMBOL_SPAN_M` (1.1),
+  `POI_MARKER_MAX_HEIGHT_M`.
+- `fittedSymbol(mesh): MeshData` — recentre on X/Z, floor Y to 0, scale
+  uniformly into the envelope.
+- `liftedMesh(mesh, byM): MeshData` — translate along Y.
+
 ## Invariants & assumptions
 
 - **Real-world size, base at `y = 0`, centred on `x`/`z`.** The consumer places
@@ -54,6 +63,28 @@ radiusY?)` — `radiusY` squashes it along Y into an ellipsoid of revolution,
   contract test found it.
 - **These are not "shape families".** That option was offered and rejected; each
   of the fifty models composes its own arrangement, and these are the parts.
+- **`fittedSymbol` REPRODUCES the prototypes' own fit, and that is the whole
+  point of it** (DEC-S21). All five galleries scale a symbol into a slot before
+  drawing it — A's `prepare()`, B's `normalise()`, C's `normalize()`, D's
+  `normalize()`, E's `fitSymbol()` — so the mesh the owner picked is the
+  authored geometry times that factor, never the authored geometry itself.
+  `tourism=hotel`'s bed is drawn 0.37 m tall and was seen at 0.58 m.
+  - **DEC-S17 assumed the opposite** — that sources author at the envelope, so a
+    marker could be composed without scaling and a too-tall symbol would fail
+    loudly. It is superseded, and the reversal is recorded rather than quietly
+    applied, because "never scale" was an explicit decision.
+  - **One house envelope, not five.** The sources' targets differ (0.88–0.92
+    tall, 0.94–1.15 across) by less than the eye resolves, so a single envelope
+    keeps every pick recognisable while stopping a C symbol from being
+    systematically shorter and wider than an E one for no visible reason.
+  - **The span clamp binds before the height for wide symbols**, so a family-S
+    marker's total is a RANGE (~2.1–2.5 m), not the flat 2.5 m DEC-S3 first
+    stated. Scaling to height alone was rejected: it makes the bed 1.70 m wide
+    on a 1.6 m column, which reads as a billboard.
+- **A translation must not touch normals and a uniform scale must not either.**
+  Both `liftedMesh` and `fittedSymbol` leave them alone; transforming them is a
+  no-op at best and a denormalisation at worst, and a denormalised normal shades
+  wrong without changing any silhouette — an invisible defect.
 - **Every triangle is wound so its vertex order agrees with its own normal, and
   this was WRONG from W16 until §4.** `box` and `prism` emitted every face
   reversed, and through them so did `slabOnLegs`, `canopy`, `postWithHead` and

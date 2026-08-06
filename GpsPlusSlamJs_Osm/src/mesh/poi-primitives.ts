@@ -726,3 +726,167 @@ export function scaledToHeight(
   }
   return { ...mesh, positions };
 }
+
+/**
+ * The stand every family-S marker shares, and the height of its top.
+ *
+ * THE PROFILE IS THE PROTOTYPES' OWN, not a new design. All five galleries drew
+ * the same three-part column — a splayed foot, a slightly tapered shaft and a
+ * small cap — and the owner picked 27 symbols while looking at symbols standing
+ * on it. Re-proportioning it here would change every one of those judgements
+ * after the fact.
+ */
+export const POI_COLUMN_HEIGHT_M = 1.605;
+
+/**
+ * The box every family-S symbol is fitted into (DEC-S21).
+ *
+ * **THIS REPLACES DEC-S17, WHICH WAS BUILT ON A FALSE READING OF THE SOURCES.**
+ * That decision said the 2.5 m is composed and asserted, never scaled: a column
+ * plus the symbol as its author drew it, so a source that authored too tall
+ * would fail by name rather than be silently squashed. The premise was that the
+ * five galleries author their symbols at the envelope. **None of them does.**
+ * Every one FITS at render time, and to different numbers — A to 0.90 m tall
+ * and 1.10 m across, B to 0.92, C to ~0.88 / 1.15, E to 0.88 / 0.94.
+ *
+ * The consequence is not academic. `tourism=hotel`'s bed is authored 0.37 m
+ * tall and 0.70 m wide; what the owner picked was that mesh scaled 1.57x by A's
+ * own `prepare()`. Composing it as authored yields a 1.98 m marker whose
+ * proportions against its neighbours are nothing like the row that was judged.
+ *
+ * SO THE FIT IS REPRODUCED, ONCE, HOUSE-WIDE. One envelope for all 27 rather
+ * than each source's own: the five targets differ by less than the eye can
+ * resolve (0.88–0.92), so every pick survives essentially as seen, while five
+ * different envelopes would make a C symbol systematically shorter and wider
+ * than an E symbol for no reason a viewer could see. That is the cross-file
+ * coherence risk the adoption sheet named, and this is where it is paid off.
+ *
+ * **THE WIDTH CLAMP IS LOAD-BEARING AND CHANGES DEC-S3.** The smaller of the
+ * two factors wins, so a wide flat symbol hits the span limit first and ends up
+ * SHORTER than `POI_SYMBOL_HEIGHT_M`. Marker totals therefore range roughly
+ * 2.1–2.5 m rather than being flat at 2.5. DEC-S3's "one fixed height, no
+ * exceptions" is properly "one fixed ENVELOPE" — and the alternative, scaling
+ * to height alone, turns the bed into a 1.70 m billboard wider than the column
+ * is tall.
+ */
+export const POI_SYMBOL_HEIGHT_M = 0.9;
+
+/** The symbol's largest permitted footprint, either horizontal axis. */
+export const POI_SYMBOL_SPAN_M = 1.1;
+
+/** The tallest a family-S marker can be: column plus a full-height symbol. */
+export const POI_MARKER_MAX_HEIGHT_M =
+  POI_COLUMN_HEIGHT_M + POI_SYMBOL_HEIGHT_M;
+
+/**
+ * The shared column: splayed foot, tapered shaft, capped top.
+ *
+ * Painted here rather than left to the model's `colour`, because a marker is
+ * two materials by design — a mineral stand and an accented symbol — and an
+ * unpainted column would take the symbol's accent for the whole stand.
+ *
+ * Ten sides, which is the prototypes' own count. It is a silhouette seen from
+ * 300 m and from 2 m; eight facets read as faceted at the near distance and
+ * twelve buys nothing at the far one.
+ */
+export function poiColumn(
+  builder: MeshBuilder,
+  stone = 0x9c988f,
+  concrete = 0xaba79e,
+): void {
+  builder.paint(stone);
+  prism(builder, 0.165, 0.145, 0.07, 10, 0);
+  builder.paint(concrete);
+  prism(builder, 0.095, 0.075, 1.5, 10, 0.07);
+  builder.paint(stone);
+  prism(builder, 0.082, 0.095, 0.06, 10, 1.545);
+}
+
+/**
+ * The same mesh translated along Y.
+ *
+ * The symbol half of a family-S marker is authored with its own base at zero —
+ * that is what DEC-S4 requires, so the identical geometry can float over a
+ * building's roof with no column under it. Composing the standalone marker
+ * therefore means lifting that mesh onto the column rather than re-authoring it
+ * at a different datum, which would be two sources of truth for one shape.
+ *
+ * **Normals are untouched**, and deliberately: a translation turns nothing.
+ * Transforming them would be a no-op at best and a denormalisation at worst,
+ * and a denormalised normal shades wrong without changing any silhouette.
+ */
+export function liftedMesh(mesh: MeshData, byM: number): MeshData {
+  if (!Number.isFinite(byM) || byM === 0) return mesh;
+  const positions = new Float32Array(mesh.positions);
+  for (let i = 1; i < positions.length; i += 3) {
+    positions[i] = (positions[i] as number) + byM;
+  }
+  return { ...mesh, positions };
+}
+
+/**
+ * A symbol recentred, floored and scaled into the shared envelope (DEC-S21).
+ *
+ * Reproduces what all five prototype galleries do to a symbol before drawing
+ * it, which is the only way the ported mesh is the thing the owner picked. The
+ * steps are theirs and the order matters:
+ *
+ *  1. **Recentre on X and Z, and floor Y to zero.** The sources author from
+ *     whatever origin suited the drawing; the marker needs its base on the
+ *     column top and its mass over the shaft.
+ *  2. **Scale UNIFORMLY by the smaller of** `height / bounds.height` and
+ *     `span / max(width, depth)`. Uniform because anything else re-proportions
+ *     a shape that was chosen for its proportions.
+ *
+ * Translating before scaling is what keeps the base at zero: scaling about the
+ * origin of an already-floored mesh cannot lift or sink it. The reverse order
+ * scales the offset too and puts the symbol somewhere above or below its stand.
+ *
+ * **A degenerate mesh is returned unchanged rather than divided by zero.** A
+ * symbol with no extent is a build that produced nothing, and `Infinity` in a
+ * position removes the whole object from the scene with nothing reported —
+ * the silent-absence failure this file keeps meeting.
+ *
+ * **Normals are untouched.** The recentre is a translation and the scale is
+ * uniform, so no direction turns; transforming them would be a no-op at best
+ * and a denormalisation at worst.
+ */
+/** Axis-aligned bounds of a mesh, as `[min, max]` per axis. */
+function boundsOf(
+  mesh: MeshData,
+): readonly [[number, number], [number, number], [number, number]] {
+  const bounds: [[number, number], [number, number], [number, number]] = [
+    [Infinity, -Infinity],
+    [Infinity, -Infinity],
+    [Infinity, -Infinity],
+  ];
+  for (let i = 0; i < mesh.positions.length; i++) {
+    const axis = bounds[i % 3] as [number, number];
+    const value = mesh.positions[i] as number;
+    axis[0] = Math.min(axis[0], value);
+    axis[1] = Math.max(axis[1], value);
+  }
+  return bounds;
+}
+
+export function fittedSymbol(mesh: MeshData): MeshData {
+  const [[minX, maxX], [minY, maxY], [minZ, maxZ]] = boundsOf(mesh);
+  const height = maxY - minY;
+  const span = Math.max(maxX - minX, maxZ - minZ);
+  if (!Number.isFinite(height) || !Number.isFinite(span)) return mesh;
+  if (!(height > 0) || !(span > 0)) return mesh;
+
+  const centreX = (minX + maxX) / 2;
+  const centreZ = (minZ + maxZ) / 2;
+  const factor = Math.min(
+    POI_SYMBOL_HEIGHT_M / height,
+    POI_SYMBOL_SPAN_M / span,
+  );
+  const positions = new Float32Array(mesh.positions.length);
+  for (let i = 0; i < mesh.positions.length; i += 3) {
+    positions[i] = ((mesh.positions[i] as number) - centreX) * factor;
+    positions[i + 1] = ((mesh.positions[i + 1] as number) - minY) * factor;
+    positions[i + 2] = ((mesh.positions[i + 2] as number) - centreZ) * factor;
+  }
+  return { ...mesh, positions };
+}
