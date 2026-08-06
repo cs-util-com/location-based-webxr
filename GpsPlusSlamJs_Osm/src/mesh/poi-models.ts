@@ -36,13 +36,13 @@ import {
   composed,
   fittedSymbol,
   groundedMesh,
-  hut,
   liftedMesh,
   POI_COLUMN_HEIGHT_M,
   poiColumn,
   scaledToHeight,
 } from "./poi-primitives.js";
 import { A_SYMBOLS } from "./poi-symbols-a.js";
+import { C_PROPS, C_SYMBOLS } from "./poi-symbols-c.js";
 import { B_VARIANTS } from "./poi-variants-b.js";
 import { D_VARIANTS } from "./poi-variants-d.js";
 import { G_VARIANTS } from "./poi-variants-g.js";
@@ -273,6 +273,37 @@ function models(): PoiModel[] {
     return symbolModel(kind, colour, build);
   };
 
+  /**
+   * A FAMILY-L model whose geometry is ported, at the source's real-world size.
+   *
+   * The counterpart of `symbolFrom` for the three kinds DEC-S14 moved: the owner
+   * saw a gallery's re-drawing of a marker we already ship and preferred it, but
+   * a bench is still a bench — it keeps DEC-R6-8's real-world scale and gets no
+   * column, no envelope and no `symbol`.
+   *
+   * **No target height and no scaling**, unlike `adopted()`. Those prototypes
+   * were dioramas drawn to one display envelope; a reference row is drawn at
+   * true size already, so scaling it would be correcting something that is not
+   * wrong.
+   */
+  const propFrom = (
+    kind: string,
+    colour: number,
+    props: ReadonlyMap<string, Parameters<typeof composed>[0]>,
+  ): PoiModel => {
+    const build = props.get(kind);
+    if (build === undefined) {
+      throw new Error(`no ported prop builds "${kind}"`);
+    }
+    // GROUNDED, and this is not defensive — C's bench legs are boxes of height
+    // 0.45 centred at 0.22, so they reach 5 mm BELOW zero. Invisible in a
+    // gallery that draws them on a pad, and half a centimetre of buried leg in
+    // the scene. The same defect the last port met with D's picnic-table
+    // A-frames, caught the same way: by the contract test, not by review.
+    const mesh = groundedMesh(composed(build));
+    return { kind, colour, heightM: peakOf(mesh), mesh };
+  };
+
   return [
     // 1 — a marked bay with a low kerb, not a building.
     model("amenity=parking", ASPHALT, (b) => {
@@ -299,23 +330,7 @@ function models(): PoiModel[] {
     //
     // Three slats, not one slab: the slatting IS the detail, and the previous
     // model (a `slabOnLegs` plus one backrest box) read as a plinth.
-    model("amenity=bench", TIMBER, (b) => {
-      // Seat: three slats running the length, with gaps between them.
-      for (let i = 0; i < 3; i++) {
-        box(b, 1.36, 0.05, 0.11, 0.415, 0, -0.13 + i * 0.13);
-      }
-      // Backrest: two slats, leaning at the back edge.
-      for (let i = 0; i < 2; i++) {
-        box(b, 1.36, 0.11, 0.05, 0.525 + i * 0.14, 0, -0.2);
-      }
-      // The frame, in metal rather than timber — which is the whole reason this
-      // model needs per-face painting and could not be expressed before §4.
-      b.paint(DARK_STEEL);
-      for (const s of [-1, 1]) {
-        box(b, 0.06, 0.44, 0.4, 0, s * 0.58, -0.03);
-        box(b, 0.06, 0.32, 0.05, 0.44, s * 0.58, -0.2);
-      }
-    }),
+    propFrom("amenity=bench", TIMBER, C_PROPS),
     // 4 — a pool: water inset in a surround.
     model("leisure=swimming_pool", WATER, (b) => {
       box(b, 6, 0.2, 3, 0);
@@ -326,7 +341,7 @@ function models(): PoiModel[] {
       box(b, 5, 0.08, 2.5);
     }),
     // 6 — a church: a hut with a tower and a spire.
-    adopted("amenity=place_of_worship", STONE, L_VARIANTS, 12),
+    symbolFrom("amenity=place_of_worship", STONE, C_SYMBOLS),
     // 7 — a restaurant: a shopfront with an awning and a table outside.
     symbolFrom("amenity=restaurant", STEEL, A_SYMBOLS),
     // 8 — a school: a long two-storey block with a flat roof.
@@ -365,9 +380,9 @@ function models(): PoiModel[] {
     // 15 — bicycle parking: a row of hoops.
     adopted("amenity=bicycle_parking", STEEL, M_VARIANTS, 0.8100000023841858),
     // 16 — a cafe: a small shopfront with a parasol.
-    adopted("amenity=cafe", TIMBER, L_VARIANTS, 3),
+    symbolFrom("amenity=cafe", TIMBER, C_SYMBOLS),
     // 17 — fast food: a boxy unit with a service window and a sign.
-    adopted("amenity=fast_food", PAINT_RED, M_VARIANTS, 4.300000190734863),
+    symbolFrom("amenity=fast_food", PAINT_RED, C_SYMBOLS),
     // 18 — a shelter: an open roof on four posts, with a bench in it.
     adopted("amenity=shelter", TIMBER, L_VARIANTS, 2.5),
     // 19 — a hotel: a tall block with a marked entrance canopy.
@@ -375,12 +390,7 @@ function models(): PoiModel[] {
     // 20 — a bank: a stone block with a portico.
     adopted("amenity=bank", STONE, D_VARIANTS, 8),
     // 21 — toilets: a small block with two doors.
-    model("amenity=toilets", STONE, (b) => {
-      box(b, 3, 2.6, 2.4);
-      box(b, 0.8, 1.9, 0.08, 0, -0.7, 1.25);
-      box(b, 0.8, 1.9, 0.08, 0, 0.7, 1.25);
-      box(b, 3.2, 0.2, 2.6, 2.6);
-    }),
+    symbolFrom("amenity=toilets", PAINT_BLUE, C_SYMBOLS),
     // 22 — recycling: three containers side by side.
     adopted("amenity=recycling", PAINT_GREEN, D_VARIANTS, 1.399999976158142),
     // 23 — a pharmacy: a shopfront with a cross above it.
@@ -394,23 +404,20 @@ function models(): PoiModel[] {
     // plate and a verdigris cap — where the old model was three plain boxes.
     adopted("historic=memorial", STONE, D_VARIANTS, 1.1200000047683716),
     // 26 — a kindergarten: a low bright block with a pitched roof.
-    model("amenity=kindergarten", PAINT_BLUE, (b) => {
-      hut(b, 8, 6, 3.4, 1.8);
-      box(b, 1, 2, 0.12, 0, -2, 3.05);
-    }),
+    symbolFrom("amenity=kindergarten", PAINT_BLUE, C_SYMBOLS),
     // 27 — drinking water: a fountain bowl on a column.
     // REBUILT (§4). SOURCE: `k_drinking_water`. §4.3 lists it under D (as the
     // typo'd `drinking_walter`); DEC-R6-28 takes the house file's version.
     adopted("amenity=drinking_water", STONE, D_VARIANTS, 1.024999976158142),
     // 28 — a picnic table: a table slab with a bench each side.
-    adopted("leisure=picnic_table", TIMBER, P_VARIANTS, 0.75),
+    propFrom("leisure=picnic_table", TIMBER, C_PROPS),
     // 29 — a sports centre: a wide hall with a curved-looking roof band.
     model("leisure=sports_centre", STEEL, (b) => {
       box(b, 16, 8, 12);
       box(b, 16.4, 1, 12.4, 8);
     }),
     // 30 — an attraction: a plinth with a marker obelisk.
-    adopted("tourism=attraction", STONE, L_VARIANTS, 4.199999809265137),
+    symbolFrom("tourism=attraction", PAINT_RED, C_SYMBOLS),
     // 31 — artwork: an irregular sculpture on a base.
     adopted("tourism=artwork", DARK_STEEL, P_VARIANTS, 3.049999952316284),
     // 32 — a vending machine: a cabinet with a front panel.
@@ -427,12 +434,7 @@ function models(): PoiModel[] {
     // 35 — a viewpoint: a railing on a small platform.
     adopted("tourism=viewpoint", STEEL, L_VARIANTS, 1.1299999952316284),
     // 36 — a hospital: a block with a cross and an ambulance canopy.
-    model("amenity=hospital", STONE, (b) => {
-      box(b, 14, 14, 10);
-      box(b, 2.4, 0.5, 0.14, 14);
-      box(b, 0.5, 2.4, 0.14, 12.9);
-      box(b, 5, 0.3, 3, 3.4, 0, 6);
-    }),
+    symbolFrom("amenity=hospital", PAINT_RED, C_SYMBOLS),
     // 37 — an ATM: a wall unit on a short pedestal.
     symbolFrom("amenity=atm", PAINT_GREEN, A_SYMBOLS),
     // 38 — a post office: a block with a horizontal sign band.
@@ -500,12 +502,7 @@ function models(): PoiModel[] {
     // 49 — a doctors' surgery: a house-scale block with a plaque.
     symbolFrom("amenity=doctors", DARK_STEEL, A_SYMBOLS),
     // 50 — a community centre: a wide hall with a canopy along its front.
-    model("amenity=community_centre", TIMBER, (b) => {
-      box(b, 12, 5.5, 8);
-      box(b, 12.4, 0.4, 8.4, 5.5);
-      box(b, 10, 0.2, 2, 3, 0, 5);
-      for (const sx of [-4.4, 0, 4.4]) box(b, 0.2, 3, 0.2, 0, sx, 5.9);
-    }),
+    symbolFrom("amenity=community_centre", TIMBER, C_SYMBOLS),
   ];
 }
 

@@ -106,15 +106,14 @@ describe("the POI model contract", () => {
       // Exactly on the 8 m threshold, and only caught once this test started
       // asking the production predicate instead of restating it.
       "amenity=bank=8.0",
-      "amenity=hospital=15.3",
-      "amenity=place_of_worship=12.0",
       "leisure=sports_centre=9.0",
-      // `tourism=hotel` WAS HERE AT 13.5 m and left when batch A replaced it
-      // with a 2.5 m bed symbol. That is the symbol-language plan working, seen
-      // from the other end: the list shrinks as each building-shaped marker
-      // stops being a building, and it should be EMPTY once all 27 are ported.
-      // Until then a kind leaving this list is the evidence that its port
-      // landed.
+      // THIS LIST SHRINKS AS THE PORT LANDS, and that is the plan working seen
+      // from the other end. `tourism=hotel` (13.5 m) left with batch A;
+      // `amenity=hospital` (15.3) and `amenity=place_of_worship` (12.0) left
+      // with batch C. Each is now a ~2.5 m symbol, so drawing it inside its own
+      // building is no longer a duplicate volume but the label that building was
+      // missing. It should reach EMPTY once all 27 are ported, at which point
+      // the suppression rule has nothing left to suppress.
     ]);
   });
 

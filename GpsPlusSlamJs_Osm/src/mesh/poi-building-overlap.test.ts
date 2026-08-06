@@ -2,10 +2,8 @@
  * POI markers standing inside buildings that were already extruded — F33,
  * closed by §5 (DEC-R6-17).
  *
- * THE DEFECT. Four POI kinds are tall enough to be buildings in their own right
- * — `amenity=hospital` (15.3 m), `tourism=hotel` (13.5), `amenity=place_of_worship`
- * (12.0), `leisure=sports_centre` (9.0) — and a hospital is routinely mapped as
- * BOTH a node and a building way. `poi.ts` marks nodes, `buildings.ts` extrudes
+ * THE DEFECT. Some POI kinds are tall enough to be buildings in their own right,
+ * and such a place is routinely mapped as BOTH a node and a building way. `poi.ts` marks nodes, `buildings.ts` extrudes
  * ways, neither knows about the other, and the result is a 15 m block standing
  * inside a building that is already there.
  *
@@ -15,8 +13,15 @@
  * volume drawn where another volume already stands, which is the same defect §5
  * fixes for building outlines.
  *
- * THE ASSERTION THAT MATTERS MOST IS THE INVERSE ONE. A hospital mapped ONLY as
- * a node — no building way anywhere — must still draw. Suppressing that would
+ * THE SET IS SHRINKING, AND ON PURPOSE. It was four kinds, then five when round 8
+ * adopted `amenity=bank` at exactly 8.0 m, and it is down to two — `bank` and
+ * `leisure=sports_centre` — as the symbol-language port replaces each
+ * building-shaped marker with a ~2.5 m symbol. At zero this rule has nothing
+ * left to suppress. Tests here therefore name a kind that still qualifies rather
+ * than a kind that once did.
+ *
+ * THE ASSERTION THAT MATTERS MOST IS THE INVERSE ONE. A building-scale POI mapped
+ * ONLY as a node — no building way anywhere — must still draw. Suppressing that would
  * turn a visible fix into an invisible data loss, and it is the easy mistake:
  * the obvious implementation drops every tall POI and looks correct on the one
  * fixture where a building happens to exist.
@@ -61,12 +66,7 @@ describe("isBuildingScalePoi", () => {
     // round 8 adopted it at exactly 8.0 m. It should reach EMPTY once all 27
     // winners are ported, at which point the suppression rule has nothing left
     // to suppress and this file's reason to exist can be revisited.
-    for (const kind of [
-      "amenity=hospital",
-      "amenity=place_of_worship",
-      "leisure=sports_centre",
-      "amenity=bank",
-    ]) {
+    for (const kind of ["leisure=sports_centre", "amenity=bank"]) {
       expect(poiModelFor(kind)).toBeDefined();
       expect(isBuildingScalePoi(kind)).toBe(true);
     }
@@ -77,8 +77,14 @@ describe("isBuildingScalePoi", () => {
     // `tourism=hotel` is a 2.5 m bed on a column now, so drawing it inside a
     // hotel building is no longer a duplicate volume — it is the label that
     // building was missing.
-    expect(poiModelFor("tourism=hotel")).toBeDefined();
-    expect(isBuildingScalePoi("tourism=hotel")).toBe(false);
+    for (const kind of [
+      "tourism=hotel",
+      "amenity=hospital",
+      "amenity=place_of_worship",
+    ]) {
+      expect(poiModelFor(kind)).toBeDefined();
+      expect(isBuildingScalePoi(kind)).toBe(false);
+    }
   });
 
   it("leaves ordinary street furniture alone", () => {
@@ -110,22 +116,28 @@ describe("isBuildingScalePoi", () => {
 });
 
 describe("suppressPoiInsideBuildings", () => {
-  it("drops a hospital node standing inside a building footprint", () => {
-    // THE REPORTED DEFECT: a 15.3 m block inside a building that is already
-    // extruded.
+  it("drops a building-scale node standing inside a building footprint", () => {
+    // THE REPORTED DEFECT: a block inside a building that is already extruded.
+    //
+    // THE SUBJECT USED TO BE `amenity=hospital` and is now
+    // `leisure=sports_centre`, because the hospital became a 2.5 m symbol in
+    // batch C and stopped being building-scale at all. The MECHANISM is what
+    // these tests are about, so they follow whichever kind still exercises it —
+    // and when the last one ports, that is the signal this file's job is done
+    // rather than a reason to weaken it.
     const kept = suppressPoiInsideBuildings(
-      [marker("amenity=hospital", 0, 0)],
+      [marker("leisure=sports_centre", 0, 0)],
       [square(40)],
     );
     expect(kept).toEqual([]);
   });
 
-  it("KEEPS a hospital node with no building around it", () => {
-    // THE ASSERTION THAT MATTERS MOST. A hospital mapped only as a node is the
+  it("KEEPS a building-scale node with no building around it", () => {
+    // THE ASSERTION THAT MATTERS MOST. A sports centre mapped only as a node is the
     // case this must not break, and the obvious implementation — drop every
     // tall POI — looks correct on any fixture where a building happens to
     // exist.
-    const markers = [marker("amenity=hospital", 0, 0)];
+    const markers = [marker("leisure=sports_centre", 0, 0)];
     expect(suppressPoiInsideBuildings(markers, [])).toEqual(markers);
     expect(suppressPoiInsideBuildings(markers, [square(40, 500, 500)])).toEqual(
       markers,
@@ -139,10 +151,10 @@ describe("suppressPoiInsideBuildings", () => {
     expect(suppressPoiInsideBuildings(markers, [square(40)])).toEqual(markers);
   });
 
-  it("keeps a hospital just OUTSIDE the footprint", () => {
+  it("keeps a building-scale node just OUTSIDE the footprint", () => {
     // The containment test has to be a real point-in-polygon rather than a
     // bounding-box hit, or a marker beside an L-shaped building disappears.
-    const markers = [marker("amenity=hospital", 30, 30)];
+    const markers = [marker("leisure=sports_centre", 30, 30)];
     expect(suppressPoiInsideBuildings(markers, [square(40)])).toEqual(markers);
   });
 
@@ -157,7 +169,7 @@ describe("suppressPoiInsideBuildings", () => {
       { x: -10, y: 20 },
       { x: -20, y: 20 },
     ];
-    const markers = [marker("amenity=hospital", 10, 10)];
+    const markers = [marker("leisure=sports_centre", 10, 10)];
     expect(suppressPoiInsideBuildings(markers, [lShape])).toEqual(markers);
   });
 

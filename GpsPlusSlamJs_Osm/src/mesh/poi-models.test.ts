@@ -299,21 +299,31 @@ describe("the §4 rebuilt models", () => {
   };
 
   it("builds `amenity=bench` at the source's real dimensions", () => {
-    // THE MODEL THE OWNER RATED BEST — "nice details, best version so far" —
-    // and the one §4.3 names as the model to study first, since it is the one
-    // already judged best in the vocabulary being adopted.
+    // THE BENCH HAS CHANGED SOURCE TWICE, and the figures move with it. It came
+    // from `poi-markers-gallery (2)`'s `k_bench` at 1.36 m long; batch C
+    // replaced it with gallery C's reference re-drawing, which the owner
+    // preferred (DEC-S14) and which is a 1.60 m bench with a taller back.
     //
-    // Dimensions come from `poi-markers-gallery (2)`'s `k_bench`, with the
-    // plinth tier stripped per DEC-R6-15 and DEC-R6-8's real-world scale: 1.36 m
-    // of slat, a seat surface at ~0.465 m, a backrest reaching ~0.775 m.
+    // IT STAYS FAMILY L, at real-world scale with no column and no envelope.
+    // That is DEC-S3 holding its own line: a bench is the thing itself, and only
+    // the kinds that are PLACES became symbols.
+    //
+    // `lo[Y]` is the assertion worth keeping across both sources. C's legs are
+    // 0.45 m boxes centred at 0.22, so they reach 5 mm BELOW zero — invisible in
+    // a gallery that draws them on a pad, half a centimetre of buried leg here.
+    // `propFrom` grounds every port for exactly this reason.
     const { lo, hi } = boundsOf("amenity=bench");
-    expect((hi[X] as number) - (lo[X] as number)).toBeCloseTo(1.36, 2);
-    expect(hi[Y] as number).toBeCloseTo(0.775, 2);
+    expect((hi[X] as number) - (lo[X] as number)).toBeCloseTo(1.6, 2);
+    expect(hi[Y] as number).toBeGreaterThan(0.8);
+    expect(hi[Y] as number).toBeLessThan(1.2);
     expect(lo[Y] as number).toBeCloseTo(0, 6);
-    // A bench is much wider than it is deep, and deeper than it is thick.
+    // A bench is much wider than it is deep, and deeper than it is thick. The
+    // upper bound moved from 0.6 to 0.7 with the source change: C draws a
+    // deeper seat with a raked back, which is 0.65 m front to back.
     const depth = (hi[Z] as number) - (lo[Z] as number);
     expect(depth).toBeGreaterThan(0.3);
-    expect(depth).toBeLessThan(0.6);
+    expect(depth).toBeLessThan(0.7);
+    expect((hi[X] as number) - (lo[X] as number)).toBeGreaterThan(depth * 2);
   });
 
   it("paints the bench's metal frame apart from its timber", () => {
@@ -402,12 +412,16 @@ describe("the §4 rebuilt models", () => {
 
   it("gives the bench slats rather than one solid slab", () => {
     // The slatting IS the detail. A single box of the same bounds passes every
-    // other assertion here and looks like a plinth — which is what the previous
-    // model effectively was (`slabOnLegs` plus one backrest box).
+    // other assertion here and looks like a plinth — which is what the model
+    // before last effectively was (`slabOnLegs` plus one backrest box).
+    //
+    // COUNTED AS BOXES rather than pinned to one number, because the exact
+    // count is a property of whichever source the bench currently comes from
+    // and has already changed once. What must not change is that there are
+    // MANY parts: C's version is three seat slats, three back slats and eight
+    // frame pieces.
     const mesh = poiModelFor("amenity=bench")?.mesh;
-    // Three seat slats, two back slats, four frame pieces: nine boxes at 12
-    // triangles each.
-    expect(mesh?.triangleCount).toBe(9 * 12);
+    expect((mesh?.triangleCount ?? 0) / 12).toBeGreaterThanOrEqual(9);
   });
 });
 
