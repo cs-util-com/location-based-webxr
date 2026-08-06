@@ -1268,7 +1268,9 @@ export class BuildingView {
   render(
     mesh: TransferableMesh,
     layers?: MeshLayers,
-    context?: MeshLayerContext,
+    // Omits `drawnHostLayers`, which `drawMeshLayers` derives from `layers` itself
+    // rather than taking from a caller who could disagree with it.
+    context?: Omit<MeshLayerContext, "drawnHostLayers">,
   ): BuildingStats {
     this.clear();
     // ONE LINE PER LAYER'S WORTH OF WORK, in `mesh-layers.ts`. This used to be a

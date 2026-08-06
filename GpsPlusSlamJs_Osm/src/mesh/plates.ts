@@ -115,6 +115,22 @@ export interface BuildPlatesOptions {
 export interface AreaPlate {
   readonly feature: OsmFeatureKey;
   readonly mesh: MeshData;
+  /**
+   * The OUTER ring in ENU metres, kept so a consumer can ask what ground this
+   * plate covers (DEC-S1, stage 1).
+   *
+   * **CARRIED RATHER THAN RE-DERIVED FROM THE FEATURE, and that distinction is
+   * the whole point.** These rings are CLIPPED to the rendered extent before
+   * triangulation, so "the way exists in the features" and "this plate is
+   * drawn" are different claims — a pool near the tile edge is clipped away
+   * entirely. A consumer that suppressed a POI marker against the FEATURE would
+   * delete the marker and draw nothing, which is exactly the data loss the
+   * layer-aware rule exists to prevent.
+   *
+   * Same precedent as `BuildingVolume.footprint`: the ring already exists here,
+   * and re-deriving it outside repeats the whole geometry conversion.
+   */
+  readonly footprint: readonly EnuPoint[];
 }
 
 /** Builds a plate per qualifying area in `features`. Skips everything else. */
@@ -132,7 +148,11 @@ export function buildAreaPlates(
       // real OSM contains collapsed ways, and an empty mesh in the list would be a
       // draw call for no pixels plus a feature id that appears to have geometry.
       if (mesh === undefined) continue;
-      plates.push({ feature: featureKey(feature), mesh });
+      plates.push({
+        feature: featureKey(feature),
+        mesh,
+        footprint: rings[0] ?? [],
+      });
     }
   }
   return plates;

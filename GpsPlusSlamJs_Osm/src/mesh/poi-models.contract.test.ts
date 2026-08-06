@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { MeshData } from "./mesh-data.js";
 
-import { isBuildingScalePoi } from "./poi-building-overlap.js";
 import { POI_FALLBACK_MODEL, POI_MODELS, poiModelFor } from "./poi-models.js";
 import {
   POI_COLUMN_HEIGHT_M,
@@ -71,57 +70,29 @@ describe("the POI model contract", () => {
     expect(flat.map((model) => model.kind)).toEqual([]);
   });
 
-  it("keeps street furniture at street-furniture scale, and names every exception", () => {
+  it("keeps every model at marker scale, and names every exception", () => {
     // The scale trap DEC-R4-14 named: "a bench the size of a kiosk". A loose
-    // upper bound would pass a units error, so the taller models are PINNED by
-    // name instead — any new one has to be added here deliberately.
+    // upper bound would pass a units error, so anything unusually tall is PINNED
+    // by name and has to be added here deliberately.
     //
-    // WHAT THE PINNED LIST REVEALED, and it is a finding rather than a formality
-    // (see F33): every exception is a BUILDING mapped as a POI node. `poi.ts`
-    // marks nodes only, and a hospital or a church is routinely mapped as BOTH a
-    // node and a building way — so these draw an 8–15 m block inside the
-    // building that `buildings.ts` already extruded from the same feature. That
-    // is R5-7's defect in a second place: coarse geometry standing inside a
-    // detailed model. Not fixed here; W3 fixed it for nested building outlines
-    // only, and this is a different owner.
+    // WHAT THIS USED TO BE, AND WHY IT CHANGED. It asked `isBuildingScalePoi`
+    // which models were tall enough to be buildings, and pinned the answer. That
+    // list ran hospital / hotel / place_of_worship / sports_centre, gained
+    // `amenity=bank` when round 8 adopted it at exactly 8.0 m — silently, which
+    // is what DEC-S9 fixed — and reached EMPTY once the symbol port replaced
+    // every one of them with a ~2.5 m marker. The predicate then had no subjects
+    // and its whole module was deleted (DEC-S2), so the guard is re-expressed
+    // against the thing that is still true: nothing here is building-sized.
     //
-    // THE PREDICATE IS CALLED, NOT RESTATED, and that is the whole point of this
-    // version (DEC-S9). It read `model.heightM > 8` while `isBuildingScalePoi`
-    // suppresses at `>= 8` — a disagreement on exactly one value, invisible for
-    // as long as no model sat on it. Round 8 then adopted `amenity=bank` at a
-    // target height of exactly 8.0 m, so the production rule began suppressing
-    // FIVE kinds while this guard kept asserting four and stayed green. A bank
-    // node inside a building had been vanishing ever since, undocumented.
-    //
-    // So the list this pins is now, by construction, the set the renderer
-    // actually suppresses. `poi-building-overlap.ts`'s header claims a fifth
-    // building-scale model would be "covered without anyone remembering to
-    // update a list" — that was true of the rule and false of its test, and this
-    // is what makes it true of both.
+    // 8 m IS KEPT AS THE LINE deliberately, because it is the one that was
+    // measured: below it sit shopfronts legitimately inside a building, above it
+    // sat the duplicates. If a model ever crosses it again this fails and names
+    // it, which is the whole reason the rule was derived from measured heights
+    // rather than from a list of kind strings.
     const tall = entries
-      .filter((model) => isBuildingScalePoi(model.kind))
+      .filter((model) => model.heightM >= 8)
       .map((model) => `${model.kind}=${model.heightM.toFixed(1)}`)
       .sort();
-    // EMPTY, AND THAT IS THE MILESTONE THIS WHOLE THREAD WAS FOR. Every kind
-    // that used to be a building drawn inside a building is now a ~2.5 m symbol
-    // on a column. The list ran hospital/hotel/place_of_worship/sports_centre,
-    // gained bank when round 8 adopted it at exactly 8.0 m, and emptied as
-    // batches A, C and B landed.
-    //
-    // THE ASSERTION IS KEPT RATHER THAN DELETED. It is now a guard in the other
-    // direction: if a future model is ever authored tall enough to be a building
-    // again, this fails and names it, which is the whole reason the rule was
-    // derived from measured heights rather than a list of strings.
-    // EMPTY, AND THAT IS THE MILESTONE THIS WHOLE THREAD WAS FOR. Every kind
-    // that was a building drawn inside a building is now a ~2.5 m symbol on a
-    // column. The list ran hospital / hotel / place_of_worship / sports_centre,
-    // gained `amenity=bank` when round 8 adopted it at exactly 8.0 m, and
-    // emptied as batches A, C and B landed.
-    //
-    // THE ASSERTION IS KEPT RATHER THAN DELETED, because it now guards the other
-    // direction: if a model is ever authored tall enough to be a building again,
-    // this fails and names it. That is the whole reason the rule was derived
-    // from measured heights rather than from a list of kind strings.
     expect(tall).toEqual([]);
   });
 

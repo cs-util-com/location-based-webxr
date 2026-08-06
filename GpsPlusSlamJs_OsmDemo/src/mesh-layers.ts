@@ -35,8 +35,11 @@ import {
   packInstances,
   POI_FALLBACK_MODEL,
   poiModelFor,
+  resolvePoiPlacement,
   type MeshData,
+  type PoiHostLayer,
   type PoiModel,
+  type PoiPlacement,
   type TreeVariant,
 } from "gps-plus-slam-osm";
 
@@ -139,6 +142,22 @@ const NO_STATS: BuildingStats = {
 export interface MeshLayerContext {
   /** The 2D map's colour for a score, as a packed `0xrrggbb`. */
   readonly colourForScore: (score: number) => number;
+  /**
+   * Which host layers are actually being DRAWN (DEC-S1).
+   *
+   * WHY IT TRAVELS ON THE CONTEXT RATHER THAN AS A `build` PARAMETER. This
+   * interface exists for exactly this — what a layer needs beyond the mesh
+   * itself — and it is already how the `areas` row gets the one shared
+   * `colourForScore` instead of re-deriving it. Widening `build` would touch
+   * all six rows for the benefit of one.
+   *
+   * WHY THE POI ROW NEEDS IT AT ALL. A marker whose feature is already drawn
+   * moves onto it or gives way to it, and "already drawn" depends on which
+   * layers are on — `plates` is off by default (DEC-R7b-5). Resolving that in
+   * the worker would read a stale layer set, because a toggle rebuilds from the
+   * cached payload and never re-runs it.
+   */
+  readonly drawnHostLayers: ReadonlySet<PoiHostLayer>;
 }
 
 /**
@@ -149,7 +168,13 @@ export interface MeshLayerContext {
  * would make that mistake look like a design choice. The same reasoning as
  * `NO_DATA_RGB` in `height-ramp.ts`.
  */
-const NEUTRAL_CONTEXT: MeshLayerContext = { colourForScore: () => 0xff00ff };
+const NEUTRAL_CONTEXT: MeshLayerContext = {
+  colourForScore: () => 0xff00ff,
+  // EMPTY, which means every marker stays at its node. That is the safe
+  // default: a caller that forgot the real context gets markers where the data
+  // puts them, rather than markers silently deleted or moved onto roofs.
+  drawnHostLayers: new Set(),
+};
 
 /** What one drawable layer contributes to the scene and to the status line. */
 export interface MeshLayerDescriptor {
@@ -224,11 +249,24 @@ const modelResources = new Map<
   { geometry: THREE.BufferGeometry; material: THREE.MeshStandardMaterial }
 >();
 
-function resourcesFor(model: PoiModel): {
+function resourcesFor(
+  model: PoiModel,
+  /**
+   * Take the SYMBOL alone rather than the whole marker (DEC-S16).
+   *
+   * A hosted marker draws its symbol over a roof with no column under it, which
+   * is a different geometry from the same kind at its node — so it needs its own
+   * cache entry and its own `InstancedMesh`. Falls back to the full mesh when a
+   * model has no symbol, which is every family-L kind.
+   */
+  symbolOnly = false,
+): {
   geometry: THREE.BufferGeometry;
   material: THREE.MeshStandardMaterial;
 } {
-  const cached = modelResources.get(model.kind);
+  const source = (symbolOnly ? model.symbol : undefined) ?? model.mesh;
+  const cacheKey = source === model.mesh ? model.kind : `${model.kind}@symbol`;
+  const cached = modelResources.get(cacheKey);
   if (cached !== undefined) return cached;
   // PER-FACE PAINTING, WHEN THE MODEL HAS IT (§4, DEC-R6-11). `MeshData.colours`
   // is undefined for a model painted in one colour, which is most of them while
@@ -238,9 +276,9 @@ function resourcesFor(model: PoiModel): {
   // `vertexColors` MULTIPLIES `color`, so an unpainted vertex in a painted model
   // is white and renders as `model.colour` unchanged. That is what lets a model
   // be painted one face at a time instead of all at once.
-  const colours = model.mesh.colours;
+  const colours = source.colours;
   const built = {
-    geometry: geometryFrom(model.mesh, colours),
+    geometry: geometryFrom(source, colours),
     material: new THREE.MeshStandardMaterial({
       color: model.colour,
       flatShading: true,
@@ -250,7 +288,7 @@ function resourcesFor(model: PoiModel): {
       roughness: 0.75,
     }),
   };
-  modelResources.set(model.kind, built);
+  modelResources.set(cacheKey, built);
   return built;
 }
 
@@ -638,8 +676,14 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "poi",
-    build: (mesh) => {
+    build: (mesh, context) => {
       if (mesh.poi.length === 0) return [];
+      // WHERE EACH MARKER ACTUALLY GOES (DEC-S1, DEC-S2), resolved HERE because
+      // this is the only place that has both the payload and the layers being
+      // drawn. The worker collected the candidates; this picks between them.
+      const placements = mesh.poi.map((marker) =>
+        resolvePoiPlacement(marker, context.drawnHostLayers),
+      );
       // ONE InstancedMesh PER KIND — W7 made it instanced, W19 gave each kind
       // its own model. Grouping first is what keeps fifty models a handful of
       // draw calls rather than one per marker, and it is why W7 had to land
@@ -649,21 +693,44 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
       // are modelled and roughly 650 are not, so the long tail is the common
       // case: giving it a bucket per kind would be 650 draw calls for the
       // markers that look identical anyway.
-      const byKind = new Map<string, TransferableMesh["poi"][number][]>();
-      for (const marker of mesh.poi) {
+      // TWO BUCKETS PER HOSTED KIND, not one. A marker on a roof draws the
+      // SYMBOL alone and a marker at its node draws the whole marker, and those
+      // are different geometries — so they cannot share an InstancedMesh even
+      // though they share a kind. The suffix keeps them apart in one map rather
+      // than needing a second one.
+      const byBucket = new Map<
+        string,
+        { marker: TransferableMesh["poi"][number]; placement: PoiPlacement }[]
+      >();
+      mesh.poi.forEach((marker, index) => {
+        const placement = placements[index] as PoiPlacement;
+        // SUPPRESSED MARKERS ARE NOT DRAWN AT ALL — the area under them already
+        // says what they say. They stay in `mesh.poi` and in the counters,
+        // because the feature is still there and still worth counting; only the
+        // geometry goes.
+        if (placement.at === "suppressed") return;
+        const model = poiModelFor(marker.kind);
+        const onHost = placement.at === "host" && model?.symbol !== undefined;
         const bucket =
-          poiModelFor(marker.kind) === undefined ? "" : marker.kind;
-        const list = byKind.get(bucket) ?? [];
-        list.push(marker);
-        byKind.set(bucket, list);
-      }
+          model === undefined ? "" : `${marker.kind}${onHost ? "@host" : ""}`;
+        const list = byBucket.get(bucket) ?? [];
+        list.push({ marker, placement });
+        byBucket.set(bucket, list);
+      });
 
       const objects: THREE.Object3D[] = [];
       const matrix = new THREE.Matrix4();
-      for (const [bucket, markers] of byKind) {
-        const model = bucket === "" ? undefined : poiModelFor(bucket);
+      for (const [bucket, entries] of byBucket) {
+        const onHost = bucket.endsWith("@host");
+        const kind = onHost ? bucket.slice(0, -"@host".length) : bucket;
+        const model = kind === "" ? undefined : poiModelFor(kind);
+        const markers = entries.map((entry) => entry.marker);
+        // THE SYMBOL ALONE ON A HOST, the whole marker at a node. Same kind, two
+        // geometries — a column standing on a roof would be a marker growing out
+        // of a building, which is the thing this change exists to stop drawing.
         const { geometry, material } = resourcesFor(
           model ?? POI_FALLBACK_MODEL,
+          onHost,
         );
         const pins = new THREE.InstancedMesh(
           geometry,
@@ -686,11 +753,28 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         const quaternion = new THREE.Quaternion();
         const scale = new THREE.Vector3();
         const up = new THREE.Vector3(0, 1, 0);
-        markers.forEach((marker, i) => {
-          const [x, y, z] = poiMarkerPosition(marker);
-          position.set(x, y, z);
+        entries.forEach(({ marker, placement }, i) => {
+          if (placement.at === "host") {
+            // OVER THE HOST'S CENTROID, not the marker's node — and the ENU→
+            // scene reflection is applied here rather than in the package, the
+            // same way `poiMarkerPosition` does it for a node. `host.y` is ENU
+            // NORTH; `-host.y` is the scene's z.
+            position.set(
+              placement.host.x,
+              placement.host.topM + placement.liftM,
+              -placement.host.y,
+            );
+            // THE HOST'S SCALE MULTIPLIES THE MARKER'S OWN (DEC-S6). The
+            // per-instance jitter still applies — two cafés on two roofs should
+            // not be identical — and the host term is what keeps a symbol
+            // readable over a large building.
+            scale.setScalar(marker.scale * placement.scale);
+          } else {
+            const [x, y, z] = poiMarkerPosition(marker);
+            position.set(x, y, z);
+            scale.setScalar(marker.scale);
+          }
           quaternion.setFromAxisAngle(up, marker.rotationY);
-          scale.setScalar(marker.scale);
           pins.setMatrixAt(i, matrix.compose(position, quaternion, scale));
         });
         pins.instanceMatrix.needsUpdate = true;
@@ -729,17 +813,34 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
 export function drawMeshLayers(
   mesh: TransferableMesh,
   layers?: MeshLayers,
-  context: MeshLayerContext = NEUTRAL_CONTEXT,
+  /**
+   * `drawnHostLayers` is DERIVED HERE, not supplied — it is `layers` restated,
+   * and a caller passing its own could disagree with the set that actually
+   * gates drawing. So the parameter omits it and the rows receive it.
+   */
+  context: Omit<MeshLayerContext, "drawnHostLayers"> = NEUTRAL_CONTEXT,
 ): { objects: THREE.Object3D[]; stats: BuildingStats } {
   const objects: THREE.Object3D[] = [];
   let stats = NO_STATS;
+  // THE HOST LAYERS ARE DERIVED FROM THE SAME SET THAT GATES DRAWING two lines
+  // below, so "is this layer drawn" cannot give one answer to the loop and a
+  // different one to the POI row. Reading the store separately here is exactly
+  // what would let them drift.
+  const hostAware: MeshLayerContext = {
+    ...context,
+    drawnHostLayers: new Set(
+      (["buildings", "plates"] as const).filter(
+        (layer) => layers?.[layer] ?? true,
+      ),
+    ),
+  };
   for (const descriptor of MESH_LAYERS) {
     // AN OMITTED LAYER DRAWS (W9). The per-row `defaultOn` flag was deleted
     // rather than flipped to `true` everywhere: it existed to reproduce a
     // baseline that no longer exists, and a field that can only ever hold one
     // value is a field that can only ever be wrong.
     if (!(layers?.[descriptor.layer] ?? true)) continue;
-    objects.push(...descriptor.build(mesh, context));
+    objects.push(...descriptor.build(mesh, hostAware));
     stats = { ...stats, ...descriptor.counters(mesh) };
   }
   return { objects, stats };

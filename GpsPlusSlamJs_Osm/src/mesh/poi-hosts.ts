@@ -36,6 +36,7 @@
  * @see poi-hosts.ts.md
  */
 
+import { containsPoint } from "../spatial/point-in-ring.js";
 import type { EnuPoint } from "./enu.js";
 
 /** The layers that can host a marker. Named, because the policy differs. */
@@ -132,8 +133,17 @@ const MAX_HOST_SCALE = 3;
  * for — a restaurant node inside a way tagged only `building=yes`, which is
  * most of real OSM.
  */
-export function hostMatches(kind: string, host: PoiHostAnchor): boolean {
-  if (host.layer === "plates") return true;
+export function hostMatches(
+  kind: string,
+  host: { readonly layer: PoiHostLayer },
+): boolean {
+  // A PLATE ONLY EVER HOSTS ITS OWN AREA KIND, and only to suppress. Letting a
+  // landuse plate host a café would move the café's symbol to the middle of a
+  // retail park — the café is at its node, and the plate is not the café.
+  if (host.layer === "plates") return AREA_KINDS.has(kind);
+  // A BUILDING ONLY EVER HOSTS A SYMBOL KIND. A pool node inside a building
+  // footprint is an indoor pool: the building is not the pool, and a pool
+  // symbol on its roof would be a claim about the whole building.
   return !AREA_KINDS.has(kind);
 }
 
@@ -208,4 +218,69 @@ export function footprintAnchor(footprint: readonly EnuPoint[]): {
     y: sumY / footprint.length,
     spanM: Math.hypot(maxX - minX, maxY - minY),
   };
+}
+
+/** A drawn piece of geometry a marker could belong to. */
+export interface HostCandidate {
+  readonly layer: PoiHostLayer;
+  readonly feature: string;
+  readonly footprint: readonly EnuPoint[];
+  readonly topM: number;
+}
+
+/** A marker this rule can annotate: it needs a position and a kind. */
+export interface PlacedMarker {
+  readonly kind: string;
+  readonly position: { readonly x: number; readonly y: number };
+}
+
+/**
+ * Annotates each marker with the hosts that CONTAIN it, one pass per layer.
+ *
+ * RUNS WHERE THE GEOMETRY IS — the worker — and deliberately does NOT decide
+ * anything. The layer set is not known here (a toggle does not re-run the
+ * worker), so this collects candidates and `resolvePoiPlacement` picks later.
+ * Splitting it that way is what lets the expensive half run once per fetch and
+ * the cheap half run per toggle.
+ *
+ * **CANDIDATES ARE ORDERED BUILDINGS-FIRST BY THE CALLER**, because the first
+ * enabled host wins and a building is the more specific claim: a café inside a
+ * building that stands on a landuse plate belongs to the building.
+ *
+ * **A real point-in-polygon, not a bounding box.** Buildings are routinely L- or
+ * U-shaped and a marker in the notch is inside the box and outside the
+ * building — which would move a symbol onto a roof it is not under, or delete
+ * an area marker that was never inside anything.
+ *
+ * Marker ORDER is preserved, and that is load-bearing rather than tidy: the
+ * consumer indexes marker identity by position in this array, so reordering
+ * would make every pick after the first name the wrong feature.
+ */
+export function annotatePoiHosts<T extends PlacedMarker>(
+  markers: readonly T[],
+  candidates: readonly HostCandidate[],
+): (T & { hosts: readonly PoiHostAnchor[] })[] {
+  // The anchors are derived ONCE per candidate rather than per marker: a city
+  // block is thousands of markers against hundreds of footprints, and
+  // `footprintAnchor` walks every vertex.
+  const prepared = candidates.map((candidate) => ({
+    candidate,
+    anchor: footprintAnchor(candidate.footprint),
+  }));
+  return markers.map((marker) => {
+    const hosts: PoiHostAnchor[] = [];
+    for (const { candidate, anchor } of prepared) {
+      if (!hostMatches(marker.kind, candidate)) continue;
+      if (!containsPoint(candidate.footprint, marker.position)) continue;
+      hosts.push({
+        layer: candidate.layer,
+        feature: candidate.feature,
+        x: anchor.x,
+        y: anchor.y,
+        topM: candidate.topM,
+        spanM: anchor.spanM,
+      });
+    }
+    return { ...marker, hosts };
+  });
 }

@@ -41,8 +41,8 @@ import {
   browserPngDecoder,
   buildAreaPlates,
   buildBuildings,
+  annotatePoiHosts,
   buildPoiMarkers,
-  suppressPoiInsideBuildings,
   buildRegionSlabs,
   type SlabRegion,
   buildRoads,
@@ -291,19 +291,6 @@ function buildMesh(
   const trees = buildTrees(all, options);
   // Same options as the trees: a marker floating over sloped ground reads as a
   // placement bug, and the sampler is the one already built for this frame.
-  // F33: a POI node that duplicates a building already extruded is suppressed
-  // (§5, DEC-R6-17). Four kinds are buildings in their own right at real-world
-  // scale — hospital 15.3 m, hotel 13.5, place_of_worship 12.0,
-  // sports_centre 9.0 — and a hospital is routinely mapped as BOTH a node and a
-  // building way, so the marker stands inside the building.
-  //
-  // APPLIED HERE because this is the only place that has both answers. Neither
-  // builder can see the other, and giving either one a dependency on the other
-  // would be a cycle.
-  const poi = suppressPoiInsideBuildings(
-    buildPoiMarkers(all, options),
-    volumes.map((volume) => volume.footprint),
-  );
   // PER-VERTEX terrain, like the plates: a road is a long surface, and one
   // sample would cut into the hill at one end and float at the other.
   const roads = buildRoads(all, options);
@@ -314,6 +301,38 @@ function buildMesh(
   // the artefact the building change removed. The same option name carries both
   // because the builders call it differently, which is where the difference belongs.
   const plates = buildAreaPlates(all, { ...options, clipTo: plateClip });
+
+  // EVERY MARKER LEARNS WHAT IT SITS INSIDE (DEC-S1, DEC-S2, stage 1).
+  //
+  // AFTER THE PLATES, DELIBERATELY. Plates are clipped to the rendered extent
+  // before triangulation, so a pool near the tile edge exists as a feature and
+  // is NOT drawn. Matching against `all` rather than against what
+  // `buildAreaPlates` returned would suppress that pool's marker and draw
+  // nothing in its place — the data loss DEC-S1 is written to prevent, arriving
+  // through the back door.
+  //
+  // NOTHING IS DECIDED HERE. The worker cannot know which layers are on (a
+  // toggle does not re-run it), so this only collects candidates;
+  // `resolvePoiPlacement` picks on the main thread, per rebuild.
+  //
+  // BUILDINGS FIRST, because the first enabled host wins and a building is the
+  // more specific claim about a marker standing on a landuse plate inside it.
+  const poi = annotatePoiHosts(buildPoiMarkers(all, options), [
+    ...volumes.map((volume) => ({
+      layer: "buildings" as const,
+      feature: volume.feature,
+      footprint: volume.footprint,
+      topM: volume.topHeightM,
+    })),
+    ...plates.map((plate) => ({
+      layer: "plates" as const,
+      feature: plate.feature,
+      footprint: plate.footprint,
+      // A plate is on the ground, and it only ever suppresses — nothing is
+      // placed above it — so there is no top to report.
+      topM: 0,
+    })),
+  ]);
   // BATCHED PER CHUNK, not merged into one (W20, R4-16). The comment that used
   // to be here said a single batch was right "even though the package's general
   // guidance is to batch per res-8/res-9 cell", on the grounds that the view is

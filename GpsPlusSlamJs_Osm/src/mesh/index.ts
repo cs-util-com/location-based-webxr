@@ -98,12 +98,27 @@ export { POI_FALLBACK_MODEL, POI_MODELS, poiModelFor } from "./poi-models.js";
 // owner's verdict was adopted into `POI_MODELS` (DEC-R7b-2a). It existed to let
 // the gallery show candidate models beside the shipped ones; the choice is made,
 // the winners are the shipped models, and the losers are in git history.
-export type { PoiFootprintMarker } from "./poi-building-overlap.js";
+// `poi-building-overlap.ts` was DELETED by stage 1 (DEC-S2). It suppressed a POI
+// marker standing inside a building already extruded — a rule that ran out of
+// subjects when the symbol port made every building-scale marker a 2.5 m symbol,
+// and whose real successor is `poi-hosts.ts`: the same containment test, for a
+// far wider set of markers, deciding between three outcomes rather than two.
+export type {
+  HostCandidate,
+  HostableMarker,
+  PlacedMarker,
+  PoiHostAnchor,
+  PoiHostLayer,
+  PoiPlacement,
+} from "./poi-hosts.js";
 export {
-  BUILDING_SCALE_POI_HEIGHT_M,
-  isBuildingScalePoi,
-  suppressPoiInsideBuildings,
-} from "./poi-building-overlap.js";
+  annotatePoiHosts,
+  footprintAnchor,
+  HOST_CLEARANCE_M,
+  hostMatches,
+  hostScale,
+  resolvePoiPlacement,
+} from "./poi-hosts.js";
 export { TALL_STRUCTURE_KINDS, isTallStructure } from "./tall-structures.js";
 export {
   box,

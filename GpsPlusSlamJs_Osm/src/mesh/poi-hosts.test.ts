@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  annotatePoiHosts,
   footprintAnchor,
   hostMatches,
   hostScale,
@@ -95,14 +96,14 @@ describe("resolvePoiPlacement", () => {
   });
 
   it("does not let a plate host a kind that is not an area kind", () => {
-    // A café node inside a `landuse` plate is not a café that has already been
-    // drawn. Only the four area kinds are self-describing; everything else needs
-    // its symbol.
+    // A café node inside a `landuse` plate is not a café that has been drawn
+    // already, and the plate is not the café. Re-anchoring here would move the
+    // symbol to the middle of a retail park — so the marker stays at its node.
     const placement = resolvePoiPlacement(
       { kind: "amenity=cafe", hosts: [host("plates")] },
       layers("plates"),
     );
-    expect(placement.at).toBe("host");
+    expect(placement.at).toBe("node");
   });
 
   it("does not let a building host an AREA kind", () => {
@@ -129,8 +130,11 @@ describe("resolvePoiPlacement", () => {
     };
     const withBoth = resolvePoiPlacement(marker, layers("buildings", "plates"));
     expect(withBoth.at === "host" && withBoth.host.feature).toBe("way/b");
-    const platesOnly = resolvePoiPlacement(marker, layers("plates"));
-    expect(platesOnly.at === "host" && platesOnly.host.feature).toBe("way/p");
+    // With buildings off, the plate is skipped rather than promoted: it cannot
+    // host a café at all, so the marker falls back to its node.
+    expect(resolvePoiPlacement(marker, layers("plates"))).toEqual({
+      at: "node",
+    });
   });
 });
 
@@ -208,5 +212,161 @@ describe("footprintAnchor", () => {
       { x: 20, y: 4 },
     ];
     expect(footprintAnchor(biased).x).toBeLessThan(10);
+  });
+});
+
+describe("annotatePoiHosts", () => {
+  const square = (size: number, cx = 0, cy = 0): { x: number; y: number }[] => {
+    const h = size / 2;
+    return [
+      { x: cx - h, y: cy - h },
+      { x: cx + h, y: cy - h },
+      { x: cx + h, y: cy + h },
+      { x: cx - h, y: cy + h },
+    ];
+  };
+
+  it("annotates a marker with the geometry that contains it", () => {
+    const [annotated] = annotatePoiHosts(
+      [{ kind: "amenity=cafe", position: { x: 0, y: 0 } }],
+      [
+        {
+          layer: "buildings",
+          feature: "way/7",
+          footprint: square(40),
+          topM: 14,
+        },
+      ],
+    );
+    expect(annotated?.hosts).toHaveLength(1);
+    expect(annotated?.hosts[0]?.feature).toBe("way/7");
+    expect(annotated?.hosts[0]?.topM).toBe(14);
+  });
+
+  it("leaves a marker OUTSIDE every footprint with no hosts", () => {
+    // The common case, and the one a bounding-box test would get wrong most
+    // often. An empty list is what makes `resolvePoiPlacement` return `node`.
+    const [annotated] = annotatePoiHosts(
+      [{ kind: "amenity=cafe", position: { x: 500, y: 500 } }],
+      [
+        {
+          layer: "buildings",
+          feature: "way/7",
+          footprint: square(40),
+          topM: 14,
+        },
+      ],
+    );
+    expect(annotated?.hosts).toEqual([]);
+  });
+
+  it("does not confuse a bounding-box hit with containment", () => {
+    // THE CASE OWED BY `poi-building-overlap.test.ts`, now with a real subject.
+    // An L-shape: the marker sits in the notch, inside the box and outside the
+    // polygon. A bbox test would move its symbol onto a roof it is not under.
+    const lShape = [
+      { x: -20, y: -20 },
+      { x: 20, y: -20 },
+      { x: 20, y: -10 },
+      { x: -10, y: -10 },
+      { x: -10, y: 20 },
+      { x: -20, y: 20 },
+    ];
+    const [annotated] = annotatePoiHosts(
+      [{ kind: "amenity=cafe", position: { x: 10, y: 10 } }],
+      [{ layer: "buildings", feature: "way/l", footprint: lShape, topM: 9 }],
+    );
+    expect(annotated?.hosts).toEqual([]);
+  });
+
+  it("skips a candidate whose layer cannot host that kind", () => {
+    // The asymmetry applied at annotation time as well, so a building never even
+    // becomes a candidate host for a pool. Cheaper, and it keeps the two halves
+    // of DEC-S7 from drifting apart.
+    const [annotated] = annotatePoiHosts(
+      [{ kind: "leisure=swimming_pool", position: { x: 0, y: 0 } }],
+      [
+        {
+          layer: "buildings",
+          feature: "way/7",
+          footprint: square(40),
+          topM: 14,
+        },
+      ],
+    );
+    expect(annotated?.hosts).toEqual([]);
+  });
+
+  it("keeps candidate order, so the caller's priority survives", () => {
+    // `resolvePoiPlacement` takes the first ENABLED host, so the order this
+    // returns IS the priority. Two plates can both contain a pool node — a pool
+    // inside a leisure complex — and the smaller, more specific one is passed
+    // first by the caller.
+    const [annotated] = annotatePoiHosts(
+      [{ kind: "leisure=swimming_pool", position: { x: 0, y: 0 } }],
+      [
+        {
+          layer: "plates",
+          feature: "way/near",
+          footprint: square(40),
+          topM: 0,
+        },
+        {
+          layer: "plates",
+          feature: "way/far",
+          footprint: square(200),
+          topM: 0,
+        },
+      ],
+    );
+    expect(annotated?.hosts.map((host) => host.feature)).toEqual([
+      "way/near",
+      "way/far",
+    ]);
+  });
+
+  it("gives a marker BOTH layers' hosts when both can host its kind", () => {
+    // The layer-aware pick only means something if the annotation kept more
+    // than one candidate. A symbol kind can only be hosted by buildings and an
+    // area kind only by plates, so this is the case where a marker legitimately
+    // carries two candidates of the same layer and the enabled set still
+    // decides — asserted so a future narrowing of the match rule cannot quietly
+    // collapse every marker to a single host.
+    const [annotated] = annotatePoiHosts(
+      [{ kind: "amenity=cafe", position: { x: 0, y: 0 } }],
+      [
+        {
+          layer: "buildings",
+          feature: "way/b1",
+          footprint: square(40),
+          topM: 9,
+        },
+        {
+          layer: "buildings",
+          feature: "way/b2",
+          footprint: square(90),
+          topM: 20,
+        },
+        { layer: "plates", feature: "way/p", footprint: square(300), topM: 0 },
+      ],
+    );
+    expect(annotated?.hosts.map((host) => host.feature)).toEqual([
+      "way/b1",
+      "way/b2",
+    ]);
+  });
+
+  it("preserves marker order, which the pick table depends on", () => {
+    // The consumer indexes marker identity by position in this array, so
+    // reordering makes every pick after the first name the wrong feature.
+    const markers = [
+      { kind: "amenity=bench", position: { x: 0, y: 0 } },
+      { kind: "amenity=cafe", position: { x: 1, y: 1 } },
+      { kind: "amenity=fountain", position: { x: 2, y: 2 } },
+    ];
+    const annotated = annotatePoiHosts(markers, []);
+    expect(annotated.map((marker) => marker.kind)).toEqual(
+      markers.map((marker) => marker.kind),
+    );
   });
 });

@@ -66,8 +66,8 @@ export interface BuildingVolume {
    *
    * Carried rather than recomputed: the rings already exist at the point this is
    * built, and re-deriving them would repeat the whole geometry conversion.
-   * `poi-building-overlap.ts` is the consumer — it suppresses POI markers that
-   * duplicate a building already standing here.
+   * `poi-hosts.ts` is the consumer — it decides whether a POI marker standing
+   * here belongs on this building's roof instead of at its own node.
    */
   readonly footprint: readonly EnuPoint[];
   /**

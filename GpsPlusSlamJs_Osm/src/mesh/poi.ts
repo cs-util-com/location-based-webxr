@@ -29,6 +29,7 @@
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import { featureKey, type OsmFeatureKey } from "../model/osm-feature.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
+import type { PoiHostAnchor } from "./poi-hosts.js";
 import { GROUND_ALIGNED_KINDS } from "./poi-models.js";
 import { stablePoiScale, stableRotationY } from "./stable-jitter.js";
 
@@ -60,6 +61,19 @@ export const POI_KEYS = [
 
 export interface PoiMarker {
   readonly feature: OsmFeatureKey;
+  /**
+   * Geometry already drawn that this marker sits inside (DEC-S1, DEC-S2).
+   *
+   * **ADDED BY `annotatePoiHosts`, NOT BY THIS BUILDER**, and absent until it
+   * runs. `poi.ts` marks nodes and knows nothing about buildings or plates —
+   * giving it a dependency on either would be a cycle, which is the same reason
+   * the old suppression rule lived outside it too.
+   *
+   * It is declared HERE rather than in a wider type because it crosses the
+   * worker boundary on this object, and a field that travels undeclared is a
+   * field the consumer casts to reach.
+   */
+  readonly hosts?: readonly PoiHostAnchor[];
   /** Metres east/north of the frame origin. */
   readonly position: EnuPoint;
   /** Ground height at the marker, metres. */
