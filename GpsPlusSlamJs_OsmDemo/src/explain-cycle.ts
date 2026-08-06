@@ -86,7 +86,24 @@ export function createExplainCycle(
         return;
       }
       if (explanation === undefined) {
+        // SAY SO, rather than doing nothing at all.
+        //
+        // DEC-7's whole reason for revealing sub-threshold cells is that "a
+        // hidden cell is the one cell you cannot click to ask why" — so
+        // clicking one and getting silence undercuts the feature it exists to
+        // serve. The user is left unable to tell "this cell has no explanation"
+        // from "the click missed".
+        //
+        // It is a real case rather than a fault: the selection outlives one
+        // working set, so after a move the worker legitimately no longer holds
+        // the cell. Reported through the NON-FATAL channel for exactly that
+        // reason — it says nothing about whether the map's data is still good.
         clear();
+        store.dispatch(
+          actions.nonFatalError(
+            `details panel: the worker no longer holds ${cell}, so there is nothing to explain`,
+          ),
+        );
         return;
       }
       render(explanation);

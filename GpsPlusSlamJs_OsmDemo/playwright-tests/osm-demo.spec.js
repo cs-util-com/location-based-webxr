@@ -3064,7 +3064,28 @@ test.describe("revealing the sub-threshold cells", () => {
       await expect(identity).toBeVisible();
 
       await identity.click({ force: true });
-      await expect(page.locator("#details")).toBeVisible();
+
+      // ASSERTED THROUGH THE APP'S OWN STATE, not just on the panel.
+      //
+      // The bare `toBeVisible` here failed in CI on five consecutive PRs and
+      // never once locally, and its message — "13 x locator resolved to <aside
+      // hidden>" — could not distinguish the two ways this goes silent: the
+      // worker no longer holding the cell, or the reply being dropped because
+      // the selection changed mid-flight. A failure that cannot name its own
+      // cause costs a debugging cycle every time it appears.
+      //
+      // So the poll reports the STATUS LINE alongside the panel state. Since
+      // `explain-cycle.ts` now says when it cannot explain a cell, a failure
+      // here prints the reason instead of only the symptom.
+      await expect
+        .poll(
+          async () => {
+            if (await page.locator("#details").isVisible()) return "visible";
+            return `hidden — status: ${await page.locator("#status").textContent()}`;
+          },
+          { timeout: 30000 },
+        )
+        .toBe("visible");
     });
   });
 });

@@ -121,6 +121,29 @@ describe("createExplainCycle", () => {
     expect(render).not.toHaveBeenCalled();
   });
 
+  it("SAYS that it cannot explain the cell, rather than doing nothing", async () => {
+    // DEC-7 reveals sub-threshold cells because "a hidden cell is the one cell
+    // you cannot click to ask why". Clicking one and getting silence undercuts
+    // that: the user cannot tell "no explanation" from "the click missed".
+    //
+    // Non-fatal rather than fatal, because the case is legitimate — the
+    // selection outlives one working set — and says nothing about whether the
+    // map data is still good.
+    const { store, actions, explain, calls } = setup();
+    store.dispatch(actions.cellSelected("cell-a"));
+    const pending = explain("cell-a");
+    calls[0]?.answer(undefined);
+    await pending;
+
+    const view = selectOsmView(store.getState());
+    expect(view.loading).toEqual({
+      phase: "error",
+      message: expect.stringContaining("cell-a"),
+    });
+    // No snapshot assertion here: this fixture never loads one, and the
+    // snapshot-survives guarantee is already pinned by the rejection test.
+  });
+
   it("reports a rejection through the NON-FATAL channel and never rejects itself", async () => {
     // Two claims. A failed explanation says nothing about whether the map's data
     // is good, so it must not clear the snapshot — that is `fetchFailed`'s job.
