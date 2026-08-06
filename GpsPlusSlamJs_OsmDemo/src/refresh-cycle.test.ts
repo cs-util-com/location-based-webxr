@@ -24,6 +24,7 @@ import {
   isFinalRing,
   renderSafely,
 } from "./refresh-cycle.js";
+import { createAnchorHolder } from "./scene-anchor.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
@@ -128,6 +129,7 @@ function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
   const refresh = createRefreshCycle({
     store: demo.store,
     actions: demo.actions,
+    anchors: createAnchorHolder(COLOGNE),
     // The pipeline moved into the worker, so the cycle now calls over RPC. The
     // narrow `RefreshWorker` shape is what keeps this test worker-free.
     worker: {
@@ -602,6 +604,7 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
     const refresh = createRefreshCycle({
       store: demo.store,
       actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
       worker: {
         call: (_kind, payload) => {
           calls += 1;
@@ -710,6 +713,7 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
     const refresh = createRefreshCycle({
       store: demo.store,
       actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
       worker: {
         // Not `async`: there is nothing to await, and the rule is right that an
         // async function without one is a promise wrapper pretending to be work.
@@ -763,6 +767,7 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
     const refresh = createRefreshCycle({
       store: demo.store,
       actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
       worker: {
         call: (_kind, payload) => {
           asked.push(payload.includeCells);
@@ -791,7 +796,15 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
 });
 
 describe("the scene anchor", () => {
-  /** Runs the cycle at each position in turn, recording the frameOrigin sent. */
+  /**
+   * Runs the cycle at each position in turn, recording the frameOrigin sent.
+   *
+   * ADVANCES THE HOLDER BEFORE EACH REFRESH, which is what `main.ts`'s position
+   * subscriber does — the anchor moves once, at the top, so the camera and the
+   * terrain load read the same value this refresh will send. The cycle used to
+   * own that decision and therefore ran it LAST, leaving the other two consumers
+   * on the outgoing frame whenever it moved.
+   */
   async function originsFor(
     positions: readonly { lat: number; lng: number }[],
   ): Promise<({ lat: number; lng: number } | undefined)[]> {
@@ -799,10 +812,12 @@ describe("the scene anchor", () => {
       start: positions[0]!,
       category: "walkable",
     });
+    const anchors = createAnchorHolder(positions[0]!);
     const sent: ({ lat: number; lng: number } | undefined)[] = [];
     const refresh = createRefreshCycle({
       store: demo.store,
       actions: demo.actions,
+      anchors,
       worker: {
         call: (_kind, payload) => {
           sent.push(payload.frameOrigin);
@@ -817,6 +832,7 @@ describe("the scene anchor", () => {
 
     for (const position of positions) {
       demo.store.dispatch(demo.actions.positionChanged(position));
+      anchors.advance(position);
       await refresh();
     }
     return sent;
@@ -851,10 +867,12 @@ describe("the scene anchor", () => {
     // one's frame.
     const near = { lat: COLOGNE.lat + 0.0005, lng: COLOGNE.lng };
     const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const anchors = createAnchorHolder(COLOGNE);
     const sent: ({ lat: number; lng: number } | undefined)[] = [];
     const refresh = createRefreshCycle({
       store: demo.store,
       actions: demo.actions,
+      anchors,
       worker: {
         call: (_kind, payload) => {
           sent.push(payload.frameOrigin);
@@ -869,9 +887,49 @@ describe("the scene anchor", () => {
 
     await refresh();
     demo.store.dispatch(demo.actions.positionChanged(near));
-    await refresh({ declared: true });
+    anchors.advance(near, { declared: true });
+    await refresh();
 
     expect(sent.at(-1)).toEqual(near);
+  });
+
+  it("sends the anchor the holder ALREADY HOLDS, never one of its own", async () => {
+    // WHY THIS TEST MATTERS. This is the structural half of the ordering fix.
+    // While the cycle computed the anchor itself, "the camera, the terrain and
+    // the geometry agree about the frame" was a rule about statement order in
+    // `main.ts`; now it is a consequence of there being one value. The
+    // assertion is that a refresh with NO position change re-sends the held
+    // origin rather than re-deriving one from wherever the user happens to be —
+    // which is what a category switch or a layer toggle does all day.
+    const walked = { lat: COLOGNE.lat + 0.0004, lng: COLOGNE.lng };
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const anchors = createAnchorHolder(COLOGNE);
+    const sent: ({ lat: number; lng: number } | undefined)[] = [];
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors,
+      worker: {
+        call: (_kind, payload) => {
+          sent.push(payload.frameOrigin);
+          return Promise.resolve({
+            snapshot: snapshot("walkable"),
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+          });
+        },
+      },
+      onMesh: () => {},
+    });
+
+    // The user has moved and the holder was advanced for it — a step, so the
+    // anchor stayed put. A later refresh that nobody told about the move must
+    // still send the anchor, not the position.
+    demo.store.dispatch(demo.actions.positionChanged(walked));
+    anchors.advance(walked);
+    await refresh();
+
+    expect(sent.at(-1)).toEqual(COLOGNE);
+    expect(sent.at(-1)).not.toEqual(walked);
   });
 
   it("re-anchors once the user travels past the threshold", async () => {

@@ -35,7 +35,29 @@ pre-existing behaviour, and therefore already known to work.
 - `REANCHOR_THRESHOLD_M = 5_000`
 - `AnchorDecision` — `{ origin, reanchored }`
 - `AnchorOptions` — `{ declared? }`
-- `nextAnchor(current, position, options?) => AnchorDecision`
+- `nextAnchor(current, position, options?) => AnchorDecision` — the rule, pure.
+- `AnchorHolder` — `{ origin, advance(position, options?) }`
+- `createAnchorHolder(start) => AnchorHolder` — the rule, held for a session.
+
+## Why there is a holder as well as a pure rule
+
+A position change drives **three** consumers of the frame — the camera pivot, the
+terrain load and the refresh — and the refresh runs **last**. While the refresh
+owned the anchor decision, the other two necessarily read the **outgoing** value
+whenever the anchor moved:
+
+- After a Cologne → Tokyo pick the camera pivoted on a frame ~9 000 km from the
+  scene it was looking at.
+- A terrain load threaded through the same value would have sampled the ground in
+  a frame the buildings no longer used.
+
+Ordering the statements in `main.ts` carefully fixes that once. **One decision
+point that every consumer reads afterwards fixes it structurally** — and this
+codebase has now watched the "consumers of the frame move together" constraint be
+violated three times by being written into a plan rather than enforced by a seam.
+
+So `main.ts` calls `advance` exactly once, at the top of the position subscriber,
+and everything downstream reads `origin`.
 
 ## The threshold, and which error it actually bounds (DEC-R11-7)
 
@@ -74,6 +96,12 @@ SLAM, which is a separate concern.
 - **Under AR, `declared` must never be set.** The framework's `zero` is
   immutable, and re-anchoring during a live session would reintroduce the exact
   disagreement this module removes.
+- **The holder is seeded, never empty.** `createAnchorHolder(start)` takes the
+  resolved start position, because the demo has no GPS path and something — the
+  initial terrain load — reads `origin` before any `advance` has happened.
+- **A throw leaves the holder untouched.** `advance` assigns only after
+  `nextAnchor` returns, so a non-finite position cannot produce a half-updated
+  holder whose `origin` is `NaN`.
 
 ## Defensive behaviour
 
@@ -90,6 +118,11 @@ span, an undeclared continent-scale move, the first call, and the non-finite
 guard.
 
 **Mutation-checked**, six of seven caught.
+
+`createAnchorHolder` is covered separately: a declared advance is visible to
+every later read (the ordering guarantee), a step leaves `origin` alone, the seed
+is readable before any advance, the threshold still fires undeclared, and a
+non-finite position throws without disturbing the held origin.
 
 **What is NOT covered — the surviving mutation:** `>` against `>=` at exactly
 `REANCHOR_THRESHOLD_M`. A great-circle distance never lands exactly on

@@ -22,10 +22,27 @@ import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 
 import { buildHeightfieldData } from "./heightfield.js";
 import { describeTerrain } from "./terrain-note.js";
-import { createTerrainCycle, type TerrainState } from "./terrain-cycle.js";
+import {
+  createTerrainCycle,
+  type TerrainLoad,
+  type TerrainState,
+} from "./terrain-cycle.js";
 
 const COLOGNE: LatLng = { lat: 50.9412, lng: 6.9583 };
 const BONN: LatLng = { lat: 50.7339, lng: 7.0997 };
+
+/**
+ * A load whose window and frame are the same point — the pre-anchor shape.
+ *
+ * These tests are about ORDERING, not about the frame, so they hold the two
+ * together deliberately: `terrain-window.test.ts` owns the question of what
+ * happens when they differ, and mixing the two concerns here would make an
+ * ordering failure look like a frame failure.
+ */
+const at = (position: LatLng) => ({
+  centre: position,
+  frameOrigin: position,
+});
 
 interface HeldCall {
   /** Mean latitude of the requested grid — i.e. which position asked. */
@@ -69,7 +86,7 @@ function deferredProvider(): {
 }
 
 function cycleFor(provider: ElevationProvider): {
-  load: (centre: LatLng) => Promise<void>;
+  load: (request: TerrainLoad) => Promise<void>;
   readonly applied: TerrainState[];
 } {
   const applied: TerrainState[] = [];
@@ -115,8 +132,8 @@ describe("createTerrainCycle", () => {
     const { provider, calls } = deferredProvider();
     const { load, applied } = cycleFor(provider);
 
-    void load(COLOGNE);
-    void load(BONN);
+    void load(at(COLOGNE));
+    void load(at(BONN));
 
     // Only ONE load may be open: the second is queued behind it, never raced.
     expect(calls).toHaveLength(1);
@@ -149,9 +166,9 @@ describe("createTerrainCycle", () => {
     const { provider, calls } = deferredProvider();
     const { load, applied } = cycleFor(provider);
 
-    void load(COLOGNE);
-    void load(BONN);
-    void load(COLOGNE);
+    void load(at(COLOGNE));
+    void load(at(BONN));
+    void load(at(COLOGNE));
 
     calls[0]?.resolve(100);
     await settle();
@@ -178,7 +195,7 @@ describe("createTerrainCycle", () => {
     };
     const { load, applied } = cycleFor(provider);
 
-    await load(COLOGNE);
+    await load(at(COLOGNE));
     expect(applied[0]?.field).toBeUndefined();
     expect(applied[0]?.note).toBe("terrain unavailable — ground is flat");
   });
@@ -194,7 +211,7 @@ describe("createTerrainCycle", () => {
     };
     const { load, applied } = cycleFor(provider);
 
-    await load(COLOGNE);
+    await load(at(COLOGNE));
     expect(applied[0]?.note).toMatch(
       /^terrain ±0 m \(1\/\d+ samples missing\)$/,
     );
@@ -208,7 +225,7 @@ describe("createTerrainCycle", () => {
     };
     const { load, applied } = cycleFor(provider);
 
-    await load(COLOGNE);
+    await load(at(COLOGNE));
     expect(applied[0]?.field).toBeUndefined();
     expect(applied[0]?.note).toBe("terrain unavailable — ground is flat");
   });
@@ -244,7 +261,7 @@ describe("createTerrainCycle — a superseded load applies nothing", () => {
     // bound. A `let` holder is the same thing plus a reassignment `prefer-const`
     // objects to.
     function supersede(): void {
-      void load(BONN);
+      void load(at(BONN));
     }
     const load = createTerrainCycle({
       worker: {
@@ -270,7 +287,7 @@ describe("createTerrainCycle — a superseded load applies nothing", () => {
       apply: (state) => applied.push(state),
     });
 
-    await load(COLOGNE);
+    await load(at(COLOGNE));
     await settle();
 
     // ONE apply, not two: the superseded load applied nothing, and the load that

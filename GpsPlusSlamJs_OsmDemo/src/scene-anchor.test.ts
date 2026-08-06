@@ -23,7 +23,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { REANCHOR_THRESHOLD_M, nextAnchor } from "./scene-anchor.js";
+import {
+  REANCHOR_THRESHOLD_M,
+  createAnchorHolder,
+  nextAnchor,
+} from "./scene-anchor.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 const TOKYO = { lat: 35.6896, lng: 139.7006 };
@@ -139,5 +143,66 @@ describe("nextAnchor", () => {
         /position/i,
       );
     });
+  });
+});
+
+describe("createAnchorHolder", () => {
+  it("advances ONCE and every reader afterwards sees the new origin", () => {
+    // WHY THIS TEST MATTERS. The anchor used to be decided inside the refresh
+    // cycle, which runs LAST of the three things a position change triggers.
+    // The camera pivot and the terrain load both read the held anchor BEFORE
+    // that, so on a re-anchor they used the outgoing frame: after a
+    // Cologne -> Tokyo pick the camera pivoted ~9 000 km from the scene and the
+    // terrain would have been sampled in a frame the buildings no longer used.
+    //
+    // Making the holder the single decision point is what removes that class of
+    // bug structurally rather than by ordering the statements carefully.
+    const anchors = createAnchorHolder(COLOGNE);
+    expect(anchors.origin).toEqual(COLOGNE);
+
+    const decision = anchors.advance(TOKYO, { declared: true });
+
+    expect(decision.reanchored).toBe(true);
+    expect(decision.origin).toEqual(TOKYO);
+    // The reader that runs after `advance` must not be able to see the old one.
+    expect(anchors.origin).toEqual(TOKYO);
+  });
+
+  it("keeps the origin for a step, so repeated reads are stable", () => {
+    // The counterweight to the case above: advancing is not the same as moving.
+    const anchors = createAnchorHolder(COLOGNE);
+    const stepped = northOf(COLOGNE, 20);
+
+    const decision = anchors.advance(stepped);
+
+    expect(decision.reanchored).toBe(false);
+    expect(anchors.origin).toEqual(COLOGNE);
+  });
+
+  it("seeds from the start position, so the first read precedes any advance", () => {
+    // The demo has no GPS: the origin is the resolved start position, taken once
+    // at construction (DEC-R11-7 §4.1). Something reads it — the initial terrain
+    // load — before any position change has happened.
+    const anchors = createAnchorHolder(COLOGNE);
+    expect(anchors.origin).toEqual(COLOGNE);
+  });
+
+  it("re-anchors past the threshold without a declaration", () => {
+    const anchors = createAnchorHolder(COLOGNE);
+    const far = northOf(COLOGNE, REANCHOR_THRESHOLD_M + 1_000);
+
+    expect(anchors.advance(far).reanchored).toBe(true);
+    expect(anchors.origin).toEqual(far);
+  });
+
+  it("keeps the last good origin when a position is not finite", () => {
+    // `nextAnchor` throws rather than poisoning the frame; the holder must not
+    // swallow that into a half-updated state where `origin` is NaN.
+    const anchors = createAnchorHolder(COLOGNE);
+
+    expect(() => anchors.advance({ lat: Number.NaN, lng: 0 })).toThrow(
+      RangeError,
+    );
+    expect(anchors.origin).toEqual(COLOGNE);
   });
 });

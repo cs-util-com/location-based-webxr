@@ -58,9 +58,30 @@ export interface TerrainState {
 interface TerrainWorker {
   call(
     kind: "terrain",
-    payload: { centre: LatLng; extentM: number; spacingM: number },
+    payload: {
+      centre: LatLng;
+      frameOrigin: LatLng;
+      extentM: number;
+      spacingM: number;
+    },
     options: { signal: AbortSignal },
   ): Promise<TerrainResult>;
+}
+
+/**
+ * One load's inputs: where the user is, and what the numbers will mean.
+ *
+ * TWO VALUES, NOT ONE, and that is the whole of round 5B's first half. They were
+ * a single `centre` while the frame followed the user, so nothing could
+ * disagree; once the scene got a fixed anchor the heightfield kept being sampled
+ * in the user's frame while the buildings standing on it moved to the scene's,
+ * and the ground slid under the city by the step distance on every step.
+ */
+export interface TerrainLoad {
+  /** Where the user is — what the window is for. */
+  readonly centre: LatLng;
+  /** Where the scene's ENU frame is anchored — what the heights mean. */
+  readonly frameOrigin: LatLng;
 }
 
 export interface TerrainCycleOptions {
@@ -87,13 +108,21 @@ export interface TerrainCycleOptions {
  */
 export function createTerrainCycle(
   options: TerrainCycleOptions,
-): LatestOnly<LatLng> {
+): LatestOnly<TerrainLoad> {
   const { worker, extentM, spacingM, apply } = options;
 
-  return latestOnly(async (centre: LatLng, signal) => {
+  return latestOnly(async (load: TerrainLoad, signal) => {
     const state = await worker.call(
       "terrain",
-      { centre, extentM, spacingM },
+      {
+        centre: load.centre,
+        // SENT SEPARATELY, and it must be the anchor this position will actually
+        // be drawn in — not the one held before the position change was handled.
+        // See `scene-anchor.ts`'s holder for why that distinction has teeth.
+        frameOrigin: load.frameOrigin,
+        extentM,
+        spacingM,
+      },
       { signal },
     );
     // NOTHING IS APPLIED FOR A SUPERSEDED LOAD — the same guard `refresh-cycle.ts`

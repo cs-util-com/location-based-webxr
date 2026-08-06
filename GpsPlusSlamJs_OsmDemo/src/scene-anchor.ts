@@ -108,3 +108,54 @@ export function nextAnchor(
     ? { origin: position, reanchored: true }
     : { origin: current, reanchored: false };
 }
+
+/** The scene's current anchor, and the one place that is allowed to move it. */
+export interface AnchorHolder {
+  /** Where the frame is anchored right now. Never `undefined` — see the seed. */
+  readonly origin: LatLng;
+  /**
+   * Applies {@link nextAnchor} for a new position and keeps the result.
+   *
+   * @throws `RangeError` for a non-finite position, leaving the held origin
+   *   untouched — a half-updated holder would be worse than a thrown error.
+   */
+  advance(position: LatLng, options?: AnchorOptions): AnchorDecision;
+}
+
+/**
+ * Holds the scene anchor for a session.
+ *
+ * **WHY THIS IS A HOLDER RATHER THAN STATE INSIDE THE REFRESH CYCLE.** A
+ * position change drives THREE consumers — the camera pivot, the terrain load
+ * and the refresh — and the refresh runs last. While the refresh owned the
+ * decision, the other two necessarily read the OUTGOING anchor: after a
+ * Cologne → Tokyo pick the camera pivoted on a frame ~9 000 km from the scene it
+ * was looking at, and a terrain load threaded through the same value would have
+ * sampled the ground in a frame the buildings no longer used.
+ *
+ * Ordering the statements in `main.ts` carefully would also fix it, once. A
+ * single decision point that every consumer reads afterwards fixes it
+ * structurally — and this codebase has now watched the same "the consumers of
+ * the frame must move together" constraint be violated three times by being
+ * written down rather than enforced.
+ *
+ * @param start the resolved start position. The demo has no GPS path, so this
+ *   is the only origin that exists before the user moves (DEC-R11-7 §4.1) — and
+ *   the initial terrain load reads it before any `advance` has happened.
+ */
+export function createAnchorHolder(start: LatLng): AnchorHolder {
+  let current = nextAnchor(undefined, start).origin;
+
+  return {
+    get origin() {
+      return current;
+    },
+    advance(position, options) {
+      // Assigned only after `nextAnchor` returns, so a throw cannot leave a
+      // half-updated holder behind.
+      const decision = nextAnchor(current, position, options);
+      current = decision.origin;
+      return decision;
+    },
+  };
+}

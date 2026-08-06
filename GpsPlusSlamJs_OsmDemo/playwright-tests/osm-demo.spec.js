@@ -2958,10 +2958,15 @@ test.describe("the legend", () => {
       // does not depend on the switch, so leaving it off would be harmless here —
       // but a step that hands the next one a state it did not ask for is how
       // fused tests start failing for reasons that are not about them.
-      await page.locator("#layer-cells").check();
-      await expect(page.locator("#map path.affordance-cell")).not.toHaveCount(
-        0,
-      );
+      //
+      // THROUGH THE HELPER, not a hand-rolled check-and-assert. Switching this
+      // layer on is a REFETCH, not a redraw (cells are data-gated since round 10
+      // stage B), so the whole progressive cycle runs and the default 5 s expect
+      // timeout is racing it on a loaded machine. This site hand-rolled exactly
+      // what `enableCellLayer` was given a `waitForRefresh` for in 518fd7d — the
+      // FOURTH appearance of that same failure, and it duly failed in a full
+      // gate run while passing in isolation.
+      await enableCellLayer(page);
     });
 
     await test.step("says nothing qualifies instead of showing a 1-to-1 ramp", async () => {

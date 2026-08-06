@@ -4,12 +4,14 @@
 
 ## Public API
 
-- `createRefreshCycle({ store, actions, worker, onMesh })` → `LatestOnly<void>`
+- `createRefreshCycle({ store, actions, worker, onMesh, anchors })` → `LatestOnly<void>`
   - Takes **no arguments** when called. Reads `position` and `category` from the store at call time.
   - Dispatches `fetchStarted` → (`snapshotReady` | `fetchFailed`).
   - Coalesced through `latestOnly`: at most one run in flight, only the newest waiting intent survives, never rejects.
 - `renderSafely({ store, actions }, label, draw)` — runs one view's draw; on a throw dispatches `nonFatalError` with `"<label>: <message>"` and returns normally.
 - `isFinalRing(radius)` — whether a snapshot of this radius is the LAST one a refresh will publish. Exported from here rather than computed by callers because this file owns `PROGRESSIVE_RADII`, and "last" must not be able to go stale somewhere else when that list changes. `>=` rather than `===`, so a radius the cycle never scores reads as finished — an unexpected value should be a cosmetic bug, not a permanent "still widening" in the UI.
+- **`anchors` is READ, never decided here.** This cycle used to own the scene-anchor decision, and that was a defect: a position change drives three consumers of the frame — the camera pivot, the terrain load and this — and this one runs LAST, so the other two read the outgoing anchor whenever it moved. The holder is advanced once by `main.ts`'s position subscriber and everything downstream reads the same value. A refresh with no position change (a category switch, a layer toggle, the initial load) therefore re-sends the held origin rather than re-deriving one from wherever the user happens to be. See `scene-anchor.ts.md`.
+  - This is also why the cycle no longer takes a `declared` flag: the flag belongs to the position change, and so does the decision it feeds.
 - Types: `StoreAccess`, `RefreshCycleOptions`. The narrowed worker surface (`RefreshWorker`) is module-private — it exists so `refresh-cycle.test.ts` can drive the cycle without a worker.
 - **`onMesh` is called BEFORE `snapshotReady` is dispatched**, and the order is load-bearing: the mesh cannot live in the store (`Float32Array` vertex data, which RTK rejects), but the 3D view draws from a snapshot subscription — so a dispatch first would draw the new snapshot against the previous position's buildings. Pinned by its own test, because both orders end in the same final state and only the intermediate frame differs.
 

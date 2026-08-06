@@ -40,7 +40,19 @@ import type { WorkerCalls } from "./worker/protocol.js";
 /** What one grid build needs. Everything here is plain, cloneable data. */
 export interface CellMeshRequest {
   readonly cells: readonly { readonly cell: string; readonly score: number }[];
+  /** Where the user is — what the grid is drawn AROUND. */
   readonly centre: LatLng;
+  /**
+   * Where the scene's ENU frame is anchored — what the grid's coordinates MEAN.
+   *
+   * The grid is the fourth thing built through the worker's `meshOptions`, and
+   * the one missed when the frame was fixed: the overlay stayed anchored on the
+   * user while the buildings under it moved to the scene's anchor, so the two
+   * slid apart by the walked distance. Optional, falling back to `centre`, so a
+   * caller that has not adopted an anchor keeps the old behaviour rather than
+   * silently getting a frame it did not ask for.
+   */
+  readonly frameOrigin?: LatLng;
   readonly threshold: number;
   readonly scale: { readonly threshold: number; readonly max: number };
   readonly showBelowThreshold: boolean;

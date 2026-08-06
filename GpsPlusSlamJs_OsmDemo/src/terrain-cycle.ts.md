@@ -4,8 +4,8 @@
 
 ## Public API
 
-- `createTerrainCycle({ worker, extentM, spacingM, apply })` → `LatestOnly<LatLng>`
-  - Called with the centre position. Loads a `Heightfield` through `buildHeightfield` and reports it via `apply` exactly once per load that is not superseded.
+- `createTerrainCycle({ worker, extentM, spacingM, apply })` → `LatestOnly<TerrainLoad>`
+  - Called with `{ centre, frameOrigin }` — where the user is, and where the scene`s ENU frame is anchored. TWO values, not one: they were a single `centre` while the frame followed the user, and once the scene got a fixed anchor the heightfield kept being sampled in the user`s frame while the buildings standing on it moved to the scene`s, so the ground slid under the city by the step distance on every step. `terrain-window.ts`owns what the worker then does with the pair. Loads a`Heightfield`through`buildHeightfield`and reports it via`apply` exactly once per load that is not superseded.
   - Coalesced through `latestOnly`: at most one load in flight, only the newest waiting position survives, never rejects.
 - `interface TerrainState` — `field` (`Heightfield | undefined`; `undefined` means the ground stays flat) and `note` (one status-line phrase, never empty).
 - `interface TerrainCycleOptions` — `worker` (the narrowed RPC surface), `extentM`, `spacingM`, `apply`. The SAMPLING moved into the worker; this module is now the coalescing wrapper around an RPC call, and `apply` receives `HeightfieldData` (not `Heightfield` — `heightAt` is a method and structured clone drops methods silently).

@@ -7,8 +7,12 @@ only the newest build ever reaches the screen.
 
 ## Public API
 
-- `CellMeshRequest` — `{ cells, centre, threshold, scale, showBelowThreshold }`,
-  all plain cloneable data. `cells` is `{ cell, score }`, with the category
+- `CellMeshRequest` — `{ cells, centre, frameOrigin?, threshold, scale, showBelowThreshold }`,
+  all plain cloneable data. `centre` is where the user is; `frameOrigin` is where
+  the scene`s ENU frame is anchored, and defaults to `centre`. The grid is the
+fourth thing built through the worker`s `meshOptions` and the one missed when
+  the frame was fixed, so the overlay stayed pinned to the user while the
+  buildings under it did not — the two sliding apart by the walked distance. `cells` is `{ cell, score }`, with the category
   already resolved on the caller's side.
 - `CellMeshCycleOptions` — `{ worker, apply }`. `worker` is narrowed
   structurally to the one call, so a test can drive it with a stub.

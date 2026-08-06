@@ -280,6 +280,16 @@ export interface WorkerCalls {
         readonly score: number;
       }[];
       readonly centre: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored.
+       *
+       * The grid is the fourth thing built through `meshOptions`, and it was
+       * missed when the frame was fixed — so the cell overlay stayed anchored on
+       * the user while the buildings underneath it moved to the scene's anchor.
+       * Optional and falling back to `centre`, exactly as the `update` and
+       * `terrain` requests are.
+       */
+      readonly frameOrigin?: LatLng;
       readonly threshold: number;
       readonly scale: { readonly threshold: number; readonly max: number };
       readonly showBelowThreshold: boolean;
@@ -320,7 +330,16 @@ export interface WorkerCalls {
   };
   readonly terrain: {
     readonly request: {
+      /** Where the user is — what the sampled window is FOR. */
       readonly centre: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored — what the heights MEAN.
+       *
+       * Optional, falling back to `centre`, so a caller that has not adopted an
+       * anchor keeps the pre-5B behaviour rather than silently getting a frame
+       * it did not ask for. `main.ts` always sends it.
+       */
+      readonly frameOrigin?: LatLng;
       readonly extentM: number;
       readonly spacingM: number;
     };

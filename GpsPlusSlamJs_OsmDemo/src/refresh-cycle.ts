@@ -31,7 +31,7 @@ import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import { isLayerEnabled } from "./layers.js";
-import { nextAnchor, type AnchorDecision } from "./scene-anchor.js";
+import type { AnchorHolder } from "./scene-anchor.js";
 import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
 import type { MeshUpdate, UpdateResult } from "./worker/protocol.js";
 
@@ -121,15 +121,18 @@ export interface RefreshCycleOptions extends StoreAccess {
    */
   readonly onMesh: (mesh: MeshUpdate) => void;
   /**
-   * Where the scene is anchored, whenever that is decided.
+   * Where the scene is anchored — READ, never decided here.
    *
-   * The anchor is computed HERE, on the page, and merely sent to the worker —
-   * so the page is its source rather than a copy of it. That is what lets the
-   * camera pivot on the user without a worker round-trip: position comes from
-   * the store, the anchor comes from here, and the ENU conversion is a pure
-   * function of the two.
+   * This cycle used to own the decision, and that was the bug: a position change
+   * drives three consumers (the camera pivot, the terrain load and this), and
+   * this one runs LAST. The other two therefore read the outgoing anchor
+   * whenever the anchor moved. The holder is advanced once by whoever handles
+   * the position change, and everything downstream reads the same value.
+   *
+   * The page remains the SOURCE of the anchor rather than a copy of it — which
+   * is what lets the camera pivot on the user without a worker round-trip.
    */
-  readonly onAnchor?: (origin: { lat: number; lng: number }) => void;
+  readonly anchors: AnchorHolder;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -145,37 +148,20 @@ function messageOf(error: unknown): string {
  * letting the EARLIER one write the final state. Latest-wins rather than a lock:
  * an 18 s dead zone after every click would break the demo's only interaction.
  */
-/** What a caller can say about the change that triggered this refresh. */
-export interface RefreshInput {
-  /**
-   * The user chose a new place rather than travelling to it.
-   *
-   * The site picker sets it; a step, a drag and a locate do not. Choosing a
-   * place is a discontinuity, so the scene anchor is re-taken with no distance
-   * test at all — two picker entries a few hundred metres apart are still two
-   * different scenes.
-   */
-  readonly declared?: boolean;
-}
-
 export function createRefreshCycle(
   options: RefreshCycleOptions,
-): LatestOnly<RefreshInput | void> {
-  const { store, actions, worker, onMesh, onAnchor } = options;
+): LatestOnly<void> {
+  const { store, actions, worker, onMesh, anchors } = options;
 
-  // THE SCENE ANCHOR IS HELD ACROSS RUNS, which is the whole point: the ENU
-  // frame belongs to the scene, not to the current position. It moves only on a
-  // declared place change or past REANCHOR_THRESHOLD_M — see `scene-anchor.ts`.
-  let anchor: AnchorDecision | undefined;
-
-  return latestOnly(async (input, signal) => {
+  return latestOnly(async (_input: void, signal) => {
     const { position, category } = selectOsmView(store.getState());
-    // DECLARED means the user CHOSE a place rather than travelling to it, so
-    // the anchor is re-taken with no distance test — see `scene-anchor.ts`.
-    anchor = nextAnchor(anchor?.origin, position, {
-      declared: input === undefined ? false : input.declared === true,
-    });
-    onAnchor?.(anchor.origin);
+    // READ, NOT DECIDED. The holder was advanced by whoever handled the position
+    // change, before the camera and the terrain load read it — see
+    // `scene-anchor.ts` for why that ordering is structural rather than a rule.
+    // A refresh with no position change (a category switch, a layer toggle, the
+    // initial load) reads the same origin it read last time, which is exactly
+    // right: the ENU frame belongs to the scene, not to this call.
+    const frameOrigin = anchors.origin;
     store.dispatch(
       actions.fetchStarted(
         `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`,
@@ -214,7 +200,7 @@ export function createRefreshCycle(
           "update",
           {
             position,
-            frameOrigin: anchor.origin,
+            frameOrigin,
             category,
             radius,
             includeCells,

@@ -80,6 +80,7 @@ import {
   type HeightfieldData,
 } from "../heightfield.js";
 import { createTerrainField, type TerrainField } from "../terrain-field.js";
+import { terrainWindowFor } from "../terrain-window.js";
 import { createMeshPlanner } from "./mesh-planner.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
 import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
@@ -630,13 +631,14 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "terrain": {
-      const { centre, extentM, spacingM } =
+      const { centre, frameOrigin, extentM, spacingM } =
         payload as WorkerCalls["terrain"]["request"];
       const { terrainField } = requireState();
       try {
         return await loadTerrain(
           terrainField,
           centre,
+          frameOrigin ?? centre,
           extentM,
           spacingM,
           signal,
@@ -657,7 +659,12 @@ async function handle<K extends WorkerCallKind>(
       // a second grid builder would be a second answer to "which cells are
       // drawn and what colour are they", which is the disagreement the shared
       // store exists to prevent.
-      const options = meshOptions(request.centre);
+      // THE SCENE'S ANCHOR, not the user's position. The grid is the fourth
+      // thing built through `meshOptions` and the one missed when the frame was
+      // fixed, so the cell overlay stayed anchored on the user while the
+      // buildings underneath it did not — the two sliding apart by the walked
+      // distance.
+      const options = meshOptions(request.frameOrigin ?? request.centre);
       return buildCellMesh(
         request.cells.map(({ cell, score }) => ({
           cell,
@@ -726,7 +733,10 @@ async function handle<K extends WorkerCallKind>(
  */
 async function loadTerrain(
   terrainField: TerrainField,
+  /** Where the user is. Keys the gate, and says which load this was. */
   centre: LatLng,
+  /** Where the scene's frame is anchored. Says what the heights mean. */
+  frameOrigin: LatLng,
   extentM: number,
   spacingM: number,
   signal: AbortSignal,
@@ -734,22 +744,16 @@ async function loadTerrain(
   // GROW the cache to cover the view, then RENDER a bounded grid from it.
   // The split is the whole point: the growth is incremental and permanent,
   // while what crosses the boundary stays a fixed-shape grid.
-  // `extentM`, NOT `extentM * SQRT2`. `ensureAround` builds a SQUARE lattice of
-  // half-width `radiusM`, and `sampleGrid` reads a SQUARE of half-width
-  // `extentM` — so the circumscribed-circle radius over-built by √2 per axis,
-  // i.e. twice the posts, for ground nothing ever samples.
   //
-  // Harmless while the extent was 1400 m (110 889 posts, under the cache cap)
-  // and NOT harmless at 2400 m: it put the lattice at 321 489 posts against a
-  // 250 000 cap, so eviction ran on every load and threw away ~71 000 posts that
-  // the next load immediately re-fetched — the exact opposite of what
-  // `terrain-field.ts` exists to do. The 5 % margin covers the Mercator pitch
-  // changing slightly across the square; `ensureAround`'s own `+1` covers the
-  // bilinear read at the very edge.
-  await terrainField.ensureAround(centre, extentM * 1.05);
+  // WHERE that window sits, and in whose coordinates, is `terrain-window.ts`'s
+  // decision — including why the radius is NOT a `sqrt(2)` margin (it cost
+  // ~321 000 posts against a 250 000 cap when it was) and why the fetch centre
+  // and the sample centre have to move together or not at all.
+  const window = terrainWindowFor({ frameOrigin, centre, extentM });
+  await terrainField.ensureAround(window.fetchCentre, window.fetchRadiusM);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const field = terrainField.sampleGrid({
-    frame: enuFrameAt(centre),
+    frame: window.frame,
     extentM,
     spacingM,
   });

@@ -79,6 +79,7 @@ import {
   isFinalRing,
   renderSafely,
 } from "./refresh-cycle.js";
+import { createAnchorHolder } from "./scene-anchor.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 import { createRpcClient, workerTransport } from "./worker/rpc-client.js";
 
@@ -444,21 +445,21 @@ async function main(): Promise<void> {
   });
 
   const access = { store, actions };
-  // WHERE THE SCENE IS ANCHORED, held so the camera can pivot on the USER.
+  // WHERE THE SCENE IS ANCHORED — one holder, read by everything downstream.
   //
-  // Both halves of that are already on this side: the position comes from the
-  // store (the map click sets it) and the anchor is decided in the refresh
-  // cycle, which merely SENDS it to the worker. So the ENU conversion is a pure
-  // function of two values this file already has — no round-trip needed.
-  let sceneAnchor = start;
+  // THE ANCHOR IS ADVANCED EXACTLY ONCE PER POSITION CHANGE, at the top of the
+  // subscriber below, BEFORE the camera, the terrain load or the refresh read
+  // it. It used to be decided inside the refresh cycle, which runs last of the
+  // three — so on a re-anchor the other two used the outgoing frame, and after a
+  // Cologne→Tokyo pick the camera pivoted ~9 000 km from the scene it was
+  // looking at. See `scene-anchor.ts`.
+  const anchors = createAnchorHolder(start);
 
   const refresh = createRefreshCycle({
     store,
     actions,
     worker,
-    onAnchor: (origin) => {
-      sceneAnchor = origin;
-    },
+    anchors,
     // A pass either rebuilds the geometry or re-sends only the region slabs
     // (W6). The slabs are the one layer a widening ring changes; everything else
     // depends on the features, the terrain and the frame origin, none of which a
@@ -785,6 +786,12 @@ async function main(): Promise<void> {
           score: cell.scores[snapshot.category] ?? 1,
         })),
         centre: snapshot.position,
+        // THE SCENE'S ANCHOR, not the user. The grid is the fourth thing built
+        // through the worker's `meshOptions`, and the one missed when the frame
+        // was fixed — so the overlay stayed pinned to the user while the
+        // buildings under it did not, the two sliding apart by the walked
+        // distance.
+        frameOrigin: anchors.origin,
         threshold: snapshot.threshold,
         // THE SAME DERIVATION AS THE MAP AND THE LEGEND (W12). This was a third
         // copy of the same expression; three copies agreeing today is three
@@ -940,18 +947,32 @@ async function main(): Promise<void> {
     (view) => view.position,
     (position) => {
       mapView.setPosition(position);
-      // W11 (R4-12). Every refresh rebuilds the world in a frame centred on the
-      // new position, so the place the user chose is at the scene origin — but
-      // the camera is only LOOKING at the origin until the first pan, after
-      // which the clicked point renders off-centre or off screen and the 3D view
-      // appears to have ignored the click. Translation only: the camera is never
-      // rotated, which is the invariant the feedback states outright.
+      // THE ANCHOR MOVES FIRST, AND EXACTLY ONCE. Everything below reads the
+      // holder, so all three consumers of the frame — the camera, the terrain
+      // load and the refresh — necessarily agree about which frame this position
+      // is drawn in. While the refresh owned this decision it ran LAST, and the
+      // two above it used the outgoing anchor on every re-anchor.
+      //
+      // READ AND CLEARED, so a declared place change re-anchors exactly once and
+      // the next ordinary step is treated as travel again.
+      const declared = placeChangeDeclared;
+      placeChangeDeclared = false;
+      anchors.advance(position, { declared });
+      // W11 (R4-12). A click must bring the chosen point back to the middle of
+      // the 3D view without spinning it: `MapControls` pans camera and target
+      // together, so after any pan the pivot is somewhere else entirely and the
+      // clicked point renders off-centre or off screen. Translation only — the
+      // camera is never rotated, which is the invariant the feedback states
+      // outright.
+      //
       // ON THE USER, not on the origin. Those were the same point while the ENU
       // frame was rebuilt at the user on every publish; `scene-anchor.ts` fixed
       // the frame, so recentring on the origin would drag the camera back to the
       // session start on every step.
       buildingView.recentre(
-        enuFrameAt(sceneAnchor).toEnu(selectOsmView(store.getState()).position),
+        enuFrameAt(anchors.origin).toEnu(
+          selectOsmView(store.getState()).position,
+        ),
       );
       // BOTH AT ONCE (W3). These used to be chained — `loadTerrain(p).finally(()
       // => refresh())` — so a ~55 000-post DEM grid was sampled, transferred and
@@ -964,12 +985,8 @@ async function main(): Promise<void> {
       // position rather than on the order these two calls post, because
       // `loadTerrain` is coalesced and only QUEUES while a load is in flight —
       // so `refresh` can genuinely reach the worker first.
-      void loadTerrain(position);
-      // READ AND CLEARED, so a declared change re-anchors exactly once and the
-      // next ordinary step is treated as travel again.
-      const declared = placeChangeDeclared;
-      placeChangeDeclared = false;
-      void refresh({ declared });
+      void loadTerrain({ centre: position, frameOrigin: anchors.origin });
+      void refresh();
     },
   );
 
@@ -1195,7 +1212,12 @@ async function main(): Promise<void> {
   // worker holds the first mesh build until the start position's terrain has
   // settled. `Promise.all` rather than two bare `void`s because `main` should not
   // resolve while the first picture is still being assembled.
-  await Promise.all([loadTerrain(start), refresh()]);
+  // The holder was seeded with `start`, so this reads the same origin the first
+  // refresh will send — the two cannot disagree about the opening scene.
+  await Promise.all([
+    loadTerrain({ centre: start, frameOrigin: anchors.origin }),
+    refresh(),
+  ]);
 }
 
 // THE ONLY FAILURE CHANNEL BEFORE THE STORE EXISTS (raised in review on #233).
