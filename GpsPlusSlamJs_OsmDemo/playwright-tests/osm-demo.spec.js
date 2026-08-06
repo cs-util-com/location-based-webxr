@@ -3058,10 +3058,47 @@ test.describe("revealing the sub-threshold cells", () => {
       // The switch is checked again here rather than inherited: the step above
       // ends by unchecking it, because "and back" is half of ITS claim.
       await page.locator("#show-below").check();
-      const identity = page
+      // THE CELL NEAREST THE MAP CENTRE, not the first in DOM order.
+      //
+      // Leaflet puts its controls in the CORNERS — zoom top-left, attribution
+      // bottom-right — and they sit above the tile/vector panes. `.first()`
+      // takes whatever the renderer happened to emit first, which can be a cell
+      // underneath one of them; the centre is clickable by construction.
+      //
+      // This is what made the test fail on CI and never locally, from #256
+      // onward: an eighth layer switch made the header taller, the map shorter,
+      // and the first identity cell moved under the attribution bar. Whether it
+      // lands there depends on font metrics, so Linux failed and Windows did
+      // not. CI named it once the click stopped being forced:
+      // "<div class=leaflet-control-attribution> intercepts pointer events".
+      const identity = await page.evaluate(() => {
+        const map = document.querySelector("#map");
+        if (map === null) return null;
+        const box = map.getBoundingClientRect();
+        const cx = box.left + box.width / 2;
+        const cy = box.top + box.height / 2;
+        let best = null;
+        let bestDistance = Infinity;
+        document
+          .querySelectorAll("#map path.affordance-cell-identity")
+          .forEach((path, index) => {
+            const r = path.getBoundingClientRect();
+            const d = Math.hypot(
+              r.left + r.width / 2 - cx,
+              r.top + r.height / 2 - cy,
+            );
+            if (d < bestDistance) {
+              bestDistance = d;
+              best = index;
+            }
+          });
+        return best;
+      });
+      expect(identity).not.toBeNull();
+      const identityCell = page
         .locator("#map path.affordance-cell-identity")
-        .first();
-      await expect(identity).toBeVisible();
+        .nth(identity);
+      await expect(identityCell).toBeVisible();
 
       // NOT `force: true`, and that is the diagnostic.
       //
@@ -3077,7 +3114,7 @@ test.describe("revealing the sub-threshold cells", () => {
       // message is absent — so the explain call is not failing; either the
       // click never selected anything, or the reply was dropped. This tells
       // those apart.
-      await identity.click();
+      await identityCell.click();
 
       // ASSERTED THROUGH THE APP'S OWN STATE, not just on the panel.
       //
