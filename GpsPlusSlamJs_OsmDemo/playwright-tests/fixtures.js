@@ -623,4 +623,19 @@ export async function enableCellLayer(page) {
   await expect(page.locator("#map path.affordance-cell")).not.toHaveCount(0, {
     timeout: 30000,
   });
+  // AND THEN WAIT FOR THE WIDENING, for the reason `waitForRefresh` spells out
+  // above: the first cells to appear are ring 2's, and rings 3 and 4 each
+  // REPUBLISH a larger snapshot, re-rendering every path on the map.
+  //
+  // Switching this layer on is a REFETCH, not a redraw — cells are data-gated
+  // since round 10 stage B — so the whole progressive cycle runs, and a caller
+  // that only waited for the first cells was racing it. That is the third
+  // appearance of the failure `waitForRefresh` was written for: a cell clicked
+  // in ring 2 gets re-rendered before the click lands, the dispatch never
+  // happens, and the details panel silently stays hidden.
+  //
+  // It surfaced as a CI-only failure of "the cells it reveals are
+  // interrogable", deterministic on a slower runner and never reproducible
+  // locally.
+  await waitForRefresh(page);
 }
