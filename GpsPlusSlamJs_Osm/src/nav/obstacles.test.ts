@@ -151,6 +151,43 @@ describe("buildObstacleIndex", () => {
     expect(index.obstaclesIn(cellAt(HOME.lat, HOME.lng)).length).toBe(1);
   });
 
+  it("indexes EVERY part of a multipolygon barrier, not just the first", () => {
+    // RAISED IN REVIEW ON #260. The multipolygon branch took `polygons[0][0]`,
+    // where the inner index correctly ignores holes but the OUTER one silently
+    // discarded `polygons[1..]` — which are disjoint PARTS of the same barrier,
+    // not holes. One part indexed, the other invisible: exactly the "a barrier
+    // the index simply did not see" failure the branch was added to remove,
+    // moved one level in.
+    //
+    // Two stitched outer rings, far enough apart to land in different cells.
+    const far = { lat: HOME.lat + 0.004, lng: HOME.lng };
+    const ring = (at: { lat: number; lng: number }) => [
+      { lat: at.lat, lng: at.lng },
+      { lat: at.lat, lng: at.lng + STEP * 20 },
+      { lat: at.lat + STEP * 20, lng: at.lng + STEP * 20 },
+      { lat: at.lat, lng: at.lng },
+    ];
+
+    const relation: OsmFeature = {
+      type: "relation",
+      id: 7,
+      members: [
+        { type: "way", ref: 71, role: "outer", geometry: ring(HOME) },
+        { type: "way", ref: 72, role: "outer", geometry: ring(far) },
+      ],
+      tags: { type: "multipolygon", barrier: "wall" },
+    };
+
+    const index = buildObstacleIndex([relation]);
+    const firstPart = cellAt(HOME.lat, HOME.lng);
+    const secondPart = cellAt(far.lat, far.lng);
+
+    // The fixture is only meaningful if the parts are genuinely disjoint.
+    expect(secondPart).not.toBe(firstPart);
+    expect(index.obstaclesIn(firstPart).length).toBe(1);
+    expect(index.obstaclesIn(secondPart).length).toBe(1);
+  });
+
   it("survives a feature with unusable geometry", () => {
     // A one-node way and an empty way are both real Overpass output. Neither
     // has a footprint, and neither may take the index down.

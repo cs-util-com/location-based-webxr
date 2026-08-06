@@ -59,6 +59,15 @@ when the user does.
 - **Every segment is indexed**, not just the first — an L-shaped wall that
   blocked along one leg and not the other is exactly the kind of defect a
   single-segment fixture cannot see. Mutation testing found that gap here.
+- **Every PART of a multipolygon is indexed**, not just the first. An earlier
+  version took `polygons[0][0]`: the inner index correctly ignores holes, but
+  the outer one silently discarded `polygons[1..]`, which are disjoint parts of
+  the same barrier. One part indexed and the other invisible is the very failure
+  the multipolygon branch was added to remove, moved one level in. Raised in
+  review on #260.
+  - **`multilinestring` is deliberately not handled.** `toGeometry` never
+    produces one — only `clip.ts` does, and clipping is not in this path — so a
+    branch for it would be code no test could ever cover.
 
 ## Defensive behaviour
 

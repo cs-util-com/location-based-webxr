@@ -40,6 +40,7 @@
 
 import {
   featureKey,
+  type LatLng,
   type OsmFeature,
   type OsmFeatureKey,
 } from "../model/osm-feature.js";
@@ -72,31 +73,46 @@ export interface ObstacleIndex {
   readonly cells: ReadonlySet<string>;
 }
 
-/** The lat/lng line a barrier feature runs along, or `undefined`. */
-function barrierLine(feature: OsmFeature): readonly PlanarPoint[] | undefined {
+/**
+ * Every lat/lng line a barrier feature runs along.
+ *
+ * **A LIST, because a multipolygon has PARTS.** An earlier version took
+ * `polygons[0][0]`: the inner index correctly ignores holes, but the outer one
+ * silently discarded `polygons[1..]` — disjoint parts of the same barrier, not
+ * holes. One part was indexed and the other was invisible, which is precisely
+ * the "a barrier the index simply did not see" failure the multipolygon branch
+ * was added to remove. Raised in review on #260.
+ *
+ * Empty when nothing usable is there.
+ */
+function barrierLines(feature: OsmFeature): readonly PlanarPoint[][] {
   const result = toGeometry(feature);
-  if (!result.ok) return undefined;
+  if (!result.ok) return [];
 
   const geometry = result.geometry;
-  // MULTIPOLYGON IS HANDLED, not silently dropped. A `barrier=wall` mapped as a
-  // multipolygon relation is rare, but it is neither "not a barrier" nor
-  // "unusable geometry" — it would have been a barrier the index simply did not
-  // see, which is the one skip reason with no stated rationale. Raised in
-  // review on #259. Only the first polygon's outer ring is used: a barrier's
-  // holes are not something to walk through.
-  const positions =
+  // MULTIPOLYGON IS HANDLED, not silently dropped (#259). A `barrier=wall`
+  // mapped as a multipolygon relation is rare, but it is neither "not a
+  // barrier" nor "unusable geometry" — it would have been a barrier the index
+  // simply did not see, which is the one skip reason with no stated rationale.
+  //
+  // OUTER RINGS ONLY, and ALL of them: a barrier's holes are not something to
+  // walk through, but its parts are all wall.
+  //
+  // `multilinestring` is deliberately absent. `toGeometry` never produces one —
+  // only `clip.ts` does, and clipping is not in this path — so a branch for it
+  // would be code no test could ever cover (#260).
+  const lines: readonly LatLng[][] =
     geometry.kind === "linestring"
-      ? geometry.positions
+      ? [[...geometry.positions]]
       : geometry.kind === "polygon"
-        ? geometry.rings[0]
+        ? [[...(geometry.rings[0] ?? [])]]
         : geometry.kind === "multipolygon"
-          ? geometry.polygons[0]?.[0]
-          : geometry.kind === "multilinestring"
-            ? geometry.lines[0]
-            : undefined;
-  if (positions === undefined || positions.length < 2) return undefined;
+          ? geometry.polygons.map((polygon) => [...(polygon[0] ?? [])])
+          : [];
 
-  return positions.map((p) => ({ x: p.lng, y: p.lat }));
+  return lines
+    .filter((line) => line.length >= 2)
+    .map((line) => line.map((p) => ({ x: p.lng, y: p.lat })));
 }
 
 /**
@@ -115,25 +131,28 @@ export function buildObstacleIndex(
   for (const feature of features) {
     if (!isSolidBarrier(feature)) continue;
 
-    const line = barrierLine(feature);
-    if (line === undefined) continue;
+    const lines = barrierLines(feature);
+    if (lines.length === 0) continue;
 
     const { heightM, thicknessM } = resolveBarrier(feature.tags);
 
     // ANCHORED AT THE FEATURE'S OWN FIRST VERTEX. Thickness is metres, so a
     // metric frame is unavoidable — but this one belongs to the feature rather
     // than to the current view, so the lat/lng it produces stay valid across
-    // every recentre.
-    const anchor = { lat: line[0]!.y, lng: line[0]!.x };
+    // every recentre. ONE frame for the whole feature, so every part is
+    // expressed against the same anchor.
+    const anchor = { lat: lines[0]![0]!.y, lng: lines[0]![0]!.x };
     const frame = enuFrameAt(anchor);
-    const enuLine = line.map((p) => frame.toEnu({ lat: p.y, lng: p.x }));
 
-    const rings = barrierFootprints(enuLine, thicknessM).map((ring) =>
-      ring.map((v) => {
-        const back = frame.toLatLng(v);
-        return { x: back.lng, y: back.lat };
-      }),
-    );
+    const rings = lines.flatMap((line) => {
+      const enuLine = line.map((p) => frame.toEnu({ lat: p.y, lng: p.x }));
+      return barrierFootprints(enuLine, thicknessM).map((ring) =>
+        ring.map((v) => {
+          const back = frame.toLatLng(v);
+          return { x: back.lng, y: back.lat };
+        }),
+      );
+    });
     if (rings.length === 0) continue;
 
     const obstacle: Obstacle = {
@@ -142,12 +161,17 @@ export function buildObstacleIndex(
       rings,
     };
 
-    // THE FEATURE'S CELLS COLLECTED ONCE, then appended once. A city wall is
-    // routinely a few hundred nodes, so appending per ring meant a few hundred
-    // `polygonToCellsExperimental` calls plus an `includes` rescan of every
-    // cell's list on top — and `polygonToCells` is already the measured hot
-    // spot of the whole scoring path. The union also makes "one obstacle per
-    // cell" structural instead of a linear scan. Raised in review on #259.
+    // THE FEATURE'S CELLS COLLECTED ONCE, then appended once.
+    //
+    // WHAT THIS REMOVES IS THE RESCAN, not the h3 calls — an earlier comment
+    // here claimed the latter and was wrong (#260). `coverCells` still runs
+    // once per ring, and batching cannot change that: `coverCells` on a
+    // multipolygon runs `addPolygon` per ring internally, so the per-quad cost
+    // is inherent to per-segment footprints.
+    //
+    // What went away is the `existing.includes(obstacle)` scan of every cell's
+    // list, once per ring — and the union makes "one obstacle per cell"
+    // structural rather than something a linear search has to enforce.
     const cells = new Set<string>();
     for (const ring of rings) {
       const coverage = coverCells(
