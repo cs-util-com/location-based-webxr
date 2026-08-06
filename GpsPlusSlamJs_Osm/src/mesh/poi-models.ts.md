@@ -13,15 +13,43 @@ are built by `adopted()` from the surviving `poi-variants-*.ts` maps; the other
 `PoiModel`, and every registry-wide contract test runs over both without knowing
 the difference.
 
+## The two families (DEC-S3)
+
+Since stage 0c the registry holds **two kinds of model**, and `PoiModel.symbol`
+is what tells them apart:
+
+- **Family L — literal, at real-world scale.** Street furniture a mapper would
+  never draw as a way because it is too small to bother with: a bench, a picnic
+  table, a waste basket. `symbol` is `undefined`. DEC-R6-8 still governs these.
+- **Family S — a symbol on the shared column, inside one envelope.** Everything
+  that is a _place_ rather than an object. `symbol` holds the payload alone.
+  **DEC-S3 partially reverses DEC-R6-8 for these**, and deliberately: real-world
+  scale is exactly what made `amenity=hospital` 15.3 m and therefore a building
+  drawn inside the building OSM already has.
+
+A family-S marker is **composed, not declared**: the 1.605 m column plus the
+symbol fitted into a 0.9 × 1.1 m envelope, with `heightM` measured from the
+result like every other model. The span clamp binds first for a wide symbol, so
+totals are a **range of roughly 2.1–2.5 m** rather than a flat 2.5 (DEC-S21).
+
 ## Public API
 
-- `PoiModel` — `{ kind, colour, heightM, mesh }`.
+- `PoiModel` — `{ kind, colour, heightM, mesh, symbol? }`.
 - `POI_MODELS: ReadonlyMap<string, PoiModel>` — keyed on `key=value`, the same
   string `poiKind` returns.
 - `poiModelFor(kind): PoiModel | undefined` — `undefined` for the long tail,
   which falls back to the generic pin.
 
-### The two builders, and why a ported model declares a target height
+### The three builders, and why a ported model declares a target height
+
+- `symbolModel(kind, colour, build)` / `symbolFrom(kind, colour, map)` — a
+  family-S marker. `build` draws the symbol at its source's own size and datum;
+  this fits it, keeps it as `symbol`, and merges it onto the column as `mesh`.
+  **The same geometry serves both**, so stage 1 can float the symbol over a
+  building's roof without a second authoring of it (DEC-S4, DEC-S16).
+  - `symbolFrom` **throws when a kind is missing** from the source map rather
+    than falling back — at module load, naming the kind. A silently missing
+    symbol is a marker that quietly reverts to the generic pin.
 
 - `model(kind, colour, build)` — geometry authored here at real-world scale.
   `heightM` falls out of the mesh.

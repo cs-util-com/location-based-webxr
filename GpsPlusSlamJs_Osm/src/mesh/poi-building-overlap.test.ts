@@ -49,20 +49,36 @@ function square(size: number, cx = 0, cy = 0): { x: number; y: number }[] {
 }
 
 describe("isBuildingScalePoi", () => {
-  it("selects the four kinds that are buildings mapped as nodes", () => {
-    // DERIVED FROM THE MODEL'S OWN HEIGHT, not from a hard-coded list of four
-    // strings. A fifth tall model added later must be covered without anyone
+  it("selects the kinds that are still buildings mapped as nodes", () => {
+    // DERIVED FROM THE MODEL'S OWN HEIGHT, not from a hard-coded list of
+    // strings. A tall model added later must be covered without anyone
     // remembering to update this — which is exactly what a literal list would
     // fail to do, silently.
+    //
+    // THE LIST SHRINKS AS THE SYMBOL PORT LANDS, and that is the port working
+    // rather than this test rotting. `tourism=hotel` was here at 13.5 m until
+    // batch A replaced it with a 2.5 m bed symbol; `amenity=bank` joined when
+    // round 8 adopted it at exactly 8.0 m. It should reach EMPTY once all 27
+    // winners are ported, at which point the suppression rule has nothing left
+    // to suppress and this file's reason to exist can be revisited.
     for (const kind of [
       "amenity=hospital",
-      "tourism=hotel",
       "amenity=place_of_worship",
       "leisure=sports_centre",
+      "amenity=bank",
     ]) {
       expect(poiModelFor(kind)).toBeDefined();
       expect(isBuildingScalePoi(kind)).toBe(true);
     }
+  });
+
+  it("stops selecting a kind once its symbol port lands", () => {
+    // The other half of the statement above, asserted rather than described.
+    // `tourism=hotel` is a 2.5 m bed on a column now, so drawing it inside a
+    // hotel building is no longer a duplicate volume — it is the label that
+    // building was missing.
+    expect(poiModelFor("tourism=hotel")).toBeDefined();
+    expect(isBuildingScalePoi("tourism=hotel")).toBe(false);
   });
 
   it("leaves ordinary street furniture alone", () => {

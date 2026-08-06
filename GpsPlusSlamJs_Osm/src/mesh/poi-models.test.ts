@@ -207,9 +207,37 @@ describe("the POI model registry", () => {
     // A marker is a few metres of screen space in AR. The ceiling is generous
     // enough for a church with a spire and tight enough that nobody quietly
     // subdivides a cylinder to 64 sides.
-    for (const entry of entries) {
+    //
+    // TWO CEILINGS, BECAUSE THERE ARE TWO FAMILIES (DEC-S3) AND THEY HAVE
+    // DIFFERENT COST PROFILES — not because the symbols would not fit under one.
+    // The budget that matters is triangles times INSTANCES, and the two differ
+    // there by a lot: family L is street furniture, which is what a city has
+    // hundreds of (benches, bins, post boxes), while family S is places, of
+    // which a view holds a handful (one pharmacy, two cafés). A denser symbol on
+    // a rare kind costs less than a denser bench on a common one.
+    //
+    // Every family-S marker also pays a FIXED 120 triangles for the shared
+    // column, which is 27 copies of one shape. DEC-S16 records the fix —
+    // instancing one column for the whole city — and why it is not done yet: it
+    // breaks the one-mesh-per-marker assumption in bucketing, `poiMarkerPosition`
+    // and the pick table.
+    const familyL = entries.filter((entry) => entry.symbol === undefined);
+    const familyS = entries.filter((entry) => entry.symbol !== undefined);
+    for (const entry of familyL) {
       expect(entry.mesh.triangleCount).toBeLessThan(400);
     }
+    for (const entry of familyS) {
+      expect(entry.mesh.triangleCount).toBeLessThan(1000);
+    }
+    // THE OUTLIER IS NAMED rather than absorbed by a loose bound, so it stays
+    // visible: `leisure=garden` is ~910 because DEC-S10 COMBINED two symbols
+    // into one at the owner's request — a flower bed with tools planted in it.
+    // It is the only marker anywhere near the ceiling, and the first place to
+    // look if the marker layer ever needs triangles back.
+    const heaviest = familyS
+      .slice()
+      .sort((a, b) => b.mesh.triangleCount - a.mesh.triangleCount)[0];
+    expect(heaviest?.kind).toBe("leisure=garden");
   });
 
   it("resolves a kind to its model, and an unmodelled one to undefined", () => {

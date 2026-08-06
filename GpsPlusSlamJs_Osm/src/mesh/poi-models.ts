@@ -29,16 +29,20 @@
  * @see poi-models.ts.md
  */
 
+import { mergeMeshes } from "./extrude.js";
 import type { MeshData } from "./mesh-data.js";
 import {
   box,
   composed,
+  fittedSymbol,
   groundedMesh,
   hut,
-  prism,
+  liftedMesh,
+  POI_COLUMN_HEIGHT_M,
+  poiColumn,
   scaledToHeight,
-  slabOnLegs,
 } from "./poi-primitives.js";
+import { A_SYMBOLS } from "./poi-symbols-a.js";
 import { B_VARIANTS } from "./poi-variants-b.js";
 import { D_VARIANTS } from "./poi-variants-d.js";
 import { G_VARIANTS } from "./poi-variants-g.js";
@@ -65,6 +69,32 @@ export interface PoiModel {
   readonly heightM: number;
   /** Built once, shared by every instance of this kind. */
   readonly mesh: MeshData;
+  /**
+   * The symbol ALONE, without the column, for a family-S marker (DEC-S16).
+   *
+   * `undefined` for family L — a bench has no symbol and no column; it is the
+   * thing itself at real-world size.
+   *
+   * WHY BOTH FORMS ARE STORED. `mesh` keeps its current meaning, so the
+   * renderer is untouched during the largest port attempted here; stage 1 later
+   * reads this field to float a symbol over a building's roof rather than
+   * changing how markers are drawn. It is also what makes DEC-S4 TESTABLE
+   * rather than aspirational: the contract can assert a symbol has geometry and
+   * a bounding box that does not depend on the column, which is impossible if
+   * only the merged form exists.
+   *
+   * **The symbol's own base is at `y = 0`**, not at the column top. It is
+   * positioned by whoever draws it — on the column in `mesh`, over a roof in
+   * stage 1 — and a geometry that baked in one of those could not serve the
+   * other.
+   *
+   * Accepted cost: the column geometry is duplicated across every family-S
+   * model. Negligible in bytes, and the alternative — one shared instanced
+   * column for the whole city — breaks the one-mesh-per-marker assumption in
+   * bucketing, `poiMarkerPosition` and the pick table. It stays available later
+   * as a pure optimisation.
+   */
+  readonly symbol?: MeshData;
 }
 
 /**
@@ -120,7 +150,11 @@ const PAINT_RED = 0xa8543f;
 const PAINT_BLUE = 0x55697c;
 const PAINT_GREEN = 0x9baf8e;
 const STONE = 0x8894a0;
-const GLASS = 0x2b3540;
+// `GLASS` (0x2b3540) LEFT WITH BATCH A. It coloured `clinic` and `doctors`,
+// both of which are now symbols carrying their source's own palette. Removed
+// rather than kept "in case", by the same rule that removed the house accents:
+// R4-14 says the palette budget is nearly spent, so a colour earns its place by
+// being used.
 const WATER = 0x17878a;
 const ASPHALT = 0xa99e8c;
 const SAND = 0xc4b9a6;
@@ -184,6 +218,61 @@ function models(): PoiModel[] {
     return { kind, colour, heightM: peakOf(mesh), mesh };
   };
 
+  /**
+   * A FAMILY-S marker: the shared column with a symbol standing on it
+   * (DEC-S3, DEC-S4, DEC-S21).
+   *
+   * `build` draws the symbol alone, at whatever size and datum its source
+   * author used. This does the three things that turn that into a marker, and
+   * the ORDER is load-bearing:
+   *
+   *  1. `fittedSymbol` recentres it, floors it and scales it into the shared
+   *     0.9 x 1.1 m envelope — reproducing what every one of the five galleries
+   *     does before drawing, which is why the result is the thing the owner
+   *     actually picked rather than the raw authored geometry (DEC-S21).
+   *  2. The fitted symbol is kept as `symbol`, base at zero, so stage 1 can
+   *     float it over a roof.
+   *  3. `mesh` is the column plus that same symbol lifted onto it — the SAME
+   *     geometry, not a second authoring of it.
+   *
+   * `heightM` is still MEASURED from the merged mesh, exactly as every other
+   * model's is. The envelope declares a ceiling; the height is derived, and
+   * `poi-models.contract.test.ts` asserts the two agree.
+   */
+  const symbolModel = (
+    kind: string,
+    colour: number,
+    build: Parameters<typeof composed>[0],
+  ): PoiModel => {
+    const symbol = fittedSymbol(composed(build));
+    const mesh = mergeMeshes([
+      composed((b) => poiColumn(b)),
+      liftedMesh(symbol, POI_COLUMN_HEIGHT_M),
+    ]);
+    return { kind, colour, heightM: peakOf(mesh), mesh, symbol };
+  };
+
+  /**
+   * A family-S marker whose symbol comes from one of the ported source maps.
+   *
+   * **Throws when the kind is absent**, rather than falling back. A silently
+   * missing symbol is a marker that quietly reverts to the generic pin, which
+   * looks like a data gap rather than a build error — the silent-absence failure
+   * this package keeps meeting. The registry is built at module load, so this
+   * fails at import time and names the kind.
+   */
+  const symbolFrom = (
+    kind: string,
+    colour: number,
+    symbols: ReadonlyMap<string, Parameters<typeof composed>[0]>,
+  ): PoiModel => {
+    const build = symbols.get(kind);
+    if (build === undefined) {
+      throw new Error(`no ported symbol builds "${kind}"`);
+    }
+    return symbolModel(kind, colour, build);
+  };
+
   return [
     // 1 — a marked bay with a low kerb, not a building.
     model("amenity=parking", ASPHALT, (b) => {
@@ -239,11 +328,7 @@ function models(): PoiModel[] {
     // 6 — a church: a hut with a tower and a spire.
     adopted("amenity=place_of_worship", STONE, L_VARIANTS, 12),
     // 7 — a restaurant: a shopfront with an awning and a table outside.
-    model("amenity=restaurant", PAINT_RED, (b) => {
-      box(b, 6, 3.6, 5);
-      box(b, 6.4, 0.12, 1.4, 2.6, 0, 3);
-      slabOnLegs(b, 1, 1, 0.75, 0.06, 0.05);
-    }),
+    symbolFrom("amenity=restaurant", STEEL, A_SYMBOLS),
     // 8 — a school: a long two-storey block with a flat roof.
     model("amenity=school", STONE, (b) => {
       box(b, 14, 7, 8);
@@ -263,11 +348,7 @@ function models(): PoiModel[] {
     // at their final height.
     adopted("tourism=information", 0x6b4e3d, D_VARIANTS, 1.3049999475479126),
     // 11 — a garden: a bed edged in stone, with a shrub.
-    model("leisure=garden", PAINT_GREEN, (b) => {
-      box(b, 4, 0.25, 4);
-      box(b, 3.4, 0.3, 3.4, 0.25);
-      prism(b, 0.7, 0.45, 0.7, 6, 0.55);
-    }),
+    symbolFrom("leisure=garden", PAINT_GREEN, A_SYMBOLS),
     // 12 — a playground: a slide platform with a ladder.
     adopted("leisure=playground", PAINT_BLUE, D_VARIANTS, 2.7200000286102295),
     // 13 — THE WASTE BASKET the notes name: a tapered bin on a post.
@@ -290,10 +371,7 @@ function models(): PoiModel[] {
     // 18 — a shelter: an open roof on four posts, with a bench in it.
     adopted("amenity=shelter", TIMBER, L_VARIANTS, 2.5),
     // 19 — a hotel: a tall block with a marked entrance canopy.
-    model("tourism=hotel", STONE, (b) => {
-      box(b, 10, 13.5, 9);
-      box(b, 4, 0.3, 1.6, 2.8, 0, 5);
-    }),
+    symbolFrom("tourism=hotel", TIMBER, A_SYMBOLS),
     // 20 — a bank: a stone block with a portico.
     adopted("amenity=bank", STONE, D_VARIANTS, 8),
     // 21 — toilets: a small block with two doors.
@@ -306,11 +384,7 @@ function models(): PoiModel[] {
     // 22 — recycling: three containers side by side.
     adopted("amenity=recycling", PAINT_GREEN, D_VARIANTS, 1.399999976158142),
     // 23 — a pharmacy: a shopfront with a cross above it.
-    model("amenity=pharmacy", PAINT_GREEN, (b) => {
-      box(b, 5, 3.4, 4.5);
-      box(b, 1.2, 0.35, 0.12, 3.7);
-      box(b, 0.35, 1.2, 0.12, 3.15);
-    }),
+    symbolFrom("amenity=pharmacy", PAINT_RED, A_SYMBOLS),
     // 24 — a post box: a rounded pillar with a slot hood.
     // REBUILT (§4). SOURCE: `k_post_box`. §4.3 lists it under B; DEC-R6-28
     // takes the house file's, which has one.
@@ -360,10 +434,7 @@ function models(): PoiModel[] {
       box(b, 5, 0.3, 3, 3.4, 0, 6);
     }),
     // 37 — an ATM: a wall unit on a short pedestal.
-    model("amenity=atm", DARK_STEEL, (b) => {
-      box(b, 0.7, 1.6, 0.45);
-      box(b, 0.5, 0.4, 0.06, 1, 0, 0.24);
-    }),
+    symbolFrom("amenity=atm", PAINT_GREEN, A_SYMBOLS),
     // 38 — a post office: a block with a horizontal sign band.
     model("amenity=post_office", PAINT_RED, (b) => {
       box(b, 8, 5, 6);
@@ -373,19 +444,11 @@ function models(): PoiModel[] {
     // 39 — waste disposal: a large skip, tapered.
     adopted("amenity=waste_disposal", DARK_STEEL, L_VARIANTS, 1.5),
     // 40 — a pub: a hut with a hanging sign on a bracket.
-    model("amenity=pub", TIMBER, (b) => {
-      hut(b, 7, 6, 3.6, 1.6);
-      box(b, 0.08, 0.08, 1, 3, 3.4, 0.5);
-      box(b, 0.06, 0.7, 0.8, 2.3, 3.4, 1);
-    }),
+    symbolFrom("amenity=pub", TIMBER, A_SYMBOLS),
     // 41 — a graveyard: headstones on grass.
     adopted("amenity=grave_yard", STONE, D_VARIANTS, 0.86 * 3),
     // 42 — a clinic: a small block with an entrance canopy and a sign.
-    model("amenity=clinic", GLASS, (b) => {
-      box(b, 8, 6, 6);
-      box(b, 3, 0.25, 1.4, 2.8, 0, 3.2);
-      box(b, 1.6, 0.35, 0.1, 4.6, 0, 3.05);
-    }),
+    symbolFrom("amenity=clinic", STEEL, A_SYMBOLS),
     // 43 — an archaeological site: broken column stubs on a base.
     adopted(
       "historic=archaeological_site",
@@ -394,10 +457,7 @@ function models(): PoiModel[] {
       1.600000023841858,
     ),
     // 44 — a guest house: a house with a dormer.
-    model("tourism=guest_house", TIMBER, (b) => {
-      hut(b, 8, 7, 5.2, 2.4);
-      box(b, 1.4, 1, 1.6, 5.2, -1.6, 1.4);
-    }),
+    symbolFrom("tourism=guest_house", PAINT_GREEN, A_SYMBOLS),
     // 45 — a wayside cross: a cross on a stepped base.
     // REBUILT IN THE HOUSE STYLE (§4, DEC-R6-15).
     //
@@ -427,9 +487,9 @@ function models(): PoiModel[] {
     }),
     // 46 — `historic=yes`, unspecified: a plain marker stone. Deliberately
     // featureless, because the tag itself says nothing more than "old".
-    adopted("historic=yes", STONE, B_VARIANTS, 1.4 * 3),
+    symbolFrom("historic=yes", STONE, A_SYMBOLS),
     // 47 — a fountain: a basin with a central jet column.
-    adopted("amenity=fountain", WATER, D_VARIANTS, 1.7999999523162842),
+    symbolFrom("amenity=fountain", STONE, A_SYMBOLS),
     // 48 — a parking entrance: a ramp mouth with a headroom bar.
     adopted(
       "amenity=parking_entrance",
@@ -438,11 +498,7 @@ function models(): PoiModel[] {
       2.5999999046325684,
     ),
     // 49 — a doctors' surgery: a house-scale block with a plaque.
-    model("amenity=doctors", GLASS, (b) => {
-      box(b, 6, 4.2, 5);
-      box(b, 1, 0.6, 0.08, 2.2, -1.8, 2.55);
-      box(b, 6.2, 0.3, 5.2, 4.2);
-    }),
+    symbolFrom("amenity=doctors", DARK_STEEL, A_SYMBOLS),
     // 50 — a community centre: a wide hall with a canopy along its front.
     model("amenity=community_centre", TIMBER, (b) => {
       box(b, 12, 5.5, 8);

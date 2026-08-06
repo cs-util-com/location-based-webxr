@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
+import type { MeshData } from "./mesh-data.js";
+
 import { isBuildingScalePoi } from "./poi-building-overlap.js";
 import { POI_MODELS, poiModelFor } from "./poi-models.js";
+import {
+  POI_COLUMN_HEIGHT_M,
+  POI_MARKER_MAX_HEIGHT_M,
+  POI_SYMBOL_HEIGHT_M,
+  POI_SYMBOL_SPAN_M,
+} from "./poi-primitives.js";
 import { POI_MODEL_LIMIT } from "./poi-ranking.js";
 
 /**
@@ -101,8 +109,101 @@ describe("the POI model contract", () => {
       "amenity=hospital=15.3",
       "amenity=place_of_worship=12.0",
       "leisure=sports_centre=9.0",
-      "tourism=hotel=13.5",
+      // `tourism=hotel` WAS HERE AT 13.5 m and left when batch A replaced it
+      // with a 2.5 m bed symbol. That is the symbol-language plan working, seen
+      // from the other end: the list shrinks as each building-shaped marker
+      // stops being a building, and it should be EMPTY once all 27 are ported.
+      // Until then a kind leaving this list is the evidence that its port
+      // landed.
     ]);
+  });
+
+  describe("the family-S markers (DEC-S3, DEC-S4, DEC-S21)", () => {
+    const familyS = entries.filter((entry) => entry.symbol !== undefined);
+
+    it("has at least one, so the rest of this block cannot pass vacuously", () => {
+      // A filter over an empty list satisfies every `for` below it. This is the
+      // guard that makes the others mean something, and it is the shape round 8
+      // was caught by twice.
+      expect(familyS.length).toBeGreaterThan(0);
+    });
+
+    it("stands every symbol marker inside the shared envelope", () => {
+      // DEC-S3 fixes the family at one height; DEC-S21 made that a CEILING
+      // rather than an equality, because the envelope's span clamp binds first
+      // for a wide symbol and leaves it shorter. So the assertion is a band: no
+      // taller than column plus a full symbol, and no shorter than the column
+      // itself plus something.
+      for (const model of familyS) {
+        expect(model.heightM).toBeLessThanOrEqual(
+          POI_MARKER_MAX_HEIGHT_M + 1e-3,
+        );
+        expect(model.heightM).toBeGreaterThan(POI_COLUMN_HEIGHT_M);
+      }
+    });
+
+    it("gives every symbol geometry that stands alone, base at zero", () => {
+      // THE ASSERTION DEC-S4 EXISTS FOR. Half the time the symbol is drawn with
+      // no column under it, floating over a building's roof, so a `symbol` that
+      // is empty or that starts at the column top is unusable in exactly the
+      // case the whole plan is for — and it would look perfectly fine in the
+      // gallery, which is where it would otherwise be judged.
+      for (const model of familyS) {
+        const symbol = model.symbol as MeshData;
+        expect(symbol.positions.length).toBeGreaterThan(0);
+        expect(symbol.indices.length).toBeGreaterThan(0);
+        let lowest = Infinity;
+        let highest = -Infinity;
+        for (let i = 1; i < symbol.positions.length; i += 3) {
+          lowest = Math.min(lowest, symbol.positions[i] as number);
+          highest = Math.max(highest, symbol.positions[i] as number);
+        }
+        expect(lowest).toBeCloseTo(0, 5);
+        expect(highest).toBeLessThanOrEqual(POI_SYMBOL_HEIGHT_M + 1e-6);
+        expect(highest).toBeGreaterThan(0);
+      }
+    });
+
+    it("keeps the symbol's bounding box independent of the column", () => {
+      // The mechanical form of "reads on its own": the symbol's own extent must
+      // not be the merged marker's. If a port ever merged the column INTO the
+      // symbol — the obvious mistake when copying a source that draws both
+      // together — this is what would catch it, since the symbol's height would
+      // suddenly match the marker's.
+      for (const model of familyS) {
+        const symbol = model.symbol as MeshData;
+        let highest = -Infinity;
+        for (let i = 1; i < symbol.positions.length; i += 3) {
+          highest = Math.max(highest, symbol.positions[i] as number);
+        }
+        expect(highest).toBeLessThan(
+          model.heightM - POI_COLUMN_HEIGHT_M + 1e-6,
+        );
+        expect(symbol.triangleCount).toBeLessThan(model.mesh.triangleCount);
+      }
+    });
+
+    it("fits every symbol inside the envelope's span, not just its height", () => {
+      // The clamp that made the height a range. A symbol wider than this is a
+      // billboard on a 1.6 m post, which is the failure mode DEC-S21 rejected
+      // "scale to height only" for.
+      for (const model of familyS) {
+        const symbol = model.symbol as MeshData;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (let i = 0; i < symbol.positions.length; i += 3) {
+          minX = Math.min(minX, symbol.positions[i] as number);
+          maxX = Math.max(maxX, symbol.positions[i] as number);
+          minZ = Math.min(minZ, symbol.positions[i + 2] as number);
+          maxZ = Math.max(maxZ, symbol.positions[i + 2] as number);
+        }
+        expect(Math.max(maxX - minX, maxZ - minZ)).toBeLessThanOrEqual(
+          POI_SYMBOL_SPAN_M + 1e-6,
+        );
+      }
+    });
   });
 
   it("produces only finite vertex positions", () => {
