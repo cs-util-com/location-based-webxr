@@ -145,9 +145,22 @@ function messageOf(error: unknown): string {
  * letting the EARLIER one write the final state. Latest-wins rather than a lock:
  * an 18 s dead zone after every click would break the demo's only interaction.
  */
+/** What a caller can say about the change that triggered this refresh. */
+export interface RefreshInput {
+  /**
+   * The user chose a new place rather than travelling to it.
+   *
+   * The site picker sets it; a step, a drag and a locate do not. Choosing a
+   * place is a discontinuity, so the scene anchor is re-taken with no distance
+   * test at all — two picker entries a few hundred metres apart are still two
+   * different scenes.
+   */
+  readonly declared?: boolean;
+}
+
 export function createRefreshCycle(
   options: RefreshCycleOptions,
-): LatestOnly<void> {
+): LatestOnly<RefreshInput | void> {
   const { store, actions, worker, onMesh, onAnchor } = options;
 
   // THE SCENE ANCHOR IS HELD ACROSS RUNS, which is the whole point: the ENU
@@ -155,9 +168,13 @@ export function createRefreshCycle(
   // declared place change or past REANCHOR_THRESHOLD_M — see `scene-anchor.ts`.
   let anchor: AnchorDecision | undefined;
 
-  return latestOnly(async (_input, signal) => {
+  return latestOnly(async (input, signal) => {
     const { position, category } = selectOsmView(store.getState());
-    anchor = nextAnchor(anchor?.origin, position);
+    // DECLARED means the user CHOSE a place rather than travelling to it, so
+    // the anchor is re-taken with no distance test — see `scene-anchor.ts`.
+    anchor = nextAnchor(anchor?.origin, position, {
+      declared: input === undefined ? false : input.declared === true,
+    });
     onAnchor?.(anchor.origin);
     store.dispatch(
       actions.fetchStarted(

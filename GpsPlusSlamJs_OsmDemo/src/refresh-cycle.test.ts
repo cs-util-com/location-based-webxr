@@ -841,6 +841,39 @@ describe("the scene anchor", () => {
     for (const origin of origins) expect(origin).toEqual(COLOGNE);
   });
 
+  it("re-anchors for a DECLARED place change, however small the move", async () => {
+    // THE SITE PICKER'S RULE (DEC-R11-7). Choosing a place is a discontinuity,
+    // not travel, so it does not consult the distance at all — two picker
+    // entries a few hundred metres apart are still two different scenes.
+    //
+    // Without this the anchor is kept for any move under 5 km, so hopping
+    // between nearby places would leave the second one drawn in the first
+    // one's frame.
+    const near = { lat: COLOGNE.lat + 0.0005, lng: COLOGNE.lng };
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const sent: ({ lat: number; lng: number } | undefined)[] = [];
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      worker: {
+        call: (_kind, payload) => {
+          sent.push(payload.frameOrigin);
+          return Promise.resolve({
+            snapshot: snapshot("walkable"),
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+          });
+        },
+      },
+      onMesh: () => {},
+    });
+
+    await refresh();
+    demo.store.dispatch(demo.actions.positionChanged(near));
+    await refresh({ declared: true });
+
+    expect(sent.at(-1)).toEqual(near);
+  });
+
   it("re-anchors once the user travels past the threshold", async () => {
     // The counterweight. Without it "the origin never moves" would also pass
     // for a scene that ignored position entirely — and the frame's fixed

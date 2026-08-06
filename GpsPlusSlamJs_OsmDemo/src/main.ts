@@ -371,10 +371,24 @@ async function main(): Promise<void> {
   // with the first. It recentres the map for the same reason the locate path
   // does: this is a request to GO somewhere, unlike a map click, which already
   // happens where the user is looking.
+  /**
+   * Set by the site picker, read once by the position subscriber.
+   *
+   * A flag rather than a field on the action because the action comes from the
+   * framework's state slice, shared with every other app — widening it for one
+   * demo's anchoring rule would be the wrong place to put this.
+   */
+  let placeChangeDeclared = false;
+
   attachSitePicker({
     select: el<HTMLSelectElement>("site"),
     onChoose: (position) => {
       mapView.centreOn(position);
+      // A DECLARED place change, not travel. The picker spans Cologne to Tokyo,
+      // so the scene anchor must be re-taken regardless of distance — and two
+      // entries a few hundred metres apart are still two different scenes.
+      // Consumed by the position subscriber below, which is what calls refresh.
+      placeChangeDeclared = true;
       store.dispatch(actions.positionChanged(position));
     },
   });
@@ -951,7 +965,11 @@ async function main(): Promise<void> {
       // `loadTerrain` is coalesced and only QUEUES while a load is in flight —
       // so `refresh` can genuinely reach the worker first.
       void loadTerrain(position);
-      void refresh();
+      // READ AND CLEARED, so a declared change re-anchors exactly once and the
+      // next ordinary step is treated as travel again.
+      const declared = placeChangeDeclared;
+      placeChangeDeclared = false;
+      void refresh({ declared });
     },
   );
 
