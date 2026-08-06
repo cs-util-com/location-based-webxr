@@ -198,3 +198,27 @@ describe("a marker whose area already describes it", () => {
     expect(stats.poi).toBe(1);
   });
 });
+
+describe("a family-L marker inside a building", () => {
+  it("stays on the ground, because it has no symbol to float", () => {
+    // A SECOND GUARD ON THE MOST VISIBLE FAILURE. The rule itself is tested in
+    // the package, but "park bench flying onto a roof" is the kind of defect
+    // that is obvious in a screenshot and invisible in a diff, so it is worth
+    // pinning where the matrix is actually written too.
+    const { objects } = drawMeshLayers(
+      meshWith([
+        marker({
+          kind: "amenity=bench",
+          position: { x: 5, y: -5 },
+          groundHeightM: 3,
+          hosts: [buildingHost],
+        }),
+      ]),
+      { ...POI_ONLY, buildings: true },
+    );
+    const at = positionOf(objects);
+    expect(at.x).toBeCloseTo(5, 4);
+    expect(at.z).toBeCloseTo(5, 4);
+    expect(at.y).toBeCloseTo(3, 4);
+  });
+});

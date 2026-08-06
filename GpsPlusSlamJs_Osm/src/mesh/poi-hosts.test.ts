@@ -520,3 +520,56 @@ describe("way-derived markers (stage 2)", () => {
     expect(kept).toHaveLength(1);
   });
 });
+
+describe("a kind with no symbol to float", () => {
+  it("STAYS AT ITS NODE inside a building, however tempting the host", () => {
+    // THE BUG THIS TEST WAS WRITTEN TO CATCH, and it was live for one commit.
+    // `hostMatches` said any non-area kind may be hosted by a building, so an
+    // atrium BENCH acquired a host and was re-anchored — a park bench flying
+    // onto a roof, at the centroid of a building it happens to stand inside.
+    //
+    // Family L has no symbol: there is nothing to float, and the marker IS the
+    // thing rather than a label for it. Only a kind with a `symbol` can be
+    // re-anchored, and the rule asks the registry rather than trusting a caller
+    // to remember — a caller that forgets moves benches onto roofs, silently.
+    const placement = resolvePoiPlacement(
+      {
+        kind: "amenity=bench",
+        hosts: [
+          {
+            layer: "buildings",
+            feature: "way/21",
+            x: 10,
+            y: 10,
+            topM: 30,
+            spanM: 40,
+          },
+        ],
+      },
+      new Set<PoiHostLayer>(["buildings"]),
+    );
+    expect(placement).toEqual({ at: "node" });
+  });
+
+  it("still lets a kind WITH a symbol be hosted", () => {
+    // The other side, so the guard above cannot be satisfied by refusing
+    // everything.
+    const placement = resolvePoiPlacement(
+      {
+        kind: "amenity=cafe",
+        hosts: [
+          {
+            layer: "buildings",
+            feature: "way/22",
+            x: 10,
+            y: 10,
+            topM: 30,
+            spanM: 40,
+          },
+        ],
+      },
+      new Set<PoiHostLayer>(["buildings"]),
+    );
+    expect(placement.at).toBe("host");
+  });
+});

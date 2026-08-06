@@ -38,6 +38,7 @@
 
 import type { OsmFeatureKey } from "../model/osm-feature.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
+import { poiModelFor } from "./poi-models.js";
 import type { EnuPoint } from "./enu.js";
 
 /** The layers that can host a marker. Named, because the policy differs. */
@@ -149,10 +150,24 @@ export function hostMatches(
   // landuse plate host a café would move the café's symbol to the middle of a
   // retail park — the café is at its node, and the plate is not the café.
   if (host.layer === "plates") return AREA_KINDS.has(kind);
-  // A BUILDING ONLY EVER HOSTS A SYMBOL KIND. A pool node inside a building
-  // footprint is an indoor pool: the building is not the pool, and a pool
-  // symbol on its roof would be a claim about the whole building.
-  return !AREA_KINDS.has(kind);
+  // A BUILDING ONLY EVER HOSTS A KIND THAT HAS A SYMBOL TO FLOAT.
+  //
+  // TWO SEPARATE REASONS, and missing the second one shipped a bug for a commit:
+  //
+  //  - An AREA kind is refused because a pool node inside a building footprint
+  //    is an indoor pool. The building is not the pool, and a pool symbol on its
+  //    roof would be a claim about the whole building.
+  //  - A FAMILY-L kind is refused because it has no symbol. A bench IS the
+  //    thing rather than a label for it, so there is nothing to lift — and the
+  //    version of this rule that only checked the area list re-anchored atrium
+  //    benches to roofs, which is a park bench flying to the centroid of a
+  //    building it happens to stand inside.
+  //
+  // ASKED OF THE REGISTRY rather than taken from a caller. A caller that forgets
+  // moves benches onto roofs silently, and the registry is the one place that
+  // knows which kinds have a symbol at all.
+  if (AREA_KINDS.has(kind)) return false;
+  return poiModelFor(kind)?.symbol !== undefined;
 }
 
 /**
