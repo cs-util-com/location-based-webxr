@@ -26,7 +26,7 @@
  * @see main.ts.md
  */
 
-import { TERRARIUM_ATTRIBUTION } from "gps-plus-slam-osm";
+import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
 
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
@@ -430,10 +430,21 @@ async function main(): Promise<void> {
   });
 
   const access = { store, actions };
+  // WHERE THE SCENE IS ANCHORED, held so the camera can pivot on the USER.
+  //
+  // Both halves of that are already on this side: the position comes from the
+  // store (the map click sets it) and the anchor is decided in the refresh
+  // cycle, which merely SENDS it to the worker. So the ENU conversion is a pure
+  // function of two values this file already has — no round-trip needed.
+  let sceneAnchor = start;
+
   const refresh = createRefreshCycle({
     store,
     actions,
     worker,
+    onAnchor: (origin) => {
+      sceneAnchor = origin;
+    },
     // A pass either rebuilds the geometry or re-sends only the region slabs
     // (W6). The slabs are the one layer a widening ring changes; everything else
     // depends on the features, the terrain and the frame origin, none of which a
@@ -921,7 +932,13 @@ async function main(): Promise<void> {
       // which the clicked point renders off-centre or off screen and the 3D view
       // appears to have ignored the click. Translation only: the camera is never
       // rotated, which is the invariant the feedback states outright.
-      buildingView.recentre();
+      // ON THE USER, not on the origin. Those were the same point while the ENU
+      // frame was rebuilt at the user on every publish; `scene-anchor.ts` fixed
+      // the frame, so recentring on the origin would drag the camera back to the
+      // session start on every step.
+      buildingView.recentre(
+        enuFrameAt(sceneAnchor).toEnu(selectOsmView(store.getState()).position),
+      );
       // BOTH AT ONCE (W3). These used to be chained — `loadTerrain(p).finally(()
       // => refresh())` — so a ~55 000-post DEM grid was sampled, transferred and
       // applied before the fetch and the scoring even started. They are

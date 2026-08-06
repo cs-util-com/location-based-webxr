@@ -18,7 +18,7 @@
 import * as THREE from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 
-import { recentreOnOrigin } from "./recentre-camera.js";
+import { recentreOn } from "./recentre-camera.js";
 import {
   createPerfStatsOverlay,
   type PerfStatsOverlayHandle,
@@ -1331,18 +1331,32 @@ export class BuildingView {
   }
 
   /**
-   * Points the camera back at the scene origin, by translation only (W11).
+   * Points the camera back at THE USER, by translation only (W11).
    *
    * Called when the user MOVES — a map click, the locate button or the location
-   * picker — because every refresh rebuilds the world in a frame centred on the
-   * new position, so the place the user chose is always at the origin. Without
-   * this, that is only on screen while the camera has never been panned.
+   * picker. Without it the chosen place is only on screen while the camera has
+   * never been panned.
+   *
+   * **THE TARGET USED TO BE THE ORIGIN, and that stopped being right.** The ENU
+   * frame was rebuilt at the user's position on every publish, so the origin and
+   * the user were the same point. `scene-anchor.ts` fixed the frame, so they
+   * diverge — and recentring on the origin now drags the camera back to the
+   * session start on every step, steadily further away the more the user walks.
+   *
+   * The position arrives in ENU FROM THE WORKER, because that is where the frame
+   * lives; a page-side copy of the frame is exactly what this round removed.
    *
    * The camera is not rotated and the viewing distance is unchanged; see
    * `recentre-camera.ts` for why that is by construction rather than by care.
    */
-  recentre(): void {
-    recentreOnOrigin(this.camera, this.controls);
+  recentre(userEnu: { readonly x: number; readonly y: number }): void {
+    // ENU x,y becomes scene x,-z — the same axis convention every other piece
+    // of scene geometry uses. `y` stays 0: the camera pivots at ground level.
+    recentreOn(this.camera, this.controls, {
+      x: userEnu.x,
+      y: 0,
+      z: -userEnu.y,
+    });
     this.requestFrame();
   }
 

@@ -120,6 +120,16 @@ export interface RefreshCycleOptions extends StoreAccess {
    * callback rather than a return value.
    */
   readonly onMesh: (mesh: MeshUpdate) => void;
+  /**
+   * Where the scene is anchored, whenever that is decided.
+   *
+   * The anchor is computed HERE, on the page, and merely sent to the worker —
+   * so the page is its source rather than a copy of it. That is what lets the
+   * camera pivot on the user without a worker round-trip: position comes from
+   * the store, the anchor comes from here, and the ENU conversion is a pure
+   * function of the two.
+   */
+  readonly onAnchor?: (origin: { lat: number; lng: number }) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -138,7 +148,7 @@ function messageOf(error: unknown): string {
 export function createRefreshCycle(
   options: RefreshCycleOptions,
 ): LatestOnly<void> {
-  const { store, actions, worker, onMesh } = options;
+  const { store, actions, worker, onMesh, onAnchor } = options;
 
   // THE SCENE ANCHOR IS HELD ACROSS RUNS, which is the whole point: the ENU
   // frame belongs to the scene, not to the current position. It moves only on a
@@ -148,6 +158,7 @@ export function createRefreshCycle(
   return latestOnly(async (_input, signal) => {
     const { position, category } = selectOsmView(store.getState());
     anchor = nextAnchor(anchor?.origin, position);
+    onAnchor?.(anchor.origin);
     store.dispatch(
       actions.fetchStarted(
         `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`,

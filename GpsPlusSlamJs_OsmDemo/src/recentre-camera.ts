@@ -56,22 +56,34 @@ export interface OrbitTarget {
 }
 
 /**
- * Translates camera and target so the target sits at the scene origin.
+ * Translates camera and target so the target sits at `at`.
  *
- * A no-op when it already does, which is the common case — the demo starts
- * there, and a recentre that always moved something would show as a jump on
- * every click rather than only after a pan.
+ * A no-op when it already does, which is the common case — and a recentre that
+ * always moved something would show as a jump on every click rather than only
+ * after a pan.
  */
-export function recentreOnOrigin(
+export function recentreOn(
   camera: THREE.Object3D,
   controls: OrbitTarget,
+  /**
+   * Where the pivot should sit, in scene coordinates.
+   *
+   * **USED TO BE IMPLICITLY THE ORIGIN**, back when the ENU frame was rebuilt
+   * at the user's position on every publish, so "the origin" and "the user"
+   * were the same point. Since `scene-anchor.ts` fixed the frame they are not:
+   * the origin is where the scene was anchored, and recentring on it would drag
+   * the camera back to the session start on every step.
+   */
+  at: { readonly x: number; readonly y: number; readonly z: number },
 ): void {
   const { target } = controls;
-  if (target.x === 0 && target.y === 0 && target.z === 0) return;
+  if (target.x === at.x && target.y === at.y && target.z === at.z) return;
   // BOTH, by the same vector. Moving only the target would swing the camera;
   // moving only the camera would slide the pivot out from under it.
-  camera.position.sub(target);
-  target.set(0, 0, 0);
+  camera.position.x += at.x - target.x;
+  camera.position.y += at.y - target.y;
+  camera.position.z += at.z - target.z;
+  target.set(at.x, at.y, at.z);
   // Required: `MapControls` holds the camera's offset from the target in
   // spherical coordinates and re-applies it on the next `update()`. Without
   // this call the very next frame — one is scheduled by the refresh anyway —

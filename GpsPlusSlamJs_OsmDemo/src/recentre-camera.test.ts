@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 
-import { recentreOnOrigin } from "./recentre-camera.js";
+import { recentreOn } from "./recentre-camera.js";
 
 function scene(): {
   camera: THREE.PerspectiveCamera;
@@ -53,13 +53,15 @@ function pan(
   controls.update();
 }
 
-describe("recentreOnOrigin", () => {
+const ORIGIN = { x: 0, y: 0, z: 0 };
+
+describe("recentreOn", () => {
   it("brings the target back to the origin after a pan", () => {
     const { camera, controls } = scene();
     pan(camera, controls, 300, -220);
     expect(controls.target.x).toBeCloseTo(300);
 
-    recentreOnOrigin(camera, controls);
+    recentreOn(camera, controls, ORIGIN);
 
     // The clicked point is built AT the origin, so the whole requirement is
     // that the camera ends up looking there.
@@ -78,7 +80,7 @@ describe("recentreOnOrigin", () => {
     pan(camera, controls, 300, -220);
     const before = camera.quaternion.clone();
 
-    recentreOnOrigin(camera, controls);
+    recentreOn(camera, controls, ORIGIN);
 
     expect(camera.quaternion.x).toBeCloseTo(before.x, 12);
     expect(camera.quaternion.y).toBeCloseTo(before.y, 12);
@@ -91,7 +93,7 @@ describe("recentreOnOrigin", () => {
     pan(camera, controls, 300, -220);
     const distance = camera.position.distanceTo(controls.target);
 
-    recentreOnOrigin(camera, controls);
+    recentreOn(camera, controls, ORIGIN);
 
     expect(camera.position.distanceTo(controls.target)).toBeCloseTo(
       distance,
@@ -105,7 +107,7 @@ describe("recentreOnOrigin", () => {
     const before = camera.position.clone();
     const offset = controls.target.clone();
 
-    recentreOnOrigin(camera, controls);
+    recentreOn(camera, controls, ORIGIN);
 
     expect(camera.position.x).toBeCloseTo(before.x - offset.x);
     expect(camera.position.y).toBeCloseTo(before.y - offset.y);
@@ -119,10 +121,53 @@ describe("recentreOnOrigin", () => {
     const { camera, controls } = scene();
     const before = camera.position.clone();
 
-    recentreOnOrigin(camera, controls);
+    recentreOn(camera, controls, ORIGIN);
 
     expect(camera.position.x).toBeCloseTo(before.x, 12);
     expect(camera.position.y).toBeCloseTo(before.y, 12);
     expect(camera.position.z).toBeCloseTo(before.z, 12);
+  });
+
+  it("recentres on the USER, not on the scene origin", () => {
+    // THE REGRESSION THE FIXED ANCHOR INTRODUCED. These used to be the same
+    // point: the ENU frame was rebuilt at the user's position on every publish,
+    // so the origin WAS the user. Since `scene-anchor.ts` fixed the frame they
+    // diverge, and recentring on the origin drags the camera back to the
+    // session start on every step — steadily further from the user the more
+    // they walk.
+    const { camera, controls } = scene();
+    const user = { x: 140, y: 0, z: -85 };
+
+    recentreOn(camera, controls, user);
+
+    expect(controls.target.x).toBeCloseTo(user.x);
+    expect(controls.target.y).toBeCloseTo(user.y);
+    expect(controls.target.z).toBeCloseTo(user.z);
+  });
+
+  it("keeps the orientation when recentring on a moved user", () => {
+    // The same by-construction guarantee as the origin case, asserted for a
+    // non-zero target: a translation of camera and pivot by one vector cannot
+    // rotate anything.
+    const { camera, controls } = scene();
+    pan(camera, controls, 300, -220);
+    const before = camera.quaternion.clone();
+
+    recentreOn(camera, controls, { x: 140, y: 0, z: -85 });
+
+    expect(camera.quaternion.x).toBeCloseTo(before.x, 12);
+    expect(camera.quaternion.w).toBeCloseTo(before.w, 12);
+  });
+
+  it("is a no-op when the pivot is already on the user", () => {
+    const { camera, controls } = scene();
+    const user = { x: 12, y: 0, z: 34 };
+    recentreOn(camera, controls, user);
+    const settled = camera.position.clone();
+
+    recentreOn(camera, controls, user);
+
+    expect(camera.position.x).toBeCloseTo(settled.x, 12);
+    expect(camera.position.z).toBeCloseTo(settled.z, 12);
   });
 });
