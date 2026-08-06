@@ -213,6 +213,15 @@ export async function stubNetwork(page, options = {}) {
     // happens while the DEM cannot possibly have finished, and the test spends
     // no time waiting for a timer.
     if (options.holdTerrain === true) await terrainHeld;
+    // `failTerrain` makes every DEM tile fail, which is the outage path — the
+    // ground stays FLAT and `field` comes back `undefined`. Distinct from
+    // `holdTerrain`: that one delays an answer, this one refuses to give one.
+    // Needed because a failed load still has to report WHERE it was asked to
+    // look, or the ground plane stops following the user during an outage.
+    if (options.failTerrain === true) {
+      await route.fulfill({ status: 503, body: "" });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "image/png",

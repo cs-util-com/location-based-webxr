@@ -28,11 +28,22 @@
 ## Examples
 
 ```ts
-const refresh = createRefreshCycle({ store, actions, worker, onMesh });
+const anchors = createAnchorHolder(start);
+const refresh = createRefreshCycle({ store, actions, worker, onMesh, anchors });
 
 subscribe(
   (view) => view.position,
-  () => void refresh(),
+  (position) => {
+    // THE ANCHOR MOVES FIRST, AND EXACTLY ONCE. Everything below reads the
+    // holder, so the camera, the terrain load and the refresh cannot disagree
+    // about which frame this position is drawn in.
+    anchors.advance(position, { declared });
+    buildingView.recentre(enuFrameAt(anchors.origin).toEnu(position));
+    // Concurrently, not chained: they are independent work on the same worker,
+    // and the worker joins them on the far side (`worker/terrain-gate.ts`).
+    void loadTerrain({ centre: position, frameOrigin: anchors.origin });
+    void refresh();
+  },
 );
 subscribe(
   (view) => view.category,

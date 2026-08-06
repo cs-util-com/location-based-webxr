@@ -4408,3 +4408,44 @@ test.describe("the scene frame", () => {
     expect(Math.hypot(dx ?? 0, dy ?? 0)).toBeLessThan(5000);
   });
 });
+
+test.describe("the scene frame during a DEM outage", () => {
+  test("keeps the ground under the user even when the terrain fails to load", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS, AND WHAT IT CAUGHT. Raised in review on #269. When
+    // the DEM returns nothing the field is `undefined` — the ground stays flat,
+    // deliberately, because a sea-level hole shaped like the outage reads as
+    // terrain. The shipped code then left the ground plane WHERE IT WAS, on the
+    // reasoning that moving a flat plane is invisible.
+    //
+    // That reasoning covered the appearance and missed the COVERAGE. The plane
+    // is finite: it reaches TERRAIN_EXTENT_M from its centre and then stops. A
+    // user who walks past that during an outage ends up off the edge of it with
+    // no ground beneath them at all — and because the re-anchor threshold is
+    // 5 km, that is reachable well inside one anchor.
+    //
+    // So a failed load still has to report WHERE it was asked to look. This is
+    // the assertion that it does.
+    await stubNetwork(page, { failTerrain: true });
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const scene = page.locator("#scene");
+    const groundCentre = () => scene.getAttribute("data-ground-centre");
+
+    // The outage is real: the status line says so rather than reporting relief.
+    await expect(page.locator("#status")).toContainText(/terrain unavailable/);
+
+    await expect.poll(groundCentre, REPAINT).toBe("0,0");
+
+    await page.locator("#map").click({ position: { x: 60, y: 60 } });
+    await waitForRefresh(page);
+
+    // THE POINT: the window still moved with the user, outage or not.
+    await expect.poll(groundCentre, REPAINT).not.toBe("0,0");
+    const moved = (await groundCentre()) ?? "";
+    const [dx, dy] = moved.split(",").map(Number);
+    expect(Math.hypot(dx ?? 0, dy ?? 0)).toBeGreaterThan(20);
+  });
+});

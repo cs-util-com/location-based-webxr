@@ -52,6 +52,15 @@ export interface TerrainState {
   readonly field: HeightfieldData | undefined;
   /** One phrase for the status line, never empty. */
   readonly note: string;
+  /**
+   * Where the window was sampled, in the scene's frame — even on failure.
+   *
+   * Carried separately from `field` precisely because `field` is `undefined`
+   * during a DEM outage. The ground plane follows this centre, and the plane is
+   * finite: leaving it behind during an outage means a user who walks past its
+   * extent has no ground under them at all.
+   */
+  readonly centreEnu: { readonly x: number; readonly y: number };
 }
 
 /** Narrowed so `terrain-cycle.test.ts` can drive this without a worker. */

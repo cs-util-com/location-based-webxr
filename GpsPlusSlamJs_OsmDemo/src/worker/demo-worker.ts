@@ -797,6 +797,10 @@ async function loadTerrain(
   return {
     field: terrain,
     note: describeTerrain(field),
+    // REPORTED EVEN WHEN THE FIELD IS EMPTY, and that is the point: the ground
+    // plane follows this centre, and a plane left behind during a DEM outage
+    // stops covering the user as soon as they walk past its extent.
+    centreEnu: window.sampleCentreEnu,
   };
 }
 

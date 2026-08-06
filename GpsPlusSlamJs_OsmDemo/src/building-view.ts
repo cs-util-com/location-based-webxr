@@ -645,7 +645,20 @@ export class BuildingView {
    * new field to already-displaced vertices would accumulate the relief on
    * every refresh, and a city would grow into a mountain over a few clicks.
    */
-  setTerrain(field: Heightfield | undefined): void {
+  setTerrain(
+    field: Heightfield | undefined,
+    /**
+     * Where the window was sampled, in the scene's frame.
+     *
+     * SEPARATE FROM `field` because a DEM outage leaves `field` undefined while
+     * the window still has a place — and the plane must follow it either way.
+     * Defaults to the field's own centre so a caller that has one cannot pass a
+     * contradictory pair.
+     */
+    centreEnu:
+      | { readonly x: number; readonly y: number }
+      | undefined = field?.centreEnu,
+  ): void {
     const started = performance.now();
     this.terrain = field;
     // THE PLANE FOLLOWS THE WINDOW. The field is sampled around the USER while
@@ -657,7 +670,7 @@ export class BuildingView {
     // Positioning it AT `centreEnu` is also what keeps the shader free of an
     // origin-offset uniform: a plane-local vertex coordinate is then exactly
     // grid-local, which is the space the height texture is indexed in.
-    this.moveGroundTo(field);
+    this.moveGroundTo(centreEnu);
     this.uploadHeightTexture(field);
     const attribute = this.ground.geometry.getAttribute("position");
     const positions = attribute.array as Float32Array;
@@ -698,15 +711,24 @@ export class BuildingView {
   }
 
   /**
-   * Puts the ground plane where the field was sampled.
+   * Puts the ground plane where the window was sampled.
    *
-   * A field that failed to load leaves the plane where it is rather than
-   * snapping it back to the origin. Moving a flat plane is invisible, and "the
-   * DEM is missing here" is not a reason to reposition the world.
+   * **MOVES FOR A FAILED LOAD TOO, and the earlier reasoning for not doing so
+   * was wrong.** It said moving a flat plane is invisible — true, and beside the
+   * point: the plane is FINITE. It reaches `TERRAIN_EXTENT_M` from its centre
+   * and stops, so a plane left behind during a DEM outage stops covering the
+   * user as soon as they walk past that, leaving them off the edge of the world
+   * with no ground at all. The 5 km re-anchor threshold puts that well inside a
+   * single anchor. Raised in review on #269.
+   *
+   * A centre of `undefined` — a caller with neither a field nor a window — is
+   * the only case that still leaves the plane alone.
    */
-  private moveGroundTo(field: Heightfield | undefined): void {
-    if (field === undefined) return;
-    const at = groundPositionFor(field.centreEnu);
+  private moveGroundTo(
+    centreEnu: { readonly x: number; readonly y: number } | undefined,
+  ): void {
+    if (centreEnu === undefined) return;
+    const at = groundPositionFor(centreEnu);
     this.ground.position.set(at.x, at.y, at.z);
   }
 

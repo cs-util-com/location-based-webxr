@@ -237,9 +237,15 @@ file owns the material swap and when the colours are refreshed.
     plane-local coordinates straight in is precisely the desynchronisation that
     made this worth threading through, and it is silent: each surface stays
     internally smooth while the two part company by the walked distance.
-  - A field that failed to load leaves the plane where it is. Moving a flat
-    plane is invisible, and "the DEM is missing here" is not a reason to
-    reposition the world.
+  - **A failed load moves the plane too, and the earlier reasoning for not doing
+    so was wrong.** It said moving a flat plane is invisible — true, and beside
+    the point: the plane is FINITE. It reaches `TERRAIN_EXTENT_M` from its centre
+    and stops, so one left behind during a DEM outage stops covering the user as
+    soon as they walk past that, leaving them off the edge of the world with no
+    ground at all — and the 5 km re-anchor threshold puts that well inside a
+    single anchor. `setTerrain` therefore takes the window centre SEPARATELY from
+    the field, because the field is `undefined` in exactly that case. Raised in
+    review on #269.
 - **It is a GROUND MODE, not a layer (W6, DEC-R5-4).** It used to be
   `terrainDebug` in `ALL_LAYERS`, applied from the layer set in `main.ts`, with a
   bespoke `layer-order.ts` entry returning 0 and a bespoke "greyed out under No

@@ -5,9 +5,18 @@
 ## Public API
 
 - `createTerrainCycle({ worker, extentM, spacingM, apply })` → `LatestOnly<TerrainLoad>`
-  - Called with `{ centre, frameOrigin }` — where the user is, and where the scene`s ENU frame is anchored. TWO values, not one: they were a single `centre` while the frame followed the user, and once the scene got a fixed anchor the heightfield kept being sampled in the user`s frame while the buildings standing on it moved to the scene`s, so the ground slid under the city by the step distance on every step. `terrain-window.ts`owns what the worker then does with the pair. Loads a`Heightfield`through`buildHeightfield`and reports it via`apply` exactly once per load that is not superseded.
+  - Called with `{ centre, frameOrigin }` — where the user is, and where the
+    scene's ENU frame is anchored. **TWO values, not one:** they were a single
+    `centre` while the frame followed the user, and once the scene got a fixed
+    anchor the heightfield kept being sampled in the user's frame while the
+    buildings standing on it moved to the scene's — so the ground slid under the
+    city by the step distance on every step. `terrain-window.ts` owns what the
+    worker then does with the pair.
+  - Reports the loaded field through `apply` exactly once per load that is not
+    superseded.
   - Coalesced through `latestOnly`: at most one load in flight, only the newest waiting position survives, never rejects.
-- `interface TerrainState` — `field` (`Heightfield | undefined`; `undefined` means the ground stays flat) and `note` (one status-line phrase, never empty).
+- `interface TerrainState` — `field` (`Heightfield | undefined`; `undefined` means the ground stays flat), `note` (one status-line phrase, never empty) and `centreEnu` (where the window was sampled, in the scene’s frame).
+  - **`centreEnu` is reported even when `field` is `undefined`**, and that is the point of it being a separate value. The ground plane follows this centre and the plane is FINITE — it reaches `TERRAIN_EXTENT_M` and stops — so one left behind during a DEM outage stops covering the user as soon as they walk past that, and the 5 km re-anchor threshold puts that well inside a single anchor. Raised in review on #269, where the code returned early instead: that fixed the appearance (moving a flat plane is invisible) and missed the coverage.
 - `interface TerrainCycleOptions` — `worker` (the narrowed RPC surface), `extentM`, `spacingM`, `apply`. The SAMPLING moved into the worker; this module is now the coalescing wrapper around an RPC call, and `apply` receives `HeightfieldData` (not `Heightfield` — `heightAt` is a method and structured clone drops methods silently).
 
 ## Invariants & assumptions
@@ -27,21 +36,34 @@ const loadTerrain = createTerrainCycle({
   worker,
   extentM: TERRAIN_EXTENT_M,
   spacingM: 12,
-  apply: ({ field, note }) => {
-    terrain = field;
+  apply: ({ field, note, centreEnu }) => {
+    terrain = field === undefined ? undefined : heightfieldFrom(field);
     terrainNote = note;
-    buildingView.setTerrain(field);
+    // `centreEnu` is passed separately because it is reported even for a FAILED
+    // load: the plane still has to move to where the window was asked for, or a
+    // walk during a DEM outage leaves the user off the edge of a flat plane.
+    buildingView.setTerrain(terrain, centreEnu);
   },
 });
 
 subscribe(
   (view) => view.position,
-  (position) => void loadTerrain(position).finally(() => refresh()),
+  (position) => {
+    // BOTH AT ONCE, never chained. They are independent work on the same worker
+    // and the worker joins them on the far side (`worker/terrain-gate.ts`), so
+    // `.finally(() => refresh())` would be pure added latency.
+    void loadTerrain({ centre: position, frameOrigin: anchors.origin });
+    void refresh();
+  },
 );
 ```
 
 ## Tests
 
 `terrain-cycle.test.ts`, against a provider whose every call the test holds open — the newest position wins even when an older load would have resolved later (only one load is ever in flight); the middle of a three-click burst is dropped; a DEM outage reports flat with an explicit note rather than sea level; the relief and missing-sample counts reach the note; and a rejecting provider still resolves with a flat field.
+
+Plus the frame-forwarding pair, added after review on #269: `centre` and `frameOrigin` reach the worker as DISTINCT values (Cologne against Bonn, ~26 km apart, so a drop or a swap is unmissable), and the window centre still reaches `apply` when the DEM produced nothing. The rest of the file deliberately holds the two equal — it is about ordering — which is precisely why that hole existed: with one value, dropping or swapping the pair changed nothing any assertion could see.
+
+That a FAILED load then moves the ground plane is the e2e’s (“keeps the ground under the user even when the terrain fails to load”, driven by `stubNetwork`’s `failTerrain`), since neither the worker nor `BuildingView` can be constructed in a unit test.
 
 Related: `latest-only.ts.md` (the coalescing contract), `refresh-cycle.ts.md` (the other half of the same click), `heightfield.ts.md` (what a field is and why it is relative).

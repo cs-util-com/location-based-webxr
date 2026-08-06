@@ -194,6 +194,19 @@ export interface TerrainResult {
   readonly field: HeightfieldData | undefined;
   /** One phrase for the status line, never empty. */
   readonly note: string;
+  /**
+   * Where the window was sampled, in the scene's frame — **reported even when
+   * `field` is `undefined`.**
+   *
+   * A failed load still has to say WHERE it was asked to look. The ground plane
+   * follows this centre, and the plane is finite: it reaches `TERRAIN_EXTENT_M`
+   * and stops. Leaving it where it was during an outage means a user who walks
+   * past that ends up off the edge of it with no ground beneath them — and the
+   * 5 km re-anchor threshold puts that well inside one anchor. Raised in review
+   * on #269, where the code returned early instead: that fixed the appearance
+   * (moving a flat plane is invisible) and missed the coverage.
+   */
+  readonly centreEnu: { readonly x: number; readonly y: number };
 }
 
 /** Payload shape per request kind, and the result each one produces. */

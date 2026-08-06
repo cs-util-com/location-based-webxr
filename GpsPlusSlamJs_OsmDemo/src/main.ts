@@ -615,10 +615,14 @@ async function main(): Promise<void> {
     worker,
     extentM: TERRAIN_EXTENT_M,
     spacingM: TERRAIN_SPACING_M,
-    apply: ({ field, note }) => {
+    apply: ({ field, note, centreEnu }) => {
       terrain = field === undefined ? undefined : heightfieldFrom(field);
       terrainNote = note;
-      buildingView.setTerrain(terrain);
+      // `centreEnu` PASSED SEPARATELY, because a DEM outage leaves `field`
+      // undefined while the window still has a place — and the ground plane has
+      // to follow it either way, or a walk during an outage takes the user off
+      // the edge of a finite plane.
+      buildingView.setTerrain(terrain, centreEnu);
       // Attribution is REQUIRED wherever the data is shown, the same as the OSM
       // one — and only shown while the data is actually in use, because
       // crediting a source whose tiles all failed would be a claim about what
@@ -633,7 +637,9 @@ async function main(): Promise<void> {
       mapView.setTerrainAttribution(
         terrain === undefined ? undefined : TERRARIUM_ATTRIBUTION,
       );
-      publishFrameState(anchors.origin, terrain?.centreEnu);
+      // THE REPORTED CENTRE, not the field's — they are the same on a good
+      // load, and only the former exists during an outage.
+      publishFrameState(anchors.origin, centreEnu);
     },
   });
 

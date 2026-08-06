@@ -106,6 +106,9 @@ function cycleFor(provider: ElevationProvider): {
         return {
           field: field.hasData ? field : undefined,
           note: describeTerrain(field),
+          // The real worker reports this even for a failed load; the fake must
+          // too, or these tests would pass for a worker that stopped.
+          centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
         };
       },
     },
@@ -279,6 +282,7 @@ describe("createTerrainCycle — a superseded load applies nothing", () => {
           return {
             field: field.hasData ? field : undefined,
             note: describeTerrain(field),
+            centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
           };
         },
       },
@@ -294,5 +298,96 @@ describe("createTerrainCycle — a superseded load applies nothing", () => {
     // replaced it applied everything. Without the guard both fire — and the OLDER
     // one can be the last to land, which is the failure mode by name.
     expect(applied).toHaveLength(1);
+  });
+});
+
+describe("createTerrainCycle — the frame is SENT, not re-derived", () => {
+  /**
+   * WHY THESE TESTS MATTER. Everything else in this file holds `centre` and
+   * `frameOrigin` equal on purpose, because these tests are about ordering. That
+   * leaves a hole: with the two always the same value, `createTerrainCycle`
+   * could drop `frameOrigin`, or swap the two, and every assertion would still
+   * pass. `terrain-window.test.ts` covers what the WORKER does with the pair —
+   * nothing covered the cycle actually forwarding it. Raised in review on #269.
+   */
+  function capturingWorker() {
+    const payloads: {
+      centre: LatLng;
+      frameOrigin: LatLng;
+      extentM: number;
+      spacingM: number;
+    }[] = [];
+    const worker = {
+      call: (
+        _kind: "terrain",
+        payload: {
+          centre: LatLng;
+          frameOrigin: LatLng;
+          extentM: number;
+          spacingM: number;
+        },
+      ) => {
+        payloads.push(payload);
+        // A FAILED load, reported exactly as the real worker reports one: no
+        // field, but still a window centre — derived from the pair, so a cycle
+        // that swapped the two would produce a visibly wrong value here.
+        return Promise.resolve({
+          field: undefined,
+          note: "terrain unavailable — ground is flat",
+          centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
+        });
+      },
+    };
+    return { worker, payloads };
+  }
+
+  it("forwards centre and frameOrigin as DISTINCT values", async () => {
+    // Cologne and Bonn are ~26 km apart, so a swap or a drop is unmissable.
+    const { worker, payloads } = capturingWorker();
+    const load = createTerrainCycle({
+      worker,
+      extentM: 50,
+      spacingM: 50,
+      apply: () => {},
+    });
+
+    await load({ centre: COLOGNE, frameOrigin: BONN });
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]?.centre).toEqual(COLOGNE);
+    expect(payloads[0]?.frameOrigin).toEqual(BONN);
+  });
+
+  it("carries the window centre to `apply` even when the DEM produced NOTHING", async () => {
+    // WHY THIS TEST MATTERS, AND WHAT IT DOES NOT COVER. A failed load still has
+    // to say WHERE it was asked to look: the ground plane follows that centre,
+    // and the plane is finite, so one left behind during an outage stops
+    // covering the user as soon as they walk past its extent. Raised in review
+    // on #269, where the code returned early instead — which fixed the
+    // appearance (moving a flat plane is invisible) and missed the coverage.
+    //
+    // THIS test only pins that the cycle does not DROP the centre on the way to
+    // `apply` while the field is undefined — the place a "no field, nothing to
+    // report" shortcut would be written. That the worker produces it, and that
+    // the plane then moves, is the e2e's job ("keeps the ground under the user
+    // even when the terrain fails to load"), because neither the worker nor
+    // `BuildingView` can be constructed here.
+    const { worker } = capturingWorker();
+    const applied: TerrainState[] = [];
+    const load = createTerrainCycle({
+      worker,
+      extentM: 50,
+      spacingM: 50,
+      apply: (state) => applied.push(state),
+    });
+
+    await load({ centre: COLOGNE, frameOrigin: BONN });
+
+    expect(applied).toHaveLength(1);
+    expect(applied[0]?.field).toBeUndefined();
+    // The exact value, not merely "defined": Cologne expressed in a frame
+    // anchored at Bonn is ~23 km from its origin, so a dropped or swapped pair
+    // cannot round to the same numbers.
+    expect(applied[0]?.centreEnu).toEqual(enuFrameAt(BONN).toEnu(COLOGNE));
   });
 });
