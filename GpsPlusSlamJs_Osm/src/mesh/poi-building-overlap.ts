@@ -33,12 +33,25 @@ import { poiModelFor } from "./poi-models.js";
 /**
  * How tall a POI model has to be before it counts as a building claim.
  *
- * 8 m, and the number is bounded from BOTH sides by real models rather than
- * chosen. Below it sit the shopfronts — `amenity=restaurant` at 3.6 m,
- * `amenity=cafe` at 3, `amenity=fast_food` at 3.2 — every one of which is
- * legitimately inside a building, so a lower threshold would delete most of a
- * high street. Above it sit exactly the four kinds that duplicate a building:
- * `leisure=sports_centre` (9.0) is the smallest.
+ * 8 m, and the number was bounded from BOTH sides by real models rather than
+ * chosen. Below it sat the shopfronts — every one of which is legitimately
+ * inside a building, so a lower threshold would delete most of a high street.
+ * Above it sat the kinds that duplicate a building.
+ *
+ * RE-MEASURED 2026-08-04, AND THE BAND HAS MOVED. Round 8 replaced 29 of the
+ * fifty models, and nobody re-ran the band this rule sits in. As the registry
+ * stands: five kinds are at or above it (`amenity=bank` 8.0, exactly on it —
+ * `leisure=sports_centre` 9.0, `amenity=place_of_worship` 12.0,
+ * `tourism=hotel` 13.5, `amenity=hospital` 15.3), and the nearest model BELOW
+ * is `tourism=guest_house` at 7.6 m — not a shopfront at all, but the same
+ * building-inside-a-building defect sitting 0.4 m under the cutoff by
+ * arithmetic rather than by judgement.
+ *
+ * The number is deliberately left at 8 (DEC-S9): `tourism=guest_house` becomes
+ * a 2.5 m symbol under the symbol-language plan, which dissolves the case,
+ * and moving an arbitrary boundary is not the same as removing the
+ * arbitrariness. **The general rule this earned: a threshold derived from
+ * generated data has to be re-measured whenever that data is regenerated.**
  */
 export const BUILDING_SCALE_POI_HEIGHT_M = 8;
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { isBuildingScalePoi } from "./poi-building-overlap.js";
 import { POI_MODELS, poiModelFor } from "./poi-models.js";
 import { POI_MODEL_LIMIT } from "./poi-ranking.js";
 
@@ -68,18 +69,35 @@ describe("the POI model contract", () => {
     // name instead — any new one has to be added here deliberately.
     //
     // WHAT THE PINNED LIST REVEALED, and it is a finding rather than a formality
-    // (see F33): all four exceptions are BUILDINGS mapped as POI nodes. `poi.ts`
+    // (see F33): every exception is a BUILDING mapped as a POI node. `poi.ts`
     // marks nodes only, and a hospital or a church is routinely mapped as BOTH a
-    // node and a building way — so these four draw a 9–15 m block inside the
+    // node and a building way — so these draw an 8–15 m block inside the
     // building that `buildings.ts` already extruded from the same feature. That
     // is R5-7's defect in a second place: coarse geometry standing inside a
     // detailed model. Not fixed here; W3 fixed it for nested building outlines
     // only, and this is a different owner.
+    //
+    // THE PREDICATE IS CALLED, NOT RESTATED, and that is the whole point of this
+    // version (DEC-S9). It read `model.heightM > 8` while `isBuildingScalePoi`
+    // suppresses at `>= 8` — a disagreement on exactly one value, invisible for
+    // as long as no model sat on it. Round 8 then adopted `amenity=bank` at a
+    // target height of exactly 8.0 m, so the production rule began suppressing
+    // FIVE kinds while this guard kept asserting four and stayed green. A bank
+    // node inside a building had been vanishing ever since, undocumented.
+    //
+    // So the list this pins is now, by construction, the set the renderer
+    // actually suppresses. `poi-building-overlap.ts`'s header claims a fifth
+    // building-scale model would be "covered without anyone remembering to
+    // update a list" — that was true of the rule and false of its test, and this
+    // is what makes it true of both.
     const tall = entries
-      .filter((model) => model.heightM > 8)
+      .filter((model) => isBuildingScalePoi(model.kind))
       .map((model) => `${model.kind}=${model.heightM.toFixed(1)}`)
       .sort();
     expect(tall).toEqual([
+      // Exactly on the 8 m threshold, and only caught once this test started
+      // asking the production predicate instead of restating it.
+      "amenity=bank=8.0",
       "amenity=hospital=15.3",
       "amenity=place_of_worship=12.0",
       "leisure=sports_centre=9.0",
