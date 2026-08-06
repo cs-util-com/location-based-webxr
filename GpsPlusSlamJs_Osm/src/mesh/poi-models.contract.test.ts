@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { MeshData } from "./mesh-data.js";
 
 import { isBuildingScalePoi } from "./poi-building-overlap.js";
-import { POI_MODELS, poiModelFor } from "./poi-models.js";
+import { POI_FALLBACK_MODEL, POI_MODELS, poiModelFor } from "./poi-models.js";
 import {
   POI_COLUMN_HEIGHT_M,
   POI_MARKER_MAX_HEIGHT_M,
@@ -210,6 +210,44 @@ describe("the POI model contract", () => {
           POI_SYMBOL_SPAN_M + 1e-6,
         );
       }
+    });
+  });
+
+  describe("the fallback marker (DEC-S19)", () => {
+    it("is a member of the family, not a 6 m cone standing over it", () => {
+      // THE DEFECT THE PORT CREATED AND HAD TO FIX. The fallback was a 6 m
+      // orange cone, which was reasonable when markers were 3-15 m volumes.
+      // With every known kind at ~2.5 m it would be 2.4x taller than every
+      // marker that knows what it is — and it is the most numerous marker in
+      // the scene, ~650 kinds against 50.
+      expect(POI_FALLBACK_MODEL.heightM).toBeLessThan(POI_MARKER_MAX_HEIGHT_M);
+      expect(POI_FALLBACK_MODEL.heightM).toBeGreaterThan(POI_COLUMN_HEIGHT_M);
+    });
+
+    it("carries NO symbol, which is what it is saying", () => {
+      // A bare column would be indistinguishable from a family-S marker whose
+      // symbol failed to build — a rendering failure that looks intentional. So
+      // the fallback has a cap in the symbol slot and no `symbol` field: it says
+      // "no symbol for this kind" rather than "no symbol".
+      expect(POI_FALLBACK_MODEL.symbol).toBeUndefined();
+    });
+
+    it("stands on the ground and is not in the registry", () => {
+      // Base at zero like every model, so `poiMarkerPosition` needs no offset
+      // for it — the special case that existed only for the cone.
+      let lowest = Infinity;
+      for (let i = 1; i < POI_FALLBACK_MODEL.mesh.positions.length; i += 3) {
+        lowest = Math.min(
+          lowest,
+          POI_FALLBACK_MODEL.mesh.positions[i] as number,
+        );
+      }
+      expect(lowest).toBeCloseTo(0, 6);
+      // Keyed on the empty string, which is the bucket `mesh-layers.ts` already
+      // groups the long tail under — and NOT one of the fifty, or the registry
+      // count would be 51.
+      expect(POI_FALLBACK_MODEL.kind).toBe("");
+      expect(POI_MODELS.has("")).toBe(false);
     });
   });
 

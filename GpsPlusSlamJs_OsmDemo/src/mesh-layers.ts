@@ -33,6 +33,7 @@
 import * as THREE from "three";
 import {
   packInstances,
+  POI_FALLBACK_MODEL,
   poiModelFor,
   type MeshData,
   type PoiModel,
@@ -175,31 +176,37 @@ export interface MeshLayerDescriptor {
 export function poiMarkerPosition(
   marker: TransferableMesh["poi"][number],
   /**
-   * Half-height for the FALLBACK cone, which is centred on its origin.
+   * A lift for a marker whose geometry is not based at `y = 0`.
    *
-   * Zero for a real model (W19): every one is built with its base at `y = 0`
-   * (`poi-primitives.ts`, asserted in `poi-models.test.ts`), so the sampled
-   * ground height IS the answer. The old unconditional `POI_HEIGHT_M / 2` is
-   * gone rather than parameterised per kind, because "the base is at zero" is a
+   * NOTHING PASSES ONE ANY MORE, and that is the point. It existed for the
+   * fallback CONE, which was centred on its origin and therefore needed half its
+   * height added; DEC-S19 replaced that cone with a model built on the shared
+   * column, base at zero like every other. So the sampled ground height is now
+   * the answer for every marker in the scene, and "the base is at zero" is a
    * contract the models satisfy rather than a number to look up.
+   *
+   * Kept as an optional parameter rather than deleted because stage 1 floats a
+   * symbol above a building's roof, which is exactly this: a marker placed
+   * somewhere other than the ground under it.
    */
-  centreOffsetM = 0,
+  liftM = 0,
 ): [x: number, y: number, z: number] {
-  return [
-    marker.position.x,
-    marker.groundHeightM + centreOffsetM,
-    -marker.position.y,
-  ];
+  return [marker.position.x, marker.groundHeightM + liftM, -marker.position.y];
 }
 
 /**
- * Height of the FALLBACK pin, metres — the long tail with no model of its own.
+ * The FALLBACK marker for the long tail — now built in the package (DEC-S19).
  *
- * Tall enough to clear a hedge, short enough not to compete with the buildings.
- * It stays a deliberately abstract cone rather than a generic box, because an
- * obviously-abstract marker is a better claim than a plausible-looking wrong one.
+ * IT WAS A 6 m ORANGE CONE HERE, and the symbol port is what made that wrong.
+ * With every known kind at ~2.5 m, the marker meaning "we do not know what this
+ * is" would have been 2.4x taller than every marker that does know — and it is
+ * the most numerous marker in the scene, ~650 kinds against 50.
+ *
+ * It is the shared column with a plain neutral cap where a symbol would go, so
+ * it is a member of the family that is visibly missing its payload. Built in
+ * `poi-models.ts` rather than here, because that is where the column lives and
+ * two definitions of one shape is how they drift.
  */
-const POI_HEIGHT_M = 6;
 
 /**
  * Per-kind geometry and material, built once and shared by every instance.
@@ -312,12 +319,6 @@ const TREE_MATERIAL = new THREE.MeshStandardMaterial({
  * placements rather than geometry. Sharing here is also why `clear()` must not
  * dispose them — see the note in `building-view.ts`.
  */
-const POI_GEOMETRY = new THREE.ConeGeometry(1.6, POI_HEIGHT_M, 5);
-const POI_MATERIAL = new THREE.MeshStandardMaterial({
-  color: 0xffb454,
-  flatShading: true,
-  roughness: 0.5,
-});
 
 /**
  * Triangles across a layer's chunks (W20).
@@ -661,20 +662,18 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
       const matrix = new THREE.Matrix4();
       for (const [bucket, markers] of byKind) {
         const model = bucket === "" ? undefined : poiModelFor(bucket);
-        const { geometry, material } =
-          model === undefined
-            ? { geometry: POI_GEOMETRY, material: POI_MATERIAL }
-            : resourcesFor(model);
+        const { geometry, material } = resourcesFor(
+          model ?? POI_FALLBACK_MODEL,
+        );
         const pins = new THREE.InstancedMesh(
           geometry,
           material,
           markers.length,
         );
-        // The fallback cone is centred on its origin; every MODEL is built with
-        // its base at y = 0 by contract, so it needs no offset at all. That
-        // contract is asserted in `poi-models.test.ts`, which is what lets this
-        // be a zero rather than a per-kind lookup.
-        const centreOffsetM = model === undefined ? POI_HEIGHT_M / 2 : 0;
+        // NO OFFSET FOR ANYTHING NOW. Every model is built with its base at
+        // y = 0 by contract, and since DEC-S19 the fallback is a model too
+        // rather than a cone centred on its origin — so the sampled ground
+        // height IS the answer for every marker in the scene.
         // COMPOSE, NOT `makeTranslation` (§4a, DEC-R6-18/R6-20). This was a
         // translation alone, which meant every bench in the city faced exactly
         // the same direction — at street level a far louder repetition cue than
@@ -688,14 +687,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         const scale = new THREE.Vector3();
         const up = new THREE.Vector3(0, 1, 0);
         markers.forEach((marker, i) => {
-          // The cone's lift is HALF ITS HEIGHT, so it has to scale with the
-          // cone. Leaving it fixed sinks or floats every unmodelled marker by a
-          // few centimetres, which reads as terrain error rather than as a bug
-          // — and unmodelled is the common case, ~650 kinds against fifty.
-          const [x, y, z] = poiMarkerPosition(
-            marker,
-            centreOffsetM * marker.scale,
-          );
+          const [x, y, z] = poiMarkerPosition(marker);
           position.set(x, y, z);
           quaternion.setFromAxisAngle(up, marker.rotationY);
           scale.setScalar(marker.scale);

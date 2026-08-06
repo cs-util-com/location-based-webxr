@@ -92,7 +92,7 @@ export type { BuildPoiOptions, PoiMarker } from "./poi.js";
 export { POI_KEYS, buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";
 
 export type { PoiModel } from "./poi-models.js";
-export { POI_MODELS, poiModelFor } from "./poi-models.js";
+export { POI_FALLBACK_MODEL, POI_MODELS, poiModelFor } from "./poi-models.js";
 // The variant registry (`CHOSEN_VARIANTS`, `POI_VARIANTS`, `poiVariantsFor`,
 // `markerHeightFor`, `LIKED_VARIANTS`, `VARIANT_SOURCES`) was DELETED once the
 // owner's verdict was adopted into `POI_MODELS` (DEC-R7b-2a). It existed to let

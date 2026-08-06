@@ -3559,6 +3559,21 @@ test.describe("the POI model gallery", () => {
     );
     const status = await page.locator("#gallery-status").textContent();
     expect(Number(/(\d+) POI models/.exec(status ?? "")?.[1])).toBe(50);
+    // THE ROOF ROW, counted from the data (DEC-S18). Every family-S marker is
+    // drawn a second time as its symbol alone over a stand-in building, which is
+    // the state stage 1 will actually use and the one no assertion can judge for
+    // legibility. A pixel count cannot tell "the roof row is missing" from "the
+    // sheet is smaller", so the count is reported and read.
+    const roofStates = Number(
+      /(\d+) shown again as a symbol alone/.exec(status ?? "")?.[1],
+    );
+    // TWENTY-FIVE, NOT TWENTY-SEVEN, and the difference is the point rather than
+    // an off-by-two. Stage 0c ported 27 winners, but two of them —
+    // `leisure=picnic_table` and `amenity=bench` — are family-L PROPS: real
+    // objects at real-world size, with no symbol and no column (DEC-S3,
+    // DEC-S14). Only the 25 family-S markers have a symbol that can float over
+    // a roof, so only they get a second slot.
+    expect(roofStates).toBe(25);
 
     // PIXELS, not "a canvas exists". A present canvas of the right size is
     // equally consistent with an empty scene, a camera inside the ground, or a

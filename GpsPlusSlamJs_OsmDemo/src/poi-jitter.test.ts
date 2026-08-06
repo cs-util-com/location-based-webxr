@@ -123,21 +123,23 @@ describe("POI instance transforms carry the jitter (§4a)", () => {
     expect(yawOf(mesh, 1)).toBeCloseTo(2.1, 6);
   });
 
-  it("scales the FALLBACK cone's centre lift with the cone", () => {
-    // The cone is centred on its origin and lifted by half its height. Scaling
-    // the geometry without scaling that lift buries it — a few centimetres,
-    // which reads as terrain error rather than as a defect. An unmodelled kind
-    // is the common case (~650 of them), so this is not an edge.
-    const unscaled = meshWith([marker({ kind: "amenity=nonexistent" })]);
-    const scaled = meshWith([
-      marker({ kind: "amenity=nonexistent", scale: 1.05 }),
+  it("leaves the FALLBACK on the ground too, at any scale", () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, and the inversion is DEC-S19
+    // landing rather than an assertion being weakened. The fallback was a CONE
+    // centred on its origin, so it needed a lift of half its height — and that
+    // lift had to scale with the geometry, or the cone buried itself by a few
+    // centimetres, which reads as terrain error rather than as a defect.
+    //
+    // It is now a model built on the shared column with its base at y = 0, like
+    // every other marker. There is no lift to scale, and the special case that
+    // existed only for the cone is gone from the layer builder entirely.
+    //
+    // An unmodelled kind is the common case — ~650 of them against fifty — so
+    // this is not an edge case, it is most of the scene.
+    const meshes = meshWith([
+      marker({ kind: "amenity=nonexistent", groundHeightM: 41, scale: 1.05 }),
     ]);
-    const lift = heightOf(unscaled[0] as THREE.InstancedMesh, 0);
-    expect(lift).toBeGreaterThan(0);
-    expect(heightOf(scaled[0] as THREE.InstancedMesh, 0)).toBeCloseTo(
-      lift * 1.05,
-      6,
-    );
+    expect(heightOf(meshes[0] as THREE.InstancedMesh, 0)).toBeCloseTo(41, 6);
   });
 
   it("leaves a modelled marker's base on the ground whatever its scale", () => {

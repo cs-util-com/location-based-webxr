@@ -38,6 +38,22 @@ const HUMAN_HEIGHT_M = 1.8;
 const PAD_M = 6.4;
 
 /**
+ * The stand-in building in the roof-symbol state, and the symbol's clearance
+ * above it (DEC-S18).
+ *
+ * A SINGLE STOREY rather than a tower: the question this state answers is "does
+ * the symbol still read with nothing under it", so the box has to be
+ * unmistakably a building and otherwise get out of the way. Something 15 m tall
+ * would put the symbol above the pad's own label and make the row unreadable.
+ *
+ * The clearance is a gap rather than contact because roofs are PITCHED, and
+ * stage 1 will lift by exactly this kind of margin above a measured roof height
+ * rather than trying to find a contact point on a slope.
+ */
+const HOST_HEIGHT_M = 4;
+const HOST_CLEARANCE_M = 0.6;
+
+/**
  * Clear ground between one pad and the next, metres.
  *
  * **TRIPLED ON THE OWNER'S FIRST LOOK** — _"insgesamt bitte mehr Abstand
@@ -196,8 +212,27 @@ export function buildGallery(container: HTMLElement): () => void {
   // losing geometry is deleted. What remains is the catalogue — the only place
   // in the repo that shows what every POI kind actually looks like at real scale
   // beside a human.
+  // TWO SLOTS FOR A FAMILY-S KIND, ONE FOR FAMILY L (DEC-S18, stage 0d).
+  //
+  // Slot 0 is the marker as it ships: symbol on its column. Slot 1 is the SYMBOL
+  // ALONE, floating over a grey box standing in for a building — which is the
+  // other half of how it will actually be used (DEC-S2), and the half no test
+  // can judge. The contract can assert a symbol has geometry, stands on its own
+  // base and fits the envelope; only an eye can say whether it still means
+  // "pharmacy" with nothing underneath it.
+  //
+  // It also restores the view the winners were PICKED in. All five prototype
+  // galleries showed the paired states, so judging the port in a single merged
+  // view would be judging it by a different standard than the one that selected
+  // it.
+  //
+  // The Z axis already exists for exactly this shape — DEC-R6-32 put variants on
+  // it — so this needs no new layout, and family L keeps one slot because a
+  // bench has no symbol to float.
   const models = [...POI_MODELS.values()];
-  const positions = galleryPositions(models.map(() => 1));
+  const positions = galleryPositions(
+    models.map((entry) => (entry.symbol === undefined ? 1 : 2)),
+  );
 
   const padGeometry = new THREE.BoxGeometry(PAD_M, 0.08, PAD_M);
   const padMaterial = new THREE.MeshStandardMaterial({
@@ -208,6 +243,14 @@ export function buildGallery(container: HTMLElement): () => void {
   const humanMaterial = new THREE.MeshStandardMaterial({
     color: 0x3d4552,
     roughness: 0.8,
+  });
+  // The stand-in building for the roof-symbol state. Deliberately plain and
+  // deliberately NOT pad-sized: it has to read as a building the symbol belongs
+  // to, without becoming the thing being looked at.
+  const hostGeometry = new THREE.BoxGeometry(3.2, HOST_HEIGHT_M, 3.2);
+  const hostMaterial = new THREE.MeshStandardMaterial({
+    color: 0x3a3f4a,
+    roughness: 0.95,
   });
 
   models.forEach((entry, kindIndex) => {
@@ -255,6 +298,38 @@ export function buildGallery(container: HTMLElement): () => void {
 
       scene.add(group);
     }
+
+    // SLOT 1 — the symbol alone, over a stand-in building (DEC-S18).
+    const roofSlot = slots[1];
+    const symbol = entry.symbol;
+    if (roofSlot !== undefined && symbol !== undefined) {
+      const group = new THREE.Group();
+      group.position.set(roofSlot.x, 0, roofSlot.z);
+
+      const building = new THREE.Mesh(hostGeometry, hostMaterial);
+      building.position.y = HOST_HEIGHT_M / 2;
+      group.add(building);
+
+      const mesh = new THREE.Mesh(
+        geometryFor(symbol),
+        new THREE.MeshStandardMaterial({
+          color: entry.colour,
+          roughness: 0.65,
+          metalness: 0.05,
+          ...(symbol.colours === undefined ? {} : { vertexColors: true }),
+        }),
+      );
+      // FLOATING ABOVE THE ROOF, not resting on it, because roofs are pitched
+      // and stage 1 will lift by a clearance rather than by a contact point.
+      mesh.position.y = HOST_HEIGHT_M + HOST_CLEARANCE_M;
+      group.add(mesh);
+
+      const label = labelFor(rowLabel(entry.kind), "symbol alone, over a roof");
+      label.position.set(0, -1.2, PAD_M / 2);
+      group.add(label);
+
+      scene.add(group);
+    }
   });
 
   const camera = new THREE.PerspectiveCamera(
@@ -263,15 +338,41 @@ export function buildGallery(container: HTMLElement): () => void {
     0.1,
     2000,
   );
-  const span = Math.ceil(Math.sqrt(models.length)) * PITCH_M;
-  // HIGH AND BACK, framing the whole sheet. A low three-quarter view lets the
-  // building-scale entries (pub, guest house, hospital) occlude the street
-  // furniture behind them, which is the opposite of what this page is for.
-  camera.position.set(0, span * 0.8, span * 0.72);
-  camera.lookAt(0, 0, 0);
+  // OPENS ON THE FIRST FEW KINDS, NOT ON THE WHOLE SHEET, and this reverses the
+  // previous framing deliberately.
+  //
+  // That framing was `sqrt(50) * PITCH` high and back, chosen so "the default
+  // camera frames the sheet rather than opening on a quarter of it". Its
+  // premise was models up to 15 m tall. After the symbol port every marker is
+  // ~2.5 m, so the same camera renders fifty two-metre objects across a 400 m
+  // row and **nothing on the page is legible** — which defeats its one job.
+  // Verified from the e2e's own screenshot rather than reasoned about.
+  //
+  // Panning is already part of using this page (the row has been 400 m wide
+  // since DEC-R6-32 put variants on Z), so the trade is only about where it
+  // STARTS. It starts at the left, because `poi-ranking.ts` orders kinds by
+  // global usage — so opening on the left is opening on the markers a user will
+  // actually meet most often.
+  const visibleKinds = 7;
+  const span = visibleKinds * PITCH_M;
+  const leftmost = (-(models.length - 1) / 2) * PITCH_M;
+  const focusX = leftmost + span / 2;
+  // HIGH AND BACK RATHER THAN A LOW THREE-QUARTER VIEW: the roof-state row sits
+  // behind the column row, and a shallow angle would let the front row occlude
+  // it — which is the opposite of what showing both states is for.
+  camera.position.set(focusX, span * 0.55, span * 0.62);
+  camera.lookAt(focusX, 1.2, 0);
 
   const controls = new MapControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  // THE TARGET, NOT JUST `lookAt`, and this is a trap rather than a detail.
+  // `MapControls` defaults its target to the origin and `controls.update()` —
+  // called on every frame in `draw()` — re-points the camera at it. So a
+  // `camera.lookAt` before this line is silently discarded on the first frame.
+  // The previous framing did not notice because it looked at the origin anyway;
+  // opening off-centre does, and the symptom is a view down the length of the
+  // row instead of across it.
+  controls.target.set(focusX, 1.2, 0);
 
   // ON DEMAND, like the demo (DEC-R3-9): a permanent rAF loop repainting a static
   // grid is a phone battery for nothing. Damping needs frames while it settles,
@@ -333,7 +434,14 @@ export function buildGallery(container: HTMLElement): () => void {
 
   const status = document.getElementById("gallery-status");
   if (status !== null) {
-    status.textContent = `${models.length} POI models, ranked by global usage · the block beside each is ${HUMAN_HEIGHT_M} m tall`;
+    // THE SECOND COUNT IS REPORTED FROM THE DATA, not written by hand, so the
+    // e2e can tell "the roof row drew" from "the roof row is missing" — which
+    // are otherwise identical to a pixel count, since a missing row just makes
+    // the sheet smaller. Same reasoning as the model count beside it.
+    const roofStates = models.filter(
+      (entry) => entry.symbol !== undefined,
+    ).length;
+    status.textContent = `${models.length} POI models, ranked by global usage · ${roofStates} shown again as a symbol alone over a roof · the block beside each is ${HUMAN_HEIGHT_M} m tall`;
   }
 
   return () => {

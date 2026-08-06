@@ -39,6 +39,7 @@ import {
   liftedMesh,
   POI_COLUMN_HEIGHT_M,
   poiColumn,
+  prism,
   scaledToHeight,
 } from "./poi-primitives.js";
 import { A_SYMBOLS } from "./poi-symbols-a.js";
@@ -173,6 +174,43 @@ function peakOf(mesh: MeshData): number {
   }
   return peak;
 }
+
+/**
+ * The marker for the ~650 kinds with no model of their own (DEC-S19).
+ *
+ * THE COLUMN WITH NO SYMBOL ON IT — the same 1.605 m stand every family-S
+ * marker uses, plus a plain neutral cap where a symbol would go. It says "there
+ * is something here and we do not know what", in the family's own vocabulary.
+ *
+ * WHY THE PORT HAD TO FIX THIS. It was a 6 m orange cone, which was reasonable
+ * when markers were 3-15 m volumes. With every known kind now at ~2.5 m, the
+ * marker meaning "unknown" would be **2.4x taller than every marker that
+ * knows** — and it is the single most numerous marker in the scene, ~650 kinds
+ * against 50.
+ *
+ * A CAP RATHER THAN A BARE COLUMN, deliberately: a bare column is
+ * indistinguishable from a family-S marker whose symbol failed to build, which
+ * turns a rendering failure into something that looks intentional. The cap says
+ * "no symbol for this kind" instead of "no symbol".
+ *
+ * **Accepted cost, stated rather than discovered:** the loud orange cone is how
+ * unmapped density currently reads at a glance, and a quiet cap gives that up.
+ * If that turns out to matter, the answer is the cap's COLOUR, not its height —
+ * going back to 6 m would restore exactly the problem this fixes.
+ *
+ * `kind` is the empty string, which is the same key `mesh-layers.ts` already
+ * buckets the long tail under.
+ */
+export const POI_FALLBACK_MODEL: PoiModel = (() => {
+  const mesh = composed((b) => {
+    poiColumn(b);
+    // A squat drum in the symbol slot: unmistakably part of the family and
+    // unmistakably not carrying anything.
+    b.paint(STEEL);
+    prism(b, 0.19, 0.16, 0.28, 10, POI_COLUMN_HEIGHT_M);
+  });
+  return { kind: "", colour: STEEL, heightM: peakOf(mesh), mesh };
+})();
 
 /** Every model, in ranking order. Built once at module load. */
 function models(): PoiModel[] {
