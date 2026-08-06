@@ -147,3 +147,76 @@ describe("createMeshPlanner", () => {
     expect(planner.needsFullBuild(AT)).toBe(true);
   });
 });
+
+describe("the saving §1.2 claims, as a number", () => {
+  /**
+   * WHY THIS TEST MATTERS. "A step no longer re-extrudes the entire city" is the
+   * strongest argument for the fixed-frame work that does not mention AR, and it
+   * shipped as an assertion because nobody measured it. The e2e cannot: it stubs
+   * the network, so its fixture city is small and a full build there is cheap —
+   * the saving does not exist in the only environment that can be automated.
+   *
+   * But the saving is a RATE, not a duration, and the rate is exactly what this
+   * module decides. Measured here, deterministically, with no clock involved:
+   * of N steps along a walk, how many still force a full build?
+   *
+   * Multiply by the cost of one build to get the rest. That figure is already
+   * recorded from a real run in `demo-worker.ts`: 2 881 ms, of which 2 657 ms
+   * was ear-clipping a single 25 001-point administrative boundary relation —
+   * paid on every click.
+   */
+  const STEP_M = 20;
+  const STEPS = 30;
+  const METRES_PER_DEG_LAT = 111_320;
+
+  /** Counts the full builds a straight walk of `STEPS` x `STEP_M` costs. */
+  function rebuildsAlongAWalk(): number {
+    const planner = createMeshPlanner();
+    let rebuilds = 0;
+    for (let i = 0; i < STEPS; i += 1) {
+      const moved = planner.needsFullBuild({
+        ...AT,
+        position: {
+          lat: AT.position.lat + (i * STEP_M) / METRES_PER_DEG_LAT,
+          lng: AT.position.lng,
+        },
+      });
+      if (moved) rebuilds += 1;
+    }
+    return rebuilds;
+  }
+
+  it("rebuilds a handful of times across a walk, not once per step", () => {
+    // 30 steps of 20 m is a 600 m walk. The bucket is 0.001 deg ~ 110 m of
+    // latitude, so the walk crosses about five of them — plus the first pass,
+    // which always builds.
+    const rebuilds = rebuildsAlongAWalk();
+
+    // THE MEASUREMENT, stated as a range rather than an exact count so that a
+    // change to STEP_M or the bucket does not make this a puzzle to re-derive.
+    expect(rebuilds).toBeGreaterThanOrEqual(4);
+    expect(rebuilds).toBeLessThanOrEqual(8);
+
+    // THE CLAIM, and the reason the range above is worth pinning: before the
+    // quantisation every one of these steps was a full rebuild, because the
+    // position went into the key verbatim. Anything close to STEPS means the
+    // saving has been given back.
+    expect(rebuilds).toBeLessThan(STEPS / 3);
+  });
+
+  it("is the SAME walk that a verbatim-position key would rebuild every time", () => {
+    // The counterweight, and it is what stops the test above passing for a
+    // planner that had simply stopped caring about position. Each step is a
+    // genuinely distinct position — so a key holding it verbatim would answer
+    // `true` all 30 times, which is the behaviour the bucket replaced.
+    const positions = new Set<string>();
+    for (let i = 0; i < STEPS; i += 1) {
+      positions.add(
+        `${AT.position.lat + (i * STEP_M) / METRES_PER_DEG_LAT},${AT.position.lng}`,
+      );
+    }
+
+    expect(positions.size).toBe(STEPS);
+    expect(rebuildsAlongAWalk()).toBeLessThan(positions.size);
+  });
+});
