@@ -70,6 +70,25 @@ export interface BuildingVolume {
    * duplicate a building already standing here.
    */
   readonly footprint: readonly EnuPoint[];
+  /**
+   * The volume's highest point, in the SAME frame as a marker's ground height
+   * (DEC-S2, stage 1).
+   *
+   * WHY IT HAS TO BE CARRIED RATHER THAN DERIVED BY A CONSUMER. `heights` is
+   * measured from the building's OWN base, and the base is `ground.lowest` —
+   * computed here, passed into `extrudeBuilding`, baked into the mesh positions
+   * and then dropped. Adding `totalHeightM` to a marker's own sampled ground
+   * height is NOT the same number: on sloped terrain the two differ by the rise
+   * under the footprint, which is metres on a hillside. A symbol placed with the
+   * wrong one is buried in a roof at the bottom of a hill and floating over one
+   * at the top — which reads as a terrain-sampling bug rather than as a marker
+   * bug, and would be diagnosed in the wrong file.
+   *
+   * Carried for the same reason `footprint` is: the number already exists at the
+   * point this is built, and re-deriving it outside means re-deriving the whole
+   * ground sample.
+   */
+  readonly topHeightM: number;
 }
 
 export interface BuildBuildingsOptions {
@@ -527,6 +546,9 @@ function volumeFor(
 
   const roofIsApproximate = mesh.roofIsApproximate;
   const footprint = rings[0] ?? [];
+  // The absolute top: the base the walls actually stand on, plus the height the
+  // roof reaches above that base.
+  const topHeightM = ground.lowest + heights.totalHeightM + ground.rise;
   return parentFeature === undefined
     ? {
         feature: featureKey(feature),
@@ -534,6 +556,7 @@ function volumeFor(
         mesh,
         roofIsApproximate,
         footprint,
+        topHeightM,
       }
     : {
         feature: featureKey(feature),
@@ -542,6 +565,7 @@ function volumeFor(
         footprint,
         mesh,
         roofIsApproximate,
+        topHeightM,
       };
 }
 
