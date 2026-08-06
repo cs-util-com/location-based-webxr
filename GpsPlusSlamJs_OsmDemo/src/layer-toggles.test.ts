@@ -1,6 +1,14 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * Added when the side-effect-note test arrived: the rest of this file is pure
+ * (`withLayerBusy` needs no DOM), but `attachLayerToggles` builds real elements
+ * and there is no second place to put one test about them.
+ */
+
 import { describe, expect, it } from "vitest";
 
-import { withLayerBusy } from "./layer-toggles.js";
+import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 
 /**
  * WHY THESE TESTS MATTER (F58).
@@ -109,5 +117,34 @@ describe("withLayerBusy", () => {
       await withLayerBusy(toggles, [], () => Promise.resolve());
       expect(toggles.calls).toEqual([]);
     });
+  });
+});
+
+describe("the side-effect note on a layer that does more than its name says", () => {
+  /**
+   * WHY THIS MATTERS. DEC-S1 accepted, in writing, that the marker set is not
+   * independent of the layer set: switching `landuse` on makes pool, pitch and
+   * parking markers disappear, because the area it draws already says what they
+   * say. The decision recorded that as a cost rather than a mystery, and the
+   * toggle is the only place a user ever meets it.
+   *
+   * A tooltip is the smallest honest thing. What this pins is that the note
+   * exists on the layer with the coupling and NOT on the layers without it — a
+   * note on everything would be noise, and a note on nothing would be the
+   * silence the decision said to avoid.
+   */
+  it("marks `plates`, and only `plates`", () => {
+    const container = document.createElement("div");
+    attachLayerToggles({ container, onChange: () => {} });
+    const noteFor = (layer: string): string =>
+      (
+        container.querySelector(`#layer-${layer}`)?.parentElement as
+          | HTMLElement
+          | undefined
+      )?.title ?? "";
+    expect(noteFor("plates")).toMatch(/pool, pitch and parking/);
+    for (const layer of ["buildings", "trees", "roads", "poi", "cells"]) {
+      expect(noteFor(layer)).toBe("");
+    }
   });
 });

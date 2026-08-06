@@ -70,7 +70,7 @@ function positionOf(objects: THREE.Object3D[], index = 0): THREE.Vector3 {
 
 const buildingHost = {
   layer: "buildings" as const,
-  feature: "way/9",
+  feature: "way/9" as const,
   x: 40,
   y: 25,
   topM: 18,
@@ -157,7 +157,7 @@ describe("a marker with a building host", () => {
 describe("a marker whose area already describes it", () => {
   const plateHost = {
     layer: "plates" as const,
-    feature: "way/3",
+    feature: "way/3" as const,
     x: 0,
     y: 0,
     topM: 0,

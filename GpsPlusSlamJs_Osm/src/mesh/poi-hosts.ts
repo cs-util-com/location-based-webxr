@@ -36,6 +36,7 @@
  * @see poi-hosts.ts.md
  */
 
+import type { OsmFeatureKey } from "../model/osm-feature.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
 import type { EnuPoint } from "./enu.js";
 
@@ -45,8 +46,15 @@ export type PoiHostLayer = "buildings" | "plates";
 /** A candidate host: geometry already drawn that names the same thing. */
 export interface PoiHostAnchor {
   readonly layer: PoiHostLayer;
-  /** The way or relation that matched, for the pick table. */
-  readonly feature: string;
+  /**
+   * The way or relation that matched, for the pick table.
+   *
+   * The package's own key type rather than a bare string: a marker derived from
+   * this host carries it straight through as its OWN feature, and a plain
+   * string would let a malformed id reach the pick table where it resolves to
+   * nothing and the panel says "unknown".
+   */
+  readonly feature: OsmFeatureKey;
   /**
    * The host's centroid, ENU metres — x east, **y NORTH**.
    *
@@ -223,7 +231,7 @@ export function footprintAnchor(footprint: readonly EnuPoint[]): {
 /** A drawn piece of geometry a marker could belong to. */
 export interface HostCandidate {
   readonly layer: PoiHostLayer;
-  readonly feature: string;
+  readonly feature: OsmFeatureKey;
   readonly footprint: readonly EnuPoint[];
   readonly topM: number;
 }
@@ -283,4 +291,92 @@ export function annotatePoiHosts<T extends PlacedMarker>(
     }
     return { ...marker, hosts };
   });
+}
+
+/**
+ * Markers for the places that are ONLY drawn as geometry (DEC-S2, stage 2).
+ *
+ * THE CASE STAGE 1 CANNOT REACH. A restaurant mapped only as a building way has
+ * no node, so `poi.ts` never makes a marker for it and there is nothing to
+ * re-anchor. The owner's headline example — _"das Gebäude ist also ein
+ * Restaurant"_ — is mostly this case, because tagging the building and not
+ * placing a separate node is ordinary practice.
+ *
+ * **`poi.ts` IS NOT MODIFIED, and that is deliberate.** Its node-ness rule is
+ * correct for what it builds, and the reason it exists — _"selecting on the tag
+ * alone would put a marker in the middle of every car park in the tile"_ — is
+ * exactly the behaviour wanted here and still unwanted there. Two builders with
+ * two rules, rather than one builder with a flag.
+ *
+ * **THE ALLOW-LIST IS WHAT KEEPS THEM APART.** `plates.ts` owns every area whose
+ * tags match `PLATE_KEYS` — amenity, landuse, leisure, natural, surface,
+ * man_made, place, tourism — which OVERLAPS the POI keys rather than being
+ * disjoint. A "not a plate" deny-list would therefore let a car park through,
+ * since a restaurant building way and a car-park way both carry `amenity`. Only
+ * a positive list of kinds that deserve a floating symbol is safe.
+ *
+ * **DEDUPLICATION IS THE CALLER'S, and it is mandatory**: a restaurant mapped as
+ * node AND way must produce exactly one symbol. See `dropHostedDuplicates`.
+ */
+export function hostDerivedMarkers(
+  candidates: readonly HostCandidate[],
+  kindOf: (feature: OsmFeatureKey) => string | undefined,
+  eligible: (kind: string) => boolean,
+): {
+  kind: string;
+  feature: OsmFeatureKey;
+  host: PoiHostAnchor;
+}[] {
+  const derived: {
+    kind: string;
+    feature: OsmFeatureKey;
+    host: PoiHostAnchor;
+  }[] = [];
+  for (const candidate of candidates) {
+    if (candidate.layer !== "buildings") continue;
+    const kind = kindOf(candidate.feature);
+    if (kind === undefined || !eligible(kind)) continue;
+    if (!hostMatches(kind, candidate)) continue;
+    const anchor = footprintAnchor(candidate.footprint);
+    if (!(anchor.spanM > 0)) continue;
+    derived.push({
+      kind,
+      feature: candidate.feature,
+      host: {
+        layer: candidate.layer,
+        feature: candidate.feature,
+        x: anchor.x,
+        y: anchor.y,
+        topM: candidate.topM,
+        spanM: anchor.spanM,
+      },
+    });
+  }
+  return derived;
+}
+
+/**
+ * Drops a way-derived marker whose way already hosts a node-derived one.
+ *
+ * THE FIRST TEST TO WRITE FOR STAGE 2, and the reason is arithmetic: a
+ * restaurant mapped as node AND way is one restaurant. Without this it grows a
+ * second symbol in exactly the same place — two identical objects at one
+ * position, which does not read as a duplicate but as a slightly wrong colour
+ * where they z-fight.
+ *
+ * Keyed on the HOST's feature rather than on kind or position: the node already
+ * resolved to that way, so "this way is spoken for" is the precise claim, and it
+ * survives two different kinds inside one building.
+ */
+export function dropHostedDuplicates<T extends { host: PoiHostAnchor }>(
+  derived: readonly T[],
+  nodeMarkers: readonly HostableMarker[],
+): T[] {
+  const spokenFor = new Set<string>();
+  for (const marker of nodeMarkers) {
+    for (const host of marker.hosts ?? []) {
+      if (hostMatches(marker.kind, host)) spokenFor.add(host.feature);
+    }
+  }
+  return derived.filter((entry) => !spokenFor.has(entry.host.feature));
 }

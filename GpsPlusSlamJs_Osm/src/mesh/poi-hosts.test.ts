@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   annotatePoiHosts,
+  dropHostedDuplicates,
   footprintAnchor,
+  hostDerivedMarkers,
   hostMatches,
   hostScale,
   resolvePoiPlacement,
@@ -124,12 +126,12 @@ describe("resolvePoiPlacement", () => {
     const marker = {
       kind: "amenity=cafe",
       hosts: [
-        host("buildings", { feature: "way/b" }),
-        host("plates", { feature: "way/p" }),
+        host("buildings", { feature: "way/11" }),
+        host("plates", { feature: "way/12" }),
       ],
     };
     const withBoth = resolvePoiPlacement(marker, layers("buildings", "plates"));
-    expect(withBoth.at === "host" && withBoth.host.feature).toBe("way/b");
+    expect(withBoth.at === "host" && withBoth.host.feature).toBe("way/11");
     // With buildings off, the plate is skipped rather than promoted: it cannot
     // host a café at all, so the marker falls back to its node.
     expect(resolvePoiPlacement(marker, layers("plates"))).toEqual({
@@ -274,7 +276,7 @@ describe("annotatePoiHosts", () => {
     ];
     const [annotated] = annotatePoiHosts(
       [{ kind: "amenity=cafe", position: { x: 10, y: 10 } }],
-      [{ layer: "buildings", feature: "way/l", footprint: lShape, topM: 9 }],
+      [{ layer: "buildings", feature: "way/13", footprint: lShape, topM: 9 }],
     );
     expect(annotated?.hosts).toEqual([]);
   });
@@ -307,21 +309,21 @@ describe("annotatePoiHosts", () => {
       [
         {
           layer: "plates",
-          feature: "way/near",
+          feature: "way/14",
           footprint: square(40),
           topM: 0,
         },
         {
           layer: "plates",
-          feature: "way/far",
+          feature: "way/15",
           footprint: square(200),
           topM: 0,
         },
       ],
     );
     expect(annotated?.hosts.map((host) => host.feature)).toEqual([
-      "way/near",
-      "way/far",
+      "way/14",
+      "way/15",
     ]);
   });
 
@@ -337,22 +339,22 @@ describe("annotatePoiHosts", () => {
       [
         {
           layer: "buildings",
-          feature: "way/b1",
+          feature: "way/16",
           footprint: square(40),
           topM: 9,
         },
         {
           layer: "buildings",
-          feature: "way/b2",
+          feature: "way/17",
           footprint: square(90),
           topM: 20,
         },
-        { layer: "plates", feature: "way/p", footprint: square(300), topM: 0 },
+        { layer: "plates", feature: "way/12", footprint: square(300), topM: 0 },
       ],
     );
     expect(annotated?.hosts.map((host) => host.feature)).toEqual([
-      "way/b1",
-      "way/b2",
+      "way/16",
+      "way/17",
     ]);
   });
 
@@ -368,5 +370,153 @@ describe("annotatePoiHosts", () => {
     expect(annotated.map((marker) => marker.kind)).toEqual(
       markers.map((marker) => marker.kind),
     );
+  });
+});
+
+describe("way-derived markers (stage 2)", () => {
+  const square = (size: number, cx = 0, cy = 0): { x: number; y: number }[] => {
+    const h = size / 2;
+    return [
+      { x: cx - h, y: cy - h },
+      { x: cx + h, y: cy - h },
+      { x: cx + h, y: cy + h },
+      { x: cx - h, y: cy + h },
+    ];
+  };
+  const eligible = (kind: string): boolean =>
+    ["amenity=restaurant", "amenity=cafe", "amenity=hospital"].includes(kind);
+
+  it("gives a building tagged as a place its own symbol", () => {
+    // THE OWNER'S HEADLINE CASE, and the one stage 1 cannot reach: a restaurant
+    // mapped ONLY as a building way has no node, so nothing exists to re-anchor.
+    // Tagging the building without a separate node is ordinary practice, so
+    // this is most of the case rather than an edge of it.
+    const derived = hostDerivedMarkers(
+      [
+        {
+          layer: "buildings",
+          feature: "way/5",
+          footprint: square(30),
+          topM: 11,
+        },
+      ],
+      () => "amenity=restaurant",
+      eligible,
+    );
+    expect(derived).toHaveLength(1);
+    expect(derived[0]?.host.topM).toBe(11);
+    expect(derived[0]?.host.x).toBeCloseTo(0, 6);
+  });
+
+  it("ignores a building whose kind is not on the allow-list", () => {
+    // THE ALLOW-LIST IS WHAT KEEPS THIS OUT OF `plates.ts`'s territory. Its keys
+    // OVERLAP the POI keys rather than being disjoint, so a "not a plate"
+    // deny-list would let a car park through — a restaurant building way and a
+    // car-park way both carry `amenity`.
+    const derived = hostDerivedMarkers(
+      [
+        {
+          layer: "buildings",
+          feature: "way/5",
+          footprint: square(30),
+          topM: 11,
+        },
+      ],
+      () => "amenity=parking",
+      eligible,
+    );
+    expect(derived).toEqual([]);
+  });
+
+  it("ignores plates entirely", () => {
+    // A landuse polygon is not a place with a roof to put a symbol on. Only
+    // buildings derive markers.
+    const derived = hostDerivedMarkers(
+      [{ layer: "plates", feature: "way/9", footprint: square(80), topM: 0 }],
+      () => "amenity=cafe",
+      eligible,
+    );
+    expect(derived).toEqual([]);
+  });
+
+  it("skips a collapsed footprint rather than anchoring it at the origin", () => {
+    // Real OSM contains collapsed ways. A zero-span footprint anchors at (0, 0)
+    // — the frame origin, which is the user's own position — so a degenerate
+    // building would drop a symbol on the camera.
+    const derived = hostDerivedMarkers(
+      [{ layer: "buildings", feature: "way/98", footprint: [], topM: 4 }],
+      () => "amenity=cafe",
+      eligible,
+    );
+    expect(derived).toEqual([]);
+  });
+
+  it("DROPS a way-derived marker whose way already has a node marker", () => {
+    // THE ASSERTION STAGE 2 EXISTS FOR. A restaurant mapped as node AND way is
+    // one restaurant. Without this it grows a second symbol in the same place —
+    // which does not read as a duplicate but as a slightly wrong colour where
+    // the two z-fight.
+    const derived = hostDerivedMarkers(
+      [
+        {
+          layer: "buildings",
+          feature: "way/5",
+          footprint: square(30),
+          topM: 11,
+        },
+      ],
+      () => "amenity=restaurant",
+      eligible,
+    );
+    const kept = dropHostedDuplicates(derived, [
+      {
+        kind: "amenity=restaurant",
+        hosts: [
+          {
+            layer: "buildings",
+            feature: "way/5",
+            x: 0,
+            y: 0,
+            topM: 11,
+            spanM: 42,
+          },
+        ],
+      },
+    ]);
+    expect(kept).toEqual([]);
+  });
+
+  it("keeps it when the node is inside a DIFFERENT building", () => {
+    // The dedup is keyed on the HOST's feature, not on kind or position: "this
+    // way is spoken for" is the precise claim. A café next door must not
+    // silence this building's own symbol.
+    const derived = hostDerivedMarkers(
+      [
+        {
+          layer: "buildings",
+          feature: "way/5",
+          footprint: square(30),
+          topM: 11,
+        },
+      ],
+      () => "amenity=restaurant",
+      eligible,
+    );
+    const kept = dropHostedDuplicates(derived, [
+      {
+        kind: "amenity=cafe",
+        hosts: [
+          {
+            layer: "buildings",
+            feature: "way/99",
+            x: 90,
+            y: 90,
+            topM: 8,
+            spanM: 20,
+          },
+        ],
+      },
+    ]);
+    expect(kept).toHaveLength(1);
   });
 });

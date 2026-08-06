@@ -111,6 +111,21 @@ export interface LayerToggles {
   dispose(): void;
 }
 
+/**
+ * What a layer does BEYOND drawing itself, or `undefined` for the honest ones.
+ *
+ * Only one layer has an answer today, and it is the accepted cost DEC-S1 wrote
+ * down rather than discovered: the marker set is not independent of the layer
+ * set. A tooltip is the smallest thing that turns that from a mystery into a
+ * rule — and per DEC-S1 the alternative was worse, since suppressing a pool
+ * marker whether or not its pool is drawn makes the pool vanish entirely under
+ * the shipped defaults.
+ */
+function sideEffectOf(layer: LayerKind): string | undefined {
+  if (layer !== "plates") return undefined;
+  return "Also hides the pool, pitch and parking markers whose area this draws — the area already says what they say.";
+}
+
 /** Human-readable name for a layer. Short, because they sit in a crowded bar. */
 function labelFor(layer: LayerKind): string {
   switch (layer) {
@@ -181,6 +196,13 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
       // so the grouping had to move the elements without renaming any of them.
       input.id = `layer-${layer}`;
       label.append(input, document.createTextNode(` ${labelFor(layer)}`));
+      // WHY A LAYER MIGHT DO MORE THAN ITS NAME SAYS (stage 4, DEC-S1's cost).
+      // Switching `landuse` on makes pool, pitch and parking MARKERS disappear,
+      // because the area it draws already says what they say. That is legible
+      // once you know the rule and a mystery until you do — and the toggle is
+      // the only place a user meets it.
+      const note = sideEffectOf(layer);
+      if (note !== undefined) label.title = note;
       box.append(label);
       inputs.set(layer, input);
     }

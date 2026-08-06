@@ -43,6 +43,12 @@ import {
   buildBuildings,
   annotatePoiHosts,
   buildPoiMarkers,
+  dropHostedDuplicates,
+  hostDerivedMarkers,
+  poiKind,
+  poiModelFor,
+  stablePoiScale,
+  stableRotationY,
   buildRegionSlabs,
   type SlabRegion,
   buildRoads,
@@ -317,7 +323,7 @@ function buildMesh(
   //
   // BUILDINGS FIRST, because the first enabled host wins and a building is the
   // more specific claim about a marker standing on a landuse plate inside it.
-  const poi = annotatePoiHosts(buildPoiMarkers(all, options), [
+  const hostCandidates = [
     ...volumes.map((volume) => ({
       layer: "buildings" as const,
       feature: volume.feature,
@@ -332,7 +338,52 @@ function buildMesh(
       // placed above it — so there is no top to report.
       topM: 0,
     })),
-  ]);
+  ];
+  const nodeMarkers = annotatePoiHosts(
+    buildPoiMarkers(all, options),
+    hostCandidates,
+  );
+
+  // STAGE 2: the places that exist ONLY as geometry (DEC-S2). A restaurant
+  // mapped as a building way and no node has no marker to re-anchor, and that
+  // is ORDINARY tagging rather than an edge case — it is most of the owner's
+  // headline example, "das Gebäude ist also ein Restaurant".
+  //
+  // ELIGIBILITY IS AN ALLOW-LIST, not "anything with a POI tag". `plates.ts`
+  // owns every area whose tags match its own keys, and those OVERLAP the POI
+  // keys — so a deny-list would let a car park through, since a restaurant
+  // building and a car park both carry `amenity`. Only kinds with a symbol to
+  // float qualify, which is exactly `poiModelFor(kind)?.symbol`.
+  const byKey = new Map(all.map((feature) => [featureKey(feature), feature]));
+  const derived = dropHostedDuplicates(
+    hostDerivedMarkers(
+      hostCandidates,
+      (feature) => {
+        const tags = byKey.get(feature)?.tags;
+        return tags === undefined ? undefined : poiKind(tags);
+      },
+      (kind) => poiModelFor(kind)?.symbol !== undefined,
+    ),
+    nodeMarkers,
+  );
+
+  // APPENDED, NEVER INTERLEAVED. The consumer indexes marker identity by
+  // position in this array, so putting a way-derived marker in the middle would
+  // renumber every node marker after it and make each later pick name the wrong
+  // feature.
+  const poi = [
+    ...nodeMarkers,
+    ...derived.map((entry) => ({
+      feature: entry.feature,
+      position: { x: entry.host.x, y: entry.host.y },
+      groundHeightM: entry.host.topM,
+      kind: entry.kind,
+      label: entry.kind.slice(entry.kind.indexOf("=") + 1),
+      rotationY: stableRotationY(entry.feature),
+      scale: stablePoiScale(entry.feature),
+      hosts: [entry.host],
+    })),
+  ];
   // BATCHED PER CHUNK, not merged into one (W20, R4-16). The comment that used
   // to be here said a single batch was right "even though the package's general
   // guidance is to batch per res-8/res-9 cell", on the grounds that the view is

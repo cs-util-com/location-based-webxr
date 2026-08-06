@@ -113,7 +113,9 @@ export type {
 } from "./poi-hosts.js";
 export {
   annotatePoiHosts,
+  dropHostedDuplicates,
   footprintAnchor,
+  hostDerivedMarkers,
   HOST_CLEARANCE_M,
   hostMatches,
   hostScale,
