@@ -363,7 +363,9 @@ describe("the §4 rebuilt models", () => {
     // shows up here rather than as a model that merely looks a bit off.
     for (const [kind, height] of [
       ["amenity=waste_basket", 0.9025],
-      ["amenity=post_box", 1.045],
+      // `amenity=post_box` was here at 1.045 m and left in batch E: it is a
+      // 2.5 m symbol now, so its height is the envelope's rather than its
+      // source's and belongs to the family-S contract instead.
       ["historic=memorial", 1.12],
       ["amenity=drinking_water", 1.025],
     ] as const) {

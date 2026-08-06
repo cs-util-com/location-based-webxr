@@ -42,8 +42,8 @@ import {
   scaledToHeight,
 } from "./poi-primitives.js";
 import { A_SYMBOLS } from "./poi-symbols-a.js";
+import { B_SYMBOLS, D_SYMBOLS, E_SYMBOLS } from "./poi-symbols-bde.js";
 import { C_PROPS, C_SYMBOLS } from "./poi-symbols-c.js";
-import { B_VARIANTS } from "./poi-variants-b.js";
 import { D_VARIANTS } from "./poi-variants-d.js";
 import { G_VARIANTS } from "./poi-variants-g.js";
 import { H_VARIANTS } from "./poi-variants-hybrid.js";
@@ -345,11 +345,7 @@ function models(): PoiModel[] {
     // 7 — a restaurant: a shopfront with an awning and a table outside.
     symbolFrom("amenity=restaurant", STEEL, A_SYMBOLS),
     // 8 — a school: a long two-storey block with a flat roof.
-    model("amenity=school", STONE, (b) => {
-      box(b, 14, 7, 8);
-      box(b, 14.4, 0.3, 8.4, 7);
-      box(b, 2, 2.6, 0.3, 0, 0, 4.1);
-    }),
+    symbolFrom("amenity=school", STONE, B_SYMBOLS),
     // 9 — a park: a tree over a lawn.
     adopted("leisure=park", PAINT_GREEN, H_VARIANTS, 4.559999942779541),
     // 10 — an information board on two posts.
@@ -388,7 +384,7 @@ function models(): PoiModel[] {
     // 19 — a hotel: a tall block with a marked entrance canopy.
     symbolFrom("tourism=hotel", TIMBER, A_SYMBOLS),
     // 20 — a bank: a stone block with a portico.
-    adopted("amenity=bank", STONE, D_VARIANTS, 8),
+    symbolFrom("amenity=bank", STONE, B_SYMBOLS),
     // 21 — toilets: a small block with two doors.
     symbolFrom("amenity=toilets", PAINT_BLUE, C_SYMBOLS),
     // 22 — recycling: three containers side by side.
@@ -398,7 +394,7 @@ function models(): PoiModel[] {
     // 24 — a post box: a rounded pillar with a slot hood.
     // REBUILT (§4). SOURCE: `k_post_box`. §4.3 lists it under B; DEC-R6-28
     // takes the house file's, which has one.
-    adopted("amenity=post_box", STONE, B_VARIANTS, 1.0449999570846558),
+    symbolFrom("amenity=post_box", PAINT_RED, E_SYMBOLS),
     // 25 — a memorial: a plinth carrying a stele.
     // REBUILT (§4). SOURCE: `k_memorial`. A stepped base, a stele, an inscribed
     // plate and a verdigris cap — where the old model was three plain boxes.
@@ -412,10 +408,7 @@ function models(): PoiModel[] {
     // 28 — a picnic table: a table slab with a bench each side.
     propFrom("leisure=picnic_table", TIMBER, C_PROPS),
     // 29 — a sports centre: a wide hall with a curved-looking roof band.
-    model("leisure=sports_centre", STEEL, (b) => {
-      box(b, 16, 8, 12);
-      box(b, 16.4, 1, 12.4, 8);
-    }),
+    symbolFrom("leisure=sports_centre", STEEL, B_SYMBOLS),
     // 30 — an attraction: a plinth with a marker obelisk.
     symbolFrom("tourism=attraction", PAINT_RED, C_SYMBOLS),
     // 31 — artwork: an irregular sculpture on a base.
@@ -428,7 +421,7 @@ function models(): PoiModel[] {
       1.7999999523162842,
     ),
     // 33 — a bar: a shopfront with a projecting sign.
-    adopted("amenity=bar", DARK_STEEL, D_VARIANTS, 3.4000000953674316),
+    symbolFrom("amenity=bar", DARK_STEEL, D_SYMBOLS),
     // 34 — a hunting stand: a raised box on four tall legs, with a ladder.
     adopted("amenity=hunting_stand", TIMBER, L_VARIANTS, 4.5),
     // 35 — a viewpoint: a railing on a small platform.
@@ -438,11 +431,7 @@ function models(): PoiModel[] {
     // 37 — an ATM: a wall unit on a short pedestal.
     symbolFrom("amenity=atm", PAINT_GREEN, A_SYMBOLS),
     // 38 — a post office: a block with a horizontal sign band.
-    model("amenity=post_office", PAINT_RED, (b) => {
-      box(b, 8, 5, 6);
-      box(b, 8.2, 0.6, 6.2, 5);
-      box(b, 3, 0.5, 0.12, 3.4, 0, 3.05);
-    }),
+    symbolFrom("amenity=post_office", PAINT_RED, B_SYMBOLS),
     // 39 — waste disposal: a large skip, tapered.
     adopted("amenity=waste_disposal", DARK_STEEL, L_VARIANTS, 1.5),
     // 40 — a pub: a hut with a hanging sign on a bracket.

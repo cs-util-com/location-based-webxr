@@ -3586,7 +3586,17 @@ test.describe("the POI model gallery", () => {
     // real asynchrony: Chromium can bring the GPU context up AFTER the first
     // frame, so the page draws once, loses that context and redraws on
     // `webglcontextrestored` — see `gallery.ts` for the measurement behind that.
-    await expect.poll(litPixels, REPAINT).toBeGreaterThan(5000);
+    // RECALIBRATED FROM 5000 TO 2500 BY THE SYMBOL PORT, and the drop is the
+    // port working rather than a regression. Twenty-seven markers stopped being
+    // 3-15 m buildings and became 2.5 m symbols on a column, so the same row
+    // covers far fewer pixels: measured 3772 immediately after stage 0c, against
+    // 5000+ before it.
+    //
+    // The number is still doing its job — it separates "the row drew" from "the
+    // scene is empty, or the camera is inside the ground" — and the headroom is
+    // deliberately generous downward because stage 0d re-frames this page.
+    // A tighter bound would fail on the next legitimate change.
+    await expect.poll(litPixels, REPAINT).toBeGreaterThan(2500);
 
     expect(errors).toEqual([]);
   });

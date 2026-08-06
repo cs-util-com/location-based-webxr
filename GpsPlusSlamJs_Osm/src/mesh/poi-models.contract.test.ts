@@ -102,19 +102,27 @@ describe("the POI model contract", () => {
       .filter((model) => isBuildingScalePoi(model.kind))
       .map((model) => `${model.kind}=${model.heightM.toFixed(1)}`)
       .sort();
-    expect(tall).toEqual([
-      // Exactly on the 8 m threshold, and only caught once this test started
-      // asking the production predicate instead of restating it.
-      "amenity=bank=8.0",
-      "leisure=sports_centre=9.0",
-      // THIS LIST SHRINKS AS THE PORT LANDS, and that is the plan working seen
-      // from the other end. `tourism=hotel` (13.5 m) left with batch A;
-      // `amenity=hospital` (15.3) and `amenity=place_of_worship` (12.0) left
-      // with batch C. Each is now a ~2.5 m symbol, so drawing it inside its own
-      // building is no longer a duplicate volume but the label that building was
-      // missing. It should reach EMPTY once all 27 are ported, at which point
-      // the suppression rule has nothing left to suppress.
-    ]);
+    // EMPTY, AND THAT IS THE MILESTONE THIS WHOLE THREAD WAS FOR. Every kind
+    // that used to be a building drawn inside a building is now a ~2.5 m symbol
+    // on a column. The list ran hospital/hotel/place_of_worship/sports_centre,
+    // gained bank when round 8 adopted it at exactly 8.0 m, and emptied as
+    // batches A, C and B landed.
+    //
+    // THE ASSERTION IS KEPT RATHER THAN DELETED. It is now a guard in the other
+    // direction: if a future model is ever authored tall enough to be a building
+    // again, this fails and names it, which is the whole reason the rule was
+    // derived from measured heights rather than a list of strings.
+    // EMPTY, AND THAT IS THE MILESTONE THIS WHOLE THREAD WAS FOR. Every kind
+    // that was a building drawn inside a building is now a ~2.5 m symbol on a
+    // column. The list ran hospital / hotel / place_of_worship / sports_centre,
+    // gained `amenity=bank` when round 8 adopted it at exactly 8.0 m, and
+    // emptied as batches A, C and B landed.
+    //
+    // THE ASSERTION IS KEPT RATHER THAN DELETED, because it now guards the other
+    // direction: if a model is ever authored tall enough to be a building again,
+    // this fails and names it. That is the whole reason the rule was derived
+    // from measured heights rather than from a list of kind strings.
+    expect(tall).toEqual([]);
   });
 
   describe("the family-S markers (DEC-S3, DEC-S4, DEC-S21)", () => {

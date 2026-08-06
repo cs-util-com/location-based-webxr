@@ -29,7 +29,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { poiModelFor } from "./poi-models.js";
+import { POI_MODELS, poiModelFor } from "./poi-models.js";
 import {
   BUILDING_SCALE_POI_HEIGHT_M,
   isBuildingScalePoi,
@@ -54,7 +54,7 @@ function square(size: number, cx = 0, cy = 0): { x: number; y: number }[] {
 }
 
 describe("isBuildingScalePoi", () => {
-  it("selects the kinds that are still buildings mapped as nodes", () => {
+  it("selects NOTHING now, which is the symbol port finished", () => {
     // DERIVED FROM THE MODEL'S OWN HEIGHT, not from a hard-coded list of
     // strings. A tall model added later must be covered without anyone
     // remembering to update this — which is exactly what a literal list would
@@ -66,21 +66,23 @@ describe("isBuildingScalePoi", () => {
     // round 8 adopted it at exactly 8.0 m. It should reach EMPTY once all 27
     // winners are ported, at which point the suppression rule has nothing left
     // to suppress and this file's reason to exist can be revisited.
-    for (const kind of ["leisure=sports_centre", "amenity=bank"]) {
-      expect(poiModelFor(kind)).toBeDefined();
-      expect(isBuildingScalePoi(kind)).toBe(true);
-    }
+    const building = [...POI_MODELS.values()]
+      .filter((model) => isBuildingScalePoi(model.kind))
+      .map((model) => model.kind);
+    expect(building).toEqual([]);
   });
 
-  it("stops selecting a kind once its symbol port lands", () => {
-    // The other half of the statement above, asserted rather than described.
-    // `tourism=hotel` is a 2.5 m bed on a column now, so drawing it inside a
-    // hotel building is no longer a duplicate volume — it is the label that
-    // building was missing.
+  it("names the kinds that used to select, so the reversal is legible", () => {
+    // Every one of these was a 8-15 m volume standing inside the building OSM
+    // already draws. They are 2.5 m symbols now, and drawing one inside its own
+    // building is no longer a duplicate — it is the label that building was
+    // missing, which is what stage 1 will do with it.
     for (const kind of [
-      "tourism=hotel",
       "amenity=hospital",
+      "tourism=hotel",
       "amenity=place_of_worship",
+      "leisure=sports_centre",
+      "amenity=bank",
     ]) {
       expect(poiModelFor(kind)).toBeDefined();
       expect(isBuildingScalePoi(kind)).toBe(false);
@@ -116,32 +118,33 @@ describe("isBuildingScalePoi", () => {
 });
 
 describe("suppressPoiInsideBuildings", () => {
-  it("drops a building-scale node standing inside a building footprint", () => {
-    // THE REPORTED DEFECT: a block inside a building that is already extruded.
-    //
-    // THE SUBJECT USED TO BE `amenity=hospital` and is now
-    // `leisure=sports_centre`, because the hospital became a 2.5 m symbol in
-    // batch C and stopped being building-scale at all. The MECHANISM is what
-    // these tests are about, so they follow whichever kind still exercises it —
-    // and when the last one ports, that is the signal this file's job is done
-    // rather than a reason to weaken it.
-    const kept = suppressPoiInsideBuildings(
-      [marker("leisure=sports_centre", 0, 0)],
-      [square(40)],
-    );
-    expect(kept).toEqual([]);
-  });
-
-  it("KEEPS a building-scale node with no building around it", () => {
-    // THE ASSERTION THAT MATTERS MOST. A sports centre mapped only as a node is the
-    // case this must not break, and the obvious implementation — drop every
-    // tall POI — looks correct on any fixture where a building happens to
-    // exist.
-    const markers = [marker("leisure=sports_centre", 0, 0)];
-    expect(suppressPoiInsideBuildings(markers, [])).toEqual(markers);
-    expect(suppressPoiInsideBuildings(markers, [square(40, 500, 500)])).toEqual(
-      markers,
-    );
+  /**
+   * THIS RULE IS NOW INERT, AND THAT IS A STATED COVERAGE GAP RATHER THAN A
+   * TIDY-UP.
+   *
+   * Every test that dropped a marker needed a kind that IS building-scale, and
+   * after stage 0c none is: they all became ~2.5 m symbols. So
+   * `suppressPoiInsideBuildings` iterates, matches nothing and returns its
+   * input, and its point-in-polygon is unreachable from production.
+   *
+   * **The resolution is stage 1, not a stub.** That stage replaces this rule
+   * with the layer-aware host resolver, which needs the same containment test
+   * for a far wider set of markers and brings its own coverage. What is asserted
+   * here meanwhile is the honest thing — that the rule is a no-op — and what is
+   * owed is recorded as `todo` rather than deleted.
+   */
+  it("suppresses NOTHING today, because no kind is building-scale any more", () => {
+    // THE CURRENT CONTRACT, asserted rather than assumed. After stage 0c every
+    // kind that used to qualify is a ~2.5 m symbol, so this rule iterates,
+    // matches nothing and returns its input unchanged — including a marker
+    // standing dead centre of a footprint, which is the case it was written to
+    // delete.
+    const markers = [
+      marker("amenity=hospital", 0, 0),
+      marker("leisure=sports_centre", 0, 0),
+      marker("amenity=bank", 0, 0),
+    ];
+    expect(suppressPoiInsideBuildings(markers, [square(40)])).toEqual(markers);
   });
 
   it("keeps a BENCH inside a building, because it is not a duplicate", () => {
@@ -151,27 +154,15 @@ describe("suppressPoiInsideBuildings", () => {
     expect(suppressPoiInsideBuildings(markers, [square(40)])).toEqual(markers);
   });
 
-  it("keeps a building-scale node just OUTSIDE the footprint", () => {
-    // The containment test has to be a real point-in-polygon rather than a
-    // bounding-box hit, or a marker beside an L-shaped building disappears.
-    const markers = [marker("leisure=sports_centre", 30, 30)];
-    expect(suppressPoiInsideBuildings(markers, [square(40)])).toEqual(markers);
-  });
-
-  it("does not confuse a bounding-box hit with containment", () => {
-    // An L-shape: the marker sits in the notch, inside the bbox and outside the
-    // polygon. A bbox-only test would delete it.
-    const lShape = [
-      { x: -20, y: -20 },
-      { x: 20, y: -20 },
-      { x: 20, y: -10 },
-      { x: -10, y: -10 },
-      { x: -10, y: 20 },
-      { x: -20, y: 20 },
-    ];
-    const markers = [marker("leisure=sports_centre", 10, 10)];
-    expect(suppressPoiInsideBuildings(markers, [lShape])).toEqual(markers);
-  });
+  // OWED TO STAGE 1, and named rather than deleted so the record of what
+  // containment has to get right survives the port. Both need a marker whose
+  // kind IS building-scale, and none exists any more; stage 1's host resolver
+  // needs the identical geometry test for a much wider set of markers and is
+  // where they come back with real subjects.
+  it.todo("keeps a host-scale node just OUTSIDE the footprint");
+  it.todo(
+    "does not confuse a bounding-box hit with containment (the L-shaped notch)",
+  );
 
   it("is unchanged when there are no markers or no buildings", () => {
     expect(suppressPoiInsideBuildings([], [square(40)])).toEqual([]);
