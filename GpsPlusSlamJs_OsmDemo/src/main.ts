@@ -363,7 +363,19 @@ async function main(): Promise<void> {
   });
   const detailsPanel = new DetailsPanel({
     container: el("details"),
-    onClose: () => store.dispatch(actions.cellSelected(undefined)),
+    // BOTH SELECTIONS, not just the cell. `details-panel.ts.md` states the
+    // invariant — "closing deselects rather than merely hiding", because a panel
+    // hidden while its subject is still selected makes re-clicking that subject
+    // appear to do nothing — and it was honoured for cells only. The reducer
+    // makes the two mutually exclusive when SELECTING, which is not the same as
+    // clearing: closing a region's panel left `selectedRegion` set, so clicking
+    // that same region again dispatched an identical value and the panel stayed
+    // shut. Found by the shared-page pilot, where one test closed a region panel
+    // and the next could no longer open one.
+    onClose: () => {
+      store.dispatch(actions.cellSelected(undefined));
+      store.dispatch(actions.regionSelected(undefined));
+    },
   });
 
   // THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Choosing a site is the same

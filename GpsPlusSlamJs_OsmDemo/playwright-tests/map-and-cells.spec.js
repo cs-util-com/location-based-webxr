@@ -13,33 +13,79 @@ import { test, expect } from "@playwright/test";
 
 import {
   AT_FIXTURE,
+  captureUiBaseline,
+  resetUi,
   stubNetwork,
   waitForRefresh,
   enableCellLayer,
   REPAINT,
 } from "./fixtures.js";
 
+/**
+ * ONE BOOT FOR THIS WHOLE FILE (DEC-S5), instead of one per test.
+ *
+ * The boot — `stubNetwork` → `goto` → `waitForRefresh` through three
+ * progressive scoring rings — was measured at ~74% of the entire e2e suite's
+ * work, and it was being paid once per test to assert things about a map that
+ * had not changed. Seven of this file's ten tests share this page; each is
+ * returned to the baseline by `resetUi` rather than by a reload, because a
+ * reload IS the boot.
+ *
+ * THE BASELINE IS WHATEVER THE BOOT PRODUCED — captured, never imposed. The
+ * first version forced the cells ON, reasoning that five of the seven tests
+ * enable them anyway and would then skip a refetch. It cost more than it saved:
+ * the reset re-checked a layer the previous test had switched off, only for the
+ * next test to switch it off again, and that off/on/off churn — which no
+ * per-test boot ever performs — broke a 3D region pick that passed in isolation
+ * and failed after its predecessor. Restoring to the captured default makes the
+ * common case a genuine no-op.
+ *
+ * THREE TESTS ARE NOT HERE and take Playwright's own `{ page }` fixture, each
+ * for a reason `resetUi` cannot fix — a different network stub, a fetch that
+ * can only be watched from cells-OFF, and a geo-event marker with no control
+ * that removes it. `fixtures.js` records each one next to `resetUi`.
+ *
+ * @type {import('@playwright/test').Page}
+ */
+let shared;
+/** @type {{category: string, cells: boolean, showBelow: boolean}} */
+let baseline;
+
+test.beforeAll(async ({ browser }) => {
+  shared = await browser.newPage();
+  await stubNetwork(shared);
+  await shared.goto(AT_FIXTURE);
+  await waitForRefresh(shared);
+  baseline = await captureUiBaseline(shared);
+});
+
+test.afterAll(async () => {
+  await shared.close();
+});
+
+// Runs for the isolated tests too, where it resets a page they do not use — a
+// few cheap reads, and cheaper than the two ways of avoiding it (duplicating
+// this hook into all five subject describes, or guarding on the test's name).
+test.beforeEach(async () => {
+  await resetUi(shared, baseline);
+});
+
 test.describe("the affordance map", () => {
-  test("draws the cells, the extent, the outlines, the popup — and redraws on a category switch", async ({
-    page,
-  }) => {
+  test("draws the cells, the extent, the outlines, the popup — and redraws on a category switch", async () => {
     // FIVE BEHAVIOURS, ONE BOOT, and the plan for this budgeted two tests here.
     // One is enough: the first four are read-only, and the category switch is the
     // only mutation, so it simply goes last. The ordering rule does the work that
     // a second boot would have.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
     // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
     // grid. Switching them on here rather than changing the default keeps the
     // default itself asserted in one place (the layer-toggle test).
-    await enableCellLayer(page); // async since round 10 stage B
+    await enableCellLayer(shared); // async since round 10 stage B
 
     await test.step("draws res-13 cells over the basemap", async () => {
       // The class exists so this assertion cannot be satisfied by the region
       // outlines: Leaflet renders every polygon as an indistinguishable <path>,
       // and a test matching all of them would pass with an empty grid.
-      const cells = page.locator("#map path.affordance-cell");
+      const cells = shared.locator("#map path.affordance-cell");
       await expect(cells.first()).toBeVisible();
       expect(await cells.count()).toBeGreaterThan(10);
     });
@@ -52,22 +98,22 @@ test.describe("the affordance map", () => {
       // Both shapes are asserted because drawing only the box would confirm the
       // exact misreading the display exists to correct.
       await expect(
-        page.locator("#map path.fetch-extent").first(),
+        shared.locator("#map path.fetch-extent").first(),
       ).toBeVisible();
       await expect(
-        page.locator("#map path.fetch-tile-hex").first(),
+        shared.locator("#map path.fetch-tile-hex").first(),
       ).toBeVisible();
 
       // The picture answers "how big" only roughly; the status line has to carry
       // the number, or the over-fetch stays invisible on a zoomed-out map.
-      const status = await page.locator("#status").textContent();
+      const status = await shared.locator("#status").textContent();
       expect(status).toMatch(/box per tile/);
       expect(status).toMatch(/hexagon/);
       expect(status).not.toMatch(/NaN|Infinity/);
     });
 
     await test.step("draws region outlines, and draws them OVER the cells", async () => {
-      const outlines = page.locator("#map path.region-outline");
+      const outlines = shared.locator("#map path.region-outline");
       await expect(outlines.first()).toBeVisible();
 
       // Paint order is invisible to every unit test and decides whether the
@@ -79,7 +125,7 @@ test.describe("the affordance map", () => {
       // This assertion earned its place immediately: the source comment claimed
       // regions were drawn underneath while the code drew them on top, and
       // nothing else in the suite could have noticed.
-      const order = await page.evaluate(() => {
+      const order = await shared.evaluate(() => {
         const paths = [...document.querySelectorAll("#map svg path")];
         return {
           lastCell: paths.findLastIndex((p) =>
@@ -99,18 +145,18 @@ test.describe("the affordance map", () => {
       // suite is offline by policy, and that is about not hammering donated
       // infrastructure before it is about determinism. Routed on the CONTEXT, not
       // the page, so it also covers the tab the link opens.
-      await page
+      await shared
         .context()
         .route("https://www.openstreetmap.org/**", (route) =>
           route.fulfill({ contentType: "text/html", body: "<html>osm</html>" }),
         );
 
-      const cell = page.locator("#map path.affordance-cell").first();
+      const cell = shared.locator("#map path.affordance-cell").first();
       await cell.hover();
 
       // HOVER gives the number. That is all it can give: Leaflet tooltips are
       // non-interactive by design.
-      const tooltip = page.locator(".leaflet-tooltip").first();
+      const tooltip = shared.locator(".leaflet-tooltip").first();
       await expect(tooltip).toBeVisible();
       await expect(tooltip).toContainText("walkable =");
 
@@ -118,12 +164,12 @@ test.describe("the affordance map", () => {
       // kept a contributing-entries map: it turns "that cell looks wrong" into
       // "that cell is wrong BECAUSE of way/12345" in one click.
       await cell.click();
-      const popup = page.locator(".leaflet-popup");
+      const popup = shared.locator(".leaflet-popup");
       await expect(popup).toBeVisible();
 
       // It STAYS open when the pointer leaves — the whole difference from a
       // tooltip, and what makes the links reachable at all.
-      await page.mouse.move(0, 0);
+      await shared.mouse.move(0, 0);
       await expect(popup).toBeVisible();
 
       // THE ASSERTION THAT WAS MISSING, and the reason this shipped broken. The
@@ -138,7 +184,7 @@ test.describe("the affordance map", () => {
         /openstreetmap\.org\/(node|way|relation)\/\d+/,
       );
       const opened = await Promise.all([
-        page.waitForEvent("popup"),
+        shared.waitForEvent("popup"),
         link.click(),
       ]);
       expect(opened[0].url()).toMatch(/openstreetmap\.org\//);
@@ -147,12 +193,12 @@ test.describe("the affordance map", () => {
       // cells, and the step below hovers one to read its tooltip — an open popup
       // left behind would swallow that hover and fail a step that is not about
       // popups at all.
-      await page.locator(".leaflet-popup-close-button").click();
+      await shared.locator(".leaflet-popup-close-button").click();
       await expect(popup).toHaveCount(0);
     });
 
     await test.step("switching category redraws the grid", async () => {
-      const other = await page.evaluate(() => {
+      const other = await shared.evaluate(() => {
         const select = document.getElementById("category");
         const values = [...(select?.querySelectorAll("option") ?? [])].map(
           (o) => o.value,
@@ -161,7 +207,7 @@ test.describe("the affordance map", () => {
       });
       test.skip(other === "", "rule table declares only one category");
 
-      await page.locator("#category").selectOption(other);
+      await shared.locator("#category").selectOption(other);
 
       // THROUGH THE HELPER, NOT A BARE `toContainText` — the second instance of
       // a flake this file has already diagnosed once (see the "my location"
@@ -174,8 +220,8 @@ test.describe("the affordance map", () => {
       // gate twice; the extra load of the other seven packages is the difference.
       // `waitForRefresh` allows 60 s and waits for the progressive widening to
       // settle, which nearly every other test here already relies on.
-      await waitForRefresh(page);
-      await expect(page.locator("#status")).toContainText(`${other} regions`);
+      await waitForRefresh(shared);
+      await expect(shared.locator("#status")).toContainText(`${other} regions`);
 
       // A category switch that rescored but never repainted would leave the map
       // showing `walkable` under a `restingArea` label — the exact kind of stale
@@ -189,10 +235,10 @@ test.describe("the affordance map", () => {
       // same colour bucket. The tooltip cannot be stale: `map-view.ts` rebuilds it
       // per render with `tooltipFor(cell, category, score)`, so it NAMES the
       // category the paths were drawn for.
-      const cell = page.locator("#map path.affordance-cell").first();
+      const cell = shared.locator("#map path.affordance-cell").first();
       await expect(cell).toBeVisible();
       await cell.hover();
-      await expect(page.locator(".leaflet-tooltip").first()).toContainText(
+      await expect(shared.locator(".leaflet-tooltip").first()).toContainText(
         `${other} =`,
       );
 
@@ -204,33 +250,30 @@ test.describe("the affordance map", () => {
       // `heatScale` re-normalises to each category's own maximum, so the same
       // hexagons come back in similar colours. The legend is the fix, and this is
       // the assertion that keeps it honest.
-      await expect(page.locator("#legend .legend-category")).toHaveText(other);
+      await expect(shared.locator("#legend .legend-category")).toHaveText(
+        other,
+      );
     });
   });
 });
 
 test.describe("explaining one cell", () => {
-  test("opens a panel, reveals the bands, explains a veto, and follows the selection", async ({
-    page,
-  }) => {
+  test("opens a panel, reveals the bands, explains a veto, and follows the selection", async () => {
     // FOUR BEHAVIOURS, ONE BOOT. The plan budgeted two tests here; one is enough
     // because the only genuinely irreversible act — MOVING the user, which drops
     // the selection — is the last thing the last step does. Everything before it
     // either reads or toggles a switch it puts back.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
     // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
     // grid. Switching them on here rather than changing the default keeps the
     // default itself asserted in one place (the layer-toggle test).
-    await enableCellLayer(page); // async since round 10 stage B
+    await enableCellLayer(shared); // async since round 10 stage B
 
-    const panel = page.locator("#details");
+    const panel = shared.locator("#details");
 
     await test.step("clicking a cell opens a details panel explaining its score", async () => {
       await expect(panel).toBeHidden();
 
-      await page.locator("#map path.affordance-cell").first().click();
+      await shared.locator("#map path.affordance-cell").first().click();
       await expect(panel).toBeVisible();
 
       // The panel must carry what the popup cannot: every contributing feature,
@@ -245,7 +288,7 @@ test.describe("explaining one cell", () => {
       // — otherwise re-clicking the same cell would appear to do nothing.
       await panel.locator(".panel-close").click();
       await expect(panel).toBeHidden();
-      await page.locator("#map path.affordance-cell").first().click();
+      await shared.locator("#map path.affordance-cell").first().click();
       await expect(panel).toBeVisible();
 
       // Deselected again, so the next step starts where a fresh boot would.
@@ -254,10 +297,10 @@ test.describe("explaining one cell", () => {
     });
 
     await test.step("the checkbox reveals sub-threshold cells in three distinct bands", async () => {
-      const cells = page.locator("#map path.affordance-cell");
+      const cells = shared.locator("#map path.affordance-cell");
       const before = await cells.count();
 
-      await page.locator("#show-below").check();
+      await shared.locator("#show-below").check();
 
       // More cells, and specifically the two the old single skip made
       // indistinguishable: a hard veto and "no rule said anything here". Being
@@ -272,15 +315,15 @@ test.describe("explaining one cell", () => {
       // cells at all — and the vetoed cell is the one the checkbox exists for.
       // The park fixture carries 15 of them against the checked-in rule table.
       await expect(
-        page.locator("#map path.affordance-cell-identity").first(),
+        shared.locator("#map path.affordance-cell-identity").first(),
       ).toBeAttached();
       await expect(
-        page.locator("#map path.affordance-cell-veto").first(),
+        shared.locator("#map path.affordance-cell-veto").first(),
       ).toBeAttached();
 
       // The legend grows the three band swatches with it: colours on screen that
       // the legend does not explain are worse than no legend.
-      await expect(page.locator("#legend .legend-band")).toHaveCount(3);
+      await expect(shared.locator("#legend .legend-band")).toHaveCount(3);
     });
 
     await test.step("a vetoed cell explains WHY it is zero, which is the whole round", async () => {
@@ -297,8 +340,8 @@ test.describe("explaining one cell", () => {
       // this step needs — it is checked again rather than assumed, because a step
       // that silently depends on its predecessor is the coupling fusion has to
       // avoid.
-      await page.locator("#show-below").check();
-      const vetoed = page.locator("#map path.affordance-cell-veto").first();
+      await shared.locator("#show-below").check();
+      const vetoed = shared.locator("#map path.affordance-cell-veto").first();
       await expect(vetoed).toBeVisible();
       await vetoed.click();
 
@@ -338,7 +381,7 @@ test.describe("explaining one cell", () => {
 
       // Back to the boot state: the reveal off, and nothing selected.
       await panel.locator(".panel-close").click();
-      await page.locator("#show-below").uncheck();
+      await shared.locator("#show-below").uncheck();
     });
 
     await test.step("the selection follows a category switch and is dropped when the user moves", async () => {
@@ -346,7 +389,7 @@ test.describe("explaining one cell", () => {
       // category the map is no longer showing, and can never describe a cell
       // belonging to a place the user has left. Both rules live in one reducer,
       // one line apart, and both are invisible to every other test here.
-      await page.locator("#map path.affordance-cell").first().click();
+      await shared.locator("#map path.affordance-cell").first().click();
       await expect(panel).toBeVisible();
       await expect(panel.locator(".panel-header strong")).toContainText(
         "walkable",
@@ -355,7 +398,7 @@ test.describe("explaining one cell", () => {
       // A category change KEEPS the selection — "what does this same cell score
       // for battleArea?" is the obvious next click, and clearing it would make
       // that question impossible to ask.
-      const other = await page.evaluate(() => {
+      const other = await shared.evaluate(() => {
         const select = document.getElementById("category");
         const values = [...(select?.querySelectorAll("option") ?? [])].map(
           (o) => o.value,
@@ -363,12 +406,12 @@ test.describe("explaining one cell", () => {
         return values.find((v) => v !== "walkable") ?? "";
       });
       test.skip(other === "", "rule table declares only one category");
-      await page.locator("#category").selectOption(other);
+      await shared.locator("#category").selectOption(other);
       // A category change starts its OWN progressive refresh (W16), and the panel
       // is re-explained on each ring. Capturing state before that settles races
       // three republishes — which is what made this test flaky in the suite while
       // passing standalone.
-      await waitForRefresh(page);
+      await waitForRefresh(shared);
 
       await expect(panel).toBeVisible();
       // Re-explained in the NEW category, not left showing the old answer.
@@ -383,9 +426,9 @@ test.describe("explaining one cell", () => {
       // grid grows to cover this point fails loudly here rather than quietly
       // passing for the wrong reason.
       const point = { x: 60, y: 60 };
-      const box = await page.locator("#map").boundingBox();
+      const box = await shared.locator("#map").boundingBox();
       if (box === null) throw new Error("no map box");
-      const onCell = await page.evaluate(
+      const onCell = await shared.evaluate(
         ([x, y]) =>
           document
             .elementFromPoint(x, y)
@@ -394,7 +437,7 @@ test.describe("explaining one cell", () => {
       );
       expect(onCell).toBe(false);
 
-      await page.locator("#map").click({ position: point });
+      await shared.locator("#map").click({ position: point });
       await expect(panel).toBeHidden();
     });
   });
@@ -404,15 +447,12 @@ test.describe("explaining one cell", () => {
  * W12 / finding R3-8 — one scale, and a legend that says when there is no ramp.
  */
 test.describe("the legend", () => {
-  test("keeps its scale, and says when nothing qualifies", async ({ page }) => {
+  test("keeps its scale, and says when nothing qualifies", async () => {
     // TWO BEHAVIOURS, ONE BOOT. The boot is ~4.8 s of a ~6.5 s test and both of
     // these want the identical one, so paying it twice bought nothing. They stay
     // separately named through `test.step`, which is what keeps a failure
     // pointing at one behaviour rather than at a pair — see
     // GpsPlusSlamJs_Docs/docs/2026-08-02-0612-osm-demo-e2e-fusion-plan.md.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
 
     await test.step("keeps its scale when the cells layer is switched off", async () => {
       // THE DEFECT, and it is not in the notes: the scale was derived from the
@@ -420,12 +460,12 @@ test.describe("the legend", () => {
       // switching it off collapsed the ramp — the legend went to "1 to 1" and the
       // 2D region fills were coloured on an empty scale while the 3D slabs used a
       // different one. Two views, two scales, the same regions.
-      const legend = page.locator("#legend");
+      const legend = shared.locator("#legend");
       const before = await legend.textContent();
       expect(before).not.toBeNull();
 
-      await page.locator("#layer-cells").uncheck();
-      await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
+      await shared.locator("#layer-cells").uncheck();
+      await expect(shared.locator("#map path.affordance-cell")).toHaveCount(0);
 
       // The cells are gone from the map; the scale describes the data, not the
       // drawing, so the legend must be unchanged.
@@ -443,15 +483,15 @@ test.describe("the legend", () => {
       // what `enableCellLayer` was given a `waitForRefresh` for in 518fd7d — the
       // FOURTH appearance of that same failure, and it duly failed in a full
       // gate run while passing in isolation.
-      await enableCellLayer(page);
+      await enableCellLayer(shared);
     });
 
     await test.step("says nothing qualifies instead of showing a 1-to-1 ramp", async () => {
       // The reported symptom, as an assertion. Any category with no cell above the
       // bar produces a degenerate scale; the fixture's own categories are used
       // rather than a hardcoded name, so this stays true if the rule table moves.
-      const picker = page.locator("#category");
-      const values = await page
+      const picker = shared.locator("#category");
+      const values = await shared
         .locator("#category option")
         .evaluateAll((nodes) =>
           nodes.map((node) => /** @type {HTMLOptionElement} */ (node).value),
@@ -459,11 +499,11 @@ test.describe("the legend", () => {
 
       for (const value of values) {
         await picker.selectOption(value);
-        await waitForRefresh(page);
-        const text = (await page.locator("#legend").textContent()) ?? "";
+        await waitForRefresh(shared);
+        const text = (await shared.locator("#legend").textContent()) ?? "";
         // Either there is a real ramp, or there is a sentence — never a ramp whose
         // two ends carry the same number.
-        const min = await page.locator("#legend .legend-min").count();
+        const min = await shared.locator("#legend .legend-min").count();
         if (min === 0) {
           expect(text).toContain("no cell scores above");
           return;
@@ -487,12 +527,7 @@ test.describe("the legend", () => {
  * sub-threshold cell painted at the ramp's darkest stop over dark ground.
  */
 test.describe("revealing the sub-threshold cells", () => {
-  test("changes BOTH views, and the cells it reveals are interrogable", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+  test("changes BOTH views, and the cells it reveals are interrogable", async () => {
     // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
     // grid. Switching them on here rather than changing the default keeps the
     // default itself asserted in one place (the layer-toggle test).
@@ -500,22 +535,22 @@ test.describe("revealing the sub-threshold cells", () => {
     // B, and `before2d` is captured immediately below. Without the wait it was
     // captured as ZERO -- so the "and back" assertion compared 1387 against 0
     // and the test failed for a reason that had nothing to do with show-below.
-    await enableCellLayer(page);
+    await enableCellLayer(shared);
 
     await test.step("changes BOTH views, in both directions", async () => {
-      const canvas = page.locator("#scene canvas");
+      const canvas = shared.locator("#scene canvas");
       const shot = () =>
-        page.evaluate(() => {
+        shared.evaluate(() => {
           const el = document.querySelector("#scene canvas");
           return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
         });
       await expect(canvas).toBeVisible();
 
-      const cells = page.locator("#map path.affordance-cell");
+      const cells = shared.locator("#map path.affordance-cell");
       const before2d = await cells.count();
       const before3d = await shot();
 
-      await page.locator("#show-below").check();
+      await shared.locator("#show-below").check();
 
       // 2D: more cells on screen. 3D: a different picture. Both halves, because
       // the reported symptom was that nothing appeared to happen at all.
@@ -523,7 +558,7 @@ test.describe("revealing the sub-threshold cells", () => {
       await expect.poll(shot, REPAINT).not.toBe(before3d);
 
       // AND BACK, which is the half that catches a redraw that only ever adds.
-      await page.locator("#show-below").uncheck();
+      await shared.locator("#show-below").uncheck();
       await expect.poll(() => cells.count()).toBe(before2d);
     });
 
@@ -539,7 +574,7 @@ test.describe("revealing the sub-threshold cells", () => {
       //
       // The switch is checked again here rather than inherited: the step above
       // ends by unchecking it, because "and back" is half of ITS claim.
-      await page.locator("#show-below").check();
+      await shared.locator("#show-below").check();
       // THE CELL NEAREST THE MAP CENTRE, not the first in DOM order.
       //
       // Leaflet puts its controls in the CORNERS — zoom top-left, attribution
@@ -553,7 +588,7 @@ test.describe("revealing the sub-threshold cells", () => {
       // lands there depends on font metrics, so Linux failed and Windows did
       // not. CI named it once the click stopped being forced:
       // "<div class=leaflet-control-attribution> intercepts pointer events".
-      const identity = await page.evaluate(() => {
+      const identity = await shared.evaluate(() => {
         const map = document.querySelector("#map");
         if (map === null) return null;
         const box = map.getBoundingClientRect();
@@ -577,7 +612,7 @@ test.describe("revealing the sub-threshold cells", () => {
         return best;
       });
       expect(identity).not.toBeNull();
-      const identityCell = page
+      const identityCell = shared
         .locator("#map path.affordance-cell-identity")
         .nth(identity);
       await expect(identityCell).toBeVisible();
@@ -622,9 +657,9 @@ test.describe("revealing the sub-threshold cells", () => {
       await expect
         .poll(
           async () => {
-            const details = page.locator("#details");
+            const details = shared.locator("#details");
             if (!(await details.isVisible())) {
-              return `hidden — status: ${await page.locator("#status").textContent()}`;
+              return `hidden — status: ${await shared.locator("#status").textContent()}`;
             }
             const explained = await details.locator(".panel-threshold").count();
             if (explained > 0) return "explained";
@@ -652,23 +687,19 @@ test.describe("selecting a region", () => {
    * The two routes to `regionSelected` are independent (a Leaflet handler and a
    * three.js raycast) and are now tested independently.
    */
-  test("opens the details panel from the 2D map", async ({ page }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const panel = page.locator("#details");
+  test("opens the details panel from the 2D map", async () => {
+    const panel = shared.locator("#details");
 
     // CELLS OFF FIRST, and that is the realistic flow rather than a test
     // convenience: the cell layer draws in a pane ABOVE the region pane, so a
     // click anywhere a cell covers reaches the cell. That is deliberate --
     // `resolvePick` prefers the finer claim in 3D for the same reason -- and it
     // means a region is reachable exactly where the grid is not.
-    await page.locator("#layer-cells").uncheck();
+    await shared.locator("#layer-cells").uncheck();
 
     // The FILLED class, not the outline: an unfilled sub-threshold outline is
     // also a `<path>`, and matching it would pass while nothing was selected.
-    const region = page.locator("#map .region-fill").first();
+    const region = shared.locator("#map .region-fill").first();
     await region.waitFor({ state: "visible" });
     await region.click({ force: true });
 
@@ -679,51 +710,80 @@ test.describe("selecting a region", () => {
     // the range is what the colour cannot say.
     await expect(stats).toContainText("median");
     await expect(stats).toContainText("range");
+
+    // CLOSING DESELECTS, so the SAME region can be re-opened. `details-panel.ts.md`
+    // states this invariant and it was honoured for cells only: `onClose`
+    // cleared `selectedCell` and left `selectedRegion` set, so a second click on
+    // the same region dispatched an identical value and the panel stayed shut —
+    // a dead click, which is exactly the defect the invariant describes.
+    // Unfindable with a page per test, because nothing ever clicked a region
+    // twice; the shared-page pilot surfaced it as one test breaking the next.
+    await panel.locator(".panel-close").click();
+    await expect(panel).toBeHidden();
+    await region.click({ force: true });
+    await expect(panel).toBeVisible();
   });
 
+  // ITS OWN PAGE, and this one is an honest defeat rather than a known
+  // limitation like the other three. It passes alone on the shared page and
+  // fails after its predecessor, so something that test leaves behind breaks the
+  // 3D raycast — and four attempts did not find what. Ruled out and disproved by
+  // measurement, not by argument: the layer-baseline churn (fixed anyway), a
+  // missing wait after hiding the cells (added anyway), and the leaked region
+  // selection (a real app defect, fixed in `main.ts` and now pinned by the 2D
+  // test above). None of them was it.
+  //
+  // Isolating it keeps six of ten tests sharing a page rather than blocking the
+  // whole file on one unexplained interaction. **Left deliberately visible**: if
+  // the shared page is ever extended to the other spec files, this is the known
+  // unsolved case, and the 3D raycast is where to start looking.
   test("opens the same panel from the 3D scene", async ({ page }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    const shared = page;
 
     // WITH THE CELLS HIDDEN, which is the point rather than a convenience: a
     // slab lies directly under the grid and `resolvePick` prefers the finer
-    // claim, so a region is reachable exactly where the grid is not. It is also
-    // the state DEC-R7b-6 makes the default.
-    await page.locator("#layer-cells").uncheck();
+    // claim, so a region is reachable exactly where the grid is not.
+    //
+    // AND THE HIDING IS NOW WAITED FOR. On a per-test boot this `uncheck()` was
+    // a no-op — DEC-R7b-6 makes cells-off the default, so the box was already
+    // clear — and the click that follows was therefore never racing anything.
+    // On the file's shared page the baseline has the cells ON, so this is a real
+    // state change, and clicking before the grid has gone picks a cell instead
+    // of the slab underneath it. The test relied on a default it described as
+    // deliberate; now it establishes the state it needs.
+    await shared.locator("#layer-cells").uncheck();
+    await expect(shared.locator("#map path.affordance-cell")).toHaveCount(0);
 
-    const canvas = page.locator("#scene canvas");
+    const canvas = shared.locator("#scene canvas");
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("no canvas box");
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await shared.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 
-    const panel = page.locator("#details");
+    const panel = shared.locator("#details");
     await expect(panel).toBeVisible();
     // The SAME panel and the same mode a 2D click produces -- one selection, one
     // explanation, and the panel does not know which view produced it.
     await expect(panel.locator(".panel-stats")).toContainText("median");
   });
 
-  test("replaces a region selection when a cell is selected", async ({
-    page,
-  }) => {
+  test("replaces a region selection when a cell is selected", async () => {
     // The mutual-exclusivity rule, seen from the outside. There is one panel, so
     // there is one selection; a region panel left under a cell selection would
     // be a confidently wrong answer.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
 
-    const panel = page.locator("#details");
+    const panel = shared.locator("#details");
 
-    await page.locator("#layer-cells").uncheck();
-    const region = page.locator("#map .region-fill").first();
+    await shared.locator("#layer-cells").uncheck();
+    const region = shared.locator("#map .region-fill").first();
     await region.waitFor({ state: "visible" });
     await region.click({ force: true });
     await expect(panel.locator(".panel-stats")).toBeVisible();
 
-    await enableCellLayer(page); // async since round 10 stage B
-    const cell = page.locator("#map .affordance-cell").first();
+    await enableCellLayer(shared); // async since round 10 stage B
+    const cell = shared.locator("#map .affordance-cell").first();
     await cell.click({ force: true });
     await expect(panel).toBeVisible();
     await expect(panel.locator(".panel-stats")).toHaveCount(0);

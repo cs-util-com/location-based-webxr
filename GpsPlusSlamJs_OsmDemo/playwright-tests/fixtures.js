@@ -677,3 +677,94 @@ export async function enableCellLayer(page) {
   // locally.
   await waitForRefresh(page);
 }
+
+/**
+ * The UI state a shared-page spec file starts every test from.
+ *
+ * CAPTURED, NOT HARD-CODED. The category the demo opens on is chosen by
+ * `main.ts` from the rule table, not by the picker's DOM order — the suite has
+ * already been bitten once by assuming option 0 — so the baseline is read off
+ * the booted page instead of written down here, where it would be a second
+ * source of truth that drifts.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function captureUiBaseline(page) {
+  return {
+    category: await page.locator("#category").inputValue(),
+    cells: await page.locator("#layer-cells").isChecked(),
+    showBelow: await page.locator("#show-below").isChecked(),
+  };
+}
+
+/**
+ * Returns a shared page to its baseline, touching only what has MOVED.
+ *
+ * WHY A SHARED PAGE NEEDS THIS AT ALL (DEC-S5). One boot per subject file
+ * instead of one per test is the whole saving, and a reload would hand it
+ * straight back — a reload IS the boot. So state has to be undone in place.
+ *
+ * WHY `beforeEach` AND NOT PER-TEST TEARDOWN (DEC-S6). This runs even when the
+ * previous test FAILED, which is exactly when the page is dirtiest and when
+ * per-test cleanup is least likely to have run. One failing test must not
+ * cascade into unrelated ones.
+ *
+ * WHY EVERY STEP IS CONDITIONAL (DEC-S8). Two of these controls trigger a
+ * refetch: re-checking `cells` goes through `layersNeedingData`, and a category
+ * change re-runs the whole pipeline. Resetting unconditionally would cost a
+ * scoring cycle per test and give back the exact boot the shared page saves, so
+ * the common case — nothing moved — has to be a few cheap reads and no clicks.
+ *
+ * WHAT THIS DELIBERATELY CANNOT RESET, and why those tests keep their own page
+ * rather than being worked around here:
+ *
+ * - **A different network stub.** `stubNetwork(page, { overpassStatus: 400 })`
+ *   is installed at boot; a page stubbed to succeed cannot be talked into
+ *   failing afterwards.
+ * - **Cells OFF.** The in-progress test exists to watch the cell FETCH happen,
+ *   which cannot be observed on a page where the cells are already held.
+ * - **The geo-event marker.** There is no control that removes it — the button
+ *   text is rewritten to describe the event and the marker stays on the map —
+ *   so it would leak into any later test that counts map paths.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {{category: string}} baseline
+ */
+export async function resetUi(page, baseline) {
+  // The panel first: closing it also DESELECTS (the close button dispatches
+  // `cellSelected(undefined)`), so a later test's selection assertions start
+  // from nothing rather than from the previous test's cell.
+  if (await page.locator("#details").isVisible()) {
+    await page.locator("#details .panel-close").click();
+    await expect(page.locator("#details")).toBeHidden();
+  }
+
+  // Free: a presentation toggle that never refetches.
+  const showBelow = page.locator("#show-below");
+  if ((await showBelow.isChecked()) !== baseline.showBelow) {
+    await showBelow.setChecked(baseline.showBelow);
+  }
+
+  // THE BASELINE IS WHATEVER THE BOOT PRODUCED, not a state this helper
+  // imposes, and that is the correction the pilot bought. Forcing cells ON made
+  // the reset re-check a layer that the previous test had switched off — a
+  // refetch — only for the next test to switch it off again. That off/on/off
+  // churn is state no per-test boot ever goes through, and it broke a 3D pick
+  // that passed in isolation and failed after its predecessor. Restoring to the
+  // captured default means the common case is genuinely a no-op.
+  const cells = page.locator("#layer-cells");
+  if ((await cells.isChecked()) !== baseline.cells) {
+    await cells.setChecked(baseline.cells);
+    // Only a switch-ON refetches (`layersNeedingData`); switching off is a
+    // redraw and needs no wait.
+    if (baseline.cells) await waitForRefresh(page);
+  }
+
+  // The most expensive reset in the file: a category change re-runs the
+  // pipeline. Last, and only when it actually differs.
+  const category = page.locator("#category");
+  if ((await category.inputValue()) !== baseline.category) {
+    await category.selectOption(baseline.category);
+    await waitForRefresh(page);
+  }
+}
