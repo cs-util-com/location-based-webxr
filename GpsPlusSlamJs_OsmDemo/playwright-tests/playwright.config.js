@@ -74,20 +74,36 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // THREE, ON AN EIGHT-CORE MACHINE, AND THE HEADROOM IS AN ILLUSION. Raising this
-  // to 5 was measured: no wall-clock gain (4.8 min against a 4.6 min mean) and two
-  // grid tests failed that pass at 3.
+  // ONE, EVERYWHERE — and the parallel version is not slower, it is just noisier.
   //
   // Each worker is a headless Chromium doing software-rasterised WebGL, which
   // saturates the machine long before the worker count reaches the core count. The
   // demo reports its own terrain cost, and the same boot on the same fixture reads
   // `ground cpu 77.2 ms` at --workers=1 and `ground cpu 1659.6 ms` under 3-5 — a 21x
-  // inflation of identical work. That is also why the timeout above is 90 s.
+  // inflation of identical work. That is also why the timeout above is 180 s.
   //
   // So the suite is CONTENTION-bound, not work-bound: more workers buy queueing, not
-  // throughput, and the only lever left is removing work. Full findings in
-  // GpsPlusSlamJs_Docs/docs/2026-08-02-0455-osm-demo-e2e-suite-speed-findings.md.
-  workers: process.env.CI ? 1 : 3,
+  // throughput. That was measured on 2026-08-02 (66 tests) when 3 workers still
+  // bought 34% — 426 s serial against a ~280 s mean — and it has since crossed all
+  // the way over. Re-measured 2026-08-07 on the current 45-test suite:
+  //
+  //   --workers=1:  547, 549 s          (spread 2 s)
+  //   --workers=3:  499, 504, 517, 543, 574, 582 s   (spread 83 s)
+  //
+  // The means differ by ~2%, which is inside the noise of the parallel runs alone.
+  // So three workers buy nothing measurable and pay for it with a 40x wider spread
+  // and with contention flakes: the OPFS-cache quiescence flake fixed on
+  // 2026-08-07 only ever reproduced under full-suite parallel load, exactly as its
+  // own comment predicted. Serial is the same wall clock, reproducible, and it
+  // makes a red run mean something.
+  //
+  // Do NOT read this as "parallelism is bad here forever" — it is a statement
+  // about a suite whose every test boots a WebGL scene. Removing that work (see
+  // the findings docs) would make workers worth having again.
+  //
+  // Full findings: GpsPlusSlamJs_Docs/docs/2026-08-02-0455-osm-demo-e2e-suite-speed-findings.md
+  // and 2026-08-07-simplify-loop-findings.md (Area 1).
+  workers: 1,
   reporter: process.env.CI
     ? [["github"], ["json", { outputFile: "../test-results/results.json" }]]
     : [["list"], ["html", { open: "never" }]],
