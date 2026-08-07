@@ -1,12 +1,14 @@
 /**
  * The explain cycle: a selected cell in, an explanation out, staleness dropped.
  *
- * WHY IT IS A MODULE RATHER THAN A CLOSURE IN `main.ts`. It is the demo's THIRD
- * async action, and it arrived last, so it was the only one still inline. It has
- * the same two hazards as the other two — a late answer that no longer matches the
- * user's intent, and a rejection that has to reach the user — and neither was
- * covered by a test while it lived in the app shell, which cannot be unit-tested at
- * all. `refresh-cycle.ts` and `terrain-cycle.ts` are the established pattern.
+ * WHY IT IS A MODULE RATHER THAN A CLOSURE IN `main.ts`. It was the demo's THIRD
+ * async action and arrived last, so it was the only one still inline at the time.
+ * It has the same two hazards as the other two — a late answer that no longer
+ * matches the user's intent, and a rejection that has to reach the user — and
+ * neither was covered by a test while it lived in the app shell, which cannot be
+ * unit-tested at all. `refresh-cycle.ts` and `terrain-cycle.ts` were the
+ * established pattern; `geo-event-cycle.ts` was extracted later (W0) for exactly
+ * this reason, having been missed here because the geo-event did not exist yet.
  *
  * WHY IT NEEDS STALENESS CHECKS AT ALL. Explaining a cell is an RPC now, because
  * the explanation needs the merged features (28–68 MB) and the rule table, both of

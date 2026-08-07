@@ -31,8 +31,8 @@ import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { describeDrawCost } from "./draw-cost.js";
-import { describeGeoEvent } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
+import { createGeoEventCycle } from "./geo-event-cycle.js";
 import {
   DEFAULT_CELL_PRESET,
   cellPreset,
@@ -328,39 +328,10 @@ async function main(): Promise<void> {
    * primary interaction. It also makes WHEN it ran visible, which matters on a
    * diagnostic surface.
    *
-   * The in-progress state is not decoration — the operation can take seconds,
-   * and the root CLAUDE.md requires an async control to show one.
+   * The element is looked up here with the other controls; the behaviour is
+   * wired further down, once `refresh` exists — see `geo-event-cycle.ts`.
    */
   const geoEventButton = el<HTMLButtonElement>("geo-event");
-  geoEventButton.addEventListener("click", () => {
-    const view = selectOsmView(store.getState());
-    geoEventButton.disabled = true;
-    geoEventButton.textContent = "Finding…";
-    void worker
-      .call("geoEvent", {
-        position: view.position,
-        category: view.category,
-        now: Date.now(),
-      })
-      .then((event) => {
-        mapView.renderGeoEvent(event);
-        // The distance and direction are not decoration (F56): the winner is
-        // very often outside the viewport -- an event tile is ~900 m across
-        // and the demo opens at zoom 18 -- so without them a successful search
-        // looks exactly like nothing happening.
-        geoEventButton.textContent = describeGeoEvent(view.position, event);
-      })
-      .catch((error: unknown) => {
-        // Through the same channel every other failure uses, so a geo-event
-        // failure is as visible as a fetch failure rather than silent.
-        const message = error instanceof Error ? error.message : String(error);
-        store.dispatch(actions.fetchFailed("geo-event failed: " + message));
-        geoEventButton.textContent = "Next geo-event";
-      })
-      .finally(() => {
-        geoEventButton.disabled = false;
-      });
-  });
   const detailsPanel = new DetailsPanel({
     container: el("details"),
     onClose: () => store.dispatch(actions.cellSelected(undefined)),
@@ -506,6 +477,25 @@ async function main(): Promise<void> {
   showBelow.addEventListener("change", () => {
     store.dispatch(actions.showBelowThresholdChanged(showBelow.checked));
   });
+  /**
+   * The geo-event search, wired HERE rather than where the button is looked up,
+   * because it needs `refresh` — see `geo-event-cycle.ts` for why a successful
+   * search republishes at all.
+   */
+  const findGeoEvent = createGeoEventCycle({
+    store,
+    actions,
+    worker,
+    render: (event) => mapView.renderGeoEvent(event),
+    setLabel: (label) => {
+      geoEventButton.textContent = label;
+    },
+    setBusy: (busy) => {
+      geoEventButton.disabled = busy;
+    },
+    republish: () => refresh(),
+  });
+  geoEventButton.addEventListener("click", () => void findGeoEvent());
   // The switches report a whole next set; `toggleLayer` is the only thing that
   // knows how to build a valid one (see `osm-view-slice.ts` for why the action
   // replaces the set rather than patching one layer).

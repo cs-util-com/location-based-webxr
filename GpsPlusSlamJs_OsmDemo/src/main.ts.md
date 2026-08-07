@@ -16,6 +16,16 @@ None. Entry point only, loaded by `index.html`.
   failure kinds), `osm-store.ts` (shared state) and `heat-colours.ts`, all pure
   and tested. When the demo misbehaves, the question should be answerable
   without reading this file.
+- **Every async action is a `*-cycle.ts` module, and none of them is inline
+  here.** `refresh-cycle.ts`, `terrain-cycle.ts`, `explain-cycle.ts` and
+  `geo-event-cycle.ts`. This file cannot be unit-tested, so an action left as a
+  closure in it is an action with no test — which is what the geo-event was
+  until W0, and it had a busy state, a label, a failure path and a missing
+  republish, none of them covered. A **new async action belongs in a new cycle
+  module**, not here.
+- **A control's element may be looked up far from where its behaviour is
+  wired.** `geoEventButton` is fetched with the other controls but wired below
+  `refresh`, which it needs. The docstring at the lookup says where to look.
 - **The scene anchor is advanced ONCE per position change, at the top of the
   position subscriber, before anything reads it.** Three consumers of the frame
   hang off that subscriber — the camera pivot, the terrain load and the refresh —
