@@ -38,8 +38,38 @@ when the user does.
   lat/lng anisotropy needs no correction — see
   [`point-in-ring.ts.md`](../spatial/point-in-ring.ts.md)).
 - `ObstacleIndex` — `obstaclesIn(cell)`, `cells`.
-- `buildObstacleIndex(features, resolution?) => ObstacleIndex`
+- `buildObstacleIndex(features, resolution?) => ObstacleIndex` — **barriers and
+  buildings**. Barriers become `thicknessM`-wide bands along their centrelines;
+  buildings follow `solidBuildingFootprints`' parts-else-outline rule, which is
+  the same selection [`buildings.ts`](../mesh/buildings.ts.md) extrudes.
 - `obstacleLevelsAt(index, cell, groundAt) => number[]`
+- `crossesObstacle(index, fromCell, toCell) => boolean` — **the predicate that
+  makes a wall block.**
+
+## What actually blocks, and why it is a step predicate
+
+`obstacleLevelsAt` only ever ADDS a standable level. On its own that stops
+nothing: a walled cell offers the ground and the wall top, and an agent walks
+along the ground straight through the wall. Blocking is `crossesObstacle`, and
+it is a property of the **step**, not of the cell:
+
+- A res-13 cell is ~8 m across and a wall ~0.5 m thick, so a wall contains a
+  cell's centre roughly one time in sixteen. Any rule of the form "you may not
+  stand in a walled cell" is transparent to pathfinding the other fifteen.
+- It tests the segment between the two **cell centres** against every obstacle
+  ring, using [`segmentCrossesRing`](../spatial/segment-crossing.ts.md).
+- Obstacles are gathered from the whole `gridDisk(fromCell, 1)`, not from the
+  two endpoints: a thin wall's footprint covers the cells the BAND passes
+  through, which can be neither endpoint. Asking only the endpoints missed
+  exactly that, silently — the wall indexed correctly and blocked nothing.
+- **Defined for neighbouring cells**, which is all the search asks: every
+  candidate `columnSpace` generates comes from `gridDisk(state.cell, 1)`.
+- A step within one cell is never blocked — moving between two LEVELS of one
+  cell crosses no boundary, and it is the one move a column model has that a 2D
+  model does not.
+
+Wire it in through `ColumnSpaceOptions.canCross`; the default admits everything,
+which is design rung 5.3 where agents deliberately do walk up walls.
 
 ## Invariants
 

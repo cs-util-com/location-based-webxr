@@ -34,6 +34,7 @@ import type { EnuFrame, EnuPoint } from "./enu.js";
 import { ringToEnu } from "./enu.js";
 import { isBelowSurface } from "../model/below-surface.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
+import type { PlanarPoint } from "../spatial/point-in-ring.js";
 import { isTallStructure, tallStructureHeightM } from "./tall-structures.js";
 import {
   isBuilding,
@@ -218,6 +219,148 @@ interface Footprint {
 }
 
 /**
+ * A footprint in ANY planar frame — ENU metres, or `x = lng, y = lat`.
+ *
+ * The outline/part assignment below is pure planar geometry: containment by
+ * crossing parity is affine-invariant, and the ENU map scales longitude by a
+ * constant `cos(lat)` across a frame, so the AREA ORDER a smallest-containing
+ * rule depends on is preserved too. That is what lets `nav/obstacles.ts` apply
+ * the identical rule to lat/lng rings without an ENU frame ever entering it.
+ */
+interface PlanarFootprint {
+  readonly feature: OsmFeature;
+  readonly rings: readonly (readonly PlanarPoint[])[];
+}
+
+/** A building volume as the obstacle index sees it: lat/lng, no frame. */
+export interface SolidFootprint {
+  readonly feature: OsmFeature;
+  /** The outline this is a part of, when it is one. */
+  readonly parentFeature?: OsmFeatureKey;
+  /** Outer ring first, then holes, as `x = lng, y = lat`. */
+  readonly rings: readonly (readonly PlanarPoint[])[];
+}
+
+/**
+ * The building volumes that are SOLID, in lat/lng — parts where an outline has
+ * them, the outline itself where it does not.
+ *
+ * **The same rule `buildBuildings` extrudes, and deliberately the same code**
+ * for the part that is subtle: `assignPartsToOutlines`, with its
+ * smallest-containing choice and its key tie-break. Two implementations of that
+ * would drift, and the drift would show as an agent walking through a building
+ * that is plainly drawn on screen.
+ *
+ * **NO AREA CAP, and that is a measured deviation from DEC-R11-9.** The decision
+ * asked for a footprint-area threshold above which an outline stops being
+ * solid, to stop a castle-sized outline sealing its own courtyard, and asked
+ * for the value to be measured against `testdata/sites/` rather than guessed.
+ * The measurement says there is no such threshold to find:
+ *
+ * - **The hazard is not in the corpus.** Heidelberg's defensive castle
+ *   (`way/254154168`, `historic=castle`, `castle_type=defensive`) carries **no
+ *   `building` tag at all**, so it never becomes a volume under any rule. The
+ *   way the design cites as `historic=castle` + `building=university`
+ *   (`way/32200575`) is **533 m²** — an ordinary building, not an enclosure.
+ * - **A cap would break real buildings.** The largest outlines the parts rule
+ *   leaves standing are Cologne's train station at ~14 000 m², a Berlin office
+ *   block at ~10 200 m² and Tokyo's Keio department store at ~7 200 m². Any cap
+ *   low enough to catch a bailey makes all three walk-through, which is a
+ *   louder bug than the one it prevents.
+ *
+ * `site-building-obstacles.test.ts` pins both facts, so a corpus refresh that
+ * introduces a real enclosure fails rather than passes quietly.
+ *
+ * **A volume that starts above the ground does not obstruct it.** `min_height`
+ * is what marks an arch or a canopy as passable underneath, and walking under a
+ * gateway is the exact move the demo needs at a castle.
+ */
+export function solidBuildingFootprints(
+  features: Iterable<OsmFeature>,
+): SolidFootprint[] {
+  const { outlines, parts } = collectPlanarFootprints(features);
+  const { claimed, partsByOutline } = assignPartsToOutlines(outlines, parts);
+  const solid: SolidFootprint[] = [];
+
+  /**
+   * PASSABLE UNDERNEATH. `min_height > 0` is the S3DB form for a gateway or a
+   * canopy, and obstructing the ground under one seals the route through it —
+   * the design names walking under a gate as the case that matters.
+   *
+   * **APPLIED HERE, AFTER THE ASSIGNMENT, AND THAT ORDER IS LOAD-BEARING.**
+   * Filtering floating parts out before `assignPartsToOutlines` changes which
+   * outlines get CLAIMED: a building whose only parts float would have nothing
+   * left to claim it, so its whole outline came back solid while the extruder
+   * drew it as a few floating slabs. The corpus test caught it at Cologne and
+   * Berlin; nothing in a hand-built fixture would have.
+   */
+  const standsOnGround = (feature: OsmFeature): boolean =>
+    resolveHeights(feature.tags).minHeightM <= 0;
+
+  for (const outline of outlines) {
+    // An outline WITH parts is not solid itself — the parts replace it, which
+    // is what keeps a courtyard between them open.
+    if (claimed.has(featureKey(outline.feature))) continue;
+    if (!standsOnGround(outline.feature)) continue;
+    solid.push({ feature: outline.feature, rings: outline.rings });
+  }
+  for (const [outlineKey, list] of partsByOutline) {
+    for (const part of list) {
+      if (!standsOnGround(part.feature)) continue;
+      solid.push({
+        feature: part.feature,
+        parentFeature: outlineKey,
+        rings: part.rings,
+      });
+    }
+  }
+  // A part with no containing outline is still a real volume — a tile boundary
+  // can deliver it without its parent, and dropping it would erase a building.
+  const placed = new Set(
+    [...partsByOutline.values()].flat().map((part) => part.feature),
+  );
+  for (const part of parts) {
+    if (placed.has(part.feature)) continue;
+    if (!standsOnGround(part.feature)) continue;
+    solid.push({ feature: part.feature, rings: part.rings });
+  }
+
+  return solid;
+}
+
+/** Splits the buildable features into outlines and parts, in lat/lng. */
+function collectPlanarFootprints(features: Iterable<OsmFeature>): {
+  outlines: PlanarFootprint[];
+  parts: PlanarFootprint[];
+} {
+  const outlines: PlanarFootprint[] = [];
+  const parts: PlanarFootprint[] = [];
+
+  for (const feature of features) {
+    // The same below-surface predicate the scorer and the extruder use: one
+    // definition, or the disagreement moves rather than going away.
+    if (isBelowSurface(feature)) continue;
+    const part = isBuildingPart(feature);
+    if (!part && !isBuilding(feature)) continue;
+    const rings = toPlanarRings(feature);
+    if (rings === undefined) continue;
+    (part ? parts : outlines).push({ feature, rings });
+  }
+  return { outlines, parts };
+}
+
+/** A feature's rings as `x = lng, y = lat`, or `undefined` when unusable. */
+function toPlanarRings(
+  feature: OsmFeature,
+): readonly (readonly PlanarPoint[])[] | undefined {
+  const geometry = toGeometry(feature);
+  if (!geometry.ok) return undefined;
+  const rings = ringsOf(geometry.geometry);
+  if (rings.length === 0) return undefined;
+  return rings.map((ring) => ring.map((p) => ({ x: p.lng, y: p.lat })));
+}
+
+/**
  * Volumes for tall structures that are not tagged as buildings (F34, §5).
  *
  * ITS OWN FUNCTION rather than a fourth loop inside `buildBuildings`, which the
@@ -323,21 +466,26 @@ function collectFootprints(
  * faster than the code this round started from. Two float comparisons discard
  * the overwhelming majority of (part, outline) pairs on a city tile.
  */
-function assignPartsToOutlines(
-  outlines: readonly Footprint[],
-  parts: readonly Footprint[],
+function assignPartsToOutlines<F extends PlanarFootprint>(
+  outlines: readonly F[],
+  parts: readonly F[],
 ): {
   claimed: Set<OsmFeatureKey>;
-  partsByOutline: Map<OsmFeatureKey, Footprint[]>;
+  partsByOutline: Map<OsmFeatureKey, F[]>;
 } {
   const claimed = new Set<OsmFeatureKey>();
-  const partsByOutline = new Map<OsmFeatureKey, Footprint[]>();
+  const partsByOutline = new Map<OsmFeatureKey, F[]>();
+
+  // GENERIC OVER THE FOOTPRINT, so one implementation of this rule serves both
+  // frames: `buildBuildings` passes ENU footprints and gets ENU ones back,
+  // `solidBuildingFootprints` passes lat/lng and gets lat/lng back. The rule
+  // itself is affine-invariant, which is why that is sound rather than merely
+  // convenient — see `PlanarFootprint`.
 
   // Once per outline, not once per (part, outline) pair.
   const indexed = outlines.map((outline) => {
     const ring = outline.rings[0] ?? [];
     return {
-      outline,
       ring,
       area: ringArea(ring),
       bounds: ringBounds(ring),
@@ -360,7 +508,7 @@ function assignPartsToOutlines(
 /** The key of the smallest indexed outline containing `point`, ties on key. */
 function smallestContaining(
   indexed: readonly IndexedOutline[],
-  point: EnuPoint,
+  point: PlanarPoint,
 ): OsmFeatureKey | undefined {
   let bestKey: OsmFeatureKey | undefined;
   let bestArea = Infinity;
@@ -384,7 +532,7 @@ function smallestContaining(
   return bestKey;
 }
 
-function withinBounds(bounds: RingBounds, point: EnuPoint): boolean {
+function withinBounds(bounds: RingBounds, point: PlanarPoint): boolean {
   return (
     point.x >= bounds.minX &&
     point.x <= bounds.maxX &&
@@ -401,15 +549,14 @@ interface RingBounds {
 }
 
 interface IndexedOutline {
-  readonly outline: Footprint;
-  readonly ring: readonly EnuPoint[];
+  readonly ring: readonly PlanarPoint[];
   readonly area: number;
   readonly bounds: RingBounds;
   readonly key: OsmFeatureKey;
 }
 
 /** Axis-aligned bounds of a ring, for rejecting a point cheaply. */
-function ringBounds(ring: readonly EnuPoint[]): RingBounds {
+function ringBounds(ring: readonly PlanarPoint[]): RingBounds {
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -424,7 +571,7 @@ function ringBounds(ring: readonly EnuPoint[]): RingBounds {
 }
 
 /** Absolute shoelace area of a ring, in square metres of the ENU frame. */
-function ringArea(ring: readonly EnuPoint[]): number {
+function ringArea(ring: readonly PlanarPoint[]): number {
   if (ring.length < 3) return 0;
   let twice = 0;
   for (let i = 0; i < ring.length; i += 1) {
@@ -600,7 +747,7 @@ function ringsOf(geometry: OsmGeometry): readonly (readonly LatLng[])[] {
 }
 
 /** A point guaranteed to lie inside a simple ring, for containment tests. */
-function representativePoint(ring: readonly EnuPoint[]): EnuPoint {
+function representativePoint(ring: readonly PlanarPoint[]): PlanarPoint {
   if (ring.length === 0) return { x: 0, y: 0 };
   let x = 0;
   let y = 0;

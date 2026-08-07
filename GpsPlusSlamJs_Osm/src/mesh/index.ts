@@ -54,8 +54,12 @@ export type { ExtrudedBuilding } from "./extrude.js";
 export type { RoofMesh, RoofOptions } from "./roof.js";
 export { buildRoof } from "./roof.js";
 
-export type { BuildBuildingsOptions, BuildingVolume } from "./buildings.js";
-export { buildBuildings } from "./buildings.js";
+export type {
+  BuildBuildingsOptions,
+  BuildingVolume,
+  SolidFootprint,
+} from "./buildings.js";
+export { buildBuildings, solidBuildingFootprints } from "./buildings.js";
 
 export type { Rgb } from "./feature-colours.js";
 export {

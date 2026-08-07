@@ -54,6 +54,21 @@ export interface ColumnSpaceOptions {
   levelsAt: (cell: string) => readonly number[];
   /** The climbable height change; defaults to {@link STEP_THRESHOLD_M}. */
   stepThresholdM?: number;
+  /**
+   * Whether the agent may pass between two cells at all, ignoring height.
+   *
+   * **This is what makes a wall block laterally**, and it is separate from
+   * `levelsAt` on purpose: levels answer "where can I stand", and no answer to
+   * that question can stop a step at this resolution. A res-13 cell is ~8 m
+   * across and a wall ~0.5 m thick, so a wall almost never contains a cell's
+   * centre — an agent simply walked along the ground through it.
+   * `crossesObstacle` in `obstacles.ts` is the intended implementation.
+   *
+   * Defaults to admitting every step, which is design rung 5.3: agents wander
+   * over free `gridDisk` adjacency and walk up the Tower walls, and that rung's
+   * whole point is that they do.
+   */
+  canCross?: (fromCell: string, toCell: string) => boolean;
 }
 
 /**
@@ -66,6 +81,7 @@ export interface ColumnSpaceOptions {
  */
 export function columnSpace(options: ColumnSpaceOptions): StateSpace<Column> {
   const stepThresholdM = options.stepThresholdM ?? STEP_THRESHOLD_M;
+  const canCross = options.canCross ?? (() => true);
 
   return {
     key: columnKey,
@@ -87,7 +103,17 @@ export function columnSpace(options: ColumnSpaceOptions): StateSpace<Column> {
       return out;
     },
     canEnter(from: Column, to: Column): boolean {
-      return columnsAdjacent(from, to, stepThresholdM);
+      if (!columnsAdjacent(from, to, stepThresholdM)) return false;
+      // ORDER MATTERS FOR COST, not for the answer: `columnsAdjacent` is
+      // arithmetic and `canCross` walks geometry, so the cheap test rejects the
+      // overwhelming majority of candidate pairs first.
+      //
+      // A MOVE WITHIN ONE CELL IS NEVER BLOCKED — stepping up onto a low wall
+      // where it is low enough crosses no boundary between cells, and asking
+      // the predicate about a cell and itself would refuse it whenever the
+      // wall's own footprint covers that cell.
+      if (from.cell === to.cell) return true;
+      return canCross(from.cell, to.cell);
     },
   };
 }

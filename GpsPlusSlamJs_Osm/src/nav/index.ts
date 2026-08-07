@@ -16,7 +16,11 @@ export type { ColumnSpaceOptions } from "./column-space.js";
 export { columnSpace, columnKey } from "./column-space.js";
 
 export type { Obstacle, ObstacleIndex } from "./obstacles.js";
-export { buildObstacleIndex, obstacleLevelsAt } from "./obstacles.js";
+export {
+  buildObstacleIndex,
+  crossesObstacle,
+  obstacleLevelsAt,
+} from "./obstacles.js";
 
 export type { PathOptions } from "./path.js";
 export { findPath, reachableFrom } from "./path.js";

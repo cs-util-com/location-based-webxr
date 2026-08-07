@@ -7,6 +7,24 @@ OSM features to building volumes, honouring `building:part`.
 ## Public API
 
 - `buildBuildings(features, { frame, groundHeightM? }): BuildingVolume[]`
+- `solidBuildingFootprints(features): SolidFootprint[]` — the same
+  parts-else-outline selection, **in lat/lng and with no frame**, for
+  [`nav/obstacles.ts`](../nav/obstacles.ts.md). Returns `{ feature,
+  parentFeature?, rings }` with rings as `x = lng, y = lat`.
+  - **Shares `assignPartsToOutlines` rather than repeating it.** That function
+    is generic over the footprint type because the rule is affine-invariant:
+    crossing parity does not care about the frame, and the ENU map scales
+    longitude by a constant `cos(lat)`, so the AREA ORDER a smallest-containing
+    rule depends on survives too. Two implementations would drift, and the drift
+    shows as an agent walking through a building that is plainly on screen.
+  - **Skips volumes with `min_height > 0`** — an arch or a canopy is passable
+    underneath, and sealing the ground under one closes the route through it.
+    **The skip happens AFTER the assignment, and that order is load-bearing:**
+    filtering floating parts first changes which outlines get claimed, so a
+    building whose only parts float came back solid as a whole outline while the
+    extruder drew it as floating slabs. Caught by the corpus test at Cologne and
+    Berlin; no hand-built fixture would have.
+  - **No area cap** — a measured deviation from DEC-R11-9. See below.
 - `interface BuildingVolume` — `feature`, `parentFeature?`, `heights`, `mesh`,
   `roofIsApproximate`
   - **`roofIsApproximate` is the real flag from `buildRoof`, not a proxy.**
@@ -112,6 +130,29 @@ OSM features to building volumes, honouring `building:part`.
   all of them under one set of heights would be inventing buildings.
 - Non-buildings are ignored; a feature whose geometry cannot be built is skipped
   rather than throwing, matching the rest of the package.
+
+## Why there is no area cap on outlines
+
+DEC-R11-9 asked for a footprint-area threshold above which a `building=*`
+outline stops counting as solid — to stop a castle-sized outline sealing its own
+courtyard — and deliberately left the value to be **measured against
+`testdata/sites/` rather than guessed**. The measurement says no such threshold
+exists, on two counts:
+
+- **The hazard is not in the corpus.** Heidelberg's defensive castle
+  (`way/254154168`, `historic=castle`, `castle_type=defensive`) carries **no
+  `building` tag at all**, so it never becomes a volume under any rule. The way
+  the design cites as the trap — `historic=castle` also tagged
+  `building=university` (`way/32200575`) — is **533 m²**: a wing, not a bailey.
+- **A cap would break real buildings.** The largest outlines the parts rule
+  leaves standing are Cologne's train station (~14 000 m²), a Berlin office
+  block (~10 200 m²) and Tokyo's Keio department store (~7 200 m²). Any cap low
+  enough to catch an enclosure makes all three walk-through, which is a louder
+  bug than the one it prevents.
+
+`testdata/sites/site-building-obstacles.test.ts` pins both facts, so a corpus
+refresh that introduces a real enclosure fails rather than inheriting this
+answer quietly.
 
 ## Examples
 

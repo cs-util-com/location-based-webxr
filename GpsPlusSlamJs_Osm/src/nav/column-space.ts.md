@@ -21,8 +21,25 @@ single-valued field — just with a longer key.
 
 ## Public API
 
-- `columnSpace({ levelsAt, stepThresholdM? }) => StateSpace<Column>`
+- `columnSpace({ levelsAt, stepThresholdM?, canCross? }) => StateSpace<Column>`
 - `columnKey(column) => string`
+
+### `canCross(fromCell, toCell) => boolean`
+
+Whether the agent may pass between two cells **at all, ignoring height**. This
+is what makes a wall block laterally, and it is separate from `levelsAt` on
+purpose: no answer to "where can I stand" can stop a step at this resolution,
+because a res-13 cell is ~8 m across and a wall ~0.5 m thick.
+`crossesObstacle` in [`obstacles.ts`](./obstacles.ts.md) is the intended
+implementation.
+
+- Defaults to admitting every step — design rung 5.3, where agents wander freely
+  and walk up the Tower walls, which is that rung's whole point.
+- Checked **after** `columnsAdjacent`, so the cheap arithmetic rejects most
+  candidate pairs before any geometry is walked.
+- **Never consulted for a move within one cell.** Stepping between two levels of
+  the same cell crosses no boundary, and asking the predicate about a cell and
+  itself would refuse it wherever the wall's own footprint covers that cell.
 
 ### `levelsAt(cell) => readonly number[]`
 

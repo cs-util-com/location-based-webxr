@@ -10,6 +10,7 @@ import {
 } from "../../mesh/barrier-volumes.js";
 import { isSolidBarrier } from "../../mesh/barriers.js";
 import { buildObstacleIndex } from "../../nav/obstacles.js";
+import { featureKey } from "../../model/osm-feature.js";
 import type { OsmFeature } from "../../model/osm-feature.js";
 
 /**
@@ -54,10 +55,18 @@ function barriersFor(site: CorpusSite): {
   const parsed = parseOverpassJson(extract.payload);
   const features = [...parsed.features];
   const index = buildObstacleIndex(features);
+  // SCOPED TO BARRIERS. The index holds buildings too since they became
+  // obstacles, and this file is about the barrier half — comparing the whole
+  // index against the barrier volumes would fail for a reason that is not a
+  // defect. `site-building-obstacles.test.ts` covers the other half.
+  const barrierKeys = new Set(
+    features.filter((f) => isSolidBarrier(f)).map((f) => featureKey(f)),
+  );
   const indexed = new Set<string>();
   for (const cell of index.cells) {
-    for (const obstacle of index.obstaclesIn(cell))
-      indexed.add(obstacle.feature);
+    for (const obstacle of index.obstaclesIn(cell)) {
+      if (barrierKeys.has(obstacle.feature)) indexed.add(obstacle.feature);
+    }
   }
   return {
     features,

@@ -43,14 +43,19 @@ import {
   type OsmFeature,
   type OsmFeatureKey,
 } from "../model/osm-feature.js";
+import { cellToLatLng, gridDisk } from "h3-js";
+
 import { barrierFootprints } from "../mesh/barrier-shape.js";
 import {
   barrierCentrelines,
   isSolidBarrier,
   resolveBarrier,
 } from "../mesh/barriers.js";
+import { solidBuildingFootprints } from "../mesh/buildings.js";
+import { resolveHeights } from "../mesh/building-heights.js";
 import { enuFrameAt } from "../mesh/enu.js";
 import { coverCells } from "../spatial/cell-coverage.js";
+import { segmentCrossesRing } from "../spatial/segment-crossing.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 import type { PlanarPoint } from "../spatial/point-in-ring.js";
 
@@ -91,18 +96,105 @@ function barrierLines(feature: OsmFeature): readonly PlanarPoint[][] {
 }
 
 /**
- * Builds an index over the solid barriers in `features`.
+ * Builds an index over the solid barriers AND buildings in `features`.
  *
- * Features that are not solid barriers, and barriers whose geometry cannot make
- * a footprint, are skipped — a one-node way and an empty way are both ordinary
+ * Features that are neither, and barriers whose geometry cannot make a
+ * footprint, are skipped — a one-node way and an empty way are both ordinary
  * Overpass output.
+ *
+ * **Buildings follow the same parts-else-outline rule the extruder draws**
+ * (`solidBuildingFootprints`), so what blocks an agent and what appears on
+ * screen are the same set of volumes.
  */
 export function buildObstacleIndex(
   features: Iterable<OsmFeature>,
   resolution: number = AFFORDANCE_RES,
 ): ObstacleIndex {
   const byCell = new Map<string, Obstacle[]>();
+  const all = [...features];
 
+  addBarriers(all, resolution, byCell);
+  addBuildings(all, resolution, byCell);
+
+  return {
+    obstaclesIn: (cell) => byCell.get(cell) ?? [],
+    cells: new Set(byCell.keys()),
+  };
+}
+
+/** Indexes `obstacle` under every cell its rings cover. */
+function indexUnderCells(
+  obstacle: Obstacle,
+  resolution: number,
+  byCell: Map<string, Obstacle[]>,
+): void {
+  // THE FEATURE'S CELLS COLLECTED ONCE, then appended once.
+  //
+  // WHAT THIS REMOVES IS THE RESCAN, not the h3 calls — an earlier comment
+  // claimed the latter and was wrong (#260). `coverCells` still runs once per
+  // ring, and batching cannot change that: it runs `addPolygon` once per
+  // POLYGON (`cell-coverage.ts`), and in the batched alternative each quad
+  // would be its own polygon — so the per-quad cost is inherent to per-segment
+  // footprints either way. Stated literally because the comment this replaces
+  // was itself wrong about this same function (#263).
+  //
+  // What went away is the `existing.includes(obstacle)` scan of every cell's
+  // list, once per ring — and the union makes "one obstacle per cell"
+  // structural rather than something a linear search has to enforce.
+  const cells = new Set<string>();
+  for (const ring of obstacle.rings) {
+    const coverage = coverCells(
+      { kind: "polygon", rings: [ring.map((v) => ({ lat: v.y, lng: v.x }))] },
+      resolution,
+    );
+    for (const covered of coverage) cells.add(covered.cell);
+  }
+
+  for (const cell of cells) {
+    const existing = byCell.get(cell);
+    if (existing === undefined) byCell.set(cell, [obstacle]);
+    else existing.push(obstacle);
+  }
+}
+
+/**
+ * Buildings, under the same rule the extruder draws.
+ *
+ * `solidBuildingFootprints` owns the parts-else-outline choice and the
+ * `min_height` passable-underneath skip, so a gateway stays walkable and a
+ * courtyard between parts stays open. Its rings are already lat/lng, which is
+ * what keeps this module free of ENU.
+ */
+function addBuildings(
+  features: readonly OsmFeature[],
+  resolution: number,
+  byCell: Map<string, Obstacle[]>,
+): void {
+  for (const solid of solidBuildingFootprints(features)) {
+    const { totalHeightM } = resolveHeights(solid.feature.tags);
+    if (!Number.isFinite(totalHeightM) || totalHeightM <= 0) continue;
+
+    indexUnderCells(
+      {
+        feature: featureKey(solid.feature),
+        heightM: totalHeightM,
+        // EVERY RING, holes included. A courtyard's inner ring is a boundary an
+        // agent crosses to get in, so dropping it would let one step from the
+        // street into the yard without passing a wall.
+        rings: solid.rings,
+      },
+      resolution,
+      byCell,
+    );
+  }
+}
+
+/** Solid barriers, as `thicknessM`-wide bands along their centrelines. */
+function addBarriers(
+  features: readonly OsmFeature[],
+  resolution: number,
+  byCell: Map<string, Obstacle[]>,
+): void {
   for (const feature of features) {
     if (!isSolidBarrier(feature)) continue;
 
@@ -130,46 +222,12 @@ export function buildObstacleIndex(
     });
     if (rings.length === 0) continue;
 
-    const obstacle: Obstacle = {
-      feature: featureKey(feature),
-      heightM,
-      rings,
-    };
-
-    // THE FEATURE'S CELLS COLLECTED ONCE, then appended once.
-    //
-    // WHAT THIS REMOVES IS THE RESCAN, not the h3 calls — an earlier comment
-    // here claimed the latter and was wrong (#260). `coverCells` still runs
-    // once per ring, and batching cannot change that: `coverCells` runs
-    // `addPolygon` once per POLYGON (`cell-coverage.ts`), and in the batched
-    // alternative each quad would be its own polygon — so the per-quad cost is
-    // inherent to per-segment footprints either way. Stated literally because
-    // the comment this replaces was itself wrong about this same function
-    // (#263).
-    //
-    // What went away is the `existing.includes(obstacle)` scan of every cell's
-    // list, once per ring — and the union makes "one obstacle per cell"
-    // structural rather than something a linear search has to enforce.
-    const cells = new Set<string>();
-    for (const ring of rings) {
-      const coverage = coverCells(
-        { kind: "polygon", rings: [ring.map((v) => ({ lat: v.y, lng: v.x }))] },
-        resolution,
-      );
-      for (const covered of coverage) cells.add(covered.cell);
-    }
-
-    for (const cell of cells) {
-      const existing = byCell.get(cell);
-      if (existing === undefined) byCell.set(cell, [obstacle]);
-      else existing.push(obstacle);
-    }
+    indexUnderCells(
+      { feature: featureKey(feature), heightM, rings },
+      resolution,
+      byCell,
+    );
   }
-
-  return {
-    obstaclesIn: (cell) => byCell.get(cell) ?? [],
-    cells: new Set(byCell.keys()),
-  };
 }
 
 /**
@@ -207,4 +265,63 @@ export function obstacleLevelsAt(
   // with the order Overpass happened to return features would be
   // unreproducible.
   return [...levels].sort((a, b) => a - b);
+}
+
+/**
+ * Whether a step from `fromCell` to `toCell` passes through solid geometry.
+ *
+ * **THIS IS WHAT MAKES A WALL BLOCK, and until it existed nothing did.**
+ * `obstacleLevelsAt` only ever ADDS a standable level, so a walled cell offered
+ * the ground and the wall top, and an agent walked along the ground straight
+ * through the wall — `obstacles.test.ts` said as much in its header and called
+ * this the next slice.
+ *
+ * **Blocking is a property of the STEP, not of the cell**, which is also how the
+ * design phrases it ("does the segment between two points cross a wall?"). The
+ * alternative — refusing to stand in a cell whose centre falls inside an
+ * obstacle — cannot work at this resolution: a res-13 cell is ~8 m across and a
+ * wall is ~0.5 m thick, so a wall contains a cell centre roughly one time in
+ * sixteen and would be transparent to pathfinding the rest of the time.
+ *
+ * The segment runs between the two CELL CENTRES, which is the position an agent
+ * in a cell is taken to occupy everywhere else in this module.
+ *
+ * **Obstacles are gathered from the whole `gridDisk(fromCell, 1)`, not from the
+ * two cells.** A thin wall's footprint covers the cells the BAND passes
+ * through, which need not be either endpoint: two neighbouring cells either
+ * side of a wall can both be clear while the wall sits in the sliver between
+ * their centres. Asking only the endpoints missed exactly that, and the miss
+ * was silent — the wall indexed correctly and blocked nothing.
+ *
+ * **Defined for NEIGHBOURING cells**, which is all the search ever asks: every
+ * candidate `columnSpace` generates comes from `gridDisk(state.cell, 1)`. For
+ * cells further apart the segment can leave the disk and the answer is a lower
+ * bound rather than a guarantee.
+ */
+export function crossesObstacle(
+  index: ObstacleIndex,
+  fromCell: string,
+  toCell: string,
+): boolean {
+  if (fromCell === toCell) return false;
+
+  const [fromLat, fromLng] = cellToLatLng(fromCell);
+  const [toLat, toLng] = cellToLatLng(toCell);
+  const a = { x: fromLng, y: fromLat };
+  const b = { x: toLng, y: toLat };
+
+  // DEDUPED BY IDENTITY, not by key: one obstacle routinely covers several of
+  // these cells, and testing its rings again is pure cost on the search's
+  // hottest path.
+  const seen = new Set<Obstacle>();
+  for (const cell of [...gridDisk(fromCell, 1), toCell]) {
+    for (const obstacle of index.obstaclesIn(cell)) {
+      if (seen.has(obstacle)) continue;
+      seen.add(obstacle);
+      for (const ring of obstacle.rings) {
+        if (segmentCrossesRing(a, b, ring)) return true;
+      }
+    }
+  }
+  return false;
 }

@@ -51,3 +51,4 @@ export {
 
 export type { PlanarPoint } from "./point-in-ring.js";
 export { containsPoint } from "./point-in-ring.js";
+export { segmentCrossesRing, segmentsIntersect } from "./segment-crossing.js";

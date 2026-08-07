@@ -17,21 +17,27 @@
  * cannot walk beside a wall it is standing inside — so the ground level is
  * always offered alongside the wall top.
  *
- * **NOTHING HERE BLOCKS ANYTHING YET.** `Obstacle.rings` is built and stored,
- * but no code in this slice asks `containsPoint` about it: `obstacleLevelsAt`
- * only ADDS a level. Wired into `columnSpace` as it stands, an agent gets the
- * wall top as an extra state and the ground beneath the wall stays fully
- * traversable. An earlier draft of this comment claimed the footprint was
- * blocked, which review on #259 correctly called out as describing behaviour
- * that does not exist. The footprint test is the next slice.
+ * **THINGS BLOCK NOW, and the last section is where.** This header used to say
+ * the opposite, correctly: `obstacleLevelsAt` only ADDS a level, so an agent
+ * got the wall top as an extra state and walked along the ground straight
+ * through the wall. `crossesObstacle` is the slice that header named, and the
+ * shape of the fix is worth keeping — **blocking had to become a property of
+ * the STEP rather than of the cell.** At res-13 a cell is ~8 m across and a
+ * wall ~0.5 m thick, so a wall contains a cell's centre about one time in
+ * sixteen; any rule of the form "you may not stand in a walled cell" is
+ * transparent to pathfinding the other fifteen.
  *
  * @see obstacles.ts.md
  */
 
 import { describe, expect, it } from "vitest";
-import { latLngToCell } from "h3-js";
+import { cellToLatLng, gridDisk, latLngToCell } from "h3-js";
 
-import { buildObstacleIndex, obstacleLevelsAt } from "./obstacles.js";
+import {
+  buildObstacleIndex,
+  crossesObstacle,
+  obstacleLevelsAt,
+} from "./obstacles.js";
 import { DEFAULT_BARRIER_HEIGHT_M } from "../mesh/barriers.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 import type { OsmFeature, OsmWay } from "../model/osm-feature.js";
@@ -333,5 +339,187 @@ describe("obstacleLevelsAt", () => {
     expect(
       obstacleLevelsAt(index, cellAt(HOME.lat, HOME.lng), () => NaN),
     ).toEqual([]);
+  });
+});
+
+describe("crossesObstacle — what finally makes a wall block", () => {
+  /**
+   * WHY THIS BLOCK MATTERS MOST OF ALL. Everything above it indexes and
+   * reports; none of it stops anything. The header of this file said so
+   * explicitly — "an agent gets the wall top as an extra state and the ground
+   * beneath the wall stays fully traversable" — and this is the slice it named
+   * as the fix.
+   *
+   * The reason it has to be a step predicate rather than a standability rule is
+   * arithmetic: a res-13 cell is ~8 m across and a wall is ~0.5 m thick, so a
+   * wall contains a cell's centre about one time in sixteen. Anything keyed on
+   * "is this cell walled" is transparent to pathfinding the other fifteen.
+   */
+
+  /** Two cells either side of a long north-south wall at HOME's longitude. */
+  const northSouthWall: OsmFeature = {
+    type: "way",
+    id: 20,
+    geometry: [
+      { lat: HOME.lat - STEP * 200, lng: HOME.lng },
+      { lat: HOME.lat + STEP * 200, lng: HOME.lng },
+    ],
+    tags: { barrier: "wall" },
+  };
+
+  /**
+   * A NEIGHBOURING pair straddling the wall, found rather than guessed.
+   *
+   * The predicate is defined for adjacent cells — every candidate the search
+   * generates comes from `gridDisk(cell, 1)` — and hand-picked coordinates at
+   * res-13 land two cells apart as easily as one. Deriving the pair from
+   * `gridDisk` keeps the fixture honest about what is actually being asked.
+   */
+  function straddlingPair(lngOfWall: number): [string, string] {
+    const west = cellAt(HOME.lat, lngOfWall - STEP * 6);
+    for (const neighbour of gridDisk(west, 1)) {
+      if (neighbour === west) continue;
+      const [, lng] = cellToLatLng(neighbour);
+      if (lng > lngOfWall) return [west, neighbour];
+    }
+    throw new Error("no neighbouring cell east of the wall");
+  }
+
+  it("blocks a step that crosses a wall", () => {
+    const index = buildObstacleIndex([northSouthWall]);
+    const [west, east] = straddlingPair(HOME.lng);
+
+    const [, westLng] = cellToLatLng(west);
+    const [, eastLng] = cellToLatLng(east);
+    // The fixture is only meaningful if the two centres really are either side.
+    expect(westLng).toBeLessThan(HOME.lng);
+    expect(eastLng).toBeGreaterThan(HOME.lng);
+    expect(crossesObstacle(index, west, east)).toBe(true);
+  });
+
+  it("admits a step that runs ALONGSIDE the wall", () => {
+    // The mirror direction, and the one that decides whether this is usable: a
+    // predicate that blocked everything near a wall would fence off both
+    // pavements and read as broken pathfinding rather than as a wall.
+    const index = buildObstacleIndex([northSouthWall]);
+    const south = cellAt(HOME.lat - STEP * 12, HOME.lng - STEP * 20);
+    const north = cellAt(HOME.lat + STEP * 12, HOME.lng - STEP * 20);
+
+    expect(south).not.toBe(north);
+    expect(crossesObstacle(index, south, north)).toBe(false);
+  });
+
+  it("never blocks a step from a cell to itself", () => {
+    // Standing still, and — more to the point — stepping between two LEVELS of
+    // one cell, which is the only move the column model has that a 2D model
+    // does not. Asking the predicate about a cell and itself would refuse it
+    // wherever the wall's own footprint covers that cell.
+    const index = buildObstacleIndex([northSouthWall]);
+    const on = cellAt(HOME.lat, HOME.lng);
+
+    expect(crossesObstacle(index, on, on)).toBe(false);
+  });
+
+  it("admits every step when there is nothing in the index", () => {
+    // Rung 5.3 of the design: with no obstacles, agents wander freely. A
+    // predicate that failed closed would make an empty index impassable.
+    const index = buildObstacleIndex([]);
+    expect(
+      crossesObstacle(
+        index,
+        cellAt(HOME.lat, HOME.lng),
+        cellAt(HOME.lat, HOME.lng + STEP * 12),
+      ),
+    ).toBe(false);
+  });
+
+  it("blocks a step into a building", () => {
+    // Buildings are obstacles too, under the same rule the extruder draws.
+    const building: OsmFeature = {
+      type: "way",
+      id: 21,
+      geometry: [
+        { lat: HOME.lat - STEP * 20, lng: HOME.lng - STEP * 20 },
+        { lat: HOME.lat - STEP * 20, lng: HOME.lng + STEP * 20 },
+        { lat: HOME.lat + STEP * 20, lng: HOME.lng + STEP * 20 },
+        { lat: HOME.lat + STEP * 20, lng: HOME.lng - STEP * 20 },
+        { lat: HOME.lat - STEP * 20, lng: HOME.lng - STEP * 20 },
+      ],
+      tags: { building: "yes" },
+    };
+
+    const index = buildObstacleIndex([building]);
+    const outside = cellAt(HOME.lat, HOME.lng - STEP * 40);
+    const inside = cellAt(HOME.lat, HOME.lng);
+
+    expect(outside).not.toBe(inside);
+    expect(crossesObstacle(index, outside, inside)).toBe(true);
+  });
+
+  it("leaves a gateway passable — min_height means you walk under it", () => {
+    // `min_height` is the S3DB form for an arch or a canopy. Obstructing the
+    // ground under one seals the route through it, and walking under a gate is
+    // the exact move the demo needs at a walled site.
+    const gateway: OsmFeature = {
+      type: "way",
+      id: 22,
+      geometry: [
+        { lat: HOME.lat - STEP * 20, lng: HOME.lng - STEP * 20 },
+        { lat: HOME.lat - STEP * 20, lng: HOME.lng + STEP * 20 },
+        { lat: HOME.lat + STEP * 20, lng: HOME.lng + STEP * 20 },
+        { lat: HOME.lat + STEP * 20, lng: HOME.lng - STEP * 20 },
+        { lat: HOME.lat - STEP * 20, lng: HOME.lng - STEP * 20 },
+      ],
+      tags: { "building:part": "yes", min_height: "4", height: "9" },
+    };
+
+    const index = buildObstacleIndex([gateway]);
+    expect(
+      crossesObstacle(
+        index,
+        cellAt(HOME.lat, HOME.lng - STEP * 40),
+        cellAt(HOME.lat, HOME.lng),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not index an outline that has parts — the parts replace it", () => {
+    // The same rule the extruder uses, so what blocks and what is drawn are the
+    // same volumes. Without it a courtyard between two wings would be sealed by
+    // the outline that encloses both.
+    const outline: OsmFeature = {
+      type: "way",
+      id: 23,
+      geometry: [
+        { lat: HOME.lat - STEP * 40, lng: HOME.lng - STEP * 40 },
+        { lat: HOME.lat - STEP * 40, lng: HOME.lng + STEP * 40 },
+        { lat: HOME.lat + STEP * 40, lng: HOME.lng + STEP * 40 },
+        { lat: HOME.lat + STEP * 40, lng: HOME.lng - STEP * 40 },
+        { lat: HOME.lat - STEP * 40, lng: HOME.lng - STEP * 40 },
+      ],
+      tags: { building: "yes" },
+    };
+    const part: OsmFeature = {
+      type: "way",
+      id: 24,
+      geometry: [
+        { lat: HOME.lat - STEP * 35, lng: HOME.lng - STEP * 35 },
+        { lat: HOME.lat - STEP * 35, lng: HOME.lng - STEP * 25 },
+        { lat: HOME.lat - STEP * 25, lng: HOME.lng - STEP * 25 },
+        { lat: HOME.lat - STEP * 25, lng: HOME.lng - STEP * 35 },
+        { lat: HOME.lat - STEP * 35, lng: HOME.lng - STEP * 35 },
+      ],
+      tags: { "building:part": "yes", height: "10" },
+    };
+
+    const index = buildObstacleIndex([outline, part]);
+    const indexed = new Set<string>();
+    for (const cell of index.cells) {
+      for (const obstacle of index.obstaclesIn(cell))
+        indexed.add(obstacle.feature);
+    }
+
+    expect(indexed.has("way/24")).toBe(true);
+    expect(indexed.has("way/23")).toBe(false);
   });
 });
