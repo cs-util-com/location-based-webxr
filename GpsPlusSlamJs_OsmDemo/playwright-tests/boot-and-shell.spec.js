@@ -771,25 +771,28 @@ test.describe("the control bar", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await test.step("gives every layer exactly one visible switch", async () => {
-      // THE REGISTRY'S OWN GUARANTEE, asserted through the UI: a builder that
-      // arrives without a switch is a layer that renders and cannot be turned off,
-      // which is the state `ALL_LAYERS` exists to prevent. Grouping the switches
-      // moved every one of them, so this is also the regression guard for that.
+    await test.step("gives every layer a VISIBLE switch", async () => {
+      // WHAT IS LEFT HERE IS THE PART THAT NEEDS A BROWSER, and only that.
+      //
+      // The inventory — one switch per `ALL_LAYERS` entry, each uniquely
+      // addressable as `#layer-<id>`, each inside a named group box — moved to
+      // `layer-toggles.test.ts` (jsdom), where it is checked against the
+      // registry itself rather than against the DOM's internal consistency, and
+      // where four mutations of `layer-toggles.ts` prove it can fail.
+      //
+      // Visibility cannot move: it is CSS resolving against real layout, which
+      // jsdom does not do. So the assertion left in the browser is the one the
+      // unit test cannot make — that the switches the registry promises are
+      // actually ON SCREEN, not merely in the document.
       const switches = page.locator("#layers input[type=checkbox][data-layer]");
       const count = await switches.count();
       expect(count).toBeGreaterThan(0);
-
-      const layers = await switches.evaluateAll((nodes) =>
-        nodes.map((node) => node.getAttribute("data-layer")),
-      );
-      expect(new Set(layers).size).toBe(count);
-      for (const layer of layers) {
-        await expect(page.locator(`#layer-${layer}`)).toBeVisible();
+      for (let i = 0; i < count; i++) {
+        await expect(switches.nth(i)).toBeVisible();
       }
 
-      // And the groups exist, with the perf switch inside the diagnostics one —
-      // it is not a layer, so nothing else would put it there.
+      // And the groups are on screen, with the perf switch inside the
+      // diagnostics one — it is not a layer, so nothing else would put it there.
       await expect(page.locator("#layer-group-overlays")).toBeVisible();
       await expect(page.locator("#layer-group-world")).toBeVisible();
       await expect(

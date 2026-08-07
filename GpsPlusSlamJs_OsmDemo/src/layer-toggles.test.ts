@@ -6,8 +6,9 @@
  * and there is no second place to put one test about them.
  */
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
+import { ALL_LAYERS } from "./layers.js";
 import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 
 /**
@@ -145,6 +146,96 @@ describe("the side-effect note on a layer that does more than its name says", ()
     expect(noteFor("plates")).toMatch(/pool, pitch and parking/);
     for (const layer of ["buildings", "trees", "roads", "poi", "cells"]) {
       expect(noteFor(layer)).toBe("");
+    }
+  });
+});
+
+describe("the switch inventory attachLayerToggles builds", () => {
+  /**
+   * WHY THESE TESTS MATTER, AND WHY THEY ARE NOT AN E2E (DEC-S3, 2026-08-07).
+   *
+   * "Every layer has exactly one switch, uniquely addressable, in the right
+   * group" is a claim about DOM this module CONSTRUCTS. It asserts nothing about
+   * what a browser painted, so it does not need one — and as an e2e it cost a
+   * full boot: `stubNetwork` -> `goto` -> three progressive scoring rings, ~4.8 s
+   * uncontended, to read checkbox ids.
+   *
+   * THE IDS ARE A PUBLISHED CONTRACT. `layer-toggles.ts` says so in a comment:
+   * the suite addresses each switch as `#layer-<id>`, and the grouping work had
+   * to move the elements without renaming any of them. A contract with no test
+   * is a comment, so this is the test.
+   *
+   * What deliberately STAYS in the browser: that a collapsed header actually
+   * hides the world and diagnostics groups. That is CSS resolving
+   * `header[data-collapsed="true"] { display: none }`, i.e. rendering, and
+   * asserting the attribute here instead would be the same
+   * presenter-checks-its-own-output blindness the e2e suite exists to catch.
+   */
+  // The body is cleared between tests, and that is load-bearing rather than
+  // tidiness: these switches carry IDS, so a container left behind by the
+  // previous test puts a second `#layer-cells` in the document. jsdom resolves
+  // an `#id` selector through the document's id map and then checks containment,
+  // so the stale one wins the lookup and `container.querySelector` returns null
+  // — which is exactly how this suite first failed.
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  const attach = () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const toggles = attachLayerToggles({ container, onChange: () => {} });
+    return { container, toggles };
+  };
+
+  it("gives every layer exactly one switch", () => {
+    const { container } = attach();
+    const inputs = [
+      ...container.querySelectorAll<HTMLInputElement>(
+        "input[type=checkbox][data-layer]",
+      ),
+    ];
+
+    // Against ALL_LAYERS rather than a hard-coded count, so adding a layer
+    // without a switch fails here instead of being noticed on screen.
+    expect(inputs.map((i) => i.dataset["layer"]).sort()).toEqual(
+      [...ALL_LAYERS].sort(),
+    );
+  });
+
+  it("addresses each switch by the `#layer-<id>` the suite depends on", () => {
+    const { container } = attach();
+
+    for (const layer of ALL_LAYERS) {
+      const input = container.querySelector(`#layer-${layer}`);
+      expect(input, `#layer-${layer} must exist`).not.toBeNull();
+      expect(input).toBeInstanceOf(HTMLInputElement);
+    }
+  });
+
+  it("gives every switch a UNIQUE id", () => {
+    // The half a per-layer lookup cannot catch: two inputs sharing an id still
+    // answer `querySelector`, and every locator in the suite would then silently
+    // address the first one.
+    const { container } = attach();
+    const ids = [
+      ...container.querySelectorAll<HTMLInputElement>("input[data-layer]"),
+    ].map((i) => i.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("puts every switch inside a named group box", () => {
+    // The grouping is the reason the ids had to be preserved, so it is asserted
+    // alongside them: a switch outside a `layer-group-*` box is one the
+    // collapsed header's CSS cannot reach.
+    const { container } = attach();
+
+    for (const layer of ALL_LAYERS) {
+      const input = container.querySelector(`#layer-${layer}`);
+      const box = input?.closest(".layer-group");
+      expect(box, `#layer-${layer} must sit in a .layer-group`).toBeTruthy();
+      expect(box?.id).toMatch(/^layer-group-/);
     }
   });
 });

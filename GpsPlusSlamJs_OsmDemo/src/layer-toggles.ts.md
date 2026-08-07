@@ -66,7 +66,26 @@ toggles.render(selectLayers(store.getState()));
 
 ## Tests
 
-The pure decisions live in `layers.test.ts`. The wiring is covered by two e2e:
+The pure decisions live in `layers.test.ts`.
+
+**The switch inventory this module BUILDS is unit-tested** in
+`layer-toggles.test.ts` (jsdom): one switch per `ALL_LAYERS` entry, each
+addressable as `#layer-<id>`, each id unique, each inside a `layer-group-*` box.
+It is checked against the **registry**, not against the DOM's internal
+consistency, so a layer added without a switch fails here rather than being
+noticed on screen. Four mutations of this file each kill at least one of them —
+renaming the id template, dropping a layer from the loop, giving every switch the
+same id, and unnaming the group box.
+
+- **`#layer-<id>` is a published contract**, and this is what makes it one: the
+  Playwright suite addresses every switch that way, so the grouping work had to
+  move the elements without renaming any. A contract with no test is a comment.
+- **Visibility is deliberately NOT asserted here.** Whether a switch is on screen
+  is CSS resolving against real layout — `header[data-collapsed="true"] { display:
+none }` and the mobile media queries — which jsdom does not do. That assertion
+  stays in `boot-and-shell.spec.js`, which keeps only the browser-only half.
+
+The wiring is covered by two e2e:
 _"switch geometry off and on without refetching"_ (asserts through the status line's
 own counters that the layer is not BUILT, and that no Overpass request is made — a
 presentation change must not refetch -- TRUE OF EVERY LAYER EXCEPT `cells`, which
