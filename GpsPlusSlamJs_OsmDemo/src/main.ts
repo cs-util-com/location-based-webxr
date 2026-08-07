@@ -1167,6 +1167,14 @@ async function main(): Promise<void> {
     clear: () => {
       detailsPanel.clear();
     },
+    // Wrapped like `render` above, and for the same reason: this one also
+    // builds DOM, so a throw here must report as a view failure rather than
+    // escape into the store subscriber that called it.
+    unavailable: (cell) => {
+      renderSafely(access, "details panel", () => {
+        detailsPanel.renderUnavailable(cell);
+      });
+    },
   });
 
   subscribe(

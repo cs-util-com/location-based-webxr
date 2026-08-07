@@ -34,6 +34,7 @@ function setup() {
   }[] = [];
   const render = vi.fn();
   const clear = vi.fn();
+  const unavailable = vi.fn();
 
   const explain = createExplainCycle({
     store: demo.store,
@@ -51,9 +52,10 @@ function setup() {
     },
     render,
     clear,
+    unavailable,
   });
 
-  return { ...demo, explain, calls, render, clear };
+  return { ...demo, explain, calls, render, clear, unavailable };
 }
 
 describe("createExplainCycle", () => {
@@ -108,40 +110,58 @@ describe("createExplainCycle", () => {
     expect(render).not.toHaveBeenCalled();
   });
 
-  it("clears the panel when the worker does not hold the cell", async () => {
-    // `undefined` means the cell is not in the current snapshot — a real case
+  it("SAYS that it cannot explain the cell, rather than doing nothing", async () => {
+    // `undefined` means the cell is not in the current working set — a real case
     // after the user moves, since the selection outlives one working set.
-    const { store, actions, explain, calls, clear, render } = setup();
+    //
+    // DEC-7 reveals sub-threshold cells because "a hidden cell is the one cell
+    // you cannot click to ask why". Clicking one and getting silence undercuts
+    // that: the user cannot tell "no explanation" from "the click missed".
+    //
+    // IN THE PANEL, which is where the question was asked. The first version of
+    // this said it through `nonFatalError` and that is what the next test exists
+    // to keep out. `render` is still asserted absent, because the one thing that
+    // must never happen here is the PREVIOUS cell's explanation staying up.
+    const { store, actions, explain, calls, unavailable, clear, render } =
+      setup();
     store.dispatch(actions.cellSelected("cell-a"));
     const pending = explain("cell-a");
     calls[0]?.answer(undefined);
     await pending;
 
-    expect(clear).toHaveBeenCalled();
+    expect(unavailable).toHaveBeenCalledWith("cell-a");
     expect(render).not.toHaveBeenCalled();
+    // Not cleared as well: `clear()` hides the panel, so doing both would put
+    // the message somewhere nobody can read it.
+    expect(clear).not.toHaveBeenCalled();
   });
 
-  it("SAYS that it cannot explain the cell, rather than doing nothing", async () => {
-    // DEC-7 reveals sub-threshold cells because "a hidden cell is the one cell
-    // you cannot click to ask why". Clicking one and getting silence undercuts
-    // that: the user cannot tell "no explanation" from "the click missed".
+  it("does NOT put a routine miss into the store's global error phase", async () => {
+    // WHY THIS TEST MATTERS — this is a regression guard, not a preference.
+    // `nonFatalError` sets `loading.phase = "error"` (osm-view-slice.ts:393),
+    // and two subscribers act on that phase rather than on the message:
     //
-    // Non-fatal rather than fatal, because the case is legitimate — the
-    // selection outlives one working set — and says nothing about whether the
-    // map data is still good.
+    // 1. `refresh-cycle.ts:238` returns before publishing a ring, dropping the
+    //    REST of a progressive widening. Its comment states the assumption this
+    //    broke outright: "an error visible here always belongs to THIS run".
+    // 2. `main.ts:989` expands a collapsed header via `revealForError()`.
+    //
+    // Both fire on a case the code's own comment calls normal, and the trigger
+    // is ordinary use: `main.ts` re-explains the still-selected cell on every
+    // `snapshotReady`, and a widening refresh publishes three of them. So a user
+    // who moves with a stale cell selected lost rings 2 and 3 of the widening —
+    // the map quietly stopped growing — and the status line read
+    // "Failed: details panel: …" instead of the cell counts.
+    //
+    // The phase is asserted rather than the message, because the phase is what
+    // those two subscribers read.
     const { store, actions, explain, calls } = setup();
     store.dispatch(actions.cellSelected("cell-a"));
     const pending = explain("cell-a");
     calls[0]?.answer(undefined);
     await pending;
 
-    const view = selectOsmView(store.getState());
-    expect(view.loading).toEqual({
-      phase: "error",
-      message: expect.stringContaining("cell-a"),
-    });
-    // No snapshot assertion here: this fixture never loads one, and the
-    // snapshot-survives guarantee is already pinned by the rejection test.
+    expect(selectOsmView(store.getState()).loading.phase).not.toBe("error");
   });
 
   it("reports a rejection through the NON-FATAL channel and never rejects itself", async () => {

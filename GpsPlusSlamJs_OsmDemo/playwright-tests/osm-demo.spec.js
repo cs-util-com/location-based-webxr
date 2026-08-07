@@ -3114,11 +3114,9 @@ test.describe("revealing the sub-threshold cells", () => {
       // diagnoses of this CI-only failure.
       //
       // Without force, Playwright NAMES the element it is waiting for instead of
-      // silently clicking through it. The status line printed on failure is a
-      // full healthy refresh, and the "worker no longer holds this cell"
-      // message is absent — so the explain call is not failing; either the
-      // click never selected anything, or the reply was dropped. This tells
-      // those apart.
+      // silently clicking through it — which is what tells an intercepted click
+      // apart from one that landed and did nothing. The poll below covers the
+      // second case.
       await identityCell.click();
 
       // ASSERTED THROUGH THE APP'S OWN STATE, not just on the panel.
@@ -3130,18 +3128,34 @@ test.describe("revealing the sub-threshold cells", () => {
       // the selection changed mid-flight. A failure that cannot name its own
       // cause costs a debugging cycle every time it appears.
       //
-      // So the poll reports the STATUS LINE alongside the panel state. Since
-      // `explain-cycle.ts` now says when it cannot explain a cell, a failure
-      // here prints the reason instead of only the symptom.
+      // So the poll reports the STATUS LINE alongside the panel state, and it
+      // distinguishes the two ways the panel can be up:
+      //
+      // - `explained` — a real explanation, which is the only pass. Keyed on
+      //   `.panel-threshold`, which only `DetailsPanel.render` emits.
+      // - `unavailable` — the panel is up and saying it has nothing to explain.
+      //   Since #265 that is a PANEL mode rather than a status-line error, so a
+      //   bare `toBeVisible()` here would now go green on it. Naming it keeps
+      //   this assertion about the explanation rather than about the overlay.
+      // - `hidden` — nothing rendered. The status line comes with it, because
+      //   that is where a refresh failure would show. A healthy-looking status
+      //   line here means the click selected nothing, or the answer was dropped
+      //   as stale on arrival (`explain-cycle.ts` returns silently for that, by
+      //   design — a superseded answer is not an event the user should see).
       await expect
         .poll(
           async () => {
-            if (await page.locator("#details").isVisible()) return "visible";
-            return `hidden — status: ${await page.locator("#status").textContent()}`;
+            const details = page.locator("#details");
+            if (!(await details.isVisible())) {
+              return `hidden — status: ${await page.locator("#status").textContent()}`;
+            }
+            const explained = await details.locator(".panel-threshold").count();
+            if (explained > 0) return "explained";
+            return `unavailable — panel: ${await details.textContent()}`;
           },
           { timeout: 30000 },
         )
-        .toBe("visible");
+        .toBe("explained");
     });
   });
 });

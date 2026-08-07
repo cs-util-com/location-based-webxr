@@ -113,3 +113,52 @@ describe("DetailsPanel.renderFeature", () => {
     expect(container.textContent).toBe("");
   });
 });
+
+describe("DetailsPanel.renderUnavailable", () => {
+  /**
+   * WHY THESE TESTS MATTER. This mode exists because the alternative — hiding
+   * the panel — is the exact silence DEC-7 reveals sub-threshold cells to
+   * remove: indistinguishable from a click that missed. So "it is VISIBLE and it
+   * names the cell" is the whole contract, and it is easy to lose by reusing
+   * `clear()` for a case that merely looks similar from the caller's side.
+   */
+  it("stays visible and names the cell it cannot explain", () => {
+    const { panel, container } = panelIn();
+    panel.renderUnavailable("87283472bffffff");
+
+    expect(container.hidden).toBe(false);
+    expect(container.textContent).toContain("87283472bffffff");
+  });
+
+  it("replaces a previous answer rather than appending to it", () => {
+    // The same rule every other mode follows. A "no explanation" note left
+    // underneath the previous cell's argument is two contradictory answers to
+    // one question, which is worse than either alone.
+    const { panel, container } = panelIn();
+    panel.renderFeature(MARKER);
+    panel.renderUnavailable("87283472bffffff");
+
+    expect(container.textContent).not.toContain(MARKER.label);
+    expect(container.querySelectorAll(".panel-header")).toHaveLength(1);
+  });
+
+  it("closes through the same callback the other modes use", () => {
+    // One dismissal path, or the panel becomes undismissable in one mode — and
+    // this is the mode a user is most likely to want gone.
+    const { panel, container, onClose } = panelIn();
+    panel.renderUnavailable("87283472bffffff");
+    container.querySelector<HTMLButtonElement>(".panel-close")?.click();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("escapes a cell id rather than letting it become markup", () => {
+    // The id reaches here from the worker; treated as data like every other
+    // string in this file.
+    const { panel, container } = panelIn();
+    panel.renderUnavailable("<img src=x onerror=alert(1)>");
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
+  });
+});

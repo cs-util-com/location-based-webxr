@@ -48,8 +48,16 @@ export interface ExplainCycleOptions {
   readonly worker: ExplainWorker;
   /** Draws an explanation. Called only for an answer that is still current. */
   readonly render: (explanation: CellExplanation) => void;
-  /** Empties the panel: no selection, or a cell the snapshot does not hold. */
+  /** Empties the panel. Called only when nothing is selected. */
   readonly clear: () => void;
+  /**
+   * Says, in the panel, that this cell has no explanation to give.
+   *
+   * SEPARATE FROM `clear` because the two look identical from here and opposite
+   * to the user: `clear` hides the panel, which is the silence DEC-7 exists to
+   * remove. And separate from the store's error channel — see the module header.
+   */
+  readonly unavailable: (cell: string) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -67,7 +75,7 @@ function messageOf(error: unknown): string {
 export function createExplainCycle(
   options: ExplainCycleOptions,
 ): (cell: string | undefined) => Promise<void> {
-  const { store, actions, worker, render, clear } = options;
+  const { store, actions, worker, render, clear, unavailable } = options;
 
   return async (cell: string | undefined): Promise<void> => {
     if (cell === undefined) {
@@ -94,16 +102,18 @@ export function createExplainCycle(
         // serve. The user is left unable to tell "this cell has no explanation"
         // from "the click missed".
         //
-        // It is a real case rather than a fault: the selection outlives one
-        // working set, so after a move the worker legitimately no longer holds
-        // the cell. Reported through the NON-FATAL channel for exactly that
-        // reason — it says nothing about whether the map's data is still good.
-        clear();
-        store.dispatch(
-          actions.nonFatalError(
-            `details panel: the worker no longer holds ${cell}, so there is nothing to explain`,
-          ),
-        );
+        // IN THE PANEL, NOT THROUGH `nonFatalError`, and that distinction is the
+        // whole point. This is a legitimate, routine state — the selection
+        // outlives one working set, so after a move the worker no longer scores
+        // the cell — but `nonFatalError` sets `loading.phase = "error"`, and two
+        // subscribers act on the PHASE rather than on the message:
+        // `refresh-cycle.ts` drops the remaining rings of a progressive
+        // widening, and `main.ts` expands a collapsed header. Since a new
+        // snapshot re-explains whatever is still selected, and one widening
+        // publishes three, moving with a stale cell selected silently cost the
+        // user rings 2 and 3 and replaced the counts with "Failed: …".
+        // Raised in review on #265; pinned by `explain-cycle.test.ts`.
+        unavailable(cell);
         return;
       }
       render(explanation);

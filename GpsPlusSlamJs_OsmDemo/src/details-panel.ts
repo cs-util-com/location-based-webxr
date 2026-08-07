@@ -150,6 +150,46 @@ export class DetailsPanel {
     this.container.hidden = false;
   }
 
+  /**
+   * Says the selected cell has no explanation to give, instead of going quiet.
+   *
+   * WHY THIS IS A PANEL MODE AND NOT A STATUS-LINE ERROR. The state is routine —
+   * a selection outlives one working set, so moving away leaves a cell the
+   * worker no longer scores — and it is the answer to a question the user asked
+   * *here*, by clicking this cell. Routing it through the store's error phase
+   * instead made a normal interaction abort the rest of a progressive refresh
+   * (raised in review on #265); `explain-cycle.ts` carries the full chain.
+   *
+   * WHY IT DOES NOT SAY "the worker no longer holds it". The worker returns
+   * `undefined` whenever `pipeline.scoreFor(cell)` has no score, which also
+   * covers a cell inside the working set that has not been scored at this ring
+   * yet. The wording states what is observable — there is no explanation for
+   * this cell right now — rather than a cause that is only sometimes the reason.
+   */
+  renderUnavailable(cell: string): void {
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("strong");
+    title.textContent = "No explanation for this cell";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "panel-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "close details");
+    close.addEventListener("click", this.onClose);
+    header.append(title, close);
+
+    const note = document.createElement("p");
+    note.className = "panel-summary";
+    // `textContent`, like everywhere else in this file: the cell id is data.
+    note.textContent = `${cell} is not in the scored working set right now — move back towards it, or wait for the map to finish widening.`;
+
+    // REPLACE and SHOW, the same rule the other modes follow. Hiding the panel
+    // here is what DEC-7 calls the silence: indistinguishable from a missed click.
+    this.container.replaceChildren(header, note);
+    this.container.hidden = false;
+  }
+
   render(explanation: CellExplanation): void {
     const tree = explanationTree(explanation);
     const nodes: HTMLElement[] = [];

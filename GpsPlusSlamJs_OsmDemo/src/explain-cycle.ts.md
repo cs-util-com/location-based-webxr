@@ -7,10 +7,16 @@ after the user has moved on and reporting failures without discarding the map.
 
 ## Public API
 
-- `createExplainCycle({ store, actions, worker, render, clear })` →
+- `createExplainCycle({ store, actions, worker, render, clear, unavailable })` →
   `(cell: string | undefined) => Promise<void>`
-  - `undefined` clears the panel and makes **no** RPC.
-  - Never rejects. A failure dispatches `nonFatalError`.
+  - `undefined` **as the argument** clears the panel and makes **no** RPC.
+  - `undefined` **as the worker's answer** calls `unavailable(cell)`. It does
+    **not** clear, and it does **not** dispatch anything.
+  - Never rejects. A thrown failure dispatches `nonFatalError`.
+- The three panel callbacks are three different outcomes and must not be merged:
+  - `render(explanation)` — there is an answer.
+  - `unavailable(cell)` — the question is legitimate and has no answer right now.
+  - `clear()` — there is no question, because nothing is selected.
 
 ## Invariants & assumptions
 
@@ -21,9 +27,24 @@ after the user has moved on and reporting failures without discarding the map.
   actions (a map click; the `<select>`), and a cell-only check lets a category
   switch render the previous category's arithmetic for the _right_ cell — harder to
   notice than the wrong cell entirely.
-- **`undefined` from the worker means "not in the current snapshot", not an
-  error.** Reachable in normal use: the selection outlives one working set, so
-  moving away leaves a selected cell the worker no longer holds. It clears.
+- **`undefined` from the worker means "no score in the current working set", not
+  an error** — and the difference decides which channel it uses. Reachable in
+  normal use: the selection outlives one working set, so moving away leaves a
+  selected cell `pipeline.scoreFor` no longer scores. It goes to `unavailable`.
+  - **It must NOT go through `nonFatalError`, and this is a fixed defect rather
+    than a preference.** `nonFatalError` sets `loading.phase = "error"`
+    (`osm-view-slice.ts`), and two subscribers act on the **phase**, not on the
+    message: `refresh-cycle.ts` returns before publishing a ring — dropping the
+    rest of a progressive widening, against its own stated assumption that "an
+    error visible here always belongs to THIS run" — and `main.ts` expands a
+    collapsed header through `revealForError()`. `main.ts` re-explains the
+    still-selected cell on **every** `snapshotReady` and one widening publishes
+    three, so a user who moved with a stale cell selected lost rings 2 and 3 and
+    saw `Failed: details panel: …` where the counts belong. Raised in review on
+    [#265](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/location-based-webxr_pr_review_comments_handled.md).
+  - **A routine state that reaches a global channel will be acted on by whoever
+    reads that channel.** The generalised form of the above, and the reason
+    `unavailable` is a callback of this module rather than one more action.
 - **A failure is NON-fatal by construction.** A failed explanation says nothing
   about whether the map's data is good, so it must not clear the snapshot — that is
   `fetchFailed`'s job. It also must not reject: the caller is a store subscriber,
@@ -59,11 +80,19 @@ subscribe(
 
 ## Tests
 
-`explain-cycle.test.ts` — 7 examples against a worker whose call the test holds
+`explain-cycle.test.ts` — 8 examples against a worker whose call the test holds
 open: renders a current answer; clears with no RPC for no selection; drops a stale
-**cell**; drops a stale **category**; clears on `undefined`; reports a rejection as
-`nonFatalError` while asserting the snapshot **survives**; survives a thrown
-non-`Error`.
+**cell**; drops a stale **category**; calls `unavailable` (and neither `render`
+nor `clear`) on `undefined`; **asserts the phase is not `"error"` after that
+miss**; reports a rejection as `nonFatalError` while asserting the snapshot
+**survives**; survives a thrown non-`Error`.
+
+The phase assertion is a **regression guard with a named consequence**, which is
+why it is separate from the example beside it: the two differ only in what they
+assert and only one of them would notice the routine-state-on-a-global-channel
+defect coming back. The panel side is covered by
+`details-panel.test.ts`'s `renderUnavailable` block — visible, names the cell,
+replaces rather than appends, dismissible, and escapes the id.
 
 This logic previously lived inline in `main.ts`, which cannot be unit-tested, so
 none of it was covered. Extracting it was the point of the change.
