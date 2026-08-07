@@ -126,6 +126,19 @@ export class MapView {
       weight: 2,
       fillColor: "#ff3860",
       fillOpacity: 1,
+      // DECORATIVE, like every other vector in this view. Leaflet's default for
+      // a `circleMarker` is interactive, which gives it `pointer-events: auto`
+      // with nothing bound — so a click landing on it was SWALLOWED rather than
+      // reaching the map handler that moves the user, and this marker sits on
+      // the one spot they are most likely to click. The three markers below
+      // already say this explicitly; the omission here was the odd one out
+      // (#267 review).
+      //
+      // NOT left to the paint order, which currently hides it: this marker is
+      // built in the constructor and every cell is added later by `render()`,
+      // so the cells happen to cover it. That is an accident of construction
+      // sequence, and one `bringToFront()` or a move to another pane undoes it.
+      interactive: false,
       // Named for the same reason the cells and the fetch box are: Leaflet
       // renders every vector as an indistinguishable `<path>`, and the e2e
       // needs to assert WHERE the user marker is to prove a locate recentred

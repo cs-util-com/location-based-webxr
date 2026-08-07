@@ -1219,6 +1219,20 @@ test.describe("my location", () => {
     expect(Math.abs(markerBox.y - (mapBox.y + mapBox.height / 2))).toBeLessThan(
       mapBox.height / 4,
     );
+
+    // AND IT DOES NOT EAT THE CLICK IT SITS ON. Leaflet makes a `circleMarker`
+    // interactive by DEFAULT, and nothing is bound to this one — so an
+    // interactive marker gives it `pointer-events: auto` and swallows a click
+    // that should have reached the map handler and moved the user. It sits
+    // wherever the user currently is, which is the spot they are most likely to
+    // click next.
+    //
+    // ASSERTED ON THE CLASS rather than by clicking it: today the cell paths
+    // happen to paint over the marker (it is built in the constructor, they are
+    // added later by `render()`), so a click test would pass on the paint order
+    // instead of on the property that guarantees it. Raised in the #267 review,
+    // where that same paint order disproved the thread's own reasoning.
+    await expect(marker).not.toHaveClass(/leaflet-interactive/);
   });
 
   test("is a square pin that names its state, and reports a denied permission", async ({
