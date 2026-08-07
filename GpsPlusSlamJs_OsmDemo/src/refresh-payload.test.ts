@@ -347,11 +347,29 @@ describe("what one refresh actually transfers", () => {
       })),
     ).flat();
 
+    /**
+     * BEST OF FIVE, not a single timed run — and the change is a bug fix.
+     *
+     * This took one warm-up and one measurement, then compared two numbers with
+     * NO MARGIN. That is a coin toss on a busy machine, and it lost one: the
+     * gate failed at 67.59 ms against 66.84, a 1 % difference, and the same
+     * test then passed three times in isolation. A ~10-minute e2e re-run is the
+     * price of each of those.
+     *
+     * The minimum is the right estimator here because the noise is one-sided:
+     * scheduler preemption and GC can only make a run SLOWER, never faster, so
+     * the fastest observed run is the closest thing to the work itself. Taking a
+     * mean would fold the contention back in — which is exactly what failed.
+     */
     const time = (body: () => void): number => {
       body();
-      const started = performance.now();
-      body();
-      return performance.now() - started;
+      let best = Number.POSITIVE_INFINITY;
+      for (let run = 0; run < 5; run += 1) {
+        const started = performance.now();
+        body();
+        best = Math.min(best, performance.now() - started);
+      }
+      return best;
     };
 
     const cloneMs = time(() => void structuredClone(atCap));
@@ -373,7 +391,15 @@ describe("what one refresh actually transfers", () => {
     // and for a resync path, NEVER for the render path. The win requires the
     // consumers to read the columns directly, at which point the main thread
     // pays nothing and the worker pays 17.3 ms instead of its half of 27.1.
-    expect(packMs).toBeLessThan(cloneMs);
+    //
+    // A RATIO WITH ROOM, not a bare `<`. The measurement establishes pack at
+    // ~0.64 of clone; asserting only "faster" pins a difference of zero, so any
+    // noise that survives the best-of-five above decides the outcome. 0.9 keeps
+    // the claim — pack is materially cheaper — while leaving the 26 points of
+    // headroom the measurement actually earned. It still fails if pack ever
+    // becomes merely as fast as the clone it replaced, which is the regression
+    // worth catching.
+    expect(packMs).toBeLessThan(cloneMs * 0.9);
 
     // And the trap, asserted so it cannot be reintroduced quietly: unpacking is
     // not free, and anyone who adds it to the render path should see this fail

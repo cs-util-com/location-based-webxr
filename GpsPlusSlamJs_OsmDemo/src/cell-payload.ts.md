@@ -124,3 +124,13 @@ neighbour's features; and that every typed-array field appears in the transfer
 list.
 
 `refresh-payload.test.ts` holds the measurements this module exists to move.
+
+**Those measurements assert RATIOS with room, over a best-of-five minimum, and
+that is a correction rather than a style choice.** The comparison started as a
+bare `expect(packMs).toBeLessThan(cloneMs)` on a single timed run — which pins a
+difference of zero, so whichever way the machine's noise fell decided the
+result. It failed a gate at 67.59 ms against 66.84 (1 %) and then passed three
+times in isolation, at the cost of a ten-minute e2e re-run. The minimum is the
+right estimator because the noise is one-sided: preemption and GC only ever make
+a run slower, so the fastest observed run is the closest thing to the work
+itself.
