@@ -16,10 +16,16 @@ path, with no DOM in it.
     arriving (see `nextEventTime`).
   - **`stats` is `GeoEventStats` (W7), and it is only measurable here**: the
     counters live on the index and the phase timings on this method, both
-    private inside the worker. `climbsStarted` is counted through a wrapper
-    handed only to the algorithm — step 1 calls the same `toCell` while deriving
-    the reach, and counting there would report ensure-set arithmetic as climbing
-    work.
+    private inside the worker.
+    - **The pinning numbers are taken per search, not read off the index.**
+      `chunksPinnedPeak` comes from inside the `withPinned` callback, where the
+      live count is this search's; the index's own peak is a session maximum
+      that never resets. `pinnedOverCap` is that count against
+      `index.maxRetainedChunks`, because the index's field is set only by
+      `evictBeyond` — which never runs while a search's pins are held. `climbsStarted` is counted through a wrapper
+      handed only to the algorithm — step 1 calls the same `toCell` while deriving
+      the reach, and counting there would report ensure-set arithmetic as climbing
+      work.
   - **A neighbouring event tile is admitted only when its whole REACH is
     already loaded, not when its centre is.** This was the centre for several
     rounds, which broke the promise the method's own docstring makes — that a

@@ -43,14 +43,27 @@ export interface GeoEventStats {
    * two orders of magnitude, and only this one explains a wall-clock number.
    */
   readonly heatLookups: number;
-  /** Chunks pinned at the peak of the search. */
+  /**
+   * Chunks THIS search pinned, read while the pins were still held.
+   *
+   * NOT the index's `stats.chunksPinnedPeak`, which is a session-lifetime
+   * maximum that is deliberately never reset — reading that made every search
+   * after the first report the largest one so far, which is exactly wrong for
+   * a number whose purpose is comparing searches.
+   */
   readonly chunksPinnedPeak: number;
   /**
-   * How far the pinned set pushed the cache past its cap.
+   * How far THIS search's pinned set went past the cap in force, or zero.
    *
-   * The index calls a non-zero value here a bug in normal use. For a geo-event
-   * it is the PREDICTION — see the module header — so it is reported rather
-   * than assumed either way.
+   * NOT the index's `stats.pinnedOverCap`, and that field cannot answer this
+   * question at all: `evictBeyond` runs from `update()` and nowhere else, so
+   * the cap is never tested while a search's pins are held — by the next
+   * eviction they are released. It is sticky too, so a search inherited a
+   * value produced by the refresh that followed the previous one.
+   *
+   * A geo-event exceeding the cap is the PREDICTION this file exists to test
+   * (see the module header), so a figure the search could not have caused
+   * would be worse than no figure at all.
    */
   readonly pinnedOverCap: number;
   /** Deriving the reach, in ms: seeding batch 0 and expanding each candidate. */

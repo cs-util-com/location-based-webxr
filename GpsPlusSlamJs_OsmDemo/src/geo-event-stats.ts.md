@@ -9,7 +9,8 @@ The shape of a geo-event search's cost, and the one line that reports it.
 - `GeoEventStats` — plain data, so it crosses the worker boundary:
   - `reachCells`, `tilesFetched` — how much ground the search prepared.
   - `climbsStarted`, `heatLookups` — how much climbing it then did.
-  - `chunksPinnedPeak`, `pinnedOverCap` — what it held while doing it.
+  - `chunksPinnedPeak`, `pinnedOverCap` — what it held while doing it, **for
+    this search only**.
   - `deriveMs`, `ensureMs`, `climbMs` — where the wall clock went.
 - `describeGeoEventStats(stats): string` — one line, phases first.
 
@@ -21,6 +22,18 @@ The shape of a geo-event search's cost, and the one line that reports it.
   keeps probing after it has enough" — is already disproved on the code alone:
   `newGeoEventFor` makes exactly one pick per tile and `bestPickForTile` returns
   at the first passing batch.
+- **Both pinning numbers are measured PER SEARCH here, not read off the index.**
+  The index's `stats.chunksPinnedPeak` is a session-lifetime maximum that is
+  deliberately never reset, and its `stats.pinnedOverCap` is sticky and set only
+  by `evictBeyond` — which runs from `update()` and nowhere else, so it never
+  observes a search's pins at all: by the next eviction they are released. The
+  first version of this file read both, so a second, cheaper search reported the
+  first one's peak, and the over-cap figure could belong to the refresh that
+  followed the previous search. For a benchmark whose whole purpose is comparing
+  runs, that is worse than reporting nothing.
+  - `chunksPinnedPeak` is now read inside `withPinned`, where the live count is
+    this search's; `pinnedOverCap` is that count against
+    `index.maxRetainedChunks`.
 - **`pinnedOverCap` is the prediction, and it is stated up front.**
   `affordance-index.ts` sizes one candidate batch at ~190 chunks and concludes
   that against its 488-chunk cap "that cannot happen" — but a geo-event pins the

@@ -69,9 +69,19 @@ export function parseLocalInstant(
   // THE LOCAL-TIME CONSTRUCTOR, not `Date.parse` of a joined string. See the
   // module header: the two differ by the device's offset, silently.
   const at = new Date(year, month - 1, day, hour, minute, 0, 0);
-  // ROLL-OVER IS REJECTED, not accepted. `new Date(2026, 1, 31)` is 3 March,
-  // so a "31 February" typed into a text-mode input would run a search for a
-  // day the dialog never showed.
+  // CALENDAR ROLL-OVER IS REJECTED. `new Date(2026, 1, 31)` is 3 March, so a
+  // "31 February" typed into a text-mode input would run a search for a day the
+  // dialog never showed.
   if (at.getMonth() !== month - 1 || at.getDate() !== day) return undefined;
+  // THE CLOCK'S OWN GAP IS ACCEPTED, and the asymmetry is deliberate. In a
+  // spring-forward hour `new Date(y, m, d, 2, 30)` is 03:30 local — the date
+  // fields still match, so the check above passes it through. Rejecting it
+  // would answer a time the `<input type="time">` itself offered with "pick a
+  // date and a time first", which is a worse lie than the shift.
+  //
+  // It is not silent either way: 02:30 did not exist that day, and the button
+  // and the marker both show the RESOLVED slot, so the user sees 03:45 rather
+  // than the 02:30 they asked for. That is the same contract quarter-hour
+  // rounding already has — you name an instant, the app shows you the slot.
   return at.getTime();
 }

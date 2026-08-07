@@ -651,6 +651,76 @@ describe("DemoPipeline.geoEvent", () => {
     expect(notTheCentres).toEqual([]);
   });
 
+  it("reports THIS search's pinned set, not the session's high-water mark", async () => {
+    // WHY THIS TEST MATTERS. `stats.chunksPinnedPeak` on the index is a
+    // session-lifetime maximum that is deliberately never reset — its own test
+    // says so, "keeps the peak across searches, so the worst case survives" —
+    // and `GeoEventStats` documents its field as this search's cost. Reading
+    // the index's value made every search after the first report the largest
+    // one so far, which is precisely wrong for a benchmark whose job is to
+    // compare searches.
+    //
+    // A BIG search then a SMALL one, which is what makes this falsifiable: a
+    // leaked session maximum only ever grows, so it would report the big
+    // search's number for the small one.
+    //
+    // Big: enough ground loaded that several neighbours qualify — five tiles,
+    // ~290 chunks. Small: a position 150 km away with nothing loaded around it,
+    // so no neighbour qualifies and only the centre's reach is pinned — one
+    // tile, ~61 chunks. A factor of five apart, so this cannot pass by accident.
+    const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+    for (const offset of [0, 0.01, -0.01, 0.02, -0.02]) {
+      await pipeline.update(
+        { lat: AT.lat + offset, lng: AT.lng + offset },
+        "walkable",
+        undefined,
+        SCORE_DISK_MAX_RADIUS,
+      );
+    }
+
+    const big = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const far = { lat: AT.lat + 1.5, lng: AT.lng + 1.5 };
+    const small = await pipeline.geoEvent(far, "walkable", 1_700_000_000_000);
+
+    // Guards the fixture: if the big search stopped admitting neighbours, the
+    // two would be the same size and the comparison below would prove nothing.
+    expect(big.event.tilesSearched).toBeGreaterThan(small.event.tilesSearched);
+    expect(small.stats.chunksPinnedPeak).toBeGreaterThan(0);
+    expect(small.stats.chunksPinnedPeak).toBeLessThan(
+      big.stats.chunksPinnedPeak,
+    );
+    // And the session maximum really did stay at the bigger value, so the
+    // assertion above is about a leak that was available to happen.
+    expect(pipeline.stats().chunksPinnedPeak).toBe(big.stats.chunksPinnedPeak);
+  });
+
+  it("measures over-cap against THIS search's pins, not a stale eviction", async () => {
+    // WHY THE INDEX'S OWN COUNTER CANNOT ANSWER THIS. `evictBeyond` runs from
+    // `update()` and nowhere else, so the cap is never tested while a search's
+    // pins are held — by the next eviction they are released. `pinnedOverCap`
+    // is also sticky, so a search inherited a number produced by the refresh
+    // that followed the PREVIOUS one. W7's whole prediction is about this
+    // value, so a figure the search could not have caused is worse than none.
+    //
+    // Comparing this search's own pinned count against the cap in force is the
+    // measurement the prediction always described. Here the fixture stays well
+    // inside the cap, so the honest answer is zero — and a leaked reading from
+    // elsewhere would show up as a non-zero.
+    const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+    await pipeline.update(AT, "walkable", undefined, SCORE_DISK_MAX_RADIUS);
+
+    const { stats } = await pipeline.geoEvent(
+      AT,
+      "walkable",
+      1_700_000_000_000,
+    );
+
+    expect(stats.pinnedOverCap).toBe(0);
+    // The guard that makes the zero meaningful: it is zero because the pins
+    // fit, not because nothing was pinned.
+    expect(stats.chunksPinnedPeak).toBeGreaterThan(0);
+  });
+
   it("counts only tiles that arrived, not every one it asked for", async () => {
     // `tilesFetched` is incremented on SUCCESS, never taken from
     // `missingTiles.length`, and the difference inverts the reading: a tile

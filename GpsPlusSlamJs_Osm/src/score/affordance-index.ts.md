@@ -23,12 +23,20 @@ the package that remembers anything.
 - `stats` — `chunksScored`, `chunksReused`, `chunksEvicted`, `geometryBuilt`,
   `geometryReused`, `movesIgnored`, `chunksPinned`, `chunksPinnedPeak`,
   `pinnedOverCap`, `scoresByCellBuilds`.
-  - **`chunksPinned` is LIVE and `chunksPinnedPeak` is the one to report.**
-    `withPinned` resets the live count in its `finally`, so anyone asking after
-    a search reads zero — which makes "how much did that search hold?"
-    unanswerable, and that is exactly what the geo-event benchmark needs (W7).
-    The peak is never reset: the worst case across a session is what a cap is
-    judged against, not whatever the last search happened to need.
+  - **`chunksPinned` is LIVE and `chunksPinnedPeak` is a SESSION maximum.** The
+    live count is reset in `withPinned`'s `finally`, so anyone asking after the
+    fact reads zero. The peak is never reset: the worst case across a session is
+    what a cap is judged against, not whatever the last call happened to need.
+  - **Neither is a per-call figure, and a consumer that wants one must take it
+    itself.** The OSM demo's geo-event benchmark reads `chunksPinned` from
+    INSIDE its `withPinned` callback for exactly this reason — it briefly read
+    the session peak instead, and every search after the first then reported the
+    largest one so far.
+  - **`pinnedOverCap` can only ever describe an `update()`.** It is assigned in
+    `evictBeyond`, which nothing else calls, so it never observes pins held by
+    `withPinned` — those are released before the next eviction runs. It is also
+    sticky (never cleared), so it reports the last non-zero reading rather than
+    the current state.
 
 `ScoredChunk`: `{ chunk, cells, tiles, featureCount }`, frozen.
 

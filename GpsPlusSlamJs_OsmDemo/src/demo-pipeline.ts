@@ -615,8 +615,21 @@ export class DemoPipeline {
     // reports `left` at the edge of the ensured set rather than of the map.
     const deriveStart = nowMs();
 
-    /** The cells a tile's own batch-0 candidates could climb over. */
-    const reachOf = (each: string): string[] => {
+    /**
+     * The cells a tile's own batch-0 candidates could climb over.
+     *
+     * `requireLoaded` ABANDONS on the first cell whose fetch tile is missing
+     * and returns `undefined`. Building the whole array and then testing it
+     * would be correct and wasteful in exactly the common case: after this
+     * gate, most neighbours are rejected, and a reach that leaves its fetch
+     * tile usually does so on an early cell. That waste would land inside
+     * `deriveMs`, which is the number W7's benchmark is read off — so the
+     * measurement would be reporting work the search did not need.
+     */
+    const reachOf = (
+      each: string,
+      requireLoaded = false,
+    ): string[] | undefined => {
       const [s, w, n, e] = boundsOfCell(each);
       const cells: string[] = [];
       for (const candidate of eventCandidates({
@@ -626,6 +639,9 @@ export class DemoPipeline {
         count: GEO_EVENT_BATCH,
       })) {
         for (const cell of gridDisk(toCell(candidate), CLIMB_STEPS + 1)) {
+          if (requireLoaded && !this.loaded.has(toFetchTile(cell))) {
+            return undefined;
+          }
           cells.push(cell);
         }
       }
@@ -633,11 +649,14 @@ export class DemoPipeline {
     };
 
     const tiles = [tile];
-    const reach = new Set<string>(reachOf(tile));
+    // The centre is searched unconditionally — the user is standing in it — so
+    // it is derived without the `requireLoaded` abort and can never be
+    // `undefined`.
+    const reach = new Set<string>(reachOf(tile) ?? []);
     for (const neighbour of gridDisk(tile, 1)) {
       if (neighbour === tile) continue;
-      const cells = reachOf(neighbour);
-      if (!cells.every((cell) => this.loaded.has(toFetchTile(cell)))) continue;
+      const cells = reachOf(neighbour, true);
+      if (cells === undefined) continue;
       tiles.push(neighbour);
       for (const cell of cells) reach.add(cell);
     }
@@ -674,8 +693,19 @@ export class DemoPipeline {
 
     // STEP 3 — pin, then climb. Nothing awaits inside this callback.
     const climbStart = nowMs();
-    const event = this.index.withPinned(reach, () =>
-      newGeoEventFor({
+    /**
+     * THIS SEARCH'S pinned count, read while the pins are still held.
+     *
+     * `stats.chunksPinnedPeak` cannot answer this: it is a session-lifetime
+     * maximum that is deliberately never reset, so after two searches it
+     * reports the larger of them for both. Inside this callback the live
+     * `chunksPinned` is exactly what this search is holding, which is the
+     * number the benchmark claims to print.
+     */
+    let chunksPinnedPeak = 0;
+    const event = this.index.withPinned(reach, () => {
+      chunksPinnedPeak = this.index.stats.chunksPinned;
+      return newGeoEventFor({
         user: position,
         tiles: boxes.map((bbox) => ({ bbox })),
         globalSeed: GEO_EVENT_SEED,
@@ -701,8 +731,8 @@ export class DemoPipeline {
         // they agree by construction, and a `__threshold__` row in the rule
         // table moves both together.
         threshold: thresholdFor(this.table, category),
-      }),
-    );
+      });
+    });
     const climbMs = nowMs() - climbStart;
 
     return {
@@ -712,11 +742,26 @@ export class DemoPipeline {
         tilesFetched,
         climbsStarted,
         heatLookups,
-        // READ AFTER `withPinned` HAS RELEASED, which is the only reason the
-        // index keeps a peak at all: the live `chunksPinned` is back to whatever
-        // is still held by now, i.e. zero.
-        chunksPinnedPeak: this.index.stats.chunksPinnedPeak,
-        pinnedOverCap: this.index.stats.pinnedOverCap,
+        chunksPinnedPeak,
+        /**
+         * COMPUTED HERE, NOT READ FROM `stats.pinnedOverCap` — and the reason
+         * is that the index's counter can never answer this question.
+         *
+         * `evictBeyond` is called from `update()` and from nowhere else, so the
+         * cap is never tested while a search's pins are held: by the time the
+         * next eviction runs — the very refresh this search triggers (W1) — the
+         * pins are released and the reading belongs to something else. Reading
+         * the index's field reported a value the search could not have caused,
+         * and it is sticky, so a second cheaper search inherited it.
+         *
+         * That matters because W7's stated prediction is about exactly this
+         * number. Comparing THIS search's pinned set against the cap in force
+         * is the measurement the prediction was always describing.
+         */
+        pinnedOverCap: Math.max(
+          0,
+          chunksPinnedPeak - this.index.maxRetainedChunks,
+        ),
         deriveMs,
         ensureMs,
         climbMs,

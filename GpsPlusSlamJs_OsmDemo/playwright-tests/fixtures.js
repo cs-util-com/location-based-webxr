@@ -760,8 +760,16 @@ export async function resetUi(page, baseline) {
   // Two clicks rather than one, and the shape is the feature: with an event
   // held, the button opens the picker instead of re-running the identical
   // search (G1), and the picker is where the clear lives.
+  //
+  // THE OPEN CHECK IS NOT REDUNDANT, because that button is a TOGGLE and
+  // nothing else closes the picker — not a click elsewhere, only Search or
+  // Clear. A test that ended with the picker open would have this helper close
+  // it, and then wait on a hidden `#geo-event-clear` until it timed out. No
+  // test leaves that state today; a reset helper exists to be insensitive to
+  // the states that do not exist yet.
   if ((await page.locator("#map .geo-winner").count()) > 0) {
-    await page.locator("#geo-event").click();
+    const picker = page.locator("#geo-event-picker");
+    if (!(await picker.isVisible())) await page.locator("#geo-event").click();
     await page.locator("#geo-event-clear").click();
     await expect(page.locator("#map .geo-winner")).toHaveCount(0);
   }
