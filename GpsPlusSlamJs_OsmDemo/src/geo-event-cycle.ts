@@ -45,14 +45,7 @@
 
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
-import { describeGeoEvent } from "./event-label.js";
 import { selectOsmView, type DemoStore } from "./osm-store.js";
-
-/** The button's resting label. Matches `index.html`, which renders it first. */
-export const GEO_EVENT_IDLE_LABEL = "Next geo-event";
-
-/** The button's in-progress label. */
-export const GEO_EVENT_BUSY_LABEL = "Finding…";
 
 /** The part of the worker client this needs; narrowed so tests can fake it. */
 interface GeoEventWorker {
@@ -66,11 +59,12 @@ export interface GeoEventCycleOptions {
   readonly store: DemoStore["store"];
   readonly actions: DemoStore["actions"];
   readonly worker: GeoEventWorker;
-  /** Draws an event, or clears the layer when given `undefined`. */
-  readonly render: (event: GeoEvent | undefined) => void;
-  /** Sets the button's label. The cycle owns all three of its states. */
-  readonly setLabel: (label: string) => void;
-  /** Disables the button while a search is running. */
+  /**
+   * Reflects the search's in-progress state — the ONE thing here that is not
+   * store state, because "a request is in flight" is a property of this cycle
+   * rather than of the data, and putting it in the store would make it
+   * persistable and inspectable for no gain.
+   */
   readonly setBusy: (busy: boolean) => void;
   /**
    * Publishes a fresh snapshot, so the cells and tiles the search produced
@@ -104,8 +98,6 @@ export function createGeoEventCycle(
     store,
     actions,
     worker,
-    render,
-    setLabel,
     setBusy,
     republish,
     now = () => Date.now(),
@@ -118,57 +110,58 @@ export function createGeoEventCycle(
     // asked.
     const { position, category } = selectOsmView(store.getState());
 
+    let event: GeoEvent | undefined;
     setBusy(true);
-    setLabel(GEO_EVENT_BUSY_LABEL);
     try {
-      let event: GeoEvent;
-      try {
-        event = await worker.call("geoEvent", {
-          position,
-          category,
-          now: now(),
-        });
-      } catch (error) {
-        store.dispatch(
-          actions.nonFatalError(`geo-event failed: ${messageOf(error)}`),
-        );
-        setLabel(GEO_EVENT_IDLE_LABEL);
-        return;
-      }
-
-      if (selectOsmView(store.getState()).category !== category) {
-        // Superseded. The label goes back to resting rather than staying on
-        // "Finding…", which would claim a search is still running.
-        setLabel(GEO_EVENT_IDLE_LABEL);
-        return;
-      }
-
-      render(event);
-      // The distance and direction are not decoration (F56): the winner is very
-      // often outside the viewport — an event tile is ~900 m across and the demo
-      // opens at zoom 18 — so without them a successful search looks exactly
-      // like nothing happening.
-      setLabel(describeGeoEvent(position, event));
-
-      // AFTER the render and the label, not before: those two are what the user
-      // pressed the button for, and the refresh is ~1.9 s of work behind them.
-      //
-      // ITS OWN CATCH, and the wording is the reason. `refresh` is `latestOnly`,
-      // which never rejects, so this is unreachable with the real wiring — but
-      // folding it into the search's handler would let a refresh fault report
-      // "geo-event failed" for a search that plainly succeeded, and the label
-      // would snap back to resting over a result that is on the map.
-      try {
-        await republish();
-      } catch (error) {
-        store.dispatch(
-          actions.nonFatalError(
-            `geo-event republish failed: ${messageOf(error)}`,
-          ),
-        );
-      }
+      event = await worker.call("geoEvent", {
+        position,
+        category,
+        now: now(),
+      });
+    } catch (error) {
+      // The PREVIOUS event deliberately stays published. A search that failed
+      // says nothing about the one already on the map, and taking it down would
+      // make a transient Overpass error look like an expiry.
+      store.dispatch(
+        actions.nonFatalError(`geo-event failed: ${messageOf(error)}`),
+      );
     } finally {
+      // THE BUSY STATE ENDS WITH THE RPC, NOT WITH THE REPUBLISH, and the
+      // ordering is the reason this is its own `try`. The label is derived, so
+      // while `busy` is true it reads "Finding…" — holding that across the
+      // ~1.9 s refresh would show it over markers that are already drawn, which
+      // is the opposite of what F56's label is for. The refresh announces
+      // itself through `fetchStarted` and the status line instead.
       setBusy(false);
+    }
+
+    if (event === undefined) return;
+
+    if (selectOsmView(store.getState()).category !== category) {
+      // Superseded. `categoryChanged` already cleared the field, and publishing
+      // now would silently refill it with the old category's answer — the
+      // stale-overlay bug arriving by a later route.
+      return;
+    }
+
+    // PUBLISHED, not drawn. Every view that shows a geo-event reads it from
+    // here, so there is one place it can be cleared from and one thing to keep
+    // in step. An empty `picks` is published too: "no event nearby" is a result,
+    // and it is what takes the previous search's markers down.
+    store.dispatch(actions.geoEventFound(event));
+
+    // ITS OWN CATCH, and the wording is the reason. `refresh` is `latestOnly`,
+    // which never rejects, so this is unreachable with the real wiring — but
+    // folding it into the search's handler would let a refresh fault report
+    // "geo-event failed" for a search whose result is plainly on the map.
+    try {
+      await republish();
+    } catch (error) {
+      store.dispatch(
+        actions.nonFatalError(
+          `geo-event republish failed: ${messageOf(error)}`,
+        ),
+      );
     }
   };
 }

@@ -17,18 +17,28 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createOsmViewSlice, type OsmViewLatLng } from './osm-view-slice';
+import {
+  createOsmViewSlice,
+  type OsmViewActions,
+  type OsmViewLatLng,
+} from './osm-view-slice';
 
 /** Stands in for the demo's `DemoSnapshot`; the slice never inspects it. */
 interface TestSnapshot {
   readonly cells: number;
 }
 
+/** The second opaque payload, exactly as the snapshot is. */
+interface TestGeoEvent {
+  readonly eventTime: number;
+}
+
 const COLOGNE: OsmViewLatLng = { lat: 50.9413, lng: 6.9583 };
 const SNAPSHOT: TestSnapshot = { cells: 931 };
+const EVENT: TestGeoEvent = { eventTime: 1_700_000_000_000 };
 
 function makeSlice() {
-  return createOsmViewSlice<TestSnapshot>({
+  return createOsmViewSlice<TestSnapshot, TestGeoEvent>({
     initialPosition: COLOGNE,
     initialCategory: 'walkable',
   });
@@ -247,6 +257,106 @@ describe('createOsmViewSlice — the failure split (DEC-16)', () => {
       slice.actions.fetchFailed('boom')
     );
     expect(state.selectedCell).toBeUndefined();
+  });
+});
+
+describe('createOsmViewSlice — the geo-event (DEC-G2)', () => {
+  it('exposes exactly the action creators OsmViewActions declares', () => {
+    // WHY THIS TEST MATTERS, and why it looks like it asserts nothing. The
+    // slice's return type is written by hand (`OsmViewActions`) because the
+    // declaration emitter degrades a two-generic slice's inferred `actions` to
+    // an index-signature type, which makes every creator `| undefined` for
+    // consumers. Writing it by hand costs the compile-time link between the
+    // reducers and the interface — `createOsmViewSlice` has to cast, since
+    // RTK's creator types are conditionals TS cannot resolve while TSnapshot is
+    // still a parameter.
+    //
+    // At CONCRETE type arguments they resolve, so this assignment restores the
+    // check: add or rename a reducer without updating `OsmViewActions` and this
+    // line fails under `typecheck:tests`. The runtime expectations below are
+    // the same claim for a reader who is not looking at types.
+    const actions: OsmViewActions<TestSnapshot, TestGeoEvent> =
+      makeSlice().actions;
+
+    expect(typeof actions.geoEventFound).toBe('function');
+    expect(actions.geoEventFound(EVENT).payload).toBe(EVENT);
+    expect(actions.geoEventFound(undefined).payload).toBeUndefined();
+  });
+
+  it('starts with no geo-event', () => {
+    expect(
+      makeSlice().reducer(undefined, { type: '@@INIT' }).geoEvent
+    ).toBeUndefined();
+  });
+
+  it('holds whatever the consumer found, without inspecting it', () => {
+    const slice = makeSlice();
+    const state = reduceAll(slice, slice.actions.geoEventFound(EVENT));
+    expect(state.geoEvent).toBe(EVENT);
+  });
+
+  it('a CATEGORY CHANGE clears it — this is the reported bug', () => {
+    // WHY THIS TEST MATTERS. The session reported walkable geo-events still on
+    // the map under battle-area cells. Nothing removed them: the markers went
+    // straight from the worker into a Leaflet layer, so they were the one
+    // overlay in the view that was not a projection of this state and no action
+    // could reach them. An event is computed against ONE category's scores and
+    // its threshold, so it cannot survive the switch.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.categoryChanged('battleArea')
+    );
+    expect(state.geoEvent).toBeUndefined();
+  });
+
+  it('a DATA FAILURE clears it, so no markers are left on a blanked map', () => {
+    // The unreported half of the same defect: `fetchFailed` empties the map of
+    // cells, regions and fetch boxes, and the geo-event markers used to be the
+    // one thing left standing on it — the map asserting a state nothing
+    // produced, in its purest form.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.fetchFailed('Overpass said no')
+    );
+    expect(state.geoEvent).toBeUndefined();
+  });
+
+  it('SURVIVES a position change, because walking to the event is the point', () => {
+    // Deliberate asymmetry with the selection, which a move DOES drop. An event
+    // is a pure function of tile and time, so moving does not make it untrue —
+    // and the label says "640 m NE", which is an instruction to walk. Clearing
+    // it on the first step would delete the thing the user is navigating to.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.positionChanged({ lat: 50.95, lng: 6.97 })
+    );
+    expect(state.geoEvent).toBe(EVENT);
+  });
+
+  it('a NON-FATAL error keeps it, for the same reason it keeps the snapshot', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.nonFatalError('WebGL context lost')
+    );
+    expect(state.geoEvent).toBe(EVENT);
+  });
+
+  it('can be cleared explicitly, which is the control the e2e reset needs', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.geoEventFound(undefined)
+    );
+    expect(state.geoEvent).toBeUndefined();
   });
 });
 

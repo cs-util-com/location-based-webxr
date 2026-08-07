@@ -78,10 +78,12 @@ export {
 export {
   createOsmViewSlice,
   type CreateOsmViewSliceOptions,
+  type OsmViewActions,
   type OsmViewFeature,
   type OsmViewLatLng,
   type OsmViewLoading,
   type OsmViewLoadingPhase,
+  type OsmViewSlice,
   type OsmViewState,
 } from './osm-view-slice.js';
 

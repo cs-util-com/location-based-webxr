@@ -20,9 +20,13 @@ interface TestSnapshot {
   readonly cells: number;
 }
 
+interface TestGeoEvent {
+  readonly eventTime: number;
+}
+
 const COLOGNE: OsmViewLatLng = { lat: 50.9413, lng: 6.9583 };
 
-const slice = createOsmViewSlice<TestSnapshot>({
+const slice = createOsmViewSlice<TestSnapshot, TestGeoEvent>({
   initialPosition: COLOGNE,
   initialCategory: 'walkable',
 });
@@ -44,6 +48,12 @@ const anyAction = fc.oneof(
   fc.string().map((m) => actions.fetchStarted(m)),
   fc.string().map((m) => actions.scoringStarted(m)),
   fc.nat().map((n) => actions.snapshotReady({ cells: n })),
+  fc
+    .option(
+      fc.nat().map((eventTime) => ({ eventTime })),
+      { nil: undefined }
+    )
+    .map((e) => actions.geoEventFound(e)),
   fc.string().map((m) => actions.fetchFailed(m)),
   fc.string().map((m) => actions.nonFatalError(m))
 );
@@ -85,6 +95,44 @@ describe('createOsmViewSlice invariants', () => {
         expect(after.selectedCell).toBeUndefined();
         expect(after.loading.phase).toBe('error');
       })
+    );
+  });
+
+  it('a geo-event NEVER outlives the category it was computed for', () => {
+    // The reported bug as an invariant rather than an example: whatever
+    // sequence got the state here, switching category must not leave an event
+    // standing. An event is an answer about ONE category's scores and its
+    // threshold, so a surviving one is a marker asserting something the map no
+    // longer shows.
+    fc.assert(
+      fc.property(anySequence, fc.string(), (sequence, category) => {
+        const after = reducer(
+          stateAfter(sequence),
+          actions.categoryChanged(category)
+        );
+        expect(after.geoEvent).toBeUndefined();
+      })
+    );
+  });
+
+  it('a geo-event ALWAYS survives a move, so it can be walked to', () => {
+    // The counterweight, and the reason this is a pair. Without it, "clear on
+    // anything that changes the view" would pass the invariant above and delete
+    // the event on the user's first step towards it — the label says "640 m
+    // NE", which is an instruction, not a description.
+    fc.assert(
+      fc.property(
+        anySequence,
+        fc.record({
+          lat: fc.double({ min: -85, max: 85, noNaN: true }),
+          lng: fc.double({ min: -180, max: 180, noNaN: true }),
+        }),
+        (sequence, position) => {
+          const before = stateAfter(sequence);
+          const after = reducer(before, actions.positionChanged(position));
+          expect(after.geoEvent).toBe(before.geoEvent);
+        }
+      )
     );
   });
 

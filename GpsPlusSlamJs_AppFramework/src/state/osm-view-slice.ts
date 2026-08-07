@@ -28,7 +28,13 @@
  * @see osm-view-slice.ts.md
  */
 
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import {
+  createSlice,
+  type ActionCreatorWithOptionalPayload,
+  type ActionCreatorWithPayload,
+  type PayloadAction,
+  type Reducer,
+} from '@reduxjs/toolkit';
 
 /**
  * A WGS84 position.
@@ -57,8 +63,14 @@ export interface OsmViewLoading {
   readonly message: string;
 }
 
-/** The minimum that lets four views agree without any of them talking. */
-export interface OsmViewState<TSnapshot> {
+/**
+ * The minimum that lets four views agree without any of them talking.
+ *
+ * `TGeoEvent` defaults to `never`, so a consumer that has no geo-events writes
+ * `OsmViewState<DemoSnapshot>` exactly as before and its `geoEvent` can only
+ * ever be `undefined`.
+ */
+export interface OsmViewState<TSnapshot, TGeoEvent = never> {
   /** Where the user is, real or simulated by a map click. */
   position: OsmViewLatLng;
   /** The affordance category being displayed. */
@@ -119,6 +131,25 @@ export interface OsmViewState<TSnapshot> {
   loading: OsmViewLoading;
   /** Whatever the consumer's pipeline last produced. Opaque here. */
   snapshot: TSnapshot | undefined;
+  /**
+   * The geo-event the consumer last found, or none.
+   *
+   * A SECOND OPAQUE PAYLOAD, for the same publish-boundary reason `TSnapshot` is
+   * one: a geo-event is a `gps-plus-slam-osm` type, and naming it here — even in
+   * a type-only import, which still lands in the emitted `.d.ts` — would 404
+   * every consumer's install. The slice stores it and never looks inside.
+   *
+   * WHY IT IS STATE AND NOT A LAYER THE CONSUMER OWNS. It used to go straight
+   * from the worker into a Leaflet layer, which made it the one overlay in the
+   * view that was not a projection of this state: nothing could clear it, no
+   * other view could react to it, and a category switch left the previous
+   * category's events sitting over the new category's cells. That was the
+   * reported defect.
+   *
+   * CLEARED BY `categoryChanged` and `fetchFailed`, KEPT by `positionChanged`.
+   * The asymmetry is the point and is not an oversight — see those reducers.
+   */
+  geoEvent: TGeoEvent | undefined;
 }
 
 /**
@@ -153,6 +184,59 @@ export interface CreateOsmViewSliceOptions {
 }
 
 const IDLE: OsmViewLoading = { phase: 'idle', message: '' };
+
+/**
+ * The slice's action creators, WRITTEN OUT rather than inferred.
+ *
+ * WHY THIS EXISTS, because "the compiler already knew this" is the obvious
+ * objection. It did — until the slice gained its second type parameter. The
+ * declaration emitter (`rolldown-plugin-dts`) inlines the inferred reducers map
+ * for a one-parameter generic and gives up on a two-parameter one, falling back
+ * to `CaseReducerActions<SliceCaseReducers<State>, string>`. That fallback has
+ * an INDEX SIGNATURE, so under `noUncheckedIndexedAccess` every consumer sees
+ * `slice.actions.snapshotReady` as possibly `undefined` and cannot call any of
+ * them. Verified by building both ways: the demo's typecheck went from clean to
+ * 19 errors on `Cannot invoke an object which is possibly 'undefined'`.
+ *
+ * So this is a workaround for a build-tool limitation — and it pays for itself,
+ * because the published surface of a published package is now stated rather
+ * than inferred, and a reducer signature changing under a consumer becomes a
+ * compile error here instead of a silent API change.
+ *
+ * The type argument on each creator is the ACTION TYPE STRING, which is `string`
+ * rather than a literal because `options.name` decides it at runtime.
+ */
+export interface OsmViewActions<TSnapshot, TGeoEvent> {
+  positionChanged: ActionCreatorWithPayload<OsmViewLatLng, string>;
+  categoryChanged: ActionCreatorWithPayload<string, string>;
+  showBelowThresholdChanged: ActionCreatorWithPayload<boolean, string>;
+  groundModeChanged: ActionCreatorWithPayload<string, string>;
+  layersChanged: ActionCreatorWithPayload<
+    Readonly<Record<string, boolean>>,
+    string
+  >;
+  cellSelected: ActionCreatorWithOptionalPayload<string | undefined, string>;
+  featureSelected: ActionCreatorWithOptionalPayload<
+    OsmViewFeature | undefined,
+    string
+  >;
+  regionSelected: ActionCreatorWithOptionalPayload<string | undefined, string>;
+  fetchStarted: ActionCreatorWithOptionalPayload<string | undefined, string>;
+  scoringStarted: ActionCreatorWithOptionalPayload<string | undefined, string>;
+  snapshotReady: ActionCreatorWithPayload<TSnapshot, string>;
+  geoEventFound: ActionCreatorWithOptionalPayload<
+    TGeoEvent | undefined,
+    string
+  >;
+  fetchFailed: ActionCreatorWithPayload<string, string>;
+  nonFatalError: ActionCreatorWithPayload<string, string>;
+}
+
+/** What {@link createOsmViewSlice} hands back. Named for the same reason. */
+export interface OsmViewSlice<TSnapshot, TGeoEvent> {
+  reducer: Reducer<OsmViewState<TSnapshot, TGeoEvent>>;
+  actions: OsmViewActions<TSnapshot, TGeoEvent>;
+}
 
 /**
  * Builds an `osmView` slice bound to the consumer's snapshot type.
@@ -200,10 +284,10 @@ function withoutSignedZero(position: OsmViewLatLng): OsmViewLatLng {
   };
 }
 
-export function createOsmViewSlice<TSnapshot>(
+export function createOsmViewSlice<TSnapshot, TGeoEvent = never>(
   options: CreateOsmViewSliceOptions
-) {
-  const initialState: OsmViewState<TSnapshot> = {
+): OsmViewSlice<TSnapshot, TGeoEvent> {
+  const initialState: OsmViewState<TSnapshot, TGeoEvent> = {
     // Normalised here too, not only in `positionChanged`: `initialPosition` is
     // consumer input, so without this the very first state could violate the
     // round-trip invariant before any action was ever dispatched.
@@ -217,6 +301,7 @@ export function createOsmViewSlice<TSnapshot>(
     selectedRegion: undefined,
     loading: IDLE,
     snapshot: undefined,
+    geoEvent: undefined,
   };
 
   const slice = createSlice({
@@ -228,6 +313,12 @@ export function createOsmViewSlice<TSnapshot>(
        * place being left, and a details panel still explaining it after the map
        * has moved is the exact class of disagreement this store exists to make
        * impossible.
+       *
+       * KEEPS the geo-event, and the asymmetry with the selection is deliberate.
+       * A geo-event is a pure function of tile and time, so moving cannot make
+       * it untrue — and the consumer's label reads "640 m NE", which is an
+       * instruction to walk there. Dropping it on the first step would delete
+       * the thing the user is navigating towards.
        */
       positionChanged(state, action: PayloadAction<OsmViewLatLng>) {
         return {
@@ -243,9 +334,15 @@ export function createOsmViewSlice<TSnapshot>(
        * Switch the displayed category. KEEPS the selection — "what does this
        * same cell score for `battleArea`?" is a question the details panel can
        * answer, and clearing it would make the obvious next click impossible.
+       *
+       * CLEARS the geo-event, and that is the opposite call for the opposite
+       * reason. The selection is a place, which means the same thing in every
+       * category; an event is an ANSWER, computed against one category's scores
+       * and its threshold. Keeping it is how the session ended up looking at
+       * walkable events sitting on battle-area cells.
        */
       categoryChanged(state, action: PayloadAction<string>) {
-        return { ...state, category: action.payload };
+        return { ...state, category: action.payload, geoEvent: undefined };
       },
 
       showBelowThresholdChanged(state, action: PayloadAction<boolean>) {
@@ -344,8 +441,45 @@ export function createOsmViewSlice<TSnapshot>(
         };
       },
 
+      /**
+       * THE CAST IS THE PRICE OF TWO OPAQUE PAYLOADS, and it is the same
+       * workaround the file header already describes for one. `state` is an
+       * immer `Draft`, so spreading it yields
+       * `TGeoEvent extends object ? Draft<TGeoEvent> : TGeoEvent` for the
+       * geo-event, while `action.payload` here is a raw `TSnapshot` — so the
+       * result matches neither the draft type (wrong snapshot) nor the plain
+       * one (wrong geo-event), and there is no annotation that satisfies both
+       * without breaking RTK's contravariant `state` parameter.
+       *
+       * It is sound because these reducers build a fresh object and never
+       * mutate, so no draft ever escapes; only the two reducers with a generic
+       * payload need it.
+       */
       snapshotReady(state, action: PayloadAction<TSnapshot>) {
-        return { ...state, snapshot: action.payload, loading: IDLE };
+        return {
+          ...state,
+          snapshot: action.payload,
+          loading: IDLE,
+        } as OsmViewState<TSnapshot, TGeoEvent>;
+      },
+
+      /**
+       * The consumer found a geo-event, or `undefined` to take it down.
+       *
+       * ONE FIELD, so two sets of events cannot coexist by construction — the
+       * reading the session could not settle is unrepresentable rather than
+       * merely untested.
+       *
+       * `undefined` is a first-class payload rather than a separate
+       * `geoEventCleared` action: a second action would be a second way to
+       * reach the same state, and the consumer's renderer already takes
+       * `undefined` to mean "clear the layer".
+       */
+      geoEventFound(state, action: PayloadAction<TGeoEvent | undefined>) {
+        return { ...state, geoEvent: action.payload } as OsmViewState<
+          TSnapshot,
+          TGeoEvent
+        >;
       },
 
       /**
@@ -367,6 +501,10 @@ export function createOsmViewSlice<TSnapshot>(
           // region id is the lowest-sorting cell of a flood fill — so with no
           // snapshot there is nothing it could resolve against.
           selectedRegion: undefined,
+          // AND THE GEO-EVENT, for the reason this action exists at all. It
+          // empties the map of cells, regions and fetch boxes; markers left
+          // standing on that blank map are the stale overlay in its purest form.
+          geoEvent: undefined,
           loading: { phase: 'error', message: action.payload },
         };
       },
@@ -399,5 +537,24 @@ export function createOsmViewSlice<TSnapshot>(
     },
   });
 
-  return { reducer: slice.reducer, actions: slice.actions };
+  return {
+    reducer: slice.reducer,
+    /**
+     * THE ONE CAST, and where the guarantee it gives up is bought back.
+     *
+     * RTK types a creator whose payload is a bare generic as a CONDITIONAL —
+     * `IfVoid<TSnapshot, …, IfMaybeUndefined<TSnapshot, …, …>>` — which TS
+     * cannot resolve while `TSnapshot` is still a type parameter, so it cannot
+     * be shown assignable to anything written by hand. The cast is therefore
+     * unavoidable given the declared return type, which itself is unavoidable
+     * given the emitter's two-generic limitation (see {@link OsmViewActions}).
+     *
+     * WHAT REPLACES THE CHECK: `osm-view-slice.test.ts` assigns these actions to
+     * `OsmViewActions<TestSnapshot, TestGeoEvent>` at CONCRETE type arguments,
+     * where every conditional resolves and the comparison is real. Add a
+     * reducer without adding it to the interface and that assignment fails
+     * under `typecheck:tests`.
+     */
+    actions: slice.actions as unknown as OsmViewActions<TSnapshot, TGeoEvent>,
+  };
 }

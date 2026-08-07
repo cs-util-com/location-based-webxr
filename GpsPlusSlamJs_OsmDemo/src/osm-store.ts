@@ -29,7 +29,7 @@ import {
   createOsmViewSlice,
   type OsmViewState,
 } from "gps-plus-slam-app-framework/state";
-import type { LatLng } from "gps-plus-slam-osm";
+import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import { DEFAULT_GROUND_MODE } from "./ground-mode.js";
@@ -37,7 +37,7 @@ import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
 
 /** The demo's root state. One slice; the demo has no other durable state. */
 export interface DemoRootState {
-  readonly osmView: OsmViewState<DemoSnapshot>;
+  readonly osmView: OsmViewState<DemoSnapshot, GeoEvent>;
 }
 
 export interface CreateDemoStoreOptions {
@@ -66,7 +66,7 @@ export function selectLayers(state: DemoRootState): LayerSet {
 /** The slice's state, from the root. The one place the mount key is named. */
 export function selectOsmView(
   state: DemoRootState,
-): OsmViewState<DemoSnapshot> {
+): OsmViewState<DemoSnapshot, GeoEvent> {
   return state.osmView;
 }
 
@@ -115,7 +115,7 @@ export function summariseSnapshot<S>(state: S): S {
  * either way, so switching to it if AR mode ever arrives is a one-line change.
  */
 export function createDemoStore(options: CreateDemoStoreOptions) {
-  const slice = createOsmViewSlice<DemoSnapshot>({
+  const slice = createOsmViewSlice<DemoSnapshot, GeoEvent>({
     initialPosition: options.start,
     initialCategory: options.category,
     initialLayers: DEFAULT_LAYERS,
@@ -175,7 +175,7 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
    * cost more than the redraw.
    */
   function subscribe<T>(
-    select: (view: OsmViewState<DemoSnapshot>) => T,
+    select: (view: OsmViewState<DemoSnapshot, GeoEvent>) => T,
     onChange: (current: T, previous: T | undefined) => void,
   ): () => void {
     let previous = select(selectOsmView(store.getState()));

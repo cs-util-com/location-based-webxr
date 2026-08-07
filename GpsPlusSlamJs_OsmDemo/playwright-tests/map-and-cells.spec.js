@@ -861,6 +861,52 @@ test.describe("the geo-event", () => {
       await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
     }
   });
+
+  /**
+   * WHY THIS TEST EXISTS (G2, DEC-G2). The reported defect, end to end: after
+   * switching category the previous category's event markers were still on the
+   * map, over the new category's cells. Nothing removed them, because they went
+   * from the worker straight into a Leaflet layer without passing through the
+   * store — so no action and no control could reach them.
+   *
+   * It is an e2e rather than a unit test because the unit tests can only prove
+   * the state is cleared; that the LAYER goes with it is a claim about the
+   * subscriber in `main.ts`, which has no other coverage.
+   */
+  test("takes the markers down when the category changes", async ({ page }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const button = page.locator("#geo-event");
+    await button.click();
+    await expect(button).toHaveText(/Event at|No event nearby/, {
+      timeout: 30_000,
+    });
+
+    // Only meaningful if something was actually drawn — a fixture with no
+    // qualifying ground has nothing to clear, and asserting on it would make
+    // this pass for the wrong reason.
+    const drawn = await page.locator("#map .geo-winner").count();
+    test.skip(drawn === 0, "fixture yielded no event to clear");
+
+    const other = await page.evaluate(() => {
+      const select = document.getElementById("category");
+      const values = [...(select?.querySelectorAll("option") ?? [])].map(
+        (option) => option.value,
+      );
+      return values.find((value) => value !== select?.value) ?? "";
+    });
+    test.skip(other === "", "rule table declares only one category");
+    await page.locator("#category").selectOption(other);
+
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+    await expect(page.locator("#map .geo-candidate")).toHaveCount(0);
+    // The label is derived from the same state, so it must go back with them —
+    // a button still describing an event that is no longer drawn is the same
+    // disagreement in a different pane.
+    await expect(button).toHaveText(/Next geo-event/);
+  });
 });
 
 test.describe("the cell layer toggle", () => {

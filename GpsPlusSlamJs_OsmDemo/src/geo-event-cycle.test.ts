@@ -15,11 +15,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GeoEvent } from "gps-plus-slam-osm";
 
-import {
-  createGeoEventCycle,
-  GEO_EVENT_BUSY_LABEL,
-  GEO_EVENT_IDLE_LABEL,
-} from "./geo-event-cycle.js";
+import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
@@ -45,8 +41,6 @@ function setup() {
     answer: (value: GeoEvent) => void;
     fail: (error: unknown) => void;
   }[] = [];
-  const render = vi.fn();
-  const setLabel = vi.fn();
   const setBusy = vi.fn();
   const republish = vi.fn(() => Promise.resolve());
 
@@ -59,19 +53,20 @@ function setup() {
           calls.push({ payload, answer: resolve, fail: reject });
         }),
     },
-    render,
-    setLabel,
     setBusy,
     republish,
     now: () => 1_700_000_000_000,
   });
 
-  return { ...demo, find, calls, render, setLabel, setBusy, republish };
+  /** What the store currently holds — the only thing any view draws from. */
+  const heldEvent = () => selectOsmView(demo.store.getState()).geoEvent;
+
+  return { ...demo, find, calls, setBusy, republish, heldEvent };
 }
 
 describe("createGeoEventCycle", () => {
-  it("asks for the CURRENT position and category, and renders the answer", async () => {
-    const { find, calls, render, setLabel } = setup();
+  it("asks for the CURRENT position and category, and PUBLISHES the answer", async () => {
+    const { find, calls, heldEvent } = setup();
 
     const pending = find();
     expect(calls[0]?.payload).toMatchObject({
@@ -79,24 +74,24 @@ describe("createGeoEventCycle", () => {
       category: "walkable",
     });
 
-    calls[0]?.answer(eventWith(1));
+    const found = eventWith(1);
+    calls[0]?.answer(found);
     await pending;
 
-    expect(render).toHaveBeenCalledTimes(1);
-    // The terminal label is the whole point of F56 — the winner is usually
-    // outside the viewport, so "nothing happened" and "it worked" look alike.
-    expect(setLabel).toHaveBeenLastCalledWith(expect.stringContaining("Event"));
+    // INTO THE STORE, not into a Leaflet layer. That was the defect: the
+    // markers were the one overlay in the view that no action could reach, so
+    // nothing could clear them and no other view could react to them.
+    expect(heldEvent()).toBe(found);
   });
 
   it("shows the in-progress state for the duration and restores it after", async () => {
     // The root CLAUDE.md requires an async control to show one, and this
     // operation is 5–10 s. Asserted for BOTH edges: a busy state that is never
     // left is worse than none.
-    const { find, calls, setBusy, setLabel } = setup();
+    const { find, calls, setBusy } = setup();
 
     const pending = find();
     expect(setBusy).toHaveBeenLastCalledWith(true);
-    expect(setLabel).toHaveBeenCalledWith(GEO_EVENT_BUSY_LABEL);
 
     calls[0]?.answer(eventWith(1));
     await pending;
@@ -104,21 +99,18 @@ describe("createGeoEventCycle", () => {
     expect(setBusy).toHaveBeenLastCalledWith(false);
   });
 
-  it("says 'no event nearby' rather than failing when nothing was found", async () => {
-    // A tile that is all water genuinely has no event. This is the routine
-    // outcome that must stay distinguishable from the failure below.
-    const { find, calls, setLabel, render } = setup();
+  it("publishes an EMPTY event rather than nothing when none was found", async () => {
+    // A tile that is all water genuinely has no event, and that is a RESULT —
+    // not an error, and not "nothing happened". Publishing it is what takes the
+    // previous search's markers down, and what lets the label say "No event
+    // nearby · searched 7 tiles" instead of silently reverting.
+    const { find, calls, heldEvent } = setup();
 
     const pending = find();
     calls[0]?.answer(eventWith(0));
     await pending;
 
-    expect(setLabel).toHaveBeenLastCalledWith(
-      expect.stringContaining("No event nearby"),
-    );
-    // Still rendered — `renderGeoEvent` clears the layer, which is how the
-    // PREVIOUS search's markers stop claiming to be current.
-    expect(render).toHaveBeenCalledTimes(1);
+    expect(heldEvent()).toMatchObject({ picks: [], tilesSearched: 7 });
   });
 
   it("reports a rejection WITHOUT blanking the map, and never rejects itself", async () => {
@@ -130,8 +122,9 @@ describe("createGeoEventCycle", () => {
     //
     // It must also not become an unhandled rejection: the caller is a DOM
     // listener, and `void`-ing a rejecting promise is an unhandled rejection.
-    const { store, actions, find, calls, setLabel } = setup();
+    const { store, actions, find, calls, heldEvent } = setup();
     store.dispatch(actions.snapshotReady({ cells: [] } as never));
+    store.dispatch(actions.geoEventFound(eventWith(1)));
 
     const pending = find();
     calls[0]?.fail(new Error("worker went away"));
@@ -144,7 +137,10 @@ describe("createGeoEventCycle", () => {
     });
     // The snapshot SURVIVES — that is the whole distinction.
     expect(view.snapshot).not.toBeUndefined();
-    expect(setLabel).toHaveBeenLastCalledWith(GEO_EVENT_IDLE_LABEL);
+    // And so does the PREVIOUS event: a search that failed says nothing about
+    // the one already on the map, and taking it down would make a transient
+    // Overpass error look like the event had expired.
+    expect(heldEvent()).not.toBeUndefined();
   });
 
   it("survives a thrown non-Error", async () => {
@@ -164,16 +160,15 @@ describe("createGeoEventCycle", () => {
     // drawing it over the new category's map is the cross-view disagreement the
     // store exists to prevent — and once W2 clears the markers on a category
     // change, a late arrival would silently put them back.
-    const { store, actions, find, calls, render, setLabel } = setup();
+    const { store, actions, find, calls, heldEvent } = setup();
 
     const pending = find();
     store.dispatch(actions.categoryChanged("battleArea"));
     calls[0]?.answer(eventWith(1));
     await pending;
 
-    expect(render).not.toHaveBeenCalled();
-    // The button must not be left saying "Finding…" for a search that resolved.
-    expect(setLabel).toHaveBeenLastCalledWith(GEO_EVENT_IDLE_LABEL);
+    // `categoryChanged` cleared the field; the late answer must not refill it.
+    expect(heldEvent()).toBeUndefined();
   });
 
   it("REPUBLISHES after a successful search, so the work it did becomes visible", async () => {
@@ -183,7 +178,8 @@ describe("createGeoEventCycle", () => {
     // carry. Nothing asked for a next snapshot, so the probed cells never
     // appeared and the red fetch rectangles never grew — leaving a winner
     // legitimately outside them.
-    const { find, calls, republish } = setup();
+    const held = setup();
+    const { find, calls, republish, setBusy } = held;
 
     const pending = find();
     expect(republish).not.toHaveBeenCalled();
@@ -192,6 +188,13 @@ describe("createGeoEventCycle", () => {
     await pending;
 
     expect(republish).toHaveBeenCalledTimes(1);
+    // AND THE BUSY STATE ENDED FIRST. The label is derived, so "busy" reads
+    // "Finding…" — holding it across the ~1.9 s refresh would show that over
+    // markers already on the map, which is exactly the "did anything happen?"
+    // confusion F56's label exists to remove.
+    expect(setBusy.mock.invocationCallOrder[1]).toBeLessThan(
+      republish.mock.invocationCallOrder[0] ?? Infinity,
+    );
   });
 
   it("does NOT republish after a failure or a dropped answer", async () => {
@@ -224,7 +227,6 @@ describe("createGeoEventCycle", () => {
     // follow-up step threw is the worst outcome of the three.
     const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
     const setBusy = vi.fn();
-    const setLabel = vi.fn();
     let answer: (value: GeoEvent) => void = () => {};
     const find = createGeoEventCycle({
       store: demo.store,
@@ -235,8 +237,6 @@ describe("createGeoEventCycle", () => {
             answer = resolve;
           }),
       },
-      render: vi.fn(),
-      setLabel,
       setBusy,
       republish: () => Promise.reject(new Error("refresh blew up")),
       now: () => 1_700_000_000_000,
@@ -250,7 +250,7 @@ describe("createGeoEventCycle", () => {
     expect(selectOsmView(demo.store.getState()).loading.message).toBe(
       "geo-event republish failed: refresh blew up",
     );
-    // The result stays described: the search succeeded and its markers are up.
-    expect(setLabel).toHaveBeenLastCalledWith(expect.stringContaining("Event"));
+    // The result stays published: the search succeeded and its markers are up.
+    expect(selectOsmView(demo.store.getState()).geoEvent).not.toBeUndefined();
   });
 });

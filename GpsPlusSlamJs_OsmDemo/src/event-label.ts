@@ -23,6 +23,12 @@ import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 /** The eight compass points, in bearing order from north. */
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
 
+/** The button's resting label. Matches `index.html`, which renders it first. */
+export const GEO_EVENT_IDLE_LABEL = "Next geo-event";
+
+/** The button's in-progress label. */
+export const GEO_EVENT_BUSY_LABEL = "Finding…";
+
 const EARTH_RADIUS_M = 6_371_000;
 const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
 
@@ -111,4 +117,28 @@ export function describeGeoEvent(
   const metres = distanceMetres(user, nearest.position);
   const where = compassPoint(bearingDegrees(user, nearest.position));
   return `Event at ${formatTime(event.eventTime)} · ${formatDistance(metres)} ${where} · ${searched}`;
+}
+
+/**
+ * The button's label for a whole view state — the WHOLE of what it displays.
+ *
+ * A PURE FUNCTION OF (busy, position, event), which is what makes the label
+ * state rather than a side effect of the last thing that happened. It used to
+ * be written at the call site on success and reset to the resting text on
+ * failure, so it could disagree with the map: a failed search reset a label that
+ * described markers still on screen, and nothing put it back.
+ *
+ * The consequence worth knowing about: because the distance is measured from the
+ * CURRENT position, the label re-reads as the user walks — "640 m NE" becomes
+ * "210 m NE" — which is the behaviour F56 wanted and previously could not have,
+ * since the string was frozen at the moment the search returned.
+ */
+export function geoEventButtonLabel(
+  view: { position: LatLng; geoEvent: GeoEvent | undefined },
+  busy: boolean,
+  formatTime?: (at: number) => string,
+): string {
+  if (busy) return GEO_EVENT_BUSY_LABEL;
+  if (view.geoEvent === undefined) return GEO_EVENT_IDLE_LABEL;
+  return describeGeoEvent(view.position, view.geoEvent, formatTime);
 }

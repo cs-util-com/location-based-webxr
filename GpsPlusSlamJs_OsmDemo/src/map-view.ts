@@ -202,6 +202,15 @@ export class MapView {
    * makes the map assert a state nothing produced — which is exactly the defect
    * the round-1 feedback reported. The marker stays because "where the user is"
    * is still true, and the basemap because it was never a claim about scoring.
+   *
+   * THE EVENT LAYER IS DELIBERATELY NOT HERE, which is a change of mechanism
+   * rather than an omission (W2). A geo-event is not derived from a snapshot, so
+   * it is not this method's business: it is a projection of `geoEvent` in the
+   * store, and `fetchFailed` — the only action that makes the snapshot
+   * `undefined` and therefore the only route to this method — clears that field
+   * too. Adding `eventLayer.clearLayers()` here would be a SECOND mechanism for
+   * one piece of state, and the two could only ever disagree. It was previously
+   * missing here for the ordinary reason: nobody had thought about it.
    */
   clear(): void {
     this.cellLayer.clearLayers();

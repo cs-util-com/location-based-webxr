@@ -31,6 +31,7 @@ import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { describeDrawCost } from "./draw-cost.js";
+import { geoEventButtonLabel } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import {
@@ -478,6 +479,24 @@ async function main(): Promise<void> {
     store.dispatch(actions.showBelowThresholdChanged(showBelow.checked));
   });
   /**
+   * Puts the geo-event button in line with the state, plus the one thing that
+   * is not state: whether a search is in flight.
+   *
+   * DERIVED, NOT WRITTEN AT THE CALL SITE. The label used to be assigned on
+   * success and reset on failure, so it could describe markers that were no
+   * longer there and vice versa. Reading it from `(busy, position, geoEvent)`
+   * also makes the distance re-read as the user walks, which is the behaviour
+   * F56 wanted and a frozen string could not give.
+   */
+  const paintGeoEventButton = (busy = geoEventButton.disabled): void => {
+    geoEventButton.disabled = busy;
+    geoEventButton.textContent = geoEventButtonLabel(
+      selectOsmView(store.getState()),
+      busy,
+    );
+  };
+
+  /**
    * The geo-event search, wired HERE rather than where the button is looked up,
    * because it needs `refresh` — see `geo-event-cycle.ts` for why a successful
    * search republishes at all.
@@ -486,13 +505,7 @@ async function main(): Promise<void> {
     store,
     actions,
     worker,
-    render: (event) => mapView.renderGeoEvent(event),
-    setLabel: (label) => {
-      geoEventButton.textContent = label;
-    },
-    setBusy: (busy) => {
-      geoEventButton.disabled = busy;
-    },
+    setBusy: paintGeoEventButton,
     republish: () => refresh(),
   });
   geoEventButton.addEventListener("click", () => void findGeoEvent());
@@ -1091,6 +1104,30 @@ async function main(): Promise<void> {
   );
 
   subscribe((view) => view.showBelowThreshold, redrawFromSnapshot);
+
+  /**
+   * The geo-event markers, drawn like every other overlay: from the store.
+   *
+   * They used to go straight from the worker into `mapView`'s event layer,
+   * which made them the ONE overlay here that was not a projection of state —
+   * so a category switch left the previous category's events sitting over the
+   * new category's cells, a failed refresh blanked everything except them, and
+   * no control could take them down. Now `geoEventFound` is the only way in and
+   * `categoryChanged` / `fetchFailed` are the ways out.
+   */
+  subscribe(
+    (view) => view.geoEvent,
+    (event) => {
+      mapView.renderGeoEvent(event);
+      paintGeoEventButton();
+    },
+  );
+  // The label's distance is measured from where the user is NOW, so walking
+  // towards an event counts it down instead of leaving a stale "640 m NE" up.
+  subscribe(
+    (view) => view.position,
+    () => paintGeoEventButton(),
+  );
 
   /**
    * Puts the view in line with a ground mode. Both axes, from one value.

@@ -15,11 +15,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  GEO_EVENT_BUSY_LABEL,
+  GEO_EVENT_IDLE_LABEL,
   bearingDegrees,
   compassPoint,
   describeGeoEvent,
   distanceMetres,
   formatDistance,
+  geoEventButtonLabel,
 } from "./event-label.js";
 
 const COLOGNE = { lat: 50.9375, lng: 6.9603 };
@@ -235,5 +238,77 @@ describe("describeGeoEvent — the searched area (F57)", () => {
     );
     expect(label).toContain("Event at");
     expect(label).toContain("searched 7 tiles");
+  });
+});
+
+describe("geoEventButtonLabel", () => {
+  const at = (): string => "14:15";
+
+  it("rests when nothing has been found", () => {
+    expect(
+      geoEventButtonLabel(
+        { position: COLOGNE, geoEvent: undefined },
+        false,
+        at,
+      ),
+    ).toBe(GEO_EVENT_IDLE_LABEL);
+  });
+
+  it("says it is working, whatever is currently held", () => {
+    // The busy state wins over the held event: while a search is running, the
+    // previous result's description would claim the button is idle.
+    expect(
+      geoEventButtonLabel(
+        {
+          position: COLOGNE,
+          geoEvent: {
+            eventTime: 0,
+            picks: [pickAt(50.94, 6.97)],
+            tilesSearched: 7,
+          },
+        },
+        true,
+        at,
+      ),
+    ).toBe(GEO_EVENT_BUSY_LABEL);
+  });
+
+  it("RE-READS as the user walks, because it is derived rather than frozen", () => {
+    // WHY THIS TEST MATTERS. The label used to be written once, at the moment
+    // the search returned, so "640 m NE" stayed on the button however far the
+    // user then walked — a number that was wrong the instant they moved, on a
+    // control whose whole purpose (F56) is to say where to go. Deriving it from
+    // (position, event) is what fixes that, and this is the assertion that
+    // would fail if anyone froze the string again.
+    const geoEvent = {
+      eventTime: 0,
+      picks: [pickAt(50.9435, 6.9603)],
+      tilesSearched: 7,
+    };
+    const far = geoEventButtonLabel({ position: COLOGNE, geoEvent }, false, at);
+    const near = geoEventButtonLabel(
+      { position: { lat: 50.9425, lng: 6.9603 }, geoEvent },
+      false,
+      at,
+    );
+
+    expect(far).toContain("670 m N");
+    expect(near).toContain("110 m N");
+  });
+
+  it("describes an empty result rather than resting, so the search is visible", () => {
+    // "No event nearby · searched 7 tiles" and "Next geo-event" are different
+    // claims: the first says a search ran and found nothing, the second says
+    // none has run. Collapsing them makes a real answer look like inaction.
+    expect(
+      geoEventButtonLabel(
+        {
+          position: COLOGNE,
+          geoEvent: { eventTime: 0, picks: [], tilesSearched: 7 },
+        },
+        false,
+        at,
+      ),
+    ).toBe("No event nearby · searched 7 tiles");
   });
 });
