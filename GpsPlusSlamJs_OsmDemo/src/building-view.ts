@@ -1238,11 +1238,15 @@ export class BuildingView {
     // positions would be visible as a sun in the sky that disagrees with where
     // the highlights fall.
     //
-    // THIS NO LONGER READS THE CAMERA. It used to derive the azimuth from
-    // `cameraAzimuth(...)` (DEC-R4-6); the sun is physical since DEC-R6-3, so
-    // the only input is the time of day. That is also what makes the PMREM
-    // regeneration inside `setSun` affordable — it runs when the user changes
-    // the time, not on every drag.
+    // THIS NO LONGER READS THE CAMERA. It used to derive the sun's azimuth from
+    // the camera's, at a fixed 45° offset, so the reflective ground's facet
+    // highlight was visible from every orbit rather than only the band a fixed
+    // sun happened to light (DEC-R4-6). The sun is physical since DEC-R6-3 —
+    // a sun that follows the camera spins the whole scattering sky as you pan —
+    // so the only input is the time of day, and the helper that measured the
+    // camera's azimuth was deleted once nothing had read it for two rounds.
+    // That is also what makes the PMREM regeneration inside `setSun`
+    // affordable — it runs when the user changes the time, not on every drag.
     const direction = this.skyRig.setSun(sunAt(this.timeOfDay));
     const distance = 1000;
     this.sun.position.set(

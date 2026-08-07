@@ -25,7 +25,6 @@ import {
   DEFAULT_TIME_OF_DAY,
   MAX_SUN_ELEVATION_RAD,
   MIN_SUN_EYE_ANGLE_RAD,
-  cameraAzimuth,
   sunAt,
   sunDirection,
 } from "./sun-position.js";
@@ -169,63 +168,5 @@ describe("the sun is not a headlight, at the default time", () => {
     expect(Math.acos(Math.max(-1, Math.min(1, cos)))).toBeGreaterThan(
       MIN_SUN_EYE_ANGLE_RAD,
     );
-  });
-});
-
-describe("cameraAzimuth", () => {
-  /**
-   * WHY THESE TESTS MATTER, AND WHY THEY CHANGED. The module header states the
-   * compass convention in capitals — azimuth is clockwise from **north**, and
-   * north is **−z** — because `sun.ts` measured from `+z` and that had to be
-   * corrected when the value became user-facing. `cameraAzimuth` came across
-   * from `sun.ts` and kept the OLD convention, 180° out from `sunDirection`
-   * beside it, and the previous test pinned the old convention rather than
-   * catching it: its two cases were north/south (where the error is exactly
-   * 180°, but the case chosen returned 0 either way) and east (where the ±90°
-   * symmetry makes both conventions agree). Raised in review on #264.
-   *
-   * NORTH AND SOUTH ARE BOTH ASSERTED for that reason. A single on-axis case
-   * cannot distinguish the two conventions; the pair is what makes the sign of
-   * the z term observable.
-   */
-  it("measures clockwise from NORTH, the same convention as `sunDirection`", () => {
-    const origin = { x: 0, y: 0, z: 0 };
-
-    // Camera due north of the target: north is −z, so this is azimuth 0.
-    expect(cameraAzimuth({ x: 0, y: 0, z: -10 }, origin)).toBe(0);
-    // Due south — the case the old convention reported as 0.
-    expect(cameraAzimuth({ x: 0, y: 0, z: 10 }, origin)).toBeCloseTo(
-      Math.PI,
-      9,
-    );
-    // Due east, and due west as its mirror. These agree under BOTH conventions,
-    // which is exactly why they cannot be the only cases.
-    expect(cameraAzimuth({ x: 10, y: 0, z: 0 }, origin)).toBeCloseTo(
-      Math.PI / 2,
-      9,
-    );
-    expect(cameraAzimuth({ x: -10, y: 0, z: 0 }, origin)).toBeCloseTo(
-      -Math.PI / 2,
-      9,
-    );
-  });
-
-  it("agrees with `sunDirection`, which is the reason the convention matters", () => {
-    // The round trip, and the assertion that would have caught the drift on its
-    // own: feed an azimuth through `sunDirection` and read it back. A function
-    // measuring from the opposite pole cannot pass this at any angle where the
-    // two conventions differ.
-    for (const azimuthRad of [0, Math.PI / 4, Math.PI / 2, 2.5, -1.2]) {
-      const direction = sunDirection({ azimuthRad, elevationRad: 0.3 });
-      expect(cameraAzimuth(direction, { x: 0, y: 0, z: 0 })).toBeCloseTo(
-        azimuthRad,
-        9,
-      );
-    }
-  });
-
-  it("returns 0 for a camera directly above its target", () => {
-    // Degenerate rather than wrong: every azimuth looks the same from there.
-    expect(cameraAzimuth({ x: 0, y: 5, z: 0 }, { x: 0, y: 0, z: 0 })).toBe(0);
   });
 });

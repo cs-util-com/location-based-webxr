@@ -12,17 +12,23 @@ Replaces `sun.ts`'s camera-following sun (§1, DEC-R6-3, reversing DEC-R4-6).
   `DEFAULT_TIME_OF_DAY`.
 - `sunDirection(angles: SunAngles): Vector3Like` — a **unit** vector towards the
   sun in the render frame.
-- `cameraAzimuth(camera, target): number` — the view's azimuth **clockwise from
-  north**, the same convention as `sunDirection`; returns `0` for a camera
-  directly above its target.
-  - **Nothing in `src/` reads it** — only the tests do, which is also what keeps
-    it past the dead-code check. Verified rather than assumed on 2026-08-07; the
-    docstring used to claim the opposite.
-  - It came over from `sun.ts` still measuring from `+z` and was **180° out**
-    from every other angle in the module until #264's review. Nothing read it, so
-    nothing looked wrong; the cost would have landed on the first caller. The
-    round trip through `sunDirection` is now asserted, which is the assertion
-    that would have caught it at any angle where the conventions differ.
+- **`cameraAzimuth` was removed on 2026-08-07**, and the reason is worth keeping
+  because the function looked load-bearing for two rounds after it stopped being
+  so. It measured which compass direction the view came from, and existed for
+  DEC-R4-6: the sun tracked the camera at a fixed 45° offset so the reflective
+  ground's facet highlight was always visible, instead of only over the band of
+  azimuths a fixed sun happened to light. DEC-R6-3 reversed that — a sun that
+  follows the camera makes the whole scattering sky spin as you pan — so the sun
+  became physical and this lost its only caller.
+  - It then survived on a **false** docstring ("other code reads it") and on its
+    own test import, which is the only thing that kept it past the dead-code
+    check. It had also silently kept `sun.ts`'s old convention, measuring from
+    `+z` while the module header states north is `−z`: **180° out** from every
+    other angle in the file, and its test could not have caught that (one
+    north/south case that returns 0 under both readings, one east case where the
+    symmetry makes them agree). #264's review found the convention error and it
+    was fixed; #264's other option — delete it — was taken on the owner's call
+    once it was clear nothing had read it since round 6.
 - Constants: `MAX_SUN_ELEVATION_RAD` (55°), `DEFAULT_TIME_OF_DAY` (0.98),
   `MIN_SUN_EYE_ANGLE_RAD` (π/8).
 

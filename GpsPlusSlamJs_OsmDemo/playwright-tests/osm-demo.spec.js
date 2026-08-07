@@ -2380,17 +2380,24 @@ test.describe("caching and failure", () => {
     // only opens when the machine is busy. Moving the capture later does NOT
     // fix it -- it was already immediately before the reload -- so the fix has
     // to be waiting for quiescence rather than picking a better moment.
+    // THREE consecutive equal samples, not one. Two readings 500 ms apart are
+    // equal whenever the prefetch merely PAUSES for longer than the interval,
+    // which under full-suite load it does — so the first version of this
+    // quiescence check declared victory mid-prefetch and the flake it was
+    // written to remove came back and failed a gate. Same rule and same count as
+    // `stashStableFrame` in `fixtures.js`, which settled this for frames first.
     let previousCount = -1;
+    let stable = 0;
     await expect
       .poll(
         () => {
-          const settled = counts.overpassQuery === previousCount;
+          stable = counts.overpassQuery === previousCount ? stable + 1 : 0;
           previousCount = counts.overpassQuery;
-          return settled;
+          return stable;
         },
         { timeout: 30000, intervals: [500] },
       )
-      .toBe(true);
+      .toBeGreaterThanOrEqual(3);
 
     const queriesAfterFirst = counts.overpassQuery;
     expect(queriesAfterFirst).toBeGreaterThan(0);
