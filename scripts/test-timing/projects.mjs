@@ -417,9 +417,23 @@ export const PROJECTS = [
       // The worker entry is a second cycle root: `main.ts` reaches it only
       // through `new Worker(new URL(...))`, so `demo-worker.ts` and the three
       // modules it alone imports were outside the cycle gate until PR #241.
-      ...demoAppStages(['./src/worker/demo-worker.ts']).filter(
-        (stage) => stage.name !== 'build:framework'
-      ),
+      ...demoAppStages(['./src/worker/demo-worker.ts'])
+        .filter((stage) => stage.name !== 'build:framework')
+        // THE ONE STAGE IN THIS REPO WITH A WALL-CLOCK CEILING, and it is the
+        // one that has demonstrably regrown: `test:e2e` here went from ~200 s to
+        // ~547 s serial in five days after PR #244 fused 66 tests to 45 to buy
+        // that time, because rounds 7-10 each added a feature test with its own
+        // app boot. Nothing was watching, and by the time it was measured every
+        // lever for recovering it was spent (findings 2026-08-07, Areas 3-5b).
+        //
+        // 740 s is the recorded MEDIAN (567 s) plus ~30 %. Loose on purpose:
+        // this suite is contention-bound — its own Playwright config records a
+        // 21x inflation of identical work under load — so a tight ceiling would
+        // be one more load-dependent failure rather than a regrowth alarm.
+        // `budget.mjs` carries the rule for changing it.
+        .map((stage) =>
+          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 740 } : stage
+        ),
     ],
   },
   demoAppProject('GpsPlusSlamJs_QrTrackingDemo'),
