@@ -40,6 +40,7 @@ import {
   TerrariumProvider,
   browserPngDecoder,
   buildAreaPlates,
+  buildBarriers,
   buildBuildings,
   annotatePoiHosts,
   buildPoiMarkers,
@@ -295,6 +296,13 @@ function buildMesh(
   const plateClip = clipBoxAround(centre, TERRAIN_EXTENT_M);
 
   const volumes = buildBuildings(all, options);
+  // BARRIERS ARE DRAWN, and drawn WITH the buildings (DEC-R11-2, DEC-R11-11).
+  // `nav/obstacles.ts` has blocked agents with these since #259; until now
+  // nothing put them on screen, which DEC-R7b-14 rules out — an NPC dodging
+  // geometry the viewer cannot see demonstrates nothing, and the Tower renders
+  // without its curtain wall at all. No toggle and no distinct colour: a wall is
+  // part of the built world, so it goes through `buildingColour` like the rest.
+  const barriers = buildBarriers(all, options);
   const trees = buildTrees(all, options);
   // Same options as the trees: a marker floating over sloped ground reads as a
   // placement bug, and the sampler is the one already built for this frame.
@@ -399,20 +407,31 @@ function buildMesh(
     all.map((feature) => [featureKey(feature), feature.tags]),
   );
 
-  const buildings = chunkMeshes(
-    volumes,
-    (volume) => volume.mesh,
-    (volume) => meshCentroidEnu(volume.mesh),
-    undefined,
-    // A `building:part` inherits its PARENT's colour: the parts of one building
-    // are one building, and colouring them independently would stripe a cathedral
-    // by whichever part happened to carry which tag.
-    (volume) =>
-      buildingColour(
+  // TAGS RESOLVED HERE, not in the colour callback, because the two sources
+  // differ in exactly one way: a `building:part` inherits its PARENT's colour —
+  // the parts of one building are one building, and colouring them
+  // independently would stripe a cathedral by whichever part carried which tag
+  // — while a barrier has no parent and is simply itself.
+  const drawn = [
+    ...volumes.map((volume) => ({
+      mesh: volume.mesh,
+      tags:
         tagsByKey.get(volume.parentFeature ?? volume.feature) ??
-          tagsByKey.get(volume.feature) ??
-          {},
-      ),
+        tagsByKey.get(volume.feature) ??
+        {},
+    })),
+    ...barriers.map((barrier) => ({
+      mesh: barrier.mesh,
+      tags: tagsByKey.get(barrier.feature) ?? {},
+    })),
+  ];
+
+  const buildings = chunkMeshes(
+    drawn,
+    (item) => item.mesh,
+    (item) => meshCentroidEnu(item.mesh),
+    undefined,
+    (item) => buildingColour(item.tags),
   );
 
   return {
@@ -445,6 +464,7 @@ function buildMesh(
     // THE REAL FLAG, not a proxy: a gabled roof on an actual rectangle is EXACT,
     // and that is the common case the approximation trade rests on.
     approximateRoofs: volumes.filter((v) => v.roofIsApproximate).length,
+    barriers: barriers.length,
   };
 }
 

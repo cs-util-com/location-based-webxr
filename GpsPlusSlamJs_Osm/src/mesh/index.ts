@@ -34,12 +34,16 @@ export { barrierFootprints } from "./barrier-shape.js";
 
 export type { BarrierDimensions } from "./barriers.js";
 export {
+  barrierCentrelines,
   isSolidBarrier,
   resolveBarrier,
   DEFAULT_BARRIER_HEIGHT_M,
   DEFAULT_CITY_WALL_HEIGHT_M,
   DEFAULT_BARRIER_THICKNESS_M,
 } from "./barriers.js";
+
+export type { BarrierVolume, BuildBarriersOptions } from "./barrier-volumes.js";
+export { buildBarriers } from "./barrier-volumes.js";
 
 export type { MeshData } from "./mesh-data.js";
 export { MeshBuilder } from "./mesh-data.js";

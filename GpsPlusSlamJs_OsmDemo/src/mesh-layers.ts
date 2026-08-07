@@ -89,6 +89,15 @@ export interface BuildingStats {
   readonly guessedHeights: number;
   /** Roofs generated from the bounding rectangle rather than exactly. */
   readonly approximateRoofs: number;
+  /**
+   * Solid barriers drawn (DEC-R11-2).
+   *
+   * Reported for the same reason the plate count is, and one more: DEC-R11-11
+   * draws barriers with the buildings under no toggle and no distinct colour,
+   * so nothing on screen distinguishes "this site has no walls" from "the
+   * barrier builder produced nothing".
+   */
+  readonly barriers: number;
   readonly trees: number;
   /** Ground areas drawn. Reported because a silent 0 is the failure mode. */
   readonly plates: number;
@@ -120,6 +129,7 @@ const NO_STATS: BuildingStats = {
   triangles: 0,
   guessedHeights: 0,
   approximateRoofs: 0,
+  barriers: 0,
   trees: 0,
   plates: 0,
   plateTriangles: 0,
@@ -485,6 +495,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
       triangles: totalTriangles(mesh.buildings),
       guessedHeights: mesh.guessedHeights,
       approximateRoofs: mesh.approximateRoofs,
+      barriers: mesh.barriers,
     }),
   },
   {

@@ -121,6 +121,15 @@ export interface TransferableMesh {
   readonly parts: number;
   readonly guessedHeights: number;
   readonly approximateRoofs: number;
+  /**
+   * Solid barriers drawn (DEC-R11-2).
+   *
+   * **Counted because DEC-R11-11 gave up the other way of checking.** Barriers
+   * draw with the buildings, with no toggle and no distinct colour, so there is
+   * no way to isolate them on screen — the count is what tells a walled site
+   * apart from one where the barrier builder silently produced nothing.
+   */
+  readonly barriers: number;
 }
 
 /**

@@ -932,6 +932,12 @@ async function main(): Promise<void> {
       mesh === undefined
         ? ""
         : `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed building heights)`,
+      // Reported only when there are some, like the plate and POI counts: a
+      // zero would be noise at every site with no mapped walls, and the
+      // interesting reading is "this walled site drew none".
+      mesh === undefined || mesh.barriers === 0
+        ? ""
+        : `${mesh.barriers} barriers`,
       mesh === undefined ? "" : `${mesh.triangles} triangles`,
       mesh === undefined || mesh.plates === 0
         ? ""

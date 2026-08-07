@@ -40,13 +40,15 @@
 
 import {
   featureKey,
-  type LatLng,
   type OsmFeature,
   type OsmFeatureKey,
 } from "../model/osm-feature.js";
-import { toGeometry } from "../model/osm-geometry.js";
 import { barrierFootprints } from "../mesh/barrier-shape.js";
-import { isSolidBarrier, resolveBarrier } from "../mesh/barriers.js";
+import {
+  barrierCentrelines,
+  isSolidBarrier,
+  resolveBarrier,
+} from "../mesh/barriers.js";
 import { enuFrameAt } from "../mesh/enu.js";
 import { coverCells } from "../spatial/cell-coverage.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
@@ -74,60 +76,18 @@ export interface ObstacleIndex {
 }
 
 /**
- * Every lat/lng line a barrier feature runs along.
+ * The same lines `barrier-volumes.ts` draws, as `x = lng, y = lat`.
  *
- * **A LIST, because a multipolygon has PARTS.** An earlier version took
- * `polygons[0][0]`: the inner index correctly ignores holes, but the outer one
- * silently discarded `polygons[1..]` — disjoint parts of the same barrier, not
- * holes. One part was indexed and the other was invisible, which is precisely
- * the "a barrier the index simply did not see" failure the multipolygon branch
- * was added to remove. Raised in review on #260.
- *
- * Empty when nothing usable is there.
+ * **Shared rather than re-derived** — `barrierCentrelines` owns which rings of
+ * which geometry kinds a barrier runs along, and the reasoning behind that took
+ * three review rounds (#259, #260, #263). Two copies could drift, and a drawn
+ * wall that is not indexed is an agent walking through something the viewer can
+ * see.
  */
 function barrierLines(feature: OsmFeature): readonly PlanarPoint[][] {
-  const result = toGeometry(feature);
-  if (!result.ok) return [];
-
-  const geometry = result.geometry;
-  // MULTIPOLYGON IS HANDLED, not silently dropped (#259). A `barrier=wall`
-  // mapped as a multipolygon relation is rare, but it is neither "not a
-  // barrier" nor "unusable geometry" — it would have been a barrier the index
-  // simply did not see, which is the one skip reason with no stated rationale.
-  //
-  // OUTER RINGS ONLY, and ALL of them — but NOT because holes must stay closed.
-  // Every ring here is a CENTRELINE: `barrierFootprints` emits one
-  // `thicknessM`-wide quad per segment, so what becomes solid is a ~0.5 m band
-  // along the ring itself and the interior is walkable whether or not the inner
-  // rings are read. An area-mapped barrier is therefore indexed as a wall along
-  // its OUTLINE, not as a filled region.
-  //
-  // What that costs, stated rather than implied (#263): an area-mapped
-  // `barrier=city_wall` is normally outer = outer face, inner = inner face, with
-  // the wall material between them. This puts a default-thickness band on the
-  // outer face and ignores the inner one. Disjoint outers are all indexed —
-  // those are PARTS of one barrier, not holes (#260).
-  //
-  // `multilinestring` is deliberately absent. `toGeometry` never produces one —
-  // only `clip.ts` does, and clipping is not in this path — so a branch for it
-  // would be code no test could ever cover (#260). The `[0]` assertions below
-  // are there for the same reason the `multilinestring` branch is not: both
-  // `wayToGeometry` (`rings: [way.geometry]`) and `relationToGeometry`
-  // (`polygons[0]!`, seeded `[outer]` by `groupRingsIntoPolygons`) always
-  // produce an outer ring, so a `?? []` fallback would be a branch no test can
-  // cover and no mutant can be killed on (#263).
-  const lines: readonly (readonly LatLng[])[] =
-    geometry.kind === "linestring"
-      ? [geometry.positions]
-      : geometry.kind === "polygon"
-        ? [geometry.rings[0]!]
-        : geometry.kind === "multipolygon"
-          ? geometry.polygons.map((polygon) => polygon[0]!)
-          : [];
-
-  return lines
-    .filter((line) => line.length >= 2)
-    .map((line) => line.map((p) => ({ x: p.lng, y: p.lat })));
+  return barrierCentrelines(feature).map((line) =>
+    line.map((p) => ({ x: p.lng, y: p.lat })),
+  );
 }
 
 /**

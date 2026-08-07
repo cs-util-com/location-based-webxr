@@ -85,13 +85,21 @@ when the user does.
   - **`multilinestring` is deliberately not handled.** `toGeometry` never
     produces one — only `clip.ts` does, and clipping is not in this path — so a
     branch for it would be code no test could ever cover.
-    - **The `[0]` assertions in `barrierLines` are the same argument.**
+    - **The `[0]` assertions in `barrierCentrelines` are the same argument.**
       `wayToGeometry` builds `rings: [way.geometry]` and `relationToGeometry`
       returns `polygons[0]!` from rings `groupRingsIntoPolygons` seeds as
       `[outer]`, so an outer ring is always present and a `?? []` fallback would
       be an uncoverable branch. Changed on #263 for consistency with the rule
       above; it also drops three whole-ring array copies that existed only to
       satisfy mutability variance.
+  - **All of the above now lives in `mesh/barriers.ts`, not here.** The rules
+    moved to `barrierCentrelines` when the barriers became drawn, because
+    [`barrier-volumes.ts`](../mesh/barrier-volumes.ts.md) needs the identical
+    lines: an indexed wall that is not drawn is a detour around thin air, and a
+    drawn wall that is not indexed is an agent walking through visible geometry.
+    A property test pins **drawn iff indexed, at the same height**. This module
+    keeps only the `LatLng` → `x = lng, y = lat` mapping its own ring format
+    needs.
 
 ## Defensive behaviour
 

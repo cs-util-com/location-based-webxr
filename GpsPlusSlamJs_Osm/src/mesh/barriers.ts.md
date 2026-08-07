@@ -34,6 +34,9 @@ would have stayed passable.
 
 - `isSolidBarrier(feature) => boolean`
 - `resolveBarrier(tags) => { heightM, thicknessM }`
+- `barrierCentrelines(feature) => readonly (readonly LatLng[])[]` — every
+  lat/lng line the barrier runs along. Empty when the geometry is unusable; a
+  line of fewer than two nodes is dropped.
 - The three defaults above.
 
 ## Invariants
@@ -48,6 +51,14 @@ would have stayed passable.
   leaves the wall walkable, too wide turns every gate into an obstacle — which
   reads as broken pathfinding rather than as a tagging call.
   - Solid: `wall`, `city_wall`, `retaining_wall`, `fence`, `hedge`.
+  - **Plus `historic=citywalls`, which is not a `barrier=*` value at all.** All
+    four such ways in the checked-in Cologne extract carry no `barrier` tag, so
+    a selector keyed on `barrier` alone dropped every one of them — and a city
+    wall is the design's motivating example, which made the one feature the work
+    exists for the one it could not see. It resolves to
+    `DEFAULT_CITY_WALL_HEIGHT_M`, because it is a city wall whichever tag
+    records it. Narrow on purpose: `historic=castle` stays out, since a castle
+    outline is a building question and banding it would wall off the bailey.
   - Not solid: `gate`, `lift_gate`, `entrance`, `cycle_barrier` — **a gate is a
     hole in a wall.** Sealing them would close the very route the design's own
     test case depends on: the path that reaches the gate instead of going over
@@ -68,6 +79,16 @@ would have stayed passable.
 unit forms OSM uses (`3`, `3 m`, `10'`). A second parser here would be a second
 set of edge cases to keep in agreement.
 
+## Why `barrierCentrelines` lives here
+
+It has two consumers — [`barrier-volumes.ts`](./barrier-volumes.ts.md) draws the
+lines and [`nav/obstacles.ts`](../nav/obstacles.ts.md) indexes them — and they
+must agree exactly. A wall drawn where nothing is indexed is an agent walking
+through visible geometry; a wall indexed where nothing is drawn is a detour
+around thin air. Both are bugs a reader would diagnose in the wrong file, so the
+"which rings of which geometry kinds" decision (settled over #259, #260 and
+#263) lives in one place rather than being copied into each.
+
 ## Tests
 
 `barriers.test.ts` — the solid set in all three directions (solid, openings,
@@ -76,5 +97,10 @@ heights winning, unit forms, unparseable and non-positive heights, and the
 finite-and-positive invariant over `NaN`, `Infinity`, `1e400` and a negative
 width.
 
-**What these do NOT cover:** the geometry. Turning a barrier way into drawn
-walls, and testing a position against them, is the next slice.
+The geometry is covered next door: `barrier-shape.*` for the quads,
+`barrier-volumes.*` for the extrusion — including a property that a barrier is
+**drawn if and only if it is indexed**, at the **same height**.
+
+`testdata/sites/site-barriers.test.ts` runs the selector over the real corpus,
+which is what caught the `historic=citywalls` miss: invented ways prove the
+arithmetic, only real extracts prove the selector matches what mappers write.
