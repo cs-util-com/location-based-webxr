@@ -761,7 +761,18 @@ async function loadTerrain(
   // ~321 000 posts against a 250 000 cap when it was) and why the fetch centre
   // and the sample centre have to move together or not at all.
   const window = terrainWindowFor({ frameOrigin, centre, extentM });
-  await terrainField.ensureAround(window.fetchCentre, window.fetchRadiusM);
+  // THE SIGNAL GOES IN, not just checked on the way out. The check below is
+  // what keeps a superseded load from being APPLIED; passing the signal is what
+  // keeps it from being PAID FOR. Without it `ensureAround` reaches
+  // `InFlightRequests` as an unsignalled caller, which pins the DEM request for
+  // every joiner, so a walk across the map fetched every abandoned view to
+  // completion (#270). `ensureAround` swallows the resulting `AbortError` into
+  // "degrade to what is held", so the check still does its job.
+  await terrainField.ensureAround(
+    window.fetchCentre,
+    window.fetchRadiusM,
+    signal,
+  );
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const field = terrainField.sampleGrid({
     frame: window.frame,

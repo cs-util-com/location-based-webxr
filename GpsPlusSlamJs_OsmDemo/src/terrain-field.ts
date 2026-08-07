@@ -90,8 +90,18 @@ export interface TerrainField {
    *
    * Never rejects: a DEM outage costs the relief, not the view. One batch per
    * call, so a provider can coalesce by source tile.
+   *
+   * **Pass `signal` for a load that can be superseded**, which is every load
+   * driven by a position change. Without it the caller is registered as `pinned`
+   * by `InFlightRequests` — declaring the request uncancellable and pinning it
+   * for every other joiner as well — so a superseded load pulls its whole batch
+   * to completion before anything can discard it. See the tests.
    */
-  ensureAround(centre: LatLng, radiusM: number): Promise<void>;
+  ensureAround(
+    centre: LatLng,
+    radiusM: number,
+    signal?: AbortSignal,
+  ): Promise<void>;
   /** Renders a bounded grid over the current view, for crossing the boundary. */
   sampleGrid(options: SampleGridOptions): HeightfieldData;
   /** Posts currently held. Exposed so the eviction bound is testable. */
@@ -143,7 +153,11 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     return { x: Math.round(raw.x), y: Math.round(raw.y) };
   };
 
-  async function ensureAround(centre: LatLng, radiusM: number): Promise<void> {
+  async function ensureAround(
+    centre: LatLng,
+    radiusM: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const perPixel = metresPerPixel(centre.lat, zoom);
     // `+1` so the requested radius is fully covered rather than truncated.
     const reach = Math.ceil(radiusM / perPixel) + 1;
@@ -169,10 +183,18 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     try {
       heights = await provider.elevationAt(
         missing.map((pixel) => fromWorldPixel(pixel, zoom)),
+        signal,
       );
     } catch {
       // Degrade to whatever is already held. A DEM outage must cost the relief,
       // never the 3D view — a thrown error here would take the pane down with it.
+      //
+      // AN ABORT LANDS HERE TOO, and that is the right outcome rather than an
+      // oversight: a superseded load has nothing to contribute, and the caller
+      // re-checks `signal.aborted` afterwards anyway. Swallowing it here keeps
+      // "cancelled" and "the DEM is down" on the same path — degrade to what is
+      // held — instead of making cancellation a rejection every caller must
+      // learn to expect.
       return;
     }
 

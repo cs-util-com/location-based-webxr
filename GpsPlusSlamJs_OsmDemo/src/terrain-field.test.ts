@@ -324,3 +324,64 @@ describe("createTerrainField", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+describe("a superseded load", () => {
+  /**
+   * WHY THESE TESTS MATTER. Abort was honoured for CORRECTNESS and not for COST:
+   * `demo-worker.ts` checks `signal.aborted` AFTER `ensureAround` resolves, so
+   * nothing stale was ever applied — but the check could only run once the whole
+   * DEM batch had already been pulled to completion. At `TERRAIN_EXTENT_M` one
+   * view is ~321 000 posts spanning several Terrarium tiles, and walking or
+   * clicking around the map is exactly the workload `terrain-cycle.ts` coalesces,
+   * so every superseded load paid in full.
+   *
+   * The plumbing existed at both ends and only this link was missing:
+   * `ElevationProvider.elevationAt(positions, signal?)` takes one, and
+   * `InFlightRequests` was built so a joiner's cancellation is per-caller. Worse
+   * than merely not cancelling, a caller that passes NO signal is registered as
+   * `pinned` there — it declares the request uncancellable and pins it for every
+   * other joiner too. Raised in review on #270.
+   */
+  it("forwards its signal to the provider instead of pinning the request", async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const field = createTerrainField({
+      provider: {
+        attribution: "test",
+        sourceId: "fixture:signal",
+        elevationAt: (positions, signal) => {
+          seen.push(signal);
+          return Promise.resolve(positions.map(() => 10));
+        },
+      },
+    });
+    const controller = new AbortController();
+
+    await field.ensureAround(COLOGNE, 40, controller.signal);
+
+    // Not just "a signal": THE caller's signal, or `InFlightRequests` cannot
+    // tell this caller's abandonment from anyone else's.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(controller.signal);
+  });
+
+  it("degrades to what is held when the provider aborts, rather than throwing", async () => {
+    // The `catch` that already guards a DEM outage has to cover the AbortError
+    // too, or plumbing the signal through turns a superseded load into a
+    // rejection the 3D pane would take down with it.
+    const field = createTerrainField({
+      provider: {
+        attribution: "test",
+        sourceId: "fixture:aborting",
+        elevationAt: () =>
+          Promise.reject(new DOMException("Aborted", "AbortError")),
+      },
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      field.ensureAround(COLOGNE, 40, controller.signal),
+    ).resolves.toBeUndefined();
+    expect(field.postCount).toBe(0);
+  });
+});

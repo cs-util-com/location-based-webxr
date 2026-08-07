@@ -40,6 +40,15 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
   either on the main thread would mean shipping them across.
 - **`inFlight` maps request id → `AbortController`**, which is what makes `abort`
   stop real work rather than just discard a reply.
+  - **The signal has to go INTO the work, not only be checked after it.** Both
+    long paths now do: `pipeline.update(..., signal)` and
+    `terrainField.ensureAround(..., signal)`. Terrain was the outlier until #270
+    — the `signal.aborted` check after it meant nothing stale was ever applied,
+    but it could only run once the whole DEM batch had been pulled, so every
+    superseded load was paid for in full. An unsignalled call is worse than
+    merely uncancellable there: `InFlightRequests` marks it `pinned`, which pins
+    the request for every other joiner too. **A post-hoc check is a correctness
+    guard, never a cost one.**
 - **This is the first consumer to exercise `gps-plus-slam-osm`'s worker-safety.**
   The package documents the claim in six places and shapes its public types around
   it; nothing had ever tested it. Treat it as newly verified rather than

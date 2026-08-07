@@ -8,8 +8,20 @@ pixel grid, fetched once each and reused as the user moves.
 ## Public API
 
 - `createTerrainField({ provider, zoom?, maxPosts? }): TerrainField`
-  - `ensureAround(centre, radiusM)` — fetches only the **missing** posts, in one
-    batch. Never rejects.
+  - `ensureAround(centre, radiusM, signal?)` — fetches only the **missing**
+    posts, in one batch. Never rejects.
+    - **Pass `signal` for any load a newer one can supersede**, which is every
+      load a position change drives. It is forwarded to
+      `provider.elevationAt(positions, signal)`. Omitting it does not merely fail
+      to cancel: `InFlightRequests` registers an unsignalled caller as `pinned`,
+      declaring the request uncancellable **and pinning it for every other
+      joiner**. Before #270 the demo's terrain path omitted it, so abort was
+      honoured for correctness (the worker re-checks `signal.aborted` afterwards)
+      and not for cost — one view is ~321 000 posts across several Terrarium
+      tiles, and every abandoned view was fetched to completion.
+    - **An abort is swallowed into "degrade to what is held"**, on the same path
+      as a DEM outage. Cancellation is not an error the 3D pane should have to
+      handle, and the caller re-checks the signal regardless.
   - `sampleGrid({ frame, extentM, spacingM, centreEnu? })` → `HeightfieldData` — a bounded,
     fixed-shape grid rendered from the lattice, for crossing the worker boundary.
   - `postCount` — held posts, so the eviction bound is testable.
@@ -67,3 +79,8 @@ _"RE-ASKS FOR NOTHING when the area is already covered"_ and _"asks ONLY for the
 posts when the user walks"_ (a ~150 m step must cost less than half the original
 load). The rest pin the pixel-centre snapping, one-batch fetching, de-duplication,
 the DEM-outage and patchy-coverage paths, and the eviction bound.
+
+Two more cover the signal (#270): that the caller's **own** signal reaches
+`elevationAt` — identity, not merely "a signal", since `InFlightRequests` cannot
+otherwise tell this caller's abandonment from anyone else's — and that a provider
+rejecting with `AbortError` resolves to nothing held rather than throwing.

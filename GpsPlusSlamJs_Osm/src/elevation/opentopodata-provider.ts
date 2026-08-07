@@ -76,7 +76,14 @@ export class OpenTopoDataProvider implements ElevationProvider {
     signal?: AbortSignal,
   ) => Promise<void>;
 
-  private lastRequestAt = Number.NEGATIVE_INFINITY;
+  /**
+   * The earliest time the next request may be sent — a reservation, not a log.
+   *
+   * A "last request at" timestamp cannot express a slot that has been CLAIMED
+   * but not yet used, which is the state every waiting concurrent caller is in.
+   * See `throttle`.
+   */
+  private nextSlotAt = Number.NEGATIVE_INFINITY;
 
   readonly stats = { requests: 0, points: 0, throttleWaitsMs: 0 };
 
@@ -133,7 +140,6 @@ export class OpenTopoDataProvider implements ElevationProvider {
     try {
       this.stats.requests++;
       this.stats.points += batch.length;
-      this.lastRequestAt = this.now();
 
       const response = await this.fetchImpl(url, signal ? { signal } : {});
       if (!response.ok) return batch.map(() => undefined);
@@ -146,9 +152,29 @@ export class OpenTopoDataProvider implements ElevationProvider {
     }
   }
 
+  /**
+   * Reserves this caller's send slot, then waits for it.
+   *
+   * THE RESERVATION HAPPENS BEFORE THE AWAIT, and that ordering is the whole
+   * point. The previous version read the last request time, computed a wait, and
+   * only recorded the request AFTER sleeping — a read-modify-write across an
+   * await. Sequential callers were fine, because the first had already written
+   * by the time the second read. Overlapping callers all read the same value,
+   * computed the same wait, slept it in parallel and fired together: N
+   * concurrent `elevationAt` calls meant N requests inside one second, against a
+   * documented 1 req/s limit on donated infrastructure. `maxPointsPerRun` cannot
+   * catch that — each call is independently under the cap. Raised on #270.
+   *
+   * `nextSlotAt` is a monotonic chain rather than a "last request" timestamp, so
+   * a slot is consumed by the caller that claimed it whether or not the request
+   * it was claimed for succeeded. Handing an abandoned slot back would need a
+   * queue, and the failure it would prevent — one wasted second — is cheaper
+   * than the one it would risk.
+   */
   private async throttle(signal?: AbortSignal): Promise<void> {
-    const since = this.now() - this.lastRequestAt;
-    const wait = OPENTOPODATA_MIN_REQUEST_INTERVAL_MS - since;
+    const at = Math.max(this.now(), this.nextSlotAt);
+    this.nextSlotAt = at + OPENTOPODATA_MIN_REQUEST_INTERVAL_MS;
+    const wait = at - this.now();
     if (wait <= 0) return;
     this.stats.throttleWaitsMs += wait;
     await this.sleepImpl(wait, signal);
