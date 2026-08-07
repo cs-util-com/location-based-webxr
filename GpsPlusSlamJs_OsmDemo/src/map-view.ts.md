@@ -33,12 +33,23 @@ raster basemap.
 - **Sub-threshold cells are drawn only when asked, in three distinct bands (DEC-7).** The old code skipped everything at or below the threshold while a comment claimed it skipped only the identity — a broader rule than it described, and the reason a vetoed cell was the one cell that could not be clicked to ask why it was vetoed. With the checkbox on, `0` is solid and off-palette (a veto is a categorical statement, not a low score), `1` is an outline with no fill (it must not paint a claim the data does not support), and `0 < s <= threshold` is a dimmed fill. Rendering `0` and `1` alike would answer the question with the same picture for either answer.
 - **Cell clicks are reported, not handled.** `onCellClick` hands the H3 id to the caller; the map does not know the details panel exists.
 - **Every vector this view draws is `interactive: false`; the map itself is the only click target.** Leaflet makes a `circleMarker` interactive by default, and an interactive vector with nothing bound to it does not add behaviour — it **removes** some, by taking `pointer-events` and swallowing a click that should have reached the map handler. The user marker was the one that had been left on the default (#267 review), which put a dead spot on exactly where the user currently is, i.e. where they are most likely to click next. It was latent only because the cell paths are added by `render()` after the constructor and so happen to paint over it — **an accident of construction order, not a guarantee**, and one `bringToFront()` or pane change away from mattering. The e2e asserts the absence of `leaflet-interactive` rather than clicking the marker, for that exact reason.
+- **The geo-event winner is the one thing here that is NOT a vector.** It is an `L.marker` carrying a `divIcon` (`quest-marker.ts`), because a `circleMarker` is an SVG `<path>` and no amount of CSS turns a path into a glyph — and DEC-G6 asked for a gold exclamation mark, not another coloured circle. Its `iconAnchor` is centred rather than left at Leaflet's default top-left, or the event would draw half a marker north-west of where it is. It keeps the `geo-winner` class so the e2e still selects on it, and it stays interactive because it carries the heat tooltip; the candidates around it are ordinary non-interactive vectors.
+- **The map's four marker colours live in `surface-colours.ts`, not in the stylesheet.** The reported defect (G8) was that the user dot, both fetch outlines and both geo-event markers were one red — a collision that survived because the colours were split between a CSS rule and two TS literals, where nothing could compare them. `marker-palette.test.ts` now asserts they differ, and that only works while there is one definition. `index.html` keeps the parts that really are presentation: the candidates' opacity and the `divIcon` chrome reset.
 - **`clear()` is what a failed refresh calls.** Cells, region outlines and the
   red fetch boxes all describe one specific scored working set; leaving any of
   them up after that set is gone makes the map assert a state nothing produced,
   which is the defect round-1 feedback reported. The user marker and the basemap
   survive: "where the user is" is still true, and the basemap was never a claim
   about scoring.
+  - **The geo-event layer is deliberately not in `clear()`** (W2). A geo-event
+    is not derived from a snapshot, so it is not this method's business: it is a
+    projection of `geoEvent` in the store, and `fetchFailed` — the only action
+    that makes the snapshot `undefined`, and therefore the only route into
+    `clear()` — clears that field too. Adding `eventLayer.clearLayers()` here
+    would be a second mechanism for one piece of state, and two mechanisms can
+    only ever disagree. It was missing before W2 for the ordinary reason: nobody
+    had thought about it, and the markers survived a failed refresh on a map
+    that had been emptied of everything else.
 
 - **2D first, not AR.** §8.4 of the plan: the AR overlay is a gross-failure
   detector because OSM footprints carry low-metre absolute error, plausibly

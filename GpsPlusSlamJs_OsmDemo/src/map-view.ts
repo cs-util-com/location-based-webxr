@@ -24,7 +24,14 @@ import { describeScale, type HeatScale } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
 import { escapeHtml } from "./escape-html.js";
 import { regionStyle } from "./region-style.js";
-import { UNDERGROUND_COLOUR, cssColour } from "./surface-colours.js";
+import { QUEST_MARKER_PX, questMarkerSvg } from "./quest-marker.js";
+import {
+  FETCH_BOX_COLOUR,
+  GEO_CANDIDATE_COLOUR,
+  UNDERGROUND_COLOUR,
+  USER_POSITION_COLOUR,
+  cssColour,
+} from "./surface-colours.js";
 import { rankContributors } from "./contributor-order.js";
 import {
   bandTreatment,
@@ -124,7 +131,10 @@ export class MapView {
       radius: 6,
       color: "#ffffff",
       weight: 2,
-      fillColor: "#ff3860",
+      // BLUE, not the red it shared with three other things (G8). The white
+      // ring stays: it is what keeps the dot readable over both the dark
+      // basemap and a saturated heat cell.
+      fillColor: cssColour(USER_POSITION_COLOUR),
       fillOpacity: 1,
       // DECORATIVE, like every other vector in this view. Leaflet's default for
       // a `circleMarker` is interactive, which gives it `pointer-events: auto`
@@ -223,25 +233,6 @@ export class MapView {
   }
 
   /**
-   * Draws what was actually downloaded: one red box per fetch tile.
-   *
-   * THE BOX IS THE QUERY, THE HEXAGON IS ONLY AN IDENTITY. Overpass has no
-   * hexagon primitive, so `buildTileQuery` asks for `cellToBoundingBox(tile)` —
-   * at Cologne a 2.47 x 2.55 km box around a 4.5 km² hexagon, 1.39x.
-   *
-   * **Nothing in the corners is discarded.** No hexagon filter exists on the
-   * ingest path: `acceptTile` merges every feature the response contained, and
-   * scoring bbox-tests against the CHUNK, never against the tile. The hexagon
-   * is a cache and invalidation key, not a spatial filter. What the mismatch
-   * really costs is that neighbouring tiles' bboxes OVERLAP, so the shared
-   * ground is transferred again when the adjacent tile is fetched — stored
-   * once, used fully, downloaded twice.
-   *
-   * Both are drawn because drawing only the box would invite the reading this
-   * display exists to correct — that the red box IS the tile. The hexagon is
-   * dashed and dimmer: it is the reference, the box is the subject.
-   */
-  /**
    * Draws a geo-event: the candidates it weighed, and the one it chose.
    *
    * WHY THE DECIDING BATCH AND NOT ALL 100 (DEC-R9-8). The algorithm stops at
@@ -250,8 +241,12 @@ export class MapView {
    * than four hundred, on a map whose cell layer was defaulted off for exactly
    * that cost.
    *
-   * RED, because the heat ramp is Viridis — purple through yellow, with no warm
-   * hues at all — so an event marker cannot be mistaken for a score.
+   * GOLD, AND THE WINNER IS A GLYPH (DEC-G6). It was red circles for both, which
+   * collided with the user dot and the fetch boxes and gave the answer the same
+   * weight as the nine draws it beat. The heat ramp is Viridis — purple through
+   * yellow with no warm hues — so gold cannot be mistaken for a score either,
+   * and the candidates keep the hue at lower strength so "these produced that"
+   * still reads. `marker-palette.test.ts` pins both halves.
    */
   renderGeoEvent(event: GeoEvent | undefined): void {
     this.eventLayer.clearLayers();
@@ -262,6 +257,7 @@ export class MapView {
         L.circleMarker([candidate.lat, candidate.lng], {
           radius: 3,
           className: "geo-candidate",
+          fillColor: cssColour(GEO_CANDIDATE_COLOUR),
           interactive: false,
         }).addTo(this.eventLayer);
       }
@@ -269,9 +265,22 @@ export class MapView {
       // position, not the seed it climbed away from. Drawing `candidate` here
       // while the tooltip quoted `cell`'s heat put the marker tens of metres
       // from the place whose heat it was reporting.
-      L.circleMarker([pick.position.lat, pick.position.lng], {
-        radius: 7,
-        className: "geo-winner",
+      //
+      // AN `L.marker` WITH A `divIcon`, NOT A `circleMarker`, and that is forced
+      // rather than chosen: a `circleMarker` is an SVG `<path>` and no amount of
+      // CSS turns a path into a glyph. The class name is kept so the e2e still
+      // selects on `.geo-winner`, and the tooltip binds the same way.
+      L.marker([pick.position.lat, pick.position.lng], {
+        icon: L.divIcon({
+          className: "geo-winner",
+          html: questMarkerSvg(),
+          iconSize: [QUEST_MARKER_PX, QUEST_MARKER_PX],
+          // CENTRED ON THE POSITION, unlike Leaflet's default pin, whose anchor
+          // is its tip. This icon is a disc, so anchoring it at the top-left —
+          // the default when `iconAnchor` is omitted — would put the event half
+          // a marker north-west of where it actually is.
+          iconAnchor: [QUEST_MARKER_PX / 2, QUEST_MARKER_PX / 2],
+        }),
       })
         .bindTooltip(
           `event at ${new Date(event.eventTime).toLocaleTimeString()} · heat ${Math.round(pick.heat)}`,
@@ -323,6 +332,28 @@ export class MapView {
     }
   }
 
+  /**
+   * Draws what was actually downloaded: one red box per fetch tile.
+   *
+   * (This block sat above `renderGeoEvent`'s own docstring for several rounds,
+   * describing a method two screens away. Moved back to the method it is about.)
+   *
+   * THE BOX IS THE QUERY, THE HEXAGON IS ONLY AN IDENTITY. Overpass has no
+   * hexagon primitive, so `buildTileQuery` asks for `cellToBoundingBox(tile)` —
+   * at Cologne a 2.47 x 2.55 km box around a 4.5 km² hexagon, 1.39x.
+   *
+   * **Nothing in the corners is discarded.** No hexagon filter exists on the
+   * ingest path: `acceptTile` merges every feature the response contained, and
+   * scoring bbox-tests against the CHUNK, never against the tile. The hexagon
+   * is a cache and invalidation key, not a spatial filter. What the mismatch
+   * really costs is that neighbouring tiles' bboxes OVERLAP, so the shared
+   * ground is transferred again when the adjacent tile is fetched — stored
+   * once, used fully, downloaded twice.
+   *
+   * Both are drawn because drawing only the box would invite the reading this
+   * display exists to correct — that the red box IS the tile. The hexagon is
+   * dashed and dimmer: it is the reference, the box is the subject.
+   */
   renderFetchTiles(tiles: readonly string[]): void {
     this.fetchLayer.clearLayers();
 
@@ -334,7 +365,7 @@ export class MapView {
           [bounds.north, bounds.east],
         ],
         {
-          color: "#ff3860",
+          color: cssColour(FETCH_BOX_COLOUR),
           weight: 2,
           // Stroke only. A fill over the heat grid would defeat the grid, and
           // the question here is "how big", not "what is inside".
@@ -346,7 +377,7 @@ export class MapView {
       ).addTo(this.fetchLayer);
 
       L.polygon(cellToBoundary(tile), {
-        color: "#ff3860",
+        color: cssColour(FETCH_BOX_COLOUR),
         weight: 1,
         opacity: 0.5,
         dashArray: "4 4",

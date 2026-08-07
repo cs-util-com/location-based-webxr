@@ -69,6 +69,47 @@ export const PLATE_COLOUR = 0x848d9e;
 export const UNDERGROUND_COLOUR = 0xff7ad9;
 
 /**
+ * The red the fetch rectangles and their hexagons are drawn in.
+ *
+ * Lifted from two literals in `map-view.ts` so the collision below can be
+ * asserted rather than eyeballed. It keeps the red it always had: the boxes are
+ * a diagnostic about DOWNLOAD extent, unrelated to the heat ramp, and red is
+ * absent from Viridis.
+ */
+export const FETCH_BOX_COLOUR = 0xff3860;
+
+/**
+ * The user's own position — a Google-Maps-style blue (G8).
+ *
+ * IT USED TO BE `#ff3860`, THE SAME RED AS THREE OTHER THINGS. The tester hit
+ * it immediately: the user dot, the geo-event candidates, the geo-event winner
+ * and both fetch outlines were one colour, on a map whose entire job is telling
+ * those four apart. Blue is the convention for "you are here" in every mapping
+ * app, and it is absent from both Viridis and the marker palette below.
+ */
+export const USER_POSITION_COLOUR = 0x1a73e8;
+
+/**
+ * The chosen geo-event — gold, to read as a quest marker (DEC-G6).
+ *
+ * A DIFFERENT HUE FROM THE FETCH BOXES, which is the point of moving it: the
+ * boxes say "data was downloaded here" and the winner says "go here", and while
+ * they shared a red those were indistinguishable at a glance.
+ */
+export const GEO_WINNER_COLOUR = 0xffc93c;
+
+/**
+ * The candidates the winner was chosen from — the same hue, weaker.
+ *
+ * SAME FAMILY, DELIBERATELY (DEC-G6). The candidates are the losing draws from
+ * the deciding batch, so the relationship "these ten produced that one" has to
+ * read off the map. A contrasting colour would present them as a second,
+ * unrelated overlay; an identical one would hide which is the answer. Same hue,
+ * lighter and semi-transparent, with the winner carrying a glyph.
+ */
+export const GEO_CANDIDATE_COLOUR = 0xffe08a;
+
+/**
  * `#rrggbb` for a packed colour, for Leaflet and CSS.
  *
  * Exists so a colour used by both a three.js material (which wants the number)

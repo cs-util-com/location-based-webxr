@@ -1,9 +1,10 @@
-# `surface-colours.ts` — the ground and the plates that lie on it
+# `surface-colours.ts` — the ground, the plates that lie on it, and the map markers
 
 ## Purpose
 
-The two terrain base colours and the **relationship between them**, in one place
-so that relationship can be asserted instead of assumed.
+The terrain base colours and the map's marker colours, with the **relationships
+between them** in one place so those relationships can be asserted instead of
+assumed.
 
 ## Public API
 
@@ -14,6 +15,10 @@ so that relationship can be asserted instead of assumed.
 - `chroma(colour: number): number` — max channel minus min, 0–255.
 - `UNDERGROUND_COLOUR` — `0xff7ad9`, the below-surface diagnostic lines, shared
   by the 3D scene and the 2D map (DEC-R11 review, #256).
+- `FETCH_BOX_COLOUR` — `0xff3860`, the fetch rectangles and their hexagons.
+- `USER_POSITION_COLOUR` — `0x1a73e8`, the "you are here" dot (G8).
+- `GEO_WINNER_COLOUR` — `0xffc93c`, the chosen geo-event (DEC-G6).
+- `GEO_CANDIDATE_COLOUR` — `0xffe08a`, the draws it beat: same hue, weaker.
 - `cssColour(colour: number): string` — `#rrggbb` for a packed colour, so a
   value used by a three.js material (which wants the number) and a Leaflet path
   option (which wants the string) has ONE definition.
@@ -65,6 +70,13 @@ for a deliberate re-tune and tight enough that lightening one constant alone
 cannot pass), the chroma ceiling against `0x4a5468` and against viridis, and
 anchor checks on `relativeLuminance` so it cannot agree with itself while
 disagreeing with the standard.
+
+`marker-palette.test.ts` covers the four map markers: that they are four
+different colours (they were all `0xff3860`, which is what the tester hit
+first), that the candidates stay within 20° of hue of the winner so "these ten
+produced that one" reads off the map, and that nothing else comes within 45° of
+that family. Those two pull against each other, which is why both are pinned —
+a palette edit satisfying one and breaking the other is the plausible mistake.
 
 `underground-lines.test.ts` covers `UNDERGROUND_COLOUR` and `cssColour`: the
 colour's distinctness from the rest of the palette, its `#rrggbb` rendering, and

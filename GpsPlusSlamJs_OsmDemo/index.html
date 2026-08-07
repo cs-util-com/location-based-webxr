@@ -384,18 +384,25 @@
         opacity: 0.6;
         cursor: progress;
       }
-      /* The seeded candidates and the winner. Red is unused by the Viridis heat
-         ramp, so an event marker cannot be mistaken for a score. */
+      /* The seeded candidates and the winner (DEC-G6).
+
+         THE COLOURS ARE NOT HERE ANY MORE, deliberately. They live in
+         `surface-colours.ts` because the reported bug was a COLLISION — the
+         user dot, both fetch outlines and these two were all `#ff3860` — and a
+         collision between a CSS rule and two TypeScript literals is one nothing
+         can assert. `marker-palette.test.ts` now pins that they differ, which
+         only works while there is one definition. What stays here is the part
+         that is genuinely presentation: opacity and the icon reset. */
       .geo-candidate {
-        fill: #ff3860;
-        fill-opacity: 0.5;
+        fill-opacity: 0.55;
         stroke: none;
       }
+      /* The winner is an `L.divIcon`, not a vector, so Leaflet's default
+         `leaflet-div-icon` chrome — a white box with a grey border — would
+         otherwise frame the glyph. */
       .geo-winner {
-        fill: #ff3860;
-        fill-opacity: 1;
-        stroke: #fff;
-        stroke-width: 2;
+        background: none;
+        border: none;
       }
       .locate-button {
         width: 2rem;
