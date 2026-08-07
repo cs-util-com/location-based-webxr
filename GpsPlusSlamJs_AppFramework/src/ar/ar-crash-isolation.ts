@@ -9,6 +9,8 @@
  * `RecordingOptions` catalog and re-exports the type.
  */
 
+import { validateOptionFields } from '../utils/validate-option-fields.js';
+
 /**
  * Diagnostic flags for isolating pre-recording AR startup crashes.
  * These gates affect XR session negotiation and frame-loop behavior,
@@ -50,51 +52,23 @@ export const DEFAULT_AR_CRASH_ISOLATION: ArCrashIsolationOptions = {
 };
 
 /**
- * Boolean-or-default (quality-review C-1): persisted/external values are
- * untrusted, so anything that is not a real boolean falls back to the
- * default. Local copy of the recorder catalog's helper — the validator must
- * stay dependency-free so the framework owns the whole group.
- */
-function boolOr(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-/**
  * Validate and normalize AR crash isolation flags.
- * Missing or invalid values fall back to defaults. The container itself is as
- * untrusted as its fields (persisted blobs may lack the key entirely or hold
- * `null`), so a nullish container yields the full defaults instead of
- * throwing.
+ *
+ * Boolean-or-default per field (quality-review C-1): persisted/external values
+ * are untrusted, so anything that is not a real boolean falls back to the
+ * default. The container itself is as untrusted as its fields (persisted blobs
+ * may lack the key entirely or hold `null`), so a nullish container yields the
+ * full defaults instead of throwing.
  */
 export function validateArCrashIsolationOptions(
   rawOptions?: Partial<ArCrashIsolationOptions> | null
 ): ArCrashIsolationOptions {
-  const options = rawOptions ?? {};
-  const defaults = DEFAULT_AR_CRASH_ISOLATION;
-  return {
-    enableDomOverlay: boolOr(
-      options.enableDomOverlay,
-      defaults.enableDomOverlay
-    ),
-    enableCameraAccess: boolOr(
-      options.enableCameraAccess,
-      defaults.enableCameraAccess
-    ),
-    enableDepthSensingFeature: boolOr(
-      options.enableDepthSensingFeature,
-      defaults.enableDepthSensingFeature
-    ),
-    enableCss3dRenderer: boolOr(
-      options.enableCss3dRenderer,
-      defaults.enableCss3dRenderer
-    ),
-    enableCameraTextureAcquisition: boolOr(
-      options.enableCameraTextureAcquisition,
-      defaults.enableCameraTextureAcquisition
-    ),
-    applyChromiumProjectionLayerWorkaround: boolOr(
-      options.applyChromiumProjectionLayerWorkaround,
-      defaults.applyChromiumProjectionLayerWorkaround
-    ),
-  };
+  return validateOptionFields(rawOptions, DEFAULT_AR_CRASH_ISOLATION, {
+    enableDomOverlay: { kind: 'bool' },
+    enableCameraAccess: { kind: 'bool' },
+    enableDepthSensingFeature: { kind: 'bool' },
+    enableCss3dRenderer: { kind: 'bool' },
+    enableCameraTextureAcquisition: { kind: 'bool' },
+    applyChromiumProjectionLayerWorkaround: { kind: 'bool' },
+  });
 }

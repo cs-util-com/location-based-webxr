@@ -19,6 +19,7 @@ Diagnostic flags for isolating pre-recording AR startup crashes: type, defaults,
 ## Invariants & Assumptions
 
 - Input to the validator is untrusted (persisted localStorage / external callers): any non-boolean value falls back to the default, so a corrupt stored value can never disable an XR feature silently or crash session negotiation.
+- The validator is a spec table over `utils/validate-option-fields.ts` (2026-07-27). It previously hand-rolled a local `boolOr` plus a six-field object literal "so it stays dependency-free"; the primitive now lives in the framework itself, so that reason is gone — and the spec table is **exhaustive over the type**, meaning a new flag is a compile error until its validation is declared, where the literal would have silently dropped it.
 - All defaults are `true` (full feature set) — turning a flag OFF is always the diagnostic opt-out.
 - The recorder's `RecordingOptions.arCrashIsolation` group embeds this type; its catalog (`GpsPlusSlamJs_RecorderApp/src/state/recording-options.ts`) spreads `DEFAULT_AR_CRASH_ISOLATION` into its own defaults and delegates group validation here, so the two stay in lockstep by construction.
 

@@ -69,7 +69,7 @@ production had used only `setZeroRef` + `syncRefPoints`.)
   and `moves an existing sphere to the latest position on re-observation`
   in [ref-point-visualizer.test.ts](ref-point-visualizer.test.ts). Design
   rationale: see
-  [2026-05-29-refpoint-single-sphere-vs-multi-sphere-review.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-29-refpoint-single-sphere-vs-multi-sphere-review.md)
+  [2026-05-29-refpoint-single-sphere-vs-multi-sphere-review.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-29-refpoint-single-sphere-vs-multi-sphere-review.md)
   §3.3.
 - Shared geometry/material lifecycle is owned by the module-level cache
   inside `syncGpsAnchoredMeshes`; the visualizer never disposes GPU
@@ -91,5 +91,5 @@ production had used only `setZeroRef` + `syncRefPoints`.)
 ## Related docs
 
 - [`sync-gps-anchored-meshes.ts`](sync-gps-anchored-meshes.ts.md) — the pure reconciler this class drives.
-- [survey § P2](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md) — the manager-retirement rationale.
-- [boundary plan](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md) — Iter 4.
+- [survey § P2](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md) — the manager-retirement rationale.
+- [boundary plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md) — Iter 4.

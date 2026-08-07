@@ -39,11 +39,12 @@ export {
 } from './chromium-camera-access-workaround.js';
 
 // --- capture-failure-tracker ---
+// The preset returns the generic `FailureTracker` (exported from `utils`);
+// there is deliberately no `CaptureFailureTracker` type any more.
 export {
   type CaptureFailureTrackerConfig,
   DEFAULT_CAPTURE_TRACKER_CONFIG,
   CAPTURE_FAILURE_WARNING,
-  type CaptureFailureTracker,
   createCaptureFailureTracker,
 } from './capture-failure-tracker.js';
 
@@ -129,6 +130,8 @@ export {
   type BlurMetricId,
   BLUR_METRIC_IDS,
   DEFAULT_QUALITY_FILTER,
+  QUALITY_FILTER_CONSTRAINTS,
+  validateQualityFilterConfig,
   DEFAULT_SHARPNESS_HISTORY_SIZE,
   DEFAULT_SHARPNESS_MIN_SAMPLES,
   type QualityRejectReason,
@@ -206,6 +209,9 @@ export {
 
 // --- webxr-nue-basis ---
 export { WEBXR_TO_NUE } from './webxr-nue-basis.js';
+
+// --- nue-webxr-conversions (component form of the same basis change) ---
+export { nueToWebXR, nueQuaternionToWebXR } from './nue-webxr-conversions.js';
 
 // --- xr-camera-texture ---
 export {

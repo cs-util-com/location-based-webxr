@@ -20,6 +20,7 @@ import {
   type ZipExportResult,
 } from 'gps-plus-slam-app-framework/storage/zip-export';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
+import { writeFileOrAbort } from 'gps-plus-slam-app-framework/storage/write-file-or-abort';
 
 const log = createLogger('ScenarioZipExport');
 
@@ -92,9 +93,10 @@ export async function syncScenarioSessionToExternalZip(
     options
   );
 
-  const writable = await fileHandle.createWritable();
-  await writable.write(result.blob);
-  await writable.close();
+  // Was a bare createWritable/write/close with NO abort guard, so a failed
+  // write committed a partial ZIP over the user's previous export and leaked
+  // the handle's lock. See the framework helper's docs.
+  await writeFileOrAbort(fileHandle, result.blob);
 
   log.info(`Synced ${result.blob.size} bytes to external file`);
   return result;

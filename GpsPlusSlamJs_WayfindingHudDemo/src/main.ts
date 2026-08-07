@@ -20,6 +20,7 @@ import {
   type HudDemoConfig,
 } from "./hud-config";
 import { applyModeEntry, detectArSupport } from "./mode-detection";
+import { guardSliderAgainstScroll } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 
 function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -83,6 +84,12 @@ function main(): void {
   };
 
   for (const slider of Object.values(sliders)) {
+    // Guard BEFORE the listener: the HUD control row is swiped past on a phone,
+    // and a native range input would otherwise edit itself as the finger
+    // travels (2026-07-27 recorder field feedback, same bug class). At-target
+    // listeners fire in registration order, which is what lets the guard shield
+    // this one.
+    guardSliderAgainstScroll(slider);
     slider.addEventListener("input", () => {
       refreshOutputs();
       activeMode?.refreshHud();

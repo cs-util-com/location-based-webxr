@@ -21,7 +21,7 @@ import * as THREE from 'three';
 import { createLogger } from '../utils/logger';
 import { applyChromiumProjectionLayerWorkaround } from './chromium-camera-access-workaround';
 import { probeImmersiveArSupport } from './webxr-support-probe';
-import { WEBXR_TO_NUE } from './webxr-nue-basis';
+import { createSceneHierarchy } from './ar-scene-hierarchy';
 import {
   ImageCaptureManager,
   type ImageCaptureCallbacks,
@@ -76,11 +76,7 @@ import { acquireCameraTexture } from './xr-camera-texture';
 import { clearFrameUpdates, runFrameUpdates } from './frame-loop';
 import { runSessionDisposers } from './session-disposers';
 import { clearXrFrameUpdates, runXrFrameUpdates } from './xr-frame-loop';
-import {
-  type OdometryTrackingRestartedPayload,
-  nueToWebXR as _nueToWebXR,
-  nueQuaternionToWebXR as _nueQuaternionToWebXR,
-} from 'gps-plus-slam-js';
+import { type OdometryTrackingRestartedPayload } from 'gps-plus-slam-js';
 import type { ARPose } from '../types/ar-types';
 import { getLastDeviceOrientation } from '../sensors/device-orientation-cache';
 import {
@@ -88,7 +84,6 @@ import {
   type ArCrashIsolationOptions,
   validateArCrashIsolationOptions,
 } from './ar-crash-isolation';
-import { SCENE_NODE } from './scene-node-names';
 import {
   createCss3dRendererManager,
   type Css3dRendererManager,
@@ -146,7 +141,7 @@ export function isXRCameraLike(value: unknown): value is XRCameraLike {
  *   - the first view has no `camera` property (camera-access not granted)
  *   - the camera property is not a valid XRCameraLike (zero/NaN dimensions)
  *
- * @see docs/2026-02-06-bug-camera-frames-black.md
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-06-bug-camera-frames-black.md
  */
 export function getXrCameraFromPose(
   pose: XRViewerPose | null
@@ -581,28 +576,13 @@ export function resetWebXRState(): void {
   activeSession = defaultArSessionHandle();
 }
 
-// The scene graph (renderer, scene, camera, arWorldGroup, CSS3D manager),
-// the XRSession, and the latest raw AR pose live on
-// `activeSession.sceneGraph` / `.xrSession` / `.latestArPose` (Stage 3) —
-// see the ArSessionHandle field docs.
-//
-// NOTE: the live session keeps NO reference to the arpose node (the
-// intermediate Object3D between basisChangeNode and the camera). It stays at
-// identity during recording and lives purely in the scene graph built by
-// createSceneHierarchy(); its only reader was the replay-injection getter
-// getArPose(), deleted by surface-reduction step 2 — replay now uses its own
-// arpose from replay-scene's getReplayState().
-
-// The image-capture cluster (manager, blit, callback slots incl. the injected
-// quality analyzer) lives on `activeSession.imageCapture` (Stage 1) — see the
-// ArSessionHandle field docs.
-
-// The tracking cluster (store, phase subscription, host callbacks) lives on
-// `activeSession.tracking` (Stage 2) — see the ArSessionHandle field docs.
-// When the store is present, `onXRFrame` dispatches `poseReceived`/`poseLost`,
-// the XR reference-space reset listener dispatches `originReset`, and a
-// subscription translates phase transitions back into the host's callbacks;
-// when absent the tracking pipeline simply no-ops.
+// THE LIVE SESSION KEEPS NO REFERENCE TO THE ARPOSE NODE (the intermediate
+// Object3D between basisChangeNode and the camera). It stays at identity during
+// recording and lives purely in the scene graph built by createSceneHierarchy();
+// its only reader was the replay-injection getter getArPose(), deleted by
+// surface-reduction step 2 — replay now uses its own arpose from replay-scene's
+// getReplayState(). Kept as a comment because it is a deliberate ABSENCE: there
+// is no handle field to hang it on, so nothing else can record it.
 
 /**
  * Info passed to the session-end callback (F3, 2026-07-04 user feedback).
@@ -615,30 +595,8 @@ export interface SessionEndInfo {
   requestedByApp: boolean;
 }
 
-// The session-end callback + app-initiated-end discriminator live on
-// `activeSession` (Stage 0) — see the ArSessionHandle field docs.
-
-// The depth-sampling cluster (sampler, rgb blit, callbacks) lives on
-// `activeSession.depth` (Stage 1) — see the ArSessionHandle field docs.
-
-// The per-frame host callback lives on `activeSession.onFrame` (Stage 3);
-// the CSS3D renderer manager on `activeSession.sceneGraph.css3d` — see the
-// ArSessionHandle field docs.
-
-// The camera-frame CV cluster (source, blit, capture size, callback) lives on
-// `activeSession.cameraFrame` (Stage 1). SINGLE consumer by design: one
-// source, one callback, one blit — one CV consumer at a time (QR *or* object
-// detection). To run two live CV consumers simultaneously at independent
-// cadences/resolutions, replace the single-callback wiring with a small
-// registry (e.g. `registerCameraFrameConsumer({ intervalMs, captureSize,
-// onFrame })`) holding a `CameraFrameSource` per consumer — the class is
-// already per-instance. See the SCOPE note in `camera-frame-source.ts`.
-
 /** Readback size for the depth-RGB blit (plan §5: "e.g. 256×192 suffices"). */
 const DEPTH_RGB_BLIT_CONFIG = { width: 256, height: 192 };
-
-// The per-frame camera texture/dimensions and the camera-access diagnostic
-// latches live on `activeSession` (Stage 0) — see the ArSessionHandle docs.
 
 const GET_CAMERA_TEXTURE_LOG_THRESHOLD = 5;
 
@@ -842,123 +800,6 @@ export function buildSessionOptions(
  */
 export async function isWebXRSupported(): Promise<boolean> {
   return probeImmersiveArSupport();
-}
-
-/**
- * AR camera frustum constants — the single source of truth for live AR and
- * replay (both build their camera via {@link createSceneHierarchy}).
- *
- * F2 (2026-07-04 user feedback): far raised 100 → 200 m so objects in the
- * reported 100–200 m range are no longer frustum-culled. The far-plane
- * distance itself is essentially free at this app's object counts; the real
- * constraint is depth precision — far/near = 2×10⁴ is comfortable for a
- * 24-bit depth buffer. Revisit the ratio if AR_CAMERA_NEAR ever shrinks.
- *
- * Note: these apply to WebGL content only. The CSS3D minimap is composited by
- * the browser from the camera fov alone — near/far do not clip it (F1 in the
- * same feedback doc).
- *
- * Module-private since surface-reduction step 3 (no consumer outside this
- * file): the values are pinned observably on the constructed camera by the
- * `createSceneHierarchy` frustum test in `webxr-session.test.ts`.
- */
-const AR_CAMERA_FOV = 70;
-const AR_CAMERA_NEAR = 0.01;
-const AR_CAMERA_FAR = 200;
-
-/**
- * Create the scene hierarchy with proper AR/GPS frame separation.
- * This is a pure function for testability.
- *
- * Hierarchy:
- *   scene (GPS world frame — NUE: X=North, Y=Up, Z=East)
- *   ├── ambientLight
- *   ├── directionalLight
- *   └── arWorldGroup (local space = NUE; receives alignment matrix)
- *       └── basisChangeNode ('webxr-to-nue', constant WEBXR_TO_NUE matrix)
- *           └── arpose (Object3D — AR pose; local space = WebXR)
- *               └── camera (PerspectiveCamera)
- *
- * basisChangeNode is a static scene-graph node that holds the WEBXR_TO_NUE
- * basis-change matrix permanently (matrixAutoUpdate=false). Moving it here
- * instead of composing it in applyAlignmentMatrix() keeps arWorldGroup's
- * local space in the **NUE axis convention** (X=North, Y=Up, Z=East), so no
- * WebXR↔NUE swizzle is needed for children.
- *
- * CAUTION — two NUE frames: arWorldGroup's local space is the *AR-odometry*
- * NUE frame, i.e. the **domain** of the alignment matrix, NOT the GPS-world
- * NUE frame of the scene root. Only content authored in AR-odometry
- * coordinates (e.g. the camera subtree) may be placed with raw local values.
- * GPS-world content (a lat/lon → NUE point) is expressed in the scene-root
- * frame and must be pre-multiplied by alignment⁻¹ before being used as a
- * local position under arWorldGroup — see createGpsAnchor and the
- * alignment-frame bug doc
- * (GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md).
- *
- * - Recording: arpose stays at identity; WebXRManager writes to camera.
- * - Replay: arpose receives recorded odomPosition/odomRotation;
- *   camera is owned by user controls (OrbitControls / FPS).
- *
- * @returns Object containing scene, arWorldGroup, arpose, and camera
- */
-export function createSceneHierarchy(): {
-  scene: THREE.Scene;
-  arWorldGroup: THREE.Group;
-  arpose: THREE.Object3D;
-  camera: THREE.PerspectiveCamera;
-} {
-  const newScene = new THREE.Scene();
-
-  // Create the AR world group — local space is NUE (X=North, Y=Up, Z=East).
-  // applyAlignmentMatrix() writes the alignment matrix directly here.
-  const newArWorldGroup = new THREE.Group();
-  newArWorldGroup.name = 'ar-world';
-  newScene.add(newArWorldGroup);
-
-  // Static basis-change node: converts WebXR camera coordinates to NUE world
-  // space. Set once at scene creation from WEBXR_TO_NUE and never modified.
-  // matrixAutoUpdate=false ensures Three.js never overwrites it from
-  // position/quaternion/scale decomposition.
-  const newBasisChangeNode = new THREE.Group();
-  newBasisChangeNode.name = SCENE_NODE.BASIS_CHANGE;
-  newBasisChangeNode.matrix.copy(WEBXR_TO_NUE);
-  newBasisChangeNode.matrixAutoUpdate = false;
-  newArWorldGroup.add(newBasisChangeNode);
-
-  // Create arpose — intermediate node between basisChangeNode and camera.
-  // Its local space is WebXR (X=East, Y=Up, Z=South).
-  // During recording it stays at identity (transparent in transform chain).
-  // During replay it receives the recorded AR pose.
-  const newArPose = new THREE.Object3D();
-  newArPose.name = 'ar-pose';
-  newBasisChangeNode.add(newArPose);
-
-  // Create camera INSIDE arpose.
-  // Its local transform = raw AR pose from WebXR (recording) or user controls (replay).
-  // Its world transform = arWorldGroup.matrix × basisChangeNode.matrix × arpose.matrix × camera.matrix
-  //                     = alignment × WEBXR_TO_NUE × arpose × camera  (mathematically identical to before)
-  const newCamera = new THREE.PerspectiveCamera(
-    AR_CAMERA_FOV,
-    window.innerWidth / window.innerHeight,
-    AR_CAMERA_NEAR,
-    AR_CAMERA_FAR
-  );
-  newArPose.add(newCamera);
-
-  // Add lighting to the scene (outside AR world - fixed in GPS space)
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-  newScene.add(ambientLight);
-
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  directionalLight.position.set(0, 10, 5);
-  newScene.add(directionalLight);
-
-  return {
-    scene: newScene,
-    arWorldGroup: newArWorldGroup,
-    arpose: newArPose,
-    camera: newCamera,
-  };
 }
 
 /**
@@ -1598,8 +1439,8 @@ export function getCamera(): THREE.PerspectiveCamera | null {
  * but arWorldGroup's local space is now NUE: objects placed as children
  * of arWorldGroup use NUE coordinates directly ([1,0,0]=North, [0,0,1]=East).
  *
- * Replay note: arpose still lives in WebXR space (below basisChangeNode),
- * so nuePositionToWebXR() is still required when setting arpose.position.
+ * Replay note: arpose still lives in WebXR space (below basisChangeNode), so
+ * the library's nueToWebXR() is still required when setting arpose.position.
  *
  * @param matrix - 16-element column-major matrix (gl-matrix mat4 format)
  */
@@ -1619,35 +1460,6 @@ export function applyAlignmentMatrix(matrix: readonly number[]): void {
   arWorldGroup.matrix.fromArray(matrix);
   arWorldGroup.matrixAutoUpdate = false;
   arWorldGroup.updateMatrixWorld(true);
-}
-
-/**
- * Convert a position from internal NUE convention (X=North, Y=Up, Z=East)
- * to WebXR local-floor convention (X=East, Y=Up, Z=South).
- *
- * Delegates to the canonical library implementation (nueToWebXR).
- * Accepts `readonly number[]` for call-site convenience.
- *
- * NUE [n, u, e] → WebXR [e, u, -n]
- */
-export function nuePositionToWebXR(
-  nue: readonly number[]
-): readonly [number, number, number] {
-  return _nueToWebXR(nue as [number, number, number]);
-}
-
-/**
- * Convert a quaternion from internal NUE convention to WebXR local-floor convention.
- *
- * Delegates to the canonical library implementation (nueQuaternionToWebXR).
- * Accepts `readonly number[]` for call-site convenience.
- *
- * NUE [x, y, z, w] → WebXR [z, y, -x, w]
- */
-export function nueQuaternionToWebXR(
-  nue: readonly number[]
-): readonly [number, number, number, number] {
-  return _nueQuaternionToWebXR(nue as [number, number, number, number]);
 }
 
 /**

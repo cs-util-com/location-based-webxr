@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OSM affordance demo</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+        background: #11131a;
+        color: #e6e8ef;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100dvh;
+      }
+      header {
+        padding: 0.6rem 0.9rem;
+        border-bottom: 1px solid #2a2f3d;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: baseline;
+      }
+      h1 {
+        font-size: 1rem;
+        margin: 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        user-select: none;
+      }
+      /* The disclosure caret, rotated by the collapsed state. Generated rather
+         than an element, so the markup stays one <h1>. */
+      h1::before {
+        content: "▾";
+        font-size: 0.8em;
+        color: #9aa3b8;
+        transition: transform 0.15s ease;
+      }
+      header[data-collapsed="true"] h1::before {
+        transform: rotate(-90deg);
+      }
+      #status,
+      #scale {
+        color: #9aa3b8;
+        font-size: 0.8rem;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        min-height: 0;
+        position: relative;
+      }
+
+      /* Floats over the split rather than taking a column (DEC-17). */
+      #details {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        bottom: 0.5rem;
+        width: 22rem;
+        max-width: 42vw;
+        overflow-y: auto;
+        z-index: 1000;
+        padding: 0.6rem 0.7rem;
+        background: #171b26f2;
+        border: 1px solid #2a2f3d;
+        border-radius: 6px;
+        font-size: 0.78rem;
+      }
+      #details[hidden] {
+        display: none;
+      }
+      /* Bottom-LEFT, so it cannot sit under the details panel and cannot be
+         mistaken for it. Same surface treatment, deliberately: it is the same
+         kind of thing — an overlay that explains the view. */
+      #hotkey-help {
+        position: absolute;
+        left: 0.5rem;
+        bottom: 0.5rem;
+        z-index: 1000;
+        padding: 0.5rem 0.7rem;
+        background: #171b26f2;
+        border: 1px solid #2a2f3d;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        line-height: 1.5;
+      }
+      #hotkey-help[hidden] {
+        display: none;
+      }
+      /* The geo-event picker sits opposite the hotkey list so the two cannot
+         cover each other — both are bottom-anchored overlays over the map. */
+      #geo-event-picker {
+        position: absolute;
+        right: 0.5rem;
+        bottom: 0.5rem;
+        z-index: 1000;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.4rem;
+        /* Bounded by the pane rather than by a fixed width: `min()` reads as an
+           invalid value to the CSS validator in the gate, and the pane bound is
+           the one that actually matters on a phone. The content is narrower
+           than this on a desktop anyway, and `flex-wrap` handles the rest. */
+        max-width: calc(100% - 1rem);
+        padding: 0.5rem 0.7rem;
+        background: #171b26f2;
+        border: 1px solid #2a2f3d;
+        border-radius: 6px;
+        font-size: 0.78rem;
+      }
+      #geo-event-picker[hidden] {
+        display: none;
+      }
+      #geo-event-picker input,
+      #geo-event-picker button {
+        font: inherit;
+        color: #e6e9f0;
+        background: #232838;
+        border: 1px solid #3a4152;
+        border-radius: 4px;
+        padding: 0.15rem 0.4rem;
+      }
+      #geo-event-picker button {
+        cursor: pointer;
+      }
+      /* Only occupies space when it has something to say — an always-present
+         empty line would push the buttons around as it filled and emptied. */
+      .geo-event-error:not(:empty) {
+        flex-basis: 100%;
+        color: #ffb4b4;
+      }
+      #hotkey-help kbd {
+        display: inline-block;
+        min-width: 1.1em;
+        text-align: center;
+        padding: 0 0.3em;
+        border: 1px solid #3a4152;
+        border-radius: 3px;
+        background: #232838;
+      }
+      .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+      }
+      .panel-close {
+        background: none;
+        border: none;
+        color: #9aa3b8;
+        font-size: 1.1rem;
+        cursor: pointer;
+        line-height: 1;
+      }
+      .panel-summary {
+        margin: 0.4rem 0;
+        color: #e6e8ef;
+      }
+      .panel-threshold {
+        margin: 0 0 0.6rem;
+        color: #9aa3b8;
+      }
+      /* The region panel's statistics. A two-column grid rather than a table:
+         the labels are one word each and the values are short, so alignment is
+         all the structure it needs. */
+      .panel-stats {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.15rem 0.75rem;
+        margin: 0.4rem 0 0.6rem;
+      }
+      .panel-stats dt {
+        color: #9aa3b8;
+      }
+      .panel-stats dd {
+        margin: 0;
+        color: #e6e8ef;
+      }
+      .panel-feature {
+        border-top: 1px solid #2a2f3d;
+        padding: 0.3rem 0;
+      }
+      .panel-feature summary {
+        cursor: pointer;
+      }
+      /* The vetoing element is the answer; it should be findable at a glance. */
+      .panel-feature-veto > summary {
+        color: #ff8fa3;
+        font-weight: 600;
+      }
+      .panel-tags {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.2rem;
+      }
+      .panel-tags td,
+      .panel-tags th {
+        padding: 0.1rem 0.3rem;
+        color: #9aa3b8;
+        vertical-align: top;
+      }
+      .panel-tags th {
+        text-align: left;
+        font-weight: 400;
+        color: #6f7995;
+        border-bottom: 1px solid #2a2f3d;
+      }
+      .panel-tag-veto td {
+        color: #ff8fa3;
+      }
+      /* A tag the veto short-circuit never evaluated: shown, but visibly not
+         part of the arithmetic. */
+      .panel-tag-skipped td {
+        opacity: 0.55;
+        text-decoration: line-through;
+      }
+
+      /* The grab bar for the map sheet. Hidden on desktop, where the split is
+         fixed and there is nothing to drag. */
+      #sheet-handle {
+        display: none;
+        position: absolute;
+        left: 0;
+        right: 0;
+        /* Matches #map s height in the mobile query below, so the bar sits on
+           the sheet s top edge from first paint. Without it the handle falls
+           back to its static position -- the TOP of the grid container -- and
+           floats over the 3D view until the first drag. */
+        bottom: var(--sheet-height, 45%);
+        height: 1.5rem;
+        z-index: 600;
+        cursor: ns-resize;
+        touch-action: none;
+      }
+      #sheet-handle::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 0.55rem;
+        width: 2.5rem;
+        height: 0.25rem;
+        margin-left: -1.25rem;
+        border-radius: 2px;
+        background: #6f7995;
+      }
+      #map,
+      #scene {
+        min-height: 0;
+        min-width: 0;
+      }
+      #scene {
+        border-left: 1px solid #2a2f3d;
+        position: relative;
+      }
+
+      /* THE CANVAS IS SIZED BY CSS, AND ONLY BY CSS (W1, finding R3-2).
+         `WebGLRenderer.setSize(w, h, false)` sets the width/height ATTRIBUTES to
+         `size x devicePixelRatio` — the drawing buffer, which is supposed to be
+         larger — and deliberately does not write `canvas.style`. Without a rule
+         here the element then lays out at its attribute size in CSS pixels: 2-3x
+         its container on a phone, 1.25-1.5x on a Windows desktop at 125-150 %
+         scaling. Everything renders correctly into the buffer, so no pixel test
+         notices; what breaks is that most of the picture falls outside the
+         visible box and the projection centre — every orbit's pivot — goes with
+         it.
+
+         DO NOT ALSO PASS `updateStyle: true`. three then writes
+         `canvas.style.width` INLINE, an inline style beats this rule, and this
+         rule becomes decoration. One mechanism, and it is this one. */
+      #scene canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      /* The two primary inputs — the category and the ground surface — plus
+         every checkbox. Styled together (W15) so the bar reads as one control
+         panel rather than as browser defaults dropped into a flex row. */
+      select {
+        background: #1b1f2a;
+        color: inherit;
+        border: 1px solid #2a2f3d;
+        border-radius: 4px;
+        padding: 0.2rem 0.45rem;
+        font: inherit;
+        font-size: 0.8rem;
+      }
+      select:hover {
+        border-color: #3a4356;
+      }
+      /* The accent makes a checked box read at a glance in a dark bar; the
+         default is a pale system blue that disappears against #171b26.
+
+         BEFORE the :focus-visible rule below, which stylelint's
+         no-descending-specificity requires: the lower-specificity selector has
+         to come first. */
+      input[type="checkbox"] {
+        accent-color: #7cc4ff;
+        margin: 0 0.15rem 0 0;
+        vertical-align: -0.1em;
+      }
+      select:focus-visible,
+      input[type="checkbox"]:focus-visible {
+        outline: 2px solid #7cc4ff;
+        outline-offset: 1px;
+      }
+      header label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        white-space: nowrap;
+      }
+      /* The layer switches. Compact, because they sit in a bar that already has
+         a category picker and a legend — and GROUPED (W15), because nine of them
+         in one wrapping row is a pile. The three groups answer three different
+         questions: what is the affordance analysis claiming, what is in the
+         world, and what am I inspecting the renderer with. */
+      .layer-toggles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.78rem;
+        color: #9aa3b8;
+      }
+      .layer-group {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.15rem 0.5rem 0.15rem 0.4rem;
+        border: 1px solid #262b38;
+        border-radius: 999px;
+        background: #171b26;
+      }
+      .layer-group-label {
+        color: #6f7995;
+        font-size: 0.68rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .layer-toggle {
+        white-space: nowrap;
+      }
+      /* IN PROGRESS (F58): enabling the cell layer refetches, measured at ~1.9 s.
+         Dimmed and non-interactive, never hidden -- a control that disappears
+         reads as a bug. */
+      .layer-toggle.layer-busy {
+        opacity: 0.55;
+        cursor: progress;
+      }
+
+      .hint {
+        color: #6f7995;
+        font-size: 0.78rem;
+      }
+
+      /* COLLAPSED (DEC-R2-4, redrawn by DEC-R6b-5): the title, the CATEGORY
+         picker, the legend and the whole affordance block stay.
+
+         WHY THE CATEGORY PICKER AND NOT THE GROUND PICKER, since this comment
+         used to justify keeping both as "the two primary inputs". The category
+         picker stays because the legend NAMES the current category (DEC-1) and
+         nothing else on screen does — a legend with no way to change what it is
+         describing re-creates the round-1 confusion. The ground mode is not in
+         that relationship with the legend: nothing in the collapsed bar claims
+         anything about it, so hiding it leaves no dangling claim. The sixth
+         session asked for it to collapse and Q-R6b-3 chose the note over the
+         older wording.
+
+         WHY THE AFFORDANCE BLOCK STAYS AND THE OTHERS GO. The legend describes
+         the affordance layers, so those switches are the ones it would be
+         strange to hide — same argument as the category picker. World, Debug and
+         Ground make no appearance in the collapsed bar's claims.
+
+         Hidden: the hint, the eight-fact status string, and the World, Debug and
+         Ground controls. `show-below` is NO LONGER LISTED HERE — it moved inside
+         `#layer-group-overlays` (see `main.ts`'s `extras`), so it now collapses
+         and expands with the affordance block it belongs to, which is to say it
+         stays visible. That reverses its old behaviour deliberately: it was the
+         ONLY setting that used to collapse, which is exactly backwards from what
+         the sixth session reported.
+
+         The Terrarium attribution is NOT hidden — it moved to Leaflet's own
+         attribution control, which is always visible, because attribution may not
+         be collapsed away.
+
+         Placed AFTER `.hint` and `#status` deliberately: stylelint's
+         `no-descending-specificity` wants the lower-specificity selectors first,
+         and these override them. */
+      header[data-collapsed="true"] .hint,
+      header[data-collapsed="true"] #status,
+      header[data-collapsed="true"] #ground-mode-label,
+      header[data-collapsed="true"] #layer-group-world,
+      header[data-collapsed="true"] #layer-group-diagnostics {
+        display: none;
+      }
+
+      /* The locate button (DEC-R2-3): a SQUARE icon, bottom-right, so it matches
+         the maps convention and — unlike the old text button — does not change
+         size when it fails. */
+      .geo-event-button {
+        font: inherit;
+        color: #e6e8ef;
+        background: #2a2f3d;
+        border: 1px solid #3a4152;
+        border-radius: 4px;
+        padding: 0.15rem 0.5rem;
+        cursor: pointer;
+      }
+      .geo-event-button:disabled {
+        opacity: 0.6;
+        cursor: progress;
+      }
+      /* The seeded candidates and the winner (DEC-G6).
+
+         THE COLOURS ARE NOT HERE ANY MORE, deliberately. They live in
+         `surface-colours.ts` because the reported bug was a COLLISION — the
+         user dot, both fetch outlines and these two were all `#ff3860` — and a
+         collision between a CSS rule and two TypeScript literals is one nothing
+         can assert. `marker-palette.test.ts` now pins that they differ, which
+         only works while there is one definition. What stays here is the part
+         that is genuinely presentation: opacity and the icon reset. */
+      .geo-candidate {
+        fill-opacity: 0.55;
+        stroke: none;
+      }
+      /* The winner is an `L.divIcon`, not a vector, so Leaflet's default
+         `leaflet-div-icon` chrome — a white box with a grey border — would
+         otherwise frame the glyph. */
+      .geo-winner {
+        background: none;
+        border: none;
+      }
+      .locate-button {
+        width: 2rem;
+        height: 2rem;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: none;
+        background: #171b26;
+        color: #e6e8ef;
+        cursor: pointer;
+        border-radius: 3px;
+      }
+      .locate-button:disabled {
+        cursor: progress;
+      }
+      /* THE IN-PROGRESS STATE, which is the one the icon-only button would
+         otherwise have lost — and the one CLAUDE.md's async-feedback rule
+         actually mandates. A GPS fix routinely takes seconds. */
+      .locate-button[data-state="locating"] {
+        color: #7cc4ff;
+        animation: locate-pulse 1s ease-in-out infinite;
+      }
+      /* Each failure gets its own colour as well as its own label, because the
+         three have three different remedies. */
+      .locate-button[data-state="denied"],
+      .locate-button[data-state="unavailable"] {
+        color: #ff8fa3;
+      }
+      .locate-button[data-state="timeout"] {
+        color: #ffd479;
+      }
+      .locate-button[data-state="located"] {
+        color: #7ce0a3;
+      }
+
+      @keyframes locate-pulse {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      /* Respect a reduced-motion preference: the colour change still carries the
+         state, so dropping the animation loses nothing. */
+      @media (prefers-reduced-motion: reduce) {
+        .locate-button[data-state="locating"] {
+          animation: none;
+        }
+      }
+
+      /* The legend replaces the scale sentence: same claim, read at a glance. */
+      #legend {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.75rem;
+        color: #9aa3b8;
+        flex-wrap: wrap;
+      }
+      .legend-category {
+        color: #e6e8ef;
+        font-weight: 600;
+      }
+      .legend-strip {
+        display: inline-flex;
+        /* Butted together, so the ramp reads as a continuum rather than as a
+           set of categories — it is a continuous quantity. */
+        gap: 0;
+      }
+      .legend-swatch {
+        width: 0.85rem;
+        height: 0.85rem;
+        border: 1px solid transparent;
+        display: inline-block;
+      }
+      /* The empty state (W12): a sentence where the ramp would be. */
+      .legend-empty {
+        font-style: italic;
+      }
+      .legend-band {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-left: 0.4rem;
+      }
+      /* The identity band is outline-only: "nothing known here" must not paint
+         a claim the data does not support. */
+      .legend-swatch-identity {
+        border-style: dashed;
+      }
+      /* MOBILE (DEC-10): the 3D view fills the viewport and the map becomes a
+         full-width sheet over it, draggable in height -- which is also the whole
+         of D8 s resizing ask, without a splitter. Follows the RecorderApp map
+         browser s full-bleed-plus-overlays pattern rather than inventing a
+         second visual language. */
+      @media (width <= 860px) {
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr;
+        }
+        #scene {
+          grid-area: 1 / 1;
+          border-left: none;
+        }
+        #map {
+          grid-area: 1 / 1;
+          align-self: end;
+          width: 100%;
+          /* Driven by --sheet-height, which the drag handle sets on <main>.
+             Read only inside this query, so a drag on a phone cannot leave a
+             stale height behind in the desktop grid after a rotation. */
+          height: var(--sheet-height, 45%);
+          z-index: 500;
+          border-top: 1px solid #2a2f3d;
+        }
+        #sheet-handle {
+          display: block;
+        }
+        /* Slides up from the bottom over the map, rather than sitting in the
+           top-right corner as it does on desktop. */
+        #details {
+          inset: auto 0.5rem 0.5rem;
+          width: auto;
+          max-width: none;
+          max-height: 55%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header id="header-bar">
+      <!-- Tapping the title collapses the whole bar (DEC-R2-4). It is the title
+           AND the control, as the feedback asked; `header-collapse.ts` gives it
+           role/tabindex/aria-expanded so it is reachable by keyboard too. -->
+      <h1 id="header-toggle">OSM affordance demo</h1>
+      <!-- THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Before the category
+           picker, as the feedback asked. Its options come from the SAME table
+           the offline fixture corpus is captured from, so the places a human
+           can reach are exactly the places the suite covers. Populated from
+           `site-picker.ts`; the markup carries no place names. -->
+      <label
+        >location
+        <select id="site"></select
+      ></label>
+      <label
+        >category
+        <select id="category"></select
+      ></label>
+      <!-- MOVED INTO THE AFFORDANCE GROUP AT RUNTIME (DEC-R6b-5). It stays here
+           in the source because this is where the header's own controls live and
+           `layer-toggles.ts` builds `#layers` from scratch; `main.ts` hands the
+           label over as an `overlays` extra, the same seam the perf switch uses.
+           The `id` exists so it can be handed over by name rather than by
+           walking up from the checkbox. -->
+      <label class="layer-toggle" id="show-below-label"
+        ><input type="checkbox" id="show-below" /> show cells below the
+        threshold</label
+      >
+      <!-- Per-layer toggles (DEC-R2-10). Independent switches rather than a
+           two-state mode: a mode makes it impossible to view a merged area OVER
+           the cells that produced it, which is the first check anyone makes when a
+           region looks wrong. Populated from ALL_LAYERS so a new builder cannot
+           arrive without a switch. -->
+      <div id="layers" class="layer-toggles"></div>
+      <!--
+        THE GEO-EVENT TRIGGER (round 9, DEC-R9-13). A BUTTON rather than firing on
+        every position change: computing an event can score hundreds of chunks and
+        may download a tile, and clicking around the map is this demo primary
+        interaction. It also makes WHEN it ran visible, which matters on a
+        diagnostic surface.
+      -->
+      <button type="button" id="geo-event" class="geo-event-button">
+        Next geo-event
+      </button>
+      <!--
+        THE GROUND MODE (W11, DEC-R3-3). NOT a layer — it does not add or remove
+        anything from the scene, it chooses which surface is drawn as the ground:
+        the CPU-displaced plane, the GPU-displaced one (W23's A/B comparison), or
+        none at all. `ALL_LAYERS` means "things the scene can draw", each
+        independently; this is one thing drawn three ways and is exclusive.
+
+        `No ground` is what makes the OSM ground areas inspectable on their own —
+        the ask behind the round-3 note — while `plates` stays an ordinary layer,
+        so "areas lying on the terrain" is still reachable. Options are populated
+        from `GROUND_MODES` so the picker cannot drift from the union.
+      -->
+      <label class="layer-toggle" id="ground-mode-label">
+        ground
+        <select id="ground-mode"></select>
+      </label>
+      <!-- A DIAGNOSTIC, outside the layer registry because it draws nothing in
+           the scene. Off by default (DEC-R3-18) so the demo's default picture is
+           unchanged. Since W6 it is the only member of the debug group — the
+           height ramp that used to sit beside it is now a ground mode. -->
+      <label class="layer-toggle" id="perf-stats-label">
+        <input type="checkbox" id="perf-stats" />
+        perf
+      </label>
+      <span class="hint">click the map to move</span>
+      <span id="status">starting…</span>
+      <div id="legend"></div>
+    </header>
+    <main>
+      <div id="map"></div>
+      <div id="scene"></div>
+      <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
+           two views to ~450 px each on a laptop, which is the width that made
+           the 3D pane useless on a phone. -->
+      <div id="sheet-handle" aria-hidden="true"></div>
+      <aside id="details" hidden></aside>
+      <!-- The keyboard shortcuts, listed by the registry that owns them (§1).
+           An undocumented hotkey is a feature only its author has, so "?"
+           toggles this and it is populated from `hotkeys.bindings()` rather
+           than hand-written — a list that can disagree with the bindings is
+           worse than none. -->
+      <aside id="hotkey-help" hidden></aside>
+      <!-- The geo-event time picker (G1, DEC-G1). Empty here and filled by
+           `geo-event-picker.ts`: the two inputs, the two buttons and the error
+           line are one interaction, and splitting them between markup and
+           wiring is how a control ends up with no listener.
+
+           A `hidden`-toggled `<aside>` rather than a `<dialog>`, like the two
+           above it. `showModal()` traps focus and dims the page, which is right
+           for a decision that blocks and wrong for this one — the map
+           underneath is what you consult while choosing a time. -->
+      <aside id="geo-event-picker" hidden></aside>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

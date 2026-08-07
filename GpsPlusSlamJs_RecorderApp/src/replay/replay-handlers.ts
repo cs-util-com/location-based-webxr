@@ -18,7 +18,7 @@ import {
   listSessionZipsInScenario,
   type SessionEntry,
   type ScenarioSessionMap,
-} from '../ui/session-browser.js';
+} from '../storage/recording-discovery.js';
 import {
   populateReplaySessions,
   updateReplayProgress,

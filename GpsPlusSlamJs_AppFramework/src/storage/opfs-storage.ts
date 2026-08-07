@@ -23,6 +23,7 @@
  */
 
 import { createLogger } from '../utils/logger';
+import { writeFileOrAbort } from './write-file-or-abort.js';
 import {
   formatTimestamp,
   formatActionFilename,
@@ -342,42 +343,6 @@ export function setSessionHandles(
 // ============================================================================
 
 /**
- * Safely write data to a file handle with proper cleanup.
- *
- * Uses try/finally to ensure the writable stream is always cleaned up,
- * calling abort() on errors to prevent resource leaks and file locks.
- */
-async function safeWriteToFile(
-  fileHandle: FileSystemFileHandle,
-  data: string | Blob
-): Promise<void> {
-  const writable = await fileHandle.createWritable();
-  let writeError: unknown = null;
-  try {
-    await writable.write(data);
-    await writable.close();
-  } catch (error: unknown) {
-    writeError = error;
-  } finally {
-    if (writeError !== null) {
-      try {
-        await writable.abort();
-      } catch {
-        // Intentionally ignored: abort failure should not overwrite writeError
-      }
-    }
-  }
-  if (writeError !== null) {
-    if (writeError instanceof Error) {
-      throw writeError;
-    }
-    const message =
-      typeof writeError === 'string' ? writeError : 'File write failed';
-    throw new Error(message);
-  }
-}
-
-/**
  * Write a Redux action to the current session's actions directory.
  *
  * @param action - The action object to write
@@ -398,7 +363,7 @@ export async function writeAction(
   });
 
   const json = JSON.stringify(action, null, 2);
-  await safeWriteToFile(fileHandle, json);
+  await writeFileOrAbort(fileHandle, json);
 }
 
 /**
@@ -418,7 +383,7 @@ export async function writeFrame(blob: Blob, index: number): Promise<void> {
     create: true,
   });
 
-  await safeWriteToFile(fileHandle, blob);
+  await writeFileOrAbort(fileHandle, blob);
 }
 
 /**
@@ -439,7 +404,7 @@ export async function writeSessionMetadata(
   });
 
   const json = JSON.stringify(metadata, null, 2);
-  await safeWriteToFile(fileHandle, json);
+  await writeFileOrAbort(fileHandle, json);
 
   log.info('Session metadata written');
 }

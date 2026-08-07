@@ -18,7 +18,7 @@ See the plan: `GpsPlusSlamJs_Docs/docs/2026-06-14-1048-map-centric-recording-bro
   - Accumulates `backfilled` recordings with coverage as backfill candidates; the browser's `onBackfill` CTA runs `backfillCoverageIntoZips` and reports the outcome (`showError` on permission denial, `showToast` on partial/complete success).
   - Error modes: a `createMapBrowser` mount failure (`null`) tears down and returns; a stream failure surfaces via `showError` **only when not caused by the owned `AbortController`** (an aborted stream is expected on close/folder switch).
 - `teardownMapBrowser(): void` — abort the in-flight coverage stream, `destroy()` the browser, remove `#map-browser-root`. Idempotent.
-- `ensureMapBrowserRoot(): HTMLElement` — create (or reuse) the full-bleed `#map-browser-root` container (`fixed inset-0 z-[80]`). Also injected by `main.ts` into `installE2eTestHooks` so the Playwright fixtures mount into the same container the real replay path uses (see [test-utils/e2e-hooks.md](../test-utils/e2e-hooks.md)).
+- `ensureMapBrowserRoot(): HTMLElement` — create (or reuse) the full-bleed `#map-browser-root` container (`fixed inset-0 z-[80]`). Also injected by `main.ts` into `installE2eTestHooks` so the Playwright fixtures mount into the same container the real replay path uses (see [test-utils/e2e-hooks.md](../test-utils/e2e-hooks.ts.md)).
 
 ## Invariants & assumptions
 

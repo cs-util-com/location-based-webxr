@@ -22,7 +22,7 @@ import {
   backfillCoverageIntoZips,
   type BackfillCandidate,
 } from '../storage/coverage-backfill';
-import type { SessionEntry } from './session-browser';
+import type { SessionEntry } from '../storage/recording-discovery';
 import { showError } from './hud';
 import { showToast } from './toast';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';

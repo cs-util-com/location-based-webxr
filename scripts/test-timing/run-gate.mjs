@@ -8,6 +8,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
+import { budgetBreach } from './budget.mjs';
 import { checkChainDrift } from './chain-guard.mjs';
 import { resolveProject, PROJECTS, TOTAL_STAGE, stageOrder } from './projects.mjs';
 import {
@@ -107,6 +108,13 @@ for (const stage of project.stages) {
       `\n✖ gate failed at stage "${stage.name}" (exit ${result.exitCode})`
     );
     process.exit(result.exitCode);
+  }
+  // AFTER the pass/fail check, so a red stage still reports its own failure
+  // rather than a budget message about a run that never finished its work.
+  const breach = budgetBreach(stage, result.durationMs);
+  if (breach !== null) {
+    console.error(`\n✖ gate failed on a wall-clock budget:\n${breach}`);
+    process.exit(1);
   }
   stageCounts.push(result.tests);
   allRecorded = allRecorded && result.recorded;

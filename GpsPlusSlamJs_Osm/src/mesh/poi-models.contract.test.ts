@@ -1,0 +1,273 @@
+import { describe, expect, it } from "vitest";
+
+import type { MeshData } from "./mesh-data.js";
+
+import { POI_FALLBACK_MODEL, POI_MODELS, poiModelFor } from "./poi-models.js";
+import {
+  POI_COLUMN_HEIGHT_M,
+  POI_MARKER_MAX_HEIGHT_M,
+  POI_SYMBOL_HEIGHT_M,
+  POI_SYMBOL_SPAN_M,
+} from "./poi-primitives.js";
+import { POI_MODEL_LIMIT } from "./poi-ranking.js";
+
+/**
+ * Every POI model is non-degenerate (W7, closes half of F28).
+ *
+ * WHY THESE TESTS MATTER, and it is a specific gap rather than a general one.
+ * DEC-R4-14 shipped fifty procedural models with **no contact sheet**, accepting
+ * in writing that _"a tag that appears at none of the six fixture sites ships
+ * without ever having been looked at"_. F28 then recorded the consequence
+ * bluntly: _"the fifty POI models were judged by no one."_
+ *
+ * The gallery page (`gallery.html`) is the half only a person can do. This file
+ * is the half a machine can, and the two answer different questions: a human
+ * looking at a grid sees "the bench is too tall", while these catch the models a
+ * human would never notice because they draw NOTHING — an empty mesh renders as
+ * absence, and absence at a site with no such POI is indistinguishable from
+ * correct behaviour.
+ *
+ * The height check is not redundant with the height being DERIVED. It is derived
+ * from the mesh, so a model that accidentally built nothing gets a consistent,
+ * self-agreeing height of zero — the two-sources-of-truth defect removed, and
+ * the wrong answer preserved.
+ */
+
+const entries = [...POI_MODELS.values()];
+
+describe("the POI model contract", () => {
+  it("has a model for every kind the ranking asked for", () => {
+    // The ranking picks the top N by global usage; the models are written to
+    // match it. A mismatch means a kind is ranked in and silently unmodelled —
+    // which falls back to no marker at all rather than to a placeholder.
+    expect(POI_MODELS.size).toBe(POI_MODEL_LIMIT);
+  });
+
+  it("keys every model by its own kind", () => {
+    // The map is built from `entry.kind`, so a copy-paste that left the previous
+    // kind string in place would silently overwrite one model with another and
+    // the count above would still pass.
+    for (const model of entries) {
+      expect(poiModelFor(model.kind)).toBe(model);
+    }
+  });
+
+  it("gives every model geometry that actually exists", () => {
+    // AN EMPTY MESH RENDERS AS NOTHING, which at a site with no such POI is
+    // indistinguishable from working correctly. This is the check F28 says was
+    // never made.
+    const empty = entries.filter(
+      (model) =>
+        model.mesh.positions.length === 0 || model.mesh.indices.length === 0,
+    );
+    expect(empty.map((model) => model.kind)).toEqual([]);
+  });
+
+  it("gives every model a positive height", () => {
+    // Derived from the mesh, so zero means the geometry is flat or absent rather
+    // than that someone typed the wrong number.
+    const flat = entries.filter((model) => !(model.heightM > 0));
+    expect(flat.map((model) => model.kind)).toEqual([]);
+  });
+
+  it("keeps every model at marker scale, and names every exception", () => {
+    // The scale trap DEC-R4-14 named: "a bench the size of a kiosk". A loose
+    // upper bound would pass a units error, so anything unusually tall is PINNED
+    // by name and has to be added here deliberately.
+    //
+    // WHAT THIS USED TO BE, AND WHY IT CHANGED. It asked `isBuildingScalePoi`
+    // which models were tall enough to be buildings, and pinned the answer. That
+    // list ran hospital / hotel / place_of_worship / sports_centre, gained
+    // `amenity=bank` when round 8 adopted it at exactly 8.0 m — silently, which
+    // is what DEC-S9 fixed — and reached EMPTY once the symbol port replaced
+    // every one of them with a ~2.5 m marker. The predicate then had no subjects
+    // and its whole module was deleted (DEC-S2), so the guard is re-expressed
+    // against the thing that is still true: nothing here is building-sized.
+    //
+    // 8 m IS KEPT AS THE LINE deliberately, because it is the one that was
+    // measured: below it sit shopfronts legitimately inside a building, above it
+    // sat the duplicates. If a model ever crosses it again this fails and names
+    // it, which is the whole reason the rule was derived from measured heights
+    // rather than from a list of kind strings.
+    const tall = entries
+      .filter((model) => model.heightM >= 8)
+      .map((model) => `${model.kind}=${model.heightM.toFixed(1)}`)
+      .sort();
+    expect(tall).toEqual([]);
+  });
+
+  describe("the family-S markers (DEC-S3, DEC-S4, DEC-S21)", () => {
+    const familyS = entries.filter((entry) => entry.symbol !== undefined);
+
+    it("has at least one, so the rest of this block cannot pass vacuously", () => {
+      // A filter over an empty list satisfies every `for` below it. This is the
+      // guard that makes the others mean something, and it is the shape round 8
+      // was caught by twice.
+      expect(familyS.length).toBeGreaterThan(0);
+    });
+
+    it("stands every symbol marker inside the shared envelope", () => {
+      // DEC-S3 fixes the family at one height; DEC-S21 made that a CEILING
+      // rather than an equality, because the envelope's span clamp binds first
+      // for a wide symbol and leaves it shorter. So the assertion is a band: no
+      // taller than column plus a full symbol, and no shorter than the column
+      // itself plus something.
+      for (const model of familyS) {
+        expect(model.heightM).toBeLessThanOrEqual(
+          POI_MARKER_MAX_HEIGHT_M + 1e-3,
+        );
+        expect(model.heightM).toBeGreaterThan(POI_COLUMN_HEIGHT_M);
+      }
+    });
+
+    it("gives every symbol geometry that stands alone, base at zero", () => {
+      // THE ASSERTION DEC-S4 EXISTS FOR. Half the time the symbol is drawn with
+      // no column under it, floating over a building's roof, so a `symbol` that
+      // is empty or that starts at the column top is unusable in exactly the
+      // case the whole plan is for — and it would look perfectly fine in the
+      // gallery, which is where it would otherwise be judged.
+      for (const model of familyS) {
+        const symbol = model.symbol as MeshData;
+        expect(symbol.positions.length).toBeGreaterThan(0);
+        expect(symbol.indices.length).toBeGreaterThan(0);
+        let lowest = Infinity;
+        let highest = -Infinity;
+        for (let i = 1; i < symbol.positions.length; i += 3) {
+          lowest = Math.min(lowest, symbol.positions[i] as number);
+          highest = Math.max(highest, symbol.positions[i] as number);
+        }
+        expect(lowest).toBeCloseTo(0, 5);
+        expect(highest).toBeLessThanOrEqual(POI_SYMBOL_HEIGHT_M + 1e-6);
+        expect(highest).toBeGreaterThan(0);
+      }
+    });
+
+    it("keeps the symbol's bounding box independent of the column", () => {
+      // The mechanical form of "reads on its own": the symbol's own extent must
+      // not be the merged marker's. If a port ever merged the column INTO the
+      // symbol — the obvious mistake when copying a source that draws both
+      // together — this is what would catch it, since the symbol's height would
+      // suddenly match the marker's.
+      for (const model of familyS) {
+        const symbol = model.symbol as MeshData;
+        let highest = -Infinity;
+        for (let i = 1; i < symbol.positions.length; i += 3) {
+          highest = Math.max(highest, symbol.positions[i] as number);
+        }
+        expect(highest).toBeLessThan(
+          model.heightM - POI_COLUMN_HEIGHT_M + 1e-6,
+        );
+        expect(symbol.triangleCount).toBeLessThan(model.mesh.triangleCount);
+      }
+    });
+
+    it("fits every symbol inside the envelope's span, not just its height", () => {
+      // The clamp that made the height a range. A symbol wider than this is a
+      // billboard on a 1.6 m post, which is the failure mode DEC-S21 rejected
+      // "scale to height only" for.
+      for (const model of familyS) {
+        const symbol = model.symbol as MeshData;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (let i = 0; i < symbol.positions.length; i += 3) {
+          minX = Math.min(minX, symbol.positions[i] as number);
+          maxX = Math.max(maxX, symbol.positions[i] as number);
+          minZ = Math.min(minZ, symbol.positions[i + 2] as number);
+          maxZ = Math.max(maxZ, symbol.positions[i + 2] as number);
+        }
+        expect(Math.max(maxX - minX, maxZ - minZ)).toBeLessThanOrEqual(
+          POI_SYMBOL_SPAN_M + 1e-6,
+        );
+      }
+    });
+  });
+
+  describe("the fallback marker (DEC-S19)", () => {
+    it("is a member of the family, not a 6 m cone standing over it", () => {
+      // THE DEFECT THE PORT CREATED AND HAD TO FIX. The fallback was a 6 m
+      // orange cone, which was reasonable when markers were 3-15 m volumes.
+      // With every known kind at ~2.5 m it would be 2.4x taller than every
+      // marker that knows what it is — and it is the most numerous marker in
+      // the scene, ~650 kinds against 50.
+      expect(POI_FALLBACK_MODEL.heightM).toBeLessThan(POI_MARKER_MAX_HEIGHT_M);
+      expect(POI_FALLBACK_MODEL.heightM).toBeGreaterThan(POI_COLUMN_HEIGHT_M);
+    });
+
+    it("carries NO symbol, which is what it is saying", () => {
+      // A bare column would be indistinguishable from a family-S marker whose
+      // symbol failed to build — a rendering failure that looks intentional. So
+      // the fallback has a cap in the symbol slot and no `symbol` field: it says
+      // "no symbol for this kind" rather than "no symbol".
+      expect(POI_FALLBACK_MODEL.symbol).toBeUndefined();
+    });
+
+    it("stands on the ground and is not in the registry", () => {
+      // Base at zero like every model, so `poiMarkerPosition` needs no offset
+      // for it — the special case that existed only for the cone.
+      let lowest = Infinity;
+      for (let i = 1; i < POI_FALLBACK_MODEL.mesh.positions.length; i += 3) {
+        lowest = Math.min(
+          lowest,
+          POI_FALLBACK_MODEL.mesh.positions[i] as number,
+        );
+      }
+      expect(lowest).toBeCloseTo(0, 6);
+      // Keyed on the empty string, which is the bucket `mesh-layers.ts` already
+      // groups the long tail under — and NOT one of the fifty, or the registry
+      // count would be 51.
+      expect(POI_FALLBACK_MODEL.kind).toBe("");
+      expect(POI_MODELS.has("")).toBe(false);
+    });
+  });
+
+  it("produces only finite vertex positions", () => {
+    // A NaN position silently drops triangles rather than reporting anything —
+    // the same failure `site-geometry.test.ts` guards for buildings.
+    for (const model of entries) {
+      const bad = [...model.mesh.positions].filter(
+        (value) => !Number.isFinite(value),
+      );
+      expect(bad).toEqual([]);
+    }
+  });
+
+  it("indexes only vertices that exist", () => {
+    // An out-of-range index is undefined behaviour in WebGL: it draws garbage or
+    // nothing, depending on the driver, which is the worst kind of failure to
+    // debug from a screenshot.
+    for (const model of entries) {
+      const vertexCount = model.mesh.positions.length / 3;
+      const bad = [...model.mesh.indices].filter(
+        (index) => index < 0 || index >= vertexCount,
+      );
+      expect(bad).toEqual([]);
+    }
+  });
+
+  it("stands every model ON the ground rather than through it", () => {
+    // The hunting stand shipped with its cabin at base 0, sitting around its
+    // legs' feet — a hide at ground level (round-4 summary §2.3). Caught then by
+    // a height check; pinned here so it stays caught.
+    for (const model of entries) {
+      let lowest = Infinity;
+      for (let i = 1; i < model.mesh.positions.length; i += 3) {
+        lowest = Math.min(lowest, model.mesh.positions[i] as number);
+      }
+      // A small tolerance: a kerb or a pad may sit fractionally below zero.
+      expect(lowest).toBeGreaterThanOrEqual(-0.5);
+    }
+  });
+
+  it("gives every model a colour in the packed 0xrrggbb range", () => {
+    // A five-digit hex literal in the road palette parsed as a dark blue and
+    // would have rendered service roads near-black (round-4 summary §2.3). Same
+    // literal, same trap, different table.
+    for (const model of entries) {
+      expect(model.colour).toBeGreaterThanOrEqual(0);
+      expect(model.colour).toBeLessThanOrEqual(0xffffff);
+      expect(Number.isInteger(model.colour)).toBe(true);
+    }
+  });
+});

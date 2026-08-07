@@ -10,7 +10,7 @@
  *
  * Used by subscribeToSelector in store-subscribers.ts for change detection.
  *
- * @see docs/2026-04-07-architecture-observations-consolidated.md §1
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-07-architecture-observations-consolidated.md §1
  */
 
 import { createSelector } from '@reduxjs/toolkit';

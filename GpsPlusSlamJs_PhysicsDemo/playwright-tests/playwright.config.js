@@ -9,8 +9,9 @@ import { defineConfig, devices } from "@playwright/test";
  * lacks WebXR (Playwright Chromium has no `navigator.xr`) instead of crashing.
  *
  * Chromium-only because WebXR is Chrome-focused. The dev server runs on the
- * demo's dedicated port 5182 so it can coexist with the minimal example (5180),
- * the anchor starter (5181) and the recorder (5173).
+ * The port is allocated in docs/dev-server-ports.md, which is the ONLY place
+ * that knows the whole set — three packages once shared 5182 while all three
+ * comments named their siblings and asserted distinctness.
  */
 const captureArtifacts = process.env.PLAYWRIGHT_CAPTURE === "1";
 
@@ -24,7 +25,7 @@ export default defineConfig({
     ? [["github"], ["json", { outputFile: "../test-results/results.json" }]]
     : [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:5182",
+    baseURL: "http://127.0.0.1:5184",
     trace: captureArtifacts ? "on" : "on-first-retry",
     screenshot: captureArtifacts ? "on" : "only-on-failure",
     video: captureArtifacts ? "on" : "retain-on-failure",
@@ -34,8 +35,8 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
-    command: "pnpm run dev -- --port 5182",
-    url: "http://127.0.0.1:5182",
+    command: "pnpm run dev -- --port 5184",
+    url: "http://127.0.0.1:5184",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },

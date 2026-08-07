@@ -30,7 +30,7 @@ import {
 import {
   discoverScenariosFromZipMetadata,
   type SessionEntry,
-} from './session-browser';
+} from '../storage/recording-discovery';
 
 /** A file handle whose getFile() must never be called (asserts the fast path). */
 function throwingFileHandle(filename: string): FileSystemFileHandle {

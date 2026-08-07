@@ -1,0 +1,93 @@
+{
+  "name": "gps-plus-slam-osm",
+  "version": "0.1.0",
+  "description": "OpenStreetMap → H3 affordance index. Fetches raw OSM data, indexes it per H3 cell, and scores each cell against a pluggable affordance rule table. Pure data — no Three.js, no AR, no framework dependency.",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./model": "./dist/model/index.js",
+    "./model/*": "./dist/model/*.js",
+    "./source": "./dist/source/index.js",
+    "./source/*": "./dist/source/*.js",
+    "./spatial": "./dist/spatial/index.js",
+    "./spatial/*": "./dist/spatial/*.js",
+    "./rules": "./dist/rules/index.js",
+    "./rules/*": "./dist/rules/*.js",
+    "./score": "./dist/score/index.js",
+    "./score/*": "./dist/score/*.js",
+    "./regions": "./dist/regions/index.js",
+    "./regions/*": "./dist/regions/*.js",
+    "./elevation": "./dist/elevation/index.js",
+    "./elevation/*": "./dist/elevation/*.js",
+    "./mesh": "./dist/mesh/index.js",
+    "./mesh/*": "./dist/mesh/*.js"
+  },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "test": "node ../scripts/test-timing/run-gate.mjs",
+    "test:core": "pnpm run format && pnpm run lint && pnpm run check:cycles && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
+    "format": "node ../scripts/test-timing/timed-stage.mjs format",
+    "format:check": "prettier --check --ignore-unknown .",
+    "build": "tsdown --config config/tsdown.config.ts",
+    "verify:pack": "pnpm pack --dry-run",
+    "prepublishOnly": "pnpm run build && pnpm run verify:pack",
+    "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
+    "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck",
+    "typecheck:tests": "node ../scripts/test-timing/timed-stage.mjs typecheck:tests",
+    "lint": "node ../scripts/test-timing/timed-stage.mjs lint",
+    "check:cycles": "node ../scripts/test-timing/timed-stage.mjs check:cycles",
+    "test:watch": "vitest --config config/vitest.config.ts",
+    "bench": "vitest bench --run --config config/vitest.bench.config.ts",
+    "import:rule-table": "node scripts/import-rule-table.mjs",
+    "import:geoid-grid": "node scripts/import-geoid-grid.mjs",
+    "capture:fixtures": "node --experimental-strip-types scripts/capture-fixtures.mjs",
+    "capture:sites": "node --experimental-strip-types scripts/capture-fixtures.mjs --sites"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "peerDependencies": {
+    "h3-js": ">=4.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.7.0",
+    "@vitest/coverage-v8": "^4.1.6",
+    "@vitest/eslint-plugin": "^1.6.17",
+    "dpdm": "^4.2.0",
+    "earcut": "^3.2.3",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "fast-check": "^4.8.0",
+    "globals": "^17.6.0",
+    "h3-js": "^4.4.0",
+    "osmtogeojson": "3.0.0-beta.5",
+    "prettier": "^3.8.3",
+    "tsdown": "^0.22.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.3",
+    "vitest": "^4.1.6"
+  },
+  "keywords": [
+    "openstreetmap",
+    "osm",
+    "h3",
+    "overpass",
+    "affordance",
+    "gis"
+  ],
+  "author": "cs-util-com",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cs-util-com/location-based-webxr.git",
+    "directory": "GpsPlusSlamJs_Osm"
+  },
+  "homepage": "https://github.com/cs-util-com/location-based-webxr#readme",
+  "bugs": {
+    "url": "https://github.com/cs-util-com/location-based-webxr/issues"
+  }
+}

@@ -14,7 +14,7 @@
  * flat / world-oriented regardless of camera rotation or
  * orbit / FPS controls.
  *
- * @see docs/2026-03-12-user-feedback.md Issue 8
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-03-12-user-feedback.md Issue 8
  */
 
 import * as THREE from 'three';

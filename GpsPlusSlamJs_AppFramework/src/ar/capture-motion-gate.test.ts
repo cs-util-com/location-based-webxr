@@ -17,6 +17,8 @@ import {
   MotionWindow,
   DEFAULT_MOTION_WINDOW_SIZE,
   DEFAULT_MOTION_FILTER,
+  MOTION_FILTER_CONSTRAINTS,
+  validateMotionFilterConfig,
 } from './capture-motion-gate.js';
 
 const THRESHOLDS = {
@@ -167,5 +169,56 @@ describe('DEFAULT_MOTION_FILTER', () => {
     expect(DEFAULT_MOTION_FILTER.maxLinearVelocity).toBeGreaterThan(0);
     // maxWaitMs ~ 2x the default 2000ms image interval.
     expect(DEFAULT_MOTION_FILTER.maxWaitMs).toBeGreaterThanOrEqual(2000);
+  });
+});
+
+/**
+ * Why these tests matter: a MotionFilterConfig survives page reloads inside a
+ * consumer app's persisted settings, so it comes back as untrusted input. The
+ * gate owns what its own numbers mean, so it owns their bounds — these pin that
+ * a corrupt or pre-feature stored value can never disable capture or make the
+ * gate inert. (They moved here from the recorder catalog, which used to encode
+ * this gate's ranges in its own table.)
+ */
+describe('validateMotionFilterConfig', () => {
+  it('default-fills an empty, null or undefined group (gate stays ENABLED)', () => {
+    for (const empty of [{}, null, undefined]) {
+      expect(validateMotionFilterConfig(empty)).toEqual(DEFAULT_MOTION_FILTER);
+    }
+  });
+
+  it('honors an explicit enabled=false', () => {
+    expect(validateMotionFilterConfig({ enabled: false }).enabled).toBe(false);
+  });
+
+  it('clamps thresholds to MOTION_FILTER_CONSTRAINTS', () => {
+    expect(
+      validateMotionFilterConfig({ maxAngularVelocity: 0 }).maxAngularVelocity
+    ).toBe(MOTION_FILTER_CONSTRAINTS.maxAngularVelocity.min);
+    expect(validateMotionFilterConfig({ maxWaitMs: 999999 }).maxWaitMs).toBe(
+      MOTION_FILTER_CONSTRAINTS.maxWaitMs.max
+    );
+  });
+
+  // A stored NaN is `typeof 'number'` and would survive a bare clamp.
+  it('falls back to the default for non-finite thresholds', () => {
+    expect(
+      validateMotionFilterConfig({ maxLinearVelocity: NaN }).maxLinearVelocity
+    ).toBe(DEFAULT_MOTION_FILTER.maxLinearVelocity);
+  });
+
+  it('brackets every default inside its own constraint window', () => {
+    for (const key of [
+      'maxAngularVelocity',
+      'maxLinearVelocity',
+      'maxWaitMs',
+    ] as const) {
+      expect(DEFAULT_MOTION_FILTER[key]).toBeGreaterThanOrEqual(
+        MOTION_FILTER_CONSTRAINTS[key].min
+      );
+      expect(DEFAULT_MOTION_FILTER[key]).toBeLessThanOrEqual(
+        MOTION_FILTER_CONSTRAINTS[key].max
+      );
+    }
   });
 });

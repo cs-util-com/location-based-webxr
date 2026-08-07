@@ -25,10 +25,10 @@ export interface Logger {
 }
 
 export interface LogEntry {
-  timestamp: number; // Unix timestamp (Date.now())
-  level: LogLevel;
-  tag: string; // Source module
-  message: string; // Stringified log content
+  readonly timestamp: number; // Unix timestamp (Date.now())
+  readonly level: LogLevel;
+  readonly tag: string; // Source module
+  readonly message: string; // Stringified log content
 }
 ```
 
@@ -89,6 +89,11 @@ unsubscribe();
 
 5. **Thread safety:** Not applicable (single-threaded JS), but care is taken to avoid mutation of returned buffer copies.
 
+   **`LogEntry` is fully readonly** — a record is immutable once created. Pinned
+   at the type level by the `LogEntry ≡ Readonly<LogEntry>` guard in
+   `logger.test.ts` (Finding #6, 2026-03-05 code review), so widening a field
+   back to mutable fails the build rather than silently allowing buffer edits.
+
 6. **Sentry integration:** All log levels add Sentry breadcrumbs for debugging context. When an exception is later captured, Sentry will show the trail of log messages leading up to it. Additionally, both `warn` and `error` produce standalone Sentry **Issues** (so the Issues dashboard is the single place to watch anything logged at warn/error level):
    - `log.warn()` calls `Sentry.captureMessage(message, { level: 'warning', fingerprint: [...] })`.
    - `log.error()` with one or more `Error` arguments calls `Sentry.captureException()` for each `Error` (full stack trace).
@@ -135,6 +140,16 @@ Unit tests in [logger.test.ts](logger.test.ts) cover:
 - Buffer entries added regardless of log level
 - Subscription and unsubscription
 - Multiple subscriber support
+- **Subscriber isolation, via `utils/isolated-registry.ts`.** The list is one of
+  the framework's isolated registries, with `console.error` as its sink — not
+  this module's own logging, which would append an entry, notify the
+  subscribers, and throw again. That hazard is why the registry requires the
+  sink rather than defaulting to one, and why it imports no logger (which would
+  also make `logger → isolated-registry → logger` a cycle).
+  - Adopting it fixed an inconsistency: the old array deferred _unsubscribes_
+    by accident (`filter` REASSIGNS, so an in-flight `for...of` kept the old
+    array) while `push` mutated in place, so a subscriber added mid-dispatch
+    received the entry it had not been subscribed for. Both now defer.
 - Safe serialization of Error instances (name, message, stack, enumerable props)
 - Safe handling of circular references
 - Graceful handling of null, undefined, BigInt, Symbol, and functions

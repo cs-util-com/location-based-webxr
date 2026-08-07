@@ -17,6 +17,7 @@ import { loadAndStartReplay, type ReplayLaunchSink } from "./replay-launch";
 import { initRapier } from "./physics-world";
 import { startArMode } from "./ar-mode";
 import { createPerfStatsOverlay } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
+import { guardSliderAgainstScroll } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import { startReplayPhysics } from "./replay-physics";
 import type { ReplaySessionController } from "gps-plus-slam-app-framework/state/replay-session";
 
@@ -172,6 +173,11 @@ function main(): void {
     speedValue.textContent = `${factor}×`;
     controller?.setSpeed(factor);
   };
+  // Guard BEFORE the listener: on a phone the replay panel is swiped past, and
+  // a native range input would otherwise edit itself as the finger travels
+  // (2026-07-27 recorder field feedback, same bug class). At-target listeners
+  // fire in registration order, which is what lets the guard shield this one.
+  guardSliderAgainstScroll(speedInput);
   speedInput.addEventListener("input", applySpeed);
 }
 

@@ -36,6 +36,12 @@ import type { TrackingQualityReport } from './tracking-quality';
 const TRANSLATION_FAIL_M =
   DEFAULT_TRACKING_QUALITY_OPTIONS.convergenceTranslationWarnM * 4;
 
+// Same derivation for the rotation axis (`rotFail = rotWarn * 4`, 24° today).
+// `rampDown` returns exactly 0 at or above this value, so "ΣΔrot ≥ ROTATION_FAIL_DEG"
+// IS the production definition of a broken-alignment recording.
+const ROTATION_FAIL_DEG =
+  DEFAULT_TRACKING_QUALITY_OPTIONS.convergenceRotationWarnDeg * 4;
+
 // ---------------------------------------------------------------------------
 // Fixtures — resolved relative to the workspace root, where both
 // TestDataJs/ and TestDataJs-Other/ live alongside location-based-webxr/.
@@ -293,13 +299,32 @@ describe.runIf(fixturesAvailable)(
       it('indoor: rotation sum captures broken alignment', () => {
         // Why: confirms rotation is the load-bearing axis on indoor
         // stationary recordings (translation stays mute because the
-        // user isn't walking). The 2026-05-23 indoor recording final
-        // ΣΔrot was 132.9° — well into fail. Loosen the gate to 50°
-        // so this doesn't false-fail on slightly less-broken indoor
-        // recordings, but tight enough to catch the F4 pathology.
+        // user isn't walking).
+        //
+        // The bound is DERIVED from the production fail threshold, not
+        // hand-picked. "Broken alignment" is not a number this test gets to
+        // invent — it is `sumRotDeg >= rotFail`, the point where rampDown
+        // pins the rotation score at 0 and (via `min`) the whole convergence
+        // sub-score with it. Asserting the derived value is what makes the
+        // second expectation below a consequence rather than a coincidence.
+        //
+        // History — why this is NOT a loosened assertion (2026-07-27): the
+        // bound used to be a hardcoded 50°, chosen in 2026-05 as a fraction
+        // of the 132.9° this recording then produced. The promoted alignment
+        // defaults (primary repo `1e90951a4` + `a3525a0e6`) improved it to
+        // 28.09°, which is still ABOVE the 24° fail threshold — the recording
+        // is still broken by the product's own definition; only the arbitrary
+        // literal had gone stale. Sibling `TRANSLATION_FAIL_M` above has
+        // always been derived this way; the rotation axis had been missed.
+        // See GpsPlusSlamJs_Docs/docs/2026-07-27-2210-tracking-quality-f6-recalibration-followup.md
+        //
+        // Headroom warning: the margin is now 1.17× (28.09 / 24), down from
+        // 5.5×. If a future alignment improvement drops this recording below
+        // 24°, do NOT lower the threshold — the correct response is a fixture
+        // that is still genuinely broken.
         expect(
           indoorResult.finalReport!.diagnostics.recentSumRotationDeltaDeg
-        ).toBeGreaterThan(50);
+        ).toBeGreaterThan(ROTATION_FAIL_DEG);
         expect(indoorResult.finalReport!.subScores.convergence).toBeLessThan(
           0.2
         );

@@ -1,0 +1,182 @@
+/**
+ * POI markers, as placement data (W12).
+ *
+ * WHAT THIS IS FOR. The demo's core affordance is "click a thing and it tells you
+ * what it is", and until now the only clickable thing was an affordance cell — an
+ * abstraction over the data rather than an object in it. A POI marker is the
+ * first feature a user can point at and be told about directly.
+ *
+ * NO GEOMETRY HERE, for the same reason as `trees.ts`: markers are numerous and
+ * identical up to a transform, so they are what `InstancedMesh` exists for, and
+ * emitting placements keeps this package free of `three` (plan §4.2). The
+ * consumer decides what a marker looks like.
+ *
+ * NO PER-TYPE ICONS, deliberately. The testing notes asked to see *that*
+ * something is there and be able to ask what it is; they did not ask for a
+ * playground pictogram. An icon set is a large amount of art and a taxonomy
+ * decision, and it can be added later behind this same placement type.
+ *
+ * WHAT IT MUST NOT DRAW. Every builder in this package has to answer "who owns
+ * this feature", and two of them got it wrong on the first attempt. Trees belong
+ * to `trees.ts`; areas belong to `plates.ts` and to W14. So this selects on
+ * **node-ness as well as tags** — `amenity=parking` is overwhelmingly a way, and
+ * selecting on the tag alone would put a marker in the middle of every car park
+ * in the tile.
+ *
+ * @see poi.ts.md
+ */
+
+import type { LatLng, OsmFeature } from "../model/osm-feature.js";
+import { featureKey, type OsmFeatureKey } from "../model/osm-feature.js";
+import type { EnuFrame, EnuPoint } from "./enu.js";
+import type { PoiHostAnchor } from "./poi-hosts.js";
+import { GROUND_ALIGNED_KINDS } from "./poi-models.js";
+import { stablePoiScale, stableRotationY } from "./stable-jitter.js";
+
+/**
+ * The tag keys that make a node a place worth marking, in PRECEDENCE ORDER.
+ *
+ * The order is load-bearing, not cosmetic. A node can carry several of these at
+ * once (`amenity=cafe` + `tourism=information` is ordinary), and object key order
+ * in JS is insertion order — so "the first key on the object" would make the
+ * answer depend on how the Overpass JSON happened to be written, and the same
+ * node could report different kinds on two runs. Fixing the order here makes it
+ * a property of the data rather than of its serialisation.
+ *
+ * Deliberately NOT "every tagged node". A `barrier=gate` or a routing node is
+ * not something a user points at to ask what it is, and marking everything would
+ * bury the ones that are.
+ */
+export const POI_KEYS = [
+  "amenity",
+  "shop",
+  "tourism",
+  "leisure",
+  "historic",
+  "healthcare",
+  "office",
+  "craft",
+  "emergency",
+] as const;
+
+export interface PoiMarker {
+  readonly feature: OsmFeatureKey;
+  /**
+   * Geometry already drawn that this marker sits inside (DEC-S1, DEC-S2).
+   *
+   * **ADDED BY `annotatePoiHosts`, NOT BY THIS BUILDER**, and absent until it
+   * runs. `poi.ts` marks nodes and knows nothing about buildings or plates —
+   * giving it a dependency on either would be a cycle, which is the same reason
+   * the old suppression rule lived outside it too.
+   *
+   * It is declared HERE rather than in a wider type because it crosses the
+   * worker boundary on this object, and a field that travels undeclared is a
+   * field the consumer casts to reach.
+   */
+  readonly hosts?: readonly PoiHostAnchor[];
+  /** Metres east/north of the frame origin. */
+  readonly position: EnuPoint;
+  /** Ground height at the marker, metres. */
+  readonly groundHeightM: number;
+  /** `key=value` of the primary tag, e.g. `amenity=cafe`. */
+  readonly kind: string;
+  /** A short human label: the `name` tag, else the primary tag's value. */
+  readonly label: string;
+  /**
+   * Yaw about the vertical axis, radians in `[0, 2π)` (§4a, DEC-R6-18/R6-20).
+   *
+   * WHY IT IS HERE AND NOT IN THE VIEW. Until §4a the consumer placed markers
+   * by translation alone, so every bench in the city faced the same direction —
+   * at street level a far louder repetition cue than any difference between two
+   * models of the same kind. Deriving the yaw here rather than in
+   * `mesh-layers.ts` keeps it a pure function of the feature key, testable
+   * without `three`, and stops "where does this marker point" having two
+   * sources. `TreePlacement.rotationY` has worked exactly this way since W6.
+   *
+   * **0 for the ground-aligned kinds** ({@link GROUND_ALIGNED_KINDS}): a
+   * painted parking bay or a pitch reads as aligned to something real, so a
+   * random spin reads as a defect rather than as variety.
+   */
+  readonly rotationY: number;
+  /**
+   * A uniform size multiplier around 1, within ±`POI_SCALE_JITTER`.
+   *
+   * DELIBERATELY NARROW. DEC-R6-8 keeps these models at real-world scale so a
+   * marker is evidence about the extruder — a bench that measures 1.8 m says
+   * the ENU frame and the ground sampling are right. Jitter wide enough to be
+   * obvious would destroy that evidence, so it stays inside the range real
+   * tagging already varies by.
+   */
+  readonly scale: number;
+}
+
+export interface BuildPoiOptions {
+  readonly frame: EnuFrame;
+  readonly groundHeightM?: (position: LatLng) => number;
+}
+
+/**
+ * The primary tag as `key=value`, or `undefined` when nothing qualifies.
+ *
+ * Exported because the details panel needs the same answer the marker was built
+ * from — deriving it twice from the tags is how the label on screen and the
+ * label in the panel drift apart.
+ */
+export function poiKind(tags: Record<string, string>): string | undefined {
+  for (const key of POI_KEYS) {
+    const value = tags[key];
+    if (value !== undefined && value !== "" && value !== "no") {
+      return `${key}=${value}`;
+    }
+  }
+  return undefined;
+}
+
+/** Whether a feature is a node this builder owns. */
+export function isPoiNode(feature: OsmFeature): boolean {
+  if (feature.type !== "node") return false;
+  const tags = feature.tags as Record<string, string> | undefined;
+  if (tags === undefined) return false;
+  // Trees are `trees.ts`'s. Drawn twice, a tree is a cone with a marker inside
+  // it — and the marker wins the pick, so the user clicks a tree and is told
+  // about a tree-shaped POI.
+  if (tags["natural"] === "tree") return false;
+  return poiKind(tags) !== undefined;
+}
+
+/** Markers for every qualifying node in `features`, in input order. */
+export function buildPoiMarkers(
+  features: Iterable<OsmFeature>,
+  options: BuildPoiOptions,
+): PoiMarker[] {
+  const markers: PoiMarker[] = [];
+
+  for (const feature of features) {
+    if (!isPoiNode(feature) || feature.type !== "node") continue;
+    const tags = feature.tags as Record<string, string>;
+    const kind = poiKind(tags);
+    // Cannot happen after `isPoiNode`, but narrowing it here keeps the marker's
+    // `kind` a plain `string` rather than pushing an optional through to every
+    // consumer of the placement.
+    if (kind === undefined) continue;
+
+    const key = featureKey(feature);
+    markers.push({
+      feature: key,
+      position: options.frame.toEnu(feature.position),
+      // Not NaN when unsampled: NaN propagates into the instance transform and
+      // removes the object from the scene with nothing reported.
+      groundHeightM: options.groundHeightM?.(feature.position) ?? 0,
+      kind,
+      // The VALUE rather than the whole `key=value` — a marker labelled
+      // "amenity=cafe" reads as debug output rather than as a place.
+      label: tags["name"] ?? kind.slice(kind.indexOf("=") + 1),
+      // Ground markings keep their zero. See `GROUND_ALIGNED_KINDS` for why
+      // this is a per-KIND opt-out and not a per-instance one.
+      rotationY: GROUND_ALIGNED_KINDS.has(kind) ? 0 : stableRotationY(key),
+      scale: stablePoiScale(key),
+    });
+  }
+
+  return markers;
+}

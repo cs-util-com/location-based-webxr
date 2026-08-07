@@ -1,0 +1,397 @@
+/**
+ * Where a POI marker actually goes when the thing it names is already drawn
+ * (DEC-S1, DEC-S2, DEC-S6, DEC-S7 — stage 1).
+ *
+ * THE PROBLEM, IN THE OWNER'S WORDS. _"Wenn jetzt hier eh schon eine Geometrie
+ * ist, die das gleiche Label hat … dann ist es ja viel sinnvoller, dass diese
+ * geschlossene Fläche entsprechend eingefärbt wird und der POI überhaupt nicht
+ * als 3D-Modell angezeigt wird."_ A restaurant node inside a restaurant building
+ * is the same fact twice; drawing both puts a marker inside a wall.
+ *
+ * AND THE BETTER HALF OF THE SAME IDEA, which is what this is really for:
+ * _"…wo man dann auf dem Restaurant oben drauf so ein Symbol machen würde, was
+ * über dem Restaurant fliegt … dadurch versteht derjenige sofort: ah okay, das
+ * Gebäude ist ein Restaurant."_ The marker does not vanish — it moves onto the
+ * roof, and the building gains the label it was missing.
+ *
+ * WHY THIS IS A PURE FUNCTION OVER PRE-RESOLVED HOSTS, and not a lookup. Two
+ * facts about the pipeline force it, and both were found by reading the code
+ * rather than assumed:
+ *
+ *  - **A layer toggle does NOT re-run the worker.** `main.ts` rebuilds three.js
+ *    objects from the CACHED worker payload precisely so that switching a layer
+ *    is cheap. So a rule that must know whether `plates` is on cannot live in
+ *    the worker, where the geometry is — it would read a stale layer set.
+ *  - **Plates are CLIPPED to the rendered extent and built AFTER the markers.**
+ *    "A pool way exists in the features" and "a pool plate is drawn" are
+ *    different claims: a pool near the tile edge is clipped away entirely. A
+ *    resolver matching against features rather than against drawn geometry would
+ *    delete the marker and draw nothing — exactly the data loss DEC-S1 exists to
+ *    prevent, arriving through the back door.
+ *
+ * So the worker resolves candidate hosts ONCE PER HOST LAYER and annotates each
+ * marker; this function picks between them given the layers actually enabled.
+ * That is also what makes the rule testable without a worker, a fetch, or a GPU.
+ *
+ * @see poi-hosts.ts.md
+ */
+
+import type { OsmFeatureKey } from "../model/osm-feature.js";
+import { containsPoint } from "../spatial/point-in-ring.js";
+import { poiModelFor } from "./poi-models.js";
+import type { EnuPoint } from "./enu.js";
+
+/** The layers that can host a marker. Named, because the policy differs. */
+export type PoiHostLayer = "buildings" | "plates";
+
+/** A candidate host: geometry already drawn that names the same thing. */
+export interface PoiHostAnchor {
+  readonly layer: PoiHostLayer;
+  /**
+   * The way or relation that matched, for the pick table.
+   *
+   * The package's own key type rather than a bare string: a marker derived from
+   * this host carries it straight through as its OWN feature, and a plain
+   * string would let a malformed id reach the pick table where it resolves to
+   * nothing and the panel says "unknown".
+   */
+  readonly feature: OsmFeatureKey;
+  /**
+   * The host's centroid, ENU metres — x east, **y NORTH**.
+   *
+   * NOT scene coordinates. The `+y north → -z` reflection belongs to
+   * `poiMarkerPosition` in the demo, which owns it for every marker and
+   * documents why getting it wrong fails silently: a symbol 50 m north of its
+   * building renders 50 m south of it, labelled correctly, looking like a data
+   * error rather than a frame error. A `z` on this payload would be a second,
+   * disagreeing convention crossing the same wire.
+   */
+  readonly x: number;
+  readonly y: number;
+  /** The host's highest point, in the same frame as a marker's ground height. */
+  readonly topM: number;
+  /** Footprint diagonal, metres — how big the thing being labelled is. */
+  readonly spanM: number;
+}
+
+/** A marker as this rule needs to see it. */
+export interface HostableMarker {
+  readonly kind: string;
+  readonly hosts?: readonly PoiHostAnchor[];
+}
+
+/** Where a marker ends up once its hosts are known. */
+export type PoiPlacement =
+  | { readonly at: "node" }
+  | {
+      readonly at: "host";
+      readonly host: PoiHostAnchor;
+      /** Metres above the host's top. */
+      readonly liftM: number;
+      /** Uniform scale for the symbol, so it reads over a large building. */
+      readonly scale: number;
+    }
+  | { readonly at: "suppressed"; readonly host: PoiHostAnchor };
+
+/**
+ * Kinds whose host geometry says everything the marker would (DEC-S1).
+ *
+ * A pool, a pitch, a car park: the drawn AREA is the thing. A symbol floating
+ * over it would be a second statement of one fact, and the owner said so
+ * directly — _"das wäre ja quasi doppelt"_.
+ *
+ * **These are AREA kinds only.** A building-shaped host never suppresses,
+ * because a building is not self-describing: a grey box does not say
+ * "restaurant" and the symbol above it is the only thing that does.
+ */
+const AREA_KINDS: ReadonlySet<string> = new Set([
+  "leisure=swimming_pool",
+  "leisure=pitch",
+  "amenity=parking",
+  "amenity=parking_space",
+]);
+
+/** Clearance above a host's top, metres. Roofs are pitched; contact is not. */
+export const HOST_CLEARANCE_M = 0.6;
+
+/**
+ * How far a symbol may grow over a large host (DEC-S6).
+ *
+ * A 0.9 m symbol on a 60 m hospital roof is invisible from the orbit camera,
+ * which defeats the whole point. The scale is derived from the host's span
+ * against a reference, and CLAMPED at both ends: never shrunk, never more than
+ * tripled. Unclamped, a stadium would carry a ten-metre knife and fork.
+ *
+ * **The bounds are a guess and are the item most likely to look wrong first.**
+ * They are cheap to change and worth looking at specifically in the first
+ * review.
+ */
+const REFERENCE_SPAN_M = 24;
+const MAX_HOST_SCALE = 3;
+
+/**
+ * Whether a host's kind is close enough to the marker's to be the same thing
+ * (DEC-S7).
+ *
+ * **THE ASYMMETRY IS THE DECISION.** Strict tag equality for area kinds, where a
+ * wrong match DELETES a marker; any building for symbol kinds, where a wrong
+ * match only MOVES one onto a roof. The aggressive rule is used exactly where
+ * being wrong is cheap.
+ *
+ * The strict reading alone would miss the ordinary case this feature exists
+ * for — a restaurant node inside a way tagged only `building=yes`, which is
+ * most of real OSM.
+ */
+export function hostMatches(
+  kind: string,
+  host: { readonly layer: PoiHostLayer },
+): boolean {
+  // A PLATE ONLY EVER HOSTS ITS OWN AREA KIND, and only to suppress. Letting a
+  // landuse plate host a café would move the café's symbol to the middle of a
+  // retail park — the café is at its node, and the plate is not the café.
+  if (host.layer === "plates") return AREA_KINDS.has(kind);
+  // A BUILDING ONLY EVER HOSTS A KIND THAT HAS A SYMBOL TO FLOAT.
+  //
+  // TWO SEPARATE REASONS, and missing the second one shipped a bug for a commit:
+  //
+  //  - An AREA kind is refused because a pool node inside a building footprint
+  //    is an indoor pool. The building is not the pool, and a pool symbol on its
+  //    roof would be a claim about the whole building.
+  //  - A FAMILY-L kind is refused because it has no symbol. A bench IS the
+  //    thing rather than a label for it, so there is nothing to lift — and the
+  //    version of this rule that only checked the area list re-anchored atrium
+  //    benches to roofs, which is a park bench flying to the centroid of a
+  //    building it happens to stand inside.
+  //
+  // ASKED OF THE REGISTRY rather than taken from a caller. A caller that forgets
+  // moves benches onto roofs silently, and the registry is the one place that
+  // knows which kinds have a symbol at all.
+  if (AREA_KINDS.has(kind)) return false;
+  return poiModelFor(kind)?.symbol !== undefined;
+}
+
+/**
+ * Where one marker goes, given the hosts resolved for it and the layers on.
+ *
+ * `enabledLayers` is what the CALLER is actually drawing. A host on a disabled
+ * layer is not a host: suppressing against geometry nobody can see is the data
+ * loss DEC-S1 was written to avoid, and it is why the plates default being off
+ * (DEC-R7b-5) turned this from a tidy rule into a real problem.
+ */
+export function resolvePoiPlacement(
+  marker: HostableMarker,
+  enabledLayers: ReadonlySet<PoiHostLayer>,
+): PoiPlacement {
+  const hosts = marker.hosts ?? [];
+  for (const host of hosts) {
+    if (!enabledLayers.has(host.layer)) continue;
+    if (!hostMatches(marker.kind, host)) continue;
+    if (host.layer === "plates" && AREA_KINDS.has(marker.kind)) {
+      return { at: "suppressed", host };
+    }
+    return {
+      at: "host",
+      host,
+      liftM: HOST_CLEARANCE_M,
+      scale: hostScale(host.spanM),
+    };
+  }
+  return { at: "node" };
+}
+
+/** The symbol's scale over a host of this span, clamped at both ends. */
+export function hostScale(spanM: number): number {
+  if (!Number.isFinite(spanM) || !(spanM > 0)) return 1;
+  return Math.min(MAX_HOST_SCALE, Math.max(1, spanM / REFERENCE_SPAN_M));
+}
+
+/**
+ * The centroid and span of a footprint, for building an anchor.
+ *
+ * THE CENTROID IS THE VERTEX MEAN, not the area centroid, and that is a
+ * deliberate simplification with a stated failure mode: on a footprint whose
+ * vertices bunch along one edge — a curved frontage traced with many points —
+ * the mean pulls toward the dense side. It is still inside the polygon for any
+ * convex-ish building, and a symbol 2 m off the middle of a roof is not a defect
+ * anyone can see. An L-shaped building is where it is worst, and there the true
+ * area centroid can fall OUTSIDE the polygon anyway, so neither is right.
+ */
+export function footprintAnchor(footprint: readonly EnuPoint[]): {
+  x: number;
+  y: number;
+  spanM: number;
+} {
+  if (footprint.length === 0) return { x: 0, y: 0, spanM: 0 };
+  let sumX = 0;
+  let sumY = 0;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const point of footprint) {
+    sumX += point.x;
+    sumY += point.y;
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  return {
+    x: sumX / footprint.length,
+    y: sumY / footprint.length,
+    spanM: Math.hypot(maxX - minX, maxY - minY),
+  };
+}
+
+/** A drawn piece of geometry a marker could belong to. */
+export interface HostCandidate {
+  readonly layer: PoiHostLayer;
+  readonly feature: OsmFeatureKey;
+  readonly footprint: readonly EnuPoint[];
+  readonly topM: number;
+}
+
+/** A marker this rule can annotate: it needs a position and a kind. */
+export interface PlacedMarker {
+  readonly kind: string;
+  readonly position: { readonly x: number; readonly y: number };
+}
+
+/**
+ * Annotates each marker with the hosts that CONTAIN it, one pass per layer.
+ *
+ * RUNS WHERE THE GEOMETRY IS — the worker — and deliberately does NOT decide
+ * anything. The layer set is not known here (a toggle does not re-run the
+ * worker), so this collects candidates and `resolvePoiPlacement` picks later.
+ * Splitting it that way is what lets the expensive half run once per fetch and
+ * the cheap half run per toggle.
+ *
+ * **CANDIDATES ARE ORDERED BUILDINGS-FIRST BY THE CALLER**, because the first
+ * enabled host wins and a building is the more specific claim: a café inside a
+ * building that stands on a landuse plate belongs to the building.
+ *
+ * **A real point-in-polygon, not a bounding box.** Buildings are routinely L- or
+ * U-shaped and a marker in the notch is inside the box and outside the
+ * building — which would move a symbol onto a roof it is not under, or delete
+ * an area marker that was never inside anything.
+ *
+ * Marker ORDER is preserved, and that is load-bearing rather than tidy: the
+ * consumer indexes marker identity by position in this array, so reordering
+ * would make every pick after the first name the wrong feature.
+ */
+export function annotatePoiHosts<T extends PlacedMarker>(
+  markers: readonly T[],
+  candidates: readonly HostCandidate[],
+): (T & { hosts: readonly PoiHostAnchor[] })[] {
+  // The anchors are derived ONCE per candidate rather than per marker: a city
+  // block is thousands of markers against hundreds of footprints, and
+  // `footprintAnchor` walks every vertex.
+  const prepared = candidates.map((candidate) => ({
+    candidate,
+    anchor: footprintAnchor(candidate.footprint),
+  }));
+  return markers.map((marker) => {
+    const hosts: PoiHostAnchor[] = [];
+    for (const { candidate, anchor } of prepared) {
+      if (!hostMatches(marker.kind, candidate)) continue;
+      if (!containsPoint(candidate.footprint, marker.position)) continue;
+      hosts.push({
+        layer: candidate.layer,
+        feature: candidate.feature,
+        x: anchor.x,
+        y: anchor.y,
+        topM: candidate.topM,
+        spanM: anchor.spanM,
+      });
+    }
+    return { ...marker, hosts };
+  });
+}
+
+/**
+ * Markers for the places that are ONLY drawn as geometry (DEC-S2, stage 2).
+ *
+ * THE CASE STAGE 1 CANNOT REACH. A restaurant mapped only as a building way has
+ * no node, so `poi.ts` never makes a marker for it and there is nothing to
+ * re-anchor. The owner's headline example — _"das Gebäude ist also ein
+ * Restaurant"_ — is mostly this case, because tagging the building and not
+ * placing a separate node is ordinary practice.
+ *
+ * **`poi.ts` IS NOT MODIFIED, and that is deliberate.** Its node-ness rule is
+ * correct for what it builds, and the reason it exists — _"selecting on the tag
+ * alone would put a marker in the middle of every car park in the tile"_ — is
+ * exactly the behaviour wanted here and still unwanted there. Two builders with
+ * two rules, rather than one builder with a flag.
+ *
+ * **THE ALLOW-LIST IS WHAT KEEPS THEM APART.** `plates.ts` owns every area whose
+ * tags match `PLATE_KEYS` — amenity, landuse, leisure, natural, surface,
+ * man_made, place, tourism — which OVERLAPS the POI keys rather than being
+ * disjoint. A "not a plate" deny-list would therefore let a car park through,
+ * since a restaurant building way and a car-park way both carry `amenity`. Only
+ * a positive list of kinds that deserve a floating symbol is safe.
+ *
+ * **DEDUPLICATION IS THE CALLER'S, and it is mandatory**: a restaurant mapped as
+ * node AND way must produce exactly one symbol. See `dropHostedDuplicates`.
+ */
+export function hostDerivedMarkers(
+  candidates: readonly HostCandidate[],
+  kindOf: (feature: OsmFeatureKey) => string | undefined,
+  eligible: (kind: string) => boolean,
+): {
+  kind: string;
+  feature: OsmFeatureKey;
+  host: PoiHostAnchor;
+}[] {
+  const derived: {
+    kind: string;
+    feature: OsmFeatureKey;
+    host: PoiHostAnchor;
+  }[] = [];
+  for (const candidate of candidates) {
+    if (candidate.layer !== "buildings") continue;
+    const kind = kindOf(candidate.feature);
+    if (kind === undefined || !eligible(kind)) continue;
+    if (!hostMatches(kind, candidate)) continue;
+    const anchor = footprintAnchor(candidate.footprint);
+    if (!(anchor.spanM > 0)) continue;
+    derived.push({
+      kind,
+      feature: candidate.feature,
+      host: {
+        layer: candidate.layer,
+        feature: candidate.feature,
+        x: anchor.x,
+        y: anchor.y,
+        topM: candidate.topM,
+        spanM: anchor.spanM,
+      },
+    });
+  }
+  return derived;
+}
+
+/**
+ * Drops a way-derived marker whose way already hosts a node-derived one.
+ *
+ * THE FIRST TEST TO WRITE FOR STAGE 2, and the reason is arithmetic: a
+ * restaurant mapped as node AND way is one restaurant. Without this it grows a
+ * second symbol in exactly the same place — two identical objects at one
+ * position, which does not read as a duplicate but as a slightly wrong colour
+ * where they z-fight.
+ *
+ * Keyed on the HOST's feature rather than on kind or position: the node already
+ * resolved to that way, so "this way is spoken for" is the precise claim, and it
+ * survives two different kinds inside one building.
+ */
+export function dropHostedDuplicates<T extends { host: PoiHostAnchor }>(
+  derived: readonly T[],
+  nodeMarkers: readonly HostableMarker[],
+): T[] {
+  const spokenFor = new Set<string>();
+  for (const marker of nodeMarkers) {
+    for (const host of marker.hosts ?? []) {
+      if (hostMatches(marker.kind, host)) spokenFor.add(host.feature);
+    }
+  }
+  return derived.filter((entry) => !spokenFor.has(entry.host.feature));
+}

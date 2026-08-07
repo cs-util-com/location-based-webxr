@@ -24,6 +24,7 @@ import {
   loadSettingsButtonHtml,
   loadSettingsTestFixture,
 } from '../test-utils/html-fixtures';
+import { simulateNativeSliderGesture } from 'gps-plus-slam-app-framework/test-utils/pointer-gestures';
 import {
   loadRecordingOptions,
   DEFAULT_RECORDING_OPTIONS,
@@ -1857,6 +1858,72 @@ describe('settings-modal', () => {
 
       expect(valueDisplay?.textContent).toBe('6');
       expect(getWorkingOptions()?.occupancy.minConfidence).toBe(6);
+    });
+
+    /**
+     * Why this test matters (user feedback 2026-07-27): the settings panel
+     * scrolls and its full-width sliders sit under the swiping finger, so a
+     * plain downward swipe used to rewrite whatever option it passed over.
+     * This pins the guard end-to-end through the production HTML — the swipe
+     * must leave both the label and the working copy untouched, while an
+     * explicit sideways drag still edits the option.
+     */
+    it('ignores a vertical scroll swipe over a slider', () => {
+      const slider = document.getElementById(
+        'occupancy-min-confidence'
+      ) as HTMLInputElement;
+      const valueDisplay = document.getElementById(
+        'occupancy-min-confidence-value'
+      );
+      const before = getWorkingOptions()?.occupancy.minConfidence;
+      const labelBefore = valueDisplay?.textContent;
+
+      simulateNativeSliderGesture(slider, [
+        { x: 8, y: 400 },
+        { x: 9, y: 340 },
+        { x: 7, y: 250 },
+      ]);
+
+      expect(getWorkingOptions()?.occupancy.minConfidence).toBe(before);
+      expect(valueDisplay?.textContent).toBe(labelBefore);
+    });
+
+    it('applies a short tap on a slider (owner decision 2026-07-28)', () => {
+      // Why this test matters: the guard commits a tap by dispatching a fresh
+      // `input` event on release — this pins that the modal's binding listener
+      // actually receives it and writes the working copy, not just that the
+      // DOM value changed.
+      const slider = document.getElementById(
+        'occupancy-min-confidence'
+      ) as HTMLInputElement;
+      const valueDisplay = document.getElementById(
+        'occupancy-min-confidence-value'
+      );
+
+      simulateNativeSliderGesture(slider, [{ x: 7, y: 400 }], {
+        durationMs: 80,
+      });
+
+      expect(getWorkingOptions()?.occupancy.minConfidence).toBe(7);
+      expect(valueDisplay?.textContent).toBe('7');
+    });
+
+    it('applies an explicit horizontal drag on a slider', () => {
+      const slider = document.getElementById(
+        'occupancy-min-confidence'
+      ) as HTMLInputElement;
+      const valueDisplay = document.getElementById(
+        'occupancy-min-confidence-value'
+      );
+
+      simulateNativeSliderGesture(slider, [
+        { x: 2, y: 400 },
+        { x: 20, y: 402 },
+        { x: 8, y: 401 },
+      ]);
+
+      expect(getWorkingOptions()?.occupancy.minConfidence).toBe(8);
+      expect(valueDisplay?.textContent).toBe('8');
     });
   });
 

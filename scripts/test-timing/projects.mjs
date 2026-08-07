@@ -59,7 +59,26 @@ export const TOTAL_STAGE = 'total';
  * record timing rows nor inherit the skip. */
 const BUILD_FRAMEWORK_STAGE = Object.freeze({
   name: 'build:framework',
-  command: 'node ../scripts/build-framework-if-stale.mjs',
+  command:
+    'node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework',
+  counts: /** @type {null} */ (null),
+  wrapperScript: false,
+});
+
+/** The same, for the OSM library.
+ *
+ * Unlike `build:framework` this must run BEFORE `typecheck`, not after it.
+ * OsmDemo resolves `gps-plus-slam-osm` through the package `exports`, i.e.
+ * through dist — where RecorderApp maps the framework to SOURCE via tsconfig
+ * `paths` and so never needs the framework built to typecheck. Nothing else in
+ * the workspace builds this package, so with the stage missing entirely the
+ * Cloudflare deployment of /osm/ failed on "Cannot find module
+ * 'gps-plus-slam-osm'" while every local run passed against a stale dist left
+ * behind by an earlier e2e run. */
+const BUILD_OSM_STAGE = Object.freeze({
+  name: 'build:osm',
+  command:
+    'node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-osm GpsPlusSlamJs_Osm',
   counts: /** @type {null} */ (null),
   wrapperScript: false,
 });
@@ -74,9 +93,17 @@ const APP_FORMAT_COMMAND =
  * chains, no coverage on unit tests, framework build split into its own
  * stage row before e2e (speedup plan Phase A.2).
  *
+ * @param {string[]} [extraCycleRoots] - additional dpdm entry points, for
+ *   packages whose graph has a root the app entry cannot reach. A module worker
+ *   is spawned from a URL string, and that is the ONE reference dpdm cannot
+ *   follow — so without its own root, everything the worker owns exclusively is
+ *   outside the cycle gate with nothing reporting it (PR #241).
+ *   `projects.test.mjs` derives the required roots from the source and fails if
+ *   one is missing.
  * @returns {StageConfig[]}
  */
-function demoAppStages() {
+function demoAppStages(extraCycleRoots = []) {
+  const cycleRoots = ['./src/main.ts', ...extraCycleRoots].join(' ');
   return [
     { name: 'format', command: APP_FORMAT_COMMAND, counts: null },
     {
@@ -97,7 +124,7 @@ function demoAppStages() {
     },
     {
       name: 'check:cycles',
-      command: 'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts',
+      command: `dpdm -T --exit-code circular:1 --no-warning --no-tree ${cycleRoots}`,
       counts: null,
     },
     {
@@ -174,10 +201,15 @@ export const PROJECTS = [
         counts: 'vitest',
       },
       packageGateStage('test:framework', 'gps-plus-slam-app-framework'),
+      // Placed right after the framework and before every app: it is a pure
+      // library with no framework dependency, so a break here is never caused
+      // by an app and should surface before the slow app gates run.
+      packageGateStage('test:osm', 'gps-plus-slam-osm'),
       packageGateStage('test:recorder', 'gps-plus-slam-recorder'),
       packageGateStage('test:starter', 'gps-plus-slam-anchor-starter'),
       packageGateStage('test:example', 'gps-plus-slam-minimal-example'),
       packageGateStage('test:qr-demo', 'gps-plus-slam-qr-tracking-demo'),
+      packageGateStage('test:osm-demo', 'gps-plus-slam-osm-demo'),
       packageGateStage('test:landing', 'gps-plus-slam-landing'),
       packageGateStage('test:physics', 'gps-plus-slam-physics-demo'),
       packageGateStage('test:wayfinding', 'gps-plus-slam-wayfinding-hud-demo'),
@@ -229,6 +261,50 @@ export const PROJECTS = [
     ],
   },
   {
+    // Pure-data library (OSM -> H3 affordance index). Modelled on the framework
+    // entry rather than demoAppProject(): it has no vite build, no e2e, and no
+    // build:framework stage because it does not depend on the framework at all.
+    name: 'GpsPlusSlamJs_Osm',
+    dir: 'GpsPlusSlamJs_Osm',
+    chainNames: ['test:core'],
+    stages: [
+      {
+        name: 'format',
+        command:
+          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "scripts" package.json README.md',
+        counts: null,
+      },
+      {
+        name: 'lint',
+        command: 'eslint . --config config/eslint.config.mjs --max-warnings 0',
+        counts: null,
+      },
+      {
+        name: 'check:cycles',
+        command:
+          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/index.ts',
+        counts: null,
+      },
+      {
+        name: 'typecheck',
+        command: 'tsc -p tsconfig.app.json --noEmit',
+        counts: null,
+      },
+      {
+        name: 'typecheck:tests',
+        command: 'tsc -p tsconfig.vitest.json --noEmit',
+        counts: null,
+      },
+      {
+        name: 'test:unit',
+        command: 'vitest run --coverage --config=config/vitest.config.ts',
+        counts: 'vitest',
+        // Filtered single-file TDD runs skip coverage (speedup plan C.1).
+        filteredRunCommand: 'vitest run --config=config/vitest.config.ts',
+      },
+    ],
+  },
+  {
     name: 'GpsPlusSlamJs_RecorderApp',
     dir: 'GpsPlusSlamJs_RecorderApp',
     chainNames: ['test:core', 'check:all'],
@@ -252,8 +328,10 @@ export const PROJECTS = [
       },
       {
         name: 'check:cycles',
+        // Both module workers are cycle roots of their own: they are spawned
+        // from URL strings, which dpdm cannot follow from `main.ts` (PR #241).
         command:
-          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts',
+          'dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/main.ts ./src/recording/image-quality.worker.ts ./src/workers/occlusion-mesher.worker.ts',
         counts: null,
       },
       {
@@ -310,6 +388,52 @@ export const PROJECTS = [
         counts: null,
       },
       { name: 'test:unit', command: 'vitest run', counts: 'vitest' },
+    ],
+  },
+  {
+    // Registered by hand rather than with demoAppProject() for two reasons.
+    //
+    // 1. It needs `build:osm` FIRST. Every other app's dependency build sits
+    //    after `typecheck`, which is safe only because RecorderApp maps the
+    //    framework to SOURCE via tsconfig `paths`. Nothing maps
+    //    `gps-plus-slam-osm`, so `tsc` cannot see one of its types until dist
+    //    exists — and until this stage was added, nothing in the workspace
+    //    built it at all, which is what broke the /osm/ deployment.
+    // 2. It has no `build:framework` stage, because `pnpm run dev` — the
+    //    Playwright webServer command — already runs `build:deps`. That build
+    //    is unconditional (no staleness skip) and its cost lands inside the
+    //    `test:e2e` row rather than a row of its own.
+    //
+    // Otherwise it now runs the SAME stage set as every other demo app. It
+    // previously ran only typecheck/test:unit/test:e2e — no format, lint,
+    // lint:css, check:dup, check:cycles, check:boundaries, check:deadcode or
+    // typecheck:tests — because the package was created without the demo-app
+    // tooling (no config/ directory and none of the 14 tool devDependencies).
+    name: 'GpsPlusSlamJs_OsmDemo',
+    dir: 'GpsPlusSlamJs_OsmDemo',
+    chainNames: ['test:core', 'check:all'],
+    stages: [
+      BUILD_OSM_STAGE,
+      // The worker entry is a second cycle root: `main.ts` reaches it only
+      // through `new Worker(new URL(...))`, so `demo-worker.ts` and the three
+      // modules it alone imports were outside the cycle gate until PR #241.
+      ...demoAppStages(['./src/worker/demo-worker.ts'])
+        .filter((stage) => stage.name !== 'build:framework')
+        // THE ONE STAGE IN THIS REPO WITH A WALL-CLOCK CEILING, and it is the
+        // one that has demonstrably regrown: `test:e2e` here went from ~200 s to
+        // ~547 s serial in five days after PR #244 fused 66 tests to 45 to buy
+        // that time, because rounds 7-10 each added a feature test with its own
+        // app boot. Nothing was watching, and by the time it was measured every
+        // lever for recovering it was spent (findings 2026-08-07, Areas 3-5b).
+        //
+        // 740 s is the recorded MEDIAN (567 s) plus ~30 %. Loose on purpose:
+        // this suite is contention-bound — its own Playwright config records a
+        // 21x inflation of identical work under load — so a tight ceiling would
+        // be one more load-dependent failure rather than a regrowth alarm.
+        // `budget.mjs` carries the rule for changing it.
+        .map((stage) =>
+          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 740 } : stage
+        ),
     ],
   },
   demoAppProject('GpsPlusSlamJs_QrTrackingDemo'),

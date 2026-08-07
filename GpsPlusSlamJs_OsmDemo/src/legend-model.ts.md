@@ -1,0 +1,48 @@
+# `legend-model.ts`
+
+**Purpose.** Decide what the legend says — the ramp swatches, the end labels, the three sub-threshold bands — as pure data, so the decisions can be tested without a browser.
+
+## Public API
+
+- `legendModel(scale, category, showBelowThreshold): LegendModel`
+- `LegendModel` — `{ category, ramp, minLabel, maxLabel, bands, description }`.
+  - `ramp` — `RAMP_STOPS` (7) swatches sampled **through `heatColour`**, geometrically spaced from `threshold` to `max`.
+  - `description` — `describeScale(scale)` verbatim, for the strip's `title` / `aria-label`.
+  - `bands` — empty unless `showBelowThreshold`; otherwise exactly three, in order `veto`, `identity`, `below`.
+- `LegendStop` — `{ kind, colour, fill, label }`. `fill: false` means "draw the outline, leave the middle empty".
+- `LegendStopKind` — `"ramp" | "veto" | "identity" | "below"`.
+- `classifyScore(score, threshold): LegendStopKind` — which band a cell belongs to. **Total** over every finite score, and non-finite scores land in `identity`: the map asks this for every cell it draws, so a score with no band would be a cell with no fill, an invisible hole rather than a visible error.
+- `VETO_COLOUR`, `IDENTITY_COLOUR`, `BELOW_THRESHOLD_COLOUR` — consumed by `map-view.ts` so the map paints exactly the bands the legend describes. One source, or the legend becomes an active lie.
+
+## Invariants & assumptions
+
+- **The ramp is sampled through `heatColour`, never re-derived from the palette.** A legend that interpolated its own copy of the ramp would drift from what the map paints, which is the one failure mode a legend cannot have.
+- **The category name is part of the model.** The reported symptom was "switching category did not reset the map": the map does redraw, but every category scores nearly every rule and `heatScale` re-normalises to each category's own maximum, so the same hexagons return in similar colours. A picture that does not say what it is a picture _of_ cannot be checked by eye.
+- **The identity band is outline-only (`fill: false`).** "No rule said anything here" must not paint a claim the data does not support — the assertion `map-view.ts` has always made in a comment, now made in pixels.
+- **`0` is not the bottom of the ramp.** `VETO_COLOUR` is deliberately outside the viridis palette: a hard veto is a categorical statement ("never here"), not a low score, and colouring it as the ramp's dark end would put it on the same axis as a merely-weak cell. Telling those two apart is the entire point of DEC-7.
+- **Total over every scale the sheet can produce.** Thresholds come from a publicly editable Google Sheet via `toNumber`, which accepts `0` and negatives — and `heatFraction` has a documented `#NaNNaNNaN` scar from exactly that. A property test asserts no colour is ever malformed and no label ever contains `NaN` or `Infinity`, for hostile scales including `threshold = 0` and `max < threshold`.
+- **The category string is passed through verbatim, never sanitised.** `legend-view.ts` avoids the HTML sink entirely by building nodes with `textContent`; a model that rewrote the name would make the on-screen label disagree with the `<select>`.
+- **Labels go through `heat-colours.ts`'s `formatScore`, not a local `round`.**
+  Two decimals below 1e4 (multiplicative scores print as `3.6000000000000005`),
+  exponential above it (DEC-R6b-6). **`minLabel` and `maxLabel` are the numbers
+  the user actually reads** — `description` is only the strip's title — which is
+  why this file having its own copy of `round` meant the sixth session's
+  over-long number survived a fix applied to `describeScale` alone. The copy is
+  gone; do not add another.
+
+## Examples
+
+```ts
+const model = legendModel({ threshold: 1, max: 8 }, "walkable", true);
+model.category; // "walkable"
+model.minLabel; // "1"
+model.maxLabel; // "8"
+model.bands.map((b) => b.label);
+// ["0 — vetoed", "1 — nothing known", "up to 1 — below the bar"]
+```
+
+## Tests
+
+- `legend-model.test.ts` — the category is named; the ends carry real numbers; a messy max is rounded; ramp swatches are distinct and ordered; `describeScale` survives as the description (DEC-13); a flat scale degrades to valid colours; bands appear only when asked, are exactly three, are mutually distinguishable, and the identity band is outline-only.
+- `classifyScore` is covered in `legend-model.test.ts`: the three sub-threshold cases at the default threshold of 1, the identity staying distinct when the threshold is raised above it, and totality over non-finite scores.
+- `legend-model.property.test.ts` — totality over hostile scales: no malformed colour, no `NaN`/`Infinity` label, category passed through verbatim, band count exactly `0` or `3`.

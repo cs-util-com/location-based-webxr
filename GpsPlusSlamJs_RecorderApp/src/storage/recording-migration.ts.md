@@ -45,6 +45,6 @@ Version constant written to `session.json` (`odomCoordVersion: 5`) when stopping
 
 ## Related Docs
 
-- [Raw-storage pattern audit](../../GpsPlusSlamJs_Docs/docs/2026-04-10-raw-storage-pattern-audit.md) — Verification that actions carry raw values and reducers convert
-- [Store Raw, Convert on Read analysis](../../GpsPlusSlamJs_Docs/docs/2026-04-09-raw-storage-convert-on-read.md) — Feasibility study for the raw-storage pattern
-- [Raw data fidelity audit](../../GpsPlusSlamJs_Docs/docs/2026-04-08-raw-data-fidelity-audit.md) — Comprehensive audit of all persisted action payloads
+- [Raw-storage pattern audit](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-10-raw-storage-pattern-audit.md) — Verification that actions carry raw values and reducers convert
+- [Store Raw, Convert on Read analysis](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-09-raw-storage-convert-on-read.md) — Feasibility study for the raw-storage pattern
+- [Raw data fidelity audit](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-08-raw-data-fidelity-audit.md) — Comprehensive audit of all persisted action payloads

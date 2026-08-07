@@ -19,6 +19,8 @@
  * @see GpsPlusSlamJs_Docs/docs/2026-06-23-2105-blurry-frame-motion-gating-plan.md §4.2-4.4
  */
 
+import { validateOptionFields } from '../utils/validate-option-fields.js';
+
 /** Default number of recent frames the gate judges motion over (~50 ms @ 60fps). */
 export const DEFAULT_MOTION_WINDOW_SIZE = 3;
 
@@ -86,6 +88,50 @@ export const DEFAULT_MOTION_FILTER: MotionFilterConfig = {
   maxLinearVelocity: 2.5,
   maxWaitMs: 4000,
 };
+
+/**
+ * Valid ranges for the {@link MotionFilterConfig} thresholds — the bounds
+ * outside which the gate stops being a gate, so they live with the gate rather
+ * than with whichever app persists a config for it.
+ *
+ * The velocity ranges (0.05–5) bracket the plausible scanning regime: below
+ * ~0.05 the gate would reject almost everything; above ~5 rad/s ≈ 286°/s (or
+ * 5 m/s) it would never reject, so the gate would be inert. `maxWaitMs` is
+ * clamped to 0.5–20 s — the never-calm fallback must always be able to fire.
+ * `step` is the granularity a settings slider should use for the value.
+ */
+export const MOTION_FILTER_CONSTRAINTS = {
+  maxAngularVelocity: { min: 0.05, max: 5, step: 0.05 },
+  maxLinearVelocity: { min: 0.05, max: 5, step: 0.05 },
+  maxWaitMs: { min: 500, max: 20000, step: 500 },
+} as const;
+
+/**
+ * Validate and normalize a persisted {@link MotionFilterConfig}.
+ *
+ * `enabled` is boolean-or-default; the three thresholds are clamped to
+ * {@link MOTION_FILTER_CONSTRAINTS}, with non-finite values (a stored `NaN` is
+ * `typeof 'number'` and would survive a bare clamp) falling back to the
+ * default. A missing/nullish group default-fills entirely, so a config
+ * persisted before the gate existed loads with the gate ENABLED rather than
+ * crashing.
+ */
+export function validateMotionFilterConfig(
+  options: Partial<MotionFilterConfig> | null | undefined
+): MotionFilterConfig {
+  return validateOptionFields(options, DEFAULT_MOTION_FILTER, {
+    enabled: { kind: 'bool' },
+    maxAngularVelocity: {
+      kind: 'num',
+      constraint: MOTION_FILTER_CONSTRAINTS.maxAngularVelocity,
+    },
+    maxLinearVelocity: {
+      kind: 'num',
+      constraint: MOTION_FILTER_CONSTRAINTS.maxLinearVelocity,
+    },
+    maxWaitMs: { kind: 'num', constraint: MOTION_FILTER_CONSTRAINTS.maxWaitMs },
+  });
+}
 
 /** Inputs to the stateless capture decision. */
 export interface CaptureDecisionInput {

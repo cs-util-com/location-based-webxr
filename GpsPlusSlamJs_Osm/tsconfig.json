@@ -1,0 +1,15 @@
+{
+  // Solution-style root config, mirroring GpsPlusSlamJs_AppFramework: it owns no
+  // files itself and only wires up the real projects via `references`, so the
+  // editor's language service assigns every opened file to a project with the
+  // right compiler options (production -> tsconfig.app.json, tests ->
+  // tsconfig.vitest.json, which adds `node` + vitest globals).
+  //
+  // Build/CI scripts target the concrete configs directly, so this file does not
+  // affect them.
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.vitest.json" }
+  ]
+}

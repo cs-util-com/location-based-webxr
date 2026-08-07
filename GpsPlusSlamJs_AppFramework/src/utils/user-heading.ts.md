@@ -6,7 +6,7 @@ Compute the user's **absolute view-direction bearing** (degrees clockwise from
 true geographic north) from the latest AR camera rotation plus the GPS+SLAM
 alignment matrix. Feeds the live/replay map overlay's view-direction line
 (Finding 2 of
-[`2026-06-28-1822-map-rings-transparency-and-view-direction-user-feedback.md`](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-28-1822-map-rings-transparency-and-view-direction-user-feedback.md)).
+[`2026-06-28-1822-map-rings-transparency-and-view-direction-user-feedback.md`](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-28-1822-map-rings-transparency-and-view-direction-user-feedback.md)).
 
 ## Public API
 

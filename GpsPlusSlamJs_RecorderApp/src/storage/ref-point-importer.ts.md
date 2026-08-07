@@ -25,7 +25,7 @@ interface ImportedRefPoint {
 }
 ```
 
-> **History:** The `name` field was removed in Jan 2026 ([task 1e](../../../GpsPlusSlamJs_Docs/docs/2026-01-27-user-feedback.md)) when `id` and `name` were identical. It was re-added after the March 2026 H3 migration changed `id` to a hex index while `name` remained the human-readable label. See [2026-04-11-aachen-ref-point-audit.md](../../../GpsPlusSlamJs_Docs/docs/2026-04-11-aachen-ref-point-audit.md) Issue 1+2.
+> **History:** The `name` field was removed in Jan 2026 ([task 1e](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-01-27-user-feedback.md)) when `id` and `name` were identical. It was re-added after the March 2026 H3 migration changed `id` to a hex index while `name` remained the human-readable label. See [2026-04-11-aachen-ref-point-audit.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-11-aachen-ref-point-audit.md) Issue 1+2.
 
 ### `RefPointImportResult`
 

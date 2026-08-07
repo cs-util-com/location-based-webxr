@@ -5,6 +5,21 @@
     "types": "error"
   },
   "workspaces": {
+    "GpsPlusSlamJs_Osm": {
+      "entry": [
+        "src/index.ts",
+        "src/model/index.ts",
+        "src/source/index.ts",
+        "src/spatial/index.ts",
+        "config/eslint.config.mjs"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "dpdm"
+      ]
+    },
     ".": {
       "entry": [
         "tests/**/*.test.js"
@@ -21,6 +36,7 @@
         "src/sensors/index.ts",
         "src/state/index.ts",
         "src/storage/index.ts",
+        "src/osm-bridge/index.ts",
         "src/visualization/index.ts",
         "src/utils/index.ts",
         "src/types/index.ts",
@@ -81,6 +97,26 @@
     "GpsPlusSlamJs_MinimalExample": {
       "project": [
         "src/**/*.ts"
+      ]
+    },
+    "GpsPlusSlamJs_OsmDemo": {
+      "entry": [
+        "config/stylelint.config.mjs",
+        "playwright-tests/**/*.{js,ts}",
+        "config/eslint.config.mjs",
+        "src/worker/demo-worker.ts",
+        "src/gallery-main.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@carlosjeurissen/stylelint-csstree-validator",
+        "dependency-cruiser",
+        "dpdm",
+        "jscpd",
+        "postcss-html",
+        "stylelint-config-standard"
       ]
     },
     "GpsPlusSlamJs_Landing": {

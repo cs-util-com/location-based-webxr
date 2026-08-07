@@ -22,6 +22,8 @@
 
 import * as Sentry from '@sentry/browser';
 
+import { createIsolatedRegistry } from './isolated-registry';
+
 /**
  * Log levels in order of verbosity (lower = more verbose)
  */
@@ -62,7 +64,26 @@ let logBuffer: LogEntry[] = [];
  * Subscribers that get notified when new log entries are added
  */
 type LogSubscriber = (entry: LogEntry) => void;
-let subscribers: LogSubscriber[] = [];
+
+/**
+ * WHY THE ERROR SINK IS `console.error` AND NOT THIS MODULE'S OWN LOGGING.
+ * Reporting a throwing subscriber through the logger would append an entry,
+ * which notifies the subscribers, which throws again — an infinite recursion.
+ * That hazard is the reason `createIsolatedRegistry` takes the sink as an
+ * option instead of importing a logger itself (which would also make
+ * `logger → isolated-registry → logger` a cycle the `check:cycles` gate
+ * rejects).
+ *
+ * ADOPTING THE REGISTRY ALSO FIXED AN INCONSISTENCY. The old array snapshotted
+ * unsubscribes by accident — `subscribers.filter(...)` REASSIGNS, so a
+ * `for...of` already in flight kept the old array — while `push` mutated in
+ * place, so a subscriber added during a dispatch received the very entry it
+ * had not been subscribed for. Now both defer to the next entry, which is what
+ * every other registry in the framework already did.
+ */
+const subscribers = createIsolatedRegistry<[LogEntry]>({
+  onError: (err) => console.error('[Logger] Subscriber threw an error:', err),
+});
 
 /**
  * Serialize an Error instance to an object capturing name, message, stack,
@@ -171,15 +192,10 @@ function addToBuffer(level: LogLevel, tag: string, message: string): void {
     logBuffer.shift();
   }
 
-  // Notify all subscribers (each wrapped in try/catch to prevent one failing subscriber from breaking others)
-  for (const subscriber of subscribers) {
-    try {
-      subscriber(entry);
-    } catch (err) {
-      // Use console.error directly to avoid infinite recursion if our own logging fails
-      console.error('[Logger] Subscriber threw an error:', err);
-    }
-  }
+  // Each subscriber is isolated, so one throwing subscriber cannot stop the
+  // others receiving the entry. See the registry's declaration for why the
+  // failure goes to `console.error` rather than through this module.
+  subscribers.run(entry);
 }
 
 /**
@@ -203,10 +219,7 @@ export function clearLogBuffer(): void {
  * @returns Unsubscribe function
  */
 export function subscribeToLogs(callback: LogSubscriber): () => void {
-  subscribers.push(callback);
-  return () => {
-    subscribers = subscribers.filter((sub) => sub !== callback);
-  };
+  return subscribers.register(callback);
 }
 
 /**

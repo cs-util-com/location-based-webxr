@@ -2,8 +2,10 @@ import { defineConfig } from 'vite';
 
 // Wayfinding-HUD demo Vite config. AppFramework resolves through the pnpm
 // workspace symlink; the published gps-plus-slam-js comes from node_modules.
-// A distinct port keeps it runnable alongside the minimal example (5180), the
-// anchor starter (5181), the physics demo (5182) and the recorder.
+// The port is allocated in docs/dev-server-ports.md, which is the ONLY place
+// that knows the whole set. This comment used to name the sibling apps it was
+// distinct from, including "the physics demo (5182)" — which was true when it
+// was written and had since become ambiguous between three packages.
 export default defineConfig({
   server: {
     port: 5183,

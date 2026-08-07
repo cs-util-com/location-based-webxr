@@ -429,7 +429,7 @@ describe('external-file-storage', () => {
 
     /**
      * Why this test matters:
-     * parseDateFromSessionFilename() in session-browser.ts uses the regex
+     * parseDateFromSessionFilename() in session-zip-naming.ts uses the regex
      * /(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})utc\.zip$/
      * The new timestamp-only format must still match that parser.
      */
@@ -444,7 +444,7 @@ describe('external-file-storage', () => {
       const testDate = new Date('2026-02-26T09:15:30Z');
       const result = generateSessionFilename(testDate);
 
-      // The regex used by session-browser.ts
+      // The regex used by session-zip-naming.ts
       const parserRegex =
         /(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})utc\.zip$/;
       expect(result).toMatch(parserRegex);

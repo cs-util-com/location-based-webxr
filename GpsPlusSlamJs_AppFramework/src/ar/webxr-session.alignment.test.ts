@@ -8,7 +8,7 @@
  *  - the matrix is written verbatim (identity stays exact identity),
  *  - the full chain `arWorldGroup × basisChangeNode` maps WebXR coordinates
  *    to NUE (north/east) correctly,
- *  - `nuePositionToWebXR()` round-trips through that chain (the conversion
+ *  - `nueToWebXR()` round-trips through that chain (the conversion
  *    replay uses when writing recorded odom poses to its own arpose node).
  *
  * They seed the module `arWorldGroup` through the REAL `initAR()` path
@@ -53,8 +53,8 @@ import {
   resetWebXRState,
   getArWorldGroup,
   applyAlignmentMatrix,
-  nuePositionToWebXR,
 } from './webxr-session.js';
+import { nueToWebXR } from 'gps-plus-slam-js';
 import { SCENE_NODE } from './scene-node-names.js';
 
 const MINIMAL_ISOLATION = {
@@ -174,20 +174,20 @@ describe('applyAlignmentMatrix (live arWorldGroup via initAR)', () => {
    * NUE — the conversion replay relies on when writing recorded odom
    * positions (NUE) to its arpose node (WebXR-local, below basisChangeNode).
    */
-  it('nuePositionToWebXR composes correctly with applyAlignmentMatrix for replay', () => {
+  it('nueToWebXR composes correctly with applyAlignmentMatrix for replay', () => {
     const arWorldGroup = getArWorldGroup()!;
     applyAlignmentMatrix(IDENTITY);
 
     // odomPosition in NUE: north=10, up=0, east=5
-    const odomNUE = [10, 0, 5];
+    const odomNUE = [10, 0, 5] as const;
     // Convert to WebXR for arpose (arpose lives in WebXR space below basisChangeNode)
-    const webxrPos = nuePositionToWebXR(odomNUE);
+    const webxrPos = nueToWebXR(odomNUE);
     const v = new THREE.Vector4(webxrPos[0], webxrPos[1], webxrPos[2], 1);
     v.applyMatrix4(fullChain(arWorldGroup));
 
     // Should recover NUE position
-    expect(v.x).toBeCloseTo(odomNUE[0] ?? 0, 5);
-    expect(v.y).toBeCloseTo(odomNUE[1] ?? 0, 5);
-    expect(v.z).toBeCloseTo(odomNUE[2] ?? 0, 5);
+    expect(v.x).toBeCloseTo(odomNUE[0], 5);
+    expect(v.y).toBeCloseTo(odomNUE[1], 5);
+    expect(v.z).toBeCloseTo(odomNUE[2], 5);
   });
 });

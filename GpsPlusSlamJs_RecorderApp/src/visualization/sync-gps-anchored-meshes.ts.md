@@ -6,7 +6,7 @@ Pure-function reconciler that keeps a `THREE.Scene` in sync with a list of
 GPS-anchored marker items, reusing the same `THREE.Mesh` instance across
 calls for items whose id is unchanged. Replaces the framework's old
 stateful `GpsAnchoredMeshManager` class (see P2 in
-[2026-05-07-csharp-features-not-yet-ported.md](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md)).
+[2026-05-07-csharp-features-not-yet-ported.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md)).
 
 ## Public API
 
@@ -73,12 +73,12 @@ duplicate-id deduplication (no orphaned meshes).
 
 - [`ref-point-visualizer.ts`](ref-point-visualizer.ts.md) — the only
   current caller; rewritten to hold one handle map per colour.
-- [survey § P2](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md) —
+- [survey § P2](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md) —
   the design rationale for moving from stateful "manager" classes to
   reconcilers.
-- [boundary analysis Iter 4+](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md) —
+- [boundary analysis Iter 4+](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-03-appframework-vs-recorderapp-boundary-analysis.md) —
   why this lives in the recorder, not the framework.
-- [GpsAnchor port plan](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md) —
+- [GpsAnchor port plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md) —
   the single-object counterpart for cases where the user cares about
   visual stability (`'snap-when-offscreen'` UX) rather than bulk-mesh
   efficiency.

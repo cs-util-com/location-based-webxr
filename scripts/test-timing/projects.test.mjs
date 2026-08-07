@@ -6,7 +6,7 @@
 // claim. chain-guard warns at runtime; this test FAILS the repo-config gate
 // at review time, which is the stronger guarantee.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,6 +41,40 @@ function wrapperPrefix(project) {
     : 'node ../scripts/test-timing';
 }
 
+/** Every `.ts`/`.js`/`.mjs` file under `dir`, recursively. */
+function sourceFiles(dir) {
+  if (!existsSync(dir)) return [];
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...sourceFiles(full));
+    else if (/\.(?:ts|js|mjs)$/.test(entry.name)) found.push(full);
+  }
+  return found;
+}
+
+/**
+ * The worker entry modules a package spawns, as `./src/…`-style roots.
+ *
+ * A module worker is referenced ONLY as a URL string
+ * (`new Worker(new URL('./x.worker.ts', import.meta.url))`), which is exactly
+ * the reference no static-analysis tool can follow — hence the test below.
+ */
+function workerEntries(project) {
+  const root = path.join(WORKSPACE_ROOT, project.dir);
+  const pattern = /new Worker\(\s*new URL\(\s*['"]([^'"]+)['"]/g;
+  const entries = new Set();
+  for (const file of sourceFiles(path.join(root, 'src'))) {
+    const source = readFileSync(file, 'utf8');
+    for (const [, specifier] of source.matchAll(pattern)) {
+      const resolved = path.resolve(path.dirname(file), specifier);
+      if (!existsSync(resolved)) continue;
+      entries.add(`./${path.relative(root, resolved).split(path.sep).join('/')}`);
+    }
+  }
+  return [...entries];
+}
+
 describe('projects.mjs config invariants', () => {
   it('has unique project dirs and names', () => {
     const dirs = PROJECTS.map((p) => p.dir);
@@ -58,6 +92,35 @@ describe('projects.mjs config invariants', () => {
       for (const stage of project.stages) {
         expect(stage.command.trim().length).toBeGreaterThan(0);
         expect([null, 'vitest', 'playwright']).toContain(stage.counts);
+      }
+    }
+  );
+});
+
+describe('check:cycles reaches the worker subgraphs', () => {
+  // Why this test matters: `check:cycles` roots dpdm at the app entry, and a
+  // module worker is reachable from there ONLY as a URL string — which is
+  // precisely the reference dpdm cannot follow. So every module a worker owns
+  // exclusively sits outside the cycle gate, silently: nothing fails, the row
+  // is still green, and the subgraph is the most stateful code in the package.
+  // PR #241 found ~1 100 lines of the OSM demo's worker code in that gap
+  // (`demo-worker`, `mesh-planner`, `prefetch-queue`, `terrain-gate` — a cycle
+  // between any two of them would never have been reported), and the RecorderApp
+  // had the same gap for both of its workers.
+  //
+  // Asserting against a FILESYSTEM SCAN rather than a hard-coded list is the
+  // point: a package that adds a worker tomorrow fails this test until its
+  // cycle root is added, which is the only version of this that stays true.
+  it.each(PROJECTS.map((p) => [p.name, p]))(
+    '%s: roots dpdm at every worker entry it spawns',
+    (_name, project) => {
+      const cycles = getStage(project, 'check:cycles');
+      if (cycles === undefined) return;
+      for (const entry of workerEntries(project)) {
+        expect(
+          cycles.command,
+          `check:cycles must root at ${entry}, or that worker's modules are outside the cycle gate`
+        ).toContain(entry);
       }
     }
   );

@@ -105,10 +105,12 @@ controller to `ready` — see "Session-end awareness".
   `startGpsWatch`, `startOrientationWatch`, `initAR`, `stopGpsWatch`,
   `stopOrientationWatch`, `endARSession`). This keeps the orchestration
   unit-testable without WebXR/GPS hardware or a DOM.
-- **Listener isolation:** `setState` dispatches over a snapshot and wraps each
-  subscriber in try/catch (logging via `createLogger('EnableGpsAr')`), so one
+- **Listener isolation:** `setState` dispatches over a snapshot with each
+  subscriber isolated (logging via `createLogger('EnableGpsAr')`), so one
   throwing subscriber cannot abort the dispatch or interrupt the
-  `refreshSupport()`/`enable()`/`disable()` transition that drives it.
+  `refreshSupport()`/`enable()`/`disable()` transition that drives it. Both
+  behaviours come from `utils/isolated-registry.ts` rather than being
+  hand-rolled here; the semantics are pinned in `isolated-registry.test.ts`.
 - Uses the `PermissionStatus`-returning `requestOrientationPermission` from
   `sensors/permission-checker.ts`, **not** the legacy `boolean`-returning one in
   `sensors/gps.ts` (plan §6.1 disambiguation).

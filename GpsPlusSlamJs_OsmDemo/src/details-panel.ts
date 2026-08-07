@@ -1,0 +1,289 @@
+/**
+ * The details panel: why THIS cell scores what it scores.
+ *
+ * WHY A PANEL RATHER THAN A BIGGER POPUP. The popup is small, it sits on top of
+ * the thing being inspected, and on a phone it covers most of the map. A tree
+ * over "every contributing element and every one of its tags" is the wrong
+ * shape for it. The panel is also where a 3D pick lands once that exists, so
+ * one selection has one place to be explained regardless of which view produced
+ * it.
+ *
+ * WHY IT IS AN OVERLAY ON DESKTOP TOO (DEC-17). The plan first put it in a thin
+ * third column. On a laptop that leaves the 2D and 3D panes at ~450 px each —
+ * the width that made the 3D pane useless on the phone. Floating it over the
+ * split keeps both views full size, costs a dismiss button, and means one
+ * layout to build and test instead of two.
+ *
+ * Every decision it renders lives in `explanation-tree.ts`; this file builds
+ * nodes. Text goes in with `textContent`, never a template string: tag keys and
+ * values come from OSM and the rule ids from a publicly editable sheet, and
+ * avoiding the HTML sink is stronger than escaping into one.
+ *
+ * @see details-panel.ts.md
+ */
+
+import { explanationTree, type FeatureRow } from "./explanation-tree.js";
+import type { RegionSummary } from "./region-summary.js";
+import type { CellExplanation } from "gps-plus-slam-osm";
+
+export interface DetailsPanelOptions {
+  readonly container: HTMLElement;
+  /** Called when the user dismisses the panel, so the store can deselect. */
+  readonly onClose: () => void;
+}
+
+export class DetailsPanel {
+  private readonly container: HTMLElement;
+  private readonly onClose: () => void;
+
+  constructor(options: DetailsPanelOptions) {
+    this.container = options.container;
+    this.onClose = options.onClose;
+  }
+
+  /** Hides the panel. Nothing is selected, so there is nothing to explain. */
+  clear(): void {
+    this.container.replaceChildren();
+    this.container.hidden = true;
+  }
+
+  /**
+   * Describes a picked map FEATURE (W12), replacing whatever was shown.
+   *
+   * Deliberately small. A cell explanation is an argument — factors, vetoes, a
+   * summary sentence — because a score is not self-evident. A POI is not an
+   * argument: it is a thing with a name and a type, and the useful move is to
+   * name it and get out of the way, with a link for anyone who wants the rest.
+   *
+   * Typed structurally rather than against `PoiMarker` so this file does not
+   * depend on the mesh layer to render three strings.
+   */
+  renderFeature(feature: {
+    readonly feature: string;
+    readonly kind: string;
+    readonly label: string;
+  }): void {
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("strong");
+    // `textContent`, never `innerHTML`: tag values are untrusted, because anyone
+    // can edit OSM. A label is displayed exactly as it was mapped.
+    title.textContent = feature.label;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "panel-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "close details");
+    close.addEventListener("click", this.onClose);
+    header.append(title, close);
+
+    const kind = document.createElement("p");
+    kind.className = "panel-summary";
+    kind.textContent = feature.kind;
+
+    // The demo's core promise: anything surprising on screen can be traced to a
+    // real object in one click. `node/4242` is already the path form
+    // openstreetmap.org expects.
+    const provenance = document.createElement("p");
+    provenance.className = "panel-threshold";
+    const link = document.createElement("a");
+    link.href = `https://www.openstreetmap.org/${feature.feature}`;
+    link.target = "_blank";
+    // Without this the opened page gets a handle to this one via `window.opener`.
+    link.rel = "noreferrer";
+    link.textContent = feature.feature;
+    provenance.append(link);
+
+    // REPLACE, not append: both modes share one container, and a cell
+    // explanation left under a POI heading is a confidently wrong answer.
+    this.container.replaceChildren(header, kind, provenance);
+    this.container.hidden = false;
+  }
+
+  /**
+   * Describes a selected affordance REGION (DEC-R7b-3a).
+   *
+   * The third mode, and the reason the panel needed one: a region is neither an
+   * argument (a cell explanation, with factors and vetoes) nor a named thing (a
+   * POI). It is a claim about an area, and what makes it worth a panel is the
+   * SPREAD the slab's single colour cannot show — see `region-summary.ts`.
+   *
+   * Takes a rendered summary rather than a `Region`, so everything that can be
+   * wrong about the wording or the arithmetic is testable without a DOM.
+   */
+  renderRegion(summary: RegionSummary): void {
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("strong");
+    title.textContent = summary.title;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "panel-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "close details");
+    close.addEventListener("click", this.onClose);
+    header.append(title, close);
+
+    const stats = document.createElement("dl");
+    stats.className = "panel-stats";
+    for (const stat of summary.stats) {
+      const label = document.createElement("dt");
+      label.textContent = stat.label;
+      const value = document.createElement("dd");
+      // `textContent`: every one of these is derived from OSM data, and a
+      // category name comes from the publicly editable rule sheet.
+      value.textContent = stat.value;
+      stats.append(label, value);
+    }
+
+    const nodes: HTMLElement[] = [header, stats];
+    if (summary.spreadNote !== undefined) {
+      const note = document.createElement("p");
+      note.className = "panel-summary";
+      note.textContent = summary.spreadNote;
+      nodes.push(note);
+    }
+
+    // REPLACE, not append — the same rule the other two modes follow. A cell
+    // explanation left under a region heading is a confidently wrong answer.
+    this.container.replaceChildren(...nodes);
+    this.container.hidden = false;
+  }
+
+  /**
+   * Says the selected cell has no explanation to give, instead of going quiet.
+   *
+   * WHY THIS IS A PANEL MODE AND NOT A STATUS-LINE ERROR. The state is routine —
+   * a selection outlives one working set, so moving away leaves a cell the
+   * worker no longer scores — and it is the answer to a question the user asked
+   * *here*, by clicking this cell. Routing it through the store's error phase
+   * instead made a normal interaction abort the rest of a progressive refresh
+   * (raised in review on #265); `explain-cycle.ts` carries the full chain.
+   *
+   * WHY IT DOES NOT SAY "the worker no longer holds it". The worker returns
+   * `undefined` whenever `pipeline.scoreFor(cell)` has no score, which also
+   * covers a cell inside the working set that has not been scored at this ring
+   * yet. The wording states what is observable — there is no explanation for
+   * this cell right now — rather than a cause that is only sometimes the reason.
+   */
+  renderUnavailable(cell: string): void {
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("strong");
+    title.textContent = "No explanation for this cell";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "panel-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "close details");
+    close.addEventListener("click", this.onClose);
+    header.append(title, close);
+
+    const note = document.createElement("p");
+    note.className = "panel-summary";
+    // `textContent`, like everywhere else in this file: the cell id is data.
+    note.textContent = `${cell} is not in the scored working set right now — move back towards it, or wait for the map to finish widening.`;
+
+    // REPLACE and SHOW, the same rule the other modes follow. Hiding the panel
+    // here is what DEC-7 calls the silence: indistinguishable from a missed click.
+    this.container.replaceChildren(header, note);
+    this.container.hidden = false;
+  }
+
+  render(explanation: CellExplanation): void {
+    const tree = explanationTree(explanation);
+    const nodes: HTMLElement[] = [];
+
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("strong");
+    title.textContent = `${tree.category} = ${tree.scoreLabel}`;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "panel-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "close details");
+    close.addEventListener("click", this.onClose);
+    header.append(title, close);
+    nodes.push(header);
+
+    // The sentence a table of numbers cannot say: "nothing is mapped here",
+    // "something vetoed it" and "it scored but under the bar" read almost
+    // identically as rows, and telling them apart is why the panel exists.
+    const summary = document.createElement("p");
+    summary.className = "panel-summary";
+    summary.textContent = tree.summary;
+    nodes.push(summary);
+
+    const bar = document.createElement("p");
+    bar.className = "panel-threshold";
+    bar.textContent = tree.aboveThreshold
+      ? `above the ${tree.thresholdLabel} threshold`
+      : `at or below the ${tree.thresholdLabel} threshold — not drawn as a region`;
+    nodes.push(bar);
+
+    for (const feature of tree.features) nodes.push(featureNode(feature));
+
+    this.container.replaceChildren(...nodes);
+    this.container.hidden = false;
+  }
+}
+
+/** One collapsible feature: the element, its factor, and its tags. */
+function featureNode(feature: FeatureRow): HTMLElement {
+  const details = document.createElement("details");
+  details.className = `panel-feature panel-feature-${feature.state}`;
+  // The vetoing feature opens by default: it is the answer, and making the
+  // reader find and click it is making them guess which row is the answer.
+  details.open = feature.state === "veto";
+
+  const summary = document.createElement("summary");
+  const link = document.createElement("a");
+  link.href = feature.osmUrl;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = feature.key;
+  const factor = document.createElement("span");
+  factor.className = "panel-factor";
+  factor.textContent = ` × ${feature.factorLabel}`;
+  summary.append(link, factor);
+  details.append(summary);
+
+  const table = document.createElement("table");
+  table.className = "panel-tags";
+
+  // HEADERS, because the four columns are otherwise inferable only from their
+  // shape: two of them hold bare numbers and mean different things ("what this
+  // tag multiplied by" vs "what the product was after it"). A sighted reader
+  // guesses from context; a screen-reader user gets four unlabelled cells.
+  const head = document.createElement("tr");
+  for (const label of ["tag", "factor", "running", "state"]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    head.append(th);
+  }
+  table.append(head);
+
+  for (const tag of feature.tags) {
+    const row = document.createElement("tr");
+    row.className = `panel-tag panel-tag-${tag.state}`;
+    for (const text of [
+      `${tag.key}=${tag.value}`,
+      tag.factorLabel,
+      tag.runningLabel,
+      // Every state is named, including the ordinary one. Rendering `scored` as
+      // an empty cell left the normal case distinguishable only by the ABSENCE
+      // of text, which is not a distinction a screen reader can announce — and
+      // "skipped" is precisely the state a reader must not have to infer.
+      tag.state,
+    ]) {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      row.append(cell);
+    }
+    table.append(row);
+  }
+  details.append(table);
+  return details;
+}

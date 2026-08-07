@@ -73,14 +73,9 @@ import {
   createImageQualityAnalyzer,
   type ImageQualityClient,
 } from './image-quality-client';
-import {
-  createWriteFailureTracker,
-  type WriteFailureTracker,
-} from '../storage/write-failure-tracker';
-import {
-  createCaptureFailureTracker,
-  type CaptureFailureTracker,
-} from 'gps-plus-slam-app-framework/ar/capture-failure-tracker';
+import { createWriteFailureTracker } from '../storage/write-failure-tracker';
+import { createCaptureFailureTracker } from 'gps-plus-slam-app-framework/ar/capture-failure-tracker';
+import type { FailureTracker } from 'gps-plus-slam-app-framework/utils/failure-tracker';
 import {
   showRecordingControls,
   hideRecordingControls,
@@ -113,7 +108,7 @@ import { magneticHeadingFromEnuQuat } from 'gps-plus-slam-app-framework/core';
 import type { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
 import { getBuildInfo } from '../utils/build-info';
-import { DEFAULT_SCENARIO } from '../ui/session-browser';
+import { DEFAULT_SCENARIO } from '../storage/session-zip-naming';
 
 const log = createLogger('RecordingSession');
 
@@ -124,7 +119,7 @@ const ABS_COMPASS_HUD_INTERVAL_MS = 200;
 
 /**
  * Single fallback used everywhere a scenario name is needed but unavailable.
- * Re-exported from `session-browser.DEFAULT_SCENARIO` so that the recording
+ * Re-exported from `session-zip-naming.DEFAULT_SCENARIO` so that the recording
  * pipeline and the replay browser's metadata-merge contract stay in sync
  * (any divergence would silently break the "missing-metadata + Default
  * Scenario" merge for newly-recorded zips).
@@ -248,8 +243,8 @@ export function createRecordingSessionHandlers(
   deps: RecordingSessionDeps
 ): RecordingSessionHandlers {
   // --- State ---
-  let writeFailureTracker: WriteFailureTracker | null = null;
-  let captureFailureTracker: CaptureFailureTracker | null = null;
+  let writeFailureTracker: FailureTracker | null = null;
+  let captureFailureTracker: FailureTracker | null = null;
   let currentSessionName = '';
   let syncManager: SyncManager | null = null;
   let lastSyncResult: ZipExportResult | null = null;

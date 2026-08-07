@@ -175,8 +175,7 @@ vi.mock('./ui/replay-ui', () => ({
   enableStartReplay: vi.fn(),
   disableStartReplay: vi.fn(),
 }));
-vi.mock('./ui/session-browser', () => ({
-  DEFAULT_SCENARIO: 'Default Scenario',
+vi.mock('./storage/recording-discovery', () => ({
   listScenariosFromFolder: vi.fn(),
   extractScenarioNamesFromZips: vi.fn(),
   discoverScenariosFromZipMetadata: vi.fn(),

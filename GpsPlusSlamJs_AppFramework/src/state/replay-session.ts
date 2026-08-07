@@ -51,9 +51,9 @@ import { OccupancyCubesVisualizer } from '../visualization/occupancy-cubes-visua
 import { OcclusionMesh } from '../visualization/occlusion-mesh.js';
 import { subscribeReplayOccupancy } from './replay-occupancy-subscriber.js';
 import {
-  nuePositionToWebXR,
+  nueToWebXR,
   nueQuaternionToWebXR,
-} from '../ar/webxr-session.js';
+} from '../ar/nue-webxr-conversions.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('ReplaySession');
@@ -175,7 +175,7 @@ export function startReplaySession(
     applyAlignmentMatrix: (matrix) => alignmentLerper?.setTarget(matrix),
     gpsEventVisualizer,
     onNewOdomPose: (odomPosition, odomRotation) => {
-      const webxrPos = nuePositionToWebXR(odomPosition);
+      const webxrPos = nueToWebXR(odomPosition);
       scene.arpose.position.fromArray(webxrPos);
       const webxrRot = nueQuaternionToWebXR(odomRotation);
       scene.arpose.quaternion.fromArray(webxrRot);

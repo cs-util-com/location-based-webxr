@@ -1,0 +1,24 @@
+{
+  // Extends the workspace demo-app compiler profile (../tsconfig.demo-base.json
+  // — the single source of truth for the strictness flags). Only the
+  // location-dependent bits stay here: `types` (resolved from THIS package's
+  // node_modules), the per-project `tsBuildInfoFile`, and `include`/`exclude`.
+  //
+  // This package previously carried its own hand-rolled copy of the flags in a
+  // single tsconfig.json, which is why it drifted out of the demo-app tooling
+  // set entirely: no lint, no cycle check, no boundaries, no dead-code pass.
+  "extends": "../tsconfig.demo-base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "dist",
+    "coverage",
+    "node_modules",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.property.test.ts"
+  ]
+}

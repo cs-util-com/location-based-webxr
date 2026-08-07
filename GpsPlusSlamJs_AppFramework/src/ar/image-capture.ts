@@ -166,7 +166,7 @@ export interface ImageCaptureCallbacks {
    * @returns Promise resolving to the JPEG blob plus the pixel dimensions it
    *   was encoded at, or null if capture fails. The dimensions flow into the
    *   persisted `ArImageCapture.width`/`height` for aspect-correct rendering.
-   * @see docs/2026-02-06-bug-camera-frames-black.md
+   * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-06-bug-camera-frames-black.md
    */
   captureFrame?: (quality: number) => Promise<CapturedFrame | null>;
   /**

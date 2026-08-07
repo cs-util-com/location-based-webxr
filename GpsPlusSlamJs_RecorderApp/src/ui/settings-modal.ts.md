@@ -95,6 +95,7 @@ The per-control wiring is a data table, `OPTION_BINDINGS` — one entry per form
 - Slider min/max/step are applied ONCE at init from the validation constraints — one source of truth, so the UI can never offer a value the validator would clamp away
 - Slider inputs that parse non-finite are dropped (never written into the working copy); save-time validation remains the authoritative clamp
 - Compass gating (`compassPriorConsumerOn`/`compassExperimentOff` rules, 2026-07-20 settings-clarity §4.2/§4.6): the vote-weight slider is disabled unless the experiment or Stage C is checked; Stage C is disabled while the experiment is on. A greyed-out Stage C **keeps its stored value and both flags keep being persisted/recorded** (keep-value-record-both) — disabling is a UI affordance, never a value change. See `GpsPlusSlamJs_Docs/docs/2026-07-20-0549-compass-debug-settings-ui-clarity-followup.md`.
+- Every slider is wrapped by [`guardSliderAgainstScroll`](../../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md), installed in `bindOptionControls()` **before** the binding listener (at-target listeners fire in registration order, so the guard can stop a scroll-gesture `input` event before the modal reacts). Touch gestures only edit a value on an explicit horizontal drag or a short tap committed on release — a vertical swipe (or a slow press that could start one) scrolls the panel instead, which is what the 2026-07-27 field feedback asked for. Mouse click-to-set is unchanged.
 - Working copy is created on show, cleared on hide
 - Callback is invoked only after successful save
 - The voxel-size slider operates in **centimetres** for readability, but the stored option (`occupancy.cellSizeM`) is **metres** — the binding's `fromSlider` divides by 100 and `toSlider` multiplies by 100. A unit mismatch here would feed the grid a 100× wrong cell size, so both directions are unit-tested. Changing it takes effect on the next Enter-AR / replay load (the grid reads it at construction), not mid-session. See [recording-options.ts.md](../state/recording-options.ts.md).
@@ -128,7 +129,7 @@ document
   - Production HTML validation: modal and button markup from `index.html`
   - Modal visibility: show/hide behavior
   - Form population: checkboxes, sliders, selects (incl. legacy-field migrations)
-  - Slider interactions: value updates + label formats on input
+  - Slider interactions: value updates + label formats on input, plus the touch-gesture trio (a vertical swipe over a slider changes nothing; a sideways drag and a short tap both do)
   - Gating: parent-toggle → sub-control disabling, incl. the compass rules
   - Save/reset/close behavior and persistence round-trips
   - Build label population and graceful fallback when metadata is unavailable

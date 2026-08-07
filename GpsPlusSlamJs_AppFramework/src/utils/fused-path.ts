@@ -10,7 +10,7 @@
  *
  * Internal coordinate convention: X=North, Y=Up, Z=East (right-handed).
  *
- * @see docs/2026-01-27-user-feedback.md Issue #4b
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-01-27-user-feedback.md Issue #4b
  */
 
 import { vec3, mat4 } from 'gl-matrix';

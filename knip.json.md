@@ -82,6 +82,16 @@ entirely after confirming they were only transitively pulled in.
   plugin auto-detects `src/main.ts` from `index.html`; explicit entries
   for the stylelint config and `playwright-tests/**` (the e2e smoke
   suite); the three stylelint tooling packages ignored.
+- **GpsPlusSlamJs_OsmDemo** — two entries are listed explicitly because
+  knip's Vite plugin finds neither of them. `src/worker/demo-worker.ts`
+  is reached through `new Worker(new URL(...), { type: "module" })`,
+  which is a runtime construction rather than an import. And
+  `src/gallery-main.ts` is the entry of a **second HTML page**
+  (`gallery.html`, the POI model gallery, W7/DEC-R5-5) — the plugin
+  auto-detects `index.html` only, so without this line knip reports the
+  whole gallery as an unused file and `buildGallery` as an unused export,
+  which is how it failed the first time it was added. **If another page
+  is ever added, its entry belongs here too.**
 
 ## Tests
 

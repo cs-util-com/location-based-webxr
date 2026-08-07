@@ -20,6 +20,10 @@ const entryFiles = [
   // ar/
   'src/ar/index.ts',
   'src/ar/ar-crash-isolation.ts',
+  // Shared scene-graph builder for live AR and replay. Both `webxr-session.ts`
+  // and `replay-scene.ts` (themselves dist entries) import it, and the `./ar/*`
+  // exports wildcard advertises the subpath, so it must be built per-file.
+  'src/ar/ar-scene-hierarchy.ts',
   'src/ar/bresenham3d.ts',
   'src/ar/camera-blit-capture.ts',
   'src/ar/capability-checker.ts',
@@ -55,6 +59,10 @@ const entryFiles = [
   'src/ar/image-quality.ts',
   'src/ar/replay-scene.ts',
   'src/ar/scene-node-names.ts',
+  // Curated re-export of the library's NUE↔WebXR conversions, so consumer apps
+  // (the recorder's replay path) reach them without a direct gps-plus-slam-js
+  // dependency. Deep-imported via the `./ar/*` wildcard → per-file entry.
+  'src/ar/nue-webxr-conversions.ts',
   'src/ar/webxr-nue-basis.ts',
   'src/ar/webxr-session.ts',
   'src/ar/webxr-support-probe.ts',
@@ -85,6 +93,10 @@ const entryFiles = [
   'src/licensing/index.ts',
 
   // geo/
+  // osm-bridge/ — wires the optional gps-plus-slam-osm peer to OPFS
+  'src/osm-bridge/index.ts',
+  'src/osm-bridge/opfs-osm-blob-store.ts',
+
   'src/geo/index.ts',
   'src/geo/h3-proximity.ts',
 
@@ -130,10 +142,16 @@ const entryFiles = [
   'src/storage/zip-export.ts',
   'src/storage/zip-reader.ts',
   'src/storage/zip-coverage-embed.ts',
+  // File System Access write-with-abort helper — deep-imported by three
+  // recorder storage modules (ref-point-loader, scenario-zip-export,
+  // coverage-backfill). The `./storage/*` exports wildcard advertises this
+  // subpath, so it must be built per-file.
+  'src/storage/write-file-or-abort.ts',
 
   // test-utils/ (advertised in `exports`; consumed by RecorderApp tests)
   'src/test-utils/browser-mocks.ts',
   'src/test-utils/zip-round-trip-helpers.ts',
+  'src/test-utils/pointer-gestures.ts',
 
   // types/
   'src/types/index.ts',
@@ -148,6 +166,16 @@ const entryFiles = [
   'src/utils/fused-path.ts',
   'src/utils/list-formatter.ts',
   'src/utils/logger.ts',
+  // Persisted-options validation primitive — deep-imported by the recorder's
+  // recording-options catalog (NOT via the `/utils` barrel, which would pull in
+  // the logger and friends). The `./utils/*` exports wildcard advertises this
+  // subpath, so it must be built per-file.
+  'src/utils/validate-option-fields.ts',
+  // Touch-gesture guard for range inputs — deep-imported by the recorder's
+  // settings modal and by the demo apps' control panels (NOT via the `/utils`
+  // barrel, which would pull in the logger and friends). The `./utils/*`
+  // exports wildcard advertises this subpath, so it must be built per-file.
+  'src/utils/slider-scroll-guard.ts',
 
   // visualization/
   'src/visualization/index.ts',

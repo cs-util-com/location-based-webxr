@@ -78,6 +78,6 @@ configureStore({
 
 ## Related
 
-- [store.ts](store.ts.md) — factory that wires this middleware into `configureStore`
+- [create-slam-app-store.ts](create-slam-app-store.ts.md) — the factory that wires this middleware into `configureStore`
 - [recording-slice.ts](recording-slice.ts.md) — provides `recordWriteFailure` action creator
 - [storage-backend.ts](../storage/storage-backend.ts.md) — `StorageBackend` interface

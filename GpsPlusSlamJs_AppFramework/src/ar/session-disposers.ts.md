@@ -20,7 +20,10 @@
     teardown; returns a deregister fn (call it when the resource is disposed
     early so a later flush won't re-run it).
   - `runSessionDisposers()` — snapshot, **clear**, then run each disposer in its
-    own `try/catch`. Called from `resetWebXRState()`.
+    own `try/catch`. Called from `resetWebXRState()`. This is
+    `isolated-registry`'s `runOnce()`; the clear-before-run ordering is what
+    makes a second flush a no-op and stops a disposer that re-registers during
+    teardown from looping.
   - `clearSessionDisposers()` — drop all without running (test-only hygiene,
     parallels `clearFrameUpdates`).
 

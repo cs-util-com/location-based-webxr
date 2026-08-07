@@ -11,7 +11,7 @@
  * - R7: Error handling — onError callback is wired from config to the engine.
  * - R8: Data flow — zip bytes → loadActionsFromZip → actions → engine.
  *
- * @see docs/2026-02-19-replay-mode.md Iteration 6
+ * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-02-19-replay-mode.md Iteration 6
  */
 
 import {
@@ -38,9 +38,9 @@ import type { Map as LeafletMap } from 'leaflet';
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { refPointVisualizer } from '../visualization/ref-point-visualizer';
 import {
-  nuePositionToWebXR,
+  nueToWebXR,
   nueQuaternionToWebXR,
-} from 'gps-plus-slam-app-framework/ar/webxr-session';
+} from 'gps-plus-slam-app-framework/ar/nue-webxr-conversions';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { loadRecording } from '../storage/recording-loader.js';
 import { createStoreRef } from '../state/store-ref';
@@ -356,13 +356,10 @@ export async function startReplayMode(
     // while user controls only affect the camera's local offset. The node is
     // the replay scene's OWN arpose (initReplayScene return) — webxr-session's
     // getArPose was deleted with the rest of the replay injection surface.
-    onNewOdomPose: (
-      odomPosition: readonly number[],
-      odomRotation: readonly number[]
-    ) => {
+    onNewOdomPose: (odomPosition, odomRotation) => {
       const arpose = replaySceneState.arpose;
       // Convert NUE→WebXR so (alignment × W2N) × WebXR_pos = alignment × NUE_pos
-      const webxrPos = nuePositionToWebXR(odomPosition);
+      const webxrPos = nueToWebXR(odomPosition);
       arpose.position.fromArray(webxrPos);
       // Rotation is now NUE in state — convert back to WebXR for arpose
       // (arpose sits below basisChangeNode in WebXR-local space)

@@ -34,5 +34,5 @@ These are declared as optional globals because unit tests may intentionally omit
 
 ## Related
 
-- [build-info.md](build-info.md)
-- [2026-04-20-zip-debug-metadata-plan.md](../../GpsPlusSlamJs_Docs/docs/2026-04-20-zip-debug-metadata-plan.md)
+- [utils/build-info.ts](utils/build-info.ts.md)
+- [2026-04-20-zip-debug-metadata-plan.md](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-20-zip-debug-metadata-plan.md)

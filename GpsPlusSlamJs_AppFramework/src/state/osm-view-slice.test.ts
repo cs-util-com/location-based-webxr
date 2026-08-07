@@ -1,0 +1,643 @@
+/**
+ * `createOsmViewSlice` — the shared state four OSM-affordance views read from.
+ *
+ * Why this test matters:
+ * The slice's whole job is to let a map, a 3D scene, a legend and a details
+ * panel agree without any of them talking to each other, so every assertion
+ * here is about a transition several views observe at once. The load-bearing
+ * one is the failure split (DEC-16): a DATA failure must clear the snapshot,
+ * because leaving it up is the stale-map defect that prompted this work, while
+ * a VIEW that throws while drawing a valid snapshot must NOT clear it — the
+ * other view is showing the right thing and discarding it destroys good state.
+ * Those two live one line apart in the reducer and are easy to collapse into
+ * one action, which is exactly what this file exists to prevent.
+ *
+ * @see osm-view-slice.ts.md
+ * @see GpsPlusSlamJs_Docs/docs/2026-07-29-0739-osm-demo-feedback-round-1-plan.md §2.1, W1
+ */
+
+import { describe, it, expect } from 'vitest';
+import {
+  createOsmViewSlice,
+  type OsmViewActions,
+  type OsmViewLatLng,
+} from './osm-view-slice';
+
+/** Stands in for the demo's `DemoSnapshot`; the slice never inspects it. */
+interface TestSnapshot {
+  readonly cells: number;
+}
+
+/** The second opaque payload, exactly as the snapshot is. */
+interface TestGeoEvent {
+  readonly eventTime: number;
+}
+
+const COLOGNE: OsmViewLatLng = { lat: 50.9413, lng: 6.9583 };
+const SNAPSHOT: TestSnapshot = { cells: 931 };
+const EVENT: TestGeoEvent = { eventTime: 1_700_000_000_000 };
+
+function makeSlice() {
+  return createOsmViewSlice<TestSnapshot, TestGeoEvent>({
+    initialPosition: COLOGNE,
+    initialCategory: 'walkable',
+  });
+}
+
+/** Reduce a sequence of actions from the initial state, for terse arrange steps. */
+function reduceAll(
+  slice: ReturnType<typeof makeSlice>,
+  ...actions: readonly { type: string; payload?: unknown }[]
+) {
+  let state = slice.reducer(undefined, { type: '@@INIT' });
+  for (const action of actions) state = slice.reducer(state, action);
+  return state;
+}
+
+describe('createOsmViewSlice — initial state', () => {
+  it('starts at the caller-supplied position and category, idle, with nothing selected', () => {
+    const state = makeSlice().reducer(undefined, { type: '@@INIT' });
+    expect(state.position).toEqual(COLOGNE);
+    expect(state.category).toBe('walkable');
+    expect(state.showBelowThreshold).toBe(false);
+    expect(state.selectedCell).toBeUndefined();
+    expect(state.snapshot).toBeUndefined();
+    expect(state.loading.phase).toBe('idle');
+  });
+
+  it('namespaces the action types, so two slices in one store cannot collide', () => {
+    const a = createOsmViewSlice<TestSnapshot>({
+      name: 'osmLeft',
+      initialPosition: COLOGNE,
+      initialCategory: 'walkable',
+    });
+    const b = createOsmViewSlice<TestSnapshot>({
+      name: 'osmRight',
+      initialPosition: COLOGNE,
+      initialCategory: 'walkable',
+    });
+    expect(a.actions.categoryChanged('x').type).toBe('osmLeft/categoryChanged');
+    expect(b.actions.categoryChanged('x').type).toBe(
+      'osmRight/categoryChanged'
+    );
+  });
+});
+
+describe('createOsmViewSlice — user intent', () => {
+  it('moving the user clears the selected cell, because it belongs to the old place', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.positionChanged({ lat: 51, lng: 7 })
+    );
+    expect(state.position).toEqual({ lat: 51, lng: 7 });
+    expect(state.selectedCell).toBeUndefined();
+  });
+
+  it('changing the category KEEPS the selected cell — the same cell in a new category is a real question', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.categoryChanged('battleArea')
+    );
+    expect(state.category).toBe('battleArea');
+    expect(state.selectedCell).toBe('8d1fb46622d8dbf');
+  });
+
+  it('selects a FEATURE, and that clears any selected cell', () => {
+    // WHY THESE TWO ARE MUTUALLY EXCLUSIVE. There is one details panel, so there
+    // is one selection. Holding both would make the panel's contents depend on
+    // which branch of the renderer ran last — a coin-toss the user cannot see and
+    // no test would reliably catch.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.featureSelected({
+        feature: 'node/4242',
+        kind: 'amenity=cafe',
+        label: 'Café Schmitz',
+      })
+    );
+    expect(state.selectedFeature?.label).toBe('Café Schmitz');
+    expect(state.selectedCell).toBeUndefined();
+  });
+
+  it('selecting a cell clears any selected feature, for the same reason', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.featureSelected({
+        feature: 'node/4242',
+        kind: 'amenity=cafe',
+        label: 'Café Schmitz',
+      }),
+      slice.actions.cellSelected('8d1fb46622d8dbf')
+    );
+    expect(state.selectedCell).toBe('8d1fb46622d8dbf');
+    expect(state.selectedFeature).toBeUndefined();
+  });
+
+  it('moving the user clears the selected FEATURE too', () => {
+    // A marker belongs to a working set. After a move it may not be in the new
+    // one at all, and a panel describing something no longer on screen is the
+    // half-swapped scene in its most damaging form — it reads as current.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.featureSelected({
+        feature: 'node/4242',
+        kind: 'amenity=cafe',
+        label: 'Café Schmitz',
+      }),
+      slice.actions.positionChanged({ lat: 51, lng: 7 })
+    );
+    expect(state.selectedFeature).toBeUndefined();
+  });
+
+  it('toggles the below-threshold band and clears the selection on demand', () => {
+    const slice = makeSlice();
+    const shown = reduceAll(
+      slice,
+      slice.actions.showBelowThresholdChanged(true)
+    );
+    expect(shown.showBelowThreshold).toBe(true);
+
+    const cleared = slice.reducer(
+      slice.reducer(shown, slice.actions.cellSelected('8d1fb4')),
+      slice.actions.cellSelected(undefined)
+    );
+    expect(cleared.selectedCell).toBeUndefined();
+  });
+});
+
+describe('createOsmViewSlice — the refresh cycle', () => {
+  it('reports fetching then scoring, and a ready snapshot returns it to idle', () => {
+    const slice = makeSlice();
+    const fetching = reduceAll(slice, slice.actions.fetchStarted('Fetching…'));
+    expect(fetching.loading).toEqual({
+      phase: 'fetching',
+      message: 'Fetching…',
+    });
+
+    const scoring = slice.reducer(fetching, slice.actions.scoringStarted());
+    expect(scoring.loading.phase).toBe('scoring');
+
+    const ready = slice.reducer(scoring, slice.actions.snapshotReady(SNAPSHOT));
+    expect(ready.snapshot).toBe(SNAPSHOT);
+    expect(ready.loading).toEqual({ phase: 'idle', message: '' });
+  });
+
+  it('keeps the previous snapshot visible WHILE the next fetch runs', () => {
+    // Blanking on `fetchStarted` would flash the map empty on every click. The
+    // stale picture is only wrong once the refresh has FAILED, not while it runs.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.snapshotReady(SNAPSHOT),
+      slice.actions.fetchStarted('Fetching…')
+    );
+    expect(state.snapshot).toBe(SNAPSHOT);
+  });
+});
+
+describe('createOsmViewSlice — the failure split (DEC-16)', () => {
+  it('a DATA failure clears the snapshot, so no view can keep drawing the old place', () => {
+    // The reported defect: `Failed: …` in the status line while the map still
+    // showed the previous category's cells, asserting a state nothing produced.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.snapshotReady(SNAPSHOT),
+      slice.actions.fetchFailed('Overpass said no')
+    );
+    expect(state.snapshot).toBeUndefined();
+    expect(state.loading).toEqual({
+      phase: 'error',
+      message: 'Overpass said no',
+    });
+  });
+
+  it('a VIEW failure keeps the snapshot, because the other view drew it correctly', () => {
+    // If the 3D scene throws after the map drew, the map is showing the right
+    // thing. Modelling this as `fetchFailed` would blank a correct picture.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.snapshotReady(SNAPSHOT),
+      slice.actions.nonFatalError('WebGL context lost')
+    );
+    expect(state.snapshot).toBe(SNAPSHOT);
+    expect(state.loading).toEqual({
+      phase: 'error',
+      message: 'WebGL context lost',
+    });
+  });
+
+  it('a successful refresh after a failure clears the error', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.fetchFailed('boom'),
+      slice.actions.fetchStarted('Fetching…'),
+      slice.actions.snapshotReady(SNAPSHOT)
+    );
+    expect(state.loading.phase).toBe('idle');
+    expect(state.snapshot).toBe(SNAPSHOT);
+  });
+
+  it('a data failure also drops the selection, since the cell it named is gone', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.snapshotReady(SNAPSHOT),
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.fetchFailed('boom')
+    );
+    expect(state.selectedCell).toBeUndefined();
+  });
+});
+
+describe('createOsmViewSlice — the geo-event (DEC-G2)', () => {
+  it('exposes exactly the action creators OsmViewActions declares', () => {
+    // WHY THIS TEST MATTERS, and why it looks like it asserts nothing. The
+    // slice's return type is written by hand (`OsmViewActions`) because the
+    // declaration emitter degrades a two-generic slice's inferred `actions` to
+    // an index-signature type, which makes every creator `| undefined` for
+    // consumers. Writing it by hand costs the compile-time link between the
+    // reducers and the interface — `createOsmViewSlice` has to cast, since
+    // RTK's creator types are conditionals TS cannot resolve while TSnapshot is
+    // still a parameter.
+    //
+    // At CONCRETE type arguments they resolve, so this assignment restores the
+    // check: add or rename a reducer without updating `OsmViewActions` and this
+    // line fails under `typecheck:tests`. The runtime expectations below are
+    // the same claim for a reader who is not looking at types.
+    const actions: OsmViewActions<TestSnapshot, TestGeoEvent> =
+      makeSlice().actions;
+
+    expect(typeof actions.geoEventFound).toBe('function');
+    expect(actions.geoEventFound(EVENT).payload).toBe(EVENT);
+    expect(actions.geoEventFound(undefined).payload).toBeUndefined();
+  });
+
+  it('starts with no geo-event', () => {
+    expect(
+      makeSlice().reducer(undefined, { type: '@@INIT' }).geoEvent
+    ).toBeUndefined();
+  });
+
+  it('holds whatever the consumer found, without inspecting it', () => {
+    const slice = makeSlice();
+    const state = reduceAll(slice, slice.actions.geoEventFound(EVENT));
+    expect(state.geoEvent).toBe(EVENT);
+  });
+
+  it('a CATEGORY CHANGE clears it — this is the reported bug', () => {
+    // WHY THIS TEST MATTERS. The session reported walkable geo-events still on
+    // the map under battle-area cells. Nothing removed them: the markers went
+    // straight from the worker into a Leaflet layer, so they were the one
+    // overlay in the view that was not a projection of this state and no action
+    // could reach them. An event is computed against ONE category's scores and
+    // its threshold, so it cannot survive the switch.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.categoryChanged('battleArea')
+    );
+    expect(state.geoEvent).toBeUndefined();
+  });
+
+  it('a DATA FAILURE clears it, so no markers are left on a blanked map', () => {
+    // The unreported half of the same defect: `fetchFailed` empties the map of
+    // cells, regions and fetch boxes, and the geo-event markers used to be the
+    // one thing left standing on it — the map asserting a state nothing
+    // produced, in its purest form.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.fetchFailed('Overpass said no')
+    );
+    expect(state.geoEvent).toBeUndefined();
+  });
+
+  it('SURVIVES a position change, because walking to the event is the point', () => {
+    // Deliberate asymmetry with the selection, which a move DOES drop. An event
+    // is a pure function of tile and time, so moving does not make it untrue —
+    // and the label says "640 m NE", which is an instruction to walk. Clearing
+    // it on the first step would delete the thing the user is navigating to.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.positionChanged({ lat: 50.95, lng: 6.97 })
+    );
+    expect(state.geoEvent).toBe(EVENT);
+  });
+
+  it('a NON-FATAL error keeps it, for the same reason it keeps the snapshot', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.nonFatalError('WebGL context lost')
+    );
+    expect(state.geoEvent).toBe(EVENT);
+  });
+
+  it('can be cleared explicitly, which is the control the e2e reset needs', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.geoEventFound(undefined)
+    );
+    expect(state.geoEvent).toBeUndefined();
+  });
+});
+
+describe('createOsmViewSlice — serialisability', () => {
+  it('holds nothing RTK would reject: the state survives a JSON round-trip', () => {
+    // RTK's default middleware throws on non-serialisable state in development.
+    // The slice must therefore never grow a Map, a Leaflet layer or a three.js
+    // object — the raw OsmFeature map deliberately stays in the demo pipeline.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.snapshotReady(SNAPSHOT),
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.showBelowThresholdChanged(true)
+    );
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it('normalises a NEGATIVE ZERO position, which JSON does not round-trip', () => {
+    // Why this test matters: `JSON.stringify(-0)` is `"0"`, so a -0 latitude
+    // reloads as 0 and the state that comes back is not the state that went in.
+    // RTK's serialisability check does not catch it — `-0` IS serialisable, it
+    // is simply not round-trippable, which is the stronger property a persisted,
+    // devtools-inspected store actually needs.
+    //
+    // Kept as an EXAMPLE alongside the property test that found it: that
+    // generator reaches -0 roughly one run in fifty, so without this the
+    // regression would be a seed lottery rather than a gate.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.positionChanged({ lat: -0, lng: -0 })
+    );
+
+    expect(Object.is(state.position.lat, -0)).toBe(false);
+    expect(Object.is(state.position.lng, -0)).toBe(false);
+    expect(state.position).toEqual({ lat: 0, lng: 0 });
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it('normalises the INITIAL position too, before any action is dispatched', () => {
+    // `initialPosition` is consumer input, so without this the very first state
+    // would already violate the round-trip invariant. The property test cannot
+    // reach this — it constructs the slice with a fixed position of its own.
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: -0, lng: -0 },
+      initialCategory: 'walkable',
+    });
+    const state = slice.reducer(undefined, { type: '@@INIT' });
+
+    expect(Object.is(state.position.lat, -0)).toBe(false);
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it('leaves every other coordinate exactly as given', () => {
+    // The normalisation must touch ONLY the zeroes — a rounding or clamping bug
+    // here would silently move the user, which is far worse than the -0 it fixes.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.positionChanged({ lat: -50.9413, lng: 6.9583 })
+    );
+    expect(state.position).toEqual({ lat: -50.9413, lng: 6.9583 });
+  });
+});
+
+describe('createOsmViewSlice — the layer set', () => {
+  /**
+   * WHY THE LAYER SET IS STRUCTURAL HERE. This package is published and
+   * `gps-plus-slam-osm` is not, so any reference to it — including a type-only
+   * import, which lands in the emitted `.d.ts` — 404s every consumer's install.
+   * That is why `TSnapshot` is a generic, and a layer union would hit the same wall.
+   * So the slice stores `Record<string, boolean>` and knows nothing about names.
+   */
+  it('defaults to no layers, so a consumer must opt in', () => {
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 0, lng: 0 },
+      initialCategory: 'walkable',
+    });
+    const state = slice.reducer(undefined, { type: '@@INIT' });
+    expect(state.layers).toEqual({});
+  });
+
+  it('takes the consumer initial set verbatim', () => {
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 0, lng: 0 },
+      initialCategory: 'walkable',
+      initialLayers: { buildings: true, roads: false },
+    });
+    const state = slice.reducer(undefined, { type: '@@INIT' });
+    expect(state.layers).toEqual({ buildings: true, roads: false });
+  });
+
+  it('replaces the whole set, and touches nothing else', () => {
+    // Whole-set replacement rather than a per-layer pair: a per-layer action would
+    // need the consumer's union as its payload type, which this package cannot name.
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 1, lng: 2 },
+      initialCategory: 'walkable',
+      initialLayers: { buildings: true },
+    });
+    const before = slice.reducer(undefined, { type: '@@INIT' });
+    const after = slice.reducer(
+      before,
+      slice.actions.layersChanged({ buildings: false, poi: true })
+    );
+
+    expect(after.layers).toEqual({ buildings: false, poi: true });
+    // Everything else survives — the layer set is presentation, not data.
+    expect(after.position).toEqual(before.position);
+    expect(after.category).toBe(before.category);
+    expect(after.snapshot).toBe(before.snapshot);
+    expect(after.loading).toEqual(before.loading);
+  });
+
+  it('does not mutate the previous state in place', () => {
+    // Subscribers only fire on a new reference; an in-place write would update the
+    // store invisibly and the views would keep drawing the previous layers.
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 0, lng: 0 },
+      initialCategory: 'walkable',
+      initialLayers: { buildings: true },
+    });
+    const before = slice.reducer(undefined, { type: '@@INIT' });
+    slice.reducer(before, slice.actions.layersChanged({ buildings: false }));
+    expect(before.layers).toEqual({ buildings: true });
+  });
+});
+
+describe('groundMode (W11)', () => {
+  /**
+   * Why these tests matter:
+   * The ground mode is exclusive while `layers` is a set of independent
+   * switches, and the reason it is a separate field rather than another layer is
+   * that merging them would make "no ground" expressible as more than one state.
+   * These pin that separation, plus the publish-boundary shape (a plain string,
+   * because this package may not name an OSM type).
+   */
+  it('starts at whatever the consumer named, and is a plain string', () => {
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 1, lng: 2 },
+      initialCategory: 'walkable',
+      initialGroundMode: 'cpu',
+    });
+    const state = slice.reducer(undefined, { type: '@@init' });
+
+    expect(state.groundMode).toBe('cpu');
+  });
+
+  it('switches without disturbing the layer set', () => {
+    // The separation, as a behaviour: switching the ground must not silently
+    // change which layers are drawn, and vice versa.
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 1, lng: 2 },
+      initialCategory: 'walkable',
+      initialLayers: { cells: true, plates: true },
+      initialGroundMode: 'cpu',
+    });
+    const before = slice.reducer(undefined, { type: '@@init' });
+
+    const after = slice.reducer(
+      before,
+      slice.actions.groundModeChanged('none')
+    );
+
+    expect(after.groundMode).toBe('none');
+    expect(after.layers).toEqual(before.layers);
+  });
+
+  it('and a layer change leaves the ground mode alone', () => {
+    const slice = createOsmViewSlice<string>({
+      initialPosition: { lat: 1, lng: 2 },
+      initialCategory: 'walkable',
+      initialGroundMode: 'gpu',
+    });
+    const before = slice.reducer(undefined, { type: '@@init' });
+
+    const after = slice.reducer(
+      before,
+      slice.actions.layersChanged({ cells: false })
+    );
+
+    expect(after.groundMode).toBe('gpu');
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (DEC-R7b-3a). Round 8 made affordance REGIONS
+ * clickable in both the 2D map and the 3D scene, which needed a third selection
+ * kind. There is still one details panel, so the "one panel, one selection" rule
+ * that already bound `selectedCell` and `selectedFeature` has to bind all three
+ * — and a third member is where a pairwise rule quietly stops holding, because
+ * each existing reducer has to learn about the newcomer.
+ *
+ * A region and a cell overlap EVERYWHERE on screen (a region is a flood fill
+ * over cells), so this is not a theoretical collision: without exclusivity the
+ * panel's contents would depend on which renderer branch ran last.
+ */
+describe('selecting a region', () => {
+  it('clears a selected cell', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.regionSelected('8d1fb46622d8dbf-region')
+    );
+    expect(state.selectedRegion).toBe('8d1fb46622d8dbf-region');
+    expect(state.selectedCell).toBeUndefined();
+  });
+
+  it('clears a selected feature', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.featureSelected({
+        feature: 'node/4242',
+        kind: 'amenity=cafe',
+        label: 'Café Schmitz',
+      }),
+      slice.actions.regionSelected('r1')
+    );
+    expect(state.selectedRegion).toBe('r1');
+    expect(state.selectedFeature).toBeUndefined();
+  });
+
+  it('is cleared by selecting a cell or a feature, so the rule holds both ways', () => {
+    // The half a pairwise rule loses when a third member arrives: the EXISTING
+    // reducers have to clear the newcomer too. Asserting only "region clears the
+    // others" would pass with both older reducers untouched.
+    const slice = makeSlice();
+    expect(
+      reduceAll(
+        slice,
+        slice.actions.regionSelected('r1'),
+        slice.actions.cellSelected('8d1fb46622d8dbf')
+      ).selectedRegion
+    ).toBeUndefined();
+    expect(
+      reduceAll(
+        slice,
+        slice.actions.regionSelected('r1'),
+        slice.actions.featureSelected({
+          feature: 'node/4242',
+          kind: 'amenity=cafe',
+          label: 'Café Schmitz',
+        })
+      ).selectedRegion
+    ).toBeUndefined();
+  });
+
+  it('closes the panel when passed undefined', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.regionSelected('r1'),
+      slice.actions.regionSelected(undefined)
+    );
+    expect(state.selectedRegion).toBeUndefined();
+  });
+});
+
+describe('a failed fetch clears every selection', () => {
+  it('drops a selected region along with the snapshot', () => {
+    // WHY THIS MATTERS, and why a region is not like a cell here. A cell id is
+    // an H3 index: it means the same place in any snapshot, so keeping it
+    // across a failure is harmless. A REGION id is the lowest-sorting cell of a
+    // flood fill, so with no snapshot there is nothing it could resolve
+    // against — the panel would be holding a name for something that cannot be
+    // looked up.
+    //
+    // Found by review on PR #250: `fetchFailed` cleared the other two
+    // selections and not this one, because the field was added to the reducers
+    // that SET a selection and not to the one that discards everything.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.regionSelected('r1'),
+      slice.actions.fetchFailed('overpass timed out')
+    );
+    expect(state.selectedRegion).toBeUndefined();
+    expect(state.snapshot).toBeUndefined();
+    expect(state.loading.phase).toBe('error');
+  });
+});

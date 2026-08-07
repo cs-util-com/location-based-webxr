@@ -22,7 +22,7 @@ See the plan: `GpsPlusSlamJs_Docs/docs/2026-06-14-1048-map-centric-recording-bro
 - **Empty vs. undefined `h3Cells`.** An empty array means the recording genuinely had no GPS coverage and is returned as-is (`backfilled: false`). Only `undefined` (the field is absent — a legacy recording) triggers the GPS-path backfill. Conflating the two would needlessly re-read zips with no GPS.
 - **No disk cache (D2).** Backfill is purely in memory for the session. If re-scanning large _legacy_ folders proves too slow, the persistent index (plan option 2-B) is the documented escape hatch — but only if measured.
 - **Defensive:** a zip that cannot be read degrades to empty coverage (`backfilled: true`) with a warning, so one corrupt recording cannot abort the whole folder index.
-- **Bounded concurrency:** legacy backfills read every action file, so reads are capped at `COVERAGE_BACKFILL_CONCURRENCY` (4) via `forEachWithConcurrencyLimit`, mirroring the metadata-scan cap in `session-browser.ts`.
+- **Bounded concurrency:** legacy backfills read every action file, so reads are capped at `COVERAGE_BACKFILL_CONCURRENCY` (4) via `forEachWithConcurrencyLimit`, mirroring the metadata-scan cap in [`storage/recording-discovery.ts`](../storage/recording-discovery.ts.md).
 - **Abort drops in-flight results.** `streamRecordingIndex` checks the signal both before pulling a new legacy zip and again before each emission, so a read that was already in flight when the abort fired resolves but is **not** emitted — a torn-down consumer never receives stray recordings.
 
 ## Examples

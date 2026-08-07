@@ -20,9 +20,8 @@
  * §6.2/§6.3 (option H-A2) for the design rationale.
  */
 
+import { createIsolatedRegistry } from '../utils/isolated-registry';
 import { createLogger } from '../utils/logger';
-
-const log = createLogger('XrFrameLoop');
 
 /**
  * Live, frame-scoped WebXR context. Valid only synchronously inside the
@@ -44,14 +43,13 @@ export interface XrFrameContext {
 /** A per-frame callback that needs live XR access. See the safety contract. */
 export type XrFrameUpdate = (ctx: XrFrameContext) => void;
 
-const updates = new Set<XrFrameUpdate>();
-/**
- * Cached iteration snapshot of {@link updates}, invalidated on every registry
- * mutation. The snapshot SEMANTICS (a register/unregister during a tick defers
- * to the next frame) are unchanged — caching only avoids re-allocating an
- * identical array at 60–90 Hz between (rare) registry changes (PR #67 review).
- */
-let snapshot: readonly XrFrameUpdate[] | null = null;
+const log = createLogger('XrFrameLoop');
+
+const registry = createIsolatedRegistry<[XrFrameContext]>({
+  // Passed, not defaulted, so failures keep this registry's own logger name.
+  onError: (error) =>
+    log.error('A registered XrFrameUpdate threw; continuing the loop', error),
+});
 
 /**
  * Register a per-frame XR-access callback. Returns an unregister function.
@@ -60,12 +58,7 @@ let snapshot: readonly XrFrameUpdate[] | null = null;
  * (it remains a single entry in the underlying `Set`).
  */
 export function registerXrFrameUpdate(fn: XrFrameUpdate): () => void {
-  updates.add(fn);
-  snapshot = null;
-  return () => {
-    updates.delete(fn);
-    snapshot = null;
-  };
+  return registry.register(fn);
 }
 
 /**
@@ -73,25 +66,15 @@ export function registerXrFrameUpdate(fn: XrFrameUpdate): () => void {
  * `onXRFrame` once per frame, only when a live `frame` / `referenceSpace` /
  * `session` are all available.
  *
- * The set is snapshotted before iterating so that
- * `registerXrFrameUpdate` / unregister calls made by a handler during the
- * same frame are deferred to the next tick — mirroring `runFrameUpdates`.
- *
- * Each callback is invoked in its own `try/catch`: this registry is the public
+ * A register/unregister made by a handler during the same frame is deferred to
+ * the next tick, and each callback is isolated — this registry is the public
  * app seam, so a bug in one app-registered callback (which throws every frame)
  * must not abort the remaining callbacks nor propagate up through `onXRFrame`
- * and kill the scene render for the whole session. Failures are logged and the
- * loop continues — mirroring `runFrameUpdates`.
+ * and kill the scene render for the whole session. Both behaviours come from
+ * `createIsolatedRegistry` and are pinned in `isolated-registry.test.ts`.
  */
 export function runXrFrameUpdates(ctx: XrFrameContext): void {
-  const fns = snapshot ?? (snapshot = Array.from(updates));
-  for (const fn of fns) {
-    try {
-      fn(ctx);
-    } catch (error) {
-      log.error('A registered XrFrameUpdate threw; continuing the loop', error);
-    }
-  }
+  registry.run(ctx);
 }
 
 /**
@@ -99,6 +82,5 @@ export function runXrFrameUpdates(ctx: XrFrameContext): void {
  * session starts with an empty registry.
  */
 export function clearXrFrameUpdates(): void {
-  updates.clear();
-  snapshot = null;
+  registry.clear();
 }

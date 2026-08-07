@@ -8,6 +8,7 @@
  * the user enters AR mode, providing clear feedback on what's missing.
  */
 
+import { createIsolatedRegistry } from '../utils/isolated-registry';
 import { createLogger } from '../utils/logger';
 import { probeImmersiveArSupportOutcome } from '../ar/webxr-support-probe';
 
@@ -528,7 +529,13 @@ export function subscribePermissionChanges(
   callback: (result: PermissionCheckResult) => void
 ): PermissionSubscription {
   let disposed = false;
-  const cleanups: Array<() => void> = [];
+  // A one-shot teardown list: `runOnce` empties it BEFORE running, so a second
+  // unsubscribe is a no-op rather than a double removeEventListener, and each
+  // cleanup is isolated so one failure cannot strand the rest.
+  const cleanups = createIsolatedRegistry<[]>({
+    onError: (err) =>
+      log.warn('subscribePermissionChanges: cleanup failed', err),
+  });
 
   const notify = (): void => {
     if (disposed) return;
@@ -564,7 +571,9 @@ export function subscribePermissionChanges(
             // clobber another live subscriber's handler).
             const handler = (): void => notify();
             status.addEventListener('change', handler);
-            cleanups.push(() => status.removeEventListener('change', handler));
+            cleanups.register(() =>
+              status.removeEventListener('change', handler)
+            );
           },
           () => {
             /* permissions.query rejected — ignore, fallbacks remain wired */
@@ -585,7 +594,7 @@ export function subscribePermissionChanges(
       if (document.visibilityState === 'visible') notify();
     };
     document.addEventListener('visibilitychange', onVisibility);
-    cleanups.push(() =>
+    cleanups.register(() =>
       document.removeEventListener('visibilitychange', onVisibility)
     );
   }
@@ -595,19 +604,13 @@ export function subscribePermissionChanges(
   if (typeof window !== 'undefined') {
     const onFocus = (): void => notify();
     window.addEventListener('focus', onFocus);
-    cleanups.push(() => window.removeEventListener('focus', onFocus));
+    cleanups.register(() => window.removeEventListener('focus', onFocus));
   }
 
   return {
     unsubscribe(): void {
       disposed = true;
-      for (const c of cleanups.splice(0)) {
-        try {
-          c();
-        } catch (err) {
-          log.warn('subscribePermissionChanges: cleanup failed', err);
-        }
-      }
+      cleanups.runOnce();
     },
   };
 }

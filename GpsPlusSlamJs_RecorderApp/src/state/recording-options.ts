@@ -9,28 +9,43 @@
  * The RECORDER owns this catalog (moved out of the framework's `state/` layer
  * on 2026-07-11, G-1 move — see
  * `GpsPlusSlamJs_Docs/docs/2026-07-11-1445-recording-options-altitude-move-plan.md`).
- * Two group building blocks stay framework-owned and are consumed here:
+ *
+ * **Ownership rule: a group whose TYPE the framework owns is validated by the
+ * framework too.** The bounds of `motionFilter.maxAngularVelocity` or
+ * `qualityFilter.blurRelativeThreshold` are statements about what those gates
+ * do, not about this app, so the constraint tables and validators live with the
+ * gates and are consumed here. This catalog only declares the bounds of the
+ * groups it actually owns. Framework-owned groups consumed here:
  * - `arCrashIsolation` — type/defaults/validator from
  *   `gps-plus-slam-app-framework/ar/ar-crash-isolation` (the framework reads
- *   the flags in `webxr-session.ts`); re-exported below for recorder callers.
+ *   the flags in `webxr-session.ts`).
+ * - `images.motionFilter` — from `ar/capture-motion-gate` (the gate that
+ *   consumes the thresholds); its constraints are re-exported below.
+ * - `images.qualityFilter` — from `ar/image-quality` (likewise).
  * - `OccluderDebugStyle` (+ its values array) from
  *   `gps-plus-slam-app-framework/visualization/occlusion-mesh` (the consumer
  *   of the style); re-exported below for recorder callers.
+ *
+ * The per-group validators below are spec tables over the framework's
+ * `validateOptionFields`, which makes them exhaustive over their group type:
+ * adding a field to an options interface is a compile error until its
+ * validation is declared.
  */
 
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
+import { validateOptionFields } from 'gps-plus-slam-app-framework/utils/validate-option-fields';
 import {
   DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE,
   DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
 } from 'gps-plus-slam-app-framework/ar/depth-sampler';
 import {
   DEFAULT_MOTION_FILTER,
+  validateMotionFilterConfig,
   type MotionFilterConfig,
 } from 'gps-plus-slam-app-framework/ar/capture-motion-gate';
 import {
   DEFAULT_QUALITY_FILTER,
-  BLUR_METRIC_IDS,
-  type BlurMetricId,
+  validateQualityFilterConfig,
   type QualityFilterConfig,
 } from 'gps-plus-slam-app-framework/ar/image-quality';
 import {
@@ -53,6 +68,14 @@ import {
 // imports it standalone; import it from
 // `gps-plus-slam-app-framework/ar/ar-crash-isolation` if that changes.
 export type { OccluderDebugStyle };
+
+// Same rationale for the two framework-owned gate constraint tables: this
+// catalog is the recorder's ONE options surface, so `ui/settings-modal.ts`
+// reads every slider range from here rather than from a mix of local tables and
+// framework deep paths. These are pass-throughs, not restatements — the bounds
+// still have exactly one definition, in the gate that gives them meaning.
+export { MOTION_FILTER_CONSTRAINTS } from 'gps-plus-slam-app-framework/ar/capture-motion-gate';
+export { QUALITY_FILTER_CONSTRAINTS } from 'gps-plus-slam-app-framework/ar/image-quality';
 
 const log = createLogger('RecordingOptions');
 
@@ -485,7 +508,14 @@ export type RecordingOptions = {
  */
 export const STORAGE_KEY = 'gps-plus-slam-recorder-options';
 
-/** Default recording options (all streams enabled) */
+/**
+ * Default recording options (all streams enabled).
+ *
+ * **Never hand out this object.** Callers (the settings modal in particular)
+ * mutate their options in place, so every path that returns "the defaults"
+ * returns a `structuredClone` of it — otherwise a single in-place write would
+ * poison the defaults for the rest of the session.
+ */
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   depth: {
     enabled: true,
@@ -618,43 +648,6 @@ export const IMAGE_CONSTRAINTS = {
 } as const;
 
 /**
- * Validation constraints for the motion-filter (blurry-frame gate) thresholds.
- *
- * The velocity ranges (0.05–5) bracket the plausible scanning regime: below
- * ~0.05 the gate would reject almost everything; above ~5 rad/s ≈ 286°/s (or
- * 5 m/s) it would never reject, so the gate would be inert. `maxWaitMs` is
- * clamped to 0.5–20 s — the never-calm fallback must always be able to fire.
- * All three back a (currently advanced/hidden) settings slider, so a corrupt
- * stored value can never disable capture. The default thresholds themselves are
- * placeholders pending on-device field tuning (plan §7).
- */
-export const MOTION_FILTER_CONSTRAINTS = {
-  maxAngularVelocity: { min: 0.05, max: 5, step: 0.05 },
-  maxLinearVelocity: { min: 0.05, max: 5, step: 0.05 },
-  maxWaitMs: { min: 500, max: 20000, step: 500 },
-} as const;
-
-/**
- * Validation constraints for the image-quality (blur/blackness) gate thresholds.
- *
- * `blurRelativeThreshold` (`k` in `sharpness < k·median`) is clamped to
- * 0.05–0.95: it is a fraction of the recent sharpness median, so values must sit
- * strictly inside (0, 1) — at ~0 the blur check never rejects, near 1 it rejects
- * almost everything. `minMeanLuminance` (the absolute black cutoff on a 0–255
- * luma scale) is clamped to 0–128: 0 disables the black check, and a cutoff
- * above mid-grey would reject normally-lit frames. `maxWaitMs` mirrors the motion
- * gate's range (0.5–20 s) so the never-good fallback can always fire. All back a
- * (currently advanced/hidden) settings slider, so a corrupt stored value can
- * never disable capture. The default thresholds are placeholders pending
- * on-device field tuning (plan §5, §10).
- */
-export const QUALITY_FILTER_CONSTRAINTS = {
-  blurRelativeThreshold: { min: 0.05, max: 0.95, step: 0.05 },
-  minMeanLuminance: { min: 0, max: 128, step: 1 },
-  maxWaitMs: { min: 500, max: 20000, step: 500 },
-} as const;
-
-/**
  * Validation constraints for occupancy options.
  *
  * `cellSizeM` is clamped to 1–20 cm. The floor exists because cell count (and
@@ -713,90 +706,6 @@ export const COMPASS_DEBUG_CONSTRAINTS = {
 } as const;
 
 /**
- * Per-field validation spec for {@link validateFields}. Persisted/external
- * values are untrusted (quality-review C-1), so every kind falls back to the
- * group default on anything unexpected:
- *
- * - `bool` — accept only a real boolean.
- * - `num` — accept only a FINITE number (a stored `NaN` is `typeof 'number'`
- *   and would survive a bare clamp), optionally `round` to an integer first,
- *   then clamp to the constraint's min/max.
- * - `enum` — accept only a member of `values`.
- * - `custom` — field-specific logic (legacy migrations, nested groups); gets
- *   the whole raw group input plus the field's default.
- *
- * (The framework's `ar/ar-crash-isolation.ts` keeps its own hand-rolled
- * validator so it stays dependency-free.)
- */
-type FieldSpec<T, K extends keyof T> =
-  | { kind: 'bool' }
-  | {
-      kind: 'num';
-      constraint: { readonly min: number; readonly max: number };
-      round?: boolean;
-    }
-  | { kind: 'enum'; values: readonly NonNullable<T[K]>[] }
-  | { kind: 'custom'; resolve: (options: Partial<T>, fallback: T[K]) => T[K] };
-
-/**
- * One spec per field, EXHAUSTIVE over the group type: adding a field to an
- * options interface is a compile error until its validation is declared here
- * (the hand-rolled validators could silently drop a new field instead).
- */
-type GroupSpec<T> = { [K in keyof T]-?: FieldSpec<T, K> };
-
-/**
- * Validate one options group against its spec table. The output object's keys
- * follow the SPEC's declaration order, so each group's serialized JSON stays
- * byte-stable across save→validate round-trips (declare specs in the same
- * order as the group's defaults).
- *
- * The casts inside the switch are contained here on purpose: TypeScript
- * cannot correlate `T[K]` with the matched spec kind inside a generic loop.
- * Call sites stay fully typed via {@link GroupSpec}.
- */
-function validateFields<T extends object>(
-  options: Partial<T>,
-  defaults: T,
-  specs: GroupSpec<T>
-): T {
-  const result = {} as T;
-  for (const key of Object.keys(specs) as (keyof T)[]) {
-    const spec = specs[key];
-    const fallback = defaults[key];
-    const value = options[key];
-    switch (spec.kind) {
-      case 'bool':
-        result[key] = (
-          typeof value === 'boolean' ? value : fallback
-        ) as T[typeof key];
-        break;
-      case 'num': {
-        const finite =
-          typeof value === 'number' && Number.isFinite(value)
-            ? value
-            : (fallback as number);
-        result[key] = clamp(
-          spec.round ? Math.round(finite) : finite,
-          spec.constraint.min,
-          spec.constraint.max
-        ) as T[typeof key];
-        break;
-      }
-      case 'enum':
-        result[key] = (
-          (spec.values as readonly unknown[]).includes(value) ? value : fallback
-        ) as T[typeof key];
-        break;
-      case 'custom':
-        result[key] = spec.resolve(options, fallback);
-        break;
-    }
-  }
-  return result;
-}
-
-/**
  * Validate and normalize the compass alignment debug toggles. Boolean-or-default
  * per field; a missing/corrupted/pre-feature value falls back to the OFF default
  * so a bad persisted value can never silently turn an alignment override ON.
@@ -804,7 +713,7 @@ function validateFields<T extends object>(
 export function validateCompassDebugOptions(
   options: Partial<CompassDebugOptions>
 ): CompassDebugOptions {
-  return validateFields(options, DEFAULT_RECORDING_OPTIONS.compassDebug, {
+  return validateOptionFields(options, DEFAULT_RECORDING_OPTIONS.compassDebug, {
     coldStartOverride: { kind: 'bool' },
     rotationPrior: { kind: 'bool' },
     webXRConsistency: { kind: 'bool' },
@@ -866,9 +775,13 @@ export function compassStoreOptions(
 export function validateLoopClosureDebugOptions(
   options: Partial<LoopClosureDebugOptions>
 ): LoopClosureDebugOptions {
-  return validateFields(options, DEFAULT_RECORDING_OPTIONS.loopClosureDebug, {
-    detectorEnabled: { kind: 'bool' },
-  });
+  return validateOptionFields(
+    options,
+    DEFAULT_RECORDING_OPTIONS.loopClosureDebug,
+    {
+      detectorEnabled: { kind: 'bool' },
+    }
+  );
 }
 
 /**
@@ -880,26 +793,23 @@ export function validateLoopClosureDebugOptions(
 export function validateVisualizationOptions(
   options: Partial<VisualizationOptions>
 ): VisualizationOptions {
-  return validateFields(options, DEFAULT_RECORDING_OPTIONS.visualization, {
-    frameTiles: { kind: 'bool' },
-    occupancyCubes: { kind: 'bool' },
-    gpsAlignmentMarkers: { kind: 'bool' },
-    compassCubes: { kind: 'bool' },
-    headingUpMap: { kind: 'bool' },
-    // Same boolean-or-default policy, but the default is OFF (debug tool) — a
-    // corrupt value must never switch the overlay on by itself.
-    statsOverlay: { kind: 'bool' },
-  });
+  return validateOptionFields(
+    options,
+    DEFAULT_RECORDING_OPTIONS.visualization,
+    {
+      frameTiles: { kind: 'bool' },
+      occupancyCubes: { kind: 'bool' },
+      gpsAlignmentMarkers: { kind: 'bool' },
+      compassCubes: { kind: 'bool' },
+      headingUpMap: { kind: 'bool' },
+      // Same boolean-or-default policy, but the default is OFF (debug tool) — a
+      // corrupt value must never switch the overlay on by itself.
+      statsOverlay: { kind: 'bool' },
+    }
+  );
 }
 
 // --- Validation ---
-
-/**
- * Clamp a value to the specified constraints.
- */
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 /**
  * Validate and normalize QR-capture options. `enabled` is boolean-or-default
@@ -912,7 +822,7 @@ function clamp(value: number, min: number, max: number): number {
 export function validateQrOptions(
   options: Partial<QrCaptureOptions>
 ): QrCaptureOptions {
-  return validateFields(options, DEFAULT_RECORDING_OPTIONS.qr, {
+  return validateOptionFields(options, DEFAULT_RECORDING_OPTIONS.qr, {
     enabled: { kind: 'bool' },
     intervalMs: { kind: 'num', constraint: QR_CONSTRAINTS.intervalMs },
     captureSize: { kind: 'num', constraint: QR_CONSTRAINTS.captureSize },
@@ -926,7 +836,7 @@ export function validateQrOptions(
 export function validateDepthOptions(
   options: Partial<DepthCaptureOptions>
 ): DepthCaptureOptions {
-  return validateFields(options, DEFAULT_RECORDING_OPTIONS.depth, {
+  return validateOptionFields(options, DEFAULT_RECORDING_OPTIONS.depth, {
     enabled: { kind: 'bool' },
     intervalMs: { kind: 'num', constraint: DEPTH_CONSTRAINTS.intervalMs },
     // gridSize is an N×N grid dimension, so it must be an integer: round here
@@ -944,94 +854,13 @@ export function validateDepthOptions(
 }
 
 /**
- * Validate and normalize the motion-filter (blurry-frame gate) options.
- * `enabled` is boolean-or-default; the three numeric thresholds are clamped to
- * {@link MOTION_FILTER_CONSTRAINTS} with a `Number.isFinite` guard (a stored
- * `NaN` is `typeof 'number'` and would survive `clamp`). A missing group
- * default-fills entirely — a pre-feature persisted options object that lacks
- * `motionFilter` therefore loads with the gate enabled rather than crashing.
- */
-export function validateMotionFilterOptions(
-  options: Partial<MotionFilterConfig>
-): MotionFilterConfig {
-  return validateFields(
-    options,
-    DEFAULT_RECORDING_OPTIONS.images.motionFilter,
-    {
-      enabled: { kind: 'bool' },
-      maxAngularVelocity: {
-        kind: 'num',
-        constraint: MOTION_FILTER_CONSTRAINTS.maxAngularVelocity,
-      },
-      maxLinearVelocity: {
-        kind: 'num',
-        constraint: MOTION_FILTER_CONSTRAINTS.maxLinearVelocity,
-      },
-      maxWaitMs: {
-        kind: 'num',
-        constraint: MOTION_FILTER_CONSTRAINTS.maxWaitMs,
-      },
-    }
-  );
-}
-
-/**
- * Validate and normalize the image-quality (blur/blackness gate) options. Same
- * policy as {@link validateMotionFilterOptions}: `enabled` is boolean-or-default;
- * the three numeric thresholds are clamped to {@link QUALITY_FILTER_CONSTRAINTS}
- * with a `Number.isFinite` guard (a stored `NaN` is `typeof 'number'` and would
- * survive `clamp`). A missing group default-fills entirely — a pre-feature
- * persisted options object that lacks `qualityFilter` loads with the gate
- * disabled (the safe default) rather than crashing. `blurMetric` is
- * membership-validated against `BLUR_METRIC_IDS`: a missing (pre-toggle) or
- * unknown (other-app-version) value falls back to variance-of-Laplacian —
- * the original behavior (2026-07-12 blur-metric-toggle plan).
- */
-export function validateQualityFilterOptions(
-  options: Partial<QualityFilterConfig>
-): QualityFilterConfig {
-  return validateFields(
-    options,
-    DEFAULT_RECORDING_OPTIONS.images.qualityFilter,
-    {
-      enabled: { kind: 'bool' },
-      blurRelativeThreshold: {
-        kind: 'num',
-        constraint: QUALITY_FILTER_CONSTRAINTS.blurRelativeThreshold,
-      },
-      minMeanLuminance: {
-        kind: 'num',
-        constraint: QUALITY_FILTER_CONSTRAINTS.minMeanLuminance,
-      },
-      maxWaitMs: {
-        kind: 'num',
-        constraint: QUALITY_FILTER_CONSTRAINTS.maxWaitMs,
-      },
-      // Declared last so the validated object serializes in
-      // DEFAULT_QUALITY_FILTER's key order (persisted JSON stays
-      // byte-comparable across save→validate). Membership-validated against
-      // BLUR_METRIC_IDS with an explicit fallback because the group default
-      // may itself omit the (optional) field — the original behavior is
-      // variance-of-Laplacian (2026-07-12 blur-metric-toggle plan).
-      blurMetric: {
-        kind: 'custom',
-        resolve: (opts, fallback) =>
-          BLUR_METRIC_IDS.includes(opts.blurMetric as BlurMetricId)
-            ? opts.blurMetric
-            : (fallback ?? 'variance-of-laplacian'),
-      },
-    }
-  );
-}
-
-/**
  * Validate and normalize image options.
  * Invalid values are clamped to valid ranges.
  */
 export function validateImageOptions(
   options: Partial<ImageCaptureOptions>
 ): ImageCaptureOptions {
-  return validateFields(options, DEFAULT_RECORDING_OPTIONS.images, {
+  return validateOptionFields(options, DEFAULT_RECORDING_OPTIONS.images, {
     enabled: { kind: 'bool' },
     intervalMs: { kind: 'num', constraint: IMAGE_CONSTRAINTS.intervalMs },
     quality: { kind: 'num', constraint: IMAGE_CONSTRAINTS.quality },
@@ -1044,11 +873,11 @@ export function validateImageOptions(
     // than crashing.
     motionFilter: {
       kind: 'custom',
-      resolve: (opts) => validateMotionFilterOptions(opts.motionFilter ?? {}),
+      resolve: (opts) => validateMotionFilterConfig(opts.motionFilter),
     },
     qualityFilter: {
       kind: 'custom',
-      resolve: (opts) => validateQualityFilterOptions(opts.qualityFilter ?? {}),
+      resolve: (opts) => validateQualityFilterConfig(opts.qualityFilter),
     },
   });
 }
@@ -1057,10 +886,11 @@ export function validateImageOptions(
  * Validate and normalize occupancy options.
  * Invalid values are clamped to valid ranges.
  *
- * Note the explicit `Number.isFinite` guard: `OccupancyGrid` throws a
- * `RangeError` on a non-finite cell size, and `clamp(NaN, …)` would otherwise
- * pass `NaN` straight through (it is `typeof 'number'`). Falling back to the
- * default keeps a corrupted stored value from crashing grid construction.
+ * Note why the `num` rule's finiteness check matters here specifically:
+ * `OccupancyGrid` throws a `RangeError` on a non-finite cell size, and a bare
+ * clamp would pass `NaN` straight through (it is `typeof 'number'`). Falling
+ * back to the default keeps a corrupted stored value from crashing grid
+ * construction.
  *
  * **Backward-compat migration:** the occlusion options were a single
  * `occlusionMeshEnabled` boolean before 2026-06-29; they are now the two
@@ -1125,7 +955,7 @@ function resolveOccluderDebugStyle(
 export function validateOccupancyOptions(
   options: Partial<OccupancyOptions>
 ): OccupancyOptions {
-  return validateFields(options, DEFAULT_RECORDING_OPTIONS.occupancy, {
+  return validateOptionFields(options, DEFAULT_RECORDING_OPTIONS.occupancy, {
     cellSizeM: { kind: 'num', constraint: OCCUPANCY_CONSTRAINTS.cellSizeM },
     // Rounded so a fractional stored value resolves to a valid integer
     // threshold (getOccupiedCells expects an int).
@@ -1182,19 +1012,23 @@ export function validateOccupancyOptions(
 export function validateFrameTileDisplayOptions(
   options: Partial<FrameTileDisplayOptions>
 ): FrameTileDisplayOptions {
-  return validateFields(options, DEFAULT_RECORDING_OPTIONS.frameTileDisplay, {
-    divisor: {
-      kind: 'num',
-      constraint: FRAME_TILE_DISPLAY_CONSTRAINTS.divisor,
-      round: true,
-    },
-    // Same policy; 0 stays 0 (the explicit "unlimited").
-    maxTiles: {
-      kind: 'num',
-      constraint: FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles,
-      round: true,
-    },
-  });
+  return validateOptionFields(
+    options,
+    DEFAULT_RECORDING_OPTIONS.frameTileDisplay,
+    {
+      divisor: {
+        kind: 'num',
+        constraint: FRAME_TILE_DISPLAY_CONSTRAINTS.divisor,
+        round: true,
+      },
+      // Same policy; 0 stays 0 (the explicit "unlimited").
+      maxTiles: {
+        kind: 'num',
+        constraint: FRAME_TILE_DISPLAY_CONSTRAINTS.maxTiles,
+        round: true,
+      },
+    }
+  );
 }
 
 /**
@@ -1250,7 +1084,7 @@ export function loadRecordingOptions(
     log.warn('Failed to load recording options:', err);
   }
   log.debug('Using default recording options');
-  return cloneRecordingOptions(DEFAULT_RECORDING_OPTIONS);
+  return structuredClone(DEFAULT_RECORDING_OPTIONS);
 }
 
 /**
@@ -1285,37 +1119,5 @@ export function resetRecordingOptions(
   } catch (err) {
     log.warn('Failed to clear recording options from storage:', err);
   }
-  return cloneRecordingOptions(DEFAULT_RECORDING_OPTIONS);
-}
-
-/**
- * Create a deep copy of recording options.
- * Useful for creating mutable copies of the frozen defaults.
- */
-export function cloneRecordingOptions(
-  options: RecordingOptions
-): RecordingOptions {
-  return {
-    depth: { ...options.depth },
-    // `images` carries NESTED objects (`motionFilter`, `qualityFilter`) — the
-    // only group that does — so each needs a deeper clone than the other
-    // flat-primitive groups. A shallow `{ ...options.images }` would share the
-    // same nested references, and the settings modal mutates them in place
-    // (`workingOptions.images.motionFilter.enabled = …`,
-    // `…images.qualityFilter.enabled = …`); without this the write would reach
-    // straight back into DEFAULT_RECORDING_OPTIONS on the no-storage / reset path
-    // (DEFAULT → clone → clone), poisoning the default for the session.
-    images: {
-      ...options.images,
-      motionFilter: { ...options.images.motionFilter },
-      qualityFilter: { ...options.images.qualityFilter },
-    },
-    arCrashIsolation: { ...options.arCrashIsolation },
-    occupancy: { ...options.occupancy },
-    frameTileDisplay: { ...options.frameTileDisplay },
-    visualization: { ...options.visualization },
-    qr: { ...options.qr },
-    compassDebug: { ...options.compassDebug },
-    loopClosureDebug: { ...options.loopClosureDebug },
-  };
+  return structuredClone(DEFAULT_RECORDING_OPTIONS);
 }

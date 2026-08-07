@@ -20,11 +20,16 @@
  * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-08-2149-arworldgroup-alignment-session-scoped-disposal.md.
  */
 
+import { createIsolatedRegistry } from '../utils/isolated-registry';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('SessionDisposers');
 
-const disposers = new Set<() => void>();
+const registry = createIsolatedRegistry<[]>({
+  // Passed, not defaulted, so failures keep this registry's own logger name.
+  onError: (error) =>
+    log.error('A session disposer threw; continuing teardown', error),
+});
 
 /**
  * Register a session-scoped teardown function. Returns a deregister function
@@ -32,10 +37,7 @@ const disposers = new Set<() => void>();
  * the teardown).
  */
 export function registerSessionDisposer(dispose: () => void): () => void {
-  disposers.add(dispose);
-  return () => {
-    disposers.delete(dispose);
-  };
+  return registry.register(dispose);
 }
 
 /**
@@ -49,15 +51,7 @@ export function registerSessionDisposer(dispose: () => void): () => void {
  * `runFrameUpdates`.
  */
 export function runSessionDisposers(): void {
-  const snapshot = Array.from(disposers);
-  disposers.clear();
-  for (const dispose of snapshot) {
-    try {
-      dispose();
-    } catch (error) {
-      log.error('A session disposer threw; continuing teardown', error);
-    }
-  }
+  registry.runOnce();
 }
 
 /**
@@ -66,5 +60,5 @@ export function runSessionDisposers(): void {
  * leak it into the next spec.
  */
 export function clearSessionDisposers(): void {
-  disposers.clear();
+  registry.clear();
 }
