@@ -65,9 +65,33 @@ when the user does.
   the same barrier. One part indexed and the other invisible is the very failure
   the multipolygon branch was added to remove, moved one level in. Raised in
   review on #260.
+  - **A one-part relation takes the `polygon` branch, not this one**, and that
+    is the commoner shape: `relationToGeometry` only returns `multipolygon` for
+    **two or more** disjoint outers. Nothing else reaches the `polygon` branch
+    either — osmtogeojson blacklists `barrier=wall` in `POLYGON_FEATURES`, so
+    even a closed `barrier=wall` way is classified as a linestring — so a
+    single-outer relation fixture is the only cover it has. Added on #263, where
+    the branch had been rewritten with no test reaching it.
+  - **Each outer ring is a CENTRELINE, not the boundary of a filled region.**
+    `barrierFootprints` emits one `thicknessM`-wide quad per segment, so an
+    area-mapped barrier is indexed as a wall along its **outline** and the
+    interior stays walkable. Inner rings are therefore dropped because they are
+    a second face of the same wall, **not** because holes must be kept closed —
+    the interior would be walkable either way. The cost is real and accepted: an
+    area-mapped `barrier=city_wall` normally has outer = outer face and
+    inner = inner face with the material between them, and this indexes only a
+    default-thickness band on the outer face. Corrected on #263, where the code
+    comment claimed the hole rationale.
   - **`multilinestring` is deliberately not handled.** `toGeometry` never
     produces one — only `clip.ts` does, and clipping is not in this path — so a
     branch for it would be code no test could ever cover.
+    - **The `[0]` assertions in `barrierLines` are the same argument.**
+      `wayToGeometry` builds `rings: [way.geometry]` and `relationToGeometry`
+      returns `polygons[0]!` from rings `groupRingsIntoPolygons` seeds as
+      `[outer]`, so an outer ring is always present and a `?? []` fallback would
+      be an uncoverable branch. Changed on #263 for consistency with the rule
+      above; it also drops three whole-ring array copies that existed only to
+      satisfy mutability variance.
 
 ## Defensive behaviour
 

@@ -95,19 +95,34 @@ function barrierLines(feature: OsmFeature): readonly PlanarPoint[][] {
   // barrier" nor "unusable geometry" — it would have been a barrier the index
   // simply did not see, which is the one skip reason with no stated rationale.
   //
-  // OUTER RINGS ONLY, and ALL of them: a barrier's holes are not something to
-  // walk through, but its parts are all wall.
+  // OUTER RINGS ONLY, and ALL of them — but NOT because holes must stay closed.
+  // Every ring here is a CENTRELINE: `barrierFootprints` emits one
+  // `thicknessM`-wide quad per segment, so what becomes solid is a ~0.5 m band
+  // along the ring itself and the interior is walkable whether or not the inner
+  // rings are read. An area-mapped barrier is therefore indexed as a wall along
+  // its OUTLINE, not as a filled region.
+  //
+  // What that costs, stated rather than implied (#263): an area-mapped
+  // `barrier=city_wall` is normally outer = outer face, inner = inner face, with
+  // the wall material between them. This puts a default-thickness band on the
+  // outer face and ignores the inner one. Disjoint outers are all indexed —
+  // those are PARTS of one barrier, not holes (#260).
   //
   // `multilinestring` is deliberately absent. `toGeometry` never produces one —
   // only `clip.ts` does, and clipping is not in this path — so a branch for it
-  // would be code no test could ever cover (#260).
-  const lines: readonly LatLng[][] =
+  // would be code no test could ever cover (#260). The `[0]` assertions below
+  // are there for the same reason the `multilinestring` branch is not: both
+  // `wayToGeometry` (`rings: [way.geometry]`) and `relationToGeometry`
+  // (`polygons[0]!`, seeded `[outer]` by `groupRingsIntoPolygons`) always
+  // produce an outer ring, so a `?? []` fallback would be a branch no test can
+  // cover and no mutant can be killed on (#263).
+  const lines: readonly (readonly LatLng[])[] =
     geometry.kind === "linestring"
-      ? [[...geometry.positions]]
+      ? [geometry.positions]
       : geometry.kind === "polygon"
-        ? [[...(geometry.rings[0] ?? [])]]
+        ? [geometry.rings[0]!]
         : geometry.kind === "multipolygon"
-          ? geometry.polygons.map((polygon) => [...(polygon[0] ?? [])])
+          ? geometry.polygons.map((polygon) => polygon[0]!)
           : [];
 
   return lines
@@ -165,9 +180,12 @@ export function buildObstacleIndex(
     //
     // WHAT THIS REMOVES IS THE RESCAN, not the h3 calls — an earlier comment
     // here claimed the latter and was wrong (#260). `coverCells` still runs
-    // once per ring, and batching cannot change that: `coverCells` on a
-    // multipolygon runs `addPolygon` per ring internally, so the per-quad cost
-    // is inherent to per-segment footprints.
+    // once per ring, and batching cannot change that: `coverCells` runs
+    // `addPolygon` once per POLYGON (`cell-coverage.ts`), and in the batched
+    // alternative each quad would be its own polygon — so the per-quad cost is
+    // inherent to per-segment footprints either way. Stated literally because
+    // the comment this replaces was itself wrong about this same function
+    // (#263).
     //
     // What went away is the `existing.includes(obstacle)` scan of every cell's
     // list, once per ring — and the union makes "one obstacle per cell"

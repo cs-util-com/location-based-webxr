@@ -188,6 +188,48 @@ describe("buildObstacleIndex", () => {
     expect(index.obstaclesIn(secondPart).length).toBe(1);
   });
 
+  it("indexes a ONE-part multipolygon relation, which is the commoner shape", () => {
+    // RAISED IN REVIEW ON #263, and it is the gap the test above left behind.
+    // `relationToGeometry` only returns `kind: "multipolygon"` for TWO OR MORE
+    // disjoint outers; a relation whose outers stitch into a single ring comes
+    // back as `kind: "polygon"` (`osm-geometry.ts`). So an ordinary
+    // `type=multipolygon` + `barrier=wall` relation — the common case — lands on
+    // the `polygon` branch, which #263 also rewrote and which nothing reached.
+    //
+    // Nor does anything else reach it: osmtogeojson blacklists `barrier=wall`
+    // in `POLYGON_FEATURES`, so even a CLOSED `barrier=wall` way is classified
+    // as a linestring by `isAreaWay`. This relation is the only route in.
+    const relation: OsmFeature = {
+      type: "relation",
+      id: 8,
+      members: [
+        {
+          type: "way",
+          ref: 81,
+          role: "outer",
+          geometry: [
+            { lat: HOME.lat, lng: HOME.lng },
+            { lat: HOME.lat, lng: HOME.lng + STEP * 20 },
+            { lat: HOME.lat + STEP * 20, lng: HOME.lng + STEP * 20 },
+            { lat: HOME.lat, lng: HOME.lng },
+          ],
+        },
+      ],
+      tags: { type: "multipolygon", barrier: "wall" },
+    };
+
+    const index = buildObstacleIndex([relation]);
+
+    // Indexed at all — the assertion that fails if the branch ever starts
+    // returning an empty line list rather than the outer ring.
+    expect(index.obstaclesIn(cellAt(HOME.lat, HOME.lng)).length).toBe(1);
+    // And along the ring rather than only at its first vertex, which is what
+    // distinguishes "the outer ring was read" from "something was read".
+    expect(
+      index.obstaclesIn(cellAt(HOME.lat, HOME.lng + STEP * 20)).length,
+    ).toBe(1);
+  });
+
   it("survives a feature with unusable geometry", () => {
     // A one-node way and an empty way are both real Overpass output. Neither
     // has a footprint, and neither may take the index down.
