@@ -279,6 +279,18 @@ export class AffordanceIndex {
     /** Chunks currently pinned against eviction. Zero unless a climb is running. */
     chunksPinned: 0,
     /**
+     * The HIGH-WATER mark of {@link chunksPinned}, which is the useful one.
+     *
+     * `chunksPinned` is live: `withPinned` sets it on entry and resets it in a
+     * `finally`, so by the time a caller can read it the answer is always the
+     * number pinned right now — zero, for anyone asking after the fact. That
+     * makes "how much did that search hold?" unanswerable, which is precisely
+     * the question W7 exists to answer. Kept as a peak and never reset, since
+     * the interesting value is the worst case across a session rather than the
+     * last one.
+     */
+    chunksPinnedPeak: 0,
+    /**
      * How far the pinned set has pushed the cache past its cap (DEC-R9-11).
      *
      * Non-zero means something is holding several batches at once without
@@ -535,6 +547,14 @@ export class AffordanceIndex {
       pinned.push(chunk);
     }
     this.stats.chunksPinned = this.pinned.size;
+    // BEFORE the body, not after: the `finally` below puts `chunksPinned` back
+    // to whatever is still held, so a peak taken there would always read the
+    // released value. This is the only moment the size is the size of THIS
+    // search's pinned set.
+    this.stats.chunksPinnedPeak = Math.max(
+      this.stats.chunksPinnedPeak,
+      this.pinned.size,
+    );
     try {
       return body();
     } finally {

@@ -876,6 +876,53 @@ test.describe("the geo-event", () => {
   });
 
   /**
+   * WHY THIS TEST EXISTS (G1, DEC-G1). The reported complaint: pressing the
+   * button a second time re-ran the identical search. "Identical" is exact
+   * rather than approximate — the event is a pure function of tile and
+   * quarter-hour — so within one 15-minute slot the second press could not
+   * produce anything new, and it read as a broken button.
+   *
+   * The unit tests cover the dialog's own behaviour. What only an e2e can show
+   * is that the BUTTON changed meaning: one press searches, the next opens the
+   * picker rather than searching again.
+   */
+  test("opens a time picker on the second press, and can clear the event", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const button = page.locator("#geo-event");
+    const picker = page.locator("#geo-event-picker");
+    await expect(picker).toBeHidden();
+
+    await button.click();
+    await expect(button).toHaveText(/Event at|No event nearby/, {
+      timeout: 30_000,
+    });
+    // The FIRST press searched rather than asking when — the common case stays
+    // one tap.
+    await expect(picker).toBeHidden();
+
+    await button.click();
+    await expect(picker).toBeVisible();
+    // Pre-filled from the event on the map, so the common edit is "later", not
+    // "type a whole date".
+    await expect(page.locator("#geo-event-date")).not.toHaveValue("");
+    await expect(page.locator("#geo-event-time")).not.toHaveValue("");
+
+    const drawn = await page.locator("#map .geo-winner").count();
+    test.skip(drawn === 0, "fixture yielded no event to clear");
+
+    await page.locator("#geo-event-clear").click();
+    await expect(picker).toBeHidden();
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+    // The label is derived from the same state, so it goes back with them.
+    await expect(button).toHaveText(/Next geo-event/);
+  });
+
+  /**
    * WHY THIS TEST EXISTS (G2, DEC-G2). The reported defect, end to end: after
    * switching category the previous category's event markers were still on the
    * map, over the new category's cells. Nothing removed them, because they went

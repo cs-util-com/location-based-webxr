@@ -97,11 +97,42 @@ export function formatDistance(metres: number): string {
  * legitimate outcome rather than an error: a tile that is all water genuinely
  * has no event.
  */
+/**
+ * The RESOLVED slot, worded so a picked day is visible.
+ *
+ * WHY THE DATE IS CONDITIONAL (W6, and DEC-G1's real requirement). The label was
+ * time-only, which was fine while every search meant "now" — it could only ever
+ * be today. A picker makes "next Tuesday at 18:00" expressible, and a time-only
+ * label would show `18:15` for it, indistinguishable from today's. So the date
+ * appears exactly when it is not today, which keeps the common case short and
+ * makes the uncommon one unambiguous.
+ *
+ * THE VALUE SHOWN IS THE RESOLVED SLOT, NOT THE REQUESTED INSTANT, and that is
+ * not a detail: `nextEventTime` quantises to the next quarter-hour, so a request
+ * for 18:07 legitimately produces an 18:15 event. Showing what was asked for
+ * would make the marker and the label disagree about the same thing.
+ */
+export function describeEventTime(
+  at: number,
+  today: Date = new Date(),
+): string {
+  const when = new Date(at);
+  const sameDay =
+    when.getFullYear() === today.getFullYear() &&
+    when.getMonth() === today.getMonth() &&
+    when.getDate() === today.getDate();
+  const time = when.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  if (sameDay) return time;
+  return `${when.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
+}
+
 export function describeGeoEvent(
   user: LatLng,
   event: GeoEvent,
-  formatTime: (at: number) => string = (at) =>
-    new Date(at).toLocaleTimeString(),
+  formatTime: (at: number) => string = (at) => describeEventTime(at),
 ): string {
   // THE SEARCHED AREA IS PART OF THE ANSWER (F57), and it is the "nothing
   // found" case that needs it most. DEC-R9-15 means the tile set is your own

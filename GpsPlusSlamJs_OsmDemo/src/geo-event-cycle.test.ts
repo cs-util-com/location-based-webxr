@@ -16,9 +16,23 @@ import { describe, expect, it, vi } from "vitest";
 import type { GeoEvent } from "gps-plus-slam-osm";
 
 import { createGeoEventCycle } from "./geo-event-cycle.js";
+import type { GeoEventStats } from "./geo-event-stats.js";
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
+
+/** Stand-in counters; what they contain is `geo-event-stats.test.ts`'s job. */
+const STATS: GeoEventStats = {
+  reachCells: 8918,
+  tilesFetched: 0,
+  climbsStarted: 70,
+  heatLookups: 2450,
+  chunksPinnedPeak: 1330,
+  pinnedOverCap: 842,
+  deriveMs: 12,
+  ensureMs: 4820,
+  climbMs: 391,
+};
 
 /** An event with one pick, far enough away that the label names a direction. */
 const eventWith = (picks: number): GeoEvent => ({
@@ -37,7 +51,12 @@ const eventWith = (picks: number): GeoEvent => ({
 function setup() {
   const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
   const calls: {
-    payload: { position: { lat: number; lng: number }; category: string };
+    payload: {
+      position: { lat: number; lng: number };
+      category: string;
+      now: number;
+      overlapMinutes?: number;
+    };
     answer: (value: GeoEvent) => void;
     fail: (error: unknown) => void;
   }[] = [];
@@ -49,9 +68,17 @@ function setup() {
     actions: demo.actions,
     worker: {
       call: (_kind, payload) =>
-        new Promise<GeoEvent>((resolve, reject) => {
-          calls.push({ payload, answer: resolve, fail: reject });
-        }),
+        new Promise<{ event: GeoEvent; stats: GeoEventStats }>(
+          (resolve, reject) => {
+            calls.push({
+              payload,
+              answer: (event) => {
+                resolve({ event, stats: STATS });
+              },
+              fail: reject,
+            });
+          },
+        ),
     },
     setBusy,
     republish,
@@ -233,8 +260,10 @@ describe("createGeoEventCycle", () => {
       actions: demo.actions,
       worker: {
         call: () =>
-          new Promise<GeoEvent>((resolve) => {
-            answer = resolve;
+          new Promise<{ event: GeoEvent; stats: GeoEventStats }>((resolve) => {
+            answer = (event) => {
+              resolve({ event, stats: STATS });
+            };
           }),
       },
       setBusy,
@@ -252,5 +281,101 @@ describe("createGeoEventCycle", () => {
     );
     // The result stays published: the search succeeded and its markers are up.
     expect(selectOsmView(demo.store.getState()).geoEvent).not.toBeUndefined();
+  });
+});
+
+describe("createGeoEventCycle — a requested time (W6) and the benchmark (W7)", () => {
+  it("sends the REQUESTED instant, and turns the overlap window off for it", () => {
+    // WHY BOTH HALVES MATTER. `nextEventTime` shifts the instant forward by the
+    // overlap BEFORE rounding, so the production default of five minutes turns
+    // a request for 18:00 into the 18:15 slot. That is right for "find me one
+    // now" — do not send me to a spawn about to move — and wrong for an
+    // explicit pick, where the user named the slot they want. Sending the
+    // instant without the zero would answer every dialog question with the
+    // quarter after the one asked, which reads as an off-by-one nobody can
+    // locate.
+    const { find, calls } = setup();
+    const requested = Date.UTC(2026, 7, 9, 18, 0);
+
+    void find(requested);
+
+    expect(calls[0]?.payload).toMatchObject({
+      now: requested,
+      overlapMinutes: 0,
+    });
+  });
+
+  it("leaves the overlap alone for a search with no requested time", () => {
+    // The counterweight: a plain press must keep the C#'s handover behaviour,
+    // so the field is ABSENT rather than sent as five — one default, in
+    // `nextEventTime`, where the docstring explaining it lives.
+    const { find, calls } = setup();
+
+    void find();
+
+    expect(calls[0]?.payload.now).toBe(1_700_000_000_000);
+    expect(calls[0]?.payload).not.toHaveProperty("overlapMinutes");
+  });
+
+  it("reports what the search cost, once, on success", async () => {
+    const onStats = vi.fn();
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    let answer: (value: {
+      event: GeoEvent;
+      stats: GeoEventStats;
+    }) => void = () => {};
+    const find = createGeoEventCycle({
+      store: demo.store,
+      actions: demo.actions,
+      worker: {
+        call: () =>
+          new Promise<{ event: GeoEvent; stats: GeoEventStats }>((resolve) => {
+            answer = resolve;
+          }),
+      },
+      setBusy: vi.fn(),
+      republish: () => Promise.resolve(),
+      onStats,
+    });
+
+    const pending = find();
+    answer({ event: eventWith(1), stats: STATS });
+    await pending;
+
+    expect(onStats).toHaveBeenCalledTimes(1);
+    expect(onStats).toHaveBeenCalledWith(STATS);
+  });
+
+  it("reports the cost of a search that was superseded, because it still ran", async () => {
+    // The event is dropped, the WORK is not: those chunks were scored and those
+    // climbs happened. A benchmark that silently omitted superseded runs would
+    // under-report exactly the case where the demo feels slowest.
+    const onStats = vi.fn();
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    let answer: (value: {
+      event: GeoEvent;
+      stats: GeoEventStats;
+    }) => void = () => {};
+    const find = createGeoEventCycle({
+      store: demo.store,
+      actions: demo.actions,
+      worker: {
+        call: () =>
+          new Promise<{ event: GeoEvent; stats: GeoEventStats }>((resolve) => {
+            answer = resolve;
+          }),
+      },
+      setBusy: vi.fn(),
+      republish: () => Promise.resolve(),
+      onStats,
+    });
+
+    const pending = find();
+    demo.store.dispatch(demo.actions.categoryChanged("battleArea"));
+    answer({ event: eventWith(1), stats: STATS });
+    await pending;
+
+    expect(selectOsmView(demo.store.getState()).geoEvent).toBeUndefined();
+    expect(onStats).toHaveBeenCalledWith(STATS);
   });
 });

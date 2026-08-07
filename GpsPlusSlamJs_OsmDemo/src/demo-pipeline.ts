@@ -43,7 +43,22 @@ import {
   toFetchTile,
 } from "gps-plus-slam-osm";
 import { cellToBoundary, cellToLatLng, gridDisk, latLngToCell } from "h3-js";
+import type { GeoEventStats } from "./geo-event-stats.js";
 import { heatScale } from "./heat-colours.js";
+
+/**
+ * A monotonic clock, or `Date.now` where there is not one.
+ *
+ * `performance` exists in a real worker and in the browser; the fallback is for
+ * a unit test that constructs a `DemoPipeline` directly under a runtime that
+ * has not defined it. Timings are reported in whole milliseconds, so the
+ * difference between the two clocks is below the reporting resolution — what
+ * matters is that a missing global cannot throw inside the one method the
+ * benchmark exists to measure.
+ */
+function nowMs(): number {
+  return typeof performance === "undefined" ? Date.now() : performance.now();
+}
 
 /**
  * The seed every device shares (DEC-R9-7).
@@ -514,12 +529,42 @@ export class DemoPipeline {
     category: string,
     now: number,
     signal?: AbortSignal,
-  ): Promise<GeoEvent> {
-    const eventTime = nextEventTime(now);
+    options?: { readonly overlapMinutes?: number },
+  ): Promise<{ event: GeoEvent; stats: GeoEventStats }> {
+    // THE OVERLAP IS THE CALLER'S, and only because a user can pick a time now
+    // (W6). It shifts the instant forward BEFORE the rounding, so the default
+    // five minutes turn a request for 18:00 into 18:15 — right for "find me one
+    // now", wrong for "show me 18:00". `nextEventTime`'s own docstring records
+    // the trap; the picker passes zero.
+    const eventTime =
+      options?.overlapMinutes === undefined
+        ? nextEventTime(now)
+        : nextEventTime(now, { overlapMinutes: options.overlapMinutes });
     const tile = latLngToCell(position.lat, position.lng, EVENT_TILE_RES);
+
+    // W7's counters. Wrapped around the two callbacks the algorithm actually
+    // spends its time in, rather than inferred: `toCell` runs once per candidate
+    // (so it counts climbs STARTED, including the batches a failing tile
+    // retries), and `heatAt` runs once per cell read (so it counts the WORK,
+    // which is two orders of magnitude larger for a climb that has somewhere to
+    // go than for one that starts on unscored ground).
+    let climbsStarted = 0;
+    let heatLookups = 0;
 
     const toCell = (at: LatLng): string =>
       latLngToCell(at.lat, at.lng, AFFORDANCE_RES);
+    /**
+     * `toCell`, counted — handed ONLY to the algorithm.
+     *
+     * Step 1 below calls `toCell` too, once per derived candidate, and counting
+     * there would report the ensure set's arithmetic as climbing work. The two
+     * uses are the same function and different questions, so they get different
+     * wrappers rather than one counter and a subtraction.
+     */
+    const countedToCell = (at: LatLng): string => {
+      climbsStarted += 1;
+      return toCell(at);
+    };
     // The exact inverse, so a pick can report WHERE THE EVENT IS rather than
     // the seed the climb started from. The map marker and the button label are
     // both built from it; deriving it twice is how they drifted apart.
@@ -560,6 +605,7 @@ export class DemoPipeline {
     // to decide it is a peak; without the extra ring the last comparison reads
     // `unknown` and the climb reports `left` at the edge of the ensured set
     // rather than of the map.
+    const deriveStart = nowMs();
     const reach = new Set<string>();
     for (const bbox of boxes) {
       for (const candidate of eventCandidates({
@@ -573,9 +619,12 @@ export class DemoPipeline {
         }
       }
     }
+    const deriveMs = nowMs() - deriveStart;
 
     // STEP 2 — ensure, fetching what is missing. Only this first batch may
     // fetch (DEC-R9-12): ten sequential fetch rounds would be minutes.
+    const ensureStart = nowMs();
+    let tilesFetched = 0;
     const { missingTiles } = this.index.ensureScored(reach);
     for (const missing of missingTiles) {
       if (signal?.aborted === true) {
@@ -584,6 +633,10 @@ export class DemoPipeline {
       try {
         this.index.acceptTile(await this.source.fetchTile(missing, signal));
         this.loaded.add(missing);
+        // COUNTED ON SUCCESS ONLY. `missingTiles.length` would report tiles
+        // that failed to download as work done, and a failed tile is the case
+        // where the climbs afterwards are cheapest — the opposite reading.
+        tilesFetched += 1;
       } catch {
         // A tile that will not load leaves its candidates unscored, and the
         // climb reports `left` for them rather than guessing. Silence here is
@@ -591,17 +644,20 @@ export class DemoPipeline {
       }
     }
     this.index.ensureScored(reach);
+    const ensureMs = nowMs() - ensureStart;
 
     // STEP 3 — pin, then climb. Nothing awaits inside this callback.
-    return this.index.withPinned(reach, () =>
+    const climbStart = nowMs();
+    const event = this.index.withPinned(reach, () =>
       newGeoEventFor({
         user: position,
         tiles: boxes.map((bbox) => ({ bbox })),
         globalSeed: GEO_EVENT_SEED,
         eventTime,
-        toCell,
+        toCell: countedToCell,
         toLatLng,
         heatAt: (cell) => {
+          heatLookups += 1;
           const state = this.index.cellState(cell);
           // `unknown` becomes `undefined`, which is what tells the climb it has
           // run out of map. An `empty` cell is genuinely known and its heat is
@@ -621,6 +677,25 @@ export class DemoPipeline {
         threshold: thresholdFor(this.table, category),
       }),
     );
+    const climbMs = nowMs() - climbStart;
+
+    return {
+      event,
+      stats: {
+        reachCells: reach.size,
+        tilesFetched,
+        climbsStarted,
+        heatLookups,
+        // READ AFTER `withPinned` HAS RELEASED, which is the only reason the
+        // index keeps a peak at all: the live `chunksPinned` is back to whatever
+        // is still held by now, i.e. zero.
+        chunksPinnedPeak: this.index.stats.chunksPinnedPeak,
+        pinnedOverCap: this.index.stats.pinnedOverCap,
+        deriveMs,
+        ensureMs,
+        climbMs,
+      },
+    };
   }
 
   /**

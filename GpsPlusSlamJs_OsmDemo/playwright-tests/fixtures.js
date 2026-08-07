@@ -723,9 +723,11 @@ export async function captureUiBaseline(page) {
  *   failing afterwards.
  * - **Cells OFF.** The in-progress test exists to watch the cell FETCH happen,
  *   which cannot be observed on a page where the cells are already held.
- * - **The geo-event marker.** There is no control that removes it — the button
- *   text is rewritten to describe the event and the marker stays on the map —
- *   so it would leak into any later test that counts map paths.
+ *
+ * The geo-event marker USED to be on that list — "there is no control that
+ * removes it" (#271 review). W6 added one, so it is reset below like anything
+ * else. Note what it took: a store action (W2) AND a control, because this
+ * helper can only press things.
  *
  * @param {import('@playwright/test').Page} page
  * @param {{category: string}} baseline
@@ -750,6 +752,19 @@ export async function resetUi(page, baseline) {
   expect(
     await page.evaluate(() => document.querySelectorAll(".panel-stats").length),
   ).toBe(0);
+
+  // THE GEO-EVENT, which this helper could not reset at all until W6. Gated on
+  // a marker actually being present, like every step here: the common case is a
+  // test that never pressed the button, and that must stay two cheap reads.
+  //
+  // Two clicks rather than one, and the shape is the feature: with an event
+  // held, the button opens the picker instead of re-running the identical
+  // search (G1), and the picker is where the clear lives.
+  if ((await page.locator("#map .geo-winner").count()) > 0) {
+    await page.locator("#geo-event").click();
+    await page.locator("#geo-event-clear").click();
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+  }
 
   // Free: a presentation toggle that never refetches.
   const showBelow = page.locator("#show-below");

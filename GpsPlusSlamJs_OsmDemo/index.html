@@ -103,6 +103,49 @@
       #hotkey-help[hidden] {
         display: none;
       }
+      /* The geo-event picker sits opposite the hotkey list so the two cannot
+         cover each other — both are bottom-anchored overlays over the map. */
+      #geo-event-picker {
+        position: absolute;
+        right: 0.5rem;
+        bottom: 0.5rem;
+        z-index: 1000;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.4rem;
+        /* Bounded by the pane rather than by a fixed width: `min()` reads as an
+           invalid value to the CSS validator in the gate, and the pane bound is
+           the one that actually matters on a phone. The content is narrower
+           than this on a desktop anyway, and `flex-wrap` handles the rest. */
+        max-width: calc(100% - 1rem);
+        padding: 0.5rem 0.7rem;
+        background: #171b26f2;
+        border: 1px solid #2a2f3d;
+        border-radius: 6px;
+        font-size: 0.78rem;
+      }
+      #geo-event-picker[hidden] {
+        display: none;
+      }
+      #geo-event-picker input,
+      #geo-event-picker button {
+        font: inherit;
+        color: #e6e9f0;
+        background: #232838;
+        border: 1px solid #3a4152;
+        border-radius: 4px;
+        padding: 0.15rem 0.4rem;
+      }
+      #geo-event-picker button {
+        cursor: pointer;
+      }
+      /* Only occupies space when it has something to say — an always-present
+         empty line would push the buttons around as it filled and emptied. */
+      .geo-event-error:not(:empty) {
+        flex-basis: 100%;
+        color: #ffb4b4;
+      }
       #hotkey-help kbd {
         display: inline-block;
         min-width: 1.1em;
@@ -618,6 +661,16 @@
            than hand-written — a list that can disagree with the bindings is
            worse than none. -->
       <aside id="hotkey-help" hidden></aside>
+      <!-- The geo-event time picker (G1, DEC-G1). Empty here and filled by
+           `geo-event-picker.ts`: the two inputs, the two buttons and the error
+           line are one interaction, and splitting them between markup and
+           wiring is how a control ends up with no listener.
+
+           A `hidden`-toggled `<aside>` rather than a `<dialog>`, like the two
+           above it. `showModal()` traps focus and dims the page, which is right
+           for a decision that blocks and wrong for this one — the map
+           underneath is what you consult while choosing a time. -->
+      <aside id="geo-event-picker" hidden></aside>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

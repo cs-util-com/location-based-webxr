@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import { latLngToCell, cellToParent } from "h3-js";
 import {
   AFFORDANCE_RES,
+  CANDIDATES_PER_BATCH,
   SCORE_CHUNK_RES,
   SCORE_DISK_MAX_RADIUS,
   SCORE_DISK_RADIUS,
@@ -499,11 +500,93 @@ describe("DemoPipeline.geoEvent", () => {
     { source: "test", fetchedAt: 0 },
   );
 
+  it("reports what the search cost, and the numbers are real (W7)", async () => {
+    // WHY THIS TEST MATTERS (DEC-G7). The benchmark decides what W8 does, so a
+    // counter that is plausible but wrong would send the next round at the
+    // wrong lever. Each assertion below is a RELATIONSHIP rather than a
+    // magnitude, because magnitudes are fixture-dependent and relationships are
+    // not:
+    //
+    // - lookups per climb, which is the whole cost model. A climb that starts
+    //   on unscored ground returns after ONE lookup; a climb with somewhere to
+    //   go does five steps of seven neighbours. If these two numbers were ever
+    //   equal, the instrumentation would be counting the same thing twice.
+    // - climbs vs the batch size, which is what says the retry batches ran at
+    //   all: one tile evaluating one batch is exactly CANDIDATES_PER_BATCH.
+    // - the reach, which must be larger than a batch by the disk around each
+    //   candidate — the ensure set is the thing the plan predicts is oversized.
+    const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+    // At the WIDEST radius, so the finding below cannot be explained away as
+    // "the disk was only radius 2".
+    await pipeline.update(AT, "walkable", undefined, SCORE_DISK_MAX_RADIUS);
+
+    const { event, stats } = await pipeline.geoEvent(
+      AT,
+      "walkable",
+      1_700_000_000_000,
+    );
+
+    expect(event.picks.length).toBeGreaterThan(0);
+    expect(stats.climbsStarted).toBeGreaterThanOrEqual(CANDIDATES_PER_BATCH);
+    expect(stats.heatLookups).toBeGreaterThan(stats.climbsStarted);
+    expect(stats.reachCells).toBeGreaterThan(CANDIDATES_PER_BATCH);
+    // The pinned peak is the number the live counter cannot give: it is back to
+    // zero by the time anyone can read it, which is why the index keeps a peak.
+    expect(stats.chunksPinnedPeak).toBeGreaterThan(0);
+    // Phases are non-negative and the wall clock is the sum of the three plus
+    // whatever falls outside them; asserting an ORDER between them would be a
+    // machine-speed test.
+    for (const ms of [stats.deriveMs, stats.ensureMs, stats.climbMs]) {
+      expect(ms).toBeGreaterThanOrEqual(0);
+    }
+    // THE FINDING THIS TEST CAPTURED, and it was a surprise worth stating: the
+    // search still downloads tiles AFTER a refresh at the WIDEST radius. The
+    // scored disk is `SCORE_DISK_MAX_RADIUS` chunks around the user; the ensure
+    // set is the union of `gridDisk(candidate, CLIMB_STEPS + 1)` over a batch
+    // spread across up to seven res-8 TILES, which is a far larger area. So
+    // "the OSM data is already cached" — the condition the session measured
+    // 5–10 s under — can be true of the disk and false of the reach at the same
+    // time, and the ensure phase is where that cost lands.
+    //
+    // Asserted as "more than none" rather than as a count: how many depends on
+    // where the seeded candidates fall, and pinning it would make this a test
+    // of the seed rather than of the relationship.
+    expect(stats.tilesFetched).toBeGreaterThan(0);
+  });
+
+  it("counts only tiles that arrived, not every one it asked for", async () => {
+    // `tilesFetched` is incremented on SUCCESS, never taken from
+    // `missingTiles.length`, and the difference inverts the reading: a tile
+    // that fails to load leaves its candidates unscored, which makes the climbs
+    // afterwards CHEAPER. A benchmark counting the request would report the
+    // cheapest case as the most expensive one.
+    const offline: OsmDataSource = {
+      attribution: "© OpenStreetMap contributors",
+      sourceId: "fixture:geo-event-offline",
+      fetchTile: () => Promise.reject(new Error("offline")),
+    };
+    const pipeline = new DemoPipeline({ source: offline, table: TABLE });
+
+    const { stats } = await pipeline.geoEvent(
+      AT,
+      "walkable",
+      1_700_000_000_000,
+    );
+
+    expect(stats.tilesFetched).toBe(0);
+    // It still climbed: one unreachable tile must not fail the whole event.
+    expect(stats.climbsStarted).toBeGreaterThan(0);
+  });
+
   it("returns an event whose picks sit on scored ground", async () => {
     const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
     await pipeline.update(AT, "walkable");
 
-    const event = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const { event } = await pipeline.geoEvent(
+      AT,
+      "walkable",
+      1_700_000_000_000,
+    );
 
     expect(event.picks.length).toBeGreaterThan(0);
     // Not `unknown`: the ensure step must have covered wherever the climb
@@ -538,7 +621,11 @@ describe("DemoPipeline.geoEvent", () => {
     // event, so the absence below is the threshold and not the fixture.
     const permissive = new DemoPipeline({ source: wideSource(), table: TABLE });
     await permissive.update(AT, "walkable");
-    const found = await permissive.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const { event: found } = await permissive.geoEvent(
+      AT,
+      "walkable",
+      1_700_000_000_000,
+    );
     expect(found.picks.length).toBeGreaterThan(0);
 
     const strict = new DemoPipeline({
@@ -546,7 +633,11 @@ describe("DemoPipeline.geoEvent", () => {
       table: HIGH_THRESHOLD,
     });
     await strict.update(AT, "walkable");
-    const none = await strict.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const { event: none } = await strict.geoEvent(
+      AT,
+      "walkable",
+      1_700_000_000_000,
+    );
     expect(none.picks).toEqual([]);
   });
 
@@ -575,7 +666,11 @@ describe("DemoPipeline.geoEvent", () => {
       const pipeline = new DemoPipeline({ source: flaky, table: TABLE });
       await pipeline.update(AT, "walkable");
 
-      const event = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+      const { event } = await pipeline.geoEvent(
+        AT,
+        "walkable",
+        1_700_000_000_000,
+      );
 
       for (const pick of event.picks) {
         expect(pipeline.cellState(pick.cell).state).not.toBe("unknown");
@@ -610,8 +705,8 @@ describe("DemoPipeline.geoEvent", () => {
 
     const cold = new DemoPipeline({ source: wideSource(), table: TABLE });
 
-    const a = await warm.geoEvent(AT, "walkable", 1_700_000_000_000);
-    const b = await cold.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const { event: a } = await warm.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const { event: b } = await cold.geoEvent(AT, "walkable", 1_700_000_000_000);
 
     expect(b.picks.length).toBeGreaterThan(0);
     const warmCells = new Set(a.picks.map((p) => p.cell));

@@ -705,14 +705,25 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "geoEvent": {
-      const { position, category, now } =
+      const { position, category, now, overlapMinutes } =
         payload as WorkerCalls["geoEvent"]["request"];
       const { pipeline } = requireState();
       // IT HAS TO RUN HERE. The index is private inside the pipeline inside this
       // worker, the climb reads it through SYNCHRONOUS callbacks that cannot
       // cross a structured clone, and the ensure step needs the same fetch
-      // machinery `update` uses. Only the finished result goes back.
-      return pipeline.geoEvent(position, category, now, signal);
+      // machinery `update` uses. Only the finished result goes back — the event
+      // and, since W7, what finding it cost, which is measurable only in here.
+      return pipeline.geoEvent(
+        position,
+        category,
+        now,
+        signal,
+        // FORWARDED AS `undefined` WHEN ABSENT rather than defaulted here, so
+        // the production default lives in exactly one place (`nextEventTime`).
+        // A second default in the worker is how the picker's zero would quietly
+        // become five again.
+        overlapMinutes === undefined ? undefined : { overlapMinutes },
+      );
     }
 
     case "explain": {

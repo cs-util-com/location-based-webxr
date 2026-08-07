@@ -21,7 +21,14 @@ the package that remembers anything.
 - `scoresByCell(): Map<string, CellScore>` — the shape `region-builder` wants.
 - `mergedFeatures(): ReadonlyMap<OsmFeatureKey, OsmFeature>`
 - `stats` — `chunksScored`, `chunksReused`, `chunksEvicted`, `geometryBuilt`,
-  `geometryReused`, `movesIgnored`.
+  `geometryReused`, `movesIgnored`, `chunksPinned`, `chunksPinnedPeak`,
+  `pinnedOverCap`, `scoresByCellBuilds`.
+  - **`chunksPinned` is LIVE and `chunksPinnedPeak` is the one to report.**
+    `withPinned` resets the live count in its `finally`, so anyone asking after
+    a search reads zero — which makes "how much did that search hold?"
+    unanswerable, and that is exactly what the geo-event benchmark needs (W7).
+    The peak is never reset: the worst case across a session is what a cap is
+    judged against, not whatever the last search happened to need.
 
 `ScoredChunk`: `{ chunk, cells, tiles, featureCount }`, frozen.
 

@@ -35,6 +35,8 @@ import { describeDrawCost } from "./draw-cost.js";
 import { geoEventButtonLabel } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
+import { GeoEventPicker } from "./geo-event-picker.js";
+import { describeGeoEventStats } from "./geo-event-stats.js";
 import {
   DEFAULT_CELL_PRESET,
   cellPreset,
@@ -506,8 +508,43 @@ async function main(): Promise<void> {
     worker,
     setBusy: paintGeoEventButton,
     republish: () => refresh(),
+    // W7's benchmark line. `console.info` rather than the status bar: it is a
+    // developer diagnostic taken once per press, and the status line is already
+    // carrying the cell counts a user reads. `describeGeoEventStats` puts the
+    // three phase timings first, because which one dominates is what picks the
+    // lever DEC-G7 defers to.
+    onStats: (stats) => {
+      // eslint-disable-next-line no-console -- the benchmark's only output.
+      console.info(describeGeoEventStats(stats));
+    },
   });
-  geoEventButton.addEventListener("click", () => void findGeoEvent());
+
+  const geoEventPicker = new GeoEventPicker({
+    container: el("geo-event-picker"),
+    onSearch: (requested) => void findGeoEvent(requested),
+    onClear: () => store.dispatch(actions.geoEventFound(undefined)),
+  });
+
+  /**
+   * The button's two meanings (G1, DEC-G1).
+   *
+   * WITH NOTHING FOUND it searches, which keeps the common case one tap. WITH
+   * AN EVENT ON THE MAP it opens the picker instead, because a second press
+   * used to re-run the identical search — exactly identical, since the event is
+   * a pure function of tile and quarter-hour, so within one slot it could not
+   * produce anything new. It read as a broken button.
+   *
+   * The dialog opens on the HELD event's time rather than on now, so the common
+   * edit is "the same place two hours later".
+   */
+  geoEventButton.addEventListener("click", () => {
+    const held = selectOsmView(store.getState()).geoEvent;
+    if (held === undefined) {
+      void findGeoEvent();
+      return;
+    }
+    geoEventPicker.toggle(new Date(held.eventTime));
+  });
   // The switches report a whole next set; `toggleLayer` is the only thing that
   // knows how to build a valid one (see `osm-view-slice.ts` for why the action
   // replaces the set rather than patching one layer).

@@ -8,10 +8,10 @@ failure without destroying the map.
 
 ## Public API
 
-- `createGeoEventCycle(options): () => Promise<void>` — builds the action. The
-  returned function takes no arguments (intent is read from the store) and
-  **never rejects**; its caller is a DOM listener, where a rejection would be
-  unhandled.
+- `createGeoEventCycle(options): (requested?: number) => Promise<void>` — builds
+  the action. Position and category come from the store; `requested` is an
+  explicitly picked local instant (W6), absent for a plain press. It **never
+  rejects**: its caller is a DOM listener, where a rejection would be unhandled.
   - `store`, `actions` — the demo store and its slice actions.
   - `worker` — narrowed to `call("geoEvent", { position, category, now })`, so a
     test can fake it without a `Worker`.
@@ -21,8 +21,12 @@ failure without destroying the map.
     label is derived from `(busy, position, geoEvent)`.
   - `republish()` — publishes a fresh snapshot. Wired to `refresh` from
     `refresh-cycle.ts` (DEC-W1a).
-  - `now?` — the clock, defaulting to `Date.now`. Injectable for tests and for
-    W6's picker, which will hand over a chosen instant instead of "now".
+  - `now?` — the clock for a search with no requested time, defaulting to
+    `Date.now`.
+  - `onStats?(stats)` — what the search cost (W7). A callback rather than store
+    state: the counters describe one run of an algorithm, not anything a view
+    draws, and the store would make them persistable and devtools-serialised for
+    a diagnostic line.
 
 ### Error modes
 
@@ -46,6 +50,24 @@ failure without destroying the map.
   would silently refill it with the previous category's answer.
 - The **position is not** re-checked. A geo-event is a pure function of tile and
   time, so it stays true after the user moves — walking towards it is the point.
+- **A requested instant turns the overlap window OFF.** `nextEventTime` shifts
+  the instant forward by `overlapMinutes` BEFORE rounding, so the production
+  default of five turns a request for 18:00 into the 18:15 slot. Right for "find
+  me one now" — do not send me to a spawn about to move — and wrong for an
+  explicit pick. A plain press omits the field entirely rather than sending five,
+  so the default lives in exactly one place.
+- **The cost is reported even for a superseded search**, because the work still
+  happened: those chunks were scored and those climbs ran. Omitting them would
+  under-report exactly the case where the demo feels slowest.
+- **A requested instant turns the overlap window OFF.** `nextEventTime` shifts
+  the instant forward by `overlapMinutes` BEFORE rounding, so the production
+  default of five turns a request for 18:00 into the 18:15 slot. That is right
+  for "find me one now" — do not send me to a spawn about to move — and wrong for
+  an explicit pick. A plain press omits the field entirely rather than sending
+  five, so the default lives only in `nextEventTime`.
+- **The cost is reported even for a superseded search**, because the work still
+  happened: those chunks were scored and those climbs ran. Omitting them would
+  under-report exactly the case where the demo feels slowest.
 - `setBusy(false)` runs in a `finally` around the **search only**, before the
   republish. The label reads "Finding…" while busy, and holding that across the
   ~1.9 s refresh would show it over markers already drawn. The refresh announces

@@ -37,6 +37,7 @@ import type {
 } from "gps-plus-slam-osm";
 
 import type { DemoSnapshot } from "../demo-pipeline.js";
+import type { GeoEventStats } from "../geo-event-stats.js";
 import type { HeightfieldData } from "../heightfield.js";
 
 /**
@@ -336,10 +337,38 @@ export interface WorkerCalls {
     readonly request: {
       readonly position: LatLng;
       readonly category: string;
-      /** Epoch ms. Passed in so a test can pin a quarter-hour. */
+      /**
+       * Epoch ms. Passed in so a test can pin a quarter-hour — and, since W6,
+       * so the user can: the picker sends the instant it was given rather than
+       * "now".
+       */
       readonly now: number;
+      /**
+       * The C#'s handover window, in minutes. Defaults to the production five.
+       *
+       * **THE PICKER SENDS ZERO, and that is the whole reason this crosses the
+       * boundary.** The overlap models "I am arriving now, do not send me to a
+       * spawn that is about to move", so it is applied BEFORE the rounding —
+       * which means asking for exactly 18:00 resolves to 18:15. That is right
+       * for a live search and wrong for an explicit pick, where "show me 18:00"
+       * is a request for that slot. Without this the dialog would answer every
+       * question with the quarter after the one asked.
+       */
+      readonly overlapMinutes?: number;
     };
-    readonly result: GeoEvent;
+    /**
+     * The event AND what finding it cost (W7).
+     *
+     * A PAIR RATHER THAN JUST THE EVENT, because the cost is only observable
+     * here: the counters live on the index and the phase timings on the pipeline,
+     * both private inside the worker. Returning them is what makes DEC-G7's
+     * "benchmark first" possible without a second RPC that would measure a
+     * different search.
+     */
+    readonly result: {
+      readonly event: GeoEvent;
+      readonly stats: GeoEventStats;
+    };
   };
   readonly terrain: {
     readonly request: {

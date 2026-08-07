@@ -25,7 +25,27 @@ pointed at the Leaflet map, so it is a new feature rather than reuse.
   `"No event nearby"` when `event.picks` is empty, which is a legitimate
   outcome (a tile that is all water has no event), not an error.
   - `formatTime` is injectable so tests do not depend on the runner's locale or
-    timezone. Defaults to `toLocaleTimeString()`.
+    timezone. Defaults to `describeEventTime`.
+- `describeEventTime(at, today?) -> string` — the RESOLVED slot: `hh:mm` today,
+  `"9 Aug 18:15"` otherwise.
+  - **The date is conditional, and that is the W6 requirement.** A time-only
+    label was fine while every search meant "now" and could only be today; a
+    picker makes "next Tuesday at 18:00" expressible, and `18:15` for it is
+    indistinguishable from today's.
+  - **It shows the RESOLVED slot, not the requested instant.** `nextEventTime`
+    quantises to the next quarter-hour, so a request for 18:07 legitimately
+    produces an 18:15 event; showing what was asked for would make the label and
+    the marker disagree about the same thing.
+  - `map-view.ts` uses it for the marker tooltip too. That was a second inline
+    `toLocaleTimeString`, which would have had the button saying "9 Aug 18:15"
+    while the marker beside it said "18:15:00".
+- `GEO_EVENT_IDLE_LABEL` / `GEO_EVENT_BUSY_LABEL` — the button's other two
+  states, exported so `index.html`, the unit tests and the e2e name one string.
+- `geoEventButtonLabel(view, busy, formatTime?) -> string` — the WHOLE of what
+  the button displays, as a pure function of `(busy, position, geoEvent)`. It
+  used to be written at the call site on success and reset on failure, so it
+  could describe markers that were no longer there; deriving it also makes the
+  distance re-read as the user walks, which a frozen string could not.
 - `distanceMetres(from, to) -> number` — great-circle metres (haversine).
 - `bearingDegrees(from, to) -> number` — initial great-circle bearing, in
   `[0, 360)`.

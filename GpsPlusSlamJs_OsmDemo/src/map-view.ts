@@ -20,6 +20,7 @@ import L from "leaflet";
 import { cellToBoundary } from "h3-js";
 import type { CellScore, GeoEvent, LatLng, Region } from "gps-plus-slam-osm";
 
+import { describeEventTime } from "./event-label.js";
 import { describeScale, type HeatScale } from "./heat-colours.js";
 import { tileBounds } from "./fetch-extent.js";
 import { escapeHtml } from "./escape-html.js";
@@ -282,8 +283,14 @@ export class MapView {
           iconAnchor: [QUEST_MARKER_PX / 2, QUEST_MARKER_PX / 2],
         }),
       })
+        // THROUGH THE SAME FORMATTER THE BUTTON USES. This was a second inline
+        // `toLocaleTimeString`, so once the picker could ask for another day
+        // (W6) the button would have said "9 Aug 18:15" while the marker beside
+        // it said "18:15:00" — two views of one instant disagreeing about which
+        // day it is, which is the class of drift `describeEventTime` exists to
+        // remove.
         .bindTooltip(
-          `event at ${new Date(event.eventTime).toLocaleTimeString()} · heat ${Math.round(pick.heat)}`,
+          `event at ${describeEventTime(event.eventTime)} · heat ${Math.round(pick.heat)}`,
         )
         .addTo(this.eventLayer);
     }

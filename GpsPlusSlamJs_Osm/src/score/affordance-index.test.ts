@@ -986,6 +986,48 @@ describe("withPinned — keeping a chunk alive across a refresh", () => {
     expect(index.stats.chunksPinned).toBe(0);
   });
 
+  it("remembers the PEAK, because the live count is always zero afterwards", () => {
+    // WHY THIS TEST MATTERS (W7). `chunksPinned` is reset in `withPinned`'s
+    // `finally`, so any caller asking "how much did that search hold?" reads
+    // the released value — zero — and the question is unanswerable. That is
+    // exactly the question the geo-event benchmark exists to answer, since the
+    // index's own cap comment reasons about the size of one pinned batch.
+    //
+    // Also asserted INSIDE the body, so the peak cannot be satisfied by
+    // recording something after the release.
+    const index = tinyCacheIndex();
+    const cells = [0.005, 0.006, 0.007].map((d) =>
+      latLngToCell(HOME.lat + d, HOME.lng + d, AFFORDANCE_RES),
+    );
+
+    let seenInside = 0;
+    index.withPinned(cells, () => {
+      seenInside = index.stats.chunksPinned;
+    });
+
+    expect(seenInside).toBeGreaterThan(0);
+    expect(index.stats.chunksPinned).toBe(0);
+    expect(index.stats.chunksPinnedPeak).toBe(seenInside);
+  });
+
+  it("keeps the peak across searches, so the worst case survives", () => {
+    // The worst case across a session is what a cap is judged against, not
+    // whatever the last search happened to need.
+    const index = tinyCacheIndex();
+    const many = [0.005, 0.006, 0.007].map((d) =>
+      latLngToCell(HOME.lat + d, HOME.lng + d, AFFORDANCE_RES),
+    );
+    const one = [
+      latLngToCell(HOME.lat + 0.005, HOME.lng + 0.005, AFFORDANCE_RES),
+    ];
+
+    index.withPinned(many, () => undefined);
+    const peak = index.stats.chunksPinnedPeak;
+    index.withPinned(one, () => undefined);
+
+    expect(index.stats.chunksPinnedPeak).toBe(peak);
+  });
+
   it("counts how far past the cap the pins pushed the cache", () => {
     // DEC-R9-11: pins win over the cap, because an algorithm mid-climb must not
     // have its data pulled away. The overrun is COUNTED rather than thrown or

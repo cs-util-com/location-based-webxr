@@ -45,14 +45,20 @@
 
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
+import type { GeoEventStats } from "./geo-event-stats.js";
 import { selectOsmView, type DemoStore } from "./osm-store.js";
 
 /** The part of the worker client this needs; narrowed so tests can fake it. */
 interface GeoEventWorker {
   call(
     kind: "geoEvent",
-    payload: { position: LatLng; category: string; now: number },
-  ): Promise<GeoEvent>;
+    payload: {
+      position: LatLng;
+      category: string;
+      now: number;
+      overlapMinutes?: number;
+    },
+  ): Promise<{ event: GeoEvent; stats: GeoEventStats }>;
 }
 
 export interface GeoEventCycleOptions {
@@ -72,11 +78,17 @@ export interface GeoEventCycleOptions {
    * the full refresh rather than a single `update`.
    */
   readonly republish: () => Promise<void>;
-  /**
-   * The clock. Injectable so a test can pin the requested instant, and so W6's
-   * picker can hand over a chosen one instead of "now".
-   */
+  /** The clock, for a search with no explicitly requested time. */
   readonly now?: () => number;
+  /**
+   * Reports what the search cost (W7). Optional, because nothing depends on it.
+   *
+   * A CALLBACK RATHER THAN STORE STATE. The counters describe one run of an
+   * algorithm, not something any view draws — putting them in the store would
+   * make them persistable, devtools-serialised and subject to the reducer rules,
+   * for a diagnostic line.
+   */
+  readonly onStats?: (stats: GeoEventStats) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -93,7 +105,7 @@ function messageOf(error: unknown): string {
  */
 export function createGeoEventCycle(
   options: GeoEventCycleOptions,
-): () => Promise<void> {
+): (requested?: number) => Promise<void> {
   const {
     store,
     actions,
@@ -101,9 +113,10 @@ export function createGeoEventCycle(
     setBusy,
     republish,
     now = () => Date.now(),
+    onStats,
   } = options;
 
-  return async (): Promise<void> => {
+  return async (requested?: number): Promise<void> => {
     // Captured at DISPATCH time. The position is what the label's distance and
     // bearing are measured from, so reading it again on arrival would describe
     // the answer from wherever the user ended up rather than from where they
@@ -113,11 +126,19 @@ export function createGeoEventCycle(
     let event: GeoEvent | undefined;
     setBusy(true);
     try {
-      event = await worker.call("geoEvent", {
+      const answer = await worker.call("geoEvent", {
         position,
         category,
-        now: now(),
+        now: requested ?? now(),
+        // ZERO FOR AN EXPLICIT PICK, the production default otherwise. The
+        // overlap window means "I am arriving now, do not send me to a spawn
+        // about to move", and it is applied before the rounding — so leaving it
+        // at five would answer "show me 18:00" with the 18:15 slot. See
+        // `nextEventTime`'s docstring, which used to claim otherwise.
+        ...(requested === undefined ? {} : { overlapMinutes: 0 }),
       });
+      event = answer.event;
+      onStats?.(answer.stats);
     } catch (error) {
       // The PREVIOUS event deliberately stays published. A search that failed
       // says nothing about the one already on the map, and taking it down would

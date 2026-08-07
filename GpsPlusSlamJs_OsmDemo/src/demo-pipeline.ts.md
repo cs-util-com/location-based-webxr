@@ -9,6 +9,23 @@ path, with no DOM in it.
 
 - `class DemoPipeline` — `update(position, category, signal?): Promise<DemoSnapshot>` (the signal is checked PER TILE, which is where the saving is: a tile is 28-68 MB), `scoreFor(cell): CellScore | undefined` (so `explainCell` can be answered inside the worker, where the merged features already are),
   `features()`, static `chunkFor(position)`
+  - `geoEvent(position, category, now, signal?, options?)` →
+    `{ event, stats }`. `options.overlapMinutes` is the C#'s handover window;
+    omit it for the production default and pass `0` for an explicitly picked
+    time, which is a request for THAT slot rather than a statement about
+    arriving (see `nextEventTime`).
+  - **`stats` is `GeoEventStats` (W7), and it is only measurable here**: the
+    counters live on the index and the phase timings on this method, both
+    private inside the worker. `climbsStarted` is counted through a wrapper
+    handed only to the algorithm — step 1 calls the same `toCell` while deriving
+    the reach, and counting there would report ensure-set arithmetic as climbing
+    work.
+  - **Measured, and it was a surprise: a search still downloads tiles after a
+    refresh at the WIDEST radius.** The scored disk is `SCORE_DISK_MAX_RADIUS`
+    chunks around the user; the ensure set is the union of
+    `gridDisk(candidate, CLIMB_STEPS + 1)` over a batch spread across up to
+    seven res-8 tiles, which is a far larger area. "The OSM data is already
+    cached" can be true of the disk and false of the reach at the same time.
 - `interface DemoSnapshot` — `cells`, `regions`, `threshold`, `missingTiles`,
   `loadedTiles`, `stats`, `radius`
   - `radius` is which ring of the progressive widening this snapshot describes,
