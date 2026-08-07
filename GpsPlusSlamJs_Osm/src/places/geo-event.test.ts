@@ -850,3 +850,106 @@ describe("CANDIDATES_PER_BATCH is the caller's contract, not a private detail", 
     );
   });
 });
+
+describe("the winner is the warmest NEIGHBOURHOOD, not the warmest cell", () => {
+  it("settles on a low-scoring cell that is surrounded by high ones", () => {
+    // WHY THIS TEST MATTERS. This is the single most confusing thing about the
+    // feature from a user's point of view, and it was reported as a suspected
+    // bug from a live session: the marker sat on a cell whose tooltip read
+    // `battleArea = 1` while visibly higher-scoring cells sat right beside it.
+    //
+    // It is correct, and it is `GetHeatForTilePlusNeighbours` in the C#.
+    // `climbToLocalMaximum` maximises the sum over a cell AND its neighbours,
+    // so being SURROUNDED by strength beats being strong: a weak cell in the
+    // middle of a warm cluster outranks a strong cell on that cluster's edge,
+    // because the edge cell's own neighbourhood reaches out into the cold.
+    //
+    // The fixture is the reported screenshot: a ring of 1.37s around a single
+    // 1, on an otherwise flat field of 1.
+    const values: Record<string, number> = {};
+    for (let x = -4; x <= 8; x += 1) {
+      for (let y = -4; y <= 8; y += 1) values[`${x},${y}`] = 1;
+    }
+    for (const [dx, dy] of [
+      [-1, -1],
+      [0, -1],
+      [1, -1],
+      [-1, 0],
+      [1, 0],
+      [-1, 1],
+      [0, 1],
+      [1, 1],
+    ]) {
+      values[`${3 + dx},${3 + dy}`] = 1.37;
+    }
+
+    const neighbourhood = (cell: string): number =>
+      gridNeighbours(cell).reduce((sum, at) => sum + (values[at] ?? 0), 0);
+
+    // The centre is the WEAKEST cell of the nine and the warmest neighbourhood.
+    expect(values["3,3"]).toBe(1);
+    expect(values["3,2"]).toBe(1.37);
+    expect(neighbourhood("3,3")).toBeGreaterThan(neighbourhood("3,2"));
+
+    const climbed = climbToLocalMaximum({
+      start: "0,0",
+      heatAt: fieldFrom(values),
+      neighbours: gridNeighbours,
+      steps: 5,
+    });
+
+    expect(climbed.left).toBe(false);
+    expect(climbed.cell).toBe("3,3");
+    // The pick's OWN score is the lowest in its cluster — which is the thing
+    // that looks wrong on the map and is not.
+    expect(values[climbed.cell]).toBe(1);
+  });
+
+  it("is what lets the gate pass a cluster and reject a lone spike", () => {
+    // The counterweight, and why the design is the one the C# chose. The gate
+    // is `heat > neighbours(cell).length * threshold` — a sum over the
+    // neighbourhood — so one very high cell surrounded by identity ground does
+    // NOT qualify, while a broad, mildly-warm district does. An event is meant
+    // to land somewhere you can play, not on one lucky hexagon.
+    const spike: Record<string, number> = {};
+    for (let x = -4; x <= 8; x += 1) {
+      for (let y = -4; y <= 8; y += 1) spike[`${x},${y}`] = 1;
+    }
+    spike["3,3"] = 4;
+
+    const climbed = climbToLocalMaximum({
+      start: "3,3",
+      heatAt: fieldFrom(spike),
+      neighbours: gridNeighbours,
+      steps: 5,
+    });
+
+    // Nine cells at the identity would sum to 9; the spike lifts it to 12.
+    const gate = gridNeighbours("3,3").length * 1;
+    expect(climbed.heat).toBe(12);
+    expect(climbed.heat > gate).toBe(true);
+
+    // But move the spike's neighbours below the identity and the same cell
+    // fails the gate, however high it is on its own — the district is judged,
+    // not the hexagon.
+    //
+    // `steps: 0` so the climb reports THIS cell's neighbourhood rather than
+    // wherever it would wander off to. Written the other way round first, and
+    // it measured the wrong cell: from an isolated spike the climb walks OUT
+    // to the surrounding field, whose neighbourhood is warmer than the pit the
+    // spike sits in — true, and not the claim being made here.
+    const isolated: Record<string, number> = { ...spike };
+    for (const at of gridNeighbours("3,3")) {
+      if (at !== "3,3") isolated[at] = 0.5;
+    }
+    const alone = climbToLocalMaximum({
+      start: "3,3",
+      heatAt: fieldFrom(isolated),
+      neighbours: gridNeighbours,
+      steps: 0,
+    });
+    expect(alone.cell).toBe("3,3");
+    expect(alone.heat).toBe(8);
+    expect(alone.heat > gate).toBe(false);
+  });
+});

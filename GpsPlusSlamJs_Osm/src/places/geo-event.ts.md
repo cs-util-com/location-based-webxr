@@ -55,6 +55,26 @@ what let it be written before the wide-heat work exists.
   immediately.
 - **The climb compares NEIGHBOURHOOD heat**, as `GetHeatForTilePlusNeighbours`
   does — it walks towards a broad warm area rather than an isolated spike.
+  - **So the winner is very often NOT the highest-scoring cell in sight, and
+    this reads as a bug on the map.** It was reported as one from a live
+    session: the marker sat on a cell whose tooltip said `battleArea = 1` with
+    visibly higher-scoring cells directly beside it. Being SURROUNDED by
+    strength beats being strong — a weak cell inside a warm cluster outranks a
+    strong cell on that cluster's edge, because the edge cell's own
+    neighbourhood reaches outward into the cold. Measured on the reported shape
+    (a ring of 1.37 around a single 1, on a flat field of 1): the centre sums
+    **11.96** against the ring's **10.85**, and the centre wins.
+  - **The same property is what makes the quality gate mean anything.** The gate
+    is `heat > neighbours(cell).length * threshold` — a sum over the
+    neighbourhood — so one very high cell surrounded by identity ground FAILS
+    it: a `4` among `0.5`s scores 8 against a gate of 9. An event is meant to
+    land somewhere playable, not on one lucky hexagon.
+  - **Nothing in the 2D map draws this metric**, which is why it is unverifiable
+    from the picture: every cell is painted by its OWN score, and the marker's
+    tooltip reports `heat`, which is already the neighbourhood sum but is not
+    labelled as such. Both facts are pinned by
+    "the winner is the warmest NEIGHBOURHOOD, not the warmest cell" in
+    `geo-event.test.ts`.
 - **It is bounded by `steps`**, because it runs in the worker and an
   ever-rising field would otherwise walk until the process died.
 
@@ -145,6 +165,16 @@ because two callers deriving it separately is exactly how they drifted apart.
 `geo-event.test.ts` — the four quarter-hour branches, determinism across seed,
 time and minute-quantisation, candidate spread and containment, and the climb's
 uphill / flat / bounded / left-the-field behaviours.
+
+It also pins **why a low-scoring cell can win**, from a live report that read as
+a bug: the fixture is the reported screenshot (a ring of 1.37 around a single 1)
+and the centre is asserted to be both the weakest cell of the nine and the
+climb's answer. Its counterweight asserts that a lone spike fails the gate, so
+the two together say what the neighbourhood metric buys and what it costs. The
+counterweight uses `steps: 0` deliberately — written with a real climb first, it
+measured the wrong cell, because from an isolated spike the climb walks OUT to
+the surrounding field, whose neighbourhood is warmer than the pit the spike sits
+in.
 
 For `newGeoEventFor` it also pins ordering by the SETTLED position (mutating
 the sort key back to `candidate` fails exactly that test) and the longitude
