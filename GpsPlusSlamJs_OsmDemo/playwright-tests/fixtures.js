@@ -620,10 +620,12 @@ export async function stashStableFrame(page, threshold = 24) {
  * triggers a refresh and the cells arrive ASYNCHRONOUSLY, where they used to be
  * redrawn from data already held.
  *
- * `waitForRefresh` is the wrong tool for this: it waits for the ABSENCE of
+ * `waitForRefresh` is the wrong tool ON ITS OWN: it waits for the ABSENCE of
  * "widening", which is still true in the moment between the click and the
  * refresh starting, so it returns immediately and the test races anyway. The
- * cells themselves are the direct observable.
+ * cells themselves are the direct observable. AFTER the cell wait it is exactly
+ * right, which is why the body below does both — do not "fix" the apparent
+ * contradiction by deleting the second one (#262).
  *
  * @param {import('@playwright/test').Page} page
  */
@@ -636,12 +638,19 @@ export async function enableCellLayer(page) {
   // above: the first cells to appear are ring 2's, and rings 3 and 4 each
   // REPUBLISH a larger snapshot, re-rendering every path on the map.
   //
-  // Switching this layer on is a REFETCH, not a redraw — cells are data-gated
-  // since round 10 stage B — so the whole progressive cycle runs, and a caller
-  // that only waited for the first cells was racing it. That is the third
-  // appearance of the failure `waitForRefresh` was written for: a cell clicked
-  // in ring 2 gets re-rendered before the click lands, the dispatch never
-  // happens, and the details panel silently stays hidden.
+  // Switching this layer on is a REFETCH rather than a redraw WHENEVER THE HELD
+  // SNAPSHOT HAS NO CELLS — they are data-gated since round 10 stage B, and
+  // `layersNeedingData` refetches only in that case (`held[layer] ?? 0) === 0`).
+  // Then the whole progressive cycle runs and a caller that only waited for the
+  // first cells was racing it. That is the third appearance of the failure
+  // `waitForRefresh` was written for: a cell clicked in ring 2 gets re-rendered
+  // before the click lands, the dispatch never happens, and the details panel
+  // silently stays hidden.
+  //
+  // AFTER AN OFF/ON FLICK WITHIN ONE POSITION the cells are already held, no
+  // refetch happens, and both waits below pass immediately — so the helper is
+  // still correct there, but the unconditional "this is a refetch" that used to
+  // stand here was broader than the rule (#262).
   //
   // It surfaced as a CI-only failure of "the cells it reveals are
   // interrogable", deterministic on a slower runner and never reproducible
