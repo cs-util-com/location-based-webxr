@@ -37,6 +37,6 @@ None — it is a side effect.
 
 ## Tests
 
-Covered end to end by `playwright-tests/osm-demo.spec.js` › _"the POI model
+Covered end to end by `playwright-tests/` › _"the POI model
 gallery"_ — if this file failed to hold the renderer, that test's polled pixel
 count would fall back to zero.

@@ -43,6 +43,26 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}`;
 
 /**
+ * How long a poll waits for a REPAINT to land.
+ *
+ * Every use is "wait until the canvas (or the Leaflet layer) has been redrawn",
+ * which costs an animation frame plus whatever GPU work the frame implies. It
+ * was 5 s, and that is a wall-clock assertion inside a suite of headless
+ * software-rasterised WebGL — it measures the machine, not the code. On a loaded
+ * developer machine three tests failed per run, each run a different three,
+ * while every one of them passed standalone.
+ *
+ * RAISING THIS WEAKENS NOTHING. A poll returns the instant its condition holds,
+ * so a passing test is not slowed by one millisecond; only the time a genuinely
+ * broken build takes to report changes. The assertions themselves are untouched.
+ *
+ * LIVES HERE, not in a spec file, because the spec files are split by subject
+ * and every one of them polls for a repaint. One definition, or the next split
+ * file quietly gets a different timeout.
+ */
+export const REPAINT = { timeout: 15000 };
+
+/**
  * A real captured Overpass response from the OSM package's fixture corpus.
  *
  * `park` is Cologne Volksgarten, which is nowhere near `main.ts`'s default start

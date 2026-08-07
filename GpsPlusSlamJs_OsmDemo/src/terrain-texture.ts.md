@@ -65,6 +65,6 @@ the exact bug this module exists to avoid.
 The load-bearing one is "matches heightAt across the field", which sweeps a grid
 and compares against the real sampler. The end-to-end half — that the _shader_
 implements this arithmetic and not something else — is
-`osm-demo.spec.js` › "displaces the ground on the GPU, and it matches the CPU
+`playwright-tests/` › "displaces the ground on the GPU, and it matches the CPU
 path", whose threshold was measured (116 differing pixels working, 8990 with the
 displacement line deleted) rather than chosen.

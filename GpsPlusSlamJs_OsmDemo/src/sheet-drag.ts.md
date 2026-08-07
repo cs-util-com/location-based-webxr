@@ -34,4 +34,4 @@ attachSheetDrag({
 ## Tests
 
 - `sheet-drag.test.ts` — a normal drag is preserved; both extremes clamp so neither view vanishes; the limits leave room for both; and nonsense input (`NaN`, `Infinity`) is total.
-- `playwright-tests/osm-demo.spec.js` — _"puts the 3D view behind a draggable map sheet"_, at a 390×780 viewport: the 3D view fills the main area, the map is a full-width bottom sheet over it, **the grab bar starts on the sheet's edge before any drag**, and dragging it grows the sheet. That pre-drag assertion is load-bearing: the drag itself grabs the bar wherever it happens to be and the first move snaps to the clamp, so it passes whether or not the bar started in the right place.
+- `playwright-tests/` — _"puts the 3D view behind a draggable map sheet"_, at a 390×780 viewport: the 3D view fills the main area, the map is a full-width bottom sheet over it, **the grab bar starts on the sheet's edge before any drag**, and dragging it grows the sheet. That pre-drag assertion is load-bearing: the drag itself grabs the bar wherever it happens to be and the first move snaps to the clamp, so it passes whether or not the bar started in the right place.

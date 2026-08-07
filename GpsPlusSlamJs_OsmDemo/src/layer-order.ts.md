@@ -35,4 +35,4 @@ const lifts = GROUND_LAYERS.map(groundLift); // [0.04, 0.08, 0.12, 0.16]
 ## Tests
 
 - `layer-order.test.ts` — strictly increasing along the ladder; every ground layer gets a distinct non-zero lift; `cells` is at the top, because they are what is being inspected; nothing that stands up from the ground is lifted; every `LayerKind` is answered, so a new kind cannot be forgotten; and every lift stays small enough not to look like floating.
-- The visible consequence is covered by e2e rather than here: `playwright-tests/osm-demo.spec.js` asserts that switching the `plates` and `areas` layers on changes the rendered pixels, which is the assertion that would fail if a lift collapsed into the terrain plane.
+- The visible consequence is covered by e2e rather than here: `playwright-tests/` asserts that switching the `plates` and `areas` layers on changes the rendered pixels, which is the assertion that would fail if a lift collapsed into the terrain plane.

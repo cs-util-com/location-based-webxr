@@ -74,7 +74,7 @@ geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
   drag the range; an all-missing field is entirely no-data.
 
 The pixel half — that the ramp reaches the screen — is
-`osm-demo.spec.js` › "shows the terrain as a height ramp, which is the default ground".
+`playwright-tests/` › "shows the terrain as a height ramp, which is the default ground".
 It counts the ramp's **two ends** (blue-dominant for the floor, bright-neutral
 for the top) and asserts both are present from a fresh load, that selecting the
 plain `cpu` ground entry returns the scene to neither, and that `gpu-ramp`

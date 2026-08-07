@@ -77,7 +77,7 @@ window.addEventListener("pagehide", dispose, { once: true });
   GPU: every model gets its own place, pads cannot overlap, the sheet is centred
   on the origin (the default camera looks at it), it stays roughly square rather
   than a 1×50 strip, and the degenerate counts do not divide by zero.
-- `playwright-tests/osm-demo.spec.js` › _"the POI model gallery"_ — the page
+- `playwright-tests/` › _"the POI model gallery"_ — the page
   loads, reports fifty from the data rather than a hard-coded number, draws
   non-background pixels, and logs no error.
 - `gps-plus-slam-osm`'s `poi-models.contract.test.ts` — that the models

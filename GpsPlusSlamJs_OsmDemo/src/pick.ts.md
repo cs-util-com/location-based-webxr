@@ -74,5 +74,5 @@ wins in both directions; unsorted input; empty input; an unidentifiable hit is
 skipped and the search continues; a triangle that maps to no cell; a `null`
 `faceIndex`.
 
-`osm-demo.spec.js` › "a building stays unpickable, which W12 must not have
+`playwright-tests/` › "a building stays unpickable, which W12 must not have
 undone" is the end-to-end half of the invariant.

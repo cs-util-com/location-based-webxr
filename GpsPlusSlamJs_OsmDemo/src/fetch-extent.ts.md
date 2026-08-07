@@ -64,6 +64,6 @@ longitude cosine at once), the over-fetch necessarily exceeding 1 while staying
 under 2, the hex area coming from H3, and the label wording, multi-tile summing,
 empty case and non-finite guard.
 
-`playwright-tests/osm-demo.spec.js` — asserts both `path.fetch-extent` and
+`playwright-tests/` — asserts both `path.fetch-extent` and
 `path.fetch-tile-hex` reach the screen and that the status line carries the
 numbers, since a zoomed-out map makes the picture alone uninformative.

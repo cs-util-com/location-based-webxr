@@ -54,6 +54,6 @@ The colour assertions compare against `heatColour` rather than literal hex, so a
 change to the map's ramp that did not reach here would fail — which is the
 divergence the shared function exists to prevent.
 
-`osm-demo.spec.js` › "fills the regions on the MAP when the areas layer is on"
+`playwright-tests/` › "fills the regions on the MAP when the areas layer is on"
 is the end-to-end half: it counts `path.region-fill` on and off, and reads the
 `fill` attribute the browser actually applied.

@@ -61,4 +61,4 @@ buildingView.renderCells(
 
 - `cell-mesh.test.ts` — one hexagon per drawn cell as four triangles; every triangle indexed back to its cell (the property a pick depends on); the same band rules as the map; colours from the shared ramp; flat colour per hexagon; empty geometry rather than a throw when nothing is drawn; and the grid lifted clear of the ground.
   - Plus the ragged-boundary cases, against real H3 ids rather than a synthetic shape: a 7-corner cell and a 10-corner pentagon are drawn in full, and a mix of corner counts keeps `cellForTriangle` aligned with every index in range.
-- `playwright-tests/osm-demo.spec.js` — _"draws the affordance grid too, and a click on it opens the panel"_, which proves the geometry is both drawn **and** correctly indexed. A coloured hexagon nobody can identify would pass a pixel test and still be useless.
+- `playwright-tests/` — _"draws the affordance grid too, and a click on it opens the panel"_, which proves the geometry is both drawn **and** correctly indexed. A coloured hexagon nobody can identify would pass a pixel test and still be useless.

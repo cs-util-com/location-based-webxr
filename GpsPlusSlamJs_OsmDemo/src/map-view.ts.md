@@ -87,7 +87,7 @@ None directly (Leaflet needs a DOM); the data it draws is tested in
 `legend-model.test.ts`, the contributor ordering in `contributor-order.test.ts`,
 and the escaping in `escape-html.test.ts`. What only a browser can show — that
 the popup opens and its links are clickable, and that the checkbox reveals three
-distinct bands — is covered in `playwright-tests/osm-demo.spec.js`.
+distinct bands — is covered in `playwright-tests/`.
 
 ## The underground layer
 

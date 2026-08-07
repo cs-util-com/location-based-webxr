@@ -73,6 +73,6 @@ pnpm run dev   # http://localhost:5186
 ## Tests
 
 No unit tests — it is DOM wiring. It is covered end to end by
-`playwright-tests/osm-demo.spec.js`, which drives the real shell: the rule-table
+`playwright-tests/`, which drives the real shell: the rule-table
 tier it reports, the category picker it builds, the status line it assembles,
 and the failure message it shows when a tile cannot be fetched.

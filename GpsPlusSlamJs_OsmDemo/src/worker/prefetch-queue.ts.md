@@ -64,6 +64,6 @@ request only makes things slower, an undropped prefetch only pulls a tile nobody
 looks at, a duplicate only doubles the bytes. None produces a wrong picture, so
 none would ever be noticed without an assertion.
 
-End to end, `osm-demo.spec.js`'s _"the background ring prefetch"_ block counts
+End to end, `playwright-tests/`'s _"the background ring prefetch"_ block counts
 requests — the only way to see a cache — and asserts both that the ring is pulled
 and that a prefetched tile is reused rather than fetched again.

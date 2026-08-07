@@ -34,4 +34,4 @@ rankContributors({ "way/strong": 5, "way/veto": 0, "way/silent": 1 });
 
 `contributor-order.test.ts` — a veto leads against ten mild contributors _and_ against one strong contributor (the case `|factor − 1|` gets wrong); `0.5` and `2` rank equally; the identity is last but present; every contributor is returned; the order is deterministic for equal ranks; a negative factor from a bad sheet edit is ranked last without disturbing the rest; an empty map returns an empty list.
 
-The rendering that consumes it is covered by `playwright-tests/osm-demo.spec.js` — _"a cell popup names the OSM elements that produced its score, and they are clickable"_.
+The rendering that consumes it is covered by `playwright-tests/` — _"a cell popup names the OSM elements that produced its score, and they are clickable"_.

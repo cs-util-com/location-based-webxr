@@ -14,7 +14,7 @@ import { galleryPositions, rowLabel } from "./gallery.js";
  * half of it. Both look like "the page is broken" rather than like a layout bug.
  *
  * The e2e half — that the page loads, draws something, and logs no error — is in
- * `osm-demo.spec.js`.
+ * `playwright-tests/`.
  */
 
 describe("galleryPositions", () => {

@@ -29,7 +29,7 @@ legendView.clear();
 
 ## Tests
 
-Covered end to end by `playwright-tests/osm-demo.spec.js`:
+Covered end to end by `playwright-tests/`:
 
 - _"reports the scale it is drawing with, as a legend"_ — the legend is visible, has swatches, labels both ends with numbers, and carries `describeScale`'s sentence in its `title`.
 - _"switching category redraws the grid"_ — `.legend-category` shows the newly selected category (W2). This is the assertion that makes a redraw visible to a person rather than only to a tooltip.

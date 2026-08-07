@@ -36,6 +36,6 @@ panel.clear();
 
 ## Tests
 
-Covered end to end by `playwright-tests/osm-demo.spec.js` — _"clicking a cell opens a details panel explaining its score"_: the panel starts hidden, a cell click reveals it, a feature expands to show tag rows, and closing it deselects so the same cell can be re-opened.
+Covered end to end by `playwright-tests/` — _"clicking a cell opens a details panel explaining its score"_: the panel starts hidden, a cell click reveals it, a feature expands to show tag rows, and closing it deselects so the same cell can be re-opened.
 
 The view model is unit-tested in `explanation-tree.test.ts`. `details-panel.test.ts` (jsdom) covers the two modes that have **no** model behind them and therefore live only here: `renderFeature` (label, kind, the `href` it actually points at, replacement, escaping, `clear()`) and `renderUnavailable` (visible, names the cell, replaces rather than appends, dismissible through the shared `onClose`, escapes the id).

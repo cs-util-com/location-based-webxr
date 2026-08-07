@@ -87,7 +87,7 @@ buildingView.setGroundAppearance(groundAppearance(ground));
 leaving the scene with no ground and no explanation, the retired `terrainDebug`
 string still falling back, and — the point of the five-way form — that both
 strategies keep both appearances and that no mode combines "no ground" with a
-ramp. End to end, `osm-demo.spec.js`'s _"the ground mode picker"_ block asserts
+ramp. End to end, `playwright-tests/`'s _"the ground mode picker"_ block asserts
 the picture changes on `none`, that the mesh layers are NOT cleared with it, that
 the picker offers exactly the five entries, and that `cpu-ramp` is what a fresh
 load shows.

@@ -111,5 +111,5 @@ rig.dispose();
   when regeneration throws; the mesh **never** in the scene; background and
   environment driven from one texture; `setSun` returning the same direction the
   light must use. All run against a faked `PmremLike`, so they need no GPU.
-- `osm-demo.spec.js` — the console-stays-clean e2e is the guard that would have
+- `playwright-tests/` — the console-stays-clean e2e is the guard that would have
   caught W20's outage, and it is the reason this file exists in this shape.
