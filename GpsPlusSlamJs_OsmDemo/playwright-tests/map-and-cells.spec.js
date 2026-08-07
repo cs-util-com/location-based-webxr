@@ -40,10 +40,11 @@ import {
  * and failed after its predecessor. Restoring to the captured default makes the
  * common case a genuine no-op.
  *
- * THREE TESTS ARE NOT HERE and take Playwright's own `{ page }` fixture, each
- * for a reason `resetUi` cannot fix — a different network stub, a fetch that
- * can only be watched from cells-OFF, and a geo-event marker with no control
- * that removes it. `fixtures.js` records each one next to `resetUi`.
+ * FOUR TESTS ARE NOT HERE and take Playwright's own `{ page }` fixture. Three
+ * are known limitations `resetUi` cannot fix — a different network stub, a fetch
+ * that can only be watched from cells-OFF, and a geo-event marker with no
+ * control that removes it; `fixtures.js` records each next to `resetUi`. The
+ * fourth is an unexplained 3D-raycast interaction, documented at the test.
  *
  * @type {import('@playwright/test').Page}
  */
@@ -60,7 +61,11 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
-  await shared.close();
+  // GUARDED: if `beforeAll` throws -- a boot timeout is the likely one, since it
+  // runs the whole fetch/score/widen chain -- `shared` is still undefined, and an
+  // unguarded close reports a TypeError next to the real failure in a run that is
+  // already hard to read.
+  if (shared !== undefined) await shared.close();
 });
 
 // Runs for the isolated tests too, where it resets a page they do not use — a
@@ -188,6 +193,10 @@ test.describe("the affordance map", () => {
         link.click(),
       ]);
       expect(opened[0].url()).toMatch(/openstreetmap\.org\//);
+      // CLOSED, like the Leaflet popup below. With a page per test this tab died
+      // with the context; on the file's shared context it would outlive the test
+      // and accumulate across the file.
+      await opened[0].close();
 
       // CLOSED before the next step. A Leaflet popup is an overlay pane above the
       // cells, and the step below hovers one to read its tooltip — an open popup
@@ -711,13 +720,16 @@ test.describe("selecting a region", () => {
     await expect(stats).toContainText("median");
     await expect(stats).toContainText("range");
 
-    // CLOSING DESELECTS, so the SAME region can be re-opened. `details-panel.ts.md`
-    // states this invariant and it was honoured for cells only: `onClose`
-    // cleared `selectedCell` and left `selectedRegion` set, so a second click on
-    // the same region dispatched an identical value and the panel stayed shut —
-    // a dead click, which is exactly the defect the invariant describes.
-    // Unfindable with a page per test, because nothing ever clicked a region
-    // twice; the shared-page pilot surfaced it as one test breaking the next.
+    // CLOSING DESELECTS, so the SAME region can be re-opened.
+    // `details-panel.ts.md` states this invariant, and nothing had asserted it
+    // for REGIONS — only for cells. It holds through a single dispatch:
+    // `cellSelected(undefined)` clears the cell, the feature AND the region.
+    //
+    // This assertion was written believing it was reproducing a defect (that
+    // closing left the region selected, making a second click dead). It was
+    // not — the reducer already cleared it, and the "fix" was dead code,
+    // reverted after review on #271. The assertion is kept because the
+    // invariant genuinely lacked region coverage; only its motive was wrong.
     await panel.locator(".panel-close").click();
     await expect(panel).toBeHidden();
     await region.click({ force: true });
@@ -741,28 +753,27 @@ test.describe("selecting a region", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
-    const shared = page;
 
     // WITH THE CELLS HIDDEN, which is the point rather than a convenience: a
     // slab lies directly under the grid and `resolvePick` prefers the finer
     // claim, so a region is reachable exactly where the grid is not.
     //
-    // AND THE HIDING IS NOW WAITED FOR. On a per-test boot this `uncheck()` was
-    // a no-op — DEC-R7b-6 makes cells-off the default, so the box was already
-    // clear — and the click that follows was therefore never racing anything.
-    // On the file's shared page the baseline has the cells ON, so this is a real
-    // state change, and clicking before the grid has gone picks a cell instead
-    // of the slab underneath it. The test relied on a default it described as
-    // deliberate; now it establishes the state it needs.
-    await shared.locator("#layer-cells").uncheck();
-    await expect(shared.locator("#map path.affordance-cell")).toHaveCount(0);
+    // AND THE HIDING IS WAITED FOR — cheap insurance, not a fix for anything
+    // observed. DEC-R7b-6 makes cells-off the default, so on this test's own
+    // fresh page the `uncheck()` is a no-op and the click races nothing. The
+    // wait costs one assertion and removes the test's dependence on that default
+    // continuing to hold. (An earlier version of this comment justified the wait
+    // by a cells-ON shared baseline; that baseline was reversed — the file now
+    // captures the boot's own state — so the justification went with it.)
+    await page.locator("#layer-cells").uncheck();
+    await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
 
-    const canvas = shared.locator("#scene canvas");
+    const canvas = page.locator("#scene canvas");
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("no canvas box");
-    await shared.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 
-    const panel = shared.locator("#details");
+    const panel = page.locator("#details");
     await expect(panel).toBeVisible();
     // The SAME panel and the same mode a 2D click produces -- one selection, one
     // explanation, and the panel does not know which view produced it.

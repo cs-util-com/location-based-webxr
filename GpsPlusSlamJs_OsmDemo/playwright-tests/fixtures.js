@@ -731,13 +731,25 @@ export async function captureUiBaseline(page) {
  * @param {{category: string}} baseline
  */
 export async function resetUi(page, baseline) {
-  // The panel first: closing it also DESELECTS (the close button dispatches
-  // `cellSelected(undefined)`), so a later test's selection assertions start
-  // from nothing rather than from the previous test's cell.
+  // The panel first: closing it also DESELECTS. `onClose` dispatches
+  // `cellSelected(undefined)`, and that reducer clears the cell, the feature AND
+  // the region unconditionally — one dispatch, all three — so a later test's
+  // selection assertions start from nothing.
+  //
+  // GATED ON VISIBILITY, which is a known hole rather than an oversight: if a
+  // test ever leaves a selection set while the panel is hidden — `showRegion`
+  // drops a selection whose id has vanished from the snapshot, for instance —
+  // this skips the deselect and the next test starts with an invisible
+  // selection. Raised in review on #271. Asserted rather than assumed below, so
+  // the skip is loud instead of silent.
   if (await page.locator("#details").isVisible()) {
     await page.locator("#details .panel-close").click();
     await expect(page.locator("#details")).toBeHidden();
   }
+  // The postcondition the branch above cannot guarantee on its own.
+  expect(
+    await page.evaluate(() => document.querySelectorAll(".panel-stats").length),
+  ).toBe(0);
 
   // Free: a presentation toggle that never refetches.
   const showBelow = page.locator("#show-below");
