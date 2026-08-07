@@ -147,14 +147,25 @@ export function sunDirection(angles: SunAngles): Vector3Like {
 }
 
 /**
- * The camera's azimuth about the vertical axis, radians.
+ * The camera's azimuth about the vertical axis, radians — **clockwise from
+ * north**, the same convention as {@link SunAngles.azimuthRad}.
  *
- * KEPT FROM `sun.ts` even though the sun no longer depends on it, because it is
- * a genuine measurement of the view and other code reads it. Measured from the
- * offset between the camera and what it is looking at, so it is the direction
- * the VIEW comes from rather than where the camera happens to sit in world
- * space. Returns 0 for a camera directly above its target, which is degenerate
- * rather than wrong — at that point every azimuth looks the same.
+ * KEPT FROM `sun.ts` even though the sun no longer depends on it (DEC-R6-3): it
+ * is a genuine measurement of the view and worth having available. **NOTHING
+ * CURRENTLY READS IT except the tests** — check that before assuming a change
+ * here is observable anywhere. It survives the dead-code check only because the
+ * test imports it, so that claim will not fail loudly on its own.
+ *
+ * IT USED TO MEASURE FROM `+z`, inherited from `sun.ts` along with the function,
+ * and so returned an angle 180° out from every other angle in this file. Nothing
+ * read it, so nothing was visibly wrong — the trap was a future caller reaching
+ * for the one function here that returns "an azimuth" and getting one measured
+ * from the opposite pole. Raised in review on #264.
+ *
+ * Measured from the offset between the camera and what it is looking at, so it
+ * is the direction the VIEW comes from rather than where the camera happens to
+ * sit in world space. Returns 0 for a camera directly above its target, which is
+ * degenerate rather than wrong — at that point every azimuth looks the same.
  */
 export function cameraAzimuth(
   camera: Vector3Like,
@@ -163,5 +174,7 @@ export function cameraAzimuth(
   const dx = camera.x - target.x;
   const dz = camera.z - target.z;
   if (dx === 0 && dz === 0) return 0;
-  return Math.atan2(dx, dz);
+  // North is −z, so the north component is −dz — the inverse of `sunDirection`,
+  // and `sun-position.test.ts` asserts the round trip rather than trusting it.
+  return Math.atan2(dx, -dz);
 }
