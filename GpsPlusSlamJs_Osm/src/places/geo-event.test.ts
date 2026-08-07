@@ -104,6 +104,23 @@ describe("nextEventTime", () => {
     expect(nextEventTime(at, { overlapMinutes: 0 })).toBe(at);
   });
 
+  it("is NOT idempotent on a boundary under the PRODUCTION default", () => {
+    // WHY THIS TEST MATTERS. The test above passes `overlapMinutes: 0`, and the
+    // docstring used to claim the idempotence unconditionally — so the pair
+    // read as "an exact boundary is already an event time", full stop. It is
+    // not: the default is five minutes, and the shift happens BEFORE the
+    // rounding, so 10:15 → 10:20 → 10:30.
+    //
+    // It matters because a user can pick a time (W6). Someone asking for 10:15
+    // and being shown 10:30 looks like a bug, so the picker must pass
+    // `overlapMinutes: 0` — the overlap models "I am arriving now", which an
+    // explicit pick is not. This test is what makes the distinction fail loudly
+    // if the default is ever applied to a picked instant.
+    const boundary = Date.UTC(2026, 7, 2, 10, 15);
+    expect(nextEventTime(boundary)).toBe(Date.UTC(2026, 7, 2, 10, 30));
+    expect(nextEventTime(boundary, { overlapMinutes: 0 })).toBe(boundary);
+  });
+
   it("always lands on a quarter-hour multiple", () => {
     for (let minute = 0; minute < 24 * 60; minute += 7) {
       const at = Date.UTC(2026, 7, 2, 0, minute);

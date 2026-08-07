@@ -67,13 +67,23 @@ export interface GeoBounds {
 /**
  * When the next event starts, as epoch milliseconds.
  *
- * Rounds UP to a quarter-hour boundary, and an exact boundary is already an
- * event time rather than being pushed to the next one — otherwise the event
- * would change the instant it started.
+ * Rounds the instant UP to a quarter-hour boundary. An instant that IS a
+ * boundary stays where it is rather than being pushed to the next one —
+ * otherwise the event would change at the moment it started.
  *
- * `overlapMinutes` reproduces the C#'s handover: within that many minutes of a
- * boundary the answer is the quarter AFTER it, so a user arriving just before a
- * change is not sent to a spawn that is about to move.
+ * `overlapMinutes` reproduces the C#'s handover: the instant is shifted forward
+ * by that much BEFORE rounding, so a user arriving just before a change is not
+ * sent to a spawn that is about to move.
+ *
+ * **THE IDEMPOTENCE ABOVE IS ABOUT THE SHIFTED INSTANT, NOT ABOUT `now`, and
+ * the difference is user-visible.** Under the production default of five
+ * minutes, asking at exactly 18:00 gives **18:15**, not 18:00: 18:00 → 18:05 →
+ * round up → 18:15. Only `overlapMinutes: 0` makes a boundary map to itself,
+ * which is what the test named "idempotent on an exact boundary" passes. An
+ * earlier version of this paragraph claimed the idempotence unconditionally,
+ * which reads as a promise the function does not keep — and it matters now that
+ * a user can PICK a time (W6): a picker must pass `overlapMinutes: 0`, because
+ * "show me 18:00" is a request for that slot, not a statement about arriving.
  */
 export function nextEventTime(
   now: number,

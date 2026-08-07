@@ -7,6 +7,13 @@ points on the heat map (§6, DEC-R6-14). Ported from
 ## Public API
 
 - `nextEventTime(now, { overlapMinutes })` — the next quarter-hour boundary.
+  - `overlapMinutes` defaults to **5** and is applied BEFORE the rounding, so
+    asking at exactly 10:15 returns **10:30**, not 10:15. The "an exact boundary
+    maps to itself" property holds only at `overlapMinutes: 0`.
+  - The overlap models "I am arriving now, do not send me to a spawn that is
+    about to move". A user PICKING a time is not arriving, so a picker must pass
+    `overlapMinutes: 0` or it will show a slot 15–20 minutes after the one that
+    was asked for.
 - `eventCandidates({ bbox, globalSeed, eventTime, count })` — seeded positions.
 - `climbToLocalMaximum({ start, heatAt, neighbours, steps })` — `{ cell, left,
 heat }`.
