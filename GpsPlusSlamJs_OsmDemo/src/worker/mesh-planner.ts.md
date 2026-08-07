@@ -69,9 +69,16 @@ fixture city is small and a full build there is cheap. But the saving is a
 **rate**, not a duration, and the rate is what this module decides, so it
 measures deterministically with no clock:
 
-- 600 m walked in 20 m steps — 7 full builds instead of 30 (77 % fewer)
-- 1 km walked in 20 m steps — 10 instead of 50 (80 % fewer)
-- 1 km walked in 50 m steps — 10 instead of 20 (50 % fewer)
+- 600 m walked in 30 steps of 20 m — 7 full builds instead of 31 (77 % fewer)
+- 1 km walked in 20 m steps — 10 instead of 51 (80 % fewer)
+- 1 km walked in 50 m steps — 10 instead of 21 (52 % fewer)
+
+The counterfactual counts **positions, not steps**: N steps is N + 1 standing
+positions, and a verbatim-position key rebuilt at every one of them. That `+ 1`
+is asserted rather than assumed — the walk's own length is a test (`walks the
+distance every figure quoted from it claims`), because these numbers are quoted
+outside this module and an off-by-one in the loop bound made all three of them
+wrong by a step without anything failing (raised in review on #269).
 
 **Rebuilds are bounded by the DISTANCE travelled — about one per 110 m — not by
 the NUMBER of position changes.** Against the 2 881 ms full build recorded from a

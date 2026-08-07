@@ -166,25 +166,52 @@ describe("the saving §1.2 claims, as a number", () => {
    * paid on every click.
    */
   const STEP_M = 20;
+  /** Steps TAKEN — so the walk stands at `STEPS + 1` positions, both ends included. */
   const STEPS = 30;
+  const WALK_M = STEPS * STEP_M;
   const METRES_PER_DEG_LAT = 111_320;
 
-  /** Counts the full builds a straight walk of `STEPS` x `STEP_M` costs. */
+  /** Every position a straight `WALK_M` walk in `STEP_M` steps stands at. */
+  function walkPositions(): { lat: number; lng: number }[] {
+    // `<=`, because N steps is N + 1 standing positions. Raised on #269, where
+    // this stopped one short: 30 iterations from 0 walk 580 m, while the comment
+    // here and both docs quoting it said 600 m. `walkLengthM` below is the guard
+    // that stops the loop bound and the quoted distance drifting apart again.
+    return Array.from({ length: STEPS + 1 }, (_unused, i) => ({
+      lat: AT.position.lat + (i * STEP_M) / METRES_PER_DEG_LAT,
+      lng: AT.position.lng,
+    }));
+  }
+
+  /** How far `walkPositions()` actually goes, north-south, in metres. */
+  function walkLengthM(): number {
+    const positions = walkPositions();
+    const first = positions[0];
+    const last = positions[positions.length - 1];
+    if (first === undefined || last === undefined) return 0;
+    return (last.lat - first.lat) * METRES_PER_DEG_LAT;
+  }
+
+  /** Counts the full builds a straight `WALK_M` walk costs. */
   function rebuildsAlongAWalk(): number {
     const planner = createMeshPlanner();
     let rebuilds = 0;
-    for (let i = 0; i < STEPS; i += 1) {
-      const moved = planner.needsFullBuild({
-        ...AT,
-        position: {
-          lat: AT.position.lat + (i * STEP_M) / METRES_PER_DEG_LAT,
-          lng: AT.position.lng,
-        },
-      });
-      if (moved) rebuilds += 1;
+    for (const position of walkPositions()) {
+      if (planner.needsFullBuild({ ...AT, position })) rebuilds += 1;
     }
     return rebuilds;
   }
+
+  it("walks the distance every figure quoted from it claims", () => {
+    // WHY THIS TEST MATTERS. The numbers this block produces are quoted outside
+    // it — in `mesh-planner.ts.md` and in two docs — as "X builds across a 600 m
+    // walk". Nothing connected that sentence to the loop, so an off-by-one in
+    // the bound made every quote wrong by a step without any test noticing. This
+    // asserts the walk's LENGTH, which is the only part of the claim that lives
+    // outside the module under test.
+    expect(walkPositions()).toHaveLength(STEPS + 1);
+    expect(walkLengthM()).toBeCloseTo(WALK_M, 6);
+  });
 
   it("rebuilds a handful of times across a walk, not once per step", () => {
     // 30 steps of 20 m is a 600 m walk. The bucket is 0.001 deg ~ 110 m of
@@ -206,17 +233,14 @@ describe("the saving §1.2 claims, as a number", () => {
 
   it("is the SAME walk that a verbatim-position key would rebuild every time", () => {
     // The counterweight, and it is what stops the test above passing for a
-    // planner that had simply stopped caring about position. Each step is a
-    // genuinely distinct position — so a key holding it verbatim would answer
-    // `true` all 30 times, which is the behaviour the bucket replaced.
-    const positions = new Set<string>();
-    for (let i = 0; i < STEPS; i += 1) {
-      positions.add(
-        `${AT.position.lat + (i * STEP_M) / METRES_PER_DEG_LAT},${AT.position.lng}`,
-      );
-    }
+    // planner that had simply stopped caring about position. Each position is
+    // genuinely distinct — so a key holding it verbatim would answer `true` at
+    // every one of them, which is the behaviour the bucket replaced.
+    const positions = new Set(
+      walkPositions().map((position) => `${position.lat},${position.lng}`),
+    );
 
-    expect(positions.size).toBe(STEPS);
+    expect(positions.size).toBe(STEPS + 1);
     expect(rebuildsAlongAWalk()).toBeLessThan(positions.size);
   });
 });
