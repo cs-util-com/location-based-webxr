@@ -27,6 +27,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CANDIDATES_PER_BATCH,
   QUARTER_HOUR_MS,
   bestPickForTile,
   climbToLocalMaximum,
@@ -774,5 +775,78 @@ describe("the event reports how much ground was searched", () => {
 
     expect(event.picks.length).toBeGreaterThan(0);
     expect(event.tilesSearched).toBe(2);
+  });
+});
+
+describe("CANDIDATES_PER_BATCH is the caller's contract, not a private detail", () => {
+  /**
+   * WHY THIS TEST MATTERS (W8).
+   *
+   * The worker cannot score everything, so it derives which cells the climb
+   * could possibly reach: it seeds batch 0 itself, expands each candidate by the
+   * step count, and scores exactly that. `bestPickForTile` then evaluates its
+   * OWN batch 0. Those are only the same ten candidates while the two batch
+   * sizes agree — and until this was exported the demo carried its own copy in
+   * another package, so nothing connected them and nothing could.
+   *
+   * The failure mode is the quiet kind: a smaller ensure set leaves later
+   * candidates on unscored ground, the climb reports `left` for them, and the
+   * event moves. No error, no test, just different answers.
+   */
+  it("is what `eventCandidates` must be asked for to reproduce batch 0", () => {
+    const bbox = { south: 0, west: 0, north: 0.01, east: 0.01 };
+    const eventTime = Date.UTC(2026, 7, 7, 16, 15);
+
+    // What a caller derives its ensure set from.
+    const derived = eventCandidates({
+      bbox,
+      globalSeed: 20260804,
+      eventTime,
+      count: CANDIDATES_PER_BATCH,
+    });
+
+    // What `bestPickForTile` actually evaluates first: it offsets the seed by
+    // `batch * CANDIDATES_PER_BATCH`, which is a no-op for batch 0.
+    const evaluated = eventCandidates({
+      bbox,
+      globalSeed: 20260804 + 0 * CANDIDATES_PER_BATCH,
+      eventTime,
+      count: CANDIDATES_PER_BATCH,
+    });
+
+    expect(derived).toEqual(evaluated);
+    expect(derived).toHaveLength(CANDIDATES_PER_BATCH);
+  });
+
+  it("hands back exactly the batch it evaluated, which is what the map draws", () => {
+    // `evaluated` is the demo's ~11 markers (DEC-R9-8), and it is also the
+    // closest thing to a receipt for the coupling above: a pick that passes on
+    // batch 0 must report the same ten candidates the caller derived its ensure
+    // set from. If the two counts ever drift, these two arrays stop matching.
+    //
+    // (Written while finding that the docstring on this field described a
+    // `batch: number` that has never existed on `BestPick`. The field is the
+    // candidate list; the docstring now says so.)
+    const bbox = { south: 0, west: 0, north: 0.01, east: 0.01 };
+    const pick = bestPickForTile({
+      bbox,
+      globalSeed: 1,
+      eventTime: 0,
+      toCell: (at) => `${at.lat.toFixed(4)}:${at.lng.toFixed(4)}`,
+      toLatLng: () => ({ lat: 0, lng: 0 }),
+      heatAt: () => 5,
+      neighbours: (cell) => [cell],
+      steps: 0,
+      threshold: 1,
+    });
+
+    expect(pick?.evaluated).toEqual(
+      eventCandidates({
+        bbox,
+        globalSeed: 1,
+        eventTime: 0,
+        count: CANDIDATES_PER_BATCH,
+      }),
+    );
   });
 });

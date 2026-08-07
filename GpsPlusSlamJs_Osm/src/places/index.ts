@@ -14,6 +14,7 @@ export type {
   GeoEvent,
 } from "./geo-event.js";
 export {
+  CANDIDATES_PER_BATCH,
   QUARTER_HOUR_MS,
   bestPickForTile,
   climbToLocalMaximum,

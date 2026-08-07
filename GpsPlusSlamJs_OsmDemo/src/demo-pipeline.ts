@@ -33,6 +33,7 @@ import {
 } from "gps-plus-slam-osm";
 import {
   AFFORDANCE_RES,
+  CANDIDATES_PER_BATCH,
   EVENT_TILE_RES,
   eventCandidates,
   fetchTilesForScoreWorkingSet,
@@ -54,8 +55,19 @@ import { heatScale } from "./heat-colours.js";
  */
 const GEO_EVENT_SEED = 20260804;
 
-/** Candidates evaluated per batch, matching the C#s COUNT. */
-const GEO_EVENT_BATCH = 10;
+/**
+ * Candidates evaluated per batch — IMPORTED, no longer a second copy.
+ *
+ * It was `const GEO_EVENT_BATCH = 10` here while `geo-event.ts` held its own
+ * `CANDIDATES_PER_BATCH = 10` in another package, module-private. Step 1 below
+ * seeds a batch of this size to derive which cells the climb could reach, and
+ * `bestPickForTile` then evaluates a batch of ITS size — so the two agreeing
+ * was the precondition for the ensure set covering the batch that actually
+ * runs. Nothing tested the relationship and nothing could: one of the two was
+ * not exported. Changing either would have left every event computed over
+ * partly unscored ground, with no failure anywhere.
+ */
+const GEO_EVENT_BATCH = CANDIDATES_PER_BATCH;
 
 /**
  * Climb steps, matching the C#s five unrolled moves.

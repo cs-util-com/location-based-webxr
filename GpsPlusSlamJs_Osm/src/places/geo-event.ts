@@ -258,7 +258,19 @@ export function climbToLocalMaximum({
  * what bounds one round of scoring work, and the retry count is how stubborn it
  * is before giving up on a tile.
  */
-const CANDIDATES_PER_BATCH = 10;
+/**
+ * EXPORTED, because the caller has to seed the SAME batch to prepare for it.
+ *
+ * The worker derives which cells the climb could reach by asking
+ * `eventCandidates` for batch 0 and expanding each by the step count, then
+ * scores exactly those. That only covers the batch this function actually
+ * evaluates while the two counts agree — and until this was exported the demo
+ * carried its own `GEO_EVENT_BATCH = 10` in another package, so a change to
+ * either would have left the ensure set silently covering the wrong cells and
+ * changed every result with nothing failing. One constant cannot drift from
+ * itself.
+ */
+export const CANDIDATES_PER_BATCH = 10;
 const MAX_BATCHES = 10;
 
 /** The chosen candidate, plus what it beat. */
@@ -286,12 +298,21 @@ export interface BestPick {
   /** Neighbourhood heat at `cell`. */
   readonly heat: number;
   /**
-   * The batch this was chosen from, in seeded order.
+   * The candidates of the DECIDING batch — the ones this pick beat.
    *
    * Exposed because the demo draws the deciding batch rather than all 100
    * candidates (DEC-R9-8) — the honest picture of what the algorithm did, and
    * ~11 markers instead of 400 on a map that had its cell layer defaulted off
    * for exactly that cost.
+   *
+   * THE BATCH ITSELF IS NOT REPORTED, and this docstring used to say it was:
+   * it opened "the batch this was chosen from, in seeded order", describing a
+   * `batch: number` field that has never existed on this type. Anyone reading
+   * for it found this array instead. The batch index is recoverable from the
+   * seed if it is ever wanted — `eventCandidates` with
+   * `globalSeed + batch * CANDIDATES_PER_BATCH` reproduces any batch — but
+   * nothing needs it today, and an unused field would be a second thing to keep
+   * true.
    */
   readonly evaluated: readonly LatLng[];
 }
