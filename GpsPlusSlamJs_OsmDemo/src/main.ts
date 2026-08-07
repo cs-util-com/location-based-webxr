@@ -28,6 +28,7 @@
 
 import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
 
+import { pickDefaultCategory } from "./default-category.js";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import { describeDrawCost } from "./draw-cost.js";
@@ -167,9 +168,7 @@ async function main(): Promise<void> {
     option.textContent = category;
     categorySelect.append(option);
   }
-  categorySelect.value = loaded.categories.includes("walkable")
-    ? "walkable"
-    : (loaded.categories[0] ?? "");
+  categorySelect.value = pickDefaultCategory(loaded.categories);
 
   const start = parseStartPosition(window.location.search);
 

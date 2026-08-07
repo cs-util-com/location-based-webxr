@@ -163,7 +163,7 @@ test.describe("the affordance map", () => {
       // non-interactive by design.
       const tooltip = shared.locator(".leaflet-tooltip").first();
       await expect(tooltip).toBeVisible();
-      await expect(tooltip).toContainText("walkable =");
+      await expect(tooltip).toContainText("battleArea =");
 
       // CLICK gives the evidence. Provenance is the whole reason the C# reference
       // kept a contributing-entries map: it turns "that cell looks wrong" into
@@ -207,12 +207,17 @@ test.describe("the affordance map", () => {
     });
 
     await test.step("switching category redraws the grid", async () => {
+      // AGAINST THE CURRENT VALUE, never against a hard-coded name. A literal
+      // here can select the category that is ALREADY showing once the default
+      // changes (DEC-G3 moved it to `battleArea`), and a "switch" to the value
+      // already selected fires no `change` event — so this step would pass
+      // while testing nothing, which is worse than failing.
       const other = await shared.evaluate(() => {
         const select = document.getElementById("category");
         const values = [...(select?.querySelectorAll("option") ?? [])].map(
           (o) => o.value,
         );
-        return values.find((v) => v !== "walkable") ?? "";
+        return values.find((v) => v !== select?.value) ?? "";
       });
       test.skip(other === "", "rule table declares only one category");
 
@@ -400,19 +405,27 @@ test.describe("explaining one cell", () => {
       // one line apart, and both are invisible to every other test here.
       await shared.locator("#map path.affordance-cell").first().click();
       await expect(panel).toBeVisible();
+      // THE CURRENT PICKER VALUE, read rather than named, so this states "the
+      // panel describes the category the map is showing" instead of restating
+      // whatever the default happens to be this month (DEC-G3 changed it).
+      const showing = await shared.locator("#category").inputValue();
       await expect(panel.locator(".panel-header strong")).toContainText(
-        "walkable",
+        showing,
       );
 
       // A category change KEEPS the selection — "what does this same cell score
-      // for battleArea?" is the obvious next click, and clearing it would make
-      // that question impossible to ask.
+      // for the other category?" is the obvious next click, and clearing it
+      // would make that question impossible to ask.
+      //
+      // AGAINST THE CURRENT VALUE, not a literal: see the sibling step above —
+      // a "switch" to the already-selected category fires no `change` event and
+      // this step would silently test nothing.
       const other = await shared.evaluate(() => {
         const select = document.getElementById("category");
         const values = [...(select?.querySelectorAll("option") ?? [])].map(
           (o) => o.value,
         );
-        return values.find((v) => v !== "walkable") ?? "";
+        return values.find((v) => v !== select?.value) ?? "";
       });
       test.skip(other === "", "rule table declares only one category");
       await shared.locator("#category").selectOption(other);

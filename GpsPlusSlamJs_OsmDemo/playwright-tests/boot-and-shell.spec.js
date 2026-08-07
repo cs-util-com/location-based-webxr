@@ -38,11 +38,15 @@ test.describe("the demo boots", () => {
 
     await test.step("loads the rule table and populates the category picker", async () => {
       // The categories come from the rule table, not from a hardcoded list, so a
-      // populated picker is evidence the table parsed. `walkable` is the C#
-      // vocabulary's own category and the demo's default.
+      // populated picker is evidence the table parsed. The default is
+      // `battleArea` (DEC-G3): the demo's headline feature is the geo-event,
+      // which models a boss NPC, and a boss belongs on a battle area rather
+      // than on a pavement. It is a GUARDED choice — a table without that
+      // column falls back to the first — so this also pins that the shipped
+      // sheet still has it.
       const options = page.locator("#category option");
       await expect(options).not.toHaveCount(0);
-      await expect(page.locator("#category")).toHaveValue("walkable");
+      await expect(page.locator("#category")).toHaveValue("battleArea");
 
       // WHICH TIER the table came from is displayed on purpose: a demo silently
       // running on the checked-in snapshot looks identical to one on the live

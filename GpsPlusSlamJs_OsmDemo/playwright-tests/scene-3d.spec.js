@@ -523,7 +523,8 @@ test.describe("the 3D view", () => {
       // and reported for ten work items while nothing was drawn. Every geometry
       // layer since gets a pixel assertion, not only a counter one.
       //
-      // The fixture has one walkable region, and it is coloured through the SAME
+      // The fixture has one region in the displayed category, and it is coloured
+      // through the SAME
       // heatColour/heatScale pair the 2D map paints with. That sharing is the point
       // of W14: a region reading as "good" in one pane and "poor" in the other is
       // the cross-view disagreement the store exists to prevent.
@@ -993,9 +994,11 @@ test.describe("the 3D view", () => {
       //
       // WHY THE WHOLE SWEEP RETRIES, from a captured failure (2026-08-02). The
       // scene was fully built and the grid plainly drawn, but that run had scored a
-      // SMALLER working set than a passing one — `845 cells · 1 walkable regions ·
-      // 19 chunks scored / 0 reused` against the usual `1692 cells · 3 walkable
-      // regions · 37 scored / 19 reused`. A smaller set is a smaller grid, and a
+      // SMALLER working set than a passing one. The status line read
+      // `845 cells · 1 <category> regions · 19 chunks scored / 0 reused` against
+      // the usual `1692 cells · 3 <category> regions · 37 scored / 19 reused`
+      // (captured while the demo defaulted to `walkable`; DEC-G3 has since made
+      // it `battleArea`, which changes the counts but not the reasoning). A smaller set is a smaller grid, and a
       // fixed arc of five offsets can then sit past its far edge, which is what the
       // screenshot shows. A republish landing under the sweep produces the same
       // symptom, and one screenshot cannot separate the two.

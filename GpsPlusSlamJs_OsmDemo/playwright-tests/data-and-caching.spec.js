@@ -119,10 +119,14 @@ test.describe("a superseded refresh", () => {
    * A category value that is not the current one.
    *
    * BY VALUE, never by index: the picker is populated from the rule table and
-   * the demo then selects `walkable` explicitly, which is NOT option 0. A test
-   * that switched to index 1 and "back" to index 0 silently ended on a third
-   * category — which is exactly how the camera assertion below first failed, at
-   * 43 % of pixels changed, for a reason that had nothing to do with the camera.
+   * the demo then selects its default explicitly. A test that switched to
+   * index 1 and "back" to index 0 silently ended on a third category — which is
+   * exactly how the camera assertion below first failed, at 43 % of pixels
+   * changed, for a reason that had nothing to do with the camera.
+   *
+   * The default happens to be option 0 today (`battleArea` is the sheet's first
+   * column, DEC-G3) — which is precisely why by-index would now look correct
+   * and break again the next time the sheet is reordered.
    */
   const otherCategory = async (page, current) => {
     const values = await page
