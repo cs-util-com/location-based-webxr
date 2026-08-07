@@ -9,12 +9,17 @@
  * fetch tile does this cell belong to".
  *
  * WHAT IT FOUND, and it is a defect rather than a cost. `DemoPipeline.geoEvent`
- * admits a neighbouring event tile when **that tile's own fetch tile** is
+ * admitted a neighbouring event tile when **that tile's own fetch tile** was
  * already loaded, and its docstring gives the reason: "a neighbour whose data is
  * missing costs an 18–110 s download… the rest are skipped". But the ensure set
  * built for an admitted neighbour reaches ~550 m past its centre in every
  * direction, into fetch tiles nobody checked — so the download it promised to
- * skip happens anyway. The gate tests the centre; the work needs the reach.
+ * skip happened anyway. The gate tested the centre; the work needs the reach.
+ *
+ * **THE GATE NOW ASKS ABOUT THE REACH**, so the tests below are a guard rather
+ * than a report. `searchAt` deliberately keeps modelling the OLD rule, because
+ * the magnitude of what it let through is the reason the new one exists — and a
+ * test that only exercised the current rule could not show that.
  *
  * It runs at the demo's own default position, Central Park South, because that
  * is where the 5–10 s was reported and because tile geometry is positional.
@@ -102,7 +107,8 @@ function searchAt(position: { lat: number; lng: number }) {
   const admitted = [centre];
   for (const neighbour of gridDisk(centre, 1)) {
     if (neighbour === centre) continue;
-    // THE GATE AS IT IS WRITTEN: the neighbour's own fetch tile, nothing else.
+    // THE OLD GATE, kept deliberately: the neighbour's own fetch tile, nothing
+    // else. Production now asks about the whole reach — see the header.
     if (loaded.has(toFetchTile(neighbour))) admitted.push(neighbour);
   }
 
@@ -178,34 +184,37 @@ describe("a geo-event's reach, measured in fetch tiles", () => {
     expect(missingForCentreOnly).toHaveLength(1);
   });
 
-  it("THE DEFECT: admitting a neighbour on its CENTRE pulls in tiles nobody checked", () => {
-    // WHY THIS TEST MATTERS. `DemoPipeline.geoEvent`'s docstring justifies the
-    // neighbour gate by saying a neighbour whose data is missing "costs an
-    // 18–110 s download", so those are skipped. The gate checks
-    // `toFetchTile(neighbour)` — the neighbour's CENTRE. The ensure set built
-    // for that neighbour then reaches ~550 m past its centre in every
-    // direction, into fetch tiles the gate never looked at.
+  it("measures what the OLD centre-only gate let through", () => {
+    // WHY THIS TEST STILL EXISTS after the gate was fixed: it is the size of
+    // the problem, and without it the new rule reads as a preference rather
+    // than a repair.
     //
-    // So the promise is not kept: at the demo's own default position, six of
-    // seven event tiles are admitted and the search needs three fetch tiles
-    // that are not loaded — the downloads the gate exists to avoid.
+    // `DemoPipeline.geoEvent`'s docstring justifies the neighbour gate by
+    // saying a neighbour whose data is missing "costs an 18–110 s download", so
+    // those are skipped. The old gate checked `toFetchTile(neighbour)` — the
+    // neighbour's CENTRE. The ensure set built for that neighbour then reaches
+    // ~550 m past its centre in every direction, into fetch tiles the gate
+    // never looked at. At the demo's own default position that admitted six of
+    // seven event tiles and needed three fetch tiles it did not have.
     //
     // Asserted as "more than the centre-only case" rather than as three, so the
     // claim survives an H3 re-index or a change to `SCORE_DISK_MAX_RADIUS`.
-    // What is being pinned is the ASYMMETRY, not the arithmetic of one city.
+    // What is pinned is the ASYMMETRY, not the arithmetic of one city.
     const { admitted, missing, missingForCentreOnly } = searchAt(MANHATTAN);
 
     expect(admitted.length).toBeGreaterThan(1);
     expect(missing.length).toBeGreaterThan(missingForCentreOnly.length);
   });
 
-  it("would be fixed by gating on the neighbour's REACH instead of its centre", () => {
-    // The proposed repair, stated as a test so it is unambiguous — and so the
-    // day it lands, this test moves from "describes a fix" to "guards it".
+  it("and that gating on the REACH removes every one of them", () => {
+    // The rule production now uses, checked independently of production: admit
+    // a neighbour only when every fetch tile its own ensure set touches is
+    // already loaded. One set lookup per candidate instead of a download, and
+    // it is the rule the docstring always claimed.
     //
-    // Admit a neighbour only when every fetch tile its own ensure set touches
-    // is already loaded. That is the rule the docstring already claims, and it
-    // costs one set lookup per neighbour rather than a download.
+    // `demo-pipeline.test.ts` asserts the same thing through the real pipeline
+    // ("downloads ONLY for the tile the user is standing in"); this one says it
+    // in geometry, which is where the number three came from.
     const { loaded, centre } = searchAt(MANHATTAN);
 
     const admittedByReach = [centre].concat(

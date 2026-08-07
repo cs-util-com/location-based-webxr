@@ -13,17 +13,41 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { latLngToCell, cellToParent } from "h3-js";
+import { cellToBoundary, cellToParent, gridDisk, latLngToCell } from "h3-js";
 import {
   AFFORDANCE_RES,
   CANDIDATES_PER_BATCH,
+  EVENT_TILE_RES,
   SCORE_CHUNK_RES,
   SCORE_DISK_MAX_RADIUS,
   SCORE_DISK_RADIUS,
+  eventCandidates,
   fetchTilesForScoreWorkingSet,
+  nextEventTime,
   parseRuleTable,
+  toFetchTile,
   type OsmDataSource,
 } from "gps-plus-slam-osm";
+
+/** `GEO_EVENT_SEED` and `CLIMB_STEPS`, mirrored from `demo-pipeline.ts`. */
+const GEO_EVENT_SEED = 20260804;
+const CLIMB_STEPS = 5;
+
+/** A cell's bounding box, as `demo-pipeline.ts` computes it. */
+function boundsOf(cell: string): [number, number, number, number] {
+  const ring = cellToBoundary(cell);
+  let south = Infinity;
+  let west = Infinity;
+  let north = -Infinity;
+  let east = -Infinity;
+  for (const [lat, lng] of ring) {
+    south = Math.min(south, lat);
+    north = Math.max(north, lat);
+    west = Math.min(west, lng);
+    east = Math.max(east, lng);
+  }
+  return [south, west, north, east];
+}
 import { DemoPipeline } from "./demo-pipeline.js";
 import { heatScale } from "./heat-colours.js";
 
@@ -539,19 +563,92 @@ describe("DemoPipeline.geoEvent", () => {
     for (const ms of [stats.deriveMs, stats.ensureMs, stats.climbMs]) {
       expect(ms).toBeGreaterThanOrEqual(0);
     }
-    // THE FINDING THIS TEST CAPTURED, and it was a surprise worth stating: the
-    // search still downloads tiles AFTER a refresh at the WIDEST radius. The
-    // scored disk is `SCORE_DISK_MAX_RADIUS` chunks around the user; the ensure
-    // set is the union of `gridDisk(candidate, CLIMB_STEPS + 1)` over a batch
-    // spread across up to seven res-8 TILES, which is a far larger area. So
-    // "the OSM data is already cached" — the condition the session measured
-    // 5–10 s under — can be true of the disk and false of the reach at the same
-    // time, and the ensure phase is where that cost lands.
+    // ZERO, AND IT WAS SIX BEFORE THE NEIGHBOUR GATE WAS FIXED. This assertion
+    // is the reason the fix is worth having: after a refresh at the widest
+    // radius, a search now costs no network at all here, where it used to
+    // download six tiles on behalf of neighbours whose data it had not checked.
     //
-    // Asserted as "more than none" rather than as a count: how many depends on
-    // where the seeded candidates fall, and pinning it would make this a test
-    // of the seed rather than of the relationship.
-    expect(stats.tilesFetched).toBeGreaterThan(0);
+    // It is not guaranteed to be zero everywhere — the centre tile is searched
+    // whatever it costs, and its own reach can overhang what a refresh loaded
+    // (measured as one tile at the demo's Manhattan default). What IS guaranteed
+    // is the rule below: nothing is downloaded for a neighbour.
+    expect(stats.tilesFetched).toBe(0);
+  });
+
+  it("does not creep outward when the button is pressed repeatedly", async () => {
+    // The hypothesis this test was written to check, and it is worth keeping
+    // even though it turned out NOT to be the shape of the defect. Under the
+    // old centre-only gate, each search downloaded the ground that would admit
+    // the next ring of neighbours, which would in turn reach past themselves —
+    // so "press Find twice and it downloads twice, further each time" was a
+    // plausible reading of the reported slowness. It converged after one round
+    // instead, so the cost recurred per LOCATION rather than per press.
+    //
+    // Kept as a guard because the reach gate is what makes it true by
+    // construction now: a neighbour is admitted only when its whole reach is
+    // already held, so admitting one can never require a download, and a second
+    // search from the same place in the same quarter-hour has nothing to learn.
+    const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
+    await pipeline.update(AT, "walkable", undefined, SCORE_DISK_MAX_RADIUS);
+
+    const first = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+    const second = await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+
+    expect(second.stats.tilesFetched).toBe(0);
+    // And the second search is not quietly poorer for it: the same tiles are
+    // searched both times, which is what "converged" has to mean.
+    expect(second.event.tilesSearched).toBe(first.event.tilesSearched);
+  });
+
+  it("downloads ONLY for the tile the user is standing in", async () => {
+    // WHY THIS TEST MATTERS, and it is the rule the code already claims.
+    // `geoEvent`'s docstring justifies searching a neighbour only when its data
+    // is present: "a neighbour whose data is missing costs an 18–110 s
+    // download… Those are free; the rest are skipped." The centre tile is
+    // exempt by design — the user is standing in it, so it must be searched
+    // whatever it costs.
+    //
+    // So every download a search makes must be attributable to the CENTRE. The
+    // gate as written checks `toFetchTile(neighbour)` — the neighbour's centre
+    // — while the ensure set built for it reaches ~550 m further, into fetch
+    // tiles nobody asked about. Those downloads are exactly the ones the
+    // docstring promises will not happen.
+    //
+    // The expectation is derived from GEOMETRY, not from the gate: it is the
+    // set of fetch tiles the centre tile's own seeded candidates can reach.
+    // That is the specification the docstring states, computed independently of
+    // the loaded-set test the implementation uses.
+    const requested: string[] = [];
+    const recording: OsmDataSource = {
+      ...wideSource(),
+      fetchTile: (tile, signal) => {
+        requested.push(tile);
+        return wideSource().fetchTile(tile, signal);
+      },
+    };
+    const pipeline = new DemoPipeline({ source: recording, table: TABLE });
+    await pipeline.update(AT, "walkable", undefined, SCORE_DISK_MAX_RADIUS);
+    requested.length = 0;
+
+    await pipeline.geoEvent(AT, "walkable", 1_700_000_000_000);
+
+    const centre = latLngToCell(AT.lat, AT.lng, EVENT_TILE_RES);
+    const [south, west, north, east] = boundsOf(centre);
+    const centreReach = new Set<string>();
+    for (const candidate of eventCandidates({
+      bbox: { south, west, north, east },
+      globalSeed: GEO_EVENT_SEED,
+      eventTime: nextEventTime(1_700_000_000_000),
+      count: CANDIDATES_PER_BATCH,
+    })) {
+      const start = latLngToCell(candidate.lat, candidate.lng, AFFORDANCE_RES);
+      for (const cell of gridDisk(start, CLIMB_STEPS + 1)) {
+        centreReach.add(toFetchTile(cell));
+      }
+    }
+
+    const notTheCentres = requested.filter((tile) => !centreReach.has(tile));
+    expect(notTheCentres).toEqual([]);
   });
 
   it("counts only tiles that arrived, not every one it asked for", async () => {

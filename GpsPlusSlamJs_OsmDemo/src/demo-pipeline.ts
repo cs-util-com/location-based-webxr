@@ -583,6 +583,9 @@ export class DemoPipeline {
     // several neighbours are usually already in memory. Those are free; the
     // rest are skipped.
     //
+    // "FREE" MEANS THE WHOLE SEARCH AREA, not the tile's centre — and that
+    // distinction was wrong here for several rounds. See the gate below.
+    //
     // **THIS DOES NOT WEAKEN DEC-R9-4, and the distinction is the whole
     // justification.** Every tile's event stays a pure function of (tile, time)
     // — identical on every device, forever. What varies with what you have
@@ -590,35 +593,58 @@ export class DemoPipeline {
     // walk to the same place find the same event; a device that has loaded more
     // discovers more of them, and they converge. The divergence is "you have not
     // loaded that area yet", not "we disagree about where the event is".
-    const tiles = [tile];
-    for (const neighbour of gridDisk(tile, 1)) {
-      if (neighbour === tile) continue;
-      if (this.loaded.has(toFetchTile(neighbour))) tiles.push(neighbour);
-    }
-    const boxes = tiles.map((each) => {
-      const [s, w, n, e] = boundsOfCell(each);
-      return { south: s, west: w, north: n, east: e };
-    });
-
-    // STEP 1 — derive, over EVERY tile. `gridDisk(steps + 1)` because the climb
-    // may move `steps` cells and then needs its destination's own neighbourhood
-    // to decide it is a peak; without the extra ring the last comparison reads
-    // `unknown` and the climb reports `left` at the edge of the ensured set
-    // rather than of the map.
+    // **THE GATE IS THE NEIGHBOUR'S REACH, NOT ITS CENTRE**, and the difference
+    // is the whole point of the paragraph above. It used to ask whether
+    // `toFetchTile(neighbour)` was loaded — the tile the neighbour's CENTRE
+    // falls in. But the ensure set built for that neighbour below extends
+    // `CLIMB_STEPS + 1` cells past each of its candidates, and its candidates
+    // are seeded across its whole bounding box: ~550 m past the centre, into
+    // fetch tiles nothing had checked. So the download this gate exists to skip
+    // happened anyway — measured at the demo's own default position as three
+    // tiles, with six of seven neighbours admitted (`geo-event-reach.test.ts`).
+    //
+    // Asking about the reach costs one set lookup per candidate and is the
+    // question the paragraph above was always describing. The centre tile is
+    // still exempt: the user is standing in it, so it is searched whatever it
+    // costs — and it too can overhang, which is a separate open question.
+    //
+    // STEP 1 rides along, because the reach has to be derived to be asked
+    // about. `gridDisk(steps + 1)` because the climb may move `steps` cells and
+    // then needs its destination's own neighbourhood to decide it is a peak;
+    // without the extra ring the last comparison reads `unknown` and the climb
+    // reports `left` at the edge of the ensured set rather than of the map.
     const deriveStart = nowMs();
-    const reach = new Set<string>();
-    for (const bbox of boxes) {
+
+    /** The cells a tile's own batch-0 candidates could climb over. */
+    const reachOf = (each: string): string[] => {
+      const [s, w, n, e] = boundsOfCell(each);
+      const cells: string[] = [];
       for (const candidate of eventCandidates({
-        bbox,
+        bbox: { south: s, west: w, north: n, east: e },
         globalSeed: GEO_EVENT_SEED,
         eventTime,
         count: GEO_EVENT_BATCH,
       })) {
         for (const cell of gridDisk(toCell(candidate), CLIMB_STEPS + 1)) {
-          reach.add(cell);
+          cells.push(cell);
         }
       }
+      return cells;
+    };
+
+    const tiles = [tile];
+    const reach = new Set<string>(reachOf(tile));
+    for (const neighbour of gridDisk(tile, 1)) {
+      if (neighbour === tile) continue;
+      const cells = reachOf(neighbour);
+      if (!cells.every((cell) => this.loaded.has(toFetchTile(cell)))) continue;
+      tiles.push(neighbour);
+      for (const cell of cells) reach.add(cell);
     }
+    const boxes = tiles.map((each) => {
+      const [s, w, n, e] = boundsOfCell(each);
+      return { south: s, west: w, north: n, east: e };
+    });
     const deriveMs = nowMs() - deriveStart;
 
     // STEP 2 — ensure, fetching what is missing. Only this first batch may

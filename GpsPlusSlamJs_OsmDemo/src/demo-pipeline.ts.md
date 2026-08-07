@@ -20,12 +20,24 @@ path, with no DOM in it.
     handed only to the algorithm — step 1 calls the same `toCell` while deriving
     the reach, and counting there would report ensure-set arithmetic as climbing
     work.
-  - **Measured, and it was a surprise: a search still downloads tiles after a
-    refresh at the WIDEST radius.** The scored disk is `SCORE_DISK_MAX_RADIUS`
-    chunks around the user; the ensure set is the union of
-    `gridDisk(candidate, CLIMB_STEPS + 1)` over a batch spread across up to
-    seven res-8 tiles, which is a far larger area. "The OSM data is already
-    cached" can be true of the disk and false of the reach at the same time.
+  - **A neighbouring event tile is admitted only when its whole REACH is
+    already loaded, not when its centre is.** This was the centre for several
+    rounds, which broke the promise the method's own docstring makes — that a
+    neighbour whose data is missing is skipped, because loading one costs
+    18–110 s. The ensure set built for an admitted neighbour extends
+    `CLIMB_STEPS + 1` cells past each of its candidates, and its candidates are
+    seeded across its whole bounding box: ~550 m past the centre, into fetch
+    tiles nothing had checked. Measured at the demo's Manhattan default as six
+    of seven neighbours admitted and three tiles downloaded;
+    `geo-event-reach.test.ts` has the geometry and
+    `demo-pipeline.test.ts` the end-to-end rule.
+    - **The centre tile stays exempt**: the user is standing in it, so it is
+      searched whatever it costs. Its own reach can overhang what a refresh
+      loaded (one tile at Manhattan), which is a separate open question.
+    - **DEC-R9-4 is untouched.** Every tile's event is still a pure function of
+      (tile, time); only WHICH tiles are visible changes, which is exactly what
+      DEC-R9-15 already accepted — "a device that has loaded more discovers more
+      of them, and they converge".
 - `interface DemoSnapshot` — `cells`, `regions`, `threshold`, `missingTiles`,
   `loadedTiles`, `stats`, `radius`
   - `radius` is which ring of the progressive widening this snapshot describes,
