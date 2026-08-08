@@ -313,6 +313,125 @@ describe("splitAtGates", () => {
       ]);
     });
 
+    /**
+     * THE BOUNDARY THE RULE ACTUALLY TURNS ON (raised in review on #277). Every
+     * other case here uses 0.2 m or 4 m, so nothing exercised the interval that
+     * decides anything. `GATE_ON_BARRIER_M` is the whole tolerance argument, and
+     * an off-by-a-comparison in `nearestOnLine` would be invisible without this.
+     *
+     * The offsets are in LONGITUDE degrees scaled by a latitude metre, so at
+     * 51.5° N they are ~0.62 of their nominal size — hence the generous margins
+     * either side rather than 0.99 / 1.01.
+     */
+    it("opens just inside the tolerance and refuses well outside it", () => {
+      const opens = (offsetM: number): boolean => {
+        const gate = gateNear(50, offsetM);
+        const gates = gateOpenings([
+          node(1, gate.position, { barrier: "gate" }),
+          way(2, crossingAt(gate.position)),
+        ]);
+        return (
+          splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M).length === 2
+        );
+      };
+      expect(opens(GATE_ON_BARRIER_M)).toBe(true);
+      expect(opens(GATE_ON_BARRIER_M * 3)).toBe(false);
+    });
+
+    /**
+     * A PERPENDICULAR CROSSING IS THE EASIEST POSSIBLE INPUT for both
+     * `nearestOnLine` and `segmentCrossing`, and every other case here uses one.
+     * The Tower's own bridge meets its wall at a shallow angle.
+     */
+    it("opens for a way crossing at an angle, not only square-on", () => {
+      const gate = gateNear(50, 0.2);
+      const slanted = [
+        { lat: gate.position.lat - 8 * M, lng: gate.position.lng - 5 * M },
+        gate.position,
+        { lat: gate.position.lat + 8 * M, lng: gate.position.lng + 5 * M },
+      ];
+      const gates = gateOpenings([
+        node(1, gate.position, { barrier: "gate" }),
+        way(2, slanted),
+      ]);
+      expect(
+        splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M),
+      ).toHaveLength(2);
+    });
+
+    /**
+     * A WAY THAT ENDS ON THE WALL STILL COUNTS, and this pins it as a decision
+     * (raised in review on #277). `segmentCrossing`'s bounds are inclusive, so a
+     * dead end abutting the barrier corroborates — which is right, because a
+     * footway terminating at a gate in a wall IS a gateway, and mapping it as a
+     * stub rather than as a line through is the mapper's style, not a claim that
+     * the wall is solid. Without this test, tightening the intersection to
+     * strict inequalities would close that class silently.
+     */
+    it("opens for a way that ENDS on the wall rather than crossing it", () => {
+      const gate = gateNear(50, 0.2);
+      // Runs in from the east and STOPS on the wall line, with the gate as its
+      // first vertex — a T-junction, not a line through.
+      const deadEnd = [
+        gate.position,
+        { lat: gate.position.lat, lng: ORIGIN.lng },
+      ];
+      const gates = gateOpenings([
+        node(1, gate.position, { barrier: "gate" }),
+        way(2, deadEnd),
+      ]);
+      expect(
+        splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M),
+      ).toHaveLength(2);
+    });
+
+    /**
+     * ONLY A ROUTE CORROBORATES (raised in review on #277). The first version
+     * indexed every way, so a building outline or another wall could vouch for a
+     * gate — and `entrance=*` nodes are overwhelmingly building-outline
+     * vertices, which makes "building entrance + outline + nearby fence" the
+     * most likely false positive in real data. It was not hypothetical: at Sylt
+     * one `barrier=wall` corroborated another.
+     */
+    it("does NOT open it when the crossing way is not a route", () => {
+      const gate = gateNear(50, 0.2);
+      const outline = crossingAt(gate.position);
+      const gates = gateOpenings([
+        node(1, gate.position, { barrier: "gate" }),
+        {
+          type: "way",
+          id: 2,
+          geometry: [...outline],
+          tags: { barrier: "wall" },
+        },
+      ]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
+    /**
+     * AND THE VETO IS SYMMETRIC (raised in review on #277). A below-surface gate
+     * node was already refused; a below-surface WAY through a surface gate is
+     * the same argument — a tunnel passing under a wall is not a way through it,
+     * which is DEC-R12-1's rejected failure mode arriving from the other side.
+     */
+    it("does NOT open it when the crossing way is below the surface", () => {
+      const gate = gateNear(50, 0.2);
+      const gates = gateOpenings([
+        node(1, gate.position, { barrier: "gate" }),
+        {
+          type: "way",
+          id: 2,
+          geometry: [...crossingAt(gate.position)],
+          tags: { highway: "footway", tunnel: "yes" },
+        },
+      ]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
     it("still refuses a gate mapped as a WAY, even where a path crosses", () => {
       // DEC-R12-1's exclusion is unchanged: a `barrier=gate` way is a gate drawn
       // as a line, an obstacle-shaped thing in its own right.

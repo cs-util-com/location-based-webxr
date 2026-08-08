@@ -332,18 +332,6 @@ export async function waitForRefresh(page) {
 }
 
 /**
- * Records every distinct `#status` text from now on (W2, finding R3-5).
- *
- * WHY AN OBSERVER RATHER THAN POLLING. The thing being asserted is that a
- * message NEVER appeared, and the message it is about — `Failed: The request was
- * superseded` — is on screen only for the moment between one run being aborted
- * and the next one publishing. A poll interval wide enough to be cheap is wide
- * enough to miss it entirely, so the test would pass on the bug.
- *
- * @param {import('@playwright/test').Page} page
- * @returns {Promise<() => Promise<string[]>>} reads the history so far
- */
-/**
  * The same recording, installed BEFORE the page's own scripts run.
  *
  * WHY A SECOND HELPER RATHER THAN A FLAG ON THE FIRST. `recordStatus` answers
@@ -362,7 +350,8 @@ export async function waitForRefresh(page) {
  * document-start removes the window rather than shrinking it.
  *
  * `#status` does not exist that early, so the recorder waits for it: it watches
- * `document.documentElement` until the node appears, then observes the node
+ * `document` until the node appears (NOT `documentElement`, which can be null
+ * at document-start — see the comment at the observer), then observes the node
  * itself and stops watching. Call this BEFORE `page.goto`.
  *
  * @param {import('@playwright/test').Page} page
@@ -417,6 +406,18 @@ export async function recordStatusFromBoot(page) {
     );
 }
 
+/**
+ * Records every distinct `#status` text from now on (W2, finding R3-5).
+ *
+ * WHY AN OBSERVER RATHER THAN POLLING. The thing being asserted is that a
+ * message NEVER appeared, and the message it is about — `Failed: The request was
+ * superseded` — is on screen only for the moment between one run being aborted
+ * and the next one publishing. A poll interval wide enough to be cheap is wide
+ * enough to miss it entirely, so the test would pass on the bug.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<() => Promise<string[]>>} reads the history so far
+ */
 export async function recordStatus(page) {
   await page.evaluate(() => {
     const seen = [];

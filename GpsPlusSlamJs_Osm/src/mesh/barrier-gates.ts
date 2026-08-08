@@ -27,27 +27,33 @@
  * match that docstring warns against: a gate NEAR a wall it is not part of.
  *
  * WHAT IT COSTS, MEASURED: over the eight-site corpus this cuts 12 of Cologne's
- * 60 solid barriers, 8 of Heidelberg's 53, 13 of Sylt's 65, 10 of Westminster's
+ * 60 solid barriers, 8 of Heidelberg's 53, 12 of Sylt's 65, 10 of Westminster's
  * 73, 2 of Tower Bridge's 9, 1 of Manhattan's 41 — and NOTHING at Berlin or
  * Tokyo, which map no gate on any barrier at all. Paths will still meet unbroken
  * walls in places; the rule fails towards a solid barrier, which reads as OSM
  * tagging rather than as a pathfinding defect.
  *
  * AND ONE NARROW EXTENSION, DEC-A2: a gate node BESIDE a barrier opens it when a
- * way through that node also crosses it. The Tower of London is the case — the
- * gate ("Groups Entrance to the Tower") sits 0.17 m off the curtain wall and
- * belongs to the footways, not to the wall, so the exact rule above could never
- * fire and the agent could not walk through the gateway. The conjunction is what
- * keeps this from being the proximity match rejected above: each half alone is a
- * rule this file already refuses. Measured cost: exactly ONE extra opening
- * across the whole corpus.
+ * routable, surface-level way through that node also crosses it. The Tower of
+ * London is the case — the gate ("Groups Entrance to the Tower") sits 0.17 m off
+ * the curtain wall and belongs to the footways, not to the wall, so the exact
+ * rule above could never fire and the agent could not walk through the gateway.
+ * The conjunction is what keeps this from being the proximity match rejected
+ * above: each half alone is a rule this file already refuses.
+ *
+ * ITS MEASURED COST IS ZERO — it changes no barrier at any of the eight sites,
+ * and getting there took two corrections that only the per-site counts exposed:
+ * a below-surface gate node opened a Cologne retaining wall, and at Sylt one
+ * `barrier=wall` corroborated another. Both were false positives. A rule that is
+ * a no-op everywhere looks exactly like a rule that works, so the demonstration
+ * is `agent-route.tower-gate.test.ts` on real Tower geometry, not the corpus.
  *
  * @see barrier-gates.ts.md
  */
 
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import { isBelowSurface } from "../model/below-surface.js";
-import { enuFrameAt, type EnuFrame } from "./enu.js";
+import { enuFrameAt, type EnuFrame, type EnuPoint } from "./enu.js";
 
 /**
  * `barrier` values on a NODE that open the barrier they sit on (DEC-R12-7).
@@ -119,8 +125,19 @@ export const GATE_GAP_M = 6;
 export const GATE_ON_BARRIER_M = 1;
 
 /**
- * A gate node that is NOT a vertex of any barrier, with the ways running
- * through it (DEC-A2).
+ * A gate node with the routable ways running through it (DEC-A2).
+ *
+ * **EVERY such gate, INCLUDING ones that are exact vertices of a barrier.**
+ * Nothing here tests barrier membership — it cannot, because a gate is
+ * collected once for the whole feature set while "is it on THIS barrier" is a
+ * question per barrier. An earlier version of this comment claimed the
+ * collection excluded on-barrier gates, which was simply false.
+ *
+ * The consequence is worth stating rather than hiding: for a gate that IS a
+ * vertex of the barrier being split, that barrier is not in `throughWays` (it is
+ * not a `highway`), so the DEC-A2 path finds no corroboration and contributes
+ * nothing — the exact rule in `opensAt` has already cut there. The two rules
+ * therefore do not double-count, and they do not depend on each other.
  *
  * Only gates with at least one through-way are collected: the conjunction
  * cannot be satisfied without one, and pruning here keeps the per-barrier scan
@@ -139,7 +156,11 @@ export interface GateOpenings {
   /** How many openings were found — for tests and diagnostics. */
   readonly size: number;
   /**
-   * Gates that sit beside a barrier rather than on it (DEC-A2).
+   * Every gate node that has a routable way through it (DEC-A2).
+   *
+   * NOT "gates beside a barrier" — nothing here knows which barrier is being
+   * split, so membership cannot be tested at collection time. See
+   * {@link OffBarrierGate}.
    *
    * Kept separate from {@link opensAt} rather than folded into it, because the
    * two answer different questions: `opensAt` is exact identity and needs no
@@ -165,6 +186,35 @@ export const NO_GATES: GateOpenings = {
   size: 0,
   offBarrier: [],
 };
+
+/**
+ * Whether this way may act as the "a route passes through here" half of DEC-A2.
+ *
+ * **A ROUTE, NOT ANY LINE, and that restriction was a review finding rather than
+ * the original design.** The first version indexed every way, so a building
+ * outline, a `landuse` edge, a waterway or another wall could corroborate a
+ * gate. That is a real false-positive shape and not a contrived one: `entrance=*`
+ * nodes are overwhelmingly vertices of BUILDING outlines, so
+ * "building entrance node + building outline + a fence within a metre" would
+ * have opened the fence — none of which involves a path.
+ *
+ * `highway` is the routable set, and it is exactly what the second half of the
+ * conjunction claims. The Tower's corroborating way is `highway=footway`, so the
+ * motivating case is unaffected.
+ *
+ * **AND IT MUST BE ON THE WALKING SURFACE**, by the same argument that vetoes a
+ * below-surface gate NODE: a `tunnel=yes` road passing under a wall is not a way
+ * through it. Without this the veto was asymmetric — the node was checked and
+ * the corroborating way was not — and a tunnel that happens to cross in plan
+ * would open the wall above it, which is DEC-R12-1's rejected failure mode
+ * arriving by another route.
+ *
+ * NOT "the same layer as the barrier": the Tower's own corroborating way is
+ * `bridge=yes layer=1`, so above-surface ways have to stay acceptable.
+ */
+function canCorroborate(feature: OsmFeature & { type: "way" }): boolean {
+  return feature.tags["highway"] !== undefined && !isBelowSurface(feature);
+}
 
 /**
  * Records `geometry` under each of its vertex positions.
@@ -215,7 +265,7 @@ export function gateOpenings(features: Iterable<OsmFeature>): GateOpenings {
 
   for (const feature of features) {
     if (feature.type === "way") {
-      indexWayVertices(feature.geometry, waysAt);
+      if (canCorroborate(feature)) indexWayVertices(feature.geometry, waysAt);
       continue;
     }
     if (feature.type !== "node") continue;
@@ -375,11 +425,14 @@ function mergedCuts(
   return merged;
 }
 
-/** A point in the line's own ENU frame. */
-interface Enu {
-  readonly x: number;
-  readonly y: number;
-}
+/**
+ * A point in the line's own ENU frame.
+ *
+ * An alias rather than a second declaration: `frame.toEnu()` already returns
+ * this exact shape, and a structurally identical local type would drift from it
+ * silently.
+ */
+type Enu = EnuPoint;
 
 /**
  * Where `gate` opens this line, as a distance along it, or `undefined`.
@@ -485,6 +538,14 @@ function segmentCrossing(
   if (denominator === 0) return undefined;
   const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / denominator;
   const u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / denominator;
+  // TOUCHING COUNTS, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT (raised in
+  // review on #277). The bounds are INCLUSIVE, so a way that merely ENDS on the
+  // barrier corroborates a gate there. A footway that terminates at a gate in a
+  // wall is a gateway — mapping it as a dead end at the wall rather than as a
+  // line through it is a stylistic choice of the mapper, not a statement that
+  // the wall is solid. Tightening these to strict inequalities would silently
+  // close that class; `barrier-gates.test.ts` pins the T-junction shape so the
+  // change cannot be made by accident.
   if (t < 0 || t > 1 || u < 0 || u > 1) return undefined;
   return { x: a.x + rx * t, y: a.y + ry * t };
 }

@@ -168,32 +168,40 @@ describe("site barriers", () => {
       }).length;
     }
 
-    // DEC-A2 ADDED EXACTLY ONE OPENING ACROSS ALL EIGHT SITES — Sylt's
-    // `way/740958910` (`barrier=wall`, stone). That the reach is this small is
-    // the evidence the rule is narrow enough to adopt: it opens a barrier only
-    // where a gate NODE sits within a metre of it AND a way through that node
-    // crosses it, and either signal alone is a rule this package already
-    // measured and rejected.
+    // DEC-A2 CHANGES NOTHING AT ANY OF THE EIGHT SITES — these are the
+    // pre-DEC-A2 numbers, unchanged. That is a deliberate outcome rather than a
+    // disappointing one, and the route to it is worth reading before anyone
+    // loosens the rule:
     //
-    // AND THE MEASUREMENT EARNED ITS KEEP. Before the below-surface exclusion it
-    // added a SECOND opening, Cologne's `way/160630326` (`barrier=retaining_wall`
-    // — the very kind DEC-R12-1 named when it rejected a bare crossing rule).
-    // The cause was node 1591065517, `entrance=yes` **`layer=-1`**, "Zugang
-    // Südturm": an underground access sitting on a retaining wall. A person at
-    // ground level cannot walk through it, so that was an invented opening of
-    // exactly the sort this module exists to prevent. It was visible only
-    // because the counts are pinned per site.
+    // The first version added TWO openings, and BOTH were false positives that
+    // only the per-site counts exposed:
+    //
+    // - **Cologne `way/160630326`** (`barrier=retaining_wall` — the very kind
+    //   DEC-R12-1 named when it rejected a bare crossing rule), opened by node
+    //   1591065517, `entrance=yes` **`layer=-1`**, "Zugang Südturm": an
+    //   underground access. Nobody walks through it at ground level.
+    // - **Sylt `way/740958910`** (`barrier=wall`), corroborated by way
+    //   739515786 — **another `barrier=wall`**. A wall vouching for a wall is
+    //   not "a route passes through here".
+    //
+    // Vetoing below-surface gates killed the first; requiring the corroborating
+    // way to be a `highway` and above-surface killed the second. What remains
+    // opens only where a gate node sits within a metre of a barrier AND a
+    // routable, surface-level way through that node crosses it.
+    //
+    // A RULE THAT IS A NO-OP EVERYWHERE LOOKS EXACTLY LIKE A RULE THAT WORKS,
+    // which is this test's own warning — so the demonstration lives in
+    // `agent-route.tower-gate.test.ts` (in the demo package), on inlined real
+    // geometry from the Tower of London. The Tower is outside every extract
+    // here: `london-tower-bridge` is centred on the bridge (bbox north 51.50668
+    // / west -0.07616) and the gate is at 51.50737 / -0.07638.
     expect(opened).toEqual({
       "cologne-cathedral": 12,
       "heidelberg-altstadt": 8,
       "berlin-alexanderplatz": 0,
-      "sylt-westerland": 13,
+      "sylt-westerland": 12,
       "manhattan-midtown": 1,
       "tokyo-shinjuku": 0,
-      // Unchanged, and NOT because the rule failed: the Tower of London is
-      // outside this extract (bbox north 51.50668 / west -0.07616; the gate is
-      // at 51.50737 / -0.07638). `agent-route.tower-gate.test.ts` in the demo
-      // covers that case on inlined real geometry.
       "london-tower-bridge": 2,
       "london-westminster": 10,
     });
