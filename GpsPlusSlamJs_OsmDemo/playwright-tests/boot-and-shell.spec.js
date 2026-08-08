@@ -168,8 +168,19 @@ test.describe("the browser console", () => {
       // The suite blocks the live rule sheet on purpose; the app reports the
       // degradation in its status line and the fixture asserts on it.
       /Rule table fetch failed/.test(text) ||
-      // Blocked by `stubNetwork`, deliberately.
-      /net::ERR_FAILED|Failed to load resource/.test(text);
+      // Blocked by `stubNetwork`, deliberately. `net::ERR_FAILED` is what
+      // Chrome logs for a route that ABORTS the request, which is what the stub
+      // does — it never answers with a status code.
+      //
+      // `Failed to load resource` IS NO LONGER IGNORED, and that narrowing is
+      // the point. This clause used to read
+      // `net::ERR_FAILED|Failed to load resource`, and "Failed to load
+      // resource: the server responded with a status of 404" is VERBATIM what
+      // Chrome logs for a missing favicon — so the one test that exists to
+      // catch console errors was structurally blind to every genuine 404. A
+      // `favicon.ico` 404 survived many sessions behind it. Aborted requests
+      // are still tolerated above; answered-with-an-error ones now fail.
+      /net::ERR_FAILED/.test(text);
 
     const real = errors.filter((text) => !ignorable(text));
     expect(real, `unexpected console errors:\n${real.join("\n---\n")}`).toEqual(

@@ -4,6 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OSM affordance demo</title>
+    <!--
+      A DATA-URI ICON, matching the RecorderApp and the landing page rather than
+      inventing a second convention. Without it the browser requests
+      `/favicon.ico` unprompted and logs a 404 on every load — noise in the one
+      place a real error would show, and it survived many sessions because the
+      console-error e2e filtered `Failed to load resource` wholesale. That
+      filter is narrowed in the same change.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ef4444'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23fff'/%3E%3C/svg%3E"
+      type="image/svg+xml"
+    />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"

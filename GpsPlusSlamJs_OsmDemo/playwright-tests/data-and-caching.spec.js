@@ -172,7 +172,14 @@ test.describe("a superseded refresh", () => {
       // The status line is where `fetchFailed` becomes visible, and the message it
       // would carry is the RPC's own. Neither may ever have appeared.
       const history = await statusHistory();
-      expect(history.join(" | ")).not.toMatch(/Failed|superseded/);
+      // ANCHORED TO THE MESSAGE, not to the bare word. `Failed: ` with the colon
+      // is how `writeStatus` renders an error phase; a bare `/Failed/` matched
+      // by accident only because it is case-SENSITIVE — every status line here
+      // already contains "live fetch failed and no cache", which `main.ts` folds
+      // in through `tableNote` whenever the suite blocks the live rule sheet.
+      // One lowercase change in that message and this assertion would have
+      // started failing for a reason that has nothing to do with what it tests.
+      expect(history.join(" | ")).not.toMatch(/Failed: |superseded/i);
 
       // And the picture survived: the grid is still there, drawn for the category
       // the picker ended on.
