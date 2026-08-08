@@ -602,6 +602,57 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
     expect(crossesObstacle(index, outside, inside)).toBe(true);
   });
 
+  it("does NOT free the interior — a step between two rooms away from the passage still blocks", () => {
+    // THE DEFECT THIS RULE ALMOST SHIPPED WITH, found in review. Blocking was a
+    // pure BOUNDARY property: `segmentCrossesRing` is false for a segment lying
+    // wholly inside a ring, and `obstacleLevelsAt` never removes the ground
+    // level from a cell inside a footprint. That combination was harmless only
+    // because a closed footprint was UNREACHABLE — you could never get in, so
+    // interior freedom was unobservable. An opening makes it reachable, and
+    // every subsequent interior step crosses no ring at all.
+    //
+    // The consequence is exactly the picture the 22 %/34 % measurement was used
+    // to rule out, scoped smaller: a route cutting a diagonal between two mouths
+    // through the rooms between them, and `planRoute` happily routing an agent
+    // to a destination inside the building. So "a corridor, not the whole
+    // volume" has to be true of the INTERIOR as well as of the boundary.
+    const index = buildObstacleIndex([
+      block,
+      passage({ tunnel: "building_passage" }),
+    ]);
+
+    // Two neighbouring cells well north of the passage line, both inside.
+    const north = HOME.lat + STEP * 15;
+    const inside = cellAt(north, HOME.lng - STEP * 8);
+    const neighbour = gridDisk(inside, 1).find((cell) => {
+      if (cell === inside) return false;
+      const [lat, lng] = cellToLatLng(cell);
+      return lng > HOME.lng - STEP * 8 && lat > HOME.lat + STEP * 8;
+    });
+    if (neighbour === undefined) throw new Error("no interior neighbour found");
+
+    expect(crossesObstacle(index, inside, neighbour)).toBe(true);
+  });
+
+  it("keeps the corridor itself walkable end to end", () => {
+    // The counterweight to the test above, and the reason it cannot be satisfied
+    // by simply blocking everything inside: the passage has to remain a route
+    // THROUGH, not a pocket you can enter and not leave.
+    const index = buildObstacleIndex([
+      block,
+      passage({ tunnel: "building_passage" }),
+    ]);
+    const west = cellAt(HOME.lat, HOME.lng - STEP * 8);
+    const east = gridDisk(west, 1).find((cell) => {
+      if (cell === west) return false;
+      const [, lng] = cellToLatLng(cell);
+      return lng > HOME.lng - STEP * 8;
+    });
+    if (east === undefined) throw new Error("no neighbour along the passage");
+
+    expect(crossesObstacle(index, west, east)).toBe(false);
+  });
+
   it("leaves the building DRAWN and indexed — it is opened, not deleted", () => {
     // The same shape `min_height` volumes have: passability is an index-only
     // property, and the volume is still there to be seen and still blocks

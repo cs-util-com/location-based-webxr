@@ -46,12 +46,8 @@ import {
 import { cellToLatLng, gridDisk } from "h3-js";
 
 import { barrierFootprints } from "../mesh/barrier-shape.js";
-import {
-  GATE_GAP_M,
-  type GateOpenings,
-  gateOpenings,
-} from "../mesh/barrier-gates.js";
-import { passageOpenings } from "./building-passages.js";
+import { type GateOpenings, gateOpenings } from "../mesh/barrier-gates.js";
+import { PASSAGE_CORRIDOR_M, passageLines } from "./building-passages.js";
 import {
   barrierCentrelines,
   isSolidBarrier,
@@ -61,9 +57,12 @@ import { solidBuildingFootprints } from "../mesh/buildings.js";
 import { resolveHeights } from "../mesh/building-heights.js";
 import { enuFrameAt } from "../mesh/enu.js";
 import { coverCells } from "../spatial/cell-coverage.js";
-import { segmentCrossesRing } from "../spatial/segment-crossing.js";
+import {
+  segmentCrossesRing,
+  segmentsIntersect,
+} from "../spatial/segment-crossing.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
-import type { PlanarPoint } from "../spatial/point-in-ring.js";
+import { containsPoint, type PlanarPoint } from "../spatial/point-in-ring.js";
 
 /** Something an agent cannot walk through, and the level it can stand on. */
 export interface Obstacle {
@@ -78,16 +77,22 @@ export interface Obstacle {
    */
   readonly rings: readonly (readonly PlanarPoint[])[];
   /**
-   * Points on the boundary where a mapped opening lets a step through
-   * (DEC-R12-3) — today, where a `tunnel=building_passage` way pierces it.
+   * Lines along which this obstacle is open (DEC-R12-3) — today, the
+   * `tunnel=building_passage` ways running through it.
    *
    * ABSENT ON ALMOST EVERYTHING, which is why it is optional rather than an
    * empty array everywhere: passages are common in a city extract and rare per
    * building, and `crossesObstacle` runs on the search's hottest path.
    *
+   * **LINES, NOT THE MOUTHS.** A step is admitted when it runs along one of
+   * these, which is a claim `crossesObstacle` can make about a step INSIDE the
+   * footprint as well as about one crossing its boundary — and the inside is
+   * where a corridor stops being a corridor if nobody asks. See
+   * `building-passages.ts`.
+   *
    * Degrees, `x = lng`, `y = lat`, exactly as {@link rings} are.
    */
-  readonly openings?: readonly PlanarPoint[];
+  readonly passages?: readonly (readonly PlanarPoint[])[];
 }
 
 /** Obstacles, looked up by the cells they cover. */
@@ -196,13 +201,13 @@ function addBuildings(
   // `building=roof` are readable from the building alone, while "a road goes
   // through here" is a property of the ROAD. Computed once for the whole
   // extract rather than per building.
-  const openings = passageOpenings(features, solids);
+  const passagesPerSolid = passageLines(features, solids);
 
   for (const [i, solid] of solids.entries()) {
     const { totalHeightM } = resolveHeights(solid.feature.tags);
     if (!Number.isFinite(totalHeightM) || totalHeightM <= 0) continue;
 
-    const pierced = openings[i] ?? [];
+    const pierced = passagesPerSolid[i] ?? [];
     indexUnderCells(
       {
         feature: featureKey(solid.feature),
@@ -213,7 +218,7 @@ function addBuildings(
         rings: solid.rings,
         // OMITTED WHEN EMPTY, so the common building carries no extra field and
         // `crossesObstacle` skips the check with one `undefined` test.
-        ...(pierced.length > 0 ? { openings: pierced } : {}),
+        ...(pierced.length > 0 ? { passages: pierced } : {}),
       },
       resolution,
       byCell,
@@ -356,14 +361,28 @@ export function crossesObstacle(
     for (const obstacle of index.obstaclesIn(cell)) {
       if (seen.has(obstacle)) continue;
       seen.add(obstacle);
+      // A MAPPED PASSAGE ADMITS THE STEPS THAT RUN ALONG IT, and refuses the
+      // ones that do not — INCLUDING the ones that cross no boundary at all
+      // (DEC-R12-3). Both halves are needed and neither is sufficient:
+      //
+      // - without the first, the passage is sealed and the tag does nothing;
+      // - without the second, opening a mouth frees the whole INTERIOR, because
+      //   `segmentCrossesRing` is false for a segment lying wholly inside a ring
+      //   and `obstacleLevelsAt` never removes a cell's ground level. Before a
+      //   building could be entered at all that was unobservable; an opening
+      //   makes it reachable, and a route would cut a diagonal between two
+      //   mouths through the rooms between them.
+      //
+      // Reached only for obstacles that HAVE passages — almost none do — so the
+      // ordinary building pays one `undefined` test and nothing else.
+      if (obstacle.passages !== undefined) {
+        if (blockedDespitePassages(a, b, obstacle, obstacle.passages))
+          return true;
+        continue;
+      }
+
       for (const ring of obstacle.rings) {
-        if (!segmentCrossesRing(a, b, ring)) continue;
-        // A MAPPED OPENING ADMITS THE STEP THAT GOES THROUGH IT (DEC-R12-3).
-        // Checked only AFTER a crossing was found, and only for the obstacles
-        // that have one — almost none do — so the hot path pays one `undefined`
-        // test per obstacle and nothing else.
-        if (goesThroughAnOpening(a, b, obstacle)) continue;
-        return true;
+        if (segmentCrossesRing(a, b, ring)) return true;
       }
     }
   }
@@ -371,47 +390,105 @@ export function crossesObstacle(
 }
 
 /**
- * Whether the step `a→b` passes close enough to one of `obstacle`'s openings to
- * be going through it.
+ * Whether a step is blocked by an obstacle that has passages through it.
+ *
+ * The rule is one sentence: **the step is admitted exactly when it runs along a
+ * passage.** Everything else about this obstacle blocks — a crossing of its
+ * boundary elsewhere, and a step between two points inside it that is not on the
+ * passage.
  *
  * **A PROXIMITY TEST RATHER THAN A HOLE IN THE RING**, and that follows from the
  * primitive: `segmentCrossesRing` treats a ring as closed whether or not the
  * caller repeated the first vertex, so a building's boundary cannot be cut the
- * way `barrier-gates.ts` cuts a barrier centreline. It does not need to be —
- * a building's passability has always been an index-only property here
+ * way `barrier-gates.ts` cuts a barrier centreline. It does not need to be — a
+ * building's passability has always been an index-only property here
  * (`min_height` and `building=roof` volumes are drawn exactly as before and
  * simply do not obstruct), so the drawn-iff-indexed rule that forced the barrier
  * gap into the shared geometry does not apply.
  *
- * HALF A {@link GATE_GAP_M} either side, the same width a mapped gate opens: both
- * are "an opening a person walks through", and both are bounded from below by
- * the spacing of neighbouring res-13 cell centres — an opening the search cannot
- * step through is one that may as well not exist.
+ * HALF A {@link PASSAGE_CORRIDOR_M} either side. It is WIDER than a gate opens,
+ * and that is not inconsistency: a gate needs one admitted step across a line,
+ * a corridor needs a chain of them along its length, and the res-13 lattice the
+ * search moves on has centres ~6 m apart. See `building-passages.ts`.
  */
-function goesThroughAnOpening(
+function blockedDespitePassages(
   a: PlanarPoint,
   b: PlanarPoint,
   obstacle: Obstacle,
+  passages: readonly (readonly PlanarPoint[])[],
 ): boolean {
-  const openings = obstacle.openings;
-  if (openings === undefined) return false;
+  const crossesBoundary = obstacle.rings.some((ring) =>
+    segmentCrossesRing(a, b, ring),
+  );
+  // Neither crossing the boundary nor inside it: this obstacle is simply not in
+  // the way, and the passage is irrelevant.
+  const inside =
+    !crossesBoundary &&
+    obstacle.rings.some(
+      (ring) => containsPoint(ring, a) && containsPoint(ring, b),
+    );
+  if (!crossesBoundary && !inside) return false;
 
+  return !runsAlongAPassage(a, b, passages);
+}
+
+/** Whether the step `a→b` runs close enough to a passage to be going along it. */
+function runsAlongAPassage(
+  a: PlanarPoint,
+  b: PlanarPoint,
+  passages: readonly (readonly PlanarPoint[])[],
+): boolean {
   // DEGREES ARE ANISOTROPIC and this comparison is in metres, so longitude is
   // scaled by cos(latitude) before the distance is taken. Everything else in
   // this module is affine-invariant and needs no such correction; a RADIUS does.
   const latitude = ((a.y + b.y) / 2) * (Math.PI / 180);
   const scaleX = Math.cos(latitude);
-  const limit = GATE_GAP_M / 2 / METRES_PER_DEGREE;
+  const limit = PASSAGE_CORRIDOR_M / 2 / METRES_PER_DEGREE;
+  const from = { x: a.x * scaleX, y: a.y };
+  const to = { x: b.x * scaleX, y: b.y };
 
-  for (const opening of openings) {
-    const distance = pointToSegment(
-      { x: opening.x * scaleX, y: opening.y },
-      { x: a.x * scaleX, y: a.y },
-      { x: b.x * scaleX, y: b.y },
-    );
-    if (distance <= limit) return true;
+  // THE WHOLE STEP AGAINST THE WHOLE LINE, not the endpoints against the line.
+  // A step is admitted when it stays within the corridor at some point along
+  // its length — which is what an ENTRY step does (it begins outside the
+  // building entirely) and what a step ALONG the corridor does. Requiring both
+  // endpoints to be inside the corridor instead fails the entry step, and fails
+  // a chain along the corridor whenever the H3 lattice puts two consecutive
+  // centres on the same side of the line.
+  for (const passage of passages) {
+    for (let i = 0; i + 1 < passage.length; i++) {
+      const p = passage[i]!;
+      const q = passage[i + 1]!;
+      const distance = segmentDistance(
+        from,
+        to,
+        {
+          x: p.x * scaleX,
+          y: p.y,
+        },
+        { x: q.x * scaleX, y: q.y },
+      );
+      if (distance <= limit) return true;
+    }
   }
   return false;
+}
+
+/** Shortest distance between two segments, in the units given. */
+function segmentDistance(
+  a: PlanarPoint,
+  b: PlanarPoint,
+  c: PlanarPoint,
+  d: PlanarPoint,
+): number {
+  // Crossing segments are at distance zero, and the endpoint minimum below
+  // would report the wrong thing for them.
+  if (segmentsIntersect(a, b, c, d)) return 0;
+  return Math.min(
+    pointToSegment(a, c, d),
+    pointToSegment(b, c, d),
+    pointToSegment(c, a, b),
+    pointToSegment(d, a, b),
+  );
 }
 
 /** Metres in one degree of latitude. Good to ~0.5 % anywhere, which is plenty. */

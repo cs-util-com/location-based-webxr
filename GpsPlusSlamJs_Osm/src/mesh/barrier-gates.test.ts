@@ -28,6 +28,7 @@ import {
   splitAtGates,
 } from "./barrier-gates.js";
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
+import { DEFAULT_BARRIER_THICKNESS_M } from "./barriers.js";
 import { enuFrameAt } from "./enu.js";
 
 /** A metre in degrees of latitude, close enough for a test fixture. */
@@ -91,6 +92,20 @@ describe("gateOpenings", () => {
     expect(openings.opensAt(north(0))).toBe(false);
   });
 
+  it("does NOT accept `entrance=no`, which says the opposite", () => {
+    // THE ONE CASE WHERE THE DATA CONTRADICTS THE CONCLUSION. `entrance=no` is a
+    // real if uncommon value meaning this node is explicitly NOT an entrance, so
+    // opening a wall there would invent the one opening OSM took the trouble to
+    // deny. The `barrier` key is checked against a value allowlist for exactly
+    // this reason; the `entrance` key had degraded to a presence test.
+    const openings = gateOpenings([
+      node(1, north(0), { entrance: "no" }),
+      node(2, north(10), { entrance: "none" }),
+    ]);
+    expect(openings.opensAt(north(0))).toBe(false);
+    expect(openings.opensAt(north(10))).toBe(false);
+  });
+
   it("does NOT accept a gate mapped as a WAY", () => {
     // A gap is a POINT on a barrier. A `barrier=gate` way is a gate drawn as a
     // line — itself an obstacle-shaped thing — and treating its vertices as
@@ -131,12 +146,14 @@ describe("splitAtGates", () => {
   it("leaves a wall with no gate exactly as it was", () => {
     // The default must be "solid": DEC-R12-1 fails towards an unbroken barrier,
     // which reads as OSM tagging rather than as a pathfinding defect.
-    expect(splitAtGates(wall, NO_GATES)).toEqual([wall]);
+    expect(splitAtGates(wall, NO_GATES, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+      wall,
+    ]);
   });
 
   it("cuts a wall in two at a gate in the middle", () => {
     const gates = gateOpenings([node(1, north(50), { barrier: "gate" })]);
-    const parts = splitAtGates(wall, gates);
+    const parts = splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M);
 
     expect(parts).toHaveLength(2);
     // The gap is centred on the gate node, so each part stops half a gap short
@@ -157,12 +174,14 @@ describe("splitAtGates", () => {
     // the vertexed wall above and leaves this one whole.
     const gates = gateOpenings([node(1, north(50), { barrier: "gate" })]);
     const coarse: readonly LatLng[] = [north(0), north(100)];
-    expect(splitAtGates(coarse, gates)).toEqual([coarse]);
+    expect(splitAtGates(coarse, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+      coarse,
+    ]);
   });
 
   it("shortens rather than splits when the gate is at an END of the wall", () => {
     const gates = gateOpenings([node(1, north(0), { barrier: "gate" })]);
-    const parts = splitAtGates(wall, gates);
+    const parts = splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M);
     expect(parts).toHaveLength(1);
     expect(lengthM(parts[0]!)).toBeCloseTo(100 - GATE_GAP_M / 2, 1);
   });
@@ -175,7 +194,7 @@ describe("splitAtGates", () => {
       node(1, north(50), { barrier: "gate" }),
       node(2, north(51), { barrier: "gate" }),
     ]);
-    const parts = splitAtGates(wall, gates);
+    const parts = splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M);
     expect(parts).toHaveLength(2);
     for (const part of parts) expect(lengthM(part)).toBeGreaterThan(GATE_GAP_M);
   });
@@ -185,7 +204,37 @@ describe("splitAtGates", () => {
     // sub-metre bands instead would be geometry too small to see and too small
     // to path around.
     const gates = gateOpenings([node(1, north(0), { barrier: "gate" })]);
-    expect(splitAtGates([north(0), north(2)], gates)).toEqual([]);
+    expect(
+      splitAtGates([north(0), north(2)], gates, DEFAULT_BARRIER_THICKNESS_M),
+    ).toEqual([]);
+  });
+
+  it("emits no fragment too small to be a barrier, between two gates just over a gap apart", () => {
+    // THE CASE THE MERGE TEST ABOVE DOES NOT REACH, because that one uses gates
+    // CLOSER than one gap. Gates 5.2 m apart give cuts [-2.5, 2.5] and
+    // [2.7, 7.7], which do not overlap — so a naive filter emits the 0.2 m of
+    // wall between them: a visible stub floating in the middle of a 7.7 m
+    // opening, and a ~0.2 x 0.5 m quad in the index that a step between two cell
+    // centres can still hit. That is precisely the "drawn and unusable" outcome
+    // GATE_GAP_M is bounded from below to prevent, arriving from the other side.
+    const gates = gateOpenings([
+      node(1, north(0), { barrier: "gate" }),
+      node(2, north(5.2), { barrier: "gate" }),
+    ]);
+    const wall2: readonly LatLng[] = [
+      north(0),
+      north(5.2),
+      north(50),
+      north(100),
+    ];
+
+    for (const part of splitAtGates(
+      wall2,
+      gates,
+      DEFAULT_BARRIER_THICKNESS_M,
+    )) {
+      expect(lengthM(part)).toBeGreaterThan(DEFAULT_BARRIER_THICKNESS_M);
+    }
   });
 
   it("never emits a line with fewer than two points", () => {
@@ -195,7 +244,7 @@ describe("splitAtGates", () => {
       node(1, north(0), { barrier: "gate" }),
       node(2, north(100), { barrier: "gate" }),
     ]);
-    for (const part of splitAtGates(wall, gates)) {
+    for (const part of splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)) {
       expect(part.length).toBeGreaterThanOrEqual(2);
     }
   });

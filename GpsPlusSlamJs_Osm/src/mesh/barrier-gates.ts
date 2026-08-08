@@ -26,7 +26,7 @@
  * ring stitching. An epsilon here would be exactly the "plausible-but-wrong"
  * match that docstring warns against: a gate NEAR a wall it is not part of.
  *
- * WHAT IT COSTS, MEASURED: over the eight-site corpus this cuts 13 of Cologne's
+ * WHAT IT COSTS, MEASURED: over the eight-site corpus this cuts 12 of Cologne's
  * 60 solid barriers, 8 of Heidelberg's 53, 12 of Sylt's 65, 10 of Westminster's
  * 73, 2 of Tower Bridge's 9, 1 of Manhattan's 41 — and NOTHING at Berlin or
  * Tokyo, which map no gate on any barrier at all. Paths will still meet unbroken
@@ -62,20 +62,31 @@ const GATE_BARRIERS = new Set([
 ]);
 
 /**
+ * `entrance` values that DENY an entrance rather than describing one.
+ *
+ * Small on purpose: `entrance=*` is otherwise open-ended (`main`, `yes`,
+ * `service`, `exit`, `emergency`, …) and a new value should mean an opening by
+ * default. Only an explicit denial is excluded.
+ */
+const DENIED_ENTRANCES = new Set(["no", "none"]);
+
+/**
  * How much barrier a gate removes, metres, centred on the node.
  *
- * A DECISION, NOT A MEASUREMENT — OSM does not say how wide a gate is, exactly
- * as it does not say how tall a wall is (DEC-R11-2 settled that one the same
- * way). Five metres is a typical mapped vehicle gate, and the value is bounded
- * from BELOW by something sharper than typicality: a gap narrower than the
- * spacing of neighbouring res-13 cell centres (~6 m) is one the pathfinder
- * cannot use, because blocking is a property of the STEP between two cell
- * centres and every such step would still cross a band. A gap that is drawn and
- * unusable is the worst of both outcomes — a visible opening the agent walks
- * around. `barrier-gates.property.test.ts` states that as "a step through the
- * gate exists", which is the claim that actually matters.
+ * A DECISION BOUNDED BY A MEASUREMENT. OSM does not say how wide a gate is, any
+ * more than it says how tall a wall is (DEC-R11-2 settled that one the same way)
+ * — but the LOWER bound is not a matter of taste. Blocking is a property of the
+ * STEP between two res-13 cell centres, whose spacing is ~6 m, so a narrower gap
+ * is one the pathfinder cannot use: drawn, visible, and walked around.
+ *
+ * SIX, NOT FIVE, and the difference was measured rather than reasoned. Five was
+ * chosen first and passed the walkability property at 40 alignments; run at 300
+ * it failed roughly one run in four, i.e. about one alignment in twelve hundred
+ * had no step through the gate at all. Six passed 1 200 alignments with no
+ * failure. A property that is 99.9 % true is a flaky test AND a gate that
+ * occasionally does not open, and the second is the one that matters.
  */
-export const GATE_GAP_M = 5;
+export const GATE_GAP_M = 6;
 
 /** The positions at which barriers open. Built once per feature set. */
 export interface GateOpenings {
@@ -115,9 +126,16 @@ export function gateOpenings(features: Iterable<OsmFeature>): GateOpenings {
     if (feature.type !== "node") continue;
     const tags = feature.tags;
     const barrier = tags["barrier"];
+    const entrance = tags["entrance"];
     const opens =
       (barrier !== undefined && GATE_BARRIERS.has(barrier)) ||
-      tags["entrance"] !== undefined;
+      // A VALUE TEST, NOT A PRESENCE TEST, and the asymmetry with `barrier`
+      // above was a real gap: `entrance=no` is a real value meaning this node is
+      // explicitly NOT an entrance, so a presence check opened a wall at the one
+      // node OSM took the trouble to deny. That is the only case where the data
+      // says the opposite of what the rule concludes, and it cuts against this
+      // module's "fail towards a solid barrier".
+      (entrance !== undefined && !DENIED_ENTRANCES.has(entrance));
     if (opens) positions.add(key(feature.position));
   }
 
@@ -129,6 +147,10 @@ export function gateOpenings(features: Iterable<OsmFeature>): GateOpenings {
 
 /**
  * `line`, with a {@link GATE_GAP_M} opening removed around every gate on it.
+ *
+ * `minPieceM` is the shortest surviving piece worth keeping — pass the
+ * feature's own `thicknessM`, since a piece shorter than the barrier is thick is
+ * not a barrier. See the filter at the end for the case that produces one.
  *
  * Returns the surviving pieces in order, each with at least two points. A line
  * with no gate comes back unchanged (as the single-element list), and a line
@@ -142,6 +164,7 @@ export function gateOpenings(features: Iterable<OsmFeature>): GateOpenings {
 export function splitAtGates(
   line: readonly LatLng[],
   gates: GateOpenings,
+  minPieceM: number,
 ): readonly (readonly LatLng[])[] {
   if (line.length < 2) return [];
   // The common case by a wide margin: most barriers have no gate, and at two of
@@ -168,17 +191,41 @@ export function splitAtGates(
   const cuts = mergedCuts(line, gates, along);
   if (cuts.length === 0) return [line];
 
-  const parts: LatLng[][] = [];
+  const parts: { points: LatLng[]; lengthM: number }[] = [];
   let from = 0;
   for (const [start, end] of cuts) {
-    if (start > from) parts.push(slice(line, along, from, start));
+    if (start > from) {
+      parts.push({
+        points: slice(line, along, from, start),
+        lengthM: start - from,
+      });
+    }
     from = end;
   }
-  if (from < total) parts.push(slice(line, along, from, total));
+  if (from < total) {
+    parts.push({
+      points: slice(line, along, from, total),
+      lengthM: total - from,
+    });
+  }
 
-  // A piece shorter than the barrier is thick is not a barrier; and a piece of
-  // one point cannot be drawn or indexed at all.
-  return parts.filter((part) => part.length >= 2);
+  // A PIECE SHORTER THAN THE BARRIER IS THICK IS NOT A BARRIER, and this is a
+  // LENGTH test rather than a point count because the case that produces one has
+  // two perfectly good points. Two gates just over a gap apart — 0 m and 5.2 m —
+  // give cuts that do NOT overlap and so are not merged, leaving 0.2 m of wall
+  // stranded in the middle of a 7.7 m opening: a visible stub floating in the
+  // gap, and a quad in the index that a step between two cell centres can still
+  // hit. That is the "drawn and unusable" outcome GATE_GAP_M is bounded from
+  // below to prevent, arriving from the other side.
+  //
+  // MEASURED AGAINST THE FEATURE'S OWN THICKNESS rather than a constant here,
+  // which is both more correct and what keeps this module free of a dependency
+  // on `barriers.ts` — the two would otherwise import each other.
+  //
+  // And a piece of one point cannot be drawn or indexed at all.
+  return parts
+    .filter((part) => part.points.length >= 2 && part.lengthM > minPieceM)
+    .map((part) => part.points);
 }
 
 /**

@@ -24,7 +24,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { passageOpenings } from "./building-passages.js";
+import { passageLines } from "./building-passages.js";
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 
 /** A metre in degrees, close enough for a fixture. */
@@ -57,21 +57,39 @@ function way(
 /** A road running west→east straight through the middle of `SQUARE`. */
 const THROUGH = [at(-10, 10), at(30, 10)];
 
-describe("passageOpenings", () => {
-  it("finds where a building_passage way enters and leaves a footprint", () => {
-    const openings = passageOpenings(
+describe("passageLines", () => {
+  it("reports the whole passage LINE for a footprint it pierces", () => {
+    const openings = passageLines(
       [way(1, THROUGH, { highway: "footway", tunnel: "building_passage" })],
       [{ rings: [SQUARE] }],
     );
-    // Two: in at the west wall, out at the east one. A passage that pierces a
-    // building has two crossings, and both must open or the agent walks in and
-    // cannot come out.
-    expect(openings[0]).toHaveLength(2);
+    // ONE LINE, not two mouth points — and the line is what makes the corridor a
+    // corridor. Opening only the two crossings freed the whole interior, because
+    // a step between two interior cells crosses no ring at all; carrying the line
+    // lets the index ask "is this step ON the passage" inside as well as at the
+    // boundary. See `nav/obstacles.ts`.
+    expect(openings[0]).toHaveLength(1);
+    expect(openings[0]?.[0]).toEqual(THROUGH.map(planar));
+  });
+
+  it("also reports a passage that ENDS inside the footprint", () => {
+    // OSM ways are routinely split at a building outline, which leaves the
+    // tagged segment wholly inside and crossing the ring zero times. Measured
+    // over the corpus this shape does not occur today (no passage at any of the
+    // eight sites has both endpoints inside a solid footprint), but its failure
+    // mode is silent — the building simply stays solid — so it is supported
+    // rather than left to be discovered.
+    const inside = [at(2, 10), at(18, 10)];
+    const openings = passageLines(
+      [way(1, inside, { highway: "footway", tunnel: "building_passage" })],
+      [{ rings: [SQUARE] }],
+    );
+    expect(openings[0]).toHaveLength(1);
   });
 
   it("ignores a road that merely passes NEARBY", () => {
     const past = [at(-10, 40), at(30, 40)];
-    const openings = passageOpenings(
+    const openings = passageLines(
       [way(1, past, { highway: "footway", tunnel: "building_passage" })],
       [{ rings: [SQUARE] }],
     );
@@ -84,7 +102,7 @@ describe("passageOpenings", () => {
     // every such crossing is the rule DEC-R12-1 measured and rejected — it would
     // invent openings, and an invented opening lets an agent walk through a
     // building that is really there.
-    const openings = passageOpenings(
+    const openings = passageLines(
       [way(1, THROUGH, { highway: "primary" })],
       [{ rings: [SQUARE] }],
     );
@@ -94,7 +112,7 @@ describe("passageOpenings", () => {
   it("ignores `covered=yes`, which DEC-R12-3 rejected by name", () => {
     // Used for roads under canopies and arcades where the building beside them
     // is genuinely solid, so honouring it would invent passages.
-    const openings = passageOpenings(
+    const openings = passageLines(
       [way(1, THROUGH, { highway: "footway", covered: "yes" })],
       [{ rings: [SQUARE] }],
     );
@@ -105,7 +123,7 @@ describe("passageOpenings", () => {
     // A real tunnel is below the surface; `below-surface.ts` already treats the
     // two values differently for scoring, and this is the same distinction one
     // module along.
-    const openings = passageOpenings(
+    const openings = passageLines(
       [way(1, THROUGH, { highway: "primary", tunnel: "yes" })],
       [{ rings: [SQUARE] }],
     );
@@ -116,18 +134,18 @@ describe("passageOpenings", () => {
     const other = [at(100, 100), at(120, 100), at(120, 120), at(100, 100)].map(
       planar,
     );
-    const openings = passageOpenings(
+    const openings = passageLines(
       [way(1, THROUGH, { highway: "footway", tunnel: "building_passage" })],
       [{ rings: [SQUARE] }, { rings: [other] }],
     );
     expect(openings).toHaveLength(2);
-    expect(openings[0]).toHaveLength(2);
+    expect(openings[0]).toHaveLength(1);
     expect(openings[1]).toEqual([]);
   });
 
   it("is empty when nothing is tagged as a passage, which is the common case", () => {
     expect(
-      passageOpenings(
+      passageLines(
         [way(1, THROUGH, { highway: "primary" })],
         [{ rings: [SQUARE] }],
       ),

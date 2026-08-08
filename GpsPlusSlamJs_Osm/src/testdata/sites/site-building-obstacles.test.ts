@@ -7,7 +7,7 @@ import { enuFrameAt } from "../../mesh/enu.js";
 import { buildBuildings } from "../../mesh/buildings.js";
 import { solidBuildingFootprints } from "../../mesh/buildings.js";
 import { isBuilding } from "../../mesh/building-heights.js";
-import { passageOpenings } from "../../nav/building-passages.js";
+import { passageLines } from "../../nav/building-passages.js";
 import { featureKey } from "../../model/osm-feature.js";
 import type { OsmFeature } from "../../model/osm-feature.js";
 
@@ -198,7 +198,7 @@ describe("building passages across the corpus (DEC-R12-3)", () => {
     for (const site of CORPUS_SITES) {
       const features = featuresOf(site.id);
       const solids = solidBuildingFootprints(features);
-      opened[site.id] = passageOpenings(features, solids).filter(
+      opened[site.id] = passageLines(features, solids).filter(
         (points) => points.length > 0,
       ).length;
     }
@@ -209,7 +209,7 @@ describe("building passages across the corpus (DEC-R12-3)", () => {
       "berlin-alexanderplatz": 0,
       "sylt-westerland": 2,
       "manhattan-midtown": 1,
-      "tokyo-shinjuku": 6,
+      "tokyo-shinjuku": 7,
       "london-tower-bridge": 3,
       "london-westminster": 15,
     });
@@ -224,7 +224,7 @@ describe("building passages across the corpus (DEC-R12-3)", () => {
     // what stops a later simplification quietly restoring the wider reading.
     const features = featuresOf("london-tower-bridge");
     const solids = solidBuildingFootprints(features);
-    const opened = passageOpenings(features, solids).filter(
+    const opened = passageLines(features, solids).filter(
       (points) => points.length > 0,
     ).length;
 

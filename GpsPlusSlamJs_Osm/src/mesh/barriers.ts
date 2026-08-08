@@ -214,8 +214,10 @@ export function barrierCentrelines(
 
   // A single node has no direction, so it can be neither drawn nor indexed.
   // Filtered BEFORE the gate split, so `splitAtGates` never sees a degenerate
-  // line, and again after it, since a piece swallowed by its own gate is gone.
+  // line, and again inside it, since a piece swallowed by its own gate is gone
+  // and a piece shorter than this barrier is thick is not a barrier.
+  const { thicknessM } = resolveBarrier(feature.tags);
   return lines
     .filter((line) => line.length >= 2)
-    .flatMap((line) => splitAtGates(line, gates));
+    .flatMap((line) => splitAtGates(line, gates, thicknessM));
 }
