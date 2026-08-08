@@ -343,6 +343,80 @@ export async function waitForRefresh(page) {
  * @param {import('@playwright/test').Page} page
  * @returns {Promise<() => Promise<string[]>>} reads the history so far
  */
+/**
+ * The same recording, installed BEFORE the page's own scripts run.
+ *
+ * WHY A SECOND HELPER RATHER THAN A FLAG ON THE FIRST. `recordStatus` answers
+ * "what has the status line said SINCE NOW" and its other caller depends on
+ * that: `data-and-caching.spec.js` starts recording after its setup and asserts
+ * a message never appeared. This one answers "what has it said SINCE BOOT".
+ * Both are legitimate; conflating them behind one name is how the next reader
+ * picks the wrong one.
+ *
+ * WHY IT EXISTS. The widening step asserts that a TRANSIENT marker was seen —
+ * it is on screen only between the first ring publishing and the last — and it
+ * failed twice in five full-suite runs while passing 5/5 alone. `recordStatus`
+ * installs its observer with `page.evaluate` AFTER `page.goto`, and `goto`
+ * resolves on `load`, by which time the app is already booting; under load that
+ * round trip can land after the whole widening phase is over. Installing at
+ * document-start removes the window rather than shrinking it.
+ *
+ * `#status` does not exist that early, so the recorder waits for it: it watches
+ * `document.documentElement` until the node appears, then observes the node
+ * itself and stops watching. Call this BEFORE `page.goto`.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<() => Promise<string[]>>} reads the history so far
+ */
+export async function recordStatusFromBoot(page) {
+  await page.addInitScript(() => {
+    /** @type {string[]} */
+    const seen = [];
+    /** @type {Record<string, unknown>} */ (window).__statusHistory = seen;
+
+    /** @param {Element} node */
+    const record = (node) => {
+      const text = node.textContent ?? "";
+      if (seen.length === 0 || text !== seen[seen.length - 1]) seen.push(text);
+    };
+
+    const attach = () => {
+      const node = document.getElementById("status");
+      if (node === null) return false;
+      record(node);
+      new MutationObserver(() => {
+        record(node);
+      }).observe(node, { childList: true, characterData: true, subtree: true });
+      return true;
+    };
+
+    if (attach()) return;
+    // The document is still being parsed. Watch for the node rather than
+    // guessing at a ready event — `DOMContentLoaded` would work today and would
+    // silently stop working if the shell ever rendered `#status` from script.
+    //
+    // OBSERVING `document`, NOT `document.documentElement`. An init script runs
+    // at document-start, where `documentElement` can still be null — and
+    // `observe(null, …)` THROWS, which aborts the rest of this script silently.
+    // That is not hypothetical: the first version did exactly that and recorded
+    // zero entries, which reads identically to "the marker never appeared".
+    // `document` always exists, and childList+subtree on it sees the same
+    // mutations.
+    const waiting = new MutationObserver(() => {
+      if (attach()) waiting.disconnect();
+    });
+    waiting.observe(document, { childList: true, subtree: true });
+  });
+
+  return () =>
+    page.evaluate(
+      () =>
+        /** @type {string[]} */ (
+          /** @type {Record<string, unknown>} */ (window).__statusHistory ?? []
+        ),
+    );
+}
+
 export async function recordStatus(page) {
   await page.evaluate(() => {
     const seen = [];

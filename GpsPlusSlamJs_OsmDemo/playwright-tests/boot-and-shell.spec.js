@@ -14,7 +14,7 @@ import { test, expect } from "@playwright/test";
 import {
   AT_FIXTURE,
   enableCellLayer,
-  recordStatus,
+  recordStatusFromBoot,
   stubNetwork,
   waitForRefresh,
   REPAINT,
@@ -29,12 +29,18 @@ test.describe("the demo boots", () => {
     // clock. `test.step` keeps each one separately named in the report, which is
     // what stops a failure from pointing at a group instead of at a behaviour.
     //
-    // The status observer is installed AFTER `goto` and BEFORE `waitForRefresh`:
-    // it lives in the page, so navigating destroys it, and the widening step
-    // needs it recording across the very boot the other three then assert on.
+    // The status observer is installed BEFORE `goto`, through an init script
+    // that survives the navigation — the widening step needs it recording
+    // across the very boot the other three then assert on, and the marker it
+    // watches for can be gone before an after-`goto` install lands.
     const counts = await stubNetwork(page);
+    // INSTALLED BEFORE `goto`, and that ordering IS the fix. The widening
+    // marker is on screen only between the first ring publishing and the last;
+    // recording from an `evaluate` after `goto` raced the boot and lost it
+    // twice in five full-suite runs. `recordStatusFromBoot` installs at
+    // document-start, so there is no window to lose it in.
+    const history = await recordStatusFromBoot(page);
     await page.goto(AT_FIXTURE);
-    const history = await recordStatus(page);
     await waitForRefresh(page);
 
     await test.step("loads the rule table and populates the category picker", async () => {
@@ -107,8 +113,19 @@ test.describe("the demo boots", () => {
       const seen = await history();
       // It appeared at least once, alongside a real cell count — a marker on an
       // empty status line would prove nothing about which snapshot it qualified.
+      //
+      // THE HISTORY RIDES ALONG IN THE FAILURE MESSAGE, permanently. This step
+      // failed twice in five full-suite runs while passing 5/5 alone, and the
+      // one thing needed to tell the competing explanations apart is what was
+      // actually recorded: a first entry of `starting…` means the observer was
+      // in place from the beginning and the marker genuinely never appeared,
+      // while a first entry of the settled final text means the recorder was
+      // installed too late to see it. Chasing that with instrumented reruns
+      // costs ~11 minutes an attempt; attaching it here costs nothing and the
+      // next natural failure carries the answer.
       expect(
         seen.filter((t) => /widening/.test(t) && /\d+ cells/.test(t)),
+        `status history (${seen.length} entries):\n${seen.join("\n")}`,
       ).not.toHaveLength(0);
 
       // And it is GONE at the end. `waitForRefresh` now waits for exactly this, so
