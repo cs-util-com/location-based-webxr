@@ -27,17 +27,27 @@
  * match that docstring warns against: a gate NEAR a wall it is not part of.
  *
  * WHAT IT COSTS, MEASURED: over the eight-site corpus this cuts 12 of Cologne's
- * 60 solid barriers, 8 of Heidelberg's 53, 12 of Sylt's 65, 10 of Westminster's
+ * 60 solid barriers, 8 of Heidelberg's 53, 13 of Sylt's 65, 10 of Westminster's
  * 73, 2 of Tower Bridge's 9, 1 of Manhattan's 41 — and NOTHING at Berlin or
  * Tokyo, which map no gate on any barrier at all. Paths will still meet unbroken
  * walls in places; the rule fails towards a solid barrier, which reads as OSM
  * tagging rather than as a pathfinding defect.
  *
+ * AND ONE NARROW EXTENSION, DEC-A2: a gate node BESIDE a barrier opens it when a
+ * way through that node also crosses it. The Tower of London is the case — the
+ * gate ("Groups Entrance to the Tower") sits 0.17 m off the curtain wall and
+ * belongs to the footways, not to the wall, so the exact rule above could never
+ * fire and the agent could not walk through the gateway. The conjunction is what
+ * keeps this from being the proximity match rejected above: each half alone is a
+ * rule this file already refuses. Measured cost: exactly ONE extra opening
+ * across the whole corpus.
+ *
  * @see barrier-gates.ts.md
  */
 
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
-import { enuFrameAt } from "./enu.js";
+import { isBelowSurface } from "../model/below-surface.js";
+import { enuFrameAt, type EnuFrame } from "./enu.js";
 
 /**
  * `barrier` values on a NODE that open the barrier they sit on (DEC-R12-7).
@@ -88,12 +98,55 @@ const DENIED_ENTRANCES = new Set(["no", "none"]);
  */
 export const GATE_GAP_M = 6;
 
+/**
+ * How far off a barrier a gate node may sit and still open it (DEC-A2).
+ *
+ * THE TOLERANCE THAT IS NOT AN EPSILON, and the distinction is the whole reason
+ * this constant is defensible where the header above rejects proximity matching.
+ * On its own, "a gate within a metre of a wall" IS the plausible-but-wrong match
+ * DEC-R12-7 threw out. It is used here only in CONJUNCTION with a way through
+ * that gate node crossing the barrier — so the data has said two independent
+ * things, and neither is inferred from the other.
+ *
+ * ONE METRE, sized from the case that motivated it rather than from taste. At
+ * the Tower of London the gate node ("Groups Entrance to the Tower") sits
+ * **0.17 m** from the curtain wall and the path through it crosses the wall
+ * **0.17 m from the node** — the mapper put the gate at the crossing point and
+ * attached it to the path rather than to the wall. A gate genuinely belonging to
+ * a different fence is metres away, not centimetres, so a sub-metre-to-metre
+ * tolerance separates the two cleanly.
+ */
+export const GATE_ON_BARRIER_M = 1;
+
+/**
+ * A gate node that is NOT a vertex of any barrier, with the ways running
+ * through it (DEC-A2).
+ *
+ * Only gates with at least one through-way are collected: the conjunction
+ * cannot be satisfied without one, and pruning here keeps the per-barrier scan
+ * proportional to the gates that could actually open something.
+ */
+interface OffBarrierGate {
+  readonly position: LatLng;
+  /** Geometries of the ways with a vertex at {@link position}. */
+  readonly throughWays: readonly (readonly LatLng[])[];
+}
+
 /** The positions at which barriers open. Built once per feature set. */
 export interface GateOpenings {
   /** Whether a barrier vertex at exactly this position is a gate. */
   opensAt(position: LatLng): boolean;
   /** How many openings were found — for tests and diagnostics. */
   readonly size: number;
+  /**
+   * Gates that sit beside a barrier rather than on it (DEC-A2).
+   *
+   * Kept separate from {@link opensAt} rather than folded into it, because the
+   * two answer different questions: `opensAt` is exact identity and needs no
+   * corroboration, while these open a barrier only when a way through them
+   * crosses it. Merging them would quietly turn the first rule into the second.
+   */
+  readonly offBarrier: readonly OffBarrierGate[];
 }
 
 /**
@@ -110,7 +163,42 @@ function key(position: LatLng): string {
 export const NO_GATES: GateOpenings = {
   opensAt: () => false,
   size: 0,
+  offBarrier: [],
 };
+
+/**
+ * Records `geometry` under each of its vertex positions.
+ *
+ * MEMBERSHIP IS COORDINATE IDENTITY, for the reason the header gives: the model
+ * carries inlined geometry and explicitly no node references, and Overpass emits
+ * the same node's coordinates identically wherever they appear. So "a way
+ * through this gate node" is "a way with a vertex here".
+ */
+function indexWayVertices(
+  geometry: readonly LatLng[],
+  waysAt: Map<string, (readonly LatLng[])[]>,
+): void {
+  for (const vertex of geometry) {
+    const vertexKey = key(vertex);
+    const held = waysAt.get(vertexKey);
+    if (held === undefined) waysAt.set(vertexKey, [geometry]);
+    else held.push(geometry);
+  }
+}
+
+/** Whether this feature's tags mark it as a gate or an entrance (DEC-R12-7). */
+function isGateNode(tags: Readonly<Record<string, string>>): boolean {
+  const barrier = tags["barrier"];
+  const entrance = tags["entrance"];
+  return (
+    (barrier !== undefined && GATE_BARRIERS.has(barrier)) ||
+    // A VALUE TEST, NOT A PRESENCE TEST, and the asymmetry with `barrier` above
+    // was a real gap: `entrance=no` is a real value meaning this node is
+    // explicitly NOT an entrance, so a presence check opened a wall at the one
+    // node OSM took the trouble to deny.
+    (entrance !== undefined && !DENIED_ENTRANCES.has(entrance))
+  );
+}
 
 /**
  * The gate and entrance NODES in `features`.
@@ -121,27 +209,46 @@ export const NO_GATES: GateOpenings = {
  */
 export function gateOpenings(features: Iterable<OsmFeature>): GateOpenings {
   const positions = new Set<string>();
+  const gateNodes: LatLng[] = [];
+  /** Way geometries indexed by each of their vertex positions. */
+  const waysAt = new Map<string, (readonly LatLng[])[]>();
 
   for (const feature of features) {
+    if (feature.type === "way") {
+      indexWayVertices(feature.geometry, waysAt);
+      continue;
+    }
     if (feature.type !== "node") continue;
-    const tags = feature.tags;
-    const barrier = tags["barrier"];
-    const entrance = tags["entrance"];
-    const opens =
-      (barrier !== undefined && GATE_BARRIERS.has(barrier)) ||
-      // A VALUE TEST, NOT A PRESENCE TEST, and the asymmetry with `barrier`
-      // above was a real gap: `entrance=no` is a real value meaning this node is
-      // explicitly NOT an entrance, so a presence check opened a wall at the one
-      // node OSM took the trouble to deny. That is the only case where the data
-      // says the opposite of what the rule concludes, and it cuts against this
-      // module's "fail towards a solid barrier".
-      (entrance !== undefined && !DENIED_ENTRANCES.has(entrance));
-    if (opens) positions.add(key(feature.position));
+    if (!isGateNode(feature.tags)) continue;
+    positions.add(key(feature.position));
+    // A GATE THAT IS NOT ON THE WALKING SURFACE OPENS NOTHING BESIDE IT.
+    // Found by the DEC-A2 corpus measurement rather than reasoned: the one new
+    // opening at Cologne came from node 1591065517, `entrance=yes` **`layer=-1`**
+    // ("Zugang Südturm"), an underground access sitting on a retaining wall. A
+    // person walking at ground level cannot pass through it, so cutting the wall
+    // there is exactly the invented opening this module exists to avoid.
+    //
+    // APPLIED ONLY TO THE OFF-BARRIER RULE, not to `opensAt`. The exact rule is
+    // DEC-R12-1's and is not being revisited here — a gate that IS a vertex of
+    // the barrier is a much stronger statement, and changing its meaning would
+    // move counts this measurement is the baseline for.
+    if (!isBelowSurface(feature)) gateNodes.push(feature.position);
+  }
+
+  // BUILT AFTER THE LOOP, because a gate node may be read before the way that
+  // runs through it — feature order is Overpass's, not ours.
+  const offBarrier: OffBarrierGate[] = [];
+  for (const position of gateNodes) {
+    const throughWays = waysAt.get(key(position));
+    if (throughWays !== undefined && throughWays.length > 0) {
+      offBarrier.push({ position, throughWays });
+    }
   }
 
   return {
     opensAt: (position) => positions.has(key(position)),
     size: positions.size,
+    offBarrier,
   };
 }
 
@@ -188,7 +295,7 @@ export function splitAtGates(
   const total = along[along.length - 1]!;
   if (!(total > 0)) return [];
 
-  const cuts = mergedCuts(line, gates, along);
+  const cuts = mergedCuts(line, gates, along, enu, frame);
   if (cuts.length === 0) return [line];
 
   const parts: { points: LatLng[]; lengthM: number }[] = [];
@@ -239,12 +346,22 @@ function mergedCuts(
   line: readonly LatLng[],
   gates: GateOpenings,
   along: readonly number[],
+  enu: readonly Enu[],
+  frame: EnuFrame,
 ): readonly (readonly [number, number])[] {
   const half = GATE_GAP_M / 2;
   const raw: [number, number][] = [];
   for (let i = 0; i < line.length; i++) {
     if (!gates.opensAt(line[i]!)) continue;
     raw.push([along[i]! - half, along[i]! + half]);
+  }
+  // AND THE GATES BESIDE THE LINE (DEC-A2), which need corroboration the exact
+  // matches above do not. Additive on purpose: every opening the original rule
+  // produced is produced identically, so the corpus can only gain openings and
+  // the before/after comparison means something.
+  for (const gate of gates.offBarrier) {
+    const cutAt = offBarrierCut(gate, along, enu, frame);
+    if (cutAt !== undefined) raw.push([cutAt - half, cutAt + half]);
   }
   if (raw.length === 0) return [];
 
@@ -256,6 +373,120 @@ function mergedCuts(
     else merged.push(interval);
   }
   return merged;
+}
+
+/** A point in the line's own ENU frame. */
+interface Enu {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Where `gate` opens this line, as a distance along it, or `undefined`.
+ *
+ * BOTH HALVES OF DEC-A2 ARE TESTED HERE, and the order is cheapest-first: the
+ * projection is arithmetic, the crossing scan walks another way's segments.
+ */
+function offBarrierCut(
+  gate: OffBarrierGate,
+  along: readonly number[],
+  enu: readonly Enu[],
+  frame: EnuFrame,
+): number | undefined {
+  const gateEnu = frame.toEnu(gate.position);
+  const near = nearestOnLine(gateEnu, enu, along);
+  if (near === undefined || near.distanceM > GATE_ON_BARRIER_M)
+    return undefined;
+  // THE CORROBORATION. A gate beside a wall whose path never reaches the wall is
+  // not a gateway — which is exactly the shape of the Tower's own `tunnel=yes`
+  // stub, holding the gate node and crossing the wall zero times.
+  if (!crossesNear(gate, gateEnu, enu, frame)) return undefined;
+  return near.alongM;
+}
+
+/** The closest point on the polyline to `at`, as a distance along it. */
+function nearestOnLine(
+  gateEnu: Enu,
+  enu: readonly Enu[],
+  along: readonly number[],
+): { distanceM: number; alongM: number } | undefined {
+  let best: { distanceM: number; alongM: number } | undefined;
+  for (let i = 1; i < enu.length; i++) {
+    const a = enu[i - 1]!;
+    const b = enu[i]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSq = dx * dx + dy * dy;
+    if (lengthSq === 0) continue;
+    const t = Math.min(
+      1,
+      Math.max(0, ((gateEnu.x - a.x) * dx + (gateEnu.y - a.y) * dy) / lengthSq),
+    );
+    const distanceM = Math.hypot(
+      gateEnu.x - (a.x + dx * t),
+      gateEnu.y - (a.y + dy * t),
+    );
+    if (best === undefined || distanceM < best.distanceM) {
+      best = { distanceM, alongM: along[i - 1]! + Math.sqrt(lengthSq) * t };
+    }
+  }
+  return best;
+}
+
+/**
+ * Whether a way through `gate` crosses the line within
+ * {@link GATE_ON_BARRIER_M} of the gate node.
+ *
+ * NEAR THE GATE, not anywhere along the way, and that bound is what stops a long
+ * path opening a wall it happens to cross half a kilometre from its gate.
+ */
+function crossesNear(
+  gate: OffBarrierGate,
+  gateEnu: Enu,
+  enu: readonly Enu[],
+  frame: EnuFrame,
+): boolean {
+  for (const way of gate.throughWays) {
+    const path = way.map((position) => frame.toEnu(position));
+    for (let i = 1; i < path.length; i++) {
+      for (let k = 1; k < enu.length; k++) {
+        const hit = segmentCrossing(
+          path[i - 1]!,
+          path[i]!,
+          enu[k - 1]!,
+          enu[k]!,
+        );
+        if (hit === undefined) continue;
+        if (
+          Math.hypot(hit.x - gateEnu.x, hit.y - gateEnu.y) <= GATE_ON_BARRIER_M
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** Where two segments cross, or `undefined` when they do not. */
+function segmentCrossing(
+  a: Enu,
+  b: Enu,
+  c: Enu,
+  d: Enu,
+): { x: number; y: number } | undefined {
+  const rx = b.x - a.x;
+  const ry = b.y - a.y;
+  const sx = d.x - c.x;
+  const sy = d.y - c.y;
+  const denominator = rx * sy - ry * sx;
+  // Parallel or degenerate. A collinear overlap is deliberately NOT a crossing:
+  // a path running ALONG a wall is not a way through it.
+  if (denominator === 0) return undefined;
+  const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / denominator;
+  const u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / denominator;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return undefined;
+  return { x: a.x + rx * t, y: a.y + ry * t };
 }
 
 /** The sub-polyline between two distances along `line`, ends interpolated. */

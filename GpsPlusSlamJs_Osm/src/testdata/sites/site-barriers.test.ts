@@ -168,13 +168,32 @@ describe("site barriers", () => {
       }).length;
     }
 
+    // DEC-A2 ADDED EXACTLY ONE OPENING ACROSS ALL EIGHT SITES — Sylt's
+    // `way/740958910` (`barrier=wall`, stone). That the reach is this small is
+    // the evidence the rule is narrow enough to adopt: it opens a barrier only
+    // where a gate NODE sits within a metre of it AND a way through that node
+    // crosses it, and either signal alone is a rule this package already
+    // measured and rejected.
+    //
+    // AND THE MEASUREMENT EARNED ITS KEEP. Before the below-surface exclusion it
+    // added a SECOND opening, Cologne's `way/160630326` (`barrier=retaining_wall`
+    // — the very kind DEC-R12-1 named when it rejected a bare crossing rule).
+    // The cause was node 1591065517, `entrance=yes` **`layer=-1`**, "Zugang
+    // Südturm": an underground access sitting on a retaining wall. A person at
+    // ground level cannot walk through it, so that was an invented opening of
+    // exactly the sort this module exists to prevent. It was visible only
+    // because the counts are pinned per site.
     expect(opened).toEqual({
       "cologne-cathedral": 12,
       "heidelberg-altstadt": 8,
       "berlin-alexanderplatz": 0,
-      "sylt-westerland": 12,
+      "sylt-westerland": 13,
       "manhattan-midtown": 1,
       "tokyo-shinjuku": 0,
+      // Unchanged, and NOT because the rule failed: the Tower of London is
+      // outside this extract (bbox north 51.50668 / west -0.07616; the gate is
+      // at 51.50737 / -0.07638). `agent-route.tower-gate.test.ts` in the demo
+      // covers that case on inlined real geometry.
       "london-tower-bridge": 2,
       "london-westminster": 10,
     });

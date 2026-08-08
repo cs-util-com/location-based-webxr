@@ -23,6 +23,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   GATE_GAP_M,
+  GATE_ON_BARRIER_M,
   NO_GATES,
   gateOpenings,
   splitAtGates,
@@ -177,6 +178,157 @@ describe("splitAtGates", () => {
     expect(splitAtGates(coarse, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
       coarse,
     ]);
+  });
+
+  /**
+   * A gate the mapper attached to the PATH instead of to the wall (DEC-A2).
+   *
+   * Why these tests matter:
+   * At the Tower of London a footpath runs through the curtain wall and the demo
+   * drew the wall solid, so the NPC could not cross. The cause is not a bug in
+   * the rule above — it is the rule's own blind spot, which `barrier-gates.ts`
+   * anticipated and accepted ("paths will still meet unbroken walls in places").
+   * Measured on the real data: node 25620776 (`barrier=gate`, "Groups Entrance
+   * to the Tower") sits **0.17 m** from city wall 509001534 and belongs to two
+   * footways, one of which crosses the wall **0.17 m from the gate node** — so
+   * the gate IS the crossing point, just attached to the wrong way.
+   *
+   * DEC-A2 opens the wall only where the data says TWO independent things: there
+   * is an opening here (a gate node), AND a route passes through here (a way
+   * through that node that actually crosses the barrier). Each half alone is a
+   * rule this package already rejected — proximity is DEC-R12-7's "a gate NEAR a
+   * wall it is not part of", and a bare crossing is DEC-R12-1's measured-and-
+   * rejected "cut wherever a way crosses". The three negative cases below are
+   * therefore the load-bearing ones.
+   */
+  describe("a gate NEAR the wall, on a way that crosses it (DEC-A2)", () => {
+    /**
+     * A path running east-west across the wall, WITH `at` as a vertex.
+     *
+     * The gate must be a vertex, not merely a point the line passes through:
+     * "a way through this gate node" is coordinate identity against the way's
+     * own vertices, the same membership test the exact rule uses. That is how
+     * the real data is shaped — the Tower's approach bridge has the gate node
+     * as one of its two vertices.
+     */
+    const crossingAt = (at: LatLng): readonly LatLng[] => [
+      { lat: at.lat, lng: at.lng - 5 * M },
+      at,
+      { lat: at.lat, lng: at.lng + 5 * M },
+    ];
+
+    /** The gate node, offset off the wall by `offsetM` as a mapper would leave it. */
+    const gateNear = (metres: number, offsetM: number) => ({
+      position: { lat: north(metres).lat, lng: ORIGIN.lng + offsetM * M },
+      atWall: north(metres),
+    });
+
+    function way(id: number, geometry: readonly LatLng[]): OsmFeature {
+      return { type: "way", id, geometry, tags: { highway: "footway" } };
+    }
+
+    it("opens the wall, which is the Tower case", () => {
+      const gate = gateNear(50, 0.2);
+      const gates = gateOpenings([
+        node(1, gate.position, { barrier: "gate" }),
+        // The crossing path passes THROUGH the gate node, exactly as the Tower's
+        // approach bridge does.
+        way(2, crossingAt(gate.position)),
+      ]);
+
+      const parts = splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M);
+      expect(parts).toHaveLength(2);
+      expect(lengthM(parts[0]!)).toBeCloseTo(50 - GATE_GAP_M / 2, 0);
+    });
+
+    it("does NOT open it without a crossing way — proximity alone is DEC-R12-7's rejection", () => {
+      const gate = gateNear(50, 0.2);
+      const gates = gateOpenings([node(1, gate.position, { barrier: "gate" })]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
+    it("does NOT open it without a gate node — a crossing alone is DEC-R12-1's rejection", () => {
+      // The measured reason that rule was thrown out: `retaining_wall` is the
+      // most-crossed kind, and a road crossing one in plan normally runs above
+      // or below the embankment it holds up.
+      const gates = gateOpenings([way(2, crossingAt(north(50)))]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
+    it("does NOT open it for a gate too far from the wall, however real its path", () => {
+      // A gate genuinely belonging to a different fence is metres away, not
+      // centimetres — which is what keeps the tolerance from becoming the
+      // epsilon DEC-R12-7 rejected.
+      const gate = gateNear(50, GATE_ON_BARRIER_M * 4);
+      const gates = gateOpenings([
+        node(1, gate.position, { barrier: "gate" }),
+        way(2, crossingAt(gate.position)),
+      ]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
+    it("does NOT open it when the way through the gate never reaches the wall", () => {
+      // The conjunction is about ONE place: a gate beside the wall whose path
+      // runs away from it is not a gateway, and the crossing test is what says
+      // so. The Tower's own `tunnel=yes` stub is exactly this shape — it holds
+      // the gate node but crosses the wall zero times.
+      const gate = gateNear(50, 0.2);
+      const stub: readonly LatLng[] = [
+        gate.position,
+        { lat: gate.position.lat, lng: gate.position.lng + 5 * M },
+      ];
+      const gates = gateOpenings([
+        node(1, gate.position, { barrier: "gate" }),
+        way(2, stub),
+      ]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
+    /**
+     * FOUND BY THE CORPUS MEASUREMENT, not by reasoning — which is why DEC-A2
+     * required one before adoption. The rule's first version added a second
+     * opening at Cologne, on `way/160630326` (`barrier=retaining_wall`, the very
+     * kind DEC-R12-1 named when it rejected a bare crossing rule). The cause was
+     * node 1591065517 — `entrance=yes` **`layer=-1`**, "Zugang Südturm" — an
+     * underground access sitting on a retaining wall. A person walking at ground
+     * level cannot pass through it, so cutting the wall there was an invented
+     * opening.
+     */
+    it("does NOT open it for a gate that is below the surface", () => {
+      const gate = gateNear(50, 0.2);
+      const gates = gateOpenings([
+        node(1, gate.position, { entrance: "yes", layer: "-1" }),
+        way(2, crossingAt(gate.position)),
+      ]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
+    it("still refuses a gate mapped as a WAY, even where a path crosses", () => {
+      // DEC-R12-1's exclusion is unchanged: a `barrier=gate` way is a gate drawn
+      // as a line, an obstacle-shaped thing in its own right.
+      const gates = gateOpenings([
+        {
+          type: "way",
+          id: 1,
+          geometry: [north(50), north(51)],
+          tags: { barrier: "gate" },
+        },
+        way(2, crossingAt(north(50))),
+      ]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
   });
 
   it("shortens rather than splits when the gate is at an END of the wall", () => {
