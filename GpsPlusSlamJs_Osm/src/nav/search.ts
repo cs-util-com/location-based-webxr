@@ -167,11 +167,22 @@ export function findStatePath<S>(
  */
 export interface CheapestOptions<S> extends SearchOptions {
   /**
-   * The price of one legal step. Must be finite and **not negative**.
+   * The price of one step. Must be finite and **not negative**.
    *
    * A negative edge does not merely slow the search down, it breaks it: this
    * algorithm settles a state the first time it is popped, which is sound only
    * while no cheaper way to it can still turn up.
+   *
+   * **TOTAL OVER `candidates`, AND CHEAP.** It is consulted for any candidate
+   * pair the space generates — including steps `canEnter` then refuses — so
+   * "the price of walking through this wall" has to be a number rather than an
+   * error. That mirrors the split the interface already makes: `candidates`
+   * enumerates before legality is considered, and this prices what it
+   * enumerates. Legality belongs in `canEnter`, never in an infinite weight.
+   *
+   * The reason is measured, not stylistic: `canEnter` is the expensive half and
+   * this is arithmetic, so the search asks the cheap question first. See
+   * `expand` in this file.
    */
   readonly cost: (from: S, to: S) => number;
   /**
@@ -361,40 +372,50 @@ export function findCheapestPath<S>(
     expand(current);
   }
 
-  /** Offers every legal neighbour of `from` to {@link relax}. */
+  /**
+   * Offers every improving, legal neighbour of `from` to {@link relax}.
+   *
+   * **THE ORDER OF THE THREE TESTS IS THE PERFORMANCE OF THIS SEARCH**, and it
+   * is the opposite of the breadth-first one's. There, `canEnter` could run at
+   * most once per discovered state, because every route to a state was equally
+   * good; with weights a later and cheaper approach is a real thing, so
+   * legality has to be asked per edge — and `canEnter` is the expensive half
+   * (point-in-polygon and a height lookup, against `cost`'s arithmetic).
+   *
+   * So the cheap tests go first: already settled, then "could this even be an
+   * improvement". Only an edge that would actually change the answer is worth
+   * asking a geometric question about. Asking `canEnter` first cost a measured
+   * 2.56 s on `agent-route.test.ts`'s sealed-courtyard case — the one that
+   * exhausts everything reachable — against a 2 s budget that exists because
+   * this runs on the demo's click path.
+   *
+   * The contract this implies for a caller: `cost` must be cheap, and it may be
+   * called for a step that turns out to be illegal.
+   */
   function expand(from: Frontier<S>): void {
     for (const next of space.candidates(from.state)) {
       const nextKey = space.key(next);
-      // A SETTLED NEIGHBOUR IS SKIPPED BEFORE `canEnter` IS ASKED. That is all
-      // that survives of the BFS's "decide legality at most once per state"
-      // saving — with weights, a later and cheaper approach to an UNsettled
-      // state is a real thing whose legality is a separate question — and on
-      // open ground most candidates are settled, so most of the saving remains.
       if (nextKey === from.key || settled.has(nextKey)) continue;
+      const g =
+        from.g +
+        requireFiniteNonNegative(options.cost(from.state, next), "cost");
+      const known = bestG.get(nextKey);
+      if (known !== undefined && known <= g) continue;
       if (!canEnter(from.state, next)) continue;
-      relax(from, next, nextKey);
+      relax(next, nextKey, g, from.key);
     }
   }
 
   /**
-   * Records `next` as reached through `from`, if that is an improvement.
+   * Records `next` as reached from `fromKey` at cost `g`.
    *
-   * Split out to keep the search loop readable rather than for reuse — the
-   * "is this better, and if so remember three things about it" step is the one
-   * place an off-by-one in the bookkeeping would produce a valid-looking route
-   * that is not the cheapest.
+   * Split out to keep the loop readable rather than for reuse — "remember three
+   * things about this state, consistently" is the one place a slip produces a
+   * valid-looking route that is not the cheapest.
    */
-  function relax(from: Frontier<S>, next: S, nextKey: string): void {
-    const step = requireFiniteNonNegative(
-      options.cost(from.state, next),
-      "cost",
-    );
-    const g = from.g + step;
-    const known = bestG.get(nextKey);
-    if (known !== undefined && known <= g) return;
-
+  function relax(next: S, nextKey: string, g: number, fromKey: string): void {
     bestG.set(nextKey, g);
-    cameFrom.set(nextKey, { state: next, from: from.key });
+    cameFrom.set(nextKey, { state: next, from: fromKey });
     frontier.push({
       state: next,
       key: nextKey,

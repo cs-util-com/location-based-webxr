@@ -80,11 +80,23 @@ asked about it six times over — roughly five wasted calls in six.
 - **`canEnter` is consulted per EDGE, not once per discovered state.** The BFS
   may skip an already-seen state before paying for the decision because every
   route to it is equally good; with weights, a later and cheaper approach to the
-  same state is a real thing whose legality is a separate question. The saving
-  survives in the sound form: a **settled** state is skipped before `canEnter` is
-  asked, and on open ground most candidates are settled.
-- **Costs and heuristics may be equal, never negative.** Zero is legal; the
-  production penalty clamps at 1, so it never produces one.
+  same state is a real thing whose legality is a separate question.
+- **`cost` must be TOTAL over `candidates`, and cheap** — and this is the one
+  contract difference a caller can get wrong quietly.
+  - The three tests in `expand` run cheapest-first: already settled, then "could
+    this even improve", then `canEnter`. So `cost` is asked about steps that are
+    then refused, and "the price of walking through this wall" has to be a
+    number rather than an error or an `Infinity`.
+  - That mirrors the split the interface already makes — `candidates` enumerates
+    before legality is considered, and `cost` prices what it enumerates.
+    **Legality belongs in `canEnter`, never in an infinite weight.**
+  - The ordering is measured, not stylistic. `canEnter` is point-in-polygon and
+    a height lookup; `cost` is arithmetic. Asking `canEnter` first cost 2.56 s on
+    `agent-route.test.ts`'s sealed-courtyard case — the one that exhausts
+    everything reachable — against a 2 s budget that exists because this runs on
+    the demo's click path.
+- **Costs and heuristics may be zero, never negative.** The production penalty
+  clamps at 1, so it never produces a zero.
 - **The frontier is a private binary heap**, ordered by `f` and then by larger
   `g`. That tie-break is not cosmetic: large areas share one penalty in the
   demo's own case, so states tie constantly, and preferring the one nearer the

@@ -66,10 +66,19 @@ function spaceFor(priceOf: ReadonlyMap<string, number>): StateSpace<string> {
         `${x!},${y! - 1}`,
       ];
     },
-    // Off the grid, or priced 0, means impassable.
+    // Off the grid, or priced 0, means impassable. Legality lives HERE and only
+    // here — `priceOf` stays total (see `priceIn` below), because `cost` is
+    // consulted before `canEnter` and must answer for a step about to be
+    // refused.
     canEnter: (_from, to) => (priceOf.get(to) ?? 0) > 0,
   };
 }
+
+/** The entry price of a square, total over every candidate the space emits. */
+const priceIn =
+  (priceOf: ReadonlyMap<string, number>) =>
+  (_from: string, to: string): number =>
+    priceOf.get(to) ?? 1;
 
 /** Manhattan distance — admissible, since every passable square costs ≥ 1. */
 function manhattanTo(goal: string): (state: string) => number {
@@ -118,7 +127,7 @@ describe("findCheapestPath, over generated weights", () => {
       fc.property(grid, fc.constantFrom(...SQUARES), (priceOf, goal) => {
         const space = spaceFor(priceOf);
         const path = findCheapestPath("0,0", (s) => s === goal, space, {
-          cost: (_from, to) => priceOf.get(to)!,
+          cost: priceIn(priceOf),
           heuristic: manhattanTo(goal),
         });
         if (path === undefined) return;
@@ -150,7 +159,7 @@ describe("findCheapestPath, over generated weights", () => {
         const space = spaceFor(priceOf);
         const oracle = cheapestCosts(priceOf, space, "0,0");
         const path = findCheapestPath("0,0", (s) => s === goal, space, {
-          cost: (_from, to) => priceOf.get(to)!,
+          cost: priceIn(priceOf),
           heuristic: manhattanTo(goal),
         });
 

@@ -32,18 +32,30 @@ import {
  *
  * The weight is the price of ENTERING a square, which is the shape the route
  * cost has: an affordance score belongs to a cell, not to the pair of cells a
- * step joins. `#` is impassable and is expressed through `canEnter`, so the
- * legality path and the cost path are exercised together.
+ * step joins.
+ *
+ * **LEGALITY AND PRICE ARE SEPARATE AXES HERE, AS THE INTERFACE REQUIRES.** `#`
+ * and off-grid squares are impassable through `canEnter` and still carry a
+ * finite price — `cost` is consulted before legality (see `expand`), so a
+ * fixture that expressed a wall as an infinite weight would be asking the search
+ * to price a step it is about to refuse. That is exactly the shape production
+ * has: `penaltyFor` returns a number for every cell, and `crossesObstacle`
+ * alone decides what blocks.
  */
 function gridSpace(rows: readonly string[]): {
   space: StateSpace<string>;
   cost: (from: string, to: string) => number;
   weightAt: (state: string) => number;
 } {
+  const passable = (state: string): boolean => {
+    const [x, y] = state.split(",").map(Number);
+    const cell = rows[y!]?.[x!];
+    return cell !== undefined && cell !== "#";
+  };
   const weightAt = (state: string): number => {
     const [x, y] = state.split(",").map(Number);
     const cell = rows[y!]?.[x!];
-    if (cell === undefined || cell === "#") return Number.POSITIVE_INFINITY;
+    if (cell === undefined || cell === "#") return 1;
     return cell === "." ? 1 : Number(cell);
   };
   const space: StateSpace<string> = {
@@ -57,7 +69,7 @@ function gridSpace(rows: readonly string[]): {
         `${x!},${y! - 1}`,
       ];
     },
-    canEnter: (_from, to) => Number.isFinite(weightAt(to)),
+    canEnter: (_from, to) => passable(to),
   };
   return { space, cost: (_from, to) => weightAt(to), weightAt };
 }
