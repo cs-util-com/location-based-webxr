@@ -109,6 +109,21 @@ const isTerrarium = (url) =>
   url.pathname.includes("/terrarium/");
 const isBasemap = (url) =>
   /(^|\.)tile\.openstreetmap\.org$/i.test(url.hostname);
+/**
+ * The Leaflet stylesheet `index.html` loads from a CDN.
+ *
+ * **THE SUITE WAS NOT ACTUALLY OFFLINE**, despite `playwright.config.js` saying
+ * so. `index.html` links `https://unpkg.com/leaflet@1.9.4/dist/leaflet.css` and
+ * nothing here intercepted it, so every run fetched it for real. Harmless while
+ * the console test swallowed `Failed to load resource` wholesale; the moment
+ * that filter was narrowed to genuine aborts, a CDN hiccup — a 429, a DNS
+ * failure, a dropped connection — would have failed a test about the app.
+ * Raised in review on #279.
+ *
+ * Served from the local `leaflet` dependency, which is the same file the CDN
+ * would return for the pinned version.
+ */
+const isCdnStylesheet = (url) => /(^|\.)unpkg\.com$/i.test(url.hostname);
 
 /**
  * Routes the app's outside world to checked-in data.
@@ -238,6 +253,19 @@ export async function stubNetwork(page, options = {}) {
       body: Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
         "base64",
+      ),
+    }),
+  );
+  // The Leaflet stylesheet, from the local dependency rather than the CDN. See
+  // `isCdnStylesheet`: without this the suite genuinely reached unpkg on every
+  // run, and a CDN hiccup would now fail the console test.
+  await page.route(isCdnStylesheet, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/css",
+      body: readFileSync(
+        join(here, "..", "node_modules", "leaflet", "dist", "leaflet.css"),
+        "utf8",
       ),
     }),
   );

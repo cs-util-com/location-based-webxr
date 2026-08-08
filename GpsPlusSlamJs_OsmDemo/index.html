@@ -8,9 +8,10 @@
       A DATA-URI ICON, matching the RecorderApp and the landing page rather than
       inventing a second convention. Without it the browser requests
       `/favicon.ico` unprompted and logs a 404 on every load — noise in the one
-      place a real error would show, and it survived many sessions because the
-      console-error e2e filtered `Failed to load resource` wholesale. That
-      filter is narrowed in the same change.
+      place a real error would show.
+      It survived many sessions because HEADLESS Chromium never requests a
+      favicon, so no e2e could see it however the console filter was written.
+      `gallery.html` carries the same link for the same reason.
     -->
     <link
       rel="icon"

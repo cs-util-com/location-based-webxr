@@ -172,14 +172,18 @@ test.describe("the browser console", () => {
       // Chrome logs for a route that ABORTS the request, which is what the stub
       // does — it never answers with a status code.
       //
-      // `Failed to load resource` IS NO LONGER IGNORED, and that narrowing is
-      // the point. This clause used to read
-      // `net::ERR_FAILED|Failed to load resource`, and "Failed to load
-      // resource: the server responded with a status of 404" is VERBATIM what
-      // Chrome logs for a missing favicon — so the one test that exists to
-      // catch console errors was structurally blind to every genuine 404. A
-      // `favicon.ico` 404 survived many sessions behind it. Aborted requests
-      // are still tolerated above; answered-with-an-error ones now fail.
+      // `Failed to load resource` IS NO LONGER IGNORED. This clause used to
+      // read `net::ERR_FAILED|Failed to load resource`, which swallowed every
+      // response answered with an error status — a 404, a 429, a 500 — along
+      // with the aborts it was written for. Those are exactly the failures
+      // worth hearing about. Aborted requests are still tolerated above.
+      //
+      // IT IS NOT, HOWEVER, WHY THE `favicon.ico` 404 SURVIVED (corrected in
+      // review on #279). `scene-3d.spec.js` loads `/gallery.html` — a page that
+      // had no favicon either — and asserts an EMPTY console with no filter at
+      // all, and it is green. Headless Chromium in this suite never requests
+      // `/favicon.ico`, so no filter here could have caught it. That one was
+      // only ever visible in a real browser.
       /net::ERR_FAILED/.test(text);
 
     const real = errors.filter((text) => !ignorable(text));

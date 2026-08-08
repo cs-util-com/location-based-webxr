@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>POI model gallery — OSM affordance demo</title>
+    <!-- The demo's OTHER Vite entry, and it needs the icon for the same reason
+         `index.html` does: without it a browser requests `/favicon.ico` and
+         logs a 404. Same data-URI icon, so the two entries cannot drift. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ef4444'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23fff'/%3E%3C/svg%3E"
+      type="image/svg+xml"
+    />
     <style>
       :root {
         color-scheme: dark;
