@@ -40,7 +40,8 @@ import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { RENDER_ORDER } from "./layer-order.js";
-import { resolvePick, type Pick } from "./pick.js";
+import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
+import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
 import { DEFAULT_TIME_OF_DAY, sunAt } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
@@ -219,6 +220,29 @@ export const GROUND_SEGMENTS = Math.min(
   Math.round((TERRAIN_EXTENT_M * 2) / TERRAIN_SPACING_M),
 );
 
+/**
+ * The route polyline and the agent share ONE colour, and that is the point.
+ *
+ * They are two halves of the same answer — the plan and the thing executing it —
+ * so a second colour would invite reading them as unrelated. Orange because
+ * nothing else in this scene is: the affordance ramp owns the red-to-green axis
+ * (DEC-R4-5 requires it to stay the loudest thing on screen), buildings are
+ * class-coloured pastels, and roads are grey.
+ */
+const ROUTE_COLOUR = 0xff7a1a;
+
+/**
+ * The agent's size, in metres.
+ *
+ * VISIBLE AT CITY SCALE rather than human-sized. The camera looks at a 2.4 km
+ * scene from ~200 m up; a 1.8 m figure is sub-pixel there, and an agent nobody
+ * can find is the same as no agent. 4 m is roughly a storey — big enough to
+ * follow, small enough to read as standing on the ground rather than looming
+ * over it.
+ */
+const AGENT_HEIGHT_M = 4;
+const AGENT_RADIUS_M = 1.2;
+
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
   /**
@@ -267,6 +291,26 @@ export class BuildingView {
   private readonly sun: THREE.DirectionalLight;
   /** The pending rAF handle, so `dispose()` can cancel it. */
   private frame: number | undefined;
+  /**
+   * Frames rendered since construction, published on the container (stage 4).
+   *
+   * The observable behind the e2e's "the scene goes quiet" assertion. See
+   * `requestFrame`, which is the only place it moves.
+   */
+  private frames = 0;
+  /** The planned route's polyline, replaced wholesale like the cell grid. */
+  private routeLine:
+    | THREE.Line<THREE.BufferGeometry, THREE.Material>
+    | undefined;
+  /** The agent itself — one marker, created on the first route (DEC-R11-15). */
+  private agent: THREE.Mesh<THREE.BufferGeometry, THREE.Material> | undefined;
+  /**
+   * The walk in progress: the path, when it started, and what to call at the end.
+   *
+   * HELD RATHER THAN CLOSED OVER, so a second order replaces the first instead
+   * of running two walks against one marker — and so `dispose()` can drop it.
+   */
+  private walk: { path: readonly ScenePoint[]; startedAt: number } | undefined;
   /** The affordance grid, kept separate so `clear()` does not drop it. */
   private cellMesh: THREE.Mesh | undefined;
   /** The outline-treated cells' boundaries (W13). Lifecycle follows the grid. */
@@ -560,6 +604,12 @@ export class BuildingView {
     // CHAINED onto the displacement hook rather than replacing it; see
     // `ground-slope-shader.ts` for why that is the failure worth guarding.
     installGroundSlope(this.groundMaterial, this.groundUniforms);
+    // WHAT MAKES A CLICK ON IT A DESTINATION (DEC-R11-17). The marker and the
+    // raycast membership are one fact rather than two that can disagree — the
+    // same pairing `regionId` and `poiInstances` already use. Setting one
+    // without the other is a silent no-op: the ray hits the plane, `resolvePick`
+    // cannot identify the hit, and the click reads as a dead control.
+    this.ground.userData["ground"] = true;
     this.scene.add(this.ground);
 
     // FAR PLANE 2400 m — 4000, then 1200, now 2400. See `FAR_PLANE_M` for why
@@ -998,7 +1048,24 @@ export class BuildingView {
       // why picking got cheaper rather than more expensive.
       if (child.userData["poiInstances"] !== undefined) targets.push(child);
       if (child.userData["regionId"] !== undefined) targets.push(child);
+      // BUILDINGS JOINED IN STAGE 4, AS BLOCKERS (DEC-R11-17). They are still
+      // not selectable — `resolvePick` stops at the first one and never returns
+      // it — but they must be RAYCAST, because the whole point is that a click
+      // on a facade does not fall through to the ground behind it. Barriers
+      // extrude with them (DEC-R11-11), so a wall blocks the click for the same
+      // reason it blocks the agent.
+      //
+      // The cost is real and stated: this is the largest geometry in the scene
+      // and it is now in the picking set. It is bounded by W20's chunking —
+      // three tests bounding boxes before triangles, so most chunks are rejected
+      // on one box test.
+      if (child.userData["solid"] === true) targets.push(child);
     }
+    // THE GROUND, AND THE REASON THE INVARIANT ABOVE HAD TO CHANGE. Ordering an
+    // agent needs a destination, and until stage 4 a click on open ground
+    // resolved to nothing at all: the affordance grid is off by default, so on
+    // the demo's own default view there was nothing in this list to hit.
+    targets.push(this.ground);
     if (targets.length === 0) return undefined;
     // Reduced to what the decision reads. `Intersection` nests `userData` under
     // `object`, and `pick.ts` must be constructible in a test without a renderer,
@@ -1008,6 +1075,10 @@ export class BuildingView {
         distance: hit.distance,
         faceIndex: hit.faceIndex,
         instanceId: hit.instanceId,
+        // WHERE the ray met the object, flattened like the rest. Only the ground
+        // reads it, and `three`'s `point` is already in world space — which for
+        // this scene is the ENU-derived frame every other coordinate uses.
+        point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
         userData: hit.object.userData,
       })),
       this.cellForTriangle,
@@ -1297,7 +1368,29 @@ export class BuildingView {
     this.frame = requestAnimationFrame(() => {
       this.frame = undefined;
       this.controls.update();
+      // BEFORE THE RENDER, so this frame shows where the agent now is rather
+      // than where it was one frame ago.
+      const walking = this.advanceWalk();
       this.renderer.render(this.scene, this.camera);
+      // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
+      // The regression this stage carries is a reintroduced permanent render
+      // loop — measured at ~6x slower e2e with one test into a timeout — and
+      // "quiet" had no machine-readable definition before this: a screenshot
+      // comparison also passes for a scene that stopped drawing, and a sleep
+      // asserts nothing at all.
+      //
+      // A MONOTONIC COUNTER ON THE CONTAINER, which is the same `#scene`
+      // element `publishFrameState` writes `data-frame-origin` and
+      // `data-ground-centre` onto, and for the same stated reason: an attribute
+      // cannot be read before it is written by mistake. A test polls it, sees it
+      // rise while the agent walks, and — the assertion that matters — sees it
+      // STOP rising once the agent arrives.
+      //
+      // Written here rather than in `main.ts` because this is where frames
+      // actually happen; a counter published from anywhere else would be
+      // counting something adjacent to rendering rather than rendering.
+      this.frames += 1;
+      this.container.dataset["frames"] = String(this.frames);
       // Captured immediately after the render: three resets these counters at
       // the START of each render, so any later read would describe a frame that
       // has not happened yet.
@@ -1312,6 +1405,12 @@ export class BuildingView {
       // the camera is moving, which is exactly when the CPU and GPU ground paths
       // differ. The MB panel is meaningful throughout.
       this.perfStats?.update();
+      // THE ONLY THING IN THIS VIEW THAT SCHEDULES A FRAME FROM WITHIN A FRAME,
+      // and it stops on its own: `advanceWalk` returns false the moment the
+      // agent arrives. That is the whole of DEC-R11-15's accepted risk — a loop
+      // that did not stop is the measured ~6x e2e slowdown — and the e2e's
+      // second half asserts the stopping rather than the moving.
+      if (walking) this.requestFrame();
     });
   }
 
@@ -1450,6 +1549,168 @@ export class BuildingView {
     this.requestFrame();
   }
 
+  /**
+   * Draws the planned route and sends the agent along it (DEC-R11-3/R11-15).
+   *
+   * THE POLYLINE IS ALWAYS DRAWN, which is the decision rather than a detail:
+   * seeing the route go _around_ the wall is the proof, and a line is a far
+   * better test artefact than a moving marker. The walk is the demonstration on
+   * top of it.
+   *
+   * ADDED TO `this.scene`, NOT TO `this.group`, for the same reason the
+   * affordance grid is: `clear()` empties the group on every mesh rebuild, and a
+   * route dropped by an unrelated republish would look like the agent had been
+   * cancelled. The scene's frame is fixed (round 5B), so a publish does not
+   * invalidate these coordinates — only a re-anchor does, and that calls
+   * {@link clearRoute}.
+   */
+  followRoute(path: readonly ScenePoint[]): void {
+    this.clearRoute();
+    const start = path[0];
+    if (start === undefined) return;
+
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(path.length * 3);
+    for (let i = 0; i < path.length; i += 1) {
+      const point = path[i]!;
+      positions[i * 3] = point.x;
+      positions[i * 3 + 1] = point.y;
+      positions[i * 3 + 2] = point.z;
+    }
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    this.routeLine = new THREE.Line(
+      geometry,
+      // DEPTH TEST OFF, and it is not decoration. The route is lifted one rung
+      // above the affordance ladder (`ROUTE_LIFT_M`), which keeps it off the
+      // ground — but a line crossing behind a building would still be occluded
+      // by it, and half a route is worse than none for the one thing this stage
+      // exists to show. The render order puts it last so it composites on top.
+      new THREE.LineBasicMaterial({ color: ROUTE_COLOUR, depthTest: false }),
+    );
+    this.routeLine.renderOrder = RENDER_ORDER.route;
+    this.scene.add(this.routeLine);
+
+    this.agent ??= this.makeAgent();
+    this.scene.add(this.agent);
+    this.walk = { path, startedAt: performance.now() };
+    this.publishRoute(path);
+    this.requestFrame();
+  }
+
+  /**
+   * Publishes the drawn route's SHAPE onto the container, for the e2e.
+   *
+   * WHY AN ATTRIBUTE AND NOT A SCREENSHOT. "The route went around something"
+   * needs a machine-readable definition, and a pixel comparison cannot supply
+   * one — the same argument `publishFrameState` makes in `main.ts`, and this
+   * follows its precedent deliberately rather than inventing a second channel.
+   *
+   * THE PAIR IS THE POINT: walked length AND the straight-line distance between
+   * the same two endpoints. Either number alone proves nothing — "the route is
+   * 180 m" is equally true of a detour and of a straight line to somewhere far
+   * away. Their RATIO is what separates "went around" from "went directly", and
+   * it is what lets a control click assert near-straightness without the test
+   * having to know where anything is in the world.
+   */
+  private publishRoute(path: readonly ScenePoint[]): void {
+    const first = path[0]!;
+    const last = path[path.length - 1]!;
+    const straight = Math.hypot(
+      last.x - first.x,
+      last.y - first.y,
+      last.z - first.z,
+    );
+    this.container.dataset["route"] =
+      `${path.length}:${Math.round(pathLengthM(path))}:${Math.round(straight)}`;
+  }
+
+  /**
+   * Takes the route and the agent down.
+   *
+   * Called on a RE-ANCHOR, which is the one event that invalidates these
+   * coordinates: every point is expressed in the scene's ENU frame, and a
+   * teleport re-takes that frame. An ordinary publish does not — the frame has
+   * been fixed since round 5B — so the route survives a walk across the map.
+   */
+  clearRoute(): void {
+    this.removeRoute();
+    this.requestFrame();
+  }
+
+  /**
+   * The teardown without the repaint.
+   *
+   * SPLIT OUT FOR `dispose()`, which cancels the pending frame FIRST and must
+   * not have one scheduled behind its back — an orphaned rAF callback touching a
+   * disposed GL context is a crash, not a leak, which is exactly why the handle
+   * is held in the first place.
+   */
+  private removeRoute(): void {
+    // The walk goes first, so nothing can advance an agent that is being
+    // removed. Ending it here is also what lets the render loop go quiet.
+    this.walk = undefined;
+    if (this.routeLine !== undefined) {
+      this.scene.remove(this.routeLine);
+      this.routeLine.geometry.dispose();
+      this.routeLine.material.dispose();
+      this.routeLine = undefined;
+    }
+    if (this.agent !== undefined) {
+      // REMOVED BUT NOT DISPOSED. The agent's geometry and material are built
+      // once and reused for every route; freeing them here would make the second
+      // route draw nothing at all, which three does not report as an error.
+      this.scene.remove(this.agent);
+    }
+    delete this.container.dataset["route"];
+  }
+
+  /** The agent's marker: one cone, built once and reused across routes. */
+  private makeAgent(): THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
+    return new THREE.Mesh(
+      new THREE.ConeGeometry(AGENT_RADIUS_M, AGENT_HEIGHT_M, 10),
+      new THREE.MeshStandardMaterial({
+        color: ROUTE_COLOUR,
+        emissive: ROUTE_COLOUR,
+        // Self-lit enough to stay readable against a shadowed facade or a dark
+        // sun angle. The agent is the thing the user is watching; losing it to
+        // the time of day would read as it having stopped.
+        emissiveIntensity: 0.6,
+        roughness: 0.4,
+        metalness: 0,
+      }),
+    );
+  }
+
+  /**
+   * Moves the agent for this frame, and says whether it is still going.
+   *
+   * **THE RETURN VALUE IS THE FRAME-SCHEDULING CONTRACT** (DEC-R11-15). This
+   * view has no permanent rAF loop — one was measured making the e2e suite ~6x
+   * slower and pushing a test into a timeout — so the walk drives frames only
+   * while it is moving, and `false` here is what lets the scene go quiet again.
+   */
+  private advanceWalk(): boolean {
+    const walk = this.walk;
+    if (walk === undefined) return false;
+    const walkedM =
+      ((performance.now() - walk.startedAt) / 1000) * AGENT_SPEED_MPS;
+    const at = pointAlong(walk.path, walkedM);
+    if (at === undefined) {
+      this.walk = undefined;
+      return false;
+    }
+    // The path sits ON the ground; the cone's origin is its centre, so half its
+    // height puts its tip up and its base on the route rather than sunk in it.
+    this.agent?.position.set(
+      at.point.x,
+      at.point.y + AGENT_HEIGHT_M / 2,
+      at.point.z,
+    );
+    if (!at.done) return true;
+    this.walk = undefined;
+    return false;
+  }
+
   private clear(): void {
     for (const child of [...this.group.children]) {
       this.group.remove(child);
@@ -1518,6 +1779,14 @@ export class BuildingView {
     this.groundRampMaterial.dispose();
     this.heightTexture?.dispose();
     this.clearUnderground();
+    // The route and the agent live on the SCENE, like the grid and the ground,
+    // so `clear()` never sees them and nothing else would free their buffers.
+    // `clearRoute` removes the agent without disposing it — it is reused across
+    // routes — so the disposal has to happen here, once, at the end of the
+    // view's life.
+    this.removeRoute();
+    if (this.agent !== undefined) disposeMesh(this.agent);
+    this.agent = undefined;
     if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
     this.cellMesh = undefined;
     if (this.cellOutlines !== undefined) {

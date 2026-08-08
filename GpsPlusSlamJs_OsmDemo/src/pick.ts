@@ -14,9 +14,17 @@
  *
  * THE INVARIANT W12 MUST NOT UNDO: buildings are not selectable. `building-view`
  * excluded them deliberately, because hitting a building should not silently
- * select the cell behind it as though the building had been chosen. They stay
- * out of the raycast set, and `resolvePick` additionally ignores anything it
- * cannot identify, so a building can neither be returned nor swallow the click.
+ * select the cell behind it as though the building had been chosen.
+ *
+ * **STAGE 4 CHANGED HOW THAT INVARIANT IS HELD, NOT WHAT IT SAYS** (DEC-R11-17).
+ * Ordering an agent needs a destination, and there was nothing to click: the
+ * ground was absent from the raycast set by construction and the affordance grid
+ * is off by default, so a click on open ground resolved to nothing. The ground
+ * now joins the set as the COARSEST claim, and buildings join it as **blockers**
+ * — never a destination, and never transparent to the ground behind them. That
+ * is the original intent stated positively rather than by omission, and it has a
+ * second reason now: a building interior is unreachable since stage 3, so
+ * routing there costs a full exhaustive search to answer "no route".
  *
  * @see pick.ts.md
  */
@@ -53,14 +61,40 @@ export interface PickCandidate {
    * `exactOptionalPropertyTypes` reason as `faceIndex`.
    */
   readonly instanceId?: number | null | undefined;
+  /**
+   * Where the ray met the object, in SCENE coordinates (W-stage 4).
+   *
+   * Only the ground reads it, and only to answer "where". Optional because
+   * every other kind identifies itself from `userData` alone, and because this
+   * module is fed a hand-reduced shape at the boundary — a ground hit that
+   * somehow arrives without one is skipped rather than turned into a route
+   * request for `undefined`.
+   */
+  readonly point?: ScenePoint | undefined;
   readonly userData: Record<string, unknown>;
+}
+
+/** A point in the scene's own frame: `x` east, `y` up, `z` SOUTH. */
+export interface ScenePoint {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
 }
 
 /** What the user selected. */
 export type Pick =
   | { readonly kind: "cell"; readonly cell: string }
   | { readonly kind: "poi"; readonly marker: PoiMarker }
-  | { readonly kind: "region"; readonly region: string };
+  | { readonly kind: "region"; readonly region: string }
+  /**
+   * Open ground — a place rather than a thing (DEC-R11-17).
+   *
+   * IT CARRIES SCENE COORDINATES, NOT `LatLng`, and that is deliberate: this
+   * module must stay constructible without an ENU frame, and the frame lives on
+   * the page next to the scene anchor. Converting here would need a second copy
+   * of the frame, which goes stale exactly when the anchor is re-taken.
+   */
+  | { readonly kind: "ground"; readonly point: ScenePoint };
 
 /**
  * The nearest hit that resolves to something selectable, or `undefined`.
@@ -95,7 +129,26 @@ export function resolvePick(
   cellForTriangle: readonly string[],
 ): Pick | undefined {
   let region: Pick | undefined;
+  /**
+   * The ground, remembered like a region but at a still coarser grain.
+   *
+   * TWO SEPARATE MEMOS RATHER THAN ONE, because the precedence is a chain and
+   * not a tie: a region beats the ground even when the ground is nearer, for
+   * exactly the reason a cell beats a region. The ground is under EVERYTHING,
+   * so a nearest-hit rule would let it swallow every existing click the moment
+   * it joined the raycast set.
+   */
+  let ground: Pick | undefined;
   for (const hit of [...hits].sort((a, b) => a.distance - b.distance)) {
+    // A BLOCKER, AND THE LOOP STOPS HERE (DEC-R11-17). Reached only once
+    // everything nearer has already answered, so a marker against a facade and
+    // a region slab in front of a building both still resolve — what cannot
+    // happen is picking the ground BEHIND the thing the user clicked. Returning
+    // the remembered claims rather than `undefined` outright is the same
+    // "answer with the coarser truth rather than with nothing" rule the region
+    // fallback follows; with nothing remembered it is `undefined`, which is the
+    // dead click a solid object should produce.
+    if (hit.userData["solid"] === true) break;
     // Remembered, not returned: the nearest region is the answer only if no cell
     // or marker turns up behind it. See the header.
     const regionId = hit.userData["regionId"];
@@ -117,6 +170,16 @@ export function resolvePick(
       if (marker === undefined) continue;
       return { kind: "poi", marker };
     }
+    if (hit.userData["ground"] === true) {
+      // Remembered, never returned here: the ground is the last answer, after
+      // every finer claim has had its chance. A hit without a point is skipped
+      // rather than defaulted — a destination at the origin would be a
+      // confidently wrong place, which this module already refuses elsewhere.
+      if (ground === undefined && hit.point !== undefined) {
+        ground = { kind: "ground", point: hit.point };
+      }
+      continue;
+    }
     if (hit.userData["cellGrid"] !== true) continue;
     // `faceIndex` IS the triangle index for an indexed BufferGeometry, which is
     // what `cellForTriangle` is keyed on — built in the same pass as the
@@ -130,5 +193,5 @@ export function resolvePick(
     if (cell === undefined) continue;
     return { kind: "cell", cell };
   }
-  return region;
+  return region ?? ground;
 }

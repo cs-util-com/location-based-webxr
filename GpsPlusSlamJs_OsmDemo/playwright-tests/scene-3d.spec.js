@@ -1662,3 +1662,131 @@ test.describe("the affordance-tile look presets", () => {
     });
   });
 });
+
+test.describe("the NPC agent", () => {
+  test("routes on a click, walks it, and lets the scene go quiet again", async ({
+    page,
+  }) => {
+    // ONE BOOT FOR THE WHOLE OF STAGE 4 (DEC-R11-18), and the reason is
+    // measured rather than stylistic. The e2e pyramid plan timed this suite's
+    // boot at ~4.8 s and found the e2e stage to be 93 % of this package's gate,
+    // and it named the exact pattern this stage was about to repeat: "rounds
+    // 7-10 each added a feature test with its own boot", which took the
+    // post-fusion suite from ~200 s back to ~547 s. DEC-R11-15 ships stage 4
+    // whole, so one test covering the whole of it is that decision's shape.
+    //
+    // THE FOUR STEPS, and why they have to share a boot: the control click is
+    // what stops the walking assertions being satisfied by an agent that always
+    // takes the long way (the fixture trap the plan's §6 names), and the quiet
+    // assertion is only meaningful against frames that were RISING a moment
+    // earlier.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const scene = page.locator("#scene");
+
+    // THE AFFORDANCE SLABS ARE TURNED OFF FIRST, and this is a finding rather
+    // than a test detail. A region slab is a claim ABOUT the ground and it wins
+    // a click over the ground itself (DEC-R7b-3a, and the same precedence rule
+    // `pick.ts` applies to a cell over a region) — and at this fixture the four
+    // `battleArea` regions blanket everything near the user, so with the layer
+    // on EVERY click here resolves to a region and none of them ever reaches the
+    // agent. See the stage-4 summary's open topics: whether ordering should beat
+    // region selection is an owner decision, not something to settle inside a
+    // test.
+    await page.locator("#layer-areas").uncheck();
+
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    /** A click at a fraction of the canvas, in page coordinates. */
+    const clickAt = (fx, fy) =>
+      page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+
+    await test.step("a click on open ground draws a route, near-straight", async () => {
+      // THE CONTROL, and it is the first step for the reason the unit suite
+      // puts its own control first: without it, "a route was drawn" and "a
+      // route wanders" are the same observation. The ratio is what makes it an
+      // assertion rather than a sighting.
+      //
+      // Just below the camera's pivot, which is open ground at the fixture —
+      // the buildings sit in the upper-middle of the frame (the existing
+      // unpickable test relies on the same layout).
+      await clickAt(0.5, 0.72);
+
+      await expect
+        .poll(() => scene.getAttribute("data-route"), REPAINT)
+        .not.toBe(null);
+      const drawn = await scene.getAttribute("data-route");
+      const [points, lengthM, straightM] = String(drawn).split(":").map(Number);
+
+      // A polyline, not a single point: the agent has somewhere to walk.
+      expect(points).toBeGreaterThan(1);
+      expect(lengthM).toBeGreaterThan(0);
+      // NEAR-STRAIGHT. A hex grid cannot draw a perfect line and the route is
+      // quantised to res-13 cell centres, so 1.6x is loose for the
+      // quantisation and far tighter than any detour around a building.
+      expect(lengthM).toBeLessThan(straightM * 1.6);
+    });
+
+    await test.step("the agent moves, so the scene keeps drawing", async () => {
+      // Frames are scheduled ON DEMAND in this view (DEC-R3-9) — there is no
+      // permanent rAF loop — so a rising counter here is only explicable by
+      // something actually animating.
+      const frames = () => scene.getAttribute("data-frames").then(Number);
+      const before = await frames();
+      await expect.poll(frames, REPAINT).toBeGreaterThan(before);
+    });
+
+    await test.step("and the scene goes QUIET once it arrives", async () => {
+      // THE ASSERTION THE WHOLE STAGE RESTS ON (DEC-R11-15). The accepted risk
+      // was a reintroduced permanent render loop — measured at ~6x slower e2e
+      // with one test into a timeout — and this is the only thing that catches
+      // one. It had to exist in W3's first commit rather than be added
+      // afterwards, because landing the frame scheduling together with new UI
+      // is what would make such a regression hard to attribute.
+      //
+      // QUIESCENCE, not a fixed wait: the walk's duration depends on whatever
+      // route the fixture produced, so "it stopped" is the observable and "it
+      // stopped by now" is not. Two SUCCESSIVE POLLS agreeing is the whole
+      // measurement — the poll's own interval supplies the gap, so there is no
+      // `waitForTimeout` here and nothing to tune if the route length changes.
+      let previous = -1;
+      await expect
+        .poll(
+          async () => {
+            const now = Number(await scene.getAttribute("data-frames"));
+            const unchanged = now === previous;
+            previous = now;
+            return unchanged;
+          },
+          { timeout: 30000, intervals: [500] },
+        )
+        .toBe(true);
+    });
+
+    await test.step("a second order replaces the first route", async () => {
+      // THE SUPERSEDING PATH, which is the one thing about clicking twice that
+      // only the running app can show: the click handler, `latestOnly`, the
+      // worker queue and the polyline teardown all have to agree that the
+      // newest destination wins. The route search is SYNCHRONOUS inside the
+      // worker and an `abort` cannot preempt it, so "the newest click wins" is
+      // the honest guarantee — and this is what proves it holds.
+      //
+      // NOT A BUILDING CLICK. DEC-R11-17's blocker — a click on a facade
+      // resolving to nothing rather than to the ground behind it — is pinned by
+      // five assertions in `pick.test.ts`, and asserting it here would need a
+      // building at a KNOWN screen coordinate, which this fixture does not
+      // guarantee: the first attempt clicked what the older "buildings stay
+      // unpickable" test uses and landed on open ground, drawing a route. A
+      // browser test that silently clicks empty ground while claiming to click
+      // a building is exactly the vacuous assertion the plan's §6 warns about.
+      const before = await scene.getAttribute("data-route");
+      await clickAt(0.35, 0.62);
+      await expect
+        .poll(() => scene.getAttribute("data-route"), REPAINT)
+        .not.toBe(before);
+    });
+  });
+});

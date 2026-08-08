@@ -17,12 +17,29 @@ None. Entry point only, loaded by `index.html`.
   and tested. When the demo misbehaves, the question should be answerable
   without reading this file.
 - **Every async action is a `*-cycle.ts` module, and none of them is inline
-  here.** `refresh-cycle.ts`, `terrain-cycle.ts`, `explain-cycle.ts` and
-  `geo-event-cycle.ts`. This file cannot be unit-tested, so an action left as a
-  closure in it is an action with no test — which is what the geo-event was
-  until W0, and it had a busy state, a label, a failure path and a missing
-  republish, none of them covered. A **new async action belongs in a new cycle
-  module**, not here.
+  here.** `refresh-cycle.ts`, `terrain-cycle.ts`, `explain-cycle.ts`,
+  `geo-event-cycle.ts` and `agent-cycle.ts`. This file cannot be unit-tested, so
+  an action left as a closure in it is an action with no test — which is what the
+  geo-event was until W0, and it had a busy state, a label, a failure path and a
+  missing republish, none of them covered. A **new async action belongs in a new
+  cycle module**, not here.
+- **A click on open ground is the one pick that is not a selection** (stage 4,
+  DEC-R11-17). Cells, POI markers and regions dispatch to the store; ground is a
+  PLACE, so it orders the agent instead. It takes no meaning away from a click
+  that already had one — every finer claim still wins, and a click on a building
+  resolves to nothing at all.
+  - `orderAgentTo` is a **forward reference** assigned after the worker client
+    and the anchor exist, like `reportFatal`. The pick handler is declared with
+    the view, which is built before both.
+  - The scene→ENU→lat/lng conversion happens HERE, not in `pick.ts`: the frame
+    lives next to the anchor and is re-taken on a teleport, so a second copy in a
+    pure module would go stale exactly when the user moves.
+- **A RE-ANCHOR clears the route; an ordinary publish does not.** Every point on
+  the drawn polyline is expressed in the scene's ENU frame, and round 5B's whole
+  guarantee is that an ordinary step leaves that frame alone. So the route
+  survives a walk across the map and is taken down exactly when its coordinates
+  stop meaning anything — which is also when the agent, standing where the user
+  _was_, is in the wrong city.
 - **A control's element may be looked up far from where its behaviour is
   wired.** `geoEventButton` is fetched with the other controls but wired below
   `refresh`, which it needs. The docstring at the lookup says where to look.
@@ -33,6 +50,11 @@ None. Entry point only, loaded by `index.html`.
   the OUTGOING anchor whenever it moved: after a Cologne→Tokyo pick the camera
   pivoted ~9 000 km from the scene it was looking at. `createAnchorHolder` makes
   it one value everything reads; see `scene-anchor.ts.md`.
+- **`#scene` carries `data-routing` while a route is being planned**, which
+  `index.html` turns into `cursor: progress`. The element that was "pressed" is
+  the canvas — there is no button to relabel — and the wait is real: "no route"
+  is the SLOWEST reply, because the search must exhaust its frontier to know,
+  which is what every mis-click across a wall does.
 - **`#scene` carries `data-frame-origin` and `data-ground-centre` for the e2e.**
   "The scene does not jump" has no other machine-readable definition here: a
   canvas diff cannot supply one, because the user moved so the picture MUST

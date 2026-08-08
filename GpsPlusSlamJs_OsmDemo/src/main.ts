@@ -65,7 +65,12 @@ import {
   type BuildingStats,
 } from "./building-view.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
+import { createAgentCycle } from "./agent-cycle.js";
 import { createExplainCycle } from "./explain-cycle.js";
+import { ROUTE_LIFT_M } from "./layer-order.js";
+import { latestOnly } from "./latest-only.js";
+import type { ScenePoint } from "./pick.js";
+import { scenePathOf } from "./route-path.js";
 import {
   GROUND_MODES,
   groundModeLabel,
@@ -203,6 +208,16 @@ async function main(): Promise<void> {
    */
   let activePreset = cellPreset(DEFAULT_CELL_PRESET);
 
+  /**
+   * Orders the agent to a clicked point (stage 4, DEC-R11-3).
+   *
+   * A FORWARD REFERENCE, like `reportFatal` above, and for the same reason: the
+   * pick handler is declared with the view, while the cycle it calls needs the
+   * worker client and the scene anchor, both of which are built below. A no-op
+   * until then, so a click during boot is dropped rather than crashing.
+   */
+  let orderAgentTo: (point: ScenePoint) => void = () => undefined;
+
   const buildingView = new BuildingView({
     container: el("scene"),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
@@ -215,6 +230,13 @@ async function main(): Promise<void> {
         // Same action a 2D region click dispatches, for the same reason a cell
         // selection is shared: the panel must not know which view produced it.
         store.dispatch(actions.regionSelected(picked.region));
+      } else if (picked.kind === "ground") {
+        // THE ONE CLICK THAT IS NOT A SELECTION (DEC-R11-17). Open ground is a
+        // PLACE rather than a thing, so it has no panel to open — it is where
+        // the agent is sent. Every finer claim still wins, and a click on a
+        // building resolves to nothing at all, so this does not take a meaning
+        // away from any click that already had one.
+        orderAgentTo(picked.point);
       } else {
         store.dispatch(actions.featureSelected(picked.marker));
       }
@@ -518,6 +540,50 @@ async function main(): Promise<void> {
       console.info(describeGeoEventStats(stats));
     },
   });
+
+  /**
+   * The agent's order, wired HERE because it needs the worker and the anchor.
+   *
+   * WRAPPED IN `latestOnly` for the reason `refresh` is: the scene stays
+   * clickable while a route is being planned, and a route search is synchronous
+   * inside the worker — an `abort` cannot preempt it, so the honest guarantee is
+   * "the newest click wins", not "the superseded one is cancelled". Without the
+   * wrapper two clicks would draw two routes in whichever order they settled.
+   */
+  const planAgentRoute = createAgentCycle({
+    worker,
+    // THE USER'S POSITION IS THE AGENT'S. DEC-R11-3 says "select an agent, click
+    // a destination"; with exactly one agent there is nothing to select, so the
+    // first clause is satisfied by the agent simply being where the user is.
+    agentAt: () => selectOsmView(store.getState()).position,
+    frameOrigin: () => anchors.origin,
+    setBusy: (busy) => {
+      // ON THE CANVAS, because the canvas is what was clicked — there is no
+      // button to relabel. `index.html` turns this into `cursor: progress`, and
+      // the e2e reads the attribute for the same reason it reads
+      // `data-frame-origin` rather than a screenshot.
+      el("scene").dataset["routing"] = String(busy);
+    },
+    showRoute: (route) => {
+      buildingView.followRoute(
+        scenePathOf(route, enuFrameAt(anchors.origin), ROUTE_LIFT_M),
+      );
+    },
+    // `nonFatalError`, never `fetchFailed`: a route that could not be planned
+    // says nothing about whether the map on screen is good, and `fetchFailed`
+    // clears the snapshot and every selection. Same split the geo-event cycle
+    // and the locate control already use.
+    report: (message) => store.dispatch(actions.nonFatalError(message)),
+  });
+  const orderAgent = latestOnly(async (point: ScenePoint) => {
+    // SCENE → ENU → LAT/LNG, through the anchor's own frame. `z` is negated
+    // because the scene puts north at `-z`; doing it here rather than in
+    // `pick.ts` keeps that module free of the frame, which is re-taken on a
+    // teleport and would go stale in a second copy.
+    const frame = enuFrameAt(anchors.origin);
+    await planAgentRoute(frame.toLatLng({ x: point.x, y: -point.z }));
+  });
+  orderAgentTo = (point) => void orderAgent(point);
 
   const geoEventPicker = new GeoEventPicker({
     container: el("geo-event-picker"),
@@ -1049,7 +1115,16 @@ async function main(): Promise<void> {
       // the next ordinary step is treated as travel again.
       const declared = placeChangeDeclared;
       placeChangeDeclared = false;
-      anchors.advance(position, { declared });
+      const anchor = anchors.advance(position, { declared });
+      // A RE-ANCHOR INVALIDATES THE ROUTE, AND ONLY A RE-ANCHOR DOES (stage 4).
+      // Every point on the drawn polyline is expressed in the scene's ENU
+      // frame; an ordinary step leaves that frame alone — that is round 5B's
+      // whole guarantee — so the route survives a walk across the map and is
+      // taken down exactly when its coordinates stop meaning anything.
+      //
+      // The agent goes with it. It is standing where the user WAS, and after a
+      // teleport that is a different city.
+      if (anchor.reanchored) buildingView.clearRoute();
       // W11 (R4-12). A click must bring the chosen point back to the middle of
       // the 3D view without spinning it: `MapControls` pans camera and target
       // together, so after any pan the pivot is somewhere else entirely and the

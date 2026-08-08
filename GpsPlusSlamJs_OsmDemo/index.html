@@ -269,6 +269,21 @@
         border-left: 1px solid #2a2f3d;
         position: relative;
       }
+      /* THE IN-PROGRESS STATE FOR ORDERING THE AGENT (stage 4, DEC-R11-3).
+         The root CLAUDE.md requires an async UI action to show a distinguishable
+         in-progress state, and the element that was "pressed" here is the canvas
+         itself — there is no button to relabel. A route is a worker round trip,
+         and its SLOWEST reply is "no route": the search has to exhaust its
+         frontier before it can know, which is what every mis-click across a wall
+         does. So the wait is real and most likely exactly when the user has
+         clicked somewhere unreachable.
+
+         The attribute is also what the e2e reads, for the same reason
+         `data-frame-origin` exists: an attribute cannot be observed before it is
+         written by mistake. */
+      #scene[data-routing="true"] {
+        cursor: progress;
+      }
 
       /* THE CANVAS IS SIZED BY CSS, AND ONLY BY CSS (W1, finding R3-2).
          `WebGLRenderer.setSize(w, h, false)` sets the width/height ATTRIBUTES to

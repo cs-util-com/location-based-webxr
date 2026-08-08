@@ -11,7 +11,8 @@ map scored.
   (the geometry is built in the WORKER now; this file only turns typed arrays
   into three.js objects, which is what its header always claimed it was for),
   `renderCells(mesh)`, `setTerrain(field | undefined)`,
-  `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`.
+  `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`,
+  `followRoute(path)`, `clearRoute()`.
   Navigation is `MapControls`, attached internally; there is nothing to call.
 - `TERRAIN_SPACING_M` — 12 m, the Terrarium z13 pixel pitch at this latitude.
 - `MeshLayers` and `BuildingStats` — **re-exported from `mesh-layers.ts`**, which
@@ -37,8 +38,42 @@ map scored.
   that never stops drawing. Damping still works: `controls.update()` emits
   another `change` while the camera eases, which schedules the next frame, so
   the sequence sustains itself and then stops.
+  - **The walking agent is the ONE thing that schedules a frame from inside a
+    frame** (stage 4, DEC-R11-15), and it stops on its own: `advanceWalk()`
+    returns `false` the moment `route-path.ts` reports the route finished, and
+    the callback only re-arms while it returns `true`. A walk that never
+    finished would be the permanent loop this whole invariant exists against —
+    which is why `pointAlong`'s `done` is asserted as hard as its position, and
+    why the e2e's second half asserts the scene going QUIET rather than moving.
+  - **`data-frames` on the container is the observable behind that.** It is a
+    monotonic counter written in the same callback, and it is the third member
+    of the family `publishFrameState` started with `data-frame-origin` and
+    `data-ground-centre`: "the scene went quiet" has no machine-readable
+    definition otherwise, and a screenshot comparison also passes for a scene
+    that stopped drawing entirely.
 - **`dispose()` cancels the pending frame FIRST.** An orphaned frame callback
   touching a disposed WebGL context crashes rather than leaks.
+  - This is why `clearRoute()` is split into a `removeRoute()` that does not
+    repaint: `dispose()` calls the latter, because the public form requests a
+    frame and would schedule one behind the cancellation's back.
+- **The route and the agent live on the SCENE, not on `this.group`** — the same
+  placement the affordance grid uses, and for the same reason: `clear()` empties
+  the group on every mesh rebuild, and a route dropped by an unrelated republish
+  would read as the agent having been cancelled. The scene's frame is fixed
+  (round 5B), so a publish does not invalidate their coordinates; only a
+  re-anchor does, and `main.ts` calls `clearRoute()` there.
+  - **The agent mesh is removed but NOT disposed by `clearRoute()`.** It is built
+    once and reused for every route; freeing it there would make the second route
+    draw nothing at all, which three does not report as an error. `dispose()`
+    frees it.
+- **The raycast set gained the ground and the buildings in stage 4**
+  (DEC-R11-17). Buildings are still not selectable — `resolvePick` stops at the
+  first one and never returns it — but they must be RAYCAST so a click on a
+  facade does not fall through to the ground behind it. The ground carries
+  `userData.ground`, and the marker and the membership are one fact rather than
+  two: setting the membership without the marker is a silent no-op, which is
+  exactly how the first implementation failed (the ray hit the plane, the hit
+  could not be identified, and the click read as a dead control).
 - **`MapControls`, not `OrbitControls` (DEC-5).** Pan-first suits a top-down city
   view. Both ship inside the `three` package the demo already depends on, so
   neither is a new dependency.

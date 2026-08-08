@@ -244,3 +244,124 @@ describe("resolvePick with region slabs", () => {
     expect(resolvePick([slab(1, "")], [])).toBeUndefined();
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER (DEC-R11-17). Stage 4 orders an agent by clicking a
+ * DESTINATION — and until this landed there was nothing to click. The raycast
+ * set excluded the ground **by construction**, and the affordance grid that
+ * would otherwise have caught the click is off by default (DEC-R7b-6), so a
+ * click on open ground resolved to `undefined`. "Click a destination" was not
+ * implementable against this module at all.
+ *
+ * The fix keeps the original invariant's INTENT while satisfying the feature
+ * literally, and both halves of that need pinning:
+ *
+ * - The ground is the **coarsest** claim. It answers only when nothing sharper
+ *   was hit, which is the rule region slabs already follow one grain up.
+ * - **A building BLOCKS.** It joins the raycast set but is never a destination:
+ *   a click on a building resolves to nothing rather than to the ground behind
+ *   it. That was the original comment's whole point ("hitting a building should
+ *   not silently select the cell behind it"), and since stage 3 it has a second
+ *   and harder reason — a building interior is unreachable, so routing there
+ *   costs the full expansion cap to answer "no".
+ */
+describe("resolvePick with the ground (DEC-R11-17)", () => {
+  const groundHit = (
+    distance: number,
+    point = { x: 12, y: 3, z: -40 },
+  ): PickCandidate => ({ distance, point, userData: { ground: true } });
+  const buildingHit = (distance: number): PickCandidate => ({
+    distance,
+    point: { x: 0, y: 20, z: 0 },
+    userData: { solid: true },
+  });
+  const slab = (distance: number, region = "r1"): PickCandidate => ({
+    distance,
+    userData: { regionId: region },
+  });
+
+  it("returns the point on the ground when nothing else was hit", () => {
+    // SCENE COORDINATES, not lat/lng. This module must stay constructible
+    // without an ENU frame — the frame lives on the page, next to the anchor —
+    // so the conversion happens at the caller and the reflection stays in one
+    // place.
+    expect(resolvePick([groundHit(30)], [])).toEqual({
+      kind: "ground",
+      point: { x: 12, y: 3, z: -40 },
+    });
+  });
+
+  it("lets every sharper claim win, at any distance", () => {
+    // The ground is under EVERYTHING, so without this rule it would swallow the
+    // whole demo's existing click behaviour the moment it joined the set. A
+    // grazing camera angle is what makes "nearest wins" the wrong rule here —
+    // the same reason region slabs are not peers.
+    expect(
+      resolvePick(
+        [
+          groundHit(1),
+          // `faceIndex` spelled out: without it the grid hit resolves to no
+          // cell and is skipped, and the assertion would pass for a ground
+          // rule that had no precedence logic at all.
+          { distance: 9, faceIndex: 0, userData: { cellGrid: true } },
+        ],
+        ["cell-a"],
+      ),
+    ).toEqual({ kind: "cell", cell: "cell-a" });
+    expect(resolvePick([groundHit(1), slab(9)], [])).toEqual({
+      kind: "region",
+      region: "r1",
+    });
+  });
+
+  it("refuses a destination when a building is in front of the ground", () => {
+    // THE ASSERTION DEC-R11-17 EXISTS FOR. Routing to the ground behind a
+    // clicked building sends the agent somewhere the user did not point at —
+    // and that somewhere is usually inside the footprint, which is unreachable,
+    // so the click also costs a full exhaustive search to answer "no route".
+    expect(resolvePick([buildingHit(5), groundHit(20)], [])).toBeUndefined();
+  });
+
+  it("still answers when the building is BEHIND what was clicked", () => {
+    // The blocking rule must be about occlusion, not about presence. A building
+    // further away than the ground the user actually clicked is simply scenery.
+    expect(resolvePick([groundHit(5), buildingHit(20)], [])).toEqual({
+      kind: "ground",
+      point: { x: 12, y: 3, z: -40 },
+    });
+  });
+
+  it("lets a marker in front of a building still be selected", () => {
+    // A POI pin standing against a facade is the everyday case. The blocker
+    // must not reach past things that are nearer than it, or W12's markers stop
+    // working next to every building in the city.
+    const poi = {
+      distance: 2,
+      instanceId: 0,
+      userData: { poiInstances: [MARKER] },
+    };
+    expect(resolvePick([poi, buildingHit(5), groundHit(20)], [])).toEqual({
+      kind: "poi",
+      marker: MARKER,
+    });
+  });
+
+  it("keeps a region the user clicked in front of a building", () => {
+    // A remembered region is a claim already made by the time the blocker is
+    // reached. Dropping it would make regions unclickable wherever a building
+    // stands behind them, which is most of the city.
+    expect(resolvePick([slab(2), buildingHit(5), groundHit(20)], [])).toEqual({
+      kind: "region",
+      region: "r1",
+    });
+  });
+
+  it("ignores a ground hit that carries no point", () => {
+    // Defensive: `Intersection.point` is always populated by three, but this
+    // module is fed a reduced shape by hand at the boundary and a destination
+    // without coordinates would post a route request for `undefined`.
+    expect(
+      resolvePick([{ distance: 5, userData: { ground: true } }], []),
+    ).toBeUndefined();
+  });
+});

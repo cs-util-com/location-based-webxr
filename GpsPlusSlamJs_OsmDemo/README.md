@@ -58,6 +58,20 @@ Hover any cell for its score and the OSM elements that produced it, each linked
 to openstreetmap.org — the provenance map is what turns "that looks wrong" into
 "that is wrong because of way/12345".
 
+5. **Does an agent route sensibly through a real place?** Click open ground in
+   the 3D view and one NPC walks there along a drawn polyline (DEC-R11-3). The
+   route is planned in the worker against an obstacle index over the barriers
+   and buildings the scene draws, so **seeing the line go _around_ a city wall
+   is the proof** — and a line that goes through one is a visible, reportable
+   fact rather than a hidden mis-score.
+   - A click on a building, a POI marker, a region slab or an affordance cell
+     keeps its existing meaning; only bare ground orders the agent. **The
+     affordance region slabs (`areas`, on by default) cover much of the ground
+     at a dense site, so turn that layer off if a click will not take.**
+   - Wall tops are unreachable by design this round (DEC-R11-10): there is no
+     stair or ramp ingress, so an agent that ended up on a wall would mean a
+     sub-threshold step had crept in.
+
 ## What it deliberately is not
 
 - **Not an AR view.** §8.4 of the plan is explicit that the AR overlay is a
@@ -72,6 +86,10 @@ Everything that can be wrong in an interesting way is pure and unit-tested:
 
 - `demo-pipeline.ts` — fetch → `AffordanceIndex` → cells + regions. No DOM.
 - `heat-colours.ts` — the log ramp and the scale description.
+- `pick.ts` — what a click in the 3D view selected, as a precedence decision
+  with no renderer in it.
+- `agent-route.ts`, `route-path.ts`, `agent-cycle.ts` — the NPC route: planning
+  it, turning it into scene geometry and a walk, and the click that orders it.
 - `map-view.ts`, `building-view.ts`, `main.ts` — drawing and wiring only.
 
 ## Attribution

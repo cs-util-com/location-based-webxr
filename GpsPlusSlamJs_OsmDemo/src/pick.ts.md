@@ -8,20 +8,56 @@ Decides what a click in the 3D view selected (W12). The raycast stays in
 
 ## Public API
 
-- `PickCandidate` — `{ distance, faceIndex?, instanceId?, userData }`. Deliberately not
-  `THREE.Intersection`: the three fields below are the whole of what the decision
-  reads, and a test must be able to construct one without a renderer.
-- `Pick` — `{ kind: "cell", cell }` or `{ kind: "poi", marker }`.
+- `PickCandidate` — `{ distance, faceIndex?, instanceId?, point?, userData }`.
+  Deliberately not `THREE.Intersection`: these fields are the whole of what the
+  decision reads, and a test must be able to construct one without a renderer.
+- `ScenePoint` — `{ x, y, z }` in the scene's own frame (`x` east, `y` up, `z`
+  **south**). Declared here because this is where it was first needed;
+  `route-path.ts` imports the type rather than declaring a second one.
+- `Pick` — `{ kind: "cell", cell }`, `{ kind: "poi", marker }`,
+  `{ kind: "region", region }` or `{ kind: "ground", point }`.
 - `resolvePick(hits, cellForTriangle) → Pick | undefined` — the nearest hit that
-  resolves to something selectable. Never throws.
+  resolves to something selectable, or the coarsest claim behind it. Never
+  throws.
+
+## The precedence chain (DEC-R7b-3a, DEC-R11-17)
+
+Finest first. Distance is the tie-break **between peers only**:
+
+- **cell / POI** — peers, decided by distance.
+- **region** — remembered, returned only if nothing sharper turned up.
+- **ground** — remembered, returned only if no region did either.
+- **a solid object (building or barrier) STOPS the scan** — see below.
 
 ## Invariants & assumptions
 
-- **Buildings are not selectable, and W12 must not have undone that.** They are
-  excluded from the raycast set in `BuildingView.pick`, which is a stronger
-  guarantee than filtering afterwards and much cheaper than raycasting the whole
-  city. `resolvePick` additionally ignores anything it cannot identify, so a
-  building could neither be returned nor swallow a click even if one arrived.
+- **Buildings are still not selectable — but they are now RAYCAST** (DEC-R11-17).
+  They joined the set as **blockers**: `resolvePick` stops at the first one and
+  never returns it, so a click on a facade resolves to nothing rather than to the
+  ground behind it. That is the original invariant's intent stated positively
+  instead of by omission, and it has a second reason now — a building interior is
+  unreachable since stage 3, so routing there costs the full expansion cap to
+  answer "no route".
+  - Because the scan is nearest-first, the blocker only reaches things BEHIND it:
+    a POI pin against a facade and a region slab in front of a building both
+    still resolve.
+  - The cost is real and stated: the largest geometry in the scene is now in the
+    picking set. W20's chunking bounds it — three tests bounding boxes before
+    triangles.
+- **The ground is the coarsest claim, never a peer.** It is under everything, so
+  a nearest-hit rule would have let it swallow every existing click the moment it
+  joined the set — the same reason region slabs are not peers, and the same
+  grazing-angle failure.
+- **A ground pick carries SCENE coordinates, not `LatLng`.** This module must
+  stay constructible without an ENU frame; the frame lives on the page next to
+  the scene anchor and is re-taken on a teleport, so a second copy here would go
+  stale exactly when the user moves. `main.ts` converts.
+  - A ground hit with no `point` is skipped rather than defaulted — a destination
+    at the origin would be a confidently wrong place, which this module refuses
+    everywhere else too.
+- **An unidentifiable hit is SKIPPED, not fatal** — the click keeps looking
+  behind it. That still holds, and is now defence in depth rather than the
+  mechanism: solid objects identify themselves.
 - **An unidentifiable hit is SKIPPED, not fatal** — the click keeps looking
   behind it. Selecting nothing because an unselectable object was in front reads
   as a dead control, a defect this demo already shipped once via a
@@ -69,10 +105,16 @@ const picked = resolvePick(
 
 ## Tests
 
-`pick.test.ts` — 8 tests: cell under a grid hit; marker under a POI hit; nearest
-wins in both directions; unsorted input; empty input; an unidentifiable hit is
-skipped and the search continues; a triangle that maps to no cell; a `null`
-`faceIndex`.
+`pick.test.ts`: cell under a grid hit; marker under a POI hit; nearest wins in
+both directions; unsorted input; empty input; an unidentifiable hit is skipped
+and the search continues; a triangle that maps to no cell; a `null` `faceIndex`;
+the instanced-marker lookup; the region precedence.
+
+The ground block (DEC-R11-17) pins the chain from both ends: a sharper claim wins
+at any distance; a building in FRONT refuses the destination; a building BEHIND
+does not; a marker or a region in front of a building still resolves; and a
+ground hit without a point is skipped.
 
 `playwright-tests/` › "a building stays unpickable, which W12 must not have
-undone" is the end-to-end half of the invariant.
+undone" is the end-to-end half of the invariant, and `scene-3d.spec.js` ›
+"orders the agent…" is the end-to-end half of the ground case.

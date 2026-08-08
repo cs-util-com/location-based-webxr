@@ -9,6 +9,7 @@
   - `buildings`, `trees`, `poi` → **0**. They stand up from the ground and are separated by their own geometry; lifting them would only make them float.
   - `terrainDebug` used to be here at **0**, for a different reason with the same answer: it re-coloured the ground plane _in place_ rather than adding a surface above it, so a lifted copy would z-fight with the plane it replaced. It is now a ground mode rather than a layer (W6, DEC-R5-4) — and needing a bespoke reason to sit in this table was one of the signs it never belonged in the registry.
 - `GROUND_LAYERS` — the four lifted layers, lowest first. Exported so a test can assert the ladder is strictly increasing **without re-listing it**; a second list would be the thing that drifts.
+- `ROUTE_LIFT_M` — the planned route's polyline, one rung **above** the whole ladder. It is not a `LayerKind` (not toggleable, not a claim about the ground), so it cannot go through `groundLift` — but it is coplanar with everything that does, which is exactly why it lives here rather than in `route-path.ts`. Above `cells` because the route is the artefact stage 4 exists to show (DEC-R11-3), and occluding it behind an affordance overlay would hide it.
 
 `STEP_M = 0.04` is deliberately not exported. Callers ask for a layer's lift, they do not do the arithmetic.
 

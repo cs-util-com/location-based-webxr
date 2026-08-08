@@ -426,69 +426,76 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // material is either disposed on the first refresh or drags the chunk's
     // owned geometry into a leak. `mesh-layers.test.ts` pins the pairing.
     build: (mesh) =>
-      mesh.buildings.map(
-        (chunk) =>
-          new THREE.Mesh(
-            geometryFrom(chunk.mesh, chunk.colors),
-            new THREE.MeshStandardMaterial({
-              // WHITE plus VERTEX COLOURS (W22). The class/material palette lives
-              // in the package and arrives per vertex, so a chunk holding a dozen
-              // building classes is still ONE draw call — which is the whole
-              // reason W20 had to come first. A non-white base would tint every
-              // colour in the palette by itself.
-              color: 0xffffff,
-              vertexColors: true,
-              // SINGLE-SIDED SINCE W24 (R4-17). It was `DoubleSide`, and the
-              // reason was honest: OSM volumes are not reliably closed, so a
-              // `building:part` with no floor shows as a hole under culling for
-              // reasons that have nothing to do with this package.
-              //
-              // But that comment also recorded why it was a bad guarantee —
-              // "IT DOES NOT VALIDATE WINDING, it hides it. Every wall quad in
-              // the package was wound inside-out when this view was written and
-              // it looked entirely fine here" — and the fix for THAT was
-              // `mesh-orientation.test.ts`, which now pins the winding directly.
-              // With the winding proved, double-siding buys only the open-volume
-              // case, at roughly double the fragment work on the largest mesh in
-              // the scene. A hole where a floor is genuinely missing is also the
-              // more honest failure: it shows the data gap instead of papering
-              // over it with a wrongly-lit interior.
-              side: THREE.FrontSide,
-              flatShading: true,
-              // REFLECTIVE, and this was an oversight rather than a decision
-              // (W13, R4-15, N3). DEC-R2-1 made the GROUND reflective so facet
-              // edges show as a highlight slides across them while the camera
-              // moves; the buildings kept `MeshStandardMaterial`'s default
-              // `roughness: 1.0`, which is fully diffuse and has no specular
-              // lobe at all. Nothing in the record says buildings should stay
-              // matte.
-              //
-              // 0.55, DOWN FROM 0.65 (DEC-S3). The round-5 owner asked for as
-              // much of the scene as possible to carry the shiny-tile look, and
-              // facades are the largest surface in it — at 0.65 they were the
-              // one thing in the frame with no highlight to catch as the sun
-              // swings with the camera.
-              //
-              // 0.55 AND NOT 0.45, WHICH IS WHERE THIS FIRST LANDED. A W13 guard
-              // asserts buildings stay above 0.5 so they do not read as glass,
-              // and 0.45 broke it. The guard is right and the fix was to move
-              // this value rather than loosen it: 0.45 is only 0.03 from the
-              // ground's 0.42, so it was very nearly the polished-stone look that
-              // decision exists to prevent. 0.55 still tightens the lobe usefully
-              // against the old 0.65.
-              //
-              // THE RISK THIS CARRIES, and it is the reason DEC-S3 made this a
-              // step of its own: DEC-R4-5 requires the affordance heat ramp to
-              // stay the loudest thing on screen, and R4-14 warned the scene was
-              // close to too colourful before the height ramp became the default
-              // surface. Shiny cells over shiny buildings over a ramped ground is
-              // three competing speculars. Reverting THIS line alone is the
-              // intended way back.
-              roughness: 0.55,
-              metalness: 0,
-            }),
-          ),
-      ),
+      mesh.buildings.map((chunk) => {
+        const object = new THREE.Mesh(
+          geometryFrom(chunk.mesh, chunk.colors),
+          new THREE.MeshStandardMaterial({
+            // WHITE plus VERTEX COLOURS (W22). The class/material palette lives
+            // in the package and arrives per vertex, so a chunk holding a dozen
+            // building classes is still ONE draw call — which is the whole
+            // reason W20 had to come first. A non-white base would tint every
+            // colour in the palette by itself.
+            color: 0xffffff,
+            vertexColors: true,
+            // SINGLE-SIDED SINCE W24 (R4-17). It was `DoubleSide`, and the
+            // reason was honest: OSM volumes are not reliably closed, so a
+            // `building:part` with no floor shows as a hole under culling for
+            // reasons that have nothing to do with this package.
+            //
+            // But that comment also recorded why it was a bad guarantee —
+            // "IT DOES NOT VALIDATE WINDING, it hides it. Every wall quad in
+            // the package was wound inside-out when this view was written and
+            // it looked entirely fine here" — and the fix for THAT was
+            // `mesh-orientation.test.ts`, which now pins the winding directly.
+            // With the winding proved, double-siding buys only the open-volume
+            // case, at roughly double the fragment work on the largest mesh in
+            // the scene. A hole where a floor is genuinely missing is also the
+            // more honest failure: it shows the data gap instead of papering
+            // over it with a wrongly-lit interior.
+            side: THREE.FrontSide,
+            flatShading: true,
+            // REFLECTIVE, and this was an oversight rather than a decision
+            // (W13, R4-15, N3). DEC-R2-1 made the GROUND reflective so facet
+            // edges show as a highlight slides across them while the camera
+            // moves; the buildings kept `MeshStandardMaterial`'s default
+            // `roughness: 1.0`, which is fully diffuse and has no specular
+            // lobe at all. Nothing in the record says buildings should stay
+            // matte.
+            //
+            // 0.55, DOWN FROM 0.65 (DEC-S3). The round-5 owner asked for as
+            // much of the scene as possible to carry the shiny-tile look, and
+            // facades are the largest surface in it — at 0.65 they were the
+            // one thing in the frame with no highlight to catch as the sun
+            // swings with the camera.
+            //
+            // 0.55 AND NOT 0.45, WHICH IS WHERE THIS FIRST LANDED. A W13 guard
+            // asserts buildings stay above 0.5 so they do not read as glass,
+            // and 0.45 broke it. The guard is right and the fix was to move
+            // this value rather than loosen it: 0.45 is only 0.03 from the
+            // ground's 0.42, so it was very nearly the polished-stone look that
+            // decision exists to prevent. 0.55 still tightens the lobe usefully
+            // against the old 0.65.
+            //
+            // THE RISK THIS CARRIES, and it is the reason DEC-S3 made this a
+            // step of its own: DEC-R4-5 requires the affordance heat ramp to
+            // stay the loudest thing on screen, and R4-14 warned the scene was
+            // close to too colourful before the height ramp became the default
+            // surface. Shiny cells over shiny buildings over a ramped ground is
+            // three competing speculars. Reverting THIS line alone is the
+            // intended way back.
+            roughness: 0.55,
+            metalness: 0,
+          }),
+        );
+        // A BLOCKER FOR PICKING, NOT A SELECTABLE THING (DEC-R11-17).
+        // `building-view.ts` puts every object carrying this key into the
+        // raycast set, and `resolvePick` stops at the first one — so a click on
+        // a facade resolves to nothing rather than to the ground behind it.
+        // Barriers extrude with the buildings (DEC-R11-11), so a wall blocks
+        // the click for the same reason it blocks the agent.
+        object.userData["solid"] = true;
+        return object;
+      }),
     counters: (mesh) => ({
       volumes: mesh.volumes,
       parts: mesh.parts,
