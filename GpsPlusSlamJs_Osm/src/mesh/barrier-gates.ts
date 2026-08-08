@@ -54,6 +54,7 @@
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import { isBelowSurface } from "../model/below-surface.js";
 import { enuFrameAt, type EnuFrame, type EnuPoint } from "./enu.js";
+import { isRoad } from "./roads.js";
 
 /**
  * `barrier` values on a NODE that open the barrier they sit on (DEC-R12-7).
@@ -198,22 +199,35 @@ export const NO_GATES: GateOpenings = {
  * "building entrance node + building outline + a fence within a metre" would
  * have opened the fence — none of which involves a path.
  *
- * `highway` is the routable set, and it is exactly what the second half of the
- * conjunction claims. The Tower's corroborating way is `highway=footway`, so the
- * motivating case is unaffected.
+ * **`isRoad`, NOT a presence test on `highway`** — and this file is the last
+ * place that should have used one. `DENIED_ENTRANCES` exists because the
+ * `entrance` key had "degraded to a presence test" and `entrance=no` opened the
+ * one node OSM took the trouble to deny; `highway` has the same denial-shaped
+ * values and one structural trap:
+ *
+ * - `highway=construction` / `proposed` — a route that does not exist yet
+ *   vouching for a gate;
+ * - **`highway=pedestrian` + `area=yes`** — the building-outline argument
+ *   arriving from the other side. A plaza is an OUTLINE, not a line through, and
+ *   plazas abut walls constantly.
+ *
+ * `roads.ts` already encodes "a `highway` that is genuinely a linear route",
+ * refuses `area=yes` for exactly the reason above, and is what the demo draws
+ * ribbons from — so reusing it keeps "a route passes through here" meaning the
+ * same thing in both places rather than in two that can drift.
  *
  * **AND IT MUST BE ON THE WALKING SURFACE**, by the same argument that vetoes a
- * below-surface gate NODE: a `tunnel=yes` road passing under a wall is not a way
- * through it. Without this the veto was asymmetric — the node was checked and
- * the corroborating way was not — and a tunnel that happens to cross in plan
- * would open the wall above it, which is DEC-R12-1's rejected failure mode
- * arriving by another route.
+ * below-surface gate NODE: a road passing under a wall is not a way through it.
+ * Without this the veto was asymmetric — the node was checked and the
+ * corroborating way was not. `isRoad` already refuses `tunnel=yes` and
+ * `covered=yes`; `isBelowSurface` additionally catches `layer`/`level` below
+ * zero and `location=underground`, so both run.
  *
  * NOT "the same layer as the barrier": the Tower's own corroborating way is
  * `bridge=yes layer=1`, so above-surface ways have to stay acceptable.
  */
 function canCorroborate(feature: OsmFeature & { type: "way" }): boolean {
-  return feature.tags["highway"] !== undefined && !isBelowSurface(feature);
+  return isRoad(feature) && !isBelowSurface(feature);
 }
 
 /**

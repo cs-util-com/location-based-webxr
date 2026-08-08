@@ -218,8 +218,17 @@ describe("splitAtGates", () => {
     ];
 
     /** The gate node, offset off the wall by `offsetM` as a mapper would leave it. */
+    /**
+     * A metre EAST, in degrees of longitude at this fixture's latitude.
+     *
+     * `M` is a metre of LATITUDE, and using it for an east offset made every
+     * "metre" here 0.62 of one at 51.5° N — so the boundary test below bracketed
+     * (0.62 m, 1.87 m) while claiming to bracket 1 m. Raised in review on #280.
+     */
+    const LNG_M = M / Math.cos((ORIGIN.lat * Math.PI) / 180);
+
     const gateNear = (metres: number, offsetM: number) => ({
-      position: { lat: north(metres).lat, lng: ORIGIN.lng + offsetM * M },
+      position: { lat: north(metres).lat, lng: ORIGIN.lng + offsetM * LNG_M },
       atWall: north(metres),
     });
 
@@ -319,11 +328,12 @@ describe("splitAtGates", () => {
      * decides anything. `GATE_ON_BARRIER_M` is the whole tolerance argument, and
      * an off-by-a-comparison in `nearestOnLine` would be invisible without this.
      *
-     * The offsets are in LONGITUDE degrees scaled by a latitude metre, so at
-     * 51.5° N they are ~0.62 of their nominal size — hence the generous margins
-     * either side rather than 0.99 / 1.01.
+     * FIVE PER CENT EITHER SIDE, which is only meaningful because `gateNear`
+     * now offsets in true metres — see `LNG_M`. Before that fix this bracketed
+     * 0.62 m and 1.87 m while claiming to test 1 m, so `>` against `>=` at the
+     * boundary was exactly as untestable as it had been without the case.
      */
-    it("opens just inside the tolerance and refuses well outside it", () => {
+    it("opens just inside the tolerance and refuses just outside it", () => {
       const opens = (offsetM: number): boolean => {
         const gate = gateNear(50, offsetM);
         const gates = gateOpenings([
@@ -334,8 +344,8 @@ describe("splitAtGates", () => {
           splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M).length === 2
         );
       };
-      expect(opens(GATE_ON_BARRIER_M)).toBe(true);
-      expect(opens(GATE_ON_BARRIER_M * 3)).toBe(false);
+      expect(opens(GATE_ON_BARRIER_M * 0.95)).toBe(true);
+      expect(opens(GATE_ON_BARRIER_M * 1.05)).toBe(false);
     });
 
     /**
