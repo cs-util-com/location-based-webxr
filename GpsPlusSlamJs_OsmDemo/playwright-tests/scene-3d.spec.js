@@ -1699,6 +1699,44 @@ test.describe("the NPC agent", () => {
     /** A click at a fraction of the canvas, in page coordinates. */
     const clickAt = (fx, fy) =>
       page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+    /** The same click, with a named mouse button. */
+    const clickAtWith = (fx, fy, button) =>
+      page.mouse.click(box.x + box.width * fx, box.y + box.height * fy, {
+        button,
+      });
+
+    await test.step("a right-click on open ground orders nothing", async () => {
+      // THE STEP GOES FIRST because "no route was drawn" is only an assertion
+      // while no route has ever been drawn — after the next step there is a
+      // stale `data-route` to confuse it, and "unchanged" is a much weaker
+      // observation than "still absent".
+      //
+      // R13-7: the view picked on `pointerup` without reading `event.button`,
+      // so this exact gesture ordered the NPC *and* opened the context menu.
+      // DEC-R13-8 reserves the secondary button for the coordinate-copy
+      // affordance, and reserving it means first making it inert.
+      await clickAtWith(0.5, 0.72, "right");
+      // A NEGATIVE ASSERTION NEEDS A REAL WINDOW, and `expect.poll(…).toBe(null)`
+      // does not give one: it passes at t=0, before the worker could possibly
+      // have answered, so it would stay green with the guard deleted. That is
+      // exactly the vacuous assertion the comments further down this test warn
+      // about. TWO SUCCESSIVE POLLS AGREEING is the same idiom the quiescence
+      // step uses, and for the same reason — the poll's own interval supplies
+      // the gap, so there is no `waitForTimeout` to tune. If a route does
+      // appear, the attribute never goes back to null and this times out.
+      let absentBefore = false;
+      await expect
+        .poll(
+          async () => {
+            const absent = (await scene.getAttribute("data-route")) === null;
+            const twice = absent && absentBefore;
+            absentBefore = absent;
+            return twice;
+          },
+          { timeout: 10000, intervals: [500] },
+        )
+        .toBe(true);
+    });
 
     await test.step("a click on open ground draws a route, near-straight", async () => {
       // THE CONTROL, and it is the first step for the reason the unit suite

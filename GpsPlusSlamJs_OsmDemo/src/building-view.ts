@@ -44,6 +44,7 @@ import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { RENDER_ORDER } from "./layer-order.js";
+import { isPickGesture, type PointerOrigin } from "./pick-gesture.js";
 import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
 import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
 import { DEFAULT_TIME_OF_DAY, sunAt } from "./sun-position.js";
@@ -667,7 +668,14 @@ export class BuildingView {
     // Picking on `pointerup` after a still pointer, not on `click`: MapControls
     // consumes drags, and a click at the end of a 200 px pan would otherwise
     // select whatever cell happened to be under the pointer when it stopped.
-    let downAt: { x: number; y: number } | undefined;
+    //
+    // WHETHER THE GESTURE COUNTS IS `pick-gesture.ts`'s CALL, not this file's
+    // (DEC-R13-8). This class needs a `WebGLRenderer`, so a guard written here
+    // is a guard the unit suite cannot reach — the same reason `pick.ts` holds
+    // the "what did you click" decision one step later in the chain. Note the
+    // ORIGIN IS CLEARED WHATEVER THE ANSWER, so a refused right-click cannot
+    // leave a stale press for the next release to measure against.
+    let downAt: PointerOrigin | undefined;
     // Held, like every other listener here, so `dispose()` can remove it. An
     // anonymous one outlives disposal and keeps the view reachable.
     this.onPointerStart = (event: PointerEvent): void => {
@@ -677,10 +685,7 @@ export class BuildingView {
     this.onPointerDown = (event: PointerEvent): void => {
       const from = downAt;
       downAt = undefined;
-      if (from === undefined) return;
-      const moved =
-        Math.abs(event.clientX - from.x) + Math.abs(event.clientY - from.y);
-      if (moved > 4) return;
+      if (!isPickGesture(from, event)) return;
       const picked = this.pick(event);
       if (picked !== undefined) options.onPick?.(picked);
     };
