@@ -5,9 +5,10 @@
 export type { Column } from "./column.js";
 export { columnsAdjacent, STEP_THRESHOLD_M } from "./column.js";
 
-export type { StateSpace, SearchOptions } from "./search.js";
+export type { StateSpace, SearchOptions, CheapestOptions } from "./search.js";
 export {
   findStatePath,
+  findCheapestPath,
   reachableStates,
   DEFAULT_MAX_EXPANSIONS,
 } from "./search.js";
