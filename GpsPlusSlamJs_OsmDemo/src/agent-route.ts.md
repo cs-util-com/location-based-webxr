@@ -12,10 +12,12 @@ proof, and a polyline is a far better test artefact than watching a marker move.
 
 ## Public API
 
-- `planRoute(features, from, to, options) => RoutePoint[] | undefined`
-- `planRouteWithIndex` exists but is **not exported yet**: the caller that wants
-  it is stage 4's click handler, and an export nothing imports is dead code the
-  gate rejects. The split is there because it is where the cost boundary is.
+- `planRoute(features, from, to, options) => RoutePoint[] | undefined` — the
+  one-shot form; builds an index per call, so it is what the unit tests drive.
+- `planRouteWithIndex(index, from, to, options) => RoutePoint[] | undefined` —
+  the production form, exported since stage 4 landed its caller. That caller is
+  the worker's `planRoute` handler, which holds one index per feature set
+  (`worker/obstacle-index-cache.ts`) and answers many clicks from it.
 - `RoutePoint` — `{ position: LatLng, heightM: number }`.
 - `RouteOptions` — `{ frame, field, maxExpansions? }`.
 - `DEFAULT_ROUTE_EXPANSIONS` = 20 000, module-private (an export nothing
@@ -78,7 +80,9 @@ if (route !== undefined) drawPolyline(route);
 - Heights come from the injected sampler, so the polyline sits on the ground.
 - Unknown ground → no route.
 
-**Not yet wired into the running demo.** The click handler, the polyline
-rendering and the frame-scheduling constraint (the scene renders on demand; a
-moving agent must drive frames while it moves and stop when it stops) are the
-remainder of stage 4.
+**Where it runs.** In the WORKER, behind the `planRoute` call — `ObstacleIndex`
+holds a method and `Map`s, so it cannot be structured-cloned and the route has to
+be computed on the side that holds the index (DEC-R11-16). The search is
+synchronous, so it also delays the next publish; that is what makes the expansion
+cap a publish-latency bound as well as a freeze bound, and why an `abort` cannot
+preempt a route in flight.

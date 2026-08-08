@@ -50,6 +50,7 @@ import {
   poiModelFor,
   stablePoiScale,
   stableRotationY,
+  buildObstacleIndex,
   buildRegionSlabs,
   type SlabRegion,
   buildRoads,
@@ -72,6 +73,7 @@ import {
   openOsmStoreDirectory,
 } from "gps-plus-slam-app-framework/osm-bridge";
 
+import { planRouteWithIndex } from "../agent-route.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { DemoPipeline } from "../demo-pipeline.js";
 import { describeTerrain } from "../terrain-note.js";
@@ -83,6 +85,7 @@ import {
 import { createTerrainField, type TerrainField } from "../terrain-field.js";
 import { terrainWindowFor } from "../terrain-window.js";
 import { createMeshPlanner } from "./mesh-planner.js";
+import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
 import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
 import {
@@ -476,6 +479,20 @@ function buildMesh(
  */
 const meshPlanner = createMeshPlanner();
 
+/**
+ * The navigation obstacle index, held across clicks (DEC-R11-16/19).
+ *
+ * NOT BUILT ON THE PUBLISH PATH, and that is DEC-R11-19 rather than DEC-R11-16
+ * as first written. The corpus measurement
+ * (`GpsPlusSlamJs_Osm/src/testdata/sites/site-obstacle-index-cost.test.ts`) put
+ * a res-13 sweep at ~1 900–2 700 covered cells per extract and a few hundred
+ * milliseconds — on extracts smaller than this demo's working set — so building
+ * it inside `buildMesh` would slow every publish for a feature most sessions
+ * never use. It appears on the first route request instead and survives until
+ * the feature set moves.
+ */
+const obstacleIndex = createObstacleIndexCache(buildObstacleIndex);
+
 /** Bumped whenever the held terrain is replaced; an input to the planner. */
 let terrainStamp = 0;
 
@@ -744,6 +761,27 @@ async function handle<K extends WorkerCallKind>(
         // become five again.
         overlapMinutes === undefined ? undefined : { overlapMinutes },
       );
+    }
+
+    case "planRoute": {
+      const { from, to, frameOrigin } =
+        payload as WorkerCalls["planRoute"]["request"];
+      const { pipeline } = requireState();
+      // KEYED ON THE FEATURE SET, not on the mesh build. `loadedTileCount`
+      // documents itself as a faithful signature of the features — tiles are
+      // only ever added — whereas `needsFullBuild`'s key also carries
+      // `terrainStamp`, and terrain does not change what blocks an agent.
+      const index = obstacleIndex.get(pipeline.loadedTileCount(), () =>
+        pipeline.features().values(),
+      );
+      // THE SAME SAMPLER EVERY BUILDER READS, through the same cache, so the
+      // ground the agent walks on and the ground the buildings stand on cannot
+      // disagree. `fieldFor` returns `undefined` during a DEM outage, which
+      // `groundHeightAtCell` turns into flat zero rather than into a refusal.
+      return planRouteWithIndex(index, from, to, {
+        frame: enuFrameAt(frameOrigin),
+        field: fieldFor(terrain),
+      });
     }
 
     case "explain": {

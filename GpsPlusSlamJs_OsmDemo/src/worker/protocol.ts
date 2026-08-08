@@ -36,6 +36,7 @@ import type {
   TreePlacement,
 } from "gps-plus-slam-osm";
 
+import type { RoutePoint } from "../agent-route.js";
 import type { DemoSnapshot } from "../demo-pipeline.js";
 import type { GeoEventStats } from "../geo-event-stats.js";
 import type { HeightfieldData } from "../heightfield.js";
@@ -379,6 +380,49 @@ export interface WorkerCalls {
       readonly stats: GeoEventStats;
     };
   };
+  /**
+   * A walkable route between two positions (stage 4, DEC-R11-16).
+   *
+   * IT RUNS IN THE WORKER, and it has to, for the same reason `geoEvent` does
+   * one line up. `ObstacleIndex` exposes `obstaclesIn` as a **method** and holds
+   * `Map`s, so it cannot be structured-cloned — the same trap this file's header
+   * describes for `Heightfield.heightAt`. The index therefore cannot cross, and
+   * the route is computed on the side that holds it. A click is a round trip.
+   *
+   * **AND IT RUNS SYNCHRONOUSLY.** `findStatePath` is a plain loop and a worker
+   * handles one message at a time, so a route request delays the next `update`
+   * — i.e. the publish. `agent-route.ts`'s expansion cap is therefore a
+   * publish-latency bound as well as a freeze bound, which is an argument for
+   * keeping it rather than raising it when a route turns out to be too long.
+   * For the same reason an `abort` cannot preempt one: the search never yields
+   * to check the signal, so a second click queues behind the first.
+   */
+  readonly planRoute: {
+    readonly request: {
+      /** Where the agent is standing now. */
+      readonly from: LatLng;
+      /** Where the user clicked. */
+      readonly to: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored — what the ground heights MEAN.
+       *
+       * REQUIRED, unlike the optional `frameOrigin` on the older calls. Those
+       * default to their own `position`/`centre` so a caller predating the fixed
+       * origin keeps its behaviour; nothing predates this one, and a route
+       * silently planned in a frame the scene is not drawn in would put the
+       * polyline somewhere the agent is not.
+       */
+      readonly frameOrigin: LatLng;
+    };
+    /**
+     * The route, or `undefined` when there is none.
+     *
+     * `undefined` deliberately merges "no route exists" with "the search hit its
+     * cap" — see `agent-route.ts`. A UI has nothing to do with the difference,
+     * and both mean "the agent is not going there".
+     */
+    readonly result: readonly RoutePoint[] | undefined;
+  };
   readonly terrain: {
     readonly request: {
       /** Where the user is — what the sampled window is FOR. */
@@ -461,6 +505,7 @@ const CALL_KINDS = new Set<string>([
   "geoEvent",
   "terrain",
   "cellMesh",
+  "planRoute",
 ] satisfies WorkerCallKind[]);
 
 /**

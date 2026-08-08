@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import { enuFrameAt } from "gps-plus-slam-osm";
 import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 
+import { planRoute } from "../agent-route.js";
 import { buildHeightfieldData, heightfieldFrom } from "../heightfield.js";
 
 const FRAME = enuFrameAt({ lat: 50.9413, lng: 6.9583 });
@@ -104,6 +105,30 @@ describe("the heightfield across the worker boundary", () => {
     // Still cloneable — a failure path that cannot cross the boundary would
     // turn a DEM outage into a dead worker.
     expect(structuredClone(data)).toStrictEqual(data);
+  });
+
+  it("carries a planned route back as plain data", () => {
+    // WHY THIS TEST MATTERS. `planRoute` is the third handler that runs in the
+    // worker because its STATE cannot cross — `ObstacleIndex` exposes
+    // `obstaclesIn` as a method — so the whole design rests on the RESULT being
+    // cloneable when the index is not. `RoutePoint[]` is plain objects and
+    // numbers today; anything that later grew a class instance or a getter here
+    // would throw `DataCloneError` inside the worker, where an exception rejects
+    // nothing and the click would simply never settle.
+    //
+    // `toStrictEqual`, not `toEqual`: `toEqual` ignores object TYPE, so a class
+    // instance compares equal to the plain object it clones into — passing for
+    // precisely the value that would have failed.
+    const route = planRoute(
+      [],
+      { lat: 50.9413, lng: 6.9583 },
+      { lat: 50.9415, lng: 6.9583 },
+      { frame: FRAME, field: undefined },
+    );
+    expect(route).toBeDefined();
+
+    expect(structuredClone(route)).toStrictEqual(route);
+    expect(structuredClone(route)?.[0]?.position.lat).toBeTypeOf("number");
   });
 
   it("computes relief for a field past the spread-argument limit", async () => {

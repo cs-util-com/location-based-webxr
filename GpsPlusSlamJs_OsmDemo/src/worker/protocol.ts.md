@@ -40,6 +40,24 @@ target }`.
 - **Replies are a discriminated result, never a thrown error.** An exception in a
   worker rejects nothing on the main thread. A failure not turned into a message
   is a hung demo, which is strictly worse than a reported one.
+- **Three calls run in the worker because their state cannot cross, not because
+  they are slow**: `geoEvent` (the affordance index is private inside the
+  pipeline and the hill climb reads it through synchronous callbacks),
+  `explain` (the provenance map), and `planRoute` (`ObstacleIndex` exposes
+  `obstaclesIn` as a **method** and holds `Map`s). Only the finished answer
+  crosses in each case.
+  - `planRoute` additionally runs **synchronously**, so it delays the next
+    `update` — i.e. the publish. The expansion cap in `agent-route.ts` is
+    therefore a publish-latency bound as well as a click-freeze bound, and an
+    `abort` cannot preempt a route in flight because the search never yields to
+    check the signal. A second click queues behind the first; `latest-only.ts`
+    keeps the superseded REPLY from being applied, and the worker still pays for
+    both searches.
+  - `planRoute`'s `frameOrigin` is **required**, unlike the optional one on
+    `update`, `terrain` and `cellMesh`. Those default to their own position so a
+    caller predating the fixed origin is unchanged; nothing predates this call,
+    and a route planned in a frame the scene is not drawn in puts the polyline
+    where the agent is not.
 
 ## Examples
 

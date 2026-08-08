@@ -103,13 +103,13 @@ export function planRoute(
  * interaction rather than on a publish, so the caller should keep one index per
  * published feature set.
  *
- * **Deliberately NOT exported yet.** The caller that would want it is stage 4's
- * click handler, which does not exist — and an export nothing imports is dead
- * code the gate is right to reject. Export it when that handler lands; the split
- * is here now because it is where the cost boundary is, not because something
- * uses it.
+ * **Exported since stage 4 landed its caller.** That caller is the worker's
+ * `planRoute` handler, which holds one index per feature set
+ * (`worker/obstacle-index-cache.ts`) and answers many clicks from it. It is the
+ * only production caller; `planRoute` above remains the one-shot form the unit
+ * tests drive.
  */
-function planRouteWithIndex(
+export function planRouteWithIndex(
   index: ObstacleIndex,
   from: LatLng,
   to: LatLng,

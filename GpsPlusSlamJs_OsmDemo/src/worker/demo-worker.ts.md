@@ -38,6 +38,20 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
 - **The merged features never leave.** They are 28–68 MB. `explainCell` and the
   mesh build both run here _because_ that is where the features are; answering
   either on the main thread would mean shipping them across.
+- **The obstacle index is held here too, and is built LAZILY** — on the first
+  `planRoute` request of a feature set, not on the publish path
+  (`obstacle-index-cache.ts`, DEC-R11-19 amending DEC-R11-16). The corpus
+  measurement put a res-13 sweep at ~1 900–2 700 covered cells and a few hundred
+  milliseconds per extract, on extracts smaller than the demo's own working set,
+  so building it inside `buildMesh` would slow every publish for a feature most
+  sessions never use. It is keyed on `pipeline.loadedTileCount()` rather than on
+  the mesh planner's key, because that key also carries `terrainStamp` and
+  terrain does not change what blocks an agent.
+- **`planRoute` is the one SYNCHRONOUS long handler**, so it delays the next
+  `update`. Its expansion cap (`agent-route.ts`) is therefore a publish-latency
+  bound as well as a click-freeze bound, and `abort` cannot preempt it — the
+  search never yields to check the signal. This is the one place where the
+  `inFlight` cancellation below does not actually stop work.
 - **`inFlight` maps request id → `AbortController`**, which is what makes `abort`
   stop real work rather than just discard a reply.
   - **The signal has to go INTO the work, not only be checked after it.** Both
