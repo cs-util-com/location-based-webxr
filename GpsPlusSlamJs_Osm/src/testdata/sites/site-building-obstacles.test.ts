@@ -160,4 +160,23 @@ describe("building obstacles across the corpus", () => {
     );
     expect(largestSolid).toBeGreaterThan(10_000);
   });
+
+  it("leaves building=roof canopies passable — you walk under a canopy", () => {
+    // Cologne's station forecourt canopy is ~16 200 m², the LARGEST single
+    // outline in the whole corpus, and most canopies carry no `min_height` at
+    // all — so the gateway rule misses them and a building-sized hole appears
+    // in the middle of the site the demo opens on. The cost is accepted: a roof
+    // mapped over solid walls becomes walk-through, which is rarer and fails
+    // towards movement rather than towards an invisible obstruction.
+    const features = featuresOf("cologne-cathedral");
+    const solid = new Set(
+      solidBuildingFootprints(features).map((s) => featureKey(s.feature)),
+    );
+    const canopies = features.filter((f) => f.tags["building"] === "roof");
+
+    expect(canopies.length).toBeGreaterThan(0);
+    for (const canopy of canopies) {
+      expect(solid.has(featureKey(canopy))).toBe(false);
+    }
+  });
 });

@@ -10,7 +10,7 @@ OSM features to building volumes, honouring `building:part`.
 - `solidBuildingFootprints(features): SolidFootprint[]` — the same
   parts-else-outline selection, **in lat/lng and with no frame**, for
   [`nav/obstacles.ts`](../nav/obstacles.ts.md). Returns `{ feature,
-  parentFeature?, rings }` with rings as `x = lng, y = lat`.
+parentFeature?, rings }` with rings as `x = lng, y = lat`.
   - **Shares `assignPartsToOutlines` rather than repeating it.** That function
     is generic over the footprint type because the rule is affine-invariant:
     crossing parity does not care about the frame, and the ENU map scales

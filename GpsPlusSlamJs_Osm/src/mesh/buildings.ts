@@ -283,30 +283,42 @@ export function solidBuildingFootprints(
   const solid: SolidFootprint[] = [];
 
   /**
-   * PASSABLE UNDERNEATH. `min_height > 0` is the S3DB form for a gateway or a
-   * canopy, and obstructing the ground under one seals the route through it —
-   * the design names walking under a gate as the case that matters.
+   * PASSABLE UNDERNEATH, for the two reasons a volume can be.
+   *
+   * - **`min_height > 0`** is the S3DB form for a gateway or an arch, and
+   *   obstructing the ground under one seals the route through it — the design
+   *   names walking under a gate as the case that matters.
+   * - **`building=roof` is a canopy**: a roof on posts, with the ground under it
+   *   walkable by construction. It needs its own rule because most canopies
+   *   carry no `min_height` at all, so the first rule misses them — and they are
+   *   not small. Cologne's station forecourt canopy is **~16 200 m², the largest
+   *   single outline in the whole corpus**, so treating it as solid puts a
+   *   building-sized hole in the middle of the one site the demo opens on. The
+   *   cost, stated: a roof mapped over solid walls becomes walk-through, which
+   *   is rarer than the canopy case and fails towards movement rather than
+   *   towards an invisible obstruction.
    *
    * **APPLIED HERE, AFTER THE ASSIGNMENT, AND THAT ORDER IS LOAD-BEARING.**
-   * Filtering floating parts out before `assignPartsToOutlines` changes which
-   * outlines get CLAIMED: a building whose only parts float would have nothing
-   * left to claim it, so its whole outline came back solid while the extruder
-   * drew it as a few floating slabs. The corpus test caught it at Cologne and
-   * Berlin; nothing in a hand-built fixture would have.
+   * Filtering these out before `assignPartsToOutlines` changes which outlines
+   * get CLAIMED: a building whose only parts float would have nothing left to
+   * claim it, so its whole outline came back solid while the extruder drew it as
+   * a few floating slabs. The corpus test caught it at Cologne and Berlin;
+   * nothing in a hand-built fixture would have.
    */
-  const standsOnGround = (feature: OsmFeature): boolean =>
-    resolveHeights(feature.tags).minHeightM <= 0;
+  const obstructsTheGround = (feature: OsmFeature): boolean =>
+    resolveHeights(feature.tags).minHeightM <= 0 &&
+    feature.tags["building"] !== "roof";
 
   for (const outline of outlines) {
     // An outline WITH parts is not solid itself — the parts replace it, which
     // is what keeps a courtyard between them open.
     if (claimed.has(featureKey(outline.feature))) continue;
-    if (!standsOnGround(outline.feature)) continue;
+    if (!obstructsTheGround(outline.feature)) continue;
     solid.push({ feature: outline.feature, rings: outline.rings });
   }
   for (const [outlineKey, list] of partsByOutline) {
     for (const part of list) {
-      if (!standsOnGround(part.feature)) continue;
+      if (!obstructsTheGround(part.feature)) continue;
       solid.push({
         feature: part.feature,
         parentFeature: outlineKey,
@@ -321,7 +333,7 @@ export function solidBuildingFootprints(
   );
   for (const part of parts) {
     if (placed.has(part.feature)) continue;
-    if (!standsOnGround(part.feature)) continue;
+    if (!obstructsTheGround(part.feature)) continue;
     solid.push({ feature: part.feature, rings: part.rings });
   }
 
