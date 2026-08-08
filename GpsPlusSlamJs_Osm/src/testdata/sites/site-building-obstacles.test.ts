@@ -7,6 +7,7 @@ import { enuFrameAt } from "../../mesh/enu.js";
 import { buildBuildings } from "../../mesh/buildings.js";
 import { solidBuildingFootprints } from "../../mesh/buildings.js";
 import { isBuilding } from "../../mesh/building-heights.js";
+import { passageOpenings } from "../../nav/building-passages.js";
 import { featureKey } from "../../model/osm-feature.js";
 import type { OsmFeature } from "../../model/osm-feature.js";
 
@@ -178,5 +179,56 @@ describe("building obstacles across the corpus", () => {
     for (const canopy of canopies) {
       expect(solid.has(featureKey(canopy))).toBe(false);
     }
+  });
+});
+
+describe("building passages across the corpus (DEC-R12-3)", () => {
+  // WHY THIS TEST MATTERS. `tunnel=building_passage` is a tag nothing in this
+  // package read for obstruction until DEC-R12-3, and the reach of the new rule
+  // is the thing most worth pinning: a rule that silently opens nothing looks
+  // exactly like a rule that works, and a rule that opens far too much only
+  // shows up as an agent walking through a city block.
+  //
+  // The counts are BUILDINGS THAT GAIN AN OPENING, not passages: a passage
+  // pierces a building twice (in and out) and may miss every footprint in the
+  // extract. A re-capture that moves these numbers is OSM re-tagging and should
+  // be read rather than re-baselined.
+  it("opens the buildings each site's passages actually pierce", () => {
+    const opened: Record<string, number> = {};
+    for (const site of CORPUS_SITES) {
+      const features = featuresOf(site.id);
+      const solids = solidBuildingFootprints(features);
+      opened[site.id] = passageOpenings(features, solids).filter(
+        (points) => points.length > 0,
+      ).length;
+    }
+
+    expect(opened).toEqual({
+      "cologne-cathedral": 6,
+      "heidelberg-altstadt": 3,
+      "berlin-alexanderplatz": 0,
+      "sylt-westerland": 2,
+      "manhattan-midtown": 1,
+      "tokyo-shinjuku": 6,
+      "london-tower-bridge": 3,
+      "london-westminster": 15,
+    });
+  });
+
+  it("opens far LESS than the whole volume the decision's other reading would", () => {
+    // THE MEASUREMENT THAT CHOSE THE IMPLEMENTATION. Reading DEC-R12-3 as "the
+    // whole volume stops obstructing", the way `min_height` and `building=roof`
+    // work, makes 22 % of Tower Bridge's buildings and ~30 % of the built AREA
+    // at Cologne, Tokyo and Tower Bridge walk-through. Opening a corridor
+    // instead touches a handful of buildings per site, and this assertion is
+    // what stops a later simplification quietly restoring the wider reading.
+    const features = featuresOf("london-tower-bridge");
+    const solids = solidBuildingFootprints(features);
+    const opened = passageOpenings(features, solids).filter(
+      (points) => points.length > 0,
+    ).length;
+
+    expect(solids.length).toBeGreaterThan(40);
+    expect(opened / solids.length).toBeLessThan(0.15);
   });
 });

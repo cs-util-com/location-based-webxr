@@ -131,6 +131,26 @@ export async function stubNetwork(page, options = {}) {
     releaseTerrain: () => {
       releaseTerrain();
     },
+    /**
+     * Makes every LATER Overpass query hang until {@link releaseOverpass}.
+     *
+     * ARMED AT CALL TIME rather than through an option, because the tests that
+     * need it need the FIRST fetch to succeed: they boot a populated scene and
+     * then assert what happens to it while the NEXT fetch is in flight — which
+     * is a real 18-110 s window in the app and would otherwise be a race in the
+     * suite. (`holdTerrain` is an option because the DEM is only interesting
+     * before it has ever answered.)
+     */
+    holdOverpass: () => {
+      overpassHeld = new Promise((resolve) => {
+        releaseOverpass = resolve;
+      });
+    },
+    /** Lets a held query through. Safe to call when nothing is held. */
+    releaseOverpass: () => {
+      releaseOverpass();
+      overpassHeld = undefined;
+    },
   };
   const payload = JSON.stringify(parkPayload());
   /** Resolved by `counts.releaseTerrain()`; see the `holdTerrain` option. */
@@ -138,6 +158,9 @@ export async function stubNetwork(page, options = {}) {
   const terrainHeld = new Promise((resolve) => {
     releaseTerrain = resolve;
   });
+  /** Pending only between `holdOverpass()` and `releaseOverpass()`. */
+  let overpassHeld;
+  let releaseOverpass = () => undefined;
 
   await page.route(isOverpass, async (route) => {
     // Counted SEPARATELY from queries. A single combined counter cannot express
@@ -164,6 +187,10 @@ export async function stubNetwork(page, options = {}) {
     }
 
     counts.overpassQuery++;
+
+    // Counted BEFORE the hold, so a test can see the request was issued while
+    // still deciding when it may answer.
+    if (overpassHeld !== undefined) await overpassHeld;
 
     const status = options.overpassStatus ?? 200;
     if (status !== 200) {

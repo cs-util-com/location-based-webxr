@@ -38,9 +38,18 @@ places without editing a URL.
   a stale `<select>` value across a reload when the option list has changed;
   moving the demo to `undefined` would be worse than doing nothing, and throwing
   would take the app down for a convenience control.
-- **It reports a position, not an action.** The picker does not know the store
-  exists. Choosing a site, clicking the map and pressing locate all dispatch the
-  same `positionChanged`, so there is exactly one refresh path.
+- **It reports a place, not an action.** The picker does not know the store
+  exists. Choosing a site, clicking the map and pressing locate all move the user
+  through the same subscriber, so there is exactly one refresh path.
+- **The whole `PickerPlace` travels, not just its position** (DEC-R12-5). The URL
+  writer has to know that a NAMED place was chosen so it can write `?site=<id>`
+  rather than coordinates, and a bare `LatLng` had already discarded that by the
+  time it reached the caller. Recovering the id by matching the position back
+  against the table would be a second representation of the same fact — the drift
+  the shared table exists to prevent.
+- **A picker choice is a DECLARED place change** (DEC-R12-6/8), so `main.ts`
+  dispatches `placeChanged` for it and `positionChanged` for travel. The picker
+  itself makes no such distinction; it reports, and the caller classifies.
 - **A first visit costs a cold fetch** (18–110 s for an uncached res-7 tile), by
   decision: DEC-R4-11 chose live data over loading the committed extract, on the
   grounds that fixture data looking identical to live data is the "two claims
@@ -51,9 +60,10 @@ places without editing a URL.
 ```ts
 const picker = attachSitePicker({
   select: document.querySelector("#site")!,
-  onChoose: (position) => {
-    mapView.centreOn(position);
-    store.dispatch(actions.positionChanged(position));
+  onChoose: (place) => {
+    mapView.centreOn(place.position);
+    // A DECLARED place change: the scene must stop asserting the city being left.
+    store.dispatch(actions.placeChanged(place.position));
   },
 });
 ```

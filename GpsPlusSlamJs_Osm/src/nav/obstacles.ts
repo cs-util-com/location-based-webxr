@@ -47,6 +47,12 @@ import { cellToLatLng, gridDisk } from "h3-js";
 
 import { barrierFootprints } from "../mesh/barrier-shape.js";
 import {
+  GATE_GAP_M,
+  type GateOpenings,
+  gateOpenings,
+} from "../mesh/barrier-gates.js";
+import { passageOpenings } from "./building-passages.js";
+import {
   barrierCentrelines,
   isSolidBarrier,
   resolveBarrier,
@@ -71,6 +77,17 @@ export interface Obstacle {
    * affine-invariant, so the latitude/longitude anisotropy needs no correction.
    */
   readonly rings: readonly (readonly PlanarPoint[])[];
+  /**
+   * Points on the boundary where a mapped opening lets a step through
+   * (DEC-R12-3) — today, where a `tunnel=building_passage` way pierces it.
+   *
+   * ABSENT ON ALMOST EVERYTHING, which is why it is optional rather than an
+   * empty array everywhere: passages are common in a city extract and rare per
+   * building, and `crossesObstacle` runs on the search's hottest path.
+   *
+   * Degrees, `x = lng`, `y = lat`, exactly as {@link rings} are.
+   */
+  readonly openings?: readonly PlanarPoint[];
 }
 
 /** Obstacles, looked up by the cells they cover. */
@@ -89,8 +106,11 @@ export interface ObstacleIndex {
  * wall that is not indexed is an agent walking through something the viewer can
  * see.
  */
-function barrierLines(feature: OsmFeature): readonly PlanarPoint[][] {
-  return barrierCentrelines(feature).map((line) =>
+function barrierLines(
+  feature: OsmFeature,
+  gates: GateOpenings,
+): readonly PlanarPoint[][] {
+  return barrierCentrelines(feature, gates).map((line) =>
     line.map((p) => ({ x: p.lng, y: p.lat })),
   );
 }
@@ -170,10 +190,19 @@ function addBuildings(
   resolution: number,
   byCell: Map<string, Obstacle[]>,
 ): void {
-  for (const solid of solidBuildingFootprints(features)) {
+  const solids = solidBuildingFootprints(features);
+  // THE SECOND FEATURE SET THIS MODULE HAS EVER CONSULTED (DEC-R12-3), and the
+  // reason is structural rather than incidental: `min_height` and
+  // `building=roof` are readable from the building alone, while "a road goes
+  // through here" is a property of the ROAD. Computed once for the whole
+  // extract rather than per building.
+  const openings = passageOpenings(features, solids);
+
+  for (const [i, solid] of solids.entries()) {
     const { totalHeightM } = resolveHeights(solid.feature.tags);
     if (!Number.isFinite(totalHeightM) || totalHeightM <= 0) continue;
 
+    const pierced = openings[i] ?? [];
     indexUnderCells(
       {
         feature: featureKey(solid.feature),
@@ -182,6 +211,9 @@ function addBuildings(
         // agent crosses to get in, so dropping it would let one step from the
         // street into the yard without passing a wall.
         rings: solid.rings,
+        // OMITTED WHEN EMPTY, so the common building carries no extra field and
+        // `crossesObstacle` skips the check with one `undefined` test.
+        ...(pierced.length > 0 ? { openings: pierced } : {}),
       },
       resolution,
       byCell,
@@ -195,10 +227,16 @@ function addBarriers(
   resolution: number,
   byCell: Map<string, Obstacle[]>,
 ): void {
+  // THE SAME GATES `barrier-volumes.ts` BUILDS, from the same feature set
+  // (DEC-R12-1). A gap indexed but not drawn is a detour around thin air; a gap
+  // drawn but not indexed is an agent walking through a visible opening. Both
+  // derive it from the list they are handed, so neither can forget.
+  const gates = gateOpenings(features);
+
   for (const feature of features) {
     if (!isSolidBarrier(feature)) continue;
 
-    const lines = barrierLines(feature);
+    const lines = barrierLines(feature, gates);
     if (lines.length === 0) continue;
 
     const { heightM, thicknessM } = resolveBarrier(feature.tags);
@@ -319,9 +357,83 @@ export function crossesObstacle(
       if (seen.has(obstacle)) continue;
       seen.add(obstacle);
       for (const ring of obstacle.rings) {
-        if (segmentCrossesRing(a, b, ring)) return true;
+        if (!segmentCrossesRing(a, b, ring)) continue;
+        // A MAPPED OPENING ADMITS THE STEP THAT GOES THROUGH IT (DEC-R12-3).
+        // Checked only AFTER a crossing was found, and only for the obstacles
+        // that have one — almost none do — so the hot path pays one `undefined`
+        // test per obstacle and nothing else.
+        if (goesThroughAnOpening(a, b, obstacle)) continue;
+        return true;
       }
     }
   }
   return false;
+}
+
+/**
+ * Whether the step `a→b` passes close enough to one of `obstacle`'s openings to
+ * be going through it.
+ *
+ * **A PROXIMITY TEST RATHER THAN A HOLE IN THE RING**, and that follows from the
+ * primitive: `segmentCrossesRing` treats a ring as closed whether or not the
+ * caller repeated the first vertex, so a building's boundary cannot be cut the
+ * way `barrier-gates.ts` cuts a barrier centreline. It does not need to be —
+ * a building's passability has always been an index-only property here
+ * (`min_height` and `building=roof` volumes are drawn exactly as before and
+ * simply do not obstruct), so the drawn-iff-indexed rule that forced the barrier
+ * gap into the shared geometry does not apply.
+ *
+ * HALF A {@link GATE_GAP_M} either side, the same width a mapped gate opens: both
+ * are "an opening a person walks through", and both are bounded from below by
+ * the spacing of neighbouring res-13 cell centres — an opening the search cannot
+ * step through is one that may as well not exist.
+ */
+function goesThroughAnOpening(
+  a: PlanarPoint,
+  b: PlanarPoint,
+  obstacle: Obstacle,
+): boolean {
+  const openings = obstacle.openings;
+  if (openings === undefined) return false;
+
+  // DEGREES ARE ANISOTROPIC and this comparison is in metres, so longitude is
+  // scaled by cos(latitude) before the distance is taken. Everything else in
+  // this module is affine-invariant and needs no such correction; a RADIUS does.
+  const latitude = ((a.y + b.y) / 2) * (Math.PI / 180);
+  const scaleX = Math.cos(latitude);
+  const limit = GATE_GAP_M / 2 / METRES_PER_DEGREE;
+
+  for (const opening of openings) {
+    const distance = pointToSegment(
+      { x: opening.x * scaleX, y: opening.y },
+      { x: a.x * scaleX, y: a.y },
+      { x: b.x * scaleX, y: b.y },
+    );
+    if (distance <= limit) return true;
+  }
+  return false;
+}
+
+/** Metres in one degree of latitude. Good to ~0.5 % anywhere, which is plenty. */
+const METRES_PER_DEGREE = 111_320;
+
+/** Shortest distance from `p` to segment `a→b`, in the units given. */
+function pointToSegment(
+  p: PlanarPoint,
+  a: PlanarPoint,
+  b: PlanarPoint,
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSquared = dx * dx + dy * dy;
+  // A zero-length step has no direction; the distance to its single point is the
+  // only defensible answer.
+  const t =
+    lengthSquared === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared),
+        );
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }

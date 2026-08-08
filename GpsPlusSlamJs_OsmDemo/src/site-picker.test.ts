@@ -59,7 +59,7 @@ describe("attachSitePicker", () => {
     );
   });
 
-  it("reports the chosen site's position, and nothing else", () => {
+  it("reports the chosen PLACE — position and id — and nothing else", () => {
     const select = pickerElement();
     const onChoose = vi.fn();
     attachSitePicker({ select, onChoose });
@@ -69,11 +69,18 @@ describe("attachSitePicker", () => {
     select.value = target.id;
     select.dispatchEvent(new Event("change"));
 
-    // The picker reports a POSITION, not a site id and not an action. It does
-    // not know the store exists — the same separation the map has, where a
-    // click reports a selection and the store decides who cares.
+    // THE ID TRAVELS WITH THE POSITION SINCE DEC-R12-5, and the reason is that
+    // it was the missing fact: the URL writer needs to know a NAMED place was
+    // chosen, and by the time a bare `LatLng` reached the caller that was no
+    // longer knowable. Reverse-matching a position back to a place would be a
+    // second representation of the same fact, which is the drift the shared
+    // table exists to prevent.
+    //
+    // It is still a REPORT rather than an action: the picker does not know the
+    // store exists — the same separation the map has, where a click reports a
+    // selection and the store decides who cares.
     expect(onChoose).toHaveBeenCalledTimes(1);
-    expect(onChoose).toHaveBeenCalledWith(target.position);
+    expect(onChoose).toHaveBeenCalledWith(target);
   });
 
   it("ignores a value that is not a known site", () => {

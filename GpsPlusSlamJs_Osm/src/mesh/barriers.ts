@@ -19,6 +19,7 @@
 
 import type { LatLng, OsmFeature, OsmTags } from "../model/osm-feature.js";
 import { toGeometry } from "../model/osm-geometry.js";
+import { type GateOpenings, splitAtGates } from "./barrier-gates.js";
 import { parseLengthMetres } from "./building-heights.js";
 
 /**
@@ -142,7 +143,7 @@ function positiveOr(value: number | undefined, fallback: number): number {
 }
 
 /**
- * Every lat/lng line a barrier feature runs along.
+ * Every lat/lng line a barrier feature runs along, with mapped gates opened.
  *
  * **ONE DEFINITION, TWO CONSUMERS.** `nav/obstacles.ts` indexes these lines and
  * `barrier-volumes.ts` draws them, and the two must agree exactly: a wall drawn
@@ -150,6 +151,13 @@ function positiveOr(value: number | undefined, fallback: number): number {
  * wall indexed where nothing is drawn is a detour around thin air. Both are
  * bugs a reader would diagnose in the wrong file, so the geometry decision lives
  * here rather than in either of them.
+ *
+ * **`gates` IS REQUIRED, AND THAT IS THE POINT** (DEC-R12-1). A gap cut in the
+ * drawn band but not in the index is an agent detouring through a visible
+ * opening; a gap cut in the index but not in the band is an agent walking
+ * through a visible wall. Making the argument optional would let one consumer
+ * quietly omit it — the exact drift this function exists to prevent — so a
+ * caller with no feature list passes {@link NO_GATES} explicitly and says so.
  *
  * **A LIST, because a multipolygon has PARTS.** An earlier version took
  * `polygons[0][0]`: the inner index correctly ignores holes, but the outer one
@@ -163,6 +171,7 @@ function positiveOr(value: number | undefined, fallback: number): number {
  */
 export function barrierCentrelines(
   feature: OsmFeature,
+  gates: GateOpenings,
 ): readonly (readonly LatLng[])[] {
   const result = toGeometry(feature);
   if (!result.ok) return [];
@@ -204,5 +213,9 @@ export function barrierCentrelines(
           : [];
 
   // A single node has no direction, so it can be neither drawn nor indexed.
-  return lines.filter((line) => line.length >= 2);
+  // Filtered BEFORE the gate split, so `splitAtGates` never sees a degenerate
+  // line, and again after it, since a piece swallowed by its own gate is gone.
+  return lines
+    .filter((line) => line.length >= 2)
+    .flatMap((line) => splitAtGates(line, gates));
 }

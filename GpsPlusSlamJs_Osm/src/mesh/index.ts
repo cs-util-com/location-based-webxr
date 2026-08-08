@@ -32,6 +32,14 @@ export {
 
 export { barrierFootprints } from "./barrier-shape.js";
 
+export type { GateOpenings } from "./barrier-gates.js";
+export {
+  GATE_GAP_M,
+  NO_GATES,
+  gateOpenings,
+  splitAtGates,
+} from "./barrier-gates.js";
+
 export type { BarrierDimensions } from "./barriers.js";
 export {
   barrierCentrelines,

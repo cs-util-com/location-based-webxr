@@ -13,6 +13,7 @@ import { test, expect } from "@playwright/test";
 
 import {
   AT_FIXTURE,
+  enableCellLayer,
   recordStatus,
   stubNetwork,
   waitForRefresh,
@@ -303,6 +304,84 @@ test.describe("the location picker", () => {
     // And the data pipeline re-ran rather than only the basemap panning.
     await waitForRefresh(page);
     await expect(page.locator("#status")).toContainText(/\d+ cells/);
+  });
+
+  test("clears the old city the moment a new one is DECLARED (DEC-R12-6)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. The eighth testing session jumped New York ->
+    // London, watched the height profile switch immediately, and watched New
+    // York's buildings and cells stay on screen for the 20-30 s the Overpass
+    // fetch took — under a status line that already said London. The status
+    // channel was right and the picture was wrong, so making the status louder
+    // would have fixed nothing; what had to change is that the scene stops
+    // asserting a city the user has left.
+    //
+    // The window is real in the app and would be a race here, so the next fetch
+    // is HELD: everything asserted below happens while London is still loading,
+    // which is exactly the state that was reported.
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    // The cell grid starts OFF (DEC-R7b-6), and it is the observable here: it is
+    // drawn straight from the snapshot, so "the old city is still on screen" and
+    // "the store still holds it" are the same statement.
+    await enableCellLayer(page);
+
+    const cells = page.locator("#map path.affordance-cell");
+    await expect(cells).not.toHaveCount(0);
+
+    counts.holdOverpass();
+    await page.selectOption("#site", "porto-ribeira");
+
+    // THE ASSERTION. Not "eventually the new city appears" — that was already
+    // true and is what made the defect invisible to the suite. The old city's
+    // cells are gone WHILE the new data is still in flight.
+    await expect(cells).toHaveCount(0, { timeout: 15000 });
+
+    // And the loading channel still explains the empty scene, so the two agree
+    // for the first time rather than contradicting each other.
+    await expect(page.locator("#status")).toContainText(/Fetching/i);
+
+    counts.releaseOverpass();
+    await waitForRefresh(page);
+    await expect(cells).not.toHaveCount(0);
+  });
+
+  test("writes the place into the URL, so a reload comes back to it (DEC-R12-5)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. The read side has parsed `?lat=&lng=` and `?site=`
+    // since round 4 and nothing ever wrote them, so the session's jump to London
+    // survived exactly until a reload. The ask was for a link that can be pasted
+    // into a report and navigated to by this suite — so the round trip through a
+    // real reload is the assertion, not the string alone.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.selectOption("#site", "porto-ribeira");
+    // A NAMED place writes its id: it says WHERE in a link a human reads, and it
+    // survives a re-capture moving the coordinates.
+    await expect
+      .poll(() => new URL(page.url()).search)
+      .toBe("?site=porto-ribeira");
+
+    // The round trip. A reload with no other state must land back at Porto
+    // rather than at the demo's default.
+    await page.reload();
+    await waitForRefresh(page);
+    await expect(page.locator("#site")).toHaveValue("");
+    await expect
+      .poll(() => new URL(page.url()).search)
+      .toBe("?site=porto-ribeira");
+
+    // Moving without naming a place writes COORDINATES instead, and drops the
+    // stale id — a walk away from Porto must not keep claiming to be at Porto.
+    await page.locator("#map").click({ position: { x: 120, y: 120 } });
+    await expect
+      .poll(() => new URL(page.url()).search)
+      .toMatch(/^\?lat=-?\d+\.\d{5}&lng=-?\d+\.\d{5}$/);
   });
 });
 

@@ -31,6 +31,7 @@ import type {
 } from "../model/osm-feature.js";
 import { featureKey } from "../model/osm-feature.js";
 import { barrierFootprints } from "./barrier-shape.js";
+import { gateOpenings } from "./barrier-gates.js";
 import {
   barrierCentrelines,
   isSolidBarrier,
@@ -127,11 +128,19 @@ export function buildBarriers(
 ): BarrierVolume[] {
   const groundAt = options.groundHeightM ?? (() => 0);
   const volumes: BarrierVolume[] = [];
+  // MATERIALISED, because `features` is an `Iterable` and the gate pass has to
+  // read all of it before the barrier pass can use the result.
+  const all = [...features];
+  // THE SAME GATES `nav/obstacles.ts` BUILDS, from the same feature set
+  // (DEC-R12-1). Both derive it rather than share an instance, and both are
+  // handed the same list by their caller — so what is drawn and what is indexed
+  // open in the same places, which is the property stage 3 established.
+  const gates = gateOpenings(all);
 
-  for (const feature of features) {
+  for (const feature of all) {
     if (!isSolidBarrier(feature)) continue;
 
-    const lines = barrierCentrelines(feature);
+    const lines = barrierCentrelines(feature, gates);
     if (lines.length === 0) continue;
 
     const dimensions = resolveBarrier(feature.tags);

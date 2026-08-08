@@ -33,10 +33,16 @@ when the user does.
 
 ## Public API
 
-- `Obstacle` — `{ feature, heightM, rings }`. `rings` are `x = lng, y = lat`,
-  ready for `containsPoint` (crossing parity is affine-invariant, so the
-  lat/lng anisotropy needs no correction — see
+- `Obstacle` — `{ feature, heightM, rings, openings? }`. `rings` are
+  `x = lng, y = lat`, ready for `containsPoint` (crossing parity is
+  affine-invariant, so the lat/lng anisotropy needs no correction — see
   [`point-in-ring.ts.md`](../spatial/point-in-ring.ts.md)).
+  - `openings` are boundary points where a mapped opening admits a step
+    (DEC-R12-3) — today, where a `tunnel=building_passage` way pierces a
+    building. **Absent on almost everything**, which is why it is optional rather
+    than an empty array: `crossesObstacle` is the search's hottest path and pays
+    one `undefined` test per obstacle for it. See
+    [`building-passages.ts.md`](building-passages.ts.md).
 - `ObstacleIndex` — `obstaclesIn(cell)`, `cells`.
 - `buildObstacleIndex(features, resolution?) => ObstacleIndex` — **barriers and
   buildings**. Barriers become `thicknessM`-wide bands along their centrelines;
@@ -86,6 +92,21 @@ which is design rung 5.3 where agents deliberately do walk up walls.
   varied with the order Overpass returned features would be unreproducible.
 - **One obstacle appears once per cell**, however many of its segments cover it.
   The segments of one wall are one wall.
+- **A mapped opening admits the step that goes through it, and nothing else**
+  (DEC-R12-1, DEC-R12-3). Barriers and buildings reach that by different routes,
+  and the difference is not arbitrary:
+  - a **barrier** is cut in the shared geometry (`barrierCentrelines`), because
+    the barrier is DRAWN from the same lines and the drawn-iff-indexed property
+    would otherwise break;
+  - a **building** keeps its rings and carries `openings` instead, because
+    `segmentCrossesRing` closes a ring implicitly so it cannot be cut — and
+    because a building's passability has always been index-only here
+    (`min_height` and `building=roof` volumes are drawn exactly as before and
+    simply do not obstruct).
+- **The opening test is the only place in this module that is not
+  affine-invariant.** It is a RADIUS in metres, so longitude is scaled by
+  cos(latitude) before the distance is taken. Everything else compares crossings,
+  which are affine-invariant and need no correction.
 - **Every segment is indexed**, not just the first — an L-shaped wall that
   blocked along one leg and not the other is exactly the kind of defect a
   single-segment fixture cannot see. Mutation testing found that gap here.

@@ -523,3 +523,99 @@ describe("crossesObstacle — what finally makes a wall block", () => {
     expect(indexed.has("way/23")).toBe(false);
   });
 });
+
+describe("a road tagged as a building passage opens the building it pierces (DEC-R12-3)", () => {
+  // WHY THIS BLOCK MATTERS. The session asked for an archway where a way crosses
+  // a building. The one rule that existed — S3DB `min_height > 0` — does not
+  // fire for the reported case, a road through a gate tower with no height
+  // tagging, and `tunnel=building_passage` is what mappers write instead.
+  //
+  // The scope is what these assertions are really about. Treating the WHOLE
+  // volume as passable, which is how the other two passable-underneath rules
+  // work, was measured over the corpus at 30-35 % of the built AREA becoming
+  // walk-through at Cologne, Tokyo and Tower Bridge. So the passage opens a
+  // corridor and the rest of the same building stays exactly as solid as it was
+  // — which is the pair of tests below, and neither is meaningful alone.
+
+  /** A 40 x 40 m building centred on HOME. */
+  const block: OsmFeature = {
+    type: "way",
+    id: 30,
+    geometry: [
+      { lat: HOME.lat - STEP * 22, lng: HOME.lng - STEP * 22 },
+      { lat: HOME.lat - STEP * 22, lng: HOME.lng + STEP * 22 },
+      { lat: HOME.lat + STEP * 22, lng: HOME.lng + STEP * 22 },
+      { lat: HOME.lat + STEP * 22, lng: HOME.lng - STEP * 22 },
+      { lat: HOME.lat - STEP * 22, lng: HOME.lng - STEP * 22 },
+    ],
+    tags: { building: "yes", height: "12" },
+  };
+
+  /** A footway west→east through the middle of it, at HOME's latitude. */
+  const passage = (tags: Record<string, string>): OsmFeature => ({
+    type: "way",
+    id: 31,
+    geometry: [
+      { lat: HOME.lat, lng: HOME.lng - STEP * 40 },
+      { lat: HOME.lat, lng: HOME.lng + STEP * 40 },
+    ],
+    tags: { highway: "footway", ...tags },
+  });
+
+  /** A neighbouring pair straddling the building's WEST wall at latitude `lat`. */
+  function pairAcrossWestWall(lat: number): [string, string] {
+    const wallLng = HOME.lng - STEP * 22;
+    const outside = cellAt(lat, wallLng - STEP * 6);
+    for (const neighbour of gridDisk(outside, 1)) {
+      if (neighbour === outside) continue;
+      const [, lng] = cellToLatLng(neighbour);
+      if (lng > wallLng) return [outside, neighbour];
+    }
+    throw new Error("no neighbouring cell inside the building");
+  }
+
+  it("admits a step through the passage", () => {
+    const index = buildObstacleIndex([
+      block,
+      passage({ tunnel: "building_passage" }),
+    ]);
+    const [outside, inside] = pairAcrossWestWall(HOME.lat);
+    expect(crossesObstacle(index, outside, inside)).toBe(false);
+  });
+
+  it("still blocks a step through the SAME building away from the passage", () => {
+    // The counterweight. Without it, "open the whole volume" would pass the test
+    // above — and that is the reading the corpus measurement ruled out.
+    const index = buildObstacleIndex([
+      block,
+      passage({ tunnel: "building_passage" }),
+    ]);
+    const [outside, inside] = pairAcrossWestWall(HOME.lat + STEP * 15);
+    expect(crossesObstacle(index, outside, inside)).toBe(true);
+  });
+
+  it("blocks the same step when the road is NOT tagged as a passage", () => {
+    // The before picture: a road crossing a building outline in plan is normally
+    // running above or below it, so the tag is doing all the work.
+    const index = buildObstacleIndex([block, passage({})]);
+    const [outside, inside] = pairAcrossWestWall(HOME.lat);
+    expect(crossesObstacle(index, outside, inside)).toBe(true);
+  });
+
+  it("leaves the building DRAWN and indexed — it is opened, not deleted", () => {
+    // The same shape `min_height` volumes have: passability is an index-only
+    // property, and the volume is still there to be seen and still blocks
+    // everywhere the passage does not run. A building that vanished from the
+    // index entirely would be the whole-volume reading by another route.
+    const index = buildObstacleIndex([
+      block,
+      passage({ tunnel: "building_passage" }),
+    ]);
+    const indexed = new Set<string>();
+    for (const cell of index.cells) {
+      for (const obstacle of index.obstaclesIn(cell))
+        indexed.add(obstacle.feature);
+    }
+    expect(indexed.has("way/30")).toBe(true);
+  });
+});

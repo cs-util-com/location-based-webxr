@@ -31,6 +31,7 @@ import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
 import { pickDefaultCategory } from "./default-category.js";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
+import { browserPlaceUrl, writePlace } from "./url-state.js";
 import { describeDrawCost } from "./draw-cost.js";
 import { geoEventButtonLabel } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
@@ -370,22 +371,41 @@ async function main(): Promise<void> {
   /**
    * Set by the site picker, read once by the position subscriber.
    *
-   * A flag rather than a field on the action because the action comes from the
-   * framework's state slice, shared with every other app — widening it for one
-   * demo's anchoring rule would be the wrong place to put this.
+   * A flag rather than a field on the action because the ANCHORING rule is the
+   * demo's alone: the framework's slice is shared with every other app, and
+   * `placeChanged` (DEC-R12-8) carries what the STORE needs to know, which is
+   * only that the snapshot is no longer about the place in view.
    */
   let placeChangeDeclared = false;
+  /**
+   * The picker id behind that flag, or `undefined` for travel.
+   *
+   * Read and cleared alongside it, so the URL is written from the same fact the
+   * anchor is: a named place writes `?site=`, anything else writes coordinates
+   * (DEC-R12-5).
+   */
+  let declaredSiteId: string | undefined;
+
+  /** The demo's URL, written on every position change. See `url-state.ts`. */
+  const placeUrl = browserPlaceUrl(window);
 
   attachSitePicker({
     select: el<HTMLSelectElement>("site"),
-    onChoose: (position) => {
-      mapView.centreOn(position);
+    onChoose: (place) => {
+      mapView.centreOn(place.position);
+      declaredSiteId = place.id;
       // A DECLARED place change, not travel. The picker spans Cologne to Tokyo,
       // so the scene anchor must be re-taken regardless of distance — and two
       // entries a few hundred metres apart are still two different scenes.
       // Consumed by the position subscriber below, which is what calls refresh.
       placeChangeDeclared = true;
-      store.dispatch(actions.positionChanged(position));
+      // `placeChanged`, NOT `positionChanged` (DEC-R12-6/8). The eighth session
+      // jumped New York -> London and watched New York's buildings stay on
+      // screen for the whole 20-30 s fetch, under a status line already naming
+      // London. This action clears the snapshot and the geo-event; the ordinary
+      // one deliberately does not, because a walk moves to a scene about to be
+      // mostly identical.
+      store.dispatch(actions.placeChanged(place.position));
     },
   });
 
@@ -1131,7 +1151,15 @@ async function main(): Promise<void> {
       // READ AND CLEARED, so a declared place change re-anchors exactly once and
       // the next ordinary step is treated as travel again.
       const declared = placeChangeDeclared;
+      const siteId = declaredSiteId;
       placeChangeDeclared = false;
+      declaredSiteId = undefined;
+      // THE URL IS WRITTEN HERE AND NOWHERE ELSE (DEC-R12-5), because this is
+      // the one place every way of moving converges — picker, map click, locate
+      // button. Writing it at each call site would be three writers racing to
+      // describe one position, and the site jump would be overwritten by the
+      // coordinates of the same jump.
+      writePlace(placeUrl, { position, siteId });
       const anchor = anchors.advance(position, { declared });
       // A RE-ANCHOR INVALIDATES THE ROUTE, AND ONLY A RE-ANCHOR DOES (stage 4).
       // Every point on the drawn polyline is expressed in the scene's ENU

@@ -360,6 +360,105 @@ describe('createOsmViewSlice — the geo-event (DEC-G2)', () => {
   });
 });
 
+describe('createOsmViewSlice — a DECLARED place change (DEC-R12-8)', () => {
+  // WHY THIS BLOCK MATTERS. The eighth testing session watched the OSM demo
+  // jump New York -> London and keep drawing New York's buildings for the 20-30 s
+  // the next Overpass fetch took, under a status line already naming London.
+  // Nothing was stale in the sense the existing guards check — the snapshot was
+  // the last true picture of a place the user had DECLARED they were leaving.
+  //
+  // The whole point of a SECOND action is that `positionChanged` must not learn
+  // about this. Walking is the common case and blanking the scene on every step
+  // is the cost the mesh planner exists to avoid, so the two intents are two
+  // actions rather than one action with a mode flag — which is also why every
+  // test here has a `positionChanged` twin asserting the opposite.
+
+  it('clears the snapshot, so no view keeps asserting the city the user left', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.snapshotReady(SNAPSHOT),
+      slice.actions.placeChanged({ lat: 51.5055, lng: -0.0754 })
+    );
+    expect(state.position).toEqual({ lat: 51.5055, lng: -0.0754 });
+    expect(state.snapshot).toBeUndefined();
+  });
+
+  it('KEEPS the snapshot on an ordinary position change, which is the whole reason it is a second action', () => {
+    // The guard against collapsing the two reducers. A map click during a walk
+    // moves to a scene that is about to be mostly identical; blanking it there
+    // is the cost this split exists to avoid.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.snapshotReady(SNAPSHOT),
+      slice.actions.positionChanged({ lat: 50.95, lng: 6.97 })
+    );
+    expect(state.snapshot).toBe(SNAPSHOT);
+  });
+
+  it('clears the geo-event too (DEC-R12-10), because a bearing computed in another city is wrong rather than stale', () => {
+    // The exception to the asymmetry `positionChanged` documents. "640 m NE" is
+    // an instruction to walk there, which survives a step and does not survive a
+    // teleport across an ocean.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.geoEventFound(EVENT),
+      slice.actions.placeChanged({ lat: 51.5007, lng: -0.1246 })
+    );
+    expect(state.geoEvent).toBeUndefined();
+  });
+
+  it('drops all three selections, exactly as an ordinary move does', () => {
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.cellSelected('8d1fb46622d8dbf'),
+      slice.actions.placeChanged({ lat: 51, lng: 7 })
+    );
+    expect(state.selectedCell).toBeUndefined();
+    expect(state.selectedFeature).toBeUndefined();
+    expect(state.selectedRegion).toBeUndefined();
+  });
+
+  it('leaves the presentation alone — a jump moves the user, not their settings', () => {
+    // Category, layers and ground mode are how the user is LOOKING, which does
+    // not change because they went somewhere else. Clearing them here would make
+    // the picker a settings reset.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.categoryChanged('battleArea'),
+      slice.actions.groundModeChanged('terrain'),
+      slice.actions.layersChanged({ cells: true }),
+      slice.actions.placeChanged({ lat: 51, lng: 7 })
+    );
+    expect(state.category).toBe('battleArea');
+    expect(state.groundMode).toBe('terrain');
+    expect(state.layers).toEqual({ cells: true });
+  });
+
+  it('normalises a negative zero, for the same round-trip reason positionChanged does', () => {
+    // Both position writers must normalise or the invariant holds only on
+    // whichever path the test happened to take.
+    const slice = makeSlice();
+    const state = reduceAll(
+      slice,
+      slice.actions.placeChanged({ lat: -0, lng: -0 })
+    );
+    expect(Object.is(state.position.lat, -0)).toBe(false);
+    expect(Object.is(state.position.lng, -0)).toBe(false);
+  });
+
+  it('is exposed on OsmViewActions, so a consumer can actually dispatch it', () => {
+    const actions: OsmViewActions<TestSnapshot, TestGeoEvent> =
+      makeSlice().actions;
+    expect(typeof actions.placeChanged).toBe('function');
+    expect(actions.placeChanged(COLOGNE).type).toBe('osmView/placeChanged');
+  });
+});
+
 describe('createOsmViewSlice — serialisability', () => {
   it('holds nothing RTK would reject: the state survives a JSON round-trip', () => {
     // RTK's default middleware throws on non-serialisable state in development.

@@ -95,6 +95,22 @@ None. Entry point only, loaded by `index.html`.
   e2e suite stand exactly on top of the checked-in fixture. Both parameters are
   required together, because half an override would mix a URL latitude with a
   default longitude and land somewhere nobody asked for.
+- **A PICKER choice is a declared place change; everything else is travel**
+  (DEC-R12-6/8). The picker dispatches `placeChanged`, which clears the snapshot
+  and the geo-event, so the scene stops asserting a city the user has left rather
+  than drawing it for the 20–30 s the next Overpass fetch takes. A map click, a
+  GPS fix and a simulated walk keep dispatching `positionChanged`, which keeps
+  both — blanking a scene that is about to be mostly identical is the cost the
+  mesh planner exists to avoid. The `placeChangeDeclared` flag stays demo-local
+  and now only carries the ANCHORING half of the same intent.
+- **The URL is written in exactly one place: the `view.position` subscriber**
+  (DEC-R12-5, `url-state.ts`). That is where the picker, the map click and the
+  locate button converge, so one writer describes one position — writing at each
+  call site would let the site jump be overwritten by the coordinates of the same
+  jump. The picker's id rides along in `declaredSiteId`, read and cleared beside
+  `placeChangeDeclared`, so a named place writes `?site=` and travel writes
+  `?lat=&lng=`. Nothing is written at boot: a bare `/` stays bare until the user
+  actually moves.
 
 ## Examples
 

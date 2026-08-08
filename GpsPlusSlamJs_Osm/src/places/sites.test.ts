@@ -15,12 +15,19 @@ import { CORPUS_SITES, siteById, type CorpusSite } from "./sites.js";
  * corpus" is the thing that gets lost first and is unrecoverable afterwards.
  */
 describe("CORPUS_SITES", () => {
-  it("has the six sites DEC-R4-2 asked for", () => {
+  it("has the eight sites DEC-R4-2 and DEC-R12-9 asked for", () => {
     // SIX, not three. The owner widened this deliberately: the demo had been
     // tested at exactly one spot for three rounds, which is the condition that
     // produced the cathedral finding. A shrinking table is a decision being
     // quietly reversed, so the count is asserted rather than implied.
-    expect(CORPUS_SITES).toHaveLength(6);
+    //
+    // EIGHT SINCE DEC-R12-9, and the two additions are the reason this assertion
+    // is worth having. The eighth testing session was run at London, which was
+    // reachable from the picker and had no fixture — so every number measured
+    // for that session's findings came from somewhere the user had not been
+    // looking. The notes did not say WHICH London, and the two picker entries
+    // are different shapes, so both were captured rather than one guessed.
+    expect(CORPUS_SITES).toHaveLength(8);
   });
 
   it("gives every site a unique id", () => {
@@ -61,14 +68,18 @@ describe("CORPUS_SITES", () => {
     }
   });
 
-  it("covers each of the six reasons exactly once", () => {
-    // The six are a SPREAD, not a sample: each was chosen for a different way of
-    // being awkward. Two sites sharing a trait would mean one of the six kinds
-    // of awkwardness is untested while the table still looks complete.
+  it("covers each of the eight reasons exactly once", () => {
+    // They are a SPREAD, not a sample: each site was chosen for a different way
+    // of being awkward. Two sites sharing a trait would mean one kind of
+    // awkwardness is untested while the table still looks complete — which is
+    // why the two London entries could NOT simply reuse `messy-tagging`, and why
+    // adding them was a decision rather than an edit.
     const traits = CORPUS_SITES.map((site) => site.trait).sort();
     expect(traits).toEqual([
+      "bridge-structure",
       "coastline",
       "dense-highrise",
+      "gated-perimeter",
       "landmark-parts",
       "messy-tagging",
       "non-european-tagging",

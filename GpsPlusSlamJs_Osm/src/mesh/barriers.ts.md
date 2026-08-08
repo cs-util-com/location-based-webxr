@@ -34,9 +34,17 @@ would have stayed passable.
 
 - `isSolidBarrier(feature) => boolean`
 - `resolveBarrier(tags) => { heightM, thicknessM }`
-- `barrierCentrelines(feature) => readonly (readonly LatLng[])[]` — every
-  lat/lng line the barrier runs along. Empty when the geometry is unusable; a
-  line of fewer than two nodes is dropped.
+- `barrierCentrelines(feature, gates) => readonly (readonly LatLng[])[]` — every
+  lat/lng line the barrier runs along, **with mapped gates opened**. Empty when
+  the geometry is unusable; a line of fewer than two nodes is dropped.
+  - `gates` is **required**, not optional, and that is deliberate (DEC-R12-1). A
+    gap cut in the drawn band but not in the index is an agent detouring through
+    a visible opening; a gap cut in the index but not in the band is an agent
+    walking through a visible wall. An optional argument would let one of the two
+    consumers quietly omit it — the exact drift this function exists to prevent.
+    A caller with no feature list passes `NO_GATES` and says so.
+  - The cutting rule and its measured reach live in
+    [`barrier-gates.ts.md`](barrier-gates.ts.md).
 - The three defaults above.
 
 ## Invariants

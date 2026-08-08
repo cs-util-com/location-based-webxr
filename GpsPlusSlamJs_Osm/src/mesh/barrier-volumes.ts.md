@@ -32,6 +32,15 @@ cost itself and nothing else.
   indexed wall cannot drift. Do not re-derive it here — the rules about which
   rings of which geometry kinds count took three review rounds (#259, #260,
   #263) to settle.
+- **The GATES come from the same feature list, and that is what keeps the gap
+  drawn as well as indexed** (DEC-R12-1). `buildBarriers` calls `gateOpenings`
+  over the features it was handed, exactly as `buildObstacleIndex` does over the
+  ones it was handed; both then pass the result into `barrierCentrelines`, whose
+  `gates` parameter is required rather than optional so neither can forget. A gap
+  drawn but not indexed is an agent detouring through a visible opening; a gap
+  indexed but not drawn is an agent walking through a visible wall.
+  `site-barriers.test.ts` asserts the drawn set and the indexed set are equal on
+  real data at all eight sites.
 - **`heightM` on the volume is the same number the index records.** A pinned
   property, not a coincidence: both go through `resolveBarrier`.
 - **One extrusion per segment, one ground sample per segment.** Falls out of

@@ -37,15 +37,21 @@
  * @see site-picker.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
-
-import { PICKER_PLACES, placeById } from "./picker-places.js";
+import { PICKER_PLACES, placeById, type PickerPlace } from "./picker-places.js";
 
 export interface SitePickerOptions {
   /** The `<select>` to populate. Emptied first, so a re-attach is idempotent. */
   readonly select: HTMLSelectElement;
-  /** Called with the chosen site's position. Never called for an unknown id. */
-  readonly onChoose: (position: LatLng) => void;
+  /**
+   * Called with the chosen PLACE. Never called for an unknown id.
+   *
+   * THE WHOLE PLACE RATHER THAN ITS POSITION (DEC-R12-5). The URL writer has to
+   * know that a NAMED place was chosen so it can write `?site=<id>` instead of
+   * coordinates, and a bare `LatLng` had already thrown that away by the time it
+   * reached the caller. Recovering it by matching the position back against the
+   * table would be a second representation of the same fact.
+   */
+  readonly onChoose: (place: PickerPlace) => void;
 }
 
 export interface SitePicker {
@@ -103,7 +109,7 @@ export function attachSitePicker(options: SitePickerOptions): SitePicker {
     // has changed, and moving the demo to `undefined` would be worse than
     // doing nothing for a control that is a convenience.
     if (place === undefined) return;
-    onChoose(place.position);
+    onChoose(place);
   };
   select.addEventListener("change", onChange);
 

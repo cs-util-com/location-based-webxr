@@ -208,6 +208,7 @@ const IDLE: OsmViewLoading = { phase: 'idle', message: '' };
  */
 export interface OsmViewActions<TSnapshot, TGeoEvent> {
   positionChanged: ActionCreatorWithPayload<OsmViewLatLng, string>;
+  placeChanged: ActionCreatorWithPayload<OsmViewLatLng, string>;
   categoryChanged: ActionCreatorWithPayload<string, string>;
   showBelowThresholdChanged: ActionCreatorWithPayload<boolean, string>;
   groundModeChanged: ActionCreatorWithPayload<string, string>;
@@ -327,6 +328,42 @@ export function createOsmViewSlice<TSnapshot, TGeoEvent = never>(
           selectedCell: undefined,
           selectedFeature: undefined,
           selectedRegion: undefined,
+        };
+      },
+
+      /**
+       * The user DECLARED they are somewhere else — a location picker, a jump to
+       * a named site. Everything `positionChanged` does, plus the snapshot and
+       * the geo-event.
+       *
+       * WHY THIS IS A SECOND ACTION RATHER THAN A FLAG (DEC-R12-8). The eighth
+       * OSM testing session jumped New York -> London and watched New York's
+       * buildings stay on screen for the 20-30 s the next Overpass fetch took,
+       * under a status line already naming London. Nothing was stale in the sense
+       * the existing guards check: the snapshot was the last TRUE picture of a
+       * place the user had said they were leaving. Two intents, two actions —
+       * `positionChanged` carries no mode flag, so an existing consumer cannot
+       * accidentally acquire this behaviour, and a walk cannot accidentally lose
+       * a scene it is about to redraw almost identically.
+       *
+       * CLEARS THE GEO-EVENT, which is the one exception to the asymmetry
+       * `positionChanged` documents (DEC-R12-10). "640 m NE" is an instruction to
+       * walk there; it survives a step and does not survive a teleport across an
+       * ocean.
+       *
+       * LEAVES THE PRESENTATION ALONE — category, layers, ground mode. Those are
+       * how the user is looking rather than where they are, and resetting them
+       * would make the picker a settings reset.
+       */
+      placeChanged(state, action: PayloadAction<OsmViewLatLng>) {
+        return {
+          ...state,
+          position: withoutSignedZero(action.payload),
+          selectedCell: undefined,
+          selectedFeature: undefined,
+          selectedRegion: undefined,
+          snapshot: undefined,
+          geoEvent: undefined,
         };
       },
 

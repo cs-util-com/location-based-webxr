@@ -8,7 +8,9 @@ import {
   buildBarriers,
   type BarrierVolume,
 } from "../../mesh/barrier-volumes.js";
-import { isSolidBarrier } from "../../mesh/barriers.js";
+import { barrierCentrelines, isSolidBarrier } from "../../mesh/barriers.js";
+import { NO_GATES, gateOpenings } from "../../mesh/barrier-gates.js";
+import type { LatLng } from "../../model/osm-feature.js";
 import { buildObstacleIndex } from "../../nav/obstacles.js";
 import { featureKey } from "../../model/osm-feature.js";
 import type { OsmFeature } from "../../model/osm-feature.js";
@@ -75,6 +77,11 @@ function barriersFor(site: CorpusSite): {
   };
 }
 
+/** One barrier's lines as a comparable string — "did the geometry move at all". */
+function geometryOf(lines: readonly (readonly LatLng[])[]): string {
+  return JSON.stringify(lines);
+}
+
 const built = new Map(CORPUS_SITES.map((site) => [site.id, barriersFor(site)]));
 
 const cases = CORPUS_SITES.map((site) => [site.id, site] as const);
@@ -128,6 +135,49 @@ describe("site barriers", () => {
       expect(wall.tags["barrier"]).toBeUndefined();
       expect(isSolidBarrier(wall)).toBe(true);
     }
+  });
+
+  it("opens a gap at exactly the mapped gates each site has (DEC-R12-1)", () => {
+    // WHY THIS TEST MATTERS, AND WHY IT IS LITERAL COUNTS. The rule cuts a
+    // barrier only where OSM maps a gate or entrance node ON the barrier's own
+    // way, which is a narrow rule by decision — narrow enough that it does
+    // NOTHING at two of the eight sites. A rule that is silently a no-op
+    // everywhere looks exactly like a rule that works, so the reach is pinned
+    // per site: a re-capture that changes these numbers is OSM re-tagging and
+    // should be read, not re-baselined.
+    //
+    // The counts are barriers whose geometry the gate rule CHANGED — a split in
+    // the middle, or a shortening at the end, both count.
+    const opened: Record<string, number> = {};
+    for (const [id] of cases) {
+      const entry = built.get(id);
+      if (entry === undefined) throw new Error(`no build for ${id}`);
+      const gates = gateOpenings(entry.features);
+
+      opened[id] = entry.features.filter((feature) => {
+        if (!isSolidBarrier(feature)) return false;
+        // COMPARED AS GEOMETRY, not as a line or vertex COUNT. A gate at the
+        // first vertex of a way shortens it without splitting it and without
+        // changing how many points it has — the interpolated start simply
+        // replaces the old one — so a count-based comparison silently missed a
+        // third of the real openings at Sylt.
+        return (
+          geometryOf(barrierCentrelines(feature, gates)) !==
+          geometryOf(barrierCentrelines(feature, NO_GATES))
+        );
+      }).length;
+    }
+
+    expect(opened).toEqual({
+      "cologne-cathedral": 12,
+      "heidelberg-altstadt": 8,
+      "berlin-alexanderplatz": 0,
+      "sylt-westerland": 12,
+      "manhattan-midtown": 1,
+      "tokyo-shinjuku": 0,
+      "london-tower-bridge": 2,
+      "london-westminster": 10,
+    });
   });
 
   it("leaves gates and kerbs passable across the whole corpus", () => {
