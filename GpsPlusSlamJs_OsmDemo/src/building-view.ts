@@ -1065,7 +1065,15 @@ export class BuildingView {
     // agent needs a destination, and until stage 4 a click on open ground
     // resolved to nothing at all: the affordance grid is off by default, so on
     // the demo's own default view there was nothing in this list to hit.
-    targets.push(this.ground);
+    //
+    // ONLY WHILE IT IS DRAWN, and that guard is load-bearing rather than tidy.
+    // three's raycaster does NOT skip invisible objects — `intersectObject`
+    // tests layers and nothing else — so without this the "none" ground mode
+    // would still send the agent to a surface the user cannot see. It is also
+    // what keeps region slabs selectable in 3D at all: the ground outranks a
+    // region (DEC-R11-21), so a plane that is always in this list would make
+    // that branch unreachable.
+    if (this.ground.visible) targets.push(this.ground);
     if (targets.length === 0) return undefined;
     // Reduced to what the decision reads. `Intersection` nests `userData` under
     // `object`, and `pick.ts` must be constructible in a test without a renderer,

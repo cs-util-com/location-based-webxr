@@ -1686,17 +1686,13 @@ test.describe("the NPC agent", () => {
 
     const scene = page.locator("#scene");
 
-    // THE AFFORDANCE SLABS ARE TURNED OFF FIRST, and this is a finding rather
-    // than a test detail. A region slab is a claim ABOUT the ground and it wins
-    // a click over the ground itself (DEC-R7b-3a, and the same precedence rule
-    // `pick.ts` applies to a cell over a region) — and at this fixture the four
-    // `battleArea` regions blanket everything near the user, so with the layer
-    // on EVERY click here resolves to a region and none of them ever reaches the
-    // agent. See the stage-4 summary's open topics: whether ordering should beat
-    // region selection is an owner decision, not something to settle inside a
-    // test.
-    await page.locator("#layer-areas").uncheck();
-
+    // NOTHING IS TURNED OFF FIRST, and that is the assertion hiding in the
+    // setup. For one commit this test had to `uncheck` the `areas` layer,
+    // because a region slab outranked the ground and the four `battleArea`
+    // slabs blanket everything near the user at this fixture — so every click
+    // resolved to a region and the agent could never be ordered. DEC-R11-21
+    // reversed that precedence, and the demo's DEFAULT configuration is what
+    // this test now runs against.
     const canvas = page.locator("#scene canvas");
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("no canvas box");

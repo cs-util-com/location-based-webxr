@@ -130,13 +130,24 @@ export function resolvePick(
 ): Pick | undefined {
   let region: Pick | undefined;
   /**
-   * The ground, remembered like a region but at a still coarser grain.
+   * The ground, remembered rather than returned — but it OUTRANKS a region.
    *
-   * TWO SEPARATE MEMOS RATHER THAN ONE, because the precedence is a chain and
-   * not a tie: a region beats the ground even when the ground is nearer, for
-   * exactly the reason a cell beats a region. The ground is under EVERYTHING,
-   * so a nearest-hit rule would let it swallow every existing click the moment
-   * it joined the raycast set.
+   * **THAT ORDER IS DEC-R11-21, and it reverses what stage 4 first shipped.**
+   * The chain reads finest-first everywhere else, and by that logic a region
+   * (a claim about the ground) should beat the ground itself. Measured against
+   * the running demo it made stage 4 unusable: the affordance slabs blanket
+   * everything near the user at the demo's own opening view, so **every** click
+   * resolved to a region and the agent could never be ordered anywhere.
+   *
+   * A cell and a POI still win — they are precise claims the user aimed at. A
+   * region is a flood fill hundreds of metres across, and "I clicked inside a
+   * large translucent area" is much more often "go there" than "tell me about
+   * this area". Region selection is unchanged in the 2D map, which dispatches
+   * the same action, and still applies in 3D wherever the ground is not drawn
+   * (`building-view.ts` keeps a hidden ground plane out of the raycast set).
+   *
+   * Two separate memos rather than one, because this is a chain and not a tie:
+   * neither is decided by distance against the other.
    */
   let ground: Pick | undefined;
   for (const hit of [...hits].sort((a, b) => a.distance - b.distance)) {
@@ -171,10 +182,10 @@ export function resolvePick(
       return { kind: "poi", marker };
     }
     if (hit.userData["ground"] === true) {
-      // Remembered, never returned here: the ground is the last answer, after
-      // every finer claim has had its chance. A hit without a point is skipped
-      // rather than defaulted — a destination at the origin would be a
-      // confidently wrong place, which this module already refuses elsewhere.
+      // Remembered, never returned here: a cell or a marker behind it is a
+      // sharper claim and still wins. A hit without a point is skipped rather
+      // than defaulted — a destination at the origin would be a confidently
+      // wrong place, which this module already refuses elsewhere.
       if (ground === undefined && hit.point !== undefined) {
         ground = { kind: "ground", point: hit.point };
       }
@@ -193,5 +204,9 @@ export function resolvePick(
     if (cell === undefined) continue;
     return { kind: "cell", cell };
   }
-  return region ?? ground;
+  // GROUND FIRST (DEC-R11-21). The region is the fallback for the one case
+  // where there is no ground to order onto — the ground plane is hidden, so
+  // `building-view.ts` leaves it out of the raycast set and the slab is
+  // genuinely the thing that was clicked.
+  return ground ?? region;
 }

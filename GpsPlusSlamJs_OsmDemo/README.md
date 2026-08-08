@@ -64,10 +64,13 @@ to openstreetmap.org — the provenance map is what turns "that looks wrong" int
    and buildings the scene draws, so **seeing the line go _around_ a city wall
    is the proof** — and a line that goes through one is a visible, reportable
    fact rather than a hidden mis-score.
-   - A click on a building, a POI marker, a region slab or an affordance cell
-     keeps its existing meaning; only bare ground orders the agent. **The
-     affordance region slabs (`areas`, on by default) cover much of the ground
-     at a dense site, so turn that layer off if a click will not take.**
+   - A click on an affordance cell or a POI marker still selects it; a click on
+     a building selects nothing (it blocks, so the agent is not sent to the
+     ground behind it). **A click on a region slab now orders the agent**
+     (DEC-R11-21) — the slabs cover much of the ground at a dense site, and
+     while they outranked it the agent could not be ordered at all. A region's
+     details are still one click away on the 2D map, and in 3D with the ground
+     mode set to `none`.
    - Wall tops are unreachable by design this round (DEC-R11-10): there is no
      stair or ramp ingress, so an agent that ended up on a wall would mean a
      sub-threshold step had crept in.

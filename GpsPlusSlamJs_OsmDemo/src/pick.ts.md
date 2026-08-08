@@ -20,14 +20,27 @@ Decides what a click in the 3D view selected (W12). The raycast stays in
   resolves to something selectable, or the coarsest claim behind it. Never
   throws.
 
-## The precedence chain (DEC-R7b-3a, DEC-R11-17)
+## The precedence chain (DEC-R7b-3a, DEC-R11-17, DEC-R11-21)
 
-Finest first. Distance is the tie-break **between peers only**:
+Distance is the tie-break **between peers only**:
 
-- **cell / POI** — peers, decided by distance.
-- **region** — remembered, returned only if nothing sharper turned up.
-- **ground** — remembered, returned only if no region did either.
+- **cell / POI** — peers, decided by distance. Precise claims the user aimed at.
+- **ground** — remembered, returned if nothing sharper turned up. **Ordering the
+  agent.**
+- **region** — remembered, returned only when there was no ground hit at all.
 - **a solid object (building or barrier) STOPS the scan** — see below.
+
+**The ground outranks the region, and that is DEC-R11-21 reversing what stage 4
+first shipped.** Finest-claim-wins puts a region above the ground, which is what
+the rest of this chain follows — and against the running demo it made the
+feature unusable: the affordance slabs blanket everything near the user at the
+demo's opening view, so every click resolved to a region and the agent could
+never be ordered anywhere. A region is a flood fill hundreds of metres across,
+where "I clicked in the big translucent area" much more often means "go there".
+
+Region selection survives in the 2D map (unchanged) and in 3D wherever the
+ground is not **drawn** — `building-view.ts` keeps a hidden ground plane out of
+the raycast set, which is also what stops that branch being unreachable code.
 
 ## Invariants & assumptions
 
@@ -44,10 +57,16 @@ Finest first. Distance is the tie-break **between peers only**:
   - The cost is real and stated: the largest geometry in the scene is now in the
     picking set. W20's chunking bounds it — three tests bounding boxes before
     triangles.
-- **The ground is the coarsest claim, never a peer.** It is under everything, so
-  a nearest-hit rule would have let it swallow every existing click the moment it
-  joined the set — the same reason region slabs are not peers, and the same
-  grazing-angle failure.
+- **The ground is never a peer.** It is under everything, so a nearest-hit rule
+  would have let it swallow every existing click the moment it joined the set —
+  the same reason region slabs are not peers, and the same grazing-angle
+  failure. It is remembered and answered last among the things a cell or a
+  marker can outrank.
+  - **A hidden ground plane must not be in the raycast set** — three's
+    `intersectObject` tests layers and nothing else, so an invisible mesh is
+    still hit. `building-view.ts` guards on `visible`, which both stops the
+    `none` ground mode ordering the agent onto a surface nobody can see and
+    keeps the region fallback reachable.
 - **A ground pick carries SCENE coordinates, not `LatLng`.** This module must
   stay constructible without an ENU frame; the frame lives on the page next to
   the scene anchor and is re-taken on a teleport, so a second copy here would go
@@ -110,10 +129,12 @@ both directions; unsorted input; empty input; an unidentifiable hit is skipped
 and the search continues; a triangle that maps to no cell; a `null` `faceIndex`;
 the instanced-marker lookup; the region precedence.
 
-The ground block (DEC-R11-17) pins the chain from both ends: a sharper claim wins
-at any distance; a building in FRONT refuses the destination; a building BEHIND
-does not; a marker or a region in front of a building still resolves; and a
-ground hit without a point is skipped.
+The ground block (DEC-R11-17, DEC-R11-21) pins the chain from both ends: a cell
+wins at any distance; **the ground beats a region at any distance**, in both
+orders, with the test naming why the obvious rule is backwards here; a region is
+still selected when there is no ground hit at all; a building in FRONT refuses
+the destination; a building BEHIND does not; a marker or a region in front of a
+building still resolves; and a ground hit without a point is skipped.
 
 `playwright-tests/` › "a building stays unpickable, which W12 must not have
 undone" is the end-to-end half of the invariant, and `scene-3d.spec.js` ›

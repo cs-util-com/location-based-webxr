@@ -781,6 +781,15 @@ test.describe("selecting a region", () => {
     await page.locator("#layer-cells").uncheck();
     await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
 
+    // AND THE GROUND HIDDEN, which is the narrow case DEC-R11-21 left this
+    // behaviour alive in. Stage 4 made a click on drawn ground ORDER THE AGENT,
+    // and the ground outranks a region — because the slabs blanket the demo's
+    // opening view, and with the old order the agent could never be ordered at
+    // all. `building-view.ts` keeps a hidden ground plane out of the raycast
+    // set, so with the "none" ground mode the slab genuinely is the thing under
+    // the pointer and this route to `regionSelected` still exists.
+    await page.locator("#ground-mode").selectOption("none");
+
     const canvas = page.locator("#scene canvas");
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("no canvas box");
