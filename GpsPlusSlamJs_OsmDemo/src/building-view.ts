@@ -44,6 +44,12 @@ import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { RENDER_ORDER } from "./layer-order.js";
+import {
+  followerAt,
+  followerSettled,
+  stepFollower,
+  type Follower,
+} from "./agent-follower.js";
 import { isPickGesture, type PointerOrigin } from "./pick-gesture.js";
 import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
 import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
@@ -259,6 +265,21 @@ export interface BuildingViewOptions {
    * silently selects the cell behind it as though it had been chosen.
    */
   readonly onPick?: (pick: Pick) => void;
+  /**
+   * Called whenever the camera moves, with where it is looking (DEC-R13-7).
+   *
+   * THE VIEW REPORTS, THE PAGE DECIDES. Debouncing and writing the URL are
+   * `main.ts`'s business — this fires on every `MapControls` change, which is
+   * once per drag frame, and a view that throttled on its caller's behalf would
+   * be guessing at a policy it cannot see.
+   */
+  readonly onCameraMove?: (view: CameraView) => void;
+}
+
+/** Where the camera is aimed, in scene coordinates, and from how far. */
+export interface CameraView {
+  readonly target: ScenePoint;
+  readonly distanceM: number;
 }
 
 export class BuildingView {
@@ -315,7 +336,24 @@ export class BuildingView {
    * HELD RATHER THAN CLOSED OVER, so a second order replaces the first instead
    * of running two walks against one marker — and so `dispose()` can drop it.
    */
-  private walk: { path: readonly ScenePoint[]; startedAt: number } | undefined;
+  /**
+   * The walk in progress: the exact path, when it began, and the BODY on it.
+   *
+   * `follower` is what the user actually sees (DEC-R13-3/4): the drawn polyline
+   * keeps showing the planner's own hex centres, while the agent moves as a mass
+   * accelerating towards a target that slides along them. `lastFrameAt` is held
+   * because the follower is integrated per elapsed second rather than per frame
+   * — a rAF-counted step would make the motion depend on the display's refresh
+   * rate, which is the failure `agent-follower.test.ts` pins directly.
+   */
+  private walk:
+    | {
+        path: readonly ScenePoint[];
+        startedAt: number;
+        lastFrameAt: number;
+        follower: Follower;
+      }
+    | undefined;
   /** The affordance grid, kept separate so `clear()` does not drop it. */
   private cellMesh: THREE.Mesh | undefined;
   /** The outline-treated cells' boundaries (W13). Lifecycle follows the grid. */
@@ -663,6 +701,11 @@ export class BuildingView {
       // `PMREMGenerator.fromScene` on every drag — exactly the per-frame
       // main-thread cost DEC-R3-9's on-demand renderer exists to avoid.
       this.requestFrame();
+      // WHERE THE CAMERA IS LOOKING, reported raw (DEC-R13-7). The ninth session
+      // twice could not point at a finding — "wüsste ich nicht, wie ich dir das
+      // irgendwie sinnvoll als Testbereich nennen kann" — and this is the
+      // observable that fixes it. Unthrottled on purpose; see `onCameraMove`.
+      options.onCameraMove?.(this.cameraView());
     });
 
     // Picking on `pointerup` after a still pointer, not on `click`: MapControls
@@ -1637,7 +1680,17 @@ export class BuildingView {
 
     this.agent ??= this.makeAgent();
     this.scene.add(this.agent);
-    this.walk = { path, startedAt: performance.now() };
+    const startedAt = performance.now();
+    // THE FOLLOWER STARTS ON THE PATH, not wherever the agent was standing. A
+    // new route always begins at the agent's own cell (`main.ts` plans from
+    // `agentAt()`), so seeding it here costs nothing and guarantees the first
+    // frame cannot show the body sprinting in from a stale position.
+    this.walk = {
+      path,
+      startedAt,
+      lastFrameAt: startedAt,
+      follower: followerAt(path[0]!),
+    };
     this.publishRoute(path);
     this.requestFrame();
   }
@@ -1734,6 +1787,40 @@ export class BuildingView {
     return { x, y: y - AGENT_HEIGHT_M / 2, z };
   }
 
+  /** Where the camera is aimed, and from how far away. */
+  cameraView(): CameraView {
+    const { target } = this.controls;
+    return {
+      target: { x: target.x, y: target.y, z: target.z },
+      distanceM: this.camera.position.distanceTo(target),
+    };
+  }
+
+  /**
+   * Aims the camera at `target` from `distanceM`, keeping its direction
+   * (DEC-R13-7, the read side).
+   *
+   * TRANSLATION THEN DOLLY, in that order and both relative — the same
+   * discipline `recentreOn` exists to enforce. Recomputing the camera from a
+   * distance and two angles would put the target in the right place and quietly
+   * re-derive the ORIENTATION, which is precisely the pose data DEC-R13-7 chose
+   * not to store: a restored link should look at the right place from the
+   * default angle, not from a guessed one.
+   */
+  lookAtFrom(target: ScenePoint, distanceM: number): void {
+    recentreOn(this.camera, this.controls, target);
+    const away = this.camera.position.clone().sub(this.controls.target);
+    const current = away.length();
+    // A degenerate offset has no direction to scale; leaving the camera where
+    // the recentre put it is better than dividing by zero into `NaN`.
+    if (current > 1e-6 && distanceM > 0) {
+      away.multiplyScalar(distanceM / current);
+      this.camera.position.copy(this.controls.target).add(away);
+      this.controls.update();
+    }
+    this.requestFrame();
+  }
+
   /** The agent's marker: one cone, built once and reused across routes. */
   private makeAgent(): THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
     return new THREE.Mesh(
@@ -1762,28 +1849,46 @@ export class BuildingView {
   private advanceWalk(): boolean {
     const walk = this.walk;
     if (walk === undefined) return false;
-    const walkedM =
-      ((performance.now() - walk.startedAt) / 1000) * AGENT_SPEED_MPS;
+    const now = performance.now();
+    const walkedM = ((now - walk.startedAt) / 1000) * AGENT_SPEED_MPS;
     const at = pointAlong(walk.path, walkedM);
     if (at === undefined) {
       this.walk = undefined;
       return false;
     }
+
+    // THE TARGET IS STILL THE EXACT PATH (DEC-R13-3). What changed in round 13
+    // is that the agent no longer IS the target: it accelerates towards it, so
+    // the staircase the planner produced stays visible in the drawn line and
+    // out of the motion. `agent-follower.ts` holds the physics and the property
+    // that keeps the smoothed curve inside the corridor the planner cleared.
+    walk.follower = stepFollower(
+      walk.follower,
+      at.point,
+      (now - walk.lastFrameAt) / 1000,
+    );
+    walk.lastFrameAt = now;
+    const shown = walk.follower.position;
+
     // The path sits ON the ground; the cone's origin is its centre, so half its
     // height puts its tip up and its base on the route rather than sunk in it.
-    this.agent?.position.set(
-      at.point.x,
-      at.point.y + AGENT_HEIGHT_M / 2,
-      at.point.z,
-    );
+    this.agent?.position.set(shown.x, shown.y + AGENT_HEIGHT_M / 2, shown.z);
     // Published for the e2e, in the family `data-frame-origin` started: without
     // it, "the agent did not teleport back to the start on a second order" has
     // no machine-readable definition. Whole metres — the assertion is about
     // tens of metres of jump, and full precision would churn the attribute on
     // every frame of the walk.
     this.container.dataset["agent"] =
-      `${Math.round(at.point.x)},${Math.round(at.point.z)}`;
+      `${Math.round(shown.x)},${Math.round(shown.z)}`;
     if (!at.done) return true;
+    // ARRIVAL IS BOTH HALVES NOW, and that is not a detail. The path is
+    // consumed a good two metres before the BODY gets there — that gap is the
+    // smoothing — so stopping on `at.done` alone would freeze the agent short
+    // of its destination and leave the drawn line ending somewhere it never
+    // reached. Keeping the frames coming until it settles is also what keeps
+    // DEC-R11-15's contract honest: `false` here still means "nothing is
+    // moving", which is the only thing that lets the scene go quiet.
+    if (!followerSettled(walk.follower, at.point)) return true;
     this.walk = undefined;
     return false;
   }

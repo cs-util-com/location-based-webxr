@@ -26,12 +26,22 @@
  * @see main.ts.md
  */
 
-import { TERRARIUM_ATTRIBUTION, enuFrameAt } from "gps-plus-slam-osm";
+import { cellToLatLng } from "h3-js";
+import {
+  TERRARIUM_ATTRIBUTION,
+  enuFrameAt,
+  type LatLng,
+} from "gps-plus-slam-osm";
 
 import { pickDefaultCategory } from "./default-category.js";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
-import { browserPlaceUrl, writePlace } from "./url-state.js";
+import {
+  browserPlaceUrl,
+  parseCameraTarget,
+  writeCamera,
+  writePlace,
+} from "./url-state.js";
 import { describeDrawCost } from "./draw-cost.js";
 import { geoEventButtonLabel } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
@@ -64,7 +74,9 @@ import {
   BuildingView,
   TERRAIN_SPACING_M,
   type BuildingStats,
+  type CameraView,
 } from "./building-view.js";
+import { throttle } from "./throttle.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
 import { createAgentCycle } from "./agent-cycle.js";
 import { createExplainCycle } from "./explain-cycle.js";
@@ -218,15 +230,47 @@ async function main(): Promise<void> {
    * until then, so a click during boot is dropped rather than crashing.
    */
   let orderAgentTo: (point: ScenePoint) => void = () => undefined;
+  /**
+   * The same order, aimed at a drawn cell (stage 3, DEC-R13-6).
+   *
+   * A SECOND ENTRY POINT RATHER THAN A CONVERSION AT THE CALL SITE, because a
+   * cell already knows where it is: `pick.ts` hands back the H3 index, and
+   * making the caller manufacture scene coordinates from it — only for
+   * `orderAgent` to convert them back to lat/lng — would put two lossy steps
+   * either side of a value that was already correct.
+   */
+  let orderAgentToCell: (cell: string) => void = () => undefined;
+
+  /**
+   * Writes where the camera is looking into the URL (DEC-R13-7).
+   *
+   * A FORWARD REFERENCE like `orderAgentTo`: the view is built before the scene
+   * anchor it needs to convert scene coordinates into lat/lng. A no-op until
+   * then, so a drag during boot is dropped rather than crashing.
+   */
+  let reportCameraView: (view: CameraView) => void = () => undefined;
 
   const buildingView = new BuildingView({
     container: el("scene"),
+    onCameraMove: (view) => reportCameraView(view),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
     // does not know, and must not know, which view the selection came from. A POI
     // selection is a different kind of answer and gets its own action (W12).
     onPick: (picked) => {
       if (picked.kind === "cell") {
         store.dispatch(actions.cellSelected(picked.cell));
+        // AND IT ORDERS (stage 3, DEC-R13-6). Before this, a cell hit returned
+        // from `pick.ts` and stopped here, so wherever the grid was drawn the
+        // agent could not be sent — masked only by the grid being off by
+        // default and covering ~250 m, and a real blocker the moment coverage
+        // grows. The rejected alternatives were a modifier split (clean, but it
+        // hides inspection behind a gesture touch does not have) and making
+        // cells unclickable in 3D (removes a feature that works).
+        //
+        // Accepted cost, stated: every inspection click also moves the agent
+        // and re-plans the route. The modifier split is the escape hatch if the
+        // next session finds that annoying.
+        orderAgentToCell(picked.cell);
       } else if (picked.kind === "region") {
         // Same action a 2D region click dispatches, for the same reason a cell
         // selection is shared: the panel must not know which view produced it.
@@ -612,15 +656,77 @@ async function main(): Promise<void> {
     // and the locate control already use.
     report: (message) => store.dispatch(actions.nonFatalError(message)),
   });
-  const orderAgent = latestOnly(async (point: ScenePoint) => {
+  // ONE `latestOnly` CHANNEL FOR EVERY WAY OF ORDERING (stage 3, DEC-R13-6).
+  // A cell click and a ground click are the same intent — "go there" — so they
+  // must supersede each other; two wrappers would let a cell order and a ground
+  // order both be in flight, and the loser would draw its route over the winner.
+  // Taking a `LatLng` rather than a `ScenePoint` is what makes that possible:
+  // the cell branch already knows a position and would otherwise have to invent
+  // scene coordinates only for this function to convert them straight back.
+  const orderAgent = latestOnly(async (destination: LatLng) => {
+    await planAgentRoute(destination);
+  });
+  orderAgentTo = (point) => {
     // SCENE → ENU → LAT/LNG, through the anchor's own frame. `z` is negated
     // because the scene puts north at `-z`; doing it here rather than in
     // `pick.ts` keeps that module free of the frame, which is re-taken on a
     // teleport and would go stale in a second copy.
     const frame = enuFrameAt(anchors.origin);
-    await planAgentRoute(frame.toLatLng({ x: point.x, y: -point.z }));
-  });
-  orderAgentTo = (point) => void orderAgent(point);
+    void orderAgent(frame.toLatLng({ x: point.x, y: -point.z }));
+  };
+  /**
+   * How often the moving camera may rewrite the URL.
+   *
+   * A SAMPLE INTERVAL, NOT A QUIET PERIOD, and that distinction was learned the
+   * hard way: this was a 400 ms debounce first, and it never fired once in a
+   * real browser. `enableDamping` keeps easing the camera after the pointer is
+   * released, and this view renders on demand — so each `change` schedules a
+   * frame, the frame updates the controls, and damping fires `change` again,
+   * measured at about one event per 200 ms until it converged. A deadline that
+   * moved with each event never arrived. See `throttle.ts`.
+   *
+   * 400 ms is far longer than a frame and far shorter than the pause before
+   * anyone reaches for the address bar, so a pan writes a handful of times while
+   * it happens and is correct the moment it stops.
+   */
+  const CAMERA_URL_SAMPLE_MS = 400;
+
+  const writeCameraView = throttle((view: CameraView) => {
+    // SCENE → ENU → LAT/LNG, the same conversion `orderAgentTo` makes and for
+    // the same reason: `z` is negated because the scene puts north at `-z`, and
+    // doing it here keeps the view free of a frame that is re-taken on every
+    // teleport. THAT CONVERSION IS ALSO WHAT MAKES THIS SAFE — DEC-R12-5
+    // rejected a camera pose because one recorded against a scene anchor is
+    // meaningless after a re-anchor, and a lat/lng target has no anchor in it.
+    const frame = enuFrameAt(anchors.origin);
+    writeCamera(placeUrl, {
+      target: frame.toLatLng({ x: view.target.x, y: -view.target.z }),
+      distanceM: view.distanceM,
+    });
+  }, CAMERA_URL_SAMPLE_MS);
+  reportCameraView = (view) => writeCameraView(view);
+
+  // AND THE READ SIDE, WHICH IS THE HALF MOST EASILY FORGOTTEN: a link nothing
+  // honours is worse than no link. Applied once, at boot, after the anchor
+  // exists — a later application would fight the user's own dragging.
+  const startCamera = parseCameraTarget(window.location.search);
+  if (startCamera !== undefined) {
+    const enu = enuFrameAt(anchors.origin).toEnu(startCamera.target);
+    buildingView.lookAtFrom(
+      { x: enu.x, y: 0, z: -enu.y },
+      startCamera.distanceM,
+    );
+  }
+
+  orderAgentToCell = (cell) => {
+    // THE CELL CENTRE, NOT THE RAYCAST POINT (DEC-R13-6). The cell is what the
+    // user aimed at, and the route is planned in cells anyway — using the exact
+    // hit would quantise to the same cell in the common case and to the
+    // neighbour at a grazing angle, which is a different destination than the
+    // one the details panel just opened on.
+    const [lat, lng] = cellToLatLng(cell);
+    void orderAgent({ lat, lng });
+  };
 
   const geoEventPicker = new GeoEventPicker({
     container: el("geo-event-picker"),

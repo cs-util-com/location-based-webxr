@@ -74,6 +74,7 @@ import {
 } from "gps-plus-slam-app-framework/osm-bridge";
 
 import { planRouteWithIndex } from "../agent-route.js";
+import { walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { DemoPipeline } from "../demo-pipeline.js";
 import { describeTerrain } from "../terrain-note.js";
@@ -781,6 +782,16 @@ async function handle<K extends WorkerCallKind>(
       return planRouteWithIndex(index, from, to, {
         frame: enuFrameAt(frameOrigin),
         field: fieldFor(terrain),
+        // THE SCORE REACHES THE PLANNER HERE, AND NOWHERE ELSE (DEC-R13-1).
+        // It is read from the same pipeline the `explain` handler reads, in the
+        // same worker the route is already planned in, so **no new payload
+        // crosses the boundary** — which is the whole reason stage 1 is a
+        // one-file change rather than a protocol change.
+        //
+        // `walkable` BY NAME, not `snapshot.category` (DEC-R13-11): the demo
+        // opens on `battleArea`, so reading the selected category would route
+        // the shipped default by battle-area suitability.
+        scoreFor: (cell) => walkableScoreOf(pipeline.scoreFor(cell)?.scores),
       });
     }
 

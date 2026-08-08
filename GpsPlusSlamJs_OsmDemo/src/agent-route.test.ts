@@ -17,9 +17,11 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { cellToLatLng } from "h3-js";
 import { enuFrameAt, type OsmFeature } from "gps-plus-slam-osm";
 
 import { planRoute } from "./agent-route.js";
+import { NEUTRAL_SCORE, PATH_SCORE } from "./route-penalty.js";
 
 const HOME = { lat: 50.9413, lng: 6.9583 };
 const FRAME = enuFrameAt(HOME);
@@ -165,5 +167,153 @@ describe("planRoute", () => {
     expect(
       planRoute([], west, east, { ...flat, field: { heightAt: () => NaN } }),
     ).toBeUndefined();
+  });
+});
+
+/**
+ * Stage 1 of round 13: the route is cheapest in METRES with a score penalty,
+ * not shortest in STEPS (DEC-R13-1, DEC-R13-11 … DEC-R13-13).
+ *
+ * Why these tests matter:
+ * The ninth session reported two things — "he does not take the shortest way"
+ * and "he does not prefer the paths" — and both came from the same line: the
+ * search was breadth-first, so every `gridDisk` neighbour cost 1 whatever
+ * direction it lay in. A staircase and a straight run tie, and the winner is
+ * decided by sort order. These tests pin the two halves separately, because a
+ * cost model can fix either one alone and look half-right on screen.
+ */
+describe("planRoute, weighted by the walkable score", () => {
+  const west = { lat: HOME.lat, lng: HOME.lng - STEP * 30 };
+  const east = { lat: HOME.lat, lng: HOME.lng + STEP * 30 };
+
+  /**
+   * THE ZIGZAG HALF (R13-2), and it needs no scores at all. On open ground with
+   * one uniform penalty the cheapest route in metres IS the straight line, where
+   * breadth-first returned whichever staircase its expansion order reached
+   * first.
+   *
+   * MEASURED BETWEEN THE ROUTE'S OWN ENDPOINTS, not between the requested
+   * points: the route starts and ends at cell CENTRES, and folding that
+   * quantisation into the ratio would loosen the bound by several metres of
+   * nothing to do with the search.
+   *
+   * THE BOUND IS THE LATTICE'S OWN FLOOR, which is what makes this an assertion
+   * rather than a sighting. A hex grid has no due-east neighbour, so travelling
+   * east means alternating between two axes 60° apart, and even a perfect
+   * straight line costs `1 / cos(30°) = 1.155` in path length. 1.17 leaves room
+   * for one cell of rounding and nothing else — a route with a genuine detour in
+   * it cannot pass.
+   */
+  it("walks a near-straight line on open ground, where BFS returned a staircase", () => {
+    const route = planRoute([], west, east, flat);
+
+    expect(route).toBeDefined();
+    const spanned = metresBetween(
+      route![0]!.position,
+      route![route!.length - 1]!.position,
+    );
+    expect(lengthOf(route!)).toBeLessThan(spanned * 1.17);
+  });
+
+  /**
+   * THE PATH-PREFERENCE HALF (R13-1). A lane of high-scoring cells runs north
+   * of the direct line; the agent should bulge onto it. Scores are supplied
+   * through the injected `scoreFor`, which is exactly how the worker supplies
+   * them from `DemoPipeline` — no new payload crosses the boundary.
+   */
+  it("detours onto a lane of high-scoring cells", () => {
+    const laneLat = HOME.lat + STEP * 8;
+    const scoreFor = (cell: string): number | undefined => {
+      const [lat] = cellToLatLng(cell);
+      return Math.abs(lat - laneLat) < STEP * 3 ? PATH_SCORE : NEUTRAL_SCORE;
+    };
+
+    const plain = planRoute([], west, east, flat)!;
+    const onLane = planRoute([], west, east, { ...flat, scoreFor })!;
+
+    const northOf = (route: typeof plain) =>
+      Math.max(...route.map((point) => point.position.lat));
+    expect(northOf(onLane)).toBeGreaterThan(northOf(plain));
+    // AND IT ACTUALLY REACHED THE LANE, rather than merely leaning north — a
+    // one-cell lean would satisfy the comparison above while proving nothing.
+    expect(northOf(onLane)).toBeGreaterThan(laneLat - STEP * 3);
+  });
+
+  /**
+   * THE OTHER DIRECTION OF THE SAME TRADE-OFF, and the pair is what pins the
+   * tunable rather than one side of it. The same lane placed far enough away
+   * costs more to reach than it saves, so the agent ignores it — an NPC that
+   * chases any path at any distance is as wrong as one that ignores them.
+   */
+  it("ignores a lane whose detour costs more than it saves", () => {
+    const laneLat = HOME.lat + STEP * 400;
+    const scoreFor = (cell: string): number | undefined => {
+      const [lat] = cellToLatLng(cell);
+      return Math.abs(lat - laneLat) < STEP * 3 ? PATH_SCORE : NEUTRAL_SCORE;
+    };
+
+    const route = planRoute([], west, east, { ...flat, scoreFor })!;
+    const northernmost = Math.max(...route.map((point) => point.position.lat));
+    expect(northernmost).toBeLessThan(laneLat - STEP * 100);
+  });
+
+  /**
+   * DEC-R13-12, AS A ROUTE RATHER THAN AS A NUMBER. `route-penalty.test.ts`
+   * pins that an unscored cell prices as neutral; this pins what that buys — the
+   * planner does not treat the edge of the scored disk as an escape hatch. With
+   * "unscored costs 1" the route would leave the scored band immediately,
+   * because every scored cell here is ordinary ground and would cost strictly
+   * more than the unknown.
+   */
+  it("does not route around the scored area to reach cheaper unknown ground", () => {
+    const bandLat = HOME.lat;
+    const scoreFor = (cell: string): number | undefined => {
+      const [lat] = cellToLatLng(cell);
+      // A band of ORDINARY scored ground along the direct line, unknown outside.
+      return Math.abs(lat - bandLat) < STEP * 10 ? NEUTRAL_SCORE : undefined;
+    };
+
+    const route = planRoute([], west, east, { ...flat, scoreFor })!;
+    const strayed = Math.max(
+      ...route.map((point) => Math.abs(point.position.lat - bandLat)),
+    );
+    expect(strayed).toBeLessThan(STEP * 10);
+  });
+
+  /**
+   * THE INVARIANT STAGE 1 MUST NOT BREAK. Barrier avoidance is what the session
+   * praised by name, and the cost model is a new reason for the search to prefer
+   * a cell — never a new reason to enter one. A tempting score on the far side
+   * of a wall must change nothing.
+   */
+  it("still goes around a wall, however good the score on the other side", () => {
+    const route = planRoute(
+      [wallWithGapAtTheNorth(HOME.lat + STEP * 60)],
+      west,
+      east,
+      { ...flat, scoreFor: () => PATH_SCORE },
+    );
+
+    expect(route).toBeDefined();
+    expect(lengthOf(route!)).toBeGreaterThan(metresBetween(west, east) * 1.5);
+  });
+
+  /**
+   * THE EXPANSION CAP AT THE SHIPPED PENALTY, and it is a real risk rather than
+   * a formality. The heuristic is unpenalised metres while edges cost
+   * metres × penalty, so the stronger the penalty the looser the guidance and
+   * the closer A\* runs to Dijkstra — and hitting `DEFAULT_ROUTE_EXPANSIONS`
+   * surfaces as `undefined`, which the UI presents as "there is no route". A
+   * too-strong tuning value would ship as an NPC that silently refuses long
+   * clicks, so raising `PATH_PREFERENCE` means re-running this.
+   */
+  it("plans a long route inside the default expansion cap", () => {
+    const far = { lat: HOME.lat + STEP * 300, lng: HOME.lng + STEP * 300 };
+    const route = planRoute([], west, far, {
+      ...flat,
+      scoreFor: (cell) => (cellToLatLng(cell)[0] > HOME.lat ? 900 : 0.2),
+    });
+
+    expect(route).toBeDefined();
   });
 });

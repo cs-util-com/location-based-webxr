@@ -378,10 +378,81 @@ test.describe("the location picker", () => {
 
     // Moving without naming a place writes COORDINATES instead, and drops the
     // stale id — a walk away from Porto must not keep claiming to be at Porto.
+    //
+    // NOT ANCHORED AT THE END SINCE STAGE 5 (DEC-R13-7): recentring the 3D view
+    // on a map click moves the camera, so the camera writer adds its own keys.
+    // The assertion that matters is that the PLACE keys are right and the site
+    // id is gone, which is what the two checks below say separately.
     await page.locator("#map").click({ position: { x: 120, y: 120 } });
     await expect
       .poll(() => new URL(page.url()).search)
-      .toMatch(/^\?lat=-?\d+\.\d{5}&lng=-?\d+\.\d{5}$/);
+      .toMatch(/^\?lat=-?\d+\.\d{5}&lng=-?\d+\.\d{5}/);
+    expect(new URL(page.url()).searchParams.get("site")).toBeNull();
+  });
+
+  test("remembers where the camera was looking, so a finding can be linked (DEC-R13-7)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. This partially reverses DEC-R12-5, and the reason
+    // is a workflow rather than a feature: twice in the ninth session a finding
+    // could not be pointed at — "wüsste ich nicht, wie ich dir das irgendwie
+    // sinnvoll als Testbereich nennen kann". A written parameter nothing reads
+    // back would leave that exactly as broken while looking fixed, so the
+    // assertion is the round trip through a real reload, as for the place above.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+
+    // A DRAG, not a click: panning is what the session was doing when it wanted
+    // the URL to remember. MapControls pans with the primary button.
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.35, {
+      steps: 12,
+    });
+    await page.mouse.up();
+
+    // AFTER THE DEBOUNCE, which is the point of the poll rather than a read:
+    // the write is deliberately not per-frame (400 ms), and asserting
+    // immediately would pass only by accident.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("clat"))
+      .not.toBeNull();
+    const written = new URL(page.url()).searchParams;
+    const clat = Number(written.get("clat"));
+    const clng = Number(written.get("clng"));
+    expect(Number.isFinite(clat)).toBe(true);
+    expect(Number.isFinite(clng)).toBe(true);
+    expect(Number(written.get("cdist"))).toBeGreaterThan(0);
+
+    // THE ROUND TRIP. Reloading must aim the camera back at the same place —
+    // observed through the URL the restored view writes for itself, which is
+    // the only machine-readable statement of where it ended up looking.
+    await page.reload();
+    await waitForRefresh(page);
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(
+      box.x + box.width * 0.5 + 2,
+      box.y + box.height * 0.5,
+      {
+        steps: 2,
+      },
+    );
+    await page.mouse.up();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("clat"))
+      .not.toBeNull();
+    const back = new URL(page.url()).searchParams;
+    // A nudge of two pixels, so the target must land within a few metres of
+    // where it was. Five decimals is ~1.1 m, so 0.001° is a generous ~110 m
+    // bound that still fails outright if the restore did nothing.
+    expect(Math.abs(Number(back.get("clat")) - clat)).toBeLessThan(0.001);
+    expect(Math.abs(Number(back.get("clng")) - clng)).toBeLessThan(0.001);
   });
 });
 

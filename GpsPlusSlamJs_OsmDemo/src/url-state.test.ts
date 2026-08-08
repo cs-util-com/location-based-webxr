@@ -23,7 +23,14 @@ import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 
 import { parseStartPosition } from "./start-position.js";
-import { browserPlaceUrl, placeQuery, writePlace } from "./url-state.js";
+import {
+  browserPlaceUrl,
+  cameraQuery,
+  parseCameraTarget,
+  placeQuery,
+  writeCamera,
+  writePlace,
+} from "./url-state.js";
 
 const TOWER_BRIDGE = { lat: 51.5055, lng: -0.0754 };
 
@@ -185,5 +192,145 @@ describe("browserPlaceUrl", () => {
 
   it("reports the current query, so `writePlace` can compare against it", () => {
     expect(browserPlaceUrl(fakeWindow("?debug=1")).search).toBe("?debug=1");
+  });
+});
+
+/**
+ * The camera target (DEC-R13-7).
+ *
+ * Why these tests matter:
+ * This partially reverses DEC-R12-5, which rejected the camera pose because "a
+ * pose recorded against one scene anchor is meaningless after a re-anchor". A
+ * target in lat/lng is anchor-independent by construction, so that trap does not
+ * apply to THIS encoding — but two new ones do, and both are silent:
+ *
+ * - **the write with no read.** A link nothing honours is worse than no link,
+ *   and the round trip is the only thing that catches it. Same load-bearing
+ *   property the place round trip above has, for the same reason.
+ * - **two writers, one query string.** `writePlace` and `writeCamera` both go
+ *   through `history.replaceState`, so whichever runs last decides the WHOLE
+ *   query. If either rebuilt it from scratch the other's keys would vanish, and
+ *   the failure would look like "sharing a link sometimes loses the site".
+ */
+describe("the camera target in the URL", () => {
+  const LOOKING_AT = { target: TOWER_BRIDGE, distanceM: 420 };
+
+  it("writes the target and the distance under their own keys", () => {
+    expect(cameraQuery("", LOOKING_AT)).toBe(
+      "?clat=51.50550&clng=-0.07540&cdist=420",
+    );
+  });
+
+  /**
+   * NOT `lat`/`lng`, AND THIS IS THE TRAP WORTH A TEST. `parseStartPosition`
+   * gives that pair priority over `?site=`, so a camera target written under
+   * those names would silently teleport the USER to wherever the camera happened
+   * to be pointing.
+   */
+  it("does not disturb where the user is", () => {
+    const query = cameraQuery("?site=london-tower-bridge", LOOKING_AT);
+    expect(query).toContain("site=london-tower-bridge");
+    expect(parseStartPosition(query)).toEqual(
+      parseStartPosition("?site=london-tower-bridge"),
+    );
+  });
+
+  it("round-trips through parseCameraTarget", () => {
+    expect(parseCameraTarget(cameraQuery("", LOOKING_AT))).toEqual({
+      target: { lat: 51.5055, lng: -0.0754 },
+      distanceM: 420,
+    });
+  });
+
+  it("round-trips arbitrary viewpoints at the written precision", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -85, max: 85, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        fc.double({ min: 1, max: 5000, noNaN: true }),
+        (lat, lng, distanceM) => {
+          const written = cameraQuery("", {
+            target: { lat, lng },
+            distanceM,
+          });
+          const read = parseCameraTarget(written)!;
+          expect(read.target.lat).toBeCloseTo(lat, 4);
+          expect(read.target.lng).toBeCloseTo(lng, 4);
+          expect(read.distanceM).toBeCloseTo(distanceM, -0.5);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  /**
+   * BOTH WRITERS, IN BOTH ORDERS. This is the one place stage 5 can silently
+   * break DEC-R12-5's shipped behaviour, so neither ordering may lose the
+   * other's keys.
+   */
+  it("survives a place write, and leaves one intact in turn", () => {
+    const afterPlace = placeQuery(cameraQuery("", LOOKING_AT), {
+      position: TOWER_BRIDGE,
+      siteId: "london-tower-bridge",
+    });
+    expect(parseCameraTarget(afterPlace)).toEqual({
+      target: { lat: 51.5055, lng: -0.0754 },
+      distanceM: 420,
+    });
+    expect(afterPlace).toContain("site=london-tower-bridge");
+
+    const afterCamera = cameraQuery(
+      placeQuery("", { position: TOWER_BRIDGE, siteId: "london-tower-bridge" }),
+      LOOKING_AT,
+    );
+    expect(afterCamera).toContain("site=london-tower-bridge");
+    expect(parseCameraTarget(afterCamera)).not.toBeUndefined();
+  });
+
+  it("leaves unrelated parameters alone", () => {
+    expect(cameraQuery("?debug=1", LOOKING_AT)).toContain("debug=1");
+  });
+
+  /**
+   * `Number('')` IS `0`, NOT `NaN` — the trap `start-position.ts` documents,
+   * where an empty `?lat=&lng=` opened the demo in the Gulf of Guinea. A partial
+   * or blank camera state is not a viewpoint.
+   */
+  it("refuses a partial, blank or out-of-range viewpoint", () => {
+    expect(parseCameraTarget("")).toBeUndefined();
+    expect(parseCameraTarget("?clat=51.5&clng=-0.07")).toBeUndefined();
+    expect(parseCameraTarget("?clat=&clng=&cdist=")).toBeUndefined();
+    expect(
+      parseCameraTarget("?clat=51.5&clng=-0.07&cdist=abc"),
+    ).toBeUndefined();
+    expect(parseCameraTarget("?clat=91&clng=-0.07&cdist=420")).toBeUndefined();
+    // A camera at or behind its own target has no direction to restore.
+    expect(parseCameraTarget("?clat=51.5&clng=-0.07&cdist=0")).toBeUndefined();
+  });
+
+  /**
+   * THE GUARD IS WHAT MAKES THE DEBOUNCE SUFFICIENT: a drag settles into a
+   * position that rounds to the same five decimals long before it stops firing
+   * events, so without this the app calls the history API to write the URL it
+   * already had.
+   */
+  it("does not touch the history when nothing changed", () => {
+    const replace = vi.fn();
+    writeCamera({ search: cameraQuery("", LOOKING_AT), replace }, LOOKING_AT);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("writes when the viewpoint moved", () => {
+    const replace = vi.fn();
+    writeCamera(
+      { search: cameraQuery("", LOOKING_AT), replace },
+      {
+        ...LOOKING_AT,
+        distanceM: 900,
+      },
+    );
+    expect(replace).toHaveBeenCalledWith(
+      "?clat=51.50550&clng=-0.07540&cdist=900",
+    );
   });
 });

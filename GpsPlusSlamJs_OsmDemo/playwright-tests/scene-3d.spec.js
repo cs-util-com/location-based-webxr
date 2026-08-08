@@ -1841,5 +1841,73 @@ test.describe("the NPC agent", () => {
       // teleport this catches is the whole distance of the first route.
       expect(Math.hypot(nowX - stoodX, nowZ - stoodZ)).toBeLessThan(20);
     });
+
+    await test.step("a click on a drawn cell both opens the panel and orders", async () => {
+      // STAGE 3 (DEC-R13-6), AND BOTH HALVES HAVE TO BE ASSERTED: opening the
+      // panel alone is what shipped before, and ordering alone is the naive
+      // fix. Either one on its own passes half of this step.
+      //
+      // THE CELL LAYER IS OFF BY DEFAULT (DEC-R7b-6), which is exactly why the
+      // bug went unnoticed — so the step turns it on first, through the helper
+      // that also waits out the progressive widening. Nothing else in this test
+      // needs cells, and it runs last for that reason.
+      await enableCellLayer(page);
+
+      const panel = page.locator("#details");
+      /** Whether the route attribute moved off `was` within a worker round trip. */
+      const routeChanged = async (was) =>
+        page
+          .waitForFunction(
+            (previous) =>
+              document.querySelector("#scene")?.getAttribute("data-route") !==
+              previous,
+            was,
+            { timeout: 4000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          );
+
+      // A SWEEP, FOR THE REASON THE OLDER GRID-PICK TEST SWEEPS: the fixture's
+      // grid covers the centre of the view, but which pixel is over a CELL
+      // depends on how large a working set that run happened to score. A fixed
+      // point landed on a region slab instead, which opens the panel and orders
+      // nothing — so a single click would fail intermittently, and a weaker
+      // assertion would pass on the wrong thing.
+      //
+      // THE PAIR IS SELF-DISCRIMINATING, which is what makes this a test of
+      // DEC-R13-6 rather than of two unrelated facts:
+      //
+      // - a REGION click opens the panel and leaves the route alone;
+      // - a GROUND click orders the agent and opens no panel;
+      // - only a CELL does both, which is exactly the behaviour this stage adds.
+      //
+      // Opening the panel alone is what shipped BEFORE this stage, and ordering
+      // alone is the naive fix, so either half on its own proves nothing.
+      const sweep = async () => {
+        for (const [dx, dy] of [
+          [0, 0],
+          [-40, 20],
+          [40, 20],
+          [0, 60],
+          [-80, 60],
+          [0, 120],
+          [-60, 140],
+          [60, 140],
+        ]) {
+          const before = await scene.getAttribute("data-route");
+          await page.mouse.click(
+            box.x + box.width / 2 + dx,
+            box.y + box.height / 2 + dy,
+          );
+          if (!(await panel.isVisible())) continue;
+          if (await routeChanged(before)) return true;
+        }
+        return false;
+      };
+      await expect.poll(sweep, { timeout: 40_000 }).toBe(true);
+      await expect(panel).toBeVisible();
+    });
   });
 });

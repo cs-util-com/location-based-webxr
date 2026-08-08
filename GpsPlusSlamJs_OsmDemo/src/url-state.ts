@@ -53,8 +53,39 @@ export interface PlaceInUrl {
  */
 const POSITION_DECIMALS = 5;
 
-/** The keys this module owns. Everything else in the query is left untouched. */
+/**
+ * The keys the PLACE writer owns. Everything else in the query is left
+ * untouched — including {@link CAMERA_KEYS}, which is what lets the two writers
+ * share a query string without either normalising the other away.
+ */
 const OWNED_KEYS = ["lat", "lng", "site"] as const;
+
+/**
+ * The keys the CAMERA writer owns (DEC-R13-7).
+ *
+ * **DELIBERATELY NOT `lat`/`lng`.** `parseStartPosition` gives that pair
+ * priority over `?site=`, so a camera target written under those names would
+ * silently move the USER — a viewpoint and a position are different facts and
+ * the URL has to say which is which.
+ */
+const CAMERA_KEYS = ["clat", "clng", "cdist"] as const;
+
+/** Where the camera is looking, and from how far away. */
+export interface CameraInUrl {
+  /** The point the camera is aimed at, on the ground. */
+  readonly target: LatLng;
+  /** Metres from the camera to that point. */
+  readonly distanceM: number;
+}
+
+/**
+ * Decimals written for the camera distance.
+ *
+ * ZERO — metres. The distance exists so a reloaded link is zoomed roughly where
+ * the reporter was, and sub-metre precision on a number that is hundreds of
+ * metres large would only churn the URL.
+ */
+const DISTANCE_DECIMALS = 0;
 
 /**
  * The query string `search` should become for `place`.
@@ -94,6 +125,91 @@ export function placeQuery(search: string, place: PlaceInUrl): string {
  */
 function format(value: number): string {
   return (value + 0).toFixed(POSITION_DECIMALS);
+}
+
+/**
+ * The query string `search` should become for `camera` (DEC-R13-7).
+ *
+ * **A PARTIAL POSE, AND THE PARTIALITY IS THE POINT.** DEC-R12-5 rejected the
+ * camera pose outright, because "a pose recorded against one scene anchor is
+ * meaningless after a re-anchor" — and it was right about that. A target in
+ * lat/lng is **anchor-independent by construction**, so the trap does not apply
+ * to this encoding, which is what makes DEC-R13-7 a safe partial reversal rather
+ * than a change of mind. Orientation stays out: it is the noisiest thing to
+ * sample and the part that spins while dragging.
+ *
+ * The argument DEC-R12-5 did not weigh is that the URL is the REPORTING TOOL for
+ * these sessions. Twice in the ninth session a finding could not be pointed at —
+ * "wüsste ich nicht, wie ich dir das irgendwie sinnvoll als Testbereich nennen
+ * kann".
+ *
+ * **IT PRESERVES EVERYTHING IT DOES NOT OWN**, exactly as {@link placeQuery}
+ * does, and that is not politeness: both writers go through
+ * `history.replaceState`, so whichever runs last decides the whole query. A
+ * writer that rebuilt the string from scratch would erase the other's keys.
+ */
+export function cameraQuery(search: string, camera: CameraInUrl): string {
+  const params = new URLSearchParams(search);
+  for (const key of CAMERA_KEYS) params.delete(key);
+
+  params.set("clat", format(camera.target.lat));
+  params.set("clng", format(camera.target.lng));
+  params.set("cdist", camera.distanceM.toFixed(DISTANCE_DECIMALS));
+
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
+}
+
+/**
+ * Writes `camera` into `url`, and does nothing when it is already there.
+ *
+ * THE GUARD IS WHAT MAKES THE DEBOUNCE SUFFICIENT. A drag settles into a
+ * position that rounds to the same five decimals long before it stops
+ * generating events, so without this the app would call the history API
+ * repeatedly to write the URL it already had — the same reason
+ * {@link writePlace} compares rather than assigns.
+ */
+export function writeCamera(url: PlaceUrl, camera: CameraInUrl): void {
+  const next = cameraQuery(url.search, camera);
+  if (next === url.search) return;
+  url.replace(next);
+}
+
+/**
+ * The camera target in a query string, or `undefined` when it is absent or
+ * unusable.
+ *
+ * THE READ SIDE LIVES HERE, next to its writer, rather than in
+ * `start-position.ts`. That module answers one question — where does the demo
+ * open — and a viewpoint is not a position: folding this into
+ * `parseStartPosition` would put two different facts behind one return value.
+ * The round trip is what the test pins.
+ *
+ * **`Number('')` IS `0`, NOT `NaN`**, so emptiness is checked before finiteness
+ * — the same trap `start-position.ts` documents, where `?lat=&lng=` opened the
+ * demo in the Gulf of Guinea. All three parameters are required together: a
+ * partial camera state is not a viewpoint.
+ */
+export function parseCameraTarget(search: string): CameraInUrl | undefined {
+  const params = new URLSearchParams(search);
+  const lat = numberIn(params, "clat");
+  const lng = numberIn(params, "clng");
+  const distanceM = numberIn(params, "cdist");
+  if (lat === undefined || lng === undefined || distanceM === undefined) {
+    return undefined;
+  }
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return undefined;
+  // A camera at or behind its own target has no viewing direction to restore.
+  if (distanceM <= 0) return undefined;
+  return { target: { lat, lng }, distanceM };
+}
+
+/** One finite parameter, or `undefined` if absent, blank or unusable. */
+function numberIn(params: URLSearchParams, key: string): number | undefined {
+  const raw = params.get(key);
+  if (raw === null || raw.trim() === "") return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 /** The slice of the browser's URL this module writes through. */
