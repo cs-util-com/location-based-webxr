@@ -12,8 +12,16 @@ map scored.
   into three.js objects, which is what its header always claimed it was for),
   `renderCells(mesh)`, `setTerrain(field | undefined)`,
   `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`,
-  `followRoute(path)`, `clearRoute()`, `agentAt()`.
-  Navigation is `MapControls`, attached internally; there is nothing to call.
+  `followRoute(path)`, `clearRoute()`, `agentAt()`, `cameraView()`,
+  `lookAtFrom(target, distanceM)`.
+  Navigation is `MapControls`, attached internally; there is nothing to call —
+  but the view now REPORTS it through the `onCameraMove(view)` option, fired on
+  every `change` and deliberately unthrottled, because sampling is a policy the
+  page can see and the view cannot (DEC-R13-7, `throttle.ts`).
+  - `lookAtFrom` translates then dollies, both relative, for the same reason
+    `recentreOn` exists: recomputing the camera from a distance and two angles
+    would place the target correctly and quietly re-derive the ORIENTATION —
+    which is exactly the pose data DEC-R13-7 chose not to store.
 - `TERRAIN_SPACING_M` — 12 m, the Terrarium z13 pixel pitch at this latitude.
 - `MeshLayers` and `BuildingStats` — **re-exported from `mesh-layers.ts`**, which
   owns them because it owns what they describe. `BuildingStats` is `volumes`,
@@ -39,12 +47,20 @@ map scored.
   another `change` while the camera eases, which schedules the next frame, so
   the sequence sustains itself and then stops.
   - **The walking agent is the ONE thing that schedules a frame from inside a
-    frame** (stage 4, DEC-R11-15), and it stops on its own: `advanceWalk()`
-    returns `false` the moment `route-path.ts` reports the route finished, and
-    the callback only re-arms while it returns `true`. A walk that never
-    finished would be the permanent loop this whole invariant exists against —
-    which is why `pointAlong`'s `done` is asserted as hard as its position, and
-    why the e2e's second half asserts the scene going QUIET rather than moving.
+    frame** (stage 4, DEC-R11-15), and it stops on its own: the callback only
+    re-arms while `advanceWalk()` returns `true`. A walk that never finished
+    would be the permanent loop this whole invariant exists against — which is
+    why `pointAlong`'s `done` is asserted as hard as its position, and why the
+    e2e's second half asserts the scene going QUIET rather than moving.
+    - **SINCE ROUND 13 IT TAKES TWO CONDITIONS, NOT ONE**, and the second is the
+      part a future reader most needs: `advanceWalk()` returns `false` only once
+      `pointAlong` reports `done` **AND** `followerSettled` agrees. The agent is
+      a damped body now (`agent-follower.ts`), so it is ~2.4 m behind when the
+      path is consumed — ending on `done` alone froze it short of its
+      destination, with the drawn line finishing somewhere it never reached.
+    - The invariant survives because the follower **provably settles**: a
+      property test pins that it reaches the end of any generated route, so
+      `false` still means "nothing is moving" rather than "the path ran out".
   - **`data-frames` on the container is the observable behind that.** It is a
     monotonic counter written in the same callback, and it joins the family
     `publishFrameState` started with `data-frame-origin` and

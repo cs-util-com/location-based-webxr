@@ -1,5 +1,9 @@
 /**
- * Breadth-first search over an arbitrary state space.
+ * Searches over an arbitrary state space: breadth-first, and A\*.
+ *
+ * `findStatePath` is shortest in STEPS; `findCheapestPath` is cheapest under a
+ * caller-supplied cost (DEC-R13-1). Everything below about states, keys and the
+ * `candidates`/`canEnter` split is shared by both.
  *
  * **Why this is not just "pathfinding over cells".** The first version of pass A
  * keyed its visited set by H3 cell, and review on #257 showed what that costs:

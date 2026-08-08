@@ -69,6 +69,18 @@ heuristic(s)   = metres(s, goal)
   heuristic per expansion, so an uncached `cellToLatLng` would run tens of
   thousands of times for a few hundred distinct cells. The cache lives for one
   route, so it cannot go stale against a re-anchor.
+- **A\* costs ~28 % more than the BFS on the UNREACHABLE case, and that is the
+  worst case rather than the typical one.** Profiled on the sealed-courtyard
+  fixture, where no route exists so the whole reachable set is expanded and the
+  heuristic has nothing to prune: 526 ms → 671 ms, with `canCross` going
+  20 531 → 31 254 calls. A weighted search must ask legality per improving
+  offer, where breadth-first could ask once per discovered state. The
+  `DEFAULT_ROUTE_EXPANSIONS` cap is unchanged; the timing assertion in
+  `agent-route.test.ts` was raised from 2 000 ms to 3 000 ms to match, with the
+  numbers recorded there.
+  - Where a route DOES exist the heuristic prunes and A\* is competitive or
+    better, which is why this is stated as a bound on the pathological case
+    rather than as a general slowdown.
 
 ## Invariants & assumptions
 

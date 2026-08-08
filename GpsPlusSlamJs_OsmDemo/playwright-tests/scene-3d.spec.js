@@ -1885,6 +1885,13 @@ test.describe("the NPC agent", () => {
       //
       // Opening the panel alone is what shipped BEFORE this stage, and ordering
       // alone is the naive fix, so either half on its own proves nothing.
+      // THE PANEL IS CLOSED BEFORE EVERY CLICK, and that is not tidiness
+      // (raised in review on #276). It stays open once opened, so without this
+      // a region click on one offset could leave it visible and a GROUND click
+      // on the next offset could change the route — two different clicks
+      // satisfying the two halves, which is precisely the vacuous pass this
+      // pair was written to prevent. Closing first makes "visible" mean "THIS
+      // click opened it".
       const sweep = async () => {
         for (const [dx, dy] of [
           [0, 0],
@@ -1896,6 +1903,10 @@ test.describe("the NPC agent", () => {
           [-60, 140],
           [60, 140],
         ]) {
+          if (await panel.isVisible()) {
+            await panel.locator(".panel-close").click();
+            await expect(panel).toBeHidden();
+          }
           const before = await scene.getAttribute("data-route");
           await page.mouse.click(
             box.x + box.width / 2 + dx,

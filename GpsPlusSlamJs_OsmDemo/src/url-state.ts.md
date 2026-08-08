@@ -50,9 +50,26 @@ kann"_.
   finiteness: `Number('')` is `0`, the same trap that once opened the demo in the
   Gulf of Guinea. A distance of zero or less is refused too — a camera at its own
   target has no direction to restore.
-- **The distance is written at zero decimals.** It exists so a reloaded link is
-  zoomed roughly where the reporter was; sub-metre precision on a hundreds-of-
-  metres number would only churn the URL.
+- **The distance is written as whole metres, BOUNDED AT BOTH ENDS** —
+  `MIN_DISTANCE_M = 1` to `MAX_DISTANCE_M = 2400`. It is the one field a reader
+  cannot sanity-check from its value (lat/lng have obvious ranges), and
+  `MapControls` is built without `minDistance`/`maxDistance`, so nothing
+  downstream clamps it either. Both ends are real failures, both raised in
+  review on #276:
+  - **below 1 m**, whole-metre rounding wrote `"0"`, which `parseCameraTarget`
+    then refused — a write its own reader drops, which is the worst kind of
+    round-trip hole because the URL looks fine;
+  - **beyond the far plane**, a restored camera renders an empty scene and
+    cannot recover, because the writer only fires on a `change` event the user
+    now has no visible geometry to trigger. A truncated or hand-edited link is
+    exactly what a feature built for pasting into bug reports must survive.
+  - **Clamped on write, refused on read**, and the asymmetry is deliberate: out
+    of range from the app means its own camera went somewhere odd and the useful
+    answer is the nearest sensible viewpoint; out of range in a URL means a
+    mangled link and the useful answer is to open normally.
+  - `MAX_DISTANCE_M` is **written out rather than imported from
+    `building-view.ts`**, so a pure URL parser does not depend on the 3D view and
+    through it on three.js. `url-state.test.ts` asserts it equals `FAR_PLANE_M`.
 - **Sampled by the caller, not here.** `main.ts` samples the write through
   `throttle(…, 400)` — a debounce never fires here, because damping keeps the event stream alive (see `throttle.ts`). The no-op guard is
   what makes that sufficient — a drag settles into a position that rounds to the
@@ -60,7 +77,8 @@ kann"_.
 
 ## Invariants & assumptions
 
-- **Only three keys are owned: `lat`, `lng`, `site`.** Anything else in the query survives every write. A debug flag must live through a walk, and a future parameter must not require an edit here.
+- **Each writer owns its own keys and preserves every other.** `placeQuery` owns `lat`, `lng`, `site`; `cameraQuery` owns `clat`, `clng`, `cdist`. Anything outside the writer's own set survives its writes — a debug flag must live through a walk, a future parameter must not require an edit here, and the two writers must not erase each other (they share one query string through `history.replaceState`, so whichever runs last decides all of it).
+  - **`placeQuery` deletes its keys before setting them; `cameraQuery` does not**, and that asymmetry is load-bearing rather than sloppy. The place writer has two mutually exclusive forms, so the one it did not write has to go. The camera writer always writes all three, and `URLSearchParams.set` replaces in place — deleting first would move them to the END of the query, so an unmoved camera would still produce a different string and `writeCamera`'s identity guard could not suppress the redundant history write. Raised in review on #276.
 - **`replaceState`, never `pushState`.** A walk across the map is dozens of position changes; pushing would fill the back stack so the back button undoes the walk one click at a time instead of leaving the demo. The URL tracks the current view rather than narrating how it was reached.
 - **Coordinates are written at five decimals**, matching the `toFixed(5)` in `refresh-cycle.ts`'s status message (~1.1 m). A pasted link and the line on screen therefore name the same point. This is also what makes the no-op guard in `writePlace` effective: GPS jitter below a metre produces an identical string, so the history API is not called at sample rate.
 - **The two forms are mutually exclusive in the output.** `parseStartPosition` lets `?lat=&lng=` win over `?site=`, so leaving both would parse correctly — but it would be ambiguous to the human reading the link, who is who this feature is for.

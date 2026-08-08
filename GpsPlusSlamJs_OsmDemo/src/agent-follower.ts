@@ -117,9 +117,19 @@ export function stepFollower(
   if (!Number.isFinite(dtS) || dtS <= 0) return follower;
   if (!isFinitePoint(target)) return follower;
 
+  // A NON-FINITE SMOOTH TIME FALLS BACK TO THE DEFAULT (raised in review on
+  // #276). `Math.max(1e-4, NaN)` is `NaN`, which poisons the follower's
+  // velocity permanently; `Infinity` sets `omega` to zero, so the agent never
+  // moves and `followerSettled` never agrees — and since `advanceWalk` keeps
+  // requesting frames until it does, that is the permanent rAF loop DEC-R11-15
+  // exists to prevent. This is a parameter of an exported function, so it is
+  // caller data like the other two.
+  const settleTime = Number.isFinite(smoothTimeS)
+    ? Math.max(1e-4, smoothTimeS)
+    : FOLLOWER_SMOOTH_TIME_S;
   // The undamped angular frequency of a critically damped system whose
-  // "roughly this long to arrive" is `smoothTimeS`.
-  const omega = 2 / Math.max(1e-4, smoothTimeS);
+  // "roughly this long to arrive" is `settleTime`.
+  const omega = 2 / settleTime;
   const x = omega * dtS;
   // A Padé-style approximation of `exp(-x)`, which is what makes the step
   // stable at any `dt` without calling `Math.exp` per axis per frame.

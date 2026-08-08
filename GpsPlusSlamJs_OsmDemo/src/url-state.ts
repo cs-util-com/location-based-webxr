@@ -10,16 +10,23 @@
  * whole e2e suite stands on); this is the missing half.
  *
  * WHAT GOES IN, AND WHY SO LITTLE. The position, and the site id when the user
- * picked a named place. Presentation state — category, layers, ground mode — and
- * the camera pose stay OUT (DEC-R12-5): every new control would otherwise have
- * to decide whether it belongs in a URL, an old link would silently pin choices
- * whose meaning has moved, and a pose recorded against one scene anchor is
- * meaningless after a re-anchor. The accepted cost is that a shared link lands on
- * the right place with the default presentation.
+ * picked a named place. Presentation state — category, layers, ground mode —
+ * stays OUT (DEC-R12-5): every new control would otherwise have to decide
+ * whether it belongs in a URL, and an old link would silently pin choices whose
+ * meaning has moved. The accepted cost is that a shared link lands on the right
+ * place with the default presentation.
  *
- * THIS MODULE OWNS THREE KEYS AND NOTHING ELSE. Anything already in the query
- * string survives, so a debug flag lives through a walk and a future parameter
- * needs no change here.
+ * THE CAMERA'S TARGET WENT IN LATER (DEC-R13-7), and the POSE still stays out.
+ * DEC-R12-5 rejected a pose because one recorded against a scene anchor is
+ * meaningless after a re-anchor; a target in lat/lng has no anchor in it, so
+ * that objection does not reach this encoding.
+ *
+ * TWO WRITERS, SIX KEYS, AND NEITHER TOUCHES THE OTHER'S. `placeQuery` owns
+ * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`. Anything else in
+ * the query survives both, so a debug flag lives through a walk and a future
+ * parameter needs no change here. They share one query string through
+ * `history.replaceState`, so whichever runs last decides all of it — preserving
+ * what you do not own is the whole reason that is safe.
  *
  * @see url-state.ts.md
  */
@@ -54,21 +61,13 @@ export interface PlaceInUrl {
 const POSITION_DECIMALS = 5;
 
 /**
- * The keys the PLACE writer owns. Everything else in the query is left
- * untouched — including {@link CAMERA_KEYS}, which is what lets the two writers
- * share a query string without either normalising the other away.
+ * The keys the PLACE writer owns and clears before writing.
+ *
+ * Everything else in the query is left untouched — including the camera's
+ * `clat`/`clng`/`cdist`, which is what lets the two writers share one query
+ * string without either normalising the other away.
  */
 const OWNED_KEYS = ["lat", "lng", "site"] as const;
-
-/**
- * The keys the CAMERA writer owns (DEC-R13-7).
- *
- * **DELIBERATELY NOT `lat`/`lng`.** `parseStartPosition` gives that pair
- * priority over `?site=`, so a camera target written under those names would
- * silently move the USER — a viewpoint and a position are different facts and
- * the URL has to say which is which.
- */
-const CAMERA_KEYS = ["clat", "clng", "cdist"] as const;
 
 /** Where the camera is looking, and from how far away. */
 export interface CameraInUrl {
@@ -79,13 +78,35 @@ export interface CameraInUrl {
 }
 
 /**
- * Decimals written for the camera distance.
+ * The camera distance is written as whole metres, between these bounds.
  *
- * ZERO — metres. The distance exists so a reloaded link is zoomed roughly where
- * the reporter was, and sub-metre precision on a number that is hundreds of
- * metres large would only churn the URL.
+ * WHOLE METRES because the distance exists so a reloaded link is zoomed roughly
+ * where the reporter was, and sub-metre precision on a hundreds-of-metres number
+ * would only churn the URL.
+ *
+ * **BOUNDED AT BOTH ENDS, AND BOTH ENDS ARE REAL** (raised in review on #276).
+ * This is the one field the reader cannot sanity-check from the value alone —
+ * lat/lng have obvious ranges and this does not — and `MapControls` is
+ * constructed without `minDistance`/`maxDistance`, so nothing downstream clamps
+ * it either.
+ *
+ * - **Below 1 m**, `toFixed(0)` writes `"0"`, which {@link parseCameraTarget}
+ *   then refuses — a write the read side silently drops, which is the worst
+ *   kind of round-trip hole because the URL looks fine.
+ * - **Beyond the far plane**, a restored camera renders an empty scene and
+ *   cannot recover: the writer only fires on a `change` event the user now has
+ *   no visible geometry to trigger. A pasted link that has been truncated or
+ *   hand-edited is exactly the case this feature exists to survive.
  */
-const DISTANCE_DECIMALS = 0;
+const MIN_DISTANCE_M = 1;
+/**
+ * The far plane, 2400 m — **written out rather than imported**, because this
+ * module is deliberately free of the 3D view: importing `FAR_PLANE_M` would
+ * make a pure URL parser depend on `building-view.ts` and, through it, on
+ * three.js. `url-state.test.ts` asserts the two agree, which is this repo's
+ * usual answer to "two values that match today with nothing saying they must".
+ */
+export const MAX_DISTANCE_M = 2400;
 
 /**
  * The query string `search` should become for `place`.
@@ -150,14 +171,46 @@ function format(value: number): string {
  */
 export function cameraQuery(search: string, camera: CameraInUrl): string {
   const params = new URLSearchParams(search);
-  for (const key of CAMERA_KEYS) params.delete(key);
-
+  // `clat`/`clng`/`cdist` — DELIBERATELY NOT `lat`/`lng`. `parseStartPosition`
+  // gives that pair priority over `?site=`, so a camera target written under
+  // those names would silently move the USER. A viewpoint and a position are
+  // different facts and the URL has to say which is which.
+  //
+  // NO `delete` LOOP HERE, unlike `placeQuery` (raised in review on #276).
+  // `URLSearchParams.set` replaces an existing key IN PLACE and appends a new
+  // one, while deleting first moves all three to the END of the query — so a
+  // camera that had not actually moved still produced a different string, and
+  // `writeCamera`'s identity guard could not suppress the redundant history
+  // write. `placeQuery` needs its deletes because its two forms are mutually
+  // exclusive; all three keys here are always written.
   params.set("clat", format(camera.target.lat));
   params.set("clng", format(camera.target.lng));
-  params.set("cdist", camera.distanceM.toFixed(DISTANCE_DECIMALS));
+  params.set("cdist", String(clampDistance(camera.distanceM)));
 
   const query = params.toString();
   return query === "" ? "" : `?${query}`;
+}
+
+/**
+ * The distance as whole metres inside {@link MIN_DISTANCE_M} …
+ * {@link MAX_DISTANCE_M}.
+ *
+ * CLAMPED ON THE WRITE SIDE, REFUSED ON THE READ SIDE, and the asymmetry is
+ * deliberate. A value out of range coming from the app is the app's own camera
+ * having gone somewhere odd, and the useful answer is the nearest sensible
+ * viewpoint; the same value arriving in a URL is a link that has been mangled,
+ * and the useful answer is to ignore it and open normally.
+ *
+ * A non-finite distance clamps to the minimum rather than writing `"NaN"` —
+ * this is the one place in the module with no validation behind it, since the
+ * value comes from a `Vector3.distanceTo` rather than from a user.
+ */
+function clampDistance(distanceM: number): number {
+  if (!Number.isFinite(distanceM)) return MIN_DISTANCE_M;
+  return Math.min(
+    MAX_DISTANCE_M,
+    Math.max(MIN_DISTANCE_M, Math.round(distanceM)),
+  );
 }
 
 /**
@@ -199,8 +252,11 @@ export function parseCameraTarget(search: string): CameraInUrl | undefined {
     return undefined;
   }
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return undefined;
-  // A camera at or behind its own target has no viewing direction to restore.
-  if (distanceM <= 0) return undefined;
+  // A camera at or behind its own target has no viewing direction to restore,
+  // and one beyond the far plane restores a view of NOTHING — see
+  // `MIN_DISTANCE_M`/`MAX_DISTANCE_M` for why nothing downstream catches either.
+  if (distanceM < MIN_DISTANCE_M || distanceM > MAX_DISTANCE_M)
+    return undefined;
   return { target: { lat, lng }, distanceM };
 }
 

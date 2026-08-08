@@ -23,11 +23,27 @@ None. Entry point only, loaded by `index.html`.
   geo-event was until W0, and it had a busy state, a label, a failure path and a
   missing republish, none of them covered. A **new async action belongs in a new
   cycle module**, not here.
-- **A click on open ground is the one pick that is not a selection** (stage 4,
-  DEC-R11-17). Cells, POI markers and regions dispatch to the store; ground is a
-  PLACE, so it orders the agent instead. It takes no meaning away from a click
-  that already had one — every finer claim still wins, and a click on a building
-  resolves to nothing at all.
+- **Two picks order the agent, and only one of them is purely an order**
+  (DEC-R11-17, then DEC-R13-6).
+  - **Open ground** is a PLACE rather than a thing, so it has no panel to open
+    and orders the agent instead. It takes no meaning away from a click that
+    already had one — every finer claim still wins, and a click on a building
+    resolves to nothing at all.
+  - **A cell now does BOTH** (stage 3, DEC-R13-6): it opens the details panel
+    AND sends the agent to the cell centre. Before that, a cell hit stopped at
+    the store, so wherever the grid was drawn the agent could not be ordered —
+    masked only by the grid being off by default and covering ~250 m, and a real
+    blocker the moment coverage grows.
+    - **Accepted cost, stated:** every inspection click also moves the agent and
+      re-plans the route. The escape hatch, if a session finds that annoying, is
+      the modifier split DEC-R13-6 rejected — it was rejected for hiding
+      inspection behind a gesture touch does not have.
+    - POI markers and regions still only dispatch to the store.
+  - **Both orders go through ONE `latestOnly` channel**, which is why
+    `orderAgent` takes a `LatLng` rather than a `ScenePoint`: a cell click and a
+    ground click are the same intent and must supersede each other, and the cell
+    branch already knows a position rather than having to invent scene
+    coordinates for the function to convert straight back.
   - `orderAgentTo` is a **forward reference** assigned after the worker client
     and the anchor exist, like `reportFatal`. The pick handler is declared with
     the view, which is built before both.
@@ -103,14 +119,29 @@ None. Entry point only, loaded by `index.html`.
   both — blanking a scene that is about to be mostly identical is the cost the
   mesh planner exists to avoid. The `placeChangeDeclared` flag stays demo-local
   and now only carries the ANCHORING half of the same intent.
-- **The URL is written in exactly one place: the `view.position` subscriber**
-  (DEC-R12-5, `url-state.ts`). That is where the picker, the map click and the
-  locate button converge, so one writer describes one position — writing at each
-  call site would let the site jump be overwritten by the coordinates of the same
-  jump. The picker's id rides along in `declaredSiteId`, read and cleared beside
-  `placeChangeDeclared`, so a named place writes `?site=` and travel writes
-  `?lat=&lng=`. Nothing is written at boot: a bare `/` stays bare until the user
-  actually moves.
+- **The URL has exactly TWO writers, one per fact, and each preserves the
+  other's keys** (DEC-R12-5, then DEC-R13-7; `url-state.ts`).
+  - **Where the user IS** — written in one place, the `view.position`
+    subscriber, because that is where the picker, the map click and the locate
+    button converge. Writing at each call site would let a site jump be
+    overwritten by the coordinates of the same jump. The picker's id rides along
+    in `declaredSiteId`, read and cleared beside `placeChangeDeclared`, so a
+    named place writes `?site=` and travel writes `?lat=&lng=`.
+  - **Where the CAMERA is looking** — `writeCameraView`, fed by
+    `BuildingView.onCameraMove` and sampled through `throttle.ts`. A viewpoint
+    and a position are different facts, so one writer cannot describe both.
+  - **WHY TWO WRITERS ARE SAFE HERE, when one was the rule before.** Both go
+    through `history.replaceState`, so whichever runs last decides the whole
+    query — they do not conflict only because each `*Query` function preserves
+    the keys it does not own, and because `browserPlaceUrl.search` is a LIVE
+    getter, so the second writer reads what the first just wrote. Break either
+    of those and a shared link starts losing `?site=` intermittently.
+  - **Nothing is written at boot for a bare `/`** — it stays bare until the user
+    actually moves. A URL that already carries a camera target is the exception:
+    restoring it calls `controls.update()`, which fires `change`, which
+    schedules one camera write. That write is a no-op against an unchanged
+    query, which is why `cameraQuery` updates its keys in place rather than
+    deleting and re-appending them.
 
 ## Examples
 

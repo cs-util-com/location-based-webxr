@@ -49,6 +49,12 @@ and is correct once it stops.
 - **`cancel()` exists because a timer outlives its scheduler**, and it clears the
   pending arguments as well as the timer — the same reason every listener in
   `building-view.ts` is held rather than anonymous.
+  - **Nothing calls it today, and there is nowhere to call it from** (noted in
+    review on #276): the demo's only throttled writer lives for the lifetime of
+    the page, and `BuildingView.dispose()` has no hook for a page-level
+    callback. It is tested, so it is a working affordance rather than a claimed
+    defence — a future caller with a real teardown finds the handle rather than
+    discovering it is missing.
 - **A non-finite or negative interval is clamped to 0, not rejected.** The
   failure mode of an `Infinity` interval is a URL that never updates: silent, and
   indistinguishable from the feature not being wired up.

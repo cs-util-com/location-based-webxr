@@ -23,9 +23,11 @@ import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 
 import { parseStartPosition } from "./start-position.js";
+import { FAR_PLANE_M } from "./building-view.js";
 import {
   browserPlaceUrl,
   cameraQuery,
+  MAX_DISTANCE_M,
   parseCameraTarget,
   placeQuery,
   writeCamera,
@@ -247,7 +249,10 @@ describe("the camera target in the URL", () => {
       fc.property(
         fc.double({ min: -85, max: 85, noNaN: true }),
         fc.double({ min: -179, max: 179, noNaN: true }),
-        fc.double({ min: 1, max: 5000, noNaN: true }),
+        // Bounded by what the writer can express: beyond the far plane a
+        // distance is clamped rather than round-tripped, which is the point of
+        // the clamp and is asserted separately below.
+        fc.double({ min: 1, max: MAX_DISTANCE_M, noNaN: true }),
         (lat, lng, distanceM) => {
           const written = cameraQuery("", {
             target: { lat, lng },
@@ -256,7 +261,8 @@ describe("the camera target in the URL", () => {
           const read = parseCameraTarget(written)!;
           expect(read.target.lat).toBeCloseTo(lat, 4);
           expect(read.target.lng).toBeCloseTo(lng, 4);
-          expect(read.distanceM).toBeCloseTo(distanceM, -0.5);
+          // Whole metres, so half of the last written digit.
+          expect(Math.abs(read.distanceM - distanceM)).toBeLessThanOrEqual(0.5);
         },
       ),
       { numRuns: 300 },
@@ -318,6 +324,86 @@ describe("the camera target in the URL", () => {
     const replace = vi.fn();
     writeCamera({ search: cameraQuery("", LOOKING_AT), replace }, LOOKING_AT);
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE GUARD ONLY WORKS IF THE KEYS STAY PUT (review on #276). `placeQuery`
+   * deletes its keys before setting them, because its two forms are mutually
+   * exclusive; copying that here moved all three camera keys to the END of the
+   * query on every write, so an unmoved camera still produced a different
+   * string and the identity guard could not suppress the redundant history
+   * write. `URLSearchParams.set` replaces in place, so there is nothing to
+   * delete.
+   */
+  it("updates its keys in place, so an unmoved camera rewrites nothing", () => {
+    const first = cameraQuery("?site=london-tower-bridge", LOOKING_AT);
+    expect(cameraQuery(first, LOOKING_AT)).toBe(first);
+    // And the site is still where it was, rather than shuffled to the end.
+    expect(first.indexOf("site=")).toBeLessThan(first.indexOf("clat="));
+  });
+
+  /**
+   * THE ONE FIELD A READER CANNOT SANITY-CHECK FROM ITS VALUE (review on #276).
+   * lat/lng have obvious ranges; a distance does not — and `MapControls` is
+   * built without `minDistance`/`maxDistance`, so nothing downstream clamps it
+   * either. A truncated or hand-edited link is exactly what this feature exists
+   * to survive, since its whole purpose is to be pasted into a bug report.
+   */
+  it("refuses a distance beyond the far plane, which would restore a view of nothing", () => {
+    expect(
+      parseCameraTarget(`?clat=51.5&clng=-0.07&cdist=${MAX_DISTANCE_M + 1}`),
+    ).toBeUndefined();
+    expect(
+      parseCameraTarget(`?clat=51.5&clng=-0.07&cdist=${MAX_DISTANCE_M}`),
+    ).not.toBeUndefined();
+    expect(
+      parseCameraTarget("?clat=51.5&clng=-0.07&cdist=1e9"),
+    ).toBeUndefined();
+  });
+
+  /**
+   * THE FAR PLANE IS THE BOUND, and the constant is written out rather than
+   * imported so a pure URL parser does not depend on the 3D view. That makes
+   * this the assertion that stops the two drifting — the repo's usual answer to
+   * "two values that agree today with nothing saying they must".
+   */
+  it("bounds the distance at exactly the camera's far plane", () => {
+    expect(MAX_DISTANCE_M).toBe(FAR_PLANE_M);
+  });
+
+  /**
+   * A WRITE THE READ SIDE DROPS IS THE WORST ROUND-TRIP HOLE, because the URL
+   * looks perfectly fine (review on #276). `toFixed(0)` turned any sub-metre
+   * distance into `"0"`, which `parseCameraTarget` then refused.
+   */
+  it("never writes a distance its own reader would refuse", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0.0001, max: 1e7, noNaN: true }),
+        (distanceM) => {
+          const written = cameraQuery("", {
+            target: TOWER_BRIDGE,
+            distanceM,
+          });
+          expect(parseCameraTarget(written)).not.toBeUndefined();
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  /**
+   * The write side is the one place with no validation behind it — the value
+   * comes from a `Vector3.distanceTo`, not from a user — so a non-finite
+   * distance must not reach the URL as the string `"NaN"`.
+   */
+  it("clamps rather than writing NaN", () => {
+    const written = cameraQuery("", {
+      target: TOWER_BRIDGE,
+      distanceM: Number.NaN,
+    });
+    expect(written).not.toContain("NaN");
+    expect(parseCameraTarget(written)).not.toBeUndefined();
   });
 
   it("writes when the viewpoint moved", () => {

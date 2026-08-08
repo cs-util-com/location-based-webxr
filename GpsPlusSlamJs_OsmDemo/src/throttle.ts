@@ -41,10 +41,15 @@ export interface Throttled<A extends readonly unknown[]> {
   /**
    * Drops any pending call.
    *
-   * Held because a timer outlives the thing that scheduled it: a view disposed
-   * mid-pan would otherwise fire once more against a torn-down page, which is
-   * the same reason every listener in `building-view.ts` is kept rather than
-   * anonymous.
+   * **NOTHING CALLS THIS TODAY, and the honest reason is that there is nowhere
+   * to call it from** (noted in review on #276): the demo's only throttled
+   * writer lives for the lifetime of the page, and `BuildingView.dispose()` has
+   * no hook for a page-level callback. It exists because a timer outlives the
+   * thing that scheduled it — the same reason every listener in
+   * `building-view.ts` is held rather than anonymous — so a future caller with a
+   * real teardown has the handle it needs rather than discovering it is missing.
+   *
+   * It is tested, so it is a working affordance rather than a claim.
    */
   cancel(): void;
 }

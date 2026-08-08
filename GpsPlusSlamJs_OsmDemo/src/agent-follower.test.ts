@@ -261,6 +261,26 @@ describe("stepFollower", () => {
    * integrator poisons the follower's velocity permanently — the agent would
    * never move again, with nothing on screen to say why.
    */
+  /**
+   * A NON-FINITE SMOOTH TIME FALLS BACK RATHER THAN POISONING (review on #276).
+   * `NaN` propagates into the velocity for ever; `Infinity` makes `omega` zero,
+   * so the agent never moves and `followerSettled` never agrees — and since
+   * `advanceWalk` keeps requesting frames until it does, that is exactly the
+   * permanent rAF loop DEC-R11-15 exists to prevent. It is a parameter of an
+   * exported function, so it is caller data like `dtS` and the target.
+   */
+  it("falls back to the default for a non-finite smooth time", () => {
+    const target = at(10, 0);
+    for (const smoothTimeS of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      let follower = followerAt(at(0, 0));
+      for (let step = 0; step < 200; step += 1) {
+        follower = stepFollower(follower, target, 1 / 60, smoothTimeS);
+      }
+      expect(Number.isFinite(follower.position.x)).toBe(true);
+      expect(followerSettled(follower, target)).toBe(true);
+    }
+  });
+
   it("ignores a non-finite target", () => {
     const start = followerAt(at(1, 2));
     expect(stepFollower(start, { x: Number.NaN, y: 0, z: 0 }, 1 / 60)).toEqual(
