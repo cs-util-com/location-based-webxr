@@ -13,8 +13,12 @@ shows the wait, and reports the two ways it can fail to produce a line
 - `AgentCycleOptions`
   - `worker` — narrowed to the one call it makes, so a test fakes an object
     rather than a client.
-  - `agentAt(): LatLng | undefined` — `undefined` before the first publish, and
-    the click is then dropped without touching the worker.
+  - `agentAt(): LatLng | undefined` — **where the AGENT is**, not where the user
+    is. `undefined` before the first publish, and the click is then dropped
+    without touching the worker. `main.ts` composes it from
+    `BuildingView.agentAt()` and falls back to the user's position only before
+    the agent has been anywhere; reading the user for both made the agent
+    teleport back to the start on a second order (review on #274).
   - `frameOrigin(): LatLng` — the scene's anchor; the protocol requires it.
   - `setBusy(busy)` — the in-progress state.
   - `showRoute(route)` — called only when there is a route.
@@ -41,6 +45,14 @@ shows the wait, and reports the two ways it can fail to produce a line
   the same reason `nonFatalError` is used rather than `fetchFailed`.
 - **`setBusy(false)` is in a `finally`.** A busy flag stuck on a rejection is a
   demo that looks permanently mid-request, which is worse than the failure.
+- **A SUPERSEDED reply does nothing at all** — it neither draws, nor reports,
+  nor clears the busy state. `latestOnly` serialises rather than cancels (the
+  search is synchronous inside the worker, so an `abort` reaches a signal it
+  never checks), so the older run comes back with a real answer. Without the
+  generation guard a second click produced
+  `setBusy(false) → showRoute(OLD) → setBusy(true) → showRoute(NEW)`: the wait
+  visibly ended and restarted, and the stale route was drawn for one interval.
+  Raised in review on #274.
 - Non-`Error` rejections are reported through `String(error)`. Workers reject
   with whatever was thrown.
 

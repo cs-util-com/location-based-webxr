@@ -491,8 +491,22 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         // `building-view.ts` puts every object carrying this key into the
         // raycast set, and `resolvePick` stops at the first one — so a click on
         // a facade resolves to nothing rather than to the ground behind it.
-        // Barriers extrude with the buildings (DEC-R11-11), so a wall blocks
-        // the click for the same reason it blocks the agent.
+        //
+        // **PICKING BLOCKS ON THE DRAWN VOLUME; NAVIGATION BLOCKS ON THE SOLID
+        // ONE, AND THEY ARE NOT THE SAME SET.** `solidBuildingFootprints`
+        // excludes `building=roof` canopies (DEC-R11-14) and `min_height > 0`
+        // arches — an agent walks under both — while this flag is per CHUNK,
+        // and a chunk is a spatial batch of many buildings that cannot say
+        // which of them is passable. So a canopy is drawn, is navigable, and
+        // still swallows the click. Cologne's station forecourt roof is the
+        // case that matters: ~16 200 m², the largest single outline in the
+        // corpus, over ground the agent can genuinely reach.
+        //
+        // Left as-is rather than papered over: expressing it would mean either
+        // per-feature picking objects (giving up W20's chunking, which exists
+        // so a 2.8 km tile can be frustum-culled at all) or a second per-vertex
+        // channel. Raised in review on #274 and filed as a follow-up; what is
+        // fixed here is the comment that claimed the two sets agreed.
         object.userData["solid"] = true;
         return object;
       }),

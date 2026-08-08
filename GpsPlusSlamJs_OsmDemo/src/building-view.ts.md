@@ -12,7 +12,7 @@ map scored.
   into three.js objects, which is what its header always claimed it was for),
   `renderCells(mesh)`, `setTerrain(field | undefined)`,
   `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`,
-  `followRoute(path)`, `clearRoute()`.
+  `followRoute(path)`, `clearRoute()`, `agentAt()`.
   Navigation is `MapControls`, attached internally; there is nothing to call.
 - `TERRAIN_SPACING_M` — 12 m, the Terrarium z13 pixel pitch at this latitude.
 - `MeshLayers` and `BuildingStats` — **re-exported from `mesh-layers.ts`**, which
@@ -46,11 +46,18 @@ map scored.
     which is why `pointAlong`'s `done` is asserted as hard as its position, and
     why the e2e's second half asserts the scene going QUIET rather than moving.
   - **`data-frames` on the container is the observable behind that.** It is a
-    monotonic counter written in the same callback, and it is the third member
-    of the family `publishFrameState` started with `data-frame-origin` and
+    monotonic counter written in the same callback, and it joins the family
+    `publishFrameState` started with `data-frame-origin` and
     `data-ground-centre`: "the scene went quiet" has no machine-readable
     definition otherwise, and a screenshot comparison also passes for a scene
-    that stopped drawing entirely.
+    that stopped drawing entirely. `data-route` and `data-agent` are the other
+    two members — the second exists so "the agent did not teleport back to the
+    start" is assertable.
+  - **The route's material must be `transparent`.** `WebGLRenderer` draws the
+    opaque list first and `renderOrder` only sorts WITHIN a list, so an opaque
+    line with `RENDER_ORDER.route` ranks above the translucent layers in the
+    table and loses to them on screen. That is the #256 finding on the
+    underground lines, repeated here and caught in review on #274.
 - **`dispose()` cancels the pending frame FIRST.** An orphaned frame callback
   touching a disposed WebGL context crashes rather than leaks.
   - This is why `clearRoute()` is split into a `removeRoute()` that does not
@@ -74,6 +81,23 @@ map scored.
   two: setting the membership without the marker is a silent no-op, which is
   exactly how the first implementation failed (the ray hit the plane, the hit
   could not be identified, and the click read as a dead control).
+  - **The ground joins it only while `visible` AND on the CPU displacement
+    path.** three's raycaster does not skip invisible objects, so `visible` has
+    to be checked here; and only the CPU path writes the displaced POSITION
+    BUFFER, which is the only geometry a ray meets. Under `gpu` the ray would
+    hit a FLAT plane while the user looks at a shader-displaced one, and since
+    the destination is read as `x`/`z` the error is horizontal — roughly
+    `relief / tan(elevation)` on an oblique click. See `groundIsOrderable`.
+  - **Picking blocks on the DRAWN volume; navigation blocks on the SOLID one.**
+    `solidBuildingFootprints` lets an agent under a `building=roof` canopy and a
+    `min_height > 0` arch, while `userData.solid` is per CHUNK and a chunk
+    cannot say which of its buildings is passable — so a canopy is walkable and
+    still swallows the click. Known gap, not an inconsistency to close by making
+    canopies solid again.
+- **`agentAt()` is where the NEXT order plans from.** Reading the user's
+  position for both is what shipped first and made the agent teleport back to
+  the start on a second order without moving. `undefined` until the first route
+  and again after `clearRoute()`, so the user's position is only the start.
 - **`MapControls`, not `OrbitControls` (DEC-5).** Pan-first suits a top-down city
   view. Both ship inside the `three` package the demo already depends on, so
   neither is a new dependency.

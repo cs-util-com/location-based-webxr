@@ -25,7 +25,11 @@ import {
 } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
 
 import type { CellMesh } from "./cell-mesh.js";
-import type { GroundAppearance, GroundStrategy } from "./ground-mode.js";
+import {
+  groundIsOrderable,
+  type GroundAppearance,
+  type GroundStrategy,
+} from "./ground-mode.js";
 import { TERRAIN_EXTENT_M, type Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
 import {
@@ -1066,14 +1070,27 @@ export class BuildingView {
     // resolved to nothing at all: the affordance grid is off by default, so on
     // the demo's own default view there was nothing in this list to hit.
     //
-    // ONLY WHILE IT IS DRAWN, and that guard is load-bearing rather than tidy.
-    // three's raycaster does NOT skip invisible objects — `intersectObject`
-    // tests layers and nothing else — so without this the "none" ground mode
-    // would still send the agent to a surface the user cannot see. It is also
-    // what keeps region slabs selectable in 3D at all: the ground outranks a
-    // region (DEC-R11-21), so a plane that is always in this list would make
-    // that branch unreachable.
-    if (this.ground.visible) targets.push(this.ground);
+    // ONLY WHILE IT IS DRAWN **AND ONLY WHILE IT IS THE PLANE ON SCREEN**, and
+    // both halves are load-bearing rather than tidy.
+    //
+    // `visible` because three's raycaster does NOT skip invisible objects —
+    // `intersectObject` tests layers and nothing else — so without it the
+    // "none" mode would send the agent to a surface the user cannot see.
+    //
+    // `groundIsOrderable` because only the CPU path displaces the POSITION
+    // BUFFER, which is the only geometry the raycaster reads. `setTerrain`
+    // skips that displacement under `gpu` (the W23 A/B measures the two paths
+    // against each other), so the ray would meet a FLAT plane while the user
+    // looks at a shader-displaced one — and since `main.ts` names a lat/lng
+    // from the hit's `x` and `z`, the error is HORIZONTAL: roughly
+    // `relief / tan(elevation)` for an oblique click. Raised in review on #274.
+    //
+    // Together they are also what keeps region slabs selectable in 3D at all:
+    // the ground outranks a region (DEC-R11-21), so a plane that was always in
+    // this list would make that branch unreachable.
+    if (this.ground.visible && groundIsOrderable(this.displacement)) {
+      targets.push(this.ground);
+    }
     if (targets.length === 0) return undefined;
     // Reduced to what the decision reads. `Intersection` nests `userData` under
     // `object`, and `pick.ts` must be constructible in a test without a renderer,
@@ -1593,7 +1610,22 @@ export class BuildingView {
       // ground — but a line crossing behind a building would still be occluded
       // by it, and half a route is worse than none for the one thing this stage
       // exists to show. The render order puts it last so it composites on top.
-      new THREE.LineBasicMaterial({ color: ROUTE_COLOUR, depthTest: false }),
+      //
+      // **AND TRANSPARENT, WHICH IS WHAT MAKES `RENDER_ORDER.route` MEAN
+      // ANYTHING.** `WebGLRenderer` splits its render list into opaque and
+      // transparent and draws opaque FIRST; `renderOrder` only sorts WITHIN a
+      // list. An opaque material with a high rung therefore ranks above the
+      // translucent layers in the table and loses to them on screen — which is
+      // exactly the defect review on #256 found in the underground lines, and
+      // exactly what this line shipped with until review on #274. `areas`,
+      // `cells` and `underground` are all transparent; without this the route
+      // drew before all three and the `underground` diagnostic composited over
+      // it.
+      new THREE.LineBasicMaterial({
+        color: ROUTE_COLOUR,
+        depthTest: false,
+        transparent: true,
+      }),
     );
     this.routeLine.renderOrder = RENDER_ORDER.route;
     this.scene.add(this.routeLine);
@@ -1670,6 +1702,31 @@ export class BuildingView {
       this.scene.remove(this.agent);
     }
     delete this.container.dataset["route"];
+    delete this.container.dataset["agent"];
+  }
+
+  /**
+   * Where the agent is standing, in scene coordinates, or `undefined`.
+   *
+   * **THE NEXT ORDER PLANS FROM HERE, NOT FROM THE USER** (raised in review on
+   * #274). `main.ts` read the user's position for both, so a second order
+   * without moving planned from the user again and `followRoute` snapped the
+   * cone back to the start before it began walking — the agent visibly
+   * teleported. One agent means the USER's position is only the agent's until
+   * the agent has been somewhere.
+   *
+   * `undefined` until the first route, and again after `clearRoute()` — which a
+   * re-anchor triggers, and after a teleport these coordinates would mean a
+   * different place anyway.
+   */
+  agentAt(): ScenePoint | undefined {
+    if (this.agent === undefined || this.agent.parent === null)
+      return undefined;
+    const { x, y, z } = this.agent.position;
+    // The cone's ORIGIN is its centre, so its stored `y` sits half a height
+    // above the route it walks. Undone here so a caller gets the point on the
+    // path rather than the middle of the marker.
+    return { x, y: y - AGENT_HEIGHT_M / 2, z };
   }
 
   /** The agent's marker: one cone, built once and reused across routes. */
@@ -1714,6 +1771,13 @@ export class BuildingView {
       at.point.y + AGENT_HEIGHT_M / 2,
       at.point.z,
     );
+    // Published for the e2e, in the family `data-frame-origin` started: without
+    // it, "the agent did not teleport back to the start on a second order" has
+    // no machine-readable definition. Whole metres — the assertion is about
+    // tens of metres of jump, and full precision would churn the attribute on
+    // every frame of the walk.
+    this.container.dataset["agent"] =
+      `${Math.round(at.point.x)},${Math.round(at.point.z)}`;
     if (!at.done) return true;
     this.walk = undefined;
     return false;

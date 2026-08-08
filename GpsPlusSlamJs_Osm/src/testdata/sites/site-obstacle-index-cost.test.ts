@@ -32,13 +32,16 @@ import { buildObstacleIndex } from "../../nav/obstacles.js";
  * working set is a res-7 fetch tile and is substantially larger**, so this is a
  * floor on the real publish cost rather than an estimate of it.
  *
- * **ONLY TWO SITES ARE MEASURED HERE, and that is deliberate.** Sweeping all six
+ * **ONLY ONE SITE IS MEASURED HERE, and that is deliberate.** Sweeping all six
  * cost the package's unit stage ~15 s — a 37 % increase for a measurement whose
- * conclusion the whole corpus agreed on. `site-barriers.test.ts` and
+ * conclusion every site agreed on — and even two sites put measurable
+ * module-level load on a pool where `poi-models.test.ts` runs with under two
+ * seconds of headroom against the 5 s per-test cap. `site-barriers.test.ts` and
  * `site-building-obstacles.test.ts` already build an index at every site, so the
  * corpus-wide "it indexes something everywhere" floor is covered there; this
- * file keeps the two that carry the argument. Cologne is the site the demo opens
- * on, and Manhattan is the densest in the corpus.
+ * file keeps the one that carries the argument — Cologne, the site the demo
+ * opens on, and the home of the ~16 200 m² canopy the passability rule exists
+ * for. The other five figures are in the list above, from the one-off sweep.
  *
  * **WHY THE ASSERTIONS ARE CELL COUNTS AND NOT DURATIONS.** `coverCells` at
  * res-13 (~8 m) over every barrier and every solid building is the work, and the
@@ -61,10 +64,10 @@ interface Measurement {
 }
 
 /**
- * The two sites the decision rests on: the one the demo opens on, and the
- * densest in the corpus. See the header for why this is not all six.
+ * The one site the decision rests on. See the header for why this is not all
+ * six, and for the other five sites' figures.
  */
-const MEASURED_SITES = ["cologne-cathedral", "manhattan-midtown"] as const;
+const MEASURED_SITES = ["cologne-cathedral"] as const;
 
 /**
  * One index per site, BUILT ONCE AT MODULE LEVEL.
@@ -102,7 +105,7 @@ function measurementFor(id: string): Measurement {
 }
 
 describe("what the obstacle index costs", () => {
-  it("covers thousands of res-13 cells at both measured sites", () => {
+  it("covers thousands of res-13 cells at the measured site", () => {
     // THE NUMBER THAT DECIDED DEC-R11-19: ~1 900–2 700 covered cells per corpus
     // extract, each one a `coverCells` sweep plus Map insertions, on extracts
     // several times smaller than the demo's actual working set. That is not a
@@ -120,7 +123,7 @@ describe("what the obstacle index costs", () => {
     }
   });
 
-  it("indexes real obstacles at both measured sites", () => {
+  it("indexes real obstacles at the measured site", () => {
     // The floor under the whole feature. A site that indexes nothing routes an
     // agent straight through every wall it can see and still looks like it
     // works — which is exactly why stage 3 shipped corpus tests with literal

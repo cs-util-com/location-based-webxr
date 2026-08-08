@@ -552,10 +552,27 @@ async function main(): Promise<void> {
    */
   const planAgentRoute = createAgentCycle({
     worker,
-    // THE USER'S POSITION IS THE AGENT'S. DEC-R11-3 says "select an agent, click
-    // a destination"; with exactly one agent there is nothing to select, so the
-    // first clause is satisfied by the agent simply being where the user is.
-    agentAt: () => selectOsmView(store.getState()).position,
+    // WHERE THE AGENT IS, falling back to the user only before it has been
+    // anywhere. DEC-R11-3 says "select an agent, click a destination"; with
+    // exactly one agent there is nothing to select, so the user's position is
+    // where it STARTS — not where it permanently lives.
+    //
+    // Reading the user's position for both is what shipped first, and it made
+    // the agent teleport: a second order without moving planned from the user
+    // again, and `followRoute` snapped the cone back to that start before it
+    // began walking. Raised in review on #274.
+    agentAt: () => {
+      const standing = buildingView.agentAt();
+      if (standing === undefined)
+        return selectOsmView(store.getState()).position;
+      // The same scene→ENU→lat/lng conversion the click uses, and deliberately
+      // the same expression: two spellings of the north reflection is how they
+      // come to disagree.
+      return enuFrameAt(anchors.origin).toLatLng({
+        x: standing.x,
+        y: -standing.z,
+      });
+    },
     frameOrigin: () => anchors.origin,
     setBusy: (busy) => {
       // ON THE CANVAS, because the canvas is what was clicked — there is no

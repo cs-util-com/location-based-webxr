@@ -25,6 +25,7 @@ import {
   DEFAULT_GROUND_MODE,
   GROUND_MODES,
   groundAppearance,
+  groundIsOrderable,
   groundModeLabel,
   groundShowsRamp,
   groundStrategy,
@@ -170,5 +171,52 @@ describe("groundModeLabel", () => {
     // complaining about in the first place.
     expect(groundModeLabel("cpu-ramp")).toMatch(/ramp/i);
     expect(groundModeLabel("gpu-ramp")).toMatch(/ramp/i);
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER (raised in review on #274). Stage 4 made a click on the
+ * ground ORDER THE AGENT, and guarded the raycast on `ground.visible` — which
+ * covers the `none` mode and misses the three `gpu*` ones entirely.
+ *
+ * The miss is silent and the error is HORIZONTAL, which is the bad combination.
+ * `BuildingView.setTerrain` displaces the position buffer only on the CPU path
+ * (that is the whole point of the W23 A/B), and the raycaster reads nothing
+ * else — so under `gpu` the ray meets a FLAT plane while the user is looking at
+ * a shader-displaced one. `main.ts` names a lat/lng from the hit's `x` and `z`,
+ * so an oblique click on a hillside lands roughly `relief / tan(elevation)`
+ * from where it was aimed, and the agent walks confidently to the wrong place.
+ */
+describe("groundIsOrderable", () => {
+  it("allows ordering ONLY on the CPU path", () => {
+    expect(groundIsOrderable("cpu")).toBe(true);
+    expect(groundIsOrderable("gpu")).toBe(false);
+    expect(groundIsOrderable("none")).toBe(false);
+  });
+
+  it("covers every mode, and the DEFAULT is orderable", () => {
+    // Derived from the modes rather than restated, so a seventh mode cannot be
+    // added with no answer here. And the default must work: a feature that is
+    // off until the user finds a picker is a feature nobody finds.
+    for (const mode of GROUND_MODES) {
+      expect(typeof groundIsOrderable(groundStrategy(mode))).toBe("boolean");
+    }
+    expect(groundIsOrderable(groundStrategy(DEFAULT_GROUND_MODE))).toBe(true);
+  });
+
+  it("refuses exactly the modes whose plane is not the one on screen", () => {
+    // Stated as the SET rather than as three examples, so a mode that changed
+    // strategy would show up here. The `gpu*` three are refused because their
+    // geometry is flat where the picture is not; `none` because there is no
+    // ground on screen at all.
+    const refused = GROUND_MODES.filter(
+      (mode) => !groundIsOrderable(groundStrategy(mode)),
+    );
+    expect([...refused].sort()).toEqual([
+      "gpu",
+      "gpu-ramp",
+      "gpu-slope",
+      "none",
+    ]);
   });
 });

@@ -87,27 +87,50 @@ export function createAgentCycle(
 ): (to: LatLng) => Promise<void> {
   const { worker, agentAt, frameOrigin, setBusy, showRoute, report } = options;
 
+  /**
+   * Which dispatch is current. Everything a reply does is gated on it.
+   *
+   * **`latestOnly` SERIALISES; IT DOES NOT CANCEL** — the route search is
+   * synchronous inside the worker, so an `abort` reaches a signal the search
+   * never checks. The superseded run therefore runs to completion and comes
+   * back with a real answer, and without this guard it produced
+   * `setBusy(false) → showRoute(OLD) → setBusy(true) → showRoute(NEW)`: the
+   * cursor dropped out of its wait state mid-wait and the stale route was drawn
+   * for one interval. Raised in review on #274.
+   */
+  let generation = 0;
+
   return async (to: LatLng): Promise<void> => {
     const from = agentAt();
     if (from === undefined) return;
-    // CAPTURED AT DISPATCH, both of them. The frame decides what the returned
+    // CAPTURED AT DISPATCH, all three. The frame decides what the returned
     // heights mean, and reading it again on arrival would describe the route in
     // whatever frame the scene had been re-anchored to while the search ran.
     const origin = frameOrigin();
+    const mine = ++generation;
+    /** True while this dispatch is still the one the user is waiting for. */
+    const current = (): boolean => mine === generation;
 
     setBusy(true);
     let route: readonly RoutePoint[] | undefined;
     try {
       route = await worker.call("planRoute", { from, to, frameOrigin: origin });
     } catch (error) {
-      report(`route failed: ${messageOf(error)}`);
+      // A SUPERSEDED FAILURE IS SILENT. Its replacement is already running, and
+      // an error toast for a click the user has overridden reads as the current
+      // click having failed.
+      if (current()) report(`route failed: ${messageOf(error)}`);
       return;
     } finally {
-      // IN A `finally`, so the control comes back on every path. A busy flag
-      // left stuck on a rejection is a demo that looks permanently mid-request,
-      // which is worse than the failure that caused it.
-      setBusy(false);
+      // IN A `finally`, so the control comes back on every path — but only for
+      // the dispatch that is still current. A busy flag left stuck on a
+      // rejection is a demo that looks permanently mid-request; a busy flag
+      // cleared by a superseded run is a wait that visibly ends and restarts
+      // while the user is still waiting for one answer.
+      if (current()) setBusy(false);
     }
+
+    if (!current()) return;
 
     if (route === undefined) {
       // SURFACED, NOT SWALLOWED. `undefined` merges "nowhere to go" with "the

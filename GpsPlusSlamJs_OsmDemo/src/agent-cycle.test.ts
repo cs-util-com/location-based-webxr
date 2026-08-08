@@ -169,6 +169,64 @@ describe("createAgentCycle", () => {
     expect(reported).toStrictEqual(["route failed: overloaded"]);
   });
 
+  it("DROPS a superseded reply rather than drawing it, and holds the busy state", async () => {
+    // WHY THIS TEST MATTERS (raised in review on #274). `latestOnly` serialises
+    // rather than cancels — the route search is synchronous inside the worker
+    // and an `abort` cannot preempt it — so a second click while the first is
+    // in flight used to produce the sequence
+    //   setBusy(false) -> showRoute(OLD) -> setBusy(true) -> showRoute(NEW).
+    // The cursor dropped out of `progress` mid-wait and the stale route was
+    // drawn for one interval before being replaced.
+    //
+    // The generation guard makes the superseded run silent: it neither draws
+    // nor clears the busy state, so the wait reads as one continuous wait and
+    // only the newest answer ever reaches the scene.
+    const first = deferred<readonly RoutePoint[] | undefined>();
+    const second = deferred<readonly RoutePoint[] | undefined>();
+    const gates = [first, second];
+    let call = 0;
+    const { order, busy, shown } = harness(() => gates[call++]!.promise);
+
+    const running1 = order(THERE);
+    const running2 = order(THERE);
+    expect(busy).toStrictEqual([true, true]);
+
+    // The SUPERSEDED reply lands first, which is the whole point: it is the
+    // ordering the worker's queue actually produces.
+    const OLD: RoutePoint[] = [{ position: HOME, heightM: 9 }];
+    first.resolve(OLD);
+    await running1;
+    expect(shown).toStrictEqual([]);
+    expect(busy).toStrictEqual([true, true]);
+
+    second.resolve(ROUTE);
+    await running2;
+    expect(shown).toStrictEqual([ROUTE]);
+    expect(busy).toStrictEqual([true, true, false]);
+  });
+
+  it("does not report a superseded FAILURE, which the user never asked about", async () => {
+    // A superseded request that fails has nothing to tell anyone: its
+    // replacement is already running, and an error toast for a click the user
+    // has already overridden reads as the current click having failed.
+    const first = deferred<readonly RoutePoint[] | undefined>();
+    const second = deferred<readonly RoutePoint[] | undefined>();
+    const gates = [first, second];
+    let call = 0;
+    const { order, reported } = harness(() => gates[call++]!.promise);
+
+    const running1 = order(THERE);
+    const running2 = order(THERE);
+
+    first.reject(new Error("superseded and irrelevant"));
+    await running1;
+    expect(reported).toStrictEqual([]);
+
+    second.resolve(ROUTE);
+    await running2;
+    expect(reported).toStrictEqual([]);
+  });
+
   it("does not call the worker at all when the agent has no position", async () => {
     // Defensive at the module boundary: before the first publish there is no
     // user position, and planning from `undefined` would either throw inside the

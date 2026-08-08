@@ -1779,10 +1779,29 @@ test.describe("the NPC agent", () => {
       // browser test that silently clicks empty ground while claiming to click
       // a building is exactly the vacuous assertion the plan's §6 warns about.
       const before = await scene.getAttribute("data-route");
+      // WHERE THE AGENT IS STANDING when the second order is given — the end of
+      // the first route, since the step above waited for the walk to finish.
+      const stoodAt = await scene.getAttribute("data-agent");
+      expect(stoodAt).not.toBeNull();
+
       await clickAt(0.35, 0.62);
       await expect
         .poll(() => scene.getAttribute("data-route"), REPAINT)
         .not.toBe(before);
+
+      // AND IT DID NOT TELEPORT BACK TO THE START (raised in review on #274).
+      // The cycle read the USER's position for both the click target and the
+      // agent's, so a second order without moving planned from the user again
+      // and snapped the cone back before it began walking. The agent's own
+      // position is the start of the new route, so one frame into the walk it
+      // is still within a stride of where it stopped.
+      const [stoodX, stoodZ] = String(stoodAt).split(",").map(Number);
+      const [nowX, nowZ] = String(await scene.getAttribute("data-agent"))
+        .split(",")
+        .map(Number);
+      // Generous: one frame of walking at AGENT_SPEED_MPS is metres, while the
+      // teleport this catches is the whole distance of the first route.
+      expect(Math.hypot(nowX - stoodX, nowZ - stoodZ)).toBeLessThan(20);
     });
   });
 });

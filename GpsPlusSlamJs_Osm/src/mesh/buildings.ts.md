@@ -17,9 +17,25 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     longitude by a constant `cos(lat)`, so the AREA ORDER a smallest-containing
     rule depends on survives too. Two implementations would drift, and the drift
     shows as an agent walking through a building that is plainly on screen.
-  - **Skips volumes with `min_height > 0`** — an arch or a canopy is passable
-    underneath, and sealing the ground under one closes the route through it.
-    **The skip happens AFTER the assignment, and that order is load-bearing:**
+  - **Skips volumes that are passable underneath, for TWO independent reasons.**
+    - **`min_height > 0`** — the S3DB form for an arch or a gateway. Sealing the
+      ground under one closes the route through it, and walking under a gate is
+      the case the navigation design names.
+    - **`building=roof`** — a canopy is a roof on posts (DEC-R11-14). It needs
+      its own clause because most canopies carry no `min_height` at all, so the
+      first rule misses them, and they are not small: Cologne's station
+      forecourt roof is **~16 200 m², the largest single outline in the whole
+      corpus**, so treating it as solid puts a building-sized hole in the middle
+      of the one site the demo opens on.
+      - **The accepted cost, stated:** a roof mapped over solid walls becomes
+        walk-through. That is rarer than the canopy case and fails towards
+        movement rather than towards an invisible obstruction.
+    - **Note the asymmetry with PICKING in the demo**: both of these are still
+      DRAWN, and `GpsPlusSlamJs_OsmDemo` marks every drawn building chunk as a
+      click blocker — so a canopy is navigable and still swallows a click. See
+      `mesh-layers.ts` there; it is a known gap, not an inconsistency to "fix"
+      by making these solid again.
+  - **The skip happens AFTER the assignment, and that order is load-bearing:**
     filtering floating parts first changes which outlines get claimed, so a
     building whose only parts float came back solid as a whole outline while the
     extruder drew it as floating slabs. Caught by the corpus test at Cologne and
