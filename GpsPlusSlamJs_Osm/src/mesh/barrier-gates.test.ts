@@ -328,10 +328,12 @@ describe("splitAtGates", () => {
      * decides anything. `GATE_ON_BARRIER_M` is the whole tolerance argument, and
      * an off-by-a-comparison in `nearestOnLine` would be invisible without this.
      *
-     * FIVE PER CENT EITHER SIDE, which is only meaningful because `gateNear`
-     * now offsets in true metres — see `LNG_M`. Before that fix this bracketed
-     * 0.62 m and 1.87 m while claiming to test 1 m, so `>` against `>=` at the
-     * boundary was exactly as untestable as it had been without the case.
+     * WHAT THE BRACKET BUYS, STATED PRECISELY (corrected in review on #282): it
+     * pins that the threshold is **1 m and not 0.62 m or 1.87 m**, which is what
+     * the latitude/longitude mix-up in `gateNear` had made it before `LNG_M`.
+     * It does NOT distinguish `>` from `>=` — both 0.95 and 1.05 are strictly
+     * off the boundary — and nothing here should, since testing that would mean
+     * asserting on float equality at exactly `GATE_ON_BARRIER_M`.
      */
     it("opens just inside the tolerance and refuses just outside it", () => {
       const opens = (offsetM: number): boolean => {
@@ -418,6 +420,55 @@ describe("splitAtGates", () => {
       expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
         wall,
       ]);
+    });
+
+    /**
+     * THE CASE THE `isRoad` NARROWING EXISTS FOR (raised in review on #282,
+     * which pointed out nothing failed if it reverted). A plaza is a SURFACE
+     * mapped as a closed outline, not a line through — the building-outline
+     * argument arriving from the other side — and plazas abut walls constantly.
+     * `roads.ts` already refuses `area=yes` for its own reasons; this pins that
+     * this call site consumes that refusal.
+     */
+    it("does NOT open it for a plaza OUTLINE, which is not a line through", () => {
+      const gate = gateNear(50, 0.2);
+      const gates = gateOpenings([
+        node(1, gate.position, { barrier: "gate" }),
+        {
+          type: "way",
+          id: 2,
+          geometry: [...crossingAt(gate.position)],
+          tags: { highway: "pedestrian", area: "yes" },
+        },
+      ]);
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
+    /**
+     * A ROUTE THAT DOES NOT EXIST YET CANNOT VOUCH FOR A GATE. `isRoad` does NOT
+     * filter this — it checks the key's presence, `tunnel`, `covered` and
+     * `area`, and nothing else — so `UNBUILT_HIGHWAYS` carries it, for the same
+     * reason `DENIED_ENTRANCES` exists on the node side. The class is real:
+     * `feature-colours.ts` paints `highway=construction`.
+     */
+    it("does NOT open it for a highway that is not built yet", () => {
+      const gate = gateNear(50, 0.2);
+      for (const highway of ["construction", "proposed"]) {
+        const gates = gateOpenings([
+          node(1, gate.position, { barrier: "gate" }),
+          {
+            type: "way",
+            id: 2,
+            geometry: [...crossingAt(gate.position)],
+            tags: { highway },
+          },
+        ]);
+        expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+          wall,
+        ]);
+      }
     });
 
     /**

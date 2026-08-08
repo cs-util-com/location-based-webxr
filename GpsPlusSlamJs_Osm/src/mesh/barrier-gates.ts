@@ -88,6 +88,16 @@ const GATE_BARRIERS = new Set([
 const DENIED_ENTRANCES = new Set(["no", "none"]);
 
 /**
+ * `highway` values describing a route that does not exist on the ground yet.
+ *
+ * A VALUE FILTER FOR THE SAME REASON `DENIED_ENTRANCES` IS ONE: a way that OSM
+ * says is not built cannot be evidence that people walk through a gate. Kept
+ * deliberately tiny — every other `highway` value describes something usable,
+ * and a new one should count as a route by default.
+ */
+const UNBUILT_HIGHWAYS = new Set(["construction", "proposed"]);
+
+/**
  * How much barrier a gate removes, metres, centred on the node.
  *
  * A DECISION BOUNDED BY A MEASUREMENT. OSM does not say how wide a gate is, any
@@ -199,22 +209,33 @@ export const NO_GATES: GateOpenings = {
  * "building entrance node + building outline + a fence within a metre" would
  * have opened the fence — none of which involves a path.
  *
- * **`isRoad`, NOT a presence test on `highway`** — and this file is the last
- * place that should have used one. `DENIED_ENTRANCES` exists because the
- * `entrance` key had "degraded to a presence test" and `entrance=no` opened the
- * one node OSM took the trouble to deny; `highway` has the same denial-shaped
- * values and one structural trap:
+ * **`isRoad` PLUS A VALUE FILTER, not a presence test on `highway`** — and this
+ * file is the last place that should have used one. `DENIED_ENTRANCES` exists
+ * because the `entrance` key had "degraded to a presence test" and `entrance=no`
+ * opened the one node OSM took the trouble to deny; `highway` has the same
+ * denial-shaped values and one structural trap:
  *
- * - `highway=construction` / `proposed` — a route that does not exist yet
- *   vouching for a gate;
  * - **`highway=pedestrian` + `area=yes`** — the building-outline argument
  *   arriving from the other side. A plaza is an OUTLINE, not a line through, and
- *   plazas abut walls constantly.
+ *   plazas abut walls constantly. **`isRoad` handles this one.**
+ * - `highway=construction` / `proposed` — a route that does not exist yet
+ *   vouching for a gate. **`isRoad` does NOT handle this**, and an earlier
+ *   version of this comment claimed it did (corrected in review on #282):
+ *   `roads.ts` filters nodes, a missing `highway`, `tunnel=yes`, `covered=yes`
+ *   and `area=yes`, and nothing else. The class is real — `feature-colours.ts`
+ *   paints `highway=construction`, so the corpus contains it — hence
+ *   {@link UNBUILT_HIGHWAYS} below.
  *
- * `roads.ts` already encodes "a `highway` that is genuinely a linear route",
- * refuses `area=yes` for exactly the reason above, and is what the demo draws
- * ribbons from — so reusing it keeps "a route passes through here" meaning the
- * same thing in both places rather than in two that can drift.
+ * The filter lives HERE rather than in `isRoad` on purpose: `isRoad` also
+ * decides what `buildRoads` DRAWS, and whether a road under construction should
+ * be drawn is a separate question from whether it may vouch for a gate. Widening
+ * that predicate to settle this one would be a rendering change smuggled into a
+ * pathfinding fix.
+ *
+ * `roads.ts` otherwise already encodes "a `highway` that is genuinely a linear
+ * route" and is what the demo draws ribbons from — so reusing it keeps "a route
+ * passes through here" meaning the same thing in both places rather than in two
+ * that can drift.
  *
  * **AND IT MUST BE ON THE WALKING SURFACE**, by the same argument that vetoes a
  * below-surface gate NODE: a road passing under a wall is not a way through it.
@@ -227,6 +248,7 @@ export const NO_GATES: GateOpenings = {
  * `bridge=yes layer=1`, so above-surface ways have to stay acceptable.
  */
 function canCorroborate(feature: OsmFeature & { type: "way" }): boolean {
+  if (UNBUILT_HIGHWAYS.has(feature.tags["highway"] ?? "")) return false;
   return isRoad(feature) && !isBelowSurface(feature);
 }
 
