@@ -222,9 +222,12 @@ export const NO_GATES: GateOpenings = {
  *   vouching for a gate. **`isRoad` does NOT handle this**, and an earlier
  *   version of this comment claimed it did (corrected in review on #282):
  *   `roads.ts` filters nodes, a missing `highway`, `tunnel=yes`, `covered=yes`
- *   and `area=yes`, and nothing else. The class is real — `feature-colours.ts`
- *   paints `highway=construction`, so the corpus contains it — hence
- *   {@link UNBUILT_HIGHWAYS} below.
+ *   and `area=yes`, and nothing else. **The class is real, and the evidence is
+ *   the corpus itself**: `highway=construction` appears once in the Westminster
+ *   fixture and three times in Berlin's. Hence {@link UNBUILT_HIGHWAYS} below.
+ *   (An earlier version of this sentence cited a colour table that has no such
+ *   entry — corrected in review on #283, and it was the same unchecked
+ *   cross-module claim this filter exists to stop making.)
  *
  * The filter lives HERE rather than in `isRoad` on purpose: `isRoad` also
  * decides what `buildRoads` DRAWS, and whether a road under construction should

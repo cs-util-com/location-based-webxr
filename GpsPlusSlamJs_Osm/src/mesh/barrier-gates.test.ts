@@ -450,8 +450,9 @@ describe("splitAtGates", () => {
      * A ROUTE THAT DOES NOT EXIST YET CANNOT VOUCH FOR A GATE. `isRoad` does NOT
      * filter this — it checks the key's presence, `tunnel`, `covered` and
      * `area`, and nothing else — so `UNBUILT_HIGHWAYS` carries it, for the same
-     * reason `DENIED_ENTRANCES` exists on the node side. The class is real:
-     * `feature-colours.ts` paints `highway=construction`.
+     * reason `DENIED_ENTRANCES` exists on the node side. The class is real, and
+     * the corpus is the evidence: `highway=construction` appears once in the
+     * Westminster fixture and three times in Berlin's.
      */
     it("does NOT open it for a highway that is not built yet", () => {
       const gate = gateNear(50, 0.2);
