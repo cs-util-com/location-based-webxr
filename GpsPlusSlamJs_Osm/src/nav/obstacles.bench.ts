@@ -28,10 +28,17 @@ import type { OsmFeature } from "../model/osm-feature.js";
  * is a property of how much real mapping a place has, and no synthetic shape
  * reproduces the mix.
  *
- * **This bench's own means, before the fast path** — quoted from the bench
- * rather than from the harness, so the two cannot drift:
- * `london-westminster` **827.7 ms**, `cologne-cathedral` **430.9 ms**,
- * `berlin-alexanderplatz` **152.1 ms**.
+ * **This bench's own means, before and after the `cell-overlap.ts` fast path** —
+ * quoted from the bench rather than from the harness, so the two cannot drift:
+ *
+ * - `london-westminster` **827.7 → 339.4 ms (−59 %)**
+ * - `cologne-cathedral` **430.9 → 182.1 ms (−58 %)**
+ * - `berlin-alexanderplatz` **152.1 → 92.7 ms (−39 %)**
+ *
+ * Berlin gains least, and that is the shape of the fix rather than noise: the
+ * win is per CALL, and Berlin makes 124 of them against Westminster's 1 123, so
+ * proportionally more of its time is the parse and the bookkeeping the fast path
+ * does not touch.
  *
  * The separate harness sweep that ranked all eight sites read, as medians of 5:
  * `london-westminster` 825 · `heidelberg-altstadt` 480 · `cologne-cathedral`
