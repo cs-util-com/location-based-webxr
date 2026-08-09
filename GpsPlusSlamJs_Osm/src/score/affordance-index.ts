@@ -725,7 +725,26 @@ export class AffordanceIndex {
     return true;
   }
 
-  /** Features currently merged in, for callers that need the raw data. */
+  /**
+   * Features currently merged in, for callers that need the raw data.
+   *
+   * **This is what decision 12.4 asks for, and it already existed.** The spatial
+   * index needs exactly the set this class maintains: tiles overlap,
+   * `mergeTiles` resolves them, and at 14–55 MB resident a second merged copy is
+   * not affordable on a phone. Reading this one also inherits `acceptTile`'s
+   * merge and invalidation, so the two consumers cannot drift apart about what
+   * is loaded.
+   *
+   * **NOT A LIVE VIEW — a snapshot whose identity changes.** `acceptTile`
+   * replaces the whole map rather than mutating it, so a caller that holds the
+   * returned reference keeps the world as of its call and then serves stale data
+   * silently, with no error to notice. Re-read after every `acceptTile`; the
+   * chunk list that call returns is the signal something changed.
+   *
+   * **Returned uncopied and must be treated as read-only.** `ReadonlyMap` says
+   * so in the type; copying instead would reintroduce the second copy this
+   * accessor exists to avoid.
+   */
   mergedFeatures(): ReadonlyMap<OsmFeatureKey, OsmFeature> {
     return this.features;
   }

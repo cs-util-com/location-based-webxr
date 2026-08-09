@@ -1333,3 +1333,53 @@ describe("belowSurfaceFeatures — what the scorer excluded", () => {
     });
   });
 });
+
+describe("mergedFeatures — the read accessor the spatial index reads", () => {
+  it("exposes the merged features rather than making a second copy", () => {
+    // Why this test matters: decision 12.4 asked for this accessor and it turned
+    // out to exist already — so what was missing was never the method, it was
+    // any test of the two properties a second consumer depends on. Identity,
+    // not just contents, is what proves no copy is made: at 14-55 MB resident a
+    // second merged copy is not affordable on a phone.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+
+    expect(index.mergedFeatures().size).toBe(1);
+    expect(index.mergedFeatures()).toBe(index.mergedFeatures());
+  });
+
+  it("reflects a later tile, so the two features cannot disagree about what is loaded", () => {
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+    index.acceptTile(
+      tile(HOME, [
+        patch(1, HOME, { landuse: "grass" }),
+        patch(2, HOME, { leisure: "park" }),
+      ]),
+    );
+
+    expect(index.mergedFeatures().size).toBe(2);
+  });
+
+  it("is a SNAPSHOT: a held reference goes stale after acceptTile", () => {
+    // Why this test matters: `acceptTile` replaces the map rather than mutating
+    // it, so a caller that caches the reference keeps serving the old world
+    // silently — no error, just outdated answers. The hazard is documented on
+    // the accessor, and pinned here so a future change to live-view semantics
+    // has to come past a failing test rather than through prose nobody re-reads.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+    const held = index.mergedFeatures();
+
+    index.acceptTile(
+      tile(HOME, [
+        patch(1, HOME, { landuse: "grass" }),
+        patch(2, HOME, { leisure: "park" }),
+      ]),
+    );
+
+    expect(held.size).toBe(1);
+    expect(index.mergedFeatures().size).toBe(2);
+    expect(index.mergedFeatures()).not.toBe(held);
+  });
+});
