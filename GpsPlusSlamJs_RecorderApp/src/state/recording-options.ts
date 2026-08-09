@@ -546,8 +546,8 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   // DEFAULT_AR_CRASH_ISOLATION (same rationale as the filter groups above).
   arCrashIsolation: { ...DEFAULT_AR_CRASH_ISOLATION },
   occupancy: {
-    cellSizeM: DEFAULT_OCCUPANCY_CELL_SIZE_M, // 18 cm voxels — framework default (2026-07-16 sweep); the speed lever, coarser/faster than the old 15 cm. Shared with the PhysicsDemo.
-    minConfidence: DEFAULT_OCCUPANCY_MIN_OBSERVATIONS, // ≥2 observations to render a voxel — framework noise floor, lowered 3→2 by the 2026-07-15-1640 fast-reconstruction defaults. 1 = legacy/unfiltered. Shared with the PhysicsDemo.
+    cellSizeM: DEFAULT_OCCUPANCY_CELL_SIZE_M, // 16 cm voxels — framework default (2026-07-16 EVENING on-device pass, between the sweep-tested 0.15 fidelity and 0.18 speed). Shared with the PhysicsDemo.
+    minConfidence: DEFAULT_OCCUPANCY_MIN_OBSERVATIONS, // ≥2 observations to render a voxel — framework noise floor, set by the same 2026-07-16 evening pass (the 07-16-0557 corpus sweep's floor of 3 was measured under LEGACY carving; the decay carve guard closes the floater gap). 1 = legacy/unfiltered. Shared with the PhysicsDemo.
     persistentOcclusion: true, // persistent depth-only mesh occluder ON by default (2026-07-01: Web-Worker offload removed the render stall — see 2026-07-01-0733-occluder-worker-and-chunked-remesh-plan.md)
     liveOcclusion: false, // live CPU-depth occluder OFF by default (device-gated quality; replay no-op)
     occluderDebugStyle: 'off', // debug visualization of the persistent occluder mesh OFF by default (occlusion is invisible in normal use)

@@ -81,7 +81,7 @@ User-configurable recording options for controlling high-frequency data streams 
   images: { enabled: true, intervalMs: 2000, quality: 0.7, resolutionDivisor: 1,
             motionFilter: { enabled: true, maxAngularVelocity: 0.6, maxLinearVelocity: 2.5, maxWaitMs: 4000 },
             qualityFilter: { enabled: false, blurRelativeThreshold: 0.5, minMeanLuminance: 10, maxWaitMs: 4000 } },
-  occupancy: { cellSizeM: 0.18, minConfidence: 3, persistentOcclusion: true, liveOcclusion: false, occluderDebugStyle: 'off', occluderMeshMode: 'smooth' },
+  occupancy: { cellSizeM: 0.16, minConfidence: 2, persistentOcclusion: true, liveOcclusion: false, occluderDebugStyle: 'off', occluderMeshMode: 'smooth' },
   frameTileDisplay: { divisor: 2, maxTiles: 100 },
   visualization: { frameTiles: true, occupancyCubes: true, gpsAlignmentMarkers: true, compassCubes: true, headingUpMap: true, statsOverlay: false },
   qr: { enabled: false, intervalMs: 125, captureSize: 1024 },

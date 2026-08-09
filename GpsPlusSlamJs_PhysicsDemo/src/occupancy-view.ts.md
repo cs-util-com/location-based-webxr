@@ -14,9 +14,13 @@ physics collider (user feedback: same framework building block). Owns an
   `options` = `{ cellSizeM=DEFAULT_OCCUPANCY_CELL_SIZE_M (0.16),
 minObservations=DEFAULT_OCCUPANCY_MIN_OBSERVATIONS (2), meshMode='smooth',
 debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from the
-  framework constants so the demo shares the RecorderApp's tuning. The 18 cm voxel
-  is the speed lever; the noise floor stays at 3 to keep floaters (= phantom
-  colliders) low (2026-07-16 cellSize × noise corpus sweep).
+  framework constants so the demo shares the RecorderApp's tuning. Both come from
+  the 2026-07-16 EVENING on-device pass, which superseded the same-day corpus
+  sweep's 0.18/3: the sweep's floater argument for floor 3 was measured under
+  LEGACY carving, and the decay carve guard largely closes that gap. Floaters
+  matter more here than in the Recorder — a floater is a phantom COLLIDER, not
+  just a stray voxel — so if the floor is ever revisited, this demo is the
+  sharper test case.
 - **`OccupancyView`**:
   - `getMesh(): THREE.Mesh` — the CURRENT occluder's mesh (a stable handle across
     `setMeshMode` recreation), whose trimesh feeds the physics collider.
