@@ -33,6 +33,18 @@
  * crossing are invariant under the affine map from degrees to local metres, so
  * no projection is needed for a boolean answer.
  *
+ * WHAT THIS DOES NOT ANSWER, and it is most of the planet. `osm-geometry.ts` has
+ * five geometry kinds and this covers ONE. Over the site corpus, 3 316 of 10 335
+ * elements are nodes and most of the 6 777 ways are open — so a spatial query
+ * built on this alone would answer for a minority of features.
+ *
+ * **A caller must not hand an open way's points in as a ring.** Nothing here can
+ * tell a closed ring from an open line, so a road passed as a ring is silently
+ * given an interior it does not have, and a query "is this inside" gets a
+ * confident wrong answer. Points and lines need a different predicate — for a
+ * zero-area object "overlap" means distance-to, not area-sharing — and that
+ * contract does not exist yet.
+ *
  * @see ring-overlap.ts.md
  */
 

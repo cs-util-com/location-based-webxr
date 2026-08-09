@@ -221,8 +221,10 @@ function boundaryOf(cell: string): PlanarPoint[] {
  * `ring-overlap.ts` — the cell was always incidental to it, since every line
  * below the boundary lookup operated on two plain point arrays. Hoisting it
  * leaves ONE copy of the predicate for the spatial index to share, and this
- * file's corpus differential (7 141 polygons and 40 000 generated rings against
- * h3) becomes the regression guard on it.
+ * file's corpus differential becomes the regression guard on it: 3 397 sweep
+ * rings and 40 000 generated rings against h3, plus 10 856 corpus geometries
+ * hashed before and after. (An earlier draft of this comment said "7 141
+ * polygons" — that is the TRIANGULATE differential's count, not this one's.)
  */
 function overlaps(ring: readonly PlanarPoint[], cell: string): boolean {
   return ringsOverlap(ring, boundaryOf(cell));

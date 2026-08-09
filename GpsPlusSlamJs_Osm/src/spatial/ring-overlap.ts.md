@@ -53,6 +53,24 @@ as closed and winding does not matter.
   for an invalid or self-intersecting ring, NTS raises `TopologyException` and
   this predicate silently answers. Real OSM contains such rings.
 
+## Scope — this answers for POLYGONS ONLY
+
+`osm-geometry.ts` has five geometry kinds and this covers one. Over the site
+corpus **3 316 of 10 335 elements are nodes**, and most of the 6 777 ways are
+open, so a query built on this alone answers for a minority of features.
+
+- **A caller must not pass an open way's points in as a ring.** Nothing here can
+  distinguish a closed ring from an open line, so a road handed in as a ring is
+  silently given an interior it does not have.
+- **Points and lines need a different predicate.** For a zero-area object
+  "overlap" means distance-to, not area-sharing. That contract does not exist
+  yet and is the real remaining work.
+- **`PlanarPolygon` structurally accepts a flattened multipolygon and would then
+  read parts 2..n as holes.** `multipolygon-builder.ts`'s `groupRingsIntoPolygons`
+  emits one polygon per outer ring, so the converter is safe — but nothing in the
+  type stops a caller flattening, and the result would be wrong rather than
+  rejected.
+
 ## Where it came from
 
 [`cell-overlap.ts`](./cell-overlap.ts.md) has covered a ring against an H3
@@ -61,8 +79,16 @@ already operated on two plain point arrays — the cell was incidental. This is
 that predicate, named for what it does, plus the hole case it could not express.
 
 `cell-overlap.ts` now calls `ringsOverlap`, so there is **one** copy, and its
-corpus differential becomes this file's regression guard: **7 141 polygons and
-40 000 generated rings, verified against h3 with zero differences.**
+corpus differential becomes this file's regression guard: **3 397 sweep rings and
+40 000 generated rings against h3, plus 10 856 corpus geometries hashed before
+and after — zero differences.**
+
+- **That evidence is OFFLINE.** What runs on every gate is
+  `cell-overlap.test.ts`'s 50-case property run, so "the differential still
+  passes" means the offline sweeps were re-run by hand, not that the gate re-runs
+  them.
+- An earlier draft of this file said "7 141 polygons". That is the count from the
+  **triangulate** differential, not this one — corrected 2026-08-09.
 
 ## Examples
 
