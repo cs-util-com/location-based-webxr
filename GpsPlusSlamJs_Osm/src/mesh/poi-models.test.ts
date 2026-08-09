@@ -76,14 +76,28 @@ describe("the POI model registry", () => {
     // the scene with nothing reported — the same failure the site-geometry
     // corpus guards against for buildings. A degenerate cone cap is the likely
     // source, which is why `prism` skips the second triangle at zero radius.
+    //
+    // SCANNED, THEN ASSERTED ONCE — not `expect` per value. There are ~50 models
+    // with thousands of floats each, and a matcher call per float cost 1 143 ms
+    // against vitest's 5 000 ms per-test timeout, which under the root cascade's
+    // parallel load is close enough to go over (it did, 2026-08-09). One
+    // assertion carrying the offender's identity is also a better failure
+    // message than `expected false to be true` with no model name.
+    const offenders: string[] = [];
     for (const entry of entries) {
-      for (const value of entry.mesh.positions) {
-        expect(Number.isFinite(value)).toBe(true);
-      }
-      for (const value of entry.mesh.normals) {
-        expect(Number.isFinite(value)).toBe(true);
+      for (const [what, values] of [
+        ["positions", entry.mesh.positions],
+        ["normals", entry.mesh.normals],
+      ] as const) {
+        for (let i = 0; i < values.length; i++) {
+          const value = values[i] as number;
+          if (!Number.isFinite(value)) {
+            offenders.push(`${entry.kind} ${what}[${i}] = ${value}`);
+          }
+        }
       }
     }
+    expect(offenders).toEqual([]);
   });
 
   it("stands every model ON the ground, not buried in it", () => {
@@ -191,16 +205,31 @@ describe("the POI model registry", () => {
     // colour array paints the WRONG faces — it does not throw, does not change
     // the silhouette, and looks exactly like the model was authored that way.
     // Nobody reviewing a new model would catch it by reading the composition.
+    //
+    // SCANNED, THEN ASSERTED ONCE, for the same reason as the NaN test above:
+    // three matcher calls per colour channel cost 2 062 ms of vitest's 5 000 ms
+    // per-test timeout, and that is what tipped over under the root cascade's
+    // parallel load on 2026-08-09.
+    const misaligned: string[] = [];
+    const outOfRange: string[] = [];
     for (const entry of entries) {
       const colours = entry.mesh.colours;
       if (colours === undefined) continue;
-      expect(colours.length).toBe(entry.mesh.positions.length);
-      for (const value of colours) {
-        expect(Number.isFinite(value)).toBe(true);
-        expect(value).toBeGreaterThanOrEqual(0);
-        expect(value).toBeLessThanOrEqual(1);
+      if (colours.length !== entry.mesh.positions.length) {
+        misaligned.push(
+          `${entry.kind}: ${colours.length} colours for ${entry.mesh.positions.length} positions`,
+        );
+      }
+      for (let i = 0; i < colours.length; i++) {
+        const value = colours[i] as number;
+        if (!(value >= 0 && value <= 1)) {
+          outOfRange.push(`${entry.kind} colours[${i}] = ${value}`);
+        }
       }
     }
+    expect(misaligned).toEqual([]);
+    // `>= 0 && <= 1` also rejects NaN, which no ordering comparison accepts.
+    expect(outOfRange).toEqual([]);
   });
 
   it("stays low-polygon, which is the house style and the AR budget", () => {
