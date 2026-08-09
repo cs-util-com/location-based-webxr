@@ -317,6 +317,9 @@ importers:
       fast-check:
         specifier: ^4.8.0
         version: 4.8.0
+      flatbush:
+        specifier: ^4.6.2
+        version: 4.6.2
       globals:
         specifier: ^17.6.0
         version: 17.6.0
@@ -2504,6 +2507,12 @@ packages:
 
   flat-cache@6.1.22:
     resolution: {integrity: sha512-N2dnzVJIphnNsjHcrxGW7DePckJ6haPrSFqpsBUhHYgwtKGVq4JrBGielEGD2fCVnsGm1zlBVZ8wGhkyuetgug==}
+
+  flatbush@4.6.2:
+    resolution: {integrity: sha512-nNT7MFJ58Q4IAm3aYsEg+zgZGpdRcmR1i4U+aa8c+r91jmYZg7FTQwNnIMC0FyBqVZTbClKdAnrJkKkfp1BOvw==}
+
+  flatqueue@3.1.0:
+    resolution: {integrity: sha512-Ia4qIYrrsEqIRx3c3XhkT+QDLQuUV5ovsr6ah1rIgKT5wclhoGK3lAMS1bWRAWxlx7wtlTBpV7QXB5d9fOSRxA==}
 
   flatted@3.4.2:
     resolution: {integrity: sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==}
@@ -5645,6 +5654,12 @@ snapshots:
       cacheable: 2.3.5
       flatted: 3.4.2
       hookified: 1.15.1
+
+  flatbush@4.6.2:
+    dependencies:
+      flatqueue: 3.1.0
+
+  flatqueue@3.1.0: {}
 
   flatted@3.4.2: {}
 
