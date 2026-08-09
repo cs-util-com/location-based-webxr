@@ -4,6 +4,11 @@
     "noEmit": true,
     "types": ["vite/client", "node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "config/**/*", "vite.config.ts"],
+  "include": [
+    "src/**/*.ts",
+    "config/**/*",
+    "vite.config.ts",
+    "vitest.bench.config.ts"
+  ],
   "exclude": ["dist", "coverage", "node_modules"]
 }

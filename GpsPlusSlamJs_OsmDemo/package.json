@@ -18,6 +18,7 @@
     "format:check": "prettier --check --ignore-unknown .",
     "lint": "node ../scripts/test-timing/timed-stage.mjs lint",
     "lint:css": "node ../scripts/test-timing/timed-stage.mjs lint:css",
+    "bench": "vitest bench --run --config vitest.bench.config.ts",
     "preview": "vite preview",
     "test": "node ../scripts/test-timing/run-gate.mjs",
     "test:core": "pnpm run format && pnpm run lint && pnpm run lint:css && pnpm run check:all && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
