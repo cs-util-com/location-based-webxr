@@ -25,6 +25,7 @@ import fc from "fast-check";
 import { cellToLatLng, gridDisk, latLngToCell } from "h3-js";
 
 import { GATE_GAP_M } from "./barrier-gates.js";
+import { DEFAULT_BARRIER_THICKNESS_M } from "./barriers.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 import { buildObstacleIndex, crossesObstacle } from "../nav/obstacles.js";
 import { enuFrameAt } from "./enu.js";
@@ -81,6 +82,50 @@ function straddles(a: LatLng, b: LatLng, wall: readonly LatLng[]): boolean {
   const d3 = side(a, b, from);
   const d4 = side(a, b, to);
   return d1 > 0 !== d2 > 0 && d3 > 0 !== d4 > 0;
+}
+
+/**
+ * Whether a step actually passes THROUGH the wall rather than along inside it.
+ *
+ * **Only the "must be blocked" properties may use this, and the distinction is
+ * the whole point.** A wall is `DEFAULT_BARRIER_THICKNESS_M` wide, and at some
+ * alignments both res-13 cell centres of a step land inside that 0.5 m band. The
+ * step then runs along the INSIDE of the wall, grazing the zero-width centreline
+ * by a floating-point sliver while never crossing the wall's boundary —
+ * `(-0.18, 21.71) → (0.00, 15.23)` metres against a band of x ∈ [−0.25, +0.25]
+ * was the case that failed. Nothing blocks it and nothing should:
+ * `segmentCrossesRing` is false for a segment lying wholly inside a ring, the
+ * same property `obstacles.ts` documents for building interiors.
+ *
+ * It is harmless because the band is SEALED. Measured for that wall: 3 cell
+ * centres fall inside it and **0** steps from outside reach any of them, so no
+ * agent can ever stand at such a step's start.
+ *
+ * **Why NOT in `straddles` itself:** at a gate the wall is absent, so a cell
+ * centre within 0.25 m of the centreline is legitimately walkable and the step
+ * through it is a genuine crossing — exactly the step the "a gate is walkable"
+ * property needs to find. Excluding it there deleted the evidence that property
+ * exists to check, which is how the first attempt at this fix broke that test.
+ */
+function passesThroughWall(
+  a: LatLng,
+  b: LatLng,
+  wall: readonly LatLng[],
+): boolean {
+  return clearsWallThickness(a, wall) && clearsWallThickness(b, wall);
+}
+
+/** Whether `p` lies outside the wall's own 0.5 m band, measured in metres. */
+function clearsWallThickness(p: LatLng, wall: readonly LatLng[]): boolean {
+  const from = wall[0]!;
+  const to = wall[wall.length - 1]!;
+  const frame = enuFrameAt(from);
+  const end = frame.toEnu(to);
+  const point = frame.toEnu(p);
+  const length = Math.hypot(end.x, end.y);
+  if (length === 0) return true;
+  const perpendicular = Math.abs(point.x * end.y - point.y * end.x) / length;
+  return perpendicular > DEFAULT_BARRIER_THICKNESS_M / 2;
 }
 
 /** Adjacent cell pairs within `radius` of `centre`, as [from, to]. */
@@ -147,7 +192,10 @@ describe("a mapped gate is walkable", () => {
 
           const farEnd = along(centre, bearing, WALL_HALF_M / 2);
           for (const [from, to] of neighbourPairs(farEnd, 0)) {
-            if (!straddles(asLatLng(from), asLatLng(to), wall)) continue;
+            const a = asLatLng(from);
+            const b = asLatLng(to);
+            if (!straddles(a, b, wall)) continue;
+            if (!passesThroughWall(a, b, wall)) continue;
             expect(crossesObstacle(index, from, to)).toBe(true);
           }
         },
@@ -171,7 +219,10 @@ describe("a mapped gate is walkable", () => {
           const index = buildObstacleIndex(features(wall, undefined));
 
           for (const [from, to] of neighbourPairs(centre, 1)) {
-            if (!straddles(asLatLng(from), asLatLng(to), wall)) continue;
+            const a = asLatLng(from);
+            const b = asLatLng(to);
+            if (!straddles(a, b, wall)) continue;
+            if (!passesThroughWall(a, b, wall)) continue;
             expect(crossesObstacle(index, from, to)).toBe(true);
           }
         },
