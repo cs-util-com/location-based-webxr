@@ -112,6 +112,17 @@ function countFor(site: CorpusSite): DeckCounts {
       f.type === "way" && isRoad(f) && layerOf(f) > 0,
   );
 
+  // NO DECKS MEANS NO WORK. Three of the eight sites carry zero `layer > 0`
+  // roads, and `solidBuildingFootprints` over a whole city extract is the
+  // expensive call in this file — running it for a site that cannot produce a
+  // crossing pushed the package's import time far enough to make the suite
+  // flaky under the root cascade's parallel load (it passed comfortably when
+  // the file ran alone, which is the same shape of failure `site-barriers.test.ts`
+  // documents at the top of its own hoisting note).
+  if (decks.length === 0) {
+    return { decks: 0, crossBarrier: 0, crossBuilding: 0, crossEither: 0 };
+  }
+
   const barrierLines = barrierLinesOf(features);
   const buildingRings = buildingRingsOf(features);
 
