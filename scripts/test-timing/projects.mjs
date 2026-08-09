@@ -133,11 +133,6 @@ function demoAppStages(extraCycleRoots = []) {
       counts: null,
     },
     {
-      name: 'check:deadcode',
-      command: 'pnpm --workspace-root run check:deadcode',
-      counts: null,
-    },
-    {
       name: 'typecheck',
       command: 'tsc -p tsconfig.app.json --noEmit',
       counts: null,
@@ -205,6 +200,26 @@ export const PROJECTS = [
       // library with no framework dependency, so a break here is never caused
       // by an app and should surface before the slow app gates run.
       packageGateStage('test:osm', 'gps-plus-slam-osm'),
+      // ONE workspace-wide knip for the whole cascade, not one per package.
+      // It used to sit in seven package stage lists running the IDENTICAL
+      // analysis each time — ~26 s warm, plus a ~25 s cold pass in whichever
+      // package happened to run first.
+      //
+      // PLACED HERE, NOT EARLIER, so its preconditions are unchanged: knip
+      // resolves workspace dependencies through their dist, and this is exactly
+      // where it first ran before — after the framework and osm gates have built
+      // theirs. Moving it to the front would fail faster and sometimes for the
+      // wrong reason.
+      //
+      // A standalone `pnpm --filter X test` no longer checks dead code. That is
+      // a deliberate narrowing (F3, 2026-05-30 static-analysis open items):
+      // .github/workflows/ci.yml runs a dedicated root-level `deadcode` job that
+      // the same doc calls the authoritative gate.
+      {
+        name: 'check:deadcode',
+        command: 'knip',
+        counts: null,
+      },
       packageGateStage('test:recorder', 'gps-plus-slam-recorder'),
       packageGateStage('test:starter', 'gps-plus-slam-anchor-starter'),
       packageGateStage('test:example', 'gps-plus-slam-minimal-example'),
@@ -340,11 +355,6 @@ export const PROJECTS = [
         counts: null,
       },
       {
-        name: 'check:deadcode',
-        command: 'pnpm --workspace-root run check:deadcode',
-        counts: null,
-      },
-      {
         name: 'typecheck',
         command: 'tsc -p tsconfig.app.json --noEmit',
         counts: null,
@@ -400,13 +410,15 @@ export const PROJECTS = [
     //    exists — and until this stage was added, nothing in the workspace
     //    built it at all, which is what broke the /osm/ deployment.
     // 2. It has no `build:framework` stage, because `pnpm run dev` — the
-    //    Playwright webServer command — already runs `build:deps`. That build
-    //    is unconditional (no staleness skip) and its cost lands inside the
-    //    `test:e2e` row rather than a row of its own.
+    //    Playwright webServer command — already runs `build:deps`, whose cost
+    //    lands inside the `test:e2e` row rather than a row of its own. Since
+    //    2026-08-09 that build goes through the same staleness check as the
+    //    stage above, so the webServer no longer rebuilds what the gate just
+    //    built — it was costing ~3.5 s per e2e package, in six of them.
     //
     // Otherwise it now runs the SAME stage set as every other demo app. It
     // previously ran only typecheck/test:unit/test:e2e — no format, lint,
-    // lint:css, check:dup, check:cycles, check:boundaries, check:deadcode or
+    // lint:css, check:dup, check:cycles, check:boundaries or
     // typecheck:tests — because the package was created without the demo-app
     // tooling (no config/ directory and none of the 14 tool devDependencies).
     name: 'GpsPlusSlamJs_OsmDemo',

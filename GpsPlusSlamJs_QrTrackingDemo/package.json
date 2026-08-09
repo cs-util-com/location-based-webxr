@@ -12,7 +12,7 @@
     "test:core": "pnpm run format && pnpm run lint && pnpm run lint:css && pnpm run check:all && pnpm run typecheck && pnpm run typecheck:tests && pnpm run test:unit",
     "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
     "test:watch": "vitest",
-    "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
+    "build:framework": "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework",
     "test:e2e": "pnpm run build:framework && node ../scripts/test-timing/timed-stage.mjs test:e2e",
     "test:e2e:headed": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --headed",
     "format": "node ../scripts/test-timing/timed-stage.mjs format",
@@ -24,8 +24,7 @@
     "check:dup": "node ../scripts/test-timing/timed-stage.mjs check:dup",
     "check:cycles": "node ../scripts/test-timing/timed-stage.mjs check:cycles",
     "check:boundaries": "node ../scripts/test-timing/timed-stage.mjs check:boundaries",
-    "check:deadcode": "node ../scripts/test-timing/timed-stage.mjs check:deadcode",
-    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries && pnpm run check:deadcode"
+    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries"
   },
   "engines": {
     "node": ">=22.14.0"
