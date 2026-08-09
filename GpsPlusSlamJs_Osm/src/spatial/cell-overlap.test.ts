@@ -123,6 +123,35 @@ describe("overlappingCells — agreement with h3", () => {
     expectAgreesWithH3(rect(-16.9, 179.995, 10, 10));
   });
 
+  it("still matches h3 for rings that SHARE candidate cells", () => {
+    // Why this test matters: cell boundaries are memoised across calls, because
+    // the obstacle sweep asks for the same cell up to 11x more often than it has
+    // distinct cells — neighbouring barrier quads and adjacent buildings share
+    // candidates. So the second ring here is served largely from cache, and this
+    // is the case where a memo that handed back a mutated or mis-keyed array
+    // would produce a wrong cover while every isolated test stayed green.
+    //
+    // Overlapping and offset, so the two candidate disks intersect without
+    // coinciding: some cells are cache hits, some are fresh.
+    const first = rect(51.5, -0.12, 12, 12);
+    const second = rect(51.50005, -0.11994, 12, 12);
+    expectAgreesWithH3(first);
+    expectAgreesWithH3(second);
+    // And the first again, now entirely from cache.
+    expectAgreesWithH3(first);
+  });
+
+  it("returns a stable answer when the same ring is covered repeatedly", () => {
+    // The memo must be transparent: repetition is exactly what it optimises, so
+    // repetition is exactly where it would show if it were not.
+    const ring = rect(48.85, 2.29, 9, 14);
+    const first = overlappingCells(ring, AFFORDANCE_RES);
+    expect(first).toBeDefined();
+    for (let i = 0; i < 5; i++) {
+      expect(overlappingCells(ring, AFFORDANCE_RES)).toEqual(first);
+    }
+  });
+
   it("agrees with h3 for arbitrary small rings (property)", () => {
     // The generated case the examples cannot reach: skewed, thin, and
     // degenerate-ish quads at arbitrary places on the planet.

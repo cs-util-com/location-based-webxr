@@ -172,12 +172,51 @@ function diskRadius(
   return radius;
 }
 
-/** Whether `cell`'s hexagon and `ring` share any area. */
-function overlaps(ring: readonly PlanarPoint[], cell: string): boolean {
+/**
+ * Cell boundaries, memoised — the same cell is asked for many times per sweep.
+ *
+ * **Measured, not assumed.** `buildObstacleIndex` over the site corpus calls
+ * `cellToBoundary` between 2.4× and **11.1×** more often than it has distinct
+ * cells to ask about: `london-westminster` makes 53 746 calls for 4 824 cells.
+ * Neighbouring rings — the per-segment quads of one wall, adjacent buildings —
+ * share candidates, and every ring re-derives them from scratch.
+ *
+ * A cell id encodes its own resolution, so the id alone is a complete key.
+ *
+ * **The cached arrays are shared and must be treated as read-only.** Nothing
+ * outside this module can reach them — `overlaps` is the only reader and only
+ * reads — but a future second reader that mutated one would corrupt every later
+ * lookup silently, which is why this says so rather than relying on it staying
+ * true.
+ */
+const boundaries = new Map<string, PlanarPoint[]>();
+
+/**
+ * Cap, in cells. Cleared wholesale rather than evicted one at a time.
+ *
+ * A working set is a few thousand distinct cells, so this holds many of them;
+ * what it bounds is a long session walking across a city, where the set grows
+ * without limit. Wholesale clearing costs one cold sweep and needs no recency
+ * bookkeeping — an LRU here would be more machinery than the thing it guards.
+ */
+const MAX_CACHED_BOUNDARIES = 1 << 16;
+
+function boundaryOf(cell: string): PlanarPoint[] {
+  const cached = boundaries.get(cell);
+  if (cached !== undefined) return cached;
+
   const boundary: PlanarPoint[] = cellToBoundary(cell).map(([lat, lng]) => ({
     x: lng,
     y: lat,
   }));
+  if (boundaries.size >= MAX_CACHED_BOUNDARIES) boundaries.clear();
+  boundaries.set(cell, boundary);
+  return boundary;
+}
+
+/** Whether `cell`'s hexagon and `ring` share any area. */
+function overlaps(ring: readonly PlanarPoint[], cell: string): boolean {
+  const boundary = boundaryOf(cell);
 
   for (const corner of boundary) {
     if (containsPoint(ring, corner)) return true;

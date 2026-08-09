@@ -28,17 +28,19 @@ import type { OsmFeature } from "../model/osm-feature.js";
  * is a property of how much real mapping a place has, and no synthetic shape
  * reproduces the mix.
  *
- * **This bench's own means, before and after the `cell-overlap.ts` fast path** —
- * quoted from the bench rather than from the harness, so the two cannot drift:
+ * **This bench's own means, in three states** — quoted from the bench rather
+ * than from a harness, so they cannot drift. Baseline → after `cell-overlap.ts`
+ * covers a hole-free ring itself → after that module memoises cell boundaries:
  *
- * - `london-westminster` **827.7 → 339.4 ms (−59 %)**
- * - `cologne-cathedral` **430.9 → 182.1 ms (−58 %)**
- * - `berlin-alexanderplatz` **152.1 → 92.7 ms (−39 %)**
+ * - `london-westminster` **827.7 → 339.4 → 154.0 ms** (−81 % overall)
+ * - `cologne-cathedral` **430.9 → 182.1 → 96.9 ms** (−78 %)
+ * - `berlin-alexanderplatz` **152.1 → 92.7 → 68.1 ms** (−55 %)
  *
- * Berlin gains least, and that is the shape of the fix rather than noise: the
- * win is per CALL, and Berlin makes 124 of them against Westminster's 1 123, so
- * proportionally more of its time is the parse and the bookkeeping the fast path
- * does not touch.
+ * Berlin gains least at both steps, and that is the shape of the fixes rather
+ * than noise: the first win is per CALL and Berlin makes 124 of them against
+ * Westminster's 1 123; the second is per REPEATED cell, and Berlin's repeat
+ * factor is 2.4× against Westminster's 11.1×. Both fixes pay in proportion to
+ * how much mapped detail a place has, which is the right way round.
  *
  * The separate harness sweep that ranked all eight sites read, as medians of 5:
  * `london-westminster` 825 · `heidelberg-altstadt` 480 · `cologne-cathedral`

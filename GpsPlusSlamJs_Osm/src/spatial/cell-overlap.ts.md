@@ -72,6 +72,22 @@ Two cheaper ideas were measured and rejected before this one:
 - Planar predicates on lat/lng are correct here for the same reason
   `point-in-ring.ts` gives: crossing parity and containment are invariant under
   the affine map from degrees to local metres, at the scale of one cell.
+- **Cell boundaries are MEMOISED across calls**, because the same cell is asked
+  for many times per sweep and re-deriving it is the single largest remaining
+  cost. Measured over the site corpus, `buildObstacleIndex` calls
+  `cellToBoundary` **2.4× to 11.1× more often than it has distinct cells** —
+  `london-westminster` makes 53 746 calls for 4 824 cells — because neighbouring
+  rings share candidates: the per-segment quads of one wall, adjacent buildings.
+  - A cell id encodes its own resolution, so the id alone is a complete key.
+  - **The cached arrays are shared and read-only by convention.** `overlaps` is
+    the only reader and only reads; a second reader that mutated one would
+    corrupt every later lookup silently, which is why the module says so instead
+    of relying on it staying true.
+  - Bounded at 65 536 cells and **cleared wholesale** rather than evicted one at
+    a time. A working set is a few thousand distinct cells, so what the bound
+    guards is a long session walking across a city; a wholesale clear costs one
+    cold sweep and needs no recency bookkeeping, where an LRU would be more
+    machinery than the thing it protects.
 
 ## Measured
 
@@ -85,6 +101,11 @@ obstacle sweep actually covers:
   obstacle indexes, hashed before and after and compared.
 - **~4× faster** on the rings it takes. Through `buildObstacleIndex`, the corpus
   goes **2 829 → 933 ms (−67 %)** and `london-westminster` **825 → 245 ms (−70 %)**.
+- **Memoising cell boundaries takes it further, to 453 ms over the corpus and
+  122.6 ms on `london-westminster`** — **−51 %** on top of the above, and **−84 %
+  / −85 %** against where each started. Bench means for the same change:
+  `london-westminster` 339.4 → 154.0 ms, `cologne-cathedral` 182.1 → 96.9,
+  `berlin-alexanderplatz` 92.7 → 68.1.
 
 Those offline sweeps are where the equivalence evidence lives. The in-repo
 property test deliberately runs only 50 cases, because 200 put it over the 5 s
@@ -121,6 +142,13 @@ phantom obstacle.
 
 Declining is tested for the decline itself, never for a best effort: too few
 points, a non-finite coordinate, and a ring too large to be worth covering.
+
+The memo has two tests of its own, both aimed at the case where a broken cache
+stays invisible: **two overlapping rings that SHARE candidate cells** (so the
+second is served largely from cache, with some fresh cells, and then the first is
+re-covered entirely from cache), and **the same ring covered repeatedly**.
+Repetition is what the memo optimises, so repetition is where a mutated or
+mis-keyed entry would show.
 
 The wiring is covered by `cell-coverage.test.ts`, and the pinned corpus coverage
 counts in `h3-feature-index` and `affordance-index` are what prove the fast path
