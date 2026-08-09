@@ -6,6 +6,12 @@ import { toGeometry } from "../model/osm-geometry.js";
 import { loadSite } from "../test-utils/load-fixtures.js";
 import { boundsOf } from "./clip.js";
 import { polygonsOverlap } from "./ring-overlap.js";
+import {
+  geometryOverlaps,
+  toPlanarGeometry,
+  type PlanarGeometry,
+} from "./geometry-overlap.js";
+import { positionsOf } from "./clip.js";
 import type { PlanarPoint } from "./point-in-ring.js";
 import type { LatLng } from "../model/osm-feature.js";
 
@@ -67,18 +73,20 @@ const toPlanar = (ring: readonly LatLng[]): PlanarPoint[] =>
  * calling the result a bounding-box cost. `chunk-cost.test.ts` sets the same
  * precedent of keeping parsing out of the timer.
  */
+const SITES = [
+  "london-westminster",
+  "cologne-cathedral",
+  "manhattan-midtown",
+  "tokyo-shinjuku",
+  "heidelberg-altstadt",
+  "berlin-alexanderplatz",
+  "sylt-westerland",
+  "london-tower-bridge",
+];
+
 function corpus(): Indexed[] {
   const out: Indexed[] = [];
-  for (const id of [
-    "london-westminster",
-    "cologne-cathedral",
-    "manhattan-midtown",
-    "tokyo-shinjuku",
-    "heidelberg-altstadt",
-    "berlin-alexanderplatz",
-    "sylt-westerland",
-    "london-tower-bridge",
-  ]) {
+  for (const id of SITES) {
     for (const feature of parseOverpassJson(loadSite(id).payload).features) {
       const result = toGeometry(feature);
       if (!result.ok) continue;
@@ -302,6 +310,151 @@ describe("narrow phase — the cost of a YES against the cost of a NO", () => {
         if (polygonsOverlap(item.rings, queryPolygon)) hits++;
       }
       sink += hits;
+    });
+  }
+});
+
+/**
+ * THE MISSING TWO THIRDS: points and lines.
+ *
+ * Everything above prices AREAL features, because until `geometry-overlap.ts`
+ * landed there was no predicate for anything else. That made every figure in the
+ * plan a LOWER BOUND on a real query rather than an estimate of one — over the
+ * corpus, 3 316 of 10 335 elements are nodes and most of the 6 777 ways are open,
+ * so the kinds that had never been measured are the majority of the map.
+ *
+ * The question this answers is not "are points fast" — a point test is one ray
+ * cast and obviously is. It is whether the REJECTION asymmetry found above
+ * (37×, and the reason the whole funnel is shaped the way it is) holds for the
+ * other kinds, or whether it is a property of polygon-vs-polygon alone. The two
+ * answers imply different designs: if lines reject as expensively as polygons,
+ * they need the same bounding-box guard; if they do not, they can go straight
+ * into the narrow phase.
+ */
+
+/** One indexable feature of ANY kind, with the bbox its broad phase uses. */
+interface IndexedAny {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+  readonly geometry: PlanarGeometry;
+  readonly kind: PlanarGeometry["kind"];
+}
+
+/** Every feature of the corpus, of every kind, converted once. */
+function corpusOfAllKinds(): IndexedAny[] {
+  const out: IndexedAny[] = [];
+  for (const id of SITES) {
+    for (const feature of parseOverpassJson(loadSite(id).payload).features) {
+      const result = toGeometry(feature);
+      if (!result.ok) continue;
+      const bbox = boundsOf(positionsOf(result.geometry));
+      if (bbox === undefined) continue;
+      out.push({
+        minX: bbox.west,
+        minY: bbox.south,
+        maxX: bbox.east,
+        maxY: bbox.north,
+        geometry: toPlanarGeometry(result.geometry),
+        kind: result.geometry.kind,
+      });
+    }
+  }
+  return out;
+}
+
+const ALL = corpusOfAllKinds();
+
+const ALL_INDEX = (() => {
+  const index = new Flatbush(ALL.length);
+  for (const item of ALL) index.add(item.minX, item.minY, item.maxX, item.maxY);
+  index.finish();
+  return index;
+})();
+
+/** Candidates of one kind, for a query centred on real data. */
+function candidatesOfKind(
+  query: PlanarPoint[],
+  kinds: readonly PlanarGeometry["kind"][],
+): number[] {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of query) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return ALL_INDEX.search(minX, minY, maxX, maxY).filter((i) => {
+    const item = ALL[i];
+    return item !== undefined && kinds.includes(item.kind);
+  });
+}
+
+describe("narrow phase by KIND — the two thirds never priced", () => {
+  const query = frustumFootprint(CENTRE, 0.002);
+  const queryPolygon = [query];
+
+  for (const [label, kinds] of [
+    ["points", ["point"]],
+    ["lines", ["linestring", "multilinestring"]],
+    ["areas", ["polygon", "multipolygon"]],
+  ] as const) {
+    const candidates = assertHits(label, candidatesOfKind(query, kinds));
+    const hits = candidates.filter((i) => {
+      const item = ALL[i];
+      return (
+        item !== undefined && geometryOverlaps(item.geometry, queryPolygon)
+      );
+    }).length;
+
+    bench(`${label} (${candidates.length} cand → ${hits} overlap)`, () => {
+      let n = 0;
+      for (const i of candidates) {
+        const item = ALL[i];
+        if (item === undefined) continue;
+        if (geometryOverlaps(item.geometry, queryPolygon)) n++;
+      }
+      sink += n;
+    });
+  }
+});
+
+describe("narrow phase by kind — YES against NO, for lines", () => {
+  // The asymmetry is the finding this whole file turns on. If it holds for lines
+  // too, they need the same bounding-box guard areas got; if it does not, they
+  // can go straight into the narrow phase and the guard is wasted work.
+  const query = frustumFootprint(CENTRE, 0.002);
+  const queryPolygon = [query];
+  const candidates = candidatesOfKind(query, ["linestring", "multilinestring"]);
+
+  const positives: number[] = [];
+  const negatives: number[] = [];
+  for (const i of candidates) {
+    const item = ALL[i];
+    if (item === undefined) continue;
+    (geometryOverlaps(item.geometry, queryPolygon)
+      ? positives
+      : negatives
+    ).push(i);
+  }
+
+  for (const [label, subset] of [
+    ["lines overlapping (YES)", positives],
+    ["lines rejected (NO)", negatives],
+  ] as const) {
+    if (subset.length === 0) continue;
+    bench(`${label} — ${subset.length} candidates`, () => {
+      let n = 0;
+      for (const i of subset) {
+        const item = ALL[i];
+        if (item === undefined) continue;
+        if (geometryOverlaps(item.geometry, queryPolygon)) n++;
+      }
+      sink += n;
     });
   }
 });
