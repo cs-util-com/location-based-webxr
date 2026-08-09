@@ -217,32 +217,48 @@ describe("site barriers", () => {
    * the justification worth pinning at all. Prose that names counts is a claim
    * a fixture refresh can silently falsify; this makes it go red instead.
    *
-   * NOTE `highway=proposed` appears at NO site. It is in the filter anyway,
-   * defensively and at no cost — the set is two values — but the honest reading
-   * of these numbers is that only `construction` is evidenced.
+   * BOTH values are evidenced, and the first version of this test could not
+   * show it. It summed `construction` and `proposed` into one number per site,
+   * which let the accompanying prose claim "Westminster has three construction
+   * ways, and `proposed` appears at no site" pass green — the true split is
+   * **1 construction + 2 proposed** (raised in review on #285). A sum also means
+   * a fixture that swapped one value for the other would stay green, which is
+   * precisely the silent falsification this test exists to prevent.
+   *
+   * **A count pinned more coarsely than the claim it defends is not a pin.**
+   * That is why the expectation below is a per-value object rather than a total.
    */
   it("still contains the unbuilt highways UNBUILT_HIGHWAYS exists for", () => {
-    const unbuilt: Record<string, number> = {};
+    // COUNTED PER VALUE, NOT SUMMED. An earlier version summed `construction`
+    // and `proposed` into one number per site, which hid two things at once: a
+    // fixture refresh could swap one value for the other and stay green (the
+    // exact silent falsification this test exists to prevent), and the summed
+    // Westminster total was read as three `construction` ways when it is not.
+    const unbuilt: Record<string, { construction: number; proposed: number }> =
+      {};
     for (const [id] of cases) {
       const entry = built.get(id);
       if (entry === undefined) throw new Error(`no build for ${id}`);
-      unbuilt[id] = entry.features.filter(
-        (feature) =>
-          feature.type === "way" &&
-          (feature.tags["highway"] === "construction" ||
-            feature.tags["highway"] === "proposed"),
-      ).length;
+      const ways = entry.features.filter((feature) => feature.type === "way");
+      unbuilt[id] = {
+        construction: ways.filter(
+          (feature) => feature.tags["highway"] === "construction",
+        ).length,
+        proposed: ways.filter(
+          (feature) => feature.tags["highway"] === "proposed",
+        ).length,
+      };
     }
 
     expect(unbuilt).toEqual({
-      "cologne-cathedral": 0,
-      "heidelberg-altstadt": 0,
-      "berlin-alexanderplatz": 3,
-      "sylt-westerland": 0,
-      "manhattan-midtown": 0,
-      "tokyo-shinjuku": 0,
-      "london-tower-bridge": 0,
-      "london-westminster": 3,
+      "cologne-cathedral": { construction: 0, proposed: 0 },
+      "heidelberg-altstadt": { construction: 0, proposed: 0 },
+      "berlin-alexanderplatz": { construction: 3, proposed: 0 },
+      "sylt-westerland": { construction: 0, proposed: 0 },
+      "manhattan-midtown": { construction: 0, proposed: 0 },
+      "tokyo-shinjuku": { construction: 0, proposed: 0 },
+      "london-tower-bridge": { construction: 0, proposed: 0 },
+      "london-westminster": { construction: 1, proposed: 2 },
     });
   });
 

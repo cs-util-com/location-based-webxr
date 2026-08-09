@@ -222,15 +222,19 @@ export const NO_GATES: GateOpenings = {
  *   vouching for a gate. **`isRoad` does NOT handle this**, and an earlier
  *   version of this comment claimed it did (corrected in review on #282):
  *   `roads.ts` filters nodes, a missing `highway`, `tunnel=yes`, `covered=yes`
- *   and `area=yes`, and nothing else. **The class is real, and the evidence is
- *   the corpus itself**: `highway=construction` appears three times in the
- *   Westminster fixture and three times in Berlin's, **pinned by
- *   `site-barriers.test.ts`** so a fixture refresh cannot falsify this sentence
- *   silently. `highway=proposed` appears at no site and is filtered
- *   defensively. Hence {@link UNBUILT_HIGHWAYS} below.
- *   (An earlier version of this sentence cited a colour table that has no such
- *   entry — corrected in review on #283, and it was the same unchecked
- *   cross-module claim this filter exists to stop making.)
+ *   and `area=yes`, and nothing else. **The class is real, and BOTH values are
+ *   evidenced in the corpus**: `highway=construction` appears **3×** in Berlin's
+ *   fixture and **1×** in Westminster's; `highway=proposed` appears **2×** in
+ *   Westminster's. **Pinned per value by `site-barriers.test.ts`**, so neither a
+ *   fixture refresh nor a swap of one value for the other can falsify this
+ *   sentence silently. Hence {@link UNBUILT_HIGHWAYS} below.
+ *
+ *   This sentence took four attempts, which is the useful part of its history:
+ *   it first claimed `isRoad` handled the case (#282), then cited a colour table
+ *   with no such entry (#283), then asserted 3 construction ways at Westminster
+ *   and none proposed anywhere (#285) — that last one passing a test that
+ *   SUMMED the two values, so the pin could not see it. **A count pinned more
+ *   coarsely than the claim it defends is not a pin.**
  *
  * The filter lives HERE rather than in `isRoad` on purpose: `isRoad` also
  * decides what `buildRoads` DRAWS, and whether a road under construction should
