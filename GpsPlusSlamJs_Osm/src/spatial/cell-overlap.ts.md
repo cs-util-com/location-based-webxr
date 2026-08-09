@@ -107,9 +107,43 @@ obstacle sweep actually covers:
   `london-westminster` 339.4 → 154.0 ms, `cologne-cathedral` 182.1 → 96.9,
   `berlin-alexanderplatz` 92.7 → 68.1.
 
+- **Rejecting candidates by bounding box halves it again** on the two heaviest
+  sites. Bench means: `london-westminster` 154.3 → 73.6 ms (**−52 %**),
+  `cologne-cathedral` 95.2 → 47.4 ms (**−50 %**),
+  `berlin-alexanderplatz` 62.7 → 57.2 ms (**−9 %**).
+  - **The spread is the interesting part and it is not noise.** The win scales
+    with how much of the candidate disk MISSES, so sites of large sparse rings
+    gain most and `berlin-alexanderplatz` — already the cheapest, and the
+    noisiest at ±9 % — gains least. A change reported only as an average would
+    have hidden that.
+
 Those offline sweeps are where the equivalence evidence lives. The in-repo
 property test deliberately runs only 50 cases, because 200 put it over the 5 s
 per-test timeout under the root cascade's parallel load — see its own comment.
+
+## Why a miss is the expensive answer
+
+The optimisation above rests on an asymmetry that is worth stating plainly,
+because it is counter-intuitive and it shapes anything built on this predicate:
+
+- **An overlap is cheap.** `ringsOverlap` returns on the first witness that
+  fires, and for a genuine overlap one usually fires immediately.
+- **A non-overlap is expensive.** It must exhaust all three witnesses, and the
+  third is the O(n·m) scan over every edge pair — thousands of segment tests for
+  a large building ring.
+- Measured at **37×** (0.31 µs against 11.4 µs per candidate) in
+  [`spatial-query.bench.ts`](./spatial-query.bench.ts).
+
+A candidate disk is almost entirely misses — a radius-11 disk is 397 cells
+around a building that touches a handful — so the miss path _is_ the workload,
+and answering it in four comparisons instead of thousands is where the time
+went.
+
+**The consequence generalises, and it is the opposite of the obvious one:**
+making a broad phase more selective makes the narrow phase more expensive _per
+candidate_, because what a better filter removes are the cheap positives. Any
+future spatial index over this predicate needs its own bounding-box reject for
+the same reason, not merely a better tree.
 
 ## Examples
 

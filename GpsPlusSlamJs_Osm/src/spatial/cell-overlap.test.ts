@@ -152,6 +152,23 @@ describe("overlappingCells — agreement with h3", () => {
     }
   });
 
+  it("matches h3 for slivers, where a bounding-box reject is most tempting", () => {
+    // Why this test matters: a candidate cell whose bounding box is disjoint
+    // from the ring's is rejected before the exact predicate runs, which is what
+    // makes a MISS cheap — and misses are almost all of the work, since a
+    // rejection costs ~37x what an overlap does (see spatial-query.bench.ts).
+    //
+    // That reject is only sound if it is CONSERVATIVE. Touching must not count
+    // as disjoint, because `segmentsIntersect` counts a shared edge as an
+    // overlap, so a cell grazing the ring's bounding box is a cell h3 keeps. A
+    // sliver has a near-degenerate bounding box and therefore the highest
+    // possible proportion of grazing candidates, which is exactly where an
+    // off-by-one in the comparison would silently drop cells.
+    expectAgreesWithH3(rect(51.5, -0.12, 0.5, 40));
+    expectAgreesWithH3(rect(51.5, -0.12, 40, 0.5));
+    expectAgreesWithH3(rect(-33.86, 151.21, 0.2, 25));
+  });
+
   it("agrees with h3 for arbitrary small rings (property)", () => {
     // The generated case the examples cannot reach: skewed, thin, and
     // degenerate-ish quads at arbitrary places on the planet.

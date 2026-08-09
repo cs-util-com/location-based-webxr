@@ -89,8 +89,12 @@ export function overlappingCells(
 ): string[] | undefined {
   if (ring.length < 3) return undefined;
 
-  const centre = centreOf(ring);
-  if (centre === undefined) return undefined;
+  const bounds = boundsOf(ring);
+  if (bounds === undefined) return undefined;
+  const centre = {
+    lat: (bounds.minY + bounds.maxY) / 2,
+    lng: (bounds.minX + bounds.maxX) / 2,
+  };
 
   const radius = diskRadius(ring, centre, resolution);
   if (radius === undefined) return undefined;
@@ -111,7 +115,7 @@ export function overlappingCells(
   const covered: string[] = [];
   for (let distance = 0; distance < byDistance.length; distance++) {
     for (const cell of byDistance[distance] ?? []) {
-      if (!overlaps(ring, cell)) continue;
+      if (!overlaps(ring, bounds, cell)) continue;
       // A hit on the outermost ring means the disk may have cut the cover off.
       // See the header: declining here is what makes the radius a cost knob.
       if (distance === radius) return undefined;
@@ -121,10 +125,21 @@ export function overlappingCells(
   return covered;
 }
 
-/** The ring's bounding-box centre, or `undefined` if any coordinate is unusable. */
-function centreOf(
-  ring: readonly PlanarPoint[],
-): { lat: number; lng: number } | undefined {
+/** An axis-aligned box in the same `x = lng, y = lat` degrees as the ring. */
+interface Bounds {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+/**
+ * The ring's bounding box, or `undefined` if any coordinate is unusable.
+ *
+ * Used for two things at once: the disk's centre comes from its middle, and the
+ * box itself rejects candidate cells before the exact predicate runs.
+ */
+function boundsOf(ring: readonly PlanarPoint[]): Bounds | undefined {
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
@@ -137,7 +152,7 @@ function centreOf(
     if (point.y < minY) minY = point.y;
     if (point.y > maxY) maxY = point.y;
   }
-  return { lat: (minY + maxY) / 2, lng: (minX + maxX) / 2 };
+  return { minX, minY, maxX, maxY };
 }
 
 /**
@@ -189,7 +204,13 @@ function diskRadius(
  * lookup silently, which is why this says so rather than relying on it staying
  * true.
  */
-const boundaries = new Map<string, PlanarPoint[]>();
+const boundaries = new Map<string, CellShape>();
+
+/** A cell's boundary and its bounding box, derived together and cached together. */
+interface CellShape {
+  readonly boundary: PlanarPoint[];
+  readonly bounds: Bounds;
+}
 
 /**
  * Cap, in cells. Cleared wholesale rather than evicted one at a time.
@@ -201,7 +222,7 @@ const boundaries = new Map<string, PlanarPoint[]>();
  */
 const MAX_CACHED_BOUNDARIES = 1 << 16;
 
-function boundaryOf(cell: string): PlanarPoint[] {
+function shapeOf(cell: string): CellShape {
   const cached = boundaries.get(cell);
   if (cached !== undefined) return cached;
 
@@ -209,9 +230,19 @@ function boundaryOf(cell: string): PlanarPoint[] {
     x: lng,
     y: lat,
   }));
+  // A hexagon's box cannot be undefined — `cellToBoundary` always returns finite
+  // vertices — but deriving it through the same function the ring uses keeps one
+  // definition of "bounding box" rather than two that could drift apart.
+  const bounds = boundsOf(boundary) ?? {
+    minX: -Infinity,
+    minY: -Infinity,
+    maxX: Infinity,
+    maxY: Infinity,
+  };
+  const shape: CellShape = { boundary, bounds };
   if (boundaries.size >= MAX_CACHED_BOUNDARIES) boundaries.clear();
-  boundaries.set(cell, boundary);
-  return boundary;
+  boundaries.set(cell, shape);
+  return shape;
 }
 
 /**
@@ -226,6 +257,30 @@ function boundaryOf(cell: string): PlanarPoint[] {
  * hashed before and after. (An earlier draft of this comment said "7 141
  * polygons" — that is the TRIANGULATE differential's count, not this one's.)
  */
-function overlaps(ring: readonly PlanarPoint[], cell: string): boolean {
-  return ringsOverlap(ring, boundaryOf(cell));
+function overlaps(
+  ring: readonly PlanarPoint[],
+  bounds: Bounds,
+  cell: string,
+): boolean {
+  const shape = shapeOf(cell);
+  // The cheap reject, and it is where nearly all the time goes. A candidate disk
+  // is mostly MISSES — a radius-11 disk is 397 cells around a building that
+  // touches a handful — and a miss is the expensive answer: an overlap exits on
+  // the first witness that fires, while a non-overlap must exhaust all three,
+  // including the O(n*m) scan over every edge pair. Measured at 37x (see
+  // spatial-query.bench.ts), so answering misses in four comparisons instead of
+  // thousands is the whole optimisation.
+  //
+  // STRICT comparisons, deliberately: touching counts as overlapping everywhere
+  // in this package, so boxes that share an edge must fall through to the exact
+  // test rather than be rejected here.
+  if (
+    shape.bounds.maxX < bounds.minX ||
+    shape.bounds.minX > bounds.maxX ||
+    shape.bounds.maxY < bounds.minY ||
+    shape.bounds.minY > bounds.maxY
+  ) {
+    return false;
+  }
+  return ringsOverlap(ring, shape.boundary);
 }
