@@ -223,8 +223,7 @@ describe("splitAtGates", () => {
      *
      * `M` is a metre of LATITUDE, and using it for an east offset made every
      * "metre" here 0.62 of one at 51.5° N — so the boundary test below bracketed
-     * (0.62 m, 1.87 m) while claiming to bracket 1 m. Raised in review on #280.
-     */
+     * (0.62 m, 1.87 m) while claiming to bracket 1 m. */
     const LNG_M = M / Math.cos((ORIGIN.lat * Math.PI) / 180);
 
     const gateNear = (metres: number, offsetM: number) => ({
@@ -323,12 +322,12 @@ describe("splitAtGates", () => {
     });
 
     /**
-     * THE BOUNDARY THE RULE ACTUALLY TURNS ON (raised in review on #277). Every
+     * THE BOUNDARY THE RULE ACTUALLY TURNS ON. Every
      * other case here uses 0.2 m or 4 m, so nothing exercised the interval that
      * decides anything. `GATE_ON_BARRIER_M` is the whole tolerance argument, and
      * an off-by-a-comparison in `nearestOnLine` would be invisible without this.
      *
-     * WHAT THE BRACKET BUYS, STATED PRECISELY (corrected in review on #282): it
+     * WHAT THE BRACKET BUYS, STATED PRECISELY: it
      * pins that the threshold is **1 m and not 0.62 m or 1.87 m**, which is what
      * the latitude/longitude mix-up in `gateNear` had made it before `LNG_M`.
      * It does NOT distinguish `>` from `>=` — both 0.95 and 1.05 are strictly
@@ -373,7 +372,7 @@ describe("splitAtGates", () => {
 
     /**
      * A WAY THAT ENDS ON THE WALL STILL COUNTS, and this pins it as a decision
-     * (raised in review on #277). `segmentCrossing`'s bounds are inclusive, so a
+     *. `segmentCrossing`'s bounds are inclusive, so a
      * dead end abutting the barrier corroborates — which is right, because a
      * footway terminating at a gate in a wall IS a gateway, and mapping it as a
      * stub rather than as a line through is the mapper's style, not a claim that
@@ -398,7 +397,7 @@ describe("splitAtGates", () => {
     });
 
     /**
-     * ONLY A ROUTE CORROBORATES (raised in review on #277). The first version
+     * ONLY A ROUTE CORROBORATES. An early version
      * indexed every way, so a building outline or another wall could vouch for a
      * gate — and `entrance=*` nodes are overwhelmingly building-outline
      * vertices, which makes "building entrance + outline + nearby fence" the
@@ -423,8 +422,8 @@ describe("splitAtGates", () => {
     });
 
     /**
-     * THE CASE THE `isRoad` NARROWING EXISTS FOR (raised in review on #282,
-     * which pointed out nothing failed if it reverted). A plaza is a SURFACE
+     * THE CASE THE `isRoad` NARROWING EXISTS FOR — and it earned this test by
+     * being revertible with nothing failing. A plaza is a SURFACE
      * mapped as a closed outline, not a line through — the building-outline
      * argument arriving from the other side — and plazas abut walls constantly.
      * `roads.ts` already refuses `area=yes` for its own reasons; this pins that
@@ -477,7 +476,7 @@ describe("splitAtGates", () => {
     });
 
     /**
-     * AND THE VETO IS SYMMETRIC (raised in review on #277). A below-surface gate
+     * AND THE VETO IS SYMMETRIC. A below-surface gate
      * node was already refused; a below-surface WAY through a surface gate is
      * the same argument — a tunnel passing under a wall is not a way through it,
      * which is DEC-R12-1's rejected failure mode arriving from the other side.

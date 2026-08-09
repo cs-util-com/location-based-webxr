@@ -141,8 +141,9 @@ export const GATE_ON_BARRIER_M = 1;
  * **EVERY such gate, INCLUDING ones that are exact vertices of a barrier.**
  * Nothing here tests barrier membership — it cannot, because a gate is
  * collected once for the whole feature set while "is it on THIS barrier" is a
- * question per barrier. An earlier version of this comment claimed the
- * collection excluded on-barrier gates, which was simply false.
+ * question per barrier. (Stated explicitly because the opposite — that the
+ * collection excludes on-barrier gates — is the intuitive reading, and a wrong
+ * one.)
  *
  * The consequence is worth stating rather than hiding: for a gate that IS a
  * vertex of the barrier being split, that barrier is not in `throughWays` (it is
@@ -201,10 +202,8 @@ export const NO_GATES: GateOpenings = {
 /**
  * Whether this way may act as the "a route passes through here" half of DEC-A2.
  *
- * **A ROUTE, NOT ANY LINE, and that restriction was a review finding rather than
- * the original design.** The first version indexed every way, so a building
- * outline, a `landuse` edge, a waterway or another wall could corroborate a
- * gate. That is a real false-positive shape and not a contrived one: `entrance=*`
+ * **A ROUTE, NOT ANY LINE.** Indexing every way lets a building outline, a
+ * `landuse` edge, a waterway or another wall corroborate a gate. That is a real false-positive shape and not a contrived one: `entrance=*`
  * nodes are overwhelmingly vertices of BUILDING outlines, so
  * "building entrance node + building outline + a fence within a metre" would
  * have opened the fence — none of which involves a path.
@@ -220,7 +219,7 @@ export const NO_GATES: GateOpenings = {
  *   plazas abut walls constantly. **`isRoad` handles this one.**
  * - `highway=construction` / `proposed` — a route that does not exist yet
  *   vouching for a gate. **`isRoad` does NOT handle this**, and an earlier
- *   version of this comment claimed it did (corrected in review on #282):
+ *   version of this comment claimed it did:
  *   `roads.ts` filters nodes, a missing `highway`, `tunnel=yes`, `covered=yes`
  *   and `area=yes`, and nothing else. **The class is real, and BOTH values are
  *   evidenced in the corpus**: `highway=construction` appears **3×** in Berlin's
@@ -229,12 +228,9 @@ export const NO_GATES: GateOpenings = {
  *   fixture refresh nor a swap of one value for the other can falsify this
  *   sentence silently. Hence {@link UNBUILT_HIGHWAYS} below.
  *
- *   This sentence took four attempts, which is the useful part of its history:
- *   it first claimed `isRoad` handled the case (#282), then cited a colour table
- *   with no such entry (#283), then asserted 3 construction ways at Westminster
- *   and none proposed anywhere (#285) — that last one passing a test that
- *   SUMMED the two values, so the pin could not see it. **A count pinned more
- *   coarsely than the claim it defends is not a pin.**
+ *   **Pinned per value, not as a total**, because a summed assertion once let
+ *   a wrong split (3 construction / none proposed) sit green: a count pinned
+ *   more coarsely than the claim it defends is not a pin.
  *
  * The filter lives HERE rather than in `isRoad` on purpose: `isRoad` also
  * decides what `buildRoads` DRAWS, and whether a road under construction should

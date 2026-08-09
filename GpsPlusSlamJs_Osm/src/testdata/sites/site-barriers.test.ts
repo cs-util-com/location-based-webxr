@@ -209,7 +209,7 @@ describe("site barriers", () => {
 
   /**
    * The corpus evidence for `UNBUILT_HIGHWAYS`, PINNED rather than asserted in
-   * prose (raised in review on #284).
+   * prose.
    *
    * `barrier-gates.ts` justifies filtering `highway=construction`/`proposed` by
    * saying the class occurs in real data — and an earlier version of that
@@ -221,7 +221,7 @@ describe("site barriers", () => {
    * show it. It summed `construction` and `proposed` into one number per site,
    * which let the accompanying prose claim "Westminster has three construction
    * ways, and `proposed` appears at no site" pass green — the true split is
-   * **1 construction + 2 proposed** (raised in review on #285). A sum also means
+   * **1 construction + 2 proposed**. A sum also means
    * a fixture that swapped one value for the other would stay green, which is
    * precisely the silent falsification this test exists to prevent.
    *
