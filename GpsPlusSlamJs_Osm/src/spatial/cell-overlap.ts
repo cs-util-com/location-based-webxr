@@ -52,6 +52,7 @@ import {
   latLngToCell,
 } from "h3-js";
 
+import { bboxesIntersect, type Bbox } from "./clip.js";
 import { type PlanarPoint } from "./point-in-ring.js";
 import { ringsOverlap } from "./ring-overlap.js";
 
@@ -92,8 +93,8 @@ export function overlappingCells(
   const bounds = boundsOf(ring);
   if (bounds === undefined) return undefined;
   const centre = {
-    lat: (bounds.minY + bounds.maxY) / 2,
-    lng: (bounds.minX + bounds.maxX) / 2,
+    lat: (bounds.south + bounds.north) / 2,
+    lng: (bounds.west + bounds.east) / 2,
   };
 
   const radius = diskRadius(ring, centre, resolution);
@@ -125,21 +126,22 @@ export function overlappingCells(
   return covered;
 }
 
-/** An axis-aligned box in the same `x = lng, y = lat` degrees as the ring. */
-interface Bounds {
-  readonly minX: number;
-  readonly minY: number;
-  readonly maxX: number;
-  readonly maxY: number;
-}
-
 /**
  * The ring's bounding box, or `undefined` if any coordinate is unusable.
  *
  * Used for two things at once: the disk's centre comes from its middle, and the
  * box itself rejects candidate cells before the exact predicate runs.
+ *
+ * Produces `clip.ts`'s `Bbox` rather than a local shape, so the comparison can
+ * be `bboxesIntersect` rather than a second hand-written one. That matters more
+ * than it looks: the two would differ in whether TOUCHING counts, and this
+ * package's answer is that it does — a divergence that would show up as an
+ * occasional missing cell rather than as a failure.
+ *
+ * `clip.ts`'s own `boundsOf` is not reused because it consumes `LatLng`, and
+ * converting every ring to feed it would allocate on the hottest path here.
  */
-function boundsOf(ring: readonly PlanarPoint[]): Bounds | undefined {
+function boundsOf(ring: readonly PlanarPoint[]): Bbox | undefined {
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
@@ -152,7 +154,7 @@ function boundsOf(ring: readonly PlanarPoint[]): Bounds | undefined {
     if (point.y < minY) minY = point.y;
     if (point.y > maxY) maxY = point.y;
   }
-  return { minX, minY, maxX, maxY };
+  return { west: minX, south: minY, east: maxX, north: maxY };
 }
 
 /**
@@ -209,7 +211,7 @@ const boundaries = new Map<string, CellShape>();
 /** A cell's boundary and its bounding box, derived together and cached together. */
 interface CellShape {
   readonly boundary: PlanarPoint[];
-  readonly bounds: Bounds;
+  readonly bounds: Bbox;
 }
 
 /**
@@ -234,10 +236,10 @@ function shapeOf(cell: string): CellShape {
   // vertices — but deriving it through the same function the ring uses keeps one
   // definition of "bounding box" rather than two that could drift apart.
   const bounds = boundsOf(boundary) ?? {
-    minX: -Infinity,
-    minY: -Infinity,
-    maxX: Infinity,
-    maxY: Infinity,
+    west: -Infinity,
+    south: -Infinity,
+    east: Infinity,
+    north: Infinity,
   };
   const shape: CellShape = { boundary, bounds };
   if (boundaries.size >= MAX_CACHED_BOUNDARIES) boundaries.clear();
@@ -259,7 +261,7 @@ function shapeOf(cell: string): CellShape {
  */
 function overlaps(
   ring: readonly PlanarPoint[],
-  bounds: Bounds,
+  bounds: Bbox,
   cell: string,
 ): boolean {
   const shape = shapeOf(cell);
@@ -271,16 +273,9 @@ function overlaps(
   // spatial-query.bench.ts), so answering misses in four comparisons instead of
   // thousands is the whole optimisation.
   //
-  // STRICT comparisons, deliberately: touching counts as overlapping everywhere
-  // in this package, so boxes that share an edge must fall through to the exact
-  // test rather than be rejected here.
-  if (
-    shape.bounds.maxX < bounds.minX ||
-    shape.bounds.minX > bounds.maxX ||
-    shape.bounds.maxY < bounds.minY ||
-    shape.bounds.minY > bounds.maxY
-  ) {
-    return false;
-  }
+  // `bboxesIntersect` is INCLUSIVE, which is the answer this package needs:
+  // touching counts as overlapping everywhere in it, so boxes sharing an edge
+  // must fall through to the exact test rather than be rejected here.
+  if (!bboxesIntersect(shape.bounds, bounds)) return false;
   return ringsOverlap(ring, shape.boundary);
 }
