@@ -223,8 +223,11 @@ export const NO_GATES: GateOpenings = {
  *   version of this comment claimed it did (corrected in review on #282):
  *   `roads.ts` filters nodes, a missing `highway`, `tunnel=yes`, `covered=yes`
  *   and `area=yes`, and nothing else. **The class is real, and the evidence is
- *   the corpus itself**: `highway=construction` appears once in the Westminster
- *   fixture and three times in Berlin's. Hence {@link UNBUILT_HIGHWAYS} below.
+ *   the corpus itself**: `highway=construction` appears three times in the
+ *   Westminster fixture and three times in Berlin's, **pinned by
+ *   `site-barriers.test.ts`** so a fixture refresh cannot falsify this sentence
+ *   silently. `highway=proposed` appears at no site and is filtered
+ *   defensively. Hence {@link UNBUILT_HIGHWAYS} below.
  *   (An earlier version of this sentence cited a colour table that has no such
  *   entry — corrected in review on #283, and it was the same unchecked
  *   cross-module claim this filter exists to stop making.)

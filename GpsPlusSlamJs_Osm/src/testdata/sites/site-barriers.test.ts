@@ -207,6 +207,45 @@ describe("site barriers", () => {
     });
   });
 
+  /**
+   * The corpus evidence for `UNBUILT_HIGHWAYS`, PINNED rather than asserted in
+   * prose (raised in review on #284).
+   *
+   * `barrier-gates.ts` justifies filtering `highway=construction`/`proposed` by
+   * saying the class occurs in real data — and an earlier version of that
+   * sentence cited a colour table that has no such entry, which is what made
+   * the justification worth pinning at all. Prose that names counts is a claim
+   * a fixture refresh can silently falsify; this makes it go red instead.
+   *
+   * NOTE `highway=proposed` appears at NO site. It is in the filter anyway,
+   * defensively and at no cost — the set is two values — but the honest reading
+   * of these numbers is that only `construction` is evidenced.
+   */
+  it("still contains the unbuilt highways UNBUILT_HIGHWAYS exists for", () => {
+    const unbuilt: Record<string, number> = {};
+    for (const [id] of cases) {
+      const entry = built.get(id);
+      if (entry === undefined) throw new Error(`no build for ${id}`);
+      unbuilt[id] = entry.features.filter(
+        (feature) =>
+          feature.type === "way" &&
+          (feature.tags["highway"] === "construction" ||
+            feature.tags["highway"] === "proposed"),
+      ).length;
+    }
+
+    expect(unbuilt).toEqual({
+      "cologne-cathedral": 0,
+      "heidelberg-altstadt": 0,
+      "berlin-alexanderplatz": 3,
+      "sylt-westerland": 0,
+      "manhattan-midtown": 0,
+      "tokyo-shinjuku": 0,
+      "london-tower-bridge": 0,
+      "london-westminster": 3,
+    });
+  });
+
   it("leaves gates and kerbs passable across the whole corpus", () => {
     // The other direction, and the louder failure: a sealed gate closes the
     // very route the demo exists to show an agent taking, and a solid kerb
