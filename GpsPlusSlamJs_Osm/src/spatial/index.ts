@@ -52,3 +52,9 @@ export {
 export type { PlanarPoint } from "./point-in-ring.js";
 export { containsPoint } from "./point-in-ring.js";
 export { segmentCrossesRing, segmentsIntersect } from "./segment-crossing.js";
+
+export type { PlanarPolygon } from "./ring-overlap.js";
+export { ringsOverlap, polygonsOverlap } from "./ring-overlap.js";
+
+export type { PlanarGeometry } from "./geometry-overlap.js";
+export { geometryOverlaps, toPlanarGeometry } from "./geometry-overlap.js";
