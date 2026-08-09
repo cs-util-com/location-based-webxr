@@ -52,8 +52,8 @@ import {
   latLngToCell,
 } from "h3-js";
 
-import { containsPoint, type PlanarPoint } from "./point-in-ring.js";
-import { segmentsIntersect } from "./segment-crossing.js";
+import { type PlanarPoint } from "./point-in-ring.js";
+import { ringsOverlap } from "./ring-overlap.js";
 
 /**
  * Beyond this many candidate cells, h3's own cover is the cheaper answer.
@@ -214,34 +214,16 @@ function boundaryOf(cell: string): PlanarPoint[] {
   return boundary;
 }
 
-/** Whether `cell`'s hexagon and `ring` share any area. */
+/**
+ * Whether `cell`'s hexagon and `ring` share any area.
+ *
+ * The three-witness test that used to live here now lives in
+ * `ring-overlap.ts` — the cell was always incidental to it, since every line
+ * below the boundary lookup operated on two plain point arrays. Hoisting it
+ * leaves ONE copy of the predicate for the spatial index to share, and this
+ * file's corpus differential (7 141 polygons and 40 000 generated rings against
+ * h3) becomes the regression guard on it.
+ */
 function overlaps(ring: readonly PlanarPoint[], cell: string): boolean {
-  const boundary = boundaryOf(cell);
-
-  for (const corner of boundary) {
-    if (containsPoint(ring, corner)) return true;
-  }
-  for (const point of ring) {
-    if (containsPoint(boundary, point)) return true;
-  }
-  return edgesCross(ring, boundary);
-}
-
-/** Whether any edge of `ring` crosses any edge of `boundary`. */
-function edgesCross(
-  ring: readonly PlanarPoint[],
-  boundary: readonly PlanarPoint[],
-): boolean {
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[j];
-    const b = ring[i];
-    if (a === undefined || b === undefined) continue;
-    for (let p = 0, q = boundary.length - 1; p < boundary.length; q = p++) {
-      const c = boundary[q];
-      const d = boundary[p];
-      if (c === undefined || d === undefined) continue;
-      if (segmentsIntersect(a, b, c, d)) return true;
-    }
-  }
-  return false;
+  return ringsOverlap(ring, boundaryOf(cell));
 }
