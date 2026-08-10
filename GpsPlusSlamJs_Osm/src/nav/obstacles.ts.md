@@ -83,6 +83,28 @@ it is a property of the **step**, not of the cell:
 Wire it in through `ColumnSpaceOptions.canCross`; the default admits everything,
 which is design rung 5.3 where agents deliberately do walk up walls.
 
+### Its cost, and what dominates it
+
+Measured in [`obstacles.bench.ts`](./obstacles.bench.ts) — **~3.8 µs per step**
+after the centre memo, from ~6.2 µs before it. A\* calls this as `canCross` for
+every newly discovered state, up to `DEFAULT_ROUTE_EXPANSIONS` = 20 000 per
+click, so it is ~77 ms of a route request.
+
+**The bill is the fixed per-call work, not the ring tests**, and the bench shows
+it the only way that is convincing: a step whose whole disk contains **no
+obstacle at all** — running zero ring tests — cost the same 6.2 µs as one on
+indexed cells. What remains of that floor is a `gridDisk`, an array spread, a
+`Set` allocation and seven map lookups per call.
+
+- **Cell centres are memoised**, capped and cleared wholesale, exactly as
+  `cell-overlap.ts` memoises cell boundaries and for the same reason: a cell is
+  asked about once as `from` and up to six times as `to`. The cached points are
+  **shared and read-only**.
+- **Consequence for anything added to the index:** the ring tests have headroom,
+  so a new feature class is cheaper than it looks — _provided its geometry is
+  clipped_. An unclipped kilometre-scale relation puts thousands of vertices into
+  every call within its span, which is the one shape that would move this number.
+
 ## Invariants
 
 - **The ground level is always offered, alongside every obstacle top.** A res-13

@@ -341,6 +341,44 @@ export function obstacleLevelsAt(
  * cells further apart the segment can leave the disk and the answer is a lower
  * bound rather than a guarantee.
  */
+/**
+ * Cell centres, memoised — the search asks for the same ones over and over.
+ *
+ * **Measured, not assumed.** `obstacles.bench.ts` prices a step at ~6.2 µs on
+ * indexed cells and ~6.3 µs on cells with no obstacle anywhere in their disk —
+ * i.e. **a step that runs no ring test at all costs the same**, so the bill is
+ * the fixed per-call work rather than the geometry. Two `cellToLatLng` calls are
+ * part of that floor, each allocating a fresh pair, and A\* asks about a given
+ * cell once as `from` and up to six times as `to`.
+ *
+ * A cell id encodes its own resolution, so the id alone is a complete key —
+ * the same reasoning `cell-overlap.ts`'s boundary memo uses.
+ *
+ * **The cached points are shared and must be treated as read-only.** Nothing
+ * outside this module can reach them and `segmentCrossesRing` only reads, but a
+ * future mutator would corrupt every later step silently, which is why this says
+ * so rather than relying on it staying true.
+ */
+const centres = new Map<string, PlanarPoint>();
+
+/**
+ * Cap, in cells. Cleared wholesale rather than evicted one at a time — the same
+ * choice, for the same reason, as `cell-overlap.ts`: a session walking across a
+ * city grows this without limit, and an LRU here would be more machinery than
+ * the thing it guards.
+ */
+const MAX_CACHED_CENTRES = 1 << 16;
+
+function centreOf(cell: string): PlanarPoint {
+  const cached = centres.get(cell);
+  if (cached !== undefined) return cached;
+  const [lat, lng] = cellToLatLng(cell);
+  const point: PlanarPoint = { x: lng, y: lat };
+  if (centres.size >= MAX_CACHED_CENTRES) centres.clear();
+  centres.set(cell, point);
+  return point;
+}
+
 export function crossesObstacle(
   index: ObstacleIndex,
   fromCell: string,
@@ -348,10 +386,8 @@ export function crossesObstacle(
 ): boolean {
   if (fromCell === toCell) return false;
 
-  const [fromLat, fromLng] = cellToLatLng(fromCell);
-  const [toLat, toLng] = cellToLatLng(toCell);
-  const a = { x: fromLng, y: fromLat };
-  const b = { x: toLng, y: toLat };
+  const a = centreOf(fromCell);
+  const b = centreOf(toCell);
 
   // DEDUPED BY IDENTITY, not by key: one obstacle routinely covers several of
   // these cells, and testing its rings again is pure cost on the search's

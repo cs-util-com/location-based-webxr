@@ -409,6 +409,37 @@ describe("crossesObstacle — what finally makes a wall block", () => {
     expect(crossesObstacle(index, south, north)).toBe(false);
   });
 
+  it("keeps answering correctly once the centre memo is warm", () => {
+    // WHY THIS TEST MATTERS. `crossesObstacle` memoises cell centres, because
+    // the two `cellToLatLng` calls were ~38 % of its per-step cost (measured in
+    // `obstacles.bench.ts`, which prices a step with NO obstacles anywhere in
+    // its disk at the same 6.2 µs as one with them — so the bill was the fixed
+    // work, not the geometry).
+    //
+    // A memo can only fail in ways that are invisible to a cold single
+    // assertion: a mutated shared point, or a key that collides. So this asks
+    // the SAME question after the cache has been filled by many other cells,
+    // which is the shape a real search has and a fresh fixture does not.
+    const index = buildObstacleIndex([northSouthWall]);
+    const [west, east] = straddlingPair(HOME.lng);
+
+    const cold = crossesObstacle(index, west, east);
+    expect(cold).toBe(true);
+
+    // Warm the cache with a few hundred unrelated cells, as an A* expansion
+    // would, then ask again. Both the blocked and the free answer must survive.
+    const south = cellAt(HOME.lat - STEP * 12, HOME.lng - STEP * 20);
+    const north = cellAt(HOME.lat + STEP * 12, HOME.lng - STEP * 20);
+    for (let i = 1; i <= 300; i++) {
+      const a = cellAt(HOME.lat + STEP * i, HOME.lng - STEP * (i + 30));
+      const b = cellAt(HOME.lat + STEP * (i + 1), HOME.lng - STEP * (i + 30));
+      crossesObstacle(index, a, b);
+    }
+
+    expect(crossesObstacle(index, west, east)).toBe(true);
+    expect(crossesObstacle(index, south, north)).toBe(false);
+  });
+
   it("never blocks a step from a cell to itself", () => {
     // Standing still, and — more to the point — stepping between two LEVELS of
     // one cell, which is the only move the column model has that a 2D model
