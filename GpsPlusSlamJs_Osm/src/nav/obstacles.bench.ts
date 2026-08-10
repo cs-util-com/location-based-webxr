@@ -107,7 +107,14 @@ describe("buildObstacleIndex — the production entry point", () => {
  * assumed. Per step, `london-westminster` **6.2 µs on indexed cells and 6.3 µs
  * on verified-clear ones**; `berlin-alexanderplatz` 7.0 and 6.2. A clear step
  * runs **no ring tests at all** — every `obstaclesIn` in its disk returns empty
- * — and costs the same.
+ * — and cost the same.
+ *
+ * ACTED ON, and the floor was nearly all of it. Memoising cell centres took it
+ * to 3.8 µs (−38 %); memoising the radius-1 disk and visiting `toCell`
+ * separately took it to **0.83 µs (−87 % overall)**, so a route click pays ~17 ms
+ * rather than ~124 ms. **The two populations now differ** — 0.33 µs against
+ * 0.22 µs — which is the check that what is left really is the ring tests: while
+ * they read the same, no geometry change could have been visible in this bench.
  *
  * **So the cost is the fixed per-call overhead, not the geometry**: two
  * `cellToLatLng` conversions, a `gridDisk(fromCell, 1)`, and seven map lookups,

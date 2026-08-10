@@ -392,34 +392,69 @@ export function crossesObstacle(
   // DEDUPED BY IDENTITY, not by key: one obstacle routinely covers several of
   // these cells, and testing its rings again is pure cost on the search's
   // hottest path.
+  //
+  // The disk is MEMOISED and the `toCell` is visited separately rather than
+  // spread into a fresh array with it: both allocated once per step, on a path
+  // the search runs 20 000 times per click. `toCell` is usually already in the
+  // disk, so it is often examined twice — which costs one map lookup and cannot
+  // change the answer, because the dedupe below is by obstacle identity.
   const seen = new Set<Obstacle>();
-  for (const cell of [...gridDisk(fromCell, 1), toCell]) {
-    for (const obstacle of index.obstaclesIn(cell)) {
-      if (seen.has(obstacle)) continue;
-      seen.add(obstacle);
-      // A MAPPED PASSAGE ADMITS THE STEPS THAT RUN ALONG IT, and refuses the
-      // ones that do not — INCLUDING the ones that cross no boundary at all
-      // (DEC-R12-3). Both halves are needed and neither is sufficient:
-      //
-      // - without the first, the passage is sealed and the tag does nothing;
-      // - without the second, opening a mouth frees the whole INTERIOR, because
-      //   `segmentCrossesRing` is false for a segment lying wholly inside a ring
-      //   and `obstacleLevelsAt` never removes a cell's ground level. Before a
-      //   building could be entered at all that was unobservable; an opening
-      //   makes it reachable, and a route would cut a diagonal between two
-      //   mouths through the rooms between them.
-      //
-      // Reached only for obstacles that HAVE passages — almost none do — so the
-      // ordinary building pays one `undefined` test and nothing else.
-      if (obstacle.passages !== undefined) {
-        if (blockedDespitePassages(a, b, obstacle, obstacle.passages))
-          return true;
-        continue;
-      }
+  for (const cell of diskOf(fromCell)) {
+    if (crossesAnyIn(index, cell, seen, a, b)) return true;
+  }
+  return crossesAnyIn(index, toCell, seen, a, b);
+}
 
-      for (const ring of obstacle.rings) {
-        if (segmentCrossesRing(a, b, ring)) return true;
-      }
+/**
+ * Radius-1 disks, memoised alongside {@link centres} and for the same measured
+ * reason: `gridDisk` allocates seven fresh strings per call, once per step.
+ *
+ * **The cached arrays are shared and must be treated as read-only.**
+ */
+const disks = new Map<string, string[]>();
+
+function diskOf(cell: string): readonly string[] {
+  const cached = disks.get(cell);
+  if (cached !== undefined) return cached;
+  const disk = gridDisk(cell, 1);
+  if (disks.size >= MAX_CACHED_CENTRES) disks.clear();
+  disks.set(cell, disk);
+  return disk;
+}
+
+/** Whether any not-yet-seen obstacle in `cell` blocks the step `a → b`. */
+function crossesAnyIn(
+  index: ObstacleIndex,
+  cell: string,
+  seen: Set<Obstacle>,
+  a: PlanarPoint,
+  b: PlanarPoint,
+): boolean {
+  for (const obstacle of index.obstaclesIn(cell)) {
+    if (seen.has(obstacle)) continue;
+    seen.add(obstacle);
+    // A MAPPED PASSAGE ADMITS THE STEPS THAT RUN ALONG IT, and refuses the
+    // ones that do not — INCLUDING the ones that cross no boundary at all
+    // (DEC-R12-3). Both halves are needed and neither is sufficient:
+    //
+    // - without the first, the passage is sealed and the tag does nothing;
+    // - without the second, opening a mouth frees the whole INTERIOR, because
+    //   `segmentCrossesRing` is false for a segment lying wholly inside a ring
+    //   and `obstacleLevelsAt` never removes a cell's ground level. Before a
+    //   building could be entered at all that was unobservable; an opening
+    //   makes it reachable, and a route would cut a diagonal between two
+    //   mouths through the rooms between them.
+    //
+    // Reached only for obstacles that HAVE passages — almost none do — so the
+    // ordinary building pays one `undefined` test and nothing else.
+    if (obstacle.passages !== undefined) {
+      if (blockedDespitePassages(a, b, obstacle, obstacle.passages))
+        return true;
+      continue;
+    }
+
+    for (const ring of obstacle.rings) {
+      if (segmentCrossesRing(a, b, ring)) return true;
     }
   }
   return false;
