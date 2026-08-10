@@ -62,9 +62,12 @@ open, so a query built on this alone answers for a minority of features.
 - **A caller must not pass an open way's points in as a ring.** Nothing here can
   distinguish a closed ring from an open line, so a road handed in as a ring is
   silently given an interior it does not have.
-- **Points and lines need a different predicate.** For a zero-area object
-  "overlap" means distance-to, not area-sharing. That contract does not exist
-  yet and is the real remaining work.
+- **Use [`geometry-overlap.ts`](./geometry-overlap.ts.md) unless you know you
+  have a polygon.** `geometryOverlaps` dispatches on `OsmGeometry`'s five kinds
+  under the exact zero-tolerance contract, so it cannot be handed the wrong one:
+  a point overlaps when it is inside, a line when it enters or crosses, an area
+  through `polygonsOverlap` here. This file is that predicate's areal case, kept
+  separate because `cell-overlap.ts` needs exactly that and nothing more.
 - **`PlanarPolygon` structurally accepts a flattened multipolygon and would then
   read parts 2..n as holes.** `multipolygon-builder.ts`'s `groupRingsIntoPolygons`
   emits one polygon per outer ring, so the converter is safe — but nothing in the
@@ -83,10 +86,13 @@ corpus differential becomes this file's regression guard: **3 397 sweep rings an
 40 000 generated rings against h3, plus 10 856 corpus geometries hashed before
 and after — zero differences.**
 
-- **That evidence is OFFLINE.** What runs on every gate is
-  `cell-overlap.test.ts`'s 50-case property run, so "the differential still
-  passes" means the offline sweeps were re-run by hand, not that the gate re-runs
-  them.
+- **That evidence used to be OFFLINE and no longer is.**
+  [`cell-overlap.differential.test.ts`](./cell-overlap.differential.test.ts) now
+  runs the corpus differential in the gate — every `STRIDE`-th ring of all eight
+  sites, exhaustive one constant away. It samples because the full sweep costs
+  54 s under gate contention; what changed is that "the differential still
+  passes" no longer means someone re-ran it by hand and remembered to say so.
+  - The 40 000-ring sweep and the corpus geometry hashes are still offline.
 - An earlier draft of this file said "7 141 polygons". That is the count from the
   **triangulate** differential, not this one — corrected 2026-08-09.
 

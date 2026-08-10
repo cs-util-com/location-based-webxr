@@ -41,9 +41,14 @@
  * **A caller must not hand an open way's points in as a ring.** Nothing here can
  * tell a closed ring from an open line, so a road passed as a ring is silently
  * given an interior it does not have, and a query "is this inside" gets a
- * confident wrong answer. Points and lines need a different predicate — for a
- * zero-area object "overlap" means distance-to, not area-sharing — and that
- * contract does not exist yet.
+ * confident wrong answer.
+ *
+ * **USE `geometry-overlap.ts` UNLESS YOU KNOW YOU HAVE A POLYGON.**
+ * `geometryOverlaps` dispatches on `OsmGeometry`'s five kinds and cannot be
+ * handed the wrong one — a point overlaps when it is inside, a line when it
+ * enters or crosses, an area through `polygonsOverlap` here. This file is its
+ * areal case, kept separate because `cell-overlap.ts` needs exactly that and
+ * nothing more.
  *
  * @see ring-overlap.ts.md
  */

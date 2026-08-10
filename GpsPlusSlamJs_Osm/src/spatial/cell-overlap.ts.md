@@ -117,7 +117,14 @@ obstacle sweep actually covers:
     noisiest at ±9 % — gains least. A change reported only as an average would
     have hidden that.
 
-Those offline sweeps are where the equivalence evidence lives. The in-repo
+Those sweeps are where the equivalence evidence lives, and **the corpus
+differential now runs in the gate** —
+[`cell-overlap.differential.test.ts`](./cell-overlap.differential.test.ts) takes
+every `STRIDE`-th ring of all eight sites, with the exhaustive sweep one constant
+away. It samples because the full run costs 3.6 s alone but **54 s under gate
+contention**, which would make it the most expensive test in the package.
+
+The 40 000-ring sweep and the corpus geometry hashes remain offline. The in-repo
 property test deliberately runs only 50 cases, because 200 put it over the 5 s
 per-test timeout under the root cascade's parallel load — see its own comment.
 
@@ -169,7 +176,7 @@ sensible oracle: the module's entire contract is to give the same answer more
 cheaply, so a hand-written expectation would be a weaker restatement of what h3
 already defines. Covers a barrier-sized quad, a building-sized rectangle, a
 polygon smaller than one cell, a concave L, both windings, four resolutions, high
-latitude and the antimeridian, and a 200-case property run over arbitrary small
+latitude and the antimeridian, and a 50-case property run over arbitrary small
 rings. Failures report _missing_ and _extra_ cells separately, because those mean
 opposite things — a missed cell is wall that stops blocking, an extra one is a
 phantom obstacle.
