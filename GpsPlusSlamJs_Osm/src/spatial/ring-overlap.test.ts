@@ -22,7 +22,6 @@
  */
 
 import { describe, expect, it } from "vitest";
-import fc from "fast-check";
 
 import { polygonsOverlap, ringsOverlap } from "./ring-overlap.js";
 import type { PlanarPoint } from "./point-in-ring.js";
@@ -87,27 +86,6 @@ describe("ringsOverlap — two simple rings", () => {
       ),
     ).toBe(false);
   });
-
-  it("is symmetric for arbitrary boxes (property)", () => {
-    // Symmetry is the property most likely to break when the three witnesses
-    // are reordered or one is dropped, and it holds for any correct predicate.
-    fc.assert(
-      fc.property(
-        fc.integer({ min: -20, max: 20 }),
-        fc.integer({ min: -20, max: 20 }),
-        fc.integer({ min: 1, max: 15 }),
-        fc.integer({ min: 1, max: 15 }),
-        fc.integer({ min: -20, max: 20 }),
-        fc.integer({ min: -20, max: 20 }),
-        (ax, ay, aw, ah, bx, by) => {
-          const a = box(ax, ay, ax + aw, ay + ah);
-          const b = box(bx, by, bx + aw, by + ah);
-          expect(ringsOverlap(a, b)).toBe(ringsOverlap(b, a));
-        },
-      ),
-      { numRuns: 100 },
-    );
-  });
 });
 
 describe("polygonsOverlap — holes are subtracted", () => {
@@ -148,23 +126,5 @@ describe("polygonsOverlap — holes are subtracted", () => {
   it("is TRUE when a hole-free shape contains the whole donut", () => {
     // The donut is inside it, and the donut has solid area, so they overlap.
     expect(polygonsOverlap(donut, [box(-5, -5, 25, 25)])).toBe(true);
-  });
-
-  it("treats a polygon with no holes exactly as ringsOverlap does", () => {
-    // The generalisation must not change the answer for the case that already
-    // worked — this is the regression guard on the hoist itself.
-    fc.assert(
-      fc.property(
-        fc.integer({ min: -20, max: 20 }),
-        fc.integer({ min: -20, max: 20 }),
-        fc.integer({ min: 1, max: 15 }),
-        (bx, by, bw) => {
-          const a = box(0, 0, 10, 10);
-          const b = box(bx, by, bx + bw, by + bw);
-          expect(polygonsOverlap([a], [b])).toBe(ringsOverlap(a, b));
-        },
-      ),
-      { numRuns: 100 },
-    );
   });
 });

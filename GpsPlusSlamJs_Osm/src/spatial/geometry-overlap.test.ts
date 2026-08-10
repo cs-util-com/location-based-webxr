@@ -27,10 +27,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-import fc from "fast-check";
 
 import { geometryOverlaps, toPlanarGeometry } from "./geometry-overlap.js";
-import { containsPoint, type PlanarPoint } from "./point-in-ring.js";
+import { type PlanarPoint } from "./point-in-ring.js";
 import type { PlanarPolygon } from "./ring-overlap.js";
 
 /** An axis-aligned box, counter-clockwise. */
@@ -77,23 +76,6 @@ describe("geometryOverlaps — points", () => {
     expect(
       geometryOverlaps({ kind: "point", position: at(2, 2) }, DONUT_QUERY),
     ).toBe(true);
-  });
-
-  it("agrees with containsPoint for arbitrary points (property)", () => {
-    // The point case must be exactly the existing predicate and nothing more —
-    // no tolerance, no epsilon. This is the regression guard on that.
-    fc.assert(
-      fc.property(
-        fc.integer({ min: -30, max: 50 }),
-        fc.integer({ min: -30, max: 50 }),
-        (x, y) => {
-          expect(
-            geometryOverlaps({ kind: "point", position: at(x, y) }, QUERY),
-          ).toBe(containsPoint(QUERY[0] as PlanarPoint[], at(x, y)));
-        },
-      ),
-      { numRuns: 50 },
-    );
   });
 });
 

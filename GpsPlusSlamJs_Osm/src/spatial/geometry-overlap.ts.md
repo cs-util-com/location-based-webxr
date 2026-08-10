@@ -99,5 +99,7 @@ hole rule intact.
 Two conversion tests pin `x = lng, y = lat` — backwards is a mistake that still
 looks plausible near the equator — and that every kind survives the conversion.
 
-One property: the point case agrees with `containsPoint` exactly, which is the
+`geometry-overlap.property.test.ts` carries the one generated run, per the
+repo's `*.property.test.ts` convention (moved out of the example file
+2026-08-10): the point case agrees with `containsPoint` exactly, which is the
 guard on "no tolerance crept in".

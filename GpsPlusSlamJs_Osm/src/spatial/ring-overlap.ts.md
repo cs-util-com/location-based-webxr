@@ -113,10 +113,12 @@ swallowed by a hole (**with the ring-only predicate asserted to disagree**, so t
 distinction cannot be optimised away), straddling a hole's rim, on the solid part,
 each inside the other's hole, and a hole-free shape containing a whole donut.
 
-Two properties: `ringsOverlap` is **symmetric** for arbitrary boxes — the property
-most likely to break if a witness is dropped or reordered — and `polygonsOverlap`
-with no holes agrees with `ringsOverlap`, which is the regression guard on the
-generalisation itself.
+`ring-overlap.property.test.ts` carries the two generated runs, per the repo's
+`*.property.test.ts` convention (moved out of the example file 2026-08-10):
+`ringsOverlap` is **symmetric** for arbitrary boxes — the property most likely to
+break if a witness is dropped or reordered — and `polygonsOverlap` with no holes
+agrees with `ringsOverlap`, which is the regression guard on the generalisation
+itself.
 
 The strongest evidence is indirect and lives elsewhere: `cell-overlap.test.ts`
 and the corpus differential exercise this predicate against h3 over every ring
