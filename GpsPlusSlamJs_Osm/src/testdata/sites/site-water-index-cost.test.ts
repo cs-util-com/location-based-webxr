@@ -82,50 +82,20 @@ function filledCells(features: readonly OsmFeature[], box?: Bbox): number {
 }
 
 /**
- * Covered cells for a BAND along the banks, measured through production code.
+ * Covered cells for a BAND along the banks — the real `addWater` path.
  *
- * The features are re-tagged `barrier=wall` and run through the real
- * `buildObstacleIndex`, because `barriers.ts` already treats an area-mapped
- * barrier as *"a wall along the rings"* — so this is exactly the footprint an
- * `addWater` band pass would produce, rather than a hand-rolled approximation
- * of one.
+ * `clipWaterTo` is passed through, so this measures exactly what production
+ * indexes rather than a stand-in for it.
  */
 function bandCells(features: readonly OsmFeature[], box?: Bbox): number {
-  // BOTH SIDES GO THROUGH THE SAME PATH — stitch, optionally clip, then rebuild
-  // as ways. The first version of this handed the raw RELATION straight to the
-  // index for the unclipped case and built ways only for the clipped one, and
-  // the two are not comparable: it reported **11 cells** for a 61 km perimeter
-  // against 1 359 for the same water clipped to a smaller box. Clipping cannot
-  // increase coverage 123-fold, and that impossibility is the only reason the
-  // broken measurement was caught. Comparing two populations by two different
-  // routes is the same mistake this block has now made three times.
-  const asBarriers: OsmFeature[] = [];
-  let id = 900_000;
-  for (const feature of features) {
-    const result = toGeometry(feature);
-    if (!result.ok) continue;
-    const geometry =
-      box === undefined ? result.geometry : clipToBbox(result.geometry, box);
-    if (geometry === undefined) continue;
-    // Every ring becomes its own way — including inner rings, which are the
-    // river's banks around islands and block just as the outer bank does.
-    const rings =
-      geometry.kind === "polygon"
-        ? geometry.rings
-        : geometry.kind === "multipolygon"
-          ? geometry.polygons.flat()
-          : [];
-    for (const ring of rings) {
-      if (ring.length < 3) continue;
-      asBarriers.push({
-        type: "way",
-        id: id++,
-        geometry: ring,
-        tags: { barrier: "wall" },
-      });
-    }
-  }
-  return buildObstacleIndex(asBarriers, AFFORDANCE_RES).cells.size;
+  // THE REAL PRODUCTION PATH, since `addWater` now exists. The first version of
+  // this re-tagged water as `barrier=wall` to approximate a band, which was the
+  // right proxy for choosing a design and the wrong thing to keep once the
+  // design shipped: a proxy that drifts from the code it stands for is a guard
+  // that passes while production breaks.
+  return buildObstacleIndex(features, AFFORDANCE_RES, {
+    clipWaterTo: box,
+  }).cells.size;
 }
 
 /**

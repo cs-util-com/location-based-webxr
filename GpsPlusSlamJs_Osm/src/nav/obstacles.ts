@@ -57,6 +57,8 @@ import { solidBuildingFootprints } from "../mesh/buildings.js";
 import { resolveHeights } from "../mesh/building-heights.js";
 import { enuFrameAt } from "../mesh/enu.js";
 import { coverCells } from "../spatial/cell-coverage.js";
+import { waterBankLines } from "../mesh/water.js";
+import type { Bbox } from "../spatial/clip.js";
 import {
   segmentCrossesRing,
   segmentsIntersect,
@@ -120,12 +122,40 @@ function barrierLines(
   );
 }
 
+/** How the index may be bounded. */
+export interface BuildObstacleIndexOptions {
+  /**
+   * Clip water geometry to this box before indexing its banks.
+   *
+   * **WATER ONLY, and deliberately not the whole feature set.** Barriers and
+   * buildings are small — the largest in the corpus estimates at ~5 500 cells —
+   * so they need no bound; water is the only class with kilometre-scale
+   * geometry, because Overpass `out geom` returns whole member geometry
+   * regardless of the query box.
+   *
+   * Clipping *everything* upstream would also be actively wrong: `clipToBbox`
+   * can turn a way that leaves and re-enters the box into a `multilinestring`,
+   * for which `barrierCentrelines` returns `[]` — an omission justified in that
+   * file by the words *"clipping is not in this path"*. Doing it here, per
+   * feature, keeps that true.
+   *
+   * A `Bbox`, **not a set of cells.** An H3 restriction would have to declare
+   * its own resolution, and getting that wrong is silent: bounding res-7 tiles
+   * with padding computed at res 13 yields a **16 m** box and an index with
+   * almost nothing in it.
+   */
+  readonly clipWaterTo?: Bbox;
+}
+
 /**
- * Builds an index over the solid barriers AND buildings in `features`.
+ * Builds an index over the solid barriers, buildings AND water in `features`.
  *
- * Features that are neither, and barriers whose geometry cannot make a
+ * Features that are none of those, and barriers whose geometry cannot make a
  * footprint, are skipped — a one-node way and an empty way are both ordinary
  * Overpass output.
+ *
+ * **Water is indexed as bands along its BANKS**, not as a filled surface, and
+ * carries `heightM = 0`. See {@link addWater}.
  *
  * **Buildings follow the same parts-else-outline rule the extruder draws**
  * (`solidBuildingFootprints`), so what blocks an agent and what appears on
@@ -134,12 +164,14 @@ function barrierLines(
 export function buildObstacleIndex(
   features: Iterable<OsmFeature>,
   resolution: number = AFFORDANCE_RES,
+  options: BuildObstacleIndexOptions = {},
 ): ObstacleIndex {
   const byCell = new Map<string, Obstacle[]>();
   const all = [...features];
 
   addBarriers(all, resolution, byCell);
   addBuildings(all, resolution, byCell);
+  addWater(all, resolution, byCell, options.clipWaterTo);
 
   return {
     obstaclesIn: (cell) => byCell.get(cell) ?? [],
@@ -220,6 +252,71 @@ function addBuildings(
         // `crossesObstacle` skips the check with one `undefined` test.
         ...(pierced.length > 0 ? { passages: pierced } : {}),
       },
+      resolution,
+      byCell,
+    );
+  }
+}
+
+/**
+ * How wide a bank band is, in metres.
+ *
+ * It exists only to give the bank a footprint the cover can file under; nothing
+ * about the veto depends on the number, because `crossesObstacle` tests whether
+ * a step crosses the band's ring rather than how thick it is. Half a metre is
+ * `barriers.ts`'s own default for a wall, reused so the two do not drift for no
+ * reason.
+ */
+const BANK_THICKNESS_M = 0.5;
+
+/**
+ * Water, as thin bands along its BANKS — never as a filled surface.
+ *
+ * Measured: filled-and-clipped costs 13 966–18 246 covered cells per site
+ * against a **1 000–10 000 budget for a whole site's index**; banded-and-clipped
+ * costs 1 153–1 517. See `site-water-index-cost.test.ts`.
+ *
+ * `heightM = 0`, which is exactly right and needs saying because it looks like a
+ * placeholder: blocking here is **height-blind** (`crossesObstacle` never reads
+ * `heightM`), while `obstacleLevelsAt` only ever ADDS a level. So a zero-height
+ * obstacle blocks the crossing and offers nothing to stand on — a river with a
+ * standable surface would be the whole point missed.
+ *
+ * ⚠️ **NO BRIDGE EXEMPTION YET.** A bridge deck crosses its river's banks, so
+ * with water indexed a route over one is refused. Nothing calls this with water
+ * in the feature set today, which is why that is tolerable — **wiring water into
+ * the demo before bridges land would break every river crossing.**
+ */
+function addWater(
+  features: readonly OsmFeature[],
+  resolution: number,
+  byCell: Map<string, Obstacle[]>,
+  clipTo?: Bbox,
+): void {
+  for (const feature of features) {
+    const lines = waterBankLines(feature, clipTo);
+    if (lines.length === 0) continue;
+
+    // One ENU frame for the whole feature, anchored at its own first vertex —
+    // the same rule `addBarriers` follows, and for the same reason: thickness is
+    // metres, but the anchor belongs to the feature rather than to the view, so
+    // the lat/lng it produces survive every recentre.
+    const anchor = { lat: lines[0]![0]!.y, lng: lines[0]![0]!.x };
+    const frame = enuFrameAt(anchor);
+
+    const rings = lines.flatMap((line) => {
+      const enuLine = line.map((p) => frame.toEnu({ lat: p.y, lng: p.x }));
+      return barrierFootprints(enuLine, BANK_THICKNESS_M).map((ring) =>
+        ring.map((v) => {
+          const back = frame.toLatLng(v);
+          return { x: back.lng, y: back.lat };
+        }),
+      );
+    });
+    if (rings.length === 0) continue;
+
+    indexUnderCells(
+      { feature: featureKey(feature), heightM: 0, rings },
       resolution,
       byCell,
     );

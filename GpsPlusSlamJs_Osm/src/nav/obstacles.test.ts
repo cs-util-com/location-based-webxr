@@ -777,3 +777,104 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
     expect(indexed.has("way/30")).toBe(true);
   });
 });
+
+describe("water blocks the bank, not the whole river (DEC-A4)", () => {
+  /**
+   * WHY THIS BLOCK MATTERS. The reported case is an NPC walking across the
+   * Thames: `route-penalty.ts` caps bad ground at three times its metres and
+   * says why — *"obstacles are `crossesObstacle`'s job alone in this demo"* — so
+   * water was expensive and never impossible, and a destination in the river
+   * could not be priced out at any multiplier.
+   *
+   * **INDEXED AS A BAND ALONG THE BANKS, NOT AS A FILLED AREA**, and that is a
+   * measured choice rather than a stylistic one. Over the corpus, filled and
+   * clipped costs 13 966–18 246 covered cells against a budget of **1 000–10 000
+   * for a whole site's index**; the band, clipped, costs **1 153–1 517**. Only
+   * band-plus-clip fits. See `site-water-index-cost.test.ts` for the table.
+   *
+   * It is also the right SEMANTICS, not merely the cheap one: `crossesObstacle`
+   * is a crossing test, so a band along the banks refuses every step that enters
+   * the water while leaving mid-river steps unindexed — and a destination in the
+   * river simply becomes unreachable, which is what "you cannot walk there"
+   * means for a search.
+   */
+
+  /** A ~90 m wide river running east–west, north of HOME. */
+  const river: OsmFeature = {
+    type: "way",
+    id: 50,
+    geometry: [
+      { lat: HOME.lat + STEP * 20, lng: HOME.lng - STEP * 200 },
+      { lat: HOME.lat + STEP * 20, lng: HOME.lng + STEP * 200 },
+      { lat: HOME.lat + STEP * 120, lng: HOME.lng + STEP * 200 },
+      { lat: HOME.lat + STEP * 120, lng: HOME.lng - STEP * 200 },
+      { lat: HOME.lat + STEP * 20, lng: HOME.lng - STEP * 200 },
+    ],
+    tags: { natural: "water", water: "river" },
+  };
+
+  /** A neighbouring pair straddling the river's SOUTH bank. */
+  function pairAcrossBank(): [string, string] {
+    const bankLat = HOME.lat + STEP * 20;
+    const outside = cellAt(bankLat - STEP * 6, HOME.lng);
+    for (const neighbour of gridDisk(outside, 1)) {
+      if (neighbour === outside) continue;
+      const [lat] = cellToLatLng(neighbour);
+      if (lat > bankLat) return [outside, neighbour];
+    }
+    throw new Error("no neighbouring cell across the bank");
+  }
+
+  it("blocks a step from the land into the water", () => {
+    const index = buildObstacleIndex([river]);
+    const [land, water] = pairAcrossBank();
+
+    const [landLat] = cellToLatLng(land);
+    const [waterLat] = cellToLatLng(water);
+    // The fixture is only meaningful if the two centres really are either side.
+    expect(landLat).toBeLessThan(HOME.lat + STEP * 20);
+    expect(waterLat).toBeGreaterThan(HOME.lat + STEP * 20);
+
+    expect(crossesObstacle(index, land, water)).toBe(true);
+  });
+
+  it("admits a step that runs along the bank, on dry land", () => {
+    // The mirror direction, and the one that decides whether this is usable: a
+    // veto that fenced off the towpath would read as broken pathfinding rather
+    // than as a river.
+    const index = buildObstacleIndex([river]);
+    const west = cellAt(HOME.lat, HOME.lng - STEP * 6);
+    const east = cellAt(HOME.lat, HOME.lng + STEP * 6);
+
+    expect(west).not.toBe(east);
+    expect(crossesObstacle(index, west, east)).toBe(false);
+  });
+
+  it("adds no standable level — water is a footprint with no volume", () => {
+    // `heightM = 0`, so `obstacleLevelsAt` offers the ground and nothing else.
+    // A river the agent could stand ON TOP of would be the whole point missed.
+    const index = buildObstacleIndex([river]);
+    const inRiver = cellAt(HOME.lat + STEP * 70, HOME.lng);
+    const levels = obstacleLevelsAt(index, inRiver, () => 0);
+
+    expect(levels).toEqual([0]);
+  });
+
+  it("ignores a river CENTRELINE, which has no banks to stand on", () => {
+    // `waterway=river` on an open way is the river's centreline, not its area —
+    // 3 such ways at london-tower-bridge, none of them closed. Banding it would
+    // put a 1-cell ribbon down the middle of the river, which is neither its
+    // area nor a bank anyone crosses.
+    const centreline: OsmFeature = {
+      type: "way",
+      id: 51,
+      geometry: [
+        { lat: HOME.lat + STEP * 70, lng: HOME.lng - STEP * 200 },
+        { lat: HOME.lat + STEP * 70, lng: HOME.lng + STEP * 200 },
+      ],
+      tags: { waterway: "river" },
+    };
+    const index = buildObstacleIndex([centreline]);
+    expect(index.cells.size).toBe(0);
+  });
+});
