@@ -443,6 +443,11 @@ export const PROJECTS = [
         // 21x inflation of identical work under load — so a tight ceiling would
         // be one more load-dependent failure rather than a regrowth alarm.
         // `budget.mjs` carries the rule for changing it.
+        //
+        // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
+        // 30 %, and CI records no median of its own, so enforcing it there
+        // measured the runner and failed two all-green PRs. See the CI note in
+        // `budget.mjs`.
         .map((stage) =>
           stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 740 } : stage
         ),

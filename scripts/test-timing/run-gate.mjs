@@ -111,7 +111,9 @@ for (const stage of project.stages) {
   }
   // AFTER the pass/fail check, so a red stage still reports its own failure
   // rather than a budget message about a run that never finished its work.
-  const breach = budgetBreach(stage, result.durationMs);
+  // `process.env` because the ceiling is calibrated from the local median and
+  // CI records none of its own — see the CI note in budget.mjs.
+  const breach = budgetBreach(stage, result.durationMs, process.env);
   if (breach !== null) {
     console.error(`\n✖ gate failed on a wall-clock budget:\n${breach}`);
     process.exit(1);
