@@ -183,3 +183,62 @@ describe("the geo-event search's actual shape", () => {
     expect(Math.max(...travelled)).toBeLessThan(60);
   });
 });
+
+/** Where the graded field's one big peak sits — the ground an event SHOULD find. */
+const PEAK = { lat: AT.lat + 0.003, lng: AT.lng + 0.003 };
+
+/**
+ * UNSKIP THIS TO DEFINE DONE.
+ *
+ * The exhaustive search is half built: `rankedPeaks` exists in the library, is
+ * tested, and reads the best separated ground off a scored field. What remains is
+ * the wiring — `newGeoEventFor` still climbs, and the reach derivation still
+ * covers candidate discs rather than the tile's 343 chunks.
+ *
+ * The test below is the executable statement of the reported bug and currently
+ * reports **0 hits out of 24**. It is skipped rather than deleted because a red
+ * test in the gate blocks everything else, and rather than weakened because its
+ * bar is already modest — a third, not a majority, since the event must still
+ * rotate.
+ */
+const EXHAUSTIVE_SEARCH_WIRED = false;
+
+describe("does the event actually find the tile's best ground?", () => {
+  it.skipIf(!EXHAUSTIVE_SEARCH_WIRED)("lands on the peak far more often than chance", async () => {
+    // WHY THIS TEST MATTERS, and why it is the outcome test rather than another
+    // diagnostic. Everything measured so far describes HOW the search fails —
+    // climbs stopping after ~1.5 steps, round one winning 83 % of the time. This
+    // asserts the thing the user actually reported: **the event never lands on
+    // the obviously best place.**
+    //
+    // The field has exactly one high peak (`historic=castle`, score 40) against
+    // a background of 2 and 80 small bumps of 6, so "the best ground" is not a
+    // judgement call — it is a single 110 m square, ~330 m from the user.
+    //
+    // A hit is being within 120 m of the peak's centre: the peak is 110 m across,
+    // so that admits its own footprint plus a cell or two of slack, and excludes
+    // every one of the 80 bumps, the nearest of which is ~100 m away from it.
+    const pipeline = new DemoPipeline({ source: gradedSource(), table: TABLE });
+    await pipeline.update(AT, "battleArea", undefined, SCORE_DISK_MAX_RADIUS);
+
+    let hits = 0;
+    for (const time of TIMES) {
+      const { event } = await pipeline.geoEvent(AT, "battleArea", time);
+      const best = event.picks[0];
+      if (best === undefined) continue;
+      if (metresBetween(best.position, PEAK) <= 120) hits++;
+    }
+
+    process.stdout.write(
+      `[geo-event quality] peak hits = ${hits}/${TIMES.length}\n`,
+    );
+
+    // THE BAR, and it is deliberately modest. The event must ROTATE every
+    // quarter hour (`geo-event.ts`: "positions rotate every quarter hour and are
+    // identical for everyone who shares the seed"), so always returning the
+    // single global maximum would be a regression, not a fix — the event would
+    // become static forever. What is required is that the best ground is in the
+    // running, not that it always wins.
+    expect(hits).toBeGreaterThan(TIMES.length / 3);
+  });
+});
