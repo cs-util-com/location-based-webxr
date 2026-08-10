@@ -25,6 +25,7 @@ import {
   cellToLatLng,
   cellToParent,
   gridDisk,
+  gridDistance,
   latLngToCell,
 } from "h3-js";
 
@@ -426,6 +427,57 @@ describe("eviction", () => {
     for (const chunk of result.workingSet) {
       expect(index.chunk(chunk)).toBeDefined();
     }
+  });
+
+  it("drops the FURTHEST chunk, even when a nearer one was held longer", () => {
+    // WHY THIS TEST MATTERS. `evictBeyond`'s docstring promises "furthest-first
+    // rather than least-recently-used: the access pattern is spatial, not
+    // temporal". Nothing asserted the ordering — the test above only checks that
+    // the working set survives, which is true under ANY eviction order.
+    //
+    // The distance function used to saturate: it looped `ring <= SCORE_DISK_RADIUS
+    // + 1` and returned a constant beyond, so every chunk past ring 3 compared
+    // EQUAL. Ties are stable and the candidate array is Map insertion order, so
+    // eviction silently became oldest-first past ~198 m — dropping ground the user
+    // just walked away from in preference to ground far behind them. Reported from
+    // London: heat-map cells cleared right after a short jump.
+    //
+    // The two chunks below are deliberately BOTH outside the old cap, and the
+    // nearer one is inserted FIRST, so the old behaviour evicts exactly the wrong
+    // one and the new behaviour evicts exactly the right one.
+    const home = latLngToCell(HOME.lat, HOME.lng, SCORE_CHUNK_RES);
+    const ringAt = (steps: number) =>
+      gridDisk(home, steps).find(
+        (cell) => gridDistance(home, cell) === steps,
+      ) as string;
+    const near = ringAt(5);
+    const far = ringAt(12);
+
+    // How many chunks a settled working set holds, measured rather than assumed —
+    // deriving it from SCORE_DISK_MAX_RADIUS would restate the constant the
+    // production code already derives and drift with it.
+    const probe = newIndex();
+    probe.update(HOME, SCORE_DISK_MAX_RADIUS);
+    const workingSetSize = probe.scoredChunks().length;
+
+    // Room for the working set and exactly ONE of the two outliers.
+    const index = new AffordanceIndex({
+      table: TABLE,
+      maxChunks: workingSetSize + 1,
+    });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+
+    // Insertion order is near-then-far: the order that makes oldest-first and
+    // furthest-first disagree.
+    index.ensureScored(cellToChildren(near, AFFORDANCE_RES).slice(0, 1));
+    index.ensureScored(cellToChildren(far, AFFORDANCE_RES).slice(0, 1));
+    expect(index.chunk(near)).toBeDefined();
+    expect(index.chunk(far)).toBeDefined();
+
+    index.update(HOME, SCORE_DISK_MAX_RADIUS);
+
+    expect(index.chunk(far)).toBeUndefined();
+    expect(index.chunk(near)).toBeDefined();
   });
 });
 

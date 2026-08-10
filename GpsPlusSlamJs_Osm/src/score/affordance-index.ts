@@ -38,7 +38,7 @@ import {
   cellToBoundary,
   cellToChildren,
   cellToParent,
-  gridDisk,
+  gridDistance,
   latLngToCell,
 } from "h3-js";
 
@@ -1131,13 +1131,33 @@ function* rawPositions(feature: OsmFeature): Generator<LatLng> {
   }
 }
 
-/** How many grid steps apart two cells of the same resolution are, capped. */
+/**
+ * How many grid steps apart two cells of the same resolution are.
+ *
+ * **CORRECTED FROM a `gridDisk` ring scan that SATURATED** (2026-08-10). It
+ * looped `ring <= SCORE_DISK_RADIUS + 1` and returned a constant for anything
+ * further, so every chunk past ring 3 compared EQUAL. `evictBeyond` sorts by
+ * this; ties are stable and its candidate array is `Map` insertion order, so
+ * "furthest-first" silently degraded to **oldest-first past ~198 m** — the
+ * opposite of what its docstring promises, and worst exactly where the promise
+ * matters. Reported from London as heat-map cells clearing right after a short
+ * jump: the ground just walked away from is the oldest, so it went first while
+ * chunks five to twenty times further away stayed.
+ *
+ * `gridDistance` is exact and has no cap. It **throws** for cells whose
+ * relationship H3 cannot express in its local IJ coordinates — across a
+ * pentagon, or very far apart — and the honest answer there is "further than
+ * anything measurable", so a failure sorts to the front of the eviction queue
+ * rather than being silently treated as adjacent. `cell-coverage.ts` catches
+ * around `gridPathCells` for the same reason.
+ */
 function ringDistance(from: string, to: string): number {
   if (from === to) return 0;
-  for (let ring = 1; ring <= SCORE_DISK_RADIUS + 1; ring++) {
-    if (gridDisk(from, ring).includes(to)) return ring;
+  try {
+    return gridDistance(from, to);
+  } catch {
+    return Number.POSITIVE_INFINITY;
   }
-  return SCORE_DISK_RADIUS + 2;
 }
 
 function cellBbox(cell: string): Bbox {
