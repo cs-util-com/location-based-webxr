@@ -549,3 +549,80 @@ export function newGeoEventFor({
   picks.sort((a, b) => distanceTo(a.position) - distanceTo(b.position));
   return { eventTime, picks, tilesSearched: tiles.length };
 }
+
+/** One peak found by an exhaustive scan, with the heat that ranked it. */
+export interface RankedPeak {
+  readonly cell: string;
+  /** Neighbourhood heat — the cell plus its neighbours, as the climb uses. */
+  readonly heat: number;
+}
+
+/**
+ * The best SEPARATED places in a field, ranked — an exhaustive alternative to
+ * climbing (DEC-A5).
+ *
+ * WHY THIS EXISTS. `climbToLocalMaximum` samples: it drops candidates at random
+ * and walks each a little way uphill, so it finds a peak only when a candidate
+ * lands on one. Measured over a field with a single obvious maximum, the event
+ * landed on it **0 times out of 24**. Two attempts to widen the sampling were
+ * refuted on one invariant — *anything that searches more of the tile must score
+ * more of the tile* — and the arithmetic then pointed somewhere unexpected: a
+ * res-8 event tile holds only **343 res-11 chunks**, which is FEWER than a climb
+ * with useful reach needs. Once they are all scored there is nothing left to
+ * search for; the answer can simply be read off.
+ *
+ * **SEPARATION IS THE WHOLE DIFFICULTY, not the ranking.** The top cells of any
+ * real field are neighbours of each other — one hill yields its summit and the
+ * six cells around it — so a naive "top N" returns one place N times. Each pick
+ * therefore excludes its own neighbourhood from those that follow.
+ *
+ * **WHY N AND NOT JUST THE MAXIMUM**, which is the non-obvious half. Event
+ * positions **rotate every quarter hour** and must stay identical across clients
+ * that share a seed. Returning the single global maximum would make the event
+ * *static forever* — a regression against a documented behaviour, dressed as a
+ * fix. So this returns a ranked shortlist and the caller's existing time seed
+ * chooses within it: the best ground is always in the running, and which of the
+ * good places wins still rotates.
+ *
+ * `heatAt` returning `undefined` means unscored, and an unscored cell is skipped
+ * rather than treated as cold — the distinction `cellState` exists to preserve.
+ */
+export function rankedPeaks({
+  cells,
+  heatAt,
+  neighbours,
+  topN,
+}: {
+  cells: Iterable<string>;
+  heatAt: (cell: string) => number | undefined;
+  neighbours: (cell: string) => readonly string[];
+  topN: number;
+}): RankedPeak[] {
+  const scored: RankedPeak[] = [];
+  for (const cell of cells) {
+    const own = heatAt(cell);
+    if (own === undefined) continue;
+    let heat = own;
+    for (const around of neighbours(cell)) {
+      if (around === cell) continue;
+      heat += heatAt(around) ?? 0;
+    }
+    scored.push({ cell, heat });
+  }
+
+  // Ties broken by cell id so the order is total and reproducible. Two chunks of
+  // identical heat are common in sparse ground, and a result that depended on
+  // Map iteration order would differ between clients that must agree.
+  scored.sort((a, b) => b.heat - a.heat || (a.cell < b.cell ? -1 : 1));
+
+  const picked: RankedPeak[] = [];
+  const excluded = new Set<string>();
+  for (const peak of scored) {
+    if (picked.length >= topN) break;
+    if (excluded.has(peak.cell)) continue;
+    picked.push(peak);
+    excluded.add(peak.cell);
+    for (const around of neighbours(peak.cell)) excluded.add(around);
+  }
+  return picked;
+}

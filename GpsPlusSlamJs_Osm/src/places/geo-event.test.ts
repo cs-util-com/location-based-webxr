@@ -27,6 +27,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  rankedPeaks,
   CANDIDATES_PER_BATCH,
   QUARTER_HOUR_MS,
   bestPickForTile,
@@ -951,5 +952,91 @@ describe("the winner is the warmest NEIGHBOURHOOD, not the warmest cell", () => 
     expect(alone.cell).toBe("3,3");
     expect(alone.heat).toBe(8);
     expect(alone.heat > gate).toBe(false);
+  });
+});
+
+describe("rankedPeaks — the exhaustive alternative to climbing", () => {
+  /** A tiny field laid out as a line of cells, so neighbours are predictable. */
+  const line = ["a", "b", "c", "d", "e", "f", "g"];
+  const neighbours = (cell: string): string[] => {
+    const i = line.indexOf(cell);
+    return [line[i - 1], line[i + 1]].filter(
+      (c): c is string => c !== undefined,
+    );
+  };
+
+  it("finds the global maximum a climb would miss", () => {
+    // The point of the whole change: a scan cannot get stuck, so the tallest
+    // ground is found wherever it is.
+    // A THREE-CELL PLATEAU, not a single spike, and the difference matters:
+    // the ranking is by NEIGHBOURHOOD heat, so a lone tall cell TIES with the
+    // cell beside it (both neighbourhoods contain it). The first version of
+    // this fixture used one spike and the tie fell to the alphabetical
+    // tie-break, which looked like a bug in the code and was a bug in the test.
+    const heat: Record<string, number> = {
+      a: 1,
+      b: 1,
+      c: 1,
+      d: 1,
+      e: 9,
+      f: 9,
+      g: 9,
+    };
+    const peaks = rankedPeaks({
+      cells: line,
+      heatAt: (c) => heat[c],
+      neighbours,
+      topN: 1,
+    });
+    expect(peaks[0]?.cell).toBe("f");
+  });
+
+  it("returns SEPARATED peaks, not one hill listed N times", () => {
+    // Without the exclusion this returns f, then its neighbours e and g — one
+    // place three times — and the rotation would have nothing to rotate between.
+    const heat: Record<string, number> = {
+      a: 1,
+      b: 20,
+      c: 1,
+      d: 1,
+      e: 9,
+      f: 9,
+      g: 9,
+    };
+    const peaks = rankedPeaks({
+      cells: line,
+      heatAt: (c) => heat[c],
+      neighbours,
+      topN: 2,
+    });
+    expect(peaks.map((p) => p.cell)).toEqual(["f", "b"]);
+  });
+
+  it("skips unscored ground rather than reading it as cold", () => {
+    // `undefined` is "nobody looked", not "nothing there" — the distinction
+    // `cellState` exists to preserve. A cell nobody scored cannot be a peak.
+    const heat: Record<string, number | undefined> = {
+      a: 1,
+      b: undefined,
+      c: 5,
+    };
+    const peaks = rankedPeaks({
+      cells: ["a", "b", "c"],
+      heatAt: (c) => heat[c],
+      neighbours: () => [],
+      topN: 3,
+    });
+    expect(peaks.map((p) => p.cell)).toEqual(["c", "a"]);
+  });
+
+  it("orders ties by cell id, so clients that must agree do", () => {
+    const heat: Record<string, number> = { z: 5, a: 5 };
+    const peaks = rankedPeaks({
+      cells: ["z", "a"],
+      heatAt: (c) => heat[c],
+      neighbours: () => [],
+      topN: 2,
+    });
+    expect(peaks.map((p) => p.cell)).toEqual(["a", "z"]);
   });
 });

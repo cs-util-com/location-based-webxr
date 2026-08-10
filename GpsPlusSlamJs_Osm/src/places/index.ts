@@ -9,11 +9,13 @@ export { CORPUS_SITES, siteById } from "./sites.js";
 export type {
   BestPick,
   ClimbResult,
+  RankedPeak,
   EventTile,
   GeoBounds,
   GeoEvent,
 } from "./geo-event.js";
 export {
+  rankedPeaks,
   CANDIDATES_PER_BATCH,
   QUARTER_HOUR_MS,
   bestPickForTile,

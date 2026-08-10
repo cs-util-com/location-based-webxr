@@ -183,3 +183,39 @@ tests use a position-PRESERVING `toCell`/`toLatLng` pair: an earlier
 `toCell: () => "0,0"` collapsed every tile onto one cell, which was invisible
 while the sort key was `candidate` and made the sort a no-op the moment it
 became `position`. A constant `toCell` cannot test ordering at all.
+
+## `rankedPeaks` — the exhaustive alternative to climbing (DEC-A5)
+
+`climbToLocalMaximum` **samples**: it drops candidates at random and walks each a
+little way uphill, so it finds a peak only when a candidate lands on one.
+Measured over a field with a single obvious maximum, the event landed on it
+**0 times out of 24**.
+
+Two attempts to widen the sampling were refuted on one invariant — **anything
+that searches more of the tile must score more of the tile** — and the arithmetic
+then pointed somewhere unexpected: a res-8 event tile holds only **343 res-11
+chunks**, *fewer* than a climb with useful reach needs (a 5-step res-11 climb
+needs ~684 against a 488-chunk cache cap). Once all 343 are scored there is
+nothing left to search for — the answer can be read off. Measured at **364 ms**
+over 2 259 real features, which is a lower bound because no fixture holds a full
+tile.
+
+- **Separation is the difficulty, not the ranking.** The top cells of any real
+  field are neighbours of each other — one hill yields its summit and the six
+  cells around it — so a naive "top N" returns one place N times. Each pick
+  excludes its own neighbourhood from those that follow.
+- **Why N and not just the maximum**, which is the non-obvious half. Event
+  positions **rotate every quarter hour** and must be identical across clients
+  sharing a seed. Returning the single global maximum would make the event
+  **static forever** — a regression against documented behaviour, dressed as a
+  fix. The shortlist keeps the best ground always in the running while which of
+  the good places wins still rotates.
+- **Ties break by cell id**, so two areas of identical heat order the same way on
+  every client. A result depending on `Map` iteration order would differ between
+  clients that must agree.
+- **`undefined` heat is skipped, not read as cold** — the `cellState`
+  distinction between "nothing here" and "nobody looked".
+
+**Not yet wired.** `demo-pipeline.ts` still uses `bestPickForTile`; the outcome
+test that stays red until it is wired is `geo-event-search-shape.test.ts`
+("lands on the peak far more often than chance", currently 0/24).
