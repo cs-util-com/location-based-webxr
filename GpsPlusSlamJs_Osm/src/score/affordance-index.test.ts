@@ -30,6 +30,8 @@ import {
 } from "h3-js";
 
 import { AffordanceIndex } from "./affordance-index.js";
+import { loadSite } from "../test-utils/load-fixtures.js";
+import { parseOverpassJson } from "../model/overpass-parser.js";
 import { isBelowSurface } from "../model/below-surface.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { parseRuleTable } from "../rules/rule-table.js";
@@ -1434,4 +1436,88 @@ describe("mergedFeatures — the read accessor the spatial index reads", () => {
     expect(index.mergedFeatures().size).toBe(2);
     expect(index.mergedFeatures()).not.toBe(held);
   });
+});
+
+/**
+ * OFF BY DEFAULT, and the number it produced is in the test below.
+ *
+ * 364 ms run alone, but scoring 343 chunks over real corpus features exceeds the
+ * 5 s per-test cap under gate contention -- the same 15-20x inflation
+ * `cell-overlap.differential.test.ts` measured and refused to pay. Set to true to
+ * reproduce.
+ */
+const TIME_EXHAUSTIVE_SCAN = false;
+
+describe("what an exhaustive scan of one event tile costs", () => {
+  it.skipIf(!TIME_EXHAUSTIVE_SCAN)(
+    "times scoring all 343 res-11 chunks of a res-8 tile",
+    () => {
+      // WHY THIS TEST MATTERS. Two geo-event fixes have now been refuted on the
+      // same invariant: **anything that searches more of the event tile must score
+      // more of it.** Heat-weighted seeding needs a field that does not exist, and
+      // a res-11 climb far enough to matter needs 684 chunks against a 488 cap.
+      //
+      // What survives is not climbing at all: a res-8 tile holds exactly 7^3 = 343
+      // res-11 chunks, which is FEWER than the climb variants need, and once they
+      // are scored the true maximum can simply be read off. Cache pressure is
+      // settled — 343 plus a 61-chunk working set is 404, under the 488 cap, so it
+      // evicts nothing. **Wall-clock was the one number missing**, and a geo-event
+      // is a button press.
+      // REAL CORPUS DATA, not a synthetic patch. Scoring cost is driven by how
+      // many features each chunk must consider, so a fixture with one grass square
+      // measures the loop and not the work: it reported 13 ms, which is a floor.
+      const site = loadSite("london-westminster");
+      const features = [...parseOverpassJson(site.payload).features];
+      const index = new AffordanceIndex({ table: TABLE });
+      index.acceptTile({
+        tile: latLngToCell(site.centre.lat, site.centre.lng, FETCH_RES),
+        features,
+        fetchedAt: 1_000,
+        sourceId: "test",
+        schemaVersion: OVERPASS_SCHEMA_VERSION,
+        skipped: [],
+      });
+
+      const eventTile = cellToParent(
+        latLngToCell(site.centre.lat, site.centre.lng, SCORE_CHUNK_RES),
+        8,
+      );
+      const chunks = cellToChildren(eventTile, SCORE_CHUNK_RES);
+      expect(chunks.length).toBe(343);
+
+      // One res-13 cell per chunk is enough: `ensureScored` maps each to its
+      // res-11 parent and scores the whole chunk.
+      const seeds = chunks.map(
+        (chunk) => cellToChildren(chunk, AFFORDANCE_RES)[0] as string,
+      );
+
+      const started = performance.now();
+      index.ensureScored(seeds);
+      const ms = performance.now() - started;
+
+      process.stdout.write(
+        `[exhaustive tile scan] chunks=${chunks.length} ` +
+          `scored=${index.scoredChunks().length} in ${ms.toFixed(0)} ms\n`,
+      );
+
+      // MEASURED 364 ms over london-westminster's 2 259 features, against 13 ms
+      // for a one-feature synthetic patch -- which is why the synthetic version was
+      // replaced rather than kept.
+      //
+      // **IT IS STILL A LOWER BOUND, and the reason is the same one that blocks
+      // every other full-scale number in this package: no fixture holds a full
+      // tile.** An Overpass bbox extract covers roughly 2 % of the res-8 event
+      // tile its features land in, so most of these 343 chunks are empty and
+      // nearly free to score. A genuinely full tile would cost more, and by how
+      // much is NOT established here.
+      //
+      // So what this settles is narrow and worth stating exactly: an exhaustive
+      // scan is **not obviously unaffordable**, which is what the alternative
+      // designs needed to know. It does not establish that it IS affordable.
+      //
+      // Reports rather than pins: this decides a design nobody has committed to,
+      // and a threshold chosen now would be a threshold fitted to one machine.
+      expect(index.scoredChunks().length).toBeGreaterThan(300);
+    },
+  );
 });
