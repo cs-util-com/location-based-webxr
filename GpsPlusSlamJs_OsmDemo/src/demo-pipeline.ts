@@ -42,7 +42,13 @@ import {
   nextEventTime,
   toFetchTile,
 } from "gps-plus-slam-osm";
-import { cellToBoundary, cellToLatLng, gridDisk, latLngToCell } from "h3-js";
+import {
+  cellToBoundary,
+  cellToChildren,
+  cellToLatLng,
+  gridDisk,
+  latLngToCell,
+} from "h3-js";
 import type { GeoEventStats } from "./geo-event-stats.js";
 import { heatScale } from "./heat-colours.js";
 
@@ -92,6 +98,53 @@ const GEO_EVENT_BATCH = CANDIDATES_PER_BATCH;
  * a port; see resolutions.ts.
  */
 const CLIMB_STEPS = 5;
+
+/**
+ * SCAN the event tile rather than climbing within it (DEC-A5).
+ *
+ * The reported bug is that an event never lands on the obviously best ground:
+ * measured on a field with one clear peak, **0 hits in 24 searches**. Climbing
+ * samples — it walks each seeded candidate ~1.5 of its 5 allowed steps before
+ * sticking on the nearest bump — so it finds a peak only when a candidate lands
+ * on one.
+ *
+ * Scanning is affordable for a reason that is the opposite of intuitive: a res-8
+ * tile holds only **343 res-11 chunks**, FEWER than a climb with useful reach
+ * needs, and 343 fits beside the user working set at 404 of a 488 cap.
+ *
+ * **The climb is kept, not deleted.** The 364 ms scan measurement is a LOWER
+ * bound — no fixture holds a full tile — so this constant is the way back, and
+ * the climb path keeps its own tests running rather than becoming a fallback
+ * nobody exercises.
+ *
+ * ⚠️ **OFF: it runs, and it still does not find the peak. Cause NOT established.**
+ *
+ * What is established, by measurement:
+ *
+ * - the exhaustive branch really is taken — `evaluated` carries the shortlist
+ *   size rather than the climb's ten seeded candidates;
+ * - the reach is the whole tile — `reachCells` reads 2 401, i.e. 343 x 7 tiles;
+ * - the target peak IS scored, at 80;
+ * - and it still loses, 0 hits in 24, even after the draw was weighted by heat.
+ *
+ * **An earlier comment here blamed unscored neighbours (peak 80 + 0 against a
+ * bump at 84). That diagnosis is NOT proven and a review argues it is wrong**:
+ * the peak sits 17 rings inside the tile, the ensure set covers the enumerated
+ * field exactly, and `cellState` answers `empty` (heat 1) rather than
+ * `unknown` for any cell in a scored chunk — which would floor the peak at
+ * 80 + 6 = 86 and win. Observation and that argument disagree, and **resolving
+ * that contradiction is the next step**, not another fix.
+ *
+ * Two candidate explanations, neither checked: the peak's neighbourhood may
+ * genuinely span chunks the ensure set missed, or `picks[0]` may be a nearer
+ * tile's pick rather than this tile's (`newGeoEventFor` sorts by distance to
+ * the user, and 5 tiles produced picks).
+ *
+ * Left wired and inert rather than reverted: the path, the weighted draw and the
+ * enumeration are all correct as far as they go, and a review confirmed the
+ * enumeration is exactly complete. Only the outcome is missing.
+ */
+const EXHAUSTIVE_GEO_EVENT = false;
 
 /**
  * A feature's outlines, for drawing it without knowing what kind it is.
@@ -626,7 +679,32 @@ export class DemoPipeline {
      * `deriveMs`, which is the number W7's benchmark is read off — so the
      * measurement would be reporting work the search did not need.
      */
-    const reachOf = (
+    /**
+     * EXHAUSTIVE REACH: one res-13 seed per res-11 chunk of the tile.
+     *
+     * 343 seeds rather than the ~1 270 cells ten candidate discs cover, because
+     * `ensureScored` maps each seed to its res-11 parent and scores the whole
+     * chunk. Scanning the tile is CHEAPER than climbing far within it — a 5-step
+     * res-11 climb needs ~684 chunks against a 488 cap, while the whole tile is
+     * 343 and fits beside the user working set at 404.
+     */
+    const exhaustiveReachOf = (
+      each: string,
+      requireLoaded = false,
+    ): string[] | undefined => {
+      const cells: string[] = [];
+      for (const chunk of cellToChildren(each, SCORE_CHUNK_RES)) {
+        const seed = cellToChildren(chunk, AFFORDANCE_RES)[0];
+        if (seed === undefined) continue;
+        if (requireLoaded && !this.loaded.has(toFetchTile(seed))) {
+          return undefined;
+        }
+        cells.push(seed);
+      }
+      return cells;
+    };
+
+    const climbReachOf = (
       each: string,
       requireLoaded = false,
     ): string[] | undefined => {
@@ -648,6 +726,8 @@ export class DemoPipeline {
       return cells;
     };
 
+    const reachOf = EXHAUSTIVE_GEO_EVENT ? exhaustiveReachOf : climbReachOf;
+
     const tiles = [tile];
     // The centre is searched unconditionally — the user is standing in it — so
     // it is derived without the `requireLoaded` abort and can never be
@@ -660,9 +740,15 @@ export class DemoPipeline {
       tiles.push(neighbour);
       for (const cell of cells) reach.add(cell);
     }
+    // The bbox objects are freshly built here, so identity is a safe key back to
+    // the tile CELL — which `EventTile` does not carry and the exhaustive scan
+    // needs in order to enumerate the tile's cells.
+    const cellOfBox = new Map<object, string>();
     const boxes = tiles.map((each) => {
       const [s, w, n, e] = boundsOfCell(each);
-      return { south: s, west: w, north: n, east: e };
+      const box = { south: s, west: w, north: n, east: e };
+      cellOfBox.set(box, each);
+      return box;
     });
     const deriveMs = nowMs() - deriveStart;
 
@@ -731,6 +817,16 @@ export class DemoPipeline {
         // they agree by construction, and a `__threshold__` row in the rule
         // table moves both together.
         threshold: thresholdFor(this.table, category),
+        ...(EXHAUSTIVE_GEO_EVENT
+          ? {
+              cellsOfTile: (each: { bbox: object }) => {
+                const cell = cellOfBox.get(each.bbox);
+                return cell === undefined
+                  ? []
+                  : cellToChildren(cell, AFFORDANCE_RES);
+              },
+            }
+          : {}),
       });
     });
     const climbMs = nowMs() - climbStart;

@@ -194,7 +194,7 @@ Measured over a field with a single obvious maximum, the event landed on it
 Two attempts to widen the sampling were refuted on one invariant — **anything
 that searches more of the tile must score more of the tile** — and the arithmetic
 then pointed somewhere unexpected: a res-8 event tile holds only **343 res-11
-chunks**, *fewer* than a climb with useful reach needs (a 5-step res-11 climb
+chunks**, _fewer_ than a climb with useful reach needs (a 5-step res-11 climb
 needs ~684 against a 488-chunk cache cap). Once all 343 are scored there is
 nothing left to search for — the answer can be read off. Measured at **364 ms**
 over 2 259 real features, which is a lower bound because no fixture holds a full
