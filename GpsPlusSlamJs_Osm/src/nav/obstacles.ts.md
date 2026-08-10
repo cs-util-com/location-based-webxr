@@ -33,16 +33,22 @@ when the user does.
 
 ## Public API
 
-- `Obstacle` — `{ feature, heightM, rings, openings? }`. `rings` are
+- `Obstacle` — `{ feature, heightM, rings, passages? }`. `rings` are
   `x = lng, y = lat`, ready for `containsPoint` (crossing parity is
   affine-invariant, so the lat/lng anisotropy needs no correction — see
   [`point-in-ring.ts.md`](../spatial/point-in-ring.ts.md)).
-  - `openings` are boundary points where a mapped opening admits a step
-    (DEC-R12-3) — today, where a `tunnel=building_passage` way pierces a
-    building. **Absent on almost everything**, which is why it is optional rather
-    than an empty array: `crossesObstacle` is the search's hottest path and pays
-    one `undefined` test per obstacle for it. See
-    [`building-passages.ts.md`](building-passages.ts.md).
+  - `passages` are **LINES along which the obstacle is open** (DEC-R12-3) —
+    today, the `tunnel=building_passage` ways running through a building.
+    **Lines, not the mouths**: a step is admitted when it runs along one, which
+    is a claim `crossesObstacle` can make about a step _inside_ the footprint as
+    well as one crossing its boundary, and the inside is where a corridor stops
+    being a corridor if nobody asks.
+    - **Absent on almost everything**, which is why it is optional rather than
+      an empty array: `crossesObstacle` is the search's hottest path and pays one
+      `undefined` test per obstacle for it. See
+      [`building-passages.ts.md`](building-passages.ts.md).
+    - **This field was called `openings` in an earlier draft of this document,
+      and described as boundary POINTS.** It is neither. Corrected 2026-08-10.
 - `ObstacleIndex` — `obstaclesIn(cell)`, `cells`.
 - `buildObstacleIndex(features, resolution?) => ObstacleIndex` — **barriers and
   buildings**. Barriers become `thicknessM`-wide bands along their centrelines;
@@ -98,7 +104,7 @@ which is design rung 5.3 where agents deliberately do walk up walls.
   - a **barrier** is cut in the shared geometry (`barrierCentrelines`), because
     the barrier is DRAWN from the same lines and the drawn-iff-indexed property
     would otherwise break;
-  - a **building** keeps its rings and carries `openings` instead, because
+  - a **building** keeps its rings and carries `passages` instead, because
     `segmentCrossesRing` closes a ring implicitly so it cannot be cut — and
     because a building's passability has always been index-only here
     (`min_height` and `building=roof` volumes are drawn exactly as before and
@@ -174,17 +180,28 @@ catchable after a bent-barrier fixture was added.
 
 **What these do NOT cover — and this is the larger gap:**
 
-- **Nothing blocks anything yet.** `Obstacle.rings` is built, stored and
-  exported, but no code in this slice ever asks `containsPoint` about it. The
-  only consumer surface is `obstacleLevelsAt`, which **adds** a level and never
-  removes one. So wiring this into `columnSpace` today gives an agent the wall
-  top as an extra state and leaves the ground under the wall fully traversable
-  — agents walk through walls that are walls, not merely through walls that are
-  houses. Review on #259 caught an earlier version of this section claiming
-  otherwise. **The footprint test is the next slice.**
-- **Buildings are not indexed at all.** Only barriers are, so even once the
-  footprint test lands, a house is not an obstacle until the building half is
-  built.
+- **⚠️ THE TWO ENTRIES THAT USED TO HEAD THIS LIST WERE BOTH FALSE, and are
+  corrected rather than deleted so the drift is visible** (2026-08-10). They read
+  _"Nothing blocks anything yet"_ and _"Buildings are not indexed at all"_. Both
+  described the state before `crossesObstacle` and `addBuildings` landed, and the
+  second contradicted this file's own API section — which has said "barriers
+  **and** buildings" for as long as the claim sat below it.
+  - **Blocking works.** `crossesObstacle` is the veto, `planRouteWithIndex`
+    passes it to `columnSpace` as `canCross`, and it is what makes a route go
+    around a wall.
+  - **Buildings are indexed**, via `solidBuildingFootprints`' parts-else-outline
+    rule — the same selection `buildings.ts` extrudes.
+  - Anyone planning work from those two lines would have planned a slice that
+    already shipped. That is the second time in one week a stale sidecar
+    sentence nearly did that, so the correction is named in place.
+- **Blocking is 2D and height-blind, which is easy to misread from the rest of
+  this file.** `crossesObstacle` never consults `heightM`; height enters only
+  through `obstacleLevelsAt`, which **adds** a standable level and never removes
+  one. Two consequences worth stating before anyone extends this:
+  - an obstacle with `heightM = 0` blocks perfectly well — it simply contributes
+    no extra level, which is what a footprint with no volume should do;
+  - conversely, a veto applies at **every** level, so anything with a deck over
+    it needs the passage mechanism rather than a height comparison.
 - **The antimeridian.** A barrier crossing ±180° would be treated as spanning
   almost the whole world, because `enuFrameAt` and the stored rings both use
   canonical longitudes. This matches the package's existing stance rather than
