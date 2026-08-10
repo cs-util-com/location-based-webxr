@@ -605,6 +605,82 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
     throw new Error("no neighbouring cell inside the building");
   }
 
+  it("admits a step inside a COURTYARD of a pierced building", () => {
+    // WHY THIS TEST MATTERS, and it is a GUARD rather than a bug reproduction.
+    //
+    // A review argued that `blockedDespitePassages` has a live defect here: it
+    // decides "is this step inside the obstacle" with
+    // `rings.some(ring => contains(a) && contains(b))` — inside ANY ring —
+    // where `building-passages.ts`'s `insideFootprint` uses ring PARITY and
+    // documents why (*"it moved Tokyo's count from 6 to 7 buildings"*). Under
+    // `some`, a step in a courtyard is "inside the outer ring", so a pierced
+    // building would refuse it and the courtyard would be unwalkable.
+    //
+    // **THAT DOES NOT REPRODUCE, and this test is what establishes it.** The
+    // structural assertions below prove the fixture really does exercise the
+    // path — a multi-ring obstacle carrying passages — and the step is still
+    // admitted. So the `some`/parity divergence is real in the source and does
+    // NOT change behaviour in this configuration. Not fixed, because the repo's
+    // rule is to confirm a behaviour is wrong before changing it, and this one
+    // is not confirmed.
+    //
+    // Kept because the water veto is where the argument would bite hardest —
+    // the inner rings of the Thames relations are islands and piers — so if that
+    // work makes this fail, the failure is the reproduction the fix needs.
+    const courtyardBlock: OsmFeature = {
+      type: "relation",
+      id: 40,
+      members: [
+        { type: "way", ref: 41, role: "outer", geometry: block.geometry },
+        {
+          type: "way",
+          ref: 42,
+          role: "inner",
+          geometry: [
+            { lat: HOME.lat - STEP * 10, lng: HOME.lng - STEP * 10 },
+            { lat: HOME.lat - STEP * 10, lng: HOME.lng + STEP * 10 },
+            { lat: HOME.lat + STEP * 10, lng: HOME.lng + STEP * 10 },
+            { lat: HOME.lat + STEP * 10, lng: HOME.lng - STEP * 10 },
+            { lat: HOME.lat - STEP * 10, lng: HOME.lng - STEP * 10 },
+          ],
+        },
+      ],
+      tags: { building: "yes", height: "12", type: "multipolygon" },
+    };
+
+    const index = buildObstacleIndex([
+      courtyardBlock,
+      passage({ tunnel: "building_passage" }),
+    ]);
+
+    // Two neighbouring cells both well inside the courtyard, north of the
+    // passage so neither runs along it — the case that must still be free.
+    const inCourtyard = cellAt(HOME.lat + STEP * 5, HOME.lng - STEP * 3);
+    const alsoInCourtyard = gridDisk(inCourtyard, 1).find((cell) => {
+      if (cell === inCourtyard) return false;
+      const [lat, lng] = cellToLatLng(cell);
+      return (
+        lat > HOME.lat + STEP * 2 &&
+        lat < HOME.lat + STEP * 9 &&
+        lng > HOME.lng - STEP * 9 &&
+        lng < HOME.lng + STEP * 9
+      );
+    });
+    expect(alsoInCourtyard).toBeDefined();
+
+    // THE FIXTURE MUST ACTUALLY EXERCISE THE PATH, or this test passes for the
+    // wrong reason: it needs an obstacle with a HOLE and with PASSAGES, since
+    // the suspect branch only runs when both are true.
+    const here = index.obstaclesIn(inCourtyard);
+    expect(here.length).toBeGreaterThan(0);
+    expect(here[0]!.rings.length).toBeGreaterThan(1);
+    expect(here[0]!.passages).toBeDefined();
+
+    expect(crossesObstacle(index, inCourtyard, alsoInCourtyard as string)).toBe(
+      false,
+    );
+  });
+
   it("admits a step through the passage", () => {
     const index = buildObstacleIndex([
       block,
