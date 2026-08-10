@@ -6,6 +6,7 @@ import { toGeometry } from "../model/osm-geometry.js";
 import { loadSite } from "../test-utils/load-fixtures.js";
 import { boundsOf } from "./clip.js";
 import { polygonsOverlap } from "./ring-overlap.js";
+import { bboxOverlapsPolygon } from "./bbox-overlap.js";
 import {
   geometryOverlaps,
   toPlanarGeometry,
@@ -420,6 +421,75 @@ describe("narrow phase by KIND — the two thirds never priced", () => {
       }
       sink += n;
     });
+  }
+});
+
+/**
+ * THE GUARD, MEASURED AGAINST THE PREDICTION MADE BEFORE RUNNING IT.
+ *
+ * `bbox-overlap.ts` rejects a candidate whose bounding box cannot reach the query
+ * POLYGON. The pre-registered falsifier, written down before the first run:
+ *
+ * - **the BOX query must show no gain** — its own bounding box IS the query, so
+ *   there is nothing for the guard to reject, and `flatbush` has already done
+ *   that comparison at leaf level;
+ * - **the FRUSTUM query must show a large one** — a trapezoid's bounding box is
+ *   ~2x its area, so the corners the broad phase hands over are real false
+ *   positives, and a rejection costs 37x a hit.
+ *
+ * **A win on the BOX query would mean this harness is wrong**, not that the
+ * optimisation beat expectations. That is section 13.3's lesson applied before
+ * the fact instead of after: every earlier measurement in this plan's history
+ * that agreed with its own hypothesis turned out to be measuring something else.
+ *
+ * The guard rides `flatbush`'s own `search(..., filterFn)` hook, which hands over
+ * each candidate's stored bounding box — so nothing is allocated and no parallel
+ * bbox table exists to drift from the tree's.
+ */
+describe("the bbox guard — does rejecting early actually pay?", () => {
+  for (const [label, query] of QUERIES) {
+    const queryPolygon = [query];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of query) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+
+    const unguarded = assertHits(label, broadPhase(query));
+    const guarded = INDEX.search(minX, minY, maxX, maxY, (_i, x0, y0, x1, y1) =>
+      bboxOverlapsPolygon(
+        { west: x0, south: y0, east: x1, north: y1 },
+        queryPolygon,
+      ),
+    );
+
+    bench(
+      `${label} GUARDED (${guarded.length} of ${unguarded.length} survive)`,
+      () => {
+        let hits = 0;
+        for (const i of INDEX.search(
+          minX,
+          minY,
+          maxX,
+          maxY,
+          (_j, x0, y0, x1, y1) =>
+            bboxOverlapsPolygon(
+              { west: x0, south: y0, east: x1, north: y1 },
+              queryPolygon,
+            ),
+        )) {
+          const item = FEATURES[i];
+          if (item === undefined) continue;
+          if (polygonsOverlap(item.rings, queryPolygon)) hits++;
+        }
+        sink += hits;
+      },
+    );
   }
 });
 

@@ -58,3 +58,5 @@ export { ringsOverlap, polygonsOverlap } from "./ring-overlap.js";
 
 export type { PlanarGeometry } from "./geometry-overlap.js";
 export { geometryOverlaps, toPlanarGeometry } from "./geometry-overlap.js";
+
+export { bboxOverlapsPolygon } from "./bbox-overlap.js";
