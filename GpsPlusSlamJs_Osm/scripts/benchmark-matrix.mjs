@@ -206,7 +206,7 @@ export function buildMatrixQuery({ bbox, keys, form }) {
   const header = `[out:json][timeout:180][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];`;
 
   // NEVER the key-regex form. Measured 2026-07-28: the union of exact-key
-  // statements returns 200 in 18.2 s where `[~"^(a|b|…)$"~"."]` 504s in 8 s on
+  // statements returns 200 where `[~"^(a|b|…)$"~"."]` 504s in 8 s on
   // the same tile, because the regex is a full-table scan.
   const areal = form === "areal-only" || form === "clipped-areal";
   const clipped = form === "clipped" || form === "clipped-areal";

@@ -109,7 +109,7 @@ describe("buildMatrixQuery", () => {
   });
 
   it("never builds the key-regex form that 504s", () => {
-    // WHY: measured 2026-07-28 — the union form returns 200 in 18.2 s where the
+    // WHY: measured 2026-07-28 — the union form returns 200 where the
     // key-regex form 504s in 8 s on the same tile. `capture-script-query.test.ts`
     // pins the capture script against exactly this regression; the sweep is the
     // third place that could reintroduce it.

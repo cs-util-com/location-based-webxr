@@ -31,29 +31,45 @@ import { metresToDegrees } from "./clip.js";
  * of res-8 cells covered, so this is one request per move instead of seven —
  * and moves are ~7x rarer because a res-7 cell is crossed far less often.
  *
- * **A res-7 tile is ~21 MB of decompressed JSON at a ~20 s median** (Cologne,
- * 2026-08-01 matrix sweep, `areal-only` form). That figure — not the request —
- * is the number to design against; it is why parsing belongs in a worker.
+ * **A res-7 tile is ~21 MB of decompressed JSON.** That figure — not the
+ * request — is the number to design against; it is why parsing belongs in a
+ * worker. It is the sturdiest number in this package: 21.1 MB in the 2026-08-01
+ * matrix sweep and 20.97–21.11 MB in the 2026-08-03 re-run, replicating to
+ * three significant figures across three separate runs under `areal-only`.
  *
- * **The slow-host TAIL is not part of that median and has never been measured
- * under this query form.** The old `nwr` form ranged to ~110 s across six
- * hosts; areal-only was only served by three of them, so "sometimes much
- * slower" remains true and unquantified. Design for the tail, quote the median.
+ * **LATENCY IS A RANGE, DELIBERATELY NOT A MEDIAN: ~15–90 s, and it does not
+ * replicate.** The four successful `areal-only` res-7 fetches in
+ * `docs/overpass-matrix-sweep.json` are 15.1 / 32.9 / 82.9 / 91.1 s, alongside
+ * two 504s — and the 2026-08-03 re-run's own §2b records medians 4.6x the
+ * morning's on identical work, concluding that **"the bytes replicate to three
+ * significant figures; the timings do not replicate at all"**. Design for the
+ * 90 s end. A single latency quoted here is quoting noise.
  *
- * SUPERSEDED FIGURES, kept because this comment has now been wrong twice and
- * both wrong versions are still quotable elsewhere:
+ * SUPERSEDED FIGURES, kept because this comment has now been wrong three times
+ * and every wrong version is still quotable elsewhere:
  *
  * - **"~68 MB, 23–110 s" is retracted** — that is the pre-F32 `nwr` form, which
  *   took every relation touching the bbox. `overpass-query.ts` adopted
- *   areal-only on 2026-08-03 and the payload fell 3.2x at the same latency,
- *   provably without changing a single cell score.
+ *   areal-only on 2026-08-03; the payload fell 3.2x, provably without changing
+ *   a single cell score. **Whether latency moved with it is unknown** — the two
+ *   forms were never timed under comparable load.
  * - **"18.2 s and 28.31 MB (21,847 elements)" is retracted** (N2, W2). It was
  *   under half even the `nwr` payload and had no host, query or artefact behind
  *   it; where it came from is not recoverable, most plausibly a narrower key
  *   list than `OVERPASS_SELECT_KEYS` at the time.
+ * - **"~20 s median" is retracted, and it lasted one day (2026-08-11).** This
+ *   comment carried it and fifteen other sites copied it. It came from
+ *   `overpass-query.ts`'s own prose rather than from an artefact; it was the
+ *   fastest sample of three non-replicating runs rather than a median; and the
+ *   (itself retracted) `18–110 s` string it replaced bracketed the real
+ *   distribution better than it did.
+ *   **A correction sourced from another comment is not a correction.**
  *
  * See `GpsPlusSlamJs_Docs/docs/2026-08-01-1324-overpass-matrix-sweep-results.md`
- * §1 for the per-form table, and
+ * §1 for the per-form byte table — it has no latency column at all, and that
+ * absence is what the third retraction above turned on —
+ * `GpsPlusSlamJs_Docs/docs/2026-08-03-0802-overpass-matrix-sweep-rerun-results.md`
+ * §2b for the non-replication finding, and
  * `GpsPlusSlamJs_Docs/docs/2026-08-11-0717-osm-demo-click-path-stage-timing-plan.md`
  * §8 for why a stale figure here is a defect rather than untidiness: this
  * comment is the most quotable source for the number, so a plan written from it
@@ -81,7 +97,7 @@ export const AFFORDANCE_RES = 13;
  * ("download this area for offline use").
  *
  * NOT used by the movement trigger any more. A fixed ring is a guess: at
- * FETCH_RES = 7 it over-fetches ~140 MB in the interior while still not being
+ * FETCH_RES = 7 it over-fetches ~150 MB (7 tiles x ~21 MB) in the interior while still not being
  * provably sufficient at a boundary. The trigger uses
  * {@link fetchTilesForScoreWorkingSet} instead, which derives the answer.
  */
@@ -226,7 +242,7 @@ export function scoreWorkingSet(
  *
  * Returns a small handful: 1 tile when the working set sits inside one fetch
  * cell, more when it straddles an edge or a vertex. This replaces "the tile I am
- * in, plus a ring": a ring both over-fetches in the interior (~140 MB at
+ * in, plus a ring": a ring both over-fetches in the interior (~150 MB (7 tiles x ~21 MB) at
  * FETCH_RES = 7) and is only heuristically sufficient at a boundary, whereas
  * asking the working set what it needs is exact by construction.
  *
@@ -240,7 +256,7 @@ export function scoreWorkingSet(
  * progressive passes must not be handed a gap. A caller that scores ring by ring
  * passes its own ring, and that matters in the other direction: with the default
  * the fetch loop blocks the FIRST answer on a tile only the outer rings need,
- * which is ~20 s at a res-7 boundary and undoes exactly the property W16 was
+ * which is ~15–90 s at a res-7 boundary and undoes exactly the property W16 was
  * built for (see {@link SCORE_DISK_MAX_RADIUS}).
  *
  * This parameter arrived because scoring outgrew fetching silently: W16 widened

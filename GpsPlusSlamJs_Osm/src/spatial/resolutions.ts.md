@@ -9,7 +9,9 @@ the derived fetch-coverage function the movement trigger uses.
 ## Public API
 
 - `FETCH_RES = 7` — unit of network fetching and raw-data caching. 2.81 km
-  across, 5.16 km², ~28 MB of decompressed JSON per tile.
+  across, 5.16 km², **~21 MB** of decompressed JSON per tile, fetched in
+  **~15–90 s that does not replicate**. See the constant's own JSDoc for the
+  three figures this line has carried and retracted.
 - `SCORE_CHUNK_RES = 11` — unit of scoring, score caching and eviction.
 - `AFFORDANCE_RES = 13` — the affordance cell itself.
 - `SCORE_DISK_RADIUS = 2` — score working-set radius (19 chunks, ~128 m reach).
@@ -52,7 +54,7 @@ the derived fetch-coverage function the movement trigger uses.
     3 and 4 were therefore scored against tiles nobody had fetched, and an
     unfetched cell scores as the identity: indistinguishable on screen from "no
     rule has ever mentioned this ground", within ~250 m of any res-7 boundary.
-  - A fixed `gridDisk(tile, 1)` ring cannot state that. It over-fetches ~140 MB
+  - A fixed `gridDisk(tile, 1)` ring cannot state that. It over-fetches ~150 MB (7 tiles x ~21 MB)
     in the tile interior while remaining only heuristically sufficient at a
     boundary — and at `FETCH_RES = 7` a boundary position is ~20 % of the tile's
     area (inradius 1218 m, working-set reach ~128 m).
@@ -80,8 +82,9 @@ what a 7-tile ring of res-8 cells covered, so the movement trigger issues **one*
 request per move instead of seven, and moves are ~7× rarer.
 
 The change is safe because the same day's re-measurement showed a res-7 tile
-fetches in 18.2 s — the earlier belief that large queries were infeasible traced
-to a pathological key **regex**, not to area. See
+fetches at all — the earlier belief that large queries were infeasible traced
+to a pathological key **regex**, not to area. (That run's "18.2 s" is retracted
+with the payload beside it; today's range is ~15–90 s.) See
 `GpsPlusSlamJs_Docs/docs/2026-07-28-1040-overpass-remeasurement-findings.md`.
 
 **Any change to `FETCH_RES` must bump `OVERPASS_SCHEMA_VERSION`**, since a

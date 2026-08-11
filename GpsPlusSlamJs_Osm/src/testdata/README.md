@@ -24,12 +24,12 @@ instances were saturated and that a full-size tile could not be fetched at all.
 That belief was wrong: it came from a key **regex** query
 (`nwr[~"^(k1|k2|…)$"~"."]`), which makes Overpass evaluate a regex against every
 key of every element in the bbox. A **union of exact-key statements** over the
-same 32 keys returns a whole res-7 tile in **18.2 s**. See
+same 32 keys returns a whole res-7 tile at all. See
 `GpsPlusSlamJs_Docs/docs/2026-07-28-1040-overpass-remeasurement-findings.md`.
 
 That run also reported 21,847 elements and 28.31 MB, and **both figures are
 retracted** (2026-08-09, N2/W2 — see `src/spatial/resolutions.ts` `FETCH_RES`).
-The current figure is **~21 MB at a ~20 s median**, under the areal-only query
+The current figure is **~21 MB, and ~15–90 s**, under the areal-only query
 form adopted 2026-08-03.
 
 Everything that reading produced is withdrawn: that instances are globally
@@ -46,7 +46,7 @@ raw) is open — see the plan's §10.
 **DECIDED 2026-08-04, and the answer is "none of those three".** The corpus stays
 checked in and uncompressed, every payload is **minified** (`.prettierignore`
 keeps the format stage from re-expanding it), and a **2 MiB ceiling per tracked
-file** is now enforced by `tests/repo-config/max-file-size.test.js`. A ~28 MB
+file** is now enforced by `tests/repo-config/max-file-size.test.js`. A ~21 MB
 res-7 capture is therefore uncommittable, and **no full-size fixture will be
 taken** — the six-site corpus covers the "one city only" risk better anyway, at
 four countries instead of one.
@@ -58,7 +58,7 @@ Each rejected option failed on a measurement, not on taste:
   stop delta-compressing, making the corpus _heavier_ after a single re-capture.
 - **Regenerate on demand** — costs the offline determinism this corpus exists
   for, and OSM edits daily, so every count-pinned test starts drifting.
-- **Check in raw at 28 MB** — what the ceiling now forbids.
+- **Check in raw at ~21 MB** — what the ceiling now forbids.
 
 The number that had been driving the whole discussion was also the wrong one:
 this corpus is **~1.7 MiB in git**, not the 4.8 MB of working-tree bytes quoted

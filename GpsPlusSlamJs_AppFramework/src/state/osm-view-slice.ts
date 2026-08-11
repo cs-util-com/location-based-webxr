@@ -51,7 +51,7 @@ export interface OsmViewLatLng {
  * Where the refresh cycle is.
  *
  * `fetching` and `scoring` are separate because they differ by two orders of
- * magnitude — a res-7 Overpass tile is 18–110 s while scoring a working set is
+ * magnitude — a res-7 Overpass tile is ~15–90 s while scoring a working set is
  * milliseconds — so a UI that shows one label for both is telling the user
  * nothing about how long to wait.
  */

@@ -190,7 +190,7 @@ describe("fetch coverage is DERIVED from the score working set, not guessed", ()
   // Why these tests matter:
   // The movement trigger used to fetch "the tile I am in, plus one ring" — a
   // fixed guess that over-fetches in the interior and can still under-fetch at
-  // a boundary. With FETCH_RES = 7 a fixed ring costs ~140 MB, so the guess got
+  // a boundary. With FETCH_RES = 7 a fixed ring costs ~150 MB (7 tiles x ~21 MB), so the guess got
   // expensive at exactly the moment it stopped being needed. Deriving the tile
   // set from the chunks we are actually going to score is both cheaper and
   // strictly more correct, and it stays correct if either resolution moves.

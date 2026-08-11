@@ -4,7 +4,7 @@
 
 Pulls the six neighbouring res-7 fetch tiles in the background, one at a time,
 and drops them the moment the user leaves (W8, DEC-R2-6) — so crossing a tile
-boundary stops being an unpredictable ~20 s stall.
+boundary stops being an unpredictable ~15–90 s stall.
 
 ## Public API
 

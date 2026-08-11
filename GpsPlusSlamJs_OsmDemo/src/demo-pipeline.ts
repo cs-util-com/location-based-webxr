@@ -393,7 +393,7 @@ export class DemoPipeline {
     //    ground": a plausible wrong answer within ~250 m of any res-7 boundary.
     //  - Deriving from the MAXIMUM on every pass blocks the FIRST answer on a
     //    tile only the outer rings need. The fetch loop below runs before any
-    //    scoring, so near a boundary that is ~20 s added to the one thing the
+    //    scoring, so near a boundary that is ~15–90 s added to the one thing the
     //    user is actually waiting for — undoing W16, whose whole point is that
     //    the extra reach costs nothing at the moment of waiting.
     //
@@ -646,7 +646,7 @@ export class DemoPipeline {
     // STEP 0 — which tiles (DEC-R9-15). Standing near a tile edge, your own
     // tile's event can be 500 m away while a neighbour's sits 50 m across the
     // boundary, invisible — so one tile is a real quality loss. But a neighbour
-    // whose data is missing costs an ~20 s download, and the C#'s four-tile
+    // whose data is missing costs a ~15–90 s download, and the C#'s four-tile
     // answer could mean several of them.
     //
     // The app downloads in RES-7 UNITS, each covering seven event tiles, so

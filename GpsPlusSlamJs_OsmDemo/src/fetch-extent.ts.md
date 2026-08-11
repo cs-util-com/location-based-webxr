@@ -33,11 +33,19 @@ the demo can draw it and put a number on it.
       barely tracked area (res 9 is 49× less ground and still returned 38.7 MB
       against 68.0 MB), so a smaller tile bought nothing. That form was retired
       2026-08-03.
-    - The current reason: areal-only restored proportionality (res 7 → res 9 is
-      21×), so a smaller tile _would_ be smaller — but `FETCH_RES` was raised
-      8 → 7 deliberately to trade bytes for a lower request count, and that
-      trade is unaffected by payload size. A res-7 fetch is **~21 MB at a ~20 s
-      median**. See the benchmark results doc.
+    - The current reason, and it is **stronger than "the trade is unaffected by
+      payload"** — which was the first draft of this line and is simply false.
+      Areal-only restored proportionality (res 7 → res 9 is 21×), so a smaller
+      tile _would_ be smaller per tile; but covering one res-7 tile's ground
+      through res 8 takes seven of them, at 7 × 4.6 MB = **~32 MB against
+      ~21 MB**. Finer tiles are worse on bytes as well as on request count.
+      - The measured version, which this line should have cited from the start:
+        the 2026-08-03 re-run's §4 finds time is dominated by server-side
+        execution rather than transfer, and that **finer tiles cost 3–8× more
+        for the same coverage** — so `FETCH_RES = 7` is validated, and if
+        anything the data argues for going coarser.
+    - A res-7 fetch is **~21 MB**, and **~15–90 s that does not replicate**; see
+      `resolutions.ts` FETCH_RES for why latency here is never a single figure.
 - **The hexagon area is exact, the box area is not.** `hexAreaKm2` comes from
   H3's own `cellArea`; the box uses an equirectangular approximation with
   longitude scaled by the mid-latitude cosine. Mixing two approximations would

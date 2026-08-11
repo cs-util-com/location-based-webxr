@@ -163,7 +163,7 @@ export function cellToBoundingBox(cell: string): BoundingBox {
  *
  * **A union of exact-key statements, NOT a key regex — this is the difference
  * between a working client and a broken one.** Measured 2026-07-28 on a res-7
- * tile: the union returned 200 OK in 18.2 s while
+ * tile: the union returned 200 OK while
  * `nwr[~"^(k1|k2|...)$"~"."]` over the same 32 keys returned 504 after 8 s. The
  * regex form makes Overpass evaluate a pattern against every key of every
  * element in the bbox and degrades with the alternation count; exact-key

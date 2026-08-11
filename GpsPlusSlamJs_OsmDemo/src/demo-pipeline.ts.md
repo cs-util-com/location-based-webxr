@@ -30,7 +30,7 @@ path, with no DOM in it.
     already loaded, not when its centre is.** This was the centre for several
     rounds, which broke the promise the method's own docstring makes — that a
     neighbour whose data is missing is skipped, because loading one costs
-    ~20 s. The ensure set built for an admitted neighbour extends
+    ~15–90 s. The ensure set built for an admitted neighbour extends
     `CLIMB_STEPS + 1` cells past each of its candidates, and its candidates are
     seeded across its whole bounding box: ~550 m past the centre, into fetch
     tiles nothing had checked. Measured at the demo's Manhattan default as six

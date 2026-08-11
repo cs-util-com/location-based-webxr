@@ -11,7 +11,7 @@
  *
  * WHY THIS IS A SCRIPT AND NOT A TEST, same rule as `capture-fixtures.mjs`: a
  * test that touches the network is a test that fails when a public server is
- * down, and this one additionally puts ~28 MB and ~18 s of server CPU on a
+ * down, and this one additionally puts ~21 MB and tens of seconds of server CPU on a
  * volunteer-run instance — and in `--matrix` mode ~1.2–3.4 GB and ~25–70 minutes
  * of it. It must never run in a gate.
  *

@@ -152,7 +152,7 @@ export async function stubNetwork(page, options = {}) {
      * ARMED AT CALL TIME rather than through an option, because the tests that
      * need it need the FIRST fetch to succeed: they boot a populated scene and
      * then assert what happens to it while the NEXT fetch is in flight — which
-     * is a real 18-110 s window in the app and would otherwise be a race in the
+     * is a real ~15–90 s window in the app and would otherwise be a race in the
      * suite. (`holdTerrain` is an option because the DEM is only interesting
      * before it has ever answered.)
      */

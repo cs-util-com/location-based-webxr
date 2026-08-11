@@ -16,10 +16,12 @@
  *    indexed and used. What the 1.39× costs is that neighbouring tiles' bboxes
  *    overlap, so shared ground is downloaded once per tile covering it.
  *
- * A res-7 fetch measures **~21 MB at a ~20 s median** (2026-08-01 matrix sweep,
- * `areal-only`). Seeing the box is worth it — it makes the unit the plan is
- * written in concrete — but it is still not an argument for a smaller
- * `FETCH_RES`, and the reason has CHANGED rather than merely being re-measured:
+ * A res-7 fetch measures **~21 MB** (2026-08-01 matrix sweep, `areal-only`,
+ * replicated three ways) **and ~15–90 s, which does not replicate** — see
+ * `resolutions.ts` FETCH_RES for why latency here is a range and never a single
+ * figure. Seeing the box is worth it — it makes the unit the plan is written in
+ * concrete — but it is still not an argument for a smaller `FETCH_RES`, and the
+ * reason has CHANGED rather than merely being re-measured:
  *
  * - **The old reason (superseded).** Under the pre-F32 `nwr` form the payload
  *   barely tracked area — res 9 is 49x less ground and still returned 38.7 MB —

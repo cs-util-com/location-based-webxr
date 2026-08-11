@@ -97,7 +97,7 @@ describe("buildTileQuery", () => {
   //    RETRACTED — see `resolutions.ts` FETCH_RES; the 200-vs-504 verdict is
   //    what this section encodes and it does not rest on them)
   //
-  //   res-7 tile, union of 32 exact keys  -> 200 OK, 18.2 s
+  //   res-7 tile, union of 32 exact keys  -> 200 OK
   //   res-7 tile, REGEX over the same 32  -> 504 after 8 s, empty body
   //   res-7 tile, regex over 3 keys       -> 200 OK
   //
@@ -144,8 +144,8 @@ describe("buildTileQuery", () => {
     // THIS REPLACES "selects nodes, ways and relations in each statement", and
     // the reversal is deliberate rather than a loosening. That rule came from
     // the `nwr` form, which fetched every relation touching the bbox —
-    // including the route, waterway and power relations that make a res-7 tile
-    // 68.0 MB instead of 21.1 MB.
+    // including the route, waterway and power relations that made a res-7 tile
+    // 68.0 MB under the previous nwr form, against 21.1 MB today.
     //
     // `buildFeatureIndex` has ALWAYS refused a relation whose `type` is not
     // areal, so those bytes were fetched, parsed and discarded on the next line.

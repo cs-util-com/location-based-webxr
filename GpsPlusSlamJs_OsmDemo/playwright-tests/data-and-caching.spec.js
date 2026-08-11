@@ -447,7 +447,7 @@ test.describe("the background ring prefetch", () => {
 
     await test.step("a prefetched neighbour is reused, not fetched again", async () => {
       // The payoff, and the only way to see it is a request count. Without the
-      // prefetch this click is an 18–110 s fetch; with it, the tile is already in
+      // prefetch this click is an ~15–90 s fetch; with it, the tile is already in
       // OPFS and the click costs nothing on the wire.
       // Let the ring settle, then remember what has been spent.
       let previous = -1;

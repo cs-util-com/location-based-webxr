@@ -1,7 +1,7 @@
 /**
  * One background tile at a time, dropped the moment the user leaves (W8).
  *
- * WHY THIS EXISTS. Crossing a res-7 fetch-tile boundary costs an ~20 s
+ * WHY THIS EXISTS. Crossing a res-7 fetch-tile boundary costs a ~15–90 s
  * Overpass request for ~21 MB, and nothing tells the user which click will pay
  * it — which is most of what the round-3 notes called "undeterministisch". The
  * answer, decided in round 2 as DEC-R2-6 and carried here as W8, is to pull the

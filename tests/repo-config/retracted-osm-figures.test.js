@@ -43,20 +43,50 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  */
 const RETRACTED = [
   {
-    pattern: /\b28[.,]31\s?MB\b/,
+    pattern: /\b28[.,]31\s?mb\b/i,
     label: '28.31 MB (retracted 2026-08-09, N2/W2 — under half the real payload)',
   },
   {
-    pattern: /\b21[,  ]?8(00|47)\b/,
+    pattern: /\b21[,  ]8(00|47)\b/,
     label: '21,847 / 21,800 elements (retracted 2026-08-09 — a res-7 tile is estimated at ~40–116 k)',
   },
   {
-    pattern: /\b(6[78](\.\d)?|28[–-]68)\s?MB\b/,
+    pattern: /(?<![\d.])(6[78](\.\d{1,2})?|28[–-]68)\s?mb\b/i,
     label: '~68 MB / 28–68 MB per res-7 tile (superseded 2026-08-03 by F32 areal-only, 21.1 MB)',
   },
   {
-    pattern: /\b23[–-]110\s?s\b/,
-    label: '23–110 s per res-7 tile (superseded 2026-08-03 by F32 areal-only, ~20 s median)',
+    // Bare `~28 MB` — the retracted 28.31 rounded. The lookbehind keeps it off
+    // decimals that merely end in 28.
+    pattern: /(?<![\d.])28\s?mb\b/i,
+    label:
+      'bare ~28 MB per res-7 tile (the retracted 28.31 MB, rounded — superseded, 21.1 MB)',
+  },
+  {
+    // BOTH ranges, and the first version of this guard listed only `23–110 s`.
+    // Every one of the twelve latency sites it was written for said
+    // `18–110 s`, so the pattern matched nothing that had ever been wrong in
+    // this tree and missed everything that had. Found by review, and it is the
+    // sharpest available reminder that a guard must be checked against the
+    // defect it names rather than against the sentence that describes it.
+    pattern: /\b(18|23)[–-]110\s?s\b/,
+    label:
+      '18–110 s / 23–110 s per res-7 tile (the 18.2 s lower bound is retracted, and the range predates areal-only)',
+  },
+  {
+    pattern: /\b18\.2\s?s\b/,
+    label:
+      '18.2 s per res-7 tile (retracted 2026-08-09 together with the payload it was measured beside)',
+  },
+  {
+    // The figure THIS repo published on 2026-08-11 and withdrew the same day.
+    // It came from a production comment, was propagated to 15 sites, and had no
+    // artefact behind it: the only checked-in areal-only res-7 timings are
+    // 15.1 / 32.9 / 82.9 / 91.1 s, and the sweep doc that produced them
+    // disclaims its own latencies as non-replicating. Listed so that a number
+    // this repo has already been wrong about once cannot return unmarked.
+    pattern: /~?20\s?s\s+median/i,
+    label:
+      '"~20 s median" (never supported — docs/overpass-matrix-sweep.json measures 15–91 s, non-replicating)',
   },
 ];
 
@@ -66,7 +96,8 @@ const RETRACTED = [
  * Two families, and both are needed:
  *
  * - **Retraction** — the figure is formally dead (`retracted`, `withdrawn`,
- *   `superseded`, `corrected from`, `used to say`).
+ *   `superseded`, `corrected from`, `used to say/quote` — but NOT the bare
+ *   `used to be`, which is ordinary English about anything at all).
  * - **Contrast** — the figure is alive as the OTHER side of a comparison, which
  *   is how the F32 change is documented everywhere it is explained: "21.1 MB
  *   against the previous `nwr` form's 68.0 MB" is not a stale claim, it is the
@@ -74,13 +105,25 @@ const RETRACTED = [
  *
  * **Deliberately narrow within each family.** The first version accepted "no
  * longer", "stale" and "was wrong", and that was a bug rather than generosity:
- * `demo-pipeline.ts:554` states "28–68 MB" two lines under "that no longer
- * works", a sentence about a code path and not about the number beside it. A
- * marker set made of ordinary English rehabilitates by coincidence, which is
- * indistinguishable from not having the gate at all.
+ * `demo-pipeline.ts:554` then read "28–68 MB" two lines under "that no longer
+ * works", a sentence about a code path and not about the number beside it. (It
+ * reads `~21 MB` now — the sweep that this test gated fixed it. The example is
+ * kept as history, in the past tense, because a test about false statements in
+ * comments must not contain one.) A marker set made of ordinary English
+ * rehabilitates by coincidence, which is indistinguishable from not having the
+ * gate at all.
+ *
+ * **`instead of` was here and has been removed**, for the second instance of
+ * exactly the bug above: it is the commonest two-word contrast phrase in
+ * English, it says nothing about the number beside it, and "the mesh is built
+ * in the worker instead of on the main thread" three lines from a reintroduced
+ * `~68 MB` would have rehabilitated it silently. It was holding up exactly one
+ * legitimate site, which now says `against the previous nwr form` like its
+ * neighbours. A marker must name the form or the retraction, never merely
+ * contrast two things.
  */
 const RETRACTION_MARKERS =
-  /\b(retracted|retraction|retracts|withdrawn|withdraws|superseded|supersedes|pre-F32|corrected from|used to (say|quote|be)|once quoted|the previous \S+ form|instead of|it was `?nwr)\b/i;
+  /\b(retracted|retraction|retracts|withdrawn|withdraws|superseded|supersedes|pre-F32|corrected from|used to (say|quote)|once quoted|the previous \S+ form|it was `?nwr)\b/i;
 
 /**
  * How far from a hit its marker may sit: 3 lines before, 2 after.
@@ -110,9 +153,18 @@ const SCANNED = /\.(ts|tsx|js|mjs|cjs|md)$/;
  * `dist/` is generated from `src/`, so flagging it would report every offence
  * twice and demand a rebuild to go green. Lockfiles and testdata are data, not
  * prose. This test file itself necessarily contains every pattern it forbids.
+ *
+ * **`test-timings.md` is exempt and that exemption is load-bearing**, not
+ * tidiness. Those files are regenerated by the gate on every run and are full
+ * of millisecond durations — `21787`, `21919`, `21563` are all in the tree
+ * today — so a digit pattern that reached them would go red on a dice roll,
+ * against files CLAUDE.md forbids hand-editing. There would be no legal way to
+ * go green. The element-count pattern additionally requires a thousands
+ * separator for the same reason; belt and braces, because this failure mode
+ * blocks the whole gate rather than merely nagging.
  */
 const EXEMPT =
-  /(^|\/)(dist|node_modules|coverage)\/|(^|\/)pnpm-lock\.yaml$|(^|\/)retracted-osm-figures\.test\.js$/;
+  /(^|\/)(dist|node_modules|coverage)\/|(^|\/)pnpm-lock\.yaml$|(^|\/)test-timings\.md$|(^|\/)retracted-osm-figures\.test\.js$/;
 
 function trackedFiles() {
   return execFileSync('git', ['ls-files'], {
@@ -176,6 +228,19 @@ describe('retracted res-7 payload figures are never stated as current', () => {
       'returned 200 OK in 18.2 s (28.31 MB, 21,847 elements)',
       '23–110 s depending on the host',
       'a tile is 28-68 MB, so stopping between tiles',
+      // The families the FIRST version of this guard was blind to, each pinned
+      // by the exact string that was actually in the tree.
+      'costs an 18–110 s download, and the rest are skipped',
+      'a first visit is an 18-110 s res-7 Overpass fetch',
+      'a real Overpass fetch, measured at 18.2 s for a res-7 tile',
+      'a res-7 tile is ~28 MB of decompressed JSON per tile',
+      '~28 MB and ~18 s of server CPU',
+      // And the figure this repo itself published wrongly on 2026-08-11.
+      'a res-7 tile is ~21 MB at a ~20 s median',
+      'measured 21.1 MB at a 20 s median across three hosts',
+      // Case-insensitivity, and the six-host sweep's two-decimal figures.
+      'the body was 68 mb',
+      'the sweep reported 66.35 MB and 67.97 MB',
     ];
     for (const claim of claims) {
       expect(
@@ -190,7 +255,19 @@ describe('retracted res-7 payload figures are never stated as current', () => {
       'res 8: 42.7 MB',
       'the mesh build is 68 ms',
       'line 68 of the handler',
-      'a 21.1 MB tile at a ~20 s median',
+      // Res-10 payloads share the digits of the retracted res-7 one. Without
+      // the lookbehind these read as `68 MB` and `28 MB` and the gate would go
+      // red on the smallest, most current figures in the sweep.
+      'res 10: 0.68 MB',
+      'the tile came back at 1.67 MB',
+      'the fixture is 0.28 MB after minification',
+      // A `durationMs` from the gate's own regenerated timings. Belt to the
+      // test-timings exemption's braces.
+      '"durationMs":21847',
+      '"durationMs":21800',
+      // The current figures must never be flagged.
+      'a res-7 tile is ~21 MB',
+      '21.1 MB per res-7 tile',
     ]) {
       expect(
         RETRACTED.some((entry) => entry.pattern.test(innocent)),
@@ -212,6 +289,10 @@ describe('retracted res-7 payload figures are never stated as current', () => {
       'that no longer works, because answering it there would mean',
       'the fixture is stale and needs recapturing',
       'the first attempt was wrong about the mechanism',
+      // Removed after review found it was the same bug a second time: the
+      // commonest contrast phrase in English, saying nothing about the number.
+      'the mesh is built in the worker instead of on the main thread',
+      'the value used to be read from the store',
       'this is an obsolete code path',
     ]) {
       expect(
