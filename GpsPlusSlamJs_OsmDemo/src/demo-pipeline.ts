@@ -205,6 +205,83 @@ export interface DemoPipelineOptions {
   readonly categories?: readonly string[];
 }
 
+/**
+ * Where the wall clock went in stages 1–5 of one refresh pass.
+ *
+ * **Stages 1–5 and no more, because this method owns no more.** Fetch, parse,
+ * merge, score and derive all happen inside `DemoPipeline.update`; the terrain
+ * join, the mesh build, the structured clone and the draw happen outside it and
+ * are added by the worker handler and the page. Pretending otherwise here would
+ * produce a "complete" breakdown that is quietly missing four stages — which is
+ * the failure the whole plan exists to correct, one level down.
+ *
+ * **REQUIRED, not optional.** `update` is the only producer of a
+ * `DemoSnapshot` and it always measures, so an optional field could only ever
+ * mean "a future path dropped it silently" — and silence reading as measured is
+ * precisely what let a six-week performance loop miss this path entirely.
+ *
+ * @see demo-pipeline.ts.md
+ */
+export interface DemoStageTimings {
+  /**
+   * Stage 1–2, SUMMED over the tiles this pass fetched, from
+   * `OsmTileResult.timings`.
+   *
+   * Summed rather than sampled: a working set is 1–3 tiles depending on how
+   * near a res-7 boundary the click landed, so sampling would divide the fetch
+   * stage by three exactly where the click is slowest and read correctly
+   * everywhere else.
+   */
+  readonly transportMs: number;
+  readonly decodeMs: number;
+  readonly parseMs: number;
+  /** The awaited cache write, and the cache read that did not serve. */
+  readonly storeMs: number;
+  readonly probeMs: number;
+  /** Queued behind the source's concurrency cap, and waiting on a dedup peer. */
+  readonly slotWaitMs: number;
+  readonly joinedMs: number;
+  /**
+   * Wall clock around the ENTIRE fetch loop, merge included.
+   *
+   * The anchor that makes the parts falsifiable. Any set of plausible per-stage
+   * numbers adds up to something; only a separately measured whole can say the
+   * parts are wrong, and `fetchMs` minus the parts is the first place an
+   * unattributed cost inside fetching shows up.
+   */
+  readonly fetchMs: number;
+  /**
+   * Stage 3 — `acceptTile`, i.e. `mergeTiles` over every tile held this session.
+   *
+   * Measured apart from `fetchMs` even though it runs inside the same loop,
+   * because this is the stage the plan predicts GROWS across a session:
+   * `this.tiles` is never evicted, so the cost of clicking around is quadratic
+   * in tiles visited. Folded into fetching, that growth would be invisible.
+   */
+  readonly mergeMs: number;
+  /** Stage 4 — `AffordanceIndex.update`: sweep, clip, cover, score. */
+  readonly scoreMs: number;
+  /** Stage 5 — thresholding, components, regions, heat scale, outlines. */
+  readonly deriveMs: number;
+  /** Wall clock of the whole method — the second reconciliation anchor. */
+  readonly pipelineMs: number;
+  /** Tiles this pass actually fetched (0 on a fully warm pass). */
+  readonly tilesFetched: number;
+  /** Tiles held by the index — the denominator merge cost grows against. */
+  readonly tilesHeld: number;
+  readonly tilesFromNetwork: number;
+  readonly tilesFromCache: number;
+  /**
+   * Tiles whose source reported nothing.
+   *
+   * A COUNT rather than an absence, because a fixture-backed run would
+   * otherwise read as a click whose network cost nothing — true of the fixture
+   * and false of the app. A breakdown has to be able to say how much of itself
+   * is unmeasured.
+   */
+  readonly tilesUnmeasured: number;
+}
+
 export interface DemoSnapshot {
   readonly position: LatLng;
   readonly category: string;
@@ -273,6 +350,8 @@ export interface DemoSnapshot {
     readonly chunksReused: number;
     readonly geometryBuilt: number;
   };
+  /** Stages 1–5 of this pass. See {@link DemoStageTimings}. */
+  readonly timings: DemoStageTimings;
   /**
    * How many rings of chunks this snapshot covers — which ring of the widening
    * it is (F42).
@@ -404,6 +483,24 @@ export class DemoPipeline {
     // `DemoSnapshot.radius`). Two `?? SCORE_DISK_RADIUS` expressions could drift
     // into a snapshot claiming a ring the fetch never covered.
     const scoredRadius = radius ?? SCORE_DISK_RADIUS;
+    const pipelineStart = nowMs();
+    // ACCUMULATED ACROSS THE TILES, because a working set is 1–3 of them. The
+    // per-tile records are summed rather than sampled; see `DemoStageTimings`.
+    const totals = {
+      transportMs: 0,
+      decodeMs: 0,
+      parseMs: 0,
+      storeMs: 0,
+      probeMs: 0,
+      slotWaitMs: 0,
+      joinedMs: 0,
+      tilesFetched: 0,
+      tilesFromNetwork: 0,
+      tilesFromCache: 0,
+      tilesUnmeasured: 0,
+    };
+    let mergeMs = 0;
+    const fetchStart = nowMs();
     for (const tile of fetchTilesForScoreWorkingSet(chunk, scoredRadius)) {
       if (this.loaded.has(tile)) continue;
       // CHECKED PER TILE, which is the granularity that matters: a tile is
@@ -424,11 +521,36 @@ export class DemoPipeline {
         // comment outlived the constraint it described.
         const result: OsmTileResult = await this.source.fetchTile(tile, signal);
         this.loaded.add(tile);
+        totals.tilesFetched++;
+        // ABSENT IS COUNTED, NEVER ZEROED. A source that does not instrument
+        // itself must show up as `tilesUnmeasured`, or a fixture-backed run
+        // reads as a click whose network cost nothing.
+        const t = result.timings;
+        if (t === undefined) {
+          totals.tilesUnmeasured++;
+        } else {
+          totals.transportMs += t.transportMs;
+          totals.decodeMs += t.decodeMs;
+          totals.parseMs += t.parseMs;
+          totals.storeMs += t.storeMs ?? 0;
+          totals.probeMs += t.probeMs ?? 0;
+          totals.slotWaitMs += t.slotWaitMs;
+          totals.joinedMs += t.joinedMs ?? 0;
+          if (t.servedBy === "network") totals.tilesFromNetwork++;
+          else if (t.servedBy === "cache") totals.tilesFromCache++;
+        }
+        // STAGE 3, CLOCKED SEPARATELY THOUGH IT SITS INSIDE THIS LOOP. It is
+        // the term the plan predicts grows across a session, and it is the term
+        // nothing has ever measured; inside the fetch stage that growth would
+        // be invisible.
+        const mergeStart = nowMs();
         this.index.acceptTile(result);
+        mergeMs += Math.max(0, nowMs() - mergeStart);
       } catch {
         missingTiles.push(tile);
       }
     }
+    const fetchMs = Math.max(0, nowMs() - fetchStart);
 
     // CHECKED AGAIN AFTER THE FETCH LOOP, and this is not redundant. The
     // per-tile check only fires when there is a NEXT tile, and at an interior
@@ -440,8 +562,11 @@ export class DemoPipeline {
       throw new DOMException("Aborted", "AbortError");
     }
 
+    const scoreStart = nowMs();
     this.index.update(position, radius);
+    const scoreMs = Math.max(0, nowMs() - scoreStart);
 
+    const deriveStart = nowMs();
     const threshold = thresholdFor(this.table, category);
     const scoresByCell = this.index.scoresByCell();
     // MATERIALISED ONCE. This used to be spread here AND again below for the
@@ -504,6 +629,17 @@ export class DemoPipeline {
         geometryBuilt: this.index.stats.geometryBuilt,
       },
       radius: scoredRadius,
+      timings: {
+        ...totals,
+        fetchMs,
+        mergeMs,
+        scoreMs,
+        // CLOSED HERE, on the last line before the snapshot leaves, so stage 5
+        // covers everything after scoring including building this object.
+        deriveMs: Math.max(0, nowMs() - deriveStart),
+        pipelineMs: Math.max(0, nowMs() - pipelineStart),
+        tilesHeld: this.loaded.size,
+      },
     };
   }
 

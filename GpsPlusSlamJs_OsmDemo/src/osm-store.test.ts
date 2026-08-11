@@ -13,6 +13,7 @@
  * @see osm-store.ts.md
  */
 
+import { ZERO_STAGE_TIMINGS } from "./snapshot-timings-fixture.js";
 import { describe, it, expect, vi } from "vitest";
 
 import {
@@ -43,6 +44,7 @@ const snapshot = (cells: number): DemoSnapshot => ({
   undergroundCount: 0,
   undergroundOutlines: [],
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 1 },
+  timings: ZERO_STAGE_TIMINGS,
   // The last ring: these tests are about the store, and a half-widened fixture
   // would say something this file is not trying to say.
   radius: SCORE_DISK_MAX_RADIUS,

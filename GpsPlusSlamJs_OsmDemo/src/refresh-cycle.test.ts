@@ -14,6 +14,7 @@
  * @see refresh-cycle.ts.md
  */
 
+import { ZERO_STAGE_TIMINGS } from "./snapshot-timings-fixture.js";
 import { describe, it, expect, vi } from "vitest";
 
 import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
@@ -62,6 +63,7 @@ const snapshot = (category: string): DemoSnapshot => ({
   undergroundCount: 0,
   undergroundOutlines: [],
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 0 },
+  timings: ZERO_STAGE_TIMINGS,
   // A FINAL snapshot by default: these tests are about failure handling and
   // ordering, not about widening, so the base should not look half-delivered.
   radius: SCORE_DISK_MAX_RADIUS,

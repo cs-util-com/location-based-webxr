@@ -167,3 +167,35 @@ serialisable. This drives the real producer and round-trips what it emits.
   replacement would otherwise have been weaker than what it replaced. A
   companion test asserts both halves of that difference, so loosening the guard
   back to `toEqual` fails a line rather than going quiet.
+
+## `DemoSnapshot.timings` — stages 1–5, and why only five
+
+Added 2026-08-11 (click-path plan §8 milestone 2). `update` owns fetch, parse,
+merge, score and derive; the terrain join, the mesh build, the structured clone
+and the draw happen outside it and are added by the worker handler and the page.
+**Reporting all nine from here would produce a "complete" breakdown quietly
+missing four stages** — the plan's own failure mode, one level down.
+
+- **REQUIRED, not optional.** `update` is the only producer of a snapshot and
+  always measures, so optional could only mean "a future path dropped it
+  silently". Hand-built fixtures use `ZERO_STAGE_TIMINGS`.
+- **Per-tile source costs are SUMMED, never sampled.** A working set is 1–3
+  tiles depending on how near a res-7 boundary the click landed, so sampling
+  would divide the fetch stage by three exactly where the click is slowest and
+  read correctly everywhere else.
+- **`mergeMs` is clocked apart from `fetchMs` although `acceptTile` runs inside
+  the fetch loop.** Stage 3 is the term predicted to grow across a session —
+  `this.tiles` never evicts, so `mergeTiles` re-merges everything on every
+  accept and clicking around is quadratic in tiles visited. Folded into
+  fetching, that growth would be invisible, and it is the term nothing has ever
+  measured.
+- **`fetchMs` and `pipelineMs` are wall clocks, and they are what make the parts
+  falsifiable.** Any set of plausible per-stage numbers adds up to something;
+  only a separately measured whole can say the parts are wrong.
+- **`tilesUnmeasured` is a count, not an absence.** A fixture-backed run must
+  not read as a click whose network cost nothing.
+- Every duration is floored at zero, for the reason `elapsedMs` gives in the OSM
+  package: a negative makes the reconciliation close by cancelling, so the gate
+  that would catch a clock problem goes quiet exactly when it should shout.
+
+Covered by `pipeline-timings.test.ts`.
