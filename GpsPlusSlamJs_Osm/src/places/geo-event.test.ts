@@ -28,6 +28,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   rankedPeaks,
+  bestPickOverField,
+  EXHAUSTIVE_SHORTLIST,
   CANDIDATES_PER_BATCH,
   QUARTER_HOUR_MS,
   bestPickForTile,
@@ -1038,5 +1040,116 @@ describe("rankedPeaks — the exhaustive alternative to climbing", () => {
       topN: 2,
     });
     expect(peaks.map((p) => p.cell)).toEqual(["a", "z"]);
+  });
+});
+
+describe("bestPickOverField — the exhaustive pick, and its weighting", () => {
+  /**
+   * WHY THIS WHOLE BLOCK MATTERS. `bestPickOverField` shipped wired into the
+   * demo (`demo-pipeline.ts` passes `cellsOfTile`) with **no test of its own** —
+   * `rankedPeaks` was covered, the pick built on top of it was not. So the one
+   * thing the exhaustive path adds beyond ranking, the heat-weighted roll, was
+   * asserted only by a docstring.
+   */
+
+  /** Isolated cells: no neighbours, so neighbourhood heat is the cell's own. */
+  const alone = (): string[] => [];
+
+  /** Peak plus five bumps — the fixture the weighting docstring computes on. */
+  const peakAndBumps: Record<string, number> = {
+    "0,0": 560,
+    "10,0": 84,
+    "20,0": 84,
+    "30,0": 84,
+    "40,0": 84,
+    "50,0": 84,
+  };
+
+  const pickAt = (
+    eventTime: number,
+    heat: Record<string, number> = peakAndBumps,
+  ): ReturnType<typeof bestPickOverField> =>
+    bestPickOverField({
+      cells: Object.keys(heat),
+      globalSeed: 42,
+      eventTime,
+      toLatLng: gridToLatLng,
+      heatAt: (cell) => heat[cell],
+      neighbours: alone,
+    });
+
+  it("refuses ground the map itself calls unusable", () => {
+    // The SHARED quality gate, `heat > neighbours(cell).length × threshold`.
+    // Nine neighbours (the grid includes the cell itself) against heat 3 fails
+    // it, and a refusal must be `undefined` — never a pick on bad ground, which
+    // would put an event where the map draws nothing.
+    const thin: Record<string, number> = { "0,0": 3, "1,0": 3 };
+    expect(
+      bestPickOverField({
+        cells: Object.keys(thin),
+        globalSeed: 42,
+        eventTime: Date.UTC(2026, 7, 2, 10, 15),
+        toLatLng: gridToLatLng,
+        heatAt: (cell) => thin[cell],
+        neighbours: gridNeighbours,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined over ground nobody has scored", () => {
+    // Not a crash and not a pick at the origin: an unscored field simply has no
+    // event in it, the same way `rankedPeaks` skips unscored cells.
+    expect(pickAt(Date.UTC(2026, 7, 2, 10, 15), {})).toBeUndefined();
+  });
+
+  it("is identical for the same seed and minute, and quantised to minutes", () => {
+    // DETERMINISM IS THE FEATURE. Two clients agree without coordinating only
+    // if the pick depends on nothing but seed and whole minute — so a clock a
+    // few seconds out must not move the event.
+    const at = Date.UTC(2026, 7, 2, 10, 15);
+    expect(pickAt(at)).toEqual(pickAt(at));
+    expect(pickAt(at + 59_000)).toEqual(pickAt(at));
+  });
+
+  it("reports the shortlist it beat, capped at EXHAUSTIVE_SHORTLIST", () => {
+    // `evaluated` is what the map draws beside the pick. For the scan these are
+    // genuine runners-up rather than the climb's discarded seeds, and there are
+    // never more of them than the shortlist — ten separated peaks still yield
+    // six, or the map would claim the search considered more than it ranked.
+    const wide: Record<string, number> = {};
+    for (let i = 0; i < 10; i += 1) wide[`${i * 10},0`] = 100 + i;
+
+    const pick = pickAt(Date.UTC(2026, 7, 2, 10, 15), wide);
+    expect(pick?.evaluated).toHaveLength(EXHAUSTIVE_SHORTLIST);
+    // Nothing was climbed, so the reported candidate IS the chosen position.
+    expect(pick?.candidate).toEqual(pick?.position);
+    expect(pick?.position).toEqual(gridToLatLng(pick?.cell ?? ""));
+  });
+
+  it("weights by heat rather than rolling uniformly over the shortlist", () => {
+    // THE ARITHMETIC THE DOCSTRING CLAIMS, now executable. A peak at 560 against
+    // five bumps at 84 is 560/980 of the total heat, so it must win ≈57 % of
+    // minutes — not the 1-in-6 (17 %) a uniform roll over the shortlist gives.
+    //
+    // Sampled over 1 200 consecutive minutes, which is deterministic: the roll
+    // is `stableHash`, not a PRNG, so this is a fixed number and not a flake.
+    const start = Date.UTC(2026, 7, 2, 0, 0);
+    const minutes = 1200;
+    let peakWins = 0;
+    const winners = new Set<string>();
+    for (let m = 0; m < minutes; m += 1) {
+      const pick = pickAt(start + m * 60_000);
+      winners.add(pick?.cell ?? "none");
+      if (pick?.cell === "0,0") peakWins += 1;
+    }
+
+    const share = peakWins / minutes;
+    expect(share).toBeGreaterThan(0.5);
+    expect(share).toBeLessThan(0.65);
+
+    // AND THE ROTATION SURVIVES THE WEIGHTING, which is the other half: every
+    // shortlisted place must stay reachable, or the event is static forever —
+    // the regression `EXHAUSTIVE_SHORTLIST` exists to prevent.
+    expect(winners.size).toBe(Object.keys(peakAndBumps).length);
   });
 });

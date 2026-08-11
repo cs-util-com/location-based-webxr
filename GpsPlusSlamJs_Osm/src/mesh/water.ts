@@ -58,8 +58,13 @@ import type { PlanarPoint } from "../spatial/point-in-ring.js";
  * Tag-only: it says nothing about whether the geometry turns out to be areal,
  * which {@link waterBankLines} decides, because an unclosed `natural=water` way
  * is real Overpass output and is not a bank.
+ *
+ * MODULE-PRIVATE ON PURPOSE. It was exported when this file was written and
+ * nothing ever imported it — a caller wanting "is this water I can block with"
+ * wants {@link waterBankLines}, whose `[]` already answers both halves. Export
+ * it again when a second caller exists, not before.
  */
-export function isWaterArea(feature: OsmFeature): boolean {
+function isWaterArea(feature: OsmFeature): boolean {
   return feature.tags["natural"] === "water";
 }
 

@@ -8,12 +8,15 @@ these lines into indexed bands.
 
 ## Public API
 
-- `isWaterArea(feature): boolean` — tag-only. Says nothing about whether the
-  geometry is areal; that is `waterBankLines`' job.
 - `waterBankLines(feature, clipTo?): PlanarPoint[][]` — the bank polylines as
   `x = lng, y = lat`. `[]` for anything not water, not convertible, or not areal.
   **`[]` always means "nothing to block with", never "unknown"** — a caller
   cannot mistake a refusal for an empty river.
+
+The tag test `isWaterArea` is **module-private**: it says nothing about whether
+the geometry is areal, so on its own it cannot answer "can I block with this" —
+`waterBankLines`' `[]` answers both halves at once, which is why no caller ever
+wanted the predicate alone.
 
 ## Why water is an obstacle at all
 
