@@ -7,7 +7,7 @@ measured, and checks them against a separately measured whole.
 
 ## Public API
 
-- `WorkerStageTimings` — `{ terrainWaitMs, meshMs, workerTotalMs }`, filled by
+- `WorkerStageTimings` — `{ terrainWaitMs, meshMs, prefetchMs, workerTotalMs, queueMs }`, filled by
   the worker's `update` handler.
 - `ClickTimingInput` — `{ radius, pipeline, worker, roundTripMs, drawMs }`.
 - `composeClickTimings(input): ClickTimings` — the stages, their shares, the
@@ -99,3 +99,23 @@ every branch of the console line including the DOES NOT RECONCILE warning.
 - **Shares are rounded independently and the line says so.** With this many
   entries the column can miss 100 by a few points, and a reader who adds it up
   would otherwise reasonably conclude the instrument is broken.
+
+## Corrections from the whole-branch review
+
+- **"The queue and the clone cannot be separated without a shared clock" was
+  WRONG, and it was asserted in five places.** `performance.timeOrigin` is
+  exposed in a dedicated worker as well as on the page and is an ABSOLUTE
+  origin, so `timeOrigin + now()` is a common timeline — which is what
+  `timeOrigin` is for. `queue` is now its own stage, measured post-to-dispatch,
+  and `boundary` means only the reply's clone. Deriving stage 8 rather than
+  timestamping it is still the default, because a single-sided duration needs
+  no shared origin at all; the overstatement was declaring the split
+  impossible, in a doc series whose subject is not asserting unchecked things.
+- **The residual identity omitted `prefetch`** here, in the module header and in
+  the plan — and the test that "pinned" it omitted the term too, passing only
+  because its fixture set `prefetchMs: 0`. A term added to the stage list has to
+  reach the algebra in the same commit.
+- **`ClickSummary` is new**, because the per-ring residual cancels page time out
+  by construction and therefore could never surface a page-side stage nobody
+  enumerated — the exact class of defect this instrument was built after
+  missing. `pageResidualMs` is that gap.

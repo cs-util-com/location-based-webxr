@@ -30,8 +30,13 @@
 import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
-import { composeClickTimings, type ClickTimings } from "./click-timings.js";
-import { nowMs } from "./monotonic-clock.js";
+import {
+  composeClickSummary,
+  composeClickTimings,
+  type ClickSummary,
+  type ClickTimings,
+} from "./click-timings.js";
+import { nowMs, nowEpochMs } from "./monotonic-clock.js";
 import { isLayerEnabled } from "./layers.js";
 import type { AnchorHolder } from "./scene-anchor.js";
 import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
@@ -63,6 +68,8 @@ interface RefreshWorker {
       includeCells: boolean;
       /** The underground diagnostic layer, same rule. */
       includeUnderground: boolean;
+      /** Epoch ms at post time, so the worker can report its queue wait. */
+      postedAtEpochMs: number;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -148,6 +155,23 @@ export interface RefreshCycleOptions extends StoreAccess {
    * someone is watching is a breakdown that is broken when they start.
    */
   readonly onTimings?: (timings: ClickTimings) => void;
+  /**
+   * The WHOLE CLICK, once its rings have all published.
+   *
+   * **Separate from `onTimings` because the per-ring lines cannot be summed to
+   * it, and the difference is the point.** Each ring's `wallMs` is one worker
+   * round trip plus its draw; everything else the cycle does — the
+   * `fetchStarted` dispatch and its subscriber renders, the per-ring layer
+   * reads, both guards, the gaps between passes, and printing the lines
+   * themselves — falls outside every one of them.
+   *
+   * Worse, the per-ring residual is structurally blind to all of it: the
+   * algebra in `click-timings.ts` shows page time CANCELS, leaving only
+   * unattributed worker time. So without this clock a page-side stage nobody
+   * enumerated could never surface — which is exactly the class of defect this
+   * whole instrument was built after missing.
+   */
+  readonly onClickSummary?: (summary: ClickSummary) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -166,7 +190,8 @@ function messageOf(error: unknown): string {
 export function createRefreshCycle(
   options: RefreshCycleOptions,
 ): LatestOnly<void> {
-  const { store, actions, worker, onMesh, anchors, onTimings } = options;
+  const { store, actions, worker, onMesh, anchors, onTimings, onClickSummary } =
+    options;
 
   return latestOnly(async (_input: void, signal) => {
     const { position, category } = selectOsmView(store.getState());
@@ -196,6 +221,11 @@ export function createRefreshCycle(
       // origin, none of which a widening ring touches. The worker decides which
       // kind of reply to send and the callback merges it — see `MeshUpdate`.
       // This was recorded here as a known cost for one round.
+      // THE CLICK-LEVEL WALL CLOCK. Opened before the first ring so it covers
+      // the gaps between passes and the per-ring bookkeeping, neither of which
+      // any ring clock can see. See `onClickSummary`.
+      const clickStart = nowMs();
+      const rings: ClickTimings[] = [];
       for (const radius of PROGRESSIVE_RADII) {
         // THE CELL ARRAY ONLY TRAVELS IF SOMETHING DRAWS IT (round 10, stage B).
         // Read per ring rather than captured once, so toggling the layer
@@ -213,7 +243,7 @@ export function createRefreshCycle(
         );
         // STAGE 8's ANCHOR. Clocked wholly on THIS side, and paired with the
         // worker's own `workerTotalMs` clocked wholly on that side, so the
-        // transfer cost is a difference of two durations rather than of two
+        // clone cost is a difference of two durations rather than of two
         // timestamps. A dedicated worker has its own `performance.timeOrigin`,
         // which makes a cross-boundary timestamp subtraction an offset rather
         // than an elapsed time — and every existing timing in this demo is
@@ -228,6 +258,12 @@ export function createRefreshCycle(
             radius,
             includeCells,
             includeUnderground,
+            // ON AN ABSOLUTE TIMELINE, so the worker can subtract it from its
+            // own reading and get the QUEUE WAIT. That is the one duration
+            // neither side can measure alone: the page sees post-to-reply, the
+            // worker sees handler-start-to-end, and the gap between them is
+            // where a busy worker hides. See `monotonic-clock.ts`.
+            postedAtEpochMs: nowEpochMs(),
           },
           { signal },
         );
@@ -278,14 +314,25 @@ export function createRefreshCycle(
         // is waiting for. Always computed, even with no listener: a breakdown
         // that only exists when someone is watching is one that is broken when
         // they start watching.
-        onTimings?.(
-          composeClickTimings({
-            radius,
-            pipeline: snapshot.timings,
-            worker: workerTimings,
-            roundTripMs,
-            drawMs,
-          }),
+        const ring = composeClickTimings({
+          radius,
+          pipeline: snapshot.timings,
+          worker: workerTimings,
+          roundTripMs,
+          drawMs,
+        });
+        rings.push(ring);
+        onTimings?.(ring);
+      }
+      // AFTER THE LOOP, so it covers the gaps between passes and the per-ring
+      // bookkeeping. Reported only when at least one ring published: a run that
+      // was superseded before publishing anything has no click to summarise,
+      // and a "0 ms across 0 rings" line would be noise on every abort — of
+      // which there is one per click the user makes while a fetch is in
+      // flight, i.e. the common case on a slow network.
+      if (rings.length > 0) {
+        onClickSummary?.(
+          composeClickSummary(Math.max(0, nowMs() - clickStart), rings),
         );
       }
     } catch (error) {

@@ -249,6 +249,33 @@ describe('retracted res-7 payload figures are never stated as current', () => {
       ).toBe(true);
     }
 
+    // AND ONE INDEXED WITNESS PER PATTERN, because the `.some()` loop above
+    // cannot tell a live pattern from a dead one: as long as ANY entry matches
+    // a claim, a pattern broken into matching nothing stays invisible. That is
+    // not hypothetical — it happened in the sibling guard in this repo's own
+    // sister project, where a sed meant to escape a narrow no-break space
+    // turned the element-count pattern into one matching nothing and every
+    // test stayed green because a different pattern caught the same example.
+    //
+    // The fix was applied there and NOT carried here for a full branch, which
+    // is the argument for indexing rather than for remembering.
+    const witnesses = [
+      '(28.31 MB) of decompressed JSON',
+      'returned 21,847 elements in one query',
+      'a res-7 tile is ~68 MB of decompressed JSON',
+      'the corpus is ~28 MB on disk',
+      'costs an 18–110 s download',
+      'a res-7 tile fetched in 18.2 s',
+      'measured at a ~20 s median across hosts',
+    ];
+    expect(witnesses).toHaveLength(RETRACTED.length);
+    RETRACTED.forEach((entry, index) => {
+      expect(
+        entry.pattern.test(witnesses[index] ?? ''),
+        `pattern ${index} (${entry.label}) matched nothing — is it dead?`,
+      ).toBe(true);
+    });
+
     // And the shapes that must NOT trip it: a res-8 payload, an unrelated
     // measurement in the same units, and a bare number with no unit.
     for (const innocent of [

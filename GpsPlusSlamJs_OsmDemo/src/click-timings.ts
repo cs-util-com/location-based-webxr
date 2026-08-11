@@ -18,13 +18,27 @@
  * **AND THE RESIDUAL HAS A SHARPER MEANING THAN "LEFTOVER", which fell out of
  * the arithmetic rather than being designed in.** Substituting the definitions:
  *
+ *     Σworker  = ΣpipelineParts + terrainWait + mesh + prefetch
  *     residual = wall - Σstages
- *             = (roundTrip + draw) - (ΣpipelineParts + terrainWait + mesh
- *                                     + (roundTrip - workerTotal) + draw)
- *             = workerTotal - (ΣpipelineParts + terrainWait + mesh)
+ *              = (roundTrip + draw)
+ *                - (Σworker + queue + (roundTrip - workerTotal - queue) + draw)
+ *              = workerTotal - Σworker
  *
  * i.e. **exactly the time inside the worker that none of the enumerated stages
- * claims.** Time on the page cancels out entirely.
+ * claims.** Time on the page cancels out entirely, and so does `queue` — it
+ * appears in the stage list and in the boundary derivation with opposite signs.
+ *
+ * **`prefetch` belongs in that sum and was missing from this comment for three
+ * commits**, along with the doc copies of it and the test that "pinned" the
+ * identity — which passed only because its fixture set `prefetchMs: 0`. A term
+ * added to the stage list has to be added to the algebra in the same breath, or
+ * the algebra quietly describes an earlier version of the code.
+ *
+ * **AND PAGE TIME CANCELLING IS A LIMITATION, not only a sharpening.** It makes
+ * a ring's residual a precise pointer at the worker — and equally makes it
+ * incapable of ever surfacing a page-side stage nobody enumerated. That is why
+ * {@link composeClickSummary} exists: a wall clock around the WHOLE click, with
+ * `pageResidualMs` as the page's own unattributed time.
  *
  * **`ΣpipelineParts` is the ten COMPONENT fields, not `DemoStageTimings.pipelineMs`
  * — and the distinction is not pedantry**, because `pipelineMs` is a real field
@@ -71,6 +85,23 @@ export interface WorkerStageTimings {
    * timestamp from a page one — see {@link composeClickTimings}.
    */
   readonly workerTotalMs: number;
+  /**
+   * How long the `update` message sat in the worker's queue before its handler
+   * ran — post to dispatch.
+   *
+   * **The one number here that DOES cross the boundary**, and deliberately: it
+   * is computed from `performance.timeOrigin + performance.now()` on both
+   * sides, which is an absolute epoch timeline rather than two unrelated
+   * relative ones. Everything else is a duration measured wholly on one side,
+   * because that needs no shared origin at all and is therefore more robust.
+   *
+   * **Coarse by design and that is fine here.** Browsers round
+   * `performance.now()` and `timeOrigin` for timing-attack reasons — typically
+   * to 0.1–1 ms outside a cross-origin-isolated context. Against a queue wait
+   * measured in tens or hundreds of milliseconds that is noise; it would not be
+   * against a sub-millisecond stage, which is why nothing else uses this route.
+   */
+  readonly queueMs: number;
 }
 
 export interface ClickTimingInput {
@@ -125,6 +156,20 @@ export interface ClickTimings {
    */
   readonly fetchUnattributedMs: number;
   /**
+   * `pipelineMs` minus everything `DemoPipeline.update` accounts for.
+   *
+   * **`pipelineMs` was computed, cloned across the worker boundary three times
+   * per click, and read by NOTHING for three commits** — while three separate
+   * places called it "the second reconciliation anchor". This is that anchor
+   * actually doing its job: the method's own wall clock against the sum of the
+   * stages it claims to be made of.
+   *
+   * It overlaps `residualMs` rather than adding to it — the residual is the
+   * worker's whole unattributed time and this is the part of it inside
+   * `update`. Reported separately because the two point at different files.
+   */
+  readonly pipelineUnattributedMs: number;
+  /**
    * Whether the parts add up well enough to draw a conclusion from.
    *
    * `false` means the breakdown is lying somewhere and no ranking may be read
@@ -172,17 +217,25 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
   const { pipeline: p, worker: w } = input;
   const wallMs = input.roundTripMs + input.drawMs;
 
-  // NAMED `boundary`, NOT `transfer`, and the rename is a correction rather
-  // than a preference. This term is everything inside the round trip that the
-  // worker's own clock does not cover, which is the structured clone in both
-  // directions PLUS any time the `update` message spent QUEUED — and the demo
-  // posts `loadTerrain` and `refresh` to the SAME worker in the same tick (W3,
-  // `main.ts`). So on a new position the concurrent DEM job's CPU lands here,
-  // and calling that "transfer" would send the next reader to look at
-  // structured-clone size for a cost that is really a busy thread. Neither side
-  // can separate the two without a shared clock, so the honest move is to name
-  // what the number actually contains.
-  const rawBoundaryMs = input.roundTripMs - w.workerTotalMs;
+  // QUEUEING IS ITS OWN STAGE NOW, and the claim it used to hide behind was
+  // simply wrong. Earlier revisions of this file said the queue and the clone
+  // "cannot be separated without a shared clock" — but `performance.timeOrigin`
+  // is exposed in a dedicated worker as well as on the page, and it is an
+  // ABSOLUTE origin, so `timeOrigin + now()` is a common timeline on both
+  // sides. That is what `timeOrigin` is specified for. Deriving stage 8 rather
+  // than timestamping it is still the right default (see below); declaring the
+  // split impossible was an overstatement, in a doc series whose whole subject
+  // is not asserting unchecked things as settled.
+  //
+  // It matters because this was the LARGEST term in the only line ever
+  // observed. `main.ts` posts the terrain load and the refresh to the same
+  // worker in the same tick (W3), so on a new position the concurrent DEM job's
+  // CPU landed here and the reader was told to treat it as "contention" with no
+  // way to check.
+  const queueMs = Math.max(0, w.queueMs);
+  // `boundary` is now only what it says: the reply's journey back, i.e. the
+  // structured clone and its delivery. roundTrip − queue − workerTotal.
+  const rawBoundaryMs = input.roundTripMs - w.workerTotalMs - queueMs;
   const boundaryMs = Math.max(0, rawBoundaryMs);
 
   // `always` marks the NINE STAGES §2 enumerates. They print even at zero,
@@ -210,6 +263,7 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     ["terrain-wait", w.terrainWaitMs, true],
     ["mesh", w.meshMs, true],
     ["prefetch-queue", w.prefetchMs, false],
+    ["queue", queueMs, true],
     ["boundary", boundaryMs, true],
     ["draw", input.drawMs, true],
   ];
@@ -251,6 +305,12 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     residualMs,
     residualShare,
     fetchUnattributedMs: Math.max(0, p.fetchMs - insideFetchLoop),
+    // THE SECOND ANCHOR, finally used. `pipelineMs` is the method's own wall
+    // clock; the sum below is everything it says it is made of.
+    pipelineUnattributedMs: Math.max(
+      0,
+      p.pipelineMs - (p.fetchMs + p.scoreMs + p.deriveMs),
+    ),
     // A NEGATIVE RESIDUAL IS NOT RECONCILED EITHER, and `Math.abs` here was a
     // bug: stages summing to MORE than the wall clock means something is
     // double-counted, which is no more trustworthy than something missing.
@@ -318,8 +378,11 @@ export function describeClickTimings(t: ClickTimings): string {
     `click ring ${String(t.radius)}: ${ms(t.wallMs)} total`,
     ...parts,
     `residual ${ms(t.residualMs)} (${pct(t.residualShare)})`,
+    ...(Math.round(t.pipelineUnattributedMs) > 0
+      ? [`of which pipeline-unattributed ${ms(t.pipelineUnattributedMs)}`]
+      : []),
     ...(Math.round(t.fetchUnattributedMs) > 0
-      ? [`fetch-unattributed ${ms(t.fetchUnattributedMs)}`]
+      ? [`of which fetch-unattributed ${ms(t.fetchUnattributedMs)}`]
       : []),
     `tiles ${served}`,
     // SHARES ARE ROUNDED INDEPENDENTLY, so the column can miss 100 by a few
@@ -331,5 +394,60 @@ export function describeClickTimings(t: ClickTimings): string {
     ...(t.reconciles
       ? []
       : ["** DOES NOT RECONCILE — do not rank stages from this line **"]),
+  ].join(" · ");
+}
+
+/**
+ * The WHOLE CLICK, against the sum of its published rings.
+ *
+ * **Exists because the per-ring residual is blind to the page by
+ * construction.** Substituting the definitions leaves
+ * `workerTotal − Σ(worker stages)`: page time cancels exactly, which is what
+ * makes a ring's residual a sharp pointer at the worker handler — and equally
+ * what makes it incapable of ever surfacing a page-side stage nobody
+ * enumerated. The plan mandated a wall clock "around the entire three-pass
+ * refresh" and the first implementation shipped only per-pass ones.
+ *
+ * `pageResidualMs` is everything the cycle spent outside the rings: the
+ * `fetchStarted` dispatch and the subscriber renders it triggers, the per-ring
+ * layer reads and guards, the gaps between passes, and printing the lines.
+ */
+export interface ClickSummary {
+  /** Wall clock around the whole widening, page-side. */
+  readonly clickMs: number;
+  /** Rings that actually published. Fewer than three means it stopped early. */
+  readonly rings: number;
+  /** Σ of the published rings' `wallMs`. */
+  readonly ringSumMs: number;
+  /** `clickMs − ringSumMs` — page time no ring accounts for. */
+  readonly pageResidualMs: number;
+}
+
+export function composeClickSummary(
+  clickMs: number,
+  rings: readonly ClickTimings[],
+): ClickSummary {
+  const ringSumMs = rings.reduce((sum, r) => sum + r.wallMs, 0);
+  return {
+    clickMs: Math.max(0, clickMs),
+    rings: rings.length,
+    ringSumMs,
+    pageResidualMs: Math.max(0, clickMs - ringSumMs),
+  };
+}
+
+/**
+ * One line for the whole click.
+ *
+ * Printed after the ring lines so the reader meets the parts before the total —
+ * and it names `page-residual` explicitly rather than leaving the gap between
+ * `clickMs` and the ring sum for someone to notice.
+ */
+export function describeClickSummary(s: ClickSummary): string {
+  const share = s.clickMs > 0 ? s.pageResidualMs / s.clickMs : 0;
+  return [
+    `click TOTAL: ${ms(s.clickMs)} across ${String(s.rings)} ring(s)`,
+    `rings ${ms(s.ringSumMs)}`,
+    `page-residual ${ms(s.pageResidualMs)} (${pct(share)})`,
   ].join(" · ");
 }

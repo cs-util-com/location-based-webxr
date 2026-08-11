@@ -71,7 +71,7 @@ page-side stages and hands the composed breakdown to a callback.
 - **`roundTripMs`** around `worker.call` and **`drawMs`** around the
   `onMesh` + dispatch pair — both clocked wholly on this side. The worker
   reports its own total, clocked wholly on that side, and `click-timings.ts`
-  derives the transfer stage from the difference. **Never a timestamp
+  derives the clone cost from the difference. **Never a timestamp
   subtraction across the boundary**: a dedicated worker has its own
   `performance.timeOrigin`.
 - **`drawMs` covers both the mesh hand-over and the dispatch**, because the

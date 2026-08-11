@@ -48,7 +48,7 @@ import { describeExtent } from "./fetch-extent.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
 import { describeGeoEventStats } from "./geo-event-stats.js";
-import { describeClickTimings } from "./click-timings.js";
+import { describeClickSummary, describeClickTimings } from "./click-timings.js";
 import {
   DEFAULT_CELL_PRESET,
   cellPreset,
@@ -532,6 +532,13 @@ async function main(): Promise<void> {
     onTimings: (timings) => {
       // eslint-disable-next-line no-console -- the breakdown's only output.
       console.info(describeClickTimings(timings));
+    },
+    // THE CLICK-LEVEL LINE, after the three ring lines. Its `page-residual` is
+    // the only place time spent OUTSIDE the worker round trips can appear —
+    // the per-ring residual cancels page time out by construction.
+    onClickSummary: (summary) => {
+      // eslint-disable-next-line no-console -- the breakdown's only output.
+      console.info(describeClickSummary(summary));
     },
     // A pass either rebuilds the geometry or re-sends only the region slabs
     // (W6). The slabs are the one layer a widening ring changes; everything else

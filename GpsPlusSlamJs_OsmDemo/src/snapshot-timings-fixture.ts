@@ -53,5 +53,6 @@ export const ZERO_WORKER_TIMINGS: WorkerStageTimings = {
   terrainWaitMs: 0,
   meshMs: 0,
   prefetchMs: 0,
+  queueMs: 0,
   workerTotalMs: 0,
 };

@@ -25,3 +25,28 @@
 export function nowMs(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
 }
+
+/**
+ * An ABSOLUTE epoch-millisecond reading from the monotonic clock.
+ *
+ * `performance.timeOrigin` is the epoch time at which this context's `now()`
+ * was zero, and it is exposed on the page AND inside a dedicated worker — so
+ * `timeOrigin + now()` is a timeline BOTH SIDES SHARE, unlike `now()` alone,
+ * which is relative to a different origin in each.
+ *
+ * **Use it only where a cross-boundary comparison is genuinely needed** — today
+ * that is exactly one thing, the worker queue wait (post → dispatch), which no
+ * single-sided duration can express. Everything else stays a duration measured
+ * wholly on one side, because that needs no shared origin and cannot be wrong
+ * about one.
+ *
+ * **It is coarse, deliberately.** Browsers round `now()` and `timeOrigin` to
+ * defend against timing attacks — typically 0.1–1 ms outside a cross-origin-
+ * isolated context. Fine against a queue wait of tens of milliseconds; not fine
+ * for a sub-millisecond stage, which is the other reason this is not the
+ * default route.
+ */
+export function nowEpochMs(): number {
+  if (typeof performance === "undefined") return Date.now();
+  return performance.timeOrigin + performance.now();
+}

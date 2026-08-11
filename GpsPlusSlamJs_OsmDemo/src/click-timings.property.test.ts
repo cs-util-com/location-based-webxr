@@ -58,6 +58,7 @@ const arbInput = (n: fc.Arbitrary<number>): fc.Arbitrary<ClickTimingInput> =>
       terrainWaitMs: n,
       meshMs: n,
       prefetchMs: n,
+      queueMs: n,
       workerTotalMs: n,
     }),
     roundTripMs: n,
@@ -65,10 +66,64 @@ const arbInput = (n: fc.Arbitrary<number>): fc.Arbitrary<ClickTimingInput> =>
   });
 
 describe("the reconciliation identity holds for any inputs", () => {
-  it("stages plus residual always equal the wall clock, exactly", () => {
-    // THE ONE THING THE WHOLE INSTRUMENT RESTS ON. If this can ever fail, a
-    // breakdown can be internally inconsistent while reporting `reconciles`,
-    // and every conclusion read off it is unsupported.
+  it("derives the residual from the INPUTS, not from its own output", () => {
+    // REWRITTEN. The first version read `wallMs` and the stage list off the
+    // RESULT and asserted `residualMs === wallMs - Σstages` — the
+    // implementation's own two lines compared against themselves. It could not
+    // fail for any input, including one where a stage was missing or doubled,
+    // while its comment called it "the one thing the whole instrument rests
+    // on".
+    //
+    // That is the fourth assertion-that-cannot-fail on this branch, and the
+    // SECOND in this exact form: the sibling unit-test file documents removing
+    // the identical circularity a few commits earlier. The rule this file now
+    // encodes: an expectation rebuilt from the INPUT can disagree with the
+    // code; one rebuilt from the OUTPUT cannot.
+    //
+    // The algebra is the module header's — residual = workerTotal − Σ(worker
+    // stages), with page time and `queue` cancelling.
+    fc.assert(
+      fc.property(arbInput(duration), (input) => {
+        const p = input.pipeline;
+        const w = input.worker;
+        const enumeratedInWorker =
+          p.slotWaitMs +
+          p.transportMs +
+          p.decodeMs +
+          p.parseMs +
+          p.probeMs +
+          p.storeMs +
+          p.joinedMs +
+          p.mergeMs +
+          p.scoreMs +
+          p.deriveMs +
+          w.terrainWaitMs +
+          w.meshMs +
+          w.prefetchMs;
+        // `fc.pre` DISCARDS the case rather than skipping the assertion. An
+        // `if` around `expect` would let the property pass vacuously if the
+        // precondition stopped holding — and a conditional expect is how a
+        // property test quietly stops testing anything.
+        //
+        // The precondition: nothing was clamped. A clamped boundary breaks the
+        // identity deliberately, and that case has its own unit test.
+        fc.pre(input.roundTripMs - w.workerTotalMs - w.queueMs >= 0);
+        const t = composeClickTimings(input);
+        expect(t.residualMs).toBeCloseTo(
+          w.workerTotalMs - enumeratedInWorker,
+          6,
+        );
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("keeps stages plus residual equal to the wall clock", () => {
+    // KEPT, but labelled honestly as the weaker companion: an
+    // internal-consistency check, not an independent one. It catches a future
+    // edit that makes `residualMs` something other than `wall - Σstages`; it
+    // cannot catch a wrong or incomplete stage list, which is what the previous
+    // version's comment implied it did.
     fc.assert(
       fc.property(arbInput(anyNumber), (input) => {
         const t = composeClickTimings(input);
@@ -129,6 +184,7 @@ describe("the reconciliation identity holds for any inputs", () => {
             meshMs: 0,
             prefetchMs: 0,
             workerTotalMs: 0,
+            queueMs: 0,
           },
           roundTripMs: 0,
           drawMs: 0,

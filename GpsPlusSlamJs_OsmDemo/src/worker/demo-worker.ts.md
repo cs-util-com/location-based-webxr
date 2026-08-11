@@ -92,7 +92,8 @@ it sits behind.
 ## `workerTimings` — stages 6 and 7
 
 The `update` handler reports `terrainWaitMs`, `meshMs` and its own
-`workerTotalMs` beside the snapshot (click-path plan, milestone 3).
+`workerTotalMs` beside the snapshot (click-path plan, milestone 3), plus
+`prefetchMs` (queueing the neighbour ring) and `queueMs` (post-to-dispatch).
 
 - **Beside the snapshot, not on it.** `DemoPipeline.update` builds the snapshot
   before either stage has happened; the terrain join and the mesh build are this
@@ -103,5 +104,17 @@ The `update` handler reports `terrainWaitMs`, `meshMs` and its own
   costs nothing when those are slow — and a fully cached refresh is exactly when
   they are not, which is the corner where a concurrent load becomes a visible
   wait. Legitimately zero on a category change or a widening ring.
-- **`workerTotalMs` exists so the page can derive the transfer stage** without
+- **`workerTotalMs` exists so the page can derive the clone cost** without
   subtracting a worker timestamp from a page one. See `click-timings.ts.md`.
+
+- **`queueMs` is the one measurement that crosses the boundary**, and
+  deliberately: it is post-to-dispatch, which neither side can see alone. The
+  page stamps `nowEpochMs()` into the request; the handler subtracts it from its
+  own. `performance.timeOrigin` makes that a real duration rather than an
+  offset, and this worker also runs the concurrent DEM load (W3), so an `update`
+  can sit here behind ~55 000 heightfield samples. Until this existed that time
+  was folded into the page-side term and read as structured-clone cost — a
+  completely different remedy.
+- **`prefetchMs`** — queueing the background neighbour ring. Small and
+  synchronous, enumerated because an unenumerated step in this handler is
+  exactly what the residual exists to catch.

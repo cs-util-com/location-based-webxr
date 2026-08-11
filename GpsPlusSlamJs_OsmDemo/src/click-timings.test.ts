@@ -49,6 +49,7 @@ const INPUT: ClickTimingInput = {
     terrainWaitMs: 500,
     meshMs: 250,
     prefetchMs: 0,
+    queueMs: 0,
     // Pipeline stages sum to 1200, plus 750 of worker stages = 1950. A worker
     // total of 1960 leaves a 10 ms residual: small, deliberate, and inside the
     // tolerance, so this fixture is a RECONCILING pass.
@@ -73,11 +74,12 @@ describe("composeClickTimings reconciles against a measured whole", () => {
     expect(t.reconciles).toBe(true);
   });
 
-  it("derives TRANSFER rather than timestamping across the worker boundary", () => {
+  it("derives the BOUNDARY term rather than timestamping across the worker", () => {
     // `performance.now()` in a dedicated worker is relative to the WORKER's
     // timeOrigin, so subtracting a worker timestamp from a page one yields an
-    // offset rather than a duration. Transfer is therefore the round trip minus
-    // what the worker says it spent — two durations, each measured wholly on
+    // offset rather than a duration. The boundary term is therefore the round
+    // trip minus the queue wait minus
+    // what the worker says it spent — durations, each measured wholly on
     // one side.
     const t = composeClickTimings(INPUT);
     const boundary = t.stages.find((s) => s.name === "boundary");
@@ -111,10 +113,17 @@ describe("composeClickTimings reconciles against a measured whole", () => {
     // missing": page time cancels, so a non-trivial residual points at the
     // worker handler specifically — which is precisely where the one stage this
     // plan's first draft missed (the terrain join) was hiding.
-    const t = composeClickTimings(INPUT);
+    // FIXTURE GIVES prefetch A NON-ZERO VALUE, which the first version did not
+    // — and that is why it passed against an identity that omitted the term
+    // entirely. `prefetchMs` was added to the stage list three commits before
+    // this test was written and never added to the algebra here or in the three
+    // documents that state it. A zero in a fixture hides a missing term
+    // perfectly.
+    const t = composeClickTimings({
+      ...INPUT,
+      worker: { ...INPUT.worker, prefetchMs: 7, workerTotalMs: 1967 },
+    });
     const enumeratedInWorker =
-      INPUT.pipeline.fetchMs -
-      INPUT.pipeline.fetchMs + // the pipeline's own stages, listed out:
       INPUT.pipeline.slotWaitMs +
       INPUT.pipeline.transportMs +
       INPUT.pipeline.decodeMs +
@@ -126,15 +135,13 @@ describe("composeClickTimings reconciles against a measured whole", () => {
       INPUT.pipeline.scoreMs +
       INPUT.pipeline.deriveMs +
       INPUT.worker.terrainWaitMs +
-      INPUT.worker.meshMs;
+      INPUT.worker.meshMs +
+      7; // prefetch — the term the first version of this identity omitted
 
-    expect(t.residualMs).toBeCloseTo(
-      INPUT.worker.workerTotalMs - enumeratedInWorker,
-      6,
-    );
+    expect(t.residualMs).toBeCloseTo(1967 - enumeratedInWorker, 6);
   });
 
-  it("floors a negative transfer at zero and reports it as unreconciled", () => {
+  it("floors a negative boundary at zero and reports it as unreconciled", () => {
     // The realistic failure: clock skew or a worker that over-reports makes
     // `roundTrip - workerTotal` negative. A negative stage would make the
     // residual close by CANCELLING — the sum would look right while two
@@ -249,6 +256,7 @@ describe("composeClickTimings reconciles against a measured whole", () => {
         meshMs: 0,
         prefetchMs: 0,
         workerTotalMs: 0,
+        queueMs: 0,
       },
       roundTripMs: 0,
       drawMs: 0,

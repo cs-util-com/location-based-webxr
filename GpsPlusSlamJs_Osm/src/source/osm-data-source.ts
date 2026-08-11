@@ -86,8 +86,15 @@ export interface OsmTileTimings {
    * transport AND decode AND parse; filing it under "bytes in hand" would
    * charge another caller's parse time to the network stage — the wrong
    * direction for a plan whose prediction is "parse dominates, not network".
-   * The other duration fields are 0 for a joiner, so the sum is `joinedMs` and
-   * the reconciliation still closes.
+   * The other duration fields are 0 for a joiner, so the sum is `joinedMs`.
+   *
+   * **It does NOT include the joiner's own cache probe**, which `CachingSource`
+   * pays before joining and then discards — on a stale entry that is a full
+   * ~21 MB read. So a joiner's reconciliation closes MINUS that probe; the
+   * difference lands in the click-level residual, where `click-timings.ts`
+   * names it. Stated here because the first version of this sentence claimed
+   * the sum closed outright, which is the same overstatement §10.2 was written
+   * to close for the non-joiner path.
    */
   readonly joinedMs?: number;
   /**

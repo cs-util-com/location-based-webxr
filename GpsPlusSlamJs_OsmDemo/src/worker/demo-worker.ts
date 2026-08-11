@@ -77,7 +77,7 @@ import { planRouteWithIndex } from "../agent-route.js";
 import { walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { DemoPipeline } from "../demo-pipeline.js";
-import { nowMs } from "../monotonic-clock.js";
+import { nowMs, nowEpochMs } from "../monotonic-clock.js";
 import { describeTerrain } from "../terrain-note.js";
 import {
   createHeightfieldCache,
@@ -632,12 +632,25 @@ async function handle<K extends WorkerCallKind>(
         radius,
         includeCells,
         includeUnderground,
+        postedAtEpochMs,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
-      // THE HANDLER'S OWN WALL CLOCK, and it is what lets the page derive the
-      // transfer stage without ever subtracting a worker timestamp from a page
-      // one — a dedicated worker has its own `performance.timeOrigin`, so that
-      // subtraction is an offset, not a duration. See `click-timings.ts`.
+      // THE QUEUE WAIT — post to dispatch, the one measurement here that has
+      // to cross the boundary. `nowEpochMs()` is `timeOrigin + now()`, an
+      // absolute timeline both sides share, so this is a real duration rather
+      // than the offset a raw `now()` subtraction would give.
+      //
+      // It matters because this worker also runs the concurrent DEM load
+      // (W3, posted from the same tick in `main.ts`), so on a new position an
+      // `update` can sit here behind ~55 000 heightfield samples. Until this
+      // existed that time was folded into the page-side "boundary" term and
+      // read as structured-clone cost, which is a completely different remedy.
+      const queueMs =
+        postedAtEpochMs === undefined
+          ? 0
+          : Math.max(0, nowEpochMs() - postedAtEpochMs);
+      // THE HANDLER'S OWN WALL CLOCK, measured wholly inside the worker so the
+      // page can derive the clone cost without needing a shared origin at all.
       const workerStart = nowMs();
       const snapshot = await pipeline.update(
         position,
@@ -707,6 +720,7 @@ async function handle<K extends WorkerCallKind>(
           terrainWaitMs,
           meshMs,
           prefetchMs,
+          queueMs,
           workerTotalMs: Math.max(0, nowMs() - workerStart),
         },
       };

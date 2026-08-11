@@ -284,6 +284,15 @@ export interface WorkerCalls {
        * by default, so nothing existing expects the data.
        */
       readonly includeUnderground?: boolean;
+      /**
+       * Epoch ms at which the page POSTED this call — `nowEpochMs()`.
+       *
+       * The one field in this protocol that exists to be compared across the
+       * boundary. The handler subtracts it from its own `nowEpochMs()` to get
+       * the queue wait, which is otherwise invisible: it is neither in the
+       * worker's own clock nor separable from the clone on the page side.
+       */
+      readonly postedAtEpochMs?: number;
     };
     readonly result: UpdateResult;
   };
