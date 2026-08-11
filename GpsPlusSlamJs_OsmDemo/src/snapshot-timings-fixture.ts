@@ -19,6 +19,7 @@
  */
 
 import type { DemoStageTimings } from "./demo-pipeline.js";
+import type { WorkerStageTimings } from "./click-timings.js";
 
 export const ZERO_STAGE_TIMINGS: DemoStageTimings = {
   transportMs: 0,
@@ -38,4 +39,18 @@ export const ZERO_STAGE_TIMINGS: DemoStageTimings = {
   tilesFromNetwork: 0,
   tilesFromCache: 0,
   tilesUnmeasured: 0,
+};
+
+/**
+ * A zeroed `WorkerStageTimings`, for fake worker `update` replies in tests.
+ *
+ * Same reasoning as {@link ZERO_STAGE_TIMINGS}: `UpdateResult.workerTimings` is
+ * required because the real handler always measures, and the refresh-cycle
+ * tests build several fake replies. Zeros are the honest fixture there — those
+ * tests are about publish ordering and abort handling, not about timing.
+ */
+export const ZERO_WORKER_TIMINGS: WorkerStageTimings = {
+  terrainWaitMs: 0,
+  meshMs: 0,
+  workerTotalMs: 0,
 };

@@ -14,7 +14,10 @@
  * @see refresh-cycle.ts.md
  */
 
-import { ZERO_STAGE_TIMINGS } from "./snapshot-timings-fixture.js";
+import {
+  ZERO_STAGE_TIMINGS,
+  ZERO_WORKER_TIMINGS,
+} from "./snapshot-timings-fixture.js";
 import { describe, it, expect, vi } from "vitest";
 
 import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
@@ -154,10 +157,15 @@ function setup(update: Update, onReply?: (signal: AbortSignal) => void) {
         // cycle is driven by what it will really receive.
         calls += 1;
         return calls === 1
-          ? { snapshot, mesh: { kind: "full" as const, mesh: NO_MESH } }
+          ? {
+              snapshot,
+              mesh: { kind: "full" as const, mesh: NO_MESH },
+              workerTimings: ZERO_WORKER_TIMINGS,
+            }
           : {
               snapshot,
               mesh: { kind: "regions" as const, regions: [], underground: [] },
+              workerTimings: ZERO_WORKER_TIMINGS,
             };
       },
     },
@@ -616,6 +624,7 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
               ? {
                   snapshot: snapshotAt(payload.category, payload.radius),
                   mesh: { kind: "full" as const, mesh: NO_MESH },
+                  workerTimings: ZERO_WORKER_TIMINGS,
                 }
               : {
                   snapshot: snapshotAt(payload.category, payload.radius),
@@ -634,6 +643,7 @@ describe("createRefreshCycle — the mesh is built once per click (W6)", () => {
                     ],
                     underground: [],
                   },
+                  workerTimings: ZERO_WORKER_TIMINGS,
                 },
           );
         },
@@ -725,6 +735,7 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -784,6 +795,7 @@ describe("the refresh cycle asks for cells only when they are drawn", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -827,6 +839,7 @@ describe("the scene anchor", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -882,6 +895,7 @@ describe("the scene anchor", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },
@@ -918,6 +932,7 @@ describe("the scene anchor", () => {
           return Promise.resolve({
             snapshot: snapshot("walkable"),
             mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
           });
         },
       },

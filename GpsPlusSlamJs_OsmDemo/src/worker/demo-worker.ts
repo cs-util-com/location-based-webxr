@@ -77,6 +77,7 @@ import { planRouteWithIndex } from "../agent-route.js";
 import { walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { DemoPipeline } from "../demo-pipeline.js";
+import { nowMs } from "../monotonic-clock.js";
 import { describeTerrain } from "../terrain-note.js";
 import {
   createHeightfieldCache,
@@ -633,6 +634,11 @@ async function handle<K extends WorkerCallKind>(
         includeUnderground,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
+      // THE HANDLER'S OWN WALL CLOCK, and it is what lets the page derive the
+      // transfer stage without ever subtracting a worker timestamp from a page
+      // one — a dedicated worker has its own `performance.timeOrigin`, so that
+      // subtraction is an offset, not a duration. See `click-timings.ts`.
+      const workerStart = nowMs();
       const snapshot = await pipeline.update(
         position,
         category,
@@ -664,18 +670,37 @@ async function handle<K extends WorkerCallKind>(
       // framework's `zero`, say — this has to key on the frame origin as well,
       // or a mesh will be built in one frame on ground sampled in another. That
       // is the exact defect round 5B removed, and it is silent.
+      // STAGE 6, AND IT WAS NOT IN THE PLAN'S FIRST ENUMERATION. W3 runs the
+      // terrain load concurrently with the fetch and the scoring, so this join
+      // costs nothing when those are slow — and a fully cached refresh is
+      // exactly when they are not, which is the corner where a concurrent load
+      // turns into a visible wait on the click the owner is complaining about.
+      // Zero on a category change or a widening ring, by design.
+      const terrainStart = nowMs();
       if (needsTerrainFor(terrainCentre, position)) {
         await terrainGate.waitFor(position, signal);
       }
+      const terrainWaitMs = Math.max(0, nowMs() - terrainStart);
       // THE RING, AFTER the visible work (W8, DEC-R2-6). Queued here rather than
       // before the fetch loop because the user's own tile must never wait behind
       // a background one — the public instances allocate ~2 slots per client.
       // `replace` states the whole desired set, so moving away drops the tiles of
       // the place left behind, including the one in flight.
       prefetch.replace(pipeline.neighbourTilesFor(position));
+      // STAGE 7. `meshPlanner` decides full-build versus regions-only, so this
+      // is legitimately near-zero on passes 2 and 3 — which is why every line
+      // is tagged with its ring rather than summed per click.
+      const meshStart = nowMs();
+      const mesh = meshUpdateFor(snapshot, pipeline, frameOrigin ?? position);
+      const meshMs = Math.max(0, nowMs() - meshStart);
       return {
         snapshot,
-        mesh: meshUpdateFor(snapshot, pipeline, frameOrigin ?? position),
+        mesh,
+        workerTimings: {
+          terrainWaitMs,
+          meshMs,
+          workerTotalMs: Math.max(0, nowMs() - workerStart),
+        },
       };
     }
 

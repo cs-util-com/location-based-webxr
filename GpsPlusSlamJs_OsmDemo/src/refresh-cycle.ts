@@ -30,6 +30,8 @@
 import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
+import { composeClickTimings, type ClickTimings } from "./click-timings.js";
+import { nowMs } from "./monotonic-clock.js";
 import { isLayerEnabled } from "./layers.js";
 import type { AnchorHolder } from "./scene-anchor.js";
 import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
@@ -133,6 +135,19 @@ export interface RefreshCycleOptions extends StoreAccess {
    * is what lets the camera pivot on the user without a worker round-trip.
    */
   readonly anchors: AnchorHolder;
+  /**
+   * The nine-stage breakdown for one pass, once it is complete.
+   *
+   * **A callback rather than a `console.info` here**, for the reason `onMesh`
+   * is one: this module is tested without a DOM and without a worker, and a
+   * cycle that printed for itself could not be asserted on. `main.ts` wires it
+   * to the console, exactly as it does for `GeoEventStats`.
+   *
+   * Optional so nothing that does not want the numbers has to take them — but
+   * the cycle always COMPUTES them, because a breakdown that only exists when
+   * someone is watching is a breakdown that is broken when they start.
+   */
+  readonly onTimings?: (timings: ClickTimings) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -151,7 +166,7 @@ function messageOf(error: unknown): string {
 export function createRefreshCycle(
   options: RefreshCycleOptions,
 ): LatestOnly<void> {
-  const { store, actions, worker, onMesh, anchors } = options;
+  const { store, actions, worker, onMesh, anchors, onTimings } = options;
 
   return latestOnly(async (_input: void, signal) => {
     const { position, category } = selectOsmView(store.getState());
@@ -196,7 +211,15 @@ export function createRefreshCycle(
           selectLayers(store.getState()),
           "underground",
         );
-        const { snapshot, mesh } = await worker.call(
+        // STAGE 8's ANCHOR. Clocked wholly on THIS side, and paired with the
+        // worker's own `workerTotalMs` clocked wholly on that side, so the
+        // transfer cost is a difference of two durations rather than of two
+        // timestamps. A dedicated worker has its own `performance.timeOrigin`,
+        // which makes a cross-boundary timestamp subtraction an offset rather
+        // than an elapsed time — and every existing timing in this demo is
+        // taken inside the worker, so nothing here warned about it.
+        const callStart = nowMs();
+        const { snapshot, mesh, workerTimings } = await worker.call(
           "update",
           {
             position,
@@ -208,6 +231,7 @@ export function createRefreshCycle(
           },
           { signal },
         );
+        const roundTripMs = Math.max(0, nowMs() - callStart);
         // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the
         // call before it resolves, but there is a real race: if the worker's reply
         // has already landed when the newer input arrives, the promise is already
@@ -241,8 +265,28 @@ export function createRefreshCycle(
         // new snapshot's cells over the PREVIOUS mesh — one frame of buildings
         // belonging to somewhere else, which is the class of disagreement the
         // store was introduced to make impossible.
+        // STAGE 9 — the three.js upload and the store dispatch that drives the
+        // status line. Clocked around BOTH, because the ordering constraint
+        // above means they are one indivisible step from the user's point of
+        // view: the frame the user sees is the one after this pair.
+        const drawStart = nowMs();
         onMesh(mesh);
         store.dispatch(actions.snapshotReady(snapshot));
+        const drawMs = Math.max(0, nowMs() - drawStart);
+
+        // REPORTED AFTER THE PUBLISH, so measuring never delays what the user
+        // is waiting for. Always computed, even with no listener: a breakdown
+        // that only exists when someone is watching is one that is broken when
+        // they start watching.
+        onTimings?.(
+          composeClickTimings({
+            radius,
+            pipeline: snapshot.timings,
+            worker: workerTimings,
+            roundTripMs,
+            drawMs,
+          }),
+        );
       }
     } catch (error) {
       // A SUPERSEDED RUN IS NOT A FAILURE, and treating it as one was the

@@ -88,3 +88,20 @@ suite, all 24 tests of which now run through it (notably the OPFS cache-hit test
 the terrain test and the details-panel test, which exercise the three non-trivial
 handlers). `worker-round-trip.test.ts` and `rpc-client.test.ts` cover the boundary
 it sits behind.
+
+## `workerTimings` — stages 6 and 7
+
+The `update` handler reports `terrainWaitMs`, `meshMs` and its own
+`workerTotalMs` beside the snapshot (click-path plan, milestone 3).
+
+- **Beside the snapshot, not on it.** `DemoPipeline.update` builds the snapshot
+  before either stage has happened; the terrain join and the mesh build are this
+  handler's work. Putting them on the snapshot would mean mutating it after the
+  fact.
+- **`terrainWaitMs` is the stage the plan's first enumeration missed.** W3 runs
+  the terrain load concurrently with the fetch and the scoring, so the join
+  costs nothing when those are slow — and a fully cached refresh is exactly when
+  they are not, which is the corner where a concurrent load becomes a visible
+  wait. Legitimately zero on a category change or a widening ring.
+- **`workerTotalMs` exists so the page can derive the transfer stage** without
+  subtracting a worker timestamp from a page one. See `click-timings.ts.md`.

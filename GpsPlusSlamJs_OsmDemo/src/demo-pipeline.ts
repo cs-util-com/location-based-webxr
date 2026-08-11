@@ -51,20 +51,11 @@ import {
 } from "h3-js";
 import type { GeoEventStats } from "./geo-event-stats.js";
 import { heatScale } from "./heat-colours.js";
+import { nowMs } from "./monotonic-clock.js";
 
-/**
- * A monotonic clock, or `Date.now` where there is not one.
- *
- * `performance` exists in a real worker and in the browser; the fallback is for
- * a unit test that constructs a `DemoPipeline` directly under a runtime that
- * has not defined it. Timings are reported in whole milliseconds, so the
- * difference between the two clocks is below the reporting resolution — what
- * matters is that a missing global cannot throw inside the one method the
- * benchmark exists to measure.
- */
-function nowMs(): number {
-  return typeof performance === "undefined" ? Date.now() : performance.now();
-}
+// `nowMs` moved to `monotonic-clock.ts` when the worker handler and the page
+// needed the same clock for the click-path breakdown. Three copies of the
+// `typeof performance` guard is three places for the fallback to drift.
 
 /**
  * The seed every device shares (DEC-R9-7).

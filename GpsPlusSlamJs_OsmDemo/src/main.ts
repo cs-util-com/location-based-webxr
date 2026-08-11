@@ -48,6 +48,7 @@ import { describeExtent } from "./fetch-extent.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
 import { describeGeoEventStats } from "./geo-event-stats.js";
+import { describeClickTimings } from "./click-timings.js";
 import {
   DEFAULT_CELL_PRESET,
   cellPreset,
@@ -519,6 +520,19 @@ async function main(): Promise<void> {
     actions,
     worker,
     anchors,
+    // THE CLICK-PATH BREAKDOWN, one line per ring. `console.info` rather than
+    // the status bar for the reason `describeGeoEventStats` uses it: this is a
+    // developer diagnostic and the status line already carries the cell counts
+    // a user reads.
+    //
+    // ALWAYS ON, not behind a flag (plan §6.2). The alternative risks the
+    // numbers existing only when someone remembers to enable them — and the
+    // whole reason this instrument exists is that the click path went six weeks
+    // unmeasured while looking measured. Three lines per click is the cost.
+    onTimings: (timings) => {
+      // eslint-disable-next-line no-console -- the breakdown's only output.
+      console.info(describeClickTimings(timings));
+    },
     // A pass either rebuilds the geometry or re-sends only the region slabs
     // (W6). The slabs are the one layer a widening ring changes; everything else
     // depends on the features, the terrain and the frame origin, none of which a

@@ -38,6 +38,7 @@ import type {
 
 import type { RoutePoint } from "../agent-route.js";
 import type { DemoSnapshot } from "../demo-pipeline.js";
+import type { WorkerStageTimings } from "../click-timings.js";
 import type { GeoEventStats } from "../geo-event-stats.js";
 import type { HeightfieldData } from "../heightfield.js";
 
@@ -191,6 +192,16 @@ export type MeshUpdate =
 export interface UpdateResult {
   readonly snapshot: DemoSnapshot;
   readonly mesh: MeshUpdate;
+  /**
+   * Stages 6–7 and the worker's own wall clock.
+   *
+   * **Beside the snapshot rather than on it**, because `DemoPipeline.update`
+   * builds the snapshot before either stage has happened — the terrain join and
+   * the mesh build are the handler's work, not the pipeline's. Putting them on
+   * the snapshot would mean mutating it after the fact, and the point of the
+   * split is that each object records what its own producer measured.
+   */
+  readonly workerTimings: WorkerStageTimings;
 }
 
 export interface TerrainResult {
