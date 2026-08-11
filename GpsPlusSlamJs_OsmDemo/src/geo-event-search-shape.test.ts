@@ -77,7 +77,12 @@ function gradedSource(): OsmDataSource {
   const features: OsmFeature[] = [
     // ~1.1 km of background, comfortably covering the res-8 event tile.
     square(1, AT, 0.005, { landuse: "grass" }),
-    // The peak — ~110 m across, ~330 m north-east of the user.
+    // The peak — 111 m N-S by 70 m E-W, 395 m north-east of the user.
+    //
+    // CORRECTED 2026-08-11: this said "~330 m", which is the LATITUDE offset
+    // alone. 0.003 deg of longitude adds a further 210 m at this latitude, so the
+    // separation is 395 m by this file's own `metresBetween`. The peak is further
+    // from the user than every doc quoting this number assumed.
     square(2, { lat: AT.lat + 0.003, lng: AT.lng + 0.003 }, 0.0005, {
       historic: "castle",
     }),
@@ -215,11 +220,28 @@ describe("does the event actually find the tile's best ground?", () => {
       //
       // The field has exactly one high peak (`historic=castle`, score 40) against
       // a background of 2 and 80 small bumps of 6, so "the best ground" is not a
-      // judgement call — it is a single 110 m square, ~330 m from the user.
+      // judgement call — it is a single 111 x 70 m rectangle, 395 m from the user.
       //
-      // A hit is being within 120 m of the peak's centre: the peak is 110 m across,
-      // so that admits its own footprint plus a cell or two of slack, and excludes
-      // every one of the 80 bumps, the nearest of which is ~100 m away from it.
+      // A hit is being within 120 m of the peak's centre, which admits the peak's
+      // own footprint plus a cell or two of slack.
+      //
+      // ⚠️ TWO KNOWN DEFECTS IN THIS CRITERION, both measured 2026-08-11 and both
+      // left in place because fixing them is entangled with the open question at
+      // `demo-pipeline.ts`'s `EXHAUSTIVE_GEO_EVENT`:
+      //
+      // 1. It does NOT exclude the bumps, whatever this comment used to claim.
+      //    The nearest bump centre is 39.5 m away and sits INSIDE the peak's
+      //    footprint; six bumps fall within 120 m. No radius fixes that — any
+      //    radius admitting a 111 x 70 m peak admits a bump 39.5 m from its
+      //    centre. The repairs are containment in the peak's own rectangle, or a
+      //    hole in the bump lattice around it.
+      // 2. `picks[0]` is the pick nearest the USER, not this tile's pick.
+      //    `newGeoEventFor` searches up to 7 tiles and sorts by distance to the
+      //    user. The peak is 395 m away in the user's own tile, and the user
+      //    stands ~30 m from that tile's western edge with the background
+      //    covering ~350 m beyond it — so a neighbour tile's pick is nearer and
+      //    is the one asserted on. **Until every pick is printed with its tile,
+      //    a score of 0 here does not mean the search missed the peak.**
       const pipeline = new DemoPipeline({
         source: gradedSource(),
         table: TABLE,

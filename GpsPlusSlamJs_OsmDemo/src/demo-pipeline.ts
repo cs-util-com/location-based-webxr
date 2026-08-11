@@ -142,10 +142,20 @@ const CLIMB_STEPS = 5;
  * 80 + 6 = 86 and win. Observation and that argument disagree, and **resolving
  * that contradiction is the next step**, not another fix.
  *
- * Two candidate explanations, neither checked: the peak's neighbourhood may
- * genuinely span chunks the ensure set missed, or `picks[0]` may be a nearer
- * tile's pick rather than this tile's (`newGeoEventFor` sorts by distance to
- * the user, and 5 tiles produced picks).
+ * Two candidate explanations: the peak's neighbourhood may genuinely span chunks
+ * the ensure set missed, or `picks[0]` may be a nearer tile's pick rather than
+ * this tile's (`newGeoEventFor` sorts by distance to the user, and 5 tiles
+ * produced picks).
+ *
+ * **THE SECOND ONE IS NOW THE FAVOURITE, on geometry rather than on a run**
+ * (2026-08-11). In the graded fixture the peak is **395 m** from the user and in
+ * the user's OWN res-8 tile, while the user stands **~30 m from that tile's
+ * western edge** with the fixture's background covering ~350 m beyond it. A
+ * neighbour tile therefore yields a pick nearer than 395 m on essentially every
+ * roll, so the peak's tile's pick is never the one the test asserts on — and
+ * "0 of 24" would read 0 for a perfect search. **Print every pick with its tile
+ * before changing anything here**; the same instrument produced the climb path's
+ * 0 of 24, so both figures are in doubt together.
  *
  * Left wired and inert rather than reverted: the path, the weighted draw and the
  * enumeration are all correct as far as they go, and a review confirmed the
