@@ -15,6 +15,72 @@ import type { OsmFeature } from "../model/osm-feature.js";
 import type { SkippedElement } from "../model/overpass-parser.js";
 
 /**
+ * Where the wall clock went producing ONE DELIVERY of a tile.
+ *
+ * **A delivery, never the tile.** The same tile handed to three callers is
+ * three deliveries with three different costs, and conflating them is not a
+ * rounding error — it is the difference between "the cache is fast" and "the
+ * cache is as slow as the fetch that filled it". Two consequences that are easy
+ * to get wrong and are therefore enforced by tests:
+ *
+ * - **`CachingSource` strips this before persisting.** `store.put` serialises
+ *   the whole result, so a `timings` left on it would be written into OPFS and
+ *   replayed on every later hit — the warm path would report the original
+ *   network's `transportMs` forever.
+ * - **A joiner gets its own.** `InFlightRequests` gives N callers one delivery;
+ *   a caller that waited 200 ms on someone else's 60 s fetch did not spend 60 s.
+ *
+ * **Optional on `OsmTileResult`, and absent is not zero.** A source that does
+ * not measure (a fixture, a test double, a future PMTiles reader) omits the
+ * field entirely. A consumer must be able to tell "nobody measured this" from
+ * "this cost nothing", because the second is a real and common answer — see
+ * `parseMs` on a cache hit.
+ *
+ * @see osm-data-source.ts.md
+ */
+export interface OsmTileTimings {
+  /**
+   * Which path produced this delivery.
+   *
+   * Four values rather than the obvious two: a joiner and a stale-on-rate-limit
+   * answer are neither a network fetch nor a cache hit, and reporting either as
+   * one of those makes the breakdown lie about which stage owns the wait.
+   */
+  readonly servedBy: "network" | "cache" | "joined" | "stale-on-rate-limit";
+  /**
+   * Time queued behind `maxConcurrent` before any work began.
+   *
+   * Its own field because it is a real, unenumerated stage on the click path:
+   * folded into `transportMs` it reads as a slow server, and dropped entirely it
+   * reads as time that never existed.
+   */
+  readonly slotWaitMs: number;
+  /**
+   * Bytes in hand — the HTTP round trip, or the OPFS `store.get`.
+   *
+   * **Includes retry backoff when `attempts > 1`**, which is why `attempts` is
+   * reported next to it: a large `transportMs` at one attempt is a slow server,
+   * and the same number at three attempts is mostly sleeping.
+   */
+  readonly transportMs: number;
+  /** `JSON.parse` of those bytes. */
+  readonly decodeMs: number;
+  /**
+   * `parseOverpassJson` — features out of the decoded payload.
+   *
+   * **Genuinely 0 on a cache hit**, because the cached blob already holds
+   * features and the parser never runs. That is a fact about the warm path
+   * worth reading, not a missing measurement; `servedBy` is what distinguishes
+   * them, and an unmeasured source omits the whole object instead.
+   */
+  readonly parseMs: number;
+  /** Network attempts made. 1 means no retry. */
+  readonly attempts: number;
+  /** The cache WRITE, present only when one happened — it is `await`ed. */
+  readonly storeMs?: number;
+}
+
+/**
  * The result of loading one fetch tile (`FETCH_RES`, res 7 as of 2026-07-28).
  *
  * **Structured-cloneable**, like everything else that can cross a worker
@@ -44,6 +110,12 @@ export interface OsmTileResult {
   readonly skipped: readonly SkippedElement[];
   /** Overpass's `osm3s.timestamp_osm_base`, when the source supplies one. */
   readonly osmBaseTimestamp?: string;
+  /**
+   * What THIS delivery cost, when the source measures. See {@link OsmTileTimings}
+   * — in particular, why it must never be persisted and why absent differs from
+   * zero.
+   */
+  readonly timings?: OsmTileTimings;
 }
 
 export interface OsmDataSource {

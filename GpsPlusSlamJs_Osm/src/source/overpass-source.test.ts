@@ -150,7 +150,17 @@ describe("single in-flight request per tile — the quota-burning bug", () => {
     const [ra, rb] = await Promise.all([a, b]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(source.stats.deduplicated).toBe(1);
-    expect(ra).toBe(rb); // the very same promise result
+
+    // THE GUARANTEE IS ONE NETWORK CALL AND ONE FEATURE SET — asserted above
+    // and on the next line. This used to read `expect(ra).toBe(rb)`, i.e.
+    // object identity, which was a PROXY for dedup rather than the thing
+    // itself, and it stopped holding when timings arrived: a joiner now gets a
+    // copy carrying its own cost, because it did not pay the originator's.
+    // Identity was never the contract — nothing downstream depends on the two
+    // callers sharing an object, and the features are still one array.
+    expect(rb.features).toBe(ra.features);
+    const kinds = [ra.timings?.servedBy, rb.timings?.servedBy].sort();
+    expect(kinds).toEqual(["joined", "network"]);
   });
 
   it("different tiles are NOT deduplicated", async () => {

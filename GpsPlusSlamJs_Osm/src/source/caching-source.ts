@@ -22,6 +22,11 @@ export interface CachingSourceOptions {
    */
   readonly schemaVersion?: number;
   readonly now?: () => number;
+  /**
+   * Monotonic clock for `timings` durations. See `OverpassSource`'s option of
+   * the same name for why this is separate from {@link now}.
+   */
+  readonly monotonicNow?: () => number;
 }
 
 export interface EnsureOptions {
@@ -52,6 +57,7 @@ export class CachingSource implements OsmDataSource {
 
   private readonly schemaVersion: number;
   private readonly now: () => number;
+  private readonly monotonicNow: () => number;
   private readonly inFlight = new InFlightRequests<OsmTileResult>();
 
   readonly stats = {
@@ -72,6 +78,10 @@ export class CachingSource implements OsmDataSource {
     this.sourceId = `cached(${inner.sourceId})`;
     this.schemaVersion = options.schemaVersion ?? OVERPASS_SCHEMA_VERSION;
     this.now = options.now ?? Date.now;
+    this.monotonicNow =
+      options.monotonicNow ??
+      (() =>
+        typeof performance === "undefined" ? Date.now() : performance.now());
   }
 
   /**
@@ -100,10 +110,29 @@ export class CachingSource implements OsmDataSource {
     tile: string,
     options: EnsureOptions = {},
   ): Promise<OsmTileResult> {
-    const cached = await this.readCached(tile);
+    // TIMED AROUND THE READ, not around the whole call, because `readCached`
+    // runs on EVERY path — hit, miss and stale — and only on a hit is its cost
+    // the whole delivery. `readCached` reports what it spent so a miss can
+    // attribute the same read honestly rather than losing it.
+    const read = await this.readCachedTimed(tile);
+    const cached = read.result;
     if (cached !== undefined && !this.isStale(cached, options.maxAgeMs)) {
       this.stats.hits++;
-      return cached;
+      return {
+        ...cached,
+        timings: {
+          servedBy: "cache",
+          slotWaitMs: 0,
+          transportMs: read.transportMs,
+          decodeMs: read.decodeMs,
+          // TRULY ZERO, not unmeasured. The blob already holds features, so
+          // `parseOverpassJson` never runs on this path — which is a real and
+          // useful fact about the warm click, and `servedBy` is what stops it
+          // being read as "nobody looked".
+          parseMs: 0,
+          attempts: 0,
+        },
+      };
     }
     if (cached !== undefined) {
       this.stats.staleRefetches++;
@@ -136,8 +165,24 @@ export class CachingSource implements OsmDataSource {
     return this.inner
       .fetchTile(tile, signal)
       .then(async (result) => {
-        await this.store.put(this.cacheKey(tile), JSON.stringify(result));
-        return result;
+        // STRIPPED BEFORE PERSISTING, and this is the single most consequential
+        // line in the file for the click-path breakdown. `timings` describes
+        // one DELIVERY; a cached blob describes a TILE, and a tile has no fetch
+        // duration. Left on, the originating network's `transportMs` would be
+        // written into OPFS and handed back on every later hit forever — so the
+        // warm path would report a 60 s fetch it never made, and parse, the
+        // term the plan is hunting, would be measured on the wrong path.
+        const { timings, ...persistable } = result;
+        const storeStart = this.monotonicNow();
+        await this.store.put(this.cacheKey(tile), JSON.stringify(persistable));
+        const storeMs = this.monotonicNow() - storeStart;
+        // THE WRITE IS ON THE CLICK PATH because it is awaited before the
+        // caller gets its tile, so it is reported rather than absorbed. Only
+        // when the inner source measured at all — a source without timings must
+        // not acquire a partial object here, since absent and zero are
+        // different facts everywhere else in this type.
+        if (timings === undefined) return result;
+        return { ...result, timings: { ...timings, storeMs } };
       })
       .catch((error: unknown) => {
         // A refused slot is not a data problem, and it is the ONE failure where
@@ -154,7 +199,22 @@ export class CachingSource implements OsmDataSource {
         // that the caller needs to be able to tell from "no data here".
         if (cached !== undefined && error instanceof RateLimitedError) {
           this.stats.staleOnRateLimit++;
-          return cached;
+          // ITS OWN `servedBy`, because this is neither a network fetch nor a
+          // cache hit: the read already happened above, the fetch was refused,
+          // and a breakdown that filed this under either would misattribute a
+          // refusal as a cost. The read's own cost is not re-reported here —
+          // it belongs to the attempt that made it.
+          return {
+            ...cached,
+            timings: {
+              servedBy: "stale-on-rate-limit",
+              slotWaitMs: 0,
+              transportMs: 0,
+              decodeMs: 0,
+              parseMs: 0,
+              attempts: 0,
+            },
+          };
         }
         throw error;
       });
@@ -198,27 +258,39 @@ export class CachingSource implements OsmDataSource {
    * throw. The cost of being wrong is one refetch; the cost of throwing is a
    * permanently poisoned tile that no amount of retrying fixes.
    */
-  private async readCached(tile: string): Promise<OsmTileResult | undefined> {
+  private async readCachedTimed(tile: string): Promise<{
+    readonly result: OsmTileResult | undefined;
+    readonly transportMs: number;
+    readonly decodeMs: number;
+  }> {
+    const none = { result: undefined, transportMs: 0, decodeMs: 0 };
     let raw: string | undefined;
+    const readStart = this.monotonicNow();
     try {
       raw = await this.store.get(this.cacheKey(tile));
     } catch {
-      return undefined;
+      return none;
     }
+    // THE OPFS READ IS THIS PATH'S TRANSPORT. Same role as the HTTP round trip
+    // on a miss: bytes in hand. Naming it the same thing is what lets a warm
+    // click and a cold one be compared line by line.
+    const transportMs = this.monotonicNow() - readStart;
     if (raw === undefined) {
-      return undefined;
+      return { ...none, transportMs };
     }
     try {
+      const decodeStart = this.monotonicNow();
       const parsed: unknown = JSON.parse(raw);
+      const decodeMs = this.monotonicNow() - decodeStart;
       if (
         !isTileResult(parsed) ||
         parsed.schemaVersion !== this.schemaVersion
       ) {
-        return undefined;
+        return { ...none, transportMs, decodeMs };
       }
-      return parsed;
+      return { result: parsed, transportMs, decodeMs };
     } catch {
-      return undefined;
+      return { ...none, transportMs };
     }
   }
 }
