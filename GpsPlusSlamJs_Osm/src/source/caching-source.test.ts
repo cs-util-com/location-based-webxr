@@ -177,8 +177,24 @@ describe("cache-first behaviour", () => {
 
     expect(inner.calls).toBe(1);
     expect(cache.stats.deduplicated).toBe(2);
-    expect(a).toBe(b);
-    expect(b).toBe(c);
+
+    // ONE DOWNSTREAM CALL AND ONE FEATURE SET is the guarantee, asserted above
+    // and on the next lines. This used to read `expect(a).toBe(b)`, i.e. object
+    // identity — a proxy for dedup rather than the thing itself, and it stopped
+    // holding when joiners started carrying their own `joinedMs`, because a
+    // caller that waited 200 ms on somebody else's 60 s fetch did not spend
+    // 60 s. Nothing downstream depends on the callers sharing an object; the
+    // ~21 MB feature array is still shared, which is what actually matters.
+    expect(b.features).toBe(a.features);
+    expect(c.features).toBe(a.features);
+
+    // AND A JOINER IS MEASURED EVEN THOUGH `CountingSource` MEASURES NOTHING,
+    // which looks inconsistent and is not: the join is timed by THIS class, so
+    // it is a real measurement of a real wait regardless of whether the inner
+    // source instruments itself. The originator legitimately reports nothing.
+    expect(a.timings).toBeUndefined();
+    expect(b.timings?.servedBy).toBe("joined");
+    expect(c.timings?.servedBy).toBe("joined");
   });
 });
 

@@ -57,7 +57,8 @@ reversible, and the only interface everything downstream consumes.
 
 `fixture-source.test.ts` proves interchangeability: the same assertions pass
 through a fixture source and through the caching decorator, and a result
-survives a JSON round-trip unchanged.
+survives a JSON round-trip unchanged APART FROM `timings`, which is per-delivery
+and must not persist — `tile-timings.test.ts` pins that both ways.
 
 ## `timings` — a delivery, never the tile
 

@@ -78,6 +78,27 @@ export interface OsmTileTimings {
   readonly attempts: number;
   /** The cache WRITE, present only when one happened — it is `await`ed. */
   readonly storeMs?: number;
+  /**
+   * A JOINER's whole wall wait, present only when `servedBy === "joined"`.
+   *
+   * **Its own field rather than `transportMs`, which is what the first
+   * implementation did and was wrong.** A joiner's wait spans somebody else's
+   * transport AND decode AND parse; filing it under "bytes in hand" would
+   * charge another caller's parse time to the network stage — the wrong
+   * direction for a plan whose prediction is "parse dominates, not network".
+   * The other duration fields are 0 for a joiner, so the sum is `joinedMs` and
+   * the reconciliation still closes.
+   */
+  readonly joinedMs?: number;
+  /**
+   * The cache READ that preceded this delivery and did NOT serve it.
+   *
+   * Present on a miss and on a stale hit, where `readCached` has already paid a
+   * full `store.get` plus `JSON.parse` — on a large blob that is the second
+   * largest term on the warm-miss path, and without this field it belongs to no
+   * stage at all.
+   */
+  readonly probeMs?: number;
 }
 
 /**
@@ -116,6 +137,49 @@ export interface OsmTileResult {
    * zero.
    */
   readonly timings?: OsmTileTimings;
+}
+
+/**
+ * A duration from two clock readings, floored at zero.
+ *
+ * **The floor is the point, and a property test is why it exists.** The two-
+ * clock design above argues that a monotonic source is needed because
+ * `Date.now()` can step backwards; that argument was shipped as a comment with
+ * nothing enforcing it, and a run over adversarial clock sequences promptly
+ * produced `transportMs: -1`.
+ *
+ * A negative duration is worse than a merely wrong one. The whole breakdown is
+ * checked by summing the stages against a wall clock, and a negative makes that
+ * sum close by CANCELLING — so the reconciliation gate goes quiet at exactly
+ * the moment it should be shouting. Clamping turns a clock glitch into a
+ * visibly-too-small stage, which the residual then reports as unattributed
+ * time: wrong, but wrong in the direction that gets noticed.
+ */
+export function elapsedMs(from: number, to: number): number {
+  return Math.max(0, to - from);
+}
+
+/**
+ * What a dedup JOINER's delivery cost — shared by every source that dedups.
+ *
+ * **Here rather than in one source, because the first implementation put it in
+ * `OverpassSource` alone and that made it unreachable.** `CachingSource` runs
+ * its own `InFlightRequests` and dedups FIRST, so in the demo's wiring the
+ * inner Overpass client sees exactly one caller and its joiner branch never
+ * runs. Two colliding refresh passes were both told the click cost a full
+ * network fetch — verbatim the overstatement this whole field exists to
+ * prevent. Any source that owns an `InFlightRequests` owes its joiners this.
+ */
+export function joinedTimings(joinedMs: number): OsmTileTimings {
+  return {
+    servedBy: "joined",
+    slotWaitMs: 0,
+    transportMs: 0,
+    decodeMs: 0,
+    parseMs: 0,
+    attempts: 0,
+    joinedMs,
+  };
 }
 
 export interface OsmDataSource {

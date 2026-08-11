@@ -63,3 +63,37 @@ Cache-first decorator around any `OsmDataSource`, backed by an injected
 regression and both schema-version guards), cache-first behaviour, staleness
 policy, the rate-limit fallback and its two negative cases, five corrupt-entry
 shapes plus a throwing store, eviction, and decorator transparency.
+
+## `timings` — and the two rules a reader would not guess
+
+This decorator fills `OsmTileTimings` (see `osm-data-source.ts.md`) on every
+path, and two of its behaviours are invariants rather than details:
+
+- **Timings are STRIPPED before `store.put`.** The write serialises the whole
+  result, so a `timings` left on it would be persisted into OPFS and replayed on
+  every later hit — the warm path would report the originating network's
+  `transportMs` forever, and parse (the term the click-path plan is hunting)
+  would be measured on the wrong path entirely. This is the single most
+  consequential line in the file and it is one keystroke from being wrong with
+  no error to notice; `tile-timings.test.ts` asserts the stored blob has no
+  `timings` key.
+- **The joiner copy lives HERE, not only in the inner source.** This class runs
+  its own `InFlightRequests` and dedups FIRST, so in the demo's wiring the inner
+  Overpass client sees exactly one caller and its joiner branch never runs. The
+  first implementation put the copy only there, which made it dead code in
+  production: two colliding refresh passes were both told the click cost a full
+  network fetch.
+
+Per path:
+
+- **Hit** — `servedBy: "cache"`; the OPFS read is `transportMs`, the blob's
+  `JSON.parse` is `decodeMs`, and `parseMs` is **genuinely 0** because
+  `parseOverpassJson` never runs.
+- **Miss / stale** — the inner source's timings, plus `storeMs` for the awaited
+  write and `probeMs` for the cache read that did not serve the answer. On a
+  large blob a stale probe is the second-largest term on that path; unattributed
+  it would surface in the residual looking like an unenumerated stage.
+- **Joined** — `joinedMs` only; see above.
+- **Stale-on-rate-limit** — its own `servedBy`, with `probeMs` carrying the real
+  cost. The zeros beside it are true (no request went out), which is only
+  readable because `servedBy` says which path produced them.

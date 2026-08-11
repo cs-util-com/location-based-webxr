@@ -16,7 +16,11 @@
  */
 
 import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
-import { OSM_ATTRIBUTION } from "./osm-data-source.js";
+import {
+  OSM_ATTRIBUTION,
+  elapsedMs,
+  joinedTimings,
+} from "./osm-data-source.js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
 import {
   buildTileQuery,
@@ -360,21 +364,9 @@ export class OverpassSource implements OsmDataSource {
       signal,
     );
     if (!joined) return result;
-    // A JOINER DID NOT PAY THE FETCH'S COST. It shares the features and nothing
-    // else: a caller that arrived 200 ms before a 60 s fetch settled spent
-    // 200 ms, and reporting the originator's `transportMs` would overstate the
-    // fetch stage by however many callers happened to collide. Returned as a
-    // copy so the shared result stays the originator's own record.
     return {
       ...result,
-      timings: {
-        servedBy: "joined",
-        slotWaitMs: 0,
-        transportMs: this.monotonicNow() - startedAt,
-        decodeMs: 0,
-        parseMs: 0,
-        attempts: 0,
-      },
+      timings: joinedTimings(elapsedMs(startedAt, this.monotonicNow())),
     };
   }
 
@@ -596,13 +588,13 @@ export class OverpassSource implements OsmDataSource {
     readonly decodeMs: number;
   }> {
     const bodyText = await response.text();
-    const transportMs = this.monotonicNow() - transportStart;
+    const transportMs = elapsedMs(transportStart, this.monotonicNow());
     const decodeStart = this.monotonicNow();
     const payload: unknown = JSON.parse(bodyText);
     return {
       payload,
       transportMs,
-      decodeMs: this.monotonicNow() - decodeStart,
+      decodeMs: elapsedMs(decodeStart, this.monotonicNow()),
     };
   }
 
@@ -634,7 +626,7 @@ export class OverpassSource implements OsmDataSource {
 
     const parseStart = this.monotonicNow();
     const parsed = parseOverpassJson(payload);
-    const parseMs = this.monotonicNow() - parseStart;
+    const parseMs = elapsedMs(parseStart, this.monotonicNow());
 
     return {
       tile,
@@ -706,7 +698,7 @@ export class OverpassSource implements OsmDataSource {
     let slotWaitMs = 0;
     if (this.active >= this.maxConcurrent) {
       await new Promise<void>((resolve) => this.queue.push(resolve));
-      slotWaitMs = this.monotonicNow() - queuedAt;
+      slotWaitMs = elapsedMs(queuedAt, this.monotonicNow());
       // No `active++` here: the slot arrived already counted.
     } else {
       this.active++;
