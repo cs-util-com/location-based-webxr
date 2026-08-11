@@ -1185,7 +1185,12 @@ function cellBbox(cell: string): Bbox {
  * The cache this replaces was module-level and unbounded, growing per chunk
  * while `evictBeyond` dropped the chunks themselves. Measured cost of the call
  * it avoided: **2.55 µs**. Its hottest caller is `acceptTile`, which runs it
- * once per held chunk — at most 256 — behind a network fetch measured at 18 s.
+ * once per held chunk — bounded by {@link DEFAULT_MAX_CHUNKS} — behind a
+ * network fetch measured in tens of seconds.
+ *
+ * The bound is named rather than written out because it is DERIVED. This
+ * comment said "at most 256" until 2026-08-11, which was the hard-coded cap W7
+ * replaced precisely because a widened scored disk left it thrashing.
  */
 function chunkBbox(chunk: string): Bbox {
   return cellBbox(chunk);
