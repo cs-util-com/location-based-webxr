@@ -68,6 +68,15 @@ export class CachingSource implements OsmDataSource {
     deduplicated: 0,
     /** Refetches a rate limit refused, answered from the stale copy instead. */
     staleOnRateLimit: 0,
+    /**
+     * Tiles fetched successfully whose cache WRITE failed.
+     *
+     * The tile was still returned — see `fetchAndStore`. Non-zero here means
+     * the cache is not retaining, so every later click refetches, and the cause
+     * is local storage rather than the network. Without the counter that reads
+     * as an unexplained slowdown.
+     */
+    storeFailures: 0,
   };
 
   constructor(
@@ -193,7 +202,30 @@ export class CachingSource implements OsmDataSource {
         // term the plan is hunting, would be measured on the wrong path.
         const { timings, ...persistable } = result;
         const storeStart = this.monotonicNow();
-        await this.store.put(this.cacheKey(tile), JSON.stringify(persistable));
+        // A FAILED WRITE MUST NOT LOSE THE TILE. This used to let the rejection
+        // propagate to the `.catch` below, which rethrows anything that is not
+        // a `RateLimitedError` — so a res-7 tile that cost 15–90 s of donated
+        // infrastructure was DISCARDED because the local disk was full, and the
+        // caller rendered nothing while a perfectly good tile sat in memory.
+        //
+        // That inverts what a cache is for: it turns a storage problem into a
+        // data problem. OPFS quota-exceeded is the realistic trigger and it is
+        // not exotic — a tile is ~21 MB and this library never evicts on its
+        // own by design (eviction is the host app's policy), so a user who
+        // browses enough ground WILL reach it. What they would have seen is
+        // "the map stopped working", not "storage is full".
+        //
+        // COUNTED, because the failure is otherwise invisible: the tile draws,
+        // and the only symptom is that every later click refetches it — which
+        // reads as a slow network rather than as a full disk.
+        try {
+          await this.store.put(
+            this.cacheKey(tile),
+            JSON.stringify(persistable),
+          );
+        } catch {
+          this.stats.storeFailures++;
+        }
         const storeMs = elapsedMs(storeStart, this.monotonicNow());
         // THE WRITE IS ON THE CLICK PATH because it is awaited before the
         // caller gets its tile, so it is reported rather than absorbed. Only

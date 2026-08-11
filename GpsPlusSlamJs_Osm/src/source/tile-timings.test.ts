@@ -502,3 +502,65 @@ describe("CachingSource keeps timings out of the cache", () => {
     expect(hit.timings?.storeMs).toBeUndefined();
   });
 });
+
+describe("a failed cache WRITE does not throw away the tile it just paid for", () => {
+  /**
+   * Why this matters: a res-7 tile costs 15–90 s of somebody else's donated
+   * infrastructure. Losing one because the LOCAL write failed inverts the whole
+   * point of the cache — it turns a storage problem into a data problem, and
+   * the caller renders nothing while holding a perfectly good tile.
+   *
+   * OPFS quota-exceeded is the realistic trigger, and it is not exotic: the
+   * store holds ~21 MB per tile and the library never evicts on its own by
+   * design (eviction is the host app's policy). A user who browses enough
+   * ground WILL hit it, and the failure they would have seen is "the map stopped
+   * working", not "storage is full".
+   */
+  class FullStore extends MemoryBlobStore {
+    override put(): Promise<void> {
+      return Promise.reject(
+        new DOMException("The quota has been exceeded.", "QuotaExceededError"),
+      );
+    }
+  }
+
+  it("returns the fetched tile even though it could not be cached", async () => {
+    const inner = new TimedSource();
+    const cached = new CachingSource(inner, new FullStore(), {
+      monotonicNow: steppingClock(5),
+    });
+
+    const result = await cached.fetchTile(TILE);
+
+    expect(result.features).toEqual((await inner.fetchTile(TILE)).features);
+    expect(cached.stats.storeFailures).toBe(1);
+  });
+
+  it("counts the failure rather than swallowing it silently", async () => {
+    // A dropped write is invisible otherwise: the tile renders, and the only
+    // symptom is that every later click refetches it — which reads as a slow
+    // network rather than as a full disk. The counter is what makes the real
+    // cause findable from the status line.
+    const cached = new CachingSource(new TimedSource(), new FullStore(), {
+      monotonicNow: steppingClock(5),
+    });
+
+    await cached.fetchTile(TILE);
+    await cached.fetchTile(TILE);
+
+    expect(cached.stats.storeFailures).toBe(2);
+    // And the tile really was NOT cached, so both were misses.
+    expect(cached.stats.misses).toBe(2);
+  });
+
+  it("still reports the timings, so the failed write is not invisible in the breakdown", async () => {
+    const cached = new CachingSource(new TimedSource(), new FullStore(), {
+      monotonicNow: steppingClock(5),
+    });
+
+    const result = await cached.fetchTile(TILE);
+
+    expect(result.timings?.servedBy).toBe("network");
+    expect(result.timings?.storeMs).toBeGreaterThanOrEqual(0);
+  });
+});
