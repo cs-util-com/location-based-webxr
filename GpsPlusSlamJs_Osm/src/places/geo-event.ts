@@ -671,9 +671,15 @@ export const EXHAUSTIVE_SHORTLIST = 6;
  * among the top {@link EXHAUSTIVE_SHORTLIST}.
  *
  * **Why scanning is affordable, which is the non-obvious part.** A res-8 event
- * tile holds only **343 res-11 chunks** — fewer than a hill climb with useful
- * reach needs (a 5-step res-11 climb needs ~684 against a 488-chunk cache cap).
- * Once they are scored there is nothing left to search for.
+ * tile holds only **343 res-11 chunks** to SCORE — fewer than a hill climb with
+ * useful reach needs (a 5-step res-11 climb needs ~684 against a 488-chunk cache
+ * cap). Once they are scored there is nothing left to search for.
+ *
+ * **TWO COSTS, AND AN EARLIER VERSION OF THIS COMMENT CONFLATED THEM.** 343 is
+ * what must be SCORED. The scan itself is handed every res-13 cell of the tile —
+ * **16 807** — each costing a `gridDisk` plus seven `heatAt` calls. So the
+ * affordability argument covers the scoring and says nothing about the ranking,
+ * whose cost has not been measured.
  *
  * **The same quality gate as the climb**, `heat > neighbours(cell).length ×
  * threshold`, so an event is still never placed where the map itself says the

@@ -109,8 +109,15 @@ const CLIMB_STEPS = 5;
  * on one.
  *
  * Scanning is affordable for a reason that is the opposite of intuitive: a res-8
- * tile holds only **343 res-11 chunks**, FEWER than a climb with useful reach
- * needs, and 343 fits beside the user working set at 404 of a 488 cap.
+ * tile holds only **343 res-11 chunks** to score, FEWER than a climb with useful
+ * reach needs.
+ *
+ * ⚠️ **THE "404 OF 488" THIS USED TO CLAIM IS SINGLE-TILE ARITHMETIC, and the
+ * search is not single-tile.** The reach accumulates over the centre tile AND
+ * every admitted neighbour — measured at **2 401 cells, i.e. 343 x 7** — so the
+ * pinned set can reach ~2 401 against a 488 cap. Pins beat the cap, so nothing
+ * evicts mid-search and this is a memory spike rather than a correctness break;
+ * but the comfortable-sounding 404 described one tile of seven.
  *
  * **The climb is kept, not deleted.** The 364 ms scan measurement is a LOWER
  * bound — no fixture holds a full tile — so this constant is the way back, and
@@ -686,7 +693,8 @@ export class DemoPipeline {
      * `ensureScored` maps each seed to its res-11 parent and scores the whole
      * chunk. Scanning the tile is CHEAPER than climbing far within it — a 5-step
      * res-11 climb needs ~684 chunks against a 488 cap, while the whole tile is
-     * 343 and fits beside the user working set at 404.
+     * 343 per tile. (Across the admitted neighbours the reach is ~2 401 — see
+     * the flag's own note; the 404 figure was one tile of seven.)
      */
     const exhaustiveReachOf = (
       each: string,
