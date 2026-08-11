@@ -354,8 +354,10 @@ describe("a tile arriving late", () => {
 
     // The two-stage funnel: a cheap raw-position bbox test runs for every
     // feature, and only survivors are ring-stitched and classified. At res 7 a
-    // fetch tile holds ~21,800 features and a chunk needs a handful, so
-    // converting all of them would be the cost this class exists to avoid.
+    // fetch tile is estimated at ~40,000–116,000 features (the ~21,800 once
+    // quoted here is retracted — see `resolutions.ts` FETCH_RES) and a chunk
+    // needs a handful, so converting all of them would be the cost this class
+    // exists to avoid.
     const far = { lat: 51.4, lng: 7.6 };
     index.acceptTile(tile(far, [patch(9, far, { landuse: "grass" })], 3_000));
 

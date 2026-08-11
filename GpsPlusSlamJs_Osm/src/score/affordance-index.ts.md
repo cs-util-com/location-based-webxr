@@ -109,8 +109,11 @@ Returns `{state:"scored", score}`, `{state:"empty"}` or `{state:"unknown"}`.
   reference's single best performance idea.
 - **Two-stage funnel**: a cheap bbox test from RAW inline positions over every
   feature, then ring stitching, clipping and covering only for survivors. At
-  res 7 a fetch tile holds ~21,800 features and a working set needs a handful,
-  so converting all of them would be the cost this class exists to avoid. A
+  res 7 a fetch tile is estimated at ~40,000–116,000 features and a working set
+  needs a handful, so converting all of them would be the cost this class exists
+  to avoid. (The ~21,800 previously quoted here is retracted — see
+  `resolutions.ts` FETCH_RES; the replacement is a bracket, not a count, because
+  no fixture holds a full res-7 tile.) A
   failed conversion is cached as a failure so a broken relation is examined
   once, not once per chunk forever.
 - **The whole batch of not-yet-held chunks is scored in ONE pass over the

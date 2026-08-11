@@ -834,7 +834,14 @@ export class AffordanceIndex {
    * only for survivors. The bbox comes from the raw inline positions, so a
    * feature the user will never walk near is never ring-stitched, never
    * classified area-vs-line and never converted at all. That matters at res 7:
-   * a fetch tile holds ~21,800 features and a working set needs a handful.
+   * a fetch tile is estimated at **~40,000–116,000 features** and a working set
+   * needs a handful.
+   *
+   * The ~21,800 this used to quote is RETRACTED (2026-08-09) — see
+   * `resolutions.ts` FETCH_RES, which withdraws the 21,847-element figure, and
+   * `GpsPlusSlamJs_Docs/docs/2026-08-09-1728-osm-spatial-index-build-cost-plan.md`
+   * §14.4 for the three methods that bracket the replacement. The bracket is an
+   * ESTIMATE: no fixture contains a full res-7 tile.
    */
   private scoreChunks(
     targets: readonly string[],
@@ -1095,8 +1102,11 @@ function planBatch(targets: readonly string[]): {
  * derived from it.
  *
  * The memoisation bought nothing worth that: measured at **9.1 µs per call**,
- * against a `scoreChunk` that bbox-tests every one of a tile's ~21,800 features
- * in the same pass. The result is also used only as a membership `Set` inside a
+ * against a `scoreChunk` that bbox-tests every one of a tile's features in the
+ * same pass — an estimated ~40,000–116,000 of them, the ~21,800 once quoted
+ * here being retracted (see `scoreChunks`). The comparison is unaffected: the
+ * bbox sweep is the larger term at either count.
+ * The result is also used only as a membership `Set` inside a
  * single `scoreChunk` call, so it has no reason to outlive it.
  *
  * Note `cellToChildren` is an INDEX partition, not a geometric one — a child can
