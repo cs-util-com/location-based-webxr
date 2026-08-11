@@ -28,7 +28,7 @@
  *
  * WHY THE CHOICE COSTS A COLD FETCH, and that is accepted rather than hidden
  * (DEC-R4-11): the picker moves the user and the ordinary pipeline fetches. A
- * first visit to a site is an 18-110 s res-7 Overpass fetch; every later visit
+ * first visit to a site is an ~20 s res-7 Overpass fetch; every later visit
  * is served from OPFS. Loading the committed offline extract instead was
  * offered and rejected — the demo would be showing fixture data while looking
  * identical to live data, which is the "two claims that look the same" defect

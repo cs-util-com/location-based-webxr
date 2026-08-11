@@ -44,8 +44,10 @@ const KEYS = ["highway", "building"];
 describe("buildMatrixQuery", () => {
   it("offers exactly the three forms the sweep is a matrix over", () => {
     // WHY: the matrix's whole point is that the RESOLUTION axis is already known
-    // not to matter (res 9 returned 38.7 MB against res 7's ~68 MB for 49x less
-    // ground). If the form axis silently collapsed to one entry the run would be
+    // not to matter — res 9 returned 38.7 MB against res 7's ~68 MB for 49x less
+    // ground, both figures from the previous `nwr` form, which is exactly the
+    // axis the FORM dimension went on to move.
+    // If the form axis silently collapsed to one entry the run would be
     // 24 expensive cells re-measuring the axis that has no answer in it.
     // FOUR SINCE F31. The combined form was added because §2.1 of the results
     // doc reasons the two levers attack different things and should compose —
@@ -408,7 +410,8 @@ describe("buildMatrixDocument", () => {
  * BOTH COME FROM THE 2026-08-01 SWEEP'S OWN RESULTS rather than from taste.
  *
  * F31: `clipped` and `areal-only` each cut the res-7 payload substantially
- * (67.9 MB -> 30.3 and 21.1), and §2.1 of the results doc reasons that they
+ * (the previous `plain` form's 67.9 MB -> 30.3 and 21.1), and §2.1 of the
+ * results doc reasons that they
  * attack different things — clipping still PRINTS a fragment of every giant
  * relation that touches the box, while areal-only removes those relations from
  * the result set. If that reasoning holds, the combination should beat both, and

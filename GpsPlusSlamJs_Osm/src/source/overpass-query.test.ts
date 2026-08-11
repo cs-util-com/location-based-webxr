@@ -93,7 +93,11 @@ describe("buildTileQuery", () => {
   // ==========================================================================
   // THE MEASUREMENT THIS SECTION ENCODES (2026-07-28, findings doc):
   //
-  //   res-7 tile, union of 32 exact keys  -> 200 OK, 18.2 s, 28.31 MB
+  //   (the 28.31 MB / 21,847-element payload figures from this run are
+  //    RETRACTED — see `resolutions.ts` FETCH_RES; the 200-vs-504 verdict is
+  //    what this section encodes and it does not rest on them)
+  //
+  //   res-7 tile, union of 32 exact keys  -> 200 OK, 18.2 s
   //   res-7 tile, REGEX over the same 32  -> 504 after 8 s, empty body
   //   res-7 tile, regex over 3 keys       -> 200 OK
   //
@@ -113,8 +117,11 @@ describe("buildTileQuery", () => {
     // A single trailing `out` is what makes the union deduplicate: the union is
     // a set, so each element is returned once. The measurement that recorded
     // "union duplicates elements" was running the statements as separate
-    // queries; measured properly, 21,847 elements came back and all 21,847 were
-    // unique.
+    // queries; measured properly, every element came back exactly once.
+    //
+    // The element COUNT that run reported (21,847) is retracted — see
+    // `resolutions.ts` FETCH_RES. Uniqueness is a property of the union, not of
+    // the count, so the conclusion here is untouched by the withdrawal.
     const q = buildTileQuery(bbox);
     expect(q).toMatch(/^\(/m);
     expect(q).toMatch(/\);$/m);

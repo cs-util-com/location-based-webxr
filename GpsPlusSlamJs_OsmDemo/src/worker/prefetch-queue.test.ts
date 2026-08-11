@@ -62,7 +62,7 @@ describe("createPrefetchQueue", () => {
   });
 
   it("ABORTS the in-flight tile when the user moves away from it", () => {
-    // The half DEC-R2-6 singles out as having to genuinely work: a 28–68 MB
+    // The half DEC-R2-6 singles out as having to genuinely work: a ~21 MB
     // request for ground the user has left is the exact waste the discipline
     // exists to avoid. Asserted on the SIGNAL, so it is the request that is
     // cancelled rather than merely the bookkeeping.

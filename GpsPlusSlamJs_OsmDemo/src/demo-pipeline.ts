@@ -393,7 +393,7 @@ export class DemoPipeline {
     //    ground": a plausible wrong answer within ~250 m of any res-7 boundary.
     //  - Deriving from the MAXIMUM on every pass blocks the FIRST answer on a
     //    tile only the outer rings need. The fetch loop below runs before any
-    //    scoring, so near a boundary that is 18–110 s added to the one thing the
+    //    scoring, so near a boundary that is ~20 s added to the one thing the
     //    user is actually waiting for — undoing W16, whose whole point is that
     //    the extra reach costs nothing at the moment of waiting.
     //
@@ -407,7 +407,7 @@ export class DemoPipeline {
     for (const tile of fetchTilesForScoreWorkingSet(chunk, scoredRadius)) {
       if (this.loaded.has(tile)) continue;
       // CHECKED PER TILE, which is the granularity that matters: a tile is
-      // 28-68 MB, so stopping between tiles is most of the saving available from
+      // ~21 MB, so stopping between tiles is most of the saving available from
       // abort at all. Once the worker's caller has moved on, continuing to pull
       // tiles for a position the user has left is exactly the waste the fetch
       // discipline exists to avoid.
@@ -551,7 +551,7 @@ export class DemoPipeline {
    * Exists so `explainCell` can be answered inside the worker. Before the worker
    * split, the caller found this by scanning `snapshot.cells` on the main thread;
    * that no longer works, because answering it there would mean shipping the
-   * merged features across the boundary — 28–68 MB of them — to explain one cell.
+   * merged features across the boundary — ~21 MB of them — to explain one cell.
    * Asking the side that already holds them is the whole point.
    */
   scoreFor(cell: string): CellScore | undefined {
@@ -646,7 +646,7 @@ export class DemoPipeline {
     // STEP 0 — which tiles (DEC-R9-15). Standing near a tile edge, your own
     // tile's event can be 500 m away while a neighbour's sits 50 m across the
     // boundary, invisible — so one tile is a real quality loss. But a neighbour
-    // whose data is missing costs an 18–110 s download, and the C#'s four-tile
+    // whose data is missing costs an ~20 s download, and the C#'s four-tile
     // answer could mean several of them.
     //
     // The app downloads in RES-7 UNITS, each covering seven event tiles, so

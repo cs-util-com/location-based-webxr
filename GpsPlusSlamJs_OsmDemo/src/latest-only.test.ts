@@ -155,7 +155,7 @@ describe("latestOnly — cancelling a superseded run", () => {
     // to completion synchronously.
     //
     // Since the pipeline moved into a worker there is something to cancel, and it
-    // is expensive: a superseded position's fetch is 28-68 MB per tile, pulled for
+    // is expensive: a superseded position's fetch is ~21 MB per tile, pulled for
     // ground the user has already walked away from. That is precisely the waste
     // the fetch discipline (DEC-R2-6) exists to prevent, and the prefetch work
     // leans on this signal.

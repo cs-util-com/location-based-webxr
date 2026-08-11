@@ -79,7 +79,7 @@ export function latestOnly<T>(
       // Originally the in-flight run was left to finish, because on the main
       // thread there was nothing to cancel — the work was synchronous once it
       // started. Since the pipeline moved into a worker there is: a superseded
-      // position's fetch is 28–68 MB per tile, pulled for ground the user has
+      // position's fetch is ~21 MB per tile, pulled for ground the user has
       // already left. `DemoPipeline` checks the signal between tiles, which is
       // the granularity where the saving actually is.
       //

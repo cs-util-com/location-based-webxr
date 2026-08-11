@@ -4,7 +4,7 @@
  * WHAT LIVES HERE AND WHY. All four of the demo's costly operations, because all
  * four blocked the UI before this existed:
  *
- * - **Fetch and parse.** An Overpass response for one res-7 tile is 28–68 MB of
+ * - **Fetch and parse.** An Overpass response for one res-7 tile is ~21 MB of
  *   JSON. `resolutions.ts` said outright that "it is why parsing belongs in a
  *   worker" — this is that worker.
  * - **Scoring.** 19 res-11 chunks, 931 res-13 cells, one synchronous pass.

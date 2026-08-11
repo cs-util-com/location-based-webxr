@@ -1440,7 +1440,7 @@ async function main(): Promise<void> {
    *
    * IT IS NOW AN RPC, and that is the point rather than an inconvenience. The
    * explanation needs the merged features and the rule table, both of which live
-   * in the worker; answering it here would mean shipping 28–68 MB of features
+   * in the worker; answering it here would mean shipping ~21 MB of features
    * across the boundary to explain one cell. Asking the side that already holds
    * them is the whole reason the split is worth having.
    *

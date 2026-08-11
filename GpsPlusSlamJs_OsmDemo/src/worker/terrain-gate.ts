@@ -37,7 +37,7 @@
  * A backstop, not a schedule. Every ordinary path settles the gate — the terrain
  * handler settles in a `finally`, so even a DEM outage releases waiters — so
  * reaching this means a load was dropped in a way nothing modelled. Long enough
- * to cover a real DEM fetch (tiles are 28-68 MB of OSM's neighbour, but a
+ * to cover a real DEM fetch (tiles are ~21 MB of OSM's neighbour, but a
  * Terrarium tile is small and slow only on a cold network), short enough that a
  * user is not looking at a frozen scene.
  *

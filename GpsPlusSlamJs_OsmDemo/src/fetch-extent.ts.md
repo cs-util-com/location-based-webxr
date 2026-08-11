@@ -28,10 +28,16 @@ the demo can draw it and put a number on it.
     not a spatial filter. The 1.39× costs redundant **transfer** — neighbouring
     tiles' bboxes overlap, so shared ground is downloaded once per tile that
     covers it — not discarded data.
-  - **Shrinking the tile would not shrink the payload much.** Measured on `lz4`:
-    res 9 is 49× less ground than res 7 and still returned 38.7 MB against
-    68.0 MB, because `out geom` prints the full geometry of every element that
-    _intersects_ the bbox. See the benchmark results doc.
+  - **Shrinking the tile is still not the move, but the reason changed.**
+    - The old reason is **superseded**: under the pre-F32 `nwr` form the payload
+      barely tracked area (res 9 is 49× less ground and still returned 38.7 MB
+      against 68.0 MB), so a smaller tile bought nothing. That form was retired
+      2026-08-03.
+    - The current reason: areal-only restored proportionality (res 7 → res 9 is
+      21×), so a smaller tile _would_ be smaller — but `FETCH_RES` was raised
+      8 → 7 deliberately to trade bytes for a lower request count, and that
+      trade is unaffected by payload size. A res-7 fetch is **~21 MB at a ~20 s
+      median**. See the benchmark results doc.
 - **The hexagon area is exact, the box area is not.** `hexAreaKm2` comes from
   H3's own `cellArea`; the box uses an equirectangular approximation with
   longitude scaled by the mid-latitude cosine. Mixing two approximations would

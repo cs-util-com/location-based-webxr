@@ -13,7 +13,7 @@
  * - **Abort that actually stops work.** This is the part that matters for this
  *   app. `latest-only.ts` coalesces the *waiting* input but lets the in-flight
  *   run finish, because on the main thread there was nothing to cancel. Across a
- *   worker there is: a superseded position's 28–68 MB fetch is exactly the waste
+ *   worker there is: a superseded position's ~21 MB fetch is exactly the waste
  *   the prefetch discipline (DEC-R2-6) exists to avoid. So a cancelled call posts
  *   an `abort` naming the id it is dropping, and the worker honours it.
  * - **No leaks.** A pending entry is deleted on every settle path, including

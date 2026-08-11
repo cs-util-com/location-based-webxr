@@ -2,7 +2,7 @@
  * The demo's main-thread ↔ worker contract, as data.
  *
  * WHY A WORKER AT ALL. Everything expensive in this demo ran on the UI thread:
- * an Overpass response measured at 28–68 MB of JSON to parse, a 19-chunk scoring
+ * an Overpass response measured at ~21 MB of JSON to parse, a 19-chunk scoring
  * pass, a mesh build, and (since the terrain extent grew) ~55 000 DEM samples.
  * `gps-plus-slam-osm` was designed for this from the start — it documents itself
  * as worker-safe in six places, its public types are deliberately

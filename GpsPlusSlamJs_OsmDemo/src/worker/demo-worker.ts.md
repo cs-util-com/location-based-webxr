@@ -35,7 +35,7 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
 - **OPFS works here, and is better here.** `navigator.storage.getDirectory()` is
   available in workers, and OPFS offers synchronous access handles only off the
   main thread. The tile cache moved with the fetching rather than staying behind.
-- **The merged features never leave.** They are 28–68 MB. `explainCell` and the
+- **The merged features never leave.** They are ~21 MB. `explainCell` and the
   mesh build both run here _because_ that is where the features are; answering
   either on the main thread would mean shipping them across.
 - **The obstacle index is held here too, and is built LAZILY** — on the first

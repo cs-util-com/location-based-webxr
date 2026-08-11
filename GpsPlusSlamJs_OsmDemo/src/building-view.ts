@@ -1514,7 +1514,7 @@ export class BuildingView {
    *
    * WHAT MOVED AND WHY. This method used to take the merged features and call
    * `buildBuildings`/`buildTrees` itself. Both now run in the worker, because the
-   * features are 28–68 MB and must not cross the boundary to be turned into
+   * features are ~21 MB and must not cross the boundary to be turned into
    * geometry that crosses back — the package's mesh output is `Float32Array`
    * precisely so the BUFFERS can transfer instead (`mesh/extrude.ts` says so).
    * The ENU frame anchoring and the terrain sampling moved with them.

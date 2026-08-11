@@ -69,7 +69,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  *
  * Overridable with `--res`. **And the answer that override produced is the
  * opposite of the obvious one**, so it is recorded here: shrinking the bbox
- * barely shrinks the payload. Measured on `lz4`, 2026-07-29, same centre:
+ * barely shrinks the payload. Measured on `lz4`, 2026-07-29, same centre.
+ *
+ * **SUPERSEDED as a property of the production query, though not as a
+ * measurement** — the three figures below are the `nwr` form, retired by F32 on
+ * 2026-08-03. Under areal-only the payload tracks area again (res 7 → res 9 is
+ * 21x, not 1.8x), so what follows explains a behaviour this app no longer
+ * exhibits. Kept because the sweep still runs all three forms, and the contrast
+ * is the point of running them.
+ *
+ * Under the previous `nwr` form, then:
  *
  * - res 7 (4.55 km² hexagon) — 68.0 MB
  * - res 8 (0.65 km²) — 42.7 MB
@@ -176,7 +185,8 @@ function bboxOfCell(cell) {
  *
  * Streamed rather than `.text()` because first-byte is not observable
  * otherwise. `progress` is mutated rather than returned so a failure PART WAY
- * through a 68 MB body still reports how far it got — "died after 40 MB" and
+ * through a multi-megabyte body still reports how far it got — "died after
+ * 40 MB" and
  * "never connected" are different diagnoses.
  */
 async function readBody(response, started, progress) {

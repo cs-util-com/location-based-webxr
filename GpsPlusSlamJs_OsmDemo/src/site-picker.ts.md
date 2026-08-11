@@ -50,7 +50,7 @@ places without editing a URL.
 - **A picker choice is a DECLARED place change** (DEC-R12-6/8), so `main.ts`
   dispatches `placeChanged` for it and `positionChanged` for travel. The picker
   itself makes no such distinction; it reports, and the caller classifies.
-- **A first visit costs a cold fetch** (18–110 s for an uncached res-7 tile), by
+- **A first visit costs a cold fetch** (~20 s for an uncached res-7 tile), by
   decision: DEC-R4-11 chose live data over loading the committed extract, on the
   grounds that fixture data looking identical to live data is the "two claims
   that look the same" defect this project keeps removing.

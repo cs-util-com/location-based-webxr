@@ -56,7 +56,7 @@ after the user has moved on and reporting failures without discarding the map.
   one interaction that should feel instant. Dropping stale answers on arrival gives
   the same guarantee for less.
 - **It is an RPC because the data is worker-side.** The explanation needs the
-  merged features (28–68 MB) and the rule table; answering it on the main thread
+  merged features (~21 MB) and the rule table; answering it on the main thread
   would mean shipping those across to explain one cell.
 
 ## Examples

@@ -7,7 +7,7 @@ path, with no DOM in it.
 
 ## Public API
 
-- `class DemoPipeline` — `update(position, category, signal?): Promise<DemoSnapshot>` (the signal is checked PER TILE, which is where the saving is: a tile is 28-68 MB), `scoreFor(cell): CellScore | undefined` (so `explainCell` can be answered inside the worker, where the merged features already are),
+- `class DemoPipeline` — `update(position, category, signal?): Promise<DemoSnapshot>` (the signal is checked PER TILE, which is where the saving is: a tile is ~21 MB), `scoreFor(cell): CellScore | undefined` (so `explainCell` can be answered inside the worker, where the merged features already are),
   `features()`, static `chunkFor(position)`
   - `geoEvent(position, category, now, signal?, options?)` →
     `{ event, stats }`. `options.overlapMinutes` is the C#'s handover window;
@@ -30,7 +30,7 @@ path, with no DOM in it.
     already loaded, not when its centre is.** This was the centre for several
     rounds, which broke the promise the method's own docstring makes — that a
     neighbour whose data is missing is skipped, because loading one costs
-    18–110 s. The ensure set built for an admitted neighbour extends
+    ~20 s. The ensure set built for an admitted neighbour extends
     `CLIMB_STEPS + 1` cells past each of its candidates, and its candidates are
     seeded across its whole bounding box: ~550 m past the centre, into fetch
     tiles nothing had checked. Measured at the demo's Manhattan default as six
@@ -62,7 +62,7 @@ path, with no DOM in it.
 
 - **`update` checks its `AbortSignal` TWICE, and both are load-bearing.** Once per
   tile in the fetch loop, and once again after the loop before scoring.
-  - The per-tile check is where the bytes are: a tile is 28–68 MB.
+  - The per-tile check is where the bytes are: a tile is ~21 MB.
   - The post-loop check exists because the per-tile one only fires when there IS a
     next tile, and at an interior position the working set needs exactly one. A run
     superseded during its single fetch would otherwise go on to score 19 chunks and

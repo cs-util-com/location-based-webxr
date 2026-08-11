@@ -190,7 +190,7 @@ map scored.
 
 - **It draws geometry the WORKER built; it no longer builds any.** `render()` used
   to take the merged features and call `buildBuildings`/`buildTrees` itself. Both
-  moved into `worker/demo-worker.ts`, because the features are 28–68 MB and must
+  moved into `worker/demo-worker.ts`, because the features are ~21 MB and must
   not cross the boundary to produce geometry that crosses back — the package's
   mesh output is `Float32Array` precisely so the BUFFERS transfer instead. The ENU
   frame anchoring and the terrain sampling moved with them.

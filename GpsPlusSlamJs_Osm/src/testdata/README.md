@@ -24,9 +24,13 @@ instances were saturated and that a full-size tile could not be fetched at all.
 That belief was wrong: it came from a key **regex** query
 (`nwr[~"^(k1|k2|…)$"~"."]`), which makes Overpass evaluate a regex against every
 key of every element in the bbox. A **union of exact-key statements** over the
-same 32 keys returns a whole res-7 tile — 21,847 elements, 28.31 MB
-decompressed — in **18.2 s**. See
+same 32 keys returns a whole res-7 tile in **18.2 s**. See
 `GpsPlusSlamJs_Docs/docs/2026-07-28-1040-overpass-remeasurement-findings.md`.
+
+That run also reported 21,847 elements and 28.31 MB, and **both figures are
+retracted** (2026-08-09, N2/W2 — see `src/spatial/resolutions.ts` `FETCH_RES`).
+The current figure is **~21 MB at a ~20 s median**, under the areal-only query
+form adopted 2026-08-03.
 
 Everything that reading produced is withdrawn: that instances are globally
 saturated, that a self-hosted instance is required, and that latency is an
@@ -35,7 +39,7 @@ rather than under-fetch, one request per move instead of seven), and the
 production query in `src/source/overpass-query.ts` is the union form.
 
 So a full-size capture is now possible, and what stops it is size: a res-7 tile
-is ~28 MB, the merge tests want a **second overlapping one**, and this corpus is
+is ~21 MB, the merge tests want a **second overlapping one**, and this corpus is
 4.8 MB today. That decision (gzip the fixtures / regenerate on demand / check in
 raw) is open — see the plan's §10.
 
