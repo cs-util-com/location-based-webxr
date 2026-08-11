@@ -686,7 +686,14 @@ async function handle<K extends WorkerCallKind>(
       // a background one — the public instances allocate ~2 slots per client.
       // `replace` states the whole desired set, so moving away drops the tiles of
       // the place left behind, including the one in flight.
+      // CLOCKED, though it is small and does not await. It is a TENTH thing
+      // this handler does, and the whole finding behind this plan is that an
+      // unenumerated step in this exact handler is what the residual exists to
+      // catch. Naming it now costs one clock; leaving it costs milestone 5 a
+      // session attributing a few stray milliseconds.
+      const prefetchStart = nowMs();
       prefetch.replace(pipeline.neighbourTilesFor(position));
+      const prefetchMs = Math.max(0, nowMs() - prefetchStart);
       // STAGE 7. `meshPlanner` decides full-build versus regions-only, so this
       // is legitimately near-zero on passes 2 and 3 — which is why every line
       // is tagged with its ring rather than summed per click.
@@ -699,6 +706,7 @@ async function handle<K extends WorkerCallKind>(
         workerTimings: {
           terrainWaitMs,
           meshMs,
+          prefetchMs,
           workerTotalMs: Math.max(0, nowMs() - workerStart),
         },
       };

@@ -52,5 +52,6 @@ export const ZERO_STAGE_TIMINGS: DemoStageTimings = {
 export const ZERO_WORKER_TIMINGS: WorkerStageTimings = {
   terrainWaitMs: 0,
   meshMs: 0,
+  prefetchMs: 0,
   workerTotalMs: 0,
 };

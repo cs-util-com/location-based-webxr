@@ -31,6 +31,7 @@ import { describe, it, expect } from "vitest";
 import { latLngToCell } from "h3-js";
 import {
   SCORE_CHUNK_RES,
+  SCORE_DISK_RADIUS,
   fetchTilesForScoreWorkingSet,
   parseRuleTable,
   type OsmDataSource,
@@ -46,10 +47,27 @@ const TABLE = parseRuleTable(
   { source: "test", fetchedAt: 0 },
 );
 
-/** How many tiles the working set at COLOGNE actually needs. */
+/**
+ * How many tiles the working set at COLOGNE actually needs FOR THE FIRST PASS.
+ *
+ * **`SCORE_DISK_RADIUS` explicitly, not the default.**
+ * `fetchTilesForScoreWorkingSet` defaults to `SCORE_DISK_MAX_RADIUS` — the
+ * widest disk anything scores — while `update` called without a radius fetches
+ * for `SCORE_DISK_RADIUS`, the pass's own ring. The first version of this
+ * helper took the default and so computed a count for a different radius than
+ * the code under test used.
+ *
+ * It passed only by luck: at this fixture every radius yields one tile. Move
+ * the fixture near a res-7 boundary — the case this file's SUM test says it
+ * exists for — and every assertion compares against the wrong `n`. The helper
+ * was weakest exactly where the test was meant to be strongest, and
+ * `demo-pipeline.ts` carries a twenty-line comment about this same conflation
+ * being a shipped defect (finding N1).
+ */
 function tileCount(): number {
   return fetchTilesForScoreWorkingSet(
     latLngToCell(COLOGNE.lat, COLOGNE.lng, SCORE_CHUNK_RES),
+    SCORE_DISK_RADIUS,
   ).length;
 }
 
@@ -195,13 +213,92 @@ describe("DemoSnapshot.timings covers stages 1-5", () => {
     expect(second.timings.tilesHeld).toBe(tileCount());
   });
 
-  it("never reports a negative stage, whatever the clock did", async () => {
-    // Same reasoning as the source-level property test: a negative makes the
-    // reconciliation close by cancelling, so the gate that would catch a clock
-    // problem goes quiet exactly when it should shout.
+  it("gives SCORE and DERIVE the intervals that belong to them, not each other's", async () => {
+    // THE TEST THE PLAN MANDATES (§5, §8 milestone 2) AND THE FIRST CUT DID NOT
+    // WRITE. Without it, swapping the `scoreMs` and `deriveMs` assignments in
+    // `update` left the whole suite green: the only assertion touching either
+    // was `fetchMs + scoreMs + deriveMs <= pipelineMs`, which is symmetric in
+    // the two.
+    //
+    // It also could not be written before this commit, because `DemoPipeline`
+    // had no clock seam — `OverpassSource` and `CachingSource` both take a
+    // `monotonicNow` precisely so a test can make ONE stage expensive and
+    // assert the others are cheap. The library half of this work built that
+    // seam; the demo half had skipped it.
+    //
+    // The clock advances only when the test says so, and the test charges
+    // 5000 ms to exactly one thing: `AffordanceIndex.update`, which is stage 4.
+    let t = 0;
+    const clock = () => t;
+    const source = measuredSource();
+    const pipeline = new DemoPipeline({
+      source,
+      table: TABLE,
+      monotonicNow: clock,
+    });
+
+    // `scoresByCell` is the first thing stage 5 touches, so charging the clock
+    // from the scoring call and stopping before it isolates stage 4 exactly.
+    const index = (
+      pipeline as unknown as {
+        index: { update: (...args: unknown[]) => void };
+      }
+    ).index;
+    const realUpdate = index.update.bind(index);
+    index.update = (...args: unknown[]) => {
+      t += 5000;
+      realUpdate(...args);
+    };
+
+    const snapshot = await pipeline.update(COLOGNE, "walkable");
+
+    expect(snapshot.timings.scoreMs).toBe(5000);
+    expect(snapshot.timings.deriveMs).toBe(0);
+    // And the whole method must contain it — the anchor still has to agree.
+    expect(snapshot.timings.pipelineMs).toBeGreaterThanOrEqual(5000);
+  });
+
+  it("charges a slow DERIVE to derive, and leaves score alone", async () => {
+    // The mirror, so neither stage can absorb the other's interval. Together
+    // these two are what make the pair non-interchangeable.
+    let t = 0;
     const pipeline = new DemoPipeline({
       source: measuredSource(),
       table: TABLE,
+      monotonicNow: () => t,
+    });
+
+    const index = (
+      pipeline as unknown as {
+        index: { scoresByCell: () => Map<string, unknown> };
+      }
+    ).index;
+    const realScores = index.scoresByCell.bind(index);
+    index.scoresByCell = () => {
+      t += 3000;
+      return realScores();
+    };
+
+    const snapshot = await pipeline.update(COLOGNE, "walkable");
+
+    expect(snapshot.timings.scoreMs).toBe(0);
+    expect(snapshot.timings.deriveMs).toBeGreaterThanOrEqual(3000);
+  });
+
+  it("never reports a negative stage, whatever the clock did", async () => {
+    // A GUARD, not documentation — which the first version was: it ran the real
+    // monotonic clock, so deleting every `Math.max(0, …)` in production left it
+    // green. Driving it with a clock that runs BACKWARDS is what makes it
+    // enforce the thing it claims.
+    //
+    // Same reasoning as the source-level property test: a negative makes the
+    // reconciliation close by cancelling, so the gate that would catch a clock
+    // problem goes quiet exactly when it should shout.
+    let t = 1_000_000;
+    const pipeline = new DemoPipeline({
+      source: measuredSource(),
+      table: TABLE,
+      monotonicNow: () => (t -= 1000),
     });
     const snapshot = await pipeline.update(COLOGNE, "walkable");
 

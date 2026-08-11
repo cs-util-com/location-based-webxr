@@ -16,8 +16,14 @@ measured, and checks them against a separately measured whole.
 
 ## Invariants & assumptions
 
-- **Stage 8 (transfer) is DERIVED as `roundTripMs - workerTotalMs`, never
-  timestamped across the boundary.** A dedicated worker has its own
+- **Stage 8 is DERIVED as `roundTripMs - workerTotalMs`, never
+  timestamped across the boundary — and it is called `boundary`, not
+  `transfer`, because it contains the structured clone in both directions PLUS
+  any time the `update` message spent QUEUED. The demo posts `loadTerrain` and
+  `refresh` to the SAME worker in the same tick (W3), so on a new position the
+  concurrent DEM job's CPU lands here. Neither side can separate the two
+  without a shared clock, so the name says what the number contains.** A
+  dedicated worker has its own
   `performance.timeOrigin`, so subtracting a worker timestamp from a page one
   yields an offset rather than a duration. Every pre-existing timing in this
   demo is taken wholly inside the worker (`GeoEventStats`), so nothing warned
@@ -65,3 +71,31 @@ console.info(describeClickTimings(timings));
 `click-timings.test.ts` — the reconciliation identity, transfer derivation, the
 negative clamp, shares-against-wall-clock, non-distribution of the residual, and
 every branch of the console line including the DOES NOT RECONCILE warning.
+
+## Corrections made after review
+
+- **`transfer` → `boundary`.** The number is everything in the round trip the
+  worker's clock does not cover: the structured clone _and_ any time the message
+  spent queued. Since `main.ts` posts the terrain load and the refresh to the
+  same worker in the same tick, on a new position the concurrent DEM job's CPU
+  lands in this term. Calling it "transfer" would send the next reader to look
+  at clone size for a cost that is really a busy thread.
+- **Zeros are no longer dropped indiscriminately.** The nine stages §2
+  enumerates print even at zero; only the sub-splits of stages 1–2 drop. Two of
+  those zeros are the answer: `parse` is genuinely 0 on a cache hit and
+  `terrain-wait` is 0 on a widening ring, and those are exactly what
+  discriminates the plan's competing predictions about which stage owns the
+  wait.
+- **`reconciles` no longer uses `Math.abs`, and is false for a zero-wall pass.**
+  Stages summing to MORE than the whole means something is double-counted, which
+  is no more trustworthy than something missing; and an instrument that measured
+  nothing must not report that its nothing adds up.
+- **`fetchUnattributedMs` was added**, because §10.2 of the plan justified
+  deferring the milestone-1 cache-probe gap on the grounds that `fetchMs` minus
+  the parts would expose it — and the first cut produced `fetchMs` and
+  subtracted nothing from it anywhere.
+- **Every stage is clamped, not just the derived one.** A property run over
+  adversarial inputs found `prefetch-queue` passing a negative through.
+- **Shares are rounded independently and the line says so.** With this many
+  entries the column can miss 100 by a few points, and a reader who adds it up
+  would otherwise reasonably conclude the instrument is broken.

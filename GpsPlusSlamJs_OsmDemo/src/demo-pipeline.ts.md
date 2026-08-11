@@ -189,8 +189,10 @@ missing four stages** — the plan's own failure mode, one level down.
   accept and clicking around is quadratic in tiles visited. Folded into
   fetching, that growth would be invisible, and it is the term nothing has ever
   measured.
-- **`fetchMs` and `pipelineMs` are wall clocks, and they are what make the parts
-  falsifiable.** Any set of plausible per-stage numbers adds up to something;
+- **`fetchMs` and `pipelineMs` are wall clocks, and `fetchMs` is what makes the fetch parts
+  falsifiable.** `click-timings.ts` subtracts the per-tile parts from it and
+  reports the difference as `fetchUnattributedMs`. Any set of plausible
+  per-stage numbers adds up to something;
   only a separately measured whole can say the parts are wrong.
 - **`tilesUnmeasured` is a count, not an absence.** A fixture-backed run must
   not read as a click whose network cost nothing.

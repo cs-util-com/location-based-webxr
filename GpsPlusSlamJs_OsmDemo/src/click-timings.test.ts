@@ -48,6 +48,7 @@ const INPUT: ClickTimingInput = {
   worker: {
     terrainWaitMs: 500,
     meshMs: 250,
+    prefetchMs: 0,
     // Pipeline stages sum to 1200, plus 750 of worker stages = 1950. A worker
     // total of 1960 leaves a 10 ms residual: small, deliberate, and inside the
     // tolerance, so this fixture is a RECONCILING pass.
@@ -58,17 +59,18 @@ const INPUT: ClickTimingInput = {
 };
 
 describe("composeClickTimings reconciles against a measured whole", () => {
-  it("derives the residual from the wall clock, never by back-filling", () => {
-    // THE CENTRAL PROPERTY. `residualMs` must be `wall - Σstages`, so a stage
-    // nobody enumerated shows up as a positive number. Computing it any other
-    // way — say, as whatever makes the shares total 100 % — would make an
-    // unenumerated stage invisible, which is exactly how the terrain join
-    // survived this plan's own first draft.
+  it("computes the wall clock and residual from INDEPENDENT expectations", () => {
+    // REWRITTEN AFTER REVIEW, because the first version was circular: it read
+    // `wallMs` and the stage list off the RESULT and asserted
+    // `residualMs === wallMs - Σstages` — which is the implementation's own two
+    // lines compared against themselves, and passes for any wrong or
+    // incomplete stage list. Every number below is derived from `INPUT`
+    // instead, so the test can disagree with the code.
     const t = composeClickTimings(INPUT);
 
-    expect(t.wallMs).toBe(2250); // roundTrip + draw
-    const stages = t.stages.reduce((sum, s) => sum + s.ms, 0);
-    expect(t.residualMs).toBeCloseTo(t.wallMs - stages, 6);
+    expect(t.wallMs).toBe(INPUT.roundTripMs + INPUT.drawMs);
+    expect(t.residualMs).toBeCloseTo(10, 6);
+    expect(t.reconciles).toBe(true);
   });
 
   it("derives TRANSFER rather than timestamping across the worker boundary", () => {
@@ -78,9 +80,29 @@ describe("composeClickTimings reconciles against a measured whole", () => {
     // what the worker says it spent — two durations, each measured wholly on
     // one side.
     const t = composeClickTimings(INPUT);
-    const transfer = t.stages.find((s) => s.name === "transfer");
+    const boundary = t.stages.find((s) => s.name === "boundary");
 
-    expect(transfer?.ms).toBe(240); // 2200 round trip - 1960 in the worker
+    expect(boundary?.ms).toBe(240); // 2200 round trip - 1960 in the worker
+  });
+
+  it("keeps the zeros the plan calls load-bearing, and drops the ones that are noise", () => {
+    // The two zeros that discriminate §3's competing predictions: `parse` is
+    // genuinely 0 on a cache hit, and `terrain-wait` is 0 on a widening ring
+    // and non-zero on a new position. Dropping them would leave the line unable
+    // to falsify the thing it exists to test — which the first version did.
+    const warmRing3 = composeClickTimings({
+      ...INPUT,
+      radius: 3,
+      pipeline: { ...INPUT.pipeline, parseMs: 0, probeMs: 0 },
+      worker: { ...INPUT.worker, terrainWaitMs: 0, meshMs: 0 },
+    });
+    const line = describeClickTimings(warmRing3);
+
+    expect(line).toContain("parse 0 ms");
+    expect(line).toContain("terrain-wait 0 ms");
+    expect(line).toContain("mesh 0 ms");
+    // …while a zero sub-split of stages 1–2 is noise and stays out.
+    expect(line).not.toContain("cache-probe");
   });
 
   it("makes the residual mean UNENUMERATED WORKER TIME, not vague leftover", () => {
@@ -123,9 +145,9 @@ describe("composeClickTimings reconciles against a measured whole", () => {
       roundTripMs: 1900,
       worker: { ...INPUT.worker, workerTotalMs: 2000 },
     });
-    const transfer = t.stages.find((s) => s.name === "transfer");
+    const boundary = t.stages.find((s) => s.name === "boundary");
 
-    expect(transfer?.ms).toBe(0);
+    expect(boundary?.ms).toBe(0);
     expect(t.reconciles).toBe(false);
   });
 
@@ -171,14 +193,85 @@ describe("composeClickTimings reconciles against a measured whole", () => {
     // Named separately because it is the tempting fix when a breakdown does not
     // close, and it destroys the only signal this whole plan is built to
     // produce: where the unmeasured time is.
-    const withGap = composeClickTimings({ ...INPUT, roundTripMs: 5000 });
+    // VARIED VIA `workerTotalMs`, not `roundTripMs` — the first version raised
+    // the round trip, which cannot move any of the stages it checked because
+    // they are verbatim pass-throughs, and omitted `boundary`, the one stage
+    // that DOES change under that input. It was the very defect the commit that
+    // introduced it congratulated itself on catching, two tests later.
+    const withGap = composeClickTimings({
+      ...INPUT,
+      worker: { ...INPUT.worker, workerTotalMs: 3000 },
+      roundTripMs: 4000,
+    });
     const baseline = composeClickTimings(INPUT);
 
-    for (const name of ["fetch", "score", "derive", "mesh", "terrain-wait"]) {
+    expect(withGap.residualMs).toBeGreaterThan(baseline.residualMs + 500);
+    for (const name of [
+      "fetch",
+      "parse",
+      "merge",
+      "score",
+      "derive",
+      "mesh",
+      "terrain-wait",
+      "draw",
+    ]) {
       const before = baseline.stages.find((s) => s.name === name)?.ms;
       const after = withGap.stages.find((s) => s.name === name)?.ms;
       expect(after, `${name} absorbed part of the residual`).toBe(before);
     }
+  });
+
+  it("does NOT reconcile a negative residual — over-counting is not better than under", () => {
+    // `Math.abs` was the first version and it was wrong: stages summing to MORE
+    // than the wall clock means something is double-counted, which is exactly
+    // as untrustworthy as something missing. It read `reconciles: true` for a
+    // −1.9 % residual.
+    const over = composeClickTimings({
+      ...INPUT,
+      worker: { ...INPUT.worker, workerTotalMs: 1000 },
+    });
+
+    expect(over.residualMs).toBeLessThan(-100);
+    expect(over.reconciles).toBe(false);
+  });
+
+  it("does NOT reconcile a pass that measured nothing at all", () => {
+    // §0.2's "silence reads as measured", reproduced in the one artefact the
+    // owner is meant to read: an all-zero pass summed to an all-zero whole and
+    // declared itself reconciled. An instrument that measured nothing has not
+    // verified anything.
+    const nothing = composeClickTimings({
+      radius: 2,
+      pipeline: ZERO_STAGE_TIMINGS,
+      worker: {
+        terrainWaitMs: 0,
+        meshMs: 0,
+        prefetchMs: 0,
+        workerTotalMs: 0,
+      },
+      roundTripMs: 0,
+      drawMs: 0,
+    });
+
+    expect(nothing.reconciles).toBe(false);
+  });
+
+  it("surfaces the fetch-loop mini-residual the plan promised", () => {
+    // §10.2 deferred the milestone-1 cache-probe gap specifically because
+    // `fetchMs` minus the per-tile parts would expose it — and then the first
+    // cut produced `fetchMs` and subtracted nothing from it anywhere, which
+    // made that reasoning empty.
+    const t = composeClickTimings(INPUT);
+
+    // 800 ms loop; parts inside it sum to 10+400+100+200+20+30+0+40 = 800.
+    expect(t.fetchUnattributedMs).toBe(0);
+
+    const leaky = composeClickTimings({
+      ...INPUT,
+      pipeline: { ...INPUT.pipeline, fetchMs: 950 },
+    });
+    expect(leaky.fetchUnattributedMs).toBe(150);
   });
 
   it("keeps the radius, because the three passes are not three of the same thing", () => {

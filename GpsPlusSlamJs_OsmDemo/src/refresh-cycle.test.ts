@@ -962,3 +962,115 @@ describe("the scene anchor", () => {
     expect(origins.at(-1)).not.toEqual(COLOGNE);
   });
 });
+
+describe("the click-path breakdown is reported exactly once per PUBLISHED ring", () => {
+  /**
+   * Why these tests matter: `onTimings` sits behind three guards that each
+   * exist because of a real, reported bug — the superseded-run guard (a flash
+   * of the previous position), the error guard (W16's erased error message) and
+   * the abort `catch` (finding R3-5, "the scene resets"). The callback was
+   * added behind all three and pinned by none of them, so a future reorder that
+   * hoisted it above the superseded check would print a ranked breakdown for a
+   * position the user had already left, and every test would stay green.
+   *
+   * A breakdown of a discarded pass is worse than no breakdown: it is a
+   * confident, decimal-pointed answer about work nobody is waiting for.
+   */
+  function timingSetup(
+    update: Update,
+    onReply?: (signal: AbortSignal) => void,
+  ) {
+    const seen: number[] = [];
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
+      worker: {
+        call: async (_kind, payload, options) => {
+          onReply?.(options.signal);
+          const snapshot = await update(
+            payload.position,
+            payload.category,
+            payload.radius,
+          );
+          return {
+            snapshot,
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
+          };
+        },
+      },
+      onMesh: () => {},
+      onTimings: (t) => seen.push(t.radius),
+    });
+    return { ...demo, refresh, seen };
+  }
+
+  it("emits one breakdown per ring, tagged with the ring it belongs to", async () => {
+    // Per pass rather than per click, because stages 6 and 7 are near-zero on
+    // rings 3 and 4 by design and a per-click sum would hide exactly that.
+    const { refresh, seen } = timingSetup((_position, category, radius) =>
+      Promise.resolve({ ...snapshot(category), radius }),
+    );
+
+    await refresh();
+
+    expect(seen).toEqual([SCORE_DISK_RADIUS, 3, SCORE_DISK_MAX_RADIUS]);
+  });
+
+  it("reports only AFTER the snapshot is published, which is what the guards protect", async () => {
+    // The structural property that makes all three guards protective. Every
+    // early `return` in the loop — superseded run, error phase on screen, and
+    // the `catch` — sits BEFORE the publish, so anything ordered after the
+    // publish cannot fire for a pass that did not publish.
+    //
+    // Asserted as ordering rather than by simulating each guard, because that
+    // is the invariant a future reorder would break: hoisting `onTimings`
+    // above the publish would print a ranked breakdown for a position the user
+    // had already left, and nothing else in this file would notice.
+    const order: string[] = [];
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
+      worker: {
+        call: (_kind, payload) =>
+          Promise.resolve({
+            snapshot: { ...snapshot(payload.category), radius: payload.radius },
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
+          }),
+      },
+      onMesh: () => order.push("mesh"),
+      onTimings: () => order.push("timings"),
+    });
+    demo.store.subscribe(() => {
+      if (selectOsmView(demo.store.getState()).snapshot !== undefined) {
+        order.push("published");
+      }
+    });
+
+    await refresh();
+
+    // First ring: mesh, then publish, then the breakdown. Never before.
+    expect(order.slice(0, 3)).toEqual(["mesh", "published", "timings"]);
+    expect(order.indexOf("timings")).toBeGreaterThan(
+      order.indexOf("published"),
+    );
+  });
+
+  it("says nothing when the pass fails", async () => {
+    // A thrown pass never reaches the publish, so it never reaches the report.
+    // A breakdown printed from the `catch` would be a ranking of a click that
+    // produced no answer at all.
+    const { refresh, seen } = timingSetup(() =>
+      Promise.reject(new Error("overpass exploded")),
+    );
+
+    await refresh();
+
+    expect(seen).toEqual([]);
+  });
+});

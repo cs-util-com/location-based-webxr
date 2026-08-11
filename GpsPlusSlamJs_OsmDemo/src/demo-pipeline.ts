@@ -194,6 +194,17 @@ export interface DemoPipelineOptions {
   readonly table: RuleTable;
   /** Categories to score. Defaults to every category the table declares. */
   readonly categories?: readonly string[];
+  /**
+   * Monotonic clock for `DemoStageTimings`. Injected so ATTRIBUTION is testable.
+   *
+   * **This seam was missing and its absence was a real gap**, not a
+   * convenience. `OverpassSource` and `CachingSource` both take one precisely
+   * so a test can make exactly one stage expensive and assert the others are
+   * zero; without it here, `scoreMs` and `deriveMs` could be swapped and every
+   * test stayed green. The plan mandates that test (§5) and it could not be
+   * written against a hard-wired clock.
+   */
+  readonly monotonicNow?: () => number;
 }
 
 /**
@@ -387,6 +398,8 @@ export class DemoPipeline {
   private readonly source: OsmDataSource;
   private readonly index: AffordanceIndex;
   private readonly table: RuleTable;
+  /** Monotonic clock for the stage timings — injectable so attribution is testable. */
+  private readonly clock: () => number;
 
   /** Tiles already handed to the index, so a redraw does not refetch. */
   private readonly loaded = new Set<string>();
@@ -394,6 +407,7 @@ export class DemoPipeline {
   constructor(options: DemoPipelineOptions) {
     this.source = options.source;
     this.table = options.table;
+    this.clock = options.monotonicNow ?? nowMs;
     this.index = new AffordanceIndex(
       options.categories === undefined
         ? { table: options.table }
@@ -474,7 +488,7 @@ export class DemoPipeline {
     // `DemoSnapshot.radius`). Two `?? SCORE_DISK_RADIUS` expressions could drift
     // into a snapshot claiming a ring the fetch never covered.
     const scoredRadius = radius ?? SCORE_DISK_RADIUS;
-    const pipelineStart = nowMs();
+    const pipelineStart = this.clock();
     // ACCUMULATED ACROSS THE TILES, because a working set is 1–3 of them. The
     // per-tile records are summed rather than sampled; see `DemoStageTimings`.
     const totals = {
@@ -491,7 +505,7 @@ export class DemoPipeline {
       tilesUnmeasured: 0,
     };
     let mergeMs = 0;
-    const fetchStart = nowMs();
+    const fetchStart = this.clock();
     for (const tile of fetchTilesForScoreWorkingSet(chunk, scoredRadius)) {
       if (this.loaded.has(tile)) continue;
       // CHECKED PER TILE, which is the granularity that matters: a tile is
@@ -534,14 +548,14 @@ export class DemoPipeline {
         // the term the plan predicts grows across a session, and it is the term
         // nothing has ever measured; inside the fetch stage that growth would
         // be invisible.
-        const mergeStart = nowMs();
+        const mergeStart = this.clock();
         this.index.acceptTile(result);
-        mergeMs += Math.max(0, nowMs() - mergeStart);
+        mergeMs += Math.max(0, this.clock() - mergeStart);
       } catch {
         missingTiles.push(tile);
       }
     }
-    const fetchMs = Math.max(0, nowMs() - fetchStart);
+    const fetchMs = Math.max(0, this.clock() - fetchStart);
 
     // CHECKED AGAIN AFTER THE FETCH LOOP, and this is not redundant. The
     // per-tile check only fires when there is a NEXT tile, and at an interior
@@ -553,11 +567,11 @@ export class DemoPipeline {
       throw new DOMException("Aborted", "AbortError");
     }
 
-    const scoreStart = nowMs();
+    const scoreStart = this.clock();
     this.index.update(position, radius);
-    const scoreMs = Math.max(0, nowMs() - scoreStart);
+    const scoreMs = Math.max(0, this.clock() - scoreStart);
 
-    const deriveStart = nowMs();
+    const deriveStart = this.clock();
     const threshold = thresholdFor(this.table, category);
     const scoresByCell = this.index.scoresByCell();
     // MATERIALISED ONCE. This used to be spread here AND again below for the
@@ -627,8 +641,8 @@ export class DemoPipeline {
         scoreMs,
         // CLOSED HERE, on the last line before the snapshot leaves, so stage 5
         // covers everything after scoring including building this object.
-        deriveMs: Math.max(0, nowMs() - deriveStart),
-        pipelineMs: Math.max(0, nowMs() - pipelineStart),
+        deriveMs: Math.max(0, this.clock() - deriveStart),
+        pipelineMs: Math.max(0, this.clock() - pipelineStart),
         tilesHeld: this.loaded.size,
       },
     };

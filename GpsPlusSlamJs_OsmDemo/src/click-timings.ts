@@ -19,14 +19,23 @@
  * the arithmetic rather than being designed in.** Substituting the definitions:
  *
  *     residual = wall - Σstages
- *             = (roundTrip + draw) - (pipeline + terrainWait + mesh
+ *             = (roundTrip + draw) - (ΣpipelineParts + terrainWait + mesh
  *                                     + (roundTrip - workerTotal) + draw)
- *             = workerTotal - (pipeline + terrainWait + mesh)
+ *             = workerTotal - (ΣpipelineParts + terrainWait + mesh)
  *
- * i.e. **exactly the time the worker spent that none of its enumerated stages
- * claims.** Time on the page cancels out. That is a better instrument than a
- * vague leftover: a non-trivial residual points at the worker handler
- * specifically, which is where the one stage this plan missed was hiding.
+ * i.e. **exactly the time inside the worker that none of the enumerated stages
+ * claims.** Time on the page cancels out entirely.
+ *
+ * **`ΣpipelineParts` is the ten COMPONENT fields, not `DemoStageTimings.pipelineMs`
+ * — and the distinction is not pedantry**, because `pipelineMs` is a real field
+ * of the very object being summed and reading the identity the obvious way
+ * gives a different, wrong one. Since the components are summed rather than the
+ * wall clock, the residual also contains unattributed time INSIDE
+ * `DemoPipeline.update` — loop overhead, a joiner's discarded cache probe, a
+ * refused network attempt on the stale-on-rate-limit path. So read it as
+ * "unattributed time anywhere inside the worker, `DemoPipeline.update`
+ * included", not as "time in the worker handler". Chasing it starts in the
+ * handler but does not end there.
  *
  * @see click-timings.ts.md
  * @see GpsPlusSlamJs_Docs/docs/2026-08-11-0717-osm-demo-click-path-stage-timing-plan.md
@@ -47,6 +56,14 @@ export interface WorkerStageTimings {
   readonly terrainWaitMs: number;
   /** Stage 7 — the mesh build, full or regions-only per `meshPlanner`. */
   readonly meshMs: number;
+  /**
+   * Queueing the background neighbour ring.
+   *
+   * Small, synchronous, and enumerated anyway — it is a tenth thing the handler
+   * does, and an unenumerated step in this exact handler is what this whole
+   * instrument exists to catch.
+   */
+  readonly prefetchMs: number;
   /**
    * The whole handler, measured wholly INSIDE the worker.
    *
@@ -80,6 +97,8 @@ export interface ClickTimingInput {
  * name earns nothing and the dead-code gate is right to say so.
  */
 interface ClickStage {
+  /** Printed even at zero — see `composeClickTimings`. */
+  readonly always: boolean;
   readonly name: string;
   readonly ms: number;
   /** Fraction of {@link ClickTimings.wallMs}, in [0, 1]. */
@@ -94,6 +113,17 @@ export interface ClickTimings {
   /** `wallMs - Σstages`. Never distributed, always reported. */
   readonly residualMs: number;
   readonly residualShare: number;
+  /**
+   * `fetchMs` minus the per-tile parts and the merge inside it.
+   *
+   * **The mini-residual §10.2 of the plan promised and the first cut did not
+   * deliver.** It is the loop's own overhead — working-set arithmetic, `loaded`
+   * lookups, await hops — and, more usefully, anything a source spends without
+   * reporting. It was the stated reason the milestone-1 cache-probe gap was
+   * deferred rather than closed blind; producing `fetchMs` and never
+   * subtracting anything from it made that reasoning empty.
+   */
+  readonly fetchUnattributedMs: number;
   /**
    * Whether the parts add up well enough to draw a conclusion from.
    *
@@ -142,41 +172,77 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
   const { pipeline: p, worker: w } = input;
   const wallMs = input.roundTripMs + input.drawMs;
 
-  const rawTransferMs = input.roundTripMs - w.workerTotalMs;
-  const transferMs = Math.max(0, rawTransferMs);
+  // NAMED `boundary`, NOT `transfer`, and the rename is a correction rather
+  // than a preference. This term is everything inside the round trip that the
+  // worker's own clock does not cover, which is the structured clone in both
+  // directions PLUS any time the `update` message spent QUEUED — and the demo
+  // posts `loadTerrain` and `refresh` to the SAME worker in the same tick (W3,
+  // `main.ts`). So on a new position the concurrent DEM job's CPU lands here,
+  // and calling that "transfer" would send the next reader to look at
+  // structured-clone size for a cost that is really a busy thread. Neither side
+  // can separate the two without a shared clock, so the honest move is to name
+  // what the number actually contains.
+  const rawBoundaryMs = input.roundTripMs - w.workerTotalMs;
+  const boundaryMs = Math.max(0, rawBoundaryMs);
 
-  const measured: readonly (readonly [string, number])[] = [
-    // Stage 1–2, already split by the source.
-    ["slot-wait", p.slotWaitMs],
-    ["fetch", p.transportMs],
-    ["decode", p.decodeMs],
-    ["parse", p.parseMs],
-    ["cache-probe", p.probeMs],
-    ["cache-store", p.storeMs],
-    ["dedup-join", p.joinedMs],
+  // `always` marks the NINE STAGES §2 enumerates. They print even at zero,
+  // because for two of them the zero is the answer: `parse` is genuinely 0 on a
+  // cache hit (§6.1) and `terrain-wait` is 0 on a widening ring and non-zero on
+  // a new position (§2 stage 6) — and those two zeros are exactly what
+  // discriminates §3's competing predictions. Dropping them would leave the
+  // line unable to falsify the thing it was built to test, and would reproduce
+  // the absent-vs-zero confusion the source-level type spends a whole field
+  // preventing. The sub-splits of stages 1–2 are the noise, and they drop.
+  const measured: readonly (readonly [string, number, boolean])[] = [
+    // Stage 1–2, split by the source. Sub-splits drop when zero.
+    ["slot-wait", p.slotWaitMs, false],
+    ["fetch", p.transportMs, true],
+    ["decode", p.decodeMs, false],
+    ["parse", p.parseMs, true],
+    ["cache-probe", p.probeMs, false],
+    ["cache-store", p.storeMs, false],
+    ["dedup-join", p.joinedMs, false],
     // Stages 3–5.
-    ["merge", p.mergeMs],
-    ["score", p.scoreMs],
-    ["derive", p.deriveMs],
+    ["merge", p.mergeMs, true],
+    ["score", p.scoreMs, true],
+    ["derive", p.deriveMs, true],
     // Stages 6–9.
-    ["terrain-wait", w.terrainWaitMs],
-    ["mesh", w.meshMs],
-    ["transfer", transferMs],
-    ["draw", input.drawMs],
+    ["terrain-wait", w.terrainWaitMs, true],
+    ["mesh", w.meshMs, true],
+    ["prefetch-queue", w.prefetchMs, false],
+    ["boundary", boundaryMs, true],
+    ["draw", input.drawMs, true],
   ];
 
-  const stages = measured.map(([name, value]) => ({
+  const stages = measured.map(([name, value, always]) => ({
     name,
-    ms: value,
+    // CLAMPED HERE TOO, not only on the derived boundary term. Every producer
+    // already floors its own durations, so this is belt and braces — but this
+    // module is a boundary and its inputs cross a structured clone from another
+    // thread. A property run over adversarial inputs found `prefetch-queue`
+    // passing a negative straight through, which is precisely the value that
+    // makes the reconciliation close by cancelling.
+    ms: Math.max(0, value),
+    always,
     // AGAINST THE WALL CLOCK, never against the sum. Shares computed against
     // the sum always total 100 %, so a breakdown missing a third of the click
     // would look complete — the exact reading this plan exists to prevent.
-    share: wallMs > 0 ? value / wallMs : 0,
+    share: wallMs > 0 ? Math.max(0, value) / wallMs : 0,
   }));
 
   const summed = stages.reduce((sum, s) => sum + s.ms, 0);
   const residualMs = wallMs - summed;
   const residualShare = wallMs > 0 ? residualMs / wallMs : 0;
+
+  const insideFetchLoop =
+    p.slotWaitMs +
+    p.transportMs +
+    p.decodeMs +
+    p.parseMs +
+    p.probeMs +
+    p.storeMs +
+    p.joinedMs +
+    p.mergeMs;
 
   return {
     radius: input.radius,
@@ -184,10 +250,21 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     stages,
     residualMs,
     residualShare,
+    fetchUnattributedMs: Math.max(0, p.fetchMs - insideFetchLoop),
+    // A NEGATIVE RESIDUAL IS NOT RECONCILED EITHER, and `Math.abs` here was a
+    // bug: stages summing to MORE than the wall clock means something is
+    // double-counted, which is no more trustworthy than something missing.
+    //
+    // AND A ZERO-WALL PASS DOES NOT RECONCILE. An instrument that measured
+    // nothing must not report that its nothing adds up — that is §0.2's
+    // "silence reads as measured" reproduced in the one artefact the owner is
+    // meant to read.
     reconciles:
-      rawTransferMs >= 0 &&
-      (Math.abs(residualMs) <= RECONCILE_TOLERANCE_MS ||
-        Math.abs(residualShare) <= RECONCILE_TOLERANCE_SHARE),
+      rawBoundaryMs >= 0 &&
+      wallMs > 0 &&
+      residualMs >= -RECONCILE_TOLERANCE_MS &&
+      (residualMs <= RECONCILE_TOLERANCE_MS ||
+        residualShare <= RECONCILE_TOLERANCE_SHARE),
     tilesFetched: p.tilesFetched,
     tilesFromNetwork: p.tilesFromNetwork,
     tilesFromCache: p.tilesFromCache,
@@ -229,7 +306,11 @@ export function describeClickTimings(t: ClickTimings): string {
   ].join("/");
 
   const parts = t.stages
-    .filter((s) => s.ms > 0)
+    // FILTERED ON THE ROUNDED VALUE, so a 0.4 ms stage does not survive the
+    // filter only to print as `0 ms (0 %)` — a zero-looking entry beside the
+    // genuinely-zero ones that were dropped, which is the worst of both.
+    // `always` stages ignore the filter entirely: see `composeClickTimings`.
+    .filter((s) => s.always || Math.round(s.ms) > 0)
     .sort((a, b) => b.ms - a.ms)
     .map((s) => `${s.name} ${ms(s.ms)} (${pct(s.share)})`);
 
@@ -237,7 +318,16 @@ export function describeClickTimings(t: ClickTimings): string {
     `click ring ${String(t.radius)}: ${ms(t.wallMs)} total`,
     ...parts,
     `residual ${ms(t.residualMs)} (${pct(t.residualShare)})`,
+    ...(Math.round(t.fetchUnattributedMs) > 0
+      ? [`fetch-unattributed ${ms(t.fetchUnattributedMs)}`]
+      : []),
     `tiles ${served}`,
+    // SHARES ARE ROUNDED INDEPENDENTLY, so the column can miss 100 by a few
+    // points on a line with this many entries. Said out loud rather than left
+    // for a reader to discover and reasonably conclude the instrument is
+    // broken — on a line whose whole claim is that every number carries its
+    // share of the whole.
+    "(shares rounded; the column need not total 100)",
     ...(t.reconciles
       ? []
       : ["** DOES NOT RECONCILE — do not rank stages from this line **"]),
