@@ -1,6 +1,6 @@
 # Location-Based WebXR
 
-> [It was almost impossible because, because it was, the dream was so big.](https://www.youtube.com/watch?v=zhl-Cs1-sG4) -- Giorgio Moroder 🎶
+> [It was almost impossible because it was.. the dream was so big](https://www.youtube.com/watch?v=zhl-Cs1-sG4) - Giorgio Moroder 🎶
 
 **Stable outdoor AR in the browser - no native app, no VPS, no signup, not even internet required**
 
