@@ -167,6 +167,28 @@ export interface SlamAppStoreOptions<
   enableDevChecks?: boolean;
 
   /**
+   * Action types the serializable check should skip, ADDED to the framework's.
+   *
+   * **A consumer with a large non-serialisable value of its own had no option
+   * short of `enableDevChecks: false`**, which trades one slice's cost for
+   * every check in the app. The OSM demo is the case that surfaced it: it
+   * exempts its scored snapshot on a measured 71 ms per dispatch, and AR mode
+   * requires it to adopt this factory because the alignment wiring reads
+   * framework GPS state.
+   *
+   * ADDED, never replacing. A caller-supplied list that overrode the defaults
+   * would silently reintroduce a deep walk on `tracking/poseReceived`, which
+   * dispatches at 60–90 Hz — the exact cost E-7 removed.
+   */
+  serializableIgnoredActions?: readonly string[];
+
+  /** State paths the serializable check should skip. Added, never replacing. */
+  serializableIgnoredPaths?: readonly string[];
+
+  /** State paths the immutable check should skip. Added, never replacing. */
+  immutableIgnoredPaths?: readonly string[];
+
+  /**
    * License key for the core library. Defaults to the bundled community key.
    * Apps with a paid license override here. Validation always runs and throws
    * on invalid / expired / empty keys.
@@ -337,6 +359,9 @@ export function createSlamAppStore<
     enableCompassExperiment = false,
     enableRobustSolverComparison = false,
     compassVoteWeight,
+    serializableIgnoredActions,
+    serializableIgnoredPaths,
+    immutableIgnoredPaths,
   } = options;
 
   validateLicenseKey(licenseKey);
@@ -552,11 +577,22 @@ export function createSlamAppStore<
         // (immutable) are excluded specifically. Everything else stays fully
         // checked in dev builds; RTK strips both checks from production
         // builds entirely, so this is a dev-experience fix, not a prod one.
+        // CONSUMER EXEMPTIONS ARE APPENDED, NEVER SUBSTITUTED. Replacing the
+        // framework defaults would silently reintroduce the deep walk on the
+        // 60-90 Hz pose action that E-7 removed.
         serializableCheck: enableDevChecks
-          ? { ignoredActions: ['tracking/poseReceived'] }
+          ? {
+              ignoredActions: [
+                'tracking/poseReceived',
+                ...(serializableIgnoredActions ?? []),
+              ],
+              ...(serializableIgnoredPaths === undefined
+                ? {}
+                : { ignoredPaths: [...serializableIgnoredPaths] }),
+            }
           : false,
         immutableCheck: enableDevChecks
-          ? { ignoredPaths: ['tracking'] }
+          ? { ignoredPaths: ['tracking', ...(immutableIgnoredPaths ?? [])] }
           : false,
       })
         .prepend(...prependedListeners)

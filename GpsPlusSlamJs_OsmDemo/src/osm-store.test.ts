@@ -179,3 +179,58 @@ describe("subscribeToOsmView", () => {
     expect(seen).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * The store migration to `createSlamAppStore` (AR milestone 1).
+ *
+ * Why these tests matter: the migration was described in this file's own source
+ * as "a one-line change" for a year, and it was not. The framework's factory
+ * hardcoded its dev-check exemptions, so adopting it naively would have
+ * reintroduced a **measured 71 ms per dispatch** — the deep serialisability
+ * walk over ~931 scored cells — in exactly the builds someone uses to judge
+ * whether the app feels fast. That regression is invisible: nothing fails, the
+ * app just gets slower in development.
+ *
+ * So the exemption is pinned, and so is the framework state AR needs, because
+ * "the store still works" is not the property the migration was for.
+ */
+describe("the demo store after the framework migration", () => {
+  it("does not warn about the snapshot it deliberately exempts", () => {
+    // The 71 ms regression, as an observable. RTK's serializable check reports
+    // through `console.error`, so a lost exemption is a stream of complaints
+    // rather than a failure — which is why this asserts on the console rather
+    // than on a timing.
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+
+    demo.store.dispatch(demo.actions.snapshotReady(snapshot(931)));
+
+    const complaints = error.mock.calls
+      .flat()
+      .filter((arg) => typeof arg === "string" && arg.includes("serializable"));
+    expect(complaints).toEqual([]);
+    error.mockRestore();
+  });
+
+  it("carries the framework GPS state that AR mode reads", () => {
+    // THE REASON THE MIGRATION HAPPENED. Without these slices the AR origin
+    // (`selectZeroReference`) and the alignment subscription have nothing to
+    // read, and the failure would appear only once someone entered AR.
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const state = demo.store.getState() as Record<string, unknown>;
+
+    for (const slice of ["gpsData", "arElements", "tracking"]) {
+      expect(state, `${slice} must exist for the AR wiring`).toHaveProperty(
+        slice,
+      );
+    }
+  });
+
+  it("still exposes the demo's own slice unchanged", () => {
+    // The counterweight: the migration must not have moved the demo's state.
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    expect(selectOsmView(demo.store.getState()).category).toBe("walkable");
+  });
+});

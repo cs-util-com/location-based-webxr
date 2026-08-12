@@ -559,3 +559,62 @@ describe('createSlamAppStore', () => {
     });
   });
 });
+
+/**
+ * Dev-check exemptions a consumer needs for its OWN slices.
+ *
+ * Why these tests matter: the factory's ignore lists were hardcoded to the
+ * framework's `tracking` slice, so a consumer holding a large non-serialisable
+ * value of its own had exactly two options — pay RTK's deep walk on every
+ * dispatch, or turn `enableDevChecks` off and lose every check in the app.
+ *
+ * The OSM demo is that consumer. It exempts its scored snapshot on a MEASURED
+ * 71 ms per dispatch ("SerializableStateInvariantMiddleware took 71ms"), and it
+ * cannot adopt this factory — which AR mode requires, because the alignment
+ * wiring reads framework GPS state — without carrying that exemption across.
+ *
+ * ADDITIVE AND DEFAULTED, so the five existing consumers are unaffected: with
+ * the options absent the behaviour is exactly what it was.
+ */
+describe('consumer-supplied dev-check exemptions', () => {
+  it('keeps the framework defaults when the caller passes nothing', () => {
+    // The regression guard for the other five apps. The per-frame pose action
+    // and the tracking slice must stay exempt whether or not a consumer adds
+    // its own — a caller-supplied list that REPLACED the defaults would
+    // reintroduce a deep walk at 60–90 Hz.
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+    });
+
+    expect(() => {
+      store.dispatch({ type: 'tracking/poseReceived', payload: {} });
+    }).not.toThrow();
+  });
+
+  it('accepts a consumer action without warning about its payload', () => {
+    // The demo's case in miniature: an action whose payload is deliberately not
+    // plain. Without the exemption RTK logs a serializability warning and walks
+    // the whole payload on every dispatch.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+      serializableIgnoredActions: ['demo/snapshotReady'],
+      serializableIgnoredPaths: ['demo.snapshot'],
+      immutableIgnoredPaths: ['demo.snapshot'],
+    });
+    store.dispatch({
+      type: 'demo/snapshotReady',
+      payload: { cells: new Float32Array(8) },
+    });
+
+    const complaints = [...warn.mock.calls, ...error.mock.calls]
+      .flat()
+      .filter((arg) => typeof arg === 'string' && arg.includes('serializable'));
+    expect(complaints).toEqual([]);
+
+    warn.mockRestore();
+    error.mockRestore();
+  });
+});
