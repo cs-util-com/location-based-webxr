@@ -39,6 +39,7 @@ import {
 } from "./cell-presets.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
+import { SceneContent } from "./scene-content.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
 import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
@@ -285,6 +286,21 @@ export interface CameraView {
 export class BuildingView {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
+  /**
+   * The map-derived content, as one subtree with a swappable parent.
+   *
+   * **THE AR SEAM** (plan milestone 0). Everything geographic hangs off this —
+   * the drawn mesh layers, the res-13 cell mesh and outlines, the underground
+   * lines — so AR mode can move the lot under the framework's scene root with
+   * one call. Lights, the ground plane, the sun rig and the NPC stay on
+   * `this.scene` deliberately: AR supplies its own lighting, hides the ground,
+   * and does not render the agent.
+   *
+   * Attached to `this.scene` here, which is the desktop arrangement and is
+   * unchanged by the extraction. See `scene-content.ts` for why the subtree is
+   * named rather than left implicit.
+   */
+  private readonly content = new SceneContent(this.scene);
   private readonly camera: THREE.PerspectiveCamera;
   /**
    * Watches the CONTAINER, not the window (W1, finding R3-2).
@@ -539,7 +555,7 @@ export class BuildingView {
       FAR_PLANE_M,
     );
 
-    this.scene.add(this.group);
+    this.content.add(this.group);
     // Ambient LOWERED from 0.55. Ambient light is flat by definition — it adds the
     // same amount to every facet regardless of its normal — so it was actively
     // washing out the only cue that distinguishes one ground facet from the next.
@@ -1196,7 +1212,7 @@ export class BuildingView {
    */
   private clearUnderground(): void {
     if (this.undergroundLines === undefined) return;
-    this.scene.remove(this.undergroundLines);
+    this.content.remove(this.undergroundLines);
     this.undergroundLines.geometry.dispose();
     this.undergroundLines.material.dispose();
     this.undergroundLines = undefined;
@@ -1211,19 +1227,19 @@ export class BuildingView {
     // became a tick rather than nothing at all. Each of those has broken once.
     this.undergroundLines = buildUndergroundLines(outlines);
     if (this.undergroundLines !== undefined) {
-      this.scene.add(this.undergroundLines);
+      this.content.add(this.undergroundLines);
     }
     this.requestFrame();
   }
 
   renderCells(mesh: CellMesh): void {
     if (this.cellMesh !== undefined) {
-      this.scene.remove(this.cellMesh);
+      this.content.remove(this.cellMesh);
       disposeMesh(this.cellMesh);
       this.cellMesh = undefined;
     }
     if (this.cellOutlines !== undefined) {
-      this.scene.remove(this.cellOutlines);
+      this.content.remove(this.cellOutlines);
       this.cellOutlines.geometry.dispose();
       this.cellOutlines.material.dispose();
       this.cellOutlines = undefined;
@@ -1251,7 +1267,7 @@ export class BuildingView {
           opacity: 0.9,
         }),
       );
-      this.scene.add(this.cellOutlines);
+      this.content.add(this.cellOutlines);
     }
     this.cellForTriangle = mesh.cellForTriangle;
     if (mesh.indices.length === 0) {
@@ -1335,7 +1351,7 @@ export class BuildingView {
     // comparison, so the decision stays a pure function of the hits and can be
     // tested without a renderer.
     this.cellMesh.userData["cellGrid"] = true;
-    this.scene.add(this.cellMesh);
+    this.content.add(this.cellMesh);
     this.requestFrame();
   }
 
@@ -1924,6 +1940,36 @@ export class BuildingView {
         material.dispose();
       }
     }
+  }
+
+  /**
+   * Hand the map-derived content to another scene graph, or take it back.
+   *
+   * **The AR entry and exit point.** AR mode calls this with the framework's
+   * scene root — which IS the GPS-world frame, so the content's existing ENU
+   * coordinates are already in the right space and nothing is pre-multiplied.
+   * Leaving AR calls it with {@link localRoot} to restore the desktop view.
+   *
+   * REPARENTING, NOT REBUILDING. The subtree moves whole and keeps its
+   * children, so returning costs nothing — which is what makes the M5 decision
+   * (hide the desktop renderer rather than dispose it) cheap to honour.
+   *
+   * **What does NOT move:** the lights, the ground plane, the sun rig and the
+   * NPC. See `scene-content.ts` for why each stays.
+   */
+  attachContentTo(root: THREE.Object3D): void {
+    this.content.attachTo(root);
+  }
+
+  /**
+   * This view's own scene, so a caller that took the content can give it back.
+   *
+   * Exposed rather than remembered by the caller: the parent to restore is a
+   * property of this view, and a caller holding its own copy is a caller that
+   * can restore the wrong one.
+   */
+  get localRoot(): THREE.Object3D {
+    return this.scene;
   }
 
   dispose(): void {
