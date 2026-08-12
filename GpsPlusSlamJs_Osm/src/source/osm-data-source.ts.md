@@ -26,12 +26,14 @@ reversible, and the only interface everything downstream consumes.
   - `attempts` — network attempts; `1` means no retry.
   - `storeMs?` — the awaited cache write, present only when one happened.
   - `joinedMs?` — a dedup joiner's whole wall wait. Present only when
-    `servedBy === "joined"`, and the other durations are 0 there, so the sum is
-    this. It is NOT `transportMs`: a joiner's wait spans somebody else's
-    transport AND decode AND parse.
+    `servedBy === "joined"`; the other durations are 0 there, so a joiner's sum
+    is `joinedMs + probeMs`. It is NOT `transportMs`: a joiner's wait spans
+    somebody else's transport AND decode AND parse.
   - `probeMs?` — the cache READ that preceded this delivery and did not serve
-    it. Present on a miss and on a stale hit; on a large blob a stale probe is
-    the second-largest term on that path.
+    it. Present on a miss, on a stale hit, **and on a join** — the joiner pays a
+    full read before it discovers there is a request to join, and until
+    2026-08-12 that cost was dropped rather than carried. On a large blob a
+    probe is the second-largest term on those paths.
 - `OSM_ATTRIBUTION` — `"© OpenStreetMap contributors"`.
 
 ## Invariants & assumptions

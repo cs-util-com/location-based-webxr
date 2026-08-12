@@ -45,8 +45,10 @@
  * of the very object being summed and reading the identity the obvious way
  * gives a different, wrong one. Since the components are summed rather than the
  * wall clock, the residual also contains unattributed time INSIDE
- * `DemoPipeline.update` — loop overhead, a joiner's discarded cache probe, a
- * refused network attempt on the stale-on-rate-limit path. So read it as
+ * `DemoPipeline.update` — loop overhead, a refused network attempt on the
+ * stale-on-rate-limit path. (**A joiner's cache probe used to be listed here
+ * and no longer belongs**: since 2026-08-12 it is carried as `probeMs` and
+ * lands in the `cache-probe` stage instead of the residual.) So read it as
  * "unattributed time anywhere inside the worker, `DemoPipeline.update`
  * included", not as "time in the worker handler". Chasing it starts in the
  * handler but does not end there.
@@ -296,15 +298,20 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
   // `reconciles` already refuses the DERIVED negative (`rawBoundaryMs`). This
   // extends the same rule to the MEASURED ones, which is what the file's own
   // argument demands and what it did not do.
-  const clamped =
-    w.queueMs < 0 ||
-    measured.some(([, value]) => value < 0) ||
-    input.drawMs < 0;
-
-  const summed = stages.reduce((sum, s) => sum + s.ms, 0);
-  const residualMs = wallMs - summed;
-  const residualShare = wallMs > 0 ? residualMs / wallMs : 0;
-
+  //
+  // ALL FOUR CLAMP SITES, not just the stage list. The first version of this
+  // rule covered `measured` alone while its own headline said "ANY CLAMP AT
+  // ALL" — and the same commit added a test (`pipelineMs: 100` against parts
+  // summing to 1200) that constructed exactly the uncovered case and asserted
+  // only the clamp. A pipeline wall clock smaller than the parts it is made of
+  // is the "something is double-counted" condition this file calls no more
+  // trustworthy than something missing, and it printed as reconciled.
+  //
+  // `input.drawMs` needs no term of its own: it is the last entry of
+  // `measured` and is held there RAW. `w.queueMs` does need one, because
+  // `measured` holds the already-clamped copy.
+  // HOISTED ABOVE `clamped`, which reads it. Both mini-residuals are clamped
+  // and both therefore feed the rule.
   const insideFetchLoop =
     p.slotWaitMs +
     p.transportMs +
@@ -314,6 +321,19 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     p.storeMs +
     p.joinedMs +
     p.mergeMs;
+  const rawFetchUnattributedMs = p.fetchMs - insideFetchLoop;
+  const rawPipelineUnattributedMs =
+    p.pipelineMs - (p.fetchMs + p.scoreMs + p.deriveMs);
+
+  const clamped =
+    w.queueMs < 0 ||
+    measured.some(([, value]) => value < 0) ||
+    rawFetchUnattributedMs < 0 ||
+    rawPipelineUnattributedMs < 0;
+
+  const summed = stages.reduce((sum, s) => sum + s.ms, 0);
+  const residualMs = wallMs - summed;
+  const residualShare = wallMs > 0 ? residualMs / wallMs : 0;
 
   return {
     radius: input.radius,
@@ -321,13 +341,10 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     stages,
     residualMs,
     residualShare,
-    fetchUnattributedMs: Math.max(0, p.fetchMs - insideFetchLoop),
+    fetchUnattributedMs: Math.max(0, rawFetchUnattributedMs),
     // THE SECOND ANCHOR, finally used. `pipelineMs` is the method's own wall
-    // clock; the sum below is everything it says it is made of.
-    pipelineUnattributedMs: Math.max(
-      0,
-      p.pipelineMs - (p.fetchMs + p.scoreMs + p.deriveMs),
-    ),
+    // clock; the raw value above is everything it says it is made of.
+    pipelineUnattributedMs: Math.max(0, rawPipelineUnattributedMs),
     // A NEGATIVE RESIDUAL IS NOT RECONCILED EITHER, and `Math.abs` here was a
     // bug: stages summing to MORE than the wall clock means something is
     // double-counted, which is no more trustworthy than something missing.

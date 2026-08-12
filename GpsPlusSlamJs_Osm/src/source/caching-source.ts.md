@@ -93,7 +93,11 @@ Per path:
   write and `probeMs` for the cache read that did not serve the answer. On a
   large blob a stale probe is the second-largest term on that path; unattributed
   it would surface in the residual looking like an unenumerated stage.
-- **Joined** — `joinedMs` only; see above.
+- **Joined** — `joinedMs` **plus `probeMs`**. The joiner runs a full
+  `readCachedTimed` before it discovers there is a request to join, and the join
+  clock starts after that, so the probe needs carrying explicitly or it belongs
+  to no stage. It was dropped until 2026-08-12 (r504 review), which showed up
+  downstream as click-level residual rather than as a lost measurement.
 - **Stale-on-rate-limit** — its own `servedBy`, with `probeMs` carrying the real
   cost. The zeros beside it are true (no request went out), which is only
   readable because `servedBy` says which path produced them.

@@ -208,9 +208,12 @@ describe("cache-first behaviour", () => {
     // prefetch queue racing a user click is precisely when a warm probe is
     // paid twice.
     //
-    // A STEPPING CLOCK, so the probe and the join are distinguishable. A clock
-    // that returned the same value throughout would report 0 for both and pass
-    // whether or not the field were carried.
+    // A STEPPING CLOCK SO THE PROBE IS NON-ZERO, which is what makes the
+    // assertion meaningful — not, as a first version of this comment claimed,
+    // to stop the test passing when broken. With a constant clock `probeMs`
+    // would be 0 and the test would be RED in both worlds: `expect(0)
+    // .toBeGreaterThan(0)` fails with the fix, and `undefined` fails without
+    // it. The stepping clock is required to keep it green when correct.
     let tick = 0;
     const inner = new CountingSource();
     const cache = new CachingSource(inner, new MemoryBlobStore(), {

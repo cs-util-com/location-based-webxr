@@ -172,6 +172,59 @@ describe("the reconciliation identity holds for any inputs", () => {
     );
   });
 
+  it("never claims to reconcile a pass that had ANY input clamped", () => {
+    // THE RULE HAD ONE EXAMPLE FOR SIXTEEN INPUTS. `reconciles` refuses a pass
+    // whose producer reported a negative anywhere, and the only test of it used
+    // `prefetchMs: -1` — so an edit replacing the `some(...)` scan with a
+    // hand-picked field list would stay green for the other fifteen. That is
+    // precisely the "written in comments and enforced over one hand-tuned
+    // fixture" configuration this file's own header exists to refuse.
+    //
+    // Stated as an implication over adversarial inputs: negative in ⇒ never
+    // reconciled.
+    fc.assert(
+      fc.property(arbInput(anyNumber), (input) => {
+        const p = input.pipeline;
+        const w = input.worker;
+        const anyNegative =
+          [
+            p.transportMs,
+            p.decodeMs,
+            p.parseMs,
+            p.storeMs,
+            p.probeMs,
+            p.slotWaitMs,
+            p.joinedMs,
+            p.mergeMs,
+            p.scoreMs,
+            p.deriveMs,
+            w.terrainWaitMs,
+            w.meshMs,
+            w.prefetchMs,
+            w.queueMs,
+            input.drawMs,
+          ].some((value) => value < 0) ||
+          // The two mini-residuals are clamped as well, so a producer whose own
+          // wall clock is smaller than its parts counts too.
+          p.fetchMs -
+            (p.slotWaitMs +
+              p.transportMs +
+              p.decodeMs +
+              p.parseMs +
+              p.probeMs +
+              p.storeMs +
+              p.joinedMs +
+              p.mergeMs) <
+            0 ||
+          p.pipelineMs - (p.fetchMs + p.scoreMs + p.deriveMs) < 0;
+
+        fc.pre(anyNegative);
+        expect(composeClickTimings(input).reconciles).toBe(false);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
   it("never claims to reconcile a pass that measured nothing", () => {
     // §0.2's "silence reads as measured", in the one artefact the owner reads.
     fc.assert(

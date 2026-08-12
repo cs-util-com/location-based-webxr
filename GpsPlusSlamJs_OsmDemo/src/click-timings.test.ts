@@ -463,15 +463,38 @@ describe("pipelineUnattributedMs — the second anchor", () => {
     );
   });
 
-  it("clamps rather than reporting a negative anchor gap", () => {
+  it("clamps a negative anchor gap AND refuses to reconcile it", () => {
     // `pipelineMs` is an independent wall clock, so parts summing past it is
     // possible under a skewed clock and means over-attribution, not negative
     // time.
+    //
+    // THE SECOND ASSERTION IS THE ONE THE FIRST VERSION MISSED. This test
+    // constructed exactly the case the file calls "something is double-counted,
+    // which is no more trustworthy than something missing" — parts summing to
+    // 1200 against a 100 ms wall clock — and asserted only the clamp. The pass
+    // still printed as RECONCILED, because `pipelineMs` touches neither `wallMs`
+    // nor the stage sum, so nothing in the predicate could see it. The
+    // headline of the rule says "ANY CLAMP AT ALL"; it covered the stage list
+    // only.
     const t = composeClickTimings({
       ...INPUT,
       pipeline: { ...INPUT.pipeline, pipelineMs: 100 },
     });
 
     expect(t.pipelineUnattributedMs).toBe(0);
+    expect(t.reconciles).toBe(false);
+  });
+
+  it("refuses to reconcile a negative FETCH anchor gap too", () => {
+    // The other mini-residual, and the other clamp site. `fetchMs` smaller than
+    // the per-tile parts inside it means the loop's own clock disagrees with
+    // the source's.
+    const t = composeClickTimings({
+      ...INPUT,
+      pipeline: { ...INPUT.pipeline, fetchMs: 1 },
+    });
+
+    expect(t.fetchUnattributedMs).toBe(0);
+    expect(t.reconciles).toBe(false);
   });
 });

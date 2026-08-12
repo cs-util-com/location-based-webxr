@@ -86,24 +86,25 @@ export interface OsmTileTimings {
    * transport AND decode AND parse; filing it under "bytes in hand" would
    * charge another caller's parse time to the network stage — the wrong
    * direction for a plan whose prediction is "parse dominates, not network".
-   * The other duration fields are 0 for a joiner, so the sum is `joinedMs`.
+   * The other duration fields are 0 for a joiner, so the sum is
+   * `joinedMs + probeMs`.
    *
-   * **It does NOT include the joiner's own cache probe**, which `CachingSource`
-   * pays before joining and then discards — on a stale entry that is a full
-   * ~21 MB read. So a joiner's reconciliation closes MINUS that probe; the
-   * difference lands in the click-level residual, where `click-timings.ts`
-   * names it. Stated here because the first version of this sentence claimed
-   * the sum closed outright, which is the same overstatement §10.2 was written
-   * to close for the non-joiner path.
+   * **It does not itself cover the joiner's own cache probe** — `CachingSource`
+   * pays that before it discovers there is a request to join, and the join
+   * clock starts after. **That probe is now carried in {@link probeMs} on the
+   * joined path too**, so the reconciliation closes rather than landing in the
+   * click-level residual (r504 review). Until 2026-08-12 it was dropped, and
+   * this docstring said so at length; the sentence is kept in corrected form
+   * because "the sum closes" has been overstated here once before.
    */
   readonly joinedMs?: number;
   /**
    * The cache READ that preceded this delivery and did NOT serve it.
    *
-   * Present on a miss and on a stale hit, where `readCached` has already paid a
-   * full `store.get` plus `JSON.parse` — on a large blob that is the second
-   * largest term on the warm-miss path, and without this field it belongs to no
-   * stage at all.
+   * Present on a miss, on a stale hit, **and on a join** — every path where
+   * `readCached` has already paid a full `store.get` plus `JSON.parse`. On a
+   * large blob that is the second largest term on the warm-miss path, and
+   * without this field it belongs to no stage at all.
    */
   readonly probeMs?: number;
 }
