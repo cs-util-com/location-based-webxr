@@ -52,6 +52,8 @@ import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 
 import { arButtonState, type ArSupport } from "./ar-button-state.js";
 import { startArMode, type ArMode } from "./ar-mode.js";
+import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
+import { createArToast } from "./ar-toast.js";
 import { canEnterAr } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
@@ -471,7 +473,7 @@ async function main(): Promise<void> {
     },
   });
 
-  new LocateControl({
+  const locateControl = new LocateControl({
     map: mapView.map,
     // A real fix moves the "user" through the same action a map click uses, so
     // there is no second refresh path that could disagree with the first.
@@ -481,6 +483,31 @@ async function main(): Promise<void> {
       // user is looking and recentring there would yank the map from under
       // them. A fix is usually somewhere else entirely, and at zoom 18 that
       // means off screen.
+      //
+      // THE AR GATE SITS HERE, ABOVE EVERYTHING (milestone 3, moved up by the
+      // r509 review). Under a watch this callback fires ~1 Hz for the whole
+      // session, and the first version gated only the fetch at the bottom of
+      // the position subscriber — so every fix still dispatched
+      // `positionChanged` and still paid for:
+      //
+      //  - `mapView.centreOn` fighting any pan the user makes on the map DEC-12
+      //    keeps beside the AR view,
+      //  - `writePlace`'s `history.replaceState`, ~1 800 times per half-hour
+      //    walk, since a 10–30 m fix changes the 5-decimal string every time,
+      //  - `buildingView.recentre`, which schedules a repaint of the desktop
+      //    2.8 km city on a SECOND live GL context at 1 Hz while the XR loop
+      //    runs at display rate,
+      //  - and, worst, a store position advancing past a position whose terrain
+      //    was never loaded — which `demo-worker.ts` states as a safety
+      //    invariant, and which strands any later build behind the full 15 s
+      //    terrain timeout.
+      //
+      // The controller dispatches the position change itself for the fixes that
+      // pass, so everything below stays exactly as true as it was.
+      if (arWalk !== undefined) {
+        arWalk.positionChanged(position);
+        return;
+      }
       mapView.centreOn(position);
       store.dispatch(actions.positionChanged(position));
       // AND THIS IS WHAT MAKES AR REACHABLE AT ALL (AR milestone 1).
@@ -856,6 +883,26 @@ async function main(): Promise<void> {
 
   let arSupport: ArSupport = "checking";
   let arSession: ArMode | undefined;
+  /**
+   * Follows the user while AR runs (milestone 3). `undefined` means the
+   * position subscriber takes its ordinary, ungated path.
+   *
+   * SEPARATE FROM `arSession` rather than derived from it, because the two have
+   * genuinely different lifetimes at the edges: the session exists for the
+   * moment between `startArMode` resolving and `startWalking` being called, and
+   * a fix arriving in that window must take the ungated path rather than be
+   * dropped.
+   */
+  let arWalk: ArWalk | undefined;
+  /**
+   * The only surface a message can reach an immersed user on.
+   *
+   * INSIDE `#ar-root`, which is what `initAR` hands WebXR as `domOverlay.root`
+   * — the browser composites only that subtree over the camera feed. The
+   * header's status line is outside it, so anything written there during a
+   * session is invisible for exactly as long as it matters (r509 review).
+   */
+  const arToast = createArToast(el("ar-root"));
 
   /**
    * The last painted state, so the DOM is written only when it CHANGES.
@@ -940,10 +987,99 @@ async function main(): Promise<void> {
   const reloadTerrainForMode = (): void => {
     void loadTerrainForCurrentMode(selectOsmView(store.getState()).position);
   };
+
+  /**
+   * The pass a position change starts: terrain and scoring, from ONE position.
+   *
+   * **HOISTED OUT OF THE SUBSCRIBER SO THE AR CONTROLLER CAN AWAIT IT** (r509
+   * review). The gate reopens when the pass is finished, and nothing else can
+   * say when that is: `loading.phase` returns to `idle` after every ring while
+   * more are still coming, and the subscriber's old `void` calls threw the
+   * handles away.
+   *
+   * `allSettled`, NOT `all`. `Promise.all` rejects on the FIRST rejection, so a
+   * failing terrain load — a dynamic `egm96` import, say — would settle this
+   * while the refresh was still running, reopen the gate, and let the next fix
+   * abort the run that was about to publish. That is the one thing the gate
+   * exists to prevent.
+   */
+  const runPassFor = async (position: LatLng): Promise<void> => {
+    // BOTH AT ONCE (W3). These used to be chained — `loadTerrain(p).finally(()
+    // => refresh())` — so a ~55 000-post DEM grid was sampled, transferred and
+    // applied before the fetch and the scoring even started. They are
+    // independent work on the same worker and the wait was pure latency.
+    //
+    // The mesh still cannot be built on the wrong ground: the worker joins them
+    // on the far side, holding the mesh build until the terrain for THAT
+    // POSITION has settled (`worker/terrain-gate.ts`).
+    await Promise.allSettled([loadTerrainForCurrentMode(position), refresh()]);
+  };
+
+  /**
+   * The pass the position subscriber most recently started.
+   *
+   * How the AR controller awaits work it did not start itself: it dispatches
+   * the position change, the subscriber runs synchronously and replaces this,
+   * and the controller awaits what came back.
+   */
+  let currentPass: Promise<void> = Promise.resolve();
+
+  /**
+   * Start following the user for this session (AR milestone 3).
+   *
+   * THE WATCH AND THE CONTROLLER ARE STARTED TOGETHER, and that pairing is the
+   * safety property rather than a convenience. A `watch: true` locate with no
+   * controller behind it IS the §2.6 starvation bug — ~1 Hz fixes into a
+   * `latestOnly` refresh, every run aborted by the next, nothing ever
+   * published, and no error to show for it.
+   */
+  const startWalking = (origin: LatLng): void => {
+    arWalk = startArWalk({
+      origin,
+      // WHERE THE DATA IN THE SCENE ACTUALLY IS, which is NOT `origin` (r509
+      // review). `zero` is the first locate fix and immutable; the scene's data
+      // was fetched for the store position, which a map click or a picker
+      // choice moves without touching `zero`. Seeding from `origin` meant that
+      // after "locate, then click 2 km away, then enter AR", every real fix was
+      // ~0 m from the seed — the gate never opened and AR showed the city from
+      // 2 km away, indefinitely and with no error.
+      dataAt: selectOsmView(store.getState()).position,
+      // THE CONTROLLER DISPATCHES THE POSITION CHANGE. Everything downstream —
+      // the URL, the map marker, the anchor, the camera, the fetch — hangs off
+      // that one action, so a gated fix must produce it and a rejected one must
+      // not. `currentPass` is what the subscriber just started.
+      refetch: async (position) => {
+        store.dispatch(actions.positionChanged(position));
+        await currentPass;
+      },
+      warn: (message) => arToast.show(message),
+    });
+    locateControl.startWatch();
+    // ONE PASS ON ENTRY, AND IT IS NOT OPTIONAL (r509 review). The absolute
+    // datum is baked into the building/tree/POI VERTICES by the worker, and
+    // that only happens in the `update` handler — the `terrain` handler just
+    // replaces the field and settles the gate. So `reloadTerrainForMode()`
+    // alone moved the ground plane (which AR does not even draw) and left every
+    // building at the window-centre datum: the ~98 m error §2.5 exists to
+    // remove, disguised as a fusion bug. Without this the datum would first
+    // apply after 100 m of walking, and never for a user who stands still.
+    currentPass = runPassFor(selectOsmView(store.getState()).position);
+    void currentPass;
+  };
+
+  /** Stop following. Idempotent, and safe when AR never started. */
+  const stopWalking = (): void => {
+    locateControl.stopWatch();
+    arWalk?.dispose();
+    arWalk = undefined;
+    arToast.clear();
+  };
+
   arButton.addEventListener("click", () => {
     if (arSession !== undefined) {
       arSession.dispose();
       arSession = undefined;
+      stopWalking();
       paintArButton();
       return;
     }
@@ -964,8 +1100,20 @@ async function main(): Promise<void> {
         // `dispose()` — so the button has to be repainted from here as well as
         // from the click handler above.
         arSession = undefined;
+        // AND THE WATCH STOPPED FROM HERE TOO. The back gesture is the whole
+        // reason this is not only in the click handler: a GPS watch left
+        // running after the session would keep draining the battery and keep
+        // resampling terrain against an AR datum the desktop view no longer
+        // uses.
+        stopWalking();
         paintArButton();
-        reloadTerrainForMode();
+        // A FULL PASS, NOT A TERRAIN RELOAD. Leaving AR changes the datum back,
+        // and the datum is baked into the building/tree/POI VERTICES by the
+        // worker's `update` handler — the `terrain` handler only replaces the
+        // field. `reloadTerrainForMode()` here moved the ground plane and left
+        // every building at the AR datum (r509 review).
+        currentPass = runPassFor(selectOsmView(store.getState()).position);
+        void currentPass;
       },
     }).then((mode) => {
       // ONLY IF A SESSION ACTUALLY STARTED. `startArMode` resolves to an inert
@@ -978,13 +1126,27 @@ async function main(): Promise<void> {
       // so the two cannot disagree.
       if (mode.started) arSession = mode;
       paintArButton();
-      // THE DATUM ONLY CHANGES IF THE TERRAIN IS RESAMPLED, and entering AR is
-      // the moment it changes. Without this the geoid producer added above can
-      // never fire: every `loadTerrain` call is driven by a position change,
-      // and all three dispatchers of one need the 2D map, which the immersive
-      // overlay replaces. Terrain was therefore always sampled with the
-      // window-centre datum and AR rendered the city ~100 m below the user.
-      reloadTerrainForMode();
+      // WALKING STARTS ONLY WITH A REAL SESSION, and it is anchored to the same
+      // `zero` the scene is — not to `anchors.origin`. The far-travel warning
+      // is about drift from the GPS frame the alignment is expressed against,
+      // which is the framework's `zero`; the scene anchor is a different point
+      // and using it would report the wrong distance.
+      //
+      // Non-null whenever `started` is true: `canEnterAr` refused otherwise.
+      //
+      // `startWalking` ALSO RUNS THE ENTRY PASS that applies the AR datum —
+      // which is why the old `reloadTerrainForMode()` is gone from here rather
+      // than sitting alongside it. See the note there: a terrain load on its
+      // own never rebuilds the building geometry the datum is baked into.
+      const zero = selectZeroReference(store.getState());
+      if (mode.started && zero !== null) {
+        startWalking({ lat: zero.lat, lng: zero.lon });
+      } else {
+        // The session did not start, so nothing changed the datum — but the
+        // entry attempt may still have raised an error worth leaving on screen,
+        // and the desktop view is still the live one. Resample only.
+        reloadTerrainForMode();
+      }
     });
   });
   // The switches report a whole next set; `toggleLayer` is the only thing that
@@ -1499,7 +1661,16 @@ async function main(): Promise<void> {
       // describe one position, and the site jump would be overwritten by the
       // coordinates of the same jump.
       writePlace(placeUrl, { position, siteId });
-      const anchor = anchors.advance(position, { declared });
+      // `frozen` WHILE AR IS LIVE, and it is not the same as leaving `declared`
+      // unset (§2.4, AR milestone 3). `nextAnchor` re-anchors on DISTANCE
+      // independently past 5 km, so a long walk or one wild fix would move the
+      // scene frame while the framework's `zero` — which is immutable for the
+      // session — stayed put. Two disagreeing origins is the exact failure the
+      // fixed-origin work removed, and the city would jump by kilometres.
+      const anchor = anchors.advance(position, {
+        declared,
+        frozen: arSession !== undefined,
+      });
       // A RE-ANCHOR INVALIDATES THE ROUTE, AND ONLY A RE-ANCHOR DOES (stage 4).
       // Every point on the drawn polyline is expressed in the scene's ENU
       // frame; an ordinary step leaves that frame alone — that is round 5B's
@@ -1536,8 +1707,16 @@ async function main(): Promise<void> {
       // position rather than on the order these two calls post, because
       // `loadTerrain` is coalesced and only QUEUES while a load is in flight —
       // so `refresh` can genuinely reach the worker first.
-      void loadTerrainForCurrentMode(position);
-      void refresh();
+      //
+      // NOT GATED HERE, and the first version of milestone 3 had it here (r509
+      // review). Gating at the BOTTOM of this subscriber let every fix dispatch
+      // `positionChanged` and then skip the fetch — which advances the store
+      // position past a position whose terrain was never loaded, and
+      // `demo-worker.ts` states the opposite as a safety invariant. The gate
+      // moved up into `onLocated`, so a rejected fix never becomes a position
+      // change at all and everything above stays true.
+      currentPass = runPassFor(position);
+      void currentPass;
     },
   );
 

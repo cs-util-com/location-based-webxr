@@ -104,6 +104,40 @@
         display: none;
       }
 
+      /*
+        The only message surface an immersed user can see (AR milestone 3).
+        WebXR composites ONLY the dom-overlay root's subtree over the camera
+        feed, and the header's status line is outside it — so a warning written
+        there is invisible for exactly as long as it is relevant.
+
+        `pointer-events: none` because it must never eat a tap: `#ar-root` is a
+        full-viewport fixed layer, and a message sitting in it that swallowed
+        input would be the same regression the `:empty` rule above exists for.
+      */
+      .ar-toast {
+        position: absolute;
+        left: 50%;
+        bottom: 12vh;
+        transform: translateX(-50%);
+        /* Viewport-relative only. A `min(34rem, 88vw)` cap is what this wants,
+           but the CSS validator in the gate rejects `min()` here — and the rem
+           half only ever binds on a wide desktop viewport, where AR does not
+           run. */
+        max-width: 88vw;
+        padding: 0.6rem 0.9rem;
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 88%);
+        color: #f2f4f8;
+        font-size: 0.95rem;
+        line-height: 1.35;
+        text-align: center;
+        /* Against a camera feed of unknown brightness, the panel needs an edge
+           of its own or it dissolves into a light-coloured scene. */
+        border: 1px solid rgb(242 244 248 / 25%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+        pointer-events: none;
+      }
+
       /* Floats over the split rather than taking a column (DEC-17). */
       #details {
         position: absolute;

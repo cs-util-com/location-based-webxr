@@ -46,6 +46,10 @@ export class LocateControl {
   private readonly map: L.Map;
   private state: LocateState = "idle";
   private resetTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Whether a continuous watch is running — see {@link startWatch}. */
+  private watching = false;
+  /** Whether the current watch outage has already been reported once. */
+  private watchErrorReported = false;
 
   constructor(options: LocateControlOptions) {
     this.map = options.map;
@@ -86,9 +90,17 @@ export class LocateControl {
     });
 
     this.map.on("locationfound", (event: L.LocationEvent) => {
-      this.setState("located");
+      // THE POSITION ALWAYS FLOWS; only the BUTTON is conditional. A watch
+      // delivers ~1 Hz for the whole AR session, and driving the button from
+      // that would flash "Located" once a second and re-arm a reset timer each
+      // time — for something the user did not press. The button belongs to the
+      // one-shot it was pressed for, which is exactly `state === "locating"`.
+      if (this.state === "locating") {
+        this.setState("located");
+        this.scheduleReset();
+      }
+      this.watchErrorReported = false;
       options.onLocated({ lat: event.latlng.lat, lng: event.latlng.lng });
-      this.scheduleReset();
     });
 
     this.map.on("locationerror", (event: L.ErrorEvent) => {
@@ -97,10 +109,94 @@ export class LocateControl {
       const next = stateForError(
         (event as L.ErrorEvent & { code?: number }).code,
       );
+      // A PENDING ONE-SHOT ALWAYS WINS THE BUTTON, even while a watch runs.
+      // Leaflet fires one event for both sources with no discriminator, and
+      // `stopLocate` cannot cancel a one-shot — so swallowing every error while
+      // watching would leave a pressed button stuck at `locating`, disabled,
+      // with no timer to release it (r509 review). `state === "locating"` is
+      // the only evidence that a one-shot is outstanding, and it is exactly the
+      // case that must not be swallowed.
+      if (this.state === "locating") {
+        this.setState(next);
+        options.onError(labelFor(next));
+        this.scheduleReset();
+        return;
+      }
+
+      // ONCE PER OUTAGE WHILE WATCHING. `watchPosition` re-fires its error
+      // callback on every timeout, so an unguarded path would push a toast a
+      // second for as long as the user stayed indoors — burying every other
+      // message the app has. Cleared by the next successful fix above, so a
+      // second outage is reported again.
+      if (this.watching) {
+        if (!this.watchErrorReported) {
+          this.watchErrorReported = true;
+          options.onError(labelFor(next));
+        }
+        return;
+      }
       this.setState(next);
       options.onError(labelFor(next));
       this.scheduleReset();
     });
+  }
+
+  /**
+   * Follow the user continuously instead of taking one fix (AR milestone 3).
+   *
+   * WHY IT REUSES `map.locate` RATHER THAN A SECOND GPS PATH. `locationfound`
+   * already flows to `onLocated`, which is the one place a new position enters
+   * the store. Opening a `navigator.geolocation.watchPosition` alongside it
+   * would be a second source for the same fact, and the two could disagree
+   * about which fix is current — the class of bug `scene-anchor.ts` exists to
+   * prevent one level up.
+   *
+   * **`watch: true` DOES NOT MEAN "refetch on every fix".** Leaflet delivers
+   * roughly 1 Hz; the demo's scoring pass takes 15–90 s and `refresh` is
+   * `latestOnly`, so acting on every fix aborts every run and nothing ever
+   * publishes. `ar-walk-controller.ts` is what makes this safe to turn on, and
+   * turning it on without that controller is the starvation bug in §2.6.
+   *
+   * Idempotent, and does NOT touch the button's state: this is a background
+   * follow, not a user-initiated action, so a pulsing "locating" pin for the
+   * whole AR session would be wrong.
+   */
+  startWatch(): void {
+    if (this.watching) return;
+    this.watching = true;
+    this.map.locate({
+      setView: false,
+      watch: true,
+      timeout: LOCATE_TIMEOUT_MS,
+      // MILLISECONDS OF CACHE AGE the caller will accept — `0` means "never
+      // hand me a cached fix". An earlier comment here described it as a
+      // distance filter, which it is not: the W3C Geolocation API has no
+      // distance filter at all (that is Android's native
+      // `setSmallestDisplacement`, unreachable from the web), and Leaflet
+      // passes these options straight through to `watchPosition` (r509 review).
+      //
+      // Zero is right for a different reason than the one that was written: a
+      // cached fix would make the demo act on a position the user has already
+      // left, and the gate downstream measures displacement from the last
+      // REFETCH, so a stale fix skews that measurement rather than just being
+      // old.
+      maximumAge: 0,
+      enableHighAccuracy: true,
+    });
+  }
+
+  /** Stop following. Idempotent, and safe when no watch is running. */
+  stopWatch(): void {
+    if (!this.watching) return;
+    this.watching = false;
+    this.watchErrorReported = false;
+    // `stopLocate` is `clearWatch(...)` plus a `setView` reset — it CANNOT
+    // cancel a pending one-shot, because the Geolocation API offers no way to
+    // (r509 review corrected the opposite claim here). That is fine and is why
+    // the button is left alone: a one-shot in flight still resolves through
+    // `locationfound` or `locationerror`, so the button finishes its own state
+    // machine either way.
+    this.map.stopLocate();
   }
 
   private start(): void {

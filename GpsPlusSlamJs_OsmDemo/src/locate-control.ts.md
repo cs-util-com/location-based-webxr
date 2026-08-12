@@ -6,6 +6,8 @@
 
 - `class LocateControl`
   - `constructor({ map, onLocated, onError })` — adds itself to the map at `bottomleft`.
+  - `startWatch()` / `stopWatch()` — follow the user continuously instead of
+    taking one fix (AR milestone 3). Both idempotent.
   - `dispose()` — cancels the pending label reset.
 - The button carries `data-state` (a `LocateState`) and class `locate-button`; both are the e2e's handles.
 
@@ -27,6 +29,29 @@
   permission denied". A fixed square cannot.
 
 - **No new dependency.** Leaflet has no built-in locate _button_, but `map.locate()` is built in and wraps `navigator.geolocation` with `locationfound` / `locationerror`, so this is a div, a click handler and two listeners rather than a plugin.
+- **The watch reuses `map.locate`, so there is only ever ONE source of position**
+  (AR milestone 3). `locationfound` already flows to `onLocated`, which is the
+  one place a new position enters the store; a parallel `watchPosition` would be
+  a second source for the same fact, and the two could disagree about which fix
+  is current.
+  - **`watch: true` does NOT mean "refetch on every fix".** Leaflet delivers
+    roughly 1 Hz, the scoring pass takes 15–90 s, and `refresh` is `latestOnly`
+    — so acting on every fix aborts every run and nothing ever publishes.
+    [`ar-walk-controller.ts`](ar-walk-controller.ts.md) is what makes this safe
+    to turn on; turning it on without that controller IS the §2.6 starvation
+    bug.
+  - **The watch does not drive the BUTTON.** A background follow that flashed
+    "Located" once a second, for something the user never pressed, would be
+    wrong — and it would re-arm a reset timer each time. The button belongs to
+    the one-shot it was pressed for, which is exactly `state === "locating"`.
+  - **A watch error is reported ONCE per outage.** `watchPosition` re-fires its
+    error callback on every timeout, so an unguarded path pushes a toast a
+    second for as long as the user stays indoors, burying every other message
+    the app has. The next successful fix rearms it, so a second outage is
+    reported again.
+  - **`stopLocate()` also cancels a one-shot in flight** and fires no event,
+    which is the other reason `stopWatch` leaves the button alone: a `locating`
+    button would otherwise stay pulsing with nothing left to end it.
 - **`disableClickPropagation` is load-bearing.** Without it a click on the button also reaches the map underneath, which reads it as "the user clicked here to move" — so pressing "my location" would first teleport them to the button's own position.
 - **`setView: false`, and the app must then actually pan.** Moving the map is the app's decision rather than a side effect of asking where we are — but for a while nothing made that decision, and a fix left the viewport at the start position with the marker, the new grid and the fetch box all off screen at zoom 18. A working button and a dead one looked identical. `main.ts` now calls `MapView.centreOn` on the **locate path only**: a map click already happens where the user is looking, and recentring there would yank the map out from under them. The fix still dispatches the same `positionChanged` a click does, so there is no second refresh path.
 - **Disabled only while in flight.** Every terminal state, including the failures, is immediately retryable; a permission the user has just granted in browser settings should work on the next tap.
