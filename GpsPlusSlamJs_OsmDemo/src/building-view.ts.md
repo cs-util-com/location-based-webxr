@@ -13,11 +13,20 @@ map scored.
   `renderCells(mesh)`, `setTerrain(field | undefined)`,
   `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`,
   `followRoute(path)`, `clearRoute()`, `agentAt()`, `cameraView()`,
-  `lookAtFrom(target, distanceM)`.
-  Navigation is `MapControls`, attached internally; there is nothing to call —
-  but the view now REPORTS it through the `onCameraMove(view)` option, fired on
-  every `change` and deliberately unthrottled, because sampling is a policy the
-  page can see and the view cannot (DEC-R13-7, `throttle.ts`).
+  `lookAtFrom(target, distanceM)`,
+  `attachContentTo(root, frame)`, `localRoot`.
+  - **`attachContentTo` / `localRoot` are the AR seam** (plan milestone 0). The
+    map-derived content — the layer group, the cell mesh and its outlines —
+    lives on a `SceneContent` root that can be handed to the framework's scene
+    graph and taken back. **The `frame` argument is not cosmetic:** this view's
+    scene is X=East, Y=Up, Z=−North and the GPS-world frame is NUE, so
+    attaching without `"gps-world-nue"` renders the city 90° off. See
+    [`scene-content.ts.md`](scene-content.ts.md) for the mapping, what stays
+    behind, and why picking in AR needs the raycast set resolved first.
+    Navigation is `MapControls`, attached internally; there is nothing to call —
+    but the view now REPORTS it through the `onCameraMove(view)` option, fired on
+    every `change` and deliberately unthrottled, because sampling is a policy the
+    page can see and the view cannot (DEC-R13-7, `throttle.ts`).
   - `lookAtFrom` translates then dollies, both relative, for the same reason
     `recentreOn` exists: recomputing the camera from a distance and two angles
     would place the target correctly and quietly re-derive the ORIENTATION —
@@ -79,8 +88,9 @@ map scored.
   - This is why `clearRoute()` is split into a `removeRoute()` that does not
     repaint: `dispose()` calls the latter, because the public form requests a
     frame and would schedule one behind the cancellation's back.
-- **The route and the agent live on the SCENE, not on `this.group`** — the same
-  placement the affordance grid uses, and for the same reason: `clear()` empties
+- **The route and the agent live on the SCENE, not on `this.group`** — for the
+  same reason the affordance grid is also kept out of the group (though the grid
+  now sits on `this.content`, see below): `clear()` empties
   the group on every mesh rebuild, and a route dropped by an unrelated republish
   would read as the agent having been cancelled. The scene's frame is fixed
   (round 5B), so a publish does not invalidate their coordinates; only a

@@ -39,7 +39,7 @@ import {
 } from "./cell-presets.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
-import { SceneContent } from "./scene-content.js";
+import { SceneContent, type ContentFrame } from "./scene-content.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
 import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
@@ -1212,7 +1212,7 @@ export class BuildingView {
    */
   private clearUnderground(): void {
     if (this.undergroundLines === undefined) return;
-    this.content.remove(this.undergroundLines);
+    this.scene.remove(this.undergroundLines);
     this.undergroundLines.geometry.dispose();
     this.undergroundLines.material.dispose();
     this.undergroundLines = undefined;
@@ -1227,7 +1227,7 @@ export class BuildingView {
     // became a tick rather than nothing at all. Each of those has broken once.
     this.undergroundLines = buildUndergroundLines(outlines);
     if (this.undergroundLines !== undefined) {
-      this.content.add(this.undergroundLines);
+      this.scene.add(this.undergroundLines);
     }
     this.requestFrame();
   }
@@ -1647,7 +1647,8 @@ export class BuildingView {
    * top of it.
    *
    * ADDED TO `this.scene`, NOT TO `this.group`, for the same reason the
-   * affordance grid is: `clear()` empties the group on every mesh rebuild, and a
+   * affordance grid is kept out of the group: `clear()` empties the group on
+   * every mesh rebuild, and a
    * route dropped by an unrelated republish would look like the agent had been
    * cancelled. The scene's frame is fixed (round 5B), so a publish does not
    * invalidate these coordinates — only a re-anchor does, and that calls
@@ -1946,9 +1947,14 @@ export class BuildingView {
    * Hand the map-derived content to another scene graph, or take it back.
    *
    * **The AR entry and exit point.** AR mode calls this with the framework's
-   * scene root — which IS the GPS-world frame, so the content's existing ENU
-   * coordinates are already in the right space and nothing is pre-multiplied.
-   * Leaving AR calls it with {@link localRoot} to restore the desktop view.
+   * scene root and `"gps-world-nue"`; leaving AR calls it with
+   * {@link localRoot} and `"demo-scene"`.
+   *
+   * **THE FRAME ARGUMENT IS NOT OPTIONAL IN PRACTICE, and an earlier version of
+   * this docstring said the coordinates were "already in the right space".**
+   * They are not: the demo's scene is X=East, Y=Up, Z=−North; the GPS-world
+   * frame is NUE. Attaching without the conversion renders the city 90° off.
+   * `scene-content.ts` owns the mapping and pins it.
    *
    * REPARENTING, NOT REBUILDING. The subtree moves whole and keeps its
    * children, so returning costs nothing — which is what makes the M5 decision
@@ -1957,8 +1963,8 @@ export class BuildingView {
    * **What does NOT move:** the lights, the ground plane, the sun rig and the
    * NPC. See `scene-content.ts` for why each stays.
    */
-  attachContentTo(root: THREE.Object3D): void {
-    this.content.attachTo(root);
+  attachContentTo(root: THREE.Object3D, frame: ContentFrame): void {
+    this.content.attachTo(root, frame);
   }
 
   /**
@@ -1981,10 +1987,17 @@ export class BuildingView {
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
     this.containerResize.disconnect();
+    // DETACH BEFORE FREEING, and this only matters once AR has reparented the
+    // content: the framework's scene root outlives this view, so disposing
+    // without detaching leaves a subtree of freed geometry attached to a live
+    // scene. three.js does not report drawing a disposed geometry — the
+    // symptom is silent absence. On desktop this is a no-op in effect, because
+    // the root dies with `this.scene`.
+    this.content.detach();
     this.clear();
-    // `clear()` only walks `this.group`. The ground and the affordance grid are
-    // deliberately added straight to the scene — so that rebuilding the
-    // buildings cannot drop them — which also means nothing else ever frees
+    // `clear()` only walks `this.group`. The ground sits on the scene and the
+    // affordance grid on `this.content`, both OUTSIDE the group — so that
+    // rebuilding the buildings cannot drop them — which also means nothing frees
     // their GPU buffers. Missing these leaks a geometry and a material per
     // disposed view, and the whole point of holding the resize listener and the
     // rAF handle is that this method actually cleans up.
