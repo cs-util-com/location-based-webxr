@@ -202,6 +202,20 @@ export function createRefreshCycle(
     // initial load) reads the same origin it read last time, which is exactly
     // right: the ENU frame belongs to the scene, not to this call.
     const frameOrigin = anchors.origin;
+
+    // THE CLICK-LEVEL WALL CLOCK, OPENED BEFORE THE DISPATCH (r504 review).
+    // It used to open twenty-two lines below, after `fetchStarted` — while
+    // three separate places (this file's `onClickSummary` doc, `ClickSummary`
+    // in `click-timings.ts`, and `main.ts`) all said `pageResidualMs` covers
+    // "the `fetchStarted` dispatch and its subscriber renders".
+    //
+    // A synchronous store dispatch with subscriber renders behind it is
+    // EXACTLY the page-side stage this summary exists to make visible, and it
+    // was the one page-side stage the docs named by hand while measuring none
+    // of it. Since `pageResidualMs` is the only clock in the instrument that
+    // can ever see page time — the per-ring algebra cancels it — an unmeasured
+    // page stage here is invisible everywhere.
+    const clickStart = nowMs();
     store.dispatch(
       actions.fetchStarted(
         `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`,
@@ -221,10 +235,6 @@ export function createRefreshCycle(
       // origin, none of which a widening ring touches. The worker decides which
       // kind of reply to send and the callback merges it — see `MeshUpdate`.
       // This was recorded here as a known cost for one round.
-      // THE CLICK-LEVEL WALL CLOCK. Opened before the first ring so it covers
-      // the gaps between passes and the per-ring bookkeeping, neither of which
-      // any ring clock can see. See `onClickSummary`.
-      const clickStart = nowMs();
       const rings: ClickTimings[] = [];
       for (const radius of PROGRESSIVE_RADII) {
         // THE CELL ARRAY ONLY TRAVELS IF SOMETHING DRAWS IT (round 10, stage B).

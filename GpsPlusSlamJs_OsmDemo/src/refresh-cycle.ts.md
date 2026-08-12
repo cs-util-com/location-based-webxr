@@ -83,4 +83,13 @@ page-side stages and hands the composed breakdown to a callback.
   without a worker; a cycle that printed for itself could not be asserted on.
   `main.ts` wires it to the console, as it already does for `GeoEventStats`.
 - **Always computed, even with no listener.** A breakdown that only exists when
-  someone is watching is one that is broken when they start watching.
+  someone is watching is one that is broken when they start watching. The
+  composition therefore happens on its own line and only its DELIVERY is
+  optional — `onTimings?.(composeClickTimings(…))` would short-circuit the whole
+  call expression and compute nothing, which is the opposite of this claim.
+- **The click clock opens BEFORE the `fetchStarted` dispatch.** A synchronous
+  store dispatch with subscriber renders behind it is a real page-side stage,
+  and `pageResidualMs` is the only clock in the instrument that can see page
+  time at all — the per-ring algebra cancels it. Opened after the dispatch, as
+  it was until the r504 review, that stage was unmeasurable everywhere while
+  three documents claimed it was covered.

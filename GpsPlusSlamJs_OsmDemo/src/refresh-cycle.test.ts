@@ -30,6 +30,7 @@ import {
 } from "./refresh-cycle.js";
 import { createAnchorHolder } from "./scene-anchor.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
+import type { ClickSummary } from "./click-timings.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
@@ -1059,6 +1060,64 @@ describe("the click-path breakdown is reported exactly once per PUBLISHED ring",
     expect(order.indexOf("timings")).toBeGreaterThan(
       order.indexOf("published"),
     );
+  });
+
+  it("opens the click clock BEFORE the fetchStarted dispatch", async () => {
+    // r504 REVIEW. The clock used to open twenty-two lines after the dispatch,
+    // while three separate documents said `pageResidualMs` covers "the
+    // `fetchStarted` dispatch and its subscriber renders". A synchronous store
+    // dispatch with subscriber renders behind it is exactly the page-side stage
+    // this summary exists to make visible — and it was the only page-side stage
+    // the docs named by hand while measuring none of it.
+    //
+    // It matters beyond bookkeeping: `pageResidualMs` is the ONLY clock in the
+    // instrument that can see page time at all (the per-ring algebra cancels
+    // it), so an unmeasured page stage here is unmeasurable everywhere.
+    //
+    // Driven by burning REAL time inside the subscriber rather than by mocking
+    // the clock, because the property under test is WHERE the clock opens
+    // relative to a synchronous dispatch — against a mocked clock the test
+    // would pass with the call in either position.
+    const BURN_MS = 20;
+    let burned = false;
+    let summary: ClickSummary | undefined;
+
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+    const refresh = createRefreshCycle({
+      store: demo.store,
+      actions: demo.actions,
+      anchors: createAnchorHolder(COLOGNE),
+      worker: {
+        call: (_kind, payload) =>
+          Promise.resolve({
+            snapshot: { ...snapshot(payload.category), radius: payload.radius },
+            mesh: { kind: "regions" as const, regions: [], underground: [] },
+            workerTimings: ZERO_WORKER_TIMINGS,
+          }),
+      },
+      onMesh: () => {},
+      onClickSummary: (s) => {
+        summary = s;
+      },
+    });
+
+    // The first notification after this point is `fetchStarted` — the cycle
+    // dispatches it before anything else it does.
+    demo.store.subscribe(() => {
+      if (burned) return;
+      burned = true;
+      const until = performance.now() + BURN_MS;
+      while (performance.now() < until) {
+        /* spin — standing in for an expensive subscriber render */
+      }
+    });
+
+    await refresh();
+
+    expect(burned).toBe(true);
+    // The rings resolve immediately here, so essentially the whole click IS
+    // the burn. With the clock opened after the dispatch this was ~0.
+    expect(summary?.pageResidualMs ?? 0).toBeGreaterThanOrEqual(BURN_MS - 5);
   });
 
   it("says nothing when the pass fails", async () => {

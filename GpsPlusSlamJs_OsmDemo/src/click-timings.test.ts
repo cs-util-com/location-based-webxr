@@ -20,7 +20,10 @@ import { describe, it, expect } from "vitest";
 import {
   composeClickTimings,
   describeClickTimings,
+  composeClickSummary,
+  describeClickSummary,
   type ClickTimingInput,
+  type ClickTimings,
 } from "./click-timings.js";
 import { ZERO_STAGE_TIMINGS } from "./snapshot-timings-fixture.js";
 
@@ -81,10 +84,50 @@ describe("composeClickTimings reconciles against a measured whole", () => {
     // trip minus the queue wait minus
     // what the worker says it spent — durations, each measured wholly on
     // one side.
-    const t = composeClickTimings(INPUT);
+    //
+    // FIFTH TAUTOLOGY RETIRED (r504 review). This asserted 240 against the
+    // shared fixture, whose `queueMs` is 0 — so it held whether or not the
+    // implementation subtracted the queue at all, and deleting `- queueMs`
+    // left it green. That clause is the headline of the commit that introduced
+    // it: the split that reassigns the largest term in the only line ever
+    // observed. The property test cannot cover it either, because `queue`
+    // appears in the stage list and in `rawBoundaryMs` with opposite signs, so
+    // the residual identity is invariant to the split.
+    //
+    // "A zero in a fixture hides a missing term perfectly" — the sibling
+    // test's own words, and the fixture's own zero is what hid this one.
+    const t = composeClickTimings({
+      ...INPUT,
+      worker: { ...INPUT.worker, queueMs: 40 },
+    });
     const boundary = t.stages.find((s) => s.name === "boundary");
+    const queue = t.stages.find((s) => s.name === "queue");
 
-    expect(boundary?.ms).toBe(240); // 2200 round trip - 1960 in the worker
+    // 2200 round trip − 40 queued − 1960 in the worker.
+    expect(boundary?.ms).toBe(200);
+    expect(queue?.ms).toBe(40);
+  });
+
+  it("refuses to reconcile a pass whose producer reported a negative stage", () => {
+    // r504 REVIEW. The clamps are right — a negative stage would make the sum
+    // close by CANCELLING — but they were silently right: after clamping, a
+    // negative input is indistinguishable from a genuine zero, so the total
+    // added up, `reconciles` said true, and the line printed a confident
+    // ranking built on a stage whose producer contradicted its own clock.
+    //
+    // `reconciles` already refused the DERIVED negative (`rawBoundaryMs`).
+    // This is the same rule applied to the MEASURED ones, which is what the
+    // module's own argument demands.
+    const t = composeClickTimings({
+      ...INPUT,
+      worker: { ...INPUT.worker, prefetchMs: -1 },
+    });
+
+    // Still clamped, so no cancellation…
+    expect(t.stages.find((s) => s.name === "prefetch-queue")?.ms).toBe(0);
+    // …but no longer silently trusted.
+    expect(t.reconciles).toBe(false);
+    expect(describeClickTimings(t)).toContain("DOES NOT RECONCILE");
   });
 
   it("keeps the zeros the plan calls load-bearing, and drops the ones that are noise", () => {
@@ -341,5 +384,94 @@ describe("describeClickTimings is readable at a glance", () => {
       }),
     );
     expect(line).toContain("2 unmeasured");
+  });
+});
+
+/**
+ * The page-side half — untested until the r504 review pointed at it.
+ *
+ * Why these matter: `composeClickSummary` exists BECAUSE the per-ring residual
+ * is structurally blind to page time (the algebra cancels it), so this is the
+ * only output in the whole instrument that can ever surface a page-side stage
+ * nobody enumerated. It shipped with no test at all — not in this file, not in
+ * the property file, and not in the e2e, whose console filter keys on
+ * `"click ring "` and never sees the summary line.
+ *
+ * That is the same shape as the tautologies this branch has been retiring: an
+ * output whose correctness nothing could contradict.
+ */
+describe("composeClickSummary — the whole click, page-side", () => {
+  const ring = (wallMs: number): ClickTimings =>
+    composeClickTimings({ ...INPUT, roundTripMs: wallMs - INPUT.drawMs });
+
+  it("attributes the gap between the click and its rings to the page", () => {
+    // The normal case, and the one the summary was added for: the cycle spends
+    // time outside every ring (the `fetchStarted` dispatch and its subscriber
+    // renders, the per-ring layer reads, the gaps between passes), and no
+    // ring's residual can see any of it.
+    const s = composeClickSummary(3000, [ring(1000), ring(900)]);
+
+    expect(s.rings).toBe(2);
+    expect(s.ringSumMs).toBe(1900);
+    expect(s.pageResidualMs).toBe(1100);
+    expect(s.clickMs).toBe(3000);
+  });
+
+  it("clamps rather than reporting a negative page residual", () => {
+    // Rings summing to MORE than the click is not "negative page time", it is
+    // a broken clock — and a negative here would make a later sum close by
+    // cancelling, which is the exact failure the per-stage clamps exist to
+    // prevent. Clamped, it reads as zero and the ring sum still shows the
+    // overrun.
+    const s = composeClickSummary(1000, [ring(800), ring(700)]);
+
+    expect(s.ringSumMs).toBe(1500);
+    expect(s.pageResidualMs).toBe(0);
+  });
+
+  it("survives a zero-length click without dividing by it", () => {
+    // `describeClickSummary` computes a share against `clickMs`. A click that
+    // measured nothing must print, not produce NaN% — the line is always-on,
+    // so a throw here would take out the console output for a whole session.
+    const line = describeClickSummary(composeClickSummary(0, []));
+
+    expect(line).toContain("0 ring(s)");
+    expect(line).not.toContain("NaN");
+  });
+
+  it("names the page residual in the printed line", () => {
+    // The term is introduced by this line and nowhere else, so if it stops
+    // being printed the gap it represents becomes invisible again.
+    const line = describeClickSummary(composeClickSummary(3000, [ring(1000)]));
+
+    expect(line).toContain("click TOTAL");
+    expect(line).toContain("page-residual");
+  });
+});
+
+describe("pipelineUnattributedMs — the second anchor", () => {
+  it("subtracts only the stages that run OUTSIDE the fetch loop", () => {
+    // The one thing a reader could get wrong here, pinned: `mergeMs` runs
+    // INSIDE `fetchMs` and must not be subtracted again. Adding `p.mergeMs` to
+    // the subtraction is the obvious-looking "fix" and would double-count;
+    // without this assertion nothing would object.
+    const p = INPUT.pipeline;
+    const t = composeClickTimings(INPUT);
+
+    expect(t.pipelineUnattributedMs).toBe(
+      p.pipelineMs - (p.fetchMs + p.scoreMs + p.deriveMs),
+    );
+  });
+
+  it("clamps rather than reporting a negative anchor gap", () => {
+    // `pipelineMs` is an independent wall clock, so parts summing past it is
+    // possible under a skewed clock and means over-attribution, not negative
+    // time.
+    const t = composeClickTimings({
+      ...INPUT,
+      pipeline: { ...INPUT.pipeline, pipelineMs: 100 },
+    });
+
+    expect(t.pipelineUnattributedMs).toBe(0);
   });
 });

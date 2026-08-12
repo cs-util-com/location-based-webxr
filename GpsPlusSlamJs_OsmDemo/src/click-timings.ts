@@ -205,8 +205,10 @@ const RECONCILE_TOLERANCE_SHARE = 0.02;
  * timestamp from a page one produces an offset, not a duration —
  * `GeoEventStats` gives no warning about this because all three of its timings
  * are taken wholly inside the worker, and this is the first thing in the demo
- * to time across it. Transfer is therefore `roundTrip - workerTotal`: two
- * durations, each measured entirely on one side.
+ * to time across it. The BOUNDARY term is therefore
+ * `roundTrip - queue - workerTotal`: durations, each measured entirely on one
+ * side. (It was called `transfer` and derived without the queue; this was the
+ * last place in the file still saying so after the rename swept four others.)
  *
  * That subtraction can go NEGATIVE on clock skew or an over-reporting worker.
  * It is clamped, and the clamp is why {@link ClickTimings.reconciles} exists: a
@@ -284,6 +286,21 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     share: wallMs > 0 ? Math.max(0, value) / wallMs : 0,
   }));
 
+  // ANY CLAMP AT ALL MEANS A PRODUCER WAS WRONG ABOUT ITS OWN CLOCK, and after
+  // clamping that is indistinguishable from a genuine zero (r504 review). The
+  // clamps above are right — a negative stage makes the sum close by
+  // CANCELLING — but silently right: the total reconciles, `reconciles`
+  // reports true, and the line prints a confident ranking built on a stage
+  // whose source contradicted itself.
+  //
+  // `reconciles` already refuses the DERIVED negative (`rawBoundaryMs`). This
+  // extends the same rule to the MEASURED ones, which is what the file's own
+  // argument demands and what it did not do.
+  const clamped =
+    w.queueMs < 0 ||
+    measured.some(([, value]) => value < 0) ||
+    input.drawMs < 0;
+
   const summed = stages.reduce((sum, s) => sum + s.ms, 0);
   const residualMs = wallMs - summed;
   const residualShare = wallMs > 0 ? residualMs / wallMs : 0;
@@ -319,8 +336,12 @@ export function composeClickTimings(input: ClickTimingInput): ClickTimings {
     // nothing must not report that its nothing adds up — that is §0.2's
     // "silence reads as measured" reproduced in the one artefact the owner is
     // meant to read.
+    // AND A CLAMPED INPUT DOES NOT RECONCILE — see `clamped` above. A stage
+    // that arrived negative was produced by a clock that disagreed with
+    // itself, and no ranking may be read off a line containing one.
     reconciles:
       rawBoundaryMs >= 0 &&
+      !clamped &&
       wallMs > 0 &&
       residualMs >= -RECONCILE_TOLERANCE_MS &&
       (residualMs <= RECONCILE_TOLERANCE_MS ||
