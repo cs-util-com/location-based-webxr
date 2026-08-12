@@ -43,6 +43,8 @@ const mocks = vi.hoisted(() => ({
   getArWorldGroup: vi.fn(),
   getCamera: vi.fn(),
   getRenderer: vi.fn(),
+  registerXrFrameUpdate: vi.fn(),
+  unregisterFrame: vi.fn(),
   alignmentDispose: vi.fn(),
   enableArWorldGroupAlignment: vi.fn(),
 }));
@@ -54,6 +56,7 @@ vi.mock("gps-plus-slam-app-framework/ar", () => ({
   getArWorldGroup: mocks.getArWorldGroup,
   getCamera: mocks.getCamera,
   getRenderer: mocks.getRenderer,
+  registerXrFrameUpdate: mocks.registerXrFrameUpdate,
 }));
 vi.mock("gps-plus-slam-app-framework/visualization", () => ({
   enableArWorldGroupAlignment: mocks.enableArWorldGroupAlignment,
@@ -66,6 +69,8 @@ const {
   getArWorldGroup,
   getCamera,
   getRenderer,
+  registerXrFrameUpdate,
+  unregisterFrame,
   alignmentDispose,
   enableArWorldGroupAlignment,
 } = mocks;
@@ -154,8 +159,13 @@ beforeEach(() => {
   renderer = {
     toneMapping: THREE.NoToneMapping,
     toneMappingExposure: 1,
-  } as THREE.WebGLRenderer;
+    // `info.render` is what the M4 readout samples. Present on every real
+    // renderer, so a fixture without it would make the sampler look fragile
+    // when it is not.
+    info: { render: { calls: 0, triangles: 0 } },
+  } as unknown as THREE.WebGLRenderer;
   getRenderer.mockReturnValue(renderer);
+  registerXrFrameUpdate.mockReturnValue(unregisterFrame);
   enableArWorldGroupAlignment.mockReturnValue({ dispose: alignmentDispose });
 });
 
@@ -320,6 +330,55 @@ describe("when AR cannot start", () => {
     expect(renderer.toneMappingExposure).toBe(0.5);
   });
 
+  it("samples the AR renderer's OWN draw cost, not the desktop view's", async () => {
+    // M4's whole point. `renderer.info` is per-renderer and the session builds
+    // a second one, so the desktop status line's figure describes a renderer
+    // that is not producing the frames. This asserts the readout reads the one
+    // `getRenderer()` returns — and that it is fed from the frame loop at all,
+    // which is the M1-shaped gap: a HUD nothing calls shows nothing forever.
+    Object.assign(renderer, {
+      info: { render: { calls: 37, triangles: 4242 } },
+    });
+    await startArMode(deps({ container: document.body }));
+
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+    expect(onFrame).toBeDefined();
+    // `elapsed` must be NON-ZERO: the rate is frames-over-window, so a window
+    // of length zero has no rate to report — which is correct, and is why the
+    // fps assertion below uses a real timestamp.
+    onFrame({ dt: 1 / 60, elapsed: 1 / 60 });
+
+    expect(document.body.textContent).toContain("37 draws");
+    // One frame into a 1/60 s window: 1 frame / (1/60 s) = 60 fps. Averaged
+    // rather than `1/dt` — the two agree here by construction, and the test
+    // below is what tells them apart.
+    expect(document.body.textContent).toContain("60 fps");
+  });
+
+  it("asks the caller for the GPS-side numbers at the same cadence", async () => {
+    // Pulled rather than pushed, because fixes arrive ~1 Hz while draw cost
+    // changes every frame. Asserted because a `liveMeasurements` nobody calls
+    // is the same silent nothing as a HUD nobody feeds.
+    const liveMeasurements = vi.fn(() => ({
+      fixAccuracyM: 6.2,
+      metresFromAnchor: 145,
+    }));
+    await startArMode(deps({ container: document.body, liveMeasurements }));
+
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+    onFrame({ dt: 1 / 60, elapsed: 0 });
+
+    expect(liveMeasurements).toHaveBeenCalled();
+    expect(document.body.textContent).toContain("fix ±6.2 m");
+    expect(document.body.textContent).toContain("145 m from anchor");
+  });
+
   it("starts anyway when the framework has no renderer to grade", async () => {
     // The asymmetry with the camera, at the session level: no renderer must not
     // fail a session, because the only cost is a look. A `getRenderer()` that
@@ -373,6 +432,32 @@ describe("leaving AR", () => {
     expect(scene.background).toBeNull();
     expect(camera.near).toBe(0.01);
     expect(camera.far).toBe(200);
+  });
+
+  it("unregisters the frame sampler and takes the readout down", async () => {
+    // The sampler reads the renderer and writes the DOM, and the session is
+    // about to drop both. A callback left registered would keep sampling
+    // against half-dead state on every frame of whatever runs next — and a HUD
+    // left in `#ar-root` keeps a full-viewport layer over the page, which is a
+    // regression this demo has already shipped once.
+    const container = document.createElement("div");
+    document.body.append(container);
+    Object.assign(renderer, {
+      info: { render: { calls: 5, triangles: 100 } },
+    });
+    const mode = await startArMode(deps({ container }));
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+    onFrame({ dt: 1 / 60, elapsed: 0 });
+    expect(container.children.length).toBeGreaterThan(0);
+
+    mode.dispose();
+
+    expect(unregisterFrame).toHaveBeenCalled();
+    expect(container.children).toHaveLength(0);
+    container.remove();
   });
 
   it("restores the environment on a SYSTEM end too", async () => {
@@ -455,5 +540,61 @@ describe("leaving AR", () => {
     // split look safe: everything `dispose()` did beyond re-attaching had to
     // run on this path too. M2, M4 and M5 each add cleanup to it.
     expect(alignmentDispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the AR readout's frame rate", () => {
+  it("AVERAGES over the window rather than reporting one frame's reciprocal", () => {
+    // THE DIFFERENCE THAT MATTERS ON A PHONE (r510 review). A single `1/dt`
+    // spikes on GC, a worker message, the terrain field landing — so at a 2 Hz
+    // readout the number would flicker between plausible and alarming with no
+    // way to tell a sustained drop from a hiccup. Telling those apart is
+    // exactly what §4's "is rendering the constraint?" question needs.
+    //
+    // Thirty frames of 1/60 s, then ONE slow 100 ms frame that crosses the
+    // sample window. `1/dt` on that frame would read 10 fps; the average over
+    // the 0.6 s window is 31/0.6 ≈ 52.
+    return startArMode(deps({ container: document.body })).then(() => {
+      const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+        dt: number;
+        elapsed: number;
+      }) => void;
+      let elapsed = 0;
+      for (let i = 0; i < 30; i++) {
+        elapsed += 1 / 60;
+        onFrame({ dt: 1 / 60, elapsed });
+      }
+      elapsed += 0.1;
+      onFrame({ dt: 0.1, elapsed });
+
+      // Parsed rather than matched against a hand-computed constant: the exact
+      // figure depends on where the 500 ms window happens to close, and a
+      // brittle equality here would be a test about arithmetic rather than
+      // about smoothing. What must hold is that the reading is near the
+      // SUSTAINED rate and nowhere near the one slow frame's 10 fps.
+      const reported = Number(
+        /(\d+) fps/.exec(document.body.textContent ?? "")?.[1],
+      );
+      expect(reported).toBeGreaterThan(40);
+      expect(reported).toBeLessThanOrEqual(60);
+    });
+  });
+
+  it("puts the alignment's vertical baseline on screen", () => {
+    // §4 predicts the Y-baseline jump and names `matrix[13]` as the term. The
+    // milestone is called "measure, then choose"; an instrument that could not
+    // see the axis its own prediction is about would have a hole in it.
+    arWorldGroup.matrix.elements[13] = -0.37;
+
+    return startArMode(deps({ container: document.body })).then(() => {
+      const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+        dt: number;
+        elapsed: number;
+      }) => void;
+      onFrame({ dt: 1 / 60, elapsed: 1 / 60 });
+
+      expect(document.body.textContent).toContain("baseline -0.37 m");
+      arWorldGroup.matrix.elements[13] = 0;
+    });
   });
 });

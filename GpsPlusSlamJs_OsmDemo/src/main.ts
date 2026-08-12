@@ -26,7 +26,7 @@
  * @see main.ts.md
  */
 
-import { cellToLatLng } from "h3-js";
+import { cellToLatLng, greatCircleDistance, UNITS } from "h3-js";
 import {
   TERRARIUM_ATTRIBUTION,
   enuFrameAt,
@@ -473,11 +473,41 @@ async function main(): Promise<void> {
     },
   });
 
+  /**
+   * The last fix's reported horizontal accuracy, for the AR readout (M4).
+   *
+   * §4 predicts that GPS fix quality, not rendering, is the binding constraint
+   * on whether AR feels right — and the plan says every figure that cannot be
+   * measured must be reported as unmeasured rather than estimated. This is the
+   * one the browser hands over for free, so leaving it off screen would be
+   * choosing to guess at the thing the milestone is about.
+   *
+   * `undefined` until a fix reports one, which is what keeps it off the HUD
+   * rather than showing as `0`.
+   */
+  let lastFixAccuracyM: number | undefined;
+  /**
+   * The last RAW fix, for the readout's distance line (M4, r510 review).
+   *
+   * NOT `selectOsmView(...).position`, which while AR is live only advances on
+   * fixes that clear the 100 m gate — so the readout would show `0 m from
+   * anchor` for the first ~71 s of walking and then jump. A staircase reading
+   * of zero is exactly what `ar-measurements.ts` refuses to print for a missing
+   * value, arriving by a different route.
+   */
+  let lastFixPosition: { lat: number; lng: number } | undefined;
+
   const locateControl = new LocateControl({
     map: mapView.map,
     // A real fix moves the "user" through the same action a map click uses, so
     // there is no second refresh path that could disagree with the first.
     onLocated: (position) => {
+      // RECORDED BEFORE THE GATE, on every fix. The readout is about the QUALITY
+      // of the fixes arriving, so a fix the gate rejects is exactly as
+      // informative as one it accepts — arguably more, since a session spent
+      // standing still is all rejected fixes.
+      lastFixAccuracyM = position.accuracyM;
+      lastFixPosition = { lat: position.lat, lng: position.lng };
       // Recentre on the LOCATE path only. The shared `view.position` subscriber
       // deliberately does not, because a map click already happens where the
       // user is looking and recentring there would yank the map from under
@@ -534,7 +564,16 @@ async function main(): Promise<void> {
     // narrower than its meaning ("an error that preserves the snapshot") —
     // recorded as a follow-up rather than renamed mid-round, since it is a
     // published framework API.
-    onError: (message) => store.dispatch(actions.nonFatalError(message)),
+    onError: (message) => {
+      // THE READOUT MUST NOT KEEP SHOWING A DEAD FIX (M4, r510 review). A
+      // `watchPosition` outage — indoors, an urban canyon — fires this about
+      // once a second while `locationfound` stops arriving, and without this
+      // the HUD would display the last good `fix ±N m` for the rest of the
+      // session. That is worse than showing nothing, because it is plausible:
+      // the number the milestone exists to read would be quietly historical.
+      lastFixAccuracyM = undefined;
+      store.dispatch(actions.nonFatalError(message));
+    },
   });
 
   // Dragging the map sheet is mobile-only in CSS, but wiring it unconditionally
@@ -1095,6 +1134,27 @@ async function main(): Promise<void> {
       sceneAnchor: anchors.origin,
       enuFrameAt,
       onError: (message) => store.dispatch(actions.nonFatalError(message)),
+      // M4. Pulled at the readout's own cadence rather than pushed, because
+      // fixes arrive ~1 Hz while draw cost changes every frame.
+      //
+      // MEASURED FROM `zero`, the same point the far-travel warning uses: the
+      // number worth watching is the drift from the frame the alignment matrix
+      // is expressed against, not from the scene anchor.
+      liveMeasurements: () => {
+        const zero = selectZeroReference(store.getState());
+        const here = lastFixPosition;
+        return {
+          fixAccuracyM: lastFixAccuracyM,
+          metresFromAnchor:
+            zero === null || here === undefined
+              ? undefined
+              : greatCircleDistance(
+                  [zero.lat, zero.lon],
+                  [here.lat, here.lng],
+                  UNITS.m,
+                ),
+        };
+      },
       onEnded: () => {
         // Fires for the Android back gesture too, where nothing called
         // `dispose()` — so the button has to be repainted from here as well as

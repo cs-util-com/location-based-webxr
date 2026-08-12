@@ -39,6 +39,7 @@ import {
   getRenderer,
   getScene,
   initAR,
+  registerXrFrameUpdate,
   type TrackingSubscribableStore,
 } from "gps-plus-slam-app-framework/ar";
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization";
@@ -48,6 +49,7 @@ import type { BuildingView } from "./building-view.js";
 import type { LatLng } from "gps-plus-slam-osm";
 
 import { applyArEnvironment } from "./ar-scene-environment.js";
+import { createArHud, type ArHud } from "./ar-hud.js";
 import {
   canEnterAr,
   sceneAnchorOffsetNue,
@@ -93,6 +95,21 @@ export interface ArModeDeps {
   readonly onError: (message: string) => void;
   /** Fired when the session ends for ANY reason, including the back gesture. */
   readonly onEnded?: () => void;
+  /**
+   * The GPS-side numbers for the readout, asked for at the sampling cadence
+   * rather than pushed (milestone 4).
+   *
+   * PULLED, NOT PUSHED, because the two sources tick at completely different
+   * rates: draw cost and fps change every frame while a fix arrives about once
+   * a second. A push seam would either rewrite the DOM on every frame or make
+   * `main.ts` own a cadence that belongs to the readout.
+   *
+   * Optional so the session still runs without an instrument.
+   */
+  readonly liveMeasurements?: () => {
+    readonly fixAccuracyM?: number | undefined;
+    readonly metresFromAnchor?: number | undefined;
+  };
 }
 
 export interface ArMode {
@@ -139,6 +156,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   const session: {
     alignment?: { dispose: () => void };
     restoreEnvironment?: () => void;
+    hud?: ArHud;
+    unregisterFrame?: () => void;
   } = {};
 
   /**
@@ -170,6 +189,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // `runSessionDisposers()` has usually already called it by the time a
     // system-initiated end reaches us.
     session.alignment?.dispose();
+    // THE FRAME CALLBACK FIRST. It reads the renderer and writes the DOM, and
+    // both are about to be torn down — an unregister that ran after the scene
+    // changed would leave one more sample running against half-dead state.
+    session.unregisterFrame?.();
+    session.hud?.dispose();
     // On BOTH exits, and NOT because the framework's objects are shared —
     // `initAR` builds a fresh scene, camera and renderer each time. It runs
     // here because this is the one place that knows the session is over, and
@@ -288,6 +312,65 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   session.alignment = enableArWorldGroupAlignment({
     store: deps.store,
     arWorldGroup,
+  });
+
+  // M4. The instrument the milestone needs before it can take a measurement:
+  // the desktop status line reports `BuildingView`'s renderer, and the session
+  // draws with a DIFFERENT one, so the number visible during AR described a
+  // renderer that was not producing the frames.
+  session.hud = createArHud(deps.container);
+  const renderer = getRenderer();
+  // FPS IS AVERAGED OVER THE WINDOW, not sampled from one frame (r510 review).
+  // A single `1/dt` spikes routinely on a phone — GC, a worker message, the
+  // terrain field landing — so at 2 Hz the readout would flicker between 60 and
+  // 22 with no way to tell a sustained drop from a hiccup. Counting frames and
+  // dividing by elapsed time is what makes the number answer §4's question.
+  let framesThisWindow = 0;
+  let windowOpenedAtS = 0;
+  session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
+    framesThisWindow += 1;
+    const windowS = elapsed - windowOpenedAtS;
+    const fps = windowS > 0 ? framesThisWindow / windowS : undefined;
+    // `dt` is unused for the rate now, but it still marks the first frame after
+    // a reset (the framework's contract says `dt` is 0 there), which is the one
+    // sample whose window is meaningless.
+    const live = deps.liveMeasurements?.() ?? {};
+    const wrote = session.hud?.sample(
+      {
+        // THE PREVIOUS FRAME'S COST, and the comment here said "this frame's"
+        // until the r510 review. `WebGLRenderer.render` calls `info.reset()` at
+        // its top, and the framework runs these callbacks BEFORE `render` — so
+        // what is readable now is the last completed frame. At a 2 Hz readout
+        // the one-frame lag is invisible; the mechanism is written down because
+        // the next change will reason from it.
+        drawCost:
+          renderer === null
+            ? undefined
+            : {
+                calls: renderer.info.render.calls,
+                triangles: renderer.info.render.triangles,
+              },
+        fps,
+        // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
+        // written directly by the alignment lerper with `matrixAutoUpdate =
+        // false`, so element 13 is the live baseline rather than a stale copy.
+        worldBaselineY: arWorldGroup.matrix.elements[13],
+        ...live,
+      },
+      // THE SESSION CLOCK, not wall time: `elapsed` is what the frame loop
+      // already computed, and it is monotonic.
+      elapsed * 1000,
+    );
+    // THE WINDOW RESETS ONLY WHEN ONE WAS ACTUALLY WRITTEN, so the average
+    // covers exactly the frames the displayed number describes. Resetting every
+    // frame would make it a single-frame reciprocal again by another route.
+    if (wrote === true) {
+      framesThisWindow = 0;
+      windowOpenedAtS = elapsed;
+    }
+    // Referenced so the first-frame contract stays visible to a reader; the
+    // rate no longer derives from it.
+    void dt;
   });
 
   bootCompleted = true;

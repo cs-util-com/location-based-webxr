@@ -138,6 +138,34 @@
         pointer-events: none;
       }
 
+      /*
+        The measurement readout (AR milestone 4). Top-left, monospace, one
+        number per line: read at arm's length while walking, where a run-on
+        sentence is unreadable and a glance is looking for one figure.
+
+        `pointer-events: none` for the same reason as the toast — `#ar-root` is
+        a full-viewport fixed layer and nothing in it may eat a tap.
+      */
+      .ar-hud {
+        position: absolute;
+        /* A plain offset, not `max(0.75rem, env(safe-area-inset-top))`: the
+           gate's CSS validator rejects `max()` here, the same way it rejects
+           `min()` on the toast's width. Under a notch this can sit high; that
+           is M5's UI polish, and it is recorded rather than silently accepted. */
+        top: 2.5rem;
+        left: 0.75rem;
+        padding: 0.4rem 0.6rem;
+        border-radius: 0.4rem;
+        background: rgb(17 19 26 / 72%);
+        color: #cfe3ff;
+        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+        font-size: 0.78rem;
+        line-height: 1.5;
+        /* The lines are joined with "\n"; without this they collapse. */
+        white-space: pre-line;
+        pointer-events: none;
+      }
+
       /* Floats over the split rather than taking a column (DEC-17). */
       #details {
         position: absolute;
@@ -762,7 +790,22 @@
         Empty and zero-sized until a session starts; the framework's canvas is
         positioned by the UA once the session is immersive.
       -->
-      <div id="ar-root" aria-hidden="true"></div>
+      <!--
+        NO `aria-hidden` (r510 review). It carried one, statically, and nothing
+        ever toggled it — which silently made the AR toast's `role="status"` /
+        `aria-live="polite"` inert, because an `aria-hidden` subtree is removed
+        from the accessibility tree wholesale. The toast exists precisely to
+        reach a user who cannot see the header's status line, so hiding it from
+        assistive technology defeated it for the one audience with the fewest
+        alternatives.
+
+        Nothing is needed in its place: the container is `display: none` while
+        `:empty` (see the CSS above), which keeps it out of the accessibility
+        tree whenever no session is running. The HUD inside it carries its own
+        `aria-hidden`, because a readout that changes twice a second forever
+        should not be announced.
+      -->
+      <div id="ar-root"></div>
       <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
            two views to ~450 px each on a laptop, which is the width that made
            the 3D pane useless on a phone. -->

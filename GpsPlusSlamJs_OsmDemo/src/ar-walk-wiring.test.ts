@@ -140,3 +140,40 @@ describe("AR walking is wired into main.ts", () => {
     expect(CODE).toMatch(/startWalking\(\{\s*lat: zero\.lat,\s*lng: zero\.lon/);
   });
 });
+
+describe("AR measurement is wired into main.ts", () => {
+  it("supplies the GPS-side numbers to the readout", () => {
+    // `liveMeasurements` is OPTIONAL on `ArModeDeps`, so nothing in the type
+    // system or in `ar-mode.test.ts` notices if `main.ts` stops passing it —
+    // and the readout silently loses the two numbers the milestone exists to
+    // read. That is precisely the M1 shape: correct in isolation, unasserted in
+    // connection (r510 review).
+    const call = CODE.match(/startArMode\(\{[\s\S]*?\n {4}\}\)/)?.[0];
+    expect(call).toBeDefined();
+    expect(call).toContain("liveMeasurements:");
+    expect(call).toContain("fixAccuracyM");
+    expect(call).toContain("metresFromAnchor");
+  });
+
+  it("measures the distance from the RAW fix, not the gated store position", () => {
+    // While AR is live the store position only advances on fixes that clear the
+    // 100 m gate, so reading it here would show "0 m from anchor" for the first
+    // ~71 s of walking and then jump — a staircase of zeroes, which is exactly
+    // what `ar-measurements.ts` refuses to print for a missing value, arriving
+    // by another route (r510 review).
+    expect(CODE).toContain("const here = lastFixPosition");
+    expect(CODE).toMatch(/lastFixPosition = \{ lat: position\.lat/);
+  });
+
+  it("forgets the fix accuracy when the watch starts failing", () => {
+    // A `watchPosition` outage fires `locationerror` about once a second while
+    // `locationfound` stops. Without this the readout keeps showing the last
+    // good `fix ±N m` for the rest of the session — worse than showing nothing,
+    // because it is plausible.
+    const onError = CODE.match(
+      /onError: \(message\) => \{[\s\S]*?\n {4}\},/,
+    )?.[0];
+    expect(onError).toBeDefined();
+    expect(onError).toContain("lastFixAccuracyM = undefined");
+  });
+});

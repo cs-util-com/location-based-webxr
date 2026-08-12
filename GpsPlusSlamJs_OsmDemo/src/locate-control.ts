@@ -17,8 +17,19 @@ import { labelFor, stateForError, type LocateState } from "./locate-state.js";
 
 export interface LocateControlOptions {
   readonly map: L.Map;
-  /** Called with the fix. The caller decides what a new position means. */
-  readonly onLocated: (position: { lat: number; lng: number }) => void;
+  /**
+   * Called with the fix. The caller decides what a new position means.
+   *
+   * `accuracyM` is the browser's reported horizontal accuracy — §4 predicts
+   * this, not rendering, is the binding constraint on whether AR "feels right",
+   * so milestone 4 puts it on screen rather than leaving it to be guessed at.
+   * Leaflet forwards it as `event.accuracy`; `undefined` when it is absent.
+   */
+  readonly onLocated: (position: {
+    lat: number;
+    lng: number;
+    accuracyM?: number | undefined;
+  }) => void;
   /** Called with a human-readable failure, for the app's error channel. */
   readonly onError: (message: string) => void;
 }
@@ -100,7 +111,11 @@ export class LocateControl {
         this.scheduleReset();
       }
       this.watchErrorReported = false;
-      options.onLocated({ lat: event.latlng.lat, lng: event.latlng.lng });
+      options.onLocated({
+        lat: event.latlng.lat,
+        lng: event.latlng.lng,
+        accuracyM: Number.isFinite(event.accuracy) ? event.accuracy : undefined,
+      });
     });
 
     this.map.on("locationerror", (event: L.ErrorEvent) => {
