@@ -583,13 +583,22 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
     tags: { building: "yes", height: "12" },
   };
 
-  /** A footway west→east through the middle of it, at HOME's latitude. */
+  /**
+   * A footway west→east through the middle of it, at HOME's latitude.
+   *
+   * SPANS ±60 STEP so it genuinely PIERCES every fixture in this block — it
+   * must cross the outer ring, not merely end inside it. The courtyard fixture
+   * below widened its outer ring to ±45 and left this at ±40, which quietly
+   * turned the road into one that begins and ends inside the building: still a
+   * passage (via the vertex-inside branch) but a corridor leading nowhere, and
+   * no longer the corpus case the describe block claims to model.
+   */
   const passage = (tags: Record<string, string>): OsmFeature => ({
     type: "way",
     id: 31,
     geometry: [
-      { lat: HOME.lat, lng: HOME.lng - STEP * 40 },
-      { lat: HOME.lat, lng: HOME.lng + STEP * 40 },
+      { lat: HOME.lat, lng: HOME.lng - STEP * 60 },
+      { lat: HOME.lat, lng: HOME.lng + STEP * 60 },
     ],
     tags: { highway: "footway", ...tags },
   });
@@ -625,8 +634,18 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
     // argued. The predicate is now shared with `building-passages.ts` as
     // `insideRingsByParity`, so there is one rule instead of two.
     //
-    // The water veto is where this would have bitten hardest — the inner rings
-    // of the Thames relations are islands and piers.
+    // **NOT A WATER PROBLEM, and an earlier version of this comment said it
+    // was.** `passages` is set in exactly one place — inside `addBuildings` —
+    // so `blockedDespitePassages`, the only caller of `insideRingsByParity`
+    // here, is unreachable for water and for barriers. `addWater` also emits
+    // one thin quad per bank segment rather than rings with holes, so a
+    // Thames relation's islands arrive as bands and never as inner rings.
+    // Both halves of the old claim were false.
+    //
+    // The forward hazard is the opposite one and is worth stating: those
+    // per-segment quads OVERLAP at every joint, so if anything ever attaches
+    // `passages` to a banded obstacle, parity will read an overlap as OUTSIDE
+    // where `.some()` read it as inside.
     //
     // FIXTURE REBUILT AFTER THE r504 REVIEW, WHICH SHOWED IT PROVED NOTHING.
     // The courtyard cells used to sit at `HOME.lat + STEP * 5`. `STEP` is
@@ -718,13 +737,12 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
       false,
     );
 
-    // AND THE CONTROL THAT NAMES THE REASON. If the step were free because of
-    // the corridor rather than because it is in the courtyard, removing the
-    // passage would block it. It stays free, so the freedom is the hole's.
-    const withoutPassage = buildObstacleIndex([courtyardBlock]);
-    expect(
-      crossesObstacle(withoutPassage, inCourtyard, alsoInCourtyard as string),
-    ).toBe(false);
+    // THE COUNTERWEIGHT: the SOLID ring between the courtyard and the outside
+    // still blocks. Without this, "open the whole volume" would satisfy the
+    // assertion above — parity must free the yard without freeing the walls.
+    const inSolid = cellAt(HOME.lat + STEP * 38, HOME.lng - STEP * 3);
+    const outside = cellAt(HOME.lat + STEP * 60, HOME.lng - STEP * 3);
+    expect(crossesObstacle(index, outside, inSolid)).toBe(true);
   });
 
   it("admits a step through the passage", () => {

@@ -45,14 +45,17 @@ const RETRACTED = [
   {
     pattern: /\b28[.,]31\s?mb\b/i,
     label: '28.31 MB (retracted 2026-08-09, N2/W2 — under half the real payload)',
+    witness: '(28.31 MB) of decompressed JSON',
   },
   {
     pattern: /\b21[,  ]8(00|47)\b/,
     label: '21,847 / 21,800 elements (retracted 2026-08-09 — a res-7 tile is estimated at ~40–116 k)',
+    witness: 'returned 21,847 elements in one query',
   },
   {
     pattern: /(?<![\d.])(6[78](\.\d{1,2})?|28[–-]68)\s?mb\b/i,
     label: '~68 MB / 28–68 MB per res-7 tile (superseded 2026-08-03 by F32 areal-only, 21.1 MB)',
+    witness: 'a res-7 tile is ~68 MB of decompressed JSON',
   },
   {
     // Bare `~28 MB` — the retracted 28.31 rounded. The lookbehind keeps it off
@@ -60,6 +63,7 @@ const RETRACTED = [
     pattern: /(?<![\d.])28\s?mb\b/i,
     label:
       'bare ~28 MB per res-7 tile (the retracted 28.31 MB, rounded — superseded, 21.1 MB)',
+    witness: 'the corpus is ~28 MB on disk',
   },
   {
     // BOTH ranges, and the first version of this guard listed only `23–110 s`.
@@ -71,11 +75,22 @@ const RETRACTED = [
     pattern: /\b(18|23)[–-]110\s?s\b/,
     label:
       '18–110 s / 23–110 s per res-7 tile (the 18.2 s lower bound is retracted, and the range predates areal-only)',
+    witness: 'costs an 18–110 s download',
   },
   {
+    // CONTEXT REQUIRED, unlike every other entry (r504 review). The others key
+    // on something that occurs nowhere else — `28.31 MB`, `18–110 s`,
+    // `20 s median` — and the element-count entry was deliberately given a
+    // separator requirement for the same reason. `18.2 s` is a BARE DURATION,
+    // and this guard scans every tracked `.ts` and `.md` in the tree, which is
+    // full of second-scale timings: without an anchor the first unrelated
+    // 18.2-second measurement turns the gate red. A gate that cries wolf gets
+    // disabled. Broader exposure than the docs copy, so it matters more here.
     pattern: /\b18\.2\s?s\b/,
+    context: /\b(tile|res-7|payload|overpass)\b/i,
     label:
       '18.2 s per res-7 tile (retracted 2026-08-09 together with the payload it was measured beside)',
+    witness: 'a res-7 tile fetched in 18.2 s',
   },
   {
     // The figure THIS repo published on 2026-08-11 and withdrew the same day.
@@ -87,6 +102,7 @@ const RETRACTED = [
     pattern: /~?20\s?s\s+median/i,
     label:
       '"~20 s median" (never supported — docs/overpass-matrix-sweep.json measures 15–91 s, non-replicating)',
+    witness: 'measured at a ~20 s median across hosts',
   },
 ];
 
@@ -193,8 +209,11 @@ function unmarkedClaims(files) {
       continue; // a tracked path that is not readable is another test's problem
     }
     for (const [index, line] of lines.entries()) {
-      for (const { pattern, label } of RETRACTED) {
+      for (const { pattern, label, context } of RETRACTED) {
         if (!pattern.test(line)) continue;
+        // Digits that are unremarkable on their own need the line to say what
+        // they are about — see the `context` field on the `18.2 s` entry.
+        if (context !== undefined && !context.test(line)) continue;
         const window = lines
           .slice(Math.max(0, index - WINDOW_BEFORE), index + WINDOW_AFTER + 1)
           .join('\n');
@@ -249,32 +268,37 @@ describe('retracted res-7 payload figures are never stated as current', () => {
       ).toBe(true);
     }
 
-    // AND ONE INDEXED WITNESS PER PATTERN, because the `.some()` loop above
-    // cannot tell a live pattern from a dead one: as long as ANY entry matches
-    // a claim, a pattern broken into matching nothing stays invisible. That is
-    // not hypothetical — it happened in the sibling guard in this repo's own
-    // sister project, where a sed meant to escape a narrow no-break space
-    // turned the element-count pattern into one matching nothing and every
-    // test stayed green because a different pattern caught the same example.
+    // AND ONE WITNESS PER PATTERN, CARRIED IN THE ENTRY, because the `.some()`
+    // loop above cannot tell a live pattern from a dead one: as long as ANY
+    // entry matches a claim, a pattern broken into matching nothing stays
+    // invisible. That is not hypothetical — a sed meant to escape a narrow
+    // no-break space turned the element-count pattern into one matching
+    // nothing, and every test stayed green because a different pattern caught
+    // the same example.
     //
-    // The fix was applied there and NOT carried here for a full branch, which
-    // is the argument for indexing rather than for remembering.
-    const witnesses = [
-      '(28.31 MB) of decompressed JSON',
-      'returned 21,847 elements in one query',
-      'a res-7 tile is ~68 MB of decompressed JSON',
-      'the corpus is ~28 MB on disk',
-      'costs an 18–110 s download',
-      'a res-7 tile fetched in 18.2 s',
-      'measured at a ~20 s median across hosts',
-    ];
-    expect(witnesses).toHaveLength(RETRACTED.length);
-    RETRACTED.forEach((entry, index) => {
+    // CO-LOCATED RATHER THAN PAIRED BY INDEX (r504 review). A parallel array
+    // guarded by `toHaveLength` catches a count mismatch and never a
+    // MISALIGNMENT, so inserting a pattern mid-list while appending its witness
+    // at the end shifts every later pair and the failure then blames the wrong
+    // entry. A field cannot slide.
+    //
+    // This is the second copy of a deliberately duplicated guard, and the
+    // duplication decayed AGAIN: the fix landed in the docs copy first and this
+    // one kept the index pairing until 2026-08-12. That is the argument for
+    // making misalignment structurally impossible rather than for remembering
+    // to sync.
+    for (const entry of RETRACTED) {
       expect(
-        entry.pattern.test(witnesses[index] ?? ''),
-        `pattern ${index} (${entry.label}) matched nothing — is it dead?`,
+        entry.pattern.test(entry.witness),
+        `${entry.label} matched nothing — is it dead?`,
       ).toBe(true);
-    });
+      if (entry.context !== undefined) {
+        expect(
+          entry.context.test(entry.witness),
+          `${entry.label} has a context requirement its own witness fails`,
+        ).toBe(true);
+      }
+    }
 
     // And the shapes that must NOT trip it: a res-8 payload, an unrelated
     // measurement in the same units, and a bare number with no unit.
