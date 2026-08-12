@@ -133,7 +133,7 @@ export type SlamAppMiddleware = Middleware<any, any, any>;
  */
 export function composeStateSanitizer(
   consumer: (<S>(state: S) => S) | undefined,
-  framework: <T>(value: T, depth?: number) => T,
+  framework: <T>(value: T, depth?: number) => T
 ): <S>(state: S) => S {
   if (consumer === undefined) return framework;
   return <S>(state: S): S => framework(consumer(state));
@@ -648,7 +648,7 @@ export function createSlamAppStore<
       // large app slice cannot switch off the redaction of pose and GPS data.
       stateSanitizer: composeStateSanitizer(
         devToolsStateSanitizer,
-        sanitizeForDevTools,
+        sanitizeForDevTools
       ),
     },
   });

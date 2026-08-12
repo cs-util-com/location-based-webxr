@@ -600,7 +600,9 @@ describe('consumer-supplied dev-check exemptions', () => {
     // plain. Without the exemption RTK logs a serializability warning and walks
     // the whole payload on every dispatch.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
 
     const store = createSlamAppStore({
       storageBackend: new NullStorageBackend(),
@@ -651,7 +653,7 @@ describe('composeStateSanitizer', () => {
     // exists to prevent would still happen.
     let frameworkSaw: unknown;
     const consumer = (<S>(): S => ({ demo: 'summary' }) as S) as <S>(
-      state: S,
+      state: S
     ) => S;
     const framework = (<T>(value: T): T => {
       frameworkSaw = value;
@@ -686,11 +688,11 @@ describe('the devtools sanitizer is actually WIRED, not just composable', () => 
     // friends.
     const source = readFileSync(
       new URL('./create-slam-app-store.ts', import.meta.url),
-      'utf-8',
+      'utf-8'
     );
 
     expect(source).toMatch(
-      /stateSanitizer:\s*composeStateSanitizer\(\s*devToolsStateSanitizer,\s*sanitizeForDevTools,?\s*\)/,
+      /stateSanitizer:\s*composeStateSanitizer\(\s*devToolsStateSanitizer,\s*sanitizeForDevTools,?\s*\)/
     );
   });
 });
