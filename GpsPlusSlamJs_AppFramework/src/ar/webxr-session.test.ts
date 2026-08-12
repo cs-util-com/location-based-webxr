@@ -22,6 +22,7 @@ import {
   getScene,
   getArWorldGroup,
   getCamera,
+  getRenderer,
   resetWebXRState,
   endARSession,
   applyAlignmentMatrix,
@@ -538,6 +539,19 @@ describe('module state accessors', () => {
    */
   it('getCamera returns null before initialization', () => {
     expect(getCamera()).toBeNull();
+  });
+
+  /**
+   * Why this test matters:
+   * Before AR is initialized, getRenderer should return null — and a consumer
+   * calling it early is the realistic case, since the reason to want it is to
+   * change settings the framework leaves neutral (tone mapping, output colour
+   * space) or to read `renderer.info.render`. Returning a stale renderer from a
+   * previous session would be worse than null: settings would be applied to an
+   * object nothing draws with, and the symptom is a look that does not change.
+   */
+  it('getRenderer returns null before initialization', () => {
+    expect(getRenderer()).toBeNull();
   });
 
   /**

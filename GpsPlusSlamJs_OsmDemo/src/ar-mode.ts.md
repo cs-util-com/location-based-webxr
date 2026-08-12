@@ -6,20 +6,23 @@ Starts a WebXR session, hands the already-built city to the framework's scene
 graph in the right frame, subscribes the world group to the fusion's alignment,
 and gives the city back on the way out.
 
-## Scope — AR milestone 1
+## Scope — AR milestones 1 and 2
 
-**In:** the session lifecycle, the attachment, the alignment subscription, and
-teardown on both the app-initiated and system-initiated exits.
+**In:** the session lifecycle, the attachment, the alignment subscription, the
+scene environment and camera planes, and teardown on both the app-initiated and
+system-initiated exits.
 
-**Out:** lighting, fog, `scene.background`, materials (M2); the distance gate
-and far-travel warning (M3); the draw-cost readout (M4); the UI and the
-desktop-renderer lifecycle (M5).
+**Out:** the distance gate and far-travel warning (M3); the draw-cost readout
+(M4); the UI and the desktop-renderer lifecycle (M5).
 
-M2 is deliberately separate rather than folded in here: this demo has a
-recorded history of a wrong scene environment making every
-`MeshStandardMaterial` **fail to compile and silently not draw for ten work
-items while every assertion stayed green**, so it gets its own step with its own
-verification.
+**M2 lives in [`ar-scene-environment.ts`](ar-scene-environment.ts.md), not
+here**, and is only _called_ from here. This demo has a recorded history of a
+wrong scene environment making every `MeshStandardMaterial` **fail to compile
+and silently not draw for ten work items while every assertion stayed green**,
+so the rule against setting one is stated and tested in a module a reader can
+point at, rather than being an absence in this file that nobody notices. The
+camera planes moved there with it: fog has to end exactly at the far plane, so
+the two are one decision.
 
 ## Public API
 
@@ -61,20 +64,32 @@ verification.
     `dispose()` additionally released the alignment handle. That worked **by
     accident**: the only thing `dispose()` added was a handle the framework
     already reclaims via `runSessionDisposers()` before invoking `onSessionEnd`.
-    **M2, M4 and M5 each add cleanup here** (lights and fog, the draw-cost
-    readout, the desktop renderer), and every one of them would have silently
-    not run on the back gesture.
-  - Content must come back whichever way the session ends: the framework's scene
-    outlives this one, so content left there is content the desktop view no
-    longer has and nothing reclaims — and three.js reports nothing, so the
-    symptom is an empty map view.
+    **M2, M4 and M5 each add cleanup here** (the environment and camera planes,
+    the draw-cost readout, the desktop renderer), and every one of them would
+    have silently not run on the back gesture. **M2 has since landed and is the
+    first to prove the point** — `session.restoreEnvironment` is released here,
+    and a test pins that it runs on the system end specifically.
+  - Content must come back whichever way the session ends: the framework
+    **discards** its scene at session end, so content still attached to it is
+    content the desktop view no longer has and nothing reclaims — and three.js
+    reports nothing, so the symptom is an empty map view.
+    - **The environment restore is a different case and a weaker one.** The
+      framework rebuilds scene, camera and renderer on every `initAR`, so
+      nothing there can leak into a later session; that restore is hygiene for a
+      caller passing objects it does not own, not protection of shared state. An
+      earlier version of this file claimed otherwise (r508 review) — the code
+      was right, the reason was not.
 - **`bootCompleted` guards a session that ends during a failed boot.** The
   scene-not-ready bail-out calls `endARSession`, which fires `onSessionEnd`,
   which must not run teardown against half-built state.
 - **No camera, depth or hit-test features**, all of which default ON. The city's
   position comes from GPS, not vision. Depth-sensing matters most: it
-  **overrides the camera's near/far planes** when a texture is present, which
-  would silently invalidate M4's far-plane work.
+  **overrides the camera's near/far planes** when a texture is present — which
+  since M2 is not a future concern but a live dependency, because the 0.5 / 1000
+  planes this module now sets would silently revert to the depth texture's.
+- **`getCamera() === null` bails the session out**, in the same guard as the
+  scene rather than treated as optional. Continuing would leave the framework's
+  `0.01 / 200` in place, clipping a 2.8 km mesh at 200 m with no error anywhere.
 - **Narrow framework subpaths, never the barrel** — the root export pulls in
   Leaflet, which touches `window` at import time. `osm-store.ts` carries the
   same note.
@@ -104,6 +119,13 @@ side of it).
 Every failure this module can produce is silent, so each has an assertion: no
 session without a fix; attachment to the scene root **and not** to
 `arWorldGroup`; the frame argument present; the alignment subscription; the
-feature flags off; the city not stranded when the scene is missing; the city
-returned on `dispose()` **and** on a system-initiated end; and idempotent
-teardown, asserted as exactly two attachments rather than three.
+feature flags off; the city not stranded when the scene is missing; the bail-out
+when the camera is missing; the camera's planes actually widened; the city and
+the scene environment returned on `dispose()` **and** on a system-initiated end;
+and idempotent teardown, asserted as exactly two attachments rather than three.
+
+The environment assertions are duplicated on purpose:
+`ar-scene-environment.test.ts` proves the function is correct, and the ones here
+prove it is **called**. M1 shipped three modules that were each correct in
+isolation with nothing asserting they were connected, and four green gates
+passed all three.

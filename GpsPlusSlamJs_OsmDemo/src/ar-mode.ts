@@ -3,11 +3,14 @@
  *
  * **WHAT THIS MILESTONE DOES AND DOES NOT DO.** It starts a WebXR session,
  * hands the already-built city to the framework's scene graph in the right
- * frame, and subscribes the world group to the fusion's alignment. It does NOT
- * touch lighting, fog or materials — that is M2, and the demo has a recorded
- * history of a wrong environment making every `MeshStandardMaterial` fail to
- * compile and silently not draw, so it is deliberately a separate step with its
- * own verification.
+ * frame, subscribes the world group to the fusion's alignment, and prepares the
+ * scene's environment.
+ *
+ * **The environment lives in `ar-scene-environment.ts`, not here** (M2). The
+ * demo has a recorded history of a wrong `scene.environment` making every
+ * `MeshStandardMaterial` fail to compile and silently not draw, so the rule
+ * against setting one is stated and tested in one place rather than being an
+ * absence in this file that nobody could point at.
  *
  * **THE CONTENT IS REPARENTED, NOT REBUILT.** `BuildingView` has already turned
  * ~21 MB of features into typed arrays and three.js objects; AR needs the same
@@ -32,6 +35,8 @@
 import {
   endARSession,
   getArWorldGroup,
+  getCamera,
+  getRenderer,
   getScene,
   initAR,
   type TrackingSubscribableStore,
@@ -42,6 +47,7 @@ import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import type { BuildingView } from "./building-view.js";
 import type { LatLng } from "gps-plus-slam-osm";
 
+import { applyArEnvironment } from "./ar-scene-environment.js";
 import {
   canEnterAr,
   sceneAnchorOffsetNue,
@@ -130,7 +136,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   let bootCompleted = false;
   // Held so `release` can dispose it whichever exit runs first. Undefined until
   // the session is fully built, which is why `release` uses optional chaining.
-  const session: { alignment?: { dispose: () => void } } = {};
+  const session: {
+    alignment?: { dispose: () => void };
+    restoreEnvironment?: () => void;
+  } = {};
 
   /**
    * Everything this session owns, released. **ONE function for BOTH exits.**
@@ -161,10 +170,17 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // `runSessionDisposers()` has usually already called it by the time a
     // system-initiated end reaches us.
     session.alignment?.dispose();
-    // GIVE THE CITY BACK. The framework's scene root outlives this session, so
-    // content left attached there is content the desktop view no longer has and
-    // nothing else will reclaim — and three.js reports nothing, so the symptom
-    // is an empty map view.
+    // On BOTH exits, and NOT because the framework's objects are shared —
+    // `initAR` builds a fresh scene, camera and renderer each time. It runs
+    // here because this is the one place that knows the session is over, and
+    // because the next thing added to `release()` will assume the pattern.
+    session.restoreEnvironment?.();
+    // GIVE THE CITY BACK, and the reason is the opposite of a leak: the
+    // framework DISCARDS its scene when the session ends. Content still
+    // attached to it goes with it — out of the desktop view, with nothing left
+    // holding a parent. The city itself survives (`BuildingView` owns the
+    // objects), but nothing re-parents it on its own, and three.js reports
+    // nothing, so the symptom is an empty map view.
     deps.buildingView.attachContentTo(
       deps.buildingView.localRoot,
       "demo-scene",
@@ -226,7 +242,12 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
 
   const scene = getScene();
   const arWorldGroup = getArWorldGroup();
-  if (scene === null || arWorldGroup === null) {
+  // The camera joins the same guard rather than being treated as optional: it
+  // is null only when there is no session, and continuing without it would
+  // leave the framework's 0.01 / 200 planes in place — clipping the city at
+  // 200 m with no error anywhere, which reads as the demo being broken.
+  const camera = getCamera();
+  if (scene === null || arWorldGroup === null || camera === null) {
     deps.onError("AR scene not ready.");
     void endARSession();
     return NOOP_AR_MODE;
@@ -254,6 +275,15 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       deps.enuFrameAt,
     ),
   );
+
+  // M2. Clears the background so the passthrough shows, widens the depth budget
+  // to 0.5 / 1000, adds fog ending exactly at that far plane, matches the demo's
+  // ACES grading, and pointedly does NOT set an environment map.
+  //
+  // THE RENDERER IS NOT IN THE GUARD ABOVE, deliberately: a missing camera
+  // leaves the city clipping at 200 m, while a missing renderer only leaves it
+  // ungraded. Failing the session over a look is the wrong trade.
+  session.restoreEnvironment = applyArEnvironment(scene, camera, getRenderer());
 
   session.alignment = enableArWorldGroupAlignment({
     store: deps.store,

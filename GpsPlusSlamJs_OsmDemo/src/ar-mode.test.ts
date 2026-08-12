@@ -8,7 +8,8 @@
  * attached to `arWorldGroup` instead of the scene root pins it to the session's
  * arbitrary start pose; content attached without the frame argument renders it
  * 90° off; and content left on the framework's scene at teardown vanishes from
- * the desktop view, because that scene outlives this one. None of those throw.
+ * the desktop view, because the framework discards that scene at session end.
+ * None of those throw.
  *
  * The framework's session module is mocked, following the reference consumer
  * (`WayfindingHudDemo/src/ar-mode.test.ts`): a real `initAR` needs a WebXR
@@ -40,6 +41,8 @@ const mocks = vi.hoisted(() => ({
   endARSession: vi.fn(),
   getScene: vi.fn(),
   getArWorldGroup: vi.fn(),
+  getCamera: vi.fn(),
+  getRenderer: vi.fn(),
   alignmentDispose: vi.fn(),
   enableArWorldGroupAlignment: vi.fn(),
 }));
@@ -49,6 +52,8 @@ vi.mock("gps-plus-slam-app-framework/ar", () => ({
   endARSession: mocks.endARSession,
   getScene: mocks.getScene,
   getArWorldGroup: mocks.getArWorldGroup,
+  getCamera: mocks.getCamera,
+  getRenderer: mocks.getRenderer,
 }));
 vi.mock("gps-plus-slam-app-framework/visualization", () => ({
   enableArWorldGroupAlignment: mocks.enableArWorldGroupAlignment,
@@ -59,14 +64,23 @@ const {
   endARSession,
   getScene,
   getArWorldGroup,
+  getCamera,
+  getRenderer,
   alignmentDispose,
   enableArWorldGroupAlignment,
 } = mocks;
 
 const scene = new THREE.Scene();
 const arWorldGroup = new THREE.Group();
+// REBUILT PER TEST rather than shared like the scene above, because
+// `applyArEnvironment` mutates it too — and the shared scene already caused
+// exactly that failure once (see the reset in `beforeEach`).
+let camera: THREE.PerspectiveCamera;
+/** A settings bag, not a real renderer — nothing here draws. */
+let renderer: THREE.WebGLRenderer;
 
 import { startArMode, type ArModeDeps } from "./ar-mode.js";
+import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
 
 const COLOGNE = { lat: 50.9413, lon: 6.9583 };
 
@@ -121,9 +135,27 @@ function deps(overrides: Partial<ArModeDeps> = {}): ArModeDeps {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // THE SCENE IS SHARED ACROSS TESTS AND `applyArEnvironment` MUTATES IT, so
+  // without this a test that leaves fog on makes the next one's "previous"
+  // state wrong — and the restore assertions then check that the fog came
+  // BACK. Found by exactly that failure.
+  scene.background = null;
+  scene.environment = null;
+  scene.fog = null;
   initAR.mockResolvedValue(undefined);
   getScene.mockReturnValue(scene);
   getArWorldGroup.mockReturnValue(arWorldGroup);
+  // The framework's own planes, so a test can tell "restored" from "never set".
+  camera = new THREE.PerspectiveCamera(70, 1, 0.01, 200);
+  getCamera.mockReturnValue(camera);
+  // The framework's renderer settings, which is to say: none. It sets no tone
+  // mapping at all, so this fixture starts where a real session starts and a
+  // test can tell "graded" from "left alone".
+  renderer = {
+    toneMapping: THREE.NoToneMapping,
+    toneMappingExposure: 1,
+  } as THREE.WebGLRenderer;
+  getRenderer.mockReturnValue(renderer);
   enableArWorldGroupAlignment.mockReturnValue({ dispose: alignmentDispose });
 });
 
@@ -244,13 +276,69 @@ describe("when AR cannot start", () => {
     expect(view.attachedTo).toEqual([]);
     expect(endARSession).toHaveBeenCalled();
   });
+
+  it("bails out when the camera is missing rather than keeping 0.01 / 200", async () => {
+    // The camera is in the same guard as the scene DELIBERATELY. Treating it as
+    // optional and carrying on would leave the framework's planes in place, so
+    // the city would clip at 200 m — with no error, no log, and a 2.8 km mesh
+    // mostly invisible. A bail-out is the honest outcome; there is no session
+    // worth having without a camera anyway.
+    getCamera.mockReturnValueOnce(null);
+    const view = fakeView();
+    const d = deps({
+      buildingView: view as unknown as ArModeDeps["buildingView"],
+    });
+
+    const mode = await startArMode(d);
+
+    expect(mode.started).toBe(false);
+    expect(d.onError).toHaveBeenCalledWith("AR scene not ready.");
+    expect(view.attachedTo).toEqual([]);
+    expect(endARSession).toHaveBeenCalled();
+  });
+
+  it("widens the camera's depth budget for the session", async () => {
+    // §2.3. The framework's 0.01 / 200 is both too near (~55 cm of depth
+    // quantisation at 300 m) and too short (the demo builds a 2.8 km mesh).
+    // Asserted here, not only in `ar-scene-environment.test.ts`, because that
+    // file proves the function works while this one proves it is CALLED — the
+    // exact gap that made three of M1's central claims false.
+    await startArMode(deps());
+
+    expect(camera.near).toBe(AR_CAMERA_NEAR_M);
+    expect(camera.far).toBe(AR_CAMERA_FAR_M);
+  });
+
+  it("grades the session's renderer to match the desktop view", async () => {
+    // Also a wiring assertion rather than a behaviour one: `getRenderer()` is a
+    // framework accessor added for this, and forgetting to CALL it would leave
+    // AR at `NoToneMapping` — every colour in the demo authored under ACES at
+    // 0.5, rendered at exposure 1.0.
+    await startArMode(deps());
+
+    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
+    expect(renderer.toneMappingExposure).toBe(0.5);
+  });
+
+  it("starts anyway when the framework has no renderer to grade", async () => {
+    // The asymmetry with the camera, at the session level: no renderer must not
+    // fail a session, because the only cost is a look. A `getRenderer()` that
+    // returns null is also what an older framework build returns, and AR
+    // becoming unenterable after a version skew would be a bad trade.
+    getRenderer.mockReturnValueOnce(null);
+
+    const mode = await startArMode(deps());
+
+    expect(mode.started).toBe(true);
+  });
 });
 
 describe("leaving AR", () => {
   it("gives the city back to the desktop view", async () => {
-    // THE FRAMEWORK'S SCENE OUTLIVES THIS SESSION. Content left attached there
-    // is content the desktop view no longer has and nothing else reclaims —
-    // and three.js reports nothing, so the symptom is an empty map view.
+    // THE FRAMEWORK DISCARDS ITS SCENE AT SESSION END. Content still attached
+    // to it is content the desktop view no longer has and nothing else
+    // reclaims — and three.js reports nothing, so the symptom is an empty map
+    // view.
     const view = fakeView();
     const mode = await startArMode(
       deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
@@ -262,6 +350,44 @@ describe("leaving AR", () => {
       root: view.localRoot,
       frame: "demo-scene",
     });
+  });
+
+  it("restores the scene environment, so the framework scene is left clean", async () => {
+    // M2. What this pins is that `release()` CALLS the restore — not that the
+    // framework needs it to. `initAR` builds a fresh scene, camera and renderer
+    // per session (r508 review corrected an earlier claim here that it reused
+    // them), so nothing leaks either way; what matters is that the one function
+    // both exits go through keeps doing the whole job as later milestones add
+    // to it.
+    //
+    // Asserted through the real `applyArEnvironment` rather than a spy, because
+    // the observable end state is the thing worth pinning.
+    scene.background = null;
+    const mode = await startArMode(deps());
+    // Entering set fog; leaving must remove it.
+    expect(scene.fog).not.toBeNull();
+
+    mode.dispose();
+
+    expect(scene.fog).toBeNull();
+    expect(scene.background).toBeNull();
+    expect(camera.near).toBe(0.01);
+    expect(camera.far).toBe(200);
+  });
+
+  it("restores the environment on a SYSTEM end too", async () => {
+    // The Android back gesture calls no `dispose()`. This is the assertion that
+    // makes the merged `release()` worth having — under the old split it would
+    // have failed.
+    await startArMode(deps());
+    expect(scene.fog).not.toBeNull();
+
+    const sessionOptions = initAR.mock.calls[0]?.[3] as {
+      onSessionEnd: () => void;
+    };
+    sessionOptions.onSessionEnd();
+
+    expect(scene.fog).toBeNull();
   });
 
   it("stops the alignment subscription and ends the session", async () => {

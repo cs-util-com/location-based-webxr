@@ -1422,6 +1422,31 @@ export function getCamera(): THREE.PerspectiveCamera | null {
 }
 
 /**
+ * Get the session's WebGL renderer, or `null` when no session is running.
+ *
+ * WHY A CONSUMER NEEDS THIS. The renderer is created here with deliberately
+ * neutral settings — no tone mapping, default output colour space — because the
+ * framework has no opinion about how a consumer's content should be graded. A
+ * consumer that authored its materials and colours under a different grade
+ * (say `ACESFilmicToneMapping` at exposure 0.5) renders visibly differently in
+ * AR than in its own view, and cannot correct it without reaching the renderer.
+ *
+ * The same handle answers the other question consumers ask, which is what a
+ * frame actually costs: `renderer.info.render` is the only source for draw
+ * calls and triangles, and it is per-renderer.
+ *
+ * READ-ONLY BY CONVENTION. This exposes the object rather than a settings API
+ * on purpose — an allow-list of "safe" properties would be a guess about what
+ * consumers need, and this is a library for applications that already own their
+ * rendering. Anything a consumer changes here it must also restore, because the
+ * renderer is torn down with the session and a half-configured one is worse
+ * than either state.
+ */
+export function getRenderer(): THREE.WebGLRenderer | null {
+  return activeSession.sceneGraph.renderer;
+}
+
+/**
  * Apply an alignment matrix to the AR world group.
  *
  * The alignment matrix maps odometry positions in NUE space
