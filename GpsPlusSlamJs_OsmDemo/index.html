@@ -649,6 +649,20 @@
         Next geo-event
       </button>
       <!--
+        AR MODE (DEC-12, AR milestone 1). HIDDEN BY DEFAULT and revealed by
+        `arButtonState`, never by this markup: the device may not support
+        immersive AR, and on a device that does, entry still waits for a first
+        GPS fix because the scene is anchored to the framework's `zero`.
+
+        THE MAP STAYS. DEC-12 is explicit that AR is an additional mode, not a
+        replacement — the reference consumer's pattern hides its map view
+        inversely to AR support, which here would cost every WebXR-capable
+        phone the only interface that can drive the data.
+      -->
+      <button type="button" id="enter-ar" class="geo-event-button" hidden>
+        AR
+      </button>
+      <!--
         THE GROUND MODE (W11, DEC-R3-3). NOT a layer — it does not add or remove
         anything from the scene, it chooses which surface is drawn as the ground:
         the CPU-displaced plane, the GPU-displaced one (W23's A/B comparison), or
@@ -679,6 +693,18 @@
     <main>
       <div id="map"></div>
       <div id="scene"></div>
+      <!--
+        WHERE `initAR` MOUNTS (AR milestone 1). Its OWN element rather than
+        `<main>` or `#scene`: the framework inserts a full-screen canvas plus a
+        DOM-overlay root as children of whatever it is given, and both `#map`
+        and `#scene` are grid-laid children that the demo sizes itself. Handing
+        either over would put a full-screen canvas inside a sized cell and
+        leave the demo's own resize observer fighting it.
+
+        Empty and zero-sized until a session starts; the framework's canvas is
+        positioned by the UA once the session is immersive.
+      -->
+      <div id="ar-root"></div>
       <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
            two views to ~450 px each on a laptop, which is the width that made
            the 3D pane useless on a phone. -->

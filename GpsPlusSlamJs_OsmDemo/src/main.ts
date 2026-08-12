@@ -45,6 +45,12 @@ import {
 import { describeDrawCost } from "./draw-cost.js";
 import { geoEventButtonLabel } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
+import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar";
+import { selectZeroReference } from "gps-plus-slam-app-framework/state";
+
+import { arButtonState, type ArSupport } from "./ar-button-state.js";
+import { startArMode, type ArMode } from "./ar-mode.js";
+import { canEnterAr } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
 import { describeGeoEventStats } from "./geo-event-stats.js";
@@ -402,6 +408,15 @@ async function main(): Promise<void> {
    * wired further down, once `refresh` exists — see `geo-event-cycle.ts`.
    */
   const geoEventButton = el<HTMLButtonElement>("geo-event");
+  /**
+   * AR mode's entry point (DEC-12, AR milestone 1).
+   *
+   * Looked up here with the other controls; the behaviour is wired below, once
+   * `buildingView` exists. Its appearance is DERIVED by `arButtonState` and
+   * never toggled here — see that module for why the map is not a function of
+   * AR support.
+   */
+  const arButton = el<HTMLButtonElement>("enter-ar");
   const detailsPanel = new DetailsPanel({
     container: el("details"),
     onClose: () => store.dispatch(actions.cellSelected(undefined)),
@@ -774,6 +789,79 @@ async function main(): Promise<void> {
       return;
     }
     geoEventPicker.toggle(new Date(held.eventTime));
+  });
+
+  /**
+   * AR MODE (DEC-12, AR milestone 1).
+   *
+   * The button's appearance is DERIVED by `arButtonState` from three facts and
+   * repainted whenever any of them changes; nothing here toggles `hidden` or
+   * `disabled` directly. That is what keeps DEC-12's rule — the map stays,
+   * always — from becoming a function of AR support by accident.
+   *
+   * THE ORIGIN IS THE FRAMEWORK'S `zero`, not the demo's position. The demo's
+   * position moves on every map click; `zero` is taken from the first GPS fix
+   * and is what the fusion's alignment matrix is expressed against. Anchoring
+   * anywhere else means the camera and the city disagree by however far the
+   * two have drifted. See `ar-origin.ts`.
+   */
+  let arSupport: ArSupport = "checking";
+  let arSession: ArMode | undefined;
+
+  const paintArButton = (): void => {
+    const state = arButtonState({
+      support: arSupport,
+      hasFix: canEnterAr(selectZeroReference(store.getState())),
+      active: arSession !== undefined,
+    });
+    arButton.hidden = state.hidden;
+    arButton.disabled = state.disabled;
+    arButton.textContent = state.label;
+    // Cleared rather than left stale: the hint explains a DISABLED state, and
+    // a tooltip surviving into the enabled one describes a condition that no
+    // longer holds.
+    if (state.hint === undefined) arButton.removeAttribute("title");
+    else arButton.title = state.hint;
+  };
+
+  // The probe is a promise and the button starts hidden, so this resolves into
+  // a repaint rather than blocking boot.
+  void probeImmersiveArSupport().then((supported) => {
+    arSupport = supported ? "supported" : "unsupported";
+    paintArButton();
+  });
+  // A fix can land at any time, and `zero` is set by the framework rather than
+  // by anything this file dispatches — so the button follows the STORE, not the
+  // locate control's callback.
+  store.subscribe(paintArButton);
+  paintArButton();
+
+  arButton.addEventListener("click", () => {
+    if (arSession !== undefined) {
+      arSession.dispose();
+      arSession = undefined;
+      paintArButton();
+      return;
+    }
+    // IN THE GESTURE, not after an await: the permission prompts WebXR raises
+    // are only allowed synchronously from a user gesture.
+    void startArMode({
+      container: el("ar-root"),
+      store,
+      buildingView,
+      origin: selectZeroReference(store.getState()),
+      onError: (message) => store.dispatch(actions.nonFatalError(message)),
+      onEnded: () => {
+        // Fires for the Android back gesture too, where nothing called
+        // `dispose()` — so the button has to be repainted from here as well as
+        // from the click handler above.
+        arSession = undefined;
+        paintArButton();
+      },
+    }).then((mode) => {
+      arSession = mode;
+      paintArButton();
+    });
   });
   // The switches report a whole next set; `toggleLayer` is the only thing that
   // knows how to build a valid one (see `osm-view-slice.ts` for why the action

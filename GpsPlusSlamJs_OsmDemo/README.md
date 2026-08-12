@@ -77,10 +77,18 @@ to openstreetmap.org — the provenance map is what turns "that looks wrong" int
 
 ## What it deliberately is not
 
-- **Not an AR view.** §8.4 of the plan is explicit that the AR overlay is a
-  gross-failure detector: OSM footprints carry low-metre absolute error,
-  plausibly larger than the fusion error one would be measuring. On a 2D map a
-  mis-scored lawn is unambiguously a scoring fact.
+- **Not an AR INSTRUMENT** — though there is now an AR mode, and the distinction
+  is the whole of §8.4. OSM footprints carry low-metre absolute error, plausibly
+  larger than the fusion error one would be measuring, so **if buildings look
+  offset in AR that is not a fusion finding and no bug should be opened from
+  it.** On a 2D map a mis-scored lawn is unambiguously a scoring fact; in AR it
+  is a scoring fact, a footprint fact and a pose fact superimposed.
+  - What AR mode IS: a product feature — walk around and see the affordance data
+    in place. It is judged on whether it feels right, which an instrument is
+    not. **The map stays** (DEC-12); AR is an additional mode, not a
+    replacement.
+  - Entry waits for a first GPS fix, because the scene is anchored to the
+    framework's `zero` and there is no re-anchoring later (DEC-R11-6).
 - **Not a product.** No offline area management, no route prefetch, no settings.
 
 ## Structure
@@ -93,6 +101,14 @@ Everything that can be wrong in an interesting way is pure and unit-tested:
   with no renderer in it.
 - `agent-route.ts`, `route-path.ts`, `agent-cycle.ts` — the NPC route: planning
   it, turning it into scene geometry and a walk, and the click that orders it.
+- `scene-content.ts` — the map content as one subtree with a swappable parent,
+  and the axis change between this demo's scene (X=East, Y=Up, Z=−North) and the
+  GPS-world frame (NUE). The AR seam.
+- `ar-origin.ts`, `ar-button-state.ts` — the `lon`/`lng` adapter, the geoid
+  datum sign, the entry gate, and what the AR button shows. All pure, because
+  every one of them fails silently and as something else when wrong.
+- `ar-mode.ts` — the WebXR session lifecycle. Tested against a mocked framework
+  session; a real one needs a device.
 - `map-view.ts`, `building-view.ts`, `main.ts` — drawing and wiring only.
 
 ## Attribution
