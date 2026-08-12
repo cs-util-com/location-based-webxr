@@ -172,7 +172,21 @@ export class CachingSource implements OsmDataSource {
     if (!joined) return result;
     return {
       ...result,
-      timings: joinedTimings(elapsedMs(startedAt, this.monotonicNow())),
+      timings: {
+        ...joinedTimings(elapsedMs(startedAt, this.monotonicNow())),
+        // THE JOINER PAID FOR ITS OWN PROBE AND MUST BE CHARGED FOR IT
+        // (r504 review). It has already run a full `readCachedTimed` above —
+        // a `store.get` plus a `JSON.parse` of a multi-megabyte blob — and
+        // `startedAt` is only taken AFTER that, so without this the probe
+        // belongs to no stage at all. That is the exact gap `probeMs` was
+        // added to close on the miss and stale paths.
+        //
+        // It surfaces downstream as residual rather than vanishing, so it was
+        // an attribution gap rather than a lost measurement — but a joining
+        // caller is precisely the collision case (`prefetch-queue` against a
+        // user click) where the warm-probe cost is real and worth seeing.
+        probeMs: read.probeMs,
+      },
     };
   }
 
@@ -323,10 +337,13 @@ export class CachingSource implements OsmDataSource {
    *
    * `probeMs` is the WHOLE attempt — read plus decode — and is what a miss or a
    * stale hit carries forward, because on those paths this work bought nothing
-   * and still has to belong to a stage. **Measured in a `finally`**, so the
-   * corrupt-entry path reports it too: a `JSON.parse` that spent real time on a
-   * large damaged blob before throwing is precisely where the wasted cost is
-   * largest, and the first version was the one branch that dropped it.
+   * and still has to belong to a stage. **Every return path funnels through the
+   * `outcome()` closure below**, so the corrupt-entry path reports it too: a
+   * `JSON.parse` that spent real time on a large damaged blob before throwing is
+   * precisely where the wasted cost is largest, and the first version was the
+   * one branch that dropped it. (This used to say "measured in a `finally`";
+   * the behaviour was right and there is no `finally` here, so a reader looking
+   * for one would not find it.)
    */
   private async readCachedTimed(tile: string): Promise<{
     readonly result: OsmTileResult | undefined;

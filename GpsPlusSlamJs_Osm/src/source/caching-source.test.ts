@@ -196,6 +196,35 @@ describe("cache-first behaviour", () => {
     expect(b.timings?.servedBy).toBe("joined");
     expect(c.timings?.servedBy).toBe("joined");
   });
+
+  it("charges a joiner for the cache probe it actually paid for", async () => {
+    // r504 REVIEW. A joiner runs a full `readCachedTimed` before it discovers
+    // there is a request to join — a `store.get` plus a `JSON.parse` of a
+    // multi-megabyte blob — and the join clock only starts AFTER that. So the
+    // probe belonged to no stage at all, which is the exact gap `probeMs` was
+    // introduced to close on the miss and stale paths.
+    //
+    // The collision this models is real and is the reason it matters: the
+    // prefetch queue racing a user click is precisely when a warm probe is
+    // paid twice.
+    //
+    // A STEPPING CLOCK, so the probe and the join are distinguishable. A clock
+    // that returned the same value throughout would report 0 for both and pass
+    // whether or not the field were carried.
+    let tick = 0;
+    const inner = new CountingSource();
+    const cache = new CachingSource(inner, new MemoryBlobStore(), {
+      monotonicNow: () => (tick += 5),
+    });
+
+    const [, joiner] = await Promise.all([
+      cache.fetchTile(TILE),
+      cache.fetchTile(TILE),
+    ]);
+
+    expect(joiner.timings?.servedBy).toBe("joined");
+    expect(joiner.timings?.probeMs).toBeGreaterThan(0);
+  });
 });
 
 describe("staleness is the consumer’s policy, never the library’s", () => {
