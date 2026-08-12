@@ -6,6 +6,7 @@
 
 - `PassableFootprint` — `{ rings: readonly (readonly PlanarPoint[])[] }`, rings as `x = lng, y = lat` degrees. Structurally satisfied by `mesh/buildings.ts`'s `SolidFootprint`, so the caller hands its footprints straight over.
 - `passageLines(features, footprints): readonly (readonly (readonly PlanarPoint[])[])[]` — one list of passage POLYLINES per footprint, **in the same order**, so the caller can zip them. Almost all lists are empty.
+- `insideRingsByParity(point, rings): boolean` — whether `point` is in the SOLID part of a multi-ring footprint. Exported so `obstacles.ts` shares it rather than keeping a second reading of the same question; see the parity invariant below.
 
 ## Invariants & assumptions
 
@@ -17,6 +18,7 @@
 - **`PASSAGE_CORRIDOR_M` is 10 m, wider than `GATE_GAP_M`, and sized by the pathfinder.** A gate needs ONE admitted step across a line; a corridor needs a CHAIN of them along its length, and the res-13 cells the search moves between sit ~6 m apart on a lattice that has no idea where the passage runs. A corridor narrower than that spacing is one the agent can enter and then not follow — worse than not opening it, because the mouth is visible. `building-passages.property.test.ts` states this as "walkable end to end at any bearing" and fails at 5 m.
 - **A passage that merely ENDS inside the footprint counts.** OSM ways are routinely split at a building outline. Measured: no passage in the corpus has both endpoints inside a solid footprint, but Tokyo has one with a vertex inside a building whose ring it never crosses — a seventh building the crossing test alone missed.
 - **Containment is by ring PARITY, not "inside any ring".** A point in a courtyard is inside the outer ring and inside a hole; counting it as inside would let a passage ending in the yard open a route through the outer wall.
+  - **The rule is EXPORTED as `insideRingsByParity` because a second copy of it existed and was wrong** (r504 review, fixed 2026-08-12). `obstacles.ts` decided the same question with `rings.some(...)` — the very "inside any ring" this invariant rejects — which made a courtyard inside a PIERCED building unwalkable. The divergence survived because the test guarding it placed its courtyard 4.45 m from the passage, inside the 5 m corridor half-width, so `runsAlongAPassage` answered first and the parity question was never reached. Two implementations of one predicate is what allowed that.
 - **The collinear case yields no opening.** A way running exactly _along_ a wall makes `segmentsIntersect` report a touch with no single crossing point, and inventing one (a midpoint, say) would place the opening where the passage does not run.
 
 ## Examples

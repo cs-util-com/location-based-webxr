@@ -173,7 +173,7 @@ function touchesFootprint(
 }
 
 /**
- * Whether `point` is inside the solid part of `footprint`.
+ * Whether `point` is inside the solid part of a multi-ring footprint.
  *
  * **BY RING PARITY, not by "inside any ring".** A footprint's rings are the
  * outer boundary followed by its holes, and a point in a courtyard is inside the
@@ -183,16 +183,31 @@ function touchesFootprint(
  * which would have opened a route through its outer wall into the yard: an
  * invented opening, and the failure DEC-R12-1 spends a page refusing. Measured:
  * it moved Tokyo's count from 6 to 7 buildings, which is how it was noticed.
+ *
+ * **EXPORTED SO THERE IS ONE RULE, NOT TWO** (r504 review). `obstacles.ts` had
+ * its own copy written as `rings.some(...)` — the very "inside any ring" this
+ * docstring rejects — and it made a courtyard inside a PIERCED building
+ * unwalkable. The divergence was invisible because the test guarding it placed
+ * its courtyard inside the passage corridor, so the passage rule answered
+ * first. Two implementations of one predicate is what allowed that; there is
+ * now one.
  */
+export function insideRingsByParity(
+  point: PlanarPoint,
+  rings: readonly (readonly PlanarPoint[])[],
+): boolean {
+  let crossings = 0;
+  for (const ring of rings) {
+    if (ring.length >= 3 && containsPoint(ring, point)) crossings++;
+  }
+  return crossings % 2 === 1;
+}
+
 function insideFootprint(
   point: PlanarPoint,
   footprint: PassableFootprint,
 ): boolean {
-  let crossings = 0;
-  for (const ring of footprint.rings) {
-    if (ring.length >= 3 && containsPoint(ring, point)) crossings++;
-  }
-  return crossings % 2 === 1;
+  return insideRingsByParity(point, footprint.rings);
 }
 
 /** Degrees as the index holds them: `x = lng`, `y = lat`. */

@@ -47,7 +47,11 @@ import { cellToLatLng, gridDisk } from "h3-js";
 
 import { barrierFootprints } from "../mesh/barrier-shape.js";
 import { type GateOpenings, gateOpenings } from "../mesh/barrier-gates.js";
-import { PASSAGE_CORRIDOR_M, passageLines } from "./building-passages.js";
+import {
+  PASSAGE_CORRIDOR_M,
+  insideRingsByParity,
+  passageLines,
+} from "./building-passages.js";
 import {
   barrierCentrelines,
   isSolidBarrier,
@@ -64,7 +68,7 @@ import {
   segmentsIntersect,
 } from "../spatial/segment-crossing.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
-import { containsPoint, type PlanarPoint } from "../spatial/point-in-ring.js";
+import { type PlanarPoint } from "../spatial/point-in-ring.js";
 
 /** Something an agent cannot walk through, and the level it can stand on. */
 export interface Obstacle {
@@ -590,11 +594,21 @@ function blockedDespitePassages(
   );
   // Neither crossing the boundary nor inside it: this obstacle is simply not in
   // the way, and the passage is irrelevant.
+  //
+  // BY RING PARITY, via the one shared predicate. This was
+  // `rings.some(ring => contains(a) && contains(b))` — "inside ANY ring" — and
+  // that made a COURTYARD inside a pierced building unwalkable: a courtyard
+  // point is inside the outer ring, so `inside` was true, so every step in the
+  // yard was refused unless it happened to run along the passage.
+  //
+  // It disagreed with `insideFootprint` in `building-passages.ts`, whose
+  // docstring rejects exactly this reading, and with the non-pierced path
+  // below, which tests only for a CROSSING and therefore already lets
+  // courtyards through. Three places, two answers.
   const inside =
     !crossesBoundary &&
-    obstacle.rings.some(
-      (ring) => containsPoint(ring, a) && containsPoint(ring, b),
-    );
+    insideRingsByParity(a, obstacle.rings) &&
+    insideRingsByParity(b, obstacle.rings);
   if (!crossesBoundary && !inside) return false;
 
   return !runsAlongAPassage(a, b, passages);

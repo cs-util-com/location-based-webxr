@@ -49,6 +49,15 @@ when the user does.
       [`building-passages.ts.md`](building-passages.ts.md).
     - **This field was called `openings` in an earlier draft of this document,
       and described as boundary POINTS.** It is neither. Corrected 2026-08-10.
+    - **"Inside the footprint" is decided BY RING PARITY, through the shared
+      `insideRingsByParity` in `building-passages.ts`** — not by "inside any
+      ring". A point in a courtyard is inside the outer ring and inside a hole:
+      two rings, even, therefore outside the building. This file had its own
+      `rings.some(...)` copy until 2026-08-12, which made **a courtyard inside a
+      pierced building unwalkable**, and disagreed both with
+      `building-passages.ts` and with the non-pierced path here, which tests
+      only for a crossing and so already let courtyards through. One predicate
+      now, not three readings of it.
 - `ObstacleIndex` — `obstaclesIn(cell)`, `cells`.
 - `buildObstacleIndex(features, resolution?) => ObstacleIndex` — **barriers and
   buildings**. Barriers become `thicknessM`-wide bands along their centrelines;

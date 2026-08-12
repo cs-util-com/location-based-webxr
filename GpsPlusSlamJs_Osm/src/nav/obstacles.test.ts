@@ -39,6 +39,7 @@ import {
   obstacleLevelsAt,
 } from "./obstacles.js";
 import { DEFAULT_BARRIER_HEIGHT_M } from "../mesh/barriers.js";
+import { PASSAGE_CORRIDOR_M } from "./building-passages.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 import type { OsmFeature, OsmWay } from "../model/osm-feature.js";
 
@@ -606,42 +607,68 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
   }
 
   it("admits a step inside a COURTYARD of a pierced building", () => {
-    // WHY THIS TEST MATTERS, and it is a GUARD rather than a bug reproduction.
+    // WHY THIS TEST MATTERS: it is a BUG REPRODUCTION, and it spent one round
+    // claiming to be the opposite.
     //
-    // A review argued that `blockedDespitePassages` has a live defect here: it
-    // decides "is this step inside the obstacle" with
+    // An earlier review argued `blockedDespitePassages` had a live defect: it
+    // decided "is this step inside the obstacle" with
     // `rings.some(ring => contains(a) && contains(b))` — inside ANY ring —
     // where `building-passages.ts`'s `insideFootprint` uses ring PARITY and
     // documents why (*"it moved Tokyo's count from 6 to 7 buildings"*). Under
     // `some`, a step in a courtyard is "inside the outer ring", so a pierced
-    // building would refuse it and the courtyard would be unwalkable.
+    // building refuses it and **the courtyard is unwalkable**.
     //
-    // **THAT DOES NOT REPRODUCE, and this test is what establishes it.** The
-    // structural assertions below prove the fixture really does exercise the
-    // path — a multi-ring obstacle carrying passages — and the step is still
-    // admitted. So the `some`/parity divergence is real in the source and does
-    // NOT change behaviour in this configuration. Not fixed, because the repo's
-    // rule is to confirm a behaviour is wrong before changing it, and this one
-    // is not confirmed.
+    // This test was written to check that argument and concluded "THAT DOES NOT
+    // REPRODUCE". **It was wrong, and the reason is the fixture, not the
+    // reasoning** — see the rebuild note below. Once the courtyard cells are
+    // placed clear of the passage corridor the step IS blocked, exactly as
+    // argued. The predicate is now shared with `building-passages.ts` as
+    // `insideRingsByParity`, so there is one rule instead of two.
     //
-    // Kept because the water veto is where the argument would bite hardest —
-    // the inner rings of the Thames relations are islands and piers — so if that
-    // work makes this fail, the failure is the reproduction the fix needs.
+    // The water veto is where this would have bitten hardest — the inner rings
+    // of the Thames relations are islands and piers.
+    //
+    // FIXTURE REBUILT AFTER THE r504 REVIEW, WHICH SHOWED IT PROVED NOTHING.
+    // The courtyard cells used to sit at `HOME.lat + STEP * 5`. `STEP` is
+    // 0.000008° ≈ 0.89 m, so that is **4.45 m** from a passage running along
+    // `HOME.lat` — inside `PASSAGE_CORRIDOR_M / 2` = 5 m. `runsAlongAPassage`
+    // takes the MINIMUM distance over the whole step against the whole line, so
+    // the step was admitted by the passage rule and the `some`/parity question
+    // was never reached. The assertion held for a reason unrelated to its own
+    // twenty-line comment — the recurring failure mode this branch keeps
+    // retiring.
+    //
+    // The courtyard is now large enough to stand well clear of the corridor,
+    // and two assertions below make the clearance a checked fact rather than
+    // arithmetic a reader has to redo.
+    const OUTER = 45;
+    const INNER = 30;
     const courtyardBlock: OsmFeature = {
       type: "relation",
       id: 40,
       members: [
-        { type: "way", ref: 41, role: "outer", geometry: block.geometry },
+        {
+          type: "way",
+          ref: 41,
+          role: "outer",
+          geometry: [
+            { lat: HOME.lat - STEP * OUTER, lng: HOME.lng - STEP * OUTER },
+            { lat: HOME.lat - STEP * OUTER, lng: HOME.lng + STEP * OUTER },
+            { lat: HOME.lat + STEP * OUTER, lng: HOME.lng + STEP * OUTER },
+            { lat: HOME.lat + STEP * OUTER, lng: HOME.lng - STEP * OUTER },
+            { lat: HOME.lat - STEP * OUTER, lng: HOME.lng - STEP * OUTER },
+          ],
+        },
         {
           type: "way",
           ref: 42,
           role: "inner",
           geometry: [
-            { lat: HOME.lat - STEP * 10, lng: HOME.lng - STEP * 10 },
-            { lat: HOME.lat - STEP * 10, lng: HOME.lng + STEP * 10 },
-            { lat: HOME.lat + STEP * 10, lng: HOME.lng + STEP * 10 },
-            { lat: HOME.lat + STEP * 10, lng: HOME.lng - STEP * 10 },
-            { lat: HOME.lat - STEP * 10, lng: HOME.lng - STEP * 10 },
+            { lat: HOME.lat - STEP * INNER, lng: HOME.lng - STEP * INNER },
+            { lat: HOME.lat - STEP * INNER, lng: HOME.lng + STEP * INNER },
+            { lat: HOME.lat + STEP * INNER, lng: HOME.lng + STEP * INNER },
+            { lat: HOME.lat + STEP * INNER, lng: HOME.lng - STEP * INNER },
+            { lat: HOME.lat - STEP * INNER, lng: HOME.lng - STEP * INNER },
           ],
         },
       ],
@@ -653,20 +680,31 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
       passage({ tunnel: "building_passage" }),
     ]);
 
-    // Two neighbouring cells both well inside the courtyard, north of the
-    // passage so neither runs along it — the case that must still be free.
-    const inCourtyard = cellAt(HOME.lat + STEP * 5, HOME.lng - STEP * 3);
+    // Two neighbouring cells well inside the courtyard AND well north of the
+    // passage — the case that must still be free.
+    const inCourtyard = cellAt(HOME.lat + STEP * 20, HOME.lng - STEP * 3);
     const alsoInCourtyard = gridDisk(inCourtyard, 1).find((cell) => {
       if (cell === inCourtyard) return false;
       const [lat, lng] = cellToLatLng(cell);
       return (
-        lat > HOME.lat + STEP * 2 &&
-        lat < HOME.lat + STEP * 9 &&
-        lng > HOME.lng - STEP * 9 &&
-        lng < HOME.lng + STEP * 9
+        lat > HOME.lat + STEP * 12 &&
+        lat < HOME.lat + STEP * (INNER - 2) &&
+        lng > HOME.lng - STEP * (INNER - 2) &&
+        lng < HOME.lng + STEP * (INNER - 2)
       );
     });
     expect(alsoInCourtyard).toBeDefined();
+
+    // CLEARANCE IS ASSERTED, NOT ASSUMED — this is the check whose absence let
+    // the old fixture pass for the wrong reason. Both endpoints must be
+    // further from the passage line than the corridor half-width, or
+    // `runsAlongAPassage` decides the outcome and the test is meaningless.
+    const METRES_PER_DEG_LAT = 111_320;
+    for (const cell of [inCourtyard, alsoInCourtyard as string]) {
+      const [lat] = cellToLatLng(cell);
+      const fromPassageM = Math.abs(lat - HOME.lat) * METRES_PER_DEG_LAT;
+      expect(fromPassageM).toBeGreaterThan(PASSAGE_CORRIDOR_M / 2);
+    }
 
     // THE FIXTURE MUST ACTUALLY EXERCISE THE PATH, or this test passes for the
     // wrong reason: it needs an obstacle with a HOLE and with PASSAGES, since
@@ -679,6 +717,14 @@ describe("a road tagged as a building passage opens the building it pierces (DEC
     expect(crossesObstacle(index, inCourtyard, alsoInCourtyard as string)).toBe(
       false,
     );
+
+    // AND THE CONTROL THAT NAMES THE REASON. If the step were free because of
+    // the corridor rather than because it is in the courtyard, removing the
+    // passage would block it. It stays free, so the freedom is the hole's.
+    const withoutPassage = buildObstacleIndex([courtyardBlock]);
+    expect(
+      crossesObstacle(withoutPassage, inCourtyard, alsoInCourtyard as string),
+    ).toBe(false);
   });
 
   it("admits a step through the passage", () => {
