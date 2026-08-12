@@ -122,6 +122,24 @@ export interface SlamAppRootState extends LibraryRootState {
 export type SlamAppMiddleware = Middleware<any, any, any>;
 
 /**
+ * Consumer summariser THEN framework sanitizer.
+ *
+ * Exported so the ORDER is testable. Inline in the factory it was reachable
+ * only through the devtools extension, i.e. not at all from a test -- and the
+ * order is the whole safety property: the consumer collapses its own large
+ * slice, and the framework then redacts pose and GPS data from what is left.
+ * Reversed, a consumer summariser that dropped fields could drop the redaction
+ * with them.
+ */
+export function composeStateSanitizer(
+  consumer: (<S>(state: S) => S) | undefined,
+  framework: <T>(value: T, depth?: number) => T,
+): <S>(state: S) => S {
+  if (consumer === undefined) return framework;
+  return <S>(state: S): S => framework(consumer(state));
+}
+
+/**
  * Options for {@link createSlamAppStore}.
  */
 export interface SlamAppStoreOptions<
@@ -187,6 +205,31 @@ export interface SlamAppStoreOptions<
 
   /** State paths the immutable check should skip. Added, never replacing. */
   immutableIgnoredPaths?: readonly string[];
+
+  /**
+   * Summarise consumer state before the devtools extension serialises it.
+   *
+   * **Composed WITH the framework's sanitizer, not instead of it** — this runs
+   * first and its result is then passed through `sanitizeForDevTools`, so a
+   * consumer can collapse its own large slice without disabling the framework's
+   * own redaction of pose and GPS data.
+   *
+   * The framework's sanitizer walks and rebuilds every array and plain object
+   * to depth 10 on every dispatch. That is the right default and it is
+   * expensive for a consumer holding a large slice: the OSM demo's snapshot is
+   * ~931 scored cells, deep-copied on every dispatch after migrating to this
+   * factory — reintroducing the cost its `serializableIgnoredPaths` exemption
+   * exists to avoid, through the other channel.
+   *
+   * **STATE ONLY, and the limit is worth stating because it is easy to assume
+   * otherwise.** `actionSanitizer` is not configurable and still walks every
+   * dispatched payload to depth 10, so the demo's `snapshotReady` action is
+   * still rebuilt on every refresh. That is a cost this factory INTRODUCED —
+   * the demo previously ran with a state sanitizer and no action one — and it
+   * is open, not fixed. An earlier version of this comment claimed the hook
+   * "removes both"; it removes the state half.
+   */
+  devToolsStateSanitizer?: <S>(state: S) => S;
 
   /**
    * License key for the core library. Defaults to the bundled community key.
@@ -362,6 +405,7 @@ export function createSlamAppStore<
     serializableIgnoredActions,
     serializableIgnoredPaths,
     immutableIgnoredPaths,
+    devToolsStateSanitizer,
   } = options;
 
   validateLicenseKey(licenseKey);
@@ -599,7 +643,13 @@ export function createSlamAppStore<
         .concat(persistenceMiddleware, ...(extraMiddleware ?? [])),
     devTools: {
       actionSanitizer: sanitizeForDevTools,
-      stateSanitizer: sanitizeForDevTools,
+      // COMPOSED, NOT REPLACED. The consumer's summariser runs first and its
+      // result goes through the framework's own sanitizer, so collapsing a
+      // large app slice cannot switch off the redaction of pose and GPS data.
+      stateSanitizer: composeStateSanitizer(
+        devToolsStateSanitizer,
+        sanitizeForDevTools,
+      ),
     },
   });
 

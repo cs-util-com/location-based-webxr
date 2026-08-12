@@ -15,9 +15,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createSlice } from '@reduxjs/toolkit';
 import { setZeroPos, setColdStartOverrideEnabled } from 'gps-plus-slam-js';
-import { createSlamAppStore } from './create-slam-app-store';
+import {
+  composeStateSanitizer,
+  createSlamAppStore,
+} from './create-slam-app-store';
 import { startSession, endSession } from './recording-slice';
 import type { StorageBackend } from '../storage/storage-backend';
 import { NullStorageBackend } from '../storage/null-storage-backend';
@@ -616,5 +620,77 @@ describe('consumer-supplied dev-check exemptions', () => {
 
     warn.mockRestore();
     error.mockRestore();
+  });
+});
+
+describe('composeStateSanitizer', () => {
+  it('runs the consumer summariser BEFORE the framework sanitizer', () => {
+    // THE ORDER IS THE SAFETY PROPERTY. The consumer collapses its own large
+    // slice; the framework then redacts pose and GPS data from what is left.
+    // Reversed, a consumer summariser that dropped fields could drop the
+    // redaction with them — and the framework's own walk would still have paid
+    // the full cost the consumer was trying to avoid.
+    const calls: string[] = [];
+    const consumer = (<S>(state: S): S => {
+      calls.push('consumer');
+      return state;
+    }) as <S>(state: S) => S;
+    const framework = (<T>(value: T): T => {
+      calls.push('framework');
+      return value;
+    }) as <T>(value: T) => T;
+
+    composeStateSanitizer(consumer, framework)({ any: 'state' });
+
+    expect(calls).toEqual(['consumer', 'framework']);
+  });
+
+  it("passes the consumer's OUTPUT to the framework, not the original", () => {
+    // The composition that matters: if the framework saw the raw state, the
+    // consumer's summary would be computed and thrown away — the deep walk it
+    // exists to prevent would still happen.
+    let frameworkSaw: unknown;
+    const consumer = (<S>(): S => ({ demo: 'summary' }) as S) as <S>(
+      state: S,
+    ) => S;
+    const framework = (<T>(value: T): T => {
+      frameworkSaw = value;
+      return value;
+    }) as <T>(value: T) => T;
+
+    composeStateSanitizer(consumer, framework)({ demo: { huge: [1, 2, 3] } });
+
+    expect(frameworkSaw).toEqual({ demo: 'summary' });
+  });
+
+  it('returns the framework sanitizer unchanged when no consumer is given', () => {
+    // The regression guard for the other five consumers: adding the option must
+    // not wrap, allocate or otherwise change a store that does not pass it.
+    const framework = (<T>(value: T): T => value) as <T>(value: T) => T;
+    expect(composeStateSanitizer(undefined, framework)).toBe(framework);
+  });
+});
+
+describe('the devtools sanitizer is actually WIRED, not just composable', () => {
+  it('routes the consumer option through composeStateSanitizer', () => {
+    // `composeStateSanitizer` is tested as a pure function above, but nothing
+    // asserted the FACTORY uses it — and deleting that one line leaves every
+    // other test green. That is precisely how the demo's own sanitizer got
+    // silently dropped in the migration this option repairs.
+    //
+    // A SOURCE-TEXT CHECK, because the only consumer of
+    // `devTools.stateSanitizer` is the browser extension: RTK does not expose
+    // the resolved value, and there is no extension in a node test run. The
+    // repo has four existing guards of this shape for the same reason —
+    // `ip-guardrail.test.ts`, `internal-subpath-guardrail.test.ts` and
+    // friends.
+    const source = readFileSync(
+      new URL('./create-slam-app-store.ts', import.meta.url),
+      'utf-8',
+    );
+
+    expect(source).toMatch(
+      /stateSanitizer:\s*composeStateSanitizer\(\s*devToolsStateSanitizer,\s*sanitizeForDevTools,?\s*\)/,
+    );
   });
 });
