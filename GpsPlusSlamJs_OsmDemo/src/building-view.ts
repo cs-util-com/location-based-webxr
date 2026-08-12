@@ -1963,8 +1963,23 @@ export class BuildingView {
    * **What does NOT move:** the lights, the ground plane, the sun rig and the
    * NPC. See `scene-content.ts` for why each stays.
    */
-  attachContentTo(root: THREE.Object3D, frame: ContentFrame): void {
-    this.content.attachTo(root, frame);
+  attachContentTo(
+    root: THREE.Object3D,
+    frame: ContentFrame,
+    /**
+     * Where this content's ENU origin sits in the target frame, in metres.
+     *
+     * Required in practice for AR: the city is authored about the demo's scene
+     * anchor and the GPS-world frame is about the framework's `zero`. See
+     * `scene-content.ts`.
+     */
+    originOffset?: {
+      readonly north: number;
+      readonly up: number;
+      readonly east: number;
+    },
+  ): void {
+    this.content.attachTo(root, frame, originOffset);
   }
 
   /**

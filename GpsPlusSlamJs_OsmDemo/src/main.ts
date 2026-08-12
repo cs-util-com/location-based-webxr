@@ -30,6 +30,7 @@ import { cellToLatLng } from "h3-js";
 import {
   TERRARIUM_ATTRIBUTION,
   enuFrameAt,
+  type GeoidModel,
   type LatLng,
 } from "gps-plus-slam-osm";
 
@@ -46,6 +47,7 @@ import { describeDrawCost } from "./draw-cost.js";
 import { geoEventButtonLabel } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
 import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar";
+import { setZeroPos } from "gps-plus-slam-app-framework/state";
 import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 
 import { arButtonState, type ArSupport } from "./ar-button-state.js";
@@ -481,6 +483,23 @@ async function main(): Promise<void> {
       // means off screen.
       mapView.centreOn(position);
       store.dispatch(actions.positionChanged(position));
+      // AND THIS IS WHAT MAKES AR REACHABLE AT ALL (AR milestone 1).
+      //
+      // `zero` is the framework's session anchor and the frame the fusion's
+      // alignment matrix is expressed against. NOTHING ELSE IN THIS DEMO SETS
+      // IT: the framework's own GPS coordinator returns early unless a
+      // recording is in progress, and this demo records nothing — so without
+      // this dispatch `selectZeroReference` stays null forever and the AR
+      // button sits permanently disabled on "Waiting for a GPS fix".
+      //
+      // `setZeroPos` is a no-op once set, so first fix wins and the anchor is
+      // immutable for the session — which is DEC-R11-6's rule enforced by the
+      // reducer rather than by this call site remembering it.
+      //
+      // A LOCATE FIX, NOT A MAP CLICK. A click is "show me there"; only a real
+      // fix is "I am here", and anchoring the AR scene to a place the user
+      // merely looked at is the offset this whole path exists to avoid.
+      store.dispatch(setZeroPos({ lat: position.lat, lon: position.lng }));
     },
     // `nonFatalError` rather than `fetchFailed` because the BEHAVIOUR is what
     // matters here: a refused GPS permission says nothing about the data on
@@ -805,8 +824,52 @@ async function main(): Promise<void> {
    * anywhere else means the camera and the city disagree by however far the
    * two have drifted. See `ar-origin.ts`.
    */
+  /**
+   * The geoid, decoded once and only if AR is used.
+   *
+   * LAZY BY DESIGN: the grid is ~170 KB behind its own entry point precisely so
+   * an app that never needs absolute heights never pays for it, and the desktop
+   * path never does. Owner decision 2026-08-12 chose `egm96Geoid()` over a
+   * regional constant -- it is the C# reference sampled to 1 degree, and at
+   * Cologne its worst case is 0.59 m against a DEM that is metres out.
+   */
+  let geoidModel: GeoidModel | undefined;
+  /**
+   * A DYNAMIC import, which is what makes the claim above true.
+   *
+   * The first version imported `egm96Geoid` statically and deferred only the
+   * decode — so every desktop page load shipped the ~176 KB base64 grid it
+   * never uses, while the comment claimed the opposite. `egm96.ts` statically
+   * imports the grid module, so nothing short of a dynamic import keeps it out
+   * of the main chunk.
+   *
+   * Awaited on the AR path only, where one module fetch is invisible against a
+   * WebXR session start.
+   */
+  const geoid = async (): Promise<GeoidModel> => {
+    if (geoidModel === undefined) {
+      const { egm96Geoid } = await import("gps-plus-slam-osm/elevation/egm96");
+      geoidModel = egm96Geoid();
+    }
+    return geoidModel;
+  };
+
   let arSupport: ArSupport = "checking";
   let arSession: ArMode | undefined;
+
+  /**
+   * The last painted state, so the DOM is written only when it CHANGES.
+   *
+   * This runs on every dispatch, and the demo dispatches a ~931-cell snapshot
+   * three times per click. The derivation is four branches and a memoised
+   * selector — genuinely cheap — but `textContent =` is not a no-op even when
+   * the string is identical: it tears down and recreates the text node and
+   * dirties that element's layout. Guarding on the derived state rather than
+   * subscribing to one slice is what makes this correct AND cheap, since the
+   * button depends on framework state the demo's own change-only `subscribe`
+   * helper cannot select.
+   */
+  let paintedAr = "";
 
   const paintArButton = (): void => {
     const state = arButtonState({
@@ -814,6 +877,10 @@ async function main(): Promise<void> {
       hasFix: canEnterAr(selectZeroReference(store.getState())),
       active: arSession !== undefined,
     });
+    const key = `${String(state.hidden)}|${String(state.disabled)}|${state.label}|${state.hint ?? ""}`;
+    if (key === paintedAr) return;
+    paintedAr = key;
+
     arButton.hidden = state.hidden;
     arButton.disabled = state.disabled;
     arButton.textContent = state.label;
@@ -836,6 +903,43 @@ async function main(): Promise<void> {
   store.subscribe(paintArButton);
   paintArButton();
 
+  /**
+   * Load terrain with the datum the CURRENT mode needs.
+   *
+   * ABSOLUTE HEIGHTS WHILE AR IS RUNNING, relief otherwise. Sent as a number
+   * because the request crosses a structured clone and a GeoidModel is a
+   * function. Sampled at the FRAME ORIGIN rather than per post: N varies about
+   * 1 m per 100 km, so one value is uniform to ~5 cm across a 4.8 km city.
+   *
+   * Desktop keeps the window-centre datum: its camera is framed relative to
+   * that same moving surface, so absolute heights there would put the ground
+   * metres from where the view expects it.
+   */
+  const loadTerrainForCurrentMode = async (centre: LatLng): Promise<void> => {
+    await loadTerrain({
+      centre,
+      frameOrigin: anchors.origin,
+      ...(arSession === undefined
+        ? {}
+        : {
+            geoidUndulationM: (await geoid()).undulationMetres(anchors.origin),
+          }),
+    });
+  };
+
+  /**
+   * Resample terrain because the MODE changed, not because the user moved.
+   *
+   * THE DATUM ONLY CHANGES WHEN THE TERRAIN IS RESAMPLED, and entering or
+   * leaving AR is exactly when it changes. Every other loadTerrain call is
+   * driven by a position change -- and all three dispatchers of one (locate,
+   * map click, place picker) need the 2D map, which the immersive overlay
+   * replaces. Without this the geoid was plumbed all the way through and never
+   * sent, so AR rendered the city ~100 m below the user.
+   */
+  const reloadTerrainForMode = (): void => {
+    void loadTerrainForCurrentMode(selectOsmView(store.getState()).position);
+  };
   arButton.addEventListener("click", () => {
     if (arSession !== undefined) {
       arSession.dispose();
@@ -850,6 +954,10 @@ async function main(): Promise<void> {
       store,
       buildingView,
       origin: selectZeroReference(store.getState()),
+      // The CITY's frame, distinct from the GPS origin above — the mesh is
+      // authored about the scene anchor and `ar-mode.ts` applies the offset.
+      sceneAnchor: anchors.origin,
+      enuFrameAt,
       onError: (message) => store.dispatch(actions.nonFatalError(message)),
       onEnded: () => {
         // Fires for the Android back gesture too, where nothing called
@@ -857,10 +965,26 @@ async function main(): Promise<void> {
         // from the click handler above.
         arSession = undefined;
         paintArButton();
+        reloadTerrainForMode();
       },
     }).then((mode) => {
-      arSession = mode;
+      // ONLY IF A SESSION ACTUALLY STARTED. `startArMode` resolves to an inert
+      // handle on a refused permission or a missing scene — assigning that
+      // unconditionally left the user looking at an error toast AND a button
+      // reading "Exit AR" with no session behind it, which is a state nobody
+      // designed and exactly what `ar-button-state.ts` exists to prevent.
+      //
+      // `started` is the handle's own answer rather than a second flag here,
+      // so the two cannot disagree.
+      if (mode.started) arSession = mode;
       paintArButton();
+      // THE DATUM ONLY CHANGES IF THE TERRAIN IS RESAMPLED, and entering AR is
+      // the moment it changes. Without this the geoid producer added above can
+      // never fire: every `loadTerrain` call is driven by a position change,
+      // and all three dispatchers of one need the 2D map, which the immersive
+      // overlay replaces. Terrain was therefore always sampled with the
+      // window-centre datum and AR rendered the city ~100 m below the user.
+      reloadTerrainForMode();
     });
   });
   // The switches report a whole next set; `toggleLayer` is the only thing that
@@ -1412,7 +1536,7 @@ async function main(): Promise<void> {
       // position rather than on the order these two calls post, because
       // `loadTerrain` is coalesced and only QUEUES while a load is in flight —
       // so `refresh` can genuinely reach the worker first.
-      void loadTerrain({ centre: position, frameOrigin: anchors.origin });
+      void loadTerrainForCurrentMode(position);
       void refresh();
     },
   );

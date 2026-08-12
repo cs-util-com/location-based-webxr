@@ -103,15 +103,54 @@ export class SceneContent {
    * list and changes nothing else. That matters because AR entry is gated on a
    * first GPS fix and may run more than once.
    */
-  attachTo(parent: THREE.Object3D, frame: ContentFrame = "demo-scene"): void {
+  attachTo(
+    parent: THREE.Object3D,
+    frame: ContentFrame = "demo-scene",
+    /**
+     * Where this content's own ENU origin sits, in the target frame's metres.
+     *
+     * **THE CITY IS NOT AUTHORED ABOUT THE GPS ORIGIN, and assuming it is was
+     * a real defect** (r507 review). The mesh is built in ENU about the demo's
+     * scene anchor — a place-picker choice or a map click — while the GPS-world
+     * frame is about the framework's `zero`, taken from the first fix. Those
+     * are different points, by up to the 5 km re-anchor threshold and by an
+     * unbounded amount if the user picked another city.
+     *
+     * Rotating without translating put the city at the right ORIENTATION and
+     * the wrong PLACE, which is the failure the plan sequenced this milestone
+     * to prevent because "a broken implementation and a correct one look
+     * identical" without it.
+     *
+     * Omitted for `"demo-scene"`, where the content's origin IS the parent's.
+     */
+    originOffset?: {
+      readonly north: number;
+      readonly up: number;
+      readonly east: number;
+    },
+  ): void {
     parent.add(this.root);
     // SET, NEVER ACCUMULATED. The transform is a property of the frame being
     // attached to, so a round trip out to AR and back is exactly the identity
     // rather than two rotations that happen to cancel.
     this.root.matrixAutoUpdate = false;
-    this.root.matrix.copy(
-      frame === "gps-world-nue" ? DEMO_TO_NUE : new THREE.Matrix4(),
-    );
+    if (frame === "gps-world-nue") {
+      // TRANSLATION AFTER ROTATION: a local point `p` in demo axes maps to
+      // `R·p + offset`, because the offset is already expressed in the TARGET
+      // frame's axes (NUE) rather than in the content's.
+      this.root.matrix.copy(DEMO_TO_NUE);
+      if (originOffset !== undefined) {
+        this.root.matrix.premultiply(
+          new THREE.Matrix4().makeTranslation(
+            originOffset.north,
+            originOffset.up,
+            originOffset.east,
+          ),
+        );
+      }
+    } else {
+      this.root.matrix.identity();
+    }
     this.root.matrixWorldNeedsUpdate = true;
   }
 

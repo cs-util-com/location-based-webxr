@@ -23,16 +23,18 @@ verification.
 
 ## Public API
 
-- `ArModeDeps` — `{ container, store, buildingView, origin, onError, onEnded? }`.
-  - `store` is typed `SubscribableStore`, not the concrete `SlamAppStore`: that
-    type's shape changes with the demo's `extraReducers` and this module only
-    subscribes.
+- `ArModeDeps` — `{ container, store, buildingView, origin, sceneAnchor, enuFrameAt, onError, onEnded? }`.
+  - `store` is the INTERSECTION `TrackingSubscribableStore & SubscribableStore`, because `initAR` and the alignment wiring want different `getState` shapes and neither subsumes the other. Stated as an intersection rather than as the concrete `SlamAppStore`, whose shape changes with the demo's `extraReducers`.
+  - `sceneAnchor` and `enuFrameAt` are how the city's own ENU origin is reconciled with the GPS one. The mesh is authored about the demo's anchor and the GPS-world frame is about `zero`; without the offset the city renders at the right orientation and the wrong place.
   - `origin` is the framework's `zero`, read by the caller. `null` means no fix.
 - `startArMode(deps): Promise<ArMode>` — **never rejects.** A refused session,
   an unsupported device and a missing GPS fix are ordinary outcomes the page
   renders, not exceptions; all of them reach the user through `onError` and
   return an inert handle.
-- `ArMode` — `{ dispose() }`, idempotent.
+- `ArMode` — `{ started, dispose() }`, idempotent. **Drive UI from `started`,
+  not from "a handle came back":** a handle always comes back, an inert one on a
+  refused permission. Treating that as a live session showed the user an error
+  toast and an "Exit AR" button at the same time.
 
 ## Invariants & assumptions
 
@@ -50,12 +52,22 @@ verification.
 - **`"gps-world-nue"` is not optional.** The demo's scene is X=East, Y=Up,
   Z=−North; the root is NUE. Attaching without it renders the city 90° off. See
   `scene-content.ts`.
-- **Teardown re-attaches the content, and runs on BOTH exits.** The framework's
-  scene outlives this session, so content left there is content the desktop view
-  no longer has and nothing reclaims — and three.js reports nothing, so the
-  symptom is an empty map view. `onSessionEnd` fires for the Android back
-  gesture as well as for our own `endARSession`, so both paths reach it and
-  teardown is idempotent.
+- **ONE `release(endSession)` for both exits, and this is load-bearing for the
+  milestones that follow.** `onSessionEnd` fires for the Android back gesture as
+  well as for our own `endARSession`, so both paths reach the same function and
+  it is idempotent. The single difference is a parameter: the system-end path
+  must NOT call `endARSession()` on a session that is already ending.
+  - An earlier version split it — `teardown()` re-attached the content while
+    `dispose()` additionally released the alignment handle. That worked **by
+    accident**: the only thing `dispose()` added was a handle the framework
+    already reclaims via `runSessionDisposers()` before invoking `onSessionEnd`.
+    **M2, M4 and M5 each add cleanup here** (lights and fog, the draw-cost
+    readout, the desktop renderer), and every one of them would have silently
+    not run on the back gesture.
+  - Content must come back whichever way the session ends: the framework's scene
+    outlives this one, so content left there is content the desktop view no
+    longer has and nothing reclaims — and three.js reports nothing, so the
+    symptom is an empty map view.
 - **`bootCompleted` guards a session that ends during a failed boot.** The
   scene-not-ready bail-out calls `endARSession`, which fires `onSessionEnd`,
   which must not run teardown against half-built state.
@@ -71,7 +83,7 @@ verification.
 
 ```ts
 const mode = await startArMode({
-  container: document.querySelector("#app")!,
+  container: document.querySelector("#ar-root")!,
   store,
   buildingView,
   origin: selectZeroReference(store.getState()),

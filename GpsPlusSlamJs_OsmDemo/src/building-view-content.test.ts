@@ -122,3 +122,15 @@ describe("BuildingView routes AR content through the content root", () => {
     }
   });
 });
+
+describe("the demo store keeps its devtools summariser wired", () => {
+  it("passes summariseSnapshot to the factory", () => {
+    // The migration DROPPED this once already, and nothing noticed: devtools
+    // then deep-walked the whole ~931-cell snapshot on every dispatch, which is
+    // the 71 ms cost the serialisable exemption two lines away exists to avoid.
+    // Source text for the same reason the framework side is: the only consumer
+    // of a state sanitizer is the browser extension.
+    const source = readFileSync(path.join(HERE, "osm-store.ts"), "utf-8");
+    expect(source).toMatch(/devToolsStateSanitizer:\s*summariseSnapshot/);
+  });
+});

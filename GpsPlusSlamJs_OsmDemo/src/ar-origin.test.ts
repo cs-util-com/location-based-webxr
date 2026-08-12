@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import {
   absoluteDatumFor,
   canEnterAr,
+  sceneAnchorOffsetNue,
   toDemoLatLng,
   type FrameworkLatLong,
 } from "./ar-origin.js";
@@ -70,6 +71,55 @@ describe("the absolute elevation datum", () => {
   });
 });
 
+describe("the offset between the demo's anchor and the GPS origin", () => {
+  /** A stand-in for the package's `enuFrameAt`, in metres-per-degree terms. */
+  const fakeFrame = (origin: { lat: number; lng: number }) => ({
+    toEnu: (p: { lat: number; lng: number }) => ({
+      x: (p.lng - origin.lng) * 70_000, // east
+      y: (p.lat - origin.lat) * 111_320, // north
+    }),
+  });
+
+  it("measures FROM the GPS origin, in NUE terms", () => {
+    // r507 REVIEW. The city is authored about the demo's scene anchor and the
+    // GPS-world frame is about `zero`; without this offset the city renders at
+    // the right orientation and the wrong place.
+    const offset = sceneAnchorOffsetNue(
+      { lat: 50.0, lon: 6.0 },
+      { lat: 50.001, lng: 6.001 },
+      fakeFrame,
+    );
+
+    expect(offset.north).toBeCloseTo(111.32, 2);
+    expect(offset.east).toBeCloseTo(70, 2);
+  });
+
+  it("is zero when the anchor and the fix coincide", () => {
+    // The common case once someone presses locate before entering AR, and the
+    // one where a sign error would be invisible.
+    const offset = sceneAnchorOffsetNue(
+      { lat: 50.9413, lon: 6.9583 },
+      { lat: 50.9413, lng: 6.9583 },
+      fakeFrame,
+    );
+
+    expect(offset.north).toBeCloseTo(0, 9);
+    expect(offset.east).toBeCloseTo(0, 9);
+  });
+
+  it("carries no vertical term, so the geoid is not double-counted", () => {
+    // The height comes from the terrain's absolute datum. A vertical offset
+    // here would apply the correction twice.
+    expect(
+      sceneAnchorOffsetNue(
+        { lat: 50.0, lon: 6.0 },
+        { lat: 51.0, lng: 7.0 },
+        fakeFrame,
+      ).up,
+    ).toBe(0);
+  });
+});
+
 describe("the gate on entering AR", () => {
   it("refuses while the origin is null", () => {
     // `zero` is null until the first GPS fix. Entering then anchors the city to
@@ -84,9 +134,15 @@ describe("the gate on entering AR", () => {
   });
 
   it("allows an origin at exactly 0,0 rather than treating it as absent", () => {
-    // Null Island is a real coordinate and a falsy-looking one. A truthiness
-    // check here would refuse to start AR at the equator on the prime
-    // meridian — the classic version of this bug.
+    // Null Island is a real coordinate and a falsy-LOOKING one.
+    //
+    // HONEST ABOUT WHAT THIS CAN CATCH: the argument is an object, so
+    // `!!{lat:0,lon:0}` is already `true` and the classic truthiness bug is
+    // unreachable through this signature — an earlier version of this comment
+    // claimed otherwise. What it does pin is that the guard stays a check on
+    // the ORIGIN rather than becoming one on its fields, which is the
+    // refactor that would reintroduce it (`origin?.lat` is `0`, which is
+    // falsy).
     expect(canEnterAr({ lat: 0, lon: 0 })).toBe(true);
   });
 });

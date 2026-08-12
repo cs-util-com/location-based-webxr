@@ -73,3 +73,36 @@ export function absoluteDatumFor(undulationMetres: number): number {
 export function canEnterAr(origin: FrameworkLatLong | null): boolean {
   return origin !== null;
 }
+
+/**
+ * Where the demo's scene anchor sits relative to the GPS origin, in NUE metres.
+ *
+ * **THE CITY IS NOT AUTHORED ABOUT `zero`, and the first cut of AR mode assumed
+ * it was.** The mesh is built in ENU about the demo's scene anchor — a
+ * place-picker choice, or wherever the user last clicked — while the GPS-world
+ * frame is about the framework's `zero`, taken from the first fix. Attaching
+ * with a rotation alone put the city at the right ORIENTATION and the wrong
+ * PLACE, by up to the 5 km re-anchor threshold and by an unbounded amount if
+ * the user picked a different city.
+ *
+ * Returns the offset `SceneContent.attachTo` needs. `up` is zero: the demo's
+ * anchor and `zero` are the same vertical datum once the terrain is sampled
+ * absolutely (see `absoluteDatumFor`), so a vertical term here would
+ * double-count the geoid.
+ */
+export function sceneAnchorOffsetNue(
+  gpsOrigin: FrameworkLatLong,
+  sceneAnchor: LatLng,
+  enuFrameAt: (origin: LatLng) => { toEnu: (p: LatLng) => EnuPoint },
+): { north: number; up: number; east: number } {
+  // Measured FROM the GPS origin, which is what the target frame is about.
+  const enu = enuFrameAt(toDemoLatLng(gpsOrigin)).toEnu(sceneAnchor);
+  // `EnuPoint` is `{x: east, y: north}` in this demo's package convention.
+  return { north: enu.y, up: 0, east: enu.x };
+}
+
+/** The ENU shape `enuFrameAt` produces. Structural, so nothing is imported. */
+interface EnuPoint {
+  readonly x: number;
+  readonly y: number;
+}

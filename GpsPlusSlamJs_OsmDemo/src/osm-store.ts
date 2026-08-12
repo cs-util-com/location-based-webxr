@@ -162,6 +162,14 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
     // user's back.
     storageBackend: new NullStorageBackend(),
     extraReducers: { osmView: slice.reducer },
+    // RESTORED AFTER THE MIGRATION DROPPED IT. The old bare store passed this
+    // as ; the factory hardcoded its own and had no
+    // hook, so for one commit devtools deep-walked the whole ~931-cell snapshot
+    // TWICE per dispatch (state and action) -- reintroducing the 71 ms cost
+    // documented below through the other channel, in the same change that
+    // carefully preserved it for the serialisable check. The factory now
+    // COMPOSES this with its own sanitizer rather than replacing it.
+    devToolsStateSanitizer: summariseSnapshot,
     /**
      * The snapshot is exempt from the deep serialisability scan.
      *

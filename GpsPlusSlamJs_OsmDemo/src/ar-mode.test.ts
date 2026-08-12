@@ -73,12 +73,26 @@ const COLOGNE = { lat: 50.9413, lon: 6.9583 };
 /** A `BuildingView` stand-in recording where its content was sent. */
 function fakeView() {
   const localRoot = new THREE.Scene();
-  const attachedTo: { root: THREE.Object3D; frame: string }[] = [];
+  // `| undefined` rather than `?`, because this package sets
+  // `exactOptionalPropertyTypes` — an absent property and one explicitly set to
+  // `undefined` are different types, and the recorder always writes the key.
+  const attachedTo: {
+    root: THREE.Object3D;
+    frame: string;
+    offset: { north: number; up: number; east: number } | undefined;
+  }[] = [];
   return {
     localRoot,
     attachedTo,
-    attachContentTo: (root: THREE.Object3D, frame: string) => {
-      attachedTo.push({ root, frame });
+    // THE OFFSET IS RECORDED, because dropping it is a silent failure: the city
+    // renders at the right orientation and the wrong place, and a fixture that
+    // ignored the third argument would pass either way.
+    attachContentTo: (
+      root: THREE.Object3D,
+      frame: string,
+      offset?: { north: number; up: number; east: number },
+    ) => {
+      attachedTo.push({ root, frame, offset });
     },
   };
 }
@@ -90,6 +104,16 @@ function deps(overrides: Partial<ArModeDeps> = {}): ArModeDeps {
     store: { getState: () => ({}), subscribe: () => () => undefined },
     buildingView: view as unknown as ArModeDeps["buildingView"],
     origin: COLOGNE,
+    // The demo's scene anchor, deliberately DIFFERENT from the GPS origin —
+    // the offset between them is what `ar-mode` has to apply, and a fixture
+    // where they coincide would let a missing offset pass.
+    sceneAnchor: { lat: 50.9423, lng: 6.9593 },
+    enuFrameAt: (o: { lat: number; lng: number }) => ({
+      toEnu: (p: { lat: number; lng: number }) => ({
+        x: (p.lng - o.lng) * 70_000,
+        y: (p.lat - o.lat) * 111_320,
+      }),
+    }),
     onError: vi.fn(),
     ...overrides,
   } as ArModeDeps;
@@ -128,8 +152,19 @@ describe("entering AR", () => {
       deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
     );
 
-    expect(view.attachedTo).toEqual([{ root: scene, frame: "gps-world-nue" }]);
+    expect(view.attachedTo).toHaveLength(1);
+    expect(view.attachedTo[0]?.root).toBe(scene);
+    expect(view.attachedTo[0]?.frame).toBe("gps-world-nue");
+    // NOT `arWorldGroup`, asserted against the actual alternative rather than
+    // implied by the line above — content there is pinned to the session's
+    // arbitrary start pose, which is the failure two readers of the framework
+    // docs previously talked themselves into.
     expect(view.attachedTo[0]?.root).not.toBe(arWorldGroup);
+    // AND THE OFFSET IS APPLIED. The fixture's scene anchor is deliberately not
+    // the GPS origin, so a dropped offset shows up here as `undefined` or zero
+    // rather than passing silently.
+    expect(view.attachedTo[0]?.offset?.north).toBeCloseTo(111.32, 1);
+    expect(view.attachedTo[0]?.offset?.east).toBeCloseTo(70, 1);
   });
 
   it("subscribes the world group to the fusion's alignment", async () => {
@@ -171,6 +206,26 @@ describe("when AR cannot start", () => {
     expect(() => {
       mode.dispose();
     }).not.toThrow();
+    // AND THE CONTAINER IS CLEARED. `initAR` inserts its canvas before
+    // `requestSession`, so a rejection leaves it behind — and `#ar-root` is
+    // `position: fixed; inset: 0` the moment it stops being `:empty`, i.e. an
+    // invisible click-eating layer over the whole page. The framework's own
+    // re-entry guard would also refuse every later attempt.
+    expect(endARSession).toHaveBeenCalled();
+  });
+
+  it("reports NOT started, so the button never offers to exit nothing", async () => {
+    // The flag added for the "error toast plus an Exit AR button" bug, which
+    // had no test at all until the r507 review said so.
+    initAR.mockRejectedValueOnce(new Error("no session"));
+
+    expect((await startArMode(deps())).started).toBe(false);
+  });
+
+  it("reports STARTED when a session really began", async () => {
+    // The counterweight: a `started` hard-coded to `false` would pass the test
+    // above and silently make AR unenterable.
+    expect((await startArMode(deps())).started).toBe(true);
   });
 
   it("does not strand the city when the scene is missing", async () => {
@@ -218,20 +273,34 @@ describe("leaving AR", () => {
     expect(endARSession).toHaveBeenCalledTimes(1);
   });
 
-  it("is idempotent, so a back gesture followed by dispose does one teardown", async () => {
-    // `onSessionEnd` fires for the Android back gesture as well as for our own
-    // `endARSession`, so both paths reach teardown and they can race. A second
-    // teardown would re-attach content that is already home — harmless — and
-    // end a session that is already ended, which is not.
+  it("survives a REAL back gesture followed by dispose, with one teardown", async () => {
+    // REWRITTEN. The first version called `dispose()` twice and called that a
+    // back gesture — the mocked `endARSession` never invokes `onSessionEnd`, so
+    // the interleaving the title names was never exercised. This fires the
+    // system end for real, then disposes on top of it.
+    //
+    // The ordering matters: the back gesture arrives first and must NOT call
+    // `endARSession` (the session is already ending), and the later `dispose()`
+    // must not end it a second time or re-attach content that is already home.
     const view = fakeView();
+    const onEnded = vi.fn();
     const mode = await startArMode(
-      deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
+      deps({
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+        onEnded,
+      }),
     );
 
-    mode.dispose();
+    const sessionOptions = initAR.mock.calls[0]?.[3] as {
+      onSessionEnd: () => void;
+    };
+    sessionOptions.onSessionEnd();
     mode.dispose();
 
-    expect(endARSession).toHaveBeenCalledTimes(1);
+    // NEVER, on this path: the system already ended it.
+    expect(endARSession).not.toHaveBeenCalled();
+    expect(onEnded).toHaveBeenCalledTimes(1);
+    // Released once, by whichever exit ran first.
     expect(alignmentDispose).toHaveBeenCalledTimes(1);
     // One attach on entry, one on teardown. Not three.
     expect(view.attachedTo).toHaveLength(2);
@@ -256,5 +325,9 @@ describe("leaving AR", () => {
 
     expect(view.attachedTo.at(-1)?.root).toBe(view.localRoot);
     expect(onEnded).toHaveBeenCalledTimes(1);
+    // THE ASSERTION THAT WAS MISSING, and its absence is what let the teardown
+    // split look safe: everything `dispose()` did beyond re-attaching had to
+    // run on this path too. M2, M4 and M5 each add cleanup to it.
+    expect(alignmentDispose).toHaveBeenCalledTimes(1);
   });
 });

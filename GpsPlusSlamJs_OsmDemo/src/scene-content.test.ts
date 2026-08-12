@@ -98,6 +98,53 @@ describe("the demo frame is NOT the GPS-world frame, and the seam converts", () 
     expect(world.y).toBeCloseTo(7, 6);
   });
 
+  it("translates the content's origin onto the GPS origin", () => {
+    // r507 REVIEW. The city is authored in ENU about the DEMO's scene anchor —
+    // a place-picker choice or a map click — while the GPS-world frame is about
+    // the framework's `zero`, taken from the first fix. Those are different
+    // points, by up to the 5 km re-anchor threshold and unbounded if the user
+    // picked another city.
+    //
+    // Rotating without translating put the city at the right ORIENTATION and
+    // the wrong PLACE — and both look identical on a device with no fix, which
+    // is exactly why the plan sequenced the origin path INTO this milestone.
+    const arWorld = new THREE.Object3D();
+    const marker = new THREE.Object3D();
+    // 10 m north of the demo's own anchor, in demo axes.
+    marker.position.set(0, 0, -10);
+    const content = new SceneContent(new THREE.Scene());
+    content.add(marker);
+
+    // …and the demo's anchor is itself 100 m north / 50 m east of `zero`.
+    content.attachTo(arWorld, "gps-world-nue", {
+      north: 100,
+      up: 0,
+      east: 50,
+    });
+    arWorld.updateMatrixWorld(true);
+
+    const world = marker.getWorldPosition(new THREE.Vector3());
+    expect(world.x).toBeCloseTo(110, 6); // 100 + 10 north
+    expect(world.z).toBeCloseTo(50, 6); // east unchanged by a northward marker
+  });
+
+  it("drops the offset when handed back to the demo frame", () => {
+    // Leaving AR must not leave the desktop content translated by the GPS
+    // offset — the desktop view's own origin is the anchor the content was
+    // authored about.
+    const desktop = new THREE.Scene();
+    const content = new SceneContent(desktop);
+
+    content.attachTo(new THREE.Object3D(), "gps-world-nue", {
+      north: 100,
+      up: 7,
+      east: 50,
+    });
+    content.attachTo(desktop, "demo-scene");
+
+    expect(content.root.matrix.equals(new THREE.Matrix4())).toBe(true);
+  });
+
   it("is a ROTATION, not a reflection — handedness is preserved", () => {
     // A mirrored frame renders a city that looks plausible and is wrong, and
     // this demo has already shipped one: `building-view.ts.md` records a

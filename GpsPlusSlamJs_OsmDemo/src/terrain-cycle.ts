@@ -91,6 +91,15 @@ export interface TerrainLoad {
   readonly centre: LatLng;
   /** Where the scene's ENU frame is anchored — what the heights mean. */
   readonly frameOrigin: LatLng;
+  /**
+   * Geoid undulation N at the frame origin, metres. AR mode only.
+   *
+   * PRESENT means "give me absolute heights against the ellipsoid"; absent
+   * means the desktop behaviour, relief against the window centre. AR cannot
+   * use the default because the window follows the user, so that datum moves
+   * mid-session and takes the scene Y baseline with it.
+   */
+  readonly geoidUndulationM?: number;
 }
 
 export interface TerrainCycleOptions {
@@ -131,6 +140,9 @@ export function createTerrainCycle(
         frameOrigin: load.frameOrigin,
         extentM,
         spacingM,
+        ...(load.geoidUndulationM === undefined
+          ? {}
+          : { geoidUndulationM: load.geoidUndulationM }),
       },
       { signal },
     );

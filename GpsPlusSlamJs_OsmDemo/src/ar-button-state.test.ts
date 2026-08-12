@@ -97,12 +97,17 @@ describe("DEC-12: the map is never traded for AR", () => {
     for (const support of ["checking", "supported", "unsupported"] as const) {
       for (const hasFix of [true, false]) {
         for (const active of [true, false]) {
+          // AN EXACT KEY SET, not `arrayContaining` plus two guessed names.
+          // The first version asserted `hideMap` and `showMap` were absent and
+          // allowed arbitrary extra keys, so a field called `mapHidden` would
+          // have sailed through the check written to forbid exactly that.
           const state = arButtonState({ support, hasFix, active });
-          expect(Object.keys(state).sort()).toEqual(
-            expect.arrayContaining(["disabled", "hidden", "label"]),
-          );
-          expect(state).not.toHaveProperty("hideMap");
-          expect(state).not.toHaveProperty("showMap");
+          const keys = Object.keys(state).sort();
+          const allowed = ["disabled", "hidden", "hint", "label"];
+          expect(
+            keys.every((key) => allowed.includes(key)),
+            `unexpected key on ${support}/${String(hasFix)}/${String(active)}: ${keys.join(",")}`,
+          ).toBe(true);
         }
       }
     }

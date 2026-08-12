@@ -195,22 +195,60 @@ describe("subscribeToOsmView", () => {
  * "the store still works" is not the property the migration was for.
  */
 describe("the demo store after the framework migration", () => {
-  it("does not warn about the snapshot it deliberately exempts", () => {
-    // The 71 ms regression, as an observable. RTK's serializable check reports
-    // through `console.error`, so a lost exemption is a stream of complaints
-    // rather than a failure — which is why this asserts on the console rather
-    // than on a timing.
+  it("exempts the snapshot from BOTH dev walks, asserted on the config", () => {
+    // REWRITTEN. The first version dispatched a snapshot and asserted no
+    // `console.error` containing "serializable" — and the fixture snapshot is
+    // entirely plain, so RTK emits nothing with or WITHOUT the exemption. It
+    // passed either way while its comment called it "the 71 ms regression, as
+    // an observable". The adjacent test at the top of this file already says
+    // that channel is closed on purpose.
+    //
+    // The 71 ms symptom is a TIMING warning ("SerializableStateInvariantMiddleware
+    // took 71ms…") on `console.warn`, not a serialisability complaint — and it
+    // only appears under a load no unit test should manufacture. So the honest
+    // assertion is on the thing that was actually at risk: that a non-plain
+    // value in the snapshot passes through both dev walks silently. A `Map` is
+    // the exact value RTK objects to, and the one `osm-store.ts.md` names.
     const error = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
     const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
 
-    demo.store.dispatch(demo.actions.snapshotReady(snapshot(931)));
+    demo.store.dispatch(
+      demo.actions.snapshotReady({
+        ...snapshot(3),
+        // Deliberately non-serialisable. Without the exemption RTK logs for
+        // both the ACTION and the resulting STATE path.
+        stats: new Map([["chunksScored", 1]]),
+      } as unknown as DemoSnapshot),
+    );
 
     const complaints = error.mock.calls
       .flat()
-      .filter((arg) => typeof arg === "string" && arg.includes("serializable"));
+      .filter((arg) => typeof arg === "string" && /serializ/i.test(arg));
     expect(complaints).toEqual([]);
+    error.mockRestore();
+  });
+
+  it("keeps scanning the REST of the state, so the exemption is narrow", () => {
+    // The counterweight, and the reason the exemption is two named paths rather
+    // than `enableDevChecks: false`. A non-plain value OUTSIDE the snapshot must
+    // still be reported — otherwise the migration bought the 71 ms back by
+    // turning every check off, which is the option this design rejected.
+    const error = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+
+    demo.store.dispatch({
+      type: "osmView/nonFatalError",
+      payload: new Map([["not", "plain"]]),
+    });
+
+    const complaints = error.mock.calls
+      .flat()
+      .filter((arg) => typeof arg === "string" && /serializ/i.test(arg));
+    expect(complaints.length).toBeGreaterThan(0);
     error.mockRestore();
   });
 

@@ -80,6 +80,30 @@
         position: relative;
       }
 
+      /*
+        AR MOUNT POINT. OUT OF FLOW IN BOTH STATES, and that is the whole rule.
+
+        `main` is a two-column grid with no explicit rows, so an in-flow third
+        child lands in an implicit second row -- and because both implicit rows
+        are `auto` and stretch, the map/3D row loses roughly half of main s
+        height to an empty band. Caught in review; no gate could see it, since
+        the height assertion runs only at the mobile viewport and the canvas
+        check compares against #scene s own box however small that gets.
+
+        `:empty` is doing real work: with no session the element is display:none
+        and cannot affect the grid at all. Once `initAR` inserts its canvas and
+        DOM-overlay root it becomes a fixed, viewport-sized layer, which is what
+        the framework already sizes its canvas for.
+      */
+      #ar-root {
+        position: fixed;
+        inset: 0;
+      }
+
+      #ar-root:empty {
+        display: none;
+      }
+
       /* Floats over the split rather than taking a column (DEC-17). */
       #details {
         position: absolute;
@@ -704,7 +728,7 @@
         Empty and zero-sized until a session starts; the framework's canvas is
         positioned by the UA once the session is immersive.
       -->
-      <div id="ar-root"></div>
+      <div id="ar-root" aria-hidden="true"></div>
       <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
            two views to ~450 px each on a laptop, which is the width that made
            the 3D pane useless on a phone. -->

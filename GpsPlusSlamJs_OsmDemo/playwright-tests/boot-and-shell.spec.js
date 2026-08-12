@@ -1042,3 +1042,113 @@ test.describe("the control bar", () => {
     });
   });
 });
+
+test.describe("the AR entry point", () => {
+  /**
+   * WHY THIS SPEC EXISTS. AR milestone 1 shipped with three false claims that
+   * four green gates all passed: nothing in the demo set the framework's
+   * `zero`, so the button was permanently disabled and `startArMode` had no
+   * reachable caller; the origin adapter was never called; and the geoid was
+   * never sent. Every unit test passed, because each module was correct in
+   * isolation and nothing asserted they were CONNECTED.
+   *
+   * A spec that drives the real button through a real fix is the smallest
+   * thing that would have failed on all three. It cannot enter a session —
+   * WebXR needs a device and headless Chromium has none — so it deliberately
+   * stops at the boundary: does the button become usable, and does pressing it
+   * reach the AR path rather than doing nothing.
+   */
+  test("stays disabled until a GPS fix, then becomes usable", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    // STUBBED, NOT SKIPPED. Headless Chromium reports no immersive-ar, so the
+    // button hides and the GPS gate — the thing this test exists for — never
+    // runs. A `test.skip` here would have been silent coverage loss of exactly
+    // the assertion the milestone most needed, which is the pattern filed in
+    // `2026-08-12-1215-conditional-e2e-skips-hide-coverage-followup.md`.
+    //
+    // Only the SUPPORT PROBE is faked. Nothing here pretends a session can
+    // start; the test stops at the button, which is the boundary a headless
+    // browser can honestly reach.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    const arButton = page.locator("#enter-ar");
+
+    // BEFORE the fix: visible so it is discoverable, disabled because the scene
+    // has nothing to anchor to, and carrying a reason.
+    await expect(arButton).toBeVisible();
+    await expect(arButton).toBeDisabled();
+    await expect(arButton).toHaveAttribute("title", /GPS/i);
+
+    await page.locator(".locate-button").click();
+
+    // AFTER the fix: usable. This is the assertion the milestone's three false
+    // claims all reduce to — without `setZeroPos` being dispatched it never
+    // arrives, however correct every module is on its own.
+    await expect(arButton).toBeEnabled({ timeout: 10000 });
+  });
+
+  test("keeps the map when AR is available — DEC-12", async ({
+    page,
+    context,
+  }) => {
+    // The rule the reference consumer's pattern would break. Asserted in the
+    // real DOM rather than only over the pure state function, because the
+    // failure mode is a call site toggling the map, not the derivation.
+    //
+    // THE STUB IS WHAT MAKES THIS TEST MEAN ANYTHING. Without it headless
+    // Chromium reports no immersive-ar, so AR is never "available" and the two
+    // assertions below hold in every state the app can reach — including with
+    // the whole AR path deleted. The first version omitted it and was exactly
+    // the kind of test this branch keeps retiring.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+    await page.locator(".locate-button").click();
+
+    // AR really is offered here — otherwise the map's survival proves nothing.
+    await expect(page.locator("#enter-ar")).toBeEnabled({ timeout: 10000 });
+
+    await expect(page.locator("#map")).toBeVisible();
+    await expect(page.locator("#scene")).toBeVisible();
+  });
+
+  test("leaves the desktop layout alone while no session is running", async ({
+    page,
+  }) => {
+    // `#ar-root` is a child of the same grid as `#map` and `#scene`. As an
+    // in-flow item with no CSS it added an implicit second row and took roughly
+    // half the height from the views — caught in review, invisible to every
+    // existing gate because the height assertion runs only at the mobile
+    // viewport and the canvas check compares against `#scene`'s own box.
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    const main = await page.locator("main").boundingBox();
+    const scene = await page.locator("#scene").boundingBox();
+
+    // The views fill the row. A stolen implicit row shows up here as roughly
+    // half, so the bound is generous and still discriminating.
+    expect(scene.height).toBeGreaterThan(main.height * 0.9);
+  });
+});
