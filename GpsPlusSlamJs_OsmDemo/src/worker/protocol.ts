@@ -457,6 +457,21 @@ export interface WorkerCalls {
       readonly frameOrigin?: LatLng;
       readonly extentM: number;
       readonly spacingM: number;
+      /**
+       * Geoid undulation `N` at the frame origin, metres — AR mode only.
+       *
+       * **Present means "give me ABSOLUTE heights against the ellipsoid";
+       * absent means the desktop behaviour** (relief against the window
+       * centre). It is a plain number rather than a `GeoidModel` because a
+       * model is a function and functions do not survive a structured clone —
+       * the page samples it once at the origin and sends the value, which is
+       * uniform to ~5 cm across a city since `N` varies about 1 m per 100 km.
+       *
+       * See `terrain-field.ts`'s `absoluteDatum` for why AR cannot use the
+       * window-centre datum: the window follows the user, so that datum moves
+       * mid-session and takes the whole scene's Y baseline with it.
+       */
+      readonly geoidUndulationM?: number;
     };
     readonly result: TerrainResult;
   };

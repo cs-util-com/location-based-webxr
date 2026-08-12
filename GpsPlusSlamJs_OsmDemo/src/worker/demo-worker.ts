@@ -727,7 +727,7 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "terrain": {
-      const { centre, frameOrigin, extentM, spacingM } =
+      const { centre, frameOrigin, extentM, spacingM, geoidUndulationM } =
         payload as WorkerCalls["terrain"]["request"];
       const { terrainField } = requireState();
       try {
@@ -737,6 +737,7 @@ async function handle<K extends WorkerCallKind>(
           frameOrigin ?? centre,
           extentM,
           spacingM,
+          geoidUndulationM,
           signal,
         );
       } finally {
@@ -877,6 +878,8 @@ async function loadTerrain(
   frameOrigin: LatLng,
   extentM: number,
   spacingM: number,
+  /** Geoid undulation at the frame origin. AR only; absent means desktop. */
+  geoidUndulationM: number | undefined,
   signal: AbortSignal,
 ): Promise<WorkerCalls["terrain"]["result"]> {
   // GROW the cache to cover the view, then RENDER a bounded grid from it.
@@ -906,6 +909,12 @@ async function loadTerrain(
     centreEnu: window.sampleCentreEnu,
     extentM,
     spacingM,
+    // AR ONLY, and absent on every desktop request — see `geoidUndulationM` in
+    // `protocol.ts`. Passing it switches the datum from the window centre to
+    // `−N`, which is what makes the heights ellipsoidal and the datum fixed.
+    ...(geoidUndulationM === undefined
+      ? {}
+      : { absoluteDatum: { undulationMetres: geoidUndulationM } }),
   });
   // Stored even when empty, so a later mesh build cannot stand on the
   // PREVIOUS position's relief after a DEM outage at this one.

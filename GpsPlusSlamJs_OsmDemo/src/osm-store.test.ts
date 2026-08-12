@@ -219,7 +219,7 @@ describe("the demo store after the framework migration", () => {
     // (`selectZeroReference`) and the alignment subscription have nothing to
     // read, and the failure would appear only once someone entered AR.
     const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
-    const state = demo.store.getState() as Record<string, unknown>;
+    const state: unknown = demo.store.getState();
 
     for (const slice of ["gpsData", "arElements", "tracking"]) {
       expect(state, `${slice} must exist for the AR wiring`).toHaveProperty(

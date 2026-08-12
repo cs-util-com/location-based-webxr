@@ -82,6 +82,28 @@ interface SampleGridOptions {
    * same point, which is why this could not exist and did not need to.
    */
   readonly centreEnu?: EnuPoint;
+  /**
+   * Reference heights to the ELLIPSOID instead of to the window centre.
+   *
+   * **AR mode's datum, and the reason it cannot reuse the default** (plan
+   * §2.5). The default subtracts the height under the user so the surface is
+   * relief — correct for a desktop view, and impossible for AR, because the
+   * window follows the user and the datum would move mid-session, shifting the
+   * whole scene's Y baseline every time the terrain recentres.
+   *
+   * The framework's GPS-world Y is the raw GNSS altitude: every producer calls
+   * `calcRelativeCoordsInMeters` with `originAltitude = 0`, so scene `y = 0` is
+   * the WGS84 ellipsoid. `heightAt` returns `surfaceHeight − datum`, so the
+   * datum that yields an ellipsoidal height from an orthometric DEM is
+   * **`−N`** — the geoid undulation, negated. There is no origin term; draft 3
+   * of the plan had one and was wrong by ~98 m at Cologne.
+   *
+   * Takes the undulation rather than a `GeoidModel` so this module needs no
+   * dependency on the geoid package: `N` varies about 1 m per 100 km, so one
+   * value is uniform to ~5 cm across a 4.8 km city and the caller samples it
+   * once at the frame origin.
+   */
+  readonly absoluteDatum?: { readonly undulationMetres: number };
 }
 
 export interface TerrainField {
@@ -362,7 +384,15 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       // under the user. Taken at the frame origin instead, a user who has walked
       // 40 m uphill stands 40 m above the scene's zero plane with the camera
       // still framed at y ~ 10.
-      datum: heightAtPosition(frame.toLatLng(centreEnu)) ?? mean,
+      //
+      // UNLESS AR ASKED FOR ABSOLUTE HEIGHTS, in which case the datum is `−N`
+      // and does not depend on the window at all — see `absoluteDatum`. That
+      // independence is the whole point: a datum computed from the window moves
+      // when the window does.
+      datum:
+        gridOptions.absoluteDatum === undefined
+          ? (heightAtPosition(frame.toLatLng(centreEnu)) ?? mean)
+          : -gridOptions.absoluteDatum.undulationMetres,
       hasData: true,
       missing: total - values.length,
       total,

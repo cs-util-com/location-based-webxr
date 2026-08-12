@@ -179,6 +179,12 @@ export {
   endARSession,
   type ArSessionCallbacks,
   type SessionEndInfo,
+  // EXPORTED 2026-08-12 because it is part of `initAR`'s public contract and a
+  // consumer could not name it: `ArSessionCallbacks.tracking.store` requires
+  // this shape, so an app typing its own store dependency had to either
+  // re-declare the interface or widen to `SubscribableStore` and fail to
+  // compile on the missing `dispatch`.
+  type TrackingSubscribableStore,
   rebindTrackingStore,
   startImageCapture,
   stopImageCapture,
