@@ -325,9 +325,21 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // terrain field landing — so at 2 Hz the readout would flicker between 60 and
   // 22 with no way to tell a sustained drop from a hiccup. Counting frames and
   // dividing by elapsed time is what makes the number answer §4's question.
+  // WHAT `createSceneHierarchy` LEAVES THE MATRIX AT until the fusion writes an
+  // alignment. Cloned from the instance rather than built from a `THREE.Matrix4`
+  // import: this module deliberately imports no three.js, and taken once here it
+  // costs the per-frame sampler nothing.
+  const identityMatrix = arWorldGroup.matrix.clone().identity();
   let framesThisWindow = 0;
-  let windowOpenedAtS = 0;
+  // OPENED ON THE FIRST FRAME, NOT AT ZERO. `elapsed` is PAGE-relative — the
+  // frame loop computes it from the rAF timestamp — so a session entered thirty
+  // seconds after load sees its first frame at `elapsed ≈ 30`. Seeding this to
+  // `0` made the first window as long as the page had been open, and the first
+  // reading "0 fps" (r511 review). The framework's docstring said "seconds since
+  // the session started", which is what made it look safe; that is corrected too.
+  let windowOpenedAtS: number | undefined;
   session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
+    windowOpenedAtS ??= elapsed;
     framesThisWindow += 1;
     const windowS = elapsed - windowOpenedAtS;
     const fps = windowS > 0 ? framesThisWindow / windowS : undefined;
@@ -354,7 +366,18 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
         // written directly by the alignment lerper with `matrixAutoUpdate =
         // false`, so element 13 is the live baseline rather than a stale copy.
-        worldBaselineY: arWorldGroup.matrix.elements[13],
+        //
+        // UNDEFINED UNTIL AN ALIGNMENT EXISTS (r511 review).
+        // `createSceneHierarchy` leaves the matrix at IDENTITY, whose element 13
+        // is a perfectly real `0` — so the readout showed `baseline 0.00 m`
+        // before the fusion had said anything at all. That is the one thing
+        // `ar-measurements.ts` exists to forbid: an unmeasured value rendered as
+        // a number, and this one is worse than most because zero is a plausible
+        // reading. Compared against the whole matrix rather than element 13
+        // alone, because a genuine zero baseline must still be reportable.
+        worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
+          ? undefined
+          : arWorldGroup.matrix.elements[13],
         ...live,
       },
       // THE SESSION CLOCK, not wall time: `elapsed` is what the frame loop

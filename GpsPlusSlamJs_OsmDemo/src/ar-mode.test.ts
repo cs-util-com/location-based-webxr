@@ -140,6 +140,10 @@ function deps(overrides: Partial<ArModeDeps> = {}): ArModeDeps {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // SEVERAL TESTS MOUNT THE HUD INTO `document.body`, so without this each one
+  // reads the leftovers of every earlier one — and an assertion that something
+  // is ABSENT then fails against a previous test's output rather than its own.
+  document.body.innerHTML = "";
   // THE SCENE IS SHARED ACROSS TESTS AND `applyArEnvironment` MUTATES IT, so
   // without this a test that leaves fog on makes the next one's "previous"
   // state wrong — and the restore assertions then check that the fog came
@@ -346,16 +350,16 @@ describe("when AR cannot start", () => {
       elapsed: number;
     }) => void;
     expect(onFrame).toBeDefined();
-    // `elapsed` must be NON-ZERO: the rate is frames-over-window, so a window
-    // of length zero has no rate to report — which is correct, and is why the
-    // fps assertion below uses a real timestamp.
-    onFrame({ dt: 1 / 60, elapsed: 1 / 60 });
+    // TWO frames: the window opens at the first one (`elapsed` is page-relative,
+    // so it cannot be assumed to start at zero), which means the first frame
+    // spans no time and has no rate to report. The second closes a real window.
+    onFrame({ dt: 1 / 60, elapsed: 10 });
+    onFrame({ dt: 1 / 60, elapsed: 10.5 });
 
     expect(document.body.textContent).toContain("37 draws");
-    // One frame into a 1/60 s window: 1 frame / (1/60 s) = 60 fps. Averaged
-    // rather than `1/dt` — the two agree here by construction, and the test
-    // below is what tells them apart.
-    expect(document.body.textContent).toContain("60 fps");
+    // One frame across a 0.5 s window = 2 fps. Low, but REAL — and that is the
+    // point: it is measured, not assumed from `1/dt`.
+    expect(document.body.textContent).toContain("2 fps");
   });
 
   it("asks the caller for the GPS-side numbers at the same cadence", async () => {
@@ -595,6 +599,74 @@ describe("the AR readout's frame rate", () => {
 
       expect(document.body.textContent).toContain("baseline -0.37 m");
       arWorldGroup.matrix.elements[13] = 0;
+    });
+  });
+});
+
+describe("the readout refuses to invent numbers (r511 review)", () => {
+  it("opens the fps window at the FIRST frame, not at zero", () => {
+    // `elapsed` is PAGE-relative — the frame loop computes it from the rAF
+    // timestamp, and the framework's docstring saying "since the session
+    // started" is what made seeding to 0 look safe. On a device, a session
+    // entered 30 s after load then made the first window 30 s long and the
+    // first reading "0 fps".
+    return startArMode(deps({ container: document.body })).then(() => {
+      const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+        dt: number;
+        elapsed: number;
+      }) => void;
+      // A session entered thirty seconds after page load, ONE frame in.
+      //
+      // Asserted on the FIRST accepted sample specifically, because that is the
+      // only place the bug is observable: a second frame closes a real 0.5 s
+      // window and overwrites the bad reading, so a two-frame version of this
+      // test passes against the defect. (It did. That is how this comment
+      // exists.)
+      onFrame({ dt: 1 / 60, elapsed: 30 });
+
+      // The window opened on this very frame, so it spans no time and there is
+      // no rate yet — correct, and reported as silence. Seeded at zero the
+      // window would have been the whole 30 s the page had been open, and the
+      // first thing the user read would have been "0 fps".
+      expect(document.body.textContent).not.toContain("fps");
+    });
+  });
+
+  it("says nothing about the baseline until an alignment exists", () => {
+    // `createSceneHierarchy` leaves the matrix at identity, whose element 13 is
+    // a perfectly real `0` — so the readout claimed `baseline 0.00 m` before
+    // the fusion had said anything. Zero is a plausible reading, which makes it
+    // the worst possible placeholder.
+    arWorldGroup.matrix.identity();
+
+    return startArMode(deps({ container: document.body })).then(() => {
+      const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+        dt: number;
+        elapsed: number;
+      }) => void;
+      onFrame({ dt: 1 / 60, elapsed: 1 });
+
+      expect(document.body.textContent).not.toContain("baseline");
+    });
+  });
+
+  it("reports a GENUINE zero baseline once an alignment has been written", () => {
+    // The counterweight, and the reason the check is against the whole matrix
+    // rather than against element 13: an alignment that happens to be level
+    // must still be reportable, or the guard would hide the very reading that
+    // says "no vertical error".
+    arWorldGroup.matrix.identity();
+    arWorldGroup.matrix.elements[12] = 5; // a northward alignment, level.
+
+    return startArMode(deps({ container: document.body })).then(() => {
+      const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+        dt: number;
+        elapsed: number;
+      }) => void;
+      onFrame({ dt: 1 / 60, elapsed: 1 });
+
+      expect(document.body.textContent).toContain("baseline 0.00 m");
+      arWorldGroup.matrix.identity();
     });
   });
 });

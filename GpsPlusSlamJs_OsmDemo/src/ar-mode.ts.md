@@ -6,14 +6,18 @@ Starts a WebXR session, hands the already-built city to the framework's scene
 graph in the right frame, subscribes the world group to the fusion's alignment,
 and gives the city back on the way out.
 
-## Scope — AR milestones 1 and 2
+## Scope — AR milestones 1 to 5
 
 **In:** the session lifecycle, the attachment, the alignment subscription, the
-scene environment and camera planes, and teardown on both the app-initiated and
-system-initiated exits.
+scene environment and camera planes, the measurement sampler, and teardown of
+all of it on both the app-initiated and system-initiated exits.
 
-**Out:** the distance gate and far-travel warning (M3); the draw-cost readout
-(M4); the UI and the desktop-renderer lifecycle (M5).
+**Out:** nothing, now that milestones 3 to 5 have landed. This file starts the
+session and owns what the session owns: the attachment, the alignment, the
+environment, the measurement sampler, and teardown of all of it on both exits.
+The distance gate lives in [`ar-walk-controller.ts`](ar-walk-controller.ts.md),
+the readout in [`ar-hud.ts`](ar-hud.ts.md), and the desktop renderer's suspend/
+resume in `building-view.ts` — each called from here or from `main.ts`.
 
 **M2 lives in [`ar-scene-environment.ts`](ar-scene-environment.ts.md), not
 here**, and is only _called_ from here. This demo has a recorded history of a

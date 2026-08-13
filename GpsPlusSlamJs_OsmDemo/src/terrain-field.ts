@@ -49,6 +49,9 @@ import {
   type EnuPoint,
   type HeightfieldData,
 } from "./heightfield.js";
+// The sign of the absolute datum, owned and tested in one place. Importing it
+// here rather than writing `-x` inline is the whole reason it exists.
+import { absoluteDatumFor } from "./ar-origin.js";
 
 /**
  * Posts kept before the furthest are evicted.
@@ -389,10 +392,15 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       // and does not depend on the window at all — see `absoluteDatum`. That
       // independence is the whole point: a datum computed from the window moves
       // when the window does.
+      // THE SIGN IS `absoluteDatumFor`'S TO OWN, not this line's (r511 review).
+      // It was written inline here as a bare `-` while the tested function that
+      // exists for exactly this sat with no production caller at all — so the
+      // one decision the function was created to hold was being made somewhere
+      // else, untested, in a single character.
       datum:
         gridOptions.absoluteDatum === undefined
           ? (heightAtPosition(frame.toLatLng(centreEnu)) ?? mean)
-          : -gridOptions.absoluteDatum.undulationMetres,
+          : absoluteDatumFor(gridOptions.absoluteDatum.undulationMetres),
       hasData: true,
       missing: total - values.length,
       total,

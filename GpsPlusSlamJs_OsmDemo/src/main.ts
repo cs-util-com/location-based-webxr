@@ -572,6 +572,18 @@ async function main(): Promise<void> {
       // session. That is worse than showing nothing, because it is plausible:
       // the number the milestone exists to read would be quietly historical.
       lastFixAccuracyM = undefined;
+      // AND THE POSITION WITH IT (r511 review). Clearing only the accuracy left
+      // half the stale readout on screen: the fix line disappeared while
+      // "N m from anchor" kept reporting the last good fix — the more
+      // misleading half, because it reads as the user having stopped moving.
+      lastFixPosition = undefined;
+      // TO THE SURFACE THE USER CAN ACTUALLY SEE (r511 review). During a
+      // session the status line is outside WebXR's dom-overlay root and is not
+      // composited at all — which milestone 3 discovered and then left this
+      // path pointing at anyway. A GPS failure while immersed is exactly when
+      // the user most needs telling: the city stops following them, and without
+      // this the only signal is that nothing happens.
+      if (arSession !== undefined) arToast.show(message);
       store.dispatch(actions.nonFatalError(message));
     },
   });
