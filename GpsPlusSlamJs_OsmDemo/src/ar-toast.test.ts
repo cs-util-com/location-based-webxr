@@ -37,6 +37,8 @@ describe("the AR toast", () => {
     const toast = createArToast(root);
 
     toast.show("You are 2.1 km from where this session was anchored");
+    // The text lands a task later, deliberately — see the r513 block below.
+    vi.advanceTimersByTime(0);
 
     expect(root.textContent).toContain("2.1 km");
   });
@@ -102,28 +104,78 @@ describe("the AR toast", () => {
   });
 });
 
-describe("the announcement actually fires (r511 review)", () => {
-  it("is IN the document before its text is set", () => {
-    // A live region is watched for mutations while it is attached, so one
-    // inserted already carrying its text is commonly not announced — the
-    // announcement depends on the text CHANGING after the region exists.
+describe("the announcement actually fires (r511 review, corrected in r513)", () => {
+  it("attaches EMPTY and stays empty for the rest of the task", () => {
+    // THE OBSERVABLE THAT MATTERS, and the first version of this test did not
+    // assert it. A live region is announced when its content changes while it
+    // is in the accessibility tree, and browsers flush that tree once at the
+    // END of a task rather than per DOM operation. So attaching and populating
+    // in the same task — even in that order — presents the AT with a region
+    // that appeared already carrying its text, which is the silent case.
     //
-    // `textContent` first is the natural order and the silent one. For a
-    // surface built specifically to reach a user who cannot see the screen,
-    // that would have made it inert for the second time: the first was the
-    // static `aria-hidden` on `#ar-root`.
+    // The previous test patched `root.append` to observe the text at attach
+    // time. That is a state no accessibility layer ever reaches, so it passed
+    // against code that announced nothing. This asserts the state that IS
+    // observable: at the end of the synchronous block the region is attached
+    // and still empty.
     const toast = createArToast(root);
-    let textAtAttachTime: string | null = null;
-    const realAppend = root.append.bind(root);
-    root.append = (...nodes: (Node | string)[]) => {
-      const el = nodes[0];
-      textAtAttachTime = el instanceof HTMLElement ? el.textContent : null;
-      realAppend(...nodes);
-    };
 
     toast.show("drifting");
 
-    expect(textAtAttachTime).toBe("");
+    expect(root.querySelector(".ar-toast")).not.toBeNull();
+    expect(root.textContent).toBe("");
+  });
+
+  it("writes the text in a LATER task, which is what gets announced", () => {
+    const toast = createArToast(root);
+    toast.show("drifting");
+
+    vi.advanceTimersByTime(0);
+
     expect(root.textContent).toContain("drifting");
+  });
+
+  it("does not resurrect a message cleared before the write lands", () => {
+    // `clear()` can arrive in the gap — leaving AR, or a newer state replacing
+    // the warning. Without the `isConnected` guard the deferred write would put
+    // the text back on a detached element and the next `show` would attach it
+    // already populated, reintroducing the silent case by the back door.
+    const toast = createArToast(root);
+    toast.show("drifting");
+
+    toast.clear();
+    vi.advanceTimersByTime(0);
+
+    expect(root.children).toHaveLength(0);
+    expect(root.textContent).toBe("");
+  });
+
+  it("shows the LATER message when two arrive in one task", () => {
+    // Both writes are deferred, so without a sequence check they land in timer
+    // order and the stale one could win.
+    const toast = createArToast(root);
+
+    toast.show("first");
+    toast.show("second");
+    vi.advanceTimersByTime(0);
+
+    expect(root.textContent).toContain("second");
+    expect(root.textContent).not.toContain("first");
+  });
+
+  it("re-attaches EMPTY after a clear, not carrying the old text", () => {
+    // The element is reused across messages, so `clear` has to empty it as well
+    // as detach it — otherwise the second `show` attaches a populated region and
+    // the whole deferral is undone.
+    const toast = createArToast(root);
+    toast.show("first");
+    vi.advanceTimersByTime(0);
+    toast.clear();
+
+    toast.show("second");
+
+    expect(root.textContent).toBe("");
+    vi.advanceTimersByTime(0);
+    expect(root.textContent).toContain("second");
   });
 });

@@ -54,29 +54,67 @@ export function createArToast(root: HTMLElement): ArToast {
   element.setAttribute("aria-live", "polite");
 
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** The deferred text write. See `show`. */
+  let pending: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Which `show` a pending write belongs to.
+   *
+   * Two `show` calls in the same task would otherwise land in timer order and
+   * the FIRST could win, leaving the older message on screen.
+   */
+  let sequence = 0;
 
   const clear = (): void => {
     if (timer !== undefined) {
       clearTimeout(timer);
       timer = undefined;
     }
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      pending = undefined;
+    }
+    // EMPTIED, not just detached. The next `show` attaches this same element,
+    // and one still carrying the previous text would arrive populated — which
+    // is the exact defect the deferral below exists to remove.
+    element.textContent = "";
     element.remove();
   };
 
   return {
     show(message: string): void {
-      // ATTACHED FIRST, POPULATED SECOND (r511 review). A live region is
-      // watched for MUTATIONS while it is in the document, so one inserted
-      // already carrying its text is commonly not announced at all — the
-      // announcement depends on the text changing after the region exists.
-      // Setting `textContent` first is the natural order and the silent one,
-      // which for a surface whose whole purpose is reaching a user who cannot
-      // see the screen would have made it inert for the second time.
+      // ATTACHED IN THIS TASK, POPULATED IN THE NEXT — and the second half is
+      // the part that took two attempts (r511 review, then r513's).
+      //
+      // A live region is announced when its content CHANGES while it is in the
+      // accessibility tree; one inserted already carrying its text is commonly
+      // not announced at all. The first fix reordered the two statements, which
+      // reads correctly and does nothing: browsers do not rebuild the
+      // accessibility tree per DOM operation, they flush queued updates once at
+      // the end of the task. With both mutations in the same task the AT still
+      // sees a region that appeared with its text already in it — the reorder
+      // was unobservable, and the test asserting it observed a state nothing
+      // ever reaches.
+      //
+      // **The separation has to be a task, not a statement.** `setTimeout`
+      // rather than `requestAnimationFrame`, deliberately: rAF is the tighter
+      // fit for "after a rendering step", but it is throttled or paused in a
+      // background tab, and `main.ts` can warn with no XR session running — so
+      // the frame-based version can silently never deliver. A task boundary is
+      // enough for the flush and always fires.
       //
       // `append`, not `insertBefore`: `initAR` puts its canvas at the FRONT of
       // this container, and the toast has to paint over it.
+      sequence += 1;
+      const mine = sequence;
       root.append(element);
-      element.textContent = message;
+      if (pending !== undefined) clearTimeout(pending);
+      pending = setTimeout(() => {
+        pending = undefined;
+        // Cleared in the gap, or superseded by a later `show`. Writing either
+        // way would resurrect a message the caller has already withdrawn.
+        if (!element.isConnected || mine !== sequence) return;
+        element.textContent = message;
+      }, 0);
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(clear, AR_TOAST_LINGER_MS);
     },

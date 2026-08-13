@@ -42,6 +42,24 @@ channel nobody can see is invisible to it.
   recorded in `ar-mode.ts`, which is why the rule is stated rather than assumed.
 - **`pointer-events: none`.** Same reason from the other direction: the toast
   must never eat a tap.
+- **Attached in one task, populated in the NEXT.** A live region is announced
+  when its content changes while it is in the accessibility tree; one inserted
+  already carrying its text is commonly not announced at all.
+  - **The obvious fix does not work and was shipped once.** Reordering the two
+    statements — attach, then set text — reads correctly and is unobservable:
+    browsers flush accessibility updates once at the end of the task rather than
+    per DOM operation, so the AT still sees a region that appeared populated.
+    **The separation has to be a task, not a statement.**
+  - **`setTimeout`, not `requestAnimationFrame`**, though rAF is the tighter fit
+    for "after a rendering step": rAF is throttled or paused in a background tab
+    and `main.ts` can warn with no XR session running, so the frame-based
+    version can silently never deliver.
+  - The deferred write is guarded by `element.isConnected` and a sequence
+    number, so a `clear()` in the gap cannot resurrect a withdrawn message and
+    two `show()` calls in one task cannot land out of order.
+  - **`clear()` empties the element as well as detaching it.** The element is
+    reused across messages, so one still carrying the previous text would arrive
+    populated on the next `show` and undo the whole deferral.
 - **`append`, not `insertBefore`.** `initAR` puts its canvas at the front of the
   container; the toast has to paint over it.
 - **`role="status"` / `aria-live="polite"`.** A drift warning is information,
@@ -69,3 +87,14 @@ arToast.clear();
 until there is something to say, the ARIA attributes, the auto-clear leaving the
 root empty again, the timer restarting on a second message, `clear()`, and
 `clear()` with nothing showing.
+
+Plus the announcement block (r511, corrected in r513): the region **attaches
+empty and stays empty for the rest of the task**, the text arrives in a later
+task, a `clear()` in the gap does not resurrect it, the later of two messages in
+one task wins, and a re-`show` after `clear` attaches empty rather than carrying
+the old text.
+
+**The test this replaced patched `root.append` to observe the text at attach
+time** — a state no accessibility layer ever reaches, so it passed against code
+that announced nothing. Same shape as the `warn` mock above, arriving from the
+other direction: assert what the AT can observe, not what the code did.
