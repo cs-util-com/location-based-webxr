@@ -85,14 +85,21 @@ export class LegendView {
     // saturates looks exactly like a field where everything is flat.
     const observed = document.createElement("span");
     observed.className = "legend-observed";
-    observed.textContent = `max here ${model.observedLabel}`;
-    const observedText = `The ramp above is fixed. The highest ${model.category} score currently on screen is ${model.observedLabel}, over ${String(model.aboveThresholdCount)} cells above the bar.`;
-    observed.title = observedText;
-    // AND AS AN ACCESSIBLE NAME, not only a tooltip (r513 review). `title` is
-    // mouse-only in practice, and the cell COUNT appears nowhere else on screen
-    // — so without this the half of DEC-H7 that says how much data is behind
-    // the number is unreachable for a screen-reader user.
-    observed.setAttribute("aria-label", observedText);
+    // BOTH NUMBERS IN THE VISIBLE TEXT, which is the only placement that
+    // reaches everyone (r513 review, second attempt).
+    //
+    // The first attempt put the count in `title` only — mouse-only in practice.
+    // The second added `aria-label` to this `<span>`, which is worse than it
+    // looks: a span with no role is `role="generic"`, where ARIA 1.2 PROHIBITS
+    // an accessible name, so a browse-mode reader announces the text content
+    // anyway — and where the name IS honoured it REPLACES "max here 512.4"
+    // rather than adding to it. Two ways to deliver nothing, and a third to
+    // deliver less.
+    //
+    // `.legend-strip` is not a precedent for the `aria-label` there: it has no
+    // text of its own, so naming it adds rather than replaces.
+    observed.textContent = `max here ${model.observedLabel} · ${String(model.aboveThresholdCount)} above`;
+    observed.title = `The ramp above is fixed at ${model.maxLabel}. The highest ${model.category} score currently on screen is ${model.observedLabel}, over ${String(model.aboveThresholdCount)} cells above the bar.`;
 
     const children: HTMLElement[] = [name, min, strip, max, observed];
     for (const band of model.bands) children.push(bandItem(band));

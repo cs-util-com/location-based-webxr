@@ -94,6 +94,19 @@ test.describe("the demo boots", () => {
       // a gradient with no units.
       await expect(legend.locator(".legend-min")).toHaveText("1");
       await expect(legend.locator(".legend-max")).not.toBeEmpty();
+      // WHAT THE DATA REACHES, beside the fixed ramp (DEC-H7). Asserted here
+      // because nothing else could: `legend-view.ts` has no unit test, so until
+      // this line deleting the readout entirely stayed green — while
+      // `heat-colours.ts.md` justifies saturating 10–14 % of `walkable` on the
+      // grounds that "the legend compensates, and has to" (r513 review).
+      //
+      // On the TEXT, not on an `aria-label`: a span with no role is
+      // `role="generic"`, where ARIA prohibits an accessible name, so the
+      // attribute is not a reliable channel. Both numbers are visible.
+      await expect(legend.locator(".legend-observed")).toContainText(
+        "max here",
+      );
+      await expect(legend.locator(".legend-observed")).toContainText("above");
     });
 
     await test.step("says it is still widening, and then stops saying it", async () => {

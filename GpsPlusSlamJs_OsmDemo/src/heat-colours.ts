@@ -50,6 +50,9 @@ export interface HeatScale {
    * The top of the ramp. **Fixed at {@link HEAT_CAP} since DEC-H5**, not the
    * highest score present — which is what it used to be, and what made a cell's
    * colour depend on cells the user could not see.
+   *
+   * `fixedScale` deviates from the constant in exactly one case: a threshold at
+   * or above the cap, where a fixed max would leave no ramp at all. See there.
    */
   readonly max: number;
 }
@@ -114,11 +117,20 @@ export function fixedScale(threshold: number): HeatScale {
   // is the same class of failure as the `#NaNNaNNaN` scar that guard was
   // written for.
   //
-  // One decade above the threshold rather than a hard clamp: it keeps a usable
-  // ramp, stays a pure function of a table constant (so it is still fixed, not
-  // data-derived), and makes the degenerate case impossible rather than merely
-  // survivable.
-  return { threshold, max: Math.max(HEAT_CAP, threshold * 10) };
+  // ONLY WHERE IT IS ACTUALLY DEGENERATE. The first version of this guard was
+  // `Math.max(HEAT_CAP, threshold * 10)`, which engages at `threshold > 1e3` —
+  // a decade EARLIER than the problem starts. A threshold of 2 000 still had
+  // two thirds of a ramp and would silently have been given 2e4, making the cap
+  // per-category in the whole 1e3–1e4 band. That contradicts `describeScale`'s
+  // promise that "the same score is the same colour everywhere", which is the
+  // entire point of DEC-H5 (r513 review).
+  //
+  // So the constant holds for every threshold that leaves a ramp, and the
+  // fallback applies only at `threshold >= HEAT_CAP`, where there is no ramp to
+  // preserve. One decade there rather than a hard clamp: it is a pure function
+  // of a table constant, so the scale is still fixed rather than data-derived.
+  if (threshold < HEAT_CAP) return { threshold, max: HEAT_CAP };
+  return { threshold, max: threshold * 10 };
 }
 
 /**
@@ -203,7 +215,7 @@ const EXPONENTIAL_ABOVE = 1e4;
  * `walkable 1 … 27992463056732.17`. That is not an outlier: the score is a
  * PRODUCT of rule factors and products compound, so round 6's corpus measurement
  * found `walkable` at Cologne spanning twelve orders of magnitude (p99 = 8.1e6,
- * max = 1.4e12). Full precision is the wrong presentation for that quantity at
+ * max = 1.7e11). Full precision is the wrong presentation for that quantity at
  * almost any position.
  *
  * Applied to the THRESHOLD as well as the max, because both come off the same

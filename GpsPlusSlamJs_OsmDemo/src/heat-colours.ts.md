@@ -8,7 +8,14 @@ read — and stating the scale so the picture can be checked.
 ## Public API
 
 - `HEAT_CAP` — 1e4, the FIXED top of the ramp for every category and place.
-- `fixedScale(threshold): HeatScale` — `{ threshold, max: HEAT_CAP }`.
+- `fixedScale(threshold): HeatScale` — `{ threshold, max: HEAT_CAP }` for every
+  threshold below the cap, which is every threshold that leaves a ramp.
+  - **The one exception**: at `threshold >= HEAT_CAP` the ramp would be
+    degenerate (span <= 0, so `heatFraction` returns 0 for every score and the
+    whole grid paints the dark end with no message). There the max becomes
+    `threshold * 10`. Still a pure function of a table constant, so the scale is
+    fixed rather than data-derived — but in that band it is per-CATEGORY, which
+    is the one property DEC-H5 otherwise removes.
   - **Takes the threshold, not the category.** The cap is category-independent
     (measured across all six), while the threshold already arrives per-category
     from `thresholdFor(table, category)`, so a `category` parameter would look

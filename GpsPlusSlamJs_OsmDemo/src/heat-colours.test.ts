@@ -74,6 +74,21 @@ describe("the scale is FIXED, not derived from what is on screen (DEC-H5)", () =
     expect(heatFraction(hostile.max, hostile)).toBe(1);
   });
 
+  it("does NOT move the cap for a threshold that still leaves a ramp", () => {
+    // THE GUARD'S FIRST VERSION OVER-FIRED BY A DECADE (r513 review). It was
+    // `Math.max(HEAT_CAP, threshold * 10)`, which engages at `threshold > 1e3`
+    // — so a threshold of 2 000, which still has two thirds of a ramp, would
+    // silently have been given 2e4.
+    //
+    // In that band the cap becomes PER-CATEGORY, which is the one thing DEC-H5
+    // exists to remove and which `describeScale` promises to the reader in as
+    // many words. The band is the part a reasonable sheet edit can reach, so it
+    // is the part that matters most.
+    for (const threshold of [1, 9, 1_001, 2_000, 9_999]) {
+      expect(fixedScale(threshold).max).toBe(HEAT_CAP);
+    }
+  });
+
   it("still leaves the weakest measured category most of the ramp", () => {
     // The objection `heat-colours.ts` used to carry — that a fixed scale makes
     // most categories look uniformly dark — measured rather than argued.
@@ -181,7 +196,7 @@ describe("abbreviating the tail (DEC-R6b-6)", () => {
    * by a very long number: a screenshot showed `walkable 1 … 27992463056732.17`.
    * That is not an outlier — the score is a PRODUCT of rule factors and products
    * compound, so round 6's corpus measurement found `walkable` at Cologne
-   * spanning twelve orders of magnitude (p99 = 8.1e6, max = 1.4e12).
+   * spanning eleven orders of magnitude (p99 = 8.1e6, max = 1.7e11).
    *
    * A full-precision decimal is the wrong presentation for that quantity at
    * almost any position, so above 1e4 the legend switches to exponential.

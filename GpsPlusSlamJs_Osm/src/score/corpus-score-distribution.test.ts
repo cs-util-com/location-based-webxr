@@ -35,7 +35,10 @@
  * number.** The C# heat map was a sum of counts; ours is a product of rule
  * factors, and 9 means something entirely different in each.
  *
- * **Q-R6-3 — the distribution spans TWELVE orders of magnitude** (0 to 1.4e12),
+ * **Q-R6-3 — the distribution spans ELEVEN orders of magnitude at Cologne**
+ * (0 to 1.7e11 — this said twelve and 1.4e12 until the max was re-measured on
+ * 2026-08-13; Heidelberg spans seventeen, so "twelve orders" remains a fair
+ * description of the corpus and of the score MODEL generally),
  * because a product of factors compounds. That decides the aggregate question in
  * a way the C# reference cannot: a SUM over a coarse cell's children is
  * dominated by its single largest child, so sum and max are very nearly the same
@@ -63,10 +66,14 @@
  * - **Q-R6-4 is untouched.** `heat > 9` still selects 51.1 %% of Cologne and
  *   29.8 %% of Heidelberg — the bulk, not the tail. DEC-R9-3, which rests on
  *   this, needs no revisiting.
- * - **Q-R6-3 holds at nine orders instead of twelve** at Cologne, because the
- *   max is unchanged and only the median rose. Sum and max are still the same
+ * - **Q-R6-3 holds at nine orders instead of twelve** at Cologne, because
+ *   mostly the median rose. ⚠️ **This said "the max is unchanged", and that is
+ *   the claim the 2026-08-13 re-measure falsifies** — the max is 1.7e11, not
+ *   the 1.4e12 recorded above it. The conclusion is unaffected (nine orders of
+ *   SPAN is what decides Q-R6-3, and 1.7e11 / 43.2 is 9.6). Sum and max are still the same
  *   statistic to within a rounding error, so a genuine average must still be
- *   geometric. Heidelberg still spans twelve.
+ *   geometric. Heidelberg spans SEVENTEEN (0.8 to 3.0e17), so the corpus as a
+ *   whole still spans more than twelve.
  *
  * What DID change is the argument for a quantile gate, which is now stronger:
  * the two sites' medians differ by ~54x and the sign of the difference REVERSED,
@@ -173,7 +180,7 @@ describe("the corpus score distribution (§6 step 0)", () => {
     // max and mean are not three meaningfully different aggregates — they are
     // one statistic and two scalings of it. A genuine average has to be
     // geometric.
-    // NINE, not ten, since the below-surface fix: the max is unchanged and the
+    // NINE, not ten, since the below-surface fix: mostly the
     // median rose ~900x, so the SPAN narrowed while the distribution itself did
     // not change shape. The conclusion is untouched — sum and max are still the
     // same statistic to within a rounding error at nine orders as at twelve.
