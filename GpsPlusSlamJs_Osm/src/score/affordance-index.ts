@@ -829,13 +829,30 @@ export class AffordanceIndex {
    * per-chunk one. `affordance-index.test.ts` pins this by scoring the same
    * chunks in differently-composed batches and comparing.
    *
-   * The TWO-STAGE FUNNEL is unchanged, exactly as the reference queries its
-   * quadtree: a cheap bbox test over EVERY feature, then the expensive work
-   * only for survivors. The bbox comes from the raw inline positions, so a
-   * feature the user will never walk near is never ring-stitched, never
-   * classified area-vs-line and never converted at all. That matters at res 7:
-   * a fetch tile is estimated at **~40,000–116,000 features** and a working set
-   * needs a handful.
+   * The TWO-STAGE FUNNEL is unchanged: a cheap bbox test over EVERY feature,
+   * then the expensive work only for survivors. The bbox comes from the raw
+   * inline positions, so a feature the user will never walk near is never
+   * ring-stitched, never classified area-vs-line and never converted at all.
+   * That matters at res 7: a fetch tile is estimated at **~40,000–116,000
+   * features** and a working set needs a handful.
+   *
+   * ⚠️ **THIS IS A LINEAR SWEEP, AND THIS COMMENT USED TO SAY IT WAS "exactly
+   * as the reference queries its quadtree".** It is not: a quadtree does not
+   * visit every feature, and there is no tree here — every merged feature of
+   * every held tile is bbox-tested on every scoring pass, and tiles are never
+   * evicted, so the sweep grows for the whole session. The claim was the
+   * sentence most likely to convince a reader that an index already exists.
+   *
+   * The sweep is defensible on cost — measured at ~1.1 ms across a res-7 tile's
+   * features, so a tree "saves ~1 ms per move"
+   * (`GpsPlusSlamJs_Docs/docs/2026-07-31-1005-osm-spatial-index-design.md` §1) —
+   * and NOT defensible on capability: the same doc reframes the index as a
+   * requirement for AR frame-loop queries, which this shape cannot answer at
+   * all. That index was planned to ship (`…2026-08-10-0634-osm-spatial-index-build-plan.md`
+   * §1: "`flatbush` ships, as a real `dependencies` entry"); the supporting
+   * modules landed and the index did not, so `package.json` still has no
+   * `dependencies` block. See
+   * `GpsPlusSlamJs_Docs/docs/2026-08-13-2305-osm-spatial-structure-review-findings.md`.
    *
    * The ~21,800 this used to quote is RETRACTED (2026-08-09) — see
    * `resolutions.ts` FETCH_RES, which withdraws the 21,847-element figure, and

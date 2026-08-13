@@ -116,6 +116,28 @@ Returns `{state:"scored", score}`, `{state:"empty"}` or `{state:"unknown"}`.
   no fixture holds a full res-7 tile.) A
   failed conversion is cached as a failure so a broken relation is examined
   once, not once per chunk forever.
+  - ⚠️ **It is a LINEAR SWEEP, not a tree.** Every merged feature of every held
+    tile is bbox-tested on every scoring pass, and tiles are never evicted, so
+    the sweep grows for the whole session. `scoreChunks` used to describe this
+    as working "exactly as the reference queries its quadtree", which is wrong
+    in the one way that matters — a quadtree does not visit every feature.
+    - Defensible on **cost**: the whole sweep measures ~1.1 ms across a res-7
+      tile's features, so a tree saves ~1 ms per move
+      ([design §1](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-31-1005-osm-spatial-index-design.md)).
+    - Not defensible on **capability**: AR frame-loop queries ("what is in the
+      direction the user is looking") need real geometry-based overlap lookups,
+      which this shape cannot answer at all. A `flatbush` index was planned to
+      ship as the package's first runtime dependency; the supporting modules
+      (`geometry-overlap`, `bbox-overlap`, `ring-overlap`, the bench) landed and
+      the index did not. See
+      [the 2026-08-13 review findings](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-13-2305-osm-spatial-structure-review-findings.md).
+  - **No oversize guard, unlike `buildFeatureIndex`.** What keeps a
+    continental-extent feature finite here is the clip to the batch's selection
+    box, not a budget. Measured on the `beach` fixture (the entire North Sea as
+    one relation): a radius-4 batch's box is ~1.8× the chunks' own area, the
+    cover yields ~5 400 res-13 cells and `update` takes ~93 ms. The bound is a
+    consequence of the scored disc's size and nothing states it — see
+    `oversize-feature-guard.test.ts`.
 - **The whole batch of not-yet-held chunks is scored in ONE pass over the
   features** (`scoreChunks`), not one pass per chunk.
   - Measured 2026-07-29 (perf loop): **84 % of `update`'s time was
