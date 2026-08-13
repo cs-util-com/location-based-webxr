@@ -44,6 +44,16 @@ path, with no DOM in it.
       (tile, time); only WHICH tiles are visible changes, which is exactly what
       DEC-R9-15 already accepted — "a device that has loaded more discovers more
       of them, and they converge".
+- `interface DemoPipelineOptions` — `source`, `table`, `categories?`,
+  `monotonicNow?`, `maxChunks?`
+  - `maxChunks` is **forwarded** to `AffordanceIndexOptions.maxChunks`, which has
+    always been public; this wrapper simply never passed it on. Omitted means the
+    index's default of 488 (`CHUNKS_PER_WORKING_SET × WORKING_SETS_RETAINED`).
+  - **The cap is what bounds stage 5.** 488 chunks × 49 res-13 children = 23 912
+    cells is the hard ceiling on `scoresByCell`, and therefore on every derive
+    pass, however far the user walks. `derive-growth.test.ts` measures the
+    approach to it and asserts the plateau; its header carries the recorded 3 km
+    table and the ~1.1 s-per-refresh derive cost at the cap.
 - `interface DemoSnapshot` — `cells`, `regions`, `threshold`, `missingTiles`,
   `loadedTiles`, `stats`, `radius`
   - `radius` is which ring of the progressive widening this snapshot describes,

@@ -205,6 +205,22 @@ export interface DemoPipelineOptions {
    * written against a hard-wired clock.
    */
   readonly monotonicNow?: () => number;
+  /**
+   * Retained scored chunks before the furthest-from-the-user are dropped.
+   *
+   * FORWARDED, not invented here — `AffordanceIndexOptions.maxChunks` has
+   * always been public and this wrapper simply never passed it on, the same
+   * omission `categories` did not have. Omitted means the index's own default
+   * of `CHUNKS_PER_WORKING_SET × WORKING_SETS_RETAINED` = 488.
+   *
+   * It exists as an option here because the cap is what BOUNDS stage 5:
+   * `derive-growth.test.ts` walks until eviction starts and asserts the derive
+   * cost plateaus with the retained set, which at the production cap needs
+   * 2.6 km of walking and ~15 s of gate time. A smaller cap reaches the same
+   * plateau in a few steps. The full-scale figures are recorded in the AR
+   * milestone-4 findings doc.
+   */
+  readonly maxChunks?: number;
 }
 
 /**
@@ -408,11 +424,15 @@ export class DemoPipeline {
     this.source = options.source;
     this.table = options.table;
     this.clock = options.monotonicNow ?? nowMs;
-    this.index = new AffordanceIndex(
-      options.categories === undefined
-        ? { table: options.table }
-        : { table: options.table, categories: options.categories },
-    );
+    this.index = new AffordanceIndex({
+      table: options.table,
+      ...(options.categories === undefined
+        ? {}
+        : { categories: options.categories }),
+      ...(options.maxChunks === undefined
+        ? {}
+        : { maxChunks: options.maxChunks }),
+    });
     // A late tile invalidates chunks; the demo simply redraws from the next
     // snapshot, so nothing needs to listen. Registering a no-op listener would
     // imply a reactivity this app does not have.
