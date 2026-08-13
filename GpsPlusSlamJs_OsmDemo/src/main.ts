@@ -80,7 +80,7 @@ import {
   type Heightfield,
 } from "./heightfield.js";
 import { createTerrainCycle } from "./terrain-cycle.js";
-import { heatColour } from "./heat-colours.js";
+import { fixedScale, heatColour } from "./heat-colours.js";
 import {
   BuildingView,
   TERRAIN_SPACING_M,
@@ -1385,7 +1385,17 @@ async function main(): Promise<void> {
     //
     // Still the ONE derivation both views read; it simply arrives instead of
     // being recomputed here.
-    return { threshold: snapshot.threshold, max: snapshot.heatMax };
+    // NOW A CONSTANT (DEC-H5). It used to be the maximum score on screen, so a
+    // cell's colour depended on cells the user could not see — walk far enough
+    // and everything brightened with no change in its own data. The snapshot
+    // still reports `observedMax`, but only so the legend can describe the
+    // data; nothing colours by it.
+    //
+    // The category-mismatch hazard this comment used to describe is GONE rather
+    // than mitigated: there is no per-category ramp left to mismatch, so
+    // colouring `view.category` against a stale snapshot's scale is now
+    // harmless by construction instead of by careful reading.
+    return fixedScale(snapshot.threshold);
   }
 
   function drawMap(snapshot: DemoSnapshot | undefined): void {
@@ -1442,7 +1452,14 @@ async function main(): Promise<void> {
     mapView.renderFetchTiles(snapshot.loadedTiles);
     // Rendered from the SAME scale the map just painted with, so the two cannot
     // drift — the one way a legend becomes an active lie.
-    legendView.render(scale, drawnCategory, view.showBelowThreshold);
+    // The counts come from the SNAPSHOT, not from what this view drew — same
+    // rule as `scaleFor`. Deriving them from the filtered cell array made
+    // switching the `cells` layer off collapse the legend, which is the defect
+    // W12 fixed; the fixed ramp does not reintroduce it, and neither does this.
+    legendView.render(scale, drawnCategory, view.showBelowThreshold, {
+      aboveThresholdCount: snapshot.aboveThresholdCount,
+      observedMax: snapshot.observedMax,
+    });
   }
 
   /**

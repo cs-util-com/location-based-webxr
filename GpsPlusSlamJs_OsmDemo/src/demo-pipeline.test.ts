@@ -49,7 +49,6 @@ function boundsOf(cell: string): [number, number, number, number] {
   return [south, west, north, east];
 }
 import { DemoPipeline } from "./demo-pipeline.js";
-import { heatScale } from "./heat-colours.js";
 
 describe("chunkFor names the chunk that was actually scored", () => {
   /**
@@ -945,11 +944,14 @@ describe("the snapshot carries the heat max, so the cells need not travel", () =
       .update(AT, "walkable")
       .then((snapshot) => {
         expect(snapshot.cells.length).toBeGreaterThan(0);
-        const onThePage = heatScale(
-          snapshot.cells.map((cell) => cell.scores["walkable"] ?? 1),
-          snapshot.threshold,
-        );
-        expect(snapshot.heatMax).toBe(onThePage.max);
+        // RECOMPUTED THE WAY THE PAGE WOULD HAVE, including the `?? 1` identity
+        // for a cell with no entry for this category.
+        let onThePage = 0;
+        for (const cell of snapshot.cells) {
+          const score = cell.scores["walkable"] ?? 1;
+          if (score > onThePage) onThePage = score;
+        }
+        expect(snapshot.observedMax).toBe(onThePage);
       });
   });
 
@@ -961,7 +963,7 @@ describe("the snapshot carries the heat max, so the cells need not travel", () =
       AT,
       "walkable",
     );
-    expect(withCells.heatMax).toBeGreaterThan(withCells.threshold);
+    expect(withCells.observedMax).toBeGreaterThan(withCells.threshold);
 
     const without = await new DemoPipeline({ source, table }).update(
       AT,
@@ -972,7 +974,8 @@ describe("the snapshot carries the heat max, so the cells need not travel", () =
     );
 
     expect(without.cells).toEqual([]);
-    expect(without.heatMax).toBe(withCells.heatMax);
+    expect(without.observedMax).toBe(withCells.observedMax);
+    expect(without.aboveThresholdCount).toBe(withCells.aboveThresholdCount);
     // And the count survives, because the status line reports it.
     expect(without.cellCount).toBe(withCells.cells.length);
   });

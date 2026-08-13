@@ -10,7 +10,7 @@ import {
 } from "gps-plus-slam-osm";
 
 import { buildCellMesh, type DrawableCell } from "./cell-mesh.js";
-import { heatScale } from "./heat-colours.js";
+import { fixedScale } from "./heat-colours.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import { DEFAULT_CATEGORY } from "./default-category.js";
 import type { TransferableMesh } from "./worker/protocol.js";
@@ -101,8 +101,9 @@ describe("buildCellMesh — the affordance overlay, in the worker", () => {
   for (const slug of ["park", "building-block"]) {
     const { cells, centre } = drawableCells(slug);
     const frame = enuFrameAt(centre);
-    const scores = cells.map((c) => c.scores[DEFAULT_CATEGORY] ?? 1);
-    const scale = heatScale(scores, 1);
+    // FIXED, as the demo now is (DEC-H5) — the bench must feed the mesh the
+    // same scale the app does, or it measures a ramp nothing draws.
+    const scale = fixedScale(1);
 
     bench(`${slug} (${cells.length} cells)`, () => {
       buildCellMesh(cells, {

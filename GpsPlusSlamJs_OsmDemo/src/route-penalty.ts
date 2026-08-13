@@ -22,14 +22,21 @@
  *   AROUND the ~250 m scored disk, the inverse of what was asked for. An
  *   unscored cell is the score IDENTITY instead, which is the same `?? 1` the
  *   heat scale already applies to a cell with no entry in a category.
- * - **what the log is measured against** (DEC-R13-13). Fixed constants, NOT the
- *   snapshot's `heatMax`. That value is computed per update for the SELECTED
- *   category, is not retained where routing runs, and is a maximum over whatever
- *   is currently scored — so it moves on every pan, and a moving baseline means
- *   the same click gives a different route after the working set grows. That
- *   would make the corpus test a flake generator and a user's bug report
- *   irreproducible, in the same round that adds camera-target URLs so a finding
- *   can be pointed at.
+ * - **what the log is measured against** (DEC-R13-13). Fixed constants, NOT a
+ *   maximum derived from whatever is currently scored. Such a maximum moves on
+ *   every pan, and a moving baseline means the same click gives a different
+ *   route after the working set grows — a flake generator for the corpus test
+ *   and an irreproducible user bug report, in the same round that adds
+ *   camera-target URLs so a finding can be pointed at.
+ *
+ *   **THE COLOURS HAVE SINCE FOLLOWED THIS FILE (DEC-H5).** The snapshot's
+ *   derived `heatMax` is gone; `heat-colours.ts` now anchors on a fixed
+ *   `HEAT_CAP` for exactly the reason recorded here, one round later and about
+ *   pixels instead of paths. Note the two anchors are **not** the same number —
+ *   `PATH_SCORE` is 5 000 and `HEAT_CAP` is 1e4 — and they answer different
+ *   questions: one is "what does a good path cost", the other "where does the
+ *   ramp top out". Neither is derived from the other, and a future round that
+ *   wants them unified has to argue it rather than assume it.
  *
  * @see route-penalty.ts.md
  */

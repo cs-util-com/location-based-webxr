@@ -37,8 +37,13 @@ export class LegendView {
     scale: HeatScale,
     category: string,
     showBelowThreshold: boolean,
+    /** What the data does — see `legendModel`'s `data` parameter (DEC-H7). */
+    data: {
+      readonly aboveThresholdCount: number;
+      readonly observedMax: number;
+    },
   ): void {
-    const model = legendModel(scale, category, showBelowThreshold);
+    const model = legendModel(scale, category, showBelowThreshold, data);
 
     const name = document.createElement("span");
     name.className = "legend-category";
@@ -75,7 +80,15 @@ export class LegendView {
     max.className = "legend-max";
     max.textContent = model.maxLabel;
 
-    const children: HTMLElement[] = [name, min, strip, max];
+    // WHAT THE DATA DOES, beside a ramp that no longer moves (DEC-H7). Without
+    // it every number on this strip is a constant, and a field where everything
+    // saturates looks exactly like a field where everything is flat.
+    const observed = document.createElement("span");
+    observed.className = "legend-observed";
+    observed.textContent = `max here ${model.observedLabel}`;
+    observed.title = `The ramp above is fixed. The highest ${model.category} score currently on screen is ${model.observedLabel}, over ${String(model.aboveThresholdCount)} cells above the bar.`;
+
+    const children: HTMLElement[] = [name, min, strip, max, observed];
     for (const band of model.bands) children.push(bandItem(band));
 
     this.container.replaceChildren(...children);

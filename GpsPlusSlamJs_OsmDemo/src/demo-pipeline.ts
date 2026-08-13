@@ -18,7 +18,6 @@
 import {
   AffordanceIndex,
   buildRegions,
-  cellsAboveThreshold,
   connectedComponents,
   thresholdFor,
   type CellScore,
@@ -50,7 +49,6 @@ import {
   latLngToCell,
 } from "h3-js";
 import type { GeoEventStats } from "./geo-event-stats.js";
-import { heatScale } from "./heat-colours.js";
 import { nowMs } from "./monotonic-clock.js";
 
 // `nowMs` moved to `monotonic-clock.ts` when the worker handler and the page
@@ -353,7 +351,16 @@ export interface DemoSnapshot {
    */
   readonly cellCount: number;
   /**
-   * The top of the heat ramp for `category` — `heatScale(...).max`.
+   * The highest score present for `category` — OBSERVED, not the ramp.
+   *
+   * **The ramp is fixed at `HEAT_CAP` now (DEC-H5), so this no longer decides
+   * any colour.** It is reported because the legend still has to say something
+   * about the data on screen: a constant ramp otherwise removes the only thing
+   * `describeScale` exists for, and a field of saturated cells would be
+   * indistinguishable from a flat field.
+   *
+   * Renamed from `heatMax` deliberately rather than kept — the old name says
+   * "this is the top of the ramp", which is exactly what it has stopped being.
    *
    * COMPUTED HERE BECAUSE IT IS WHY THE CELLS TRAVELLED (round 10, stage B).
    * The page derived this by mapping every cell's score for the current
@@ -362,7 +369,18 @@ export interface DemoSnapshot {
    * produce ONE NUMBER. The regions were already computed here; this was the
    * only other thing the default configuration used the array for.
    */
-  readonly heatMax: number;
+  readonly observedMax: number;
+  /**
+   * How many cells clear the threshold for `category`.
+   *
+   * THE LEGEND KEYS ITS "nothing here" MESSAGE ON THIS (DEC-H7). It used to ask
+   * `max <= threshold`, which only ever worked BECAUSE the max was observed —
+   * under a fixed ramp `max > threshold` always, so the R3-8 fix would have died
+   * silently and its e2e would have stayed green.
+   *
+   * Free: `above.length` from the fused derive pass.
+   */
+  readonly aboveThresholdCount: number;
   readonly stats: {
     readonly chunksScored: number;
     readonly chunksReused: number;
@@ -617,23 +635,32 @@ export class DemoPipeline {
       undergroundFeatures?.flatMap((feature) => outlinesOf(feature)) ?? [];
     const undergroundCount =
       undergroundFeatures?.length ?? this.index.belowSurfaceCount();
-    const above = cellsAboveThreshold(
-      { cells, unmappedTagCounts: {}, lookups: 0 },
-      category,
-      threshold,
-    );
+    // ONE PASS, not four (DEC-H6/H10). This used to be the `values()` spread
+    // above, then `cellsAboveThreshold`, then a `cells.map` allocating a score
+    // array over every retained cell, then `heatScale` scanning that array —
+    // four full-length walks over up to 23 912 cells, three times per move.
+    //
+    // They are independent reductions over the same sequence, so they fuse.
+    // Measured before this change: derive reached ~1.1 s per refresh once the
+    // chunk cap was full, after a 2.6 km walk
+    // (`GpsPlusSlamJs_OsmDemo/src/derive-growth.test.ts`).
+    //
+    // `observedMax` is NOT the ramp any more — the ramp is fixed. It is
+    // reported so the legend can still say something about the data on screen,
+    // which is `describeScale`'s stated purpose and the thing a constant ramp
+    // would otherwise remove (DEC-H7). Same `?? 1` identity the page used, so
+    // the number does not shift because the computation moved.
+    const above: string[] = [];
+    let observedMax = 0;
+    for (const cell of cells) {
+      const score = cell.scores[category] ?? 1;
+      if (score > threshold) above.push(cell.cell);
+      if (Number.isFinite(score) && score > observedMax) observedMax = score;
+    }
     const regions = buildRegions(
       connectedComponents(above),
       category,
       scoresByCell,
-    );
-
-    // OVER THE SAME VALUES THE PAGE USED, including the `?? 1` identity for a
-    // cell with no entry for this category — the ramp must not shift because
-    // the computation moved.
-    const { max: heatMax } = heatScale(
-      cells.map((cell) => cell.scores[category] ?? 1),
-      threshold,
     );
 
     return {
@@ -644,7 +671,8 @@ export class DemoPipeline {
       cellCount: cells.length,
       undergroundCount,
       undergroundOutlines,
-      heatMax,
+      observedMax,
+      aboveThresholdCount: above.length,
       regions,
       missingTiles,
       loadedTiles: [...this.loaded],

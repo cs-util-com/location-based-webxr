@@ -1552,8 +1552,21 @@ test.describe("the time of day", () => {
       // and this suite has already shipped one vacuous test (§14.5's isocline
       // check, which asserted a constant against an argument it never took):
       //
-      //   plain `cpu`   -> 9.285
-      //   `cpu-slope`   -> 9.302  (the default)
+      //   plain `cpu`   -> 9.285  ->  6.351 after DEC-H5
+      //   `cpu-slope`   -> 9.302  ->  6.435 after DEC-H5  (the default)
+      //
+      // **THE FIXED COLOUR CAP COST A THIRD OF THE MARGIN, and that was the
+      // acceptance criterion for making the change.** Anchoring the ramp at a
+      // constant 1e4 instead of at the brightest cell on screen means the
+      // typical cell no longer reaches the yellow end — which is precisely what
+      // "the data layer is less loud" means, measured. It was predicted before
+      // the change and measured after.
+      //
+      // The margin still clears the bound, at ~127 % of it rather than ~186 %.
+      // **That is a real loss of headroom and it is accepted knowingly**: the
+      // thing bought is that a cell's colour no longer depends on cells the user
+      // cannot see. A future backdrop change has a third less room than it had,
+      // and the rule below applies to it unchanged.
       //
       // **The two agree to within 0.02, and that is the honest reading of F49:
       // the gate WAS sound at the default — by accident.** The aspect tint is
@@ -1564,7 +1577,8 @@ test.describe("the time of day", () => {
       // the accident; it is not carrying its weight in this number today, and
       // that is fine — it is carrying it against the change nobody has made yet.
       //
-      // The bound of 5 therefore sits at ~54 % of the observed margin in both.
+      // The bound of 5 sat at ~54 % of the observed margin in both before the
+      // colour cap; it now sits at ~78 %.
       //
       // **The wrong response to a red here is lowering the margin.** It is
       // either fixing the backdrop or re-judging the decision that made it the

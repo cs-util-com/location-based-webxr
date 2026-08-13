@@ -273,7 +273,8 @@ export interface WorkerCalls {
        *
        * Omitted means yes, so nothing that does not opt out changes. The demo
        * passes `false` whenever the `cells` layer is off -- the default -- and
-       * the page then reads `heatMax` and `cellCount` instead of deriving them
+       * the page then reads `observedMax`, `aboveThresholdCount` and
+       * `cellCount` instead of deriving them
        * from ~24 000 cells it does not draw.
        */
       readonly includeCells?: boolean;

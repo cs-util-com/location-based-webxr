@@ -122,10 +122,23 @@ measured 27–35 ms at the 488-chunk cap, three times per move — and in the
 regions are computed here, and the only other thing the page did with the array
 was derive `heatScale`'s `max`. So ~24 000 cells travelled to produce one number.
 
-The snapshot now reports that number as `heatMax`, plus `cellCount` for the
-status line, and the array is skipped when nothing draws it. `regions`,
-`threshold`, `heatMax` and `cellCount` are reported either way, so the visible
-surface is identical.
+The snapshot now reports `observedMax`, `aboveThresholdCount` and `cellCount`,
+and the array is skipped when nothing draws it. All of those plus `regions` and
+`threshold` are reported either way, so the visible surface is identical.
+
+**Since DEC-H5 `observedMax` is no longer the ramp.** The ramp is fixed at
+`HEAT_CAP`, so this is the highest score PRESENT — reported only so the legend
+can still describe the data on screen, which a constant ramp otherwise removes.
+`aboveThresholdCount` drives the legend's "nothing scores above the bar"
+message; it used to be inferred from `max <= threshold`, which worked only
+because the max was observed and would have died silently under a fixed ramp.
+
+**All four derive reductions are one pass** (DEC-H6/H10). The `values()` spread,
+`cellsAboveThreshold`, the `cells.map` that allocated a score array, and
+`heatScale`'s own scan were four full-length walks over up to 23 912 cells,
+three times per move. They are independent reductions over the same sequence, so
+they fuse into the single loop in `update`. Derive was measured at ~1.1 s per
+refresh at the chunk cap before this — see `derive-growth.test.ts`.
 
 **This withholds nothing from anything that needs cells.** Cell-level algorithms
 run _here_, against the index: the geo-event's hill climb makes thousands of
@@ -143,8 +156,8 @@ switched on.
 const pipeline = new DemoPipeline({ source, table });
 const snapshot = await pipeline.update({ lat: 50.94, lng: 6.96 }, "walkable");
 
-// The default configuration: regions, threshold, heatMax and cellCount, but no
-// ~24 000-cell array to clone.
+// The default configuration: regions, threshold, observedMax,
+// aboveThresholdCount and cellCount, but no ~24 000-cell array to clone.
 const lean = await pipeline.update(at, "walkable", undefined, undefined, {
   includeCells: false,
 });

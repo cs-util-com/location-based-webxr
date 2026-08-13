@@ -40,14 +40,19 @@ here decides whether the NPC cuts across the grass or follows the park paths.
     exactly at the boundary DEC-R13-9 keeps in place.
   - An unscored cell prices as the score **identity** instead, which is the same
     `?? 1` `demo-pipeline.ts` already applies when building the heat scale.
-- **What the log is measured against** (DEC-R13-13) — fixed constants, **not**
-  `snapshot.heatMax`.
-  - `heatMax` is computed per `update()` for the **selected** category, is not
-    retained where routing runs, and is a maximum over whatever is currently
-    scored. It moves on every pan, so the same click would give a different
+- **What the log is measured against** (DEC-R13-13) — fixed constants, **not** a
+  maximum derived from what is currently scored.
+  - Such a maximum moves on every pan, so the same click would give a different
     route after the working set grows — making the corpus assertions flaky and a
     user's bug report irreproducible, in the same round that adds camera-target
     URLs so a finding can be pointed at.
+  - **The colours have since followed this file (DEC-H5).** `snapshot.heatMax`
+    no longer exists; `heat-colours.ts` anchors on a fixed `HEAT_CAP` for
+    exactly this reason, a round later and about pixels rather than paths.
+  - **The two anchors are different numbers on purpose** — `PATH_SCORE` is
+    5 000, `HEAT_CAP` is 1e4 — because they answer different questions: what a
+    good path costs, versus where the ramp tops out. Unifying them would need an
+    argument, not an assumption.
 
 ## Invariants & assumptions
 

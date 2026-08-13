@@ -21,12 +21,15 @@ import type { CellScore } from "gps-plus-slam-osm";
 import { cellToBoundary, latLngToCell } from "h3-js";
 
 import { buildCellMesh } from "./cell-mesh.js";
-import { heatScale } from "./heat-colours.js";
+import { fixedScale, HEAT_CAP } from "./heat-colours.js";
 import { bandTreatment } from "./legend-model.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 const FRAME = enuFrameAt(COLOGNE);
-const SCALE = heatScale([1, 8], 1);
+// FIXED (DEC-H5), as the app now is. The mesh derives prism height from the
+// same fraction the colour uses, so a bench or a test on a different scale is
+// measuring geometry the app never builds.
+const SCALE = fixedScale(1);
 
 const cellAt = (lat: number, lng: number, score: number): CellScore => ({
   cell: latLngToCell(lat, lng, 13),
@@ -78,7 +81,15 @@ describe("buildCellMesh", () => {
   it("colours a cell exactly as the 2D map does", () => {
     // Shared through `heatColour`, never a second ramp: a 3D cell that is a
     // different colour from its 2D twin makes the reader trust neither.
-    const mesh = build([cellAt(50.9413, 6.9583, 8)]);
+    //
+    // THE SCORE HAD TO RISE FROM 8 TO THE CAP when the ramp was fixed (DEC-H5),
+    // and that is the change showing through rather than a test being bent to
+    // fit. Under the old derived scale this fixture's own maximum WAS 8, so 8
+    // was the top of the ramp by construction; under a ramp that runs to 1e4
+    // for everyone, 8 sits a quarter of the way up and is properly dark. To
+    // assert "the top of the ramp is yellow" the cell now has to actually be at
+    // the top.
+    const mesh = build([cellAt(50.9413, 6.9583, HEAT_CAP)]);
     const [r, g, b] = [mesh.colors[0], mesh.colors[1], mesh.colors[2]];
     expect(r).toBeGreaterThanOrEqual(0);
     expect(r).toBeLessThanOrEqual(1);

@@ -51,22 +51,53 @@ export interface HeatScale {
 }
 
 /**
- * Builds a scale from the data actually on screen.
+ * The top of the ramp — FIXED, not derived (DEC-H5).
  *
- * Derived from the data rather than fixed, because the useful range differs by
- * category and by place — `walkable` in a city saturates where `restingArea`
- * has a handful of cells at 6. A fixed scale would make most categories look
- * uniformly dark and hide precisely the variation being judged.
+ * WHY A CONSTANT AT ALL. The scale used to be the maximum score on screen, so a
+ * cell's colour depended on cells the user could not see: walk far enough for
+ * the hottest cell to leave the retained set and every remaining cell brightens
+ * with no change in its own data. **The picture reported a change that did not
+ * happen.** Tolerable on a desktop where you click between places; in AR the
+ * user walks continuously and the grid is what they are reading. It also made
+ * two observations incomparable — here versus a kilometre back, today versus
+ * last week.
+ *
+ * WHY 1e4 SPECIFICALLY, and it is measured rather than chosen. The decade
+ * histogram over the corpus (`corpus-score-distribution.test.ts`,
+ * `category-score-distributions.test.ts`) says:
+ *
+ * - The region above 1e4 holds ~10-14 % of `walkable` cells spread over EIGHT
+ *   orders of magnitude. Up there a product-of-factors score is largely reading
+ *   how thoroughly the patch was mapped rather than how walkable it is.
+ * - Roughly two thirds of coloured cells sit below 1000, which is where the
+ *   resolution belongs.
+ * - It clips at most 3.9 % of every other category — less than the 9.8-13.9 %
+ *   accepted for `walkable`, the category it was chosen for.
+ *
+ * **The accepted cost, stated:** at Heidelberg roughly one coloured `walkable`
+ * cell in four saturates, so an outstanding spot stops being distinguishable
+ * from a merely very good one.
+ *
+ * **The objection this file used to carry is measured and does not hold.** It
+ * said a fixed scale "would make most categories look uniformly dark and hide
+ * precisely the variation being judged". The ramp is logarithmic, so at the
+ * weaker corpus site the five non-`walkable` categories' maxima land at 68 %,
+ * 76 %, 91 %, 95 % and 107 % of a ramp running 1 → 1e4.
  */
-export function heatScale(
-  scores: readonly number[],
-  threshold: number,
-): HeatScale {
-  let max = threshold;
-  for (const score of scores) {
-    if (Number.isFinite(score) && score > max) max = score;
-  }
-  return { threshold, max };
+export const HEAT_CAP = 1e4;
+
+/**
+ * The scale for a category — a constant, given that category's threshold.
+ *
+ * TAKES THE THRESHOLD RATHER THAN THE CATEGORY, which is a deliberate deviation
+ * from DEC-H6's `scaleFor(category)`. The cap is the same for all six
+ * categories (measured), while the threshold is already per-category and
+ * already arrives from `thresholdFor(table, category)` — so a `category`
+ * parameter would be an argument that looks nothing up. If a per-category cap
+ * is ever justified, this is where it goes.
+ */
+export function fixedScale(threshold: number): HeatScale {
+  return { threshold, max: HEAT_CAP };
 }
 
 /**
@@ -125,8 +156,9 @@ export function toHex({ r, g, b }: Rgb): string {
  */
 export function describeScale(scale: HeatScale): string {
   return (
-    `above ${formatScore(scale.threshold)} (the identity is 1) up to ${formatScore(scale.max)}, ` +
-    `log scale — each colour step is an equal RATIO, because the score is a product`
+    `above ${formatScore(scale.threshold)} (the identity is 1) up to a FIXED ${formatScore(scale.max)}, ` +
+    `log scale — each colour step is an equal RATIO, because the score is a product. ` +
+    `The same score is the same colour everywhere, so anything above the top reads as the top`
   );
 }
 

@@ -639,6 +639,15 @@
       .legend-empty {
         font-style: italic;
       }
+      /* What the DATA reaches, beside a ramp that no longer moves (DEC-H7).
+         Dimmer than the ramp's own end labels on purpose: the ramp is the
+         scale and this is an annotation on it, so it must not read as a third
+         endpoint. */
+      .legend-observed {
+        margin-left: 0.5rem;
+        opacity: 0.75;
+        font-variant-numeric: tabular-nums;
+      }
       .legend-band {
         display: inline-flex;
         align-items: center;
