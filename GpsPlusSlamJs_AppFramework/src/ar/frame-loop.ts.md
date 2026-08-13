@@ -14,8 +14,14 @@ to satisfy P4 of the C# port survey
 
 - `type FrameUpdate = (dt: number, elapsed: number) => void` — the
   callback shape. `dt` is seconds since the previous frame (0 on the
-  first tick after a reset); `elapsed` is seconds since the session
-  started. Both come from the XR `time` argument, not `THREE.Clock`.
+  first tick after a reset); `elapsed` is the XR frame timestamp in seconds.
+  Both come from the XR `time` argument, not `THREE.Clock`.
+  - **`elapsed` is PAGE-relative, not session-relative.** That clock starts at
+    page load, so entering AR a minute in gives a first `elapsed` near 60
+    rather than near 0. This line used to say "seconds since the session
+    started"; a consumer believed it, opened its first averaging window at
+    zero and read a wildly wrong first sample. Treat `elapsed` as a monotonic
+    stamp to difference against itself, never as a duration.
 - `registerFrameUpdate(fn) → unregister` — add `fn` to the registry.
   Idempotent (Set dedup). Returns an unregister function components store
   and call from their `dispose()`.

@@ -46,8 +46,14 @@ export function registerFrameUpdate(fn: FrameUpdate): () => void {
 /**
  * Invoke all registered callbacks. Called by the WebXR session's
  * `onXRFrame` once per frame with the XR-derived `dt` (seconds since the
- * previous frame; 0 on the first frame after a reset) and `elapsed`
- * (seconds since the session started).
+ * previous frame; 0 on the first frame after a reset) and `elapsed`.
+ *
+ * **`elapsed` is PAGE-relative, not session-relative** — it is the raw
+ * `XRFrame` timestamp in seconds, and that clock starts at page load rather
+ * than at `requestSession`. Entering AR a minute in yields a first `elapsed`
+ * near 60, not near 0. The wording this replaced said "seconds since the
+ * session started", and a consumer that believed it opened its first averaging
+ * window at zero and read a wildly wrong first sample.
  *
  * A throwing handler is isolated: it cannot abort the remaining callbacks nor
  * propagate up through `onXRFrame` and kill the scene render for the whole

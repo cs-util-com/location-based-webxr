@@ -1193,7 +1193,9 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   updateTrackingState(arPose);
 
   // Tick the per-frame callback registry. `dt`/`elapsed` are derived from
-  // the XR `time` argument (monotonic ms since session start) — not from
+  // the XR `time` argument — monotonic ms since PAGE LOAD, not since the
+  // session started, so `elapsed` is a stamp to difference rather than a
+  // session duration (see `frame-loop.ts.md`) — not from
   // `THREE.Clock` — so replay/test harnesses that drive `onXRFrame` with
   // synthetic timestamps see deterministic ticks. See `frame-loop.ts.md`
   // and `2026-05-13-ecs-migration-plan.md`.
