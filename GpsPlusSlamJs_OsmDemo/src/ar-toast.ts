@@ -65,10 +65,18 @@ export function createArToast(root: HTMLElement): ArToast {
 
   return {
     show(message: string): void {
-      element.textContent = message;
+      // ATTACHED FIRST, POPULATED SECOND (r511 review). A live region is
+      // watched for MUTATIONS while it is in the document, so one inserted
+      // already carrying its text is commonly not announced at all — the
+      // announcement depends on the text changing after the region exists.
+      // Setting `textContent` first is the natural order and the silent one,
+      // which for a surface whose whole purpose is reaching a user who cannot
+      // see the screen would have made it inert for the second time.
+      //
       // `append`, not `insertBefore`: `initAR` puts its canvas at the FRONT of
       // this container, and the toast has to paint over it.
       root.append(element);
+      element.textContent = message;
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(clear, AR_TOAST_LINGER_MS);
     },

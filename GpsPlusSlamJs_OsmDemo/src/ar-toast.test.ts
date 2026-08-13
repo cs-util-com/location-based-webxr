@@ -101,3 +101,29 @@ describe("the AR toast", () => {
     }).not.toThrow();
   });
 });
+
+describe("the announcement actually fires (r511 review)", () => {
+  it("is IN the document before its text is set", () => {
+    // A live region is watched for mutations while it is attached, so one
+    // inserted already carrying its text is commonly not announced — the
+    // announcement depends on the text CHANGING after the region exists.
+    //
+    // `textContent` first is the natural order and the silent one. For a
+    // surface built specifically to reach a user who cannot see the screen,
+    // that would have made it inert for the second time: the first was the
+    // static `aria-hidden` on `#ar-root`.
+    const toast = createArToast(root);
+    let textAtAttachTime: string | null = null;
+    const realAppend = root.append.bind(root);
+    root.append = (...nodes: (Node | string)[]) => {
+      const el = nodes[0];
+      textAtAttachTime = el instanceof HTMLElement ? el.textContent : null;
+      realAppend(...nodes);
+    };
+
+    toast.show("drifting");
+
+    expect(textAtAttachTime).toBe("");
+    expect(root.textContent).toContain("drifting");
+  });
+});
