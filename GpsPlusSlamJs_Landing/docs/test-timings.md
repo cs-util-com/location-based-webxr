@@ -4,46 +4,47 @@
 
 ## Latest
 
-Last recorded 2026-08-13T13:56:20.166Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r511` @ `d390d267`
+Last recorded 2026-08-13T15:25:55.479Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r513` @ `6ca4ae16`
 
 _Header describes the most recent write only; standalone stage runs update single rows. Median = the stage's same-machine history median. Per-recording provenance lives in the JSON block._
 
 | Stage | Duration | Δ duration | Median | Tests | Δ tests | Flag |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
-| `format` | 1.6 s | ≈ | 1.7 s | – | – | |
-| `lint` | 5.4 s | ≈ | 6.4 s | – | – | |
-| `lint:css` | 1.2 s | ≈ | 1.3 s | – | – | |
-| `check:dup` | 1.1 s | ≈ | 1.2 s | – | – | |
-| `check:cycles` | 0.8 s | ≈ | 0.8 s | – | – | |
-| `check:boundaries` | 1.5 s | ≈ | 1.6 s | – | – | |
-| `typecheck` | 1.1 s | ≈ | 1.4 s | – | – | |
-| `typecheck:tests` | 1.3 s | ≈ | 1.5 s | – | – | |
-| `test:unit` | 4.3 s | ≈ | 4.9 s | 265 passed | 0 | |
-| `test:e2e` | 78.8 s | ≈ | 76.1 s | 12 passed | 0 | |
+| `format` | 1.9 s | ≈ | 1.8 s | – | – | |
+| `lint` | 6.6 s | ≈ | 6.5 s | – | – | |
+| `lint:css` | 1.3 s | ≈ | 1.3 s | – | – | |
+| `check:dup` | 1.2 s | ≈ | 1.3 s | – | – | |
+| `check:cycles` | 0.9 s | ≈ | 0.9 s | – | – | |
+| `check:boundaries` | 1.7 s | ≈ | 1.6 s | – | – | |
+| `typecheck` | 1.4 s | ≈ | 1.4 s | – | – | |
+| `typecheck:tests` | 1.6 s | ≈ | 1.6 s | – | – | |
+| `test:unit` | 5.3 s | ≈ | 5.0 s | 265 passed | 0 | |
+| `test:e2e` | 85.0 s | ≈ | 77.6 s | 12 passed | 0 | |
 | `check:deadcode` | 5.6 s | ≈ | 3.7 s | – | – | |
-| **total** | 97.6 s | ≈ | 96.8 s | 277 passed | 0 | |
+| **total** | 107.7 s | ≈ | 97.5 s | 277 passed | 0 | |
 
 ## History (last 10 recordings per stage, newest first, seconds)
 
-- `format`: 1.6, 1.9, 2.0, 2.0, 1.7, 1.7, 1.8, 1.7, 1.7, 1.5
-- `lint`: 5.4, 6.6, 6.8, 6.8, 6.3, 6.5, 6.9, 5.8, 5.9, 5.6
-- `lint:css`: 1.2, 1.5, 1.5, 1.4, 1.3, 1.3, 1.3, 1.2, 1.2, 1.1
-- `check:dup`: 1.1, 1.3, 1.3, 1.3, 1.2, 1.2, 1.2, 1.4, 1.3, 1.1
-- `check:cycles`: 0.8, 0.9, 0.9, 0.9, 0.8, 0.8, 0.8, 0.9, 0.8, 0.8
-- `check:boundaries`: 1.5, 1.8, 1.9, 1.8, 1.5, 1.5, 1.6, 1.6, 1.5, 1.4
-- `typecheck`: 1.1, 1.5, 1.8, 1.5, 1.1, 1.1, 1.5, 1.8, 1.4, 1.0
-- `typecheck:tests`: 1.3, 1.5, 1.8, 1.8, 1.3, 1.3, 1.6, 1.7, 1.7, 1.2
-- `test:unit`: 4.3, 5.6, 5.3, 5.6, 4.4, 4.4, 5.0, 4.9, 5.0, 4.0
-- `test:e2e`: 78.8, 94.0, 89.8, 80.5, 72.2, 75.7, 73.4, 73.7, 76.5, 69.0
+- `format`: 1.9, 1.6, 1.9, 2.0, 2.0, 1.7, 1.7, 1.8, 1.7, 1.7
+- `lint`: 6.6, 5.4, 6.6, 6.8, 6.8, 6.3, 6.5, 6.9, 5.8, 5.9
+- `lint:css`: 1.3, 1.2, 1.5, 1.5, 1.4, 1.3, 1.3, 1.3, 1.2, 1.2
+- `check:dup`: 1.2, 1.1, 1.3, 1.3, 1.3, 1.2, 1.2, 1.2, 1.4, 1.3
+- `check:cycles`: 0.9, 0.8, 0.9, 0.9, 0.9, 0.8, 0.8, 0.8, 0.9, 0.8
+- `check:boundaries`: 1.7, 1.5, 1.8, 1.9, 1.8, 1.5, 1.5, 1.6, 1.6, 1.5
+- `typecheck`: 1.4, 1.1, 1.5, 1.8, 1.5, 1.1, 1.1, 1.5, 1.8, 1.4
+- `typecheck:tests`: 1.6, 1.3, 1.5, 1.8, 1.8, 1.3, 1.3, 1.6, 1.7, 1.7
+- `test:unit`: 5.3, 4.3, 5.6, 5.3, 5.6, 4.4, 4.4, 5.0, 4.9, 5.0
+- `test:e2e`: 85.0, 78.8, 94.0, 89.8, 80.5, 72.2, 75.7, 73.4, 73.7, 76.5
 - `check:deadcode`: 5.6, 3.7, 4.1, 3.9, 4.0, 3.6, 3.6, 3.6, 3.6, 3.6
-- `total`: 97.6, 117.2, 113.8, 104.4, 92.4, 96.2, 95.8, 95.4, 97.5, 87.3
+- `total`: 107.7, 97.6, 117.2, 113.8, 104.4, 92.4, 96.2, 95.8, 95.4, 97.5
 
 ```json
 {
   "version": 1,
-  "meta": {"project":"GpsPlusSlamJs_Landing","lastWrite":{"ts":"2026-08-13T13:56:20.166Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"d390d267","branch":"r511"}},
+  "meta": {"project":"GpsPlusSlamJs_Landing","lastWrite":{"ts":"2026-08-13T15:25:55.479Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"6ca4ae16","branch":"r513"}},
   "stages": {
     "format": { "history": [
+      {"ts":"2026-08-13T15:24:09.743Z","durationMs":1936,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:54:44.177Z","durationMs":1600,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:52:40.794Z","durationMs":1916,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:20:56.585Z","durationMs":1988,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -52,10 +53,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:30.644Z","durationMs":1737,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:28.441Z","durationMs":1809,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:04:51.945Z","durationMs":1730,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:10:48.886Z","durationMs":1652,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:38.801Z","durationMs":1489,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:10:48.886Z","durationMs":1652,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "lint": { "history": [
+      {"ts":"2026-08-13T15:24:16.377Z","durationMs":6558,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:54:49.641Z","durationMs":5408,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:52:47.463Z","durationMs":6600,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:21:03.444Z","durationMs":6779,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -64,10 +65,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:37.174Z","durationMs":6467,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:35.421Z","durationMs":6913,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:04:57.790Z","durationMs":5790,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:10:54.862Z","durationMs":5895,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:44.500Z","durationMs":5642,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:10:54.862Z","durationMs":5895,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "lint:css": { "history": [
+      {"ts":"2026-08-13T15:24:17.784Z","durationMs":1345,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:54:50.863Z","durationMs":1162,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:52:49.004Z","durationMs":1472,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:21:04.966Z","durationMs":1456,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -76,10 +77,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:38.526Z","durationMs":1279,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:36.805Z","durationMs":1314,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:04:59.106Z","durationMs":1228,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:10:56.132Z","durationMs":1201,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:45.622Z","durationMs":1068,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:10:56.132Z","durationMs":1201,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "check:dup": { "history": [
+      {"ts":"2026-08-13T15:24:19.100Z","durationMs":1249,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:54:52.050Z","durationMs":1132,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:52:50.386Z","durationMs":1314,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:21:06.362Z","durationMs":1333,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -88,10 +89,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:39.764Z","durationMs":1172,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:38.064Z","durationMs":1195,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:05:00.548Z","durationMs":1389,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:10:57.482Z","durationMs":1295,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:46.801Z","durationMs":1095,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:10:57.482Z","durationMs":1295,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "check:cycles": { "history": [
+      {"ts":"2026-08-13T15:24:20.107Z","durationMs":939,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:54:52.872Z","durationMs":767,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:52:51.374Z","durationMs":924,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:21:07.340Z","durationMs":907,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -100,10 +101,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:40.642Z","durationMs":810,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:38.945Z","durationMs":822,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:05:01.539Z","durationMs":935,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:10:58.317Z","durationMs":780,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:47.619Z","durationMs":750,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:10:58.317Z","durationMs":780,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "check:boundaries": { "history": [
+      {"ts":"2026-08-13T15:24:21.913Z","durationMs":1742,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:54:54.400Z","durationMs":1469,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:52:53.204Z","durationMs":1765,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:21:09.289Z","durationMs":1880,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -112,8 +113,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:42.242Z","durationMs":1534,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:40.650Z","durationMs":1634,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:05:03.212Z","durationMs":1617,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:10:59.908Z","durationMs":1513,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:49.081Z","durationMs":1400,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:10:59.908Z","durationMs":1513,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "check:deadcode": { "history": [
       {"ts":"2026-08-09T14:18:20.694Z","durationMs":5643,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"06d516d"},
@@ -128,6 +128,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-09T00:54:47.293Z","durationMs":3630,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da0e56e"}
     ] },
     "typecheck": { "history": [
+      {"ts":"2026-08-13T15:24:23.336Z","durationMs":1354,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:54:55.606Z","durationMs":1148,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:52:54.741Z","durationMs":1464,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:21:11.113Z","durationMs":1756,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -136,10 +137,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:43.470Z","durationMs":1150,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:42.194Z","durationMs":1467,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:05:05.027Z","durationMs":1752,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:11:01.375Z","durationMs":1401,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:50.177Z","durationMs":1040,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:11:01.375Z","durationMs":1401,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "typecheck:tests": { "history": [
+      {"ts":"2026-08-13T15:24:24.989Z","durationMs":1586,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:54:56.952Z","durationMs":1292,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:52:56.292Z","durationMs":1484,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:21:12.992Z","durationMs":1814,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -148,10 +149,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:44.815Z","durationMs":1279,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:43.831Z","durationMs":1571,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:05:06.816Z","durationMs":1730,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:11:03.096Z","durationMs":1668,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:51.418Z","durationMs":1182,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:11:03.096Z","durationMs":1668,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "test:unit": { "history": [
+      {"ts":"2026-08-13T15:24:30.380Z","durationMs":5300,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:55:01.276Z","durationMs":4254,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:53:01.926Z","durationMs":5566,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:21:18.390Z","durationMs":5304,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -160,10 +161,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:02:49.313Z","durationMs":4420,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:25:48.908Z","durationMs":4990,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:05:11.789Z","durationMs":4889,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:11:08.112Z","durationMs":4952,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:06:55.515Z","durationMs":4007,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:11:08.112Z","durationMs":4952,"tests":{"passed":265,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "test:e2e": { "history": [
+      {"ts":"2026-08-13T15:25:55.413Z","durationMs":84961,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:56:20.107Z","durationMs":78779,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:54:36.044Z","durationMs":94036,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:22:48.294Z","durationMs":89839,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -172,10 +173,10 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:04:05.032Z","durationMs":75658,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:27:02.346Z","durationMs":73360,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:06:25.552Z","durationMs":73710,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:12:24.638Z","durationMs":76464,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:08:04.556Z","durationMs":68985,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:12:24.638Z","durationMs":76464,"tests":{"passed":12,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] },
     "total": { "history": [
+      {"ts":"2026-08-13T15:25:55.479Z","durationMs":107686,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6ca4ae16"},
       {"ts":"2026-08-13T13:56:20.166Z","durationMs":97614,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d390d267"},
       {"ts":"2026-08-13T12:54:36.120Z","durationMs":117244,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"9eab68eb"},
       {"ts":"2026-08-13T09:22:48.361Z","durationMs":113782,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"35f588a"},
@@ -184,8 +185,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-12T22:04:05.098Z","durationMs":96205,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"7cb33ed"},
       {"ts":"2026-08-12T20:27:02.417Z","durationMs":95780,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da6aca1"},
       {"ts":"2026-08-12T06:06:25.604Z","durationMs":95404,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"a2b993c"},
-      {"ts":"2026-08-12T05:12:24.694Z","durationMs":97469,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"},
-      {"ts":"2026-08-11T23:08:04.611Z","durationMs":87305,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d2d9b27"}
+      {"ts":"2026-08-12T05:12:24.694Z","durationMs":97469,"tests":{"passed":277,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"99d0fe4"}
     ] }
   }
 }
