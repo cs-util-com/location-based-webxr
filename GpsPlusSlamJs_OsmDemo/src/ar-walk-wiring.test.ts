@@ -177,3 +177,20 @@ describe("AR measurement is wired into main.ts", () => {
     expect(onError).toContain("lastFixAccuracyM = undefined");
   });
 });
+
+describe("the desktop renderer's AR lifecycle is wired into main.ts", () => {
+  it("suspends the desktop view on entry and resumes it on every exit", () => {
+    // HIDDEN BUT RESIDENT (§3, M5). Suspending without resuming leaves the map
+    // pane blank after a session with no error to explain it; resuming without
+    // suspending leaves a second GL context repainting a 2.8 km city behind an
+    // AR view nobody can see it through.
+    //
+    // The pairing is asserted by LOCATION, not just by presence: `startWalking`
+    // and `stopWalking` are the two functions both AR exits already go through,
+    // including the Android back gesture where nothing calls `dispose()`.
+    const start = CODE.match(/const startWalking[\s\S]*?\n {2}\};/)?.[0];
+    const stop = CODE.match(/const stopWalking[\s\S]*?\n {2}\};/)?.[0];
+    expect(start).toContain("buildingView.suspend()");
+    expect(stop).toContain("buildingView.resume()");
+  });
+});

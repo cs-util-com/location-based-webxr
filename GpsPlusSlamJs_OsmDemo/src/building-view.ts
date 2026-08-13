@@ -329,6 +329,8 @@ export class BuildingView {
   private readonly sun: THREE.DirectionalLight;
   /** The pending rAF handle, so `dispose()` can cancel it. */
   private frame: number | undefined;
+  /** Whether the desktop view is hidden and not drawing — see {@link suspend}. */
+  private suspended = false;
   /**
    * Frames rendered since construction, published on the container (stage 4).
    *
@@ -1399,7 +1401,57 @@ export class BuildingView {
    * touching a disposed WebGL context is a crash, not a leak — the same reason
    * the resize listener is held rather than passed inline.
    */
+  /**
+   * Stop drawing and hide the canvas, keeping everything else alive (M5).
+   *
+   * **HIDDEN BUT RESIDENT — the decision §3 records, not one this makes.** The
+   * GL context, the compiled programs, the uploaded geometry and every setting
+   * survive; only the loop and the visibility stop. Two live GL contexts on the
+   * phone is the accepted cost, and what buys it is an instant return to the
+   * map without rebuilding a 2.8 km mesh.
+   *
+   * **A PENDING FRAME IS CANCELLED, not merely un-scheduled.** `requestFrame`
+   * coalesces, so one callback can already be in flight when AR starts — and it
+   * would render the desktop scene once, on the frame after the session began,
+   * for nothing.
+   *
+   * Idempotent. Safe to call when no session ever started.
+   */
+  suspend(): void {
+    if (this.suspended) return;
+    this.suspended = true;
+    if (this.frame !== undefined) {
+      cancelAnimationFrame(this.frame);
+      this.frame = undefined;
+    }
+    // `visibility`, NOT `display`. A `display: none` canvas has a zero-sized
+    // box, and the `ResizeObserver` above would fire with 0×0 and resize the
+    // drawing buffer to nothing — so returning from AR would find a renderer
+    // sized for an element that had no size, which is a blank pane until
+    // something else happens to resize it.
+    this.container.style.visibility = "hidden";
+  }
+
+  /**
+   * Draw and show again. Idempotent, and safe without a prior `suspend()`.
+   *
+   * Schedules a frame explicitly: the scene is static and frames are on demand,
+   * so nothing else would repaint it and the pane would stay as it was when the
+   * session started — which, having been hidden, means blank.
+   */
+  resume(): void {
+    if (!this.suspended) return;
+    this.suspended = false;
+    this.container.style.visibility = "";
+    this.requestFrame();
+  }
+
   private requestFrame(): void {
+    // THE GUARD THAT MAKES `suspend` MEAN ANYTHING. Every one of the dozen
+    // `requestFrame()` call sites in this file is a path a suspended view can
+    // still be driven down — a terrain load landing, a snapshot publishing, a
+    // resize — so refusing here is the only place that covers them all.
+    if (this.suspended) return;
     if (this.frame !== undefined) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = undefined;

@@ -380,3 +380,33 @@ occluded by the very ground they exist to be seen under. The material is also
 **transparent**, and that is load-bearing: three draws the opaque list first and
 `renderOrder` only sorts within a list, so an opaque line outranked the
 affordance slabs in the table while losing to them on screen.
+
+## `suspend()` / `resume()` — the desktop renderer while AR runs (M5)
+
+**Hidden but resident**, which §3 of the AR plan decided rather than left open.
+The GL context, the compiled programs, the uploaded geometry and every setting
+survive; only the loop and the visibility stop. Two live GL contexts on the
+phone is the accepted cost, and what buys it is an **instant** return to the map
+instead of rebuilding a 2.8 km mesh.
+
+- **The guard is inside `requestFrame`, not at the call sites.** A dozen paths
+  reach it — a terrain load landing, a snapshot publishing, a resize, a camera
+  change — and a suspended view can still be driven down any of them. Guarding
+  the call sites is a list the next one added will not be on.
+- **A pending frame is CANCELLED, not merely un-scheduled.** `requestFrame`
+  coalesces, so a callback can already be in flight when AR starts; left alone
+  it renders the desktop scene once, on the frame after the session began, for
+  nothing.
+- **`visibility`, never `display`.** A `display: none` canvas has a zero-sized
+  box and this class observes its container with a `ResizeObserver`, so hiding
+  that way resizes the drawing buffer to 0×0 — and returning from AR finds a
+  renderer sized for an element that had no size. Blank pane, no error.
+- **`resume()` schedules a frame explicitly**, because the scene is static and
+  frames are on demand: nothing else would repaint it, and the pane would stay
+  as it was when the session started — which, having been hidden, means blank.
+- Both are idempotent, and `resume()` is safe without a prior `suspend()`.
+
+`main.ts` calls them from `startWalking` / `stopWalking`, the two functions both
+AR exits already pass through — including the Android back gesture, where
+nothing calls `ArMode.dispose()`. `ar-walk-wiring.test.ts` pins that pairing by
+location; `building-view-content.test.ts` pins the four invariants above.

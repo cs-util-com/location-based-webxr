@@ -1094,6 +1094,11 @@ async function main(): Promise<void> {
       warn: (message) => arToast.show(message),
     });
     locateControl.startWatch();
+    // HIDDEN BUT RESIDENT (§3, M5). The desktop view stops drawing and hides,
+    // but keeps its GL context, its compiled programs and its uploaded
+    // geometry — so leaving AR is instant rather than a 2.8 km mesh rebuild.
+    // Two live contexts on the phone is the accepted cost of that.
+    buildingView.suspend();
     // ONE PASS ON ENTRY, AND IT IS NOT OPTIONAL (r509 review). The absolute
     // datum is baked into the building/tree/POI VERTICES by the worker, and
     // that only happens in the `update` handler — the `terrain` handler just
@@ -1109,6 +1114,10 @@ async function main(): Promise<void> {
   /** Stop following. Idempotent, and safe when AR never started. */
   const stopWalking = (): void => {
     locateControl.stopWatch();
+    // Paired with the `suspend` in `startWalking`, and in the same function, so
+    // the back gesture cannot restore one without the other — leaving the
+    // desktop pane hidden after a session is a blank map with no error.
+    buildingView.resume();
     arWalk?.dispose();
     arWalk = undefined;
     arToast.clear();

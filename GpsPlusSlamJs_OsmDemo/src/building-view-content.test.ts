@@ -134,3 +134,45 @@ describe("the demo store keeps its devtools summariser wired", () => {
     expect(source).toMatch(/devToolsStateSanitizer:\s*summariseSnapshot/);
   });
 });
+
+describe("suspend/resume — the desktop renderer's AR lifecycle (M5)", () => {
+  it("gates EVERY frame request behind one flag, not each call site", () => {
+    // `requestFrame` has a dozen callers in this file — a terrain load landing,
+    // a snapshot publishing, a resize, a camera change — and a suspended view
+    // can still be driven down any of them. Refusing inside `requestFrame` is
+    // the only place that covers them all; guarding the call sites instead is a
+    // list that the next one added will not be on.
+    expect(SOURCE).toMatch(
+      /private requestFrame\(\): void \{[\s\S]{0,600}?if \(this\.suspended\) return;/,
+    );
+  });
+
+  it("cancels a frame already in flight rather than only refusing new ones", () => {
+    // `requestFrame` coalesces, so one callback can already be scheduled when
+    // AR starts. Left alone it renders the desktop scene once, on the frame
+    // after the session began, for nothing.
+    expect(SOURCE).toMatch(
+      /suspend\(\): void \{[\s\S]{0,400}?cancelAnimationFrame\(this\.frame\)/,
+    );
+  });
+
+  it("hides with `visibility`, never with `display`", () => {
+    // A `display: none` canvas has a zero-sized box, and this class observes
+    // its container with a `ResizeObserver` — so hiding that way would resize
+    // the drawing buffer to 0×0, and returning from AR would find a renderer
+    // sized for an element that had no size. Blank pane, no error.
+    const suspend = /suspend\(\): void \{[\s\S]*?\n {2}\}/.exec(SOURCE)?.[0];
+    expect(suspend).toContain('style.visibility = "hidden"');
+    // On the ASSIGNMENT, not the word: the method's own comment explains why
+    // `display` is wrong, and a naive substring check flags that explanation.
+    expect(suspend).not.toContain("style.display");
+  });
+
+  it("schedules a frame on resume, because nothing else will", () => {
+    // The scene is static and frames are on demand, so without this the pane
+    // stays exactly as it was when the session started — which, having been
+    // hidden, means blank.
+    const resume = /resume\(\): void \{[\s\S]*?\n {2}\}/.exec(SOURCE)?.[0];
+    expect(resume).toContain("this.requestFrame()");
+  });
+});
