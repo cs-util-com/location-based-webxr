@@ -56,13 +56,6 @@ export function createArToast(root: HTMLElement): ArToast {
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** The deferred text write. See `show`. */
   let pending: ReturnType<typeof setTimeout> | undefined;
-  /**
-   * Which `show` a pending write belongs to.
-   *
-   * Two `show` calls in the same task would otherwise land in timer order and
-   * the FIRST could win, leaving the older message on screen.
-   */
-  let sequence = 0;
 
   const clear = (): void => {
     if (timer !== undefined) {
@@ -104,15 +97,23 @@ export function createArToast(root: HTMLElement): ArToast {
       //
       // `append`, not `insertBefore`: `initAR` puts its canvas at the FRONT of
       // this container, and the toast has to paint over it.
-      sequence += 1;
-      const mine = sequence;
+      // WITHDRAWAL AND SUPERSESSION ARE HANDLED BY CANCELLING THE TIMER, above
+      // and in `clear`, not by guarding inside the callback (r513 review). The
+      // first version tested `element.isConnected` and a sequence number in
+      // there, and neither could ever be true: both `clear()` and a second
+      // `show()` call `clearTimeout(pending)` before anything else, so a
+      // withdrawn or superseded write never runs at all.
+      //
+      // They were deleted rather than kept as belt-and-braces because the
+      // sidecar had begun documenting them as the mechanism — which is the
+      // same defect this whole function exists to fix, one level up: a
+      // description asserting something the code does not do. The two tests
+      // that look like they cover the guards pass on the cancellation, and
+      // their comments now say so.
       root.append(element);
       if (pending !== undefined) clearTimeout(pending);
       pending = setTimeout(() => {
         pending = undefined;
-        // Cleared in the gap, or superseded by a later `show`. Writing either
-        // way would resurrect a message the caller has already withdrawn.
-        if (!element.isConnected || mine !== sequence) return;
         element.textContent = message;
       }, 0);
       if (timer !== undefined) clearTimeout(timer);

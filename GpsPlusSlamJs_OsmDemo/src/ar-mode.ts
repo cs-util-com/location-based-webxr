@@ -380,8 +380,12 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           : arWorldGroup.matrix.elements[13],
         ...live,
       },
-      // THE SESSION CLOCK, not wall time: `elapsed` is what the frame loop
-      // already computed, and it is monotonic.
+      // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop
+      // already computed, and it is monotonic. **Page-relative, not a session
+      // duration** — this comment said "the session clock" until r513, which is
+      // the wording that caused the fps window to be opened at zero a few lines
+      // above. Safe here because `sample` only ever differences this stamp
+      // against its own previous value; never treat it as an elapsed time.
       elapsed * 1000,
     );
     // THE WINDOW RESETS ONLY WHEN ONE WAS ACTUALLY WRITTEN, so the average

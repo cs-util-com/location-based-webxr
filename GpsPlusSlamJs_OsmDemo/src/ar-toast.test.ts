@@ -137,9 +137,15 @@ describe("the announcement actually fires (r511 review, corrected in r513)", () 
 
   it("does not resurrect a message cleared before the write lands", () => {
     // `clear()` can arrive in the gap — leaving AR, or a newer state replacing
-    // the warning. Without the `isConnected` guard the deferred write would put
-    // the text back on a detached element and the next `show` would attach it
-    // already populated, reintroducing the silent case by the back door.
+    // the warning. What makes this hold is that `clear()` CANCELS the pending
+    // timer, so the write never runs.
+    //
+    // Said precisely because the first version of this file claimed otherwise
+    // (r513 review): it described an `element.isConnected` guard inside the
+    // callback as the mechanism, and that guard could never fire — the
+    // cancellation above it had already made the callback unreachable. This
+    // test passed then and passes now, which is exactly why the wording had to
+    // be corrected rather than left to imply coverage it does not have.
     const toast = createArToast(root);
     toast.show("drifting");
 
@@ -151,8 +157,8 @@ describe("the announcement actually fires (r511 review, corrected in r513)", () 
   });
 
   it("shows the LATER message when two arrive in one task", () => {
-    // Both writes are deferred, so without a sequence check they land in timer
-    // order and the stale one could win.
+    // Held by the same cancellation: the second `show` clears the first's
+    // pending write before arming its own, so only one callback ever runs.
     const toast = createArToast(root);
 
     toast.show("first");

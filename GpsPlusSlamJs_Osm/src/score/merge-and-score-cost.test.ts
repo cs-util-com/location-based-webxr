@@ -277,6 +277,12 @@ describe("the recorded curve", () => {
     );
 
     expect(single).toHaveLength(TILES);
-    expect(mean(perFeatureUs)).toBeGreaterThan(0);
+    // FINITE, not positive (r513 review). `> 0` is still a clock comparison:
+    // on a machine with a coarse timer every accept can round to 0 ms, and the
+    // mean is then exactly 0 — a red gate that says nothing about the code.
+    // What this test is for is that the apparatus produces real numbers.
+    expect(perFeatureUs).toHaveLength(TILES);
+    expect(perFeatureUs.every((value) => Number.isFinite(value))).toBe(true);
+    expect(mean(perFeatureUs)).toBeGreaterThanOrEqual(0);
   });
 });

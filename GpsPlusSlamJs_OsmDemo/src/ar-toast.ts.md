@@ -54,9 +54,15 @@ channel nobody can see is invisible to it.
     for "after a rendering step": rAF is throttled or paused in a background tab
     and `main.ts` can warn with no XR session running, so the frame-based
     version can silently never deliver.
-  - The deferred write is guarded by `element.isConnected` and a sequence
-    number, so a `clear()` in the gap cannot resurrect a withdrawn message and
-    two `show()` calls in one task cannot land out of order.
+  - **Withdrawal and supersession are handled by CANCELLING the pending timer**,
+    in `clear()` and at the top of `show()`, so a withdrawn or superseded write
+    never runs.
+    - This line used to describe an `element.isConnected` check and a sequence
+      number inside the callback as the mechanism. **Neither could ever fire** —
+      the cancellation above them made the callback unreachable — so the sidecar
+      was asserting something the code did not do, which is the same shape as
+      the defect the deferral itself fixes. The guards are gone and this says
+      what actually holds (r513 review).
   - **`clear()` empties the element as well as detaching it.** The element is
     reused across messages, so one still carrying the previous text would arrive
     populated on the next `show` and undo the whole deferral.
