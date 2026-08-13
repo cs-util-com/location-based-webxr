@@ -260,10 +260,14 @@ test.describe("the affordance map", () => {
       // proves a person could tell. Until the legend landed, the only place the
       // app named the current category was inside a tooltip, so the reported
       // symptom — "switching category did not reset the map" — was reachable with
-      // this test passing: every category scores nearly every rule, and
-      // `heatScale` re-normalises to each category's own maximum, so the same
-      // hexagons come back in similar colours. The legend is the fix, and this is
-      // the assertion that keeps it honest.
+      // this test passing: every category scores nearly every rule, so the same
+      // hexagons come back in similar colours whichever one is selected. The
+      // legend is the fix, and this is the assertion that keeps it honest.
+      //
+      // (This used to cite `heatScale` re-normalising to each category's own
+      // maximum. DEC-H5 deleted that mechanism and the reason outlived it: the
+      // ambiguity is the OVERLAP between categories, which a fixed ramp does
+      // nothing about.)
       await expect(shared.locator("#legend .legend-category")).toHaveText(
         other,
       );

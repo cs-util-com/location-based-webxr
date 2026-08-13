@@ -60,6 +60,20 @@ describe("the scale is FIXED, not derived from what is on screen (DEC-H5)", () =
     expect(heatFraction(HEAT_CAP * 1e7, fixedScale(1))).toBe(1);
   });
 
+  it("keeps the cap above a threshold the sheet puts above it", () => {
+    // A REGRESSION THE FIXED RAMP INTRODUCED (r513 review). `heatScale` seeded
+    // `max = threshold`, so `max >= threshold` held by construction; a constant
+    // cap does not. Thresholds come from a publicly editable sheet, and this
+    // file's sibling already exercises 250 000 as a realistic large one.
+    //
+    // Without the guard the span goes non-positive and EVERY score reads 0 —
+    // a uniformly dark map from one sheet edit, with no message explaining it.
+    const hostile = fixedScale(250_000);
+    expect(hostile.max).toBeGreaterThan(hostile.threshold);
+    expect(heatFraction(hostile.threshold * 5, hostile)).toBeGreaterThan(0);
+    expect(heatFraction(hostile.max, hostile)).toBe(1);
+  });
+
   it("still leaves the weakest measured category most of the ramp", () => {
     // The objection `heat-colours.ts` used to carry — that a fixed scale makes
     // most categories look uniformly dark — measured rather than argued.

@@ -1391,10 +1391,22 @@ async function main(): Promise<void> {
     // still reports `observedMax`, but only so the legend can describe the
     // data; nothing colours by it.
     //
-    // The category-mismatch hazard this comment used to describe is GONE rather
-    // than mitigated: there is no per-category ramp left to mismatch, so
-    // colouring `view.category` against a stale snapshot's scale is now
-    // harmless by construction instead of by careful reading.
+    // The category-mismatch hazard this comment used to describe is much
+    // narrower, not gone — and the first version of this sentence said "gone",
+    // which overreached (r513 review).
+    //
+    // `fixedScale` fixes the ramp's TOP. Its BOTTOM is still
+    // `thresholdFor(table, category)`, filled per column from the live sheet, so
+    // a `__threshold__` row would give categories different ramps again and the
+    // stale-snapshot window would matter again. The shipped table has no such
+    // row, so every category sits at `DEFAULT_THRESHOLD` and the mismatch is
+    // currently impossible **by accident of the sheet** — which is exactly the
+    // shape of the `max <= threshold` test this same change had to replace,
+    // because that one "only ever worked BECAUSE the max was observed".
+    //
+    // Reading the threshold from the SNAPSHOT rather than from `view.category`
+    // is what keeps it structural rather than accidental, and that is why it
+    // stays.
     return fixedScale(snapshot.threshold);
   }
 
@@ -1521,7 +1533,7 @@ async function main(): Promise<void> {
     const wantsMeshLayers = wantsAnyMeshLayer(layers);
     if (latestMesh !== undefined && wantsMeshLayers) {
       // ONE SCALE, BOTH VIEWS, and DERIVED IN ONE PLACE. W14 first computed a
-      // second `heatScale` here from the same snapshot — agreeing with the map's
+      // second scale here from the same snapshot — agreeing with the map's
       // by construction, but by construction is not the same as by design: two
       // derivations of the identical thing is how they eventually differ, and
       // the failure would be silent because each view stays self-consistent.

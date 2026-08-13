@@ -12,10 +12,18 @@
  *
  * WHY THE CATEGORY NAME IS PART OF IT. The reported symptom was "switching
  * category did not reset the map". The map does redraw — but every category
- * scores nearly every rule, and `heatScale` re-normalises the ramp to each
- * category's own maximum, so the same hexagons are drawn in similar colours. A
- * picture that does not say what it is a picture OF cannot be checked by eye.
- * Naming the category is the smallest thing that makes the redraw visible.
+ * scores nearly every rule, so the same hexagons come back in similar colours
+ * whatever category is selected. A picture that does not say what it is a
+ * picture OF cannot be checked by eye, and naming the category is the smallest
+ * thing that makes the redraw visible.
+ *
+ * **This reason used to be stated as "`heatScale` re-normalises the ramp to
+ * each category's own maximum", and that mechanism was deleted by DEC-H5.** The
+ * reason survives the mechanism — what makes the picture ambiguous is the
+ * OVERLAP between categories, not the normalisation, and a fixed ramp does
+ * nothing about overlap. Corrected rather than dropped because it is the
+ * rationale for a test, and a rationale citing a function that no longer exists
+ * reads as though the test is obsolete.
  *
  * WHY IT IS A PURE MODEL AND NOT A DOM BUILDER. The interesting parts — which
  * bands exist, what they are labelled, that no two of them render alike — are

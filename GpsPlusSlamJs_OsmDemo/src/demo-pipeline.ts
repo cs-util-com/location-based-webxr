@@ -612,11 +612,18 @@ export class DemoPipeline {
     const deriveStart = this.clock();
     const threshold = thresholdFor(this.table, category);
     const scoresByCell = this.index.scoresByCell();
-    // MATERIALISED ONCE. This used to be spread here AND again below for the
-    // heat scale -- two full copies of ~24 000 cells, in the round whose whole
-    // subject is not copying them. Small beside the structured clone stage B
-    // removes, and on the same hot path. Raised in review on #254.
-    const cells = [...scoresByCell.values()];
+    // MATERIALISED ONLY WHEN IT TRAVELS (r513 review). It used to be spread
+    // here AND again below for the heat scale — two full copies of ~24 000
+    // cells, in the round whose whole subject was not copying them (#254).
+    //
+    // The heat-scale copy is gone with the fixed ramp, and this one is now
+    // conditional: the DEFAULT configuration has the `cells` layer off, so the
+    // array had no reader at all and was allocated on every publish regardless.
+    // Building it only when `includeCells` is not `false` is what makes the
+    // fused loop below genuinely ONE pass rather than two — the claim the first
+    // version of that comment made and the spread quietly falsified.
+    const includeCells = options?.includeCells !== false;
+    const cells: CellScore[] = [];
     // THE COUNT IS ALWAYS WANTED; THE FEATURES ALMOST NEVER ARE. The status
     // line reports how many features were excluded whether or not the layer is
     // drawn, so calling `belowSurfaceFeatures()` here put an array of ~13 % of
@@ -635,10 +642,14 @@ export class DemoPipeline {
       undergroundFeatures?.flatMap((feature) => outlinesOf(feature)) ?? [];
     const undergroundCount =
       undergroundFeatures?.length ?? this.index.belowSurfaceCount();
-    // ONE PASS, not four (DEC-H6/H10). This used to be the `values()` spread
-    // above, then `cellsAboveThreshold`, then a `cells.map` allocating a score
-    // array over every retained cell, then `heatScale` scanning that array —
-    // four full-length walks over up to 23 912 cells, three times per move.
+    // ONE PASS, not four (DEC-H6/H10) — and it is one only because the `cells`
+    // array is filled HERE rather than spread separately above. The first cut
+    // of this comment claimed one and delivered two; review caught it.
+    //
+    // It used to be the `values()` spread, then `cellsAboveThreshold`, then a
+    // `cells.map` allocating a score array over every retained cell, then
+    // `heatScale` scanning that array — four full-length walks over up to
+    // 23 912 cells, three times per move.
     //
     // They are independent reductions over the same sequence, so they fuse.
     // Measured before this change: derive reached ~1.1 s per refresh once the
@@ -652,7 +663,10 @@ export class DemoPipeline {
     // the number does not shift because the computation moved.
     const above: string[] = [];
     let observedMax = 0;
-    for (const cell of cells) {
+    let cellCount = 0;
+    for (const cell of scoresByCell.values()) {
+      cellCount += 1;
+      if (includeCells) cells.push(cell);
       const score = cell.scores[category] ?? 1;
       if (score > threshold) above.push(cell.cell);
       if (Number.isFinite(score) && score > observedMax) observedMax = score;
@@ -667,8 +681,10 @@ export class DemoPipeline {
       position,
       category,
       threshold,
-      cells: options?.includeCells === false ? [] : cells,
-      cellCount: cells.length,
+      cells,
+      // COUNTED IN THE LOOP, not from `cells.length` — the array is empty when
+      // the layer is off, and the status line reports this number either way.
+      cellCount,
       undergroundCount,
       undergroundOutlines,
       observedMax,

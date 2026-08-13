@@ -14,6 +14,18 @@
  *
  * - **Cologne Cathedral** (n = 927): p05 = 0, p50 = **0.048**, p90 = 3.9e3,
  *   p99 = 8.1e6, max = 1.4e12. **46.3 % score above 1; 44.9 % above 9.**
+ *   - ⚠️ **THE MAX ROTTED, and this file exists to stop exactly that.** Measured
+ *     2026-08-13 it is **1.7e11**, not 1.4e12 — an order of magnitude out. The
+ *     re-measure note below says "the max is unchanged", and that claim is what
+ *     was wrong; the narrative it introduced ("nine orders instead of twelve")
+ *     only computes at 1.7e11, so the prose had already followed the new value
+ *     while the header line stayed behind. Found by review comparing this file
+ *     against `category-score-distributions.test.ts`, which reports 1.7e11 for
+ *     the identical measurement.
+ *   - **Nothing could catch it**: the span assertion below is `> 9`, which
+ *     passes at either figure. A max assertion is added at the end of this file
+ *     so the recorded order of magnitude now has a guard, which is the whole
+ *     argument for this being a test rather than a script.
  * - **Heidelberg Altstadt** (n = 931): p50 = **0.8**, **29.8 % above 9.**
  *
  * **Q-R6-4 — `heat > 9` is in the BULK, not the tail.** The gate is inherited
@@ -199,6 +211,28 @@ describe("the corpus score distribution (§6 step 0)", () => {
     expect(
       fractionAbove(COLOGNE, 9) / fractionAbove(COLOGNE, 1e5),
     ).toBeGreaterThan(5);
+  });
+
+  it("pins the MAX's order of magnitude, which had rotted unnoticed", () => {
+    // ADDED 2026-08-13. This file's header recorded Cologne's max as 1.4e12 and
+    // the true figure is 1.7e11 — an order of magnitude out, sitting in a file
+    // whose stated reason for being a test rather than a script is that "a
+    // script produces a figure that is right on the day and silently rots".
+    //
+    // Nothing here could catch it: the span assertion is `> 9`, which passes at
+    // either value, and the median is asserted only as `> 1`. The recorded max
+    // was load-bearing — `heat-colours.ts.md` cites it as the accepted cost of
+    // the fixed colour cap — and was checked by nobody.
+    //
+    // Asserted as a RANGE rather than a value: the point is to catch a drift of
+    // an order of magnitude, not to break on the rule table gaining a row.
+    const cologneMax = COLOGNE[COLOGNE.length - 1] ?? 0;
+    expect(Math.log10(cologneMax)).toBeGreaterThan(10);
+    expect(Math.log10(cologneMax)).toBeLessThan(12);
+
+    const heidelbergMax = HEIDELBERG[HEIDELBERG.length - 1] ?? 0;
+    expect(Math.log10(heidelbergMax)).toBeGreaterThan(16);
+    expect(Math.log10(heidelbergMax)).toBeLessThan(18);
   });
 
   it("differs enough between the two sites to rule out one global constant", () => {

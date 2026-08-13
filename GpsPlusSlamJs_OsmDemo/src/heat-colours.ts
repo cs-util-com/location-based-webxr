@@ -46,7 +46,11 @@ const RAMP: readonly Rgb[] = [
 export interface HeatScale {
   /** Scores at or below this are not part of the ramp at all. */
   readonly threshold: number;
-  /** The highest score present, so the ramp uses its full range. */
+  /**
+   * The top of the ramp. **Fixed at {@link HEAT_CAP} since DEC-H5**, not the
+   * highest score present — which is what it used to be, and what made a cell's
+   * colour depend on cells the user could not see.
+   */
   readonly max: number;
 }
 
@@ -97,7 +101,24 @@ export const HEAT_CAP = 1e4;
  * is ever justified, this is where it goes.
  */
 export function fixedScale(threshold: number): HeatScale {
-  return { threshold, max: HEAT_CAP };
+  // THE CAP HAS TO STAY ABOVE THE THRESHOLD, and this guard is a regression the
+  // fixed ramp introduced (r513 review). `heatScale` seeded `max = threshold`
+  // and grew from there, so `max >= threshold` held by construction. A constant
+  // cap does not: thresholds come from a publicly editable Google Sheet through
+  // `toNumber`, and `legend-model.test.ts` already exercises 250 000 as a
+  // "large threshold off the rule sheet".
+  //
+  // At `threshold >= HEAT_CAP` the span goes non-positive, `heatFraction`'s
+  // guard returns 0 for every score, and the entire grid paints the ramp's dark
+  // end with no message — a uniformly dark map caused by one sheet edit, which
+  // is the same class of failure as the `#NaNNaNNaN` scar that guard was
+  // written for.
+  //
+  // One decade above the threshold rather than a hard clamp: it keeps a usable
+  // ramp, stays a pure function of a table constant (so it is still fixed, not
+  // data-derived), and makes the degenerate case impossible rather than merely
+  // survivable.
+  return { threshold, max: Math.max(HEAT_CAP, threshold * 10) };
 }
 
 /**
@@ -196,7 +217,7 @@ const EXPONENTIAL_ABOVE = 1e4;
  * There is now one.
  */
 export function formatScore(value: number): string {
-  // Defensive: `heatScale` filters non-finite scores, but this function is
+  // Defensive: the pipeline filters non-finite scores, but this function is
   // reachable from an exported one and "Infinity" in the legend would read as a
   // broken demo rather than as a broken input.
   if (!Number.isFinite(value)) return "—";

@@ -41,7 +41,11 @@ const snapshot = (cells: number): DemoSnapshot => ({
   loadedTiles: ["871fa199affffff"],
   cellCount: cells,
   observedMax: 2,
-  aboveThresholdCount: 1,
+  // EVERY generated cell scores 2 against a threshold of 1, so the count is
+  // `cells`. It was hard-coded to 1 when the field was added, which made the
+  // fixture disagree with its own cells and would have hidden a legend or
+  // status-count regression (r513 review).
+  aboveThresholdCount: cells,
   undergroundCount: 0,
   undergroundOutlines: [],
   stats: { chunksScored: 1, chunksReused: 0, geometryBuilt: 1 },

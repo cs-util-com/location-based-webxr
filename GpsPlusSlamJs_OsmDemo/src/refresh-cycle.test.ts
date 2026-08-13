@@ -46,6 +46,12 @@ const snapshotAt = (category: string, radius: number): DemoSnapshot => ({
     scores: { [category]: 3 },
     contributors: { [category]: {} },
   })),
+  // DERIVED FROM THE CELLS THIS FIXTURE ACTUALLY GENERATES. Both were inherited
+  // from `snapshot(category)` and described one cell while `radius` were built,
+  // so the fixture contradicted itself (r513 review). Every generated cell
+  // scores 3 against a threshold of 1.
+  cellCount: radius,
+  aboveThresholdCount: radius,
 });
 
 const snapshot = (category: string): DemoSnapshot => ({

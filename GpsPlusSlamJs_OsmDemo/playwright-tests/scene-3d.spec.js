@@ -525,7 +525,7 @@ test.describe("the 3D view", () => {
       //
       // The fixture has one region in the displayed category, and it is coloured
       // through the SAME
-      // heatColour/heatScale pair the 2D map paints with. That sharing is the point
+      // heatColour/fixedScale pair the 2D map paints with. That sharing is the point
       // of W14: a region reading as "good" in one pane and "poor" in the other is
       // the cross-view disagreement the store exists to prevent.
 

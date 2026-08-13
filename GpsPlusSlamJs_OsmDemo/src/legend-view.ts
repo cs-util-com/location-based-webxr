@@ -86,7 +86,13 @@ export class LegendView {
     const observed = document.createElement("span");
     observed.className = "legend-observed";
     observed.textContent = `max here ${model.observedLabel}`;
-    observed.title = `The ramp above is fixed. The highest ${model.category} score currently on screen is ${model.observedLabel}, over ${String(model.aboveThresholdCount)} cells above the bar.`;
+    const observedText = `The ramp above is fixed. The highest ${model.category} score currently on screen is ${model.observedLabel}, over ${String(model.aboveThresholdCount)} cells above the bar.`;
+    observed.title = observedText;
+    // AND AS AN ACCESSIBLE NAME, not only a tooltip (r513 review). `title` is
+    // mouse-only in practice, and the cell COUNT appears nowhere else on screen
+    // — so without this the half of DEC-H7 that says how much data is behind
+    // the number is unreachable for a screen-reader user.
+    observed.setAttribute("aria-label", observedText);
 
     const children: HTMLElement[] = [name, min, strip, max, observed];
     for (const band of model.bands) children.push(bandItem(band));

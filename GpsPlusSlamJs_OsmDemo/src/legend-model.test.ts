@@ -116,6 +116,43 @@ describe("legendModel — the ramp", () => {
     expect(model.emptyMessage).not.toContain("250000");
   });
 
+  it("reports what the DATA reaches, not just where the ramp ends", () => {
+    // THE COMPENSATING HALF OF DEC-H7, and it was asserted nowhere until the
+    // r513 review said so. `heat-colours.ts.md` accepts saturating ~10-14 % of
+    // `walkable` explicitly on the grounds that "the legend compensates, and
+    // has to" — so this is the assertion that claim rests on. Wiring
+    // `observedLabel` to `maxLabel`, or deleting the span from the view, kept
+    // every test green.
+    //
+    // The two must be able to DIFFER: `maxLabel` is the fixed cap and is the
+    // same everywhere, `observedLabel` is what is on screen here.
+    const model = legendModel(fixedScale(1), "walkable", false, {
+      aboveThresholdCount: 40,
+      observedMax: 512.4,
+    });
+
+    expect(model.observedLabel).toBe("512.4");
+    expect(model.maxLabel).not.toBe(model.observedLabel);
+    expect(model.aboveThresholdCount).toBe(40);
+  });
+
+  it("reports a saturating field differently from a flat one", () => {
+    // WHY THE READOUT EXISTS AT ALL. On a clipped ramp both look identical —
+    // every cell at the yellow end. The observed max is the only thing that
+    // separates "everything here is off the top of the scale" from "everything
+    // here is merely at it".
+    const saturating = legendModel(fixedScale(1), "walkable", false, {
+      aboveThresholdCount: 900,
+      observedMax: 3e17,
+    });
+    const flat = legendModel(fixedScale(1), "walkable", false, {
+      aboveThresholdCount: 900,
+      observedMax: 1e4,
+    });
+
+    expect(saturating.observedLabel).not.toBe(flat.observedLabel);
+  });
+
   it("gives every ramp swatch a distinct colour, low to high", () => {
     const swatches = legendModel(SCALE, "walkable", false, SOME_DATA).ramp;
     expect(swatches.length).toBeGreaterThanOrEqual(5);

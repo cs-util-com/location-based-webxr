@@ -144,7 +144,7 @@ const NO_STATS: BuildingStats = {
  *
  * Exists for exactly one reason: W14's region slabs are coloured by
  * `medianScore`, and **the 2D map and the 3D view must never be able to disagree
- * about what a score looks like.** The demo owns one `heatScale`/`heatColour`
+ * about what a score looks like.** The demo owns one `fixedScale`/`heatColour`
  * pair, both views read it, and it is handed in here rather than reimplemented —
  * a second colour function would be a second source of truth for the same
  * question, which is the whole reason the store exists.
