@@ -58,6 +58,20 @@ export function toDemoLatLng(origin: FrameworkLatLong): LatLng {
  * elevation one, which is a much more expensive place to go looking. That
  * warning is `geoid.ts`'s, and it is why the demo pays for a function instead
  * of writing a minus sign at the call site.
+ *
+ * ⚠️ **THIS FUNCTION IS HALF OF A HANDSHAKE, and the other half is untested.**
+ * Converting the DEM to ellipsoidal is only correct because the frame it has to
+ * meet — the fusion's Up axis — is ellipsoidal too, and that is true only
+ * because Android/Chrome reports `GeolocationCoordinates.altitude` against the
+ * ellipsoid. Nothing in the framework or the library normalises it; see the
+ * comment on `altitude:` in `GpsPlusSlamJs_AppFramework/src/sensors/gps.ts`.
+ *
+ * So if iOS support is ever added and its altitude turns out to be orthometric,
+ * this conversion becomes the thing that doubles the error rather than cancels
+ * it: the DEM would be raised by N while the GPS side stayed at MSL, putting the
+ * city ~2N — about 94 m at Cologne — out of place. That is the SAME magnitude
+ * and the same misleading signature as getting the sign below backwards. Fix it
+ * at the sensor boundary so this function keeps its single, checkable meaning.
  */
 export function absoluteDatumFor(undulationMetres: number): number {
   return -undulationMetres;

@@ -50,6 +50,19 @@ testing without a WebXR session, a renderer or a DOM.
   property is `surfaceHeight − datum = DEM_orthometric + N`, and the test
   asserts that end-to-end rather than the sign alone — the sign is precisely
   what a reader cannot check by eye.
+- ⚠️ **The datum conversion is half a handshake, and the other half is
+  Android-only.** Raising the DEM to ellipsoidal is correct only because the
+  frame it meets is ellipsoidal — which holds because Android/Chrome reports
+  `GeolocationCoordinates.altitude` against the ellipsoid and nothing in the
+  framework or the library normalises it.
+  - If iOS is ever supported and its altitude is orthometric (CoreLocation's
+    MSL, as widely reported), this conversion **doubles** the error instead of
+    cancelling it: DEM up by N, GPS still at MSL, city ~2N — about 94 m at
+    Cologne — out of place. Same magnitude and same misleading signature as
+    getting the sign backwards.
+  - Fix belongs at the sensor boundary (`GpsPlusSlamJs_AppFramework/src/sensors/gps.ts`),
+    never here — otherwise the DEM datum and `applyAltitudeOverride` each need
+    their own copy of the rule.
 - Pure. No clock, no DOM, no session, no three.js.
 
 ## Examples
