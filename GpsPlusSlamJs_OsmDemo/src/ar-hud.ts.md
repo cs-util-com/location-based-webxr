@@ -44,10 +44,36 @@ inset: 0` and hidden only while `:empty`, so an always-attached readout keeps
 
 ```ts
 const hud = createArHud(container);
-registerXrFrameUpdate(({ dt, elapsed }) => {
-  hud.sample({ fps: dt > 0 ? 1 / dt : undefined, ...live }, elapsed * 1000);
+
+// `elapsed` is PAGE-relative, so the window has to be opened from the first
+// frame's value rather than from zero — see `frame-loop.ts.md`.
+let windowOpenedAtS: number | undefined;
+let framesThisWindow = 0;
+
+registerXrFrameUpdate(({ elapsed }) => {
+  windowOpenedAtS ??= elapsed;
+  framesThisWindow += 1;
+  const windowS = elapsed - windowOpenedAtS;
+
+  // `sample` returns whether it ACCEPTED the sample. Discarding that is what
+  // makes an averaged fps impossible: the caller cannot know when to reset its
+  // counters, so it either never resets or resets on frames the HUD ignored.
+  const wrote = hud.sample(
+    { fps: windowS > 0 ? framesThisWindow / windowS : undefined, ...live },
+    elapsed * 1000,
+  );
+  if (wrote === true) {
+    framesThisWindow = 0;
+    windowOpenedAtS = elapsed;
+  }
 });
 ```
+
+**This example used to read `fps: dt > 0 ? 1 / dt : undefined` and drop
+`sample`'s return value** — a single-frame reciprocal, which is the thing this
+module's own invariant list says it is not. On a phone that flickers between
+plausible and alarming with no way to tell a sustained drop from a hiccup, which
+is the only question the number exists to answer.
 
 ## Tests
 

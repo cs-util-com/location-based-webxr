@@ -176,6 +176,35 @@ describe("AR measurement is wired into main.ts", () => {
     expect(onError).toBeDefined();
     expect(onError).toContain("lastFixAccuracyM = undefined");
   });
+
+  it("forgets the fix POSITION too, so the distance stops advancing", () => {
+    // THE SECOND HALF OF THE SAME FIX, and it had no guard until the r511
+    // review pointed out that this file asserted only the accuracy line
+    // (r513). A stale `lastFixPosition` through an outage freezes
+    // `metresFromAnchor` at whatever it last read — which is the more
+    // misleading half, because a distance that stops moving reads as the user
+    // having stopped walking rather than as the GPS having stopped answering.
+    const onError = CODE.match(
+      /onError: \(message\) => \{[\s\S]*?\n {4}\},/,
+    )?.[0];
+    expect(onError).toBeDefined();
+    expect(onError).toContain("lastFixPosition = undefined");
+  });
+
+  it("routes the failure to the AR toast while a session is running", () => {
+    // ALSO UNGUARDED UNTIL r513. The status line is outside WebXR's dom-overlay
+    // root and is not composited during a session, so without this branch a GPS
+    // failure while immersed is completely silent — the city simply stops
+    // following the user. `arToast` appeared nowhere in this file, so deleting
+    // the branch would have left the suite green.
+    const onError = CODE.match(
+      /onError: \(message\) => \{[\s\S]*?\n {4}\},/,
+    )?.[0];
+    expect(onError).toBeDefined();
+    expect(onError).toMatch(
+      /arSession !== undefined.*arToast\.show\(message\)/s,
+    );
+  });
 });
 
 describe("the desktop renderer's AR lifecycle is wired into main.ts", () => {
