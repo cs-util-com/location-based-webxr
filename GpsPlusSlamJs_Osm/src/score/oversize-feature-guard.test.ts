@@ -68,14 +68,13 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { latLngToCell } from "h3-js";
+import { getHexagonAreaAvg, latLngToCell, UNITS } from "h3-js";
 
 import { AffordanceIndex, selectionBoxFor } from "./affordance-index.js";
 import { buildFeatureIndex } from "../spatial/h3-feature-index.js";
 import { type Bbox } from "../spatial/clip.js";
 import {
   AFFORDANCE_CELL_AREA_M2,
-  RES13_CELLS_PER_CHUNK,
   SCORE_CHUNK_RES,
   SCORE_DISK_MAX_RADIUS,
   scoreWorkingSet,
@@ -88,8 +87,22 @@ import type { OsmTileResult } from "../source/osm-data-source.js";
 
 const METRES_PER_DEGREE = 111_320;
 
-/** Average area of one res-11 scoring chunk — 49 res-13 children. */
-const CHUNK_AREA_M2 = AFFORDANCE_CELL_AREA_M2 * RES13_CELLS_PER_CHUNK;
+/**
+ * Average area of one res-11 scoring chunk — **from H3, not derived** (r514
+ * review, round 2).
+ *
+ * It used to be `AFFORDANCE_CELL_AREA_M2 * RES13_CELLS_PER_CHUNK`, and that made
+ * the two assertions below one assertion wearing two hats: with the chunk area
+ * defined from the cell area, the cell area CANCELS in `boxArea / chunkArea`,
+ * so the ratio and the cell count moved together and neither could fail without
+ * the other. Taking the res-11 area from `getHexagonAreaAvg` makes the ratio
+ * independent of the constant whose misuse this file exists to retract.
+ *
+ * The two agree to 0.07 % (2 149.6 m² against 43.9 × 49 = 2 151.1), which is
+ * itself worth having: it cross-checks `AFFORDANCE_CELL_AREA_M2` against H3's
+ * own table every run.
+ */
+const CHUNK_AREA_M2 = getHexagonAreaAvg(SCORE_CHUNK_RES, UNITS.m2);
 
 const table = snapshotRuleTable();
 
@@ -212,14 +225,17 @@ describe("scoring a feature larger than the batch", () => {
     // res-15 cell area — so it is pinned to the decade it actually occupies
     // rather than to a bound that would have admitted the wrong answer too.
     //
-    // Not implied by the ratio above, despite being algebraically derived from
-    // the same two quantities: the ratio fixes `boxArea / chunkArea`, while
-    // this fixes `boxArea` against the res-13 cell area, so a wrong
-    // `AFFORDANCE_CELL_AREA_M2` — the exact mistake being retracted — moves
-    // this and leaves the ratio untouched.
+    // INDEPENDENT OF THE RATIO ABOVE, but only since `CHUNK_AREA_M2` stopped
+    // being derived from `AFFORDANCE_CELL_AREA_M2`. An earlier comment here
+    // claimed the independence while the arithmetic denied it: with the chunk
+    // area defined as `cellArea × 49`, the cell area cancels out of
+    // `boxArea / chunkArea` entirely, so substituting the retracted 0.895 would
+    // have moved BOTH — the ratio would have read 88.9 rather than 1.812. The
+    // ratio would in fact have caught the res-15 mistake by itself, and the
+    // second assertion was decoration. Now the ratio comes from H3's res-11
+    // area and this line from the package's res-13 constant, so they can
+    // genuinely disagree.
     expect(covered).toBeGreaterThan(5_000);
     expect(covered).toBeLessThan(6_000);
-    // The disc's own cells, for scale: the cover is ~1.8x what can be kept.
-    expect(covered).toBeGreaterThan(chunks.length * RES13_CELLS_PER_CHUNK);
   });
 });
