@@ -70,6 +70,14 @@ interface RefreshWorker {
       includeUnderground: boolean;
       /** Epoch ms at post time, so the worker can report its queue wait. */
       postedAtEpochMs: number;
+      /**
+       * The datum this mesh must stand on — see `protocol.ts`.
+       *
+       * The mesh build declares it so the worker can tell a matching field from
+       * a stale one; AR entry does not move the user, so the position alone
+       * cannot distinguish an ellipsoidal field from a window-centre one.
+       */
+      geoidUndulationM?: number;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -142,6 +150,18 @@ export interface RefreshCycleOptions extends StoreAccess {
    * is what lets the camera pivot on the user without a worker round-trip.
    */
   readonly anchors: AnchorHolder;
+  /**
+   * The datum the mesh must stand on, read at post time.
+   *
+   * A GETTER rather than a value, because it changes with the MODE and this
+   * cycle outlives an AR session. Returns the geoid undulation while AR runs
+   * and `undefined` on the desktop; `main.ts` owns the single held value so the
+   * terrain load and the mesh build cannot state different datums.
+   *
+   * Omitted behaves exactly as before, which is what keeps the existing tests
+   * meaningful rather than merely passing.
+   */
+  readonly geoidUndulationM?: () => number | undefined;
   /**
    * The nine-stage breakdown for one pass, once it is complete.
    *
@@ -258,6 +278,7 @@ export function createRefreshCycle(
         // which makes a cross-boundary timestamp subtraction an offset rather
         // than an elapsed time — and every existing timing in this demo is
         // taken inside the worker, so nothing here warned about it.
+        const datum = options.geoidUndulationM?.();
         const callStart = nowMs();
         const { snapshot, mesh, workerTimings } = await worker.call(
           "update",
@@ -274,6 +295,12 @@ export function createRefreshCycle(
             // worker sees handler-start-to-end, and the gap between them is
             // where a busy worker hides. See `monotonic-clock.ts`.
             postedAtEpochMs: nowEpochMs(),
+            // THE DATUM THIS BUILD REQUIRES. Read at post time, not captured at
+            // construction: the cycle outlives an AR session and the datum
+            // changes with the mode. Spread conditionally because
+            // `exactOptionalPropertyTypes` distinguishes absent from undefined,
+            // and the protocol means ABSENT by "desktop datum".
+            ...(datum === undefined ? {} : { geoidUndulationM: datum }),
           },
           { signal },
         );

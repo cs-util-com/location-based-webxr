@@ -257,6 +257,22 @@ export interface WorkerCalls {
        * anchor yet behaves exactly as before.
        */
       readonly frameOrigin?: LatLng;
+      /**
+       * The datum this mesh must be built against — the geoid undulation for
+       * AR, omitted for the desktop view.
+       *
+       * **NOT a duplicate of `terrain`'s field of the same name; it is the
+       * REQUEST side of the same fact** (2026-08-14). The terrain call says
+       * "sample a field with this datum"; this says "do not build until the
+       * held field HAS it". Without it the mesh build cannot tell an AR field
+       * from a desktop one, and since AR entry does not move the user, the
+       * gate saw an unchanged position and let the build proceed on ground
+       * measured from a different zero — ~99 m out at Cologne.
+       *
+       * Omitted behaves exactly as before, so a caller that has not adopted AR
+       * is unaffected.
+       */
+      readonly geoidUndulationM?: number;
       readonly category: string;
       /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.

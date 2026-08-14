@@ -691,6 +691,12 @@ async function main(): Promise<void> {
     actions,
     worker,
     anchors,
+    // THE DATUM THE MESH MUST STAND ON. A getter, not a value: this cycle
+    // outlives an AR session and the datum changes with the mode. Reading the
+    // one held value here is what keeps the mesh build's declared datum and the
+    // terrain load's requested datum identical — the worker's gate compares
+    // them, and two independent samples would be two chances to disagree.
+    geoidUndulationM: () => arUndulationM,
     // THE CLICK-PATH BREAKDOWN, one line per ring. `console.info` rather than
     // the status bar for the reason `describeGeoEventStats` uses it: this is a
     // developer diagnostic and the status line already carries the cell counts
@@ -991,6 +997,25 @@ async function main(): Promise<void> {
     return geoidModel;
   };
 
+  /**
+   * The geoid undulation AR is currently using, or `undefined` on the desktop.
+   *
+   * **THE DEMO'S ONE ANSWER TO "what is the terrain measured from?"**, and it
+   * has to be one answer because two consumers now ask: the terrain load, which
+   * samples the field against it, and the mesh build, which must declare the
+   * same datum so the worker's gate can tell a matching field from a stale one.
+   *
+   * **Resolved BEFORE the AR entry pass, which is the whole point.** The geoid
+   * is a dynamic import; the first version sampled it inline in the terrain
+   * request, so the terrain path awaited a module fetch while the mesh build
+   * posted immediately — the mesh was therefore built against the desktop
+   * field, with its window-centre datum, while the camera was lifted to
+   * ellipsoidal height. The owner saw that as flying ~50 m above the buildings
+   * on first entry and landing within ~4 m on the second, the second being
+   * right only because the AR field was by then already held.
+   */
+  let arUndulationM: number | undefined;
+
   let arSupport: ArSupport = "checking";
   let arSession: ArMode | undefined;
   /**
@@ -1076,11 +1101,14 @@ async function main(): Promise<void> {
     await loadTerrain({
       centre,
       frameOrigin: anchors.origin,
-      ...(arSession === undefined
+      // READ FROM THE HELD VALUE rather than re-sampled here (2026-08-14). The
+      // mesh build must state the SAME datum in its own request or the worker's
+      // gate cannot tell whether the held field matches, and two independent
+      // `undulationMetres` calls are two chances to disagree. `arUndulationM`
+      // is resolved once on AR entry, before the entry pass runs.
+      ...(arUndulationM === undefined
         ? {}
-        : {
-            geoidUndulationM: (await geoid()).undulationMetres(anchors.origin),
-          }),
+        : { geoidUndulationM: arUndulationM }),
     });
   };
 
@@ -1198,6 +1226,12 @@ async function main(): Promise<void> {
     // fixes from dispatching GPS events against a null AR pose — `AnchorStarter`
     // omits this and gets away with it only because it never leaves AR.
     gpsRegistration.stop();
+    // BACK TO THE WINDOW-CENTRE DATUM, cleared here so the exit pass below
+    // rebuilds against it. Leaving this set would keep the desktop view's
+    // buildings at ellipsoidal heights while its camera is framed relative to a
+    // moving surface — the mirror of the AR-entry bug, and the gate now catches
+    // it because the datum is part of the field's identity.
+    arUndulationM = undefined;
     // Paired with the `suspend` in `startWalking`, and in the same function, so
     // the back gesture cannot restore one without the other — leaving the
     // desktop pane hidden after a session is a blank map with no error.
@@ -1268,7 +1302,7 @@ async function main(): Promise<void> {
         currentPass = runPassFor(selectOsmView(store.getState()).position);
         void currentPass;
       },
-    }).then((mode) => {
+    }).then(async (mode) => {
       // ONLY IF A SESSION ACTUALLY STARTED. `startArMode` resolves to an inert
       // handle on a refused permission or a missing scene — assigning that
       // unconditionally left the user looking at an error toast AND a button
@@ -1293,6 +1327,12 @@ async function main(): Promise<void> {
       // own never rebuilds the building geometry the datum is baked into.
       const zero = selectZeroReference(store.getState());
       if (mode.started && zero !== null) {
+        // THE DATUM IS RESOLVED BEFORE THE ENTRY PASS, not during it. Awaiting
+        // the geoid here — once, on a path that has just started a WebXR
+        // session — is invisible; awaiting it inside the terrain request let
+        // the mesh build overtake it and stand on the desktop field. See
+        // `arUndulationM`.
+        arUndulationM = (await geoid()).undulationMetres(anchors.origin);
         startWalking({ lat: zero.lat, lng: zero.lon });
       } else {
         // The session did not start, so nothing changed the datum — but the

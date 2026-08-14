@@ -51,6 +51,27 @@ const TERRAIN_WAIT_TIMEOUT_MS = 15_000;
 export interface GateCentre {
   readonly lat: number;
   readonly lng: number;
+  /**
+   * The geoid undulation the field must be sampled against, or `undefined` for
+   * the window-centre datum.
+   *
+   * **PART OF THE IDENTITY, not a detail** (2026-08-14 field report). A field
+   * is defined by where it was sampled AND what its heights are measured from.
+   * `terrain-field.ts` uses the window-centre height for the desktop view — so
+   * heights come out as relief around zero — and `−N` for AR, so they come out
+   * ellipsoidal, ~99 m at Cologne, which is where the fusion puts the camera.
+   * Two fields at one position with different datums are ~99 m apart and are
+   * NOT interchangeable.
+   *
+   * Left out until now, and the cost was exactly the failure `demo-worker.ts`
+   * predicted for a different axis: AR entry re-runs the pass at the unchanged
+   * position, the gate answered "no new terrain needed", and the mesh was built
+   * on the desktop field while the camera sat at ellipsoidal height. The owner
+   * reported flying ~50 m above the buildings on first entry and landing within
+   * ~4 m on the second — the second entry being fine is the tell, because by
+   * then the AR field was already held.
+   */
+  readonly undulationM?: number | undefined;
 }
 
 export interface TerrainGate {
@@ -79,9 +100,16 @@ export interface TerrainGateOptions {
   readonly clearTimer?: (handle: unknown) => void;
 }
 
-/** `lat,lng` — exact, because both sides derive it from the same numbers. */
+/**
+ * `lat,lng,datum` — exact, because both sides derive it from the same numbers.
+ *
+ * The datum is in the key for the same reason it is in {@link GateCentre}: an
+ * AR-entry wait must not be released by the desktop field that settled just
+ * before it. Changing the predicate without changing the key would move the bug
+ * one layer down rather than fix it.
+ */
 function keyOf(centre: GateCentre): string {
-  return `${centre.lat},${centre.lng}`;
+  return `${centre.lat},${centre.lng},${centre.undulationM ?? "window"}`;
 }
 
 /**
@@ -103,7 +131,15 @@ export function needsTerrainFor(
   position: GateCentre,
 ): boolean {
   if (held === undefined) return true;
-  return held.lat !== position.lat || held.lng !== position.lng;
+  return (
+    held.lat !== position.lat ||
+    held.lng !== position.lng ||
+    // THE DATUM IS THE SECOND MOVER. See `GateCentre.undulationM`: AR entry and
+    // AR exit both change what the heights are measured from without moving the
+    // user, so a position-only comparison answers "no wait" on precisely the
+    // two transitions where the held field is ~99 m out.
+    held.undulationM !== position.undulationM
+  );
 }
 
 /**

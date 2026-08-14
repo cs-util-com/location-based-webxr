@@ -282,3 +282,47 @@ describe("the GPS→store→alignment loop is wired into main.ts", () => {
     expect(AR_MODE).toContain("odometryTrackingRestarted(");
   });
 });
+
+describe("the AR terrain datum is wired into main.ts", () => {
+  // WHY THIS BLOCK EXISTS. The owner entered AR and was "flying roughly 50 m
+  // above the OSM buildings"; on a second entry they were within ~4 m. That is
+  // the signature of a mesh built against the wrong DATUM — the desktop view
+  // measures heights from the window centre, AR measures them from the
+  // ellipsoid, and the two are ~99 m apart at Cologne. The gate now treats the
+  // datum as part of a field's identity; these guards cover the wiring that
+  // feeds it, which is the half a unit test of the gate cannot see.
+
+  it("resolves the geoid BEFORE the entry pass, not inside the terrain request", () => {
+    // THE ORDERING IS THE FIX. The geoid is a dynamic import; sampling it
+    // inside `loadTerrainForCurrentMode` meant the terrain path awaited a
+    // module fetch while the mesh build posted immediately — so the mesh was
+    // guaranteed to be built on the desktop field on a cold first entry.
+    // Awaiting it on AR entry, before `startWalking`, is what removes the race.
+    const entry = CODE.match(
+      /if \(mode\.started && zero !== null\) \{[\s\S]*?\n {6}\}/,
+    )?.[0];
+    expect(entry).toBeDefined();
+    expect(entry).toContain("arUndulationM = (await geoid())");
+    const resolveAt = entry?.indexOf("arUndulationM = (await geoid())") ?? -1;
+    const walkAt = entry?.indexOf("startWalking(") ?? -1;
+    expect(resolveAt).toBeGreaterThan(-1);
+    expect(walkAt).toBeGreaterThan(resolveAt);
+  });
+
+  it("clears the datum on the way out, so the exit pass rebuilds for the desktop", () => {
+    // The mirror case. Leaving it set would keep the desktop view's buildings
+    // at ellipsoidal heights while its camera is framed against a moving
+    // surface — and the exit pass runs right after `stopWalking`.
+    const stop = CODE.match(/const stopWalking[\s\S]*?\n {2}\};/)?.[0];
+    expect(stop).toContain("arUndulationM = undefined");
+  });
+
+  it("gives the mesh build the SAME datum the terrain load uses", () => {
+    // One held value, two readers. Two independent `undulationMetres` calls
+    // would be two chances to disagree, and the worker's gate compares them —
+    // so a disagreement would not merely be wrong, it would stall every AR
+    // build on the gate's full timeout waiting for a field that never matches.
+    expect(CODE).toContain("geoidUndulationM: () => arUndulationM");
+    expect(CODE).toContain("geoidUndulationM: arUndulationM");
+  });
+});

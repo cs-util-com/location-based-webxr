@@ -158,7 +158,9 @@ let terrain: HeightfieldData | undefined;
  * and a stalled one: it answers "is the terrain question resolved for this
  * position?", not "is there relief?". A DEM outage resolves the question.
  */
-let terrainCentre: { lat: number; lng: number } | undefined;
+let terrainCentre:
+  | { lat: number; lng: number; undulationM: number | undefined }
+  | undefined;
 
 /**
  * Releases a mesh build that is waiting for its own position's terrain (W3).
@@ -633,6 +635,7 @@ async function handle<K extends WorkerCallKind>(
         includeCells,
         includeUnderground,
         postedAtEpochMs,
+        geoidUndulationM,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
       // THE QUEUE WAIT — post to dispatch, the one measurement here that has
@@ -690,8 +693,14 @@ async function handle<K extends WorkerCallKind>(
       // turns into a visible wait on the click the owner is complaining about.
       // Zero on a category change or a widening ring, by design.
       const terrainStart = nowMs();
-      if (needsTerrainFor(terrainCentre, position)) {
-        await terrainGate.waitFor(position, signal);
+      // KEYED ON THE DATUM AS WELL AS THE POSITION. AR entry and AR exit both
+      // change what the heights are measured from WITHOUT moving the user, so a
+      // position-only check answered "no wait" on exactly the two transitions
+      // where the held field is ~99 m out. The comment above predicted this
+      // class of failure and named the frame origin; the datum got there first.
+      const wantedField = { ...position, undulationM: geoidUndulationM };
+      if (needsTerrainFor(terrainCentre, wantedField)) {
+        await terrainGate.waitFor(wantedField, signal);
       }
       const terrainWaitMs = Math.max(0, nowMs() - terrainStart);
       // THE RING, AFTER the visible work (W8, DEC-R2-6). Queued here rather than
@@ -746,7 +755,10 @@ async function handle<K extends WorkerCallKind>(
         // there relief here?" — so a DEM outage, an abort and a success all
         // release it. Releasing only on success turns a failed tile into a
         // stalled mesh, which is the one outcome worse than flat ground.
-        terrainGate.settle(centre);
+        // WITH THE DATUM, or an AR-entry wait is released by the desktop field
+        // that settled just before it — the same ~99 m mismatch the gate now
+        // exists to catch, one layer down.
+        terrainGate.settle({ ...centre, undulationM: geoidUndulationM });
       }
     }
 
@@ -940,7 +952,11 @@ async function loadTerrain(
   // "the DEM failed here" is an answer to that question. Recording it only on
   // success would make every later mesh build at this position wait out the
   // gate's full timeout.
-  terrainCentre = centre;
+  // THE DATUM TRAVELS WITH THE CENTRE. A field is identified by where it was
+  // sampled AND by what its heights are measured from; recording only the
+  // position is what let an AR-entry mesh build stand on the desktop field,
+  // ~99 m out. See `GateCentre.undulationM`.
+  terrainCentre = { ...centre, undulationM: geoidUndulationM };
   return {
     field: terrain,
     note: describeTerrain(field),
