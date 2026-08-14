@@ -24,12 +24,18 @@
  * disc around the fixture centre with the North Sea as the only feature:
  *
  * - the batch's selection box is **488 m** across, ~131 000 m² of chunk against
- *   ~238 000 m² of box — **~1.8×**, which is what a hexagonal disc's bounding
- *   box plus a shared margin costs, and is the amortisation `scoreChunks`
- *   claims in as many words;
- * - covering the North Sea clipped to that box yields ~5 400 res-13 cells, of
- *   which 2 177 land in a scored chunk and are kept;
+ *   ~238 000 m² of box — a ratio of **1.812**, which is what a hexagonal disc's
+ *   bounding box plus a shared margin costs, and is the amortisation
+ *   `scoreChunks` claims in as many words;
+ * - that box holds **5 417** res-13 cells. Covering the North Sea clipped to it
+ *   produces **4 409** — the coast crosses the box, so the water is ~81 % of it
+ *   — of which **2 177** land in a scored chunk and are kept;
  * - `update` completes in **93 ms**, geometry converted once.
+ *
+ * The three cell counts are different quantities and an earlier draft of this
+ * header used one figure for all of them. 5 417 is the box's CAPACITY, 4 409 is
+ * the cover actually computed (`stats.cellsCovered`), 2 177 is what survives the
+ * per-chunk filter. Only the middle one is work done and then discarded.
  *
  * So the guard's absence is survivable **because the clip is doing the guard's
  * job**, not because the case cannot arise. That distinction is the finding:
@@ -62,11 +68,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { cellToBoundary, latLngToCell } from "h3-js";
+import { latLngToCell } from "h3-js";
 
-import { AffordanceIndex } from "./affordance-index.js";
+import { AffordanceIndex, selectionBoxFor } from "./affordance-index.js";
 import { buildFeatureIndex } from "../spatial/h3-feature-index.js";
-import { boundsOf, padBbox, type Bbox } from "../spatial/clip.js";
+import { type Bbox } from "../spatial/clip.js";
 import {
   AFFORDANCE_CELL_AREA_M2,
   RES13_CELLS_PER_CHUNK,
@@ -79,9 +85,6 @@ import { parseOverpassJson } from "../model/overpass-parser.js";
 import { OVERPASS_SCHEMA_VERSION } from "../source/overpass-query.js";
 import { loadFixture } from "../test-utils/load-fixtures.js";
 import type { OsmTileResult } from "../source/osm-data-source.js";
-
-/** The margin `affordance-index.ts` pads each chunk's selection box with. */
-const CHUNK_MARGIN_DEG = 0.0005;
 
 const METRES_PER_DEGREE = 111_320;
 
@@ -107,33 +110,6 @@ function beachTile(): {
     },
     centre: fixture.centre,
   };
-}
-
-function cellBbox(cell: string): Bbox {
-  const bbox = boundsOf(
-    cellToBoundary(cell).map(([lat, lng]) => ({ lat, lng })),
-  );
-  if (bbox === undefined) throw new Error(`no boundary for ${cell}`);
-  return bbox;
-}
-
-/** `planBatch`'s selection box, replicated: the union of the padded chunk boxes. */
-function selectionBoxOf(chunks: readonly string[]): Bbox {
-  let box: Bbox | undefined;
-  for (const chunk of chunks) {
-    const padded = padBbox(cellBbox(chunk), CHUNK_MARGIN_DEG);
-    box =
-      box === undefined
-        ? padded
-        : {
-            south: Math.min(box.south, padded.south),
-            west: Math.min(box.west, padded.west),
-            north: Math.max(box.north, padded.north),
-            east: Math.max(box.east, padded.east),
-          };
-  }
-  if (box === undefined) throw new Error("no chunks");
-  return box;
 }
 
 function areaM2(box: Bbox): number {
@@ -183,6 +159,23 @@ describe("scoring a feature larger than the batch", () => {
     // Converted ONCE despite 61 chunks in the batch — the geometry cache is
     // what makes a 1 MB multipolygon affordable at all.
     expect(index.stats.geometryBuilt).toBe(1);
+
+    // THE ACTUAL CLAIM, and until the r514 review it was the one thing here
+    // that nothing checked. Every assertion above counts cells that were KEPT,
+    // and kept cells are capped at 61 x 49 = 2 989 by construction — the
+    // per-chunk filter in `distribute` enforces that with or without the clip.
+    // Delete the clip and all of them still pass; the only signal left is the
+    // suite grinding, which is the failure mode this file exists NOT to rely on.
+    //
+    // `cellsCovered` is the input side of that filter, so it sees the cover
+    // itself. A continental feature clipped to a ~488 m box is a few thousand
+    // res-13 cells; unclipped it is the whole North Sea and this number would
+    // be astronomically larger — or `polygonToCellsExperimental` would throw.
+    // Measured 4 409, against 2 177 kept and a box that holds 5 417. Pinned to
+    // the same tightness as the geometry below and for the same reason: it is
+    // deterministic, so a wide window would only hide what it exists to catch.
+    expect(index.stats.cellsCovered).toBeGreaterThan(4_000);
+    expect(index.stats.cellsCovered).toBeLessThan(5_000);
   });
 
   it("pays ~1.8x for the batch's bounding box, which is the claimed amortisation", () => {
@@ -196,23 +189,37 @@ describe("scoring a feature larger than the batch", () => {
       SCORE_DISK_MAX_RADIUS,
     );
 
-    const boxArea = areaM2(selectionBoxOf(chunks));
+    // THE REAL `planBatch` BOX, not a copy of it (r514 review). This test had
+    // its own transcription of the union loop and of `CHUNK_MARGIN_DEG`, which
+    // meant the one production knob the ratio is meant to guard was invisible
+    // to it: raise the margin to 0.002 and the real box grows ~2.8x in area
+    // while a private 0.0005 keeps reporting 1.8 and passing.
+    const boxArea = areaM2(selectionBoxFor(chunks));
     const chunkArea = chunks.length * CHUNK_AREA_M2;
     const covered = boxArea / AFFORDANCE_CELL_AREA_M2;
 
-    // A hexagonal disc's bounding box plus one shared margin. Bounded on BOTH
-    // sides: under 1 would mean the box no longer contains the chunks, and a
-    // large ratio would mean the margin had stopped being amortised — the
-    // regression the batching exists to prevent.
-    expect(boxArea / chunkArea).toBeGreaterThan(1);
-    expect(boxArea / chunkArea).toBeLessThan(3);
+    // A hexagonal disc's bounding box plus one shared margin. **Pinned tightly
+    // rather than bracketed**, because this is H3 geometry at a fixed place
+    // with no clock in it — the measured value is 1.82 and it is reproducible,
+    // so a wide window would only hide the regression the number exists to
+    // catch. Under 1 would mean the box no longer contains its chunks; over
+    // ~1.9 would mean the margin had stopped being amortised.
+    expect(boxArea / chunkArea).toBeGreaterThan(1.7);
+    expect(boxArea / chunkArea).toBeLessThan(1.9);
 
-    // And in the units the cover is actually paid in: a few thousand res-13
-    // cells for a feature of continental extent. **NOT the 265 726 the first
-    // version of this test computed** — see the header's retraction.
-    expect(covered).toBeLessThan(20_000);
-    expect(covered).toBeGreaterThan(
-      chunks.length * RES13_CELLS_PER_CHUNK * 0.5,
-    );
+    // And in the units the cover is paid in. **This figure IS the header's
+    // retraction** — the first version of this test computed 265 726 against a
+    // res-15 cell area — so it is pinned to the decade it actually occupies
+    // rather than to a bound that would have admitted the wrong answer too.
+    //
+    // Not implied by the ratio above, despite being algebraically derived from
+    // the same two quantities: the ratio fixes `boxArea / chunkArea`, while
+    // this fixes `boxArea` against the res-13 cell area, so a wrong
+    // `AFFORDANCE_CELL_AREA_M2` — the exact mistake being retracted — moves
+    // this and leaves the ratio untouched.
+    expect(covered).toBeGreaterThan(5_000);
+    expect(covered).toBeLessThan(6_000);
+    // The disc's own cells, for scale: the cover is ~1.8x what can be kept.
+    expect(covered).toBeGreaterThan(chunks.length * RES13_CELLS_PER_CHUNK);
   });
 });

@@ -310,6 +310,25 @@ export class AffordanceIndex {
      * comment rather than measured.
      */
     scoresByCellBuilds: 0,
+    /**
+     * Cells `coverCells` produced, BEFORE the per-chunk filter throws most away.
+     *
+     * **THE INPUT SIDE OF THE FUNNEL, and nothing could see it** (r514 review).
+     * Every other number here counts what was KEPT, and kept cells are capped
+     * at `chunks x 49` by construction — `distribute` files a cell only if
+     * `cellToChunk` has it. So the cost of covering a feature against the
+     * batch's whole bounding box was invisible: delete the `clipToBbox` in
+     * `scoreChunks` and every existing assertion still passes, with the suite
+     * grinding as the only signal.
+     *
+     * That made the one claim `oversize-feature-guard.test.ts` exists for — the
+     * clip is what keeps a continental feature affordable — the one thing it
+     * could not pin. With this it is a direct assertion instead of a
+     * replicated-geometry argument.
+     *
+     * Cumulative over the index's life, like its neighbours here.
+     */
+    cellsCovered: 0,
   };
 
   constructor(options: AffordanceIndexOptions) {
@@ -882,7 +901,13 @@ export class AffordanceIndex {
       const clipped = clipToBbox(cached.geometry, selection);
       if (clipped === undefined) continue;
 
-      distribute(clipped, key, feature, cellToChunk, buckets);
+      this.stats.cellsCovered += distribute(
+        clipped,
+        key,
+        feature,
+        cellToChunk,
+        buckets,
+      );
     }
 
     for (const target of targets) {
@@ -1035,6 +1060,10 @@ export class AffordanceIndex {
  * whole rectangle, and only the cells belonging to a chunk being scored are
  * wanted. A feature lands in `kept` for a chunk only if it actually reached one
  * of that chunk's cells, which is what keeps `ScoredChunk.tiles` per-chunk.
+ *
+ * **Returns how many cells the cover produced**, i.e. the count BEFORE that
+ * drop. See `stats.cellsCovered`: the gap between this and what survives is the
+ * price of clipping to a bounding box, and it was previously unobservable.
  */
 function distribute(
   geometry: OsmGeometry,
@@ -1042,8 +1071,10 @@ function distribute(
   feature: OsmFeature,
   cellToChunk: ReadonlyMap<string, string>,
   buckets: ReadonlyMap<string, ChunkBucket>,
-): void {
+): number {
+  let covered = 0;
   for (const coverage of coverCells(geometry, AFFORDANCE_RES)) {
+    covered += 1;
     const owner = cellToChunk.get(coverage.cell);
     if (owner === undefined) continue;
     const bucket = buckets.get(owner);
@@ -1055,6 +1086,7 @@ function distribute(
     else cell.push(entry);
     bucket.kept.set(key, feature);
   }
+  return covered;
 }
 
 /** One chunk's collected coverage, before it is scored. */
@@ -1084,12 +1116,40 @@ function planBatch(targets: readonly string[]): {
 } {
   const cellToChunk = new Map<string, string>();
   const buckets = new Map<string, ChunkBucket>();
-  let bounds: Bbox | undefined;
 
   for (const target of targets) {
     for (const cell of childCells(target)) cellToChunk.set(cell, target);
     buckets.set(target, { byCell: new Map(), kept: new Map() });
-    const padded = padBbox(chunkBbox(target), CHUNK_MARGIN_DEG);
+  }
+
+  return { cellToChunk, buckets, selection: selectionBoxFor(targets) };
+}
+
+/**
+ * The box a batch of chunks is clipped and selected against.
+ *
+ * **EXPORTED SO A TEST CAN ASK THE REAL QUESTION** (r514 review).
+ * `oversize-feature-guard.test.ts` asserts that this box stays ~1.8x the area
+ * of the chunks inside it — the claim that the union-padding is amortised, and
+ * the reason a feature larger than the batch stays affordable. It had a private
+ * COPY of this loop and of {@link CHUNK_MARGIN_DEG}, so the one production knob
+ * the assertion exists to guard was the one it could not see: raising the margin
+ * would grow the real box while the test kept measuring 0.0005 and passing.
+ *
+ * **The margin itself stays module-private.** Exporting it was the cheaper half
+ * of the same fix and is redundant once this function exists — the test needs
+ * the box, not the constant — and `check:deadcode` refuses the unused export,
+ * which is the right answer.
+ *
+ * The union is a BOUNDING BOX, not a union of shapes, which is why the cost of
+ * a batch grows with its SPREAD rather than with its chunk count. That is
+ * harmless for the compact disc `update` passes and is an open question for the
+ * scattered set `ensureScored` can receive — see the test's header.
+ */
+export function selectionBoxFor(chunks: readonly string[]): Bbox {
+  let bounds: Bbox | undefined;
+  for (const chunk of chunks) {
+    const padded = padBbox(chunkBbox(chunk), CHUNK_MARGIN_DEG);
     bounds =
       bounds === undefined
         ? padded
@@ -1102,9 +1162,9 @@ function planBatch(targets: readonly string[]): {
   }
 
   if (bounds === undefined) {
-    throw new Error("planBatch needs at least one chunk");
+    throw new Error("selectionBoxFor needs at least one chunk");
   }
-  return { cellToChunk, buckets, selection: bounds };
+  return bounds;
 }
 
 /**

@@ -134,10 +134,21 @@ Returns `{state:"scored", score}`, `{state:"empty"}` or `{state:"unknown"}`.
   - **No oversize guard, unlike `buildFeatureIndex`.** What keeps a
     continental-extent feature finite here is the clip to the batch's selection
     box, not a budget. Measured on the `beach` fixture (the entire North Sea as
-    one relation): a radius-4 batch's box is ~1.8× the chunks' own area, the
-    cover yields ~5 400 res-13 cells and `update` takes ~93 ms. The bound is a
-    consequence of the scored disc's size and nothing states it — see
+    one relation): a radius-4 batch's box is **1.812×** the chunks' own area and
+    holds 5 417 res-13 cells, the clipped cover produces **4 409** of which
+    2 177 are kept, and `update` takes ~93 ms. The bound is a consequence of the
+    scored disc's size and nothing states it — see
     `oversize-feature-guard.test.ts`.
+  - **`selectionBoxFor` is exported for that test** (r514 review). It had a
+    private copy of the union loop and of `CHUNK_MARGIN_DEG`, so the one
+    production knob its ratio assertion guards was invisible to it — raising the
+    margin would grow the real box while the test kept measuring the old
+    constant and passing.
+  - **`stats.cellsCovered` counts the INPUT side of the per-chunk filter.**
+    Everything else here counts kept cells, which are capped at `chunks × 49` by
+    construction, so the cost of covering against the whole box was
+    unobservable: deleting the clip left every assertion passing and the suite
+    grinding as the only signal.
 - **The whole batch of not-yet-held chunks is scored in ONE pass over the
   features** (`scoreChunks`), not one pass per chunk.
   - Measured 2026-07-29 (perf loop): **84 % of `update`'s time was
