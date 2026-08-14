@@ -368,3 +368,29 @@ describe("the geoid await cannot outlive its own AR session", () => {
     expect(walkAt).toBeGreaterThan(writeAt);
   });
 });
+
+describe("a failed geoid import cannot leave a live session with no walk", () => {
+  it("catches the import, reports it, and ends the session", () => {
+    // Why this matters (r517 review). `geoid()` is a dynamic import of a
+    // ~176 KB chunk over mobile data, on the one entry path the code itself
+    // calls "a cold cache". An unhandled rejection skips `startWalking`
+    // entirely — while `arSession = mode` and the "Exit AR" repaint have
+    // already run — so there is no GPS registration, `recordGpsEvent` never
+    // fires, and the alignment never leaves identity. That is the ORIGINAL bug
+    // this change set fixed, reintroduced through a network failure.
+    //
+    // Refused rather than degraded: without the geoid the terrain datum cannot
+    // be computed, and continuing would draw the city ~47 m out vertically.
+    const entry = CODE.match(
+      /if \(mode\.started && zero !== null\) \{[\s\S]*?\n {6}\}/,
+    )?.[0];
+    expect(entry).toBeDefined();
+    expect(entry).toMatch(/try \{[\s\S]*?await geoid\(\)[\s\S]*?\} catch/);
+    // And the failure path must both TELL the user and END the session —
+    // either alone is the silent-failure shape this guards against.
+    const failure = entry?.slice(entry.indexOf("} catch")) ?? "";
+    expect(failure).toContain("arToast.show(");
+    expect(failure).toContain("dispose()");
+    expect(failure).toContain("return;");
+  });
+});

@@ -1332,7 +1332,32 @@ async function main(): Promise<void> {
         // session — is invisible; awaiting it inside the terrain request let
         // the mesh build overtake it and stand on the desktop field. See
         // `arUndulationM`.
-        const undulation = (await geoid()).undulationMetres(anchors.origin);
+        // A REJECTED IMPORT MUST NOT LEAVE A LIVE SESSION WITH NO WALK
+        // (r517 review). `geoid()` is `await import(...)` of a ~176 KB chunk
+        // over whatever mobile data the phone has — the one runtime this mode
+        // runs on, on the one entry the comment above calls "a cold cache". An
+        // unhandled rejection here skips `startWalking` entirely while
+        // `arSession = mode` and the "Exit AR" repaint have already happened:
+        // no GPS registration, so `recordGpsEvent` never fires, so the
+        // alignment never leaves identity. That is the ORIGINAL bug this whole
+        // change set fixed, reintroduced through a network failure.
+        //
+        // REPORTED AND REFUSED rather than degraded: without the geoid the
+        // terrain datum cannot be computed, and continuing would draw the city
+        // ~47 m out vertically — a confidently wrong placement, which is the
+        // one outcome this demo consistently refuses (see the alignment gate
+        // and the DEM-outage policy). Ending the session is honest and the
+        // user can simply re-enter.
+        let undulation: number;
+        try {
+          undulation = (await geoid()).undulationMetres(anchors.origin);
+        } catch {
+          arToast.show(
+            "Could not load the elevation reference. Leaving AR — please try again.",
+          );
+          arSession?.dispose();
+          return;
+        }
         // THE SESSION CAN END INSIDE THAT AWAIT, and before this guard it did
         // not have to be a rare race (r515 review). The geoid is a ~176 KB
         // dynamic import, this is the first AR entry on a cold cache, and
