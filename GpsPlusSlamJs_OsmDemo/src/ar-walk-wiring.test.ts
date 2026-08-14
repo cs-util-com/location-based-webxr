@@ -348,9 +348,23 @@ describe("the geoid await cannot outlive its own AR session", () => {
     expect(entry).toBeDefined();
     const awaitAt = entry?.indexOf("await geoid()") ?? -1;
     const guardAt = entry?.indexOf("if (arSession !== mode) return;") ?? -1;
+    // THE DATUM WRITE IS IN THE CHAIN, and leaving it out was the hole this
+    // guard most needed to close (r515 review). Assigning into a local first is
+    // load-bearing: writing `arUndulationM` BEFORE the guard leaves the AR
+    // datum applied to the desktop view for the rest of the page's life on the
+    // stale path. With only await → guard → walk asserted, moving the
+    // assignment back above the guard kept all three passing while fully
+    // restoring the leak.
+    //
+    // Retargeting the previous assertion off `arUndulationM = (await geoid())`
+    // is what opened it: that string was the only thing tying the datum write
+    // to this path at all, and dropping it dropped the placement and the
+    // provenance together.
+    const writeAt = entry?.indexOf("arUndulationM = undulation") ?? -1;
     const walkAt = entry?.indexOf("startWalking(") ?? -1;
     expect(awaitAt).toBeGreaterThan(-1);
     expect(guardAt).toBeGreaterThan(awaitAt);
-    expect(walkAt).toBeGreaterThan(guardAt);
+    expect(writeAt).toBeGreaterThan(guardAt);
+    expect(walkAt).toBeGreaterThan(writeAt);
   });
 });
