@@ -28,7 +28,7 @@
     "typecheck:tests": "node ../scripts/test-timing/timed-stage.mjs typecheck:tests"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.15.0"
   },
   "dependencies": {
     "gps-plus-slam-app-framework": "workspace:*",

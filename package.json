@@ -31,7 +31,7 @@
         "test:changed": "node scripts/test-changed/test-changed.mjs"
     },
     "engines": {
-        "node": ">=22.14.0"
+        "node": ">=22.15.0"
     },
     "license": "Apache-2.0",
     "devDependencies": {

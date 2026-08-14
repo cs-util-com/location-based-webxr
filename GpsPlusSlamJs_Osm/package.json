@@ -47,7 +47,7 @@
     "capture:sites": "node --experimental-strip-types scripts/capture-fixtures.mjs --sites"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.15.0"
   },
   "peerDependencies": {
     "h3-js": ">=4.2.1"

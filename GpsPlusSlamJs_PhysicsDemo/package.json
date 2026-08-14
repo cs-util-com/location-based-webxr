@@ -28,7 +28,7 @@
     "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.15.0"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.12.0",
