@@ -98,9 +98,12 @@ const METRES_PER_DEGREE = 111_320;
  * the other. Taking the res-11 area from `getHexagonAreaAvg` makes the ratio
  * independent of the constant whose misuse this file exists to retract.
  *
- * The two agree to 0.07 % (2 149.6 m² against 43.9 × 49 = 2 151.1), which is
- * itself worth having: it cross-checks `AFFORDANCE_CELL_AREA_M2` against H3's
- * own table every run.
+ * The two agree to 0.07 % today (2 149.6 m² against 43.9 × 49 = 2 151.1), but
+ * **this is not a cross-check of the constant and an earlier version of this
+ * comment overstated it as one.** The two windows below jointly bound the cell
+ * area only to `(37.2, 49.8)` m² — ±13 % — so the retracted 0.895 fails loudly
+ * while a merely wrong value passes. The real gate on that constant is
+ * `resolutions.test.ts`, which asserts it against `getHexagonAreaAvg` directly.
  */
 const CHUNK_AREA_M2 = getHexagonAreaAvg(SCORE_CHUNK_RES, UNITS.m2);
 
