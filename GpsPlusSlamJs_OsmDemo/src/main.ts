@@ -71,6 +71,24 @@ import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
 import { summariseRegion } from "./region-summary.js";
 import { LocateControl } from "./locate-control.js";
+import { createGpsRegistration, toGpsPosition } from "./gps-registration.js";
+// THE FRAMEWORK CALLS THE REGISTRATION LOOP NEEDS. Narrow subpaths, not the
+// barrel — `osm-store.ts` and `ar-mode.ts` both carry the note about the root
+// export pulling in Leaflet at import time.
+import { getCurrentArPose } from "gps-plus-slam-app-framework/ar";
+import {
+  createGpsPositionHandler,
+  endSession,
+  startSession,
+  updateDeviceOrientation,
+} from "gps-plus-slam-app-framework/state";
+import {
+  requestDeviceOrientationPermission,
+  startAbsoluteOrientationWatch,
+  startOrientationWatch,
+  stopAbsoluteOrientationWatch,
+  stopOrientationWatch,
+} from "gps-plus-slam-app-framework/sensors";
 import { attachSheetDrag } from "./sheet-drag.js";
 import { EMPTY_CELL_MESH } from "./cell-mesh.js";
 import { createCellMeshCycle } from "./cell-mesh-cycle.js";
@@ -497,6 +515,34 @@ async function main(): Promise<void> {
    */
   let lastFixPosition: { lat: number; lng: number } | undefined;
 
+  /**
+   * The loop the 2026-08-14 report found missing: fixes → store → alignment.
+   *
+   * DECLARED BEFORE `locateControl` because that control's `onLocated` closes
+   * over it and a `const` in the temporal dead zone would throw on the first
+   * fix. Inert until `startWalking` calls `start()`.
+   *
+   * The seams are the real framework functions; they are injected rather than
+   * imported inside the module because `sensors` and `state` touch browser
+   * sensors and module-level caches at import time, and the demo's unit suite
+   * runs in Node.
+   */
+  const gpsRegistration = createGpsRegistration({
+    store,
+    getArPose: getCurrentArPose,
+    seams: {
+      createGpsPositionHandler,
+      startOrientationWatch,
+      stopOrientationWatch,
+      updateDeviceOrientation,
+      startAbsoluteOrientationWatch,
+      stopAbsoluteOrientationWatch,
+      requestDeviceOrientationPermission,
+      startSession,
+      endSession,
+    },
+  });
+
   const locateControl = new LocateControl({
     map: mapView.map,
     // A real fix moves the "user" through the same action a map click uses, so
@@ -508,6 +554,19 @@ async function main(): Promise<void> {
       // standing still is all rejected fixes.
       lastFixAccuracyM = position.accuracyM;
       lastFixPosition = { lat: position.lat, lng: position.lng };
+      // REGISTRATION IS NOT GATED, and that separation is the fix for the
+      // 2026-08-14 report ("no automatic updates of the user position … the
+      // store … automatic alignments … missing entirely").
+      //
+      // Every fix feeds the fusion; only REFETCHING waits for 100 m. The two
+      // were the same thing while this callback existed to move the map, and
+      // conflating them again would mean the alignment is re-solved once per
+      // 100 m of walking rather than once per fix — i.e. the city would lurch
+      // at each gate opening instead of tracking the user.
+      //
+      // A no-op outside AR: `onFix` does nothing until `start()`, so a desktop
+      // user clicking the locate button never enters the fusion.
+      gpsRegistration.onFix(toGpsPosition(position));
       // Recentre on the LOCATE path only. The shared `view.position` subscriber
       // deliberately does not, because a map click already happens where the
       // user is looking and recentring there would yank the map from under
@@ -1106,6 +1165,13 @@ async function main(): Promise<void> {
       warn: (message) => arToast.show(message),
     });
     locateControl.startWatch();
+    // AND THE FIXES NOW REACH THE FUSION, not only the fetcher (2026-08-14).
+    // Started here rather than in `ar-mode.ts` on purpose: `startWalking` /
+    // `stopWalking` already own the watch lifecycle and are already proven to
+    // run on the Android back gesture, so the registration cannot outlive the
+    // watch that feeds it. Fire-and-forget because the only awaited step is the
+    // orientation permission, which must not delay the first fetch pass below.
+    void gpsRegistration.start();
     // HIDDEN BUT RESIDENT (§3, M5). The desktop view stops drawing and hides,
     // but keeps its GL context, its compiled programs and its uploaded
     // geometry — so leaving AR is instant rather than a 2.8 km mesh rebuild.
@@ -1126,6 +1192,12 @@ async function main(): Promise<void> {
   /** Stop following. Idempotent, and safe when AR never started. */
   const stopWalking = (): void => {
     locateControl.stopWatch();
+    // PAIRED WITH THE START, in the same function, for the same reason the
+    // suspend/resume pair is: the back gesture must not be able to restore one
+    // without the other. Ending the session is what stops later desktop locate
+    // fixes from dispatching GPS events against a null AR pose — `AnchorStarter`
+    // omits this and gets away with it only because it never leaves AR.
+    gpsRegistration.stop();
     // Paired with the `suspend` in `startWalking`, and in the same function, so
     // the back gesture cannot restore one without the other — leaving the
     // desktop pane hidden after a session is a blank map with no error.

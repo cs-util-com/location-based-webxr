@@ -9,6 +9,22 @@
   - `startWatch()` / `stopWatch()` — follow the user continuously instead of
     taking one fix (AR milestone 3). Both idempotent.
   - `dispose()` — cancels the pending label reset.
+- `LocatedFix` — the shape handed to `onLocated`: `{ lat, lng, accuracyM?,
+altitude, altitudeAccuracy, heading, speed, timestamp }`.
+  - **WIDENED 2026-08-14 from `{ lat, lng, accuracyM? }`.** The vertical and
+    temporal fields were being discarded at this boundary even though Leaflet
+    copies every numeric `coords` property onto its event. That is why the
+    fusion's vertical solve could never work: `applyAltitudeOverride` fits
+    `ref[1] - odom[1]` weighted by `altitudeAccuracy`, so with neither field
+    `alignmentMatrix[13]` stays structurally zero and the AR HUD reports a
+    confident `0.00 m`. `gps-registration.ts` is the consumer that needs them.
+  - The four optional fields are normalised to `null`, not left `undefined`:
+    `@types/leaflet` declares them as plain `number`, but Leaflet only copies
+    what the browser provided, so they are absent on most indoor and all desktop
+    fixes. The framework's `GpsPosition` wants `null`, and `undefined` reaching
+    the weight maths would produce `NaN` rather than a skipped term.
+  - `timestamp` falls back to `Date.now()` for the same reason: a synthetic
+    `locationfound` may omit it, and a `NaN` timestamp poisons time weighting.
 - The button carries `data-state` (a `LocateState`) and class `locate-button`; both are the e2e's handles.
 
 ## Invariants & assumptions

@@ -43,6 +43,7 @@ import {
   type TrackingSubscribableStore,
 } from "gps-plus-slam-app-framework/ar";
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization";
+import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 
 import type { BuildingView } from "./building-view.js";
@@ -230,7 +231,21 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       // from GPS, which is the entire point of the mode.
       {},
       {
-        tracking: { store: deps.store },
+        tracking: {
+          store: deps.store,
+          // RE-BASE THE ODOMETRY WHEN ARCORE RESETS ITS ORIGIN (2026-08-14 AR
+          // review, F4). The framework calls this on a `lost → tracking`
+          // transition that reset the origin; with no callback the payload is
+          // dropped and every pre-restart odometry position stays in a frame
+          // that no longer exists, so the solve mixes two incompatible frames.
+          //
+          // It was harmless while no GPS events existed. It became load-bearing
+          // the moment `gps-registration.ts` started feeding the coordinator,
+          // and its failure mode is the worst kind: the city jumps once and
+          // never re-converges, which reads exactly like a broken fusion.
+          onRestarted: (payload) =>
+            deps.store.dispatch(odometryTrackingRestarted(payload)),
+        },
         onSessionEnd: () => {
           if (!bootCompleted) return;
           // NOT `endARSession()` — the session is already ending.

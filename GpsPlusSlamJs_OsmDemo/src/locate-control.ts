@@ -25,13 +25,41 @@ export interface LocateControlOptions {
    * so milestone 4 puts it on screen rather than leaving it to be guessed at.
    * Leaflet forwards it as `event.accuracy`; `undefined` when it is absent.
    */
-  readonly onLocated: (position: {
-    lat: number;
-    lng: number;
-    accuracyM?: number | undefined;
-  }) => void;
+  readonly onLocated: (position: LocatedFix) => void;
   /** Called with a human-readable failure, for the app's error channel. */
   readonly onError: (message: string) => void;
+}
+
+/**
+ * A fix, whole — every field the framework's `GpsPosition` carries.
+ *
+ * **WIDENED 2026-08-14.** This used to be `{ lat, lng, accuracyM? }`, which was
+ * enough for the map and the refetch gate and silently insufficient for the
+ * fusion: `gps-registration.ts` turns these into `recordGpsEvent`, and without
+ * `altitude`/`altitudeAccuracy` the separate 1-D vertical solve has nothing to
+ * fit. The horizontal alignment would have looked correct while every object
+ * sat at the wrong height, reported as a confident `0.00 m`.
+ *
+ * `lng` rather than `lon` because that is this demo's convention throughout;
+ * `gps-registration.ts` does the one-line rename at the framework boundary,
+ * where `ar-origin.ts` already documents the same mismatch.
+ */
+export interface LocatedFix {
+  readonly lat: number;
+  readonly lng: number;
+  /** Horizontal accuracy in metres, or `undefined` when the browser omits it. */
+  readonly accuracyM?: number | undefined;
+  /** Metres above the WGS-84 ellipsoid on Android — see `ar-origin.ts`. */
+  readonly altitude: number | null;
+  readonly altitudeAccuracy: number | null;
+  readonly heading: number | null;
+  readonly speed: number | null;
+  readonly timestamp: number;
+}
+
+/** A finite number, or `null` — the shape `GpsPosition` wants for absent data. */
+function finiteOrNull(value: number | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 /** How long to wait for a fix before giving up, ms. */
@@ -115,6 +143,33 @@ export class LocateControl {
         lat: event.latlng.lat,
         lng: event.latlng.lng,
         accuracyM: Number.isFinite(event.accuracy) ? event.accuracy : undefined,
+        // THE WHOLE FIX, not just the horizontal part (2026-08-14 AR review).
+        // These were dropped here, and dropping them is why the vertical solve
+        // could never work: `applyAltitudeOverride` fits `ref[1] - odom[1]`
+        // weighted by `altitudeAccuracy`, so without either field
+        // `alignmentMatrix[13]` stays structurally zero and the AR HUD's
+        // `worldBaselineY` reads a confident `0.00 m`. The data was always
+        // here — Leaflet copies every numeric `coords` property onto the event
+        // — and was discarded at this boundary.
+        //
+        // `finiteOrNull` rather than a cast: the `@types/leaflet` shape
+        // declares these as plain `number`, but Leaflet only copies the
+        // properties the browser actually provided, so they are `undefined` on
+        // a fix with no altitude — which is most indoor fixes and every
+        // desktop one. The framework's `GpsPosition` wants `null` there, and
+        // `undefined` reaching the weight maths would produce `NaN` rather than
+        // a skipped term.
+        altitude: finiteOrNull(event.altitude),
+        altitudeAccuracy: finiteOrNull(event.altitudeAccuracy),
+        heading: finiteOrNull(event.heading),
+        speed: finiteOrNull(event.speed),
+        // `Date.now()` rather than a cast for the same reason: Leaflet sets
+        // `timestamp` from the browser's fix, but a synthetic `locationfound`
+        // (its own `setView` path, or a test) may omit it, and a `NaN`
+        // timestamp poisons the library's time weighting.
+        timestamp: Number.isFinite(event.timestamp)
+          ? event.timestamp
+          : Date.now(),
       });
     });
 

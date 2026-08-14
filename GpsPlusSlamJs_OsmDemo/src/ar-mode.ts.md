@@ -94,6 +94,19 @@ the two are one decision.
 - **`getCamera() === null` bails the session out**, in the same guard as the
   scene rather than treated as optional. Continuing would leave the framework's
   `0.01 / 200` in place, clipping a 2.8 km mesh at 200 m with no error anywhere.
+- **`tracking.onRestarted` re-bases the odometry, and became load-bearing on
+  2026-08-14.** The framework calls it on a `lost → tracking` transition that
+  reset ARCore's origin; with no callback the payload is dropped and every
+  pre-restart odometry position stays in a frame that no longer exists, so the
+  alignment solve mixes two incompatible frames. It was harmless while the demo
+  dispatched no GPS events at all; the moment `gps-registration.ts` started
+  feeding the coordinator it became the difference between a converging fit and
+  a city that jumps once and never recovers — a failure that reads exactly like
+  a broken fusion.
+  - Worse, it fails _wrongly_ rather than absently: the framework substitutes a
+    fabricated zero orientation when the device-orientation cache is empty, so
+    without the orientation watch the restart payload carries a confident wrong
+    rotation rather than a null one. Both are wired together for that reason.
 - **Narrow framework subpaths, never the barrel** — the root export pulls in
   Leaflet, which touches `window` at import time. `osm-store.ts` carries the
   same note.

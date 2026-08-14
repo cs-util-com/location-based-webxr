@@ -223,3 +223,62 @@ describe("the desktop renderer's AR lifecycle is wired into main.ts", () => {
     expect(stop).toContain("buildingView.resume()");
   });
 });
+
+describe("the GPS→store→alignment loop is wired into main.ts", () => {
+  // WHY THIS BLOCK EXISTS. The owner reported on 2026-08-14 that AR mode
+  // "doesn't really use the AR framework — GPS events … dispatched into the
+  // store … automatic alignments … missing entirely." It was: the demo had a
+  // real 1 Hz watch whose fixes were spent on fetching and never on
+  // registration. The behaviour now lives in `gps-registration.ts` and is
+  // tested there; these guards only close the "is it CONNECTED" gap, which is
+  // the gap that let the loop be absent for four milestones.
+
+  it("registers every fix, NOT only the ones the refetch gate admits", () => {
+    // THE SEPARATION IS THE FIX. Registration is per-fix; refetching waits for
+    // 100 m. Conflating them again would re-solve the alignment once per 100 m
+    // of walking instead of once per fix, so the city would lurch at each gate
+    // opening rather than track the user.
+    //
+    // Asserted by ORDER, the same way the starvation guard above is: the
+    // registration call must come BEFORE the `arWalk` short-circuit, or the
+    // `return` skips it for every fix that does not open the gate.
+    const registerAt = CODE.indexOf("gpsRegistration.onFix(");
+    const gateAt = CODE.indexOf("if (arWalk !== undefined)");
+    expect(registerAt).toBeGreaterThan(-1);
+    expect(gateAt).toBeGreaterThan(-1);
+    expect(registerAt).toBeLessThan(gateAt);
+  });
+
+  it("starts and stops the registration with the watch that feeds it", () => {
+    // Paired by LOCATION, like suspend/resume above: `startWalking` and
+    // `stopWalking` are the two functions every AR entry and exit goes
+    // through, including the Android back gesture. A registration that
+    // outlived the watch would keep `isRecording` true, and then every desktop
+    // locate fix afterwards would dispatch a GPS event against a null AR pose.
+    const start = CODE.match(/const startWalking[\s\S]*?\n {2}\};/)?.[0];
+    const stop = CODE.match(/const stopWalking[\s\S]*?\n {2}\};/)?.[0];
+    expect(start).toContain("gpsRegistration.start()");
+    expect(stop).toContain("gpsRegistration.stop()");
+  });
+
+  it("does NOT open a second GPS watch", () => {
+    // `locate-control.ts` rejects this by name: two sources for the same fact
+    // can disagree about which fix is current, and the alignment would then be
+    // solved against positions the scene was never fetched for. The obvious
+    // fix — copy `AnchorStarter` and call `startGpsWatch` on AR entry — is
+    // exactly the wrong one here, so the guard is on its ABSENCE.
+    expect(CODE).not.toContain("startGpsWatch");
+  });
+
+  it("re-bases the odometry when ARCore resets its origin", () => {
+    // Harmless while no GPS events existed; load-bearing now. Without the
+    // callback the framework drops the restart payload and the solve mixes two
+    // incompatible odometry frames — the city jumps once and never
+    // re-converges, which reads exactly like a broken fusion.
+    const AR_MODE = readFileSync(path.join(HERE, "ar-mode.ts"), "utf-8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    expect(AR_MODE).toContain("onRestarted");
+    expect(AR_MODE).toContain("odometryTrackingRestarted(");
+  });
+});
