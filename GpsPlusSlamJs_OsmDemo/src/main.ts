@@ -1332,7 +1332,25 @@ async function main(): Promise<void> {
         // session — is invisible; awaiting it inside the terrain request let
         // the mesh build overtake it and stand on the desktop field. See
         // `arUndulationM`.
-        arUndulationM = (await geoid()).undulationMetres(anchors.origin);
+        const undulation = (await geoid()).undulationMetres(anchors.origin);
+        // THE SESSION CAN END INSIDE THAT AWAIT, and before this guard it did
+        // not have to be a rare race (r515 review). The geoid is a ~176 KB
+        // dynamic import, this is the first AR entry on a cold cache, and
+        // `onSessionEnd` is armed strictly before `startArMode` resolves — so
+        // the Android back gesture, the headset coming off, or ARCore dropping
+        // the session all land in the gap.
+        //
+        // Resuming blind would run `startWalking` AFTER its own teardown:
+        // `buildingView.suspend()` with nothing to resume it — the "blank map
+        // with no error" `stopWalking` names — plus a locate watch and a GPS
+        // registration started after their stop, an `arWalk` nothing will
+        // dispose, and the AR datum left applied to the desktop view.
+        //
+        // `arSession !== mode` is the honest test rather than a new flag: the
+        // teardown clears it, so this asks "is the session I started still the
+        // live one?" and cannot drift from what `onEnded` actually does.
+        if (arSession !== mode) return;
+        arUndulationM = undulation;
         startWalking({ lat: zero.lat, lng: zero.lon });
       } else {
         // The session did not start, so nothing changed the datum — but the

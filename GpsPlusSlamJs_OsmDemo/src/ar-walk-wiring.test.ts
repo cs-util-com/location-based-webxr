@@ -302,8 +302,11 @@ describe("the AR terrain datum is wired into main.ts", () => {
       /if \(mode\.started && zero !== null\) \{[\s\S]*?\n {6}\}/,
     )?.[0];
     expect(entry).toBeDefined();
-    expect(entry).toContain("arUndulationM = (await geoid())");
-    const resolveAt = entry?.indexOf("arUndulationM = (await geoid())") ?? -1;
+    // Matched on the AWAIT rather than on the assignment: the fix for the
+    // session-end race split those two lines apart, and a guard pinned to one
+    // exact spelling breaks on a change that keeps the property intact.
+    expect(entry).toContain("await geoid()");
+    const resolveAt = entry?.indexOf("await geoid()") ?? -1;
     const walkAt = entry?.indexOf("startWalking(") ?? -1;
     expect(resolveAt).toBeGreaterThan(-1);
     expect(walkAt).toBeGreaterThan(resolveAt);
@@ -324,5 +327,30 @@ describe("the AR terrain datum is wired into main.ts", () => {
     // build on the gate's full timeout waiting for a field that never matches.
     expect(CODE).toContain("geoidUndulationM: () => arUndulationM");
     expect(CODE).toContain("geoidUndulationM: arUndulationM");
+  });
+});
+
+describe("the geoid await cannot outlive its own AR session", () => {
+  it("re-checks the session AFTER the await, before starting the walk", () => {
+    // Why this guard matters (r515 review). Adding `await geoid()` to the AR
+    // entry turned a synchronous `.then` body into an interleaving point, and
+    // `onSessionEnd` is armed strictly BEFORE `startArMode` resolves — so the
+    // back gesture can run the whole teardown while this is parked on a
+    // ~176 KB dynamic import. Resuming blind starts a locate watch, a GPS
+    // registration and an `arWalk` after their own stop, and leaves the
+    // desktop 3D pane suspended with nothing to resume it.
+    //
+    // Asserted by ORDER, like the registration guard above: the check must sit
+    // between the await and `startWalking`, or it proves nothing.
+    const entry = CODE.match(
+      /if \(mode\.started && zero !== null\) \{[\s\S]*?\n {6}\}/,
+    )?.[0];
+    expect(entry).toBeDefined();
+    const awaitAt = entry?.indexOf("await geoid()") ?? -1;
+    const guardAt = entry?.indexOf("if (arSession !== mode) return;") ?? -1;
+    const walkAt = entry?.indexOf("startWalking(") ?? -1;
+    expect(awaitAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeGreaterThan(awaitAt);
+    expect(walkAt).toBeGreaterThan(guardAt);
   });
 });
