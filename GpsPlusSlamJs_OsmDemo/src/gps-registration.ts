@@ -154,6 +154,25 @@ export function createGpsRegistration<TStore, TPose>(
 
   let handler: ((position: GpsPosition) => void) | undefined;
   let orientationStarted = false;
+  /**
+   * Bumped by every `start()`, re-checked after every `await`.
+   *
+   * **WITHOUT THIS, A STOP DURING A PENDING START LEAKS BOTH SENSOR WATCHES
+   * FOR THE REST OF THE PAGE'S LIFE** (r515 review). `main.ts` calls
+   * `void start()` — fire-and-forget — while `stop()` is synchronous, so
+   * `stopWalking()` can run while this function is parked on the orientation
+   * permission. The resumed tail then attached a `deviceorientation` listener
+   * and started the sensor AFTER the teardown that was supposed to remove
+   * them, and `stop()` had already seen `orientationStarted === false` and
+   * skipped its own cleanup. The framework's own generation guard does not
+   * cover it either: that invalidates a start already in flight when the stop
+   * happened, not one that begins afterwards.
+   *
+   * The `handler === undefined` half of the check is not redundant — it catches
+   * a stop that happened with no intervening start, where the counter is
+   * unchanged.
+   */
+  let startGeneration = 0;
 
   return {
     async start(): Promise<void> {
@@ -162,6 +181,7 @@ export function createGpsRegistration<TStore, TPose>(
       // watch for exactly this. Two starts would mean two sessions and two
       // orientation listeners writing one cache.
       if (handler !== undefined) return;
+      const generation = ++startGeneration;
 
       // RECORDING FIRST, and nothing works without it.
       // `createGpsPositionHandler` returns early unless
@@ -193,6 +213,11 @@ export function createGpsRegistration<TStore, TPose>(
       const permitted = await Promise.resolve(
         seams.requestDeviceOrientationPermission(),
       ).catch(() => false);
+      // STOPPED WHILE WE WERE AWAITING? Then this start is stale and must
+      // attach nothing — `stop()` has already run its teardown and cannot see
+      // a watch started after it. See `startGeneration`.
+      if (generation !== startGeneration || handler === undefined) return;
+
       if (permitted) {
         seams.startOrientationWatch(seams.updateDeviceOrientation);
         orientationStarted = true;

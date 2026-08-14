@@ -313,6 +313,40 @@ describe("createGpsRegistration", () => {
     expect(s.startOrientationWatch).not.toHaveBeenCalled();
   });
 
+  it("attaches nothing when stopped WHILE starting", async () => {
+    // Why this test matters: `main.ts` calls `void start()` and `stop()` is
+    // synchronous, so a user who leaves AR before the orientation permission
+    // resolves lands exactly here — and the Android back gesture makes that a
+    // single tap. Every other test in this file awaits `start()` first, which
+    // is precisely why none of them covered it (r515 review).
+    //
+    // The leak was silent and permanent: the resumed tail attached a
+    // `deviceorientation` listener and started the sensor AFTER the teardown,
+    // and `stop()` had already skipped its own cleanup because
+    // `orientationStarted` was still false. Both then kept writing the
+    // module-level caches while the user was back on the map.
+    let releasePermission: (granted: boolean) => void = () => {};
+    const pending = new Promise<boolean>((resolve) => {
+      releasePermission = resolve;
+    });
+    const s = seams({
+      requestDeviceOrientationPermission: vi.fn(() => pending),
+    });
+    const registration = createGpsRegistration({
+      store: fakeStore(),
+      getArPose: () => null,
+      seams: s,
+    });
+
+    const starting = registration.start();
+    registration.stop();
+    releasePermission(true);
+    await starting;
+
+    expect(s.startOrientationWatch).not.toHaveBeenCalled();
+    expect(s.startAbsoluteOrientationWatch).not.toHaveBeenCalled();
+  });
+
   it("is idempotent on double start and double stop", async () => {
     // Why this test matters: `startWalking`/`stopWalking` are reachable twice
     // in a row through the back gesture, and the existing `locateControl`
