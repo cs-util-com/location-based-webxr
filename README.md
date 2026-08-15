@@ -193,14 +193,17 @@ resolves under its app's base so a misrouted asset fails the deploy instead of
 ## Run Tests
 
 ```bash
-# All tests — the commit gate: repo-config + every package's full gate
-# (framework, recorder incl. E2E, starter, example, qr-demo, landing,
-# physics, wayfinding)
-pnpm test
-
-# Iteration only: gates of changed packages + their dependents (+ repo-config).
-# Never a substitute for the full `pnpm test` before a commit.
+# THE COMMIT GATE (since 2026-08-15): changed packages' gates in full,
+# their dependents without the browser stages, + repo-config. An Osm
+# change costs ~132 s this way against ~13.6 min for the full closure.
+# Canonical rule: root CLAUDE.md of the sibling gps-plus-slam repo,
+# section "THE COMMIT GATE".
 pnpm run test:changed
+
+# The whole cascade — every package's full gate incl. E2E, ~23 min.
+# Runs ONCE per session before the PR, and on every PR in CI. It is not
+# the per-commit gate any more.
+pnpm test
 
 # Framework tests only
 pnpm run test:framework
