@@ -392,6 +392,40 @@ describe("what one refresh actually transfers", () => {
     // consumers to read the columns directly, at which point the main thread
     // pays nothing and the worker pays 17.3 ms instead of its half of 27.1.
     //
+    // Runs EVERYWHERE, because it is the part that does not depend on the
+    // machine: the packed form must still describe every cell it was given.
+    // Without it the wall-clock assertions below are the whole test, and on CI
+    // — where they are skipped — it would assert nothing at all.
+    expect(unpackCells(packed)).toHaveLength(atCap.length);
+
+    // WALL CLOCK IS ASSERTED LOCALLY ONLY, and this is the second hardening of
+    // this test rather than the first. It began as one timed run compared with
+    // no margin, lost a coin toss at 1 %, and was rebuilt as the best-of-five
+    // plus the 0.9 ratio documented above. That still failed THREE of the last
+    // twenty CI runs (2026-08-14/15), every time here, every time green on a
+    // re-run — at ~25 min of CI per re-run.
+    //
+    // The margin is not the problem, and widening it again would be the third
+    // guess. The measured CI ratios were 0.98, 1.08 and 1.14 against the 0.64
+    // this file records locally: on that hardware `packCells` is simply NOT
+    // faster than a native `structuredClone`, so the claim being asserted is
+    // false there. A threshold cannot fix a claim that does not hold.
+    //
+    // Keeping it local matches how this repo already treats machine-speed
+    // claims: `scripts/test-timing/budget.mjs` disables the e2e wall-clock
+    // budget under `env.CI` for the same reason, and this file says at the top
+    // of the block above that "absolute timings on a shared CI runner are
+    // exactly the flaky test this repo does not want". The relative form turned
+    // out to be no safer.
+    //
+    // What is lost: CI no longer catches a pack-performance regression. That
+    // regression is caught on the developer machine where the 0.64 was measured
+    // and where the decision this guards was made — and a red gate there is
+    // ~25 min cheaper to act on than one found after a push.
+    if (process.env.CI) {
+      return;
+    }
+
     // A RATIO WITH ROOM, not a bare `<`. The measurement establishes pack at
     // ~0.64 of clone; asserting only "faster" pins a difference of zero, so any
     // noise that survives the best-of-five above decides the outcome. 0.9 keeps
