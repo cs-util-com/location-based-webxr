@@ -409,12 +409,27 @@ export const PROJECTS = [
     //    `gps-plus-slam-osm`, so `tsc` cannot see one of its types until dist
     //    exists — and until this stage was added, nothing in the workspace
     //    built it at all, which is what broke the /osm/ deployment.
-    // 2. It has no `build:framework` stage, because `pnpm run dev` — the
+    // 2. It needs `build:framework` FIRST TOO, since 2026-08-15. It used to
+    //    have no such stage at all — see the retracted paragraph below — and
+    //    that made the gate's correctness depend on a side effect of the e2e
+    //    stage. `tsc` and `vitest` here resolve `gps-plus-slam-app-framework`
+    //    through the package `exports` -> dist (this package declares NO
+    //    tsconfig `paths`; only RecorderApp does), so the same argument that
+    //    puts `build:osm` first puts this first.
+    //
+    //    RETRACTED, and kept because the reasoning reads plausible: "It has no
+    //    `build:framework` stage, because `pnpm run dev` — the
     //    Playwright webServer command — already runs `build:deps`, whose cost
     //    lands inside the `test:e2e` row rather than a row of its own. Since
     //    2026-08-09 that build goes through the same staleness check as the
     //    stage above, so the webServer no longer rebuilds what the gate just
-    //    built — it was costing ~3.5 s per e2e package, in six of them.
+    //    built — it was costing ~3.5 s per e2e package, in six of them."
+    //
+    //    It is true that the webServer builds it. What it misses is that the
+    //    build was then reachable ONLY through a stage that DEC-G2 removes,
+    //    and that the other five consumers keep their own build — so a
+    //    dependent run would have type-checked OsmDemo against whichever
+    //    framework dist a sibling package happened to leave on disk.
     //
     // Otherwise it now runs the SAME stage set as every other demo app. It
     // previously ran only typecheck/test:unit/test:e2e — no format, lint,
@@ -426,6 +441,9 @@ export const PROJECTS = [
     chainNames: ['test:core', 'check:all'],
     stages: [
       BUILD_OSM_STAGE,
+      // FIRST, not in demoAppStages' post-typecheck slot — see reason 2 above.
+      // The filter below drops that late copy so this one is the only build.
+      BUILD_FRAMEWORK_STAGE,
       // The worker entry is a second cycle root: `main.ts` reaches it only
       // through `new Worker(new URL(...))`, so `demo-worker.ts` and the three
       // modules it alone imports were outside the cycle gate until PR #241.
@@ -508,4 +526,79 @@ export function getStage(project, name) {
  */
 export function stageOrder(project) {
   return project.stages.map((stage) => stage.name);
+}
+
+/**
+ * Does this stage boot a browser?
+ *
+ * Matched on the COMMAND, deliberately, not on `counts: 'playwright'`. That
+ * field names the JSON reporter to inject — it happens to select the same rows
+ * today, but a stage could run playwright without being counted by it, and the
+ * thing being decided here is "does this cost a headless Chromium", not "how is
+ * it reported". Nor on the stage NAME: `test:e2e` is a convention, and a
+ * convention is what a future stage breaks.
+ *
+ * @param {{ command: string }} stage
+ * @returns {boolean}
+ */
+export function isBrowserStage(stage) {
+  // `playwright` as a WHOLE TOKEN — the command invokes the CLI. `\bplaywright\b`
+  // was the first attempt and it is wrong: `\b` matches at the hyphen, so the
+  // shared app `format` command, which lists the `"playwright-tests"` DIRECTORY
+  // among prettier's targets, was classified as a browser stage and silently
+  // dropped from dependent runs. Caught by running the mode for real, not by the
+  // unit test — which had compared the implementation against its own regex.
+  return /(?:^|\s)playwright(?:\s|$)/.test(stage.command);
+}
+
+/**
+ * The stages a gate run should execute.
+ *
+ * `skipBrowser` is DEC-G2's dependent mode: a package that is only in the run
+ * because something it depends on changed pays for its static checks, its
+ * builds and its unit tests, but not for a browser.
+ *
+ * **Builds are never excluded, and that is the whole point of routing this
+ * through the real stage list.** Two earlier designs for this mode were
+ * rejected because each dropped a build that a `typecheck` downstream of it
+ * depends on — `test:core` omits `build:osm`, and "the stage list minus
+ * playwright" omitted `build:framework` back when OsmDemo had no such stage and
+ * got its framework built as a side effect of the e2e webServer. Both produced
+ * the same failure: a green local gate type-checking against a stale dist.
+ * `projects.test.mjs` pins that builds survive, for every project.
+ *
+ * @param {ProjectConfig} project
+ * @param {{ skipBrowser?: boolean }} [options]
+ * @returns {readonly StageConfig[]}
+ */
+export function gateStages(project, { skipBrowser = false } = {}) {
+  return skipBrowser
+    ? project.stages.filter((stage) => !isBrowserStage(stage))
+    : project.stages;
+}
+
+/** Env var that puts a gate run in DEC-G2's dependent mode. */
+export const SKIP_BROWSER_ENV = 'GATE_SKIP_BROWSER_STAGES';
+
+/**
+ * Resolve the gate mode from the environment.
+ *
+ * **An env var on the existing `test` script, NOT a new per-package script.**
+ * The rejected alternative was `pnpm --filter "...<x>" run <mode-script>`, and
+ * it fails silently: pnpm errors only when NO selected package has the script,
+ * so a package missing it is skipped with a green exit code. Every package
+ * already has `test`, so this cannot select nothing by accident.
+ *
+ * @param {Record<string, string | undefined>} [env] - process.env or a stub.
+ *   Omitted means "no mode": a caller that forgets it runs the FULL gate, which
+ *   is the safe direction.
+ * @returns {{ skipBrowser: boolean }}
+ */
+export function resolveGateMode(env = {}) {
+  const raw = env[SKIP_BROWSER_ENV];
+  // Same truthiness rule as `budgetBreach`'s CI check: any non-empty value
+  // means on. `'0'` deliberately counts as ON — an env var set to a string is
+  // set, and inventing a second falsy spelling is how a mode gets enabled by
+  // accident and disabled by a typo.
+  return { skipBrowser: Boolean(raw) };
 }

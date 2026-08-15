@@ -18,6 +18,10 @@ import {
   getStage,
   resolveProject,
   stageOrder,
+  gateStages,
+  isBrowserStage,
+  resolveGateMode,
+  SKIP_BROWSER_ENV,
 } from './projects.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -186,5 +190,127 @@ describe('getStage', () => {
     const first = PROJECTS[0];
     expect(getStage(first, first.stages[0].name)).toBe(first.stages[0]);
     expect(getStage(first, 'no-such-stage')).toBeUndefined();
+  });
+});
+
+// Why this test matters: DEC-G2 makes a dependent package run its gate WITHOUT
+// the browser stages, and two earlier designs for that were rejected because
+// each silently dropped a BUILD the package's typecheck depends on. Both
+// failures had the same shape — the build was reachable only as a side effect
+// of the stage being removed — so the invariant worth pinning is not "e2e is
+// excluded" but "excluding e2e never removes a build".
+describe('browser-stage exclusion (DEC-G2)', () => {
+  it('classifies a stage by whether it INVOKES playwright, not by mentioning it', () => {
+    // Stated as concrete commands rather than re-deriving the regex. The first
+    // version of this test asserted `isBrowserStage(s) === /\bplaywright\b/`,
+    // which is the implementation compared against itself: it passed while the
+    // shared `format` command — prettier over `"src" "config" "playwright-tests"
+    // …` — was being classified as a browser stage and dropped from every
+    // dependent run. A real run caught it; this test could not.
+    expect(
+      isBrowserStage({
+        command: 'playwright test --config playwright-tests/playwright.config.js',
+      })
+    ).toBe(true);
+    expect(
+      isBrowserStage({
+        command:
+          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" index.html README.md package.json',
+      })
+    ).toBe(false);
+    expect(isBrowserStage({ command: 'vitest run' })).toBe(false);
+    expect(isBrowserStage({ command: 'tsc -p tsconfig.json --noEmit' })).toBe(
+      false
+    );
+  });
+
+  it('excludes e2e and NOTHING else across the real project configs', () => {
+    // The whole-repo counterpart to the unit case above: whatever the regex
+    // does, the only stages it may remove are the e2e ones.
+    for (const project of PROJECTS) {
+      const excluded = project.stages
+        .filter(isBrowserStage)
+        .map((stage) => stage.name);
+      expect(
+        excluded,
+        `${project.name} excluded unexpected stages`
+      ).toEqual(
+        project.stages
+          .map((stage) => stage.name)
+          .filter((name) => name === 'test:e2e')
+      );
+    }
+    // Non-empty, or the loop above passes vacuously.
+    expect(
+      PROJECTS.flatMap((p) => p.stages).filter(isBrowserStage).length
+    ).toBeGreaterThan(0);
+  });
+
+  it.each(PROJECTS.map((p) => [p.name, p]))(
+    '%s: excluding browser stages keeps every build stage',
+    (_name, project) => {
+      const kept = gateStages(project, { skipBrowser: true }).map((s) => s.name);
+      const builds = project.stages
+        .map((s) => s.name)
+        .filter((name) => name.startsWith('build:'));
+      for (const build of builds) {
+        expect(
+          kept,
+          `${project.name}: "${build}" must survive browser exclusion — a dependent run type-checks against dist`
+        ).toContain(build);
+      }
+    }
+  );
+
+  it('OsmDemo builds BOTH of its workspace dependencies as real stages', () => {
+    // The bug this pins: OsmDemo declares gps-plus-slam-app-framework and
+    // imports it in production files, resolving through `exports` -> dist with
+    // no tsconfig `paths`. Until 2026-08-15 it had no `build:framework` stage —
+    // the Playwright webServer (`pnpm run dev` -> `build:deps`) built it as a
+    // side effect INSIDE the test:e2e row. So dropping e2e dropped the only
+    // framework build, and whether a fresh dist existed depended on which
+    // sibling package pnpm happened to gate first.
+    const stages = gateStages(getProject('GpsPlusSlamJs_OsmDemo'), {
+      skipBrowser: true,
+    }).map((s) => s.name);
+    expect(stages).toContain('build:osm');
+    expect(stages).toContain('build:framework');
+    expect(stages).not.toContain('test:e2e');
+    // Both builds must precede the first stage that reads a dist.
+    expect(stages.indexOf('build:osm')).toBeLessThan(stages.indexOf('typecheck'));
+    expect(stages.indexOf('build:framework')).toBeLessThan(
+      stages.indexOf('typecheck')
+    );
+  });
+
+  it('leaves the full stage list untouched when the mode is off', () => {
+    for (const project of PROJECTS) {
+      expect(gateStages(project).map((s) => s.name)).toEqual(stageOrder(project));
+    }
+  });
+});
+
+// Why this test matters: the mode is selected by an environment variable, and
+// the failure mode of getting it wrong is asymmetric — a run that silently
+// covers less than it claims. "Unset means full gate" is the safe direction and
+// is what a caller who forgets to pass env gets.
+describe('resolveGateMode', () => {
+  it('defaults to the FULL gate when nothing is set', () => {
+    expect(resolveGateMode()).toEqual({ skipBrowser: false });
+    expect(resolveGateMode({})).toEqual({ skipBrowser: false });
+    expect(resolveGateMode({ [SKIP_BROWSER_ENV]: undefined })).toEqual({
+      skipBrowser: false,
+    });
+    expect(resolveGateMode({ [SKIP_BROWSER_ENV]: '' })).toEqual({
+      skipBrowser: false,
+    });
+  });
+
+  it('treats any non-empty value as on, including "0"', () => {
+    for (const value of ['1', 'true', 'yes', '0']) {
+      expect(resolveGateMode({ [SKIP_BROWSER_ENV]: value })).toEqual({
+        skipBrowser: true,
+      });
+    }
   });
 });

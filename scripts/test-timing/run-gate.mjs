@@ -10,7 +10,15 @@ import path from 'node:path';
 
 import { budgetBreach } from './budget.mjs';
 import { checkChainDrift } from './chain-guard.mjs';
-import { resolveProject, PROJECTS, TOTAL_STAGE, stageOrder } from './projects.mjs';
+import {
+  resolveProject,
+  PROJECTS,
+  TOTAL_STAGE,
+  stageOrder,
+  gateStages,
+  resolveGateMode,
+  SKIP_BROWSER_ENV,
+} from './projects.mjs';
 import {
   WORKSPACE_ROOT,
   projectRoot,
@@ -95,12 +103,26 @@ function printSummaryTable() {
 
 warnOnChainDrift();
 
+const { skipBrowser } = resolveGateMode(process.env);
+const stages = gateStages(project, { skipBrowser });
+
+if (skipBrowser) {
+  // NAMED, never silent. The repo's rule for a run that covers less than the
+  // full gate is that it says so — a quiet subset reads as "everything passed".
+  const skipped = project.stages
+    .filter((stage) => !stages.includes(stage))
+    .map((stage) => stage.name);
+  console.log(
+    `\n⏭ ${project.name}: ${SKIP_BROWSER_ENV} set — running ${stages.length} of ${project.stages.length} stages, skipping ${skipped.join(', ') || '(none)'}.\n   Dependent mode (DEC-G2): builds, static checks and unit tests only.`
+  );
+}
+
 const gateStart = performance.now();
 /** @type {(TestCounts | null)[]} */
 const stageCounts = [];
 let allRecorded = true;
 
-for (const stage of project.stages) {
+for (const stage of stages) {
   console.log(`\n▶ ${project.name} ${stage.name}`);
   const result = await runStage(project, stage.name, []);
   if (result.exitCode !== 0) {
@@ -125,7 +147,17 @@ for (const stage of project.stages) {
 const totalMs = Math.round(performance.now() - gateStart);
 // The total row must reflect a complete recorded gate run; if any stage
 // skipped recording (e.g. CI), the total is skipped too.
-if (allRecorded) {
+//
+// AND NOT IN DEPENDENT MODE, which is the same rule for a different reason and
+// is load-bearing: a browser-less OsmDemo run totals ~119 s against a real
+// ~700 s, `HISTORY_LIMIT` is 10, so ten dependent runs would evict every
+// genuine cascade total from the artefact. The next full run would then flag
+// itself 🔺 slower by ~500 % against a median built from partial runs, and
+// every flag in between is noise. The 2026-08-09 gate-cost decision (§4)
+// permits a LABELLED discontinuity in this artefact and forbids a silent one;
+// this is silent by construction, so the row is simply not written. Per-stage
+// rows are unaffected — same command, same work, comparable to their history.
+if (allRecorded && !skipBrowser) {
   try {
     console.log(
       `\n${recordStage(project, TOTAL_STAGE, totalMs, sumCounts(stageCounts))}`
