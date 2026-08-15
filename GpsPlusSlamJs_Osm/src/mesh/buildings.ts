@@ -143,6 +143,16 @@ export function buildBuildings(
     );
   }
 
+  // INDEXED ONCE, for the same reason as `placed` below. `outlineOf` did
+  // `outlines.find(...)` — recomputing `featureKey` (a template-literal string
+  // allocation) for every candidate — once per outline group, i.e.
+  // O(groups × outlines) string builds. `assignPartsToOutlines` already computes
+  // this exact key and throws it away.
+  const outlineByKey = new Map<OsmFeatureKey, Footprint[]>();
+  for (const outline of outlines) {
+    outlineByKey.set(featureKey(outline.feature), [outline]);
+  }
+
   for (const [outlineKey, list] of partsByOutline) {
     // ONE GROUND FOR THE WHOLE BUILDING (W5, finding R3-1), sampled over the
     // outline AND every part, and handed to each of them unchanged.
@@ -157,7 +167,7 @@ export function buildBuildings(
     // building's extent, and excluding it would make the base depend on which
     // parts happened to arrive in this tile.
     const group = groundUnder(
-      [...(outlineOf(outlines, outlineKey) ?? []), ...list],
+      [...(outlineByKey.get(outlineKey) ?? []), ...list],
       options,
     );
     for (const part of list) {
@@ -173,11 +183,16 @@ export function buildBuildings(
   // It keeps the per-footprint ground, because there is no building to share
   // one with. That is also what makes the grouping above safe to apply
   // unconditionally: the fallback is exactly the old behaviour.
+  // BUILT ONCE, not rebuilt per part. This was
+  // `[...partsByOutline.values()].some((list) => list.includes(part))`, which
+  // re-materialised the whole grouping into a fresh array AND did a linear
+  // `includes` for every part — O(parts × placedParts) with an allocation per
+  // iteration. `solidBuildingFootprints` already used the set form 150 lines
+  // below; this is the same fix in the place that was missed. Reference
+  // identity, exactly as `includes` used.
+  const placed = new Set([...partsByOutline.values()].flat());
   for (const part of parts) {
-    const alreadyPlaced = [...partsByOutline.values()].some((list) =>
-      list.includes(part),
-    );
-    if (alreadyPlaced) continue;
+    if (placed.has(part)) continue;
     volumes.push(
       volumeFor(
         part.feature,
@@ -202,15 +217,6 @@ export function buildBuildings(
   volumes.push(...tallStructureVolumes(features, options));
 
   return volumes;
-}
-
-/** The outline footprint for a key, as a one-element list, or `undefined`. */
-function outlineOf(
-  outlines: readonly Footprint[],
-  key: OsmFeatureKey,
-): Footprint[] | undefined {
-  const found = outlines.find((outline) => featureKey(outline.feature) === key);
-  return found === undefined ? undefined : [found];
 }
 
 interface Footprint {
