@@ -286,10 +286,25 @@ const BANK_THICKNESS_M = 0.5;
  * obstacle blocks the crossing and offers nothing to stand on — a river with a
  * standable surface would be the whole point missed.
  *
- * ⚠️ **NO BRIDGE EXEMPTION YET.** A bridge deck crosses its river's banks, so
- * with water indexed a route over one is refused. Nothing calls this with water
- * in the feature set today, which is why that is tolerable — **wiring water into
- * the demo before bridges land would break every river crossing.**
+ * ⚠️ **NO BRIDGE EXEMPTION YET, AND WATER IS LIVE IN THE DEMO — so a route over
+ * a bridge is refused right now.** A bridge deck crosses its river's banks, and
+ * `crossesObstacle` rejects any step crossing a bank ring.
+ *
+ * This paragraph used to end "Nothing calls this with water in the feature set
+ * today, which is why that is tolerable". **That was false and is corrected
+ * here**, because it is the sentence a future reader would have trusted:
+ * `GpsPlusSlamJs_OsmDemo/src/worker/demo-worker.ts` builds the obstacle index
+ * from `pipeline.features()` — the whole merged set — and `overpass-query.ts`
+ * fetches `natural`, `water` and `waterway` including multipolygon relations.
+ * So `natural=water water=river type=multipolygon` reaches this function on
+ * every route request.
+ *
+ * **The fix is the bridge exemption, NOT switching water off.** Water vetoing a
+ * route is deliberate and planned work, so making this opt-in and disabling it
+ * would revert a decision rather than fix a defect — it would just trade
+ * "bridges unroutable" for "agents walk on rivers". Until a bridge deck can be
+ * recognised (`bridge=yes` on the crossing way) and exempted from its river's
+ * bank rings, a river is a hard barrier to any agent.
  */
 function addWater(
   features: readonly OsmFeature[],
