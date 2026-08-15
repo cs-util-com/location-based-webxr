@@ -451,8 +451,25 @@ function mergedCuts(
   // matches above do not. Additive on purpose: every opening the original rule
   // produced is produced identically, so the corpus can only gain openings and
   // the before/after comparison means something.
+  // THE BROAD PHASE, and without it this loop is the barrier build's whole cost.
+  // `gates.offBarrier` is every gate and entrance node in the WHOLE merged tile
+  // set — tens of thousands in a city, and the `gates.size === 0` early-out in
+  // `splitAtGates` therefore never fires there. Each one used to walk this
+  // line's every segment (`nearestOnLine`) before the `> GATE_ON_BARRIER_M`
+  // test at the bottom of `offBarrierCut` rejected it, so a gate 6 km away cost
+  // exactly as much as one standing in the wall.
+  //
+  // The box is the line's own extent grown by the same 1 m the distance test
+  // uses, so it is CONSERVATIVE by construction: a gate outside it is more than
+  // 1 m from every vertex and every segment of the line, and `offBarrierCut`
+  // could only ever have returned `undefined` for it. Measured: the whole
+  // off-barrier scan is ~1 s of the mesh build at working-set scale, and the
+  // no-gates residual is 4 ms.
+  const bounds = lineBounds(enu, GATE_ON_BARRIER_M);
   for (const gate of gates.offBarrier) {
-    const cutAt = offBarrierCut(gate, along, enu, frame);
+    const gateEnu = frame.toEnu(gate.position);
+    if (!withinBounds(bounds, gateEnu)) continue;
+    const cutAt = offBarrierCut(gate, gateEnu, along, enu, frame);
     if (cutAt !== undefined) raw.push([cutAt - half, cutAt + half]);
   }
   if (raw.length === 0) return [];
@@ -482,13 +499,55 @@ type Enu = EnuPoint;
  * BOTH HALVES OF DEC-A2 ARE TESTED HERE, and the order is cheapest-first: the
  * projection is arithmetic, the crossing scan walks another way's segments.
  */
+/**
+ * The line's axis-aligned extent in its own ENU frame, grown by `padM`.
+ *
+ * An empty line yields an INVERTED box, which {@link withinBounds} rejects for
+ * every point — the correct reading, since a line with no vertices is nowhere
+ * near anything.
+ */
+function lineBounds(
+  enu: readonly Enu[],
+  padM: number,
+): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const point of enu) {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
+  }
+  if (minX > maxX) return { minX, maxX, minY, maxY };
+  return {
+    minX: minX - padM,
+    maxX: maxX + padM,
+    minY: minY - padM,
+    maxY: maxY + padM,
+  };
+}
+
+function withinBounds(
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  point: Enu,
+): boolean {
+  return (
+    point.x >= bounds.minX &&
+    point.x <= bounds.maxX &&
+    point.y >= bounds.minY &&
+    point.y <= bounds.maxY
+  );
+}
+
 function offBarrierCut(
   gate: OffBarrierGate,
+  gateEnu: Enu,
   along: readonly number[],
   enu: readonly Enu[],
   frame: EnuFrame,
 ): number | undefined {
-  const gateEnu = frame.toEnu(gate.position);
   const near = nearestOnLine(gateEnu, enu, along);
   if (near === undefined || near.distanceM > GATE_ON_BARRIER_M)
     return undefined;

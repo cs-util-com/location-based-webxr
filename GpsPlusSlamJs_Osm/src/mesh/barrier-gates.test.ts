@@ -350,6 +350,38 @@ describe("splitAtGates", () => {
     });
 
     /**
+     * THE BROAD PHASE, AND WHY IT CANNOT CHANGE AN ANSWER.
+     *
+     * `mergedCuts` rejects a gate against the line's own bounding box grown by
+     * `GATE_ON_BARRIER_M` before walking the polyline. That reject exists for
+     * cost — `gates.offBarrier` holds every gate and entrance node in the whole
+     * merged tile set, so before it, a gate kilometres away paid a full
+     * `nearestOnLine` walk of every barrier in the city (~1 s of the mesh build
+     * at working-set scale, against a 4 ms residual with no gates at all).
+     *
+     * The safety argument is that the pad EQUALS the tolerance: a gate the
+     * distance test would accept is within 1 m of the line, hence inside a box
+     * that is the line's extent plus 1 m. The bracket above is what enforces it
+     * — shrink the pad below `GATE_ON_BARRIER_M` and `opens(0.95)` goes false.
+     * This test adds the other half: a gate far away along the wall's OWN axis,
+     * which is inside no bounding box but is the case a purely perpendicular
+     * test would miss.
+     */
+    it("ignores a valid gate that is nowhere near this wall, however well formed", () => {
+      const farAway = gateNear(50_000, 0.2);
+      const gates = gateOpenings([
+        node(1, farAway.position, { barrier: "gate" }),
+        way(2, crossingAt(farAway.position)),
+      ]);
+      // A perfectly good gate with a perfectly good crossing way — 50 km up the
+      // meridian. It must leave this wall whole, and it must do so without
+      // measuring it.
+      expect(splitAtGates(wall, gates, DEFAULT_BARRIER_THICKNESS_M)).toEqual([
+        wall,
+      ]);
+    });
+
+    /**
      * A PERPENDICULAR CROSSING IS THE EASIEST POSSIBLE INPUT for both
      * `nearestOnLine` and `segmentCrossing`, and every other case here uses one.
      * The Tower's own bridge meets its wall at a shallow angle.
