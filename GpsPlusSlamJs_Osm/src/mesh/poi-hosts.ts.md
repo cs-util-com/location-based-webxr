@@ -14,6 +14,47 @@ way to it** (an area that describes itself). Everything else stays at its node.
 - `PoiHostAnchor`, `HostableMarker`, `PoiHostLayer`.
 - `hostMatches(kind, host)`, `hostScale(spanM)`, `footprintAnchor(footprint)`,
   `HOST_CLEARANCE_M`.
+- `annotatePoiHosts(markers, candidates, stats?)` — the worker-side pass. The
+  optional `stats: PoiHostStats` is an out-parameter for the cost guard; it
+  counts `pairsConsidered` and `containsPointCalls` and is `undefined` in
+  production.
+- `footprintAnchor` returns `{x, y, spanM, minX, maxX, minY, maxY}`. The four
+  bounds are the broad-phase box; an **empty footprint yields an inverted box**
+  (`min = +Infinity`, `max = -Infinity`) so it rejects every point.
+
+## Cost — read this before changing the loop
+
+**This function was 65-79 % of the demo's whole mesh build, and the mistake that
+put it there is worth not repeating.**
+
+- **The work is `markers × candidates`.** Candidates are every building volume
+  and every plate; markers are every POI node. Both grow with the number of tiles
+  a session has loaded, and **tiles are never evicted**, so the pass is quadratic
+  in session length rather than in map area.
+- **Measured:** wiring this function in (`f83224c7`, 2026-08-06) took the mesh
+  build from 5 109 ms to 47 977 ms on a fixed 95 887-feature corpus. In the app it
+  showed up as a 17 s wait per click for a session that had visited two cities.
+- **The rule this replaced had a bounding-box pre-filter and its docstring said
+  why** — _"Round 5 measured what the naive shape costs on this data: a
+  `parts × outlines × vertices` scan was 0.8-4.6 s per build at res-7 scale"_ —
+  and that warning was deleted along with `poi-building-overlap.ts`. This section
+  exists so it cannot be lost twice.
+- **What is in place now:** a bounding-box reject before `containsPoint` (which
+  has no short-circuit of its own), and `hostMatches` hoisted out of the pair
+  loop. Ray casts dropped 977 427 → 216 at nine copies of `london-westminster`
+  and are now linear in the working set. **Safe by construction:** a point
+  outside a ring's bounding box cannot be inside the ring, so the reject can only
+  skip work, never drop a host.
+- **What is NOT fixed:** the loop still visits every pair, so the _shape_ is
+  still O(markers × candidates) — the reject only made each pair ~20× cheaper.
+  Making it linear needs either a broad-phase index over candidates or clipping
+  the mesh input to the rendered extent. See
+  `GpsPlusSlamJs_Docs/docs/2026-08-15-1051-osm-demo-mesh-cost-plan.md` §4.1b/§4.2.
+- **The guard is `poi-hosts-cost.test.ts`** and it asserts _counts_, not
+  milliseconds — it runs the same site at 1 and 9 copies and fails if ray casts
+  grow faster than ~12× for 9× the input. A wall-clock threshold was rejected
+  because `chunk-cost`'s 100 ms ceiling flaked at 104 ms under the nine-package
+  cascade.
 
 ## Invariants & assumptions
 
