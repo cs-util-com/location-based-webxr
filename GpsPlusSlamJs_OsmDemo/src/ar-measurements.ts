@@ -72,7 +72,100 @@ export interface ArMeasurements {
   readonly altitudeM?: number | undefined;
   /** The fix's reported VERTICAL accuracy, metres. Often absent. */
   readonly altitudeAccuracyM?: number | undefined;
+  /**
+   * The DEM height under the user, **ellipsoidal** metres (DEC-H1).
+   *
+   * Already comparable to {@link altitudeM} with no conversion at the call
+   * site: in AR the terrain field is sampled with
+   * `absoluteDatum: { undulationMetres: N }`, so `heightAt` returns
+   * orthometric + `N` rather than relief.
+   *
+   * **A PROXY FOR WHAT THE BUILDINGS STAND ON, NOT THE SAME THING.** The
+   * buildings were extruded against the field the WORKER held at mesh-build
+   * time, baked into vertices; this is the main thread's current field. They are
+   * normally identical and can diverge — that divergence is the class
+   * `worker/terrain-gate.ts` exists to prevent. Labelled `terrain`, never
+   * "building ground", for that reason.
+   */
+  readonly terrainHeightM?: number | undefined;
+  /**
+   * Whether the DEM actually loaded.
+   *
+   * **THE MOST IMPORTANT FLAG IN THIS INTERFACE.** `heightfieldFrom` returns a
+   * sampler that is **flat zero** when `hasData` is false, so a failed terrain
+   * load renders as a perfectly plausible `0.0 m` — and then a residual against
+   * it reads as a confident hundred-metre error. False suppresses both the
+   * height and the residual and says `no DEM` instead.
+   */
+  readonly terrainHasData?: boolean | undefined;
+  /**
+   * Geoid undulation `N` at the AR origin, metres.
+   *
+   * A **session constant**, not something that moves: `N` varies about 1 m per
+   * 100 km, so it is uniform to centimetres across a city. It is on screen to
+   * make one catastrophic state visible — `ZERO_GEOID` still in place in a build
+   * rendering absolute heights puts the whole scene ~46 m out in central Europe,
+   * and nothing else on the readout would say so.
+   */
+  readonly geoidUndulationM?: number | undefined;
+  /** The active geoid model's identity, from the library's `describeGeoid`. */
+  readonly geoidModelId?: string | undefined;
+  /**
+   * Where the user is.
+   *
+   * **THE LINE THAT MAKES A SCREENSHOT FALSIFIABLE.** Without coordinates a
+   * screenshot cannot be checked against an external elevation service, returned
+   * to, or correlated with another screenshot — every other number on the
+   * readout stays unverifiable while this one is missing.
+   */
+  readonly position?:
+    | { readonly lat: number; readonly lng: number }
+    | undefined;
+  /**
+   * How long ago the last fix arrived, milliseconds.
+   *
+   * A stale fix and a fresh one are **indistinguishable** on the rest of the
+   * readout, and a large share of "the alignment drifted" observations are
+   * really "no fix has arrived for 40 s".
+   */
+  readonly fixAgeMs?: number | undefined;
+  /**
+   * The alignment's own answer to "which way is north", degrees.
+   *
+   * **A CAMERA YAW TAKEN IN THE AR FRAME IS NOT A BEARING.** It becomes one only
+   * once the alignment rotation is applied, so the caller must take the camera's
+   * yaw **relative to `arWorldGroup`** — that group is what carries the
+   * alignment. A world-space yaw would report an AR-frame angle as a compass
+   * reading: plausible-looking, and wrong.
+   *
+   * Read beside the library's compass bearing once that is exposed (DEC-H3/H6).
+   * The two differing by tens of degrees says the compass is being outvoted or
+   * is wrong; either line alone says nothing.
+   */
+  readonly fusedBearingDeg?: number | undefined;
 }
+
+/** How the readout is being shown — DEC-H2's one collapsible surface. */
+export interface ArReadoutOptions {
+  /**
+   * Show everything, rather than the walking set.
+   *
+   * **ONE LIST AND ONE BOOLEAN, not two tiers.** Two membership lists would need
+   * a test that one stays a subset of the other; collapse/expand makes the
+   * expanded state *the screenshot state* rather than a mode to remember to
+   * leave.
+   */
+  readonly expanded?: boolean | undefined;
+}
+
+/**
+ * Above this age a fix is called out as stale, milliseconds.
+ *
+ * A GPS watch delivers roughly 1 Hz, so 15 s without one is not slow — it is
+ * broken, or the user is indoors. Chosen well above the ordinary jitter so the
+ * warning stays rare enough to mean something.
+ */
+const STALE_FIX_MS = 15_000;
 
 /**
  * One line per measurement that has a value, in a fixed order.
@@ -90,8 +183,19 @@ export interface ArMeasurements {
  */
 export function describeArMeasurements(
   measurements: ArMeasurements,
+  options: ArReadoutOptions = {},
 ): readonly string[] {
   const lines: string[] = [];
+  const expanded = options.expanded === true;
+  /**
+   * Push a line only when the readout is expanded.
+   *
+   * A DEGRADED value is never routed through this — a warning that appears only
+   * when expanded is a warning nobody sees (DEC-H2).
+   */
+  const pushExpanded = (line: string): void => {
+    if (expanded) lines.push(line);
+  };
 
   const cost = describeDrawCost(measurements.drawCost);
   if (cost !== "") lines.push(cost);
@@ -155,7 +259,88 @@ export function describeArMeasurements(
     lines.push(`baseline ${measurements.worldBaselineY.toFixed(2)} m`);
   }
 
+  // THE DEM'S OWN STATE FIRST, because everything below depends on whether it
+  // loaded at all. `false` is a claim; `undefined` is only "not reported".
+  const demFailed = measurements.terrainHasData === false;
+  if (demFailed) {
+    // COLLAPSED TOO. Without the DEM the ground is flat zero, so every building
+    // stands at the wrong height — a silent failure that the render cannot
+    // distinguish from genuinely flat terrain.
+    lines.push("terrain: no DEM");
+  }
+
+  const terrainUsable =
+    !demFailed && isSignedReading(measurements.terrainHeightM);
+  if (terrainUsable) {
+    pushExpanded(`terrain ${measurements.terrainHeightM.toFixed(1)} m`);
+  }
+
+  // THE LINE THE READOUT EXISTS FOR (DEC-H1/H5). Chest height should read about
+  // +1.5 m; a steady +10 m is the reported symptom, and its SIGN separates the
+  // two filed causes that need opposite fixes. Always shown, never expanded-only.
+  if (terrainUsable && isSignedReading(measurements.altitudeM)) {
+    const residual = measurements.altitudeM - measurements.terrainHeightM;
+    lines.push(`above terrain ${signed(residual)} m`);
+  }
+
+  if (isSignedReading(measurements.geoidUndulationM)) {
+    // THE MODEL'S IDENTITY, not just the number. `ZERO_GEOID` reads as a
+    // perfectly ordinary `+0.0 m`, and the whole point is that it should not.
+    const model =
+      measurements.geoidModelId === undefined
+        ? ""
+        : ` — ${measurements.geoidModelId}`;
+    pushExpanded(`geoid N ${signed(measurements.geoidUndulationM)} m${model}`);
+  }
+
+  if (isUsable(measurements.fixAgeMs)) {
+    const seconds = Math.round(measurements.fixAgeMs / 1000);
+    if (measurements.fixAgeMs > STALE_FIX_MS) {
+      // COLLAPSED TOO — see `pushExpanded`. A fix this old makes every other
+      // number on the readout describe somewhere the user has left.
+      lines.push(`fix ${seconds} s ago — STALE`);
+    } else {
+      pushExpanded(`fix ${seconds} s ago`);
+    }
+  }
+
+  if (isSignedReading(measurements.fusedBearingDeg)) {
+    // WHOLE DEGREES. The comparison this exists for — fused against the
+    // library's compass bearing — is a tens-of-degrees question, and a decimal
+    // reads as precision the alignment does not have.
+    pushExpanded(`fused ${Math.round(measurements.fusedBearingDeg)}°`);
+  }
+
+  const position = measurements.position;
+  if (
+    position !== undefined &&
+    Number.isFinite(position.lat) &&
+    Number.isFinite(position.lng)
+  ) {
+    // SIX DECIMALS — about 0.1 m, finer than any fix, and the precision an
+    // external elevation service expects to be handed back.
+    pushExpanded(`${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`);
+  }
+
   return lines;
+}
+
+/** `+1.5` / `-10.0` — the sign is explicit on both, because it is the reading. */
+function signed(valueM: number): string {
+  return `${valueM >= 0 ? "+" : ""}${valueM.toFixed(1)}`;
+}
+
+/**
+ * Present and finite, with **no `>= 0` guard**.
+ *
+ * The counterpart to {@link isUsable} for the values where a negative is a real
+ * place or a real direction rather than an impossibility: terrain and altitude
+ * (the Dead Sea, any basement), and the geoid undulation, which is about −30 m
+ * over India and −50 m south of Sri Lanka. Routing those through `isUsable`
+ * would drop exactly the readings that are most surprising.
+ */
+function isSignedReading(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value);
 }
 
 /**

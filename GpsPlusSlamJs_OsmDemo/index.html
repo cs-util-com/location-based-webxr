@@ -166,6 +166,119 @@
         pointer-events: none;
       }
 
+      /*
+        The expand/collapse toggle (DEC-H2), which must OPT BACK IN to input.
+
+        `.ar-hud` above sets `pointer-events: none` so the readout can never eat
+        a tap, and that inherits — so without this rule the button is inert in a
+        real browser while every jsdom test still passes, because jsdom does no
+        hit-testing. A control that is unclickable only on the device it exists
+        for is exactly the failure the co-located CSS is here to prevent.
+      */
+      .ar-hud-toggle {
+        display: block;
+        margin-top: 0.3rem;
+        padding: 0.15rem 0.5rem;
+        border: 1px solid rgb(207 227 255 / 40%);
+        border-radius: 0.3rem;
+        background: rgb(17 19 26 / 72%);
+        color: #cfe3ff;
+        font-family: inherit;
+        font-size: 0.85rem;
+        line-height: 1.2;
+        cursor: pointer;
+        pointer-events: auto;
+      }
+
+      /*
+        The manual elevation nudge (DEC-E1). Bottom-centre, above the toast's
+        band, so it is reachable with a thumb while the phone is held up.
+
+        NOT `pointer-events: none`, unlike the readout and the toast: this one
+        exists to be pressed. It is a direct child of `#ar-root`, which sets no
+        pointer-events of its own, so it needs no opt-in the way the HUD's
+        toggle does.
+      */
+      .ar-elevation {
+        position: absolute;
+        bottom: 4vh;
+        left: 50%;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.4rem 0.6rem;
+        transform: translateX(-50%);
+        border: 1px solid rgb(242 244 248 / 25%);
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 88%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+      }
+
+      .ar-elevation-button {
+        /* A 2.5rem square is the smallest reliable touch target; against a
+           camera feed of unknown brightness it also needs an edge of its own. */
+        width: 2.5rem;
+        height: 2.5rem;
+        border: 1px solid rgb(242 244 248 / 35%);
+        border-radius: 0.4rem;
+        background: rgb(36 40 52 / 92%);
+        color: #f2f4f8;
+        font-size: 1.35rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      /*
+        The compass-influence slider (DEC-E2). Above the elevation nudge so the
+        two stack rather than overlap, and wide enough that 0-1 is draggable
+        with a thumb rather than being a 20-pixel target.
+      */
+      .ar-compass {
+        position: absolute;
+        bottom: 12vh;
+        left: 50%;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: center;
+        max-width: 88vw;
+        padding: 0.4rem 0.6rem;
+        transform: translateX(-50%);
+        border: 1px solid rgb(242 244 248 / 25%);
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 88%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+      }
+
+      .ar-compass-slider {
+        width: 55vw;
+      }
+
+      .ar-compass-value {
+        min-width: 9rem;
+        color: #f2f4f8;
+        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+        font-size: 0.9rem;
+      }
+
+      /* The two states a user would otherwise read as a broken control: not
+         accepting input yet, and taking ~15-30 fixes to express a change. */
+      .ar-compass-hint {
+        width: 100%;
+        color: #9aa3b8;
+        font-size: 0.72rem;
+        text-align: center;
+      }
+
+      .ar-elevation-value {
+        min-width: 4.5rem;
+        color: #f2f4f8;
+        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+        font-size: 0.95rem;
+        text-align: center;
+      }
+
       /* Floats over the split rather than taking a column (DEC-17). */
       #details {
         position: absolute;

@@ -180,3 +180,156 @@ describe("altitude readout", () => {
     ).toEqual(["alt 10.0 m"]);
   });
 });
+
+/**
+ * Why these tests matter: this is the height decomposition (DEC-H1), the
+ * measurement that decides whether the ~10 m residual is a biased GPS altitude
+ * or the filed vertical-solve defect. Those two need OPPOSITE fixes, so a line
+ * that quietly invents a number here sends weeks of work at the wrong cause.
+ * The `no DEM` cases carry most of the weight: a failed terrain load samples
+ * flat zero, so the honest-looking `0.0 m` is exactly the false reading this
+ * module exists to refuse.
+ */
+describe("describeArMeasurements — the height decomposition", () => {
+  it("shows the residual between GPS altitude and the terrain under the user", () => {
+    // THE LINE THE WHOLE READOUT IS FOR. A phone at chest height should read
+    // about +1.5 m; a steady +10 m is the reported symptom, stated instead of
+    // inferred from a scene that looks wrong.
+    const lines = describeArMeasurements({
+      altitudeM: 105.5,
+      terrainHeightM: 104,
+      terrainHasData: true,
+    });
+
+    expect(lines).toContain("above terrain +1.5 m");
+  });
+
+  it("signs a NEGATIVE residual, which means the camera is under the ground", () => {
+    // The sign is the information: below the terrain is the state that makes
+    // buildings float overhead.
+    expect(
+      describeArMeasurements({
+        altitudeM: 94,
+        terrainHeightM: 104,
+        terrainHasData: true,
+      }),
+    ).toContain("above terrain -10.0 m");
+  });
+
+  it("refuses the residual when the DEM never loaded", () => {
+    // `heightfieldFrom` samples FLAT ZERO when `hasData` is false, so a failed
+    // terrain load would otherwise produce a confident "above terrain +105.5 m".
+    const lines = describeArMeasurements({
+      altitudeM: 105.5,
+      terrainHeightM: 0,
+      terrainHasData: false,
+    });
+
+    expect(lines.some((line) => line.startsWith("above terrain"))).toBe(false);
+    expect(lines).toContain("terrain: no DEM");
+  });
+
+  it("warns about a missing DEM even while COLLAPSED", () => {
+    // A warning that only appears when expanded is a warning nobody sees
+    // (DEC-H2). Everything else new is expanded-only; this is not.
+    expect(describeArMeasurements({ terrainHasData: false })).toContain(
+      "terrain: no DEM",
+    );
+  });
+
+  it("keeps the terrain height and the geoid out of the COLLAPSED readout", () => {
+    // DEC-H2: the collapsed set is what you walk with. These are screenshot
+    // material, and 14 lines over a camera feed covers the scene being
+    // photographed.
+    const collapsed = describeArMeasurements({
+      terrainHeightM: 104,
+      terrainHasData: true,
+      geoidUndulationM: 46.2,
+    });
+
+    expect(collapsed.some((line) => line.startsWith("terrain "))).toBe(false);
+    expect(collapsed.some((line) => line.startsWith("geoid"))).toBe(false);
+  });
+
+  it("shows terrain, geoid and position once EXPANDED", () => {
+    const expanded = describeArMeasurements(
+      {
+        terrainHeightM: 104,
+        terrainHasData: true,
+        geoidUndulationM: 46.2,
+        position: { lat: 50.941234, lng: 6.958765 },
+      },
+      { expanded: true },
+    );
+
+    expect(expanded).toContain("terrain 104.0 m");
+    expect(expanded).toContain("geoid N +46.2 m");
+    // SIX DECIMALS -- a screenshot without coordinates cannot be checked
+    // against an external elevation service, returned to, or correlated with
+    // another screenshot.
+    expect(expanded).toContain("50.941234, 6.958765");
+  });
+
+  it("says out loud when NO geoid correction is being applied", () => {
+    // The dangerous state is invisible by construction: with N = 0 the whole
+    // scene is ~46 m out in central Europe and nothing else on the readout
+    // would say so. `describeGeoid` exists in the library for this reason.
+    const lines = describeArMeasurements(
+      {
+        geoidUndulationM: 0,
+        geoidModelId: "zero (NO geoid correction applied)",
+      },
+      { expanded: true },
+    );
+
+    expect(lines).toContain(
+      "geoid N +0.0 m — zero (NO geoid correction applied)",
+    );
+  });
+
+  it("keeps a NEGATIVE geoid undulation, which is most of the planet", () => {
+    // N is around -30 m over India and -50 m south of Sri Lanka. Routing this
+    // through the shared `isUsable` guard would drop exactly those places.
+    expect(
+      describeArMeasurements({ geoidUndulationM: -31.4 }, { expanded: true }),
+    ).toContain("geoid N -31.4 m");
+  });
+
+  it("reports how stale the fix is, and warns about it even COLLAPSED", () => {
+    // A stale fix and a fresh one look identical on the readout today, and
+    // "the alignment drifted" is often "no fix has arrived for 40 s".
+    expect(
+      describeArMeasurements({ fixAgeMs: 3200 }, { expanded: true }),
+    ).toContain("fix 3 s ago");
+    expect(describeArMeasurements({ fixAgeMs: 3200 })).toEqual([]);
+    expect(describeArMeasurements({ fixAgeMs: 42_000 })).toContain(
+      "fix 42 s ago — STALE",
+    );
+  });
+
+  it("shows the fused bearing, which is the alignment's own answer for north", () => {
+    // Read beside the library's compass bearing once that is exposed: the two
+    // differing by tens of degrees says the compass is being outvoted or is
+    // wrong. Either line alone says nothing.
+    expect(
+      describeArMeasurements({ fusedBearingDeg: 137.4 }, { expanded: true }),
+    ).toContain("fused 137°");
+  });
+
+  it("drops every new value when it is not finite", () => {
+    // Same rule as the rest of the module: unmeasured is omitted, never zero.
+    const lines = describeArMeasurements(
+      {
+        terrainHeightM: Number.NaN,
+        terrainHasData: true,
+        geoidUndulationM: Number.NaN,
+        fixAgeMs: Number.NaN,
+        fusedBearingDeg: Number.NaN,
+        position: { lat: Number.NaN, lng: 6.9 },
+      },
+      { expanded: true },
+    );
+
+    expect(lines).toEqual([]);
+  });
+});

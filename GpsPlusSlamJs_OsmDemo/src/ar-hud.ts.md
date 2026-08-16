@@ -81,3 +81,31 @@ is the only question the number exists to answer.
 empty again when the numbers go; ignores a sample inside the window and takes
 the next one after it; accepts the FIRST sample immediately; is `aria-hidden`;
 and disposes without becoming unusable.
+
+## Collapse and expand (DEC-H2)
+
+One collapsible readout rather than two tiers. Collapsed is what you walk with;
+expanded is what you open just before taking a screenshot. Membership lives in
+`ar-measurements.ts`; this file owns the surface and the state.
+
+- **The preference persists** in `localStorage` under `osm-demo:ar-hud-expanded`.
+  Without that it is re-enabled by hand on every field trip, which is the
+  friction that gets an instrument abandoned.
+  - Both reads and writes are wrapped in `try`/`catch`: `localStorage`
+    **throws** on access in private mode and in sandboxed iframes rather than
+    being merely empty. Losing the preference is acceptable; losing the readout
+    the session is being measured with is not. Pinned by a test.
+- **The toggle repaints immediately**, not at the next 500 ms sample. A control
+  that waits that long reads as broken, so the user presses it again and toggles
+  straight back. The last sample is held for exactly this.
+- **The numbers are `aria-hidden`, the toggle is not.** The attribute moved from
+  `.ar-hud` to `.ar-hud-values` when the toggle arrived: an `aria-hidden`
+  subtree containing a focusable button is the worst of both, still reachable by
+  keyboard and invisible to the screen reader that would describe it.
+- ⚠️ **`.ar-hud` sets `pointer-events: none`** so the readout can never eat a tap
+  on a full-viewport overlay — so `.ar-hud-toggle` must **opt back in** with
+  `pointer-events: auto`. Without that rule the button is inert on a real device
+  while every jsdom test still passes, because jsdom does no hit-testing. The
+  CSS lives in `index.html` beside the other AR overlay classes.
+  - Class names are **kebab-case, not BEM**: the gate's `lint:css` enforces
+    `selector-class-pattern`, and `__` names fail it.

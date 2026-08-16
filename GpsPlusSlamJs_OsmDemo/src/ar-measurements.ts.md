@@ -114,3 +114,64 @@ still does use it — an accuracy below zero is impossible.
 and Android commonly reports `null` even with a good altitude, so the altitude is
 shown alone rather than suppressed for want of its error bar. An accuracy without
 an altitude shows nothing at all — it would read as a measurement.
+
+## The height decomposition (DEC-H1)
+
+The readout's reason for existing, and the measurement that decides
+[the altitude-offset question](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-16-1230-altitude-offset-from-elevation-data-review.md):
+the ~10 m symptom has **two** candidate causes that need **opposite** fixes.
+
+- `terrainHeightM` — the DEM height under the user, **ellipsoidal** metres, so
+  it is directly comparable to `altitudeM` with no conversion at the call site.
+  In AR the field is sampled with `absoluteDatum: { undulationMetres: N }`, so
+  `heightAt` returns orthometric + `N` rather than relief.
+  - **A proxy for what the buildings stand on, not the same thing.** The
+    buildings were extruded against the field the WORKER held at build time,
+    baked into vertices; this is the main thread's current field. Normally
+    identical, and their divergence is the class `worker/terrain-gate.ts`
+    prevents. Labelled `terrain`, never "building ground".
+- `terrainHasData` — **the most important flag in the interface.**
+  `heightfieldFrom` samples **flat zero** when `hasData` is false, so a failed
+  DEM load would otherwise render as a plausible `0.0 m` and a residual against
+  it as a confident hundred-metre error. False suppresses both and prints
+  `terrain: no DEM` — **and that warning shows even collapsed**, because a
+  warning only visible when expanded is a warning nobody sees.
+- **The residual, `above terrain ±X m`** — derived here rather than passed in.
+  Chest height should read about **+1.5 m**; a steady **+10 m** is the reported
+  symptom, stated instead of inferred from a scene that looks wrong. Its sign is
+  the information: negative means the camera is under the ground, which is the
+  state that makes buildings float overhead.
+- `geoidUndulationM` / `geoidModelId` — a **session constant** (`N` varies about
+  1 m per 100 km). On screen only to make the `ZERO_GEOID` trap visible: with
+  `N = 0` the whole scene is ~46 m out in central Europe and nothing else would
+  say so.
+- `position` — **the line that makes a screenshot falsifiable.** Without
+  coordinates a screenshot cannot be checked against an external elevation
+  service, returned to, or correlated with another. Six decimals ≈ 0.1 m.
+- `fixAgeMs` — a stale fix and a fresh one are otherwise indistinguishable, and
+  "the alignment drifted" is often "no fix for 40 s". Past `STALE_FIX_MS`
+  (15 s) the line is promoted to the collapsed set and marked `— STALE`.
+- `fusedBearingDeg` — **formatted here, not yet wired.** Per DEC-H6 it ships
+  with the library's compass bearing, because either line alone says nothing;
+  the pair differing by tens of degrees is the diagnostic. ⚠️ Its caller must
+  take the camera's yaw **relative to `arWorldGroup`**, not in world space — a
+  yaw in the AR frame is not a bearing. `ar-mode.ts` records that two
+  independent readers have already got that frame backwards.
+
+## Collapsed and expanded (DEC-H2)
+
+`describeArMeasurements(measurements, { expanded })` — **one list and one
+boolean**, not two tiers. Two membership lists would need a test that one stays
+a subset of the other; collapse/expand instead makes the expanded state _the
+screenshot state_ rather than a mode someone has to remember to leave.
+
+Collapsed is the walking set: draw cost, fps, fix accuracy, distance from
+anchor, altitude, the residual, the baseline — **plus anything degraded**
+(`terrain: no DEM`, a stale fix). Expanded adds terrain height, geoid, position,
+fix age and the fused bearing.
+
+`isSignedReading` is the counterpart to `isUsable` for values where a negative
+is a real place or direction rather than an impossibility: terrain and altitude
+(the Dead Sea, any basement) and the geoid undulation (about −30 m over India).
+Routing those through `isUsable`'s `>= 0` guard would drop exactly the readings
+that are most surprising.

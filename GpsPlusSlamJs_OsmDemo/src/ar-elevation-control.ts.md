@@ -40,8 +40,8 @@ surface for the manual vertical offset whose arithmetic lives in
   identity and discards the offset; making it follow would lift the buildings
   away from the ground plane, route line and NPC agent, which all live on the
   preview's own scene and would stay put.
-- Styling is by class (`.ar-elevation`, `.ar-elevation__button`,
-  `.ar-elevation__value`) rather than inline, so CSS owns the look.
+- Styling is by class (`.ar-elevation`, `.ar-elevation-button`,
+  `.ar-elevation-value`) rather than inline, so CSS owns the look.
 
 ## Examples
 

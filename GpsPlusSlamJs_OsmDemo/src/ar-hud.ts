@@ -48,6 +48,40 @@ export interface ArHud {
 }
 
 /**
+ * Where the expand/collapse preference lives between sessions.
+ *
+ * PERSISTED, because the expanded state is what a user opens just before taking
+ * a screenshot — and a preference that resets every session is one re-enabled by
+ * hand on every field trip, which is the friction that gets an instrument
+ * abandoned.
+ */
+const EXPANDED_KEY = "osm-demo:ar-hud-expanded";
+
+/**
+ * Read the preference, treating any failure as "collapsed".
+ *
+ * `localStorage` THROWS on access in private mode and in sandboxed iframes —
+ * it is not merely empty there. Losing the preference is acceptable; losing the
+ * readout that the session is being measured with is not.
+ */
+function readExpanded(): boolean {
+  try {
+    return window.localStorage.getItem(EXPANDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Store the preference, or silently accept that it will not survive. */
+function storeExpanded(expanded: boolean): void {
+  try {
+    window.localStorage.setItem(EXPANDED_KEY, expanded ? "1" : "0");
+  } catch {
+    // See `readExpanded` — the preference is expendable, the readout is not.
+  }
+}
+
+/**
  * Create the readout inside the AR overlay root.
  *
  * @param root the SAME element passed to `initAR`.
@@ -59,47 +93,93 @@ export interface ArHud {
 export function createArHud(root: HTMLElement): ArHud {
   const element = document.createElement("div");
   element.className = "ar-hud";
-  // NOT a live region. Unlike the far-travel toast — which IS announced,
-  // politely, now that `#ar-root` no longer carries a static `aria-hidden`
-  // that made it inert (r510 review) — this changes twice a second forever.
-  // Announcing that would make the page unusable with a screen reader, and the
-  // numbers are a developer instrument rather than user-facing content.
-  element.setAttribute("aria-hidden", "true");
 
+  // THE NUMBERS ARE HIDDEN FROM ASSISTIVE TECHNOLOGY, THE TOGGLE IS NOT.
+  // They change twice a second forever; announcing that would make the page
+  // unusable with a screen reader, and they are a developer instrument rather
+  // than user-facing content — unlike the far-travel toast, which IS announced
+  // politely now that `#ar-root` no longer carries a static `aria-hidden` that
+  // made it inert (r510 review).
+  //
+  // **The attribute moved from the container to this span** when the readout
+  // became collapsible (DEC-H2). It cannot stay on the container: an
+  // `aria-hidden` subtree containing a focusable button is the worst of both —
+  // still reachable by keyboard, invisible to the screen reader describing it.
+  const values = document.createElement("span");
+  values.className = "ar-hud-values";
+  values.setAttribute("aria-hidden", "true");
+
+  // THE WHOLE READOUT IS THE TAP TARGET's neighbour rather than the target
+  // itself: a real `<button>` is what makes this reachable and nameable, and it
+  // sits inside the readout so it costs no extra thumb space against the
+  // elevation control.
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "ar-hud-toggle";
+
+  let expanded = readExpanded();
   let lastWriteMs = Number.NEGATIVE_INFINITY;
   let lastText = "";
   let attached = false;
+  let latest: ArMeasurements = {};
+
+  const paintToggle = (): void => {
+    toggle.textContent = expanded ? "−" : "+";
+    const label = expanded
+      ? "Show fewer AR debug values"
+      : "Show all AR debug values";
+    toggle.title = label;
+    toggle.setAttribute("aria-label", label);
+  };
+
+  const paint = (): void => {
+    const text = describeArMeasurements(latest, { expanded }).join("\n");
+    // NOTHING MEASURED YET MEANS NOTHING ON SCREEN, and specifically it means
+    // the element stays OUT of `#ar-root` — which is `position: fixed;
+    // inset: 0` and hidden only while `:empty`, so an always-attached readout
+    // would keep a full-viewport layer over the page whenever AR is not
+    // running. That regression has shipped here once already (`ar-mode.ts`).
+    if (text === "") {
+      if (attached) {
+        element.remove();
+        attached = false;
+      }
+      lastText = "";
+      return;
+    }
+
+    // Guarded, because `textContent` invalidates layout even when the string
+    // is identical — and most samples are identical in most fields.
+    if (text !== lastText) {
+      values.textContent = text;
+      lastText = text;
+    }
+    if (!attached) {
+      root.append(element);
+      attached = true;
+    }
+  };
+
+  toggle.addEventListener("click", () => {
+    expanded = !expanded;
+    storeExpanded(expanded);
+    paintToggle();
+    // REPAINTED HERE, not at the next sample. The window is 500 ms, and a
+    // control that waits that long to respond reads as broken — so the user
+    // presses it again and toggles straight back.
+    paint();
+  });
+
+  paintToggle();
+  element.append(values, toggle);
 
   return {
     sample(measurements: ArMeasurements, nowMs: number): boolean {
       if (nowMs - lastWriteMs < AR_HUD_SAMPLE_MS) return false;
       lastWriteMs = nowMs;
-
-      const text = describeArMeasurements(measurements).join("\n");
-      // NOTHING MEASURED YET MEANS NOTHING ON SCREEN, and specifically it means
-      // the element stays OUT of `#ar-root` — which is `position: fixed;
-      // inset: 0` and hidden only while `:empty`, so an always-attached readout
-      // would keep a full-viewport layer over the page whenever AR is not
-      // running. That regression has shipped here once already (`ar-mode.ts`).
-      if (text === "") {
-        if (attached) {
-          element.remove();
-          attached = false;
-        }
-        lastText = "";
-        return true;
-      }
-
-      // Guarded, because `textContent` invalidates layout even when the string
-      // is identical — and most samples are identical in most fields.
-      if (text !== lastText) {
-        element.textContent = text;
-        lastText = text;
-      }
-      if (!attached) {
-        root.append(element);
-        attached = true;
-      }
+      // HELD, so the toggle can repaint without waiting for a fresh sample.
+      latest = measurements;
+      paint();
       return true;
     },
 
@@ -108,6 +188,7 @@ export function createArHud(root: HTMLElement): ArHud {
       attached = false;
       lastText = "";
       lastWriteMs = Number.NEGATIVE_INFINITY;
+      latest = {};
     },
   };
 }
