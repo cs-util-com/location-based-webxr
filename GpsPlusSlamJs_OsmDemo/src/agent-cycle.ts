@@ -30,6 +30,7 @@
 
 import type { LatLng } from "gps-plus-slam-osm";
 
+import { clampOrder, MAX_ORDER_M } from "./route-order.js";
 import type { RoutePoint } from "./agent-route.js";
 
 /** The part of the worker client this needs; narrowed so tests can fake it. */
@@ -100,9 +101,19 @@ export function createAgentCycle(
    */
   let generation = 0;
 
-  return async (to: LatLng): Promise<void> => {
+  return async (requested: LatLng): Promise<void> => {
     const from = agentAt();
     if (from === undefined) return;
+    // CLAMPED BEFORE DISPATCH (DEC-R3). A* reaches ~374-529 m of open ground
+    // inside its expansion cap while the drawn scene is 2 400 m across, so a far
+    // click used to come back `undefined` and be reported as "cannot reach that
+    // spot" — untrue, and the most confident thing the demo said. Walking as far
+    // as it can is what the click meant.
+    //
+    // HERE rather than in the worker, because clamping SHRINKS the search: the
+    // search runs synchronously and its cap doubles as a publish-latency bound
+    // (`worker/protocol.ts`), so the fix must not make the search bigger.
+    const { to, clamped } = clampOrder(from, requested);
     // CAPTURED AT DISPATCH, all three. The frame decides what the returned
     // heights mean, and reading it again on arrival would describe the route in
     // whatever frame the scene had been re-anchored to while the search ran.
@@ -140,6 +151,13 @@ export function createAgentCycle(
       report("no route: the agent cannot reach that spot");
       return;
     }
+    // SAID OUT LOUD (DEC-R3). A silently shortened order looks like the click
+    // was ignored — the agent stops somewhere the user did not point at, with no
+    // explanation. Reported AFTER the route is drawn so the message describes
+    // something already on screen.
     showRoute(route);
+    if (clamped) {
+      report(`too far — walking as far as it can (${MAX_ORDER_M} m)`);
+    }
   };
 }

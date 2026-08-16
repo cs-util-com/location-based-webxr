@@ -246,3 +246,58 @@ describe("createAgentCycle", () => {
     expect(call).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Why these tests matter: DEC-R3 replaced a confident lie. A click beyond A*'s
+ * ~374-529 m reach in a 2 400 m scene used to come back `undefined` and be
+ * reported as "the agent cannot reach that spot". The clamp is only a fix if it
+ * happens BEFORE dispatch — clamping after the search would keep paying for the
+ * failure it exists to avoid — and only honest if the shortened order is said
+ * out loud.
+ */
+describe("far clicks are clamped, not refused (DEC-R3)", () => {
+  /** ~2 km north of HOME — far outside the reach, well inside the scene. */
+  const FAR = { lat: HOME.lat + 0.018, lng: HOME.lng };
+
+  it("dispatches a shortened destination, not the one clicked", () => {
+    const { order, posted } = harness(() => Promise.resolve(ROUTE));
+    return order(FAR).then(() => {
+      const sent = posted[0] as { to: { lat: number; lng: number } };
+      // The clamp must reach the worker, or the search still pays for the far
+      // click and still fails.
+      expect(sent.to.lat).toBeLessThan(FAR.lat);
+      expect(sent.to.lat).toBeGreaterThan(HOME.lat);
+      // Direction preserved: due north in, due north out.
+      expect(sent.to.lng).toBeCloseTo(HOME.lng, 10);
+    });
+  });
+
+  it("says the order was shortened, after drawing the route", () => {
+    const { order, shown, reported } = harness(() => Promise.resolve(ROUTE));
+    return order(FAR).then(() => {
+      expect(shown).toEqual([ROUTE]);
+      expect(reported).toHaveLength(1);
+      expect(reported[0]).toContain("too far");
+      // A silently shortened order looks like the click was ignored; the agent
+      // stops somewhere the user did not point at with no explanation.
+    });
+  });
+
+  it("stays silent and unchanged for a reachable click", () => {
+    const { order, posted, reported } = harness(() => Promise.resolve(ROUTE));
+    return order(THERE).then(() => {
+      expect((posted[0] as { to: unknown }).to).toEqual(THERE);
+      expect(reported).toEqual([]);
+    });
+  });
+
+  it("still reports honestly when even the clamped order has no route", () => {
+    // Clamping makes the refusal rare, not impossible — a detour is longer than
+    // the crow flies, and the cap counts the detour. The old message is still
+    // the right one here, and it must not be replaced by the clamp notice.
+    const { order, reported } = harness(() => Promise.resolve(undefined));
+    return order(FAR).then(() => {
+      expect(reported).toEqual(["no route: the agent cannot reach that spot"]);
+    });
+  });
+});

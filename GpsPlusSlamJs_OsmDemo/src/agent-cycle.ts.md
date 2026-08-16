@@ -88,3 +88,20 @@ Also covered: the refusal reaches `report` and draws nothing; a second,
 unanswerable order leaves the first route on screen; the payload carries the
 position and the frame read at dispatch; a rejection never propagates; a
 non-`Error` throw is reported as text; and no position means no worker call.
+
+## The order is clamped before dispatch (DEC-R3)
+
+`clampOrder` (see [`route-order.ts.md`](./route-order.ts.md)) runs on the click,
+before the worker call. A destination beyond `MAX_ORDER_M` is shortened along the
+same bearing and the agent walks as far as it can.
+
+- **Before dispatch, not after**: clamping SHRINKS the search, and the search
+  runs synchronously in the worker where its cap doubles as a publish-latency
+  bound. A fix that grew the search would trade one defect for another.
+- **The shortening is reported, after `showRoute`.** A silently shortened order
+  looks like the click was ignored — the agent stops somewhere the user never
+  pointed at, with no explanation. Reporting after the draw means the message
+  describes something already on screen.
+- **"No route" survives.** Clamping makes that refusal rare, not impossible: a
+  detour is longer than the crow flies and the cap counts the detour. The two
+  messages are distinct and both are tested.
