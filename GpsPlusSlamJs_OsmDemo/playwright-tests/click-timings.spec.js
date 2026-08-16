@@ -26,7 +26,7 @@
  * survive the trip and add up on the other side.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 import { AT_FIXTURE, stubNetwork, waitForRefresh } from "./fixtures.js";
 
 /** Every `click ring …` line the app printed. */

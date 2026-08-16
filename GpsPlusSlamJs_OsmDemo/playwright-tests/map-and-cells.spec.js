@@ -9,7 +9,12 @@
  * reasoning for why the whole suite is offline.
  */
 
-import { test, expect } from "@playwright/test";
+import {
+  test,
+  expect,
+  attachOnFailure,
+  createPageDiagnostics,
+} from "./e2e-test.js";
 
 import {
   AT_FIXTURE,
@@ -52,8 +57,21 @@ let shared;
 /** @type {{category: string, cells: boolean, showBelow: boolean}} */
 let baseline;
 
+/**
+ * THE SHARED PAGE'S OWN DIAGNOSTICS. `e2e-test.js` wraps the `page` fixture, and
+ * this file does not use it — so without this wiring the largest spec file in the
+ * suite would be the one place a browser-side failure stays invisible. Created
+ * before the first navigation, because a boot failure is exactly what it is for.
+ *
+ * @type {ReturnType<typeof createPageDiagnostics>}
+ */
+let sharedDiagnostics;
+
 test.beforeAll(async ({ browser }) => {
   shared = await browser.newPage();
+  sharedDiagnostics = createPageDiagnostics(shared, {
+    baseUrl: test.info().project.use.baseURL,
+  });
   await stubNetwork(shared);
   await shared.goto(AT_FIXTURE);
   await waitForRefresh(shared);
@@ -73,6 +91,21 @@ test.afterAll(async () => {
 // this hook into all five subject describes, or guarding on the test's name).
 test.beforeEach(async () => {
   await resetUi(shared, baseline);
+});
+
+// Attach what the browser said, then clear it: one collector serves every test in
+// this file, so without the reset each attachment would replay its predecessors'.
+// TWO TOOLS DISAGREE HERE, and the disable is the resolution rather than a
+// shortcut. Playwright REQUIRES a hook's first argument to be an object
+// destructuring pattern — `async (_fixtures, testInfo)` fails at collection with
+// "First argument must use the object destructuring pattern" — while eslint's
+// `no-empty-pattern` rejects the `{}` that requirement forces. This hook needs no
+// fixture at all, and naming one (`{ page }`) would instantiate a browser context
+// for every test in the file, which is precisely what this file avoids.
+// eslint-disable-next-line no-empty-pattern
+test.afterEach(async ({}, testInfo) => {
+  await attachOnFailure(sharedDiagnostics, testInfo);
+  sharedDiagnostics.reset();
 });
 
 test.describe("the affordance map", () => {

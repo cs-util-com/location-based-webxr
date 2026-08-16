@@ -9,7 +9,7 @@
  * reasoning for why the whole suite is offline.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 import {
   AT_FIXTURE,

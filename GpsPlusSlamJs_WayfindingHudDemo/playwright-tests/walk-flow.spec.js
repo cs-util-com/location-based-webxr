@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 /**
  * Walk-flow e2e — drives the REAL wayfinding HUD through its hysteresis
