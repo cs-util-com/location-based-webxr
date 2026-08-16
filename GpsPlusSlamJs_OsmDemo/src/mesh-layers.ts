@@ -393,6 +393,18 @@ function geometryFrom(
    * what keeps both.
    */
   colors?: Float32Array,
+  /**
+   * The AR shell shader's two per-vertex inputs, when the layer feeds it.
+   *
+   * ATTACHED UNCONDITIONALLY ONCE PRESENT, not only while AR runs: the geometry
+   * is built by the worker pass and reused across an AR entry/exit, so attaching
+   * them lazily would mean rebuilding the city to switch material. Two floats
+   * per vertex is the price of making the swap free.
+   */
+  shell?: {
+    height01?: Float32Array | undefined;
+    featureRand?: Float32Array | undefined;
+  },
 ): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
@@ -402,6 +414,18 @@ function geometryFrom(
   geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
   if (colors !== undefined) {
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  }
+  if (shell?.height01 !== undefined) {
+    geometry.setAttribute(
+      "aHeight01",
+      new THREE.BufferAttribute(shell.height01, 1),
+    );
+  }
+  if (shell?.featureRand !== undefined) {
+    geometry.setAttribute(
+      "aFeatureRand",
+      new THREE.BufferAttribute(shell.featureRand, 1),
+    );
   }
   geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
   return geometry;
@@ -428,7 +452,10 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     build: (mesh) =>
       mesh.buildings.map((chunk) => {
         const object = new THREE.Mesh(
-          geometryFrom(chunk.mesh, chunk.colors),
+          geometryFrom(chunk.mesh, chunk.colors, {
+            height01: chunk.height01,
+            featureRand: chunk.featureRand,
+          }),
           new THREE.MeshStandardMaterial({
             // WHITE plus VERTEX COLOURS (W22). The class/material palette lives
             // in the package and arrives per vertex, so a chunk holding a dozen

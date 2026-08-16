@@ -77,6 +77,7 @@ import {
 import { planRouteWithIndex } from "../agent-route.js";
 import { WALKABLE_CATEGORY, walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
+import { shellRandFor } from "./shell-rand.js";
 import { DemoPipeline } from "../demo-pipeline.js";
 import { nowMs, nowEpochMs } from "../monotonic-clock.js";
 import { describeTerrain } from "../terrain-note.js";
@@ -440,6 +441,11 @@ function buildMesh(
     (item) => meshCentroidEnu(item.mesh),
     undefined,
     (item) => buildingColour(item.tags),
+    // THE PHASE OFFSET FOR THE AR SHELL SHADER. Derived from the feature's own
+    // first vertex rather than from its index, so it is STABLE across rebuilds:
+    // an index-derived value would re-shuffle every refresh and the city would
+    // visibly re-randomise whenever a tile loaded.
+    (item) => shellRandFor(item.mesh),
   );
 
   return {
@@ -1034,6 +1040,17 @@ function transferablesOf(kind: WorkerCallKind, value: unknown): Transferable[] {
       chunk.mesh.positions.buffer,
       chunk.mesh.normals.buffer,
       chunk.mesh.indices.buffer,
+      // `colors` IS DELIBERATELY ABSENT, and the omission is not the oversight
+      // it looks like. Adding it on 2026-08-16 turned the demo's e2e suite red
+      // — so something downstream re-reads that buffer after the post, and
+      // transferring it detaches the worker's copy. Reverted rather than chased,
+      // and filed; the comment above is about buffers that are safe to move.
+      //
+      // The two shell attributes ARE transferred: they are new, and nothing but
+      // the AR material reads them. The optional entries rely on the
+      // `instanceof` filter below to drop `undefined`.
+      chunk.height01?.buffer,
+      chunk.featureRand?.buffer,
     ])
     .filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
 }

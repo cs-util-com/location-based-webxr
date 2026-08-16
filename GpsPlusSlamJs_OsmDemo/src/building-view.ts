@@ -384,6 +384,8 @@ export class BuildingView {
   private readonly onPointerDown: (event: PointerEvent) => void;
   private readonly onPointerStart: (event: PointerEvent) => void;
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
+  /** The AR shell material while a session runs; see `setArShellMaterial`. */
+  private arShellMaterial: THREE.Material | undefined;
   /**
    * The scattering sky and the environment map derived from it (§1).
    *
@@ -1552,6 +1554,13 @@ export class BuildingView {
     // layer detectable, which the longhand form could not: see that file's header.
     const { objects, stats } = drawMeshLayers(mesh, layers, context);
     for (const object of objects) this.group.add(object);
+    // RE-APPLIED AFTER EVERY REBUILD. The objects above are brand new and carry
+    // the desktop material; without this a refetch mid-session would silently
+    // drop the AR look at whatever moment the user walked far enough to trigger
+    // one. Cheap and idempotent when no session is running.
+    if (this.arShellMaterial !== undefined) {
+      this.setArShellMaterial(this.arShellMaterial);
+    }
 
     // SCHEDULED, not rendered inline. A synchronous `renderer.render()` here does
     // put pixels in the drawing buffer, but with `antialias: true` that buffer is
@@ -1962,6 +1971,52 @@ export class BuildingView {
    * **What does NOT move:** the lights, the ground plane, the sun rig and the
    * NPC. See `scene-content.ts` for why each stays.
    */
+  /**
+   * Swap the building meshes to an AR shell material, or restore the desktop one.
+   *
+   * **HELD ON THE VIEW, NOT APPLIED ONCE.** A refresh while AR is running
+   * rebuilds every layer object from the worker payload, and a rebuilt mesh
+   * arrives with the desktop material — so a one-shot swap would silently revert
+   * the moment the user walked far enough to trigger a refetch. `render` re-applies
+   * from this field for exactly that reason.
+   *
+   * **THE BUILDING MESHES ARE IDENTIFIED BY THEIR GEOMETRY**, not by a marker:
+   * `aHeight01` is attached only to the buildings layer (owner decision — ground
+   * layers stay solid), so its presence *is* the membership test and there is no
+   * second thing to keep in sync.
+   *
+   * @param material the shell material, or `undefined` to restore.
+   */
+  setArShellMaterial(material: THREE.Material | undefined): void {
+    this.arShellMaterial = material;
+    this.group.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      // NARROWED EXPLICITLY: `THREE.Mesh`'s default generics leave `geometry`
+      // as `any`, which this package's lint bans — and an unchecked `any` here
+      // would silently accept a mesh with no geometry at all.
+      const geometry = object.geometry as THREE.BufferGeometry;
+      if (geometry.getAttribute("aHeight01") === undefined) return;
+      const original = object.userData["desktopMaterial"] as
+        | THREE.Material
+        | undefined;
+      if (material === undefined) {
+        // RESTORE ONLY IF WE SWAPPED IT. A mesh built after the swap already
+        // carries the desktop material, and overwriting it with `undefined`
+        // would leave a mesh with no material at all.
+        if (original !== undefined) {
+          object.material = original;
+          delete object.userData["desktopMaterial"];
+        }
+        return;
+      }
+      // The FIRST swap is the one that records the original; a second swap must
+      // not record the shell material as the thing to restore.
+      object.userData["desktopMaterial"] ??= object.material;
+      object.material = material;
+    });
+    this.requestFrame();
+  }
+
   attachContentTo(
     root: THREE.Object3D,
     frame: ContentFrame,

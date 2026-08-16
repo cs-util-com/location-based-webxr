@@ -187,3 +187,122 @@ describe("chunkMeshes — per-feature colours (W22/W23)", () => {
     expect(chunk?.colors?.length).toBe(chunk?.mesh.positions.length);
   });
 });
+
+/**
+ * Why these tests matter: the AR shell shader reads both of these per vertex,
+ * and both are silent when wrong. A `height01` that is off puts the pulse phase
+ * in the wrong place — which looks like a stylistic choice, not a bug. A
+ * `featureRand` that leaks across the feature boundary makes neighbouring
+ * buildings breathe in lockstep, which looks deliberate too. The only way either
+ * is caught is here, where the feature boundaries still exist.
+ */
+describe("chunkMeshes shell attributes", () => {
+  /** A box from y=base to y=top, as two triangles' worth of vertices. */
+  const column = (base: number, top: number): MeshData => ({
+    positions: new Float32Array([
+      0,
+      base,
+      0,
+      1,
+      base,
+      0,
+      1,
+      top,
+      0,
+      0,
+      top,
+      0,
+      0,
+      base,
+      0,
+      1,
+      top,
+      0,
+    ]),
+    // `mergeMeshes` walks positions and normals in lockstep, so a fixture
+    // without normals throws rather than failing an assertion.
+    normals: new Float32Array([
+      0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+    ]),
+    indices: new Uint32Array([0, 1, 2, 3, 4, 5]),
+    triangleCount: 2,
+    forcedEars: 0,
+  });
+
+  it("emits nothing extra unless a shell random is supplied", () => {
+    // Every other layer must not pay two Float32Arrays for bytes it never reads.
+    const [chunk] = chunkMeshes(
+      [column(0, 10)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+    );
+    expect(chunk?.height01).toBeUndefined();
+    expect(chunk?.featureRand).toBeUndefined();
+  });
+
+  it("normalises height within each feature's OWN extent", () => {
+    // A part starting at min_height reads 0 at ITS base, not at the ground —
+    // so each part breathes over its own extent.
+    const [chunk] = chunkMeshes(
+      [column(20, 30)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      CHUNK_SIZE_M,
+      undefined,
+      () => 0.5,
+    );
+    const h = chunk?.height01;
+    expect(h).toBeDefined();
+    // y=20 is the base ⇒ 0; y=30 is the top ⇒ 1.
+    expect(Math.min(...(h ?? []))).toBeCloseTo(0, 6);
+    expect(Math.max(...(h ?? []))).toBeCloseTo(1, 6);
+  });
+
+  it("keeps each feature's random on its OWN vertices", () => {
+    // The failure this prevents: a fill that walks vertices without respecting
+    // part boundaries, which desynchronises nothing and is invisible on screen.
+    const [chunk] = chunkMeshes(
+      [column(0, 10), column(0, 20)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      CHUNK_SIZE_M,
+      undefined,
+      (m) => (m.positions[7] === 10 ? 0.25 : 0.75),
+    );
+    const r = chunk?.featureRand ?? new Float32Array();
+    expect(r).toHaveLength(12);
+    // First feature's six vertices, then the second's — merge order preserved.
+    expect([...r.slice(0, 6)]).toEqual([0.25, 0.25, 0.25, 0.25, 0.25, 0.25]);
+    expect([...r.slice(6)]).toEqual([0.75, 0.75, 0.75, 0.75, 0.75, 0.75]);
+  });
+
+  it("yields 0 for a feature with no vertical extent, not NaN", () => {
+    // A flat plate or a degenerate footprint divides by a zero span. NaN in a
+    // vertex attribute takes the whole draw call with it.
+    const [chunk] = chunkMeshes(
+      [column(5, 5)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      CHUNK_SIZE_M,
+      undefined,
+      () => 0.5,
+    );
+    for (const v of chunk?.height01 ?? []) expect(v).toBe(0);
+  });
+
+  it("still carries colours when both are requested", () => {
+    // The two fills are separate loops over the same parts; one must not have
+    // displaced the other.
+    const [chunk] = chunkMeshes(
+      [column(0, 10)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      CHUNK_SIZE_M,
+      () => 0xff0000,
+      () => 0.5,
+    );
+    expect(chunk?.colors?.[0]).toBeCloseTo(1, 6);
+    expect(chunk?.featureRand?.[0]).toBeCloseTo(0.5, 6);
+    expect(chunk?.height01).toBeDefined();
+  });
+});

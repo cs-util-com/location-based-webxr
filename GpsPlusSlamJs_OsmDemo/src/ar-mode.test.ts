@@ -100,6 +100,7 @@ function fakeView() {
     frame: string;
     offset: { north: number; up: number; east: number } | undefined;
   }[] = [];
+  const shellCalls: (THREE.Material | undefined)[] = [];
   return {
     localRoot,
     attachedTo,
@@ -112,6 +113,14 @@ function fakeView() {
       offset?: { north: number; up: number; east: number },
     ) => {
       attachedTo.push({ root, frame, offset });
+    },
+    // RECORDED, not ignored: the swap and the restore are a pair, and a fake
+    // that swallowed them would let a session leave an additive, depth-write-free
+    // material on the desktop view — which is invisible until someone looks at
+    // the map again.
+    shellCalls,
+    setArShellMaterial: (material: THREE.Material | undefined) => {
+      shellCalls.push(material);
     },
   };
 }
@@ -804,5 +813,44 @@ describe("the compass slider reaches the store", () => {
 
     mode.dispose();
     expect(container.querySelector("input[type=range]")).toBeNull();
+  });
+});
+
+/**
+ * Why these tests matter: the AR shell material is applied to the shared
+ * `BuildingView`, not to a copy — so a session that fails to restore it leaves an
+ * ADDITIVE, depth-write-free material on the desktop view. That is invisible
+ * until someone looks at the map again, and then reads as a rendering bug with no
+ * obvious connection to AR having been used.
+ */
+describe("the AR building shell", () => {
+  it("applies on entry and restores on dispose", async () => {
+    const view = fakeView();
+    const mode = await startArMode(
+      deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
+    );
+
+    expect(view.shellCalls[0]).toBeDefined();
+    expect(view.shellCalls[0]).toBeInstanceOf(THREE.ShaderMaterial);
+
+    mode.dispose();
+    // The LAST call must be the restore, whatever happened in between.
+    expect(view.shellCalls.at(-1)).toBeUndefined();
+  });
+
+  it("restores on a SYSTEM-initiated end too, not just dispose()", async () => {
+    // The Android back gesture never calls `dispose()`. This is the path that
+    // would leave the material behind.
+    const view = fakeView();
+    await startArMode(
+      deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
+    );
+
+    const sessionOptions = initAR.mock.calls[0]?.[3] as {
+      onSessionEnd: () => void;
+    };
+    sessionOptions.onSessionEnd();
+
+    expect(view.shellCalls.at(-1)).toBeUndefined();
   });
 });

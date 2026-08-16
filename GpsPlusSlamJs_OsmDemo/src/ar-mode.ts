@@ -62,6 +62,10 @@ import {
   createArCompassControl,
   type ArCompassControl,
 } from "./ar-compass-control.js";
+import {
+  createArBuildingMaterial,
+  type ArBuildingMaterial,
+} from "./ar-building-material.js";
 import type { CompassSettings } from "./compass-influence.js";
 import {
   canEnterAr,
@@ -214,6 +218,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     hud?: ArHud;
     elevation?: ArElevationControl;
     compass?: ArCompassControl;
+    shell?: ArBuildingMaterial;
     unregisterFrame?: () => void;
   } = {};
 
@@ -258,6 +263,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // Same reason as the elevation control above: nothing may be left in
     // `#ar-root`, which is hidden only while `:empty`.
     session.compass?.dispose();
+    // RESTORED BEFORE the city is handed back, so the desktop view never sees
+    // an additive, depth-write-free material against its own sky gradient.
+    deps.buildingView.setArShellMaterial(undefined);
+    session.shell?.material.dispose();
     // On BOTH exits, and NOT because the framework's objects are shared —
     // `initAR` builds a fresh scene, camera and renderer each time. It runs
     // here because this is the one place that knows the session is over, and
@@ -417,6 +426,13 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     session.compass.setReady(true);
   }
 
+  // THE AR LOOK (owner decision 2026-08-16): the "Double-sided X-ray pulse"
+  // shell replaces the desktop material on the buildings for the session, and
+  // is restored in `release()`. Held ON THE VIEW rather than applied once, so a
+  // refetch mid-session cannot silently drop it.
+  session.shell = createArBuildingMaterial();
+  deps.buildingView.setArShellMaterial(session.shell.material);
+
   // M2. Clears the background so the passthrough shows, widens the depth budget
   // to 0.5 / 1000, adds fog ending exactly at that far plane, matches the demo's
   // ACES grading, and pointedly does NOT set an environment map.
@@ -463,6 +479,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // `dt` is unused for the rate now, but it still marks the first frame after
     // a reset (the framework's contract says `dt` is 0 there), which is the one
     // sample whose window is meaningless.
+    // THE BREATHING. Driven from `elapsed` -- the frame clock the loop already
+    // computed, monotonic and page-relative -- rather than from wall time, so the
+    // pulse cannot jump when the tab is backgrounded.
+    session.shell?.setTime(elapsed);
     const live = deps.liveMeasurements?.() ?? {};
     const wrote = session.hud?.sample(
       {
