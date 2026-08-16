@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import {
   absoluteDatumFor,
   canEnterAr,
+  fieldMatchesArDatum,
   nueBearingDeg,
   sceneAnchorOffsetNue,
   toDemoLatLng,
@@ -184,5 +185,43 @@ describe("nueBearingDeg", () => {
     expect(nueBearingDeg(0, 0)).toBeUndefined();
     expect(nueBearingDeg(1e-9, -1e-9)).toBeUndefined();
     expect(nueBearingDeg(Number.NaN, 1)).toBeUndefined();
+  });
+});
+
+/**
+ * Why this test matters: found in review of PR #311. Publishing a terrain height
+ * from the desktop field while AR is running produces a residual that is wrong
+ * by tens of metres — the same magnitude as the ~10 m symptom the residual line
+ * exists to diagnose. A reading that is wrong by exactly the quantity under
+ * measurement is worse than no reading, because it looks like the answer.
+ */
+describe("fieldMatchesArDatum", () => {
+  it("accepts a field sampled against AR's datum", () => {
+    const undulation = 46.2;
+    expect(
+      fieldMatchesArDatum({ datum: absoluteDatumFor(undulation) }, undulation),
+    ).toBe(true);
+  });
+
+  it("REJECTS the desktop field, whose datum is the window-centre height", () => {
+    // The live failure: entering AR while this field is still held publishes
+    // relief as though it were an ellipsoidal height.
+    expect(fieldMatchesArDatum({ datum: 0 }, 46.2)).toBe(false);
+    expect(fieldMatchesArDatum({ datum: 118.4 }, 46.2)).toBe(false);
+  });
+
+  it("rejects a field sampled against a DIFFERENT undulation", () => {
+    // Re-anchoring far enough to change N leaves a field that is subtly wrong
+    // rather than obviously so.
+    expect(fieldMatchesArDatum({ datum: absoluteDatumFor(46.2) }, 31.4)).toBe(
+      false,
+    );
+  });
+
+  it("says no when there is no field or no AR datum", () => {
+    // The desktop has no AR datum at all, so there is nothing to match against.
+    expect(fieldMatchesArDatum(undefined, 46.2)).toBe(false);
+    expect(fieldMatchesArDatum({ datum: 0 }, undefined)).toBe(false);
+    expect(fieldMatchesArDatum(undefined, undefined)).toBe(false);
   });
 });

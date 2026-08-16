@@ -235,7 +235,11 @@
       */
       .ar-compass {
         position: absolute;
-        bottom: 12vh;
+        /* NOT 12vh — that is `.ar-toast`'s band, and the far-travel toast fires
+           at 2 km, i.e. during exactly the long walk this slider is being
+           measured on. The two would paint over each other at the moment both
+           matter most (PR #311 review, finding 4). */
+        bottom: 20vh;
         left: 50%;
         display: flex;
         gap: 0.5rem;

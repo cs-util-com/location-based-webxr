@@ -69,8 +69,17 @@ export function createArCompassControl(
   let influence = clamp(options.initialInfluence ?? COMPASS_INFLUENCE_DEFAULT);
   let ready = false;
   let attached = false;
-  /** Set while a change arrived before the store could take it. */
-  let pending = false;
+  /**
+   * Whether the shown value still has to reach the store.
+   *
+   * **STARTS `true`, and that is the fix for PR #311's finding 2.** The control
+   * shows a value from the moment it is built, so until something dispatches it
+   * the readout and the store disagree — and they disagree about
+   * `coldStartOverrideEnabled`, whose library default is ON while every slider
+   * position clears it. A session that never touched the slider was therefore
+   * measuring settings the UI did not describe.
+   */
+  let pending = true;
 
   const element = document.createElement("div");
   element.className = "ar-compass";
@@ -140,9 +149,16 @@ export function createArCompassControl(
       ready = next;
       slider.disabled = !next;
       render();
-      // THE FLUSH. A value chosen before the first fix is applied the moment one
-      // arrives; without this the control silently disagrees with the store for
-      // the rest of the session.
+      // THE FLUSH, AND THE INITIAL DISPATCH — one mechanism, because they are
+      // the same failure. `pending` starts TRUE, so becoming ready applies
+      // whatever the control is showing even if nobody has dragged it.
+      //
+      // Without that, the readout said `compass 0.10` while the store still
+      // held the LIBRARY defaults — and those differ in kind, not just degree:
+      // `coldStartOverrideEnabled` defaults ON, and `compassSettingsFor` clears
+      // it at every position precisely so the slider is the thing being
+      // measured. So a session that never touched the slider was measuring
+      // something the UI did not describe. Found in review of PR #311.
       if (next && !wasReady && pending) apply();
     },
     dispose() {

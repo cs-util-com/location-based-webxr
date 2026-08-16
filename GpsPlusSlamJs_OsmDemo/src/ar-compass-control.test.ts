@@ -93,15 +93,21 @@ describe("createArCompassControl", () => {
   it("does NOT re-dispatch on a later readiness change with nothing pending", () => {
     // `setReady` runs on every fix in the wiring; re-applying each time would
     // re-dispatch four settings once a second forever.
+    //
+    // COUNTS INCLUDE THE INITIAL DISPATCH since the PR #311 review: becoming
+    // ready now applies whatever the control is showing, so the baseline is one
+    // call rather than none. The property under test is unchanged — a REPEATED
+    // `setReady(true)` must add nothing.
     const { control, onChange, drag } = harness();
     control.attach();
     control.setReady(true);
+    expect(onChange).toHaveBeenCalledTimes(1); // the initial value
     drag(0.4);
-    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledTimes(2); // the drag
 
     control.setReady(true);
     control.setReady(true);
-    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledTimes(2);
   });
 
   it("dispatches the FULL silencing combination at zero", () => {
@@ -155,5 +161,70 @@ describe("createArCompassControl", () => {
     const { control, slider } = harness();
     control.attach();
     expect(slider().getAttribute("aria-label")).toMatch(/compass/i);
+  });
+});
+
+/**
+ * Why these tests matter: found in review of PR #311. The control shows a value
+ * from the moment it is built, so until something dispatches it the readout and
+ * the store disagree — and they disagree about `coldStartOverrideEnabled`, whose
+ * library default is ON while every slider position clears it. A session that
+ * never touched the slider was measuring settings the UI did not describe, and
+ * the field notes from it would look like data.
+ */
+describe("createArCompassControl — the initial value reaches the store", () => {
+  it("dispatches what it is SHOWING as soon as it can, untouched", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const onChange = vi.fn();
+    const control = createArCompassControl({ root, onChange });
+    control.attach();
+
+    // Nobody has dragged anything.
+    expect(onChange).not.toHaveBeenCalled();
+    control.setReady(true);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        voteWeight: COMPASS_INFLUENCE_DEFAULT,
+        // THE FIELD THAT MADE THIS A REAL BUG rather than a tidiness point: the
+        // library default is ON, so without the dispatch the cold-start override
+        // was still driving yaw while the slider claimed to be the only input.
+        coldStartOverrideEnabled: false,
+      }),
+    );
+  });
+
+  it("dispatches a NON-default starting value too", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const onChange = vi.fn();
+    const control = createArCompassControl({
+      root,
+      onChange,
+      initialInfluence: 0,
+    });
+    control.attach();
+    control.setReady(true);
+
+    // Zero is the position where silence would be least visible and most wrong.
+    expect(onChange).toHaveBeenLastCalledWith({
+      rotationPriorEnabled: false,
+      coldStartOverrideEnabled: false,
+      experimentEnabled: false,
+      voteWeight: 0,
+    });
+  });
+
+  it("still does not dispatch twice for a repeated setReady", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const onChange = vi.fn();
+    const control = createArCompassControl({ root, onChange });
+    control.attach();
+    control.setReady(true);
+    control.setReady(true);
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });

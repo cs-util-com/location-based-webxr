@@ -88,3 +88,39 @@ worker.call("terrain", {
 far apart and differently signed, so a transposition cannot pass), the datum
 sign, the composed `DEM + N` arithmetic, `ZERO_GEOID` passing through as a
 no-op, and Null Island being allowed rather than refused.
+
+## `nueBearingDeg` — the geographic bearing of a direction
+
+Degrees clockwise from north, given a direction's **north** (`x`) and **east**
+(`z`) components in the GPS-world NUE frame. `undefined` for a degenerate
+(vertical) direction, because reporting `0` there would be a confident "facing
+north" while the phone points at the ground.
+
+⚠️ **Take the direction in WORLD space.** The hierarchy is
+`scene (GPS-world NUE) → arWorldGroup (receives the alignment) → basisChangeNode
+→ arpose → camera`, so the camera is a **descendant** of the aligned group and
+its world transform already carries the alignment. A direction taken _relative
+to_ `arWorldGroup` is in the AR-odometry frame — the alignment's **domain**, i.e.
+un-aligned — and yields a plausible number that is not north.
+`ar-scene-hierarchy.ts` records two earlier readers getting this backwards, and
+an AR HUD review draft made it three; the function exists so the next reader
+inherits the answer instead of the trap.
+
+Tests cover the four cardinals, a **clockwise**-from-north case at 45° (a
+swapped `atan2` passes N/S/E/W and fails only off-axis), the `[0, 360)` range,
+and the degenerate refusals.
+
+## `fieldMatchesArDatum` — is the held terrain AR's, or still the desktop's?
+
+A **type guard** (so the caller keeps its `Heightfield` methods after the check)
+answering whether a held field was sampled against AR's datum, i.e. whether its
+`datum` is `absoluteDatumFor(N)` exactly.
+
+**Why it exists (PR #311 review, finding 3).** Between AR entry and the entry
+pass landing, the app still holds the **desktop** field — sampled against the
+window-centre height, so `heightAt` returns **relief**, not an ellipsoidal
+height. Publishing a GPS-altitude residual against that prints a confident number
+tens of metres out: _the same magnitude as the ~10 m symptom the residual exists
+to diagnose_. Being wrong by exactly the quantity under measurement is the worst
+available failure, so it is checked rather than assumed. The check is an identity
+comparison and closes on its own once the AR field lands.

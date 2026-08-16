@@ -84,3 +84,21 @@ being named, the smoothing warning, and the accessible name.
 - `ar-elevation-control.ts` — the sibling control; same `#ar-root` discipline.
 - `ar-measurements.ts` — `fusedBearingDeg` is what makes this slider observable,
   and `ar-origin.ts`'s `nueBearingDeg` carries the axis convention it needs.
+
+## The initial value is dispatched too (PR #311 review, finding 2)
+
+`pending` starts **`true`**, so the first `setReady(true)` applies whatever the
+control is showing even if nobody has dragged it.
+
+Before that fix the readout said `compass 0.10` while the store still held the
+**library defaults** — and those differ in kind, not merely in degree:
+`coldStartOverrideEnabled` defaults **on**, while `compassSettingsFor` clears it
+at _every_ slider position precisely so the slider is the thing being measured.
+A session that never touched the control was therefore measuring settings the UI
+did not describe, and its field notes would have looked like data.
+
+This also blunts a related gap the same review noted: `release()` does not
+restore the four settings on session end, so a slider left at 0.5 leaves
+`coldStartOverrideEnabled: false, experimentEnabled: true` behind. Harmless while
+the fusion only runs during an AR walk, and the next session now re-dispatches
+its own starting value at entry rather than inheriting the last one silently.

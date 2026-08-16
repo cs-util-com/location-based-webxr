@@ -153,3 +153,33 @@ export function nueBearingDeg(north: number, east: number): number | undefined {
   const deg = (Math.atan2(east, north) * 180) / Math.PI;
   return ((deg % 360) + 360) % 360;
 }
+
+/**
+ * Whether a held heightfield was sampled against AR's datum.
+ *
+ * **THE GUARD FOR PR #311's FINDING 3.** Between AR entry and the entry pass
+ * landing, the app still holds the DESKTOP field — sampled against the window
+ * centre, so `heightAt` returns **relief** rather than an ellipsoidal height.
+ * Reading a GPS-altitude residual against that prints a confident number tens of
+ * metres out, which is the same magnitude as the symptom the residual exists to
+ * diagnose. Being wrong by exactly the amount you are trying to measure is the
+ * worst available failure, so this is checked rather than assumed.
+ *
+ * An **identity** check, not a heuristic: `HeightfieldData` carries the datum it
+ * was built with, and AR's is {@link absoluteDatumFor} of the undulation
+ * exactly. It closes on its own once the AR field lands.
+ *
+ * @param field the currently held field, or `undefined` before one exists.
+ * @param undulationM the geoid undulation AR is using, or `undefined` on the
+ *   desktop — where there is no AR datum and the answer is always `false`.
+ */
+export function fieldMatchesArDatum<
+  T extends { readonly datum: number } = { readonly datum: number },
+>(field: T | undefined, undulationM: number | undefined): field is T {
+  // A TYPE GUARD rather than a plain boolean, and generic rather than widened to
+  // `{ datum }`: the caller holds a `Heightfield` and still needs `heightAt`
+  // after the check. Returning `boolean` left `field` possibly-undefined at the
+  // call site; narrowing to a fixed shape would have thrown the sampler away.
+  if (field === undefined || undulationM === undefined) return false;
+  return field.datum === absoluteDatumFor(undulationM);
+}

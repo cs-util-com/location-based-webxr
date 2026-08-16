@@ -62,7 +62,7 @@ import { arButtonState, type ArSupport } from "./ar-button-state.js";
 import { startArMode, type ArMode } from "./ar-mode.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
-import { canEnterAr } from "./ar-origin.js";
+import { canEnterAr, fieldMatchesArDatum } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
 import { describeGeoEventStats } from "./geo-event-stats.js";
@@ -1326,7 +1326,20 @@ async function main(): Promise<void> {
           fixAccuracyM: lastFixAccuracyM,
           altitudeM: lastAltitudeM,
           altitudeAccuracyM: lastAltitudeAccuracyM,
-          ...(field === undefined || enuHere === undefined
+          // GATED ON THE FIELD'S OWN DATUM, not merely on a field existing
+          // (PR #311 review, finding 3). Between AR entry and the entry pass
+          // landing, `terrain` still holds the DESKTOP field — sampled against
+          // the window-centre height, so `heightAt` returns RELIEF rather than
+          // an ellipsoidal height. Published then, `above terrain` prints a
+          // confident residual tens of metres out: the same magnitude as the
+          // symptom the line exists to diagnose, which is the worst possible
+          // way to be wrong.
+          //
+          // `HeightfieldData` carries its `datum`, and AR's is
+          // `absoluteDatumFor(N)` exactly — so this is an identity check rather
+          // than a heuristic, and it closes on its own once the AR field lands.
+          ...(enuHere === undefined ||
+          !fieldMatchesArDatum(field, arUndulationM)
             ? {}
             : {
                 terrainHasData: field.hasData,

@@ -132,11 +132,18 @@ export interface ArMeasurements {
   /**
    * The alignment's own answer to "which way is north", degrees.
    *
-   * **A CAMERA YAW TAKEN IN THE AR FRAME IS NOT A BEARING.** It becomes one only
-   * once the alignment rotation is applied, so the caller must take the camera's
-   * yaw **relative to `arWorldGroup`** — that group is what carries the
-   * alignment. A world-space yaw would report an AR-frame angle as a compass
-   * reading: plausible-looking, and wrong.
+   * **TAKE IT IN WORLD SPACE.** The hierarchy is `scene (GPS-world NUE) →
+   * arWorldGroup (receives the alignment) → basisChangeNode → arpose → camera`,
+   * so the camera is a **descendant** of the aligned group and its **world**
+   * transform already carries the alignment.
+   *
+   * A direction taken **relative to `arWorldGroup`** would be in the AR-odometry
+   * frame — the alignment's *domain*, i.e. un-aligned — and would report a
+   * plausible number that is not north. An earlier version of this comment said
+   * exactly that, which made it the third statement of a distinction
+   * `ar-scene-hierarchy.ts` already records two readers getting backwards. Use
+   * `ar-origin.ts`'s `nueBearingDeg`, which carries the axis convention and its
+   * tests, rather than an `atan2` at a call site.
    *
    * Read beside the library's compass bearing once that is exposed (DEC-H3/H6).
    * The two differing by tens of degrees says the compass is being outvoted or
