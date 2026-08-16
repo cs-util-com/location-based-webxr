@@ -102,7 +102,13 @@ export type {
 export { buildRegionSlabs } from "./region-slabs.js";
 
 export type { BuildRoadsOptions, RoadRibbon } from "./roads.js";
-export { buildRoads, isPedestrianPath, isRoad, roadWidthM } from "./roads.js";
+export {
+  buildRoads,
+  isBridgeCrossing,
+  isPedestrianPath,
+  isRoad,
+  roadWidthM,
+} from "./roads.js";
 
 export type { BuildPoiOptions, PoiMarker } from "./poi.js";
 export { POI_KEYS, buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";

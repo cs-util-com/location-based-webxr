@@ -121,3 +121,29 @@ surface paths (F10), and a `highway` AREA is a plate rather than a ribbon.
 
 Tested in `roads.test.ts` — the allowlist, carriageways and non-highways refused,
 the shared exclusions, and nodes (no length to walk along).
+
+## `isBridgeCrossing(feature)` — the bank opener (DEC-R1)
+
+Whether a way is a **ground-level** crossing carried over something. It decides
+where a river bank may be opened, so a wrong `true` puts an agent on open water
+and a wrong `false` leaves a shipped picker location unroutable.
+
+**Three earlier formulations were each refuted against
+`testdata/sites/london-tower-bridge.json`, so every clause names a real way:**
+
+- **Any truthy `bridge`, not `bridge=yes`** — the bascule spans are
+  `bridge=movable`, 6 of the 14 ground-level ways at the site the rule exists
+  for. An exact match misses the bridge the place is named after.
+- **A `highway` is required** — ways 367652753 / 367653917 are
+  `bridge=yes building:part=yes min_height=40`, closed areas carrying no way. A
+  bare `bridge=*` rule opens the bank along their outline, from 40 m overhead.
+- **`layer` must be ground level** — ways 153173986 / 153173987 _are_
+  `highway=footway bridge=yes`, at `layer=2`, 43 m up and behind a turnstile. The
+  highway clause alone admits them.
+  - Absent or non-numeric `layer` reads as ground, matching the tag's default;
+    refusing the absent case would drop the common bridge to catch a rare
+    mis-tagged one.
+
+Pinned against the real fixture in `bridge-crossing.corpus.test.ts` — 18 tagged,
+exactly 14 selected — with counts chosen so each refuted draft would fail it
+(8, 18 and 16 respectively).

@@ -21,7 +21,13 @@ import { describe, expect, it } from "vitest";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { enuFrameAt } from "./enu.js";
 import type { MeshData } from "./mesh-data.js";
-import { buildRoads, isPedestrianPath, isRoad, roadWidthM } from "./roads.js";
+import {
+  buildRoads,
+  isBridgeCrossing,
+  isPedestrianPath,
+  isRoad,
+  roadWidthM,
+} from "./roads.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 const FRAME = enuFrameAt(COLOGNE);
@@ -428,6 +434,97 @@ describe("isPedestrianPath (DEC-R2)", () => {
         position: { lat: 0, lng: 0 },
         tags: { highway: "footway" },
       }),
+    ).toBe(false);
+  });
+});
+
+// Why this test matters: this predicate decides where a river bank may be
+// opened (DEC-R1), so a wrong `true` puts an agent on water and a wrong `false`
+// leaves a shipped picker location unroutable. The cases are not hypothetical —
+// every one is a real way in `testdata/sites/london-tower-bridge.json`, and two
+// earlier drafts of the rule were refuted against exactly this data.
+describe("isBridgeCrossing (DEC-R1)", () => {
+  const way = (tags: Record<string, string>): OsmFeature => ({
+    type: "way",
+    id: 1,
+    geometry: [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.001 },
+    ],
+    tags,
+  });
+
+  it("admits the ground-level decks, including the bascule spans", () => {
+    // `bridge=yes` ALONE MISSES THE BRIDGE THE SITE IS NAMED AFTER: Tower
+    // Bridge's opening spans are `bridge=movable`, 6 of the 14 ground-level
+    // ways. An exact-match rule would silently fail there.
+    expect(
+      isBridgeCrossing(way({ bridge: "yes", highway: "trunk", layer: "1" })),
+    ).toBe(true);
+    expect(
+      isBridgeCrossing(
+        way({ bridge: "movable", highway: "trunk", layer: "1" }),
+      ),
+    ).toBe(true);
+    expect(
+      isBridgeCrossing(way({ bridge: "yes", highway: "footway", layer: "1" })),
+    ).toBe(true);
+    expect(
+      isBridgeCrossing(way({ bridge: "viaduct", highway: "service" })),
+    ).toBe(true);
+  });
+
+  it("refuses the high-level walkways, which are highways 43 m in the air", () => {
+    // ways 153173986 / 153173987: `bridge=yes highway=footway layer=2`. A rule
+    // keyed on "the deck is a highway" admits these, and the bank would be
+    // opened under a walkway that is behind a turnstile 43 m up.
+    expect(
+      isBridgeCrossing(way({ bridge: "yes", highway: "footway", layer: "2" })),
+    ).toBe(false);
+  });
+
+  it("refuses the structural areas that carry no way", () => {
+    // ways 367652753 / 367653917: `bridge=yes building:part=yes min_height=40`,
+    // closed areas with NO highway. A bare `bridge=*` rule opens the bank along
+    // their whole outline, from a structure 40 m overhead.
+    expect(
+      isBridgeCrossing(
+        way({ bridge: "yes", "building:part": "yes", layer: "2" }),
+      ),
+    ).toBe(false);
+    expect(isBridgeCrossing(way({ bridge: "yes" }))).toBe(false);
+  });
+
+  it("refuses a negated bridge tag and anything with no bridge at all", () => {
+    expect(isBridgeCrossing(way({ bridge: "no", highway: "footway" }))).toBe(
+      false,
+    );
+    expect(isBridgeCrossing(way({ highway: "footway" }))).toBe(false);
+  });
+
+  it("treats a missing layer as ground level", () => {
+    // Most simple bridges carry no `layer` at all. Reading absent as "unknown,
+    // refuse" would drop the common case; reading it as ground level is what
+    // the tag's default means.
+    expect(isBridgeCrossing(way({ bridge: "yes", highway: "footway" }))).toBe(
+      true,
+    );
+  });
+
+  it("refuses nodes and tunnels", () => {
+    expect(
+      isBridgeCrossing({
+        type: "node",
+        id: 1,
+        position: { lat: 0, lng: 0 },
+        tags: { bridge: "yes", highway: "footway" },
+      }),
+    ).toBe(false);
+    // A way cannot be both; if it claims to be, it is not a crossing over water.
+    expect(
+      isBridgeCrossing(
+        way({ bridge: "yes", highway: "footway", tunnel: "yes" }),
+      ),
     ).toBe(false);
   });
 });

@@ -166,6 +166,48 @@ export function isPedestrianPath(feature: OsmFeature): boolean {
   return highway !== undefined && highway in PATH_WIDTH_M;
 }
 
+/**
+ * Whether this way is a ground-level crossing carried over something — the
+ * opener for a water bank (DEC-R1).
+ *
+ * **Three earlier formulations of this rule were refuted against real data, so
+ * each clause is here for a named way in `testdata/sites/london-tower-bridge.json`:**
+ *
+ * - **Any truthy `bridge`, not `bridge=yes`.** Tower Bridge's own bascule spans
+ *   are `bridge=movable` — 6 of the 14 ground-level ways at the site the rule
+ *   was written for. An exact match misses the bridge the place is named after.
+ * - **A `highway` is required.** Ways 367652753 / 367653917 are
+ *   `bridge=yes building:part=yes min_height=40`, closed areas carrying no way
+ *   at all. A bare `bridge=*` rule opens the bank along their whole outline,
+ *   from a structure 40 m overhead.
+ * - **`layer` must be ground level.** Ways 153173986 / 153173987 ARE
+ *   `highway=footway bridge=yes` — and sit at `layer=2`, 43 m up, behind a
+ *   turnstile. The highway clause alone admits them.
+ *   - Absent `layer` reads as ground level, because that is the tag's default
+ *     and most simple bridges carry none. Refusing the absent case would drop
+ *     the common bridge to save the rare mis-tagged one.
+ *
+ * A tunnel is excluded for completeness: a way claiming to be both is not a
+ * crossing over water.
+ */
+export function isBridgeCrossing(feature: OsmFeature): boolean {
+  if (feature.type === "node") return false;
+  const tags = feature.tags as Record<string, string> | undefined;
+  if (tags === undefined) return false;
+
+  const bridge = tags["bridge"];
+  if (bridge === undefined || bridge === "no") return false;
+  if (tags["highway"] === undefined) return false;
+  if (tags["tunnel"] === "yes") return false;
+
+  const layer = tags["layer"];
+  if (layer === undefined) return true;
+  const level = Number.parseInt(layer, 10);
+  // A layer that is not a number tells us nothing; treat it as ground rather
+  // than as a reason to refuse, matching the absent case.
+  return !Number.isFinite(level) || level <= 1;
+}
+
 /** Whether this builder owns the feature. */
 export function isRoad(feature: OsmFeature): boolean {
   if (feature.type === "node") return false;
