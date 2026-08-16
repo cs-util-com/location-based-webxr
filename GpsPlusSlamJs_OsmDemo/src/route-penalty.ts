@@ -124,6 +124,39 @@ const LN_PATH_SCORE = Math.log(PATH_SCORE);
  * penalty(PATH_SCORE)    = 1
  * ```
  */
+/**
+ * What non-path ground costs relative to a path, on top of its score penalty
+ * (DEC-R2).
+ *
+ * **A SURCHARGE OFF PATHS, NOT A DISCOUNT ON THEM, and that is forced rather
+ * than chosen.** `agent-route.ts`'s heuristic is unpenalised straight-line
+ * metres, which is a lower bound only while every edge costs at least its own
+ * metres. Any factor below 1 would destroy that and make A* return
+ * non-optimal routes that still look plausible — the worst kind of wrong,
+ * because nothing reports it.
+ *
+ * 1.5 is a starting value, not a measurement: it makes an off-path detour worth
+ * taking only when the path costs more than half as much again in distance.
+ * The owner asked for "stay on the paths unless it is a big detour"; this is the
+ * knob that means it, and it is expected to want tuning by eye.
+ */
+export const NON_PATH_PENALTY = 1.5;
+
+/**
+ * @param onPath - whether the cell carries a pedestrian way, or `undefined`
+ *   where nothing is known.
+ *
+ * **Unknown counts as OFF path**, deliberately. Outside the scored disk nothing
+ * is known, so every cell takes the same surcharge — a uniform multiplier, which
+ * cannot change which route is cheapest. The alternative would price unmapped
+ * ground as though it were a path, making it preferable to mapped ground: the
+ * inverse of the intent, and the same trap DEC-R13-12 already records for the
+ * score itself.
+ */
+export function pathFactor(onPath: boolean | undefined): number {
+  return onPath === true ? 1 : NON_PATH_PENALTY;
+}
+
 export function penaltyFor(score: number | undefined): number {
   // NON-FINITE IS UNKNOWN, NOT TERRIBLE. `NaN` here means the score pipeline
   // produced something uninterpretable; bending routes around a data fault

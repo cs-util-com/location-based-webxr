@@ -331,3 +331,68 @@ describe("planRoute, weighted by the walkable score", () => {
     expect(route).toBeDefined();
   });
 });
+
+/**
+ * Why these tests matter: DEC-R2 splits the two questions the `walkable` score
+ * was being asked at once. This is the OUTCOME half — that the planner's route
+ * actually moves onto a path — as opposed to `route-penalty.test.ts`, which pins
+ * the arithmetic. Both are needed: a correct multiplier wired to nothing would
+ * pass that file and change no route.
+ */
+describe("path-ness steers the route (DEC-R2)", () => {
+  const west = { lat: HOME.lat, lng: HOME.lng - STEP * 30 };
+  const east = { lat: HOME.lat, lng: HOME.lng + STEP * 30 };
+
+  /** A corridor of on-path cells, offset north of the straight line. */
+  const corridorNorthOf = (lat: number) => (cell: string) =>
+    cellToLatLng(cell)[0] > lat;
+
+  it("detours onto a path rather than taking the shorter neutral line", () => {
+    const straight = planRoute([], west, east, flat);
+    const viaPath = planRoute([], west, east, {
+      ...flat,
+      onPathAt: corridorNorthOf(HOME.lat + STEP * 2),
+    });
+
+    expect(straight).toBeDefined();
+    expect(viaPath).toBeDefined();
+
+    const northOf = (route: NonNullable<typeof straight>) =>
+      route.filter((p) => p.position.lat > HOME.lat + STEP * 2).length /
+      route.length;
+
+    // The path corridor pulls the route north; without it there is no reason to
+    // leave the straight line. Asserted as a SHARE of the route rather than as
+    // exact cells, because the hex lattice decides the staircase and this test
+    // is about the pull, not about the tiling.
+    expect(northOf(viaPath!)).toBeGreaterThan(northOf(straight!));
+  });
+
+  it("does NOT detour when the path is too far to be worth it", () => {
+    // The other half of "stay on paths unless it is a big detour". A corridor
+    // far off the line costs more in distance than NON_PATH_PENALTY saves, so
+    // the planner should ignore it — otherwise the NPC chases every distant
+    // pavement, which reads as broken rather than as natural.
+    const viaFarPath = planRoute([], west, east, {
+      ...flat,
+      onPathAt: corridorNorthOf(HOME.lat + STEP * 400),
+    });
+
+    expect(viaFarPath).toBeDefined();
+    for (const point of viaFarPath!) {
+      expect(point.position.lat).toBeLessThan(HOME.lat + STEP * 400);
+    }
+  });
+
+  it("leaves the route unchanged when nothing is known about path-ness", () => {
+    // Uniformly unknown is a uniform multiplier, so it cannot change which route
+    // is cheapest — the same honest default `scoreFor` has.
+    const withoutSignal = planRoute([], west, east, flat);
+    const allUnknown = planRoute([], west, east, {
+      ...flat,
+      onPathAt: () => undefined,
+    });
+
+    expect(allUnknown).toEqual(withoutSignal);
+  });
+});

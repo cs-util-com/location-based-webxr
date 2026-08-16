@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { enuFrameAt } from "./enu.js";
 import type { MeshData } from "./mesh-data.js";
-import { buildRoads, isRoad, roadWidthM } from "./roads.js";
+import { buildRoads, isPedestrianPath, isRoad, roadWidthM } from "./roads.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 const FRAME = enuFrameAt(COLOGNE);
@@ -362,5 +362,72 @@ describe("buildRoads — geometry", () => {
       expect(Number.isFinite(value)).toBe(true);
     for (const value of mesh.normals) expect(Number.isFinite(value)).toBe(true);
     expect(mesh.triangleCount).toBeGreaterThan(0);
+  });
+});
+
+// Why this test matters: DEC-R2 splits the two questions the `walkable` score
+// was being asked to answer at once. `walkable` rates GROUND QUALITY — under
+// "can a person walk on this surface", `surface=grass` 9 beating
+// `highway=footway` 3 is correct — while routing needs PATH-NESS, which is a
+// property of the way, not of the surface. This predicate is that second
+// question, and it lives beside `PATH_WIDTH_M` so the allowlist has exactly one
+// home; a second copy of it in the demo is the "two implementations of one
+// predicate" mistake this package has already had to fix once.
+describe("isPedestrianPath (DEC-R2)", () => {
+  const way = (tags: Record<string, string>): OsmFeature => ({
+    type: "way",
+    id: 1,
+    geometry: [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.001 },
+    ],
+    tags,
+  });
+
+  it("admits the ways a person walks along", () => {
+    for (const highway of [
+      "footway",
+      "path",
+      "steps",
+      "pedestrian",
+      "bridleway",
+      "cycleway",
+    ]) {
+      expect(isPedestrianPath(way({ highway })), highway).toBe(true);
+    }
+  });
+
+  it("refuses carriageways and non-highways", () => {
+    for (const highway of ["motorway", "trunk", "primary", "residential"]) {
+      expect(isPedestrianPath(way({ highway })), highway).toBe(false);
+    }
+    expect(isPedestrianPath(way({ building: "yes" }))).toBe(false);
+    expect(isPedestrianPath(way({}))).toBe(false);
+  });
+
+  it("refuses what `isRoad` refuses, for the same reasons", () => {
+    // Underground and covered ways are not surface paths (F10), and a highway
+    // AREA is a plate rather than a ribbon. Sharing the exclusions keeps the two
+    // predicates from disagreeing about the same feature.
+    expect(isPedestrianPath(way({ highway: "footway", tunnel: "yes" }))).toBe(
+      false,
+    );
+    expect(isPedestrianPath(way({ highway: "footway", covered: "yes" }))).toBe(
+      false,
+    );
+    expect(isPedestrianPath(way({ highway: "pedestrian", area: "yes" }))).toBe(
+      false,
+    );
+  });
+
+  it("refuses nodes, which have no length to walk along", () => {
+    expect(
+      isPedestrianPath({
+        type: "node",
+        id: 1,
+        position: { lat: 0, lng: 0 },
+        tags: { highway: "footway" },
+      }),
+    ).toBe(false);
   });
 });

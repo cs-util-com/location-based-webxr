@@ -62,6 +62,7 @@ import {
   buildingColour,
   chunkMeshes,
   featureKey,
+  isPedestrianPath,
   meshCentroidEnu,
   roadColour,
   type LatLng,
@@ -74,7 +75,7 @@ import {
 } from "gps-plus-slam-app-framework/osm-bridge";
 
 import { planRouteWithIndex } from "../agent-route.js";
-import { walkableScoreOf } from "../route-penalty.js";
+import { WALKABLE_CATEGORY, walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { DemoPipeline } from "../demo-pipeline.js";
 import { nowMs, nowEpochMs } from "../monotonic-clock.js";
@@ -852,6 +853,34 @@ async function handle<K extends WorkerCallKind>(
         // opens on `battleArea`, so reading the selected category would route
         // the shipped default by battle-area suitability.
         scoreFor: (cell) => walkableScoreOf(pipeline.scoreFor(cell)?.scores),
+        // PATH-NESS, THE OTHER HALF OF "PREFER PATHS" (DEC-R2), read from the
+        // same two maps the `explain` handler below already walks — the
+        // provenance map for which features cover the cell, then the merged
+        // feature map for their tags. No new payload, no new index.
+        //
+        // **It sees what the score cannot.** Scoring is multiplicative with zero
+        // absorbing, so a footbridge sharing a res-13 cell with a river scores
+        // exactly 0 and is indistinguishable from open water — while
+        // `contributors` records a feature even when its factor is 0 or 1, so
+        // the footway is still listed here.
+        //
+        // `undefined` rather than `false` for an unscored cell, so the planner
+        // can tell "no way here" from "nobody looked": outside the scored disk
+        // every cell is unknown, which prices uniformly and therefore changes no
+        // route.
+        onPathAt: (cell) => {
+          const scored = pipeline.scoreFor(cell);
+          if (scored === undefined) return undefined;
+          const merged = pipeline.features();
+          return Object.keys(scored.contributors[WALKABLE_CATEGORY] ?? {}).some(
+            (key) => {
+              const feature = merged.get(
+                key as Parameters<typeof merged.get>[0],
+              );
+              return feature !== undefined && isPedestrianPath(feature);
+            },
+          );
+        },
       });
     }
 

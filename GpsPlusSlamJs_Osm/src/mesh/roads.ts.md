@@ -95,3 +95,29 @@ geometry full of holes. The helper does a plan-view point-in-triangle test and
 explicitly rejects degenerate triangles, so the "not covered" assertions cannot
 silently become no-ops. Mutation-checked: removing the discs fails
 "leaves NO GAP at a right-angle corner" and nothing else.
+
+## `isPedestrianPath(feature)` — the path-ness signal (DEC-R2)
+
+Whether a way is one a person walks **along**. Added 2026-08-16 for routing, not
+for rendering, and it lives here because `PATH_WIDTH_M` — the allowlist it tests
+against — already does. A second copy of that list in the demo is the "two
+implementations of one predicate" mistake this package has had to fix before.
+
+**It is not the `walkable` score, and the difference is the point.** `walkable`
+rates GROUND QUALITY: under "can a person walk on this surface",
+`surface=grass` 9 outranking `highway=footway` 3 is correct, because a footway
+LINE carries no surface information of its own. Path-ness is a property of the
+way. A router wanting "prefer the paths" needs both, as separate multipliers —
+asking one number to carry both made the preference track how thoroughly a place
+is mapped rather than whether a cell is a path.
+
+**It also answers a case the score structurally cannot.** Scoring is
+multiplicative with zero absorbing, so a footbridge sharing a res-13 cell with a
+river scores exactly 0 — indistinguishable from open water. The provenance map
+still records the footway, so this predicate sees the bridge.
+
+Exclusions are `isRoad`'s, shared deliberately: tunnels and covered ways are not
+surface paths (F10), and a `highway` AREA is a plate rather than a ribbon.
+
+Tested in `roads.test.ts` — the allowlist, carriageways and non-highways refused,
+the shared exclusions, and nodes (no length to walk along).

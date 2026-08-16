@@ -131,6 +131,41 @@ export function roadWidthM(tags: OsmTags): number {
   return lanes * laneWidthM(lanes);
 }
 
+/**
+ * Whether this way is one a person walks ALONG — the path-ness signal routing
+ * needs (DEC-R2).
+ *
+ * **This is not the same question as the `walkable` score, and conflating them
+ * is what six documents of routing analysis got wrong.** `walkable` rates
+ * GROUND QUALITY: under "can a person walk on this surface", `surface=grass` 9
+ * outranking `highway=footway` 3 is correct, because a footway LINE carries no
+ * surface information of its own. Path-ness is a property of the way. A router
+ * that wants "prefer the paths" needs both, as separate multipliers.
+ *
+ * It also answers a case the score structurally cannot. Scoring is
+ * multiplicative with zero absorbing, so a footbridge sharing a res-13 cell with
+ * a river scores exactly 0 — indistinguishable from open water. The provenance
+ * map still records the footway as a contributor, so this predicate sees the
+ * bridge the score cannot.
+ *
+ * **Allowlist rather than a `highway` presence test**, and it is `PATH_WIDTH_M`'s
+ * key set by construction — one home for the list. A presence test would admit
+ * motorways, and the rule table already scores those 0 for good reason.
+ *
+ * Exclusions are {@link isRoad}'s, deliberately shared: two predicates
+ * disagreeing about one feature is a mistake this package has already had to fix.
+ */
+export function isPedestrianPath(feature: OsmFeature): boolean {
+  if (!isRoad(feature)) return false;
+  const tags = feature.tags as Record<string, string> | undefined;
+  const highway = tags?.["highway"];
+  // `noUncheckedIndexedAccess` makes the lookup `string | undefined`, and
+  // `undefined in PATH_WIDTH_M` is a type error rather than a false — narrow
+  // first. `isRoad` has already established the tag exists; the compiler cannot
+  // see that across the call.
+  return highway !== undefined && highway in PATH_WIDTH_M;
+}
+
 /** Whether this builder owns the feature. */
 export function isRoad(feature: OsmFeature): boolean {
   if (feature.type === "node") return false;

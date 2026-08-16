@@ -107,3 +107,27 @@ neutral penalty rather than throwing.
 
 `agent-route.test.ts` › "planRoute, weighted by the walkable score" is where the
 numbers become routes.
+
+## `pathFactor` / `NON_PATH_PENALTY` — the second multiplier (DEC-R2)
+
+`penaltyFor` prices the GROUND; `pathFactor` prices the WAY. The planner
+multiplies both, and the split exists because `walkable` was answering two
+questions at once — see `gps-plus-slam-osm`'s `roads.ts.md` on
+`isPedestrianPath`.
+
+- `NON_PATH_PENALTY = 1.5` — a starting value, expected to want tuning by eye.
+  It makes an off-path detour worth taking only when the path costs more than
+  half as much again in distance.
+- `pathFactor(onPath)` → `1` on a path, `NON_PATH_PENALTY` otherwise.
+
+**A SURCHARGE OFF PATHS, NOT A DISCOUNT ON THEM, and that is forced.**
+`agent-route.ts`'s heuristic is unpenalised straight-line metres, a lower bound
+only while every edge costs at least its own metres. A factor below 1 would
+destroy that and yield non-optimal routes that still look plausible — the worst
+kind of wrong, because nothing reports it. `route-penalty.test.ts` asserts the
+combined multiplier is `>= 1` across the whole input space, not at a sample.
+
+**Unknown counts as off-path.** Outside the scored disk nothing is known, so
+every cell takes the same surcharge — a uniform multiplier cannot change which
+route is cheapest. Pricing unknown as a path would make unmapped ground
+preferable to mapped ground, the same trap DEC-R13-12 records for the score.

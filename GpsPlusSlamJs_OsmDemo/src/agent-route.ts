@@ -32,7 +32,7 @@ import {
 } from "gps-plus-slam-osm";
 
 import { groundHeightAtCell, type GroundSampler } from "./cell-ground.js";
-import { penaltyFor } from "./route-penalty.js";
+import { pathFactor, penaltyFor } from "./route-penalty.js";
 
 /** One point on a planned route, ready to draw. */
 export interface RoutePoint {
@@ -92,6 +92,27 @@ export interface RouteOptions {
    * what the unit fixtures use.
    */
   readonly scoreFor?: (cell: string) => number | undefined;
+
+  /**
+   * Whether a cell carries a pedestrian way — the path-ness half of "prefer
+   * paths" (DEC-R2).
+   *
+   * **Separate from `scoreFor` because they answer different questions.** The
+   * `walkable` score rates GROUND QUALITY, where `surface=grass` outranking
+   * `highway=footway` is correct; path-ness is a property of the way. Asking one
+   * number to carry both is what made the preference track how thoroughly a
+   * place is mapped rather than whether a cell is a path.
+   *
+   * It also sees what the score cannot: scoring is multiplicative with zero
+   * absorbing, so a footbridge sharing a cell with a river scores exactly 0 and
+   * is indistinguishable from open water — while the provenance map still
+   * records the footway.
+   *
+   * Omitted, or `undefined` for a cell, prices as off-path. Uniformly unknown is
+   * a uniform multiplier and therefore leaves the route where plain distance
+   * puts it — the same honest default `scoreFor` has.
+   */
+  readonly onPathAt?: (cell: string) => boolean | undefined;
 }
 
 /**
@@ -155,6 +176,11 @@ export function planRouteWithIndex(
   const start: Column = { cell: startCell, heightM: startLevels[0]! };
 
   const metresBetweenCells = cellMetres(options.frame);
+  // MEMOISED PER ROUTE, exactly like `cellMetres` and for the same reason: this
+  // is consulted once per expanded cell on a path the search walks up to
+  // `maxExpansions` times, and the lookup behind it walks a provenance map and
+  // then a feature map per call.
+  const onPathAt = memoisePathness(options.onPathAt);
   const goalAt = (cell: string) => metresBetweenCells(cell, goalCell);
 
   let path: Column[] | undefined;
@@ -165,9 +191,14 @@ export function planRouteWithIndex(
       // score at all: every `gridDisk` neighbour used to cost 1 whatever
       // direction it lay in, so a straight run and a staircase of the same step
       // count were indistinguishable. The penalty is what fixes the other half.
+      // TWO MULTIPLIERS, NOT ONE (DEC-R2). The score rates the GROUND and the
+      // path factor rates the WAY, and neither answers the other's question.
+      // Both are >= 1, which is what keeps the unpenalised heuristic below a
+      // lower bound — see the note on it directly beneath.
       cost: (leaving, entering) =>
         metresBetweenCells(leaving.cell, entering.cell) *
-        penaltyFor(options.scoreFor?.(entering.cell)),
+        penaltyFor(options.scoreFor?.(entering.cell)) *
+        pathFactor(onPathAt(entering.cell)),
       // STRAIGHT-LINE DISTANCE, UNPENALISED, which is what keeps it a lower
       // bound: `penaltyFor` never returns less than 1, so no route can be
       // cheaper than its own metres. See `search.ts` on why consistency rather
@@ -225,5 +256,27 @@ function cellMetres(frame: EnuFrame): (a: string, b: string) => number {
     const from = centreOf(a);
     const to = centreOf(b);
     return Math.hypot(to.x - from.x, to.y - from.y);
+  };
+}
+
+/**
+ * Caches a path-ness lookup for the life of one route.
+ *
+ * **`cache.has` rather than `cache.get(...) !== undefined`**, because
+ * `undefined` — "nothing is known about this cell" — is a legitimate answer and
+ * the commonest one outside the scored disk. Testing the value would re-run the
+ * lookup for every unknown cell, which is precisely the population that makes
+ * the memo worth having.
+ */
+function memoisePathness(
+  lookup: ((cell: string) => boolean | undefined) | undefined,
+): (cell: string) => boolean | undefined {
+  if (lookup === undefined) return () => undefined;
+  const cache = new Map<string, boolean | undefined>();
+  return (cell) => {
+    if (cache.has(cell)) return cache.get(cell);
+    const answer = lookup(cell);
+    cache.set(cell, answer);
+    return answer;
   };
 }

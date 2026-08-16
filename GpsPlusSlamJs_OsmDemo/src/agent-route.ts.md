@@ -162,3 +162,27 @@ be computed on the side that holds the index (DEC-R11-16). The search is
 synchronous, so it also delays the next publish; that is what makes the expansion
 cap a publish-latency bound as well as a freeze bound, and why an `abort` cannot
 preempt a route in flight.
+
+## `RouteOptions.onPathAt` — path-ness (DEC-R2)
+
+`(cell) => boolean | undefined`. Whether a cell carries a pedestrian way.
+Injected for the same reason `scoreFor` is: the answer lives in the pipeline
+inside the worker, and this module stays constructible from a feature list alone.
+No new payload crosses the worker boundary — the handler reads the same
+provenance and feature maps `explain` already walks.
+
+- Cost is now `metres × penaltyFor(score) × pathFactor(onPath)`. **Both factors
+  are `>= 1`**, which is what keeps the unpenalised heuristic a lower bound.
+- **Memoised per route** (`memoisePathness`), like `cellMetres` and for the same
+  reason — it is consulted once per expanded cell, up to `maxExpansions` times,
+  and the lookup behind it walks two maps per call. The memo uses `cache.has`
+  rather than a truthiness test, because `undefined` is a legitimate and common
+  answer outside the scored disk.
+- Omitted, or uniformly `undefined`, leaves the route exactly where plain
+  distance puts it. `agent-route.test.ts` asserts that equivalence directly.
+
+Covered by "path-ness steers the route (DEC-R2)" in `agent-route.test.ts`: the
+route detours onto a near corridor, ignores one too far to be worth it, and is
+unchanged when nothing is known. The first of those was verified to go red when
+the multiplier is disabled — a green outcome test that cannot fail is the
+failure mode this suite has already met once.
