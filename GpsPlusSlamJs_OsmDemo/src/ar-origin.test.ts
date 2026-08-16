@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import {
   absoluteDatumFor,
   canEnterAr,
+  nueBearingDeg,
   sceneAnchorOffsetNue,
   toDemoLatLng,
   type FrameworkLatLong,
@@ -144,5 +145,44 @@ describe("the gate on entering AR", () => {
     // refactor that would reintroduce it (`origin?.lat` is `0`, which is
     // falsy).
     expect(canEnterAr({ lat: 0, lon: 0 })).toBe(true);
+  });
+});
+
+/**
+ * Why this test matters: the axis convention is the entire risk in this
+ * function. `ar-scene-hierarchy.ts` records that two independent readers already
+ * got the alignment frame backwards, and an earlier draft of the AR HUD review
+ * did too. A bearing computed on the wrong axes is not obviously wrong on
+ * screen — it is a plausible number that is simply not north, which is the worst
+ * failure available for a compass readout.
+ */
+describe("nueBearingDeg", () => {
+  it("maps the four cardinal directions in NUE (x=north, z=east)", () => {
+    expect(nueBearingDeg(1, 0)).toBe(0); // facing north
+    expect(nueBearingDeg(0, 1)).toBe(90); // facing east
+    expect(nueBearingDeg(-1, 0)).toBe(180); // facing south
+    expect(nueBearingDeg(0, -1)).toBe(270); // facing west
+  });
+
+  it("turns CLOCKWISE from north, which is what a compass does", () => {
+    // The sign error that would pass every cardinal test but one: swapping the
+    // atan2 arguments gives anticlockwise, and north/south/east/west alone
+    // cannot always catch it.
+    expect(nueBearingDeg(1, 1)).toBeCloseTo(45, 6); // north-east
+    expect(nueBearingDeg(-1, 1)).toBeCloseTo(135, 6); // south-east
+  });
+
+  it("always lands in [0, 360)", () => {
+    expect(nueBearingDeg(1, -0.0001)).toBeGreaterThanOrEqual(0);
+    expect(nueBearingDeg(1, -0.0001)).toBeLessThan(360);
+  });
+
+  it("refuses a degenerate direction rather than claiming north", () => {
+    // Looking straight up or down projects to nothing horizontal. Reporting 0
+    // there would be a confident "facing north" while the phone points at the
+    // ground.
+    expect(nueBearingDeg(0, 0)).toBeUndefined();
+    expect(nueBearingDeg(1e-9, -1e-9)).toBeUndefined();
+    expect(nueBearingDeg(Number.NaN, 1)).toBeUndefined();
   });
 });

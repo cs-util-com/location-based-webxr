@@ -48,6 +48,14 @@ import { geoEventButtonLabel } from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
 import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar";
 import { setZeroPos } from "gps-plus-slam-app-framework/state";
+// The four that together mean "the compass has this much say" — see
+// `compass-influence.ts` for why silencing it is not one setting.
+import {
+  setColdStartOverrideEnabled,
+  setCompassExperimentEnabled,
+  setCompassRotationPriorEnabled,
+  setCompassVoteWeight,
+} from "gps-plus-slam-app-framework/state";
 import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 
 import { arButtonState, type ArSupport } from "./ar-button-state.js";
@@ -521,6 +529,15 @@ async function main(): Promise<void> {
    * value, arriving by a different route.
    */
   let lastFixPosition: { lat: number; lng: number } | undefined;
+  /**
+   * When the last fix arrived, epoch ms.
+   *
+   * **A STALE FIX AND A FRESH ONE ARE INDISTINGUISHABLE** on every other line of
+   * the readout, and a large share of "the alignment drifted" observations are
+   * really "no fix has arrived for 40 s". Wall time rather than the frame clock
+   * because that is what the fix itself is stamped against.
+   */
+  let lastFixAtMs: number | undefined;
 
   /**
    * The loop the 2026-08-14 report found missing: fixes → store → alignment.
@@ -566,6 +583,7 @@ async function main(): Promise<void> {
       lastAltitudeM = position.altitude ?? undefined;
       lastAltitudeAccuracyM = position.altitudeAccuracy ?? undefined;
       lastFixPosition = { lat: position.lat, lng: position.lng };
+      lastFixAtMs = Date.now();
       // REGISTRATION IS NOT GATED, and that separation is the fix for the
       // 2026-08-14 report ("no automatic updates of the user position … the
       // store … automatic alignments … missing entirely").
@@ -650,6 +668,10 @@ async function main(): Promise<void> {
       // "N m from anchor" kept reporting the last good fix — the more
       // misleading half, because it reads as the user having stopped moving.
       lastFixPosition = undefined;
+      // AND THE FIX AGE WITH IT, for the same reason: an age left ticking after
+      // the watch failed reads as a fix that is still arriving, which is the
+      // opposite of what has happened.
+      lastFixAtMs = undefined;
       // TO THE SURFACE THE USER CAN ACTUALLY SEE (r511 review). During a
       // session the status line is outside WebXR's dom-overlay root and is not
       // composited at all — which milestone 3 discovered and then left this
@@ -1284,10 +1306,47 @@ async function main(): Promise<void> {
       liveMeasurements: () => {
         const zero = selectZeroReference(store.getState());
         const here = lastFixPosition;
+        // THE DEM UNDER THE USER (DEC-H1). `terrain` is declared further down
+        // this function body, which is safe because this closure only ever RUNS
+        // from a frame callback — long after the whole body has been evaluated.
+        // Sampling costs one bilinear array read, twice a second.
+        //
+        // `hasData` is passed through rather than folded in: `heightfieldFrom`
+        // samples FLAT ZERO for a failed load, so the height alone cannot
+        // distinguish "sea level" from "no DEM" and the readout must.
+        const field = terrain;
+        const enuHere =
+          here === undefined
+            ? undefined
+            : enuFrameAt(anchors.origin).toEnu({
+                lat: here.lat,
+                lng: here.lng,
+              });
         return {
           fixAccuracyM: lastFixAccuracyM,
           altitudeM: lastAltitudeM,
           altitudeAccuracyM: lastAltitudeAccuracyM,
+          ...(field === undefined || enuHere === undefined
+            ? {}
+            : {
+                terrainHasData: field.hasData,
+                terrainHeightM: field.heightAt({
+                  x: enuHere.x,
+                  y: enuHere.y,
+                }),
+              }),
+          // THE SESSION CONSTANT that makes the ZERO_GEOID trap visible. It does
+          // not move while walking; it is on screen so that a `0` announces
+          // itself rather than putting the whole scene ~46 m out in silence.
+          ...(arUndulationM === undefined
+            ? {}
+            : { geoidUndulationM: arUndulationM }),
+          ...(here === undefined
+            ? {}
+            : { position: { lat: here.lat, lng: here.lng } }),
+          ...(lastFixAtMs === undefined
+            ? {}
+            : { fixAgeMs: Date.now() - lastFixAtMs }),
           metresFromAnchor:
             zero === null || here === undefined
               ? undefined
@@ -1297,6 +1356,22 @@ async function main(): Promise<void> {
                   UNITS.m,
                 ),
         };
+      },
+      // FOUR DISPATCHES, NOT ONE (DEC-E2). `compass-influence.ts` holds why:
+      // "influence 0" is not "vote weight 0" — at weight 0 the steady-state
+      // formula is `1 − observability`, a FULL override exactly when yaw is
+      // poorly observable, and switching the prior off falls through to the
+      // cold-start override, whose curve is identical and which is on by
+      // default. Silencing the compass takes all of these together.
+      onCompassSettings: (settings) => {
+        store.dispatch(
+          setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
+        );
+        store.dispatch(
+          setColdStartOverrideEnabled(settings.coldStartOverrideEnabled),
+        );
+        store.dispatch(setCompassExperimentEnabled(settings.experimentEnabled));
+        store.dispatch(setCompassVoteWeight(settings.voteWeight));
       },
       onEnded: () => {
         // Fires for the Android back gesture too, where nothing called

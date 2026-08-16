@@ -51,15 +51,36 @@ import type { LatLng } from "gps-plus-slam-osm";
 
 import { applyArEnvironment } from "./ar-scene-environment.js";
 import { createArHud, type ArHud } from "./ar-hud.js";
+// Type-only: the GPS-side half of the readout is DEFINED by the formatter, so
+// the two cannot drift apart the way two hand-kept field lists would.
+import type { ArMeasurements } from "./ar-measurements.js";
 import {
   createArElevationControl,
   type ArElevationControl,
 } from "./ar-elevation-control.js";
 import {
+  createArCompassControl,
+  type ArCompassControl,
+} from "./ar-compass-control.js";
+import type { CompassSettings } from "./compass-influence.js";
+import {
   canEnterAr,
+  nueBearingDeg,
   sceneAnchorOffsetNue,
   type FrameworkLatLong,
 } from "./ar-origin.js";
+
+// Only for the reusable direction vector below. `getWorldDirection` needs a
+// target and allocating one per frame would be litter on the frame path.
+import * as THREE from "three";
+
+/**
+ * Scratch for the camera's look direction, reused every frame.
+ *
+ * MODULE-LEVEL rather than per session: only one AR session exists at a time,
+ * and the value is consumed synchronously in the line after it is written.
+ */
+const forward = new THREE.Vector3();
 
 /** The ENU shape the injected frame produces. Structural, nothing imported. */
 interface EnuPoint {
@@ -124,7 +145,26 @@ export interface ArModeDeps {
      */
     readonly altitudeM?: number | undefined;
     readonly altitudeAccuracyM?: number | undefined;
-  };
+  } & Pick<
+    ArMeasurements,
+    | "terrainHeightM"
+    | "terrainHasData"
+    | "geoidUndulationM"
+    | "geoidModelId"
+    | "position"
+    | "fixAgeMs"
+  >;
+  /**
+   * Apply the compass-influence settings the slider produced (DEC-E2).
+   *
+   * FOUR SETTINGS RATHER THAN ONE, and the reason is in `compass-influence.ts`:
+   * "influence 0" is not "vote weight 0". Dispatching is the caller's job
+   * because the action creators belong to the library and this module is kept
+   * testable without a real store.
+   *
+   * Optional so the session still runs without the control.
+   */
+  readonly onCompassSettings?: (settings: CompassSettings) => void;
 }
 
 export interface ArMode {
@@ -173,6 +213,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     restoreEnvironment?: () => void;
     hud?: ArHud;
     elevation?: ArElevationControl;
+    compass?: ArCompassControl;
     unregisterFrame?: () => void;
   } = {};
 
@@ -214,6 +255,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // it nudges — and so nothing is left in `#ar-root`, which is hidden only
     // while `:empty`.
     session.elevation?.dispose();
+    // Same reason as the elevation control above: nothing may be left in
+    // `#ar-root`, which is hidden only while `:empty`.
+    session.compass?.dispose();
     // On BOTH exits, and NOT because the framework's objects are shared —
     // `initAR` builds a fresh scene, camera and renderer each time. It runs
     // here because this is the one place that knows the session is over, and
@@ -356,6 +400,23 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   });
   session.elevation.attach();
 
+  // THE COMPASS SLIDER (DEC-E2), only when the caller can actually dispatch.
+  if (deps.onCompassSettings !== undefined) {
+    const onCompassSettings = deps.onCompassSettings;
+    session.compass = createArCompassControl({
+      root: deps.container,
+      onChange: onCompassSettings,
+    });
+    session.compass.attach();
+    // READY IMMEDIATELY, and that is a fact rather than an assumption: every
+    // compass setter is a no-op while the store's gps state is null, but AR
+    // entry is GATED on `canEnterAr(deps.origin)`, and a non-null origin IS the
+    // framework's `zero` — so `setZeroPos` has already been dispatched by the
+    // time this line runs. The control's latch stays as the defensive path for
+    // any future caller that is not gated the same way.
+    session.compass.setReady(true);
+  }
+
   // M2. Clears the background so the passthrough shows, widens the depth budget
   // to 0.5 / 1000, adds fog ending exactly at that far plane, matches the demo's
   // ACES grading, and pointedly does NOT set an environment map.
@@ -434,6 +495,21 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
           ? undefined
           : arWorldGroup.matrix.elements[13],
+        // THE FUSED BEARING — what the alignment currently thinks north is,
+        // which is the only way to SEE what the compass slider did.
+        //
+        // WORLD SPACE IS THE GEO FRAME HERE, and that is the whole subtlety.
+        // The hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the
+        // alignment) → basisChangeNode → arpose → camera`, so the camera is a
+        // DESCENDANT of the aligned group and its world transform already
+        // carries the alignment. A direction taken relative to `arWorldGroup`
+        // would be in the AR-odometry frame — the alignment's *domain*, i.e.
+        // un-aligned — and would be a plausible number that is not north.
+        // `ar-scene-hierarchy.ts` records two independent readers getting this
+        // backwards; `nueBearingDeg` carries the axis convention and its tests.
+        fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
+          ? undefined
+          : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
         ...live,
       },
       // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop

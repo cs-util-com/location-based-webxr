@@ -98,6 +98,21 @@ export {
   recordGpsEvent,
   add2dImage,
   calcRelativeCoordsInMeters,
+  // The compass-influence setters, re-exported for the same reason as the rest
+  // of this block: a consumer app dispatches them into the store this package
+  // builds, and adding `gps-plus-slam-js` as a second direct dependency of every
+  // such app just to reach four action creators would be a worse surface.
+  //
+  // ALL FOUR TOGETHER, deliberately. "The compass has no influence" is not one
+  // setting: at vote weight 0 the steady-state formula is `1 − observability`,
+  // a full override precisely when yaw is poorly observable, and disabling the
+  // rotation prior falls through to the cold-start override, whose curve is
+  // identical and which has been default-ON since 2026-07-25. Exporting a
+  // subset would invite exactly the two-setting mistake.
+  setColdStartOverrideEnabled,
+  setCompassRotationPriorEnabled,
+  setCompassExperimentEnabled,
+  setCompassVoteWeight,
 } from 'gps-plus-slam-js';
 export type {
   LatLong,

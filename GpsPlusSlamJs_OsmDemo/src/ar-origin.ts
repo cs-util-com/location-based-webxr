@@ -120,3 +120,36 @@ interface EnuPoint {
   readonly x: number;
   readonly y: number;
 }
+
+/**
+ * The geographic bearing a direction points in, degrees clockwise from north.
+ *
+ * **THE FRAME IS THE WHOLE RISK HERE, so it is stated rather than implied.** The
+ * framework's scene root is the GPS-world **NUE** frame — `X = North`,
+ * `Y = Up`, `Z = East` — and the camera is a DESCENDANT of `arWorldGroup`, which
+ * is what receives the alignment matrix. So a camera direction taken in
+ * **world** space already carries the alignment and is a real geographic
+ * bearing; a direction taken relative to `arWorldGroup` would be in the
+ * AR-odometry frame, i.e. the *domain* of the alignment — un-aligned, and
+ * meaningless as a compass reading.
+ *
+ * That distinction has already misled two independent readers of
+ * `ar-scene-hierarchy.ts` (its own comment says so), and an earlier draft of the
+ * AR HUD review got it backwards. Hence a named, tested function rather than an
+ * `atan2` at a call site.
+ *
+ * @param north the direction's north component (three.js world `x`).
+ * @param east the direction's east component (three.js world `z`).
+ * @returns bearing in `[0, 360)`, or `undefined` for a degenerate direction —
+ *   straight up or down has no bearing, and reporting `0` for it would be a
+ *   confident claim of "facing north".
+ */
+export function nueBearingDeg(north: number, east: number): number | undefined {
+  if (!Number.isFinite(north) || !Number.isFinite(east)) return undefined;
+  // A vertical look direction projects to nothing on the horizontal plane. The
+  // threshold is generous: below this the bearing is numerical noise that would
+  // spin the readout while the user holds the phone still, pointed down.
+  if (Math.hypot(north, east) < 1e-6) return undefined;
+  const deg = (Math.atan2(east, north) * 180) / Math.PI;
+  return ((deg % 360) + 360) % 360;
+}

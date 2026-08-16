@@ -734,3 +734,75 @@ describe("the elevation nudge reaches the scene", () => {
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 });
+
+/**
+ * Why these tests matter: the compass slider is only a control if its four
+ * settings reach the store, and the mapping test cannot see the wiring while the
+ * DOM test cannot see the dispatch. The specific failure guarded here is a
+ * slider wired to ONE setter — which looks completely correct on screen and
+ * leaves the compass driving at the zero end, because at vote weight 0 the
+ * steady-state formula is `1 − observability` and the cold-start override takes
+ * over anyway.
+ */
+describe("the compass slider reaches the store", () => {
+  const sliderIn = (container: HTMLElement): HTMLInputElement => {
+    const found = container.querySelector("input[type=range]");
+    if (found === null) throw new Error("no compass slider");
+    return found as HTMLInputElement;
+  };
+
+  it("passes the FULL settings object through on a drag", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const onCompassSettings = vi.fn();
+    await startArMode(deps({ container, onCompassSettings }));
+
+    const slider = sliderIn(container);
+    slider.value = "0";
+    slider.dispatchEvent(new Event("input"));
+
+    // ALL FOUR, and the zero end especially: one setter would leave the
+    // cold-start override driving yaw while the label reads "GPS only".
+    expect(onCompassSettings).toHaveBeenLastCalledWith({
+      rotationPriorEnabled: false,
+      coldStartOverrideEnabled: false,
+      experimentEnabled: false,
+      voteWeight: 0,
+    });
+  });
+
+  it("is usable immediately, because AR entry already required a fix", async () => {
+    // The setters no-op while the store's gps state is null, so the control
+    // starts disabled. Entry is gated on `canEnterAr`, i.e. a non-null `zero`,
+    // so `ar-mode` may enable it at once — and if that call is ever dropped the
+    // slider is permanently dead.
+    const container = document.createElement("div");
+    document.body.append(container);
+    await startArMode(deps({ container, onCompassSettings: vi.fn() }));
+
+    expect(sliderIn(container).disabled).toBe(false);
+  });
+
+  it("is absent when the caller cannot dispatch", async () => {
+    // No `onCompassSettings` means no control, rather than a slider that
+    // silently does nothing.
+    const container = document.createElement("div");
+    document.body.append(container);
+    await startArMode(deps({ container }));
+
+    expect(container.querySelector("input[type=range]")).toBeNull();
+  });
+
+  it("takes the slider down when the session ends", async () => {
+    // `#ar-root` is hidden only while `:empty`.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const mode = await startArMode(
+      deps({ container, onCompassSettings: vi.fn() }),
+    );
+    expect(container.querySelector("input[type=range]")).not.toBeNull();
+
+    mode.dispose();
+    expect(container.querySelector("input[type=range]")).toBeNull();
+  });
+});

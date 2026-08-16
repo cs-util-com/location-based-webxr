@@ -124,6 +124,30 @@ the two are one decision.
     behind covers the whole page. Teardown is asserted here.
   - **AR only.** The desktop preview attaches with `demo-scene`, which sets
     identity and discards the offset entirely.
+- **The compass slider is created only when `onCompassSettings` is supplied**,
+  so a caller that cannot dispatch gets no control rather than a slider that
+  silently does nothing.
+  - `setReady(true)` is called **immediately**, and that is a fact rather than
+    an assumption: every compass setter no-ops while the store's gps state is
+    null, but AR entry is gated on `canEnterAr(origin)` and a non-null origin
+    **is** the framework's `zero`. The control's own latch stays as the
+    defensive path for a future caller that is not gated the same way.
+  - Disposed in `release()` alongside the elevation control, for the `#ar-root`
+    reason.
+- **`fusedBearingDeg` is taken in WORLD space, and that is the subtlety.** The
+  hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the alignment) →
+basisChangeNode → arpose → camera`, so the camera is a **descendant** of the
+  aligned group and its world transform already carries the alignment.
+  - A direction taken **relative to `arWorldGroup`** would be in the AR-odometry
+    frame — the alignment's _domain_, i.e. un-aligned — and would produce a
+    plausible number that is not north. `ar-scene-hierarchy.ts` records two
+    independent readers getting this backwards, and an earlier draft of the AR
+    HUD review did too.
+  - The axis convention lives in `ar-origin.ts`'s `nueBearingDeg` with its own
+    cardinal-direction tests, rather than as an `atan2` at the call site.
+  - Suppressed while the alignment matrix is still identity, on the same
+    reasoning as `worldBaselineY`: an unmeasured bearing must not render as a
+    confident `0°`.
 
 ## Examples
 
