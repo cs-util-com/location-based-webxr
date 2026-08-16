@@ -504,6 +504,13 @@ async function main(): Promise<void> {
    * rather than showing as `0`.
    */
   let lastFixAccuracyM: number | undefined;
+  // THE RAW VERTICAL PAIR, kept beside the horizontal one and for the same
+  // reason: the readout is about the quality of the fixes arriving. Without
+  // these, the HUD can show what the alignment DID to the altitude but not what
+  // it was given, and those are the two hypotheses the height residual needs
+  // separating.
+  let lastAltitudeM: number | undefined;
+  let lastAltitudeAccuracyM: number | undefined;
   /**
    * The last RAW fix, for the readout's distance line (M4, r510 review).
    *
@@ -553,6 +560,11 @@ async function main(): Promise<void> {
       // informative as one it accepts — arguably more, since a session spent
       // standing still is all rejected fixes.
       lastFixAccuracyM = position.accuracyM;
+      // NULL MEANS THE BROWSER OMITTED IT, and the readout distinguishes absent
+      // from zero — so null becomes undefined rather than 0. Android commonly
+      // reports a null altitudeAccuracy even with a good altitude.
+      lastAltitudeM = position.altitude ?? undefined;
+      lastAltitudeAccuracyM = position.altitudeAccuracy ?? undefined;
       lastFixPosition = { lat: position.lat, lng: position.lng };
       // REGISTRATION IS NOT GATED, and that separation is the fix for the
       // 2026-08-14 report ("no automatic updates of the user position … the
@@ -631,6 +643,8 @@ async function main(): Promise<void> {
       // session. That is worse than showing nothing, because it is plausible:
       // the number the milestone exists to read would be quietly historical.
       lastFixAccuracyM = undefined;
+      lastAltitudeM = undefined;
+      lastAltitudeAccuracyM = undefined;
       // AND THE POSITION WITH IT (r511 review). Clearing only the accuracy left
       // half the stale readout on screen: the fix line disappeared while
       // "N m from anchor" kept reporting the last good fix — the more
@@ -1272,6 +1286,8 @@ async function main(): Promise<void> {
         const here = lastFixPosition;
         return {
           fixAccuracyM: lastFixAccuracyM,
+          altitudeM: lastAltitudeM,
+          altitudeAccuracyM: lastAltitudeAccuracyM,
           metresFromAnchor:
             zero === null || here === undefined
               ? undefined

@@ -134,3 +134,49 @@ describe("the vertical baseline — §4's prediction, on screen", () => {
     expect(describeArMeasurements({ worldBaselineY: Number.NaN })).toEqual([]);
   });
 });
+
+/**
+ * Why these tests matter: the height residual reported from the field is ~10 m
+ * and repeatable, and the findings doc that diagnosed it ranked this readout
+ * AHEAD of the elevation nudge buttons — because a nudge is a number with
+ * nothing to check it against until the raw altitude and its accuracy are on
+ * screen. Two filed defects already account for the residual, one of them a
+ * library defect where the vertical solve runs no outlier rejection, so
+ * distinguishing "the data is wrong" from "my nudge is wrong" is the whole
+ * point of showing it.
+ */
+describe("altitude readout", () => {
+  it("shows the reported altitude with its vertical accuracy", () => {
+    expect(
+      describeArMeasurements({ altitudeM: 123.45, altitudeAccuracyM: 4.2 }),
+    ).toEqual(["alt 123.5 m ±4.2 m"]);
+  });
+
+  it("shows the altitude alone when no vertical accuracy is reported", () => {
+    // Vertical accuracy is optional in the Geolocation API and commonly absent.
+    // Omitting the whole line because half of it is missing would hide the
+    // number the session is about.
+    expect(describeArMeasurements({ altitudeM: 51 })).toEqual(["alt 51.0 m"]);
+  });
+
+  it("shows nothing when there is no altitude, even with an accuracy", () => {
+    // An accuracy without a value describes nothing, and rendering it alone
+    // would read as a measurement.
+    expect(describeArMeasurements({ altitudeAccuracyM: 4 })).toEqual([]);
+    expect(describeArMeasurements({})).toEqual([]);
+  });
+
+  it("keeps a NEGATIVE altitude, which is a real place", () => {
+    // The shared `isUsable` guard rejects negatives because an accuracy or a
+    // frame rate cannot be below zero. Altitude can: Schiphol, the Dead Sea, any
+    // basement. Reusing that guard here would silently drop them.
+    expect(describeArMeasurements({ altitudeM: -3.5 })).toEqual(["alt -3.5 m"]);
+  });
+
+  it("drops a non-finite altitude", () => {
+    expect(describeArMeasurements({ altitudeM: Number.NaN })).toEqual([]);
+    expect(
+      describeArMeasurements({ altitudeM: 10, altitudeAccuracyM: Number.NaN }),
+    ).toEqual(["alt 10.0 m"]);
+  });
+});

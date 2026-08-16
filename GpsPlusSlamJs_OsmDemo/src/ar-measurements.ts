@@ -56,6 +56,22 @@ export interface ArMeasurements {
    * about would have shipped an instrument with a hole in it.
    */
   readonly worldBaselineY?: number | undefined;
+  /**
+   * The last fix's REPORTED altitude, metres — raw, before any alignment.
+   *
+   * **On screen because the height residual is not diagnosable without it.** The
+   * field report is a ~10 m offset, repeatable across reloads, and two filed
+   * defects already account for it — including a library one where the vertical
+   * solve needs a single pair, runs no outlier rejection, and weights at
+   * `1/accuracy⁵`, so one bad fix owns `worldBaselineY`. With only the aligned
+   * baseline visible, "the GPS altitude is wrong" and "the solve mishandled a
+   * good altitude" look identical. This is the term that separates them, and the
+   * findings doc that diagnosed the residual ranked showing it **ahead** of the
+   * manual offset buttons for exactly that reason.
+   */
+  readonly altitudeM?: number | undefined;
+  /** The fix's reported VERTICAL accuracy, metres. Often absent. */
+  readonly altitudeAccuracyM?: number | undefined;
 }
 
 /**
@@ -104,6 +120,24 @@ export function describeArMeasurements(
         ? `${Math.round(measurements.metresFromAnchor)} m`
         : `${(measurements.metresFromAnchor / 1000).toFixed(1)} km`;
     lines.push(`${distance} from anchor`);
+  }
+
+  // SIGNED, like the baseline below and NOT filtered through `isUsable`, whose
+  // `>= 0` is right for an accuracy and wrong here: Schiphol, the Dead Sea and
+  // any basement are real places at negative altitude, and quietly dropping them
+  // would hide the reading exactly where it is most surprising.
+  if (
+    measurements.altitudeM !== undefined &&
+    Number.isFinite(measurements.altitudeM)
+  ) {
+    // The accuracy is appended only when it is itself usable. Half a line is
+    // better than none: vertical accuracy is optional in the Geolocation API and
+    // commonly absent, and omitting the altitude because its error bar is
+    // missing would hide the number the session is about.
+    const accuracy = isUsable(measurements.altitudeAccuracyM)
+      ? ` ±${measurements.altitudeAccuracyM.toFixed(1)} m`
+      : "";
+    lines.push(`alt ${measurements.altitudeM.toFixed(1)} m${accuracy}`);
   }
 
   if (

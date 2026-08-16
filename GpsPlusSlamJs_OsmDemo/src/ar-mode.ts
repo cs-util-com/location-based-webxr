@@ -110,6 +110,16 @@ export interface ArModeDeps {
   readonly liveMeasurements?: () => {
     readonly fixAccuracyM?: number | undefined;
     readonly metresFromAnchor?: number | undefined;
+    /**
+     * The RAW reported altitude and its vertical accuracy.
+     *
+     * Here rather than derived from the alignment, because separating "the GPS
+     * altitude is wrong" from "the solve mishandled a good altitude" is the
+     * whole reason the readout exists — and `worldBaselineY` beside it can only
+     * answer the second half. See `ar-measurements.ts`.
+     */
+    readonly altitudeM?: number | undefined;
+    readonly altitudeAccuracyM?: number | undefined;
   };
 }
 

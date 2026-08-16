@@ -89,3 +89,28 @@ a sustained drop from a hiccup. Telling those apart is exactly what §4's "is
 rendering the constraint?" question needs. `ar-mode.ts` counts frames and
 divides by the window `ArHud.sample` reports back; **the docstring here claimed
 the averaging before it existed** (r510 review).
+
+## The altitude readout
+
+`altitudeM` and `altitudeAccuracyM` — the last fix's **raw reported** altitude and
+vertical accuracy, before any alignment.
+
+**Why it is on screen.** The field report is a ~10 m height offset, repeatable
+across reloads. Two filed defects already account for it, one a library defect
+where the vertical solve needs a single pair, runs **no outlier rejection** and
+weights at `1/accuracy⁵` — so one bad fix owns `worldBaselineY`. With only the
+aligned baseline visible, _"the GPS altitude is wrong"_ and _"the solve
+mishandled a good altitude"_ look identical on screen. This is the term that
+separates them, which is why the findings doc that diagnosed the residual ranked
+it **ahead** of the manual offset buttons.
+
+**It does NOT go through `isUsable`**, and that is deliberate. That guard's
+`>= 0` is right for an accuracy or a frame rate and wrong for an altitude:
+Schiphol, the Dead Sea and any basement are real places below zero, and reusing
+it would silently drop the readings most likely to surprise. The accuracy half
+still does use it — an accuracy below zero is impossible.
+
+**Half a line beats none.** Vertical accuracy is optional in the Geolocation API
+and Android commonly reports `null` even with a good altitude, so the altitude is
+shown alone rather than suppressed for want of its error bar. An accuracy without
+an altitude shows nothing at all — it would read as a measurement.

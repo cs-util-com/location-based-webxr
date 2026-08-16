@@ -369,6 +369,13 @@ describe("when AR cannot start", () => {
     const liveMeasurements = vi.fn(() => ({
       fixAccuracyM: 6.2,
       metresFromAnchor: 145,
+      // THE VERTICAL PAIR TOO. The height residual reported from the field is
+      // ~10 m, and telling 'the GPS altitude is wrong' from 'the solve
+      // mishandled a good altitude' needs the RAW value on screen beside the
+      // aligned baseline. A field that typechecks but never reaches the DOM is
+      // the same silent nothing this test already guards against.
+      altitudeM: 51.4,
+      altitudeAccuracyM: 3.5,
     }));
     await startArMode(deps({ container: document.body, liveMeasurements }));
 
@@ -380,6 +387,7 @@ describe("when AR cannot start", () => {
 
     expect(liveMeasurements).toHaveBeenCalled();
     expect(document.body.textContent).toContain("fix ±6.2 m");
+    expect(document.body.textContent).toContain("alt 51.4 m ±3.5 m");
     expect(document.body.textContent).toContain("145 m from anchor");
   });
 
