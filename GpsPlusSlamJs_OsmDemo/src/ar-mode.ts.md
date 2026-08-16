@@ -110,6 +110,20 @@ the two are one decision.
 - **Narrow framework subpaths, never the barrel** — the root export pulls in
   Leaflet, which touches `window` at import time. `osm-store.ts` carries the
   same note.
+- **The manual elevation nudge is summed onto the geometric offset AT THE
+  `attachContentTo` CALL SITE** (DEC-E1), never inside `sceneAnchorOffsetNue`.
+  That function's `up: 0` is a guarded invariant with its own test, and folding a
+  user fudge into it would double-count the geoid.
+  - The offset is **added to** `geometricOffset`, not substituted for it.
+    Dropping the north/east terms would put the city in the wrong country, which
+    is why `ar-mode.test.ts` asserts the summed vector reaches
+    `attachContentTo` rather than merely asserting the call happened.
+  - The control is created, attached and disposed with the session, for the
+    `#ar-root` reason recorded in `ar-elevation-control.ts.md`: that element is
+    `position: fixed; inset: 0` and hidden only while `:empty`, so one left
+    behind covers the whole page. Teardown is asserted here.
+  - **AR only.** The desktop preview attaches with `demo-scene`, which sets
+    identity and discards the offset entirely.
 
 ## Examples
 

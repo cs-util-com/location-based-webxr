@@ -52,6 +52,10 @@ import type { LatLng } from "gps-plus-slam-osm";
 import { applyArEnvironment } from "./ar-scene-environment.js";
 import { createArHud, type ArHud } from "./ar-hud.js";
 import {
+  createArElevationControl,
+  type ArElevationControl,
+} from "./ar-elevation-control.js";
+import {
   canEnterAr,
   sceneAnchorOffsetNue,
   type FrameworkLatLong,
@@ -168,6 +172,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     alignment?: { dispose: () => void };
     restoreEnvironment?: () => void;
     hud?: ArHud;
+    elevation?: ArElevationControl;
     unregisterFrame?: () => void;
   } = {};
 
@@ -205,6 +210,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // changed would leave one more sample running against half-dead state.
     session.unregisterFrame?.();
     session.hud?.dispose();
+    // BEFORE the city is handed back, so the control cannot outlive the scene
+    // it nudges — and so nothing is left in `#ar-root`, which is hidden only
+    // while `:empty`.
+    session.elevation?.dispose();
     // On BOTH exits, and NOT because the framework's objects are shared —
     // `initAR` builds a fresh scene, camera and renderer each time. It runs
     // here because this is the one place that knows the session is over, and
@@ -315,15 +324,37 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // demo's scene anchor, not about `zero` — attaching with the rotation alone
   // put it at the right orientation and the wrong place, by up to the 5 km
   // re-anchor threshold. `origin` is non-null here: `canEnterAr` returned true.
-  deps.buildingView.attachContentTo(
-    scene,
-    "gps-world-nue",
-    sceneAnchorOffsetNue(
-      deps.origin as FrameworkLatLong,
-      deps.sceneAnchor,
-      deps.enuFrameAt,
-    ),
+  // THE GEOMETRIC OFFSET, COMPUTED ONCE. The manual nudge is summed onto it
+  // below rather than folded into it:  returns
+  //  as a GUARDED INVARIANT with its own test — a vertical term inside
+  // it would double-count the geoid. The nudge is a user fudge, not a datum
+  // term, so it belongs here at the call site and nowhere else.
+  const geometricOffset = sceneAnchorOffsetNue(
+    deps.origin as FrameworkLatLong,
+    deps.sceneAnchor,
+    deps.enuFrameAt,
   );
+
+  // RE-ATTACHING IS THE LIVE PATH, and it is safe because  documents
+  // its transform as "SET, NEVER ACCUMULATED" — so applying a new offset is
+  // idempotent rather than a second translation stacked on the first.
+  const applyElevation = (offsetM: number) => {
+    deps.buildingView.attachContentTo(scene, "gps-world-nue", {
+      ...geometricOffset,
+      up: geometricOffset.up + offsetM,
+    });
+  };
+  applyElevation(0);
+
+  // AR ONLY. The desktop preview discards  (it attaches with
+  // "demo-scene", which sets identity), and making it follow would lift the
+  // buildings away from the ground plane, the route line and the NPC agent —
+  // all of which live on the preview's own scene and would stay put.
+  session.elevation = createArElevationControl({
+    root: deps.container,
+    onChange: applyElevation,
+  });
+  session.elevation.attach();
 
   // M2. Clears the background so the passthrough shows, widens the depth budget
   // to 0.5 / 1000, adds fog ending exactly at that far plane, matches the demo's

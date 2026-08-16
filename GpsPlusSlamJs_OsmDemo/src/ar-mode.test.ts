@@ -678,3 +678,59 @@ describe("the readout refuses to invent numbers (r511 review)", () => {
     });
   });
 });
+
+/**
+ * Why these tests matter: the nudge is only a fix if it reaches the scene. The
+ * arithmetic is covered in `elevation-nudge.test.ts` and the DOM in
+ * `ar-elevation-control.test.ts`; what neither can see is whether the value ever
+ * arrives at `attachContentTo` — the same "typechecks but never renders" gap the
+ * live-measurements test above already guards.
+ */
+describe("the elevation nudge reaches the scene", () => {
+  const pressIn = (container: HTMLElement, label: string) => {
+    const target = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === label,
+    );
+    if (target === undefined) throw new Error(`no ${label} button`);
+    target.click();
+  };
+
+  it("re-attaches the content with the offset added to the geometric one", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = fakeView();
+    await startArMode(
+      deps({
+        container,
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+
+    const arAttach = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    expect(arAttach).toHaveLength(1);
+    const base = arAttach[0]?.offset;
+    expect(base).toBeDefined();
+
+    pressIn(container, "+");
+
+    const after = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    expect(after).toHaveLength(2);
+    // SUMMED ONTO the geometric offset, not replacing it: the north/east terms
+    // place the city and dropping them puts it in the wrong country.
+    expect(after[1]?.offset?.north).toBe(base?.north);
+    expect(after[1]?.offset?.east).toBe(base?.east);
+    expect(after[1]?.offset?.up).toBe((base?.up ?? 0) + 1);
+  });
+
+  it("takes the control down when the session ends", async () => {
+    // `#ar-root` is hidden only while `:empty`, so a control left behind keeps a
+    // full-viewport layer over the page.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const mode = await startArMode(deps({ container }));
+    expect(container.querySelectorAll("button").length).toBeGreaterThan(0);
+
+    mode.dispose();
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+  });
+});
