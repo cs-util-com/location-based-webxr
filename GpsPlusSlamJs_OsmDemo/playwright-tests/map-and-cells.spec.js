@@ -958,8 +958,22 @@ test.describe("the geo-event", () => {
     await expect(page.locator("#geo-event-date")).not.toHaveValue("");
     await expect(page.locator("#geo-event-time")).not.toHaveValue("");
 
+    // FAILS RATHER THAN SKIPS (owner decision 2026-08-17). This used to be
+    // `test.skip(drawn === 0, "fixture yielded no event to clear")`, which read
+    // like a data problem and is actually a CLOCK one: the geo-event is a pure
+    // function of tile and quarter-hour, so whether this test executes at all
+    // depended on which quarter-hour the suite happened to run in. Three runs of
+    // the same commit reported 56, 56 and 54-passed-2-skipped — and every one of
+    // them looked green. A test that cannot run is a defect, not a pass.
     const drawn = await page.locator("#map .geo-winner").count();
-    test.skip(drawn === 0, "fixture yielded no event to clear");
+    expect(
+      drawn,
+      "no geo-event was drawn for the fixture tile in the CURRENT quarter-hour, " +
+        "so this test cannot exercise clearing one. The event is a pure function " +
+        "of tile and quarter-hour; the fix is to pin the clock or choose a " +
+        "tile/instant known to yield one, not to skip. See " +
+        "2026-08-17-0019-geo-event-e2e-wall-clock-skip-followup.md",
+    ).toBeGreaterThan(0);
 
     await page.locator("#geo-event-clear").click();
     await expect(picker).toBeHidden();
@@ -993,8 +1007,18 @@ test.describe("the geo-event", () => {
     // Only meaningful if something was actually drawn — a fixture with no
     // qualifying ground has nothing to clear, and asserting on it would make
     // this pass for the wrong reason.
+    //
+    // FAILS RATHER THAN SKIPS, for the reason given at the sibling assertion
+    // above: "nothing was drawn" is a wall-clock condition, and skipping on it
+    // let this test silently stop covering anything in some quarter-hours while
+    // the run still reported success.
     const drawn = await page.locator("#map .geo-winner").count();
-    test.skip(drawn === 0, "fixture yielded no event to clear");
+    expect(
+      drawn,
+      "no geo-event was drawn for the fixture tile in the CURRENT quarter-hour, " +
+        "so this test cannot exercise the markers coming down. See " +
+        "2026-08-17-0019-geo-event-e2e-wall-clock-skip-followup.md",
+    ).toBeGreaterThan(0);
 
     const other = await page.evaluate(() => {
       const select = document.getElementById("category");
