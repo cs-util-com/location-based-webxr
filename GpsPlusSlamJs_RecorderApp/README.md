@@ -23,7 +23,9 @@
 
 ## ⚠️ CRITICAL: This App Uses the GpsPlusSlamJs Library
 
-**DO NOT create a custom Redux store.** This app **MUST** use the `gps-plus-slam-js` library for all GPS/AR alignment logic.
+**DO NOT create a custom Redux store.** This app **MUST** use the shared GPS/AR alignment logic rather than reimplementing it.
+
+**It reaches that logic through `gps-plus-slam-app-framework`, not through a direct core dependency.** `package.json` lists `gps-plus-slam-app-framework` and no `gps-plus-slam-js`; there is not a single direct `gps-plus-slam-js` import in `src/`. Core symbols arrive via the framework's curated re-export surface — see `state/recorder-store.ts`. Mentions of a direct core dependency further down belong to the historical bootstrap record and no longer describe this app.
 
 ### Why This Matters
 
@@ -33,20 +35,20 @@
 
 ### Required Integration Steps
 
-1. **Add Dependency:**
+1. **Add Dependency** — the framework, which re-exports what this app needs:
 
    ```bash
-   npm install ../GpsPlusSlamJs  # or published package name
+   pnpm add gps-plus-slam-app-framework
    ```
 
-2. **Use Library Store:**
+2. **Use the framework's store factory** (see `state/recorder-store.ts`):
 
    ```typescript
-   import { createGpsSlamStore } from 'gps-plus-slam-js';
+   import { createSlamAppStore } from 'gps-plus-slam-app-framework/state/create-slam-app-store';
 
-   const libraryStore = createGpsSlamStore();
-   // Add persistence middleware to save actions to disk
-   // Optionally combine with app-specific state (UI, session metadata)
+   const store = createSlamAppStore(/* app slices, persistence, options */);
+   // Persistence middleware saves actions to disk
+   // App-specific state (UI, session metadata) is combined in here
    ```
 
 3. **Use Library Actions:**
@@ -796,6 +798,7 @@ GpsPlusSlamJs_RecorderApp/
     │                       # and the ref-point importer/loader/merge/recovery cluster
     ├── ui/                 # HUD (split across hud-*.ts), settings modal, navigation,
     │                       # map-browser, session-summary, ref-point-picker, dialogs
+    ├── global.d.ts         # WebXR & File System Access type declarations
     ├── utils/              # ar-session-scope, build-info, dom-helpers, sentry
     ├── visualization/      # ref-point-visualizer, frame tiles, occluder sink/worker client
     ├── workers/            # occlusion-mesher.worker.ts
@@ -1075,7 +1078,24 @@ const deviceRotation = eulerToQuaternion(
 
 ## Implementation Checklist
 
-Use this checklist to ensure correct implementation from the start.
+> ⚠️ **HISTORICAL BOOTSTRAP RECORD — do not follow these paths today.** This
+> checklist records how the app was originally stood up, and its file paths and
+> dependency block are the pre-framework layout. Since then the framework was
+> extracted, so several files it tells you to create now live in
+> `gps-plus-slam-app-framework` (`ar/webxr-session`, `ar/replay-scene`,
+> `state/replay-engine`, `state/gps-event-coordinator` — formerly
+> `recording-coordinator.ts` — `visualization/gps-event-markers`, `sensors/gps`)
+> and two were renamed in place (`state/store.ts` → `state/recorder-store.ts`,
+> `visualization/reference-points.ts` → `visualization/ref-point-visualizer.ts`).
+> **The recorder also takes no direct `gps-plus-slam-js` dependency any more** —
+> core symbols come through the framework's curated re-export surface (see
+> `state/recorder-store.ts`), so the dependency block below no longer matches
+> `package.json`.
+>
+> **For the current layout use "Project Structure" and "Key implementation
+> files" above**, which are verified against the tree. Kept because the
+> rationale in each step — why the store is wrapped, why the scene hierarchy is
+> shaped as it is — is still the reason the code looks the way it does.
 
 ### Phase 1: Library Integration
 

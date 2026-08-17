@@ -739,8 +739,8 @@ export function createRecordingSessionHandlers(
 
     // Final sync before stopping. Capture the manager into a local and claim
     // ownership (null the shared field) *before* the await, so any concurrent
-    // teardown path (a second stop, cleanupForNewRecording on an XR
-    // session-end) sees null and no-ops instead of stopping it from under us.
+    // teardown path (a second stop, or cleanupForNewRecording) sees null and
+    // no-ops instead of stopping it from under us.
     // Defense in depth alongside the re-entrancy guard (Sentry issue 7319627943).
     const sm = syncManager;
     syncManager = null;
