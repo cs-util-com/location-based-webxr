@@ -202,12 +202,24 @@ function unmarkedClaims(files) {
   const offenders = [];
   for (const file of files) {
     if (EXEMPT.test(file) || !SCANNED.test(file)) continue;
-    let lines;
+    let content;
     try {
-      lines = readFileSync(resolve(repoRoot, file), 'utf8').split('\n');
+      content = readFileSync(resolve(repoRoot, file), 'utf8');
     } catch {
       continue; // a tracked path that is not readable is another test's problem
     }
+    // Whole-file pre-filter. Worth having but NOT what fixed the timeout —
+    // that was the budget (see the `it` below). Measured: the per-line loop
+    // costs 600 ms across the tree and 191 ms with this skip, against 2076 ms
+    // of file I/O it cannot touch, so it buys ~400 ms of a ~2.8 s scan. Only
+    // 14 of 1889 files reach the per-line loop at all. Skipping here is
+    // exact, not approximate:
+    // every pattern is unanchored and non-global, and each line is a
+    // substring of `content`, so a pattern matching some line necessarily
+    // matches `content`. The converse may over-admit a file (a match
+    // spanning a newline), which only costs a scan that then finds nothing.
+    if (!RETRACTED.some(({ pattern }) => pattern.test(content))) continue;
+    const lines = content.split('\n');
     for (const [index, line] of lines.entries()) {
       for (const { pattern, label, context } of RETRACTED) {
         if (!pattern.test(line)) continue;
@@ -234,9 +246,17 @@ describe('retracted res-7 payload figures are never stated as current', () => {
     expect(files.length).toBeGreaterThan(100);
   });
 
+  // Explicit timeout, because vitest's 5 s default is a UNIT-test budget and
+  // this is a whole-repo I/O scan. Measured on this tree: `git ls-files` 168 ms,
+  // then 2076 ms to read 15.4 MB across 1889 tracked files — 2.1 s of
+  // irreducible synchronous I/O before a single pattern runs. That left so
+  // little headroom that the test passed standalone (~3.0 s) and FAILED inside
+  // `pnpm run test:changed` (6.1 s) purely on CPU contention, i.e. the commit
+  // gate went red on machine load rather than on a defect. The scan itself is
+  // not what to shrink here; the budget was simply the wrong one.
   it('quotes no retracted figure without a retraction marker beside it', () => {
     expect(unmarkedClaims(files)).toEqual([]);
-  });
+  }, 30_000);
 
   it('recognises a retracted figure and the note that rehabilitates it', () => {
     // Pinned because the whole test turns on this pair of judgements, and a
