@@ -75,10 +75,15 @@ const SILENT: CompassSettings = {
 /**
  * Map a 0–1 influence to the settings that produce it.
  *
- * Out-of-range and non-finite inputs collapse to {@link SILENT} rather than
- * being passed on: `setCompassVoteWeight` validates to `[0,1]` and would reject
- * them somewhere the UI cannot see, and "the compass drives with a NaN weight"
- * is the worst state available.
+ * Out-of-range inputs CLAMP into `[0,1]` and non-finite inputs collapse to
+ * {@link SILENT}, rather than either being passed on: `setCompassVoteWeight`
+ * validates to `[0,1]` and would reject them somewhere the UI cannot see, and
+ * "the compass drives with a NaN weight" is the worst state available.
+ *
+ * **The clamp is ASYMMETRIC in effect.** A clamped `-0.5` reaches 0 and is
+ * therefore genuinely silent, but a clamped `1.5` reaches 1 — FULL influence,
+ * not silence. Said explicitly because this docstring claimed the opposite
+ * until the PR #313 review, while the sidecar and the code were both right.
  */
 export function compassSettingsFor(influence: number): CompassSettings {
   if (!Number.isFinite(influence)) return SILENT;

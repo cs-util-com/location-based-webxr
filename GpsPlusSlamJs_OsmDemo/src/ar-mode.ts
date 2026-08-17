@@ -378,8 +378,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // put it at the right orientation and the wrong place, by up to the 5 km
   // re-anchor threshold. `origin` is non-null here: `canEnterAr` returned true.
   // THE GEOMETRIC OFFSET, COMPUTED ONCE. The manual nudge is summed onto it
-  // below rather than folded into it:  returns
-  //  as a GUARDED INVARIANT with its own test — a vertical term inside
+  // below rather than folded into it: `sceneAnchorOffsetNue` returns
+  // `up: 0` as a GUARDED INVARIANT with its own test — a vertical term inside
   // it would double-count the geoid. The nudge is a user fudge, not a datum
   // term, so it belongs here at the call site and nowhere else.
   const geometricOffset = sceneAnchorOffsetNue(
@@ -388,9 +388,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     deps.enuFrameAt,
   );
 
-  // RE-ATTACHING IS THE LIVE PATH, and it is safe because  documents
-  // its transform as "SET, NEVER ACCUMULATED" — so applying a new offset is
-  // idempotent rather than a second translation stacked on the first.
+  // RE-ATTACHING IS THE LIVE PATH, and it is safe because `SceneContent.attachTo`
+  // documents its transform as "SET, NEVER ACCUMULATED" — so applying a new
+  // offset is idempotent rather than a second translation stacked on the first.
   const applyElevation = (offsetM: number) => {
     deps.buildingView.attachContentTo(scene, "gps-world-nue", {
       ...geometricOffset,
@@ -399,7 +399,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   };
   applyElevation(0);
 
-  // AR ONLY. The desktop preview discards  (it attaches with
+  // AR ONLY. The desktop preview discards `geometricOffset` (it attaches with
   // "demo-scene", which sets identity), and making it follow would lift the
   // buildings away from the ground plane, the route line and the NPC agent —
   // all of which live on the preview's own scene and would stay put.

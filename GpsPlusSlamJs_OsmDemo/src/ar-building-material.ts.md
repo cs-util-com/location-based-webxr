@@ -60,6 +60,18 @@ Fallbacks if fragment cost proves too high: `FrontSide` (losing the
 interior-safe property) or a distance cutoff. The AR HUD already reports draw
 calls, triangles and a rolling fps, which is the instrument for that measurement.
 
+**A second desk-proof question, and it compounds with the one above:** this
+material **bypasses the scene's tone mapping and sRGB encode**. three.js
+substitutes `#include <tonemapping_fragment>` / `#include <colorspace_fragment>`
+into shader source that asks for them and injects them into source that does
+not; neither appears here, so `gl_FragColor` is written raw while
+`ar-scene-environment.ts` grades everything else through ACES at exposure. The
+authored HSL therefore renders darker and less saturated than picked, and the
+shell's brightness relative to its neighbours is not the approved relationship.
+Whether that IS the approved look depends on whether the shader lab previewed
+graded — so "adding the chunks" could be the regression rather than the fix.
+Open: [`docs/2026-08-17-2220-ar-shell-colour-pipeline-followup.md`](../docs/2026-08-17-2220-ar-shell-colour-pipeline-followup.md).
+
 ## Tests
 
 `ar-building-material.test.ts` — the three flags, that every uniform the fragment

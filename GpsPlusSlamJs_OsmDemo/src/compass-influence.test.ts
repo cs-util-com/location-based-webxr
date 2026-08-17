@@ -67,6 +67,21 @@ describe("compassSettingsFor", () => {
     expect(compassSettingsFor(-2).rotationPriorEnabled).toBe(false);
   });
 
+  it("clamps ASYMMETRICALLY — above range is FULL influence, not silence", () => {
+    // Why this test matters (PR #313 review): the docstring claimed for a while
+    // that out-of-range inputs "collapse to SILENT", which is true only of the
+    // negative half — and only because that half clamps to 0, which is silent
+    // for an unrelated reason. Above the range the clamp lands on 1, the
+    // LOUDEST setting available and the exact opposite of the claim. Pinned so
+    // the two halves cannot be described as one behaviour again.
+    expect(compassSettingsFor(1.5)).toEqual(compassSettingsFor(1));
+    expect(compassSettingsFor(1.5).rotationPriorEnabled).toBe(true);
+    expect(compassSettingsFor(1.5).experimentEnabled).toBe(true);
+    expect(compassSettingsFor(1.5).voteWeight).toBe(1);
+    // The negative half, stated beside it so the asymmetry is visible in one place:
+    expect(compassSettingsFor(-0.5)).toEqual(compassSettingsFor(0));
+  });
+
   it("treats a non-finite influence as fully off", () => {
     // Defensive: a range input cannot produce this, but a restored preference
     // can, and "compass drives with a NaN weight" is the worst available state.

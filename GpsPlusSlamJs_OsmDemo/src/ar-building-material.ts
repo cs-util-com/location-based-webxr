@@ -24,6 +24,22 @@
  * brightens the camera feed, so on a bright daylit street the glow may wash out
  * to near-invisible. The variant was judged against a procedural backdrop.
  *
+ * ⚠️ **THIS MATERIAL IS NOT GRADED LIKE THE REST OF THE AR SCENE, and that is
+ * a fact rather than a preference** (PR #313 review). `ar-scene-environment.ts`
+ * sets `renderer.toneMapping = AR_TONE_MAPPING` and an exposure, but three.js
+ * applies tone mapping and the linear→sRGB encode to a `ShaderMaterial` only if
+ * the fragment source *contains* `#include <tonemapping_fragment>` and
+ * `#include <colorspace_fragment>` — it SUBSTITUTES those chunks, it never
+ * injects them. Neither appears here (nor anywhere in this package), so
+ * `gl_FragColor` is written raw. Two consequences: the tint is built with
+ * `setHSL(..., THREE.SRGBColorSpace)`, which converts into Linear-sRGB, and
+ * writing that straight to an sRGB target renders it darker and less saturated
+ * than the HSL picked in the lab; and the shell is the one thing in the scene
+ * not passing through ACES at exposure. Whether that is the approved look — the
+ * lab may itself have been ungraded — is an open question, filed as
+ * `docs/2026-08-17-2220-ar-shell-colour-pipeline-followup.md`. Stated here so
+ * the file stops reading as if it lived under the same grade as its neighbours.
+ *
  * @see ar-building-material.ts.md
  */
 
@@ -194,8 +210,13 @@ export function createArBuildingMaterial(
     material,
     setTime(seconds: number): void {
       // GUARDED. A non-finite clock would make `sin` NaN and blank every
-      // building — the frame loop hands `elapsed`, which is 0 on the first
-      // frame after a reset by documented contract.
+      // building. The frame loop hands `elapsed` — the rAF timestamp in
+      // seconds, PAGE-relative rather than session-relative, so it is already
+      // large on the first frame of a session entered late. (`dt` is the one
+      // that starts at 0; `xr-frame-loop.ts` records that reading `elapsed`
+      // as session-relative already cost a consumer a real defect.) Monotonic,
+      // never negative, and only ever fed to `sin`, so the magnitude does not
+      // matter here — only finiteness does.
       if (!Number.isFinite(seconds)) return;
       (material.uniforms["uTime"] as { value: number }).value = seconds;
     },
