@@ -85,6 +85,7 @@ let camera: THREE.PerspectiveCamera;
 let renderer: THREE.WebGLRenderer;
 
 import { startArMode, type ArModeDeps } from "./ar-mode.js";
+import { nueBearingDeg } from "./ar-origin.js";
 import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
 
 const COLOGNE = { lat: 50.9413, lon: 6.9583 };
@@ -684,6 +685,69 @@ describe("the readout refuses to invent numbers (r511 review)", () => {
 
       expect(document.body.textContent).toContain("baseline 0.00 m");
       arWorldGroup.matrix.identity();
+    });
+  });
+
+  it("reports the bearing in WORLD space, so the alignment is carried", () => {
+    // Why this test matters (PR #312 review): this call site is the one frame
+    // choice in the file with no test, and it is the choice three independent
+    // readers have already got backwards (`ar-scene-hierarchy.ts` records two,
+    // an earlier HUD review a third). `nueBearingDeg`'s own tests cannot catch
+    // a regression here — they take north/east as arguments, so swapping this
+    // call site to `arWorldGroup.worldToLocal(...)` passes the whole suite.
+    //
+    // THE ASSERTION MUST BE A VALUE THE UN-ALIGNED READING CANNOT PRODUCE, or
+    // it degrades to "some number appears". So the camera is parented under
+    // `arWorldGroup` exactly as production parents it, the group carries a 90°
+    // yaw, and the camera's LOCAL forward points along −Z. Relative to the
+    // group that is bearing 90° (east, in the N=x/E=z convention); rotated by
+    // the group's yaw it is a different bearing entirely. Only the world-space
+    // reading can produce the latter.
+    // The bearing is an EXPANDED-set line (`pushExpanded`), so a collapsed HUD
+    // would show nothing and the assertion would pass vacuously in reverse.
+    window.localStorage.setItem("osm-demo:ar-hud-expanded", "1");
+    arWorldGroup.matrix.identity();
+    arWorldGroup.rotation.set(0, Math.PI / 2, 0);
+    arWorldGroup.updateMatrix();
+    arWorldGroup.matrixAutoUpdate = false;
+    arWorldGroup.add(camera);
+    camera.rotation.set(0, 0, 0);
+    arWorldGroup.updateMatrixWorld(true);
+
+    // What the two frames actually give, computed from the same primitive the
+    // production line uses, so the expectation is not a hand-copied constant.
+    const local = new THREE.Vector3();
+    camera.getWorldDirection(local);
+    const worldBearing = nueBearingDeg(local.x, local.z);
+
+    const relative = new THREE.Vector3(0, 0, -1);
+    const unaligned = nueBearingDeg(relative.x, relative.z);
+
+    // The fixture is only meaningful if the two frames DISAGREE.
+    expect(worldBearing).toBeDefined();
+    expect(worldBearing).not.toBeCloseTo(unaligned as number, 1);
+
+    return startArMode(deps({ container: document.body })).then(() => {
+      const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+        dt: number;
+        elapsed: number;
+      }) => void;
+      onFrame({ dt: 1 / 60, elapsed: 1 });
+
+      expect(document.body.textContent).toContain(
+        `fused ${Math.round(worldBearing as number)}°`,
+      );
+      // And explicitly NOT the un-aligned reading, which is the regression this
+      // test exists to catch rather than merely a different number.
+      expect(document.body.textContent).not.toContain(
+        `fused ${Math.round(unaligned as number)}°`,
+      );
+
+      window.localStorage.removeItem("osm-demo:ar-hud-expanded");
+      arWorldGroup.remove(camera);
+      arWorldGroup.rotation.set(0, 0, 0);
+      arWorldGroup.matrix.identity();
+      arWorldGroup.updateMatrixWorld(true);
     });
   });
 });

@@ -151,12 +151,23 @@ the ~10 m symptom has **two** candidate causes that need **opposite** fixes.
 - `fixAgeMs` — a stale fix and a fresh one are otherwise indistinguishable, and
   "the alignment drifted" is often "no fix for 40 s". Past `STALE_FIX_MS`
   (15 s) the line is promoted to the collapsed set and marked `— STALE`.
-- `fusedBearingDeg` — **formatted here, not yet wired.** Per DEC-H6 it ships
-  with the library's compass bearing, because either line alone says nothing;
-  the pair differing by tens of degrees is the diagnostic. ⚠️ Its caller must
-  take the camera's yaw **relative to `arWorldGroup`**, not in world space — a
-  yaw in the AR frame is not a bearing. `ar-mode.ts` records that two
-  independent readers have already got that frame backwards.
+- `fusedBearingDeg` — **wired in `ar-mode.ts`**, from the camera's **world**
+  direction. Per DEC-H6 it reads beside the library's compass bearing, because
+  either line alone says nothing; the pair differing by tens of degrees is the
+  diagnostic. ⚠️ Its caller must take the direction in **WORLD SPACE**. The
+  hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the alignment) →
+basisChangeNode → arpose → camera`, so the camera is a DESCENDANT of the
+  aligned group and its world transform already carries the alignment; a
+  direction taken _relative to_ `arWorldGroup` is in the un-aligned AR-odometry
+  frame — the alignment's own domain — and is a plausible number that is not
+  north. Use `ar-origin.ts`'s `nueBearingDeg`, which carries the axis
+  convention and its tests, rather than an `atan2` at a call site.
+  - **This bullet said the exact opposite until the PR #312 review**, and it was
+    the fourth statement of the distinction and the last one still backwards —
+    `ar-measurements.ts`, `ar-origin.ts` and `ar-mode.ts:498` had all been
+    corrected. `ar-scene-hierarchy.ts` records two independent readers getting
+    this frame backwards, so a sidecar restating the error was the likeliest way
+    to produce a third.
 
 ## Collapsed and expanded (DEC-H2)
 
