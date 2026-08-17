@@ -84,8 +84,20 @@ function filledCells(features: readonly OsmFeature[], box?: Bbox): number {
 /**
  * Covered cells for a BAND along the banks — the real `addWater` path.
  *
- * `clipWaterTo` is passed through, so this measures exactly what production
- * indexes rather than a stand-in for it.
+ * ⚠️ **`clipWaterTo` is passed here and is NOT passed in production**, so the
+ * clipped columns below are a measurement of a path the demo never takes. This
+ * docstring claimed the opposite ("measures exactly what production indexes")
+ * until the PR #313 review. The demo's only call site builds the index through
+ * `createObstacleIndexCache(buildObstacleIndex)`, whose `build` parameter is
+ * typed to take `features` ALONE — so `resolution` and `options` both default
+ * and water is indexed UNCLIPPED. The gap is the point of the table: at
+ * `london-westminster` that is 13 052 cells against 1 517, i.e. over the stated
+ * 10 000-cell site budget rather than comfortably inside it.
+ *
+ * The band-vs-filled comparison the table exists for is unaffected — both
+ * columns are measured the same way. What must not be read off it is a budget
+ * claim about the shipped path. See
+ * `docs/2026-08-17-2210-obstacle-index-water-clipping-followup.md`.
  */
 function bandCells(features: readonly OsmFeature[], box?: Bbox): number {
   // THE REAL PRODUCTION PATH, since `addWater` now exists. The first version of
