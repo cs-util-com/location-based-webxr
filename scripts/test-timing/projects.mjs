@@ -456,18 +456,34 @@ export const PROJECTS = [
         // app boot. Nothing was watching, and by the time it was measured every
         // lever for recovering it was spent (findings 2026-08-07, Areas 3-5b).
         //
-        // 740 s is the recorded MEDIAN (567 s) plus ~30 %. Loose on purpose:
+        // 900 s is the recorded MEDIAN (690.1 s) plus ~30 %. Loose on purpose:
         // this suite is contention-bound — its own Playwright config records a
         // 21x inflation of identical work under load — so a tight ceiling would
         // be one more load-dependent failure rather than a regrowth alarm.
         // `budget.mjs` carries the rule for changing it.
+        //
+        // RE-DERIVED 2026-08-17, and the reason matters more than the number.
+        // The previous ceiling was 740 s = median 567 s + 30 %. The median has
+        // since risen to 690.1 s (history in `GpsPlusSlamJs_OsmDemo/docs/
+        // test-timings.md`), which left the ceiling only +7 % above it — so the
+        // guard had quietly stopped being the LOOSE regrowth alarm it is
+        // designed as and become a tight performance target, firing on ordinary
+        // load. It tripped on a comments-and-docs change that added no e2e test
+        // (56 tests, +0): 769.3 s and 770.6 s on consecutive runs, against
+        // 707.1 s for the same 56 tests two hours earlier on the same tree.
+        //
+        // ⚠️ THE 22 % GROWTH FROM 567 s TO 690 s IS REAL AND IS NOT EXPLAINED
+        // HERE. Re-deriving the ceiling restores the alarm's sensitivity to
+        // FUTURE growth; it does not account for the growth already banked
+        // across r519-r525. `budget.mjs` is right that removing work is the
+        // better fix, and that remains owed. Owner decision, 2026-08-17.
         //
         // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
         // 30 %, and CI records no median of its own, so enforcing it there
         // measured the runner and failed two all-green PRs. See the CI note in
         // `budget.mjs`.
         .map((stage) =>
-          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 740 } : stage
+          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 900 } : stage
         ),
     ],
   },

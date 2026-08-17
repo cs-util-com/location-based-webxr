@@ -12,13 +12,14 @@
   - Exactly the budget is **inside** it (`<=`), so a stage landing on the number does not flap.
   - **The ceiling is only enforced off CI**, because it is derived from the same-machine median that [stage-args.mjs](stage-args.mjs) deliberately refuses to record on CI. Enforcing a local number on a runner that contributes no data point measured the runner, not the suite — it failed two PRs on runs where all 51 e2e tests passed. The CI truthiness check must stay identical to `decideRecording`'s, or a run could skip the budget while still recording a row.
     - The cost, stated plainly: the alarm now lives only on the machine that runs the full local gate. If that habit lapses, the guard lapses with it.
-  - Currently exactly one stage is guarded: `GpsPlusSlamJs_OsmDemo`'s `test:e2e` at 740 s ([projects.mjs](projects.mjs)). Changing that number is a deliberate act with its own commit and the new median quoted — the module docstring carries the rule for deriving one.
+  - Currently exactly one stage is guarded: `GpsPlusSlamJs_OsmDemo`'s `test:e2e` at **900 s** ([projects.mjs](projects.mjs)). Changing that number is a deliberate act with its own commit and the new median quoted — the module docstring carries the rule for deriving one.
+    - **Re-derived 2026-08-17** from 740 s (median 567 s + 30 %) to 900 s (median **690.1 s** + 30 %). The median had risen ~22 % while the ceiling stayed put, leaving only +7 % of headroom — so the guard had stopped being a loose regrowth alarm and started firing on ordinary load, on a change that added no e2e test. ⚠️ The growth itself is real and still unexplained; re-deriving restores sensitivity to *future* growth without accounting for what is already banked.
 - Example:
   ```js
   budgetBreach({ name: 'lint' }, 9_999_000, {}); // → null (unguarded stage)
-  budgetBreach({ name: 'test:e2e', budgetSeconds: 740 }, 587_000, {}); // → null
-  budgetBreach({ name: 'test:e2e', budgetSeconds: 740 }, 771_000, {}); // → 'stage "test:e2e" took 771.0 s …'
-  budgetBreach({ name: 'test:e2e', budgetSeconds: 740 }, 771_000, { CI: '1' }); // → null
+  budgetBreach({ name: 'test:e2e', budgetSeconds: 900 }, 771_000, {}); // → null
+  budgetBreach({ name: 'test:e2e', budgetSeconds: 900 }, 931_000, {}); // → 'stage "test:e2e" took 931.0 s …'
+  budgetBreach({ name: 'test:e2e', budgetSeconds: 900 }, 931_000, { CI: '1' }); // → null
   ```
 - Caller: [run-gate.mjs](run-gate.mjs) checks each stage **after** its own pass/fail, so a red stage reports its own failure rather than a budget message about work that never finished.
 - Tests: [budget.test.mjs](budget.test.mjs) (examples: boundaries, the "raising it is the wrong first move" wording, malformed inputs, CI skip), [budget.property.test.mjs](budget.property.test.mjs) (never breaches on CI for any stage/budget/duration; off CI breaches ⟺ duration exceeds budget).
