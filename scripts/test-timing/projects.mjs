@@ -472,11 +472,22 @@ export const PROJECTS = [
         // (56 tests, +0): 769.3 s and 770.6 s on consecutive runs, against
         // 707.1 s for the same 56 tests two hours earlier on the same tree.
         //
-        // ⚠️ THE 22 % GROWTH FROM 567 s TO 690 s IS REAL AND IS NOT EXPLAINED
-        // HERE. Re-deriving the ceiling restores the alarm's sensitivity to
-        // FUTURE growth; it does not account for the growth already banked
-        // across r519-r525. `budget.mjs` is right that removing work is the
-        // better fix, and that remains owed. Owner decision, 2026-08-17.
+        // WHERE THE 567 -> 690 DRIFT CAME FROM, investigated 2026-08-17 from the
+        // versioned history rather than guessed at. The first draft of this
+        // comment blamed r519-r525; THAT WAS WRONG and the history says so.
+        // The ceiling was set 2026-08-07 on a 468-614 s history. By 2026-08-14
+        // the recorded runs were already 678-728 s, i.e. the drift had happened
+        // BEFORE the branches blamed for it, spread across ~40 commits with no
+        // step change attributable to any one of them.
+        //
+        // ⚠️ AND THE DRIFT IS SMALLER THAN THE NOISE. On 2026-08-11 alone the
+        // recorded runs span 563-820 s — a 1.46x same-day spread on a suite
+        // whose own Playwright config records a 21x inflation of identical work
+        // under load. So "the suite grew ~22 %" overstates a signal that
+        // day-to-day variance already exceeds, and a ceiling sitting +7 % above
+        // the median could not have survived it whatever the suite did.
+        // Removing work is still worth doing, but it is a throughput argument
+        // rather than the regrowth alarm this guard exists to be.
         //
         // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
         // 30 %, and CI records no median of its own, so enforcing it there
