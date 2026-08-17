@@ -4,7 +4,7 @@
 
 ## Latest
 
-Last recorded 2026-08-17T04:13:29.045Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r525` @ `8ef7ab22`
+Last recorded 2026-08-17T04:34:47.209Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r525` @ `f05fbe66`
 
 _Header describes the most recent write only; standalone stage runs update single rows. Median = the stage's same-machine history median. Per-recording provenance lives in the JSON block._
 
@@ -13,7 +13,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 | `test:repo-config` | 3.6 s | ≈ | 3.3 s | 272 passed | 0 | |
 | `test:framework` | 86.3 s | ≈ | 93.4 s | – | – | |
 | `test:osm` | 57.1 s | ≈ | 64.3 s | – | – | |
-| `check:deadcode` | 3.7 s | ≈ | 3.8 s | – | – | |
+| `check:deadcode` | 4.3 s | ≈ | 3.9 s | – | – | |
 | `test:recorder` | 199.3 s | ≈ | 216.1 s | – | – | |
 | `test:starter` | 30.7 s | ≈ | 31.9 s | – | – | |
 | `test:example` | 4.0 s | ≈ | 4.0 s | – | – | |
@@ -29,7 +29,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 - `test:repo-config`: 3.6, 3.3, 4.6, 3.3, 3.0, 3.0, 3.2, 3.2, 4.3, 3.7
 - `test:framework`: 86.3, 85.2, 93.3, 148.3, 119.2, 98.6, 105.1, 86.5, 91.2, 93.6
 - `test:osm`: 57.1, 57.2, 63.0, 60.2, 68.0, 67.1, 69.2, 60.9, 65.6, 66.3
-- `check:deadcode`: 3.7, 4.0, 3.8, 32.6, 19.7, 3.6, 3.8, 20.3, 3.5, 3.5
+- `check:deadcode`: 4.3, 3.7, 4.0, 3.8, 32.6, 19.7, 3.6, 3.8, 20.3, 3.5
 - `test:recorder`: 199.3, 196.8, 207.0, 226.9, 219.1, 218.8, 231.1, 192.6, 218.0, 214.1
 - `test:starter`: 30.7, 31.3, 34.2, 32.2, 34.8, 32.7, 33.3, 29.5, 31.7, 30.8
 - `test:example`: 4.0, 4.0, 4.1, 4.0, 4.5, 4.2, 4.5, 3.9, 4.0, 4.0
@@ -43,7 +43,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 ```json
 {
   "version": 1,
-  "meta": {"project":"location-based-webxr","lastWrite":{"ts":"2026-08-17T04:13:29.045Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"8ef7ab22","branch":"r525"}},
+  "meta": {"project":"location-based-webxr","lastWrite":{"ts":"2026-08-17T04:34:47.209Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"f05fbe66","branch":"r525"}},
   "stages": {
     "test:repo-config": { "history": [
       {"ts":"2026-08-17T04:13:29.045Z","durationMs":3630,"tests":{"passed":272,"failed":0,"skipped":0,"todo":0},"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"8ef7ab22"},
@@ -190,6 +190,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-14T18:42:30.365Z","durationMs":730542,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"128a1246"}
     ] },
     "check:deadcode": { "history": [
+      {"ts":"2026-08-17T04:34:47.209Z","durationMs":4312,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"f05fbe66"},
       {"ts":"2026-08-16T22:00:26.864Z","durationMs":3652,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"de540e1c"},
       {"ts":"2026-08-16T21:38:45.617Z","durationMs":4045,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"05ce0992"},
       {"ts":"2026-08-16T21:29:08.313Z","durationMs":3838,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"05ce0992"},
@@ -198,8 +199,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-16T12:35:14.713Z","durationMs":3621,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"f52e6a50"},
       {"ts":"2026-08-16T11:47:00.054Z","durationMs":3751,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"0ce3d89b"},
       {"ts":"2026-08-16T09:25:02.700Z","durationMs":20340,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"6f1988db"},
-      {"ts":"2026-08-15T18:14:40.648Z","durationMs":3534,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"c28582cf"},
-      {"ts":"2026-08-15T17:51:18.038Z","durationMs":3458,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"213457ea"}
+      {"ts":"2026-08-15T18:14:40.648Z","durationMs":3534,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"c28582cf"}
     ] }
   }
 }
