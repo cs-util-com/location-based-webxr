@@ -38,11 +38,26 @@ when the user does.
   affine-invariant, so the lat/lng anisotropy needs no correction — see
   [`point-in-ring.ts.md`](../spatial/point-in-ring.ts.md)).
   - `passages` are **LINES along which the obstacle is open** (DEC-R12-3) —
-    today, the `tunnel=building_passage` ways running through a building.
+    the `tunnel=building_passage` ways running through a building, and since
+    2026-08-17 the **ground-level bridge decks crossing a water feature**.
     **Lines, not the mouths**: a step is admitted when it runs along one, which
     is a claim `crossesObstacle` can make about a step _inside_ the footprint as
     well as one crossing its boundary, and the inside is where a corridor stops
     being a corridor if nobody asks.
+    - **The bridge case is why the field is not building-specific.** A bank ring
+      cannot be cut the way `barrier-gates.ts` cuts a barrier centreline —
+      `segmentCrossesRing` treats a ring as closed regardless of whether the
+      first vertex was repeated — so the corridor is the only available shape,
+      and it is the right one: a deck admits exactly the steps that run along
+      it. Selector and corpus evidence in `isBridgeCrossing` (`mesh/roads.ts`):
+      14 of 18 `bridge`-tagged ways at `london-tower-bridge` are decks; the 4
+      rejected are structural areas and ways 43 m up behind a turnstile.
+    - **Water carries every deck in the extract, not the intersecting ones**,
+      unlike buildings, which are filtered per footprint by `passageLines`. The
+      asymmetry is deliberate: decks are few per city, and
+      `blockedDespitePassages` requires the step to be crossing or inside _this_
+      obstacle before any passage is consulted, so a distant deck cannot admit
+      anything.
     - **Absent on almost everything**, which is why it is optional rather than
       an empty array: `crossesObstacle` is the search's hottest path and pays one
       `undefined` test per obstacle for it. See
@@ -59,10 +74,18 @@ when the user does.
       only for a crossing and so already let courtyards through. One predicate
       now, not three readings of it.
 - `ObstacleIndex` — `obstaclesIn(cell)`, `cells`.
-- `buildObstacleIndex(features, resolution?) => ObstacleIndex` — **barriers and
-  buildings**. Barriers become `thicknessM`-wide bands along their centrelines;
-  buildings follow `solidBuildingFootprints`' parts-else-outline rule, which is
-  the same selection [`buildings.ts`](../mesh/buildings.ts.md) extrudes.
+- `buildObstacleIndex(features, resolution?, options?) => ObstacleIndex` —
+  **barriers, buildings and water**. (This line said "barriers and buildings"
+  until 2026-08-17, having missed `addWater` entirely.) Barriers become
+  `thicknessM`-wide bands along their centrelines; buildings follow
+  `solidBuildingFootprints`' parts-else-outline rule, which is the same
+  selection [`buildings.ts`](../mesh/buildings.ts.md) extrudes; water becomes
+  bands along its BANKS carrying every ground-level bridge deck as a `passage`.
+  - `options.clipWaterTo?: Bbox` clips water before banding. ⚠️ **No production
+    caller passes it** — the demo builds through
+    `createObstacleIndexCache(buildObstacleIndex)`, whose `build` parameter takes
+    `features` alone — so water ships unclipped. See
+    [`2026-08-17-2210-obstacle-index-water-clipping-followup.md`](../../docs/2026-08-17-2210-obstacle-index-water-clipping-followup.md).
 - `obstacleLevelsAt(index, cell, groundAt) => number[]`
 - `crossesObstacle(index, fromCell, toCell) => boolean` — **the predicate that
   makes a wall block.**

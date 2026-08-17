@@ -62,6 +62,7 @@ import { resolveHeights } from "../mesh/building-heights.js";
 import { enuFrameAt } from "../mesh/enu.js";
 import { coverCells } from "../spatial/cell-coverage.js";
 import { waterBankLines } from "../mesh/water.js";
+import { isBridgeCrossing } from "../mesh/roads.js";
 import type { Bbox } from "../spatial/clip.js";
 import {
   segmentCrossesRing,
@@ -175,7 +176,7 @@ export function buildObstacleIndex(
 
   addBarriers(all, resolution, byCell);
   addBuildings(all, resolution, byCell);
-  addWater(all, resolution, byCell, options.clipWaterTo);
+  addWater(all, resolution, byCell, options.clipWaterTo, bridgeDeckLines(all));
 
   return {
     obstaclesIn: (cell) => byCell.get(cell) ?? [],
@@ -286,9 +287,14 @@ const BANK_THICKNESS_M = 0.5;
  * obstacle blocks the crossing and offers nothing to stand on — a river with a
  * standable surface would be the whole point missed.
  *
- * ⚠️ **NO BRIDGE EXEMPTION YET, AND WATER IS LIVE IN THE DEMO — so a route over
- * a bridge is refused right now.** A bridge deck crosses its river's banks, and
- * `crossesObstacle` rejects any step crossing a bank ring.
+ * **BRIDGES ARE EXEMPTED, since 2026-08-17** (PR #313 review). A bridge deck
+ * crosses its river's banks, and `crossesObstacle` rejects any step crossing a
+ * bank ring — so until the exemption was wired, every bridge over water was
+ * unroutable, including `london-tower-bridge` in the shipped picker corpus. The
+ * exemption is a PASSAGE rather than a hole: see {@link bridgeDeckLines}, and
+ * note that `isBridgeCrossing` had existed with no production consumer for four
+ * branches before this, which is why the warning below is kept in the past tense
+ * rather than deleted.
  *
  * This paragraph used to end "Nothing calls this with water in the feature set
  * today, which is why that is tolerable". **That was false and is corrected
@@ -302,15 +308,45 @@ const BANK_THICKNESS_M = 0.5;
  * **The fix is the bridge exemption, NOT switching water off.** Water vetoing a
  * route is deliberate and planned work, so making this opt-in and disabling it
  * would revert a decision rather than fix a defect — it would just trade
- * "bridges unroutable" for "agents walk on rivers". Until a bridge deck can be
- * recognised (`bridge=yes` on the crossing way) and exempted from its river's
- * bank rings, a river is a hard barrier to any agent.
+ * "bridges unroutable" for "agents walk on rivers". That fix is now in place, so
+ * a river is a hard barrier to any agent EXCEPT along a ground-level deck.
  */
+/**
+ * The centrelines of every ground-level bridge deck in the extract.
+ *
+ * **These become PASSAGES on the water obstacles, not cuts in their bank
+ * rings**, and that is forced rather than chosen: `segmentCrossesRing` treats a
+ * ring as closed whether or not the caller repeated the first vertex, so a bank
+ * ring cannot be opened the way `barrier-gates.ts` opens a barrier centreline.
+ * The passage corridor `blockedDespitePassages` already implements is exactly
+ * the right shape for a deck — "admitted exactly when the step runs along it".
+ *
+ * `isBridgeCrossing` carries the selector and its corpus evidence: at
+ * `london-tower-bridge`, 14 of the 18 `bridge`-tagged ways are ground-level
+ * decks. The 4 it rejects are structural areas and ways 43 m up behind a
+ * turnstile — opening a bank along one of those would walk an agent onto a wall.
+ *
+ * Computed ONCE per index build, like `gateOpenings`, because it is a property
+ * of the extract rather than of any one water feature.
+ */
+function bridgeDeckLines(
+  features: readonly OsmFeature[],
+): readonly (readonly PlanarPoint[])[] {
+  const lines: (readonly PlanarPoint[])[] = [];
+  for (const feature of features) {
+    if (feature.type !== "way" || !isBridgeCrossing(feature)) continue;
+    if (feature.geometry.length < 2) continue;
+    lines.push(feature.geometry.map((p) => ({ x: p.lng, y: p.lat })));
+  }
+  return lines;
+}
+
 function addWater(
   features: readonly OsmFeature[],
   resolution: number,
   byCell: Map<string, Obstacle[]>,
   clipTo?: Bbox,
+  bridges: readonly (readonly PlanarPoint[])[] = [],
 ): void {
   for (const feature of features) {
     const lines = waterBankLines(feature, clipTo);
@@ -335,7 +371,18 @@ function addWater(
     if (rings.length === 0) continue;
 
     indexUnderCells(
-      { feature: featureKey(feature), heightM: 0, rings },
+      {
+        feature: featureKey(feature),
+        heightM: 0,
+        rings,
+        // EVERY DECK, NOT THE ONES THAT INTERSECT THIS RIVER. `passageLines`
+        // filters per building because a building is small and passages are
+        // many; here the asymmetry runs the other way — a city extract holds a
+        // handful of decks — and `blockedDespitePassages` already requires the
+        // step to be crossing or inside THIS obstacle before it looks at a
+        // passage at all, so a distant deck cannot admit anything.
+        ...(bridges.length > 0 ? { passages: bridges } : {}),
+      },
       resolution,
       byCell,
     );

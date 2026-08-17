@@ -941,4 +941,70 @@ describe("water blocks the bank, not the whole river (DEC-A4)", () => {
     const index = buildObstacleIndex([centreline]);
     expect(index.cells.size).toBe(0);
   });
+
+  describe("a bridge deck opens the banks it crosses (DEC-R1)", () => {
+    /**
+     * Why these tests matter (PR #313 review): `isBridgeCrossing` shipped with
+     * NO production consumer, so every bridge over water was unroutable — and
+     * `london-tower-bridge` is in the shipped site picker. The predicate, its
+     * corpus pinning and the warning in `obstacles.ts` all existed; only the
+     * wiring was missing, which made the file read as if the feature were live.
+     *
+     * The mechanism is the EXISTING passage corridor, not a cut in the bank
+     * ring. `segmentCrossesRing` treats a ring as closed whether or not the
+     * caller repeated the first vertex, so a bank ring cannot be cut the way
+     * `barrier-gates.ts` cuts a barrier centreline — the same constraint
+     * `blockedDespitePassages` was written for.
+     */
+
+    /** A ground-level deck crossing the river north–south. */
+    const deck: OsmFeature = {
+      type: "way",
+      id: 52,
+      geometry: [
+        { lat: HOME.lat + STEP * 10, lng: HOME.lng },
+        { lat: HOME.lat + STEP * 130, lng: HOME.lng },
+      ],
+      tags: { highway: "footway", bridge: "yes" },
+    };
+
+    it("admits a step across the bank where the deck crosses it", () => {
+      const index = buildObstacleIndex([river, deck]);
+      const [land, water] = pairAcrossBank();
+
+      // Same pair the blocking test uses, so the only difference is the deck.
+      expect(crossesObstacle(index, land, water)).toBe(false);
+    });
+
+    it("still blocks the bank away from the deck", () => {
+      // The half that makes the opening a BRIDGE rather than a hole in the
+      // river: an opening that admitted every bank step would be
+      // indistinguishable from not indexing water at all.
+      const index = buildObstacleIndex([river, deck]);
+      const bankLat = HOME.lat + STEP * 20;
+      // Still WITHIN the river's east–west span (it ends at +200), but far
+      // enough from the deck at HOME.lng to be outside the passage corridor.
+      const farLng = HOME.lng + STEP * 150;
+      const land = cellAt(bankLat - STEP * 6, farLng);
+      const water = cellAt(bankLat + STEP * 6, farLng);
+
+      expect(crossesObstacle(index, land, water)).toBe(true);
+    });
+
+    it("ignores a bridge that is not a ground-level crossing", () => {
+      // `isBridgeCrossing` rejects 4 of the 18 `bridge`-tagged ways at Tower
+      // Bridge — structural areas and non-routable ways. Opening a bank along
+      // one of those would let an agent walk out onto a wall.
+      const structure: OsmFeature = {
+        type: "way",
+        id: 53,
+        geometry: deck.geometry,
+        tags: { bridge: "yes", man_made: "bridge" },
+      };
+      const index = buildObstacleIndex([river, structure]);
+      const [land, water] = pairAcrossBank();
+
+      expect(crossesObstacle(index, land, water)).toBe(true);
+    });
+  });
 });
