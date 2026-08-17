@@ -51,17 +51,19 @@
    // App-specific state (UI, session metadata) is combined in here
    ```
 
-3. **Use Library Actions:**
+3. **Use Library Actions** — through the framework's subpaths, never from the core package directly:
 
    ```typescript
    import {
      setZeroPos, // Set GPS zero reference (first GPS reading)
      recordGpsEvent, // Record paired AR+GPS data
-     odometryTrackingRestarted, // Handle AR tracking loss
      type RecordGpsEventPayload,
-     type GpsPoint,
+   } from 'gps-plus-slam-app-framework/state';
+   import {
+     odometryTrackingRestarted, // Handle AR tracking loss
      calcRelativeCoordsInMeters,
-   } from 'gps-plus-slam-js';
+     type GpsPoint,
+   } from 'gps-plus-slam-app-framework/core';
    ```
 
 4. **Subscribe to Alignment Matrix:**
@@ -846,10 +848,10 @@ const store = configureStore({
 **Correct:**
 
 ```typescript
-import { createGpsSlamStore } from 'gps-plus-slam-js';
+import { createSlamAppStore } from 'gps-plus-slam-app-framework/state/create-slam-app-store';
 
-const libraryStore = createGpsSlamStore();
-// Add persistence middleware, optionally combine with app-specific state
+const store = createSlamAppStore(/* app slices, persistence, options */);
+// See `state/recorder-store.ts` for the recorder's actual wiring
 ```
 
 **Why:** The library's store contains the alignment algorithm. Custom stores can't replay sessions or compute alignment matrices.
@@ -942,7 +944,7 @@ const gpsPoint = {
 **Correct:**
 
 ```typescript
-import { calcRelativeCoordsInMeters } from 'gps-plus-slam-js';
+import { calcRelativeCoordsInMeters } from 'gps-plus-slam-app-framework/core';
 
 const coords = calcRelativeCoordsInMeters(
   { lat: pos.coords.latitude, lon: pos.coords.longitude },
