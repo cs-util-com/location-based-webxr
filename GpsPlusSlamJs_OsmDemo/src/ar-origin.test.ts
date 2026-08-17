@@ -19,6 +19,7 @@ import {
   fieldMatchesArDatum,
   nueBearingDeg,
   sceneAnchorOffsetNue,
+  terrainReadout,
   toDemoLatLng,
   type FrameworkLatLong,
 } from "./ar-origin.js";
@@ -223,5 +224,87 @@ describe("fieldMatchesArDatum", () => {
     expect(fieldMatchesArDatum(undefined, 46.2)).toBe(false);
     expect(fieldMatchesArDatum({ datum: 0 }, undefined)).toBe(false);
     expect(fieldMatchesArDatum(undefined, undefined)).toBe(false);
+  });
+});
+
+/**
+ * Why these tests matter (PR #312 review): the datum guard above is right, and
+ * applying it to the WHOLE terrain payload silently disabled the alarm it sits
+ * next to.
+ *
+ * A failed or all-missing DEM load returns `flat(...)`, which hardcodes
+ * `datum: 0` regardless of the undulation requested (`heightfield.ts:189`). So
+ * for any non-zero undulation — −46.2 at Cologne — `fieldMatchesArDatum`
+ * REJECTS the failed field, and if `terrainHasData` is published only inside
+ * that gate then `terrainHasData: false` is never published at all.
+ *
+ * `ar-measurements.ts` calls that flag "THE MOST IMPORTANT FLAG IN THIS
+ * INTERFACE" and `describeArMeasurements` puts `terrain: no DEM` in the
+ * always-shown collapsed set precisely so a silent terrain failure cannot pass
+ * as flat ground. Gated, an AR session whose DEM failed showed NO terrain line —
+ * indistinguishable from "the AR field has not landed yet", which is the same
+ * silence the flag exists to break.
+ *
+ * The datum mismatch invalidates the HEIGHT, not the hasData CLAIM, so the two
+ * are gated separately. These tests exist because the predicate above was
+ * covered in isolation while the payload that consumes it was not — which is
+ * exactly how this passed review.
+ */
+describe("terrainReadout", () => {
+  const UNDULATION = 46.2;
+  const HERE = { x: 10, y: 20 };
+  /** What a failed or empty DEM load produces: flat, datum 0, honest. */
+  const failed = {
+    datum: 0,
+    hasData: false,
+    heightAt: () => 0,
+  };
+
+  it("publishes hasData:false for a FAILED load, though its datum cannot match", () => {
+    // The regression this describe block exists for. `flat()` hardcodes
+    // datum 0, so the datum guard can never accept it — and the "no DEM" alarm
+    // must fire anyway.
+    const readout = terrainReadout(failed, HERE, UNDULATION);
+
+    expect(readout.terrainHasData).toBe(false);
+  });
+
+  it("still withholds the HEIGHT from a field whose datum does not match", () => {
+    // The half that must NOT regress: publishing a height off the desktop field
+    // prints a confident residual tens of metres out.
+    const readout = terrainReadout(failed, HERE, UNDULATION);
+
+    expect(readout.terrainHeightM).toBeUndefined();
+  });
+
+  it("publishes both once the field is AR's own", () => {
+    const arField = {
+      datum: absoluteDatumFor(UNDULATION),
+      hasData: true,
+      heightAt: () => 123.5,
+    };
+    const readout = terrainReadout(arField, HERE, UNDULATION);
+
+    expect(readout.terrainHasData).toBe(true);
+    expect(readout.terrainHeightM).toBe(123.5);
+  });
+
+  it("publishes nothing at all before any field exists", () => {
+    // "No field yet" is genuinely unknown and must stay silent — publishing
+    // hasData:false here would raise the DEM alarm during normal startup.
+    expect(terrainReadout(undefined, HERE, UNDULATION)).toEqual({});
+  });
+
+  it("withholds the height when the user's position is unknown", () => {
+    // No ENU point to sample at, but the field's own hasData is still a fact.
+    const arField = {
+      datum: absoluteDatumFor(UNDULATION),
+      hasData: true,
+      heightAt: () => 123.5,
+    };
+    const readout = terrainReadout(arField, undefined, UNDULATION);
+
+    expect(readout.terrainHasData).toBe(true);
+    expect(readout.terrainHeightM).toBeUndefined();
   });
 });

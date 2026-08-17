@@ -183,3 +183,61 @@ export function fieldMatchesArDatum<
   if (field === undefined || undulationM === undefined) return false;
   return field.datum === absoluteDatumFor(undulationM);
 }
+
+/** The shape of a heightfield this readout needs: its datum, and how to sample it. */
+export interface TerrainReadoutField {
+  readonly datum: number;
+  readonly hasData: boolean;
+  heightAt(point: { readonly x: number; readonly y: number }): number;
+}
+
+/**
+ * The terrain half of the AR readout: what is known, and what is only claimed.
+ *
+ * **TWO GATES, NOT ONE, and that separation is the whole point of this
+ * function** (PR #312 review). `terrainHasData` and `terrainHeightM` answer
+ * different questions and a single gate silently disabled the more important
+ * one.
+ *
+ * - **`terrainHasData` is gated only on a field EXISTING.** A failed or
+ *   all-missing load returns `flat(...)`, which hardcodes `datum: 0` whatever
+ *   undulation was requested (`heightfield.ts`). So for any non-zero undulation
+ *   — −46.2 at Cologne — {@link fieldMatchesArDatum} necessarily rejects the
+ *   failed field. Gating `hasData` behind it therefore suppressed
+ *   `terrainHasData: false` **exactly when the DEM had failed**, i.e. precisely
+ *   when the alarm should fire. `ar-measurements.ts` calls that flag "THE MOST
+ *   IMPORTANT FLAG IN THIS INTERFACE" and shows `terrain: no DEM` in the
+ *   always-visible collapsed set so a silent terrain failure cannot pass as
+ *   flat ground; gated, the line vanished instead, which reads as "not landed
+ *   yet" — the same silence the flag exists to break.
+ * - **`terrainHeightM` keeps the datum gate**, unchanged. Between AR entry and
+ *   the entry pass landing the held field is still the DESKTOP one, sampled
+ *   against the window-centre height, so its `heightAt` returns RELIEF rather
+ *   than an ellipsoidal height. Publishing that prints a confident residual
+ *   tens of metres out — the same magnitude as the symptom the residual exists
+ *   to diagnose.
+ *
+ * The mismatch invalidates the HEIGHT, never the hasData CLAIM. Returning
+ * nothing at all before any field exists is deliberate: "no field yet" is
+ * genuinely unknown, and publishing `false` there would raise the DEM alarm
+ * during ordinary startup.
+ *
+ * Extracted from the `liveMeasurements` closure in `main.ts` so it can be
+ * tested. The predicate was covered in isolation while the payload consuming it
+ * was not, which is how the defect passed review.
+ */
+export function terrainReadout(
+  field: TerrainReadoutField | undefined,
+  enuHere: { readonly x: number; readonly y: number } | undefined,
+  arUndulationM: number | undefined,
+): { terrainHasData?: boolean; terrainHeightM?: number } {
+  if (field === undefined) return {};
+  const height =
+    enuHere !== undefined && fieldMatchesArDatum(field, arUndulationM)
+      ? field.heightAt(enuHere)
+      : undefined;
+  return {
+    terrainHasData: field.hasData,
+    ...(height === undefined ? {} : { terrainHeightM: height }),
+  };
+}
