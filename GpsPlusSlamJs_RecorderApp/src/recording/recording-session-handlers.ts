@@ -625,11 +625,15 @@ export function createRecordingSessionHandlers(
    * Stop everything that actively FEEDS a recording — captures, sensor
    * watches, the off-thread quality analyzer — plus their HUD readouts. The
    * ONE teardown for this resource cluster, shared by `performStop` (the
-   * ordered stop flow) and `cleanupForNewRecording` (the XR-session-end /
-   * start-over path), which previously skipped it and left the camera/GPS
-   * feeds and the analyzer Worker running (recurring PR #115/#120/#123 review
-   * finding). Every call is idempotent, so running it on an already-stopped
-   * session is a no-op.
+   * ordered stop flow) and `cleanupForNewRecording` (the start-over path),
+   * which previously skipped it and left the camera/GPS feeds and the analyzer
+   * Worker running (recurring PR #115/#120/#123 review finding). Every call is
+   * idempotent, so running it on an already-stopped session is a no-op.
+   *
+   * NOT the XR-session-end path, despite what this comment said until
+   * 2026-08-17: a system-ended XRSession is handled by `system-session-end.ts`,
+   * which calls the regular `handleStopRecording` — so that path reaches this
+   * function through `performStop`, never through `cleanupForNewRecording`.
    */
   function stopLiveFeeds(): void {
     stopImageCapture();
@@ -868,9 +872,18 @@ export function createRecordingSessionHandlers(
 
   // --- Lifecycle ---
 
+  /**
+   * The START-OVER teardown. Its only production caller is `main.ts`'s
+   * `resetForNewRecording()`, which is reached exclusively from the SUMMARY
+   * screen ("New recording", or Back from the summary) — i.e. always after
+   * `performStop()` has already run. That is why it does not disable the
+   * `beforeunload` warning: `performStop` disabled it on the way here, and
+   * there is no path that reaches this function with a recording still live.
+   * If a caller is ever added that can, the warning must be disabled here too.
+   */
   function cleanupForNewRecording(): void {
-    // Teardown parity with performStop: this path (XR session end, start-over)
-    // must also stop the captures/watches/analyzer, not only the bookkeeping.
+    // Teardown parity with performStop: this path must also stop the
+    // captures/watches/analyzer, not only the bookkeeping.
     stopLiveFeeds();
     if (unsubscribeStore) {
       unsubscribeStore();
