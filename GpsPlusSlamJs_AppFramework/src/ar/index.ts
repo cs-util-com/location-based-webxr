@@ -102,6 +102,19 @@ export {
   estimateFloor,
 } from './floor-estimator.js';
 
+// --- elevation-offset-estimator (slew-limited weighted median + freeze
+// layer over baseline-free floor-vs-terrain delta samples) ---
+export {
+  type ElevationOffsetSample,
+  type ElevationOffsetTick,
+  type ElevationOffsetFreezeOptions,
+  type ElevationOffsetOptions,
+  type ElevationOffsetState,
+  type ElevationOffsetEstimator,
+  DEFAULT_ELEVATION_OFFSET_OPTIONS,
+  createElevationOffsetEstimator,
+} from './elevation-offset-estimator.js';
+
 // --- occupancy-mesher (sparse voxel Set → face-culled surface + AABB list) ---
 export {
   type Aabb,

@@ -44,6 +44,12 @@ const entryFiles = [
   // per-file (a missing entry breaks Vite resolution at runtime; see
   // 2026-04-29-recorder-e2e-import-resolution-failure.md).
   'src/ar/floor-estimator.ts',
+  // Production elevation-offset estimator (slew-limited weighted median +
+  // CUSUM freeze layer over baseline-free floor-vs-terrain deltas) — deep-
+  // importable via the `./ar/*` wildcard, so it must be built per-file (a
+  // missing entry breaks Vite resolution at runtime; see
+  // 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/ar/elevation-offset-estimator.ts',
   'src/ar/occupancy-grid.ts',
   // Pure voxel→surface mesher — deep-importable (the `./ar/*` wildcard
   // advertises this subpath), so it must be built per-file.
