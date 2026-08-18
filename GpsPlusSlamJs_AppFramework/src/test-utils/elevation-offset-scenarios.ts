@@ -233,6 +233,49 @@ export function bridgeCrossing(seed: number): ElevationScenario {
   });
 }
 
+/**
+ * Gradient ramp walk — the DEM-error-gradient field case (a hillside whose
+ * terrain model is offset proportionally to distance walked, ~0.3 m per
+ * metre): sampleM ramps slowly (0.4 m/tick at walk speed) for 60 ticks
+ * while the camera walks. A slow coherent ramp is DATA, not man-made
+ * structure — the estimator must keep tracking (never freeze) and follow
+ * within the slew bound. Ramp is ticks 40..99 (0 → +24 m), then 40 level.
+ */
+export function rampWalk(seed: number): ElevationScenario {
+  return buildScenario({
+    name: 'rampWalk',
+    seed,
+    specs: [...level(40, 0), ...ramp(0, 24, 0.4), ...level(40, 24)],
+    moving: true,
+    positionJitterM: 0.05,
+    baseSampleM: 24,
+  });
+}
+
+/**
+ * Underpass / sunken walkway — the negative twin of bridgeCrossing: full
+ * walking speed throughout, sampleM ramps DOWN to −8 m, holds, ramps back.
+ * A downward ramp can only trigger the NEGATIVE CUSUM branch, so this is
+ * the branch's dedicated coverage. Ramp down is ticks 40..49, the hold
+ * 50..89, ramp up 90..99.
+ */
+export function underpassWalk(seed: number): ElevationScenario {
+  return buildScenario({
+    name: 'underpassWalk',
+    seed,
+    specs: [
+      ...level(40, 0),
+      ...ramp(0, -8, 0.8),
+      ...level(40, -8),
+      ...ramp(-8, 0, 0.8),
+      ...level(40, 0),
+    ],
+    moving: true,
+    positionJitterM: 0.05,
+    baseSampleM: 0,
+  });
+}
+
 /** Standstill: no movement at all, constant sampleM + noise. */
 export function standstill(seed: number): ElevationScenario {
   return buildScenario({

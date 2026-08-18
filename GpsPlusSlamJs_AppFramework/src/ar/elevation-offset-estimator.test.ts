@@ -34,9 +34,11 @@ import {
   garbageConfidenceWalk,
   gpsOutageWalk,
   hillsideWalk,
+  rampWalk,
   standstill,
   stairwellClimb,
   towerDwell,
+  underpassWalk,
   type ElevationScenario,
 } from '../test-utils/elevation-offset-scenarios';
 
@@ -72,6 +74,17 @@ function lastState(
     throw new Error('empty scenario');
   }
   return last;
+}
+
+/** Max |Δ offsetM| between consecutive non-null outputs (0 when none). */
+function maxStepPerTick(states: readonly ElevationOffsetState[]): number {
+  return states.reduce((m, s, i) => {
+    const prev = i > 0 ? states[i - 1] : undefined;
+    if (prev?.offsetM == null || s.offsetM == null) {
+      return m;
+    }
+    return Math.max(m, Math.abs(s.offsetM - prev.offsetM));
+  }, 0);
 }
 
 /** Uniform tick builder for the hand-rolled (non-scenario) streams. */
@@ -205,6 +218,194 @@ describe('createElevationOffsetEstimator', () => {
     expect(last.frozen).toBe(false);
   });
 
+  it('a slow coherent ramp (0.4 m/tick while walking) never freezes and is tracked within the slew bound', () => {
+    // Why this test matters: a DEM error gradient on a hill makes the
+    // baseline-free sample ramp slowly and coherently while the user walks.
+    // That ramp is DATA — an estimator that freezes on it parks the offset
+    // and (on a one-way walk) never re-enters the unfreeze band, so the
+    // world stays wrong for the rest of the session.
+    const scenario = rampWalk(31);
+    const states = run(scenario);
+    expect(states.some((s) => s.frozen)).toBe(false);
+    // The output follows the ramp within the slew bound per tick...
+    const slew = DEFAULT_ELEVATION_OFFSET_OPTIONS.slewRatePerSecondM;
+    expect(maxStepPerTick(states)).toBeLessThanOrEqual(slew + 1e-9);
+    // ...and after the post-ramp level stretch it has caught up.
+    const last = lastState(states);
+    expect(Math.abs((last.offsetM ?? 99) - scenario.baseSampleM)).toBeLessThan(
+      0.5
+    );
+  });
+
+  it('underpass walk freezes via the NEGATIVE CUSUM branch and unfreezes on return', () => {
+    // Why this test matters: a downward structure ramp (underpass, sunken
+    // walkway) can only accumulate on the negative CUSUM side — this is that
+    // branch's only scenario coverage. The offset must not follow the user
+    // down, and the return to ground must unfreeze it.
+    const scenario = underpassWalk(32);
+    const states = run(scenario);
+    const iFreeze = firstFrozenIndex(states);
+    // The down-ramp is ticks 40..49; the freeze must land inside it.
+    expect(iFreeze).toBeGreaterThanOrEqual(40);
+    expect(iFreeze).toBeLessThan(50);
+    expect(
+      maxDeviationFromBase(states, scenario.baseSampleM)
+    ).toBeLessThanOrEqual(1.5);
+    const last = lastState(states);
+    expect(last.frozen).toBe(false);
+    expect(Math.abs((last.offsetM ?? 99) - scenario.baseSampleM)).toBeLessThan(
+      1
+    );
+  });
+
+  it('an alternating outlier/good tick stream keeps the output advancing (never wedges frozen)', () => {
+    // Why this test matters: with an unweighted per-tick aggregate, a tick
+    // whose zero-confidence garbage hits form the numeric majority yields a
+    // garbage aggregate, freezing the estimator; the next good tick then
+    // unfroze it with a zero slew budget, so the output was permanently
+    // wedged while flapping frozen/unfrozen. Confidence-weighting the
+    // aggregate (same floors as the window median) makes garbage ticks
+    // harmless and the output must keep tracking the good hits' slow rise.
+    const est = createElevationOffsetEstimator();
+    const states: ElevationOffsetState[] = [];
+    for (let i = 0; i < 40; i++) {
+      const baseM = i < 10 ? 0 : 0.2 * (i - 9); // slow coherent rise (DATA)
+      const posE = i * 1.4;
+      const good = (n: number) =>
+        Array.from({ length: n }, () => ({
+          sampleM: baseM,
+          confidence: 0.8,
+          posE,
+          posN: 0,
+        }));
+      const garbage = (n: number) =>
+        Array.from({ length: n }, (_, k) => ({
+          sampleM: baseM + 10,
+          confidence: k % 2 === 0 ? 0 : Number.NaN,
+          posE,
+          posN: 0,
+        }));
+      const samples =
+        i >= 10 && i % 2 === 1 ? [...good(2), ...garbage(4)] : good(6);
+      states.push(
+        est.update({ tMs: i * 1000, posE, posN: 0, cameraYar: 1.6, samples })
+      );
+    }
+    expect(states.some((s) => s.frozen)).toBe(false);
+    const atStart = states[10]?.offsetM;
+    const atEnd = states[39]?.offsetM;
+    expect(atStart).not.toBeNull();
+    expect(atEnd).not.toBeNull();
+    // Net movement over the alternating stretch: the output tracked the
+    // rise instead of being wedged at its pre-outlier value.
+    expect((atEnd ?? 0) - (atStart ?? 0)).toBeGreaterThan(2);
+  });
+
+  it('unfreezes only after 3 consecutive in-band ticks (a lone in-band tick cannot unfreeze)', () => {
+    // Why this test matters: with a single-tick unfreeze, one lucky in-band
+    // aggregate in an otherwise out-of-band stream (noise, an outlier tick)
+    // unfreezes the estimator mid-climb and lets the next tick re-freeze it
+    // at a corrupted snapshot. Requiring a streak makes the unfreeze a
+    // state decision, not a coin flip.
+    const est = createElevationOffsetEstimator();
+    const states: ElevationOffsetState[] = [];
+    const push = (i: number, v: number) =>
+      states.push(est.update(makeTick(i, v)));
+    for (let i = 0; i < 10; i++) push(i, 0); // establish output ≈ 0
+    push(10, 8); // structure step → freeze
+    expect(states[10]?.frozen).toBe(true);
+    push(11, 0); // in-band tick 1 — must NOT unfreeze yet
+    expect(states[11]?.frozen).toBe(true);
+    push(12, 8); // out-of-band: resets the streak
+    expect(states[12]?.frozen).toBe(true);
+    push(13, 0);
+    push(14, 0);
+    expect(states[14]?.frozen).toBe(true); // streak 2 — still frozen
+    push(15, 0);
+    expect(states[15]?.frozen).toBe(false); // streak 3 → unfreeze
+  });
+
+  it('re-anchors the slew clock on unfreeze: the first unfrozen tick has a full step budget', () => {
+    // Why this test matters: anchoring the slew clock to the unfreeze tick
+    // itself made dt = 0, so the unfreeze tick could not move at all — in
+    // an alternating stream that zero budget was what wedged the output.
+    // The anchor must be the PREVIOUS tick, giving the resume a normal
+    // one-tick budget while still never granting retroactive dwell credit.
+    const est = createElevationOffsetEstimator();
+    const states: ElevationOffsetState[] = [];
+    const push = (i: number, v: number) =>
+      states.push(est.update(makeTick(i, v)));
+    for (let i = 0; i < 10; i++) push(i, 0); // establish output = 0
+    for (let i = 10; i < 70; i++) push(i, 8); // long dwell → frozen, window ages out
+    for (let i = 70; i < 73; i++) push(i, -1); // in-band (|−1 − 0| ≤ 1.5)
+    const iUnfreeze = states.findIndex((s, i) => i > 10 && !s.frozen);
+    expect(iUnfreeze).toBe(72); // third consecutive in-band tick
+    // The unfreeze tick itself moves toward the new median (−1) with a full
+    // 1 s budget: 0.5 m — not pinned at the frozen value by a dt of 0.
+    expect(states[72]?.offsetM).toBeCloseTo(-0.5, 6);
+  });
+
+  it('holds an established output through an estimate-less gap and slews on recovery (never null, never a jump)', () => {
+    // Why this test matters: a 50 s stretch without floor estimates (bad
+    // tracking, featureless ground) empties the window. Flapping to null
+    // would yank anchored content away and then snap it back; the correct
+    // behavior is to hold the last output with decaying confidence and
+    // SLEW toward the new median when data returns.
+    const est = createElevationOffsetEstimator();
+    const states: ElevationOffsetState[] = [];
+    for (let i = 0; i < 15; i++) states.push(est.update(makeTick(i, 0)));
+    expect(states[14]?.offsetM).toBeCloseTo(0, 6);
+    const confBefore = states[14]?.confidence ?? 0;
+    for (let i = 15; i < 65; i++) {
+      states.push(est.update(makeTick(i, 0, 0.8, 0))); // ticks, no samples
+    }
+    const gapStates = states.slice(15, 65);
+    // The gap must hold the output — never flap to null...
+    expect(gapStates.every((s) => s.offsetM != null)).toBe(true);
+    // ...and a data gap is not a freeze.
+    expect(gapStates.some((s) => s.frozen)).toBe(false);
+    // Confidence decays through the gap instead of staying stale.
+    expect(states[64]?.confidence).toBeLessThan(confBefore / 2);
+    // Recovery at a shifted base: the output slews, it never jumps.
+    for (let i = 65; i < 80; i++) states.push(est.update(makeTick(i, 1)));
+    const slew = DEFAULT_ELEVATION_OFFSET_OPTIONS.slewRatePerSecondM;
+    expect(maxStepPerTick(states)).toBeLessThanOrEqual(slew + 1e-9);
+    expect(lastState(states).offsetM).toBeCloseTo(1, 1);
+  });
+
+  it('confidence collapse still freezes at a degraded 0.5 Hz tick rate', () => {
+    // Why this test matters: the old coverage gate required the retained
+    // ticks to SPAN ≥ 90% of the 5 s window — at 0.5 Hz the retained ticks
+    // can only ever span 4 s, so the collapse branch was structurally dead
+    // exactly when the tick source was degraded. The gate must be an
+    // absolute evidence count (≥3 ticks spanning ≥2.5 s), not a fraction.
+    const est = createElevationOffsetEstimator();
+    const states: ElevationOffsetState[] = [];
+    for (let i = 0; i < 26; i++) {
+      const posE = i * 2.8; // walking, 2 s per tick
+      const confidence = i < 10 ? 0.8 : 0.05;
+      states.push(
+        est.update({
+          tMs: i * 2000,
+          posE,
+          posN: 0,
+          cameraYar: 1.6,
+          samples: Array.from({ length: 6 }, () => ({
+            sampleM: 0,
+            confidence,
+            posE,
+            posN: 0,
+          })),
+        })
+      );
+    }
+    const iFreeze = firstFrozenIndex(states);
+    expect(iFreeze).toBeGreaterThan(10);
+    expect(lastState(states).frozen).toBe(true);
+    // The freeze parked the offset at its pre-collapse value.
+    expect(Math.abs(lastState(states).offsetM ?? 99)).toBeLessThanOrEqual(0.5);
+  });
+
   it('hillside walk with constant sample NEVER freezes', () => {
     const scenario = hillsideWalk(26);
     const states = run(scenario);
@@ -239,6 +440,10 @@ describe('createElevationOffsetEstimator', () => {
     expect(
       Math.abs((last.offsetM ?? 99) - scenario.baseSampleM)
     ).toBeLessThanOrEqual(1.5);
+    // While frozen the PUBLISHED confidence must decay toward the collapsed
+    // tick-stream confidence — a frozen offset advertising its healthy
+    // freeze-time confidence would keep consumers trusting a parked value.
+    expect(last.confidence).toBeLessThan(0.3);
   });
 
   it('slew limit bounds the output rate to slewRatePerSecondM', () => {
@@ -252,15 +457,8 @@ describe('createElevationOffsetEstimator', () => {
       states.push(est.update(makeTick(i, i < 40 ? 0 : 10)));
     }
     const slew = DEFAULT_ELEVATION_OFFSET_OPTIONS.slewRatePerSecondM;
-    const maxStepPerTick = states.reduce((m, s, i) => {
-      const prev = i > 0 ? states[i - 1] : undefined;
-      if (prev?.offsetM == null || s.offsetM == null) {
-        return m;
-      }
-      return Math.max(m, Math.abs(s.offsetM - prev.offsetM));
-    }, 0);
     // Ticks are 1 s apart, so the per-tick step is bounded by the rate.
-    expect(maxStepPerTick).toBeLessThanOrEqual(slew + 1e-9);
+    expect(maxStepPerTick(states)).toBeLessThanOrEqual(slew + 1e-9);
     // ...and the output still gets there (damped, not stuck).
     expect(lastState(states).offsetM).toBeCloseTo(10, 6);
   });

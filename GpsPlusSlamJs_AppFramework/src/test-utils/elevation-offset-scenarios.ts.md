@@ -15,6 +15,8 @@ Deterministic synthetic tick-stream generators for the elevation-offset estimato
   - `towerDwell` — stationary; ramps to +20 m (ticks 40..49), holds 150 ticks, returns. The canonical dwell no timer-based unfreeze survives.
   - `stairwellClimb` — stationary, deliberately GENTLE ramp (0.8 m/tick to 6 m, σ 0.05) sized so the halved (small-extent) CUSUM threshold fires one tick earlier than the full threshold — making the strengthened path observable behaviorally.
   - `bridgeCrossing` — full walking speed throughout (extent must never veto), ramps to +8 m and back.
+  - `rampWalk` — full walking speed, sampleM ramps SLOWLY (0.4 m/tick for 60 ticks, ticks 40..99) then levels: the DEM-error-gradient field case that must NEVER freeze (a slow coherent ramp is data, not structure).
+  - `underpassWalk` — the negative twin of `bridgeCrossing`: full walking speed, ramps DOWN to −8 m, holds, ramps back — the NEGATIVE CUSUM branch's dedicated coverage.
   - `standstill` — no movement, constant delta + noise (confidence-inflation guard).
   - `gpsOutageWalk` — walking, constant delta, confidence decays toward zero (confidence-collapse path).
   - `garbageConfidenceWalk` — 4 good hits at −2 m + 2 garbage hits at +10 m with confidence 0/NaN per tick (floored-never-rejected weighting guard).

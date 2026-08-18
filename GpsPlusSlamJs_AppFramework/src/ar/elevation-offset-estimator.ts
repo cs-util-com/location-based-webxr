@@ -58,7 +58,15 @@ export interface ElevationOffsetTick {
 }
 
 export interface ElevationOffsetFreezeOptions {
-  /** CUSUM innovation allowance subtracted per tick, metres. Default 0.2. */
+  /**
+   * CUSUM innovation allowance subtracted per tick, metres. Default 1.5.
+   * Innovation is measured against the LEADING reference (median of the
+   * last {@link CUSUM_REFERENCE_TICKS} tick aggregates), whose ~3-tick lag
+   * amplifies a coherent ramp of r m/tick into a steady innovation of
+   * ≈ 3·r — so this allowance tolerates legitimate slow ramps (DEM error
+   * gradients, ≲ 0.5 m/tick) while structure climbs (≥ ~0.8 m/tick) still
+   * accumulate to the threshold within a few ticks.
+   */
   readonly driftPerTickM?: number;
   /**
    * CUSUM trigger threshold (cumulative metres beyond the allowance).
@@ -128,7 +136,7 @@ export const DEFAULT_ELEVATION_OFFSET_OPTIONS = {
   noveltyRefM: 1,
   slewRatePerSecondM: 0.5,
   freeze: {
-    driftPerTickM: 0.2,
+    driftPerTickM: 1.5,
     thresholdM: 3,
     extentWindowSeconds: 20,
     smallExtentM: 3,
@@ -144,25 +152,59 @@ const MIN_CONFIDENCE_WEIGHT = 0.01;
 const NOVELTY_FLOOR = 0.02;
 /**
  * Total effective weight at which output confidence saturates at 1. Sized
- * so a moving window (~45 ticks × 6 hits × conf 0.8 ≈ 200) saturates while
- * a standstill window (novelty-floored, ≈ 10) stays clearly below 0.3.
+ * against reachable window masses: the DISTANCE cap (20 m) holds a walking
+ * window to ~14 ticks (at 1.4 m/s), so a moving window carries
+ * ~14 ticks × 6 hits × conf 0.8 ≈ 67 and saturates, while a standstill
+ * window (novelty-floored: 45 ticks × 6 hits × 0.02 × 0.8 ≈ 4.3) stays
+ * clearly below 0.3.
  */
 const CONFIDENCE_SATURATION_WEIGHT = 50;
 /**
  * Minimal effective window weight before a COLD START may publish: one
  * full-confidence moving tick (~6 hits × 0.8 ≈ 4.8) clears it, a lone
  * floored-confidence hit does not. Applies to cold start only — an
- * established output degrades via confidence, it does not flap to null.
+ * established output holds through an emptied window with decaying
+ * confidence (see the hold branch in `feed`), it does not flap to null.
  */
 const MIN_OUTPUT_WEIGHT = 2;
 /** Threshold multiplier while the horizontal extent is small (DEC: halves). */
 const SMALL_EXTENT_THRESHOLD_FACTOR = 0.5;
 /**
- * Fraction of the confidence window that must have coverage before the
- * collapse check may fire — a single early low-confidence tick must not
- * freeze a fresh session.
+ * Leading-reference length for the CUSUM baseline, ticks. The median of
+ * the last 5 aggregates lags the stream by ~3 ticks, which turns a step
+ * into a full-height innovation for several ticks while a slow coherent
+ * ramp contributes only ≈ 3 × rampRate per tick (absorbed by the drift
+ * allowance).
  */
-const CONFIDENCE_COVERAGE_FRACTION = 0.9;
+const CUSUM_REFERENCE_TICKS = 5;
+/**
+ * Consecutive in-band ticks required to unfreeze. One lucky in-band
+ * aggregate in an out-of-band stream must not unfreeze mid-climb (and let
+ * the next tick re-freeze a corrupted snapshot); three consecutive ticks
+ * make the unfreeze a state decision instead of a coin flip.
+ */
+const UNFREEZE_STREAK_TICKS = 3;
+/**
+ * Confidence-collapse evidence gate: at least this many retained
+ * sample-bearing ticks, spanning at least this long among themselves. An
+ * absolute count deliberately replaces the old "span ≥ 90% of the window"
+ * fraction, which could NEVER fire at degraded tick rates (at 0.5 Hz a
+ * 5 s window retains ticks spanning at most 4 s).
+ */
+const MIN_COLLAPSE_TICKS = 3;
+const MIN_COLLAPSE_SPAN_MS = 2500;
+/**
+ * e-folding time of the frozen-state confidence decay toward the live
+ * tick stream's mean confidence, seconds: a frozen offset must not keep
+ * advertising its healthy freeze-time confidence.
+ */
+const FROZEN_CONFIDENCE_TAU_S = 5;
+/**
+ * e-folding time of the hold-state confidence decay while the window is
+ * empty (estimate-less gap), seconds — slower than the frozen decay
+ * because a data gap is absence of evidence, not evidence of a problem.
+ */
+const HOLD_CONFIDENCE_TAU_S = 10;
 
 type ResolvedFreeze = Readonly<Required<ElevationOffsetFreezeOptions>>;
 type Resolved = Readonly<
@@ -283,22 +325,58 @@ function isFiniteTick(tick: ElevationOffsetTick): boolean {
   );
 }
 
+/** Lower median of a plain number list; null when empty. */
+function lowerMedian(values: readonly number[]): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[(sorted.length - 1) >> 1] ?? null;
+}
+
 /**
- * Per-tick aggregate for the freeze detector: the lower median of the
- * tick's finite sample values. A per-HIT detector would accumulate N×
- * too fast on intra-tick-correlated hits.
+ * Per-tick aggregate for the freeze detector: the CONFIDENCE-WEIGHTED
+ * lower median of the tick's finite sample values, using the same floored
+ * weights as the window median — so a tick whose zero-confidence garbage
+ * hits form the numeric majority still aggregates to the good hits' value
+ * instead of handing the detector an outlier. A per-HIT detector would
+ * accumulate N× too fast on intra-tick-correlated hits.
  */
 function tickAggregate(
   samples: readonly ElevationOffsetSample[]
 ): number | null {
-  const values = samples
-    .map((s) => s.sampleM)
-    .filter((v) => Number.isFinite(v))
-    .sort((a, b) => a - b);
-  if (values.length === 0) {
+  const entries = samples
+    .filter((s) => Number.isFinite(s.sampleM))
+    .map((s) => ({ v: s.sampleM, w: confidenceWeight(s.confidence) }))
+    .sort((a, b) => a.v - b.v);
+  if (entries.length === 0) {
     return null;
   }
-  return values[(values.length - 1) >> 1] ?? null;
+  let totalWeight = 0;
+  for (const e of entries) {
+    totalWeight += e.w;
+  }
+  const half = totalWeight / 2;
+  let acc = 0;
+  for (const e of entries) {
+    acc += e.w;
+    if (acc >= half) {
+      return e.v;
+    }
+  }
+  // Weights are floored strictly above 0, so the loop always returns.
+  return entries[entries.length - 1]?.v ?? null;
+}
+
+/** Mean of the tick's sample confidences (0 for a sample-less tick). */
+function meanTickConfidence(samples: readonly ElevationOffsetSample[]): number {
+  if (samples.length === 0) {
+    return 0;
+  }
+  return (
+    samples.reduce((a, s) => a + finiteConfidence(s.confidence), 0) /
+    samples.length
+  );
 }
 
 /**
@@ -310,14 +388,26 @@ function tickAggregate(
 class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
   private readonly entries: StoredSample[] = [];
   private prevFeedPos: { readonly e: number; readonly n: number } | null = null;
-  /** The slew-limited output — also the CUSUM's slow reference. */
+  /** The slew-limited output (the freeze layer snapshots it on trigger). */
   private outputM: number | null = null;
   private outputTMs = 0;
+  /** Timestamp of the last real (finite) tick — anchors the unfreeze slew. */
+  private lastTMs = 0;
   private lastConfidence = 0;
   private posSum = 0;
   private negSum = 0;
+  /**
+   * The CUSUM's LEADING reference: the last few tick aggregates (frozen
+   * ticks included, so the reference is current at unfreeze time). Using
+   * the slew-limited output as the reference instead would open an
+   * ever-growing innovation on a legitimate slow ramp — the output lags by
+   * design — and freeze the estimator on real data.
+   */
+  private readonly recentAggregates: number[] = [];
   /** Frozen-sample-value snapshot; non-null means frozen. */
   private frozenM: number | null = null;
+  /** Consecutive in-band ticks observed while frozen. */
+  private inBandStreak = 0;
   private readonly extentWindow: { tMs: number; e: number; n: number }[] = [];
   private readonly confWindow: { tMs: number; c: number }[] = [];
 
@@ -329,6 +419,23 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
       return this.currentState();
     }
     const aggregateM = tickAggregate(tick.samples);
+    const state = this.step(tick, aggregateM);
+    // The leading reference sees every real tick's aggregate AFTER the
+    // tick was handled — detection always compares against PREVIOUS ticks.
+    if (aggregateM != null) {
+      this.recentAggregates.push(aggregateM);
+      if (this.recentAggregates.length > CUSUM_REFERENCE_TICKS) {
+        this.recentAggregates.shift();
+      }
+    }
+    this.lastTMs = tick.tMs;
+    return state;
+  }
+
+  private step(
+    tick: ElevationOffsetTick,
+    aggregateM: number | null
+  ): ElevationOffsetState {
     const extentM = this.trackExtent(tick);
     const collapsed = this.trackLowConfidence(tick);
     const thresholdM = this.effectiveThreshold(extentM);
@@ -369,42 +476,73 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
       : f.thresholdM;
   }
 
-  /** While frozen: STATE-based unfreeze check only — never a timer. */
+  /**
+   * While frozen: STATE-based unfreeze check only — never a timer. The
+   * unfreeze requires {@link UNFREEZE_STREAK_TICKS} CONSECUTIVE in-band
+   * ticks, and the published confidence decays toward the live tick
+   * stream's mean confidence (so a frozen offset stops advertising its
+   * healthy freeze-time confidence while its inputs degrade).
+   */
   private frozenTick(
     tick: ElevationOffsetTick,
     aggregateM: number | null,
     collapsed: boolean
   ): ElevationOffsetState {
+    const dtS = Math.max(0, (tick.tMs - this.lastTMs) / 1000);
+    const blend = 1 - Math.exp(-dtS / FROZEN_CONFIDENCE_TAU_S);
+    this.lastConfidence +=
+      (meanTickConfidence(tick.samples) - this.lastConfidence) * blend;
     const inBand =
       aggregateM != null &&
       this.frozenM != null &&
       Math.abs(aggregateM - this.frozenM) <= this.opts.freeze.unfreezeBandM;
     if (!inBand || collapsed) {
+      this.inBandStreak = 0;
       return this.currentState();
     }
-    // Resume FROM the frozen value, rate-limited from this tick on (no
-    // retroactive slew credit for the dwell time).
+    this.inBandStreak++;
+    if (this.inBandStreak < UNFREEZE_STREAK_TICKS) {
+      return this.currentState();
+    }
+    // Resume FROM the frozen value. The slew clock re-anchors to the
+    // PREVIOUS tick's time: no retroactive slew credit for the dwell, but
+    // a normal one-tick step budget on this very tick (anchoring to the
+    // tick itself would make dt = 0 and wedge the resume).
     this.outputM = this.frozenM;
-    this.outputTMs = tick.tMs;
+    this.outputTMs = this.lastTMs;
     this.frozenM = null;
+    this.inBandStreak = 0;
     this.posSum = 0;
     this.negSum = 0;
     return this.feed(tick);
   }
 
   private freeze(): ElevationOffsetState {
-    // Both call sites guarantee outputM non-null: stepDetected needs it as
-    // the CUSUM reference, and the collapse branch checks it explicitly.
+    // Both call sites guarantee outputM non-null: stepDetected requires it
+    // as the snapshot source, and the collapse branch checks it explicitly.
     this.frozenM = this.outputM;
+    this.inBandStreak = 0;
     return this.currentState();
   }
 
-  /** Two-sided CUSUM with drift allowance; accumulates only on real ticks. */
+  /**
+   * Two-sided CUSUM with drift allowance against the LEADING reference
+   * (median of the last few tick aggregates); accumulates only on real
+   * ticks. See {@link CUSUM_REFERENCE_TICKS} and the driftPerTickM option
+   * doc for why the reference must lead, not lag: a slow coherent ramp
+   * (DEM error gradient on a hill) must read as small bounded innovation,
+   * while a structure step opens a full-height gap for several ticks.
+   * `outputM` must exist before anything may freeze (it is the snapshot).
+   */
   private stepDetected(aggregateM: number | null, thresholdM: number): boolean {
     if (aggregateM == null || this.outputM == null) {
       return false;
     }
-    const innovation = aggregateM - this.outputM;
+    const referenceM = lowerMedian(this.recentAggregates);
+    if (referenceM == null) {
+      return false;
+    }
+    const innovation = aggregateM - referenceM;
     const drift = this.opts.freeze.driftPerTickM;
     this.posSum = Math.max(0, this.posSum + innovation - drift);
     this.negSum = Math.max(0, this.negSum - innovation - drift);
@@ -415,9 +553,19 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
     this.admit(tick);
     const { medianM, totalWeight } = this.windowMedian();
     if (medianM == null) {
-      // Window emptied (long gap / far move): reset to the cold-start state.
-      this.outputM = null;
-      this.lastConfidence = 0;
+      if (this.outputM == null) {
+        // True cold start with an empty window: nothing to publish.
+        this.lastConfidence = 0;
+        return this.currentState();
+      }
+      // Established output + emptied window (estimate-less gap, far move):
+      // HOLD the output with exponentially decaying confidence instead of
+      // flapping to null, and keep the slew clock current so recovery
+      // SLEWS from here (a stale clock would grant the whole gap as one
+      // giant step budget — a jump).
+      const dtS = Math.max(0, (tick.tMs - this.outputTMs) / 1000);
+      this.lastConfidence *= Math.exp(-dtS / HOLD_CONFIDENCE_TAU_S);
+      this.outputTMs = tick.tMs;
       return this.currentState();
     }
     if (this.outputM == null) {
@@ -536,14 +684,17 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
     return extentM;
   }
 
-  /** True when mean tick confidence collapsed over a full window of coverage. */
+  /** True when mean tick confidence collapsed over enough real evidence. */
   private trackLowConfidence(tick: ElevationOffsetTick): boolean {
-    const meanC =
-      tick.samples.length > 0
-        ? tick.samples.reduce((a, s) => a + finiteConfidence(s.confidence), 0) /
-          tick.samples.length
-        : 0;
-    this.confWindow.push({ tMs: tick.tMs, c: meanC });
+    // Sample-less ticks carry no confidence evidence: they are a data gap
+    // (the hold path's territory), not a collapsing source — only
+    // sample-bearing ticks enter the window. Eviction still runs per tick.
+    if (tick.samples.length > 0) {
+      this.confWindow.push({
+        tMs: tick.tMs,
+        c: meanTickConfidence(tick.samples),
+      });
+    }
     const windowMs = this.opts.freeze.lowConfidenceSeconds * 1000;
     const minTMs = tick.tMs - windowMs;
     let head = this.confWindow[0];
@@ -552,11 +703,19 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
       head = this.confWindow[0];
     }
     const first = this.confWindow[0];
-    if (first == null) {
+    const last = this.confWindow[this.confWindow.length - 1];
+    if (first == null || last == null) {
       return false;
     }
-    const spanMs = tick.tMs - first.tMs;
-    if (spanMs < windowMs * CONFIDENCE_COVERAGE_FRACTION) {
+    // Absolute evidence gate (works at degraded tick rates — see the
+    // MIN_COLLAPSE_* constants): enough retained ticks, spanning enough
+    // time among themselves. A single early low-confidence tick can still
+    // never freeze a fresh session.
+    const spanMs = last.tMs - first.tMs;
+    if (
+      this.confWindow.length < MIN_COLLAPSE_TICKS ||
+      spanMs < MIN_COLLAPSE_SPAN_MS
+    ) {
       return false;
     }
     const mean =

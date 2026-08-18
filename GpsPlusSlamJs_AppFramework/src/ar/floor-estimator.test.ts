@@ -63,6 +63,8 @@ describe('estimateFloor', () => {
     expect(Math.abs(est!.slopeZ)).toBeLessThan(0.02);
     expect(est!.planeResidualM).toBeLessThan(0.02);
     expect(est!.confidence).toBeGreaterThan(0.8);
+    // A flat well-supported floor is never a clamped extrapolation.
+    expect(est!.clamped).toBe(false);
     expect(est!.support).toBeGreaterThanOrEqual(
       DEFAULT_FLOOR_MIN_SUPPORT_CELLS
     );
@@ -170,6 +172,52 @@ describe('estimateFloor', () => {
     );
     const cleanEst = estimateFloor(clean, camera, { minObservations: 1 });
     expect(cleanEst!.confidence).toBeGreaterThan(0.8);
+  });
+
+  it('clamps a one-sided steep extrapolation to the exclusion line and hard-crushes confidence', () => {
+    // Why this test matters: with support only on one side of the camera and
+    // a steep local gradient, the fitted plane EVALUATED at the camera's XZ
+    // can extrapolate above the exclusion line — a "floor" inside the band
+    // the histogram was told to ignore. The clamp caps it at the line, the
+    // `clamped` flag reports it, and the confidence is multiplied down hard
+    // (×0.2) because a clamped extrapolation is the least trustworthy
+    // geometry the estimator can return.
+    const grid = new OccupancyGrid();
+    const camera: Vector3 = [0, 1.0, 0];
+    // −45° pitch: the camera looks down-forward at a steep ramp entirely on
+    // its −z side (z ∈ [−2.5, −1.5], y rising toward the camera: 0.1..0.6).
+    const lookDownForward: [number, number, number, number] = [
+      -Math.sin(Math.PI / 8),
+      0,
+      0,
+      Math.cos(Math.PI / 8),
+    ];
+    const ramp = surfacePatch(
+      (_x, z) => 0.6 + 0.5 * (z + 1.5),
+      0.5,
+      0.15,
+      0,
+      -2
+    );
+    grid.addSample(makeSample(camera, ramp, lookDownForward));
+
+    const est = estimateFloor(grid, camera, { minObservations: 1 });
+    expect(est).not.toBeNull();
+    // Every support point sits below the exclusion line (0.6), yet the
+    // band's plane (dy/dz = 0.5) extrapolated to z = 0 would land at
+    // ~1.35 m — above the camera exclusion line. It must be clamped there.
+    expect(est!.clamped).toBe(true);
+    expect(est!.floorYar).toBeCloseTo(
+      camera[1] - DEFAULT_FLOOR_MIN_BELOW_CAMERA_M,
+      6
+    );
+    expect(est!.heightAboveFloorM).toBeCloseTo(
+      DEFAULT_FLOOR_MIN_BELOW_CAMERA_M,
+      6
+    );
+    // Hard crush: plausibility decay alone would leave ~0.5 confidence for
+    // the 0.4 m height; the ×0.2 clamp factor pushes it well below that.
+    expect(est!.confidence).toBeLessThan(0.15);
   });
 
   it('answers null for an empty grid', () => {

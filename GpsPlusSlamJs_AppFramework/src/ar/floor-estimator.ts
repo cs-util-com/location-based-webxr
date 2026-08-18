@@ -18,11 +18,15 @@
  * XZ instead of the band mean — on a slope, the difference is the whole
  * point.
  *
- * The default constants are corpus-measured (92 real recordings on the
- * intended 0.16 m / ≥2-observation grid): an estimate lands on ~every 1 Hz
- * tick, 95% of the resulting camera heights fall inside [0.5, 2.5] m, and
- * the median camera height is 1.72 m — the plausibility band below is that
- * measured envelope, not a guess.
+ * The default constants are corpus-measured for THIS production module
+ * (floor-estimator-production-crossval, 90 usable deduped real recordings
+ * on the intended 0.16 m / ≥2-observation grid): an estimate lands on ~every 1 Hz
+ * tick, the median per-recording ACCEPT RATE — the share of a recording's
+ * estimates whose camera height falls inside [0.5, 2.5] m — is 0.90, and
+ * the median over per-recording MEDIAN camera heights is 1.67 m. The
+ * plausibility band below is that measured envelope, not a guess. (The
+ * spike prototype measured 0.95 / 1.72 m with its band-MEAN height; the
+ * plane fit evaluated at the camera's XZ shifts both statistics slightly.)
  *
  * @see floor-estimator.ts.md for detailed documentation
  */
@@ -46,10 +50,12 @@ export const DEFAULT_FLOOR_MIN_SUPPORT_CELLS = 6;
 export const DEFAULT_FLOOR_BAND_CELLS = 2;
 
 /**
- * Plausible camera-height-above-floor envelope, metres. Corpus-measured:
- * 95% of real estimates land inside it. OUTSIDE the band an estimate is
- * still returned — the estimator reports, callers gate — but its
- * confidence is scaled down hard (see {@link estimateFloor}).
+ * Plausible camera-height-above-floor envelope, metres. Corpus-measured
+ * envelope: the median per-recording share of production estimates inside
+ * it is 0.90 (production cross-validation, 90 usable deduped recordings).
+ * OUTSIDE
+ * the band an estimate is still returned — the estimator reports, callers
+ * gate — but its confidence is scaled down hard (see {@link estimateFloor}).
  */
 export const PLAUSIBLE_HEIGHT_MIN_M = 0.5;
 export const PLAUSIBLE_HEIGHT_MAX_M = 2.5;
@@ -64,6 +70,15 @@ const RESIDUAL_DECAY_SCALE_M = 0.08;
 const PLAUSIBILITY_DECAY_SCALE_M = 0.15;
 /** Relative determinant floor below which the plane fit is degenerate. */
 const DEGENERACY_EPS = 1e-9;
+/**
+ * Confidence multiplier when the extrapolation clamp fires. A clamped
+ * estimate means the plane had to be extrapolated from one-sided steep
+ * support INTO the exclusion zone at the camera's XZ — the least
+ * trustworthy geometry the estimator can report — so the crush is
+ * deliberate and hard: the plausibility decay alone (the clamped height is
+ * `minBelowCameraM`, only 0.1 m below the band) would leave ~0.5.
+ */
+const CLAMPED_CONFIDENCE_FACTOR = 0.2;
 
 export interface FloorEstimatorOptions {
   /** Query radius around the camera, metres. Default 3. */
@@ -104,6 +119,13 @@ export interface FloorEstimate {
   readonly slopeZ: number;
   /** 0..1 gate signal — see the confidence model in the sidecar. */
   readonly confidence: number;
+  /**
+   * True when `floorYar` was clamped to the exclusion line because the
+   * plane, evaluated at the camera's XZ, extrapolated above it (one-sided
+   * steep support). A clamped estimate's confidence is additionally
+   * multiplied by {@link CLAMPED_CONFIDENCE_FACTOR}.
+   */
+  readonly clamped: boolean;
   /** Number of cells in the winning band. */
   readonly support: number;
   /** RMS residual of the plane fit over the band's points, metres. */
@@ -123,7 +145,9 @@ export interface FloorEstimate {
  *
  * An implausible estimate (height outside [0.5, 2.5] m) is RETURNED with
  * confidence scaled down hard, never hidden: the estimator reports,
- * callers gate.
+ * callers gate. Likewise a clamped extrapolation (see `FloorEstimate.
+ * clamped`) is returned with its confidence crushed by
+ * {@link CLAMPED_CONFIDENCE_FACTOR}, never suppressed.
  */
 export function estimateFloor(
   grid: OccupancyGrid,
@@ -162,15 +186,18 @@ export function estimateFloor(
   // it when the support is one-sided and steep. A floor inside the band the
   // histogram was told to ignore would contradict the input contract, so
   // clamp to the line (this is the one case where `floorYar` is not exactly
-  // `a + b·x + c·z`; the resulting sub-plausible height already scales
-  // confidence down).
+  // `a + b·x + c·z`). The clamp is reported via `clamped` and hard-crushes
+  // the confidence below — the sub-plausible height alone would not.
+  let clamped = false;
   if (floorYar > maxFloorY) {
     floorYar = maxFloorY;
+    clamped = true;
   }
   const heightAboveFloorM = cameraPos[1] - floorYar;
 
   // Confidence terms (each in [0, 1], multiplied — see the sidecar):
-  // support saturation, residual penalty, height plausibility.
+  // support saturation, residual penalty, height plausibility, and the
+  // extrapolation-clamp crush.
   const supportTerm = Math.min(1, hits.length / SUPPORT_SATURATION_CELLS);
   const residualExcess = Math.max(0, fit.residualM - RESIDUAL_FULL_CREDIT_M);
   const residualTerm = Math.exp(-residualExcess / RESIDUAL_DECAY_SCALE_M);
@@ -181,9 +208,10 @@ export function estimateFloor(
         ? heightAboveFloorM - PLAUSIBLE_HEIGHT_MAX_M
         : 0;
   const plausibilityTerm = Math.exp(-outsideM / PLAUSIBILITY_DECAY_SCALE_M);
+  const clampTerm = clamped ? CLAMPED_CONFIDENCE_FACTOR : 1;
   const confidence = Math.min(
     1,
-    Math.max(0, supportTerm * residualTerm * plausibilityTerm)
+    Math.max(0, supportTerm * residualTerm * plausibilityTerm * clampTerm)
   );
 
   return {
@@ -192,6 +220,7 @@ export function estimateFloor(
     slopeX: fit.b,
     slopeZ: fit.c,
     confidence,
+    clamped,
     support: hits.length,
     planeResidualM: fit.residualM,
     hits,
