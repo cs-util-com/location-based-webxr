@@ -494,12 +494,6 @@ function mergedCuts(
 type Enu = EnuPoint;
 
 /**
- * Where `gate` opens this line, as a distance along it, or `undefined`.
- *
- * BOTH HALVES OF DEC-A2 ARE TESTED HERE, and the order is cheapest-first: the
- * projection is arithmetic, the crossing scan walks another way's segments.
- */
-/**
  * The line's axis-aligned extent in its own ENU frame, grown by `padM`.
  *
  * An empty line yields an INVERTED box, which {@link withinBounds} rejects for
@@ -541,6 +535,12 @@ function withinBounds(
   );
 }
 
+/**
+ * Where `gate` opens this line, as a distance along it, or `undefined`.
+ *
+ * BOTH HALVES OF DEC-A2 ARE TESTED HERE, and the order is cheapest-first: the
+ * projection is arithmetic, the crossing scan walks another way's segments.
+ */
 function offBarrierCut(
   gate: OffBarrierGate,
   gateEnu: Enu,
