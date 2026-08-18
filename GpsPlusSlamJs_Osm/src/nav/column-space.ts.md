@@ -35,7 +35,7 @@ implementation.
 
 - Defaults to admitting every step — design rung 5.3, where agents wander freely
   and walk up the Tower walls, which is that rung's whole point.
-- Checked **after** `columnsAdjacent`, so the cheap arithmetic rejects most
+- Checked **after** the height rules, so the cheap arithmetic rejects most
   candidate pairs before any geometry is walked.
 - **Never consulted for a move within one cell.** Stepping between two levels of
   the same cell crosses no boundary, and asking the predicate about a cell and
@@ -86,10 +86,17 @@ Every height at which an agent can stand in that cell.
 - **Candidates are sorted.** `gridDisk` promises no ordering, and a route that
   depended on it would vary with the H3 version — the same reason
   `connectedComponents` sorts.
-- **`canEnter` is `columnsAdjacent`**, so every rule in
+- **`canEnter` is `columnsClimbable`** — `columnsAdjacent` **minus** its
+  neighbourhood test, because this module established that when it GENERATED the
+  candidate from `gridDisk(state.cell, 1)`. Every height rule in
   [`column.ts.md`](./column.ts.md) applies unchanged, including the non-finite
-  height guard — now called with each state's resolved `groundM`, so the slope
+  guard, and it is called with each state's resolved `groundM` so the slope
   clause is live for every caller without one of them having to ask for it.
+  - **The neighbourhood is this module's obligation now**, not the predicate's.
+    It is discharged by construction — `candidates` is the only source of the
+    states `search.ts` passes to `canEnter` — and it is worth 23 % of a real
+    route. Anything that ever generated a candidate from another source would
+    have to go back to `columnsAdjacent`.
 
 ## Height quantisation
 

@@ -108,9 +108,19 @@ over the same run. Mapped barriers refuse those, through `crossesObstacle`; an
     measurement taken at Cologne's latitude alone. It was the argument that the
     approximation is safe, so it is corrected in place rather than deleted.
 - `columnsAdjacent(a, b, limits?: StepLimits) => boolean`, where `StepLimits` is
-  `{ stepThresholdM?, maxGroundGradient? }`.
+  `{ stepThresholdM?, maxGroundGradient? }` — the height rules **and** the
+  neighbourhood test.
   - Throws `RangeError` if either limit is not finite and non-negative, or if
     the two cells are at different H3 resolutions.
+- `columnsClimbable(a, b, limits?: StepLimits) => boolean` — the height rules
+  **alone**, for a caller that already knows the two cells are neighbours.
+  - ⚠️ **Unsound for anyone else**: it calls two cells on opposite sides of a
+    city climbable, and a test pins exactly that so the trap is visible rather
+    than merely documented.
+  - Exists because the neighbourhood test is ~85 % of `columnsAdjacent`'s cost
+    (`gridDisk` allocates seven index strings) and `columnSpace` established the
+    neighbourhood when it generated the candidate. Worth **23 %** of a real
+    route. Same guards, same defaults, same throws.
 
 ## Invariants
 
