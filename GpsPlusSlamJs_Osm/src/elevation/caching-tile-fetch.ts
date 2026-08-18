@@ -21,10 +21,14 @@
  * is a fraction of the decoded `Float32Array`'s size, and decode-on-hit is the
  * provider's existing job.
  *
- * CACHE INVALIDATION IS DELIBERATELY NONE (v1). Terrain tiles are effectively
- * static — the underlying DEMs change on a timescale of years, and a stale hill
- * is still the hill. The injected store's own eviction policy is the bound;
- * this wrapper never expires, revalidates, or evicts.
+ * CACHE INVALIDATION IS DELIBERATELY NONE (v1) — AND THAT MEANS UNBOUNDED.
+ * Terrain tiles are effectively static — the underlying DEMs change on a
+ * timescale of years, and a stale hill is still the hill — so this wrapper
+ * never expires, revalidates, or evicts. Nothing else bounds it either: the
+ * `OsmBlobStore` seam exposes `delete`/`keys` but carries no eviction policy
+ * of its own, and no current consumer ever deletes DEM entries. Growth is one
+ * encoded tile per distinct URL ever fetched; an explicit eviction pass is a
+ * known follow-up, not a property to assume.
  *
  * Runs wherever `Response` and the injected store run — window, Worker, Node.
  * Nothing here touches `window`; persistence portability is the store's

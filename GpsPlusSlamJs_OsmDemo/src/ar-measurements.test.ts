@@ -254,6 +254,72 @@ describe("describeArMeasurements — the height decomposition", () => {
     expect(expanded).toContain("terrain 104.0 m · mapterhorn+terrarium");
   });
 
+  it("shows the primary's share of answered posts when serving stats arrive", () => {
+    // WHY THIS TEST MATTERS. The composed id names what was ASKED; the stats
+    // say what ANSWERED. A field session standing on the ~30 m fallback while
+    // the line reads like LiDAR would check residuals against the wrong
+    // upstream — the share is what makes the screenshot attributable.
+    const expanded = describeArMeasurements(
+      {
+        terrainHeightM: 104,
+        terrainHasData: true,
+        demSourceId: "mapterhorn+terrarium",
+        demStats: { primaryAnswered: 98, fallbackAnswered: 2, unanswered: 0 },
+      },
+      { expanded: true },
+    );
+
+    expect(expanded).toContain("terrain 104.0 m · mapterhorn 98%");
+  });
+
+  it("names the fallback outright when the primary answered nothing", () => {
+    // 0% is the one share that changes what the number MEANS — everything on
+    // screen is the coarse global DEM — so it is stated as words, not as a
+    // percentage a reader might skim past.
+    const expanded = describeArMeasurements(
+      {
+        terrainHeightM: 104,
+        terrainHasData: true,
+        demSourceId: "mapterhorn+terrarium",
+        demStats: { primaryAnswered: 0, fallbackAnswered: 55, unanswered: 3 },
+      },
+      { expanded: true },
+    );
+
+    expect(expanded).toContain("terrain 104.0 m · terrarium (fallback)");
+  });
+
+  it("falls back to the composed id when the stats counted nothing", () => {
+    // All-zero counters carry no serving information (nothing has answered
+    // yet), so the honest label is the composition that was asked.
+    const expanded = describeArMeasurements(
+      {
+        terrainHeightM: 104,
+        terrainHasData: true,
+        demSourceId: "mapterhorn+terrarium",
+        demStats: { primaryAnswered: 0, fallbackAnswered: 0, unanswered: 12 },
+      },
+      { expanded: true },
+    );
+
+    expect(expanded).toContain("terrain 104.0 m · mapterhorn+terrarium");
+  });
+
+  it("keeps the composed-id line when no stats are reported", () => {
+    // The pre-stats behaviour, kept: a worker (or fake) that predates the
+    // snapshot must not lose the source label it already had.
+    const expanded = describeArMeasurements(
+      {
+        terrainHeightM: 104,
+        terrainHasData: true,
+        demSourceId: "mapterhorn+terrarium",
+      },
+      { expanded: true },
+    );
+
+    expect(expanded).toContain("terrain 104.0 m · mapterhorn+terrarium");
+  });
+
   it("keeps the plain terrain line when no DEM source is reported", () => {
     // A missing id is "not reported", never an empty suffix — the same
     // omission rule every other absent value here follows.

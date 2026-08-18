@@ -11,11 +11,18 @@ primary-with-fallback.
   `elevationAt(positions, signal?): Promise<readonly (number | undefined)[]>`.
 - `class NullElevationProvider` — `undefined` everywhere.
 - `consensusProvider(providers, { sourceId? }): ElevationProvider`
-- `fallbackProvider(primary, fallback, { sourceId? }): ElevationProvider` —
-  the fallback fills only the positions the primary returned `undefined` for,
-  in one batched retry. Default `sourceId` is
-  `` `${primary.sourceId}+${fallback.sourceId}` ``; attribution is both
+- `fallbackProvider(primary, fallback, { sourceId? }):
+FallbackElevationProvider` — the fallback fills only the positions the
+  primary returned `undefined` for, in one batched retry. Default `sourceId`
+  is `` `${primary.sourceId}+${fallback.sourceId}` ``; attribution is both
   attributions joined with `" · "` (empty ones dropped).
+- `FallbackElevationProvider` — the seam plus a live `stats` surface.
+- `FallbackProviderStats` — `{ primaryAnswered, fallbackAnswered,
+unanswered }`, counts of **positions** (not requests), accumulated over the
+  provider's lifetime. This is the aggregate answer to "which DEM actually
+  served this session" — the seam itself deliberately carries no per-sample
+  provenance, so without these counters a silent everything-fell-back session
+  is indistinguishable from one the high-resolution primary served.
 - `median(values): number | undefined`
 
 ## Invariants & assumptions
@@ -46,6 +53,11 @@ primary-with-fallback.
   A fallback failure degrades its gaps to `undefined` without touching primary
   answers; an abort from either stage propagates. The output length is pinned
   to the input even against a misbehaving primary that returns a short array.
+- **Fallback stats count settled outcomes.** `primaryAnswered` is recorded
+  once the primary settles (so a later abort in the fallback stage keeps the
+  primary's serving on the record); a failed fallback's gaps count as
+  `unanswered`; a fallback that returns `undefined` for a gap counts it as
+  `unanswered`, matching what the merged output actually says.
 
 ## Examples
 
@@ -73,8 +85,9 @@ behaviour including order-independence and the empty case, consensus rejecting
 an outlier, surviving a failing provider, ignoring non-finite samples,
 deduplicated attribution, and `fallbackProvider`: primary answers all / none /
 some, the fallback receiving ONLY the gaps in one batched call, in-order
-merging, surviving a failing fallback, abort propagation from both stages, and
-signal pass-through.
+merging, surviving a failing fallback, abort propagation from both stages,
+signal pass-through, and the stats surface (all-primary, mixed batches,
+accumulation across calls, a failing fallback's gaps counted as unanswered).
 `elevation-provider.property.test.ts` — for arbitrary answer patterns,
 `output[i] === primary[i] ?? fallback[i]` with the fallback queried exactly on
 the gap set.

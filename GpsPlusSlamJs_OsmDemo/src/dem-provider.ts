@@ -34,7 +34,7 @@ import {
   TerrariumProvider,
   createCachingTileFetch,
   fallbackProvider,
-  type ElevationProvider,
+  type FallbackElevationProvider,
   type OsmBlobStore,
   type PngDecoder,
 } from "gps-plus-slam-osm";
@@ -44,8 +44,10 @@ import {
  *
  * COMPOSED, NOT PER-SAMPLE: the `ElevationProvider` seam returns heights with
  * no per-position provenance, so which of the two sources answered a given
- * post is not observable here. See the sidecar's follow-up note before
- * inventing that tracking.
+ * post is not observable here. What IS observable is the aggregate — the
+ * returned provider's `stats` counts positions per source, which is how the
+ * HUD reports the primary's share. See the sidecar before inventing
+ * per-sample tracking.
  */
 export const DEM_SOURCE_ID = "mapterhorn+terrarium";
 
@@ -77,10 +79,15 @@ export interface DemProviderOptions {
  * positions the primary returned `undefined` — including every tile outside
  * Mapterhorn's coverage, which its server reports as a 404 the provider
  * degrades to `undefined` per position.
+ *
+ * The returned provider carries `fallbackProvider`'s `stats` surface —
+ * positions served per source, accumulated for the provider's life. The
+ * worker snapshots it into every `TerrainResult` so the HUD can say which
+ * DEM actually served, not just which composition was asked.
  */
 export function createDemProvider(
   options: DemProviderOptions,
-): ElevationProvider {
+): FallbackElevationProvider {
   const tileFetch = createCachingTileFetch({
     store: options.store,
     ...(options.fetchImpl === undefined

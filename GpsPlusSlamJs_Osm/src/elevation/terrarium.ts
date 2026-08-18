@@ -98,6 +98,24 @@ export interface TilePixel {
 }
 
 /**
+ * The tile size all tile/pixel arithmetic in this module defaults to.
+ *
+ * ONE CONSTANT, AND IT IS ALSO THE DEFAULT `tileSize` of `toTilePixel`,
+ * `toWorldPixel` and `fromWorldPixel` below — the provider's rescale divides
+ * by the same value those functions multiplied by, so a literal `256` in
+ * either place could drift from the other silently and skew every within-tile
+ * offset.
+ *
+ * Tile INDICES are size-invariant — `toWorldPixel` scales with 2^z · tileSize,
+ * so `worldX / tileSize` names the same tile for any size — which is why the
+ * provider can group positions into tiles before it has fetched a single one
+ * and learned how big they are. The WITHIN-TILE offset is not size-invariant:
+ * it scales with the tile's actual pixel width, so sampling rescales it by
+ * `tile.size / TILE_MATH_SIZE` once the decoded size is known.
+ */
+const TILE_MATH_SIZE = 256;
+
+/**
  * Web Mercator tile and fractional pixel for a position.
  *
  * `tileSize` is the tile's pixel width; Terrarium tiles are 256.
@@ -109,7 +127,7 @@ export interface TilePixel {
 export function toTilePixel(
   position: LatLng,
   zoom: number,
-  tileSize = 256,
+  tileSize = TILE_MATH_SIZE,
 ): TilePixel {
   const { x: worldX, y: worldY } = toWorldPixel(position, zoom, tileSize);
   const tileX = Math.floor(worldX / tileSize);
@@ -146,7 +164,7 @@ export interface WorldPixel {
 export function toWorldPixel(
   position: LatLng,
   zoom: number,
-  tileSize = 256,
+  tileSize = TILE_MATH_SIZE,
 ): WorldPixel {
   const lat = Math.min(
     MAX_MERCATOR_LAT,
@@ -175,7 +193,7 @@ export function toWorldPixel(
 export function fromWorldPixel(
   point: WorldPixel,
   zoom: number,
-  tileSize = 256,
+  tileSize = TILE_MATH_SIZE,
 ): LatLng {
   const scale = 2 ** zoom * tileSize;
   const lng = (point.x / scale) * 360 - 180;
@@ -261,18 +279,6 @@ export function sampleTile(
   const bottom = at(x0, y1) * (1 - fx) + at(x1, y1) * fx;
   return top * (1 - fy) + bottom * fy;
 }
-
-/**
- * The tile size all tile/pixel arithmetic in this provider is done at.
- *
- * Tile INDICES are size-invariant — `toWorldPixel` scales with 2^z · tileSize,
- * so `worldX / tileSize` names the same tile for any size — which is why the
- * provider can group positions into tiles before it has fetched a single one
- * and learned how big they are. The WITHIN-TILE offset is not size-invariant:
- * it scales with the tile's actual pixel width, so sampling rescales it by
- * `tile.size / TILE_MATH_SIZE` once the decoded size is known.
- */
-const TILE_MATH_SIZE = 256;
 
 export interface TerrariumProviderOptions {
   readonly decodePng: PngDecoder;

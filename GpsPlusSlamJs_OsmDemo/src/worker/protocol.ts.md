@@ -19,6 +19,12 @@ union, and two runtime guards. No behaviour.
     constant** so the label the AR readout renders can only describe the
     provider that actually sampled the field. Composed, never per-sample —
     see `dem-provider.ts.md`.
+  - `TerrainResult.demStats` — a snapshot of the composed provider's
+    session-cumulative serving counters (`FallbackProviderStats`: positions
+    the primary answered, the fallback filled, and neither). The three raw
+    counts rather than a derived percentage: a pct would invent a rounding
+    and a 0/0 corner and hide the denominator. Optional, so a fake or an
+    older worker degrades to the composed-id-only HUD label.
 - `WorkerEnvelope` — what the main thread posts, including `{ kind: 'abort',
 target }`.
 - `WorkerReply` — `{ id, ok: true, value } | { id, ok: false, message }`.

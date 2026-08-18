@@ -27,7 +27,12 @@
  */
 
 import { cellToLatLng, greatCircleDistance, UNITS } from "h3-js";
-import { enuFrameAt, type GeoidModel, type LatLng } from "gps-plus-slam-osm";
+import {
+  enuFrameAt,
+  type FallbackProviderStats,
+  type GeoidModel,
+  type LatLng,
+} from "gps-plus-slam-osm";
 
 import { DEM_ATTRIBUTION } from "./dem-provider.js";
 import { pickDefaultCategory } from "./default-category.js";
@@ -1333,6 +1338,10 @@ async function main(): Promise<void> {
           // provider seam cannot say which member answered a given post, so
           // the readout names what was asked. See `ar-measurements.ts`.
           ...(demSourceId === undefined ? {} : { demSourceId }),
+          // AND WHAT ANSWERED, in aggregate: the worker's snapshot of the
+          // provider's serving counters, applied atomically with the field.
+          // The HUD renders the primary's share from this.
+          ...(demStats === undefined ? {} : { demStats }),
           // THE SESSION CONSTANT that makes the ZERO_GEOID trap visible. It does
           // not move while walking; it is on screen so that a `0` announces
           // itself rather than putting the whole scene ~46 m out in silence.
@@ -1533,6 +1542,10 @@ async function main(): Promise<void> {
   // applied atomically with the field so the AR readout can never label a
   // field with a provider that did not produce it.
   let demSourceId: string | undefined;
+  // Which member of that composition actually SERVED, as position counts —
+  // applied atomically with the field for the same reason. The HUD derives
+  // the primary's share from this; absent keeps the composed-id-only label.
+  let demStats: FallbackProviderStats | undefined;
 
   // Coalesced, exactly like `refresh` — the two are driven by the same click and
   // must agree about which position is current. See `terrain-cycle.ts` for the
@@ -1587,10 +1600,17 @@ async function main(): Promise<void> {
     worker,
     extentM: TERRAIN_EXTENT_M,
     spacingM: TERRAIN_SPACING_M,
-    apply: ({ field, note, centreEnu, demSourceId: loadedSourceId }) => {
+    apply: ({
+      field,
+      note,
+      centreEnu,
+      demSourceId: loadedSourceId,
+      demStats: loadedStats,
+    }) => {
       terrain = field === undefined ? undefined : heightfieldFrom(field);
       terrainNote = note;
       demSourceId = loadedSourceId;
+      demStats = loadedStats;
       // `centreEnu` PASSED SEPARATELY, because a DEM outage leaves `field`
       // undefined while the window still has a place — and the ground plane has
       // to follow it either way, or a walk during an outage takes the user off

@@ -59,7 +59,9 @@ sampling, and the provider that ties them together.
   rescales it by `tile.size / 256` once the decoded size is known. Without the
   rescale, a 512-px tile (Mapterhorn's size) is sampled only in its top-left
   quadrant — every elevation displaced toward the tile origin, silently, as
-  plausible terrain.
+  plausible terrain. The 256 lives once, as `TILE_MATH_SIZE`, which is also
+  the default `tileSize` of `toTilePixel`/`toWorldPixel`/`fromWorldPixel` —
+  so the provider's rescale and the pixel maths cannot silently diverge.
 - **`browserPngDecoder` is not PNG-specific despite the name.**
   `createImageBitmap` sniffs the bytes' actual format, so WebP terrarium tiles
   decode through the same path; the name is historical.

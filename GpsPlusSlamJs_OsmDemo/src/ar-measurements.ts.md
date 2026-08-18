@@ -56,7 +56,9 @@ describeArMeasurements({ drawCost: { calls: 12, triangles: 1000 }, fps: 59.6 });
 
 `ar-measurements.test.ts` — empty in, empty out; the draw cost; a zero-call
 cost omitted; `Infinity` and `NaN` fps dropped; both precision rules; the fixed
-order with all four present; and the order preserved with two missing.
+order with all four present; the order preserved with two missing; and the
+terrain-line source suffix (primary share, fallback-only wording, composed-id
+fallback when stats are absent or counted nothing).
 
 The surface is [`ar-hud.ts`](ar-hud.ts.md); that `ar-mode.ts` actually samples
 it, from the AR renderer, is pinned in `ar-mode.test.ts`.
@@ -140,6 +142,21 @@ need **opposite** fixes.
   member answered a given post. See
   [`dem-provider.ts.md`](dem-provider.ts.md) for the composition and the
   filed follow-up before inventing per-sample tracking.
+- `demStats` — which member of that composition actually **served**, as
+  position counts (`{ primaryAnswered, fallbackAnswered, unanswered }`, the
+  worker's snapshot of the provider's session-cumulative counters). **This
+  exists so a field session can tell which DEM actually served**: on every
+  other number a walk served by the ~30 m fallback reads identically to one
+  standing on national LiDAR, and the residuals against the two differ by an
+  order of magnitude. Rendered on the terrain line as the primary's share of
+  answered posts — `terrain 104.0 m · mapterhorn 98%` — with two worded
+  states: `· terrarium (fallback)` when the primary answered nothing (the one
+  share that changes what the height means, so it must not be skimmable as a
+  percentage), and the plain composed id when stats are absent, all-zero, or
+  the id lacks the `primary+fallback` shape the names are derived from (the
+  pre-stats behaviour, kept). The names come from splitting `demSourceId` at
+  its first `+`, never from constants here, so the label can only describe
+  the composition that produced the field.
 - `terrainHasData` — **the most important flag in the interface.**
   `heightfieldFrom` samples **flat zero** when `hasData` is false, so a failed
   DEM load would otherwise render as a plausible `0.0 m` and a residual against

@@ -3,7 +3,11 @@
  * and the geoid conversion.
  */
 
-export type { ElevationProvider } from "./elevation-provider.js";
+export type {
+  ElevationProvider,
+  FallbackElevationProvider,
+  FallbackProviderStats,
+} from "./elevation-provider.js";
 export {
   NullElevationProvider,
   consensusProvider,

@@ -37,10 +37,14 @@ provider's existing job.
   64-tile in-memory Map, so without this wrapper a restart with no network has
   no terrain — and the AR failure mode is a silently wrong flat datum, not an
   error.
-- **Cache invalidation is deliberately none (v1).** Terrain tiles are
-  effectively static — the underlying DEMs change on a timescale of years, and
-  a stale hill is still the hill. The store's own eviction policy is the bound;
-  the wrapper never expires, revalidates, or evicts.
+- **Cache invalidation is deliberately none (v1) — and the cache is therefore
+  UNBOUNDED.** Terrain tiles are effectively static — the underlying DEMs
+  change on a timescale of years, and a stale hill is still the hill — so the
+  wrapper never expires, revalidates, or evicts. Nothing else bounds it
+  either: the `OsmBlobStore` seam exposes `delete`/`keys` but has no eviction
+  policy of its own, and no current consumer ever deletes DEM entries. Growth
+  is one encoded tile per distinct URL ever fetched; an explicit eviction pass
+  is a filed follow-up, not a property to assume.
 - **Key = the full request URL string**, however the caller spelled it
   (string, `URL`, or `Request` all key identically). URL-shaped keys cannot
   collide with the OSM cache's `osm/v{n}/…` keys in a shared store.
@@ -63,6 +67,9 @@ provider's existing job.
   wrong in every way.
 - **A pre-aborted signal rejects with `AbortError` even on a hit** — the
   synthetic path must not be more alive than the network it stands in for.
+  This guarantee is scoped to `init.signal`: a signal carried on a `Request`
+  input is not pre-checked here (it still governs the delegated network fetch,
+  but a warm hit with only a Request-carried signal resolves).
 - **Bytes are stored as base64** (`btoa`/`atob`, chunked), because
   `OsmBlobStore` is string-valued; the ~33% overhead is accepted to reuse the
   existing seam unchanged. Works in window, Worker and Node — nothing touches

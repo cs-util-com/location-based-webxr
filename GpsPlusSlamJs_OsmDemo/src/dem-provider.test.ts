@@ -147,6 +147,36 @@ describe("createDemProvider", () => {
     expect(second.urls).toHaveLength(0);
   });
 
+  it("exposes serving stats so a session can tell which DEM actually served", async () => {
+    // WHY THIS TEST MATTERS. The composed id names what was ASKED; the stats
+    // are the only surface saying what ANSWERED. A session that silently fell
+    // back to the ~30 m AWS tiles reads identically to a LiDAR-served one on
+    // every other number, and the residuals differ by an order of magnitude.
+    const primaryServed = createDemProvider({
+      store: new MemoryBlobStore(),
+      decodePng: fakeDecodePng,
+      fetchImpl: fakeNetwork().fetchImpl,
+    });
+    await primaryServed.elevationAt([COLOGNE]);
+    expect(primaryServed.stats).toEqual({
+      primaryAnswered: 1,
+      fallbackAnswered: 0,
+      unanswered: 0,
+    });
+
+    const fellBack = createDemProvider({
+      store: new MemoryBlobStore(),
+      decodePng: fakeDecodePng,
+      fetchImpl: fakeNetwork({ mapterhornStatus: 404 }).fetchImpl,
+    });
+    await fellBack.elevationAt([COLOGNE]);
+    expect(fellBack.stats).toEqual({
+      primaryAnswered: 0,
+      fallbackAnswered: 1,
+      unanswered: 0,
+    });
+  });
+
   it("identifies the composition for the HUD, and credits BOTH sources", () => {
     const provider = createDemProvider({
       store: new MemoryBlobStore(),

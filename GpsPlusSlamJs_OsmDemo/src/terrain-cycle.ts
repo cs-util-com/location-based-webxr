@@ -29,7 +29,7 @@
  * @see terrain-cycle.ts.md
  */
 
-import { type LatLng } from "gps-plus-slam-osm";
+import { type FallbackProviderStats, type LatLng } from "gps-plus-slam-osm";
 
 import type { HeightfieldData } from "./heightfield.js";
 import { latestOnly, type LatestOnly } from "./latest-only.js";
@@ -60,6 +60,16 @@ export interface TerrainState {
    * field was never sampled through.
    */
   readonly demSourceId: string;
+  /**
+   * Which member of the composition served, as position counts — the worker's
+   * snapshot of the provider's cumulative stats at this load.
+   *
+   * Applied atomically with the field and the source id, and for the same
+   * reason: the HUD's "which DEM actually served" suffix must describe the
+   * field on screen, never a snapshot from another load. Absent when the
+   * worker did not report one; the HUD then shows the composed id alone.
+   */
+  readonly demStats?: FallbackProviderStats | undefined;
   /**
    * Where the window was sampled, in the scene's frame — even on failure.
    *

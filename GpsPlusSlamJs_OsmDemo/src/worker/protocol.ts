@@ -29,6 +29,7 @@
 import type {
   MeshChunk,
   CellExplanation,
+  FallbackProviderStats,
   GeoEvent,
   LatLng,
   MeshData,
@@ -227,6 +228,19 @@ export interface TerrainResult {
    * `dem-provider.ts`).
    */
   readonly demSourceId: string;
+  /**
+   * Which member of the composition actually served, as position counts —
+   * a snapshot of the provider's session-cumulative `stats`, taken when this
+   * result was built.
+   *
+   * THE COUNTS ARE THE SMALLEST HONEST SHAPE. A derived percentage would
+   * invent a rounding and a 0/0 corner here, and would hide the denominator
+   * the reader needs to weigh it; the three raw counters are exactly what the
+   * library's `FallbackProviderStats` surface says, with nothing added.
+   * Optional so a worker (or test fake) that predates the stats keeps its
+   * behaviour — the HUD falls back to the composed id alone.
+   */
+  readonly demStats?: FallbackProviderStats;
   /**
    * Where the window was sampled, in the scene's frame — **reported even when
    * `field` is `undefined`.**

@@ -46,7 +46,11 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
   browser-bound pieces (the store, `browserPngDecoder()`) and records the
   provider's `sourceId`, which every `terrain` reply carries back as
   `TerrainResult.demSourceId` so the page labels a field with the provider
-  that actually sampled it.
+  that actually sampled it. Each reply also snapshots the provider's
+  cumulative serving counters into `TerrainResult.demStats` (copied, so the
+  page's snapshot cannot mutate under a later batch) — the aggregate answer
+  to "which member of the composition actually served", which the AR readout
+  renders as the primary's share.
 - **The merged features never leave.** They are ~21 MB. `explainCell` and the
   mesh build both run here _because_ that is where the features are; answering
   either on the main thread would mean shipping them across.

@@ -284,6 +284,89 @@ describe("fallbackProvider", () => {
     expect(combined.sourceId).toBe("hi-res+lo-res");
     expect(combined.attribution).toBe("© hi-res · © lo-res");
   });
+
+  /**
+   * WHY THE STATS MATTER. The composed provider deliberately hides which
+   * member answered a given post (per-sample provenance is not in the seam),
+   * so without an aggregate surface a field session cannot tell "the national
+   * LiDAR served this walk" from "everything quietly fell back to ~30 m
+   * SRTM" — two datasets whose residuals differ by an order of magnitude.
+   * The counters are the smallest honest answer: positions, not requests,
+   * because a position is what a consumer's question is about.
+   */
+  describe("stats", () => {
+    it("counts every position the primary answered", async () => {
+      const primary = recording("hi-res", (p) => p.lat * 10);
+      const backup = recording("lo-res", () => 0);
+      const combined = fallbackProvider(primary.provider, backup.provider);
+
+      await combined.elevationAt(POSITIONS);
+
+      expect(combined.stats).toEqual({
+        primaryAnswered: 4,
+        fallbackAnswered: 0,
+        unanswered: 0,
+      });
+    });
+
+    it("splits a mixed batch into answered-by-whom and unanswered", async () => {
+      // Primary answers 1 and 3; the fallback fills 2 and leaves 4 open.
+      const primary = recording("hi-res", (p) =>
+        p.lat % 2 === 1 ? p.lat * 10 : undefined,
+      );
+      const backup = recording("lo-res", (p) =>
+        p.lat === 2 ? p.lat * 100 : undefined,
+      );
+      const combined = fallbackProvider(primary.provider, backup.provider);
+
+      await combined.elevationAt(POSITIONS);
+
+      expect(combined.stats).toEqual({
+        primaryAnswered: 2,
+        fallbackAnswered: 1,
+        unanswered: 1,
+      });
+    });
+
+    it("accumulates across calls rather than resetting", async () => {
+      // Session counters: the consumer snapshots them per terrain load, so a
+      // wrapper that reset per call would understate every load but the last.
+      const primary = recording("hi-res", (p) =>
+        p.lat <= 2 ? p.lat * 10 : undefined,
+      );
+      const backup = recording("lo-res", (p) => p.lat * 100);
+      const combined = fallbackProvider(primary.provider, backup.provider);
+
+      await combined.elevationAt(POSITIONS);
+      await combined.elevationAt(POSITIONS);
+
+      expect(combined.stats).toEqual({
+        primaryAnswered: 4,
+        fallbackAnswered: 4,
+        unanswered: 0,
+      });
+    });
+
+    it("counts the gaps as unanswered when the fallback fails outright", async () => {
+      const primary = recording("hi-res", (p) =>
+        p.lat <= 2 ? p.lat * 10 : undefined,
+      );
+      const failing: ElevationProvider = {
+        attribution: "© lo-res",
+        sourceId: "lo-res",
+        elevationAt: () => Promise.reject(new Error("down")),
+      };
+      const combined = fallbackProvider(primary.provider, failing);
+
+      await combined.elevationAt(POSITIONS);
+
+      expect(combined.stats).toEqual({
+        primaryAnswered: 2,
+        fallbackAnswered: 0,
+        unanswered: 2,
+      });
+    });
+  });
 });
 
 describe("an aborted consensus batch rejects rather than degrading", () => {

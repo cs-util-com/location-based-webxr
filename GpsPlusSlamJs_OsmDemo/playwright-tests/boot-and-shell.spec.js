@@ -605,9 +605,11 @@ test.describe("the header", () => {
       await expandHeader();
       const attribution = page.locator("#map .leaflet-control-attribution");
       await expect(attribution).toContainText("OpenStreetMap");
-      await expect(attribution).toContainText(
-        /Mapzen|Terrarium|Tilezen|elevation/i,
-      );
+      // PINNED to the AWS credit's own name, not a loose alternation: the old
+      // /Mapzen|Terrarium|Tilezen|elevation/ matched the word "elevation" in
+      // ANY credit, so a build that dropped the AWS line entirely still passed
+      // as long as some elevation credit remained.
+      await expect(attribution).toContainText(/Mapzen/i);
       // BOTH DEM sources, by name. The composition falls back per tile, so a
       // session may stand on either — a credit naming only one of them stops
       // satisfying the obligation the moment the other serves a tile.
@@ -620,9 +622,7 @@ test.describe("the header", () => {
       );
       // Still there with the bar collapsed — the whole point.
       await expect(attribution).toContainText("OpenStreetMap");
-      await expect(attribution).toContainText(
-        /Mapzen|Terrarium|Tilezen|elevation/i,
-      );
+      await expect(attribution).toContainText(/Mapzen/i);
       await expect(attribution).toContainText(/Mapterhorn/i);
     });
   });

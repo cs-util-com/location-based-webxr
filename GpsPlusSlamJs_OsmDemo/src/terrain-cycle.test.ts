@@ -109,6 +109,9 @@ function cycleFor(provider: ElevationProvider): {
           // Reported with every load, like the real worker: the label must
           // travel WITH the field it describes, never separately.
           demSourceId: "test-dem",
+          // The serving stats travel the same way, for the same reason: a
+          // snapshot applied on its own could describe a different load.
+          demStats: { primaryAnswered: 9, fallbackAnswered: 1, unanswered: 0 },
           // The real worker reports this even for a failed load; the fake must
           // too, or these tests would pass for a worker that stopped.
           centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
@@ -157,6 +160,13 @@ describe("createTerrainCycle", () => {
     // a field with a source that did not produce it — same atomicity argument
     // as the note and the centre.
     expect(applied[0]?.demSourceId).toBe("test-dem");
+    // And so do the serving stats: the HUD's "which DEM actually served" line
+    // must describe the field on screen, never a snapshot from another load.
+    expect(applied[0]?.demStats).toEqual({
+      primaryAnswered: 9,
+      fallbackAnswered: 1,
+      unanswered: 0,
+    });
 
     // The last state applied belongs to the last position the user asked for —
     // which is the whole guarantee, since `apply` is what the UI reads.

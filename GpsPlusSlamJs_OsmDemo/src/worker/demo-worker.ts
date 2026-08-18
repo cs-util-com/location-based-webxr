@@ -64,6 +64,7 @@ import {
   isPedestrianPath,
   meshCentroidEnu,
   roadColour,
+  type FallbackProviderStats,
   type LatLng,
   type OsmFeature,
   type RuleTable,
@@ -144,6 +145,14 @@ interface WorkerState {
    * result so the page labels a field with the provider that sampled it.
    */
   readonly demSourceId: string;
+  /**
+   * A snapshot of the provider's cumulative serving stats — which member
+   * answered how many positions. A FUNCTION, not a value: the counters live
+   * on the provider and move with every batch, and each terrain result must
+   * carry the numbers as of ITS load, copied so the page's snapshot cannot
+   * mutate under it.
+   */
+  readonly demStats: () => FallbackProviderStats;
 }
 
 let state: WorkerState | undefined;
@@ -637,6 +646,7 @@ async function handle<K extends WorkerCallKind>(
         }),
         terrainField: createTerrainField({ provider: demProvider }),
         demSourceId: demProvider.sourceId,
+        demStats: () => ({ ...demProvider.stats }),
       };
       return {
         categories: loaded.table.categories,
@@ -759,11 +769,12 @@ async function handle<K extends WorkerCallKind>(
     case "terrain": {
       const { centre, frameOrigin, extentM, spacingM, geoidUndulationM } =
         payload as WorkerCalls["terrain"]["request"];
-      const { terrainField, demSourceId } = requireState();
+      const { terrainField, demSourceId, demStats } = requireState();
       try {
         return await loadTerrain(
           terrainField,
           demSourceId,
+          demStats,
           centre,
           frameOrigin ?? centre,
           extentM,
@@ -936,6 +947,8 @@ async function loadTerrain(
   terrainField: TerrainField,
   /** The provider's `sourceId`, reported back with the field it sampled. */
   demSourceId: string,
+  /** Snapshots the provider's cumulative serving stats for this result. */
+  demStats: () => FallbackProviderStats,
   /** Where the user is. Keys the gate, and says which load this was. */
   centre: LatLng,
   /** Where the scene's frame is anchored. Says what the heights mean. */
@@ -1013,6 +1026,10 @@ async function loadTerrain(
     field: terrain,
     note: describeTerrain(field),
     demSourceId,
+    // SNAPSHOT AT RESULT TIME, after the sampling above, so the counts include
+    // this load's own batches. Cumulative for the session — the HUD reports a
+    // share, and a share needs the denominator to keep meaning something.
+    demStats: demStats(),
     // REPORTED EVEN WHEN THE FIELD IS EMPTY, and that is the point: the ground
     // plane follows this centre, and a plane left behind during a DEM outage
     // stops covering the user as soon as they walk past its extent.

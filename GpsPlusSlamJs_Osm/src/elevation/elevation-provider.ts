@@ -130,6 +130,31 @@ export function consensusProvider(
 }
 
 /**
+ * Which source served how many positions, accumulated for a provider's life.
+ *
+ * WHY THIS EXISTS. The composed provider deliberately carries no per-sample
+ * provenance — the seam returns plain heights — so without an aggregate
+ * surface a consumer cannot tell "the high-resolution primary served this
+ * session" from "everything quietly fell back to the coarse global DEM",
+ * although the two differ by an order of magnitude in what a residual against
+ * them means. Counts are POSITIONS, not requests: a position is what the
+ * consumer's question is about, and one batched call can carry thousands.
+ */
+export interface FallbackProviderStats {
+  /** Positions the primary answered. */
+  primaryAnswered: number;
+  /** Gap positions the fallback filled. */
+  fallbackAnswered: number;
+  /** Positions neither source answered (including a failed fallback's gaps). */
+  unanswered: number;
+}
+
+/** What {@link fallbackProvider} returns: the seam plus its stats surface. */
+export type FallbackElevationProvider = ElevationProvider & {
+  readonly stats: FallbackProviderStats;
+};
+
+/**
  * The primary answers; the fallback fills only the gaps.
  *
  * WHY THIS BEATS {@link consensusProvider} FOR TWO SOURCES OF VERY DIFFERENT
@@ -154,12 +179,18 @@ export function fallbackProvider(
   primary: ElevationProvider,
   fallback: ElevationProvider,
   options: { readonly sourceId?: string } = {},
-): ElevationProvider {
+): FallbackElevationProvider {
+  const stats: FallbackProviderStats = {
+    primaryAnswered: 0,
+    fallbackAnswered: 0,
+    unanswered: 0,
+  };
   return {
     attribution: [primary.attribution, fallback.attribution]
       .filter((a) => a !== "")
       .join(" · "),
     sourceId: options.sourceId ?? `${primary.sourceId}+${fallback.sourceId}`,
+    stats,
 
     async elevationAt(positions, signal) {
       const first = await primary.elevationAt(positions, signal);
@@ -177,6 +208,9 @@ export function fallbackProvider(
       // Copying via `positions` (not `first`) keeps the output's length pinned
       // to the input even if a misbehaving primary returned a short array.
       const merged = positions.map((_, i) => first[i]);
+      // Counted once the primary has settled, so an abort during the fallback
+      // stage still leaves the primary's serving on the record.
+      stats.primaryAnswered += positions.length - gapIndices.length;
       if (gapIndices.length === 0) return merged;
 
       let filled: readonly (number | undefined)[];
@@ -188,11 +222,16 @@ export function fallbackProvider(
         // abort is different: it is a cancellation, not a data problem.
         if (error instanceof Error && error.name === "AbortError") throw error;
         signal?.throwIfAborted();
+        stats.unanswered += gapIndices.length;
         return merged;
       }
+      let filledCount = 0;
       gapIndices.forEach((positionIndex, j) => {
         merged[positionIndex] = filled[j];
+        if (filled[j] !== undefined) filledCount += 1;
       });
+      stats.fallbackAnswered += filledCount;
+      stats.unanswered += gapIndices.length - filledCount;
       return merged;
     },
   };

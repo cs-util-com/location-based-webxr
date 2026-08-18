@@ -101,6 +101,25 @@ export interface ArMeasurements {
    */
   readonly demSourceId?: string | undefined;
   /**
+   * Which member of the composition actually served, as position counts —
+   * the worker's snapshot of the provider's cumulative serving stats.
+   *
+   * **THE HALF {@link demSourceId} CANNOT SAY.** The composed id names what
+   * was asked; these counters say what answered, which is what lets a field
+   * session tell "this walk stood on national LiDAR" from "everything
+   * quietly fell back to ~30 m SRTM" — the residuals against those two
+   * differ by an order of magnitude. Rendered as the primary's share of
+   * answered posts on the terrain line; absent keeps the composed-id-only
+   * behaviour.
+   */
+  readonly demStats?:
+    | {
+        readonly primaryAnswered: number;
+        readonly fallbackAnswered: number;
+        readonly unanswered: number;
+      }
+    | undefined;
+  /**
    * Whether the DEM actually loaded.
    *
    * **THE MOST IMPORTANT FLAG IN THIS INTERFACE.** `heightfieldFrom` returns a
@@ -298,7 +317,7 @@ export function describeArMeasurements(
     const source =
       measurements.demSourceId === undefined || measurements.demSourceId === ""
         ? ""
-        : ` · ${measurements.demSourceId}`;
+        : ` · ${demServingLabel(measurements.demSourceId, measurements.demStats)}`;
     pushExpanded(
       `terrain ${measurements.terrainHeightM.toFixed(1)} m${source}`,
     );
@@ -357,6 +376,41 @@ export function describeArMeasurements(
 /** `+1.5` / `-10.0` — the sign is explicit on both, because it is the reading. */
 function signed(valueM: number): string {
   return `${valueM >= 0 ? "+" : ""}${valueM.toFixed(1)}`;
+}
+
+/**
+ * The terrain line's source suffix: which DEM actually served, when known.
+ *
+ * WHY A SHARE AND NOT THE RAW COUNTERS. The question a field session asks is
+ * "am I standing on the LiDAR or on the ~30 m fallback?", and the primary's
+ * share of ANSWERED posts is that question's number — `mapterhorn 98%`. Two
+ * states are words instead:
+ *
+ * - **`terrarium (fallback)`** when the primary answered nothing — the one
+ *   share that changes what the height MEANS, stated so it cannot be skimmed
+ *   past as a percentage.
+ * - **The composed id** when the stats are absent or have counted nothing
+ *   yet, or when the id does not carry the `primary+fallback` shape this
+ *   derives its names from — the pre-stats behaviour, kept.
+ *
+ * The names come from splitting {@link ArMeasurements.demSourceId} at its
+ * first `+`, so the label can only ever name the composition that produced
+ * the field — a hardcoded name here would keep agreeing with itself after the
+ * worker's wiring changed.
+ */
+function demServingLabel(
+  sourceId: string,
+  stats: ArMeasurements["demStats"],
+): string {
+  const split = sourceId.indexOf("+");
+  if (stats === undefined || split <= 0) return sourceId;
+  const answered = stats.primaryAnswered + stats.fallbackAnswered;
+  if (answered <= 0) return sourceId;
+  if (stats.primaryAnswered === 0) {
+    return `${sourceId.slice(split + 1)} (fallback)`;
+  }
+  const pct = Math.round((stats.primaryAnswered / answered) * 100);
+  return `${sourceId.slice(0, split)} ${pct}%`;
 }
 
 /**

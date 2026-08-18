@@ -624,6 +624,12 @@ export async function expectCanvasFillsContainer(page) {
  * fetch, decode, sample, displace. An aborted tile would exercise only the
  * "terrain unavailable" branch, and the displaced-ground code would never be
  * reached by any test in the suite.
+ *
+ * HISTORY WORTH KEEPING: before the library's tile-size fix, the provider
+ * sampled this 2x2 tile at 256-px offsets, so clamping pinned every read to
+ * one pixel and the whole tile decoded to a constant 10 m — meaning every
+ * pre-fix relief assertion in this suite ran against a flat field and proved
+ * nothing about displacement.
  */
 function terrariumPng() {
   const heights = [

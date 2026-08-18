@@ -8,7 +8,12 @@ the same blob store the OSM tiles persist through.
 
 ## Public API
 
-- `createDemProvider({ store, decodePng, fetchImpl? }): ElevationProvider`
+- `createDemProvider({ store, decodePng, fetchImpl? }):
+FallbackElevationProvider` — the seam plus `fallbackProvider`'s live
+  `stats` surface (`{ primaryAnswered, fallbackAnswered, unanswered }`,
+  position counts accumulated for the provider's life). The worker snapshots
+  it into every `TerrainResult.demStats`, and the AR readout renders the
+  primary's share — so a field session can tell which DEM actually served.
   - `store` — an `OsmBlobStore`; the worker passes the **same** OPFS-backed
     store the OSM tiles and the rule table use. DEM entries are keyed by full
     request URL, so the three key families (`https://…`, `osm/v{n}/…`,
@@ -55,9 +60,19 @@ the same blob store the OSM tiles persist through.
   constant.
 - **Per-sample source attribution is deliberately absent.** The
   `ElevationProvider` seam returns heights with no per-position provenance, so
-  "which member answered this post" is unknowable here; the HUD shows the
-  composed id instead. Adding provenance would be a library seam change —
-  file it as such rather than approximating it in the demo.
+  "which member answered THIS post" is unknowable here; what IS known is the
+  aggregate — `stats` counts positions per source, and the HUD renders the
+  primary's share beside the composed id. True per-sample provenance would be
+  a library seam change — file it as such rather than approximating it in the
+  demo.
+- **A DEM source change means a mesh rebuild, never a live re-sample.** The
+  building bases are baked into vertices against the field the worker held at
+  mesh-build time, so any future runtime source switch (a settings toggle, a
+  self-hosted mirror) must ride the existing terrain-gate/rebuild path —
+  load the new field, bump the terrain stamp, rebuild — exactly as a position
+  change does. Re-sampling the live field under standing geometry would leave
+  the buildings on the old source's ground while every readout describes the
+  new one: the divergence class `worker/terrain-gate.ts` exists to prevent.
 
 ## Examples
 
@@ -74,7 +89,8 @@ const terrainField = createTerrainField({ provider });
 `dem-provider.test.ts` — primary-first (no AWS request while Mapterhorn
 answers), fallback on a primary 404, a repeat query served from the injected
 store with **zero** network fetches (a second provider instance models a
-reload), and the `DEM_SOURCE_ID`/`DEM_ATTRIBUTION` identities. No
+reload), the serving stats (primary-served against fell-back), and the
+`DEM_SOURCE_ID`/`DEM_ATTRIBUTION` identities. No
 property-based spec, deliberately: every behaviour is a composition of
 already-property-tested library parts (`fallbackProvider`,
 `TerrariumProvider`, `createCachingTileFetch`), and a property over the wiring

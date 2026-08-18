@@ -130,6 +130,37 @@ describe("store miss", () => {
     expect(new Uint8Array(await cached.arrayBuffer())).toEqual(BYTES_A);
   });
 
+  it("round-trips a multi-chunk payload byte-exactly", async () => {
+    // WHY THIS TEST MATTERS. `toBase64` walks the bytes in 0x8000-element
+    // chunks to stay under `String.fromCharCode`'s argument-count limit — a
+    // real 512-px WebP tile is comfortably past one chunk, while every other
+    // test here uses a handful of bytes and would never enter the loop's
+    // second iteration. 100 000 bytes (> 3 chunks) covering every value
+    // 0x00..0xFF pins that chunk boundaries neither drop, duplicate, nor
+    // reorder bytes — a corruption that would decode into plausible but wrong
+    // terrain, the exact failure this module must not produce.
+    const bytes = new Uint8Array(100_000);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 256;
+
+    const store = new MemoryBlobStore();
+    const first = createCachingTileFetch({
+      store,
+      fetchImpl: countingNetwork(() => bytes).impl,
+    });
+    await first(URL_A);
+    expect(first.stats.storeFailures).toBe(0);
+
+    // A second wrapper over the same store: the replay can only come from the
+    // persisted base64, so equality here is equality through the round trip.
+    const replay = createCachingTileFetch({
+      store,
+      fetchImpl: countingNetwork(() => undefined).impl,
+    });
+    const cached = await replay(URL_A);
+    expect(cached.headers.get("x-tile-cache")).toBe("hit");
+    expect(new Uint8Array(await cached.arrayBuffer())).toEqual(bytes);
+  });
+
   it("accepts URL and Request inputs and keys them identically to the string form", async () => {
     const store = new MemoryBlobStore();
     const { impl, calls } = countingNetwork();
