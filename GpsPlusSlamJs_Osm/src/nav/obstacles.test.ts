@@ -283,6 +283,26 @@ describe("obstacleLevelsAt", () => {
     expect(levels).toContain(DEFAULT_BARRIER_HEIGHT_M);
   });
 
+  it("always puts the ground first, at any ground height", () => {
+    // NOW LOAD-BEARING, NOT MERELY TIDY. `columnSpace` reads a cell's GROUND as
+    // the lowest of its levels, and that is what lets a step be split into a
+    // slope and a climb — so if a wall top could ever sort below the ground,
+    // the slope rule would price the terrain against a wall top and an agent
+    // could walk off one. The property holds by construction here (the set is
+    // seeded with the ground and only ever gains `ground + heightM` above it),
+    // and this is where that construction is pinned.
+    const index = buildObstacleIndex([wall()]);
+    for (const groundM of [-30, 0, 12.5, 340]) {
+      const levels = obstacleLevelsAt(
+        index,
+        cellAt(HOME.lat, HOME.lng),
+        () => groundM,
+      );
+      expect(levels[0]).toBe(groundM);
+      expect(Math.min(...levels)).toBe(groundM);
+    }
+  });
+
   it("offers each distinct obstacle height once", () => {
     // Two walls of the same height crossing one cell is one standable level,
     // not two identical ones — duplicates would inflate the search's state

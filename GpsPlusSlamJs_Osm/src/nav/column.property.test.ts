@@ -15,10 +15,18 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import { latLngToCell, gridDisk } from "h3-js";
-import { columnsAdjacent, STEP_THRESHOLD_M } from "./column.js";
+import {
+  columnsAdjacent,
+  neighbourSpacingM,
+  MAX_GROUND_GRADIENT,
+  STEP_THRESHOLD_M,
+} from "./column.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 
 const ORIGIN = latLngToCell(50.9413, 6.9583, AFFORDANCE_RES);
+
+/** The run the grade is measured over — the same one the predicate uses. */
+const NEIGHBOUR_SPACING_M = neighbourSpacingM(AFFORDANCE_RES);
 
 /** The origin and its six neighbours — every cell a step could reach. */
 const RING = gridDisk(ORIGIN, 1);
@@ -84,7 +92,8 @@ describe("column adjacency properties", () => {
           // silently assert NOTHING when the guard never holds — the exact
           // failure mode this branch keeps finding.
           const lost =
-            columnsAdjacent(a, b, low) && !columnsAdjacent(a, b, high);
+            columnsAdjacent(a, b, { stepThresholdM: low }) &&
+            !columnsAdjacent(a, b, { stepThresholdM: high });
           expect(lost).toBe(false);
         },
       ),
@@ -100,11 +109,9 @@ describe("column adjacency properties", () => {
         fc.double({ min: 0, max: 1000, noNaN: true, noDefaultInfinity: true }),
         (far, originHeight, threshold) => {
           expect(
-            columnsAdjacent(
-              { cell: ORIGIN, heightM: originHeight },
-              far,
-              threshold,
-            ),
+            columnsAdjacent({ cell: ORIGIN, heightM: originHeight }, far, {
+              stepThresholdM: threshold,
+            }),
           ).toBe(false);
         },
       ),
@@ -127,6 +134,79 @@ describe("column adjacency properties", () => {
         expect(
           columnsAdjacent({ cell: ORIGIN, heightM: originHeight }, other),
         ).toBe(Math.abs(originHeight - other.heightM) <= STEP_THRESHOLD_M);
+      }),
+    );
+  });
+
+  it("never loses an edge when the gradient limit is raised", () => {
+    // MONOTONICITY, FOR THE SECOND LIMIT. The step threshold has had this
+    // property since the module existed; a slope allowance that failed it
+    // would be the same baffling regression — a route that gets worse after
+    // the agent is made more capable — reintroduced through the new door.
+    const grounded = (cells: readonly string[]) =>
+      fc.record({ cell: cellIn(cells), heightM: height, groundM: height });
+
+    fc.assert(
+      fc.property(
+        grounded(RING),
+        grounded(RING),
+        fc.double({ min: 0, max: 5, noNaN: true, noDefaultInfinity: true }),
+        fc.double({ min: 0, max: 5, noNaN: true, noDefaultInfinity: true }),
+        (a, b, g1, g2) => {
+          const low = Math.min(g1, g2);
+          const high = Math.max(g1, g2);
+          const lost =
+            columnsAdjacent(a, b, { maxGroundGradient: low }) &&
+            !columnsAdjacent(a, b, { maxGroundGradient: high });
+          expect(lost).toBe(false);
+        },
+      ),
+    );
+  });
+
+  it("never refuses a step the absolute rule admitted", () => {
+    // THE SAFETY PROPERTY OF THE WHOLE CHANGE. Knowing where the ground is can
+    // only ever ADD edges: the surface-to-surface reading is the rule this
+    // module shipped with, kept verbatim as one arm of a union. So no route
+    // that a caller has today can vanish because it started supplying a
+    // ground — which is a claim worth machine-checking rather than asserting,
+    // since a later "simplification" that folds the two arms together would
+    // break it silently and only on sloped ground.
+    fc.assert(
+      fc.property(
+        column(RING),
+        column(RING),
+        height,
+        height,
+        (a, b, groundA, groundB) => {
+          const bare = columnsAdjacent(a, b);
+          const grounded = columnsAdjacent(
+            { ...a, groundM: groundA },
+            { ...b, groundM: groundB },
+          );
+          expect(bare && !grounded).toBe(false);
+        },
+      ),
+    );
+  });
+
+  it("ignores the ground entirely when both states walk on it", () => {
+    // THE CLAIM THE FIX RESTS ON, stated as an algebraic identity rather than
+    // as an example: for an agent standing ON the ground in both cells the
+    // step term is zero by construction, so adjacency is the grade alone. If
+    // this ever fails, the decomposition has leaked the absolute height
+    // difference back into the answer — which is the defect being fixed.
+    fc.assert(
+      fc.property(height, height, (groundA, groundB) => {
+        const withinGrade =
+          Math.abs(groundA - groundB) <=
+          MAX_GROUND_GRADIENT * NEIGHBOUR_SPACING_M;
+        expect(
+          columnsAdjacent(
+            { cell: ORIGIN, heightM: groundA, groundM: groundA },
+            { cell: RING[1]!, heightM: groundB, groundM: groundB },
+          ),
+        ).toBe(withinGrade);
       }),
     );
   });

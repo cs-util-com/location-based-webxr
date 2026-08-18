@@ -136,6 +136,16 @@ if (route !== undefined) drawPolyline(route);
 - Heights come from the injected sampler, so the polyline sits on the ground.
 - Unknown ground → no route.
 
+`agent-route.slope.test.ts` — **the guard for a defect every other route test
+was blind to.** All of the above run on ground of a CONSTANT height — mostly
+`field: undefined`, which `cell-ground.ts` turns into a flat zero, and otherwise
+a sampler returning one number — so `Δground` is 0 in every one of them, and
+nothing here could see that `columnsAdjacent` was comparing DEM samples ~6.5 m
+apart against a 0.5 m step limit and refusing every ground steeper than ~7.5 %. A live session reported the Cologne Frankenwerft promenade as
+unreachable in every downhill direction. This file routes over a plane at the
+measured 24 % grade — down and up — and keeps two controls: a 150 % cliff is
+still refused, and a sealed wall on that same slope still is too.
+
 `agent-route.test.ts` › "planRoute, weighted by the walkable score" covers the
 cost model, and pins the two halves separately because either can be fixed alone
 and look half-right on screen:

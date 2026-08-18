@@ -156,9 +156,17 @@ floor. While they read the same, no geometry change could have been visible.
 - **Obstacle heights are relative to the ground beneath them.** A 2 m wall on a
   30 m hill is standable at 32 m. Treating them as absolute would put every wall
   top underground on any real slope.
-- **Levels are distinct and ascending.** Two walls of the same height crossing
-  one cell are one standable level, not two identical ones; and a route that
-  varied with the order Overpass returned features would be unreproducible.
+- **Levels are distinct and ascending, and the FIRST is the ground.** Two walls
+  of the same height crossing one cell are one standable level, not two identical
+  ones; and a route that varied with the order Overpass returned features would
+  be unreproducible.
+  - **The "first is the ground" half became load-bearing on 2026-08-18.**
+    `column-space.ts` reads a cell's walking surface as the lowest of its levels
+    in order to price a slope separately from a climb, so a wall top sorting
+    below the ground would make an agent walk off one. It holds by construction —
+    the set is seeded with the ground and only ever gains `ground + heightM`
+    above it — and `obstacles.test.ts` now pins it at several ground heights
+    rather than leaving it implied by the sort.
 - **One obstacle appears once per cell**, however many of its segments cover it.
   The segments of one wall are one wall.
 - **A mapped opening admits the step that goes through it, and nothing else**

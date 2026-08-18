@@ -248,6 +248,21 @@ represent the two states at once. [`column.ts.md`](./src/nav/column.ts.md) ·
 `search.ts` is generic over the state type for that reason: the caller owns what
 a state _is_ and how it is keyed.
 
+⚠️ **A HILLSIDE IS NOT A WALL, and one threshold cannot say both.** The
+climbable-step limit is calibrated against discontinuities — a kerb is 0.15 m, a
+riser 0.18 m, a wall is metres — but the heights it compares are DEM samples at
+cell centres **~6.4–6.9 m apart**. As a single absolute rule it therefore
+declared any ground steeper than **~7.5 %** impassable, and a live session
+reported a Cologne river promenade as unreachable in every downhill direction
+while the `walkable` heat map rated it highly. Adjacency now asks two questions
+and admits the step if **either** answers yes: the absolute change between two
+surfaces against the step threshold, or — where the ground is known — the
+**ground's grade** against `MAX_GROUND_GRADIENT` with the height above that
+ground still against the step threshold. The first arm is the original rule
+verbatim, so knowing the ground can only add edges.
+[`column.ts.md`](./src/nav/column.ts.md) ·
+[`2026-08-18-0659-nav-terrain-slope-vs-step-plan.md`](./docs/2026-08-18-0659-nav-terrain-slope-vs-step-plan.md)
+
 ---
 
 ## 8. Geo-events — agreement without a server
