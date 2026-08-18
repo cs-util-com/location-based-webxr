@@ -92,6 +92,22 @@ export {
   LeafletMapOverlay,
 } from './leaflet-map-overlay.js';
 
+// --- flat-leaflet-map (plain 2D Leaflet map, no CSS3D/AR embedding) ---
+export {
+  type FlatLeafletMapOptions,
+  type FlatLeafletMapInstance,
+  createFlatLeafletMap,
+} from './flat-leaflet-map.js';
+
+// --- waypoint-marker-status (pure waypoint -> marker view-model mapping) ---
+export {
+  type MapWaypointPosition,
+  type MapWaypointInput,
+  type WaypointMarkerStatus,
+  type WaypointMarkerViewModel,
+  computeMarkerViewModels,
+} from './waypoint-marker-status.js';
+
 // --- lerp-utils ---
 export { DEFAULT_LERP_RATE, clampedAlpha } from './lerp-utils.js';
 
