@@ -36,10 +36,12 @@ import {
   endARSession,
   getArWorldGroup,
   getCamera,
+  getCurrentArPose,
   getRenderer,
   getScene,
   initAR,
   registerXrFrameUpdate,
+  startDepthCapture,
   type TrackingSubscribableStore,
 } from "gps-plus-slam-app-framework/ar";
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization";
@@ -49,7 +51,22 @@ import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import type { BuildingView } from "./building-view.js";
 import type { LatLng } from "gps-plus-slam-osm";
 
-import { applyArEnvironment } from "./ar-scene-environment.js";
+import {
+  applyArEnvironment,
+  AR_CAMERA_FAR_M,
+  AR_CAMERA_NEAR_M,
+} from "./ar-scene-environment.js";
+import {
+  createArDepthPipeline,
+  AR_DEPTH_SAMPLER_CONFIG,
+} from "./ar-depth-pipeline.js";
+import {
+  composeElevationM,
+  createArElevationAuto,
+  type AnchorEnuPoint,
+  type ArElevationAuto,
+  type ArElevationAutoState,
+} from "./ar-elevation-auto.js";
 import { createArHud, type ArHud } from "./ar-hud.js";
 // Type-only: the GPS-side half of the readout is DEFINED by the formatter, so
 // the two cannot drift apart the way two hand-kept field lists would.
@@ -160,6 +177,25 @@ export interface ArModeDeps {
     | "position"
     | "fixAgeMs"
   >;
+  /**
+   * The automatic elevation offset (plan §2.6). **Presence IS the switch**:
+   * `main.ts` omits the whole group when the URL kill switch
+   * (`?autoElevation=off`) is set, and with it absent this module requests no
+   * depth sensing, builds no grid and ticks no estimator — the session is
+   * byte-identical to the pre-auto behaviour, which is what makes the kill
+   * switch a real field A/B rather than a UI flag.
+   *
+   * `terrainHeightM` is the AR-DATUM-GATED DEM sampler (ellipsoidal DEM+N at
+   * a point in the scene anchor's ENU), answering `undefined` while the held
+   * field does not match AR's datum — the same two gates the HUD's terrain
+   * line uses (`terrainReadout`). The gate lives with the caller because the
+   * caller owns the field and the session undulation.
+   */
+  readonly autoElevation?:
+    | {
+        readonly terrainHeightM: (enu: AnchorEnuPoint) => number | undefined;
+      }
+    | undefined;
   /**
    * Apply the compass-influence settings the slider produced (DEC-E2).
    *
@@ -287,18 +323,27 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     if (endSession) void endARSession();
   };
 
+  // BUILT BEFORE `initAR`, because the depth callback below closes over it.
+  // One pipeline per session, dropped with the handle — grid cells are
+  // odometry-frame state and must never survive into a later session.
+  const depthPipeline =
+    deps.autoElevation === undefined ? undefined : createArDepthPipeline();
+
   try {
     await initAR(
       deps.container,
       {
-        // The city is geometry, not vision. Nothing here reads the camera
-        // image or the depth buffer, and both default ON — leaving them on
-        // would add a crash surface and a permission prompt for features this
-        // mode never uses. Depth-sensing in particular OVERRIDES the camera's
-        // near/far planes when a texture is present (plan §2.3), which M4 has
-        // to reason about; not requesting it keeps that variable out.
+        // The city is geometry, not vision. The camera image is never read,
+        // and both camera flags default ON — leaving them on would add a
+        // crash surface and a permission prompt for features this mode never
+        // uses. Depth-sensing follows the auto-elevation switch: the floor
+        // estimator needs the depth stream, and a depth TEXTURE also makes
+        // three.js OVERRIDE the camera's near/far planes (plan §1.3) — which
+        // is why the flag stayed false until the frame loop below learned to
+        // re-assert them, and why the kill switch turns all of this off at
+        // once.
         enableCameraAccess: false,
-        enableDepthSensingFeature: false,
+        enableDepthSensingFeature: depthPipeline !== undefined,
         enableCameraTextureAcquisition: false,
       },
       // No hit-test: nothing is placed by tapping. The city's position comes
@@ -317,9 +362,23 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           // the moment `gps-registration.ts` started feeding the coordinator,
           // and its failure mode is the worst kind: the city jumps once and
           // never re-converges, which reads exactly like a broken fusion.
-          onRestarted: (payload) =>
-            deps.store.dispatch(odometryTrackingRestarted(payload)),
+          //
+          // THE GRID IS CLEARED IN THE SAME BREATH (plan §2.4): its cells are
+          // measured in the frame that just died, and stale cells produce a
+          // plausible-looking WRONG floor inside the estimator's acceptance
+          // band. One callback, so the two can never drift apart.
+          onRestarted: (payload) => {
+            depthPipeline?.clear();
+            deps.store.dispatch(odometryTrackingRestarted(payload));
+          },
         },
+        // DIRECT FOLD, NO STORE HOP (plan §2.6): the demo records nothing, so
+        // routing 576-point payloads through Redux at ~5 Hz would buy only
+        // dev-mode serializability checks. Present only with the pipeline —
+        // the framework creates its DepthSampler from this group's presence.
+        ...(depthPipeline === undefined
+          ? {}
+          : { depth: { onCaptured: depthPipeline.fold } }),
         onSessionEnd: () => {
           if (!bootCompleted) return;
           // NOT `endARSession()` — the session is already ending.
@@ -410,6 +469,16 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         up: geometricOffset.up + offsetM,
       });
     };
+    // ONE CHANNEL, TWO CONTRIBUTORS (plan §2.6): the automatic offset and the
+    // manual trim share the nudge's `applyElevation` path, composed here and
+    // nowhere else. A null auto contributes ZERO, so with the estimator cold
+    // or the kill switch set the buttons behave exactly as they always did —
+    // the owner's escape hatch stays live whatever the estimator does.
+    let autoM: number | null = null;
+    let manualTrimM = 0;
+    const applyComposed = () => {
+      applyElevation(composeElevationM(autoM, manualTrimM));
+    };
     applyElevation(0);
 
     // AR ONLY. The desktop preview discards `geometricOffset` (it attaches with
@@ -418,9 +487,31 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // all of which live on the preview's own scene and would stay put.
     session.elevation = createArElevationControl({
       root: deps.container,
-      onChange: applyElevation,
+      onChange: (offsetM) => {
+        manualTrimM = offsetM;
+        applyComposed();
+      },
     });
     session.elevation.attach();
+
+    // THE ESTIMATOR, only when the caller wired the DEM sampler (kill switch:
+    // absent dep = no depth, no grid, no estimator — see `ArModeDeps`).
+    // `geometricOffset` doubles as the anchor's NUE offset: the same value the
+    // city is attached with is what reconciles hit positions (about `zero`)
+    // with the DEM field (about the scene anchor), so the two CANNOT disagree.
+    const auto: ArElevationAuto | undefined =
+      depthPipeline !== undefined && deps.autoElevation !== undefined
+        ? createArElevationAuto({
+            grid: depthPipeline.grid,
+            terrainHeightM: deps.autoElevation.terrainHeightM,
+            anchorOffsetNue: geometricOffset,
+          })
+        : undefined;
+    // Sampling starts once, after `initAR` created the framework's sampler.
+    // The framework tears it down with the session, so there is no stop here.
+    if (depthPipeline !== undefined) {
+      startDepthCapture(AR_DEPTH_SAMPLER_CONFIG);
+    }
 
     // THE COMPASS SLIDER (DEC-E2), only when the caller can actually dispatch.
     if (deps.onCompassSettings !== undefined) {
@@ -488,11 +579,52 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // reading "0 fps" (r511 review). The framework's docstring said "seconds since
     // the session started", which is what made it look safe; that is corrected too.
     let windowOpenedAtS: number | undefined;
+    // The last auto state, held for the HUD between the ~1 Hz ticks.
+    let latestAuto: ArElevationAutoState | undefined;
     session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
       windowOpenedAtS ??= elapsed;
       framesThisWindow += 1;
       const windowS = elapsed - windowOpenedAtS;
       const fps = windowS > 0 ? framesThisWindow / windowS : undefined;
+
+      // THE DEPTH TEXTURE REVERTS THE CAMERA PLANES, so they are re-asserted
+      // whenever they drift (plan §2.6): with depth-sensing on, three.js takes
+      // depthNear/depthFar from the texture and ignores what M2 set — the
+      // whole reason the feature used to be off. A per-frame equality check
+      // costs nothing and self-heals whenever three writes them back. Whether
+      // the re-assertion reaches PIXELS on-device is an M5 field check — no
+      // headless test can see a projection matrix the UA owns.
+      if (
+        depthPipeline !== undefined &&
+        (camera.near !== AR_CAMERA_NEAR_M || camera.far !== AR_CAMERA_FAR_M)
+      ) {
+        camera.near = AR_CAMERA_NEAR_M;
+        camera.far = AR_CAMERA_FAR_M;
+        camera.updateProjectionMatrix();
+      }
+
+      // THE AUTO TICK, before the HUD sample so the readout shows what this
+      // very frame applied. `sample` self-throttles to ~1 Hz; the estimator's
+      // slew limiter is the ONE smoothing stage on the applied value (see
+      // `ar-elevation-auto.ts`), so the apply below is a plain set.
+      if (auto !== undefined) {
+        const pose = getCurrentArPose();
+        const aligned = !arWorldGroup.matrix.equals(identityMatrix);
+        latestAuto = auto.sample({
+          nowMs: elapsed * 1000,
+          cameraPosAr:
+            pose === null
+              ? undefined
+              : [pose.position.x, pose.position.y, pose.position.z],
+          // GATED ON AN ALIGNMENT EXISTING, like `worldBaselineY` below and
+          // for the same reason: identity's element 13 is a plausible 0.
+          alignment: aligned ? arWorldGroup.matrix.elements : undefined,
+        });
+        if (latestAuto.autoM !== autoM) {
+          autoM = latestAuto.autoM;
+          applyComposed();
+        }
+      }
       // `dt` is unused for the rate now, but it still marks the first frame after
       // a reset (the framework's contract says `dt` is 0 there), which is the one
       // sample whose window is meaningless.
@@ -547,6 +679,17 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
             ? undefined
             : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
+          // THE APPLIED AUTO OFFSET, beside the raw `above terrain` residual
+          // the live measurements carry — the pair is the M5 instrument (see
+          // `ar-measurements.ts`). Absent while the estimator publishes
+          // nothing, per the readout's no-invented-numbers rule.
+          ...(latestAuto === undefined || latestAuto.autoM === null
+            ? {}
+            : {
+                autoOffsetM: latestAuto.autoM,
+                autoConfidence: latestAuto.confidence,
+                autoFrozen: latestAuto.frozen,
+              }),
           ...live,
         },
         // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop

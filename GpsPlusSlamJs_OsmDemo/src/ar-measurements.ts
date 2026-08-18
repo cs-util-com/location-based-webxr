@@ -130,6 +130,31 @@ export interface ArMeasurements {
    */
   readonly terrainHasData?: boolean | undefined;
   /**
+   * The automatic elevation offset currently applied to the content, metres —
+   * `baseline + robust(floor − DEM)`, from `ar-elevation-auto.ts`.
+   *
+   * **THE OTHER HALF OF THE PAIR {@link terrainHeightM}'s residual opens.**
+   * `above terrain` is the RAW GPS-vs-DEM residual and is untouched by the
+   * offset; this line is the estimator's view of the same axis. Their
+   * difference exposes the fused-vertical error live — and once auto engages,
+   * the city can look right while `above terrain` still reads +7 m, which is
+   * why both are on screen and which line means what is worth stating in the
+   * field protocol.
+   *
+   * Absent whenever the estimator publishes nothing (cold start, kill switch,
+   * no alignment) — never rendered as `+0.0 m`, per this module's one rule.
+   */
+  readonly autoOffsetM?: number | undefined;
+  /** The estimator's confidence in {@link autoOffsetM}, 0..1. */
+  readonly autoConfidence?: number | undefined;
+  /**
+   * True while the freeze layer holds the offset — the user is climbing
+   * man-made structure (tower, stairs, bridge) and the world must not ride
+   * up with them. Named on the line because the M5 tower walk needs to SEE
+   * the freeze engage, and nothing else on screen says so.
+   */
+  readonly autoFrozen?: boolean | undefined;
+  /**
    * Geoid undulation `N` at the AR origin, metres.
    *
    * A **session constant**, not something that moves: `N` varies about 1 m per
@@ -329,6 +354,20 @@ export function describeArMeasurements(
   if (terrainUsable && isSignedReading(measurements.altitudeM)) {
     const residual = measurements.altitudeM - measurements.terrainHeightM;
     lines.push(`above terrain ${signed(residual)} m`);
+  }
+
+  // THE PAIRED LINE, always visible like the residual above: `above terrain`
+  // is untouched by the offset, this is the estimator's view, and their
+  // difference is the fused-vertical error, live. Absent while the estimator
+  // publishes nothing — a zero here would claim measured agreement.
+  if (isSignedReading(measurements.autoOffsetM)) {
+    const frozen = measurements.autoFrozen === true;
+    const detail = isUsable(measurements.autoConfidence)
+      ? ` (conf ${measurements.autoConfidence.toFixed(2)}${frozen ? ", frozen" : ""})`
+      : frozen
+        ? " (frozen)"
+        : "";
+    lines.push(`auto ${signed(measurements.autoOffsetM)} m${detail}`);
   }
 
   if (isSignedReading(measurements.geoidUndulationM)) {

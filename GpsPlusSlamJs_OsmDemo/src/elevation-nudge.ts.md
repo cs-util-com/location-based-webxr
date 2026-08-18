@@ -42,6 +42,10 @@ The arithmetic of the manual vertical offset applied to all OSM content in AR
   it by metres between two glances. Expect to re-adjust, and read it beside the
   altitude readout — without the raw altitude on screen, drift and a mis-set
   nudge are indistinguishable.
+- **Since the auto offset landed, the nudge is TRIM on top of it.** The applied
+  value is `composeElevationM(autoM, manualTrimM)` in `ar-mode.ts`
+  (`ar-elevation-auto.ts` owns the auto term); with auto off or cold the trim
+  behaves exactly as described above — pinned in `ar-mode.test.ts`.
 - Pure by design: no scene, no session, no DOM. The arithmetic is the part worth
   testing and it should be testable without any of them.
 

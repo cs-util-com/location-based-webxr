@@ -43,6 +43,8 @@ const mocks = vi.hoisted(() => ({
   getArWorldGroup: vi.fn(),
   getCamera: vi.fn(),
   getRenderer: vi.fn(),
+  getCurrentArPose: vi.fn(),
+  startDepthCapture: vi.fn(),
   registerXrFrameUpdate: vi.fn(),
   unregisterFrame: vi.fn(),
   alignmentDispose: vi.fn(),
@@ -56,6 +58,8 @@ vi.mock("gps-plus-slam-app-framework/ar", () => ({
   getArWorldGroup: mocks.getArWorldGroup,
   getCamera: mocks.getCamera,
   getRenderer: mocks.getRenderer,
+  getCurrentArPose: mocks.getCurrentArPose,
+  startDepthCapture: mocks.startDepthCapture,
   registerXrFrameUpdate: mocks.registerXrFrameUpdate,
 }));
 vi.mock("gps-plus-slam-app-framework/visualization", () => ({
@@ -69,6 +73,8 @@ const {
   getArWorldGroup,
   getCamera,
   getRenderer,
+  getCurrentArPose,
+  startDepthCapture,
   registerXrFrameUpdate,
   unregisterFrame,
   alignmentDispose,
@@ -84,7 +90,14 @@ let camera: THREE.PerspectiveCamera;
 /** A settings bag, not a real renderer — nothing here draws. */
 let renderer: THREE.WebGLRenderer;
 
+import {
+  makeWorldPointSample,
+  surfacePatch,
+} from "gps-plus-slam-app-framework/test-utils/synthetic-depth-samples";
+import type { DepthSample } from "gps-plus-slam-app-framework/ar/depth-sampler";
+
 import { startArMode, type ArModeDeps } from "./ar-mode.js";
+import { AR_DEPTH_SAMPLER_CONFIG } from "./ar-depth-pipeline.js";
 import { nueBearingDeg } from "./ar-origin.js";
 import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
 
@@ -179,6 +192,7 @@ beforeEach(() => {
     info: { render: { calls: 0, triangles: 0 } },
   } as unknown as THREE.WebGLRenderer;
   getRenderer.mockReturnValue(renderer);
+  getCurrentArPose.mockReturnValue(null);
   registerXrFrameUpdate.mockReturnValue(unregisterFrame);
   enableArWorldGroupAlignment.mockReturnValue({ dispose: alignmentDispose });
 });
@@ -231,11 +245,12 @@ describe("entering AR", () => {
     );
   });
 
-  it("asks for no camera, depth or hit-test features", async () => {
-    // Every one of these defaults ON and none is used: the city's position
-    // comes from GPS, not from vision. Depth-sensing matters most — it
-    // OVERRIDES the camera's near/far planes when a texture is present, which
-    // would silently invalidate M4's far-plane work.
+  it("asks for no camera, depth or hit-test features while auto elevation is off", async () => {
+    // Camera access and texture acquisition default ON and are never used: the
+    // city's position comes from GPS, not from vision. Depth-sensing is the
+    // KILL-SWITCH path now — without the `autoElevation` dep the session must
+    // be byte-identical to the pre-auto behaviour, including no depth texture
+    // (which would override the camera's near/far planes) and no capture cost.
     await startArMode(deps());
 
     expect(initAR).toHaveBeenCalledWith(
@@ -248,6 +263,163 @@ describe("entering AR", () => {
       {},
       expect.anything(),
     );
+    expect(startDepthCapture).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Why these tests matter: the auto offset is three real modules (grid, floor
+ * estimator, offset estimator) chained through two frame conversions, and the
+ * chain has exactly one observable end — the `up` component that reaches
+ * `attachContentTo`. Each module is proven in isolation elsewhere; what only
+ * this file can see is that `ar-mode` CONNECTS them: depth samples reach the
+ * grid, the tick reads the live alignment, the published value shares the
+ * manual nudge's channel, and the HUD names what was applied.
+ */
+describe("the automatic elevation offset", () => {
+  /** Deps with the auto feature wired to a flat DEM at 100 m ellipsoidal. */
+  const autoDeps = (
+    view: ReturnType<typeof fakeView>,
+    container: HTMLElement,
+  ) =>
+    deps({
+      container,
+      buildingView: view as unknown as ArModeDeps["buildingView"],
+      autoElevation: { terrainHeightM: () => 100 },
+    });
+
+  /** The captured initAR callbacks, typed to what these tests reach into. */
+  const sessionCallbacks = () =>
+    initAR.mock.calls[0]?.[3] as {
+      depth?: { onCaptured: (sample: DepthSample) => void };
+      tracking: { onRestarted: (payload: unknown) => void };
+    };
+
+  it("requests depth sensing and starts the reconstruction-cadence capture", async () => {
+    await startArMode(deps({ autoElevation: { terrainHeightM: () => 100 } }));
+
+    expect(initAR).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enableDepthSensingFeature: true }),
+      {},
+      expect.anything(),
+    );
+    expect(sessionCallbacks().depth?.onCaptured).toBeDefined();
+    // The EXPLICIT reconstruction config, not the library fallback — the
+    // fallback builds the grid 8× slower and the floor with it.
+    expect(startDepthCapture).toHaveBeenCalledWith(AR_DEPTH_SAMPLER_CONFIG);
+  });
+
+  it("applies floor − DEM + baseline through the nudge channel, composed with the trim", async () => {
+    // THE FULL CHAIN, on real framework modules. Floor plate at raw-AR
+    // y = 3.0 under a camera at 4.6; baseline 98.4; DEM+N = 100. The sign
+    // test in `ar-elevation-auto.test.ts` owns the arithmetic: the city must
+    // RISE by 98.4 + (3.0 − 100) = +1.4 m. Here that value must actually
+    // REACH `attachContentTo` — the "typechecks but never renders" gap.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = fakeView();
+    arWorldGroup.matrix.identity();
+    arWorldGroup.matrix.elements[13] = 98.4;
+    getCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 4.6, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+
+    await startArMode(autoDeps(view, container));
+    const { depth } = sessionCallbacks();
+    const sample = makeWorldPointSample(
+      [0, 4.6, 0],
+      surfacePatch(() => 3, 1, 0.2),
+    );
+    // Twice: the production grid counts a cell occupied at ≥2 observations.
+    depth?.onCaptured(sample);
+    depth?.onCaptured(sample);
+
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+    onFrame({ dt: 1 / 60, elapsed: 1 });
+
+    const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    expect(attached.at(-1)?.offset?.up).toBeCloseTo(1.4, 1);
+    // The north/east terms survive — auto must not repeat the bug the manual
+    // nudge's test guards against.
+    expect(attached.at(-1)?.offset?.north).toBeCloseTo(111.32, 1);
+    // AND THE HUD SAYS WHAT WAS APPLIED, beside the raw residual it pairs
+    // with — the two lines are the M5 field instrument.
+    expect(document.body.textContent).toContain("auto +1.4 m");
+
+    // Manual trim COMPOSES on top of auto (the owner's escape hatch): +1 m
+    // by button lands at auto + trim, not at trim alone.
+    const plus = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "+",
+    );
+    plus?.click();
+    const trimmed = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    expect(trimmed.at(-1)?.offset?.up).toBeCloseTo(2.4, 1);
+
+    arWorldGroup.matrix.identity();
+    getCurrentArPose.mockReturnValue(null);
+    container.remove();
+  });
+
+  it("contributes nothing before an alignment exists", async () => {
+    // The identity matrix's element 13 is a perfectly real 0 — publishing a
+    // "baseline 0" offset before the fusion has said anything is the exact
+    // trap `worldBaselineY` already refuses. The nudge channel must stay pure
+    // manual until an alignment lands.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = fakeView();
+    arWorldGroup.matrix.identity();
+    getCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 4.6, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+
+    await startArMode(autoDeps(view, container));
+    const { depth } = sessionCallbacks();
+    const sample = makeWorldPointSample(
+      [0, 4.6, 0],
+      surfacePatch(() => 3, 1, 0.2),
+    );
+    depth?.onCaptured(sample);
+    depth?.onCaptured(sample);
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+    onFrame({ dt: 1 / 60, elapsed: 1 });
+
+    const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    expect(attached.at(-1)?.offset?.up).toBe(0);
+    expect(document.body.textContent ?? "").not.toContain("auto ");
+
+    getCurrentArPose.mockReturnValue(null);
+    container.remove();
+  });
+
+  it("re-asserts the demo's near/far planes when the depth texture reverts them", async () => {
+    // With depth-sensing ON, three.js takes depthNear/depthFar from the depth
+    // texture and silently reverts the 0.5 / 1000 planes M2 set — the exact
+    // reason the feature used to be off. The frame loop re-asserts the
+    // constants whenever they drift; whether that re-assertion reaches PIXELS
+    // on-device is the M5 field check (headless has no AR).
+    await startArMode(deps({ autoElevation: { terrainHeightM: () => 100 } }));
+    // Simulate the revert three performs once a depth texture is present.
+    camera.near = 0.01;
+    camera.far = 200;
+
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+    onFrame({ dt: 1 / 60, elapsed: 1 });
+
+    expect(camera.near).toBe(AR_CAMERA_NEAR_M);
+    expect(camera.far).toBe(AR_CAMERA_FAR_M);
   });
 });
 

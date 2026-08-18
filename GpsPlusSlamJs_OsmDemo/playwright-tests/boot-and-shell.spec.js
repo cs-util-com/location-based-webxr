@@ -1169,4 +1169,23 @@ test.describe("the AR entry point", () => {
     // half, so the bound is generous and still discriminating.
     expect(scene.height).toBeGreaterThan(main.height * 0.9);
   });
+
+  test("accepts the auto-elevation kill switch in the URL and boots clean", async ({
+    page,
+  }) => {
+    // The URL is the kill switch's whole surface (`?autoElevation=off`, read
+    // at AR entry), so a mangled or flagged URL must never change the boot.
+    // Headless has no AR — the depth/estimator chain is unit-tested and
+    // field-checked in M5 — so what e2e can honestly pin is the boundary: the
+    // flag parses, the app boots identically, and no AR HUD exists on the
+    // desktop (`#ar-root` stays `:empty`, which is also what keeps it from
+    // covering the page).
+    await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&autoElevation=off`);
+    await waitForRefresh(page);
+
+    await expect(page.locator("#scene")).toBeVisible();
+    await expect(page.locator("#ar-root")).toBeEmpty();
+    await expect(page.locator("body")).not.toContainText("auto ");
+  });
 });

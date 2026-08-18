@@ -168,6 +168,21 @@ need **opposite** fixes.
   symptom, stated instead of inferred from a scene that looks wrong. Its sign is
   the information: negative means the camera is under the ground, which is the
   state that makes buildings float overhead.
+- **`auto ±X.X m (conf 0.NN[, frozen])`** — the applied automatic elevation
+  offset (`ar-elevation-auto.ts`: `baseline + robust(floor − DEM)`), shown
+  even collapsed, right under the residual it pairs with.
+  - **The pair IS the instrument** (plan §2.6): `above terrain` is the RAW
+    GPS-vs-DEM residual and is untouched by the offset; `auto` is the
+    estimator's correction on the same axis. **Their difference exposes the
+    fused-vertical error live** — and once auto engages, the city can look
+    right while `above terrain` still reads +7 m, so the M5 field protocol
+    must name which line means what.
+  - `frozen` names the freeze layer holding the offset while the user climbs
+    man-made structure (tower/stairs/bridge) — the state the M5 tower walk
+    watches for, visible nowhere else.
+  - Absent whenever the estimator publishes nothing (cold start, kill switch
+    `?autoElevation=off`, no alignment) — never `+0.0 m`, which would claim
+    measured agreement.
 - `geoidUndulationM` / `geoidModelId` — a **session constant** (`N` varies about
   1 m per 100 km). On screen only to make the `ZERO_GEOID` trap visible: with
   `N = 0` the whole scene is ~46 m out in central Europe and nothing else would
@@ -204,9 +219,9 @@ a subset of the other; collapse/expand instead makes the expanded state _the
 screenshot state_ rather than a mode someone has to remember to leave.
 
 Collapsed is the walking set: draw cost, fps, fix accuracy, distance from
-anchor, altitude, the residual, the baseline — **plus anything degraded**
-(`terrain: no DEM`, a stale fix). Expanded adds terrain height, geoid, position,
-fix age and the fused bearing.
+anchor, altitude, the residual, the auto offset, the baseline — **plus anything
+degraded** (`terrain: no DEM`, a stale fix). Expanded adds terrain height,
+geoid, position, fix age and the fused bearing.
 
 `isSignedReading` is the counterpart to `isUsable` for values where a negative
 is a real place or direction rather than an impossibility: terrain and altitude

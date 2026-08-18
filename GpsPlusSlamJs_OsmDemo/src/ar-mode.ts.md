@@ -30,7 +30,15 @@ the two are one decision.
 
 ## Public API
 
-- `ArModeDeps` — `{ container, store, buildingView, origin, sceneAnchor, enuFrameAt, onError, onEnded? }`.
+- `ArModeDeps` — `{ container, store, buildingView, origin, sceneAnchor, enuFrameAt, onError, onEnded?, autoElevation?, … }`.
+  - `autoElevation` — **presence IS the switch** for the automatic elevation
+    offset (plan §2.6). `main.ts` omits the whole group when the URL kill
+    switch (`?autoElevation=off`) is set; with it absent this module requests
+    no depth sensing, builds no grid and ticks no estimator — the session is
+    byte-identical to the pre-auto behaviour, which is what makes the kill
+    switch a real field A/B. Its `terrainHeightM` is the AR-datum-gated DEM
+    sampler (`terrainReadout`'s height — the same two gates the HUD's terrain
+    line uses).
   - `store` is the INTERSECTION `TrackingSubscribableStore & SubscribableStore`, because `initAR` and the alignment wiring want different `getState` shapes and neither subsumes the other. Stated as an intersection rather than as the concrete `SlamAppStore`, whose shape changes with the demo's `extraReducers`.
   - `sceneAnchor` and `enuFrameAt` are how the city's own ENU origin is reconciled with the GPS one. The mesh is authored about the demo's anchor and the GPS-world frame is about `zero`; without the offset the city renders at the right orientation and the wrong place.
   - `origin` is the framework's `zero`, read by the caller. `null` means no fix.
@@ -99,11 +107,42 @@ the two are one decision.
 - **`bootCompleted` guards a session that ends during a failed boot.** The
   scene-not-ready bail-out calls `endARSession`, which fires `onSessionEnd`,
   which must not run teardown against half-built state.
-- **No camera, depth or hit-test features**, all of which default ON. The city's
-  position comes from GPS, not vision. Depth-sensing matters most: it
-  **overrides the camera's near/far planes** when a texture is present — which
-  since M2 is not a future concern but a live dependency, because the 0.5 / 1000
-  planes this module now sets would silently revert to the depth texture's.
+- **No camera or hit-test features** (both default ON): the city's position
+  comes from GPS, not vision. **Depth-sensing follows the `autoElevation`
+  switch** — the floor estimator needs the depth stream, so with the dep
+  present the flag is on, the framework sampler is started at the
+  reconstruction cadence (`AR_DEPTH_SAMPLER_CONFIG`), and every captured
+  sample folds directly into the session's `ar-depth-pipeline.ts` grid (no
+  store hop — the demo records nothing).
+  - **A depth texture makes three.js override the camera's near/far planes**
+    (it takes `depthNear`/`depthFar` from the texture and ignores what M2
+    set) — the reason the flag stayed `false` until now. The frame loop
+    re-asserts `AR_CAMERA_NEAR_M`/`AR_CAMERA_FAR_M` whenever they drift;
+    whether the re-assertion reaches PIXELS on-device is an **M5 field
+    check** (headless has no AR — see `ar-depth-pipeline.ts.md`).
+  - **The grid is cleared in the same `onRestarted` callback that re-bases
+    the odometry** (plan §2.4): stale cells from a dead odometry frame
+    produce a plausible-looking, wrong floor inside the estimator's
+    acceptance band. One callback, so the clear and the dispatch cannot
+    drift apart.
+- **The applied elevation is `composeElevationM(autoM, manualTrimM)` — one
+  composition, one channel.** The auto estimator (`ar-elevation-auto.ts`,
+  ticked ~1 Hz from the frame loop with the live alignment and
+  `getCurrentArPose`) and the manual ± control both land on the same
+  `applyElevation` path; a null auto contributes zero, so the buttons behave
+  exactly as before the feature existed. The estimator's slew limiter is the
+  ONE smoothing stage; the apply is a plain set. The auto state also feeds the
+  HUD's `auto` line beside the raw `above terrain` residual — the pair is the
+  M5 instrument (`ar-measurements.ts`).
+  - **`geometricOffset` doubles as the estimator's `anchorOffsetNue`**, so the
+    frame the city is attached in and the frame hits are compared in cannot
+    disagree.
+- **Frame note for future consumers (plan §2.6):** the offset moves the CITY
+  SUBTREE only. Anything anchored in the GPS-world frame **outside** that
+  subtree — framework `GpsAnchor` consumers, the AnchorStarter pattern — will
+  disagree with the corrected city by exactly `autoM + manualTrimM`. Harmless
+  today (only the city is reparented); a 6–7 m surprise for the first feature
+  that places an object beside it.
 - **`getCamera() === null` bails the session out**, in the same guard as the
   scene rather than treated as optional. Continuing would leave the framework's
   `0.01 / 200` in place, clipping a 2.8 km mesh at 200 m with no error anywhere.
@@ -197,3 +236,12 @@ The environment assertions are duplicated on purpose:
 prove it is **called**. M1 shipped three modules that were each correct in
 isolation with nothing asserting they were connected, and four green gates
 passed all three.
+
+The auto-elevation wiring is split across two files because `vi.mock` is
+file-wide: `ar-mode.test.ts` keeps the REAL `ar-depth-pipeline` and drives the
+full fold → floor → offset chain to the one observable end (`attachContentTo`'s
+`up`, the HUD's `auto` line, the trim composition, the pre-alignment null, the
+near/far re-assertion, the kill-switch flag set); `ar-mode.depth-wiring.test.ts`
+swaps in a spy pipeline to pin the lifecycle wiring itself — every captured
+sample reaches `fold`, `clear` runs in the same callback as the
+`odometryTrackingRestarted` dispatch, and no pipeline exists without the dep.

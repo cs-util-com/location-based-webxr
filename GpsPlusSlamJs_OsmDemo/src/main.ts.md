@@ -50,6 +50,14 @@ None. Entry point only, loaded by `index.html`.
   - The scene→ENU→lat/lng conversion happens HERE, not in `pick.ts`: the frame
     lives next to the anchor and is re-taken on a teleport, so a second copy in a
     pure module would go stale exactly when the user moves.
+- **The AR auto-elevation dep is assembled here, and only here.** The URL kill
+  switch (`autoElevationEnabled(window.location.search)`, read at each AR
+  entry) decides whether `startArMode` gets the `autoElevation` group at all —
+  absence IS the off state (`ar-mode.ts.md`). Its `terrainHeightM` reuses
+  `terrainReadout`'s two gates verbatim (field exists + field matches AR's
+  datum), so the estimator and the HUD's terrain line can never disagree about
+  when the DEM is usable; `terrain` and `arUndulationM` are read per call from
+  the same closure pattern as `liveMeasurements`.
 - **A RE-ANCHOR clears the route; an ordinary publish does not.** Every point on
   the drawn polyline is expressed in the scene's ENU frame, and round 5B's whole
   guarantee is that an ordinary step leaves that frame alone. So the route

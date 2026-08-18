@@ -163,6 +163,11 @@ const entryFiles = [
   'src/test-utils/browser-mocks.ts',
   'src/test-utils/zip-round-trip-helpers.ts',
   'src/test-utils/pointer-gestures.ts',
+  // Synthetic depth samples at exact world points — consumed by the OsmDemo's
+  // auto-elevation tests (M4 wiring), which exercise the REAL fold →
+  // floor-estimate → offset chain against a demo-owned grid. Advertised by the
+  // `./test-utils/*` wildcard, so it must be built per-file like the rest.
+  'src/test-utils/synthetic-depth-samples.ts',
 
   // types/
   'src/types/index.ts',

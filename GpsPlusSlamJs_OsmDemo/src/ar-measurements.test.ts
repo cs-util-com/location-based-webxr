@@ -237,6 +237,48 @@ describe("describeArMeasurements — the height decomposition", () => {
     );
   });
 
+  it("shows the auto offset with its confidence, even collapsed", () => {
+    // THE PAIR IS THE INSTRUMENT (plan §2.6): `above terrain` is the RAW
+    // GPS-vs-DEM residual, untouched by the offset; `auto` is the estimator's
+    // correction. Their difference exposes the fused-vertical error LIVE, and
+    // once auto engages the city can look right while `above terrain` still
+    // reads +7 m — so both lines must be visible while walking, not only in
+    // the expanded screenshot set.
+    const lines = describeArMeasurements({
+      autoOffsetM: 1.4,
+      autoConfidence: 0.83,
+    });
+
+    expect(lines).toContain("auto +1.4 m (conf 0.83)");
+  });
+
+  it("signs a negative auto offset and names the frozen state", () => {
+    // Frozen means the freeze layer is holding the offset while the user
+    // climbs man-made structure — the state the M5 tower test looks for, and
+    // invisible anywhere else.
+    expect(
+      describeArMeasurements({
+        autoOffsetM: -2.5,
+        autoConfidence: 0.4,
+        autoFrozen: true,
+      }),
+    ).toContain("auto -2.5 m (conf 0.40, frozen)");
+  });
+
+  it("drops the confidence suffix when it was not reported", () => {
+    expect(describeArMeasurements({ autoOffsetM: 1.4 })).toContain(
+      "auto +1.4 m",
+    );
+  });
+
+  it("says nothing about auto while it publishes nothing", () => {
+    // Null/off is ABSENCE, never `auto +0.0 m` — a zero would claim the
+    // estimator measured agreement when it measured nothing.
+    const lines = describeArMeasurements({ autoConfidence: 0.5 });
+
+    expect(lines.some((line) => line.startsWith("auto"))).toBe(false);
+  });
+
   it("names the active DEM source on the terrain line", () => {
     // WHY THIS TEST MATTERS. The demo composes two DEMs (Mapterhorn primary,
     // AWS Terrarium fallback) and the two differ by an order of magnitude in

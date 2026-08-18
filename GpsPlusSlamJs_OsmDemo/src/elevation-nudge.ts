@@ -15,6 +15,11 @@
  * alone; without the raw altitude on screen, drift and a mis-set nudge are
  * indistinguishable.
  *
+ * **Since the auto offset landed, the nudge is TRIM on top of it** — the
+ * applied value is `composeElevationM(autoM, manualTrimM)` in `ar-mode.ts`,
+ * and with auto off/cold the trim behaves exactly as described above. The
+ * value this module steps is only ever the manual term.
+ *
  * Pure on purpose: the arithmetic is the part worth testing, and it should be
  * testable without a scene, a session or a DOM.
  *

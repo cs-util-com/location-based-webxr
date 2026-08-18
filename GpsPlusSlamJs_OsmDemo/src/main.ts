@@ -61,6 +61,7 @@ import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 
 import { arButtonState, type ArSupport } from "./ar-button-state.js";
 import { startArMode, type ArMode } from "./ar-mode.js";
+import { autoElevationEnabled } from "./ar-elevation-auto.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
@@ -1298,6 +1299,23 @@ async function main(): Promise<void> {
       sceneAnchor: anchors.origin,
       enuFrameAt,
       onError: (message) => store.dispatch(actions.nonFatalError(message)),
+      // THE AUTO ELEVATION OFFSET (plan §2.6). Presence is the switch: the
+      // whole group is omitted when the URL kill switch (`?autoElevation=off`)
+      // is set, read HERE at entry so a field A/B is one reload. The sampler
+      // shares `terrainReadout`'s two gates with the HUD's terrain line — the
+      // datum gate matters most, because between AR entry and the entry pass
+      // landing the held field is the DESKTOP one, whose `heightAt` returns
+      // relief rather than an ellipsoidal height. `terrain`/`arUndulationM`
+      // are read per call, like `liveMeasurements` below and safely for the
+      // same reason: the closure only runs long after this body evaluated.
+      ...(autoElevationEnabled(window.location.search)
+        ? {
+            autoElevation: {
+              terrainHeightM: (enu: { x: number; y: number }) =>
+                terrainReadout(terrain, enu, arUndulationM).terrainHeightM,
+            },
+          }
+        : {}),
       // M4. Pulled at the readout's own cadence rather than pushed, because
       // fixes arrive ~1 Hz while draw cost changes every frame.
       //
