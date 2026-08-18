@@ -60,7 +60,7 @@ import {
 import type { OccupancyGrid } from "gps-plus-slam-app-framework/ar/occupancy-grid";
 
 /** The URL parameter of the kill switch (plan §2.6 — field A/B on the spot). */
-export const AUTO_ELEVATION_PARAM = "autoElevation";
+const AUTO_ELEVATION_PARAM = "autoElevation";
 
 /**
  * Whether the auto offset is enabled for this entry, from the URL.
@@ -167,7 +167,7 @@ export interface ArElevationAutoState {
   readonly frozen: boolean;
 }
 
-export interface ArElevationAutoInput {
+interface ArElevationAutoInput {
   /** Monotonic milliseconds (the frame loop's `elapsed * 1000`). */
   readonly nowMs: number;
   /** Camera position in the RAW WebXR frame, or undefined without a pose. */
@@ -223,7 +223,7 @@ export interface ArElevationAuto {
  * "absence of evidence, not evidence of a problem" rate the framework
  * estimator uses for its own hold state.
  */
-export const POSE_GAP_CONFIDENCE_TAU_S = 10;
+const POSE_GAP_CONFIDENCE_TAU_S = 10;
 
 const AUTO_OFF: ArElevationAutoState = {
   autoM: null,
