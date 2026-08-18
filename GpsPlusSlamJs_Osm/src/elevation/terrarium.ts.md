@@ -79,6 +79,16 @@ const provider = new TerrariumProvider({ decodePng: browserPngDecoder() });
 const heights = await provider.elevationAt(cells.map(cellCentre));
 ```
 
+To make tiles survive an offline restart, compose a persisting fetch into the
+`fetchImpl` seam — see [`caching-tile-fetch.ts.md`](./caching-tile-fetch.ts.md):
+
+```ts
+const provider = new TerrariumProvider({
+  decodePng: browserPngDecoder(),
+  fetchImpl: createCachingTileFetch({ store }),
+});
+```
+
 ## Tests
 
 `terrarium.test.ts` — the encoding against the published formula including

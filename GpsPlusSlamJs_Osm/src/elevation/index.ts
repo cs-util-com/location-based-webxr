@@ -35,6 +35,13 @@ export {
   toTilePixel,
 } from "./terrarium.js";
 
+export type {
+  CachingTileFetch,
+  CachingTileFetchOptions,
+  CachingTileFetchStats,
+} from "./caching-tile-fetch.js";
+export { createCachingTileFetch } from "./caching-tile-fetch.js";
+
 export type { OpenTopoDataOptions } from "./opentopodata-provider.js";
 export {
   OPENTOPODATA_ATTRIBUTION,
