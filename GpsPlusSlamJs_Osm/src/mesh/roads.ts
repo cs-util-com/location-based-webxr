@@ -28,6 +28,7 @@
 import type { LatLng, OsmFeature, OsmTags } from "../model/osm-feature.js";
 import { featureKey, type OsmFeatureKey } from "../model/osm-feature.js";
 import { parseLengthMetres } from "./building-heights.js";
+import { isBelowSurface } from "../model/below-surface.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { MeshBuilder, type MeshData } from "./mesh-data.js";
 
@@ -187,8 +188,17 @@ export function isPedestrianPath(feature: OsmFeature): boolean {
  *     and most simple bridges carry none. Refusing the absent case would drop
  *     the common bridge to save the rare mis-tagged one.
  *
- * A tunnel is excluded for completeness: a way claiming to be both is not a
- * crossing over water.
+ * - **BELOW THE SURFACE IS NOT A CROSSING**, and that is decided by the SHARED
+ *   {@link isBelowSurface} rather than by a bespoke test here. This rule used to
+ *   be `tunnel === "yes"` plus `level <= 1`, which admitted NEGATIVE layers --
+ *   so a `highway=* bridge=yes layer=-1` way counted as a ground-level deck and,
+ *   through `bridgeDeckLines` -> `addWater`, opened a passage corridor through a
+ *   river bank. It also missed `tunnel=culvert`, which `below-surface.ts` has
+ *   classified as sub-surface all along.
+ *   - The asymmetry was the tell (PR #315 review): `gateOpenings` vetoes a
+ *     below-surface gate node and `canCorroborate` vetoes a below-surface way,
+ *     while this -- the third sibling rule in the same package -- did not. One
+ *     definition now serves all three.
  */
 export function isBridgeCrossing(feature: OsmFeature): boolean {
   if (feature.type === "node") return false;
@@ -198,7 +208,7 @@ export function isBridgeCrossing(feature: OsmFeature): boolean {
   const bridge = tags["bridge"];
   if (bridge === undefined || bridge === "no") return false;
   if (tags["highway"] === undefined) return false;
-  if (tags["tunnel"] === "yes") return false;
+  if (isBelowSurface(feature)) return false;
 
   const layer = tags["layer"];
   if (layer === undefined) return true;

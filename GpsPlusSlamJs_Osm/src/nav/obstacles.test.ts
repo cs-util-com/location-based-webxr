@@ -991,6 +991,23 @@ describe("water blocks the bank, not the whole river (DEC-A4)", () => {
       expect(crossesObstacle(index, land, water)).toBe(true);
     });
 
+    it("does not open the bank along a BELOW-SURFACE way (PR #315 review)", () => {
+      // The end-to-end consequence of the `layer <= 1` slip: `isBridgeCrossing`
+      // admitted negative layers, so a way tagged as a bridge but sitting UNDER
+      // the surface opened a passage corridor through the bank and let an agent
+      // route across the river along it. Asserted here rather than only on the
+      // predicate, because the predicate is only interesting through this path.
+      const belowDeck: OsmFeature = {
+        type: "way",
+        id: 54,
+        geometry: deck.geometry,
+        tags: { highway: "footway", bridge: "yes", layer: "-1" },
+      };
+      const index = buildObstacleIndex([river, belowDeck]);
+      const [land, water] = pairAcrossBank();
+
+      expect(crossesObstacle(index, land, water)).toBe(true);
+    });
     it("ignores a bridge that is not a ground-level crossing", () => {
       // `isBridgeCrossing` rejects 4 of the 18 `bridge`-tagged ways at Tower
       // Bridge — structural areas and non-routable ways. Opening a bank along

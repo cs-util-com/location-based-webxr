@@ -495,6 +495,33 @@ describe("isBridgeCrossing (DEC-R1)", () => {
     expect(isBridgeCrossing(way({ bridge: "yes" }))).toBe(false);
   });
 
+  it("refuses a BELOW-SURFACE way, however it is tagged (PR #315 review)", () => {
+    // Why this test matters: `level <= 1` also admits NEGATIVE layers, and
+    // `isBridgeCrossing` is now wired into `addWater` via `bridgeDeckLines` --
+    // so a `layer=-1` way opened a PASSAGE CORRIDOR through a river bank and an
+    // agent could route across the water along something under it. Three
+    // sibling rules in this package disagreed: `gateOpenings` vetoes a
+    // below-surface gate node and `canCorroborate` vetoes a below-surface way,
+    // while this one did not. One shared predicate now decides all three.
+    expect(
+      isBridgeCrossing(way({ bridge: "yes", highway: "footway", layer: "-1" })),
+    ).toBe(false);
+    expect(
+      isBridgeCrossing(way({ bridge: "yes", highway: "footway", level: "-1" })),
+    ).toBe(false);
+    // `tunnel=yes` was already refused; `tunnel=culvert` was not, though
+    // `below-surface.ts` has classified it as sub-surface all along.
+    expect(
+      isBridgeCrossing(
+        way({ bridge: "yes", highway: "footway", tunnel: "culvert" }),
+      ),
+    ).toBe(false);
+    expect(
+      isBridgeCrossing(
+        way({ bridge: "yes", highway: "footway", location: "underground" }),
+      ),
+    ).toBe(false);
+  });
   it("refuses a negated bridge tag and anything with no bridge at all", () => {
     expect(isBridgeCrossing(way({ bridge: "no", highway: "footway" }))).toBe(
       false,

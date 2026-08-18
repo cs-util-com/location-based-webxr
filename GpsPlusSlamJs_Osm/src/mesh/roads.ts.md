@@ -143,6 +143,17 @@ and a wrong `false` leaves a shipped picker location unroutable.
   - Absent or non-numeric `layer` reads as ground, matching the tag's default;
     refusing the absent case would drop the common bridge to catch a rare
     mis-tagged one.
+- **BELOW the surface is not a crossing either, and the shared `isBelowSurface`
+  decides it** — not a bespoke test here. The clause above was once
+  `level <= 1`, which bounded only the TOP: a `layer=-1` way passed, so through
+  `bridgeDeckLines` → `addWater` it opened a 10 m passage corridor through a
+  river bank and an agent could cross the water along something running under
+  it. `tunnel=culvert` slipped through the old `tunnel === "yes"` test for the
+  same reason.
+  - **The asymmetry was the tell** (PR #315 review): `gateOpenings` vetoes a
+    below-surface gate node and `canCorroborate` vetoes a below-surface way,
+    while this third sibling rule in the same package did not. Three rules, two
+    answers — now one definition.
 
 Pinned against the real fixture in `bridge-crossing.corpus.test.ts` — 18 tagged,
 exactly 14 selected — with counts chosen so each refuted draft would fail it
