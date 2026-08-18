@@ -168,9 +168,16 @@ need **opposite** fixes.
   symptom, stated instead of inferred from a scene that looks wrong. Its sign is
   the information: negative means the camera is under the ground, which is the
   state that makes buildings float overhead.
-- **`auto ±X.X m (conf 0.NN[, frozen])`** — the applied automatic elevation
-  offset (`ar-elevation-auto.ts`: `baseline + robust(floor − DEM)`), shown
-  even collapsed, right under the residual it pairs with.
+- **`auto ±X.X m (conf 0.NN[, frozen]) · <dem label>`** — the published
+  automatic elevation offset (`ar-elevation-auto.ts`:
+  `baseline + robust(floor − DEM)`), shown even collapsed, right under the
+  residual it pairs with.
+  - **The serving DEM rides on this line too** (cold-review F7), via the same
+    `demServingLabel` helper as the terrain line (e.g. `· mapterhorn 98%`):
+    the offset is a correction against a SPECIFIC DEM, the terrain line that
+    names it is expanded-only, and this line is in the collapsed walking set
+    — without the suffix a walking screenshot shows a correction with no way
+    to tell LiDAR from ~30 m SRTM. Absent id, absent suffix.
   - **The pair IS the instrument** (plan §2.6): `above terrain` is the RAW
     GPS-vs-DEM residual and is untouched by the offset; `auto` is the
     estimator's correction on the same axis. **Their difference exposes the

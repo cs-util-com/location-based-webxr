@@ -116,7 +116,12 @@ export interface ElevationOffsetState {
    * module docstring for why the baseline must not be folded in here).
    */
   readonly offsetM: number | null;
-  /** [0, 1]; grows with accumulated effective (novelty × confidence) weight. */
+  /**
+   * [0, 1]; grows with the window's PER-TICK-NORMALIZED mass — each tick
+   * contributes novelty × mean hit quality, at most 1 regardless of hit
+   * count (F6: intra-tick hits are correlated, so a denser depth grid must
+   * not inflate confidence).
+   */
   readonly confidence: number;
   /** True while the freeze layer holds the offset at its snapshot value. */
   readonly frozen: boolean;
@@ -151,14 +156,24 @@ const MIN_CONFIDENCE_WEIGHT = 0.01;
 /** Floor for the per-tick novelty factor (a standstill still updates, slowly). */
 const NOVELTY_FLOOR = 0.02;
 /**
- * Total effective weight at which output confidence saturates at 1. Sized
- * against reachable window masses: the DISTANCE cap (20 m) holds a walking
- * window to ~14 ticks (at 1.4 m/s), so a moving window carries
- * ~14 ticks × 6 hits × conf 0.8 ≈ 67 and saturates, while a standstill
- * window (novelty-floored: 45 ticks × 6 hits × 0.02 × 0.8 ≈ 4.3) stays
- * clearly below 0.3.
+ * Per-tick-normalized window mass at which output confidence saturates at 1
+ * (cold-review F6 recalibration, corpus-measured 2026-08-18). Each window
+ * tick contributes its NOVELTY × MEAN hit-confidence-weight — at most 1 per
+ * tick regardless of hit count, because a tick's hits are intra-tick
+ * correlated (one floor patch, one shared estimate confidence) and thirty
+ * of them are not five times the evidence of six.
+ *
+ * The predecessor was a per-HIT mass (`CONFIDENCE_SATURATION_WEIGHT = 50`)
+ * sized against "~6 hits/tick"; the production floor estimator actually
+ * delivers a median 28 hits/tick (p90 72) over the 88-recording corpus
+ * (`elevation-offset-production-corpus`), so the published confidence
+ * saturated at ~1.0 on 72% of recordings and carried no signal. In tick
+ * units the DISTANCE cap (20 m) holds a walking window to ~14 ticks (at
+ * 1.4 m/s) of ~0.8 quality ≈ 11 → saturates, while a standstill window
+ * (novelty-floored: 45 ticks × 0.02 × 0.8 ≈ 0.7) stays below 0.1 — the
+ * same qualitative split the old sizing intended, now hit-count-invariant.
  */
-const CONFIDENCE_SATURATION_WEIGHT = 50;
+const CONFIDENCE_SATURATION_TICK_MASS = 10;
 /**
  * Minimal effective window weight before a COLD START may publish: one
  * full-confidence moving tick (~6 hits × 0.8 ≈ 4.8) clears it, a lone
@@ -551,7 +566,7 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
 
   private feed(tick: ElevationOffsetTick): ElevationOffsetState {
     this.admit(tick);
-    const { medianM, totalWeight } = this.windowMedian();
+    const { medianM, totalWeight, tickMassSum } = this.windowMedian();
     if (medianM == null) {
       if (this.outputM == null) {
         // True cold start with an empty window: nothing to publish.
@@ -581,9 +596,13 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
       this.outputM += Math.min(maxStepM, Math.max(-maxStepM, delta));
     }
     this.outputTMs = tick.tMs;
+    // PER-TICK-NORMALIZED confidence (F6): the window's mass in "effective
+    // full-quality tick" units, so a denser depth grid cannot inflate it.
+    // The MEDIAN above still weighs every hit — per-hit weights are what
+    // make it robust; only the CONFIDENCE is normalized.
     this.lastConfidence = Math.min(
       1,
-      totalWeight / CONFIDENCE_SATURATION_WEIGHT
+      tickMassSum / CONFIDENCE_SATURATION_TICK_MASS
     );
     return this.currentState();
   }
@@ -640,15 +659,37 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
     this.entries.length = write;
   }
 
-  /** Lower weighted median of the window plus its total effective weight. */
-  private windowMedian(): { medianM: number | null; totalWeight: number } {
+  /**
+   * Lower weighted median of the window plus two mass readings: the total
+   * per-HIT effective weight (the cold-start gate's unit) and the per-TICK-
+   * normalized mass (the confidence unit, F6) — each retained tick
+   * contributes the MEAN of its hits' weights, i.e. novelty × mean hit
+   * quality, at most 1 however many hits the tick carried.
+   */
+  private windowMedian(): {
+    medianM: number | null;
+    totalWeight: number;
+    tickMassSum: number;
+  } {
     if (this.entries.length === 0) {
-      return { medianM: null, totalWeight: 0 };
+      return { medianM: null, totalWeight: 0, tickMassSum: 0 };
     }
     const sorted = [...this.entries].sort((a, b) => a.sampleM - b.sampleM);
     let totalWeight = 0;
+    const perTick = new Map<number, { sum: number; count: number }>();
     for (const e of sorted) {
       totalWeight += e.weight;
+      const t = perTick.get(e.tMs);
+      if (t) {
+        t.sum += e.weight;
+        t.count += 1;
+      } else {
+        perTick.set(e.tMs, { sum: e.weight, count: 1 });
+      }
+    }
+    let tickMassSum = 0;
+    for (const t of perTick.values()) {
+      tickMassSum += t.sum / t.count;
     }
     const half = totalWeight / 2;
     let medianM: number | null = null;
@@ -661,7 +702,7 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
       }
     }
     // Weights are floored strictly above 0, so the loop always assigns.
-    return { medianM, totalWeight };
+    return { medianM, totalWeight, tickMassSum };
   }
 
   /** Extent = max distance from the window's FIRST position (never path length). */

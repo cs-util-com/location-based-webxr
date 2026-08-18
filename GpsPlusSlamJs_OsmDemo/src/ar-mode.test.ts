@@ -65,6 +65,15 @@ vi.mock("gps-plus-slam-app-framework/ar", () => ({
 vi.mock("gps-plus-slam-app-framework/visualization", () => ({
   enableArWorldGroupAlignment: mocks.enableArWorldGroupAlignment,
 }));
+// The real action creator runs the library's licence check when invoked
+// outside a licensed store — irrelevant here, where only "dispatch was
+// called" matters (same stub as `ar-mode.depth-wiring.test.ts`).
+vi.mock("gps-plus-slam-app-framework/core", () => ({
+  odometryTrackingRestarted: (payload: unknown) => ({
+    type: "odometry/trackingRestarted",
+    payload,
+  }),
+}));
 
 const {
   initAR,
@@ -340,7 +349,12 @@ describe("the automatic elevation offset", () => {
       dt: number;
       elapsed: number;
     }) => void;
-    onFrame({ dt: 1 / 60, elapsed: 1 });
+    // Enough frames for the application-time ease (1.5 m/s, cold-review F4)
+    // to converge on the 1.4 m target — the ease itself is pinned in its own
+    // test below; this one pins the CONVERGED value reaching the scene.
+    for (let i = 0; i <= 120; i++) {
+      onFrame({ dt: 1 / 60, elapsed: 1 + i / 60 });
+    }
 
     const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
     expect(attached.at(-1)?.offset?.up).toBeCloseTo(1.4, 1);
@@ -348,7 +362,8 @@ describe("the automatic elevation offset", () => {
     // nudge's test guards against.
     expect(attached.at(-1)?.offset?.north).toBeCloseTo(111.32, 1);
     // AND THE HUD SAYS WHAT WAS APPLIED, beside the raw residual it pairs
-    // with — the two lines are the M5 field instrument.
+    // with — the two lines are the M5 field instrument. (The HUD reports the
+    // estimator's PUBLISHED value; the eased application catches up to it.)
     expect(document.body.textContent).toContain("auto +1.4 m");
 
     // Manual trim COMPOSES on top of auto (the owner's escape hatch): +1 m
@@ -401,16 +416,31 @@ describe("the automatic elevation offset", () => {
     container.remove();
   });
 
-  it("re-asserts the demo's near/far planes when the depth texture reverts them", async () => {
-    // With depth-sensing ON, three.js takes depthNear/depthFar from the depth
-    // texture and silently reverts the 0.5 / 1000 planes M2 set — the exact
-    // reason the feature used to be off. The frame loop re-asserts the
-    // constants whenever they drift; whether that re-assertion reaches PIXELS
-    // on-device is the M5 field check (headless has no AR).
-    await startArMode(deps({ autoElevation: { terrainHeightM: () => 100 } }));
-    // Simulate the revert three performs once a depth texture is present.
-    camera.near = 0.01;
-    camera.far = 200;
+  it("eases the FIRST auto value in — never a one-frame step (cold-review F4)", async () => {
+    // The estimator's slew limiter shapes the signal BETWEEN ticks, but the
+    // cold-start first value reaches this module as a step — and a step is
+    // exactly what the content must never do (a city that snaps 1.4 m on one
+    // frame reads as a glitch, and a first value of 5 m would be violent).
+    // The applied value must move toward the target at the bounded
+    // AUTO_APPLY_RATE_M_PER_S, so one 1/60 s frame moves it centimetres.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = fakeView();
+    arWorldGroup.matrix.identity();
+    arWorldGroup.matrix.elements[13] = 98.4;
+    getCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 4.6, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+
+    await startArMode(autoDeps(view, container));
+    const { depth } = sessionCallbacks();
+    const sample = makeWorldPointSample(
+      [0, 4.6, 0],
+      surfacePatch(() => 3, 1, 0.2),
+    );
+    depth?.onCaptured(sample);
+    depth?.onCaptured(sample);
 
     const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
       dt: number;
@@ -418,8 +448,81 @@ describe("the automatic elevation offset", () => {
     }) => void;
     onFrame({ dt: 1 / 60, elapsed: 1 });
 
-    expect(camera.near).toBe(AR_CAMERA_NEAR_M);
-    expect(camera.far).toBe(AR_CAMERA_FAR_M);
+    const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    const firstStep = attached.at(-1)?.offset?.up ?? 0;
+    // Moved, but by at most one frame's rate budget (1.5 m/s × 1/60 s), not
+    // by the full 1.4 m target.
+    expect(firstStep).toBeGreaterThan(0);
+    expect(firstStep).toBeLessThan(0.1);
+
+    arWorldGroup.matrix.identity();
+    getCurrentArPose.mockReturnValue(null);
+    container.remove();
+  });
+
+  it("resets the estimator in the SAME callback that re-bases the odometry (cold-review F2)", async () => {
+    // The grid is cleared on `odometryTrackingRestarted` because its cells
+    // were measured in the odometry frame that just died — but the ESTIMATOR
+    // WINDOW holds samples from the same dead frame, and its hold branch
+    // would keep publishing a dead-frame value for up to 45 s while the grid
+    // refills. The restart callback must reset both in the same breath.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = fakeView();
+    arWorldGroup.matrix.identity();
+    arWorldGroup.matrix.elements[13] = 98.4;
+    getCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 4.6, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+    const d = deps({
+      container,
+      buildingView: view as unknown as ArModeDeps["buildingView"],
+      autoElevation: { terrainHeightM: () => 100 },
+      store: {
+        getState: () => ({}),
+        subscribe: () => () => undefined,
+        dispatch: vi.fn(),
+      } as unknown as ArModeDeps["store"],
+    });
+
+    await startArMode(d);
+    const { depth, tracking } = sessionCallbacks();
+    const sample = makeWorldPointSample(
+      [0, 4.6, 0],
+      surfacePatch(() => 3, 1, 0.2),
+    );
+    depth?.onCaptured(sample);
+    depth?.onCaptured(sample);
+
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+    // Warm the chain until the eased value converges on +1.4 m.
+    for (let i = 0; i <= 120; i++) {
+      onFrame({ dt: 1 / 60, elapsed: 1 + i / 60 });
+    }
+    expect(document.body.textContent).toContain("auto +1.4 m");
+
+    tracking.onRestarted({ some: "payload" });
+
+    // The next tick sees a cleared grid AND a cold estimator: the publish
+    // must return to null (HUD line gone). WITHOUT the reset the hold branch
+    // keeps the dead frame's +1.4 m alive here — this is the discriminator.
+    onFrame({ dt: 1 / 60, elapsed: 4.5 });
+    expect(document.body.textContent ?? "").not.toContain("auto ");
+    // And the APPLIED offset eases back toward the auto-off contribution of
+    // zero rather than holding the dead-frame value.
+    for (let i = 1; i <= 120; i++) {
+      onFrame({ dt: 1 / 60, elapsed: 4.5 + i / 60 });
+    }
+    const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    expect(attached.at(-1)?.offset?.up ?? NaN).toBeCloseTo(0, 5);
+
+    arWorldGroup.matrix.identity();
+    getCurrentArPose.mockReturnValue(null);
+    container.remove();
   });
 });
 

@@ -143,6 +143,34 @@ describe('createElevationOffsetEstimator', () => {
     expect(last.confidence).toBeGreaterThan(0.9);
   });
 
+  it('normalizes confidence per TICK — hit count cannot inflate it (F6 recalibration)', () => {
+    // Why this test matters: the 88-recording corpus measured a median 28
+    // FloorEstimate hits per production tick (p90 72) against the "~6
+    // hits/tick" the old per-HIT saturation mass was sized on — so the
+    // published confidence pegged at ~1.0 on 72% of recordings and carried
+    // no signal. A tick's hits are intra-tick CORRELATED (one floor patch,
+    // one shared estimate confidence): thirty of them are not five times
+    // the evidence of six. Confidence must therefore accumulate per tick
+    // (novelty × mean hit quality), so the same walk reported with a denser
+    // depth grid yields the SAME confidence.
+    const sparse = createElevationOffsetEstimator();
+    const dense = createElevationOffsetEstimator();
+    let sparseState: ElevationOffsetState | undefined;
+    let denseState: ElevationOffsetState | undefined;
+    for (let i = 0; i < 3; i++) {
+      sparseState = sparse.update(makeTick(i, -2, 0.8, 6));
+      denseState = dense.update(makeTick(i, -2, 0.8, 30));
+    }
+    expect(denseState?.confidence).toBeCloseTo(
+      sparseState?.confidence ?? -1,
+      6
+    );
+    // And the early-window confidence keeps headroom instead of saturating:
+    // three ticks of one walk are NOT full certainty, however dense the grid.
+    expect(denseState?.confidence).toBeLessThan(0.5);
+    expect(denseState?.confidence).toBeGreaterThan(0);
+  });
+
   it('standstill does not inflate confidence (correlated samples carry ~no new information)', () => {
     const still = run(standstill(22));
     expect(still.some((s) => s.frozen)).toBe(false);

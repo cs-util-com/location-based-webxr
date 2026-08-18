@@ -114,26 +114,41 @@ the two are one decision.
   reconstruction cadence (`AR_DEPTH_SAMPLER_CONFIG`), and every captured
   sample folds directly into the session's `ar-depth-pipeline.ts` grid (no
   store hop — the demo records nothing).
-  - **A depth texture makes three.js override the camera's near/far planes**
-    (it takes `depthNear`/`depthFar` from the texture and ignores what M2
-    set) — the reason the flag stayed `false` until now. The frame loop
-    re-asserts `AR_CAMERA_NEAR_M`/`AR_CAMERA_FAR_M` whenever they drift;
-    whether the re-assertion reaches PIXELS on-device is an **M5 field
-    check** (headless has no AR — see `ar-depth-pipeline.ts.md`).
-  - **The grid is cleared in the same `onRestarted` callback that re-bases
-    the odometry** (plan §2.4): stale cells from a dead odometry frame
+  - **The depth-texture near/far override is NOT in play here, and that is a
+    verified fact** (cold-review F1 removed an inert per-frame re-assertion
+    guard): three.js takes `depthNear`/`depthFar` from a depth texture only
+    in **gpu-optimized** depth sessions, and the framework pins
+    `usagePreference: ['cpu-optimized']` (`permission-checker.ts`, asserted
+    by its own test); three also never writes near/far back onto the app's
+    camera object, so the removed guard's condition was unreachable and its
+    test could only pass by mutating the camera by hand. The **M5 field
+    check** is now simply: confirm no clip/fog anomaly with depth sensing on
+    (see `ar-depth-pipeline.ts.md`).
+  - **The grid is cleared AND the auto estimator is reset in the same
+    `onRestarted` callback that re-bases the odometry** (plan §2.4;
+    cold-review F2 added the reset): stale cells from a dead odometry frame
     produce a plausible-looking, wrong floor inside the estimator's
-    acceptance band. One callback, so the clear and the dispatch cannot
-    drift apart.
-- **The applied elevation is `composeElevationM(autoM, manualTrimM)` — one
-  composition, one channel.** The auto estimator (`ar-elevation-auto.ts`,
+    acceptance band, and the estimator's own window holds samples from the
+    same dead frame — its hold branch would keep publishing a dead-frame
+    value for up to 45 s while the cleared grid refills. One callback, so
+    the clear, the reset and the dispatch cannot drift apart.
+- **The applied elevation is `composeElevationM(appliedAutoM, manualTrimM)` —
+  one composition, one channel.** The auto estimator (`ar-elevation-auto.ts`,
   ticked ~1 Hz from the frame loop with the live alignment and
   `getCurrentArPose`) and the manual ± control both land on the same
-  `applyElevation` path; a null auto contributes zero, so the buttons behave
-  exactly as before the feature existed. The estimator's slew limiter is the
-  ONE smoothing stage; the apply is a plain set. The auto state also feeds the
+  `applyElevation` path; a null auto target contributes zero, so the buttons
+  behave exactly as before the feature existed. The auto state also feeds the
   HUD's `auto` line beside the raw `above terrain` residual — the pair is the
   M5 instrument (`ar-measurements.ts`).
+  - **The applied auto value is EASED, the manual trim is instant**
+    (cold-review F4; DEC-E1). `appliedAutoM` glides toward the published
+    target at `AUTO_APPLY_RATE_M_PER_S` (1.5 m/s, 3× the estimator's slew
+    rate) per frame, so the cold-start first value and each 1 Hz step reach
+    the content as an ease, never a one-frame step — and a reset/kill eases
+    back to zero the same way. The split is deliberate: a measured signal
+    must arrive gently, an owner override must obey immediately. The HUD
+    shows the estimator's PUBLISHED value; the application catches up to it
+    within a second or two.
   - **`geometricOffset` doubles as the estimator's `anchorOffsetNue`**, so the
     frame the city is attached in and the frame hits are compared in cannot
     disagree.
@@ -143,6 +158,13 @@ the two are one decision.
   disagree with the corrected city by exactly `autoM + manualTrimM`. Harmless
   today (only the city is reparented); a 6–7 m surprise for the first feature
   that places an object beside it.
+- **Far-field limitation of the auto offset (known, accepted):** the
+  correction is a single scalar measured at the user's feet and applied to
+  the whole city. On a slope where the DEM's error varies with position,
+  buildings hundreds of metres upslope or downslope can end up WORSE than
+  uncorrected — one measurement cannot serve two places whose DEM errors
+  differ. A distance taper (full correction near the user, fading with
+  range) is future work; see `ar-elevation-auto.ts.md`.
 - **`getCamera() === null` bails the session out**, in the same guard as the
   scene rather than treated as optional. Continuing would leave the framework's
   `0.01 / 200` in place, clipping a 2.8 km mesh at 200 m with no error anywhere.
@@ -241,7 +263,8 @@ The auto-elevation wiring is split across two files because `vi.mock` is
 file-wide: `ar-mode.test.ts` keeps the REAL `ar-depth-pipeline` and drives the
 full fold → floor → offset chain to the one observable end (`attachContentTo`'s
 `up`, the HUD's `auto` line, the trim composition, the pre-alignment null, the
-near/far re-assertion, the kill-switch flag set); `ar-mode.depth-wiring.test.ts`
-swaps in a spy pipeline to pin the lifecycle wiring itself — every captured
-sample reaches `fold`, `clear` runs in the same callback as the
-`odometryTrackingRestarted` dispatch, and no pipeline exists without the dep.
+application-time ease of the first value, the estimator reset on a tracking
+restart, the kill-switch flag set); `ar-mode.depth-wiring.test.ts` swaps in a
+spy pipeline to pin the lifecycle wiring itself — every captured sample reaches
+`fold`, `clear` runs in the same callback as the `odometryTrackingRestarted`
+dispatch, and no pipeline exists without the dep.

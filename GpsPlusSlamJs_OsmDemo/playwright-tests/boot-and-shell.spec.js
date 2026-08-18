@@ -1173,19 +1173,25 @@ test.describe("the AR entry point", () => {
   test("accepts the auto-elevation kill switch in the URL and boots clean", async ({
     page,
   }) => {
-    // The URL is the kill switch's whole surface (`?autoElevation=off`, read
-    // at AR entry), so a mangled or flagged URL must never change the boot.
-    // Headless has no AR — the depth/estimator chain is unit-tested and
-    // field-checked in M5 — so what e2e can honestly pin is the boundary: the
-    // flag parses, the app boots identically, and no AR HUD exists on the
-    // desktop (`#ar-root` stays `:empty`, which is also what keeps it from
-    // covering the page).
+    // HONESTY NOTE (cold-review F8): this desktop e2e CANNOT DISCRIMINATE
+    // the kill switch. Headless never enters AR, so no HUD and no estimator
+    // exist with the switch in EITHER position — every assertion below would
+    // pass identically without `autoElevation=off` in the URL. What it can
+    // honestly pin is only that a flagged URL does not break the boot (the
+    // switch's whole surface is the URL, and a boot that chokes on the
+    // parameter would kill the field A/B before it starts). The tests that
+    // DO discriminate the switch are unit tests: the parser in
+    // `ar-elevation-auto.test.ts` (`autoElevationEnabled`) and the wiring in
+    // `ar-mode.test.ts` / `ar-mode.depth-wiring.test.ts` (no depth feature,
+    // no capture, no pipeline without the dep).
     await stubNetwork(page);
     await page.goto(`${AT_FIXTURE}&autoElevation=off`);
     await waitForRefresh(page);
 
     await expect(page.locator("#scene")).toBeVisible();
+    // A LAYOUT invariant, not a switch assertion: `#ar-root` must stay
+    // `:empty` on the desktop (it covers the page the moment it is not) —
+    // asserted here so the flagged boot keeps that property too.
     await expect(page.locator("#ar-root")).toBeEmpty();
-    await expect(page.locator("body")).not.toContainText("auto ");
   });
 });

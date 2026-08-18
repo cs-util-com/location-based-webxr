@@ -271,6 +271,31 @@ describe("describeArMeasurements — the height decomposition", () => {
     );
   });
 
+  it("names the serving DEM on the auto line itself (cold-review F7)", () => {
+    // The auto offset is a correction AGAINST a specific DEM, and the two
+    // candidate DEMs differ by an order of magnitude in resolution — so an
+    // offset without its DEM is as uncheckable as a terrain height without
+    // one. The terrain line carries the source only in the EXPANDED set;
+    // the auto line is in the collapsed walking set, so the source must
+    // ride here too or every walking screenshot loses the provenance.
+    const lines = describeArMeasurements({
+      autoOffsetM: 1.4,
+      autoConfidence: 0.82,
+      demSourceId: "mapterhorn+terrarium",
+      demStats: { primaryAnswered: 98, fallbackAnswered: 2, unanswered: 0 },
+    });
+
+    expect(lines).toContain("auto +1.4 m (conf 0.82) · mapterhorn 98%");
+  });
+
+  it("keeps the auto line suffix-free while no DEM source is reported", () => {
+    // Absent id, absent suffix — "not reported" must not render as an empty
+    // separator (the terrain line's rule, applied to the paired line).
+    expect(
+      describeArMeasurements({ autoOffsetM: 1.4, autoConfidence: 0.82 }),
+    ).toContain("auto +1.4 m (conf 0.82)");
+  });
+
   it("says nothing about auto while it publishes nothing", () => {
     // Null/off is ABSENCE, never `auto +0.0 m` — a zero would claim the
     // estimator measured agreement when it measured nothing.

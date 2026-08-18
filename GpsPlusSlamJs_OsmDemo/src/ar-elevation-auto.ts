@@ -24,10 +24,14 @@
  * teleports and then heals over half a window. Only the slow, physical
  * floor-vs-DEM disagreement goes through the estimator.
  *
- * **ONE SMOOTHING STAGE TOTAL, and it is the estimator's own slew limiter**
- * (0.5 m/s on the baseline-free component). The `applyElevation` channel is a
- * hard matrix set with no smoothing of its own, and adding a second easing
- * stage here would only add lag on top of the one that was corpus-tuned.
+ * **TWO SMOOTHING STAGES, WITH DISJOINT JOBS** (cold-review F4 revised the
+ * earlier one-stage rule). The estimator's slew limiter (0.5 m/s on the
+ * baseline-free component) shapes the SIGNAL between ticks — but it cannot
+ * touch the cold-start FIRST value or the re-added baseline, both of which
+ * reach this module's output as steps. `ar-mode.ts` therefore eases the
+ * APPLIED value toward the composed target at a bounded rate
+ * (`AUTO_APPLY_RATE_M_PER_S`), so no published step ever moves the content
+ * in one frame; the manual trim stays instant (owner-driven, DEC-E1).
  *
  * **NO EXTRA GEOID TERM.** In AR the demo's terrain field is sampled with
  * `absoluteDatum = −N` (see `absoluteDatumFor`), so `heightAt` already
@@ -145,9 +149,16 @@ export function composeElevationM(
 export interface ArElevationAutoState {
   /**
    * The full auto offset for the nudge channel (baseline re-added), or null
-   * when nothing can honestly be published — cold estimator, no alignment,
-   * no camera pose. Null means "contribute 0", never "hold the last value":
-   * the honesty rule of `ar-measurements.ts`, applied to a control signal.
+   * when nothing can honestly be published — cold estimator (never had a
+   * value, or `reset()` after a tracking restart) or the kill switch.
+   *
+   * **A pose/alignment GAP is not one of those cases** (cold-review F3): a
+   * tracking blip drops the pose for a frame or two, and flapping to null
+   * there composes as 0 — the city jumps by the full offset and jumps back
+   * when the pose returns. The physical floor-vs-DEM disagreement did not
+   * change because ARCore blinked, so the last value is HELD across gaps
+   * (with decaying confidence — see {@link POSE_GAP_CONFIDENCE_TAU_S});
+   * only a state that never measured anything contributes 0.
    */
   readonly autoM: number | null;
   /** The estimator's confidence, [0, 1]. 0 whenever `autoM` is null. */
@@ -193,7 +204,26 @@ export interface ArElevationAutoOptions {
 export interface ArElevationAuto {
   /** Offer the current frame. Internally throttled to ~1 Hz; returns state. */
   sample(input: ArElevationAutoInput): ArElevationAutoState;
+  /**
+   * Back to a true cold start: fresh estimator, no held value, throttle
+   * re-armed. For the `odometryTrackingRestarted` callback (cold-review F2):
+   * the window's samples were measured in the odometry frame that just died,
+   * and without this the estimator's hold branch would keep publishing a
+   * dead-frame value for up to its 45 s window while the cleared grid
+   * refills.
+   */
+  reset(): void;
 }
+
+/**
+ * e-folding time of the published confidence while the pose/alignment is
+ * missing (tracking blip), seconds. The VALUE is held — see the
+ * `ArElevationAutoState.autoM` contract — but a held value must not keep
+ * advertising its pre-gap confidence forever, so it decays at the same
+ * "absence of evidence, not evidence of a problem" rate the framework
+ * estimator uses for its own hold state.
+ */
+export const POSE_GAP_CONFIDENCE_TAU_S = 10;
 
 const AUTO_OFF: ArElevationAutoState = {
   autoM: null,
@@ -206,28 +236,49 @@ export function createArElevationAuto(
   options: ArElevationAutoOptions,
 ): ArElevationAuto {
   const { grid, terrainHeightM, anchorOffsetNue } = options;
-  const estimator = createElevationOffsetEstimator();
+  let estimator = createElevationOffsetEstimator();
   let lastTickMs = Number.NEGATIVE_INFINITY;
   let state: ArElevationAutoState = AUTO_OFF;
 
+  /**
+   * A tick with no usable pose/alignment: HOLD an established value with
+   * decaying confidence (F3 — flapping to null composes as 0 and teleports
+   * the city by the full offset, twice); a true cold start stays off. The
+   * estimator deliberately receives no tick either way — its own window
+   * keeps its hold/decay semantics for when data returns.
+   */
+  const holdThroughGap = (gapS: number): ArElevationAutoState => {
+    if (state.autoM === null) return AUTO_OFF;
+    state = {
+      autoM: state.autoM,
+      confidence:
+        state.confidence * Math.exp(-gapS / POSE_GAP_CONFIDENCE_TAU_S),
+      frozen: state.frozen,
+    };
+    return state;
+  };
+
   return {
+    reset(): void {
+      estimator = createElevationOffsetEstimator();
+      lastTickMs = Number.NEGATIVE_INFINITY;
+      state = AUTO_OFF;
+    },
     sample(input: ArElevationAutoInput): ArElevationAutoState {
       if (input.nowMs - lastTickMs < AUTO_TICK_INTERVAL_MS) return state;
+      // Time since the last REAL tick, for the gap decay. Finite whenever a
+      // value is held (holding implies a previous tick set `lastTickMs`).
+      const gapS = (input.nowMs - lastTickMs) / 1000;
       lastTickMs = input.nowMs;
 
       const { cameraPosAr, alignment } = input;
       if (cameraPosAr === undefined || alignment === undefined) {
-        // No pose or no alignment: nothing can be measured OR composed. The
-        // estimator deliberately receives no tick — its own window keeps its
-        // hold/decay semantics for when data returns.
-        state = AUTO_OFF;
-        return state;
+        return holdThroughGap(gapS);
       }
       const camNue = arPointToSceneNue(alignment, cameraPosAr);
       const baselineY = arPointToSceneNue(alignment, [0, 0, 0])?.up;
       if (camNue === undefined || baselineY === undefined) {
-        state = AUTO_OFF;
-        return state;
+        return holdThroughGap(gapS);
       }
 
       const estimate = estimateFloor(grid, cameraPosAr);

@@ -55,12 +55,14 @@ tracking-reset hygiene rule needs.
 
 ## Field-session items (M5) — what no headless gate can see
 
-- **The near/far reversion**: with depth-sensing on, three.js takes
-  `depthNear`/`depthFar` from the depth texture and ignores the camera.
-  `ar-mode.ts` re-asserts the demo's 0.5 / 1000 constants per frame, but
-  whether that re-assertion reaches PIXELS (vs. the projection the UA owns)
-  is only observable on a device — check the far fog wall sits at 1000 m and
-  the city does not clip at 200 m.
+- **Depth planes**: the depth-texture near/far override is NOT in play
+  (cold-review F1 — three.js applies `depthNear`/`depthFar` from a texture
+  only in **gpu-optimized** depth sessions, and the framework pins
+  `usagePreference: ['cpu-optimized']` in `permission-checker.ts`; three
+  never writes near/far back to the app camera either, so the old per-frame
+  re-assertion guard was unreachable and has been removed). The field check
+  is simply: with depth sensing on, confirm no clip/fog anomaly — the far
+  fog wall sits at 1000 m and the city does not clip at 200 m.
 - **Real depth quality**: the synthetic tests use exact unprojections; real
   ARCore depth is noisy, and the fold + floor cadence budget (plan §2.6 perf
   gate) needs an on-device number.

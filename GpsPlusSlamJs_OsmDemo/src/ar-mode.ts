@@ -51,11 +51,7 @@ import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import type { BuildingView } from "./building-view.js";
 import type { LatLng } from "gps-plus-slam-osm";
 
-import {
-  applyArEnvironment,
-  AR_CAMERA_FAR_M,
-  AR_CAMERA_NEAR_M,
-} from "./ar-scene-environment.js";
+import { applyArEnvironment } from "./ar-scene-environment.js";
 import {
   createArDepthPipeline,
   AR_DEPTH_SAMPLER_CONFIG,
@@ -102,6 +98,19 @@ import * as THREE from "three";
  * and the value is consumed synchronously in the line after it is written.
  */
 const forward = new THREE.Vector3();
+
+/**
+ * How fast the APPLIED auto elevation may move the content, metres/second
+ * (cold-review F4). The estimator's slew limiter (0.5 m/s) shapes the signal
+ * BETWEEN ticks but cannot touch the cold-start FIRST value or the re-added
+ * baseline — both reach the composed target as steps, and a city that snaps
+ * metres in one frame reads as a glitch. 1.5 m/s is deliberately 3× the
+ * estimator's rate: fast enough that the ease adds little lag on top of the
+ * corpus-tuned smoothing, slow enough that even a 5 m first value arrives as
+ * a ~3 s glide. The MANUAL trim stays instant (owner-driven, DEC-E1) — the
+ * split is: measured signal eases, owner override obeys.
+ */
+const AUTO_APPLY_RATE_M_PER_S = 1.5;
 
 /** The ENU shape the injected frame produces. Structural, nothing imported. */
 interface EnuPoint {
@@ -328,6 +337,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // odometry-frame state and must never survive into a later session.
   const depthPipeline =
     deps.autoElevation === undefined ? undefined : createArDepthPipeline();
+  // DECLARED BEFORE `initAR` because the restart callback below closes over
+  // it; ASSIGNED after, because its construction needs `geometricOffset`. The
+  // callback only fires inside a live session, after the assignment.
+  let auto: ArElevationAuto | undefined;
 
   try {
     await initAR(
@@ -337,11 +350,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // and both camera flags default ON — leaving them on would add a
         // crash surface and a permission prompt for features this mode never
         // uses. Depth-sensing follows the auto-elevation switch: the floor
-        // estimator needs the depth stream, and a depth TEXTURE also makes
-        // three.js OVERRIDE the camera's near/far planes (plan §1.3) — which
-        // is why the flag stayed false until the frame loop below learned to
-        // re-assert them, and why the kill switch turns all of this off at
-        // once.
+        // estimator needs the depth stream, and the kill switch turns all of
+        // it off at once. The depth-TEXTURE near/far override that once kept
+        // this flag false is NOT in play here — see the note at the frame
+        // loop below (the framework pins cpu-optimized depth usage).
         enableCameraAccess: false,
         enableDepthSensingFeature: depthPipeline !== undefined,
         enableCameraTextureAcquisition: false,
@@ -366,9 +378,14 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           // THE GRID IS CLEARED IN THE SAME BREATH (plan §2.4): its cells are
           // measured in the frame that just died, and stale cells produce a
           // plausible-looking WRONG floor inside the estimator's acceptance
-          // band. One callback, so the two can never drift apart.
+          // band. THE ESTIMATOR IS RESET IN THE SAME BREATH TOO (cold-review
+          // F2): its window holds samples measured in the same dead frame,
+          // and its hold branch would keep publishing a dead-frame value for
+          // up to 45 s while the cleared grid refills. One callback, so the
+          // three can never drift apart.
           onRestarted: (payload) => {
             depthPipeline?.clear();
+            auto?.reset();
             deps.store.dispatch(odometryTrackingRestarted(payload));
           },
         },
@@ -474,10 +491,17 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // nowhere else. A null auto contributes ZERO, so with the estimator cold
     // or the kill switch set the buttons behave exactly as they always did —
     // the owner's escape hatch stays live whatever the estimator does.
+    //
+    // WHAT IS COMPOSED IS THE EASED AUTO VALUE, not the published one
+    // (cold-review F4): `appliedAutoM` glides toward the estimator's target
+    // at AUTO_APPLY_RATE_M_PER_S in the frame loop below, so the cold-start
+    // first value and each 1 Hz step reach the content as an ease, never a
+    // step. The manual trim bypasses the ease by design (DEC-E1).
     let autoM: number | null = null;
     let manualTrimM = 0;
+    let appliedAutoM = 0;
     const applyComposed = () => {
-      applyElevation(composeElevationM(autoM, manualTrimM));
+      applyElevation(composeElevationM(appliedAutoM, manualTrimM));
     };
     applyElevation(0);
 
@@ -499,7 +523,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // `geometricOffset` doubles as the anchor's NUE offset: the same value the
     // city is attached with is what reconciles hit positions (about `zero`)
     // with the DEM field (about the scene anchor), so the two CANNOT disagree.
-    const auto: ArElevationAuto | undefined =
+    auto =
       depthPipeline !== undefined && deps.autoElevation !== undefined
         ? createArElevationAuto({
             grid: depthPipeline.grid,
@@ -587,26 +611,18 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       const windowS = elapsed - windowOpenedAtS;
       const fps = windowS > 0 ? framesThisWindow / windowS : undefined;
 
-      // THE DEPTH TEXTURE REVERTS THE CAMERA PLANES, so they are re-asserted
-      // whenever they drift (plan §2.6): with depth-sensing on, three.js takes
-      // depthNear/depthFar from the texture and ignores what M2 set — the
-      // whole reason the feature used to be off. A per-frame equality check
-      // costs nothing and self-heals whenever three writes them back. Whether
-      // the re-assertion reaches PIXELS on-device is an M5 field check — no
-      // headless test can see a projection matrix the UA owns.
-      if (
-        depthPipeline !== undefined &&
-        (camera.near !== AR_CAMERA_NEAR_M || camera.far !== AR_CAMERA_FAR_M)
-      ) {
-        camera.near = AR_CAMERA_NEAR_M;
-        camera.far = AR_CAMERA_FAR_M;
-        camera.updateProjectionMatrix();
-      }
+      // NO NEAR/FAR RE-ASSERTION HERE, and its absence is a verified fact,
+      // not an oversight (cold-review F1 removed an inert guard): three.js
+      // takes depthNear/depthFar from a depth texture only in GPU-OPTIMIZED
+      // depth sessions, and the framework pins `usagePreference:
+      // ['cpu-optimized']` (permission-checker.ts, asserted by its own
+      // test) — so the override path is not in play, and three never writes
+      // near/far back onto the app's camera object either, which made the
+      // old drift check unreachable. The M5 field check is now simply:
+      // confirm no clip/fog anomaly with depth sensing on.
 
       // THE AUTO TICK, before the HUD sample so the readout shows what this
-      // very frame applied. `sample` self-throttles to ~1 Hz; the estimator's
-      // slew limiter is the ONE smoothing stage on the applied value (see
-      // `ar-elevation-auto.ts`), so the apply below is a plain set.
+      // very frame published. `sample` self-throttles to ~1 Hz.
       if (auto !== undefined) {
         const pose = getCurrentArPose();
         const aligned = !arWorldGroup.matrix.equals(identityMatrix);
@@ -620,14 +636,29 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           // for the same reason: identity's element 13 is a plausible 0.
           alignment: aligned ? arWorldGroup.matrix.elements : undefined,
         });
-        if (latestAuto.autoM !== autoM) {
-          autoM = latestAuto.autoM;
+        autoM = latestAuto.autoM;
+        // THE APPLICATION-TIME EASE (cold-review F4): glide the applied auto
+        // contribution toward the published target at the bounded rate, so a
+        // cold-start first value or a 1 Hz step never moves the content in
+        // one frame. A null target eases back to the auto-off contribution
+        // of ZERO — the kill-switch/cold-start contract, reached smoothly.
+        // `dt` is 0 on the first frame after a reset (framework contract),
+        // which correctly moves nothing on that frame.
+        const targetM = autoM ?? 0;
+        if (appliedAutoM !== targetM) {
+          // Non-finite dt (defensive: the contract says a number, but a NaN
+          // here would poison appliedAutoM for the rest of the session)
+          // moves nothing, like the documented dt = 0 reset frame.
+          const maxStepM =
+            AUTO_APPLY_RATE_M_PER_S * (Number.isFinite(dt) ? dt : 0);
+          const deltaM = targetM - appliedAutoM;
+          appliedAutoM +=
+            Math.abs(deltaM) <= maxStepM
+              ? deltaM
+              : Math.sign(deltaM) * maxStepM;
           applyComposed();
         }
       }
-      // `dt` is unused for the rate now, but it still marks the first frame after
-      // a reset (the framework's contract says `dt` is 0 there), which is the one
-      // sample whose window is meaningless.
       // THE BREATHING. Driven from `elapsed` -- the frame clock the loop already
       // computed, monotonic and page-relative -- rather than from wall time, so the
       // pulse cannot jump when the tab is backgrounded.
@@ -707,9 +738,6 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         framesThisWindow = 0;
         windowOpenedAtS = elapsed;
       }
-      // Referenced so the first-frame contract stays visible to a reader; the
-      // rate no longer derives from it.
-      void dt;
     });
 
     bootCompleted = true;

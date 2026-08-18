@@ -367,7 +367,19 @@ export function describeArMeasurements(
       : frozen
         ? " (frozen)"
         : "";
-    lines.push(`auto ${signed(measurements.autoOffsetM)} m${detail}`);
+    // THE DEM RIDES ON THIS LINE TOO (cold-review F7): the offset is a
+    // correction against a SPECIFIC DEM, and the terrain line that names it
+    // is expanded-only while this line is in the collapsed walking set — so
+    // without the suffix here, a walking screenshot shows a correction with
+    // no way to tell LiDAR from ~30 m SRTM. Same guard and same label
+    // helper as the terrain line, so the two can never name different DEMs.
+    const autoSource =
+      measurements.demSourceId === undefined || measurements.demSourceId === ""
+        ? ""
+        : ` · ${demServingLabel(measurements.demSourceId, measurements.demStats)}`;
+    lines.push(
+      `auto ${signed(measurements.autoOffsetM)} m${detail}${autoSource}`,
+    );
   }
 
   if (isSignedReading(measurements.geoidUndulationM)) {

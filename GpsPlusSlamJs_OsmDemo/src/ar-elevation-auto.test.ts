@@ -103,7 +103,11 @@ describe("the sign of the auto offset (the fieldMatchesArDatum of this feature)"
 
     expect(state.autoM).not.toBeNull();
     expect(state.autoM).toBeCloseTo(1.4, 1);
-    expect(state.confidence).toBeGreaterThan(0.5);
+    // ONE full-quality tick is ~0.1 of the estimator's 10-tick confidence
+    // saturation (per-tick-normalized since the F6 recalibration — hit
+    // count no longer inflates it). Positive and finite is the claim here;
+    // the growth curve is the framework estimator's own tested contract.
+    expect(state.confidence).toBeGreaterThan(0.05);
     expect(state.frozen).toBe(false);
   });
 
@@ -121,6 +125,28 @@ describe("the sign of the auto offset (the fieldMatchesArDatum of this feature)"
     });
 
     expect(state.autoM).toBeCloseTo(-1.0, 1);
+  });
+
+  it("keeps the sign and magnitude under a YAWED alignment (cold-review F9)", () => {
+    // The two identity-rotation tests above cannot see a mistake that only a
+    // rotation exposes (a transposed matrix, a row/column-major mix-up): with
+    // identity rotation the alignment is pure translation and every such bug
+    // cancels. A 90° yaw + full 3-axis translation is exactly the shape the
+    // fusion's alignment takes, and the VERTICAL result must be unchanged —
+    // yaw-only alignments are vertical-frame-invariant, the module's core
+    // assumption. The flat DEM keeps the horizontal remap out of the answer.
+    const yawed = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+    yawed.setPosition(12, 98.4, -7);
+    const auto = autoWith({ grid: gridWithFloor(4.6, 3) });
+
+    const state = auto.sample({
+      nowMs: 1000,
+      cameraPosAr: [0, 4.6, 0],
+      alignment: [...yawed.elements],
+    });
+
+    expect(state.autoM).not.toBeNull();
+    expect(state.autoM).toBeCloseTo(1.4, 1);
   });
 });
 
@@ -223,7 +249,7 @@ describe("what feeds the estimator", () => {
 });
 
 describe("the ~1 Hz tick throttle", () => {
-  it("holds the last state between ticks and re-evaluates after the interval", () => {
+  it("holds the last state between ticks without re-evaluating", () => {
     const auto = autoWith({ grid: gridWithFloor(4.6, 3) });
     const good = {
       cameraPosAr: [0, 4.6, 0] as const,
@@ -234,21 +260,134 @@ describe("the ~1 Hz tick throttle", () => {
     expect(first.autoM).toBeCloseTo(1.4, 1);
 
     // 400 ms later the pose is gone — but the tick is throttled, so the
-    // PREVIOUS state holds rather than flapping to null mid-interval.
+    // PREVIOUS state holds unchanged (not even the pose-gap confidence decay
+    // runs mid-interval; the interval belongs to the last real tick).
     const held = auto.sample({
       nowMs: 1400,
       cameraPosAr: undefined,
       alignment: undefined,
     });
     expect(held.autoM).toBeCloseTo(1.4, 1);
+    expect(held.confidence).toBe(first.confidence);
+  });
+});
 
-    // Past the interval the same degraded input is re-evaluated for real.
-    const reevaluated = auto.sample({
+describe("pose gaps hold the published value (cold-review F3)", () => {
+  // Why this test matters: a tracking blip drops `getCurrentArPose()` to null
+  // for a frame or two. The old contract flapped `autoM` to null on the next
+  // tick, which composes as 0 — so the CITY JUMPED by the full offset and
+  // jumped back when the pose returned. The honest reading is "no NEW
+  // measurement", not "the offset is gone": the value is held (the physical
+  // floor-vs-DEM disagreement did not change because ARCore blinked), with
+  // the confidence decaying so a LONG outage still advertises itself.
+  it("holds the last composed value across a pose gap and resumes after it", () => {
+    const auto = autoWith({ grid: gridWithFloor(4.6, 3) });
+    const good = {
+      cameraPosAr: [0, 4.6, 0] as const,
+      alignment: translationAlignment(0, 98.4, 0),
+    };
+
+    const before = auto.sample({ nowMs: 1000, ...good });
+    expect(before.autoM).toBeCloseTo(1.4, 1);
+    expect(before.confidence).toBeGreaterThan(0.05);
+
+    // A full tick with NO pose: the value must hold — no jump to null/0.
+    const gap = auto.sample({
       nowMs: 1000 + AUTO_TICK_INTERVAL_MS + 100,
       cameraPosAr: undefined,
+      alignment: good.alignment,
+    });
+    expect(gap.autoM).toBeCloseTo(1.4, 1);
+    // Held, not re-measured: the confidence decays instead of renewing.
+    expect(gap.confidence).toBeLessThan(before.confidence);
+    expect(gap.confidence).toBeGreaterThan(0);
+
+    // A missing ALIGNMENT mid-session is the same kind of blip (the matrix
+    // cannot re-become identity in production; the input goes undefined only
+    // when the caller cannot read it) — held too.
+    const gap2 = auto.sample({
+      nowMs: 1000 + 2 * (AUTO_TICK_INTERVAL_MS + 100),
+      cameraPosAr: [0, 4.6, 0],
       alignment: undefined,
     });
-    expect(reevaluated.autoM).toBeNull();
+    expect(gap2.autoM).toBeCloseTo(1.4, 1);
+
+    // Pose returns: measurement resumes and the confidence recovers.
+    const after = auto.sample({
+      nowMs: 1000 + 3 * (AUTO_TICK_INTERVAL_MS + 100),
+      ...good,
+    });
+    expect(after.autoM).toBeCloseTo(1.4, 1);
+    expect(after.confidence).toBeGreaterThan(gap2.confidence);
+  });
+
+  it("still publishes nothing on a TRUE cold start without a pose", () => {
+    // The hold is for a value that EXISTED. Before anything was ever
+    // published there is nothing to hold, and inventing one would be the
+    // unmeasured-rendered-as-measured trap.
+    const auto = autoWith({ grid: gridWithFloor(4.6, 3) });
+
+    const state = auto.sample({
+      nowMs: 1000,
+      cameraPosAr: undefined,
+      alignment: translationAlignment(0, 98.4, 0),
+    });
+
+    expect(state.autoM).toBeNull();
+    expect(state.confidence).toBe(0);
+  });
+});
+
+describe("reset() — tracking-restart hygiene (cold-review F2)", () => {
+  // Why this test matters: after `odometryTrackingRestarted` the odometry
+  // frame every window sample was measured in NO LONGER EXISTS. The grid is
+  // cleared in the same callback, but the ESTIMATOR's window still holds
+  // pre-restart samples — and its hold branch would keep publishing a value
+  // measured in the dead frame for up to 45 s. `reset()` recreates the
+  // estimator so the published auto returns to a true cold start.
+  it("returns to a cold start after reset() despite a warm pre-restart window", () => {
+    // The DEM sampler is switchable so the post-reset ticks carry NO new
+    // samples: without the reset the estimator's hold branch keeps the old
+    // 1.4 m alive (that is exactly the stale-frame failure), with it the
+    // publish must honestly return to null.
+    let terrain: number | undefined = 100;
+    const auto = autoWith({
+      grid: gridWithFloor(4.6, 3),
+      terrainHeightM: () => terrain,
+    });
+    const good = {
+      cameraPosAr: [0, 4.6, 0] as const,
+      alignment: translationAlignment(0, 98.4, 0),
+    };
+
+    const warm = auto.sample({ nowMs: 1000, ...good });
+    expect(warm.autoM).toBeCloseTo(1.4, 1);
+
+    auto.reset();
+    terrain = undefined; // post-restart: no fresh samples form
+
+    const afterReset = auto.sample({
+      nowMs: 1000 + AUTO_TICK_INTERVAL_MS + 100,
+      ...good,
+    });
+    expect(afterReset.autoM).toBeNull();
+    expect(afterReset.confidence).toBe(0);
+  });
+
+  it("resets the tick throttle too, so the next frame re-measures at once", () => {
+    const auto = autoWith({ grid: gridWithFloor(4.6, 3) });
+    const good = {
+      cameraPosAr: [0, 4.6, 0] as const,
+      alignment: translationAlignment(0, 98.4, 0),
+    };
+    auto.sample({ nowMs: 1000, ...good });
+
+    auto.reset();
+
+    // 100 ms later — inside the old throttle window. A reset that kept the
+    // old `lastTickMs` would silently skip the first post-restart second.
+    const state = auto.sample({ nowMs: 1100, ...good });
+    expect(state.autoM).toBeCloseTo(1.4, 1);
   });
 });
 
