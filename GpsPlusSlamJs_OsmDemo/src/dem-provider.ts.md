@@ -23,6 +23,12 @@ FallbackElevationProvider` — the seam plus `fallbackProvider`'s live
     decoder in tests, so no image codec runs in Node.
   - `fetchImpl` — the network, defaulting to global `fetch`. Injected so tests
     can count and script requests per host.
+  - `primaryTimeoutMs` / `fallbackTimeoutMs` — per-tile deadlines, defaulting to
+    `PRIMARY_DEM_TIMEOUT_MS` (3 s) and `FALLBACK_DEM_TIMEOUT_MS` (8 s). Tests
+    pass a few milliseconds.
+- `PRIMARY_DEM_TIMEOUT_MS`, `FALLBACK_DEM_TIMEOUT_MS` — exported so a test can
+  assert the relationship between them rather than restate the numbers.
+
 - `DEM_SOURCE_ID` — `"mapterhorn+terrarium"`, the composed provider's
   `sourceId`. The worker reports it with every terrain result
   (`TerrainResult.demSourceId`) and the AR readout renders it on the terrain
@@ -30,6 +36,35 @@ FallbackElevationProvider` — the seam plus `fallbackProvider`'s live
 - `DEM_ATTRIBUTION` — the credit `main.ts` hands Leaflet's attribution control
   while terrain is on screen. Names **both** sources unconditionally, because
   the fallback can serve any tile the primary lacks.
+
+## Why the deadlines exist, and why BOTH sources have one
+
+**The failure they remove (2026-08-19 session, §1 of the twelfth-session
+feedback doc).** `fallbackProvider` asks the fallback only for positions the
+primary returned `undefined` for. A primary that is **slow** rather than broken
+produces no such positions — so the fallback is not consulted at all, and a
+working source sits idle behind a stalled one. Measured that day: the four z13
+tiles one terrain window needs took **21.7 s** from Mapterhorn and **1.04 s**
+from AWS, past the consumer's 15 s terrain gate, with `cf-cache-status: HIT` on
+the slow responses (so not a cold origin that would warm up). The owner reported
+it as "the fallback is broken"; the fallback was fine and unreachable.
+
+**Why the fallback is bounded too, which the plan did not ask for.** Specifying
+the deadline as primary-only would leave the identical hang one provider to the
+right. AWS measured fast and has no documented rate limit — which is exactly
+what was true of the primary before it wasn't. A deadline whose purpose is that
+no single source can stall the composition has to cover every source in it. The
+values differ because the roles do: the primary's is a switch to something
+better, the fallback's is a last resort against a hang.
+
+Both sit well inside the consumer's 15 s terrain gate, so the gate should now be
+unreachable in ordinary operation rather than routinely hit.
+
+**The trap, if this is ever reimplemented:** the deadline must surface as a
+`TimeoutError`, not an `AbortError`. `TerrariumProvider.load` rethrows aborts
+and degrades everything else, so an `AbortController`-based deadline would
+reject the whole batch and reinstate the unreachable-fallback bug while looking
+like its fix. See `terrarium.ts.md`.
 
 ## Invariants & assumptions
 
@@ -90,7 +125,19 @@ const terrainField = createTerrainField({ provider });
 answers), fallback on a primary 404, a repeat query served from the injected
 store with **zero** network fetches (a second provider instance models a
 reload), the serving stats (primary-served against fell-back), and the
-`DEM_SOURCE_ID`/`DEM_ATTRIBUTION` identities. No
+`DEM_SOURCE_ID`/`DEM_ATTRIBUTION` identities.
+
+Two cases carry the deadline and are the ones to keep if anything here is ever
+trimmed:
+
+- _"lets the fallback serve when the primary is SLOW rather than failing"_ — the
+  assertion whose absence let the 2026-08-19 regression ship. It has to live at
+  THIS seam: against `fallbackProvider` directly a never-settling fake primary
+  hangs forever, because that combinator carries no deadline of its own.
+- _"degrades on a DEADLINE but still propagates a caller's ABORT"_ — the two
+  halves together, because it is the difference between them that matters.
+
+No
 property-based spec, deliberately: every behaviour is a composition of
 already-property-tested library parts (`fallbackProvider`,
 `TerrariumProvider`, `createCachingTileFetch`), and a property over the wiring

@@ -204,6 +204,24 @@ export function fromWorldPixel(
 }
 
 /** Key for a decoded tile in the cache. */
+/**
+ * The signal governing one tile fetch: the caller's, the deadline's, or both.
+ *
+ * `AbortSignal.any` is only reached when there really are two, because it
+ * allocates a signal that stays subscribed to its sources until it is collected
+ * — pointless overhead on the common path where only one exists. Returning the
+ * single source unchanged also keeps its `reason` identity intact, which the
+ * `AbortError` / `TimeoutError` discrimination in `load` depends on.
+ */
+function composeSignals(
+  ...signals: readonly (AbortSignal | undefined)[]
+): AbortSignal | undefined {
+  const present = signals.filter((s): s is AbortSignal => s !== undefined);
+  if (present.length === 0) return undefined;
+  if (present.length === 1) return present[0];
+  return AbortSignal.any(present);
+}
+
 function tileKey(z: number, x: number, y: number): string {
   return `${z}/${x}/${y}`;
 }
@@ -287,6 +305,33 @@ export interface TerrariumProviderOptions {
   readonly urlTemplate?: string;
   /** Decoded tiles retained. 64 × 256 KB ≈ 16 MB of Float32Array. */
   readonly maxCachedTiles?: number;
+  /**
+   * How long one tile request may take before it degrades to "no data", ms.
+   *
+   * **WHY A PROVIDER MAY NEED A DEADLINE AT ALL, since the seam already says a
+   * provider never throws for missing data.** Because "never answers" is not
+   * "no data" — it is no answer, and it is the one outcome a composed provider
+   * cannot route around. `fallbackProvider` consults its fallback only for
+   * positions the primary returned `undefined` for, so a primary that is merely
+   * SLOW produces no gap and the fallback is never asked. Measured 2026-08-19:
+   * one host served a z13 tile in 3–21 s while another served the same ground
+   * in 0.8–1.0 s, which is enough to exceed a consumer's whole terrain budget
+   * and take the working source down with it.
+   *
+   * **UNSET BY DEFAULT, deliberately.** A library-wide default deadline would
+   * silently change behaviour for every existing consumer, and the right value
+   * depends entirely on what the caller is composing: a sole provider wants
+   * patience, a primary in front of a fast fallback wants impatience. The
+   * consumer picks. `dem-provider.ts` in the OSM demo is the worked example.
+   *
+   * **IT IS A `TimeoutError`, NOT AN `AbortError`, and that is load-bearing.**
+   * `load` rethrows aborts (a caller that left wants no answer) and degrades
+   * everything else. A deadline spelled as an abort would therefore reject the
+   * whole batch instead of degrading it — reintroducing the exact failure it
+   * was added to remove. `AbortSignal.timeout` yields `TimeoutError`, which
+   * lands on the degrade branch. Pinned by `terrarium.test.ts`.
+   */
+  readonly requestTimeoutMs?: number;
 }
 
 /**
@@ -301,6 +346,7 @@ export class TerrariumProvider implements ElevationProvider {
   private readonly zoom: number;
   private readonly urlTemplate: string;
   private readonly maxCachedTiles: number;
+  private readonly requestTimeoutMs: number | undefined;
 
   private readonly tiles = new Map<string, ElevationTile>();
   /**
@@ -321,6 +367,7 @@ export class TerrariumProvider implements ElevationProvider {
     this.zoom = options.zoom ?? DEFAULT_TERRARIUM_ZOOM;
     this.urlTemplate = options.urlTemplate ?? TERRARIUM_URL_TEMPLATE;
     this.maxCachedTiles = options.maxCachedTiles ?? 64;
+    this.requestTimeoutMs = options.requestTimeoutMs;
   }
 
   async elevationAt(
@@ -389,9 +436,30 @@ export class TerrariumProvider implements ElevationProvider {
       .replace("{x}", String(x))
       .replace("{y}", String(y));
 
+    // THE DEADLINE IS COMPOSED, NOT SUBSTITUTED. Both signals have to reach the
+    // fetch: the caller's (or rather the dedup controller's — see `tile`) says
+    // "nobody wants this any more", the deadline says "this is taking too long
+    // to be useful". Dropping either one loses a distinct cancellation reason,
+    // and the two are handled differently three lines below.
+    //
+    // ONE CONSEQUENCE WORTH KNOWING: `signal` here is `InFlightRequests`'
+    // internal controller, shared by every caller joined to this tile. So the
+    // deadline is shared too — the first joiner's clock bounds them all, and a
+    // late joiner inherits a budget already part-spent. That is the right
+    // trade for a tile cache (one fetch serves everyone, so one verdict serves
+    // everyone) but it does mean the deadline is per-TILE, not per-caller.
+    const deadline =
+      this.requestTimeoutMs === undefined
+        ? undefined
+        : AbortSignal.timeout(this.requestTimeoutMs);
+    const composed = composeSignals(signal, deadline);
+
     try {
       this.stats.fetches++;
-      const response = await this.fetchImpl(url, signal ? { signal } : {});
+      const response = await this.fetchImpl(
+        url,
+        composed ? { signal: composed } : {},
+      );
       if (!response.ok) return undefined;
       const image = await this.decodePng(await response.arrayBuffer());
       const tile = toElevationTile(image, z, x, y);
@@ -400,6 +468,13 @@ export class TerrariumProvider implements ElevationProvider {
     } catch (error) {
       // An abort must propagate — a caller that left the area is not asking for
       // a degraded answer, it is asking for no answer.
+      //
+      // A DEADLINE IS NOT AN ABORT and must NOT land here. `AbortSignal.timeout`
+      // rejects with a `TimeoutError`, so it falls through to the degrade branch
+      // below and the composed provider's fallback gets its chance. This is the
+      // whole reason the deadline is not spelled `controller.abort()`: that
+      // yields an `AbortError`, this line would rethrow it, and the batch would
+      // fail instead of degrading — the failure the deadline exists to prevent.
       if (error instanceof Error && error.name === "AbortError") throw error;
       // Everything else degrades: a missing or corrupt terrain tile means "no
       // elevation here", never a thrown batch.

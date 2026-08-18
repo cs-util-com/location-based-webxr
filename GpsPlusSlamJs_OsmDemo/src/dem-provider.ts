@@ -63,6 +63,44 @@ export const DEM_SOURCE_ID = "mapterhorn+terrarium";
  */
 export const DEM_ATTRIBUTION = `${MAPTERHORN_ATTRIBUTION} · ${TERRARIUM_ATTRIBUTION}`;
 
+/**
+ * How long Mapterhorn gets before a tile degrades to "no data", ms.
+ *
+ * MEASURED, NOT CHOSEN BY FEEL (2026-08-19 session, §1 of the feedback doc).
+ * On one home connection the four z13 tiles a terrain window needs took
+ * **21.7 s** from Mapterhorn and **1.04 s** from AWS, and single tiles were
+ * 4.5–7.5 s against 0.8–1.2 s. Crucially the slow responses carried
+ * `cf-cache-status: HIT`, so this is delivery throughput rather than a cold
+ * origin that would warm up.
+ *
+ * 3 s sits above AWS's whole four-tile budget with margin, and far below the
+ * consumer's 15 s terrain gate — so a Mapterhorn tile that is merely having a
+ * bad moment still wins, while one that is behaving as measured gets out of the
+ * way in time for the fallback to serve and the gate never fires.
+ *
+ * **The cost of being wrong is asymmetric, which is why the number leans
+ * short.** Too short only means coarser heights for that window, and the
+ * upgrade path (planned as M3) reclaims them. Too long means the flat-ground
+ * failure this constant exists to remove.
+ */
+export const PRIMARY_DEM_TIMEOUT_MS = 3_000;
+
+/**
+ * The same bound for the fallback, ms — larger, and NOT optional.
+ *
+ * The plan said "primary-only", and shipping it that way would have left the
+ * identical hang open one provider to the right: AWS has no documented rate
+ * limit and measured fast, but "measured fast today" is what was said about the
+ * primary too, and a fallback that never answers hangs the batch exactly as a
+ * primary that never answers did. A deadline whose whole point is that no
+ * single source can stall the composition has to cover every source in it.
+ *
+ * Longer than the primary's because the roles differ: there is nothing behind
+ * the fallback, so its deadline is a last resort against a hang rather than a
+ * switch to something better. It is still comfortably inside the 15 s gate.
+ */
+export const FALLBACK_DEM_TIMEOUT_MS = 8_000;
+
 export interface DemProviderOptions {
   /** Where tile bytes persist — the same blob store the OSM tiles use. */
   readonly store: OsmBlobStore;
@@ -70,6 +108,10 @@ export interface DemProviderOptions {
   readonly decodePng: PngDecoder;
   /** The network. Defaults to the global `fetch`. */
   readonly fetchImpl?: typeof fetch;
+  /** Overrides {@link PRIMARY_DEM_TIMEOUT_MS}. Tests use a few ms. */
+  readonly primaryTimeoutMs?: number;
+  /** Overrides {@link FALLBACK_DEM_TIMEOUT_MS}. Tests use a few ms. */
+  readonly fallbackTimeoutMs?: number;
 }
 
 /**
@@ -96,8 +138,15 @@ export function createDemProvider(
   });
   const shared = { decodePng: options.decodePng, fetchImpl: tileFetch };
   return fallbackProvider(
-    new TerrariumProvider({ ...shared, urlTemplate: MAPTERHORN_URL_TEMPLATE }),
-    new TerrariumProvider(shared),
+    new TerrariumProvider({
+      ...shared,
+      urlTemplate: MAPTERHORN_URL_TEMPLATE,
+      requestTimeoutMs: options.primaryTimeoutMs ?? PRIMARY_DEM_TIMEOUT_MS,
+    }),
+    new TerrariumProvider({
+      ...shared,
+      requestTimeoutMs: options.fallbackTimeoutMs ?? FALLBACK_DEM_TIMEOUT_MS,
+    }),
     { sourceId: DEM_SOURCE_ID },
   );
 }

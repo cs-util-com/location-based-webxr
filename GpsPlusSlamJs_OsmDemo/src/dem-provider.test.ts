@@ -57,12 +57,31 @@ function fakeDecodePng(bytes: ArrayBuffer): Promise<DecodedImage> {
 }
 
 /** A network that answers per host and records every URL it was asked for. */
-function fakeNetwork(options: { mapterhornStatus?: number } = {}): {
+function fakeNetwork(
+  options: {
+    mapterhornStatus?: number;
+    /**
+     * Mapterhorn accepts the request and then never answers.
+     *
+     * THE FIELD CASE, and it is NOT the same as an error. The 2026-08-19
+     * session measured Mapterhorn at 10-21 s for the four tiles one window
+     * needs while AWS served the same four in 1.0 s. A slow primary produces
+     * no gap for `fallbackProvider` to fill, so before the deadline existed
+     * the fallback was unreachable rather than broken. A `never` here is the
+     * limit of that behaviour and is what the deadline has to survive.
+     *
+     * It respects the request's signal so an aborted or timed-out fetch
+     * settles the way a real one does; without that the pending promise
+     * outlives the test and vitest reports an unhandled rejection.
+     */
+    mapterhornNeverAnswers?: boolean;
+  } = {},
+): {
   fetchImpl: typeof fetch;
   urls: string[];
 } {
   const urls: string[] = [];
-  const fetchImpl = ((input: RequestInfo | URL) => {
+  const fetchImpl = ((input: RequestInfo | URL, init?: RequestInit) => {
     // The providers pass plain URL strings; the branches keep the fake honest
     // (and the linter quiet) should that ever change.
     const url =
@@ -73,6 +92,25 @@ function fakeNetwork(options: { mapterhornStatus?: number } = {}): {
           : input.url;
     urls.push(url);
     if (url.includes("mapterhorn")) {
+      if (options.mapterhornNeverAnswers === true) {
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal ?? undefined;
+          if (signal == null) return;
+          // `signal.reason` is typed `any` and `prefer-promise-reject-errors`
+          // is right to refuse it — a fake that rejected with a non-Error would
+          // offer production a path a real `fetch` never does. In practice it
+          // IS an Error (Node's DOMException extends it), which is exactly what
+          // lets the provider tell an AbortError from a TimeoutError by name.
+          signal.addEventListener(
+            "abort",
+            () => {
+              const reason: unknown = signal.reason;
+              reject(reason instanceof Error ? reason : new Error("aborted"));
+            },
+            { once: true },
+          );
+        });
+      }
       const status = options.mapterhornStatus ?? 200;
       return Promise.resolve(
         status === 200
@@ -86,6 +124,12 @@ function fakeNetwork(options: { mapterhornStatus?: number } = {}): {
   }) as typeof fetch;
   return { fetchImpl, urls };
 }
+
+/**
+ * Short enough that the suite stays fast, long enough not to race the fake
+ * network's own microtasks. Real deadlines are seconds — see `dem-provider.ts`.
+ */
+const TEST_TIMEOUT_MS = 25;
 
 describe("createDemProvider", () => {
   it("answers from Mapterhorn and never asks AWS while the primary has data", async () => {
@@ -175,6 +219,75 @@ describe("createDemProvider", () => {
       fallbackAnswered: 1,
       unanswered: 0,
     });
+  });
+
+  it("lets the fallback serve when the primary is SLOW rather than failing", async () => {
+    // THE ASSERTION WHOSE ABSENCE LET cf797bc3 SHIP, and the whole of M1.
+    //
+    // The existing cases cover a primary that says 404 and a fallback that
+    // throws. Neither catches the field failure the twelfth testing session
+    // reported: `fallbackProvider` awaits the primary unconditionally and only
+    // consults the fallback for positions the primary returned `undefined`, so
+    // a primary that never answers produces no gap and the fallback is never
+    // asked at all. The user saw "the fallback is broken"; it was unreachable.
+    //
+    // Note this test CANNOT live against `fallbackProvider` directly: that
+    // combinator carries no deadline of its own, so a never-settling fake
+    // primary would hang there forever. The deadline lives on the tile fetch,
+    // which is why the seam that can express this is `createDemProvider`.
+    const { fetchImpl, urls } = fakeNetwork({ mapterhornNeverAnswers: true });
+    const provider = createDemProvider({
+      store: new MemoryBlobStore(),
+      decodePng: fakeDecodePng,
+      fetchImpl,
+      primaryTimeoutMs: TEST_TIMEOUT_MS,
+    });
+
+    const [height] = await provider.elevationAt([COLOGNE]);
+
+    expect(height).toBe(AWS_HEIGHT);
+    expect(urls.some((url) => url.includes("tiles.mapterhorn.com"))).toBe(true);
+    expect(urls.some((url) => url.includes("s3.amazonaws.com"))).toBe(true);
+    // The positions the deadline rescued are attributed to the fallback, not
+    // silently counted as unanswered — the HUD's share has to stay honest.
+    expect(provider.stats).toEqual({
+      primaryAnswered: 0,
+      fallbackAnswered: 1,
+      unanswered: 0,
+    });
+  });
+
+  it("degrades on a DEADLINE but still propagates a caller's ABORT", async () => {
+    // WHY THIS TEST MATTERS - it pins a trap that would invert M1's intent.
+    //
+    // `TerrariumProvider.load` rethrows anything whose `name` is "AbortError"
+    // and degrades everything else to `undefined`. So a deadline implemented
+    // with a plain `AbortController.abort()` would REJECT the whole batch
+    // rather than degrade it, and the fallback would never run - exactly the
+    // failure the deadline exists to remove, reintroduced by the fix.
+    // `AbortSignal.timeout` yields a `TimeoutError`, which lands on the
+    // degrade branch. The two halves are asserted together because it is the
+    // DIFFERENCE between them that has to hold.
+    const deadlineOnly = createDemProvider({
+      store: new MemoryBlobStore(),
+      decodePng: fakeDecodePng,
+      fetchImpl: fakeNetwork({ mapterhornNeverAnswers: true }).fetchImpl,
+      primaryTimeoutMs: TEST_TIMEOUT_MS,
+    });
+    await expect(deadlineOnly.elevationAt([COLOGNE])).resolves.toEqual([
+      AWS_HEIGHT,
+    ]);
+
+    // A caller that walks away is asking for NO answer, not a degraded one.
+    const controller = new AbortController();
+    const aborted = createDemProvider({
+      store: new MemoryBlobStore(),
+      decodePng: fakeDecodePng,
+      fetchImpl: fakeNetwork({ mapterhornNeverAnswers: true }).fetchImpl,
+      primaryTimeoutMs: 10_000,
+    }).elevationAt([COLOGNE], controller.signal);
+    controller.abort();
+    await expect(aborted).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("identifies the composition for the HUD, and credits BOTH sources", () => {

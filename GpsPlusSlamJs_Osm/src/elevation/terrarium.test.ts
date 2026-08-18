@@ -327,6 +327,145 @@ describe("TerrariumProvider", () => {
       provider.elevationAt([{ lat: 50.94, lng: 6.95 }]),
     ).rejects.toThrow("aborted");
   });
+
+  /**
+   * A fetch that honours its signal and otherwise never answers.
+   *
+   * A bare never-resolving promise would leave the request pending past the end
+   * of the test; rejecting with the signal's own reason is also what a real
+   * `fetch` does, which is the behaviour the deadline is written against.
+   */
+  /**
+   * A signal's abort reason as an `Error`.
+   *
+   * `signal.reason` is typed `any`, and `prefer-promise-reject-errors` is right
+   * to refuse it: a fake that rejected with a non-Error would let production
+   * code take a path a real `fetch` never offers. In practice the reason IS an
+   * Error — Node's `DOMException` extends it, which is what lets `load`
+   * discriminate `AbortError` from `TimeoutError` by name at all — so the
+   * fallback is unreachable belt-and-braces rather than a real branch.
+   */
+  const abortReasonOf = (signal: AbortSignal): Error => {
+    const reason: unknown = signal.reason;
+    return reason instanceof Error ? reason : new Error(String(reason));
+  };
+
+  const stalledFetch = () =>
+    vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal == null) return;
+          signal.addEventListener(
+            "abort",
+            () => reject(abortReasonOf(signal)),
+            {
+              once: true,
+            },
+          );
+        }),
+    ) as unknown as typeof fetch;
+
+  it("has NO deadline unless one is asked for", async () => {
+    // Why this test matters: `requestTimeoutMs` was added for one consumer with
+    // a fast fallback behind it. Defaulting it on would silently change every
+    // other consumer's behaviour — a sole provider on a slow link wants
+    // patience, and a library that quietly gives up on it would turn a slow
+    // render into a wrong one. The absence of a default is the contract.
+    const provider = providerWith(stalledFetch());
+    const pending = provider.elevationAt([{ lat: 50.94, lng: 6.95 }]);
+
+    const raced = await Promise.race([
+      pending.then(() => "settled" as const),
+      new Promise<"still-waiting">((r) =>
+        setTimeout(() => r("still-waiting"), 40),
+      ),
+    ]);
+    expect(raced).toBe("still-waiting");
+  });
+
+  it("degrades a tile that exceeds its deadline, WITHOUT failing the batch", async () => {
+    // THE FIELD FAILURE THIS OPTION EXISTS FOR (2026-08-19 session). A primary
+    // that is slow rather than broken produces no `undefined`, so a composed
+    // `fallbackProvider` sees no gap and never consults its fallback: the
+    // working source is unreachable for as long as the slow one keeps the
+    // promise open. The deadline turns "slow" into "no data here", which is
+    // the one shape the composition can route around.
+    //
+    // `toEqual([undefined])` rather than `rejects` is the entire point — see
+    // the next test for why that is easy to get backwards.
+    const provider = new TerrariumProvider({
+      decodePng,
+      fetchImpl: stalledFetch(),
+      zoom: 13,
+      requestTimeoutMs: 20,
+    });
+
+    const out = await provider.elevationAt([{ lat: 50.94, lng: 6.95 }]);
+    expect(out).toEqual([undefined]);
+  });
+
+  it("spells the deadline as a TimeoutError, so the abort branch cannot swallow it", async () => {
+    // Why this test matters: `load` rethrows anything named `AbortError` and
+    // degrades everything else. A deadline built on `controller.abort()` would
+    // therefore REJECT the batch — reinstating the exact unreachable-fallback
+    // failure the deadline was added to remove, while looking like a fix.
+    // Asserting the error's NAME at the boundary is what stops a later
+    // "simplification" to `AbortController` from passing review.
+    const seen: (string | undefined)[] = [];
+    const fetchImpl = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal == null) return;
+          signal.addEventListener(
+            "abort",
+            () => {
+              const reason = abortReasonOf(signal);
+              seen.push(reason.name);
+              reject(reason);
+            },
+            { once: true },
+          );
+        }),
+    ) as unknown as typeof fetch;
+
+    const provider = new TerrariumProvider({
+      decodePng,
+      fetchImpl,
+      zoom: 13,
+      requestTimeoutMs: 20,
+    });
+    await provider.elevationAt([{ lat: 50.94, lng: 6.95 }]);
+
+    expect(seen).toEqual(["TimeoutError"]);
+  });
+
+  it("applies ONE deadline per tile, shared by every joined caller", async () => {
+    // Why this test matters: the deadline is composed with `InFlightRequests`'
+    // internal controller, not with any one caller's signal, so it is a
+    // property of the TILE rather than of the request that happened to start
+    // it. Both callers must therefore see the same degraded answer from the
+    // same single fetch. Stating it as a test because the alternative reading
+    // — a per-caller budget — is the intuitive one and is not what this does.
+    const fetchImpl = stalledFetch();
+    const provider = new TerrariumProvider({
+      decodePng,
+      fetchImpl,
+      zoom: 13,
+      requestTimeoutMs: 20,
+    });
+    const at = [{ lat: 50.94, lng: 6.95 }];
+
+    const [first, second] = await Promise.all([
+      provider.elevationAt(at),
+      provider.elevationAt(at),
+    ]);
+
+    expect(first).toEqual([undefined]);
+    expect(second).toEqual([undefined]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("the browser PNG decoder", () => {
