@@ -113,8 +113,10 @@ rather than being assumed.
 (`getHexagonEdgeLengthAvg(res) × √3` = 7.09 m at res 13), not the exact
 great-circle distance between the two centres. Two reasons: `canEnter` is the
 search's hottest arithmetic path and this keeps it trig-free; and the error is
-+3…+12 % against the measured 6.34–6.91 m, i.e. it errs **permissive**, which is
-the safe direction for a rule whose failure mode is a confident "no route". A
+bounded — real res-13 neighbours are 5.18–7.82 m apart worldwide against the
+model's 7.088 m, so the worst case is an effective gradient of 0.453 instead of
+0.5. **This paragraph claimed the error "errs permissive"; it does not** — see
+§6.2. A
 same-cell step uses distance 0, so climbing onto a wall inside one cell is
 governed by the discontinuity rule alone — unchanged.
 
@@ -211,17 +213,20 @@ naming:
   The `column-space.test.ts` "walks over the wall once the agent can climb it"
   control passes unchanged, which it would not have under a pure decomposition.
 
-Two fixtures did change meaning, both honestly:
+One fixture changed meaning, and one thing that reads like a second did not:
 
 - `column-space.test.ts` "routes THROUGH a same-cell level change" was built on
   cells with a single level each and an origin 0.5 m below its neighbour, so its
   blocked moves were blocked by an ABSOLUTE difference that the ground rule now
   reads as a 7 % slope and walks. Rebuilt with a flat ground and a ladder of
   levels above it, so the offsets do the blocking and no slope allowance exists.
-- `columnsAdjacent` with a **non-finite** `groundM` now falls back to the
-  absolute rule rather than refusing. The heights are still known; a DEM miss
-  costs only the ability to tell a hillside from a wall, which is exactly what an
-  absent ground already describes.
+- `columnsAdjacent` with a **non-finite** `groundM` falls back to the absolute
+  rule rather than refusing — the heights are still known, and a DEM miss costs
+  only the ability to tell a hillside from a wall, which is what an absent ground
+  already describes. **This is a pure addition, not a changed fixture** (PR
+  review): `groundM` did not exist before this commit, so no shipped behaviour
+  moved. Listing it beside the rewrite above made the change look larger and less
+  safe than it is.
 
 ### Milestones, as delivered
 
@@ -278,17 +283,138 @@ property observed rather than argued.
 destinations to a rule about kerbs — and nothing in the package would have said
 so, because no route test has ever run over any corpus site.
 
-⚠️ **And the honest reading of the same run: `MAX_GROUND_GRADIENT` does not bind
-anywhere in the corpus.** Re-running with the limit effectively removed
-(`maxGroundGradient: 1000`) yields **exactly** the post-fix figures at all three
-sites checked — Heidelberg 80, Tokyo 136, Manhattan 120. So every refusal that
-survives the fix is **geometry** (a destination inside a building, a barrier,
-water), not slope, and DEC-S2's value is under-determined by this evidence: 0.3
-and 1.0 would have produced the same corpus numbers. The value matters only where
-a DEM resolves something genuinely cliff-like, which these six cities do not
-contain at 12 m posts.
+**No refusal that survives the fix is caused by the slope limit.** Re-running with
+the limit effectively removed (`maxGroundGradient: 1000`) yields **exactly** the
+post-fix figures at all three sites checked — Heidelberg 80, Tokyo 136,
+Manhattan 120. Every surviving refusal is **geometry**: a destination inside a
+building, a barrier, water.
+
+⚠️ **An earlier draft of this paragraph read "`MAX_GROUND_GRADIENT` does not bind
+anywhere in the corpus" and called DEC-S2 under-determined. Both were wrong**, and
+they were wrong in the same way: a conclusion about individual STEPS inferred from
+a measurement of route OUTCOMES. See §6.2, which measures the steps.
+
+### 6.2 Does the rail ever fire? — measured at the step, not the outcome
+
+§6.1's first draft concluded from equal route counts that the gradient limit
+never binds. **That does not follow**: a blocked step only changes an outcome when
+there is no way around it, and on open ground there almost always is. Measured
+directly instead — every res-13 cell within ~300 m of a point, each of its six
+neighbours, the ground step between them against the 3.54 m that a 0.5 grade buys
+over the 7.088 m model run:
+
+| site | steps | blocked (> 0.5) | > 0.3 | > 1.0 | steepest step |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cologne Frankenwerft | 39 180 | **0.21 %** | 1.04 % | 0 % | 4.16 m |
+| Heidelberg castle | 38 826 | 0.20 % | **16.82 %** | 0 % | 4.01 m |
+| Tokyo Shinjuku | 38 550 | 1.51 % | 5.23 % | 0.08 % | 9.03 m |
+| San Francisco, Filbert St | 37 056 | 0.35 % | 9.03 % | 0 % | 4.27 m |
+| Rio, Morro Dois Irmãos | 37 512 | 3.00 % | 7.60 % | 0.39 % | 12.42 m |
+| Hong Kong, Victoria Peak | 38 394 | **22.86 %** | 43.22 % | 3.69 % | 16.01 m |
+| Cliffs of Moher | 38 568 | 18.15 % | 28.40 % | 9.46 % | **45.32 m** |
+| Lauterbrunnen wall | 38 226 | **26.03 %** | 36.46 % | 13.04 % | 25.96 m |
+
+Terrarium z13 for each site; the last five are outside the corpus and were chosen
+because they have relief the six shipped sites do not.
+
+**Three conclusions, and the third replaces DEC-S2's rationale.**
+
+- **The rail fires everywhere, including at the reported location** — 0.21 % of
+  steps at the Frankenwerft. The accurate version of §6.1's claim is the narrow
+  one: it never changed whether a **destination** was reachable in that
+  1 200-route sample, because the agent detours around the few blocked steps.
+- **It is load-bearing where cliffs exist.** A fifth to a quarter of all steps at
+  Moher, Victoria Peak and Lauterbrunnen, with single steps dropping **45 m**
+  between adjacent cells. The six-site corpus containing nothing steeper than 0.60
+  is a fact about the corpus, not about the rule.
+- **0.5 is no longer a defensible guess; it is the value the evidence picks.**
+  - **0.3 would be actively harmful:** it refuses **16.8 %** of steps around the
+    Heidelberg castle hill — ordinary walkable hillside, i.e. the reported defect
+    returning in a milder form.
+  - **1.0 would be meaningfully less protective:** it admits 9.5 % of Moher's
+    steps and 3.7 % of Victoria Peak's that 0.5 refuses — real cliff faces.
+  - 0.5 sits in the gap: 0.2–1.5 % of city steps, most genuine cliff steps.
+
+⚠️ **Nothing in the test suite can exercise this**, because no corpus site has the
+relief for it — filed as
+[`2026-08-18-0905-nav-corpus-has-no-relief-followup.md`](2026-08-18-0905-nav-corpus-has-no-relief-followup.md).
 
 **Corollary worth knowing when the next report arrives:** "the agent cannot reach
 that spot" is still the correct answer for a click **inside a building** — a cell
 with no standable level — and that is now the commonest cause of the message
 rather than the rarest. Manhattan refuses 80 of 200 for exactly that reason.
+
+---
+
+## 7. Cold review, and what it changed (2026-08-18)
+
+The review required by the plan-to-pr loop's Phase 2 did not run before this
+shipped — the session's harness forbids launching sub-agents unasked, and the
+owner authorised it afterwards. It ran against the plan plus commits `0ea91ba2`
+and `5b17de20`. **Eight findings, all accepted**; each was independently
+re-measured before being applied, and two came back worse than reported.
+
+### 7.1 Accepted and fixed
+
+- **A refusal on steep open ground went from instant to cap-bound.** Contour
+  steps stay legal at any grade, so on an open cliff the frontier is an unbounded
+  line rather than empty. Reproduced: the `agent-route.slope.test.ts` plane at
+  grade 1.5 exhausts 20 000 expansions in **481 ms** and 60 004 `levelsAt` calls,
+  against 3 ms and 23 calls for the walkable case. The expansion cap doubles as
+  the worker's publish-latency bound (`route-order.ts`), so this is user-visible.
+  **Accepted as a known cost rather than fixed**: it is the same cost
+  `agent-cycle.ts` already documents for every unreachable click ("'No route' is
+  the SLOWEST reply, not the quickest"), and the UI already shows a wait for it.
+  Now named in `column.ts`, `column.ts.md` and `ARCHITECTURE.md`.
+- **The safety claim was scoped too widely.** "Can only add edges" is a property
+  of the PREDICATE; a bounded search built on it can reach its cap sooner, and
+  `planRouteWithIndex` reports a cap as `undefined`. Corrected everywhere it
+  appeared, with §6.1's 1 200-route zero-regression measurement as the empirical
+  bound.
+- **`agent-route.slope.test.ts` › "refuses a cliff" passed for the wrong reason** —
+  its `undefined` came from the cap, not from a refusal, so it could not tell
+  "too steep" from "gave up", and it burned the full budget on every unit run.
+  Both refusal controls now name their own `maxExpansions`, and a new test
+  asserts the refusal at the step predicate, where it can be stated without
+  ambiguity. The file's unit time falls from ~1.2 s to ~0.9 s with one more test.
+- **The property suite did not cover what the docs claimed for it.** Symmetry,
+  reflexivity, step-threshold monotonicity and the ring-2 oracle all ran on an
+  arbitrary carrying no `groundM`, so every one proved its invariant for the
+  original arm only. The grounded arbitrary is hoisted and those four now run
+  over both shapes; the ring-2 case also sweeps the gradient.
+- **`column.ts.md`'s worked example still called the old signature**
+  (`columnsAdjacent(foot, top, 10)`), in the very commit that changed it.
+  Markdown is not type-checked, which is why the gate stayed green.
+- **§6 called the non-finite-`groundM` case a changed fixture.** It is a pure
+  addition — the field did not exist before — and describing it as changed made
+  the diff look riskier than it is. Corrected above.
+- **The perf follow-up's headline numbers did not reproduce**, and its 14×
+  comparison was ~4× off. Re-measured over 1 200 distinct pairs and corrected in
+  place, together with the end-to-end 35 % saving that actually decides whether
+  the work is worth doing.
+- **`grounded()` allocates two objects per edge.** Noted in the follow-up so it
+  is priced with the rest of that work rather than separately.
+
+### 7.2 The claim that was worse than the review said
+
+**"The average-spacing approximation errs permissive" is false, and not
+marginally.** The review measured real res-13 spacing at 5.207–7.817 m globally
+against the model's 7.088 m. Re-measured independently over a 24 000-pair global
+sample: **5.182–7.818 m, and 64 % of pairs have a real run LONGER than the
+model** — so erring strict is the normal case, not the exception the wording
+implied.
+
+The consequence is still bounded and the constant still stands: the worst case is
+an effective gradient of `0.5 × 7.088/7.818 = 0.453`, which passes any street.
+What was wrong was the argument, not the number — a measurement taken at one
+latitude was written up as a property of the approximation. Corrected in
+`column.ts`, `column.ts.md` and §2, in place rather than by deletion, because the
+retracted sentence was the reason to believe the approximation was safe.
+
+### 7.3 Left as reported
+
+- Plan §1.1 and §6's live-data reproductions are **unverifiable offline**, as the
+  review notes: nothing in the repo captures the Overpass extract or the DEM tile.
+  That is why the shipped guard is a synthetic plane. Accepted — capturing a
+  fixture for one bug would add a multi-megabyte file to a package whose corpus
+  is already deliberately six sites.

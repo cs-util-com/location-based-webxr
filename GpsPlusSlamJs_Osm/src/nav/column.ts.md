@@ -50,9 +50,24 @@ So adjacency now asks two questions and admits the step when **either** says yes
    steep the hill it stands on: its top is a fixed height above the ground
    beneath it, and no relief adds to the budget for climbing it.
 
-**Because clause 1 is the old rule, supplying a ground can only ADD edges** — no
-route a caller has today can vanish. `column.property.test.ts` machine-checks
-that rather than trusting the argument.
+**Because clause 1 is the old rule, supplying a ground can only ADD edges.**
+`column.property.test.ts` machine-checks that rather than trusting the argument.
+
+⚠️ **That is a property of the PREDICATE, and it does not transfer unchanged to a
+planner** (PR review, 2026-08-18). More edges mean more states below the goal's
+cost, so a bounded search can hit its expansion cap sooner — and
+`planRouteWithIndex` turns a cap into `undefined`, which a caller cannot tell
+from "no route". Two consequences, both measured:
+
+- **A refusal on steep open ground is now SLOW rather than instant.** Contour
+  steps stay legal on a cliff, so the frontier is an unbounded line instead of
+  empty: the plane in `agent-route.slope.test.ts` at grade 1.5 exhausts 20 000
+  expansions in ~480 ms, where the same shape used to refuse at once. This is the
+  cost `agent-cycle.ts` already documents for every unreachable click — "'No
+  route' is the SLOWEST reply, not the quickest" — so it is a new instance of a
+  known case, not a new failure mode.
+- **No route was actually lost.** 1 200 routes across the six-site corpus, before
+  and after: zero regressions.
 
 ⚠️ **The grade rule cannot tell a 26° hillside from a 2 m retaining wall smeared
 across one cell**, and nothing at this resolution can — both are the same rise
@@ -76,14 +91,22 @@ over the same run. Mapped barriers refuse those, through `crossesObstacle`; an
 - `STEP_THRESHOLD_M = 0.5` — the default climbable height change, confirmed by
   the owner as DEC-R11-1.
 - `MAX_GROUND_GRADIENT = 0.5` — the steepest walkable ground, rise over run
-  (1 in 2, ~26.6°), owner decision DEC-S2. Above any street or promenade; a
-  cliff in a 12 m-post DEM still reads as impassable.
+  (1 in 2, ~26.6°), owner decision DEC-S2 — **and the value the evidence picks**,
+  measured as the share of res-13 neighbour steps refused at Terrarium z13: 0.3
+  refuses 16.8 % of the Heidelberg castle hill (this defect, milder), 1.0 admits
+  9.5 % of the Cliffs of Moher, and 0.5 refuses 0.2–1.5 % of city steps against
+  18–26 % of genuine cliff steps. Full table in §6.2 of the plan.
 - `neighbourSpacingM(resolution) => number` — the run a grade is measured over.
-  **The resolution's AVERAGE spacing** (`edgeLengthAvg × √3` = 7.09 m at res 13),
-  not the exact distance between the two cells: `columnsAdjacent` is the
-  search's hottest arithmetic path, and the +3…+12 % error against the measured
-  6.34–6.91 m errs **permissive**, which is the safe direction for a rule whose
-  failure mode is a confident "cannot reach that spot".
+  **The resolution's AVERAGE spacing** (`edgeLengthAvg × √3` = 7.088 m at res 13),
+  not the exact distance between the two cells, because `columnsAdjacent` is the
+  search's hottest arithmetic path. Real res-13 neighbours are **5.18–7.82 m**
+  apart over a 24 000-pair global sample, so the model is off by −27 %/+10 %, and
+  where the real run is longer the rule errs **strict** — **64 % of pairs
+  globally**. Worst case that is an effective 0.453 gradient instead of 0.5, still
+  far above any street.
+  - ⚠️ **This said the error "errs permissive" until PR review 2026-08-18**, on a
+    measurement taken at Cologne's latitude alone. It was the argument that the
+    approximation is safe, so it is corrected in place rather than deleted.
 - `columnsAdjacent(a, b, limits?: StepLimits) => boolean`, where `StepLimits` is
   `{ stepThresholdM?, maxGroundGradient? }`.
   - Throws `RangeError` if either limit is not finite and non-negative, or if
@@ -163,7 +186,7 @@ const top = { cell, heightM: 8 }; // same cell — the wall above it
 
 columnsAdjacent(foot, top); // false: the step is not climbable
 columnsAdjacent(foot, { cell, heightM: 0.2 }); // true
-columnsAdjacent(foot, top, 10); // true — an agent that can climb 10 m
+columnsAdjacent(foot, top, { stepThresholdM: 10 }); // an agent that climbs 10 m
 ```
 
 ## Tests

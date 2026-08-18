@@ -259,7 +259,10 @@ and admits the step if **either** answers yes: the absolute change between two
 surfaces against the step threshold, or — where the ground is known — the
 **ground's grade** against `MAX_GROUND_GRADIENT` with the height above that
 ground still against the step threshold. The first arm is the original rule
-verbatim, so knowing the ground can only add edges.
+verbatim, so knowing the ground can only add edges **to the predicate** — a
+bounded search built on it can still reach its expansion cap sooner, which is
+why a refusal over a cliff is now slow rather than instant (measured: zero lost
+routes across 1 200 corpus routes).
 [`column.ts.md`](./src/nav/column.ts.md) ·
 [`2026-08-18-0659-nav-terrain-slope-vs-step-plan.md`](./docs/2026-08-18-0659-nav-terrain-slope-vs-step-plan.md)
 

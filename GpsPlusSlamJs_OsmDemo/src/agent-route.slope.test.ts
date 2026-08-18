@@ -13,10 +13,17 @@
  * DEM samples at cell centres ~6.4–6.9 m apart — so any continuous ground
  * steeper than ~7.5 % was treated as a cliff.
  *
- * **Every other route test in this package is FLAT** (`field: undefined` yields
- * ground 0 everywhere), which is exactly why none of them could see it. This one
- * is the guard for that gap: a sloped ground field, a route that must exist, and
- * a cliff that must still refuse one.
+ * **Every other route test in this package stands on ground of a CONSTANT
+ * height** — mostly `field: undefined`, which `cell-ground.ts` turns into a flat
+ * zero, and otherwise a sampler returning one number — so their `Δground` is
+ * zero and none of them could see it. This one is the guard for that gap: a
+ * sloped ground field, a route that must exist, and a cliff that must not.
+ *
+ * **THE PLANE IS INFINITE, WHICH SHAPES THE CONTROLS.** A contour step stays
+ * legal at any grade, so on a cliff the frontier is an unbounded line rather
+ * than empty and the search answers from its expansion cap. Every refusal here
+ * therefore names its own `maxExpansions`, and the actual "too steep" claim is
+ * asserted at the step predicate where it can be stated without ambiguity.
  *
  * The gradients are the measured ones. Terrarium tile 13/4254/2744 over the
  * reported position gives 48.51 m at the agent falling to 41.2 m 30 m to the
@@ -27,7 +34,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { enuFrameAt, type LatLng } from "gps-plus-slam-osm";
+import { gridDisk, latLngToCell } from "h3-js";
+import {
+  AFFORDANCE_RES,
+  columnsAdjacent,
+  enuFrameAt,
+  neighbourSpacingM,
+  type LatLng,
+} from "gps-plus-slam-osm";
 
 import { planRoute } from "./agent-route.js";
 import type { GroundSampler } from "./cell-ground.js";
@@ -36,6 +50,9 @@ import type { GroundSampler } from "./cell-ground.js";
 const AGENT: LatLng = { lat: 50.94016, lng: 6.96243 };
 
 const FRAME = enuFrameAt(AGENT);
+
+/** The run a grade is measured over — the predicate's own figure, not a guess. */
+const NEIGHBOUR_SPACING_M = neighbourSpacingM(AFFORDANCE_RES);
 
 /** Metres per degree of latitude — the same spherical figure the demo uses. */
 const M_PER_DEG_LAT = 111_320;
@@ -100,12 +117,45 @@ describe("routing over sloped ground", () => {
     // THE CONTROL, and without it every assertion above would also pass for a
     // planner that had simply stopped checking heights. 150 % is a rock face,
     // well past `MAX_GROUND_GRADIENT`.
+    //
+    // ⚠️ `maxExpansions` IS PART OF THE ASSERTION, NOT A SPEED KNOB (PR review,
+    // 2026-08-18). The first version of this test ran the default 20 000 and
+    // passed for the wrong reason: on an infinite plane the contour direction
+    // stays legal at ANY grade, so the frontier is an unbounded line rather than
+    // empty, and `undefined` came back from the expansion cap — 481 ms of it —
+    // saying nothing about whether the cliff was refused. A small cap makes the
+    // claim honest: whatever the search did, it did not get down the slope. The
+    // step-level assertion below is what actually pins the refusal.
     const route = planRoute([], AGENT, away(30, 45), {
       frame: FRAME,
       field: slopeOf(1.5),
+      maxExpansions: 200,
     });
 
     expect(route).toBeUndefined();
+  });
+
+  it("refuses the individual step down a cliff, which is the real claim", () => {
+    // THE ASSERTION THE ROUTE-LEVEL CONTROL CANNOT MAKE. A route returning
+    // `undefined` merges "nowhere to go" with "gave up" by design
+    // (`agent-route.ts`), so the only place "this ground is too steep" can be
+    // stated without ambiguity is the step predicate itself.
+    //
+    // 150 % over the ~7.09 m between two res-13 centres is a 10.6 m drop
+    // against a 3.54 m budget; the 24 % case above is 1.70 m and passes.
+    const cliff = 1.5 * NEIGHBOUR_SPACING_M;
+    const walkable = 0.24 * NEIGHBOUR_SPACING_M;
+    const here = latLngToCell(AGENT.lat, AGENT.lng, AFFORDANCE_RES);
+    const next = gridDisk(here, 1).filter((cell) => cell !== here)[0]!;
+
+    const stepOf = (drop: number) =>
+      columnsAdjacent(
+        { cell: here, heightM: 48.51, groundM: 48.51 },
+        { cell: next, heightM: 48.51 - drop, groundM: 48.51 - drop },
+      );
+
+    expect(stepOf(cliff)).toBe(false);
+    expect(stepOf(walkable)).toBe(true);
   });
 
   it("still refuses a destination on flat ground behind a sealed wall", () => {
@@ -136,9 +186,13 @@ describe("routing over sloped ground", () => {
       ],
       AGENT,
       away(30, 45),
-      { frame: FRAME, field: slopeOf(0.24) },
+      { frame: FRAME, field: slopeOf(0.24), maxExpansions: 2000 },
     );
 
+    // The ring is 15 m across, so everything inside it is reachable in far
+    // fewer than 2 000 expansions — the cap is a guard against this test
+    // silently becoming cap-bound the way the cliff control had, not the
+    // reason the route is refused.
     expect(route).toBeUndefined();
   });
 });

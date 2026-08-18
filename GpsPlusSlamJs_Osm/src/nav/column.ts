@@ -76,9 +76,18 @@ export const STEP_THRESHOLD_M = 0.5;
  * while the `walkable` heat map rated it highly, and that is the whole defect:
  * a hillside is not a wall.
  *
- * 0.5 — 1 in 2, ~26.6° — is DEC-S2. It clears any street or promenade (the
- * steepest real streets are near 30 %) while a cliff or a retaining edge the
- * DEM does resolve still reads as impassable.
+ * 0.5 — 1 in 2, ~26.6° — is DEC-S2, and it is the value the evidence picks
+ * rather than a defensible guess. Measured at Terrarium z13 as the share of
+ * res-13 neighbour steps this refuses:
+ *
+ * - **0.3 would be actively harmful** — it refuses 16.8 % of steps around the
+ *   Heidelberg castle hill, ordinary walkable hillside, which is this defect
+ *   returning in a milder form.
+ * - **1.0 would be meaningfully less protective** — it admits 9.5 % of the
+ *   Cliffs of Moher's steps and 3.7 % of Victoria Peak's that 0.5 refuses.
+ * - **0.5 sits in the gap**: 0.2–1.5 % of city steps (0.21 % at the reported
+ *   Cologne location), against 18–26 % on genuine cliffs, where a single step
+ *   drops as much as 45 m.
  *
  * ⚠️ **It cannot tell a 26° hillside from a 2 m retaining wall smeared across
  * one cell**, and nothing at this resolution can: both are the same rise over
@@ -110,10 +119,20 @@ const SPACING_BY_RESOLUTION: number[] = [];
  * - `columnsAdjacent` is the search's hottest arithmetic path — `columnSpace`
  *   calls it before the geometry test precisely because it is cheap — and an
  *   exact answer costs two `cellToLatLng` calls and a haversine per candidate.
- * - The error runs the safe way. At res 13 this yields 7.09 m against a
- *   measured 6.34–6.91 m between real neighbours, i.e. +3…+12 %, so the rule
- *   errs **permissive** — and its failure mode when too strict is a confident
- *   "the agent cannot reach that spot", which is the worse of the two.
+ * - **The error is bounded and small.** At res 13 this yields 7.088 m; real
+ *   neighbour centres are 5.18–7.82 m apart over a 24 000-pair global sample,
+ *   so the model is off by at most −27 %/+10 %. Where the real run is LONGER
+ *   than the model the rule errs strict — which is **64 % of pairs globally**,
+ *   so that is the normal case, not the exception. The worst of it costs
+ *   `0.5 × 7.088/7.818 = 0.453` of effective gradient instead of 0.5, still far
+ *   above any street.
+ *
+ *   ⚠️ **This bullet claimed the error "errs permissive" until PR review
+ *   2026-08-18, and that was false.** It generalised a measurement taken at one
+ *   latitude — 6.34–6.91 m at Cologne, where the model does happen to be
+ *   permissive — to the globe. Corrected in place rather than deleted, because
+ *   the wrong version was an argument that the approximation is SAFE, and a
+ *   reader is entitled to know it was checked properly.
  *
  * A regular hexagon of edge `a` has adjacent centres `a√3` apart; H3 cells are
  * near-regular, which is what the measured spread above bounds.
@@ -235,10 +254,16 @@ export function columnsAdjacent(
  *     the reading the module lacked, and its absence is what made every
  *     hillside a wall.
  *
- * **Clause 1 is the old rule verbatim, so this can only ADD edges.** No route
- * that existed before the ground was known can disappear now that it is —
- * asserted as a property, because "we only relaxed it" is exactly the kind of
- * claim that quietly stops being true.
+ * **Clause 1 is the old rule verbatim, so this can only ADD edges** — asserted
+ * as a property, because "we only relaxed it" is exactly the kind of claim that
+ * quietly stops being true.
+ *
+ * ⚠️ **That is a statement about this PREDICATE, not about a planner built on
+ * it** (PR review, 2026-08-18). More edges mean more states below the goal's
+ * cost, so a bounded search can reach its expansion cap sooner than it did — and
+ * `planRouteWithIndex` reports a cap as `undefined`, which is indistinguishable
+ * from "no route". Measured over 1 200 routes on the six-site corpus: no route
+ * that existed before was lost. Bounded, not impossible.
  *
  * Reading 2 is skipped when either ground is missing or non-finite: a caller
  * that cannot say where the surface is has given nothing to separate a hillside
