@@ -251,3 +251,44 @@ Two fixtures did change meaning, both honestly:
   recorded in `column.ts.md` rather than left implicit.
 - **Cost is still horizontal-only** (DEC-S3), so an agent takes a steep shortcut
   over a gentle path of the same ground distance.
+
+### 6.1 Corpus-wide effect, and the zero-regression check
+
+Measured after the fix over the **checked-in six-site corpus** plus the real
+Terrarium z13 tile for each centre. 25 start points per site on a 60 m lattice,
+each routed 30 m in 8 directions — 200 routes per site — through
+`columnSpace` + `findCheapestPath` with the real obstacle index.
+
+**`maxGroundGradient: 0` reproduces the OLD rule exactly**, which is what makes
+this a true A/B in one binary: with a zero grade allowance the second arm
+degenerates to `|Δground| = 0 ∧ |Δoffset| ≤ step`, i.e. the absolute rule, which
+is the first arm.
+
+- `heidelberg-altstadt` (the relief site) — **73 → 80** of 200
+- `cologne-cathedral` — **115 → 116**
+- `london-tower-bridge` — **172 → 183**
+- `berlin-alexanderplatz` — **145 → 145**
+- `manhattan-midtown` — **120 → 120**
+- `tokyo-shinjuku` — **49 → 136**
+
+**Zero regressions across all 1 200 routes**, which is the "can only add edges"
+property observed rather than argued.
+
+**Tokyo Shinjuku is the site that was most broken** — it lost more than half its
+destinations to a rule about kerbs — and nothing in the package would have said
+so, because no route test has ever run over any corpus site.
+
+⚠️ **And the honest reading of the same run: `MAX_GROUND_GRADIENT` does not bind
+anywhere in the corpus.** Re-running with the limit effectively removed
+(`maxGroundGradient: 1000`) yields **exactly** the post-fix figures at all three
+sites checked — Heidelberg 80, Tokyo 136, Manhattan 120. So every refusal that
+survives the fix is **geometry** (a destination inside a building, a barrier,
+water), not slope, and DEC-S2's value is under-determined by this evidence: 0.3
+and 1.0 would have produced the same corpus numbers. The value matters only where
+a DEM resolves something genuinely cliff-like, which these six cities do not
+contain at 12 m posts.
+
+**Corollary worth knowing when the next report arrives:** "the agent cannot reach
+that spot" is still the correct answer for a click **inside a building** — a cell
+with no standable level — and that is now the commonest cause of the message
+rather than the rarest. Manhattan refuses 80 of 200 for exactly that reason.
