@@ -1,7 +1,8 @@
 # `columnsAdjacent` re-derives a neighbourhood the search already knows — follow-up
 
-**Status:** filed, measured, and ready to take — the remaining blocker is the
-contract question below, not the evidence. Found while benchmarking the slope fix
+**Status:** ✅ **TAKEN 2026-08-18.** `columnsClimbable` is the height-only
+predicate; `columnSpace.canEnter` calls it. Measured 23 % off a real route. This
+document is kept as the measurement and the rationale. Found while benchmarking the slope fix
 ([`2026-08-18-0659-nav-terrain-slope-vs-step-plan.md`](2026-08-18-0659-nav-terrain-slope-vs-step-plan.md));
 it is **pre-existing** and entirely separate from that change.
 
@@ -30,15 +31,20 @@ would have decided whether this work is worth scheduling.
 
 Measured end to end on the Cologne reproduction — real Overpass extract, real
 obstacle index, 24 destinations at 30/120/250 m, including the 10 that exhaust
-the cap:
+the cap. **Interleaved in one process, 7 rounds each, with the route results
+asserted identical every round:**
 
-- shipped `columnSpace` — **226.3 ms per route**
-- a space whose `canEnter` asks only the height question — **148.1 ms per route**
-- **35 % faster, with identical results** (14 of 24 routed either way)
+- before — **268 ms per route** (min and median agree)
+- after — **206 ms per route**
+- **23 % faster**
 
-That is the click path, and the saving concentrates on exactly the reply the demo
-most wants to be quick: `agent-cycle.ts` records that "no route" is the slowest
-answer, because it is the one that must exhaust the frontier.
+⚠️ **A first attempt at this reported 35 %, and that number was noise.** It
+compared two separate processes, and the UNCHANGED baseline moved 17 % between
+runs — larger than the effect being claimed. Interleaving the two arms in one
+process and reporting min alongside median is what made the figure stable; both
+now agree to the percentage point. This is the same trap
+`GpsPlusSlamJs_Docs/docs/lessons-learned.md` records as "delete a timing spec
+whose variance exceeds its effect", hit while measuring the fix for it.
 
 ## Why it is avoidable rather than merely expensive
 
@@ -60,18 +66,25 @@ allocated H3 index strings — to re-discover it.
   click, above. That was the performance loop's own precondition, so this is
   ready to be taken rather than merely arguable.
 
-## Suggested shape, if taken
+## The shape it took
 
 Give `columnSpace` a path that asks only the height question — the clauses are
 already factored out of `columnsAdjacent` into a private `climbable` helper by
-the slope fix — and keep the public predicate's meaning unchanged. The
-before/after on the Cologne reproduction is the measurement above; re-run it
-after the change and expect ~148 ms per route.
+the slope fix — and keep the public predicate's meaning unchanged. That is what
+shipped: `columnsAdjacent` still means what it always meant, and
+`columnsClimbable` is documented as **unsound for any caller that did not
+generate the second state as a neighbour of the first**, with a test pinning that
+it will happily call two cells on opposite sides of a city climbable.
 
-## Also worth pricing in the same pass
+## What is left, and it is now the largest remaining per-edge cost
 
 `columnSpace.canEnter` builds `{ ...state, groundM }` for both endpoints on
 every edge — two allocations per edge, up to ~280 k on a capped route (raised in
-the same PR review). Small next to the `gridDisk` cost above, but it is on the
-same line of code any fix here would touch, so measure it with the rest rather
-than separately.
+the PR review) — and `columnsClimbable` re-runs `resolveLimits` and
+`sharedResolution` per call, both of which are constant for the life of a space.
+
+An inlined predicate with none of that measured **~15 % faster again** than the
+shipped one on the same routes. Not taken: it would mean either a third entry
+point or a space that hand-rolls the rule, and duplicating the rule is exactly
+what this package's history says goes wrong. Recorded so the next person knows
+the remaining headroom is real but bought at a price.

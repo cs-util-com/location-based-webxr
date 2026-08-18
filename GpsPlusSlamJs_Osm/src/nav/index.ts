@@ -5,6 +5,7 @@
 export type { Column, StepLimits } from "./column.js";
 export {
   columnsAdjacent,
+  columnsClimbable,
   neighbourSpacingM,
   MAX_GROUND_GRADIENT,
   STEP_THRESHOLD_M,

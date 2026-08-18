@@ -19,7 +19,11 @@
 
 import { describe, it, expect } from "vitest";
 import { latLngToCell, gridDisk } from "h3-js";
-import { columnsAdjacent, STEP_THRESHOLD_M } from "./column.js";
+import {
+  columnsAdjacent,
+  columnsClimbable,
+  STEP_THRESHOLD_M,
+} from "./column.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 
 const TOWER = { lat: 50.9413, lng: 6.9583 };
@@ -325,5 +329,76 @@ describe("ground slope, once the ground is known", () => {
     expect(() => columnsAdjacent(a, b, { maxGroundGradient: NaN })).toThrow(
       /gradient/i,
     );
+  });
+});
+
+/**
+ * `columnsClimbable` — the height half, for a caller that already knows the
+ * cells are neighbours.
+ *
+ * Why these tests matter:
+ * `columnsAdjacent` spends ~85 % of its time in `gridDisk(a, 1).includes(b)`,
+ * re-deriving a neighbourhood `columnSpace` established when it GENERATED the
+ * candidate. Splitting the height question out saves that, and the split is only
+ * safe if the two predicates agree wherever the neighbourhood clause is
+ * satisfied — which is what the oracle below pins.
+ *
+ * The second test is the trap: this predicate says nothing about where the cells
+ * are, and a caller that forgets that gets an agent teleporting across the map.
+ *
+ * @see ../../docs/2026-08-18-0745-column-adjacency-griddisk-cost-followup.md
+ */
+describe("columnsClimbable", () => {
+  it("agrees with the full predicate for every neighbouring pair", () => {
+    // THE ORACLE. Every member of `gridDisk(FOOT, 1)` is a neighbour by
+    // construction, so for those pairs the two predicates must be the same
+    // function — otherwise the split changed behaviour rather than cost.
+    for (const cell of gridDisk(FOOT, 1)) {
+      for (const [ha, ga] of [
+        [0, 0],
+        [8, 0],
+        [48.51, 48.51],
+      ] as const) {
+        for (const [hb, gb] of [
+          [0, 0],
+          [0.4, 0],
+          [8, 0],
+          [47.7, 47.7],
+          [55.7, 47.7],
+        ] as const) {
+          const a = { cell: FOOT, heightM: ha, groundM: ga };
+          const b = { cell, heightM: hb, groundM: gb };
+          expect(columnsClimbable(a, b)).toBe(columnsAdjacent(a, b));
+        }
+      }
+    }
+  });
+
+  it("says nothing about WHERE the cells are, which is the whole point", () => {
+    // THE TRAP, PINNED. Two cells on opposite sides of the city at the same
+    // height are "climbable" and emphatically not adjacent. This predicate is
+    // only sound for a caller that generated `b` as a neighbour of `a` — the
+    // contract `columnSpace` satisfies by construction and nothing else here
+    // enforces.
+    const distant = { cell: DISTANT, heightM: 0, groundM: 0 };
+    const here = { cell: FOOT, heightM: 0, groundM: 0 };
+    expect(columnsClimbable(here, distant)).toBe(true);
+    expect(columnsAdjacent(here, distant)).toBe(false);
+  });
+
+  it("keeps the limit and resolution guards", () => {
+    // The cheap half of the split must not also drop the checks that turn a
+    // caller bug into a loud failure rather than a plausible "no route".
+    const a = { cell: FOOT, heightM: 0 };
+    const b = { cell: NEIGHBOUR, heightM: 0 };
+    expect(() => columnsClimbable(a, b, { stepThresholdM: -1 })).toThrow(
+      /threshold/i,
+    );
+    expect(() =>
+      columnsClimbable(a, {
+        cell: latLngToCell(TOWER.lat, TOWER.lng, 8),
+        heightM: 0,
+      }),
+    ).toThrow(/resolution/i);
   });
 });

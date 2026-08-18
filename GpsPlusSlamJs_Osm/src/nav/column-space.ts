@@ -22,7 +22,7 @@
 import { gridDisk } from "h3-js";
 
 import {
-  columnsAdjacent,
+  columnsClimbable,
   MAX_GROUND_GRADIENT,
   STEP_THRESHOLD_M,
   type Column,
@@ -166,7 +166,12 @@ export function columnSpace(options: ColumnSpaceOptions): StateSpace<Column> {
         const groundM = groundOf(state.cell);
         return groundM === undefined ? state : { ...state, groundM };
       };
-      if (!columnsAdjacent(grounded(from), grounded(to), limits)) return false;
+      // `columnsClimbable`, NOT `columnsAdjacent`: every candidate came out of
+      // `gridDisk(state.cell, 1)` in `candidates` above, and `search.ts` only
+      // asks this about a state that came from there — so the neighbourhood is
+      // established by construction and the full predicate would spend ~85 % of
+      // its time re-deriving it. Worth 23 % of a real route (268 → 206 ms).
+      if (!columnsClimbable(grounded(from), grounded(to), limits)) return false;
       // ORDER MATTERS FOR COST, not for the answer: `columnsAdjacent` is
       // arithmetic and `canCross` walks geometry, so the cheap test rejects the
       // overwhelming majority of candidate pairs first.

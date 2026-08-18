@@ -234,7 +234,46 @@ export function columnsAdjacent(
     return false;
   }
 
+  // THE EXPENSIVE HALF, AND IT IS LAST FOR THAT REASON. Measured at ~2.26 µs of
+  // a ~2.66 µs call — `gridDisk` allocates seven H3 index strings — against 4 ns
+  // for the arithmetic above. A caller that already knows the two cells are
+  // neighbours should use {@link columnsClimbable} and skip it entirely.
   return a.cell === b.cell || gridDisk(a.cell, 1).includes(b.cell);
+}
+
+/**
+ * The height half of {@link columnsAdjacent}, without the neighbourhood test.
+ *
+ * **For a caller that GENERATED the second state as a neighbour of the first**,
+ * and it is unsound for any other. `columnSpace` is that caller: every candidate
+ * it produces comes out of `gridDisk(state.cell, 1)`, and `search.ts` only ever
+ * asks `canEnter(from, to)` about a `to` that came from `candidates(from)` — so
+ * the full predicate spends ~85 % of its time re-deriving something already
+ * established by construction. Removing it is worth **23 %** of a real route on
+ * the reported Cologne data (268 → 206 ms, interleaved A/B, identical results),
+ * and the saving lands on the reply the demo most wants quick: a refusal, which
+ * must exhaust the frontier.
+ *
+ * ⚠️ **This says NOTHING about where the cells are.** Two states on opposite
+ * sides of a city at the same height are "climbable". Pinned by a test, because
+ * the failure it invites — an agent stepping across the map — looks like a
+ * pathfinder bug rather than a misused predicate.
+ *
+ * Both guards are kept: the limits are validated and mixed resolutions throw, so
+ * the cheap path cannot turn a caller bug into a plausible "no route".
+ *
+ * @see ../../docs/2026-08-18-0745-column-adjacency-griddisk-cost-followup.md
+ */
+export function columnsClimbable(
+  a: Column,
+  b: Column,
+  limits: StepLimits = {},
+): boolean {
+  const { stepThresholdM, maxGroundGradient } = resolveLimits(limits);
+  const resolution = sharedResolution(a.cell, b.cell);
+
+  if (!Number.isFinite(a.heightM) || !Number.isFinite(b.heightM)) return false;
+  return climbable(a, b, stepThresholdM, maxGroundGradient, resolution);
 }
 
 /**
