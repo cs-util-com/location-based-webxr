@@ -148,8 +148,29 @@ export function needsTerrainFor(
  * ONE SETTLED CENTRE IS REMEMBERED, not a set, and that is deliberate: the
  * question is only ever "is the CURRENT position's terrain resolved?", and a
  * growing set of every centre ever visited would be a leak whose entries are
- * never read. A new load for the same centre clears it, so a re-load is waited
- * for rather than answered from the previous one.
+ * never read. Settling a DIFFERENT centre is what displaces the memory, and it
+ * is the only thing that does — `settle` assigns `settledKey` and nothing else
+ * ever writes it.
+ *
+ * **A RE-LOAD AT THE SAME CENTRE IS THEREFORE ANSWERED FROM THE PREVIOUS
+ * SETTLE, NOT WAITED FOR** — and this comment claimed the exact opposite until
+ * 2026-08-19, when a cold review checked it against the code. The gate has no
+ * "a load began" signal to react to: it learns only that one finished. So a
+ * re-sample at an unchanged centre (a retried DEM, a widened extent) releases
+ * waiters on the OLD field's result.
+ *
+ * That is a real limitation rather than a bug to fix here, and the way to lift
+ * it is already visible in the design: `keyOf` is the identity, so anything
+ * that makes the second load a genuinely different field belongs IN the key.
+ * `undulationM` is in there for precisely that reason. A change that makes two
+ * different fields share one centre and one datum — the planned Mapterhorn
+ * upgrade is exactly that — must add a third component, or the gate silently
+ * stops being able to answer the question it exists for.
+ *
+ * `terrain-gate.test.ts` pins both halves: displacement by another centre, and
+ * the same-centre pass-through. The second test is new, because the test that
+ * appeared to cover it settled a different centre in the middle and so proved
+ * only the first.
  */
 export function createTerrainGate(
   options: TerrainGateOptions = {},

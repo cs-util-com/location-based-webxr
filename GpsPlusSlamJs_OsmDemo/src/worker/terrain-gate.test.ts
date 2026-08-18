@@ -83,21 +83,46 @@ describe("createTerrainGate", () => {
     expect(await settledNow(waiting)).toBe(false);
   });
 
-  it("waits again after a NEW load starts for a settled centre", async () => {
-    // `settle` is called in a `finally`, so a re-load for the same centre must
-    // not be answered from the previous one's result — otherwise a re-sample
-    // (a wider extent, a retried DEM) would be skipped by every waiter.
+  it("forgets a settled centre as soon as a DIFFERENT centre settles", async () => {
+    // Why this test matters: it is the ONLY thing that displaces the gate's
+    // memory, because `settledKey` is a single slot with no other writer.
+    //
+    // RENAMED 2026-08-19. It used to be called "waits again after a NEW load
+    // starts for a settled centre", which is not what it does: it settles
+    // `THERE` in between, so what it actually proves is displacement by another
+    // centre. The same-centre case it appeared to cover is pinned separately
+    // below — and behaves the opposite way.
     const { gate } = gateWithManualTimer();
     gate.settle(HERE);
     expect(await settledNow(gate.waitFor(HERE))).toBe(true);
 
-    // A second load for the same centre settles again; a waiter that arrives in
-    // between still has to see the new one.
     gate.settle(THERE);
     const waiting = gate.waitFor(HERE);
     expect(await settledNow(waiting)).toBe(false);
     gate.settle(HERE);
     await expect(waiting).resolves.toBeUndefined();
+  });
+
+  it("answers a SAME-centre re-load from the previous settle, because it cannot see a load start", async () => {
+    // Why this test matters: `createTerrainGate`'s header claimed the opposite
+    // for months — "A new load for the same centre clears it, so a re-load is
+    // waited for rather than answered from the previous one." Nothing clears
+    // `settledKey`; `settle` only ever assigns, and the gate has no "a load
+    // began" signal to react to. The test above looked like it covered this and
+    // did not, so the false claim survived unchallenged.
+    //
+    // This pins the REAL behaviour so the comment can be trusted again, and so
+    // the limitation is visible to whoever needs it to change. It is a genuine
+    // limitation: a re-sample at the same centre (a retried DEM, a widened
+    // extent, or the Mapterhorn upgrade planned as M3) is NOT waited for, and
+    // any design that needs it to be must add a component to `keyOf` — the
+    // datum is already there for exactly that reason.
+    const { gate } = gateWithManualTimer();
+    gate.settle(HERE);
+
+    // A second load for HERE begins here — the gate is told nothing about it,
+    // so a waiter is released immediately on the FIRST load's result.
+    expect(await settledNow(gate.waitFor(HERE))).toBe(true);
   });
 
   it("gives up when the caller's run is superseded", async () => {
