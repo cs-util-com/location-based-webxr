@@ -129,6 +129,75 @@ export function consensusProvider(
   };
 }
 
+/**
+ * The primary answers; the fallback fills only the gaps.
+ *
+ * WHY THIS BEATS {@link consensusProvider} FOR TWO SOURCES OF VERY DIFFERENT
+ * QUALITY. A median of two samples degenerates to their average, so wherever
+ * both sources answer, a high-resolution primary (say, national LiDAR) is
+ * blended with a coarse global fallback and its resolution advantage is simply
+ * thrown away — the worst of both, delivered smoothly. Consensus is the right
+ * tool when the sources are peers and disagreement is the signal; when one
+ * source is strictly better wherever it has data, the right composition is
+ * explicit precedence: the primary's answers survive untouched, the fallback
+ * is consulted ONLY for positions the primary returned `undefined`, and every
+ * seam in the output is attributable to a known coverage boundary rather than
+ * to an anonymous blend.
+ *
+ * The retry is batched — one fallback call carrying just the missing
+ * positions, results merged back at their original indices — so the fallback's
+ * quota is spent only on true gaps. A fallback failure degrades those gaps to
+ * `undefined` and never destroys the primary's answers; an abort from either
+ * stage propagates, per the seam's contract.
+ */
+export function fallbackProvider(
+  primary: ElevationProvider,
+  fallback: ElevationProvider,
+  options: { readonly sourceId?: string } = {},
+): ElevationProvider {
+  return {
+    attribution: [primary.attribution, fallback.attribution]
+      .filter((a) => a !== "")
+      .join(" · "),
+    sourceId: options.sourceId ?? `${primary.sourceId}+${fallback.sourceId}`,
+
+    async elevationAt(positions, signal) {
+      const first = await primary.elevationAt(positions, signal);
+
+      // Indices the primary left unanswered, with their positions kept
+      // alongside so the fallback batch and the merge use the same pairing.
+      const gapIndices: number[] = [];
+      const gapPositions: LatLng[] = [];
+      positions.forEach((position, i) => {
+        if (first[i] === undefined) {
+          gapIndices.push(i);
+          gapPositions.push(position);
+        }
+      });
+      // Copying via `positions` (not `first`) keeps the output's length pinned
+      // to the input even if a misbehaving primary returned a short array.
+      const merged = positions.map((_, i) => first[i]);
+      if (gapIndices.length === 0) return merged;
+
+      let filled: readonly (number | undefined)[];
+      try {
+        filled = await fallback.elevationAt(gapPositions, signal);
+      } catch (error) {
+        // The contract says providers do not throw for missing data, but a
+        // misbehaving fallback must not destroy the primary's answers. An
+        // abort is different: it is a cancellation, not a data problem.
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        signal?.throwIfAborted();
+        return merged;
+      }
+      gapIndices.forEach((positionIndex, j) => {
+        merged[positionIndex] = filled[j];
+      });
+      return merged;
+    },
+  };
+}
+
 /** Median of a sample list, `undefined` when empty. */
 export function median(values: readonly number[]): number | undefined {
   if (values.length === 0) return undefined;

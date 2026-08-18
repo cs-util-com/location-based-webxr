@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_TERRARIUM_ZOOM,
+  MAPTERHORN_URL_TEMPLATE,
   TerrariumProvider,
   browserPngDecoder,
   decodeTerrarium,
@@ -140,6 +141,104 @@ describe("sampling a decoded tile", () => {
       data: new Uint8ClampedArray(2 * 3 * 4),
     };
     expect(() => toElevationTile(oblong, 13, 0, 0)).toThrow(/square/);
+  });
+});
+
+/**
+ * A size×size image split into four quadrants of constant elevation.
+ *
+ * Exists to make tile-size bugs visible: on a 512-px tile every sample the
+ * provider takes must land in the quadrant the position actually falls in, so
+ * a coordinate computed for the wrong tile size returns a DIFFERENT quadrant's
+ * value rather than a subtly-shifted interpolation.
+ */
+function quadrantImage(
+  size: number,
+  [tl, tr, bl, br]: readonly [number, number, number, number],
+): DecodedImage {
+  const data = new Uint8ClampedArray(size * size * 4);
+  const half = size / 2;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const metres = y < half ? (x < half ? tl : tr) : x < half ? bl : br;
+      const raw = metres + 32768;
+      const o = (y * size + x) * 4;
+      data[o] = Math.floor(raw / 256);
+      data[o + 1] = raw % 256;
+      data[o + 2] = 0;
+      data[o + 3] = 255;
+    }
+  }
+  return { width: size, height: size, data };
+}
+
+describe("TerrariumProvider with non-256 tile sizes", () => {
+  /**
+   * WHY THIS TEST MATTERS. Tile INDICES are size-invariant (worldPixel scales
+   * with 2^z · tileSize, so worldX / tileSize is the same for any size), but
+   * the WITHIN-TILE pixel offset is not: it scales with the tile's actual
+   * pixel width. A provider that computes the offset for 256-px tiles and
+   * samples a 512-px tile with it reads only the top-left quadrant — every
+   * elevation displaced toward the tile's origin, silently, as plausible
+   * terrain. Some terrarium-encoded services serve 512-px tiles, so this is a
+   * real configuration, not a hypothetical.
+   */
+  it("samples a 512-px tile at the position's true within-tile fraction", async () => {
+    const tileX = 4302;
+    const tileY = 2807;
+    // Within-tile fraction 0.75/0.75 → the BOTTOM-RIGHT quadrant. The
+    // tile-size bug would sample at pixel (192, 192) of the 512 tile, which is
+    // the top-left quadrant.
+    const position = fromWorldPixel(
+      { x: (tileX + 0.75) * 256, y: (tileY + 0.75) * 256 },
+      13,
+    );
+
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(new Response(new ArrayBuffer(8), { status: 200 })),
+    ) as unknown as typeof fetch;
+    const provider = new TerrariumProvider({
+      decodePng: () =>
+        Promise.resolve(quadrantImage(512, [100, 200, 300, 400])),
+      fetchImpl,
+      zoom: 13,
+    });
+
+    const out = await provider.elevationAt([position]);
+    expect(out).toEqual([400]);
+  });
+
+  /**
+   * WHY THIS TEST MATTERS. Mapterhorn is the ready-made 512-px terrarium
+   * service, so this pins the whole configuration end-to-end: the URL template
+   * expands to the tile actually under the position, and the 512-px tile is
+   * sampled at the position's true within-tile fraction — the exact pairing
+   * the tile-size rescale above exists for.
+   */
+  it("requests the Mapterhorn URL and samples its 512-px tile correctly", async () => {
+    const tileX = 4302;
+    const tileY = 2807;
+    const position = fromWorldPixel(
+      { x: (tileX + 0.75) * 256, y: (tileY + 0.75) * 256 },
+      13,
+    );
+
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(new Response(new ArrayBuffer(8), { status: 200 })),
+    ) as unknown as typeof fetch;
+    const provider = new TerrariumProvider({
+      decodePng: () => Promise.resolve(quadrantImage(512, [10, 20, 30, 40])),
+      fetchImpl,
+      zoom: 13,
+      urlTemplate: MAPTERHORN_URL_TEMPLATE,
+    });
+
+    const out = await provider.elevationAt([position]);
+    expect(out).toEqual([40]);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `https://tiles.mapterhorn.com/13/${tileX}/${tileY}.webp`,
+      expect.anything(),
+    );
   });
 });
 

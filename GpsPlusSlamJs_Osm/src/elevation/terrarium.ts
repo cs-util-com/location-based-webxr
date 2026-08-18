@@ -33,6 +33,23 @@ export const TERRARIUM_ATTRIBUTION =
   "Elevation data © Mapzen / AWS Open Data Terrain Tiles, sourced from SRTM, NED and others";
 
 /**
+ * Mapterhorn: national open LiDAR terrain compiled into terrarium-encoded
+ * tiles, with Copernicus GLO-30 as the fallback where no LiDAR exists.
+ *
+ * Same terrarium encoding as the AWS tiles, but WebP-compressed and — the part
+ * that bites — **512-px tiles**, not 256. `TerrariumProvider` groups by tile
+ * index (size-invariant) and rescales the within-tile offset to the decoded
+ * size, so the template drops in as `urlTemplate` with no other configuration.
+ * `browserPngDecoder()` already decodes WebP: `createImageBitmap` sniffs the
+ * content, the "Png" in the name is historical.
+ */
+export const MAPTERHORN_URL_TEMPLATE =
+  "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp";
+
+export const MAPTERHORN_ATTRIBUTION =
+  "Elevation data © Mapterhorn (national LiDAR sources, Copernicus GLO-30)";
+
+/**
  * Default zoom.
  *
  * z=13, NOT the z=14 the plan first wrote. A Web Mercator tile shrinks with
@@ -245,6 +262,18 @@ export function sampleTile(
   return top * (1 - fy) + bottom * fy;
 }
 
+/**
+ * The tile size all tile/pixel arithmetic in this provider is done at.
+ *
+ * Tile INDICES are size-invariant — `toWorldPixel` scales with 2^z · tileSize,
+ * so `worldX / tileSize` names the same tile for any size — which is why the
+ * provider can group positions into tiles before it has fetched a single one
+ * and learned how big they are. The WITHIN-TILE offset is not size-invariant:
+ * it scales with the tile's actual pixel width, so sampling rescales it by
+ * `tile.size / TILE_MATH_SIZE` once the decoded size is known.
+ */
+const TILE_MATH_SIZE = 256;
+
 export interface TerrariumProviderOptions {
   readonly decodePng: PngDecoder;
   readonly fetchImpl?: typeof fetch;
@@ -313,7 +342,12 @@ export class TerrariumProvider implements ElevationProvider {
     return placed.map((p) => {
       const tile = loaded.get(tileKey(p.z, p.x, p.y));
       if (tile === undefined) return undefined;
-      return sampleTile(tile, p.px, p.py);
+      // `p.px`/`p.py` were computed at TILE_MATH_SIZE; the decoded tile may be
+      // larger (512-px terrarium services exist). The tile index is the same
+      // either way, but the offset scales with the actual size — sampling
+      // without this rescale reads only the tile's top-left quadrant.
+      const s = tile.size / TILE_MATH_SIZE;
+      return sampleTile(tile, p.px * s, p.py * s);
     });
   }
 
@@ -383,11 +417,16 @@ export class TerrariumProvider implements ElevationProvider {
 }
 
 /**
- * A PNG decoder built on browser APIs.
+ * A raster decoder built on browser APIs.
  *
  * Works on the main thread and in a Worker (`OffscreenCanvas` is available in
  * both). Throws where those APIs do not exist rather than pretending — a Node
  * caller must supply its own decoder, and the failure should name that.
+ *
+ * Despite the name it is NOT PNG-specific: `createImageBitmap` sniffs the
+ * bytes' actual format, so WebP-compressed terrarium tiles (e.g. Mapterhorn's)
+ * decode through the same path. The "Png" in the name is historical — the
+ * first tile source happened to serve PNG.
  */
 export function browserPngDecoder(): PngDecoder {
   return async (bytes: ArrayBuffer): Promise<DecodedImage> => {

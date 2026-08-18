@@ -7,6 +7,7 @@ export type { ElevationProvider } from "./elevation-provider.js";
 export {
   NullElevationProvider,
   consensusProvider,
+  fallbackProvider,
   median,
 } from "./elevation-provider.js";
 
@@ -22,6 +23,8 @@ export {
   fromWorldPixel,
   toWorldPixel,
   DEFAULT_TERRARIUM_ZOOM,
+  MAPTERHORN_ATTRIBUTION,
+  MAPTERHORN_URL_TEMPLATE,
   TERRARIUM_ATTRIBUTION,
   TERRARIUM_URL_TEMPLATE,
   TerrariumProvider,

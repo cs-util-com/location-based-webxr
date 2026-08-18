@@ -14,6 +14,10 @@ sampling, and the provider that ties them together.
 - `class TerrariumProvider` (+ `stats`: `fetches`, `cacheHits`, `decodeFailures`)
 - `browserPngDecoder(): PngDecoder`
 - `TERRARIUM_URL_TEMPLATE`, `TERRARIUM_ATTRIBUTION`, `DEFAULT_TERRARIUM_ZOOM`
+- `MAPTERHORN_URL_TEMPLATE`, `MAPTERHORN_ATTRIBUTION` — Mapterhorn's
+  terrarium-encoded tiles (national open LiDAR compiled with Copernicus GLO-30
+  fallback): same encoding, WebP-compressed, **512-px tiles**. Drops into
+  `TerrariumProvider` as `urlTemplate` with no other configuration.
 
 ## Invariants & assumptions
 
@@ -47,6 +51,18 @@ sampling, and the provider that ties them together.
 - **Bilinear sampling, clamping at tile edges.** Nearest-neighbour is a visible
   staircase at ~12 m/pixel; wrapping at the edge would be wrong by half the
   planet where clamping is wrong by half a pixel.
+- **Tile-index maths is independent of tile size; within-tile offsets are
+  not.** `toWorldPixel` scales with 2^z · tileSize, so `worldX / tileSize`
+  names the same tile whatever the size — which is why the provider can group
+  positions into tiles at its 256-px maths size before fetching anything. The
+  fractional offset DOES scale with the tile's actual pixel width, so sampling
+  rescales it by `tile.size / 256` once the decoded size is known. Without the
+  rescale, a 512-px tile (Mapterhorn's size) is sampled only in its top-left
+  quadrant — every elevation displaced toward the tile origin, silently, as
+  plausible terrain.
+- **`browserPngDecoder` is not PNG-specific despite the name.**
+  `createImageBitmap` sniffs the bytes' actual format, so WebP terrarium tiles
+  decode through the same path; the name is historical.
 - **Positions are grouped by tile before fetching**, and one fetch is in flight
   per tile however many positions want it.
   - Through [`InFlightRequests`](../source/in-flight-requests.ts.md), so those
@@ -67,6 +83,10 @@ const heights = await provider.elevationAt(cells.map(cellCentre));
 
 `terrarium.test.ts` — the encoding against the published formula including
 negative ground and both extremes, tile arithmetic direction/clamping/wrapping,
-exact and interpolated sampling, edge clamping, non-square rejection, and the
+exact and interpolated sampling, edge clamping, non-square rejection, the
 provider's one-fetch-per-tile, caching, `undefined`-not-zero and abort
-behaviour. No image codec is used.
+behaviour, and 512-px tiles (quadrant-distinct synthetic tiles pin that the
+within-tile offset is rescaled to the decoded size, including end-to-end with
+the Mapterhorn URL template). No image codec is used.
+`terrarium.property.test.ts` — `toWorldPixel`/`fromWorldPixel` as exact
+inverses, monotonicity, and per-zoom doubling.
