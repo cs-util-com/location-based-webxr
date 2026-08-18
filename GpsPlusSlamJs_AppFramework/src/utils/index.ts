@@ -34,3 +34,4 @@ export {
   type GroupSpec,
 } from './validate-option-fields.js';
 export { guardSliderAgainstScroll } from './slider-scroll-guard.js';
+export { QR_OPTIONS, generateQr, renderQrSvg } from './qr-render.js';
