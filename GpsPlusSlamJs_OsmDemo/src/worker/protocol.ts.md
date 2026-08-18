@@ -14,6 +14,11 @@ union, and two runtime guards. No behaviour.
   points at.
 - `TransferableMesh` — built geometry plus the status-line counters.
 - `UpdateResult`, `TerrainResult` — the two compound results.
+  - `TerrainResult.demSourceId` — the worker provider's own `sourceId`
+    (`mapterhorn+terrarium`), reported **on the result rather than shared as a
+    constant** so the label the AR readout renders can only describe the
+    provider that actually sampled the field. Composed, never per-sample —
+    see `dem-provider.ts.md`.
 - `WorkerEnvelope` — what the main thread posts, including `{ kind: 'abort',
 target }`.
 - `WorkerReply` — `{ id, ok: true, value } | { id, ok: false, message }`.

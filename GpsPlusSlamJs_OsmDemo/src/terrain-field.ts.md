@@ -78,9 +78,10 @@ pixel grid, fetched once each and reused as the user moves.
 ## Examples
 
 ```ts
-const field = createTerrainField({
-  provider: new TerrariumProvider({ decodePng }),
-});
+// The demo composes Mapterhorn-primary + AWS-fallback behind one caching
+// fetch via `createDemProvider` (see dem-provider.ts.md); any single
+// `ElevationProvider` works the same way here.
+const field = createTerrainField({ provider: demProvider });
 await field.ensureAround(centre, extentM * Math.SQRT2); // grow (incremental)
 const grid = field.sampleGrid({ frame, extentM, spacingM }); // render (bounded)
 ```

@@ -35,6 +35,18 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
 - **OPFS works here, and is better here.** `navigator.storage.getDirectory()` is
   available in workers, and OPFS offers synchronous access handles only off the
   main thread. The tile cache moved with the fetching rather than staying behind.
+  - **One store, three tenants**: Overpass tiles (`osm/v{n}/…`), the rule table
+    (`rules/v1/…`) and — since the Mapterhorn composition — DEM tile bytes,
+    keyed by full request URL through `createCachingTileFetch`. The key
+    families cannot collide, so a second OPFS directory would buy nothing.
+- **The DEM provider is composed in [`dem-provider.ts`](../dem-provider.ts.md)**
+  (Mapterhorn primary, AWS Terrarium fallback, one shared caching fetch), not
+  inline in `init` — `init` needs `navigator.storage` and `OffscreenCanvas`, so
+  wiring built there is untestable by construction. `init` supplies only the
+  browser-bound pieces (the store, `browserPngDecoder()`) and records the
+  provider's `sourceId`, which every `terrain` reply carries back as
+  `TerrainResult.demSourceId` so the page labels a field with the provider
+  that actually sampled it.
 - **The merged features never leave.** They are ~21 MB. `explainCell` and the
   mesh build both run here _because_ that is where the features are; answering
   either on the main thread would mean shipping them across.

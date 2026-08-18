@@ -37,7 +37,6 @@ import {
   CachingSource,
   MemoryBlobStore,
   OverpassSource,
-  TerrariumProvider,
   browserPngDecoder,
   buildAreaPlates,
   buildBarriers,
@@ -75,6 +74,7 @@ import {
 } from "gps-plus-slam-app-framework/osm-bridge";
 
 import { planRouteWithIndex } from "../agent-route.js";
+import { createDemProvider } from "../dem-provider.js";
 import { WALKABLE_CATEGORY, walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { shellRandFor } from "./shell-rand.js";
@@ -139,6 +139,11 @@ interface WorkerState {
    * the new edge instead of re-sampling the whole square.
    */
   readonly terrainField: TerrainField;
+  /**
+   * The composed DEM provider's `sourceId`, reported with every terrain
+   * result so the page labels a field with the provider that sampled it.
+   */
+  readonly demSourceId: string;
 }
 
 let state: WorkerState | undefined;
@@ -609,6 +614,16 @@ async function handle<K extends WorkerCallKind>(
         store,
       );
       const pipeline = new DemoPipeline({ source, table: loaded.table });
+      // THE SAME STORE AGAIN, third tenant: DEM tiles are keyed by their full
+      // request URL, so they coexist with `osm/v{n}/…` and `rules/v1/…` the
+      // same way those two coexist with each other. The composition itself —
+      // Mapterhorn primary, AWS fallback, one caching fetch — lives behind
+      // `createDemProvider`, where it is unit-testable; only the browser-bound
+      // pieces (this store, the real decoder) are supplied here.
+      const demProvider = createDemProvider({
+        store,
+        decodePng: browserPngDecoder(),
+      });
       state = {
         pipeline,
         table: loaded.table,
@@ -620,9 +635,8 @@ async function handle<K extends WorkerCallKind>(
             source.fetchTile(tile, prefetchSignal),
           isLoaded: (tile) => pipeline.hasTile(tile),
         }),
-        terrainField: createTerrainField({
-          provider: new TerrariumProvider({ decodePng: browserPngDecoder() }),
-        }),
+        terrainField: createTerrainField({ provider: demProvider }),
+        demSourceId: demProvider.sourceId,
       };
       return {
         categories: loaded.table.categories,
@@ -745,10 +759,11 @@ async function handle<K extends WorkerCallKind>(
     case "terrain": {
       const { centre, frameOrigin, extentM, spacingM, geoidUndulationM } =
         payload as WorkerCalls["terrain"]["request"];
-      const { terrainField } = requireState();
+      const { terrainField, demSourceId } = requireState();
       try {
         return await loadTerrain(
           terrainField,
+          demSourceId,
           centre,
           frameOrigin ?? centre,
           extentM,
@@ -919,6 +934,8 @@ async function handle<K extends WorkerCallKind>(
  */
 async function loadTerrain(
   terrainField: TerrainField,
+  /** The provider's `sourceId`, reported back with the field it sampled. */
+  demSourceId: string,
   /** Where the user is. Keys the gate, and says which load this was. */
   centre: LatLng,
   /** Where the scene's frame is anchored. Says what the heights mean. */
@@ -995,6 +1012,7 @@ async function loadTerrain(
   return {
     field: terrain,
     note: describeTerrain(field),
+    demSourceId,
     // REPORTED EVEN WHEN THE FIELD IS EMPTY, and that is the point: the ground
     // plane follows this centre, and a plane left behind during a DEM outage
     // stops covering the user as soon as they walk past its extent.

@@ -608,6 +608,10 @@ test.describe("the header", () => {
       await expect(attribution).toContainText(
         /Mapzen|Terrarium|Tilezen|elevation/i,
       );
+      // BOTH DEM sources, by name. The composition falls back per tile, so a
+      // session may stand on either — a credit naming only one of them stops
+      // satisfying the obligation the moment the other serves a tile.
+      await expect(attribution).toContainText(/Mapterhorn/i);
 
       await page.locator("#header-toggle").click();
       await expect(page.locator("#header-bar")).toHaveAttribute(
@@ -619,6 +623,7 @@ test.describe("the header", () => {
       await expect(attribution).toContainText(
         /Mapzen|Terrarium|Tilezen|elevation/i,
       );
+      await expect(attribution).toContainText(/Mapterhorn/i);
     });
   });
 });

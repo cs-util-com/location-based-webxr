@@ -117,9 +117,9 @@ an altitude shows nothing at all — it would read as a measurement.
 
 ## The height decomposition (DEC-H1)
 
-The readout's reason for existing, and the measurement that decides
-[the altitude-offset question](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-16-1230-altitude-offset-from-elevation-data-review.md):
-the ~10 m symptom has **two** candidate causes that need **opposite** fixes.
+The readout's reason for existing, and the measurement that decides the
+altitude-offset question: the ~10 m symptom has **two** candidate causes that
+need **opposite** fixes.
 
 - `terrainHeightM` — the DEM height under the user, **ellipsoidal** metres, so
   it is directly comparable to `altitudeM` with no conversion at the call site.
@@ -130,6 +130,16 @@ the ~10 m symptom has **two** candidate causes that need **opposite** fixes.
     baked into vertices; this is the main thread's current field. Normally
     identical, and their divergence is the class `worker/terrain-gate.ts`
     prevents. Labelled `terrain`, never "building ground".
+- `demSourceId` — which DEM **composition** produced `terrainHeightM`, rendered
+  as a suffix on the terrain line (`terrain 104.0 m · mapterhorn+terrarium`).
+  The two composed sources differ by an order of magnitude in resolution
+  (national LiDAR against ~30 m SRTM), so "which DEM" changes what counts as a
+  residual — a screenshot without it cannot be checked against the right
+  upstream. **Composed, never per-sample**: the `ElevationProvider` seam
+  carries no per-position provenance, so this names what was asked, not which
+  member answered a given post. See
+  [`dem-provider.ts.md`](dem-provider.ts.md) for the composition and the
+  filed follow-up before inventing per-sample tracking.
 - `terrainHasData` — **the most important flag in the interface.**
   `heightfieldFrom` samples **flat zero** when `hasData` is false, so a failed
   DEM load would otherwise render as a plausible `0.0 m` and a residual against

@@ -217,6 +217,17 @@ export interface TerrainResult {
   /** One phrase for the status line, never empty. */
   readonly note: string;
   /**
+   * The worker provider's own `sourceId` — e.g. `mapterhorn+terrarium`.
+   *
+   * ON THE RESULT, NOT A CONSTANT SHARED WITH THE PAGE, so the label the AR
+   * readout renders can only ever describe the provider that actually sampled
+   * this field: a constant imported on both sides would keep agreeing with
+   * itself after the worker's wiring changed. Composed, never per-sample —
+   * the `ElevationProvider` seam carries no per-position provenance (see
+   * `dem-provider.ts`).
+   */
+  readonly demSourceId: string;
+  /**
    * Where the window was sampled, in the scene's frame — **reported even when
    * `field` is `undefined`.**
    *

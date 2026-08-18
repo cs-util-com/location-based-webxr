@@ -27,13 +27,9 @@
  */
 
 import { cellToLatLng, greatCircleDistance, UNITS } from "h3-js";
-import {
-  TERRARIUM_ATTRIBUTION,
-  enuFrameAt,
-  type GeoidModel,
-  type LatLng,
-} from "gps-plus-slam-osm";
+import { enuFrameAt, type GeoidModel, type LatLng } from "gps-plus-slam-osm";
 
+import { DEM_ATTRIBUTION } from "./dem-provider.js";
 import { pickDefaultCategory } from "./default-category.js";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
@@ -1333,6 +1329,10 @@ async function main(): Promise<void> {
           // for, so gating it hid `no DEM` for exactly the fields it describes
           // (PR #312 review).
           ...terrainReadout(field, enuHere, arUndulationM),
+          // THE COMPOSITION'S IDENTITY, not per-sample provenance — the
+          // provider seam cannot say which member answered a given post, so
+          // the readout names what was asked. See `ar-measurements.ts`.
+          ...(demSourceId === undefined ? {} : { demSourceId }),
           // THE SESSION CONSTANT that makes the ZERO_GEOID trap visible. It does
           // not move while walking; it is on screen so that a `0` announces
           // itself rather than putting the whole scene ~46 m out in silence.
@@ -1529,6 +1529,10 @@ async function main(): Promise<void> {
    */
   let terrain: Heightfield | undefined;
   let terrainNote = "";
+  // Which DEM composition sampled `terrain` — the worker's own `sourceId`,
+  // applied atomically with the field so the AR readout can never label a
+  // field with a provider that did not produce it.
+  let demSourceId: string | undefined;
 
   // Coalesced, exactly like `refresh` — the two are driven by the same click and
   // must agree about which position is current. See `terrain-cycle.ts` for the
@@ -1583,9 +1587,10 @@ async function main(): Promise<void> {
     worker,
     extentM: TERRAIN_EXTENT_M,
     spacingM: TERRAIN_SPACING_M,
-    apply: ({ field, note, centreEnu }) => {
+    apply: ({ field, note, centreEnu, demSourceId: loadedSourceId }) => {
       terrain = field === undefined ? undefined : heightfieldFrom(field);
       terrainNote = note;
+      demSourceId = loadedSourceId;
       // `centreEnu` PASSED SEPARATELY, because a DEM outage leaves `field`
       // undefined while the window still has a place — and the ground plane has
       // to follow it either way, or a walk during an outage takes the user off
@@ -1602,8 +1607,11 @@ async function main(): Promise<void> {
       // belongs, so it is the ONLY place this is shown — a second copy in the
       // header would be the copy that does not satisfy the obligation, sitting
       // next to the one that does.
+      // BOTH sources, unconditionally: the composition falls back per tile, so
+      // any session may be standing on either DEM. See `dem-provider.ts` for
+      // why the credit is a constant rather than the provider's own field.
       mapView.setTerrainAttribution(
-        terrain === undefined ? undefined : TERRARIUM_ATTRIBUTION,
+        terrain === undefined ? undefined : DEM_ATTRIBUTION,
       );
       // THE REPORTED CENTRE, not the field's — they are the same on a good
       // load, and only the former exists during an outage.

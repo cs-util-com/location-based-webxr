@@ -15,7 +15,7 @@
   - Reports the loaded field through `apply` exactly once per load that is not
     superseded.
   - Coalesced through `latestOnly`: at most one load in flight, only the newest waiting position survives, never rejects.
-- `interface TerrainState` — `field` (`Heightfield | undefined`; `undefined` means the ground stays flat), `note` (one status-line phrase, never empty) and `centreEnu` (where the window was sampled, in the scene’s frame).
+- `interface TerrainState` — `field` (`Heightfield | undefined`; `undefined` means the ground stays flat), `note` (one status-line phrase, never empty), `demSourceId` (which DEM composition sampled the field — the worker provider's `sourceId`, applied atomically with the field for the same reason the note is) and `centreEnu` (where the window was sampled, in the scene’s frame).
   - **`centreEnu` is reported even when `field` is `undefined`**, and that is the point of it being a separate value. The ground plane follows this centre and the plane is FINITE — it reaches `TERRAIN_EXTENT_M` and stops — so one left behind during a DEM outage stops covering the user as soon as they walk past that, and the 5 km re-anchor threshold puts that well inside a single anchor. Raised in review on #269, where the code returned early instead: that fixed the appearance (moving a flat plane is invisible) and missed the coverage.
 - `interface TerrainCycleOptions` — `worker` (the narrowed RPC surface), `extentM`, `spacingM`, `apply`. The SAMPLING moved into the worker; this module is now the coalescing wrapper around an RPC call, and `apply` receives `HeightfieldData` (not `Heightfield` — `heightAt` is a method and structured clone drops methods silently).
 
@@ -36,7 +36,7 @@ const loadTerrain = createTerrainCycle({
   worker,
   extentM: TERRAIN_EXTENT_M,
   spacingM: 12,
-  apply: ({ field, note, centreEnu }) => {
+  apply: ({ field, note, centreEnu, demSourceId }) => {
     terrain = field === undefined ? undefined : heightfieldFrom(field);
     terrainNote = note;
     // `centreEnu` is passed separately because it is reported even for a FAILED

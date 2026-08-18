@@ -153,6 +153,7 @@ export interface ArModeDeps {
     ArMeasurements,
     | "terrainHeightM"
     | "terrainHasData"
+    | "demSourceId"
     | "geoidUndulationM"
     | "geoidModelId"
     | "position"

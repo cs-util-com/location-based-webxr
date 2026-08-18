@@ -237,6 +237,34 @@ describe("describeArMeasurements — the height decomposition", () => {
     );
   });
 
+  it("names the active DEM source on the terrain line", () => {
+    // WHY THIS TEST MATTERS. The demo composes two DEMs (Mapterhorn primary,
+    // AWS Terrarium fallback) and the two differ by an order of magnitude in
+    // resolution — so a screenshot of the terrain height is only checkable
+    // against the upstream if it says which composition produced it.
+    const expanded = describeArMeasurements(
+      {
+        terrainHeightM: 104,
+        terrainHasData: true,
+        demSourceId: "mapterhorn+terrarium",
+      },
+      { expanded: true },
+    );
+
+    expect(expanded).toContain("terrain 104.0 m · mapterhorn+terrarium");
+  });
+
+  it("keeps the plain terrain line when no DEM source is reported", () => {
+    // A missing id is "not reported", never an empty suffix — the same
+    // omission rule every other absent value here follows.
+    const expanded = describeArMeasurements(
+      { terrainHeightM: 104, terrainHasData: true },
+      { expanded: true },
+    );
+
+    expect(expanded).toContain("terrain 104.0 m");
+  });
+
   it("keeps the terrain height and the geoid out of the COLLAPSED readout", () => {
     // DEC-H2: the collapsed set is what you walk with. These are screenshot
     // material, and 14 lines over a camera feed covers the scene being

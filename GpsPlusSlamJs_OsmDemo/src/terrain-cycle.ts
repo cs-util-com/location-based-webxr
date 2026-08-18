@@ -53,6 +53,14 @@ export interface TerrainState {
   /** One phrase for the status line, never empty. */
   readonly note: string;
   /**
+   * Which DEM composition sampled `field` — the worker provider's `sourceId`.
+   *
+   * Applied atomically with the field for the same reason the note is: a
+   * label that arrived on its own could describe a provider the current
+   * field was never sampled through.
+   */
+  readonly demSourceId: string;
+  /**
    * Where the window was sampled, in the scene's frame — even on failure.
    *
    * Carried separately from `field` precisely because `field` is `undefined`

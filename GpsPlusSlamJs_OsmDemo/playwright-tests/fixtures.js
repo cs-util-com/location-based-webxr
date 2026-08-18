@@ -107,6 +107,17 @@ const isRuleSheet = (url) => /(^|\.)docs\.google\.com$/i.test(url.hostname);
 const isTerrarium = (url) =>
   /(^|\.)s3\.amazonaws\.com$/i.test(url.hostname) &&
   url.pathname.includes("/terrarium/");
+/**
+ * The PRIMARY DEM since the Mapterhorn+AWS composition landed: the app asks
+ * this host first and falls back to the AWS tiles above only for tiles it
+ * does not have. Both hosts are DEM tiles and share ONE route handler, so
+ * `holdTerrain`/`failTerrain` govern the DEM as a whole — failing only the
+ * primary would quietly turn every "outage" test into a fallback test.
+ */
+const isMapterhorn = (url) =>
+  /(^|\.)tiles\.mapterhorn\.com$/i.test(url.hostname);
+/** Either DEM host — what the `terrain` counter and the DEM routes match. */
+const isDemTile = (url) => isTerrarium(url) || isMapterhorn(url);
 const isBasemap = (url) =>
   /(^|\.)tile\.openstreetmap\.org$/i.test(url.hostname);
 /**
@@ -269,7 +280,8 @@ export async function stubNetwork(page, options = {}) {
       ),
     }),
   );
-  // Terrarium DEM tiles. Served as a REAL 2x2 PNG rather than aborted, so the
+  // DEM tiles — BOTH hosts (Mapterhorn primary, AWS Terrarium fallback),
+  // through one handler. Served as a REAL 2x2 PNG rather than aborted, so the
   // decode + sample path runs for real: an aborted tile would exercise only the
   // "terrain unavailable" branch and the displaced-ground code would never be
   // reached by any test. The four pixels encode distinct heights, so the
@@ -277,7 +289,17 @@ export async function stubNetwork(page, options = {}) {
   //
   // Terrarium decodes as (r * 256 + g + b / 256) - 32768, so r = 128, g = 0
   // is exactly 0 m and larger g values step up one metre each.
-  await page.route(isTerrarium, async (route) => {
+  //
+  // MAPTERHORN GETS THE SAME 2x2 PNG, deliberately, not a 512-px WebP: the
+  // provider's tile arithmetic is size-invariant (its own library tests pin
+  // the 512-px rescale) and `createImageBitmap` sniffs bytes rather than
+  // trusting the `.webp` URL, so the identical tile keeps the PRIMARY path —
+  // the one production takes — exercised for real while staying deterministic.
+  // Answering the primary means the AWS fallback is expected to receive no
+  // requests in an ordinary run; it stays intercepted so a fallback fetch can
+  // never leak to the network.
+  /** @param {import('@playwright/test').Route} route */
+  const serveDemTile = async (route) => {
     // `holdTerrain` STALLS the DEM indefinitely, until the test releases it (W3).
     //
     // A HOLD RATHER THAN A DELAY, and the difference is the difference between
@@ -302,11 +324,16 @@ export async function stubNetwork(page, options = {}) {
       contentType: "image/png",
       body: terrariumPng(),
     });
-  });
+  };
+  await page.route(isMapterhorn, serveDemTile);
+  await page.route(isTerrarium, serveDemTile);
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (isBasemap(url)) counts.basemap++;
-    if (isTerrarium(url)) counts.terrain++;
+    // One counter for the DEM as a whole: which host answered is the app's
+    // composition detail, and every existing assertion is about "did the DEM
+    // get asked", not about the member that replied.
+    if (isDemTile(url)) counts.terrain++;
   });
 
   return counts;
@@ -575,13 +602,23 @@ export async function expectCanvasFillsContainer(page) {
 }
 
 /**
- * A 2x2 Terrarium DEM tile with four distinct heights.
+ * A 2x2 Terrarium DEM tile: a low plateau with one 40 m corner.
  *
  * ENCODED HERE rather than checked in as a binary, because the interesting part
  * is the ENCODING and a base64 blob hides it. Terrarium stores height as
  * `(r * 256 + g + b / 256) - 32768`, so `r = 128, g = 0` is exactly 0 m and each
- * step of `g` is one metre. The four pixels below are 0 / 20 / 40 / 10 m, which
- * is enough relief for a test to tell a displaced plane from a flat one.
+ * step of `g` is one metre.
+ *
+ * WHY THREE ZEROS AND ONE 40, not four distinct heights. The provider samples a
+ * tile at its DECODED size (the library's tile-size fix), so a 2x2 tile is one
+ * smooth bilinear surface per z13 tile (~3 km at the fixture's latitude) —
+ * `h = 40·x·y` with this layout. The previous four-value tile put the low
+ * ground mid-distance from `AT_FIXTURE`, where scene fog washes the ramp's
+ * saturated floor colour out and the ramp test's "cool end on screen" count
+ * read zero. With the single high corner the user stands ON the low plateau:
+ * the ramp floor is close and saturated, the 40 m corner keeps the surface
+ * measurably non-flat (~±7 m within the near field, ±40 m in view), and the
+ * displacement A/B still runs over real slopes.
  *
  * Written as a real PNG rather than a stub so the whole path runs for real:
  * fetch, decode, sample, displace. An aborted tile would exercise only the
@@ -591,9 +628,9 @@ export async function expectCanvasFillsContainer(page) {
 function terrariumPng() {
   const heights = [
     [128, 0, 0],
-    [128, 20, 0],
+    [128, 0, 0],
+    [128, 0, 0],
     [128, 40, 0],
-    [128, 10, 0],
   ];
   // Raw scanlines: one filter byte (0 = none) then RGB triples.
   const raw = Buffer.concat([

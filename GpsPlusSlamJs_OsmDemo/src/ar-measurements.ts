@@ -89,6 +89,18 @@ export interface ArMeasurements {
    */
   readonly terrainHeightM?: number | undefined;
   /**
+   * Which DEM composition produced {@link terrainHeightM} — e.g.
+   * `mapterhorn+terrarium`, the worker provider's own `sourceId`.
+   *
+   * **COMPOSED, NOT PER-SAMPLE.** The `ElevationProvider` seam returns heights
+   * with no per-position provenance, so this names the composition that was
+   * asked, never which member answered a given post — the honest claim, and
+   * the one that makes a screenshot checkable against the right upstream at
+   * the right resolution (national LiDAR and ~30 m SRTM differ by an order of
+   * magnitude, so "which DEM" changes what counts as a residual).
+   */
+  readonly demSourceId?: string | undefined;
+  /**
    * Whether the DEM actually loaded.
    *
    * **THE MOST IMPORTANT FLAG IN THIS INTERFACE.** `heightfieldFrom` returns a
@@ -279,7 +291,17 @@ export function describeArMeasurements(
   const terrainUsable =
     !demFailed && isSignedReading(measurements.terrainHeightM);
   if (terrainUsable) {
-    pushExpanded(`terrain ${measurements.terrainHeightM.toFixed(1)} m`);
+    // The SOURCE rides on the height's own line rather than getting one of its
+    // own: it only means anything next to the number it qualifies, and the
+    // expanded readout is already long. Absent id, absent suffix — "not
+    // reported" must not render as an empty separator.
+    const source =
+      measurements.demSourceId === undefined || measurements.demSourceId === ""
+        ? ""
+        : ` · ${measurements.demSourceId}`;
+    pushExpanded(
+      `terrain ${measurements.terrainHeightM.toFixed(1)} m${source}`,
+    );
   }
 
   // THE LINE THE READOUT EXISTS FOR (DEC-H1/H5). Chest height should read about
