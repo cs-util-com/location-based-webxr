@@ -39,6 +39,11 @@ const entryFiles = [
   // the recorder's live-occlusion wiring, so it must be built per-file.
   'src/ar/depth-occluder.ts',
   'src/ar/depth-unprojection.ts',
+  // Pure column-histogram + plane-fit floor estimator over the occupancy
+  // grid — deep-importable via the `./ar/*` wildcard, so it must be built
+  // per-file (a missing entry breaks Vite resolution at runtime; see
+  // 2026-04-29-recorder-e2e-import-resolution-failure.md).
+  'src/ar/floor-estimator.ts',
   'src/ar/occupancy-grid.ts',
   // Pure voxel→surface mesher — deep-importable (the `./ar/*` wildcard
   // advertises this subpath), so it must be built per-file.

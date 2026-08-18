@@ -88,6 +88,20 @@ export { bresenham3d, type GridCell } from './bresenham3d.js';
 // --- occupancy-grid ---
 export { OccupancyGrid, type OccupancyGridOptions } from './occupancy-grid.js';
 
+// --- floor-estimator (column-histogram + plane-fit floor under the camera) ---
+export {
+  type FloorEstimatorOptions,
+  type FloorHit,
+  type FloorEstimate,
+  DEFAULT_FLOOR_QUERY_RADIUS_M,
+  DEFAULT_FLOOR_MIN_BELOW_CAMERA_M,
+  DEFAULT_FLOOR_MIN_SUPPORT_CELLS,
+  DEFAULT_FLOOR_BAND_CELLS,
+  PLAUSIBLE_HEIGHT_MIN_M,
+  PLAUSIBLE_HEIGHT_MAX_M,
+  estimateFloor,
+} from './floor-estimator.js';
+
 // --- occupancy-mesher (sparse voxel Set → face-culled surface + AABB list) ---
 export {
   type Aabb,
