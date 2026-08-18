@@ -76,3 +76,42 @@ export {
 
 // --- zip-coverage-embed ---
 export { embedCoverageInSessionJson } from './zip-coverage-embed.js';
+
+// --- byte-source ---
+export { type ByteSource, SwitchableByteSource } from './byte-source.js';
+
+// --- range-probe ---
+export {
+  type ProbeResult,
+  type RangeProbeRejectCause,
+  type FallbackDecision,
+  parseContentRangeTotal,
+  decideFallback,
+} from './range-probe.js';
+
+// --- remote-range-byte-source ---
+export {
+  type FetchImpl,
+  probeRemote,
+  RemoteRangeByteSource,
+} from './remote-range-byte-source.js';
+
+// --- local-cache-byte-source ---
+export {
+  LocalCacheByteSource,
+  type LocalCacheStore,
+  InMemoryLocalCacheStore,
+  CacheApiStore,
+} from './local-cache-byte-source.js';
+
+// --- zip-byte-source-reader ---
+export { ByteSourceReader } from './zip-byte-source-reader.js';
+
+// --- share-link ---
+export {
+  type NormalizeShareUrlOptions,
+  normalizeShareUrl,
+} from './share-link.js';
+
+// --- structural-read-error ---
+export { StructuralReadError } from './structural-read-error.js';
