@@ -106,6 +106,12 @@ function cycleFor(provider: ElevationProvider): {
         return {
           field: field.hasData ? field : undefined,
           note: describeTerrain(field),
+          // Reported with every load, like the real worker: the label must
+          // travel WITH the field it describes, never separately.
+          demSourceId: "test-dem",
+          // The serving stats travel the same way, for the same reason: a
+          // snapshot applied on its own could describe a different load.
+          demStats: { primaryAnswered: 9, fallbackAnswered: 1, unanswered: 0 },
           // The real worker reports this even for a failed load; the fake must
           // too, or these tests would pass for a worker that stopped.
           centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
@@ -149,6 +155,18 @@ describe("createTerrainCycle", () => {
     expect(calls[1]?.centreLat).toBeCloseTo(BONN.lat, 3);
     calls[1]?.resolve(200);
     await settle();
+
+    // The provider identity travels WITH the load, so the UI can never label
+    // a field with a source that did not produce it — same atomicity argument
+    // as the note and the centre.
+    expect(applied[0]?.demSourceId).toBe("test-dem");
+    // And so do the serving stats: the HUD's "which DEM actually served" line
+    // must describe the field on screen, never a snapshot from another load.
+    expect(applied[0]?.demStats).toEqual({
+      primaryAnswered: 9,
+      fallbackAnswered: 1,
+      unanswered: 0,
+    });
 
     // The last state applied belongs to the last position the user asked for —
     // which is the whole guarantee, since `apply` is what the UI reads.
@@ -282,6 +300,7 @@ describe("createTerrainCycle — a superseded load applies nothing", () => {
           return {
             field: field.hasData ? field : undefined,
             note: describeTerrain(field),
+            demSourceId: "test-dem",
             centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
           };
         },
@@ -334,6 +353,7 @@ describe("createTerrainCycle — the frame is SENT, not re-derived", () => {
         return Promise.resolve({
           field: undefined,
           note: "terrain unavailable — ground is flat",
+          demSourceId: "test-dem",
           centreEnu: enuFrameAt(payload.frameOrigin).toEnu(payload.centre),
         });
       },

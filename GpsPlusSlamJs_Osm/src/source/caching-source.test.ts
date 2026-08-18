@@ -177,8 +177,56 @@ describe("cache-first behaviour", () => {
 
     expect(inner.calls).toBe(1);
     expect(cache.stats.deduplicated).toBe(2);
-    expect(a).toBe(b);
-    expect(b).toBe(c);
+
+    // ONE DOWNSTREAM CALL AND ONE FEATURE SET is the guarantee, asserted above
+    // and on the next lines. This used to read `expect(a).toBe(b)`, i.e. object
+    // identity — a proxy for dedup rather than the thing itself, and it stopped
+    // holding when joiners started carrying their own `joinedMs`, because a
+    // caller that waited 200 ms on somebody else's 60 s fetch did not spend
+    // 60 s. Nothing downstream depends on the callers sharing an object; the
+    // ~21 MB feature array is still shared, which is what actually matters.
+    expect(b.features).toBe(a.features);
+    expect(c.features).toBe(a.features);
+
+    // AND A JOINER IS MEASURED EVEN THOUGH `CountingSource` MEASURES NOTHING,
+    // which looks inconsistent and is not: the join is timed by THIS class, so
+    // it is a real measurement of a real wait regardless of whether the inner
+    // source instruments itself. The originator legitimately reports nothing.
+    expect(a.timings).toBeUndefined();
+    expect(b.timings?.servedBy).toBe("joined");
+    expect(c.timings?.servedBy).toBe("joined");
+  });
+
+  it("charges a joiner for the cache probe it actually paid for", async () => {
+    // r504 REVIEW. A joiner runs a full `readCachedTimed` before it discovers
+    // there is a request to join — a `store.get` plus a `JSON.parse` of a
+    // multi-megabyte blob — and the join clock only starts AFTER that. So the
+    // probe belonged to no stage at all, which is the exact gap `probeMs` was
+    // introduced to close on the miss and stale paths.
+    //
+    // The collision this models is real and is the reason it matters: the
+    // prefetch queue racing a user click is precisely when a warm probe is
+    // paid twice.
+    //
+    // A STEPPING CLOCK SO THE PROBE IS NON-ZERO, which is what makes the
+    // assertion meaningful — not, as a first version of this comment claimed,
+    // to stop the test passing when broken. With a constant clock `probeMs`
+    // would be 0 and the test would be RED in both worlds: `expect(0)
+    // .toBeGreaterThan(0)` fails with the fix, and `undefined` fails without
+    // it. The stepping clock is required to keep it green when correct.
+    let tick = 0;
+    const inner = new CountingSource();
+    const cache = new CachingSource(inner, new MemoryBlobStore(), {
+      monotonicNow: () => (tick += 5),
+    });
+
+    const [, joiner] = await Promise.all([
+      cache.fetchTile(TILE),
+      cache.fetchTile(TILE),
+    ]);
+
+    expect(joiner.timings?.servedBy).toBe("joined");
+    expect(joiner.timings?.probeMs).toBeGreaterThan(0);
   });
 });
 

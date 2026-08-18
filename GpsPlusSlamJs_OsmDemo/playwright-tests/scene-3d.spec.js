@@ -9,7 +9,7 @@
  * reasoning for why the whole suite is offline.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 import {
   AT_FIXTURE,
@@ -525,7 +525,7 @@ test.describe("the 3D view", () => {
       //
       // The fixture has one region in the displayed category, and it is coloured
       // through the SAME
-      // heatColour/heatScale pair the 2D map paints with. That sharing is the point
+      // heatColour/fixedScale pair the 2D map paints with. That sharing is the point
       // of W14: a region reading as "good" in one pane and "poor" in the other is
       // the cross-view disagreement the store exists to prevent.
 
@@ -1552,8 +1552,21 @@ test.describe("the time of day", () => {
       // and this suite has already shipped one vacuous test (§14.5's isocline
       // check, which asserted a constant against an argument it never took):
       //
-      //   plain `cpu`   -> 9.285
-      //   `cpu-slope`   -> 9.302  (the default)
+      //   plain `cpu`   -> 9.285  ->  6.351 after DEC-H5
+      //   `cpu-slope`   -> 9.302  ->  6.435 after DEC-H5  (the default)
+      //
+      // **THE FIXED COLOUR CAP COST A THIRD OF THE MARGIN, and that was the
+      // acceptance criterion for making the change.** Anchoring the ramp at a
+      // constant 1e4 instead of at the brightest cell on screen means the
+      // typical cell no longer reaches the yellow end — which is precisely what
+      // "the data layer is less loud" means, measured. It was predicted before
+      // the change and measured after.
+      //
+      // The margin still clears the bound, at ~127 % of it rather than ~186 %.
+      // **That is a real loss of headroom and it is accepted knowingly**: the
+      // thing bought is that a cell's colour no longer depends on cells the user
+      // cannot see. A future backdrop change has a third less room than it had,
+      // and the rule below applies to it unchanged.
       //
       // **The two agree to within 0.02, and that is the honest reading of F49:
       // the gate WAS sound at the default — by accident.** The aspect tint is
@@ -1564,7 +1577,8 @@ test.describe("the time of day", () => {
       // the accident; it is not carrying its weight in this number today, and
       // that is fine — it is carrying it against the change nobody has made yet.
       //
-      // The bound of 5 therefore sits at ~54 % of the observed margin in both.
+      // The bound of 5 sat at ~54 % of the observed margin in both before the
+      // colour cap; it now sits at ~78 %.
       //
       // **The wrong response to a red here is lowering the margin.** It is
       // either fixing the backdrop or re-judging the decision that made it the
@@ -1659,6 +1673,266 @@ test.describe("the affordance-tile look presets", () => {
       await page.keyboard.press("?");
       await expect(page.locator("#hotkey-help")).toContainText("preset");
       await page.keyboard.press("?");
+    });
+  });
+});
+
+test.describe("the NPC agent", () => {
+  test("routes on a click, walks it, and lets the scene go quiet again", async ({
+    page,
+  }) => {
+    // ONE BOOT FOR THE WHOLE OF STAGE 4 (DEC-R11-18), and the reason is
+    // measured rather than stylistic. The e2e pyramid plan timed this suite's
+    // boot at ~4.8 s and found the e2e stage to be 93 % of this package's gate,
+    // and it named the exact pattern this stage was about to repeat: "rounds
+    // 7-10 each added a feature test with its own boot", which took the
+    // post-fusion suite from ~200 s back to ~547 s. DEC-R11-15 ships stage 4
+    // whole, so one test covering the whole of it is that decision's shape.
+    //
+    // THE FOUR STEPS, and why they have to share a boot: the control click is
+    // what stops the walking assertions being satisfied by an agent that always
+    // takes the long way (the fixture trap the plan's §6 names), and the quiet
+    // assertion is only meaningful against frames that were RISING a moment
+    // earlier.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const scene = page.locator("#scene");
+
+    // NOTHING IS TURNED OFF FIRST, and that is the assertion hiding in the
+    // setup. For one commit this test had to `uncheck` the `areas` layer,
+    // because a region slab outranked the ground and the four `battleArea`
+    // slabs blanket everything near the user at this fixture — so every click
+    // resolved to a region and the agent could never be ordered. DEC-R11-21
+    // reversed that precedence, and the demo's DEFAULT configuration is what
+    // this test now runs against.
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    /** A click at a fraction of the canvas, in page coordinates. */
+    const clickAt = (fx, fy) =>
+      page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+    /** The same click, with a named mouse button. */
+    const clickAtWith = (fx, fy, button) =>
+      page.mouse.click(box.x + box.width * fx, box.y + box.height * fy, {
+        button,
+      });
+
+    await test.step("a right-click on open ground orders nothing", async () => {
+      // THE STEP GOES FIRST because "no route was drawn" is only an assertion
+      // while no route has ever been drawn — after the next step there is a
+      // stale `data-route` to confuse it, and "unchanged" is a much weaker
+      // observation than "still absent".
+      //
+      // R13-7: the view picked on `pointerup` without reading `event.button`,
+      // so this exact gesture ordered the NPC *and* opened the context menu.
+      // DEC-R13-8 reserves the secondary button for the coordinate-copy
+      // affordance, and reserving it means first making it inert.
+      await clickAtWith(0.5, 0.72, "right");
+      // A NEGATIVE ASSERTION NEEDS A REAL WINDOW, and `expect.poll(…).toBe(null)`
+      // does not give one: it passes at t=0, before the worker could possibly
+      // have answered, so it would stay green with the guard deleted. That is
+      // exactly the vacuous assertion the comments further down this test warn
+      // about. TWO SUCCESSIVE POLLS AGREEING is the same idiom the quiescence
+      // step uses, and for the same reason — the poll's own interval supplies
+      // the gap, so there is no `waitForTimeout` to tune. If a route does
+      // appear, the attribute never goes back to null and this times out.
+      let absentBefore = false;
+      await expect
+        .poll(
+          async () => {
+            const absent = (await scene.getAttribute("data-route")) === null;
+            const twice = absent && absentBefore;
+            absentBefore = absent;
+            return twice;
+          },
+          { timeout: 10000, intervals: [500] },
+        )
+        .toBe(true);
+    });
+
+    await test.step("a click on open ground draws a route, near-straight", async () => {
+      // THE CONTROL, and it is the first step for the reason the unit suite
+      // puts its own control first: without it, "a route was drawn" and "a
+      // route wanders" are the same observation. The ratio is what makes it an
+      // assertion rather than a sighting.
+      //
+      // Just below the camera's pivot, which is open ground at the fixture —
+      // the buildings sit in the upper-middle of the frame (the existing
+      // unpickable test relies on the same layout).
+      await clickAt(0.5, 0.72);
+
+      await expect
+        .poll(() => scene.getAttribute("data-route"), REPAINT)
+        .not.toBe(null);
+      const drawn = await scene.getAttribute("data-route");
+      const [points, lengthM, straightM] = String(drawn).split(":").map(Number);
+
+      // A polyline, not a single point: the agent has somewhere to walk.
+      expect(points).toBeGreaterThan(1);
+      expect(lengthM).toBeGreaterThan(0);
+      // NEAR-STRAIGHT. A hex grid cannot draw a perfect line and the route is
+      // quantised to res-13 cell centres, so 1.6x is loose for the
+      // quantisation and far tighter than any detour around a building.
+      expect(lengthM).toBeLessThan(straightM * 1.6);
+    });
+
+    await test.step("the agent moves, so the scene keeps drawing", async () => {
+      // Frames are scheduled ON DEMAND in this view (DEC-R3-9) — there is no
+      // permanent rAF loop — so a rising counter here is only explicable by
+      // something actually animating.
+      const frames = () => scene.getAttribute("data-frames").then(Number);
+      const before = await frames();
+      await expect.poll(frames, REPAINT).toBeGreaterThan(before);
+    });
+
+    await test.step("and the scene goes QUIET once it arrives", async () => {
+      // THE ASSERTION THE WHOLE STAGE RESTS ON (DEC-R11-15). The accepted risk
+      // was a reintroduced permanent render loop — measured at ~6x slower e2e
+      // with one test into a timeout — and this is the only thing that catches
+      // one. It had to exist in W3's first commit rather than be added
+      // afterwards, because landing the frame scheduling together with new UI
+      // is what would make such a regression hard to attribute.
+      //
+      // QUIESCENCE, not a fixed wait: the walk's duration depends on whatever
+      // route the fixture produced, so "it stopped" is the observable and "it
+      // stopped by now" is not. Two SUCCESSIVE POLLS agreeing is the whole
+      // measurement — the poll's own interval supplies the gap, so there is no
+      // `waitForTimeout` here and nothing to tune if the route length changes.
+      let previous = -1;
+      await expect
+        .poll(
+          async () => {
+            const now = Number(await scene.getAttribute("data-frames"));
+            const unchanged = now === previous;
+            previous = now;
+            return unchanged;
+          },
+          { timeout: 30000, intervals: [500] },
+        )
+        .toBe(true);
+    });
+
+    await test.step("a second order replaces the first route", async () => {
+      // THE SUPERSEDING PATH, which is the one thing about clicking twice that
+      // only the running app can show: the click handler, `latestOnly`, the
+      // worker queue and the polyline teardown all have to agree that the
+      // newest destination wins. The route search is SYNCHRONOUS inside the
+      // worker and an `abort` cannot preempt it, so "the newest click wins" is
+      // the honest guarantee — and this is what proves it holds.
+      //
+      // NOT A BUILDING CLICK. DEC-R11-17's blocker — a click on a facade
+      // resolving to nothing rather than to the ground behind it — is pinned by
+      // five assertions in `pick.test.ts`, and asserting it here would need a
+      // building at a KNOWN screen coordinate, which this fixture does not
+      // guarantee: the first attempt clicked what the older "buildings stay
+      // unpickable" test uses and landed on open ground, drawing a route. A
+      // browser test that silently clicks empty ground while claiming to click
+      // a building is exactly the vacuous assertion the plan's §6 warns about.
+      const before = await scene.getAttribute("data-route");
+      // WHERE THE AGENT IS STANDING when the second order is given — the end of
+      // the first route, since the step above waited for the walk to finish.
+      const stoodAt = await scene.getAttribute("data-agent");
+      expect(stoodAt).not.toBeNull();
+
+      await clickAt(0.35, 0.62);
+      await expect
+        .poll(() => scene.getAttribute("data-route"), REPAINT)
+        .not.toBe(before);
+
+      // AND IT DID NOT TELEPORT BACK TO THE START (raised in review on #274).
+      // The cycle read the USER's position for both the click target and the
+      // agent's, so a second order without moving planned from the user again
+      // and snapped the cone back before it began walking. The agent's own
+      // position is the start of the new route, so one frame into the walk it
+      // is still within a stride of where it stopped.
+      const [stoodX, stoodZ] = String(stoodAt).split(",").map(Number);
+      const [nowX, nowZ] = String(await scene.getAttribute("data-agent"))
+        .split(",")
+        .map(Number);
+      // Generous: one frame of walking at AGENT_SPEED_MPS is metres, while the
+      // teleport this catches is the whole distance of the first route.
+      expect(Math.hypot(nowX - stoodX, nowZ - stoodZ)).toBeLessThan(20);
+    });
+
+    await test.step("a click on a drawn cell both opens the panel and orders", async () => {
+      // STAGE 3 (DEC-R13-6), AND BOTH HALVES HAVE TO BE ASSERTED: opening the
+      // panel alone is what shipped before, and ordering alone is the naive
+      // fix. Either one on its own passes half of this step.
+      //
+      // THE CELL LAYER IS OFF BY DEFAULT (DEC-R7b-6), which is exactly why the
+      // bug went unnoticed — so the step turns it on first, through the helper
+      // that also waits out the progressive widening. Nothing else in this test
+      // needs cells, and it runs last for that reason.
+      await enableCellLayer(page);
+
+      const panel = page.locator("#details");
+      /** Whether the route attribute moved off `was` within a worker round trip. */
+      const routeChanged = async (was) =>
+        page
+          .waitForFunction(
+            (previous) =>
+              document.querySelector("#scene")?.getAttribute("data-route") !==
+              previous,
+            was,
+            { timeout: 4000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          );
+
+      // A SWEEP, FOR THE REASON THE OLDER GRID-PICK TEST SWEEPS: the fixture's
+      // grid covers the centre of the view, but which pixel is over a CELL
+      // depends on how large a working set that run happened to score. A fixed
+      // point landed on a region slab instead, which opens the panel and orders
+      // nothing — so a single click would fail intermittently, and a weaker
+      // assertion would pass on the wrong thing.
+      //
+      // THE PAIR IS SELF-DISCRIMINATING, which is what makes this a test of
+      // DEC-R13-6 rather than of two unrelated facts:
+      //
+      // - a REGION click opens the panel and leaves the route alone;
+      // - a GROUND click orders the agent and opens no panel;
+      // - only a CELL does both, which is exactly the behaviour this stage adds.
+      //
+      // Opening the panel alone is what shipped BEFORE this stage, and ordering
+      // alone is the naive fix, so either half on its own proves nothing.
+      // THE PANEL IS CLOSED BEFORE EVERY CLICK, and that is not tidiness
+      // (raised in review on #276). It stays open once opened, so without this
+      // a region click on one offset could leave it visible and a GROUND click
+      // on the next offset could change the route — two different clicks
+      // satisfying the two halves, which is precisely the vacuous pass this
+      // pair was written to prevent. Closing first makes "visible" mean "THIS
+      // click opened it".
+      const sweep = async () => {
+        for (const [dx, dy] of [
+          [0, 0],
+          [-40, 20],
+          [40, 20],
+          [0, 60],
+          [-80, 60],
+          [0, 120],
+          [-60, 140],
+          [60, 140],
+        ]) {
+          if (await panel.isVisible()) {
+            await panel.locator(".panel-close").click();
+            await expect(panel).toBeHidden();
+          }
+          const before = await scene.getAttribute("data-route");
+          await page.mouse.click(
+            box.x + box.width / 2 + dx,
+            box.y + box.height / 2 + dy,
+          );
+          if (!(await panel.isVisible())) continue;
+          if (await routeChanged(before)) return true;
+        }
+        return false;
+      };
+      await expect.poll(sweep, { timeout: 40_000 }).toBe(true);
+      await expect(panel).toBeVisible();
     });
   });
 });

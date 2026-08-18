@@ -51,6 +51,14 @@ contributes to the status line. Replaces the branch-per-layer form that
   `undefined` in the status line rather than as 0, and `toBeGreaterThan(undefined)`
   passes — a defect this repo has already shipped once via a dropped field in
   `buildHeightfieldData`.
+- **Three `userData` keys are picking CONTRACTS, not decoration.** `regionId` and
+  `poiInstances` make an object selectable; **`solid` (stage 4, DEC-R11-17) makes
+  a building a BLOCKER** — `building-view.ts` puts every object carrying one of
+  the three into the raycast set, and `resolvePick` stops at the first `solid`
+  one without ever returning it. The marker and the membership are one fact
+  rather than two that can disagree.
+  - Barriers extrude with the buildings (DEC-R11-11), so a wall blocks the click
+    for the same reason it blocks the agent, with no separate row.
 - **Ground layers take their lift from `layer-order.ts`, never a local
   constant.** Five things want to be at y ≈ 0 and any two that end up coplanar
   z-fight; a layer that lifted itself would sit outside that guarantee while

@@ -27,6 +27,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BARRIER_HEIGHT_M,
   DEFAULT_BARRIER_THICKNESS_M,
+  DEFAULT_CITY_WALL_HEIGHT_M,
   isSolidBarrier,
   resolveBarrier,
 } from "./barriers.js";
@@ -105,6 +106,24 @@ describe("isSolidBarrier", () => {
       }),
     ).toBe(false);
   });
+
+  it("accepts historic=citywalls, which carries no barrier tag at all", () => {
+    // MEASURED, NOT ASSUMED. The design named `historic=citywalls` in pass B's
+    // obstacle set and the first implementation keyed solely on `barrier=*`,
+    // which drops it. All four `historic=citywalls` ways in the Cologne fixture
+    // carry NO `barrier` tag, so every one of them was invisible — and a city
+    // wall is the design's motivating example. See `site-barriers.test.ts`,
+    // which asserts the same thing on the real extract.
+    expect(isSolidBarrier(way({ historic: "citywalls" }))).toBe(true);
+  });
+
+  it("still ignores other historic values", () => {
+    // The narrow reading, so this does not become "anything old is solid". A
+    // `historic=castle` outline is a building question, not a barrier one — and
+    // treating it as a wall would trace a band around the whole bailey.
+    expect(isSolidBarrier(way({ historic: "castle" }))).toBe(false);
+    expect(isSolidBarrier(way({ historic: "monument" }))).toBe(false);
+  });
 });
 
 describe("resolveBarrier", () => {
@@ -157,6 +176,19 @@ describe("resolveBarrier", () => {
     );
     expect(resolveBarrier({ barrier: "city_wall", height: "8" }).heightM).toBe(
       8,
+    );
+  });
+
+  it("gives historic=citywalls the city-wall height, not the general one", () => {
+    // Same reasoning as `barrier=city_wall` (DEC-R11-4): it IS a city wall, and
+    // the tag it happens to be recorded under does not change how tall it is.
+    // Reading it as a generic 2 m barrier would leave Cologne's walls looking
+    // climbable in exactly the case the design set out to fix.
+    expect(resolveBarrier({ historic: "citywalls" }).heightM).toBe(
+      DEFAULT_CITY_WALL_HEIGHT_M,
+    );
+    expect(resolveBarrier({ historic: "citywalls", height: "9" }).heightM).toBe(
+      9,
     );
   });
 

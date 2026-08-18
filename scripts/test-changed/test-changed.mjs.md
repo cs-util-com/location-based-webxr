@@ -1,8 +1,19 @@
-# test-changed.mjs — dependency-aware iteration gate (CLI shell)
+# test-changed.mjs — dependency-aware COMMIT gate (CLI shell)
 
 - Purpose: `pnpm run test:changed` — runs the gates of changed packages PLUS
   every package that depends on them, instead of the full 8-package cascade.
-  **Iteration-only: the full `pnpm test` cascade remains the commit gate.**
+  **This IS the commit gate since 2026-08-15 (DEC-G1).** It was
+  iteration-only before that, and this line used to read "the full
+  `pnpm test` cascade remains the commit gate". The cascade now runs once
+  per session before the PR (DEC-G3) and on every PR in CI.
+
+  What it gives up, stated so a weaker gate cannot pass for a stronger
+  one: a change that breaks only a **dependent's** rendering is not caught
+  here. Dependents run with `GATE_SKIP_BROWSER_STAGES` set, so they pay
+  for their builds, static checks and unit tests but not for a browser.
+
+  Scope is `location-based-webxr` only — the primary repo’s projects have
+  no equivalent and keep their own full gate.
 - Public API (CLI): `pnpm run test:changed [--all] [--ref <git-ref>]
   [--dry-run]`. `--all` = full-cascade escape hatch (mandatory after
   changing the link-overridden sibling library, which this repo's git cannot

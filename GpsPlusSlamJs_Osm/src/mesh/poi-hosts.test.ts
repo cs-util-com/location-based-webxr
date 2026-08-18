@@ -196,7 +196,55 @@ describe("footprintAnchor", () => {
   it("survives an empty footprint rather than returning NaN", () => {
     // A collapsed way triangulates to nothing and can reach here. `0 / 0` is
     // NaN, and a NaN anchor would delete the marker it was meant to place.
-    expect(footprintAnchor([])).toEqual({ x: 0, y: 0, spanM: 0 });
+    const anchor = footprintAnchor([]);
+    expect(anchor.x).toBe(0);
+    expect(anchor.y).toBe(0);
+    expect(anchor.spanM).toBe(0);
+    // Asserted field by field rather than with `toEqual` on the whole object,
+    // because the anchor also carries the broad-phase bounds now and a
+    // whole-object match would fail on every future field for no reason.
+    expect(Number.isNaN(anchor.spanM)).toBe(false);
+  });
+
+  it("returns an INVERTED box for an empty footprint, so the broad phase rejects everything", () => {
+    // Why this test matters: the bbox reject in `annotatePoiHosts` is only safe
+    // because it can never discard a host `containsPoint` would have accepted.
+    // For an empty footprint `containsPoint` accepts nothing, so the box must
+    // reject everything — and `min = +Infinity, max = -Infinity` is what makes
+    // that true for every point without a special case at the call site. A
+    // degenerate `0,0,0,0` box would instead claim the origin, which is exactly
+    // where a collapsed way's anchor sits.
+    const anchor = footprintAnchor([]);
+    expect(anchor.minX).toBe(Infinity);
+    expect(anchor.maxX).toBe(-Infinity);
+    expect(anchor.minY).toBe(Infinity);
+    expect(anchor.maxY).toBe(-Infinity);
+  });
+
+  it("returns bounds that enclose every vertex, which is what makes the reject conservative", () => {
+    // Why this test matters: if the bounds were ever tighter than the footprint,
+    // `annotatePoiHosts` would silently drop real hosts — a marker would stop
+    // being re-anchored onto its building and would look like a data error
+    // rather than a pruning bug. This pins the enclosing property directly.
+    const L = [
+      { x: -3, y: 2 },
+      { x: 7, y: 2 },
+      { x: 7, y: 11 },
+      { x: 4, y: 11 },
+      { x: 4, y: 5 },
+      { x: -3, y: 5 },
+    ];
+    const anchor = footprintAnchor(L);
+    for (const point of L) {
+      expect(point.x).toBeGreaterThanOrEqual(anchor.minX);
+      expect(point.x).toBeLessThanOrEqual(anchor.maxX);
+      expect(point.y).toBeGreaterThanOrEqual(anchor.minY);
+      expect(point.y).toBeLessThanOrEqual(anchor.maxY);
+    }
+    expect(anchor.minX).toBe(-3);
+    expect(anchor.maxX).toBe(7);
+    expect(anchor.minY).toBe(2);
+    expect(anchor.maxY).toBe(11);
   });
 
   it("uses the VERTEX mean, with the bias that implies", () => {

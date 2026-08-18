@@ -10,7 +10,8 @@ and the home of every item of the plan's §5.3 network discipline.
 - `OverpassSource` implementing `OsmDataSource`.
 - `OverpassSourceOptions` — `userAgent` (**required**), `endpoints`,
   `fetchImpl`, `maxConcurrent`, `maxRetries`, `timeoutSeconds`, `backoff`,
-  `random`, `now`, `sleepImpl`.
+  `random`, `now`, `monotonicNow`, `sleepImpl`, `selectKeys`, `budget`,
+  `maxAttemptLog`.
 - `DEFAULT_OVERPASS_ENDPOINTS`.
 - `PermanentOverpassError`.
 - `stats` — `{ requests, retries, deduplicated }`, for the demo app's
@@ -76,9 +77,10 @@ and the home of every item of the plan's §5.3 network discipline.
   instead of one, and an abort kept working on an area the user had left.
   `PermanentOverpassError` exists to make that distinction explicit.
 - **An HTML error page served with status 200 is retryable.** Real public
-  instances do this under load; `.json()` throws and the throw must not be a
+  instances do this under load; `JSON.parse` throws and the throw must not be a
   hard failure.
-- **Everything injectable is injected** — `fetch`, `now`, `random`, `sleepImpl`
+- **Everything injectable is injected** — `fetch`, `now`, `monotonicNow`,
+  `random`, `sleepImpl`
   — so the whole policy is tested offline, deterministically, with no real
   timers and no real requests.
 
@@ -98,3 +100,32 @@ release after success and after failure), bounded concurrency, retry on each
 retryable status with endpoint rotation, no-retry on 400, `Retry-After` in both
 forms, jittered fallback, give-up reporting, transport-level throws,
 HTML-in-a-200, and `AbortSignal` before and during a retry wait.
+
+## `timings` — what this source measures, and where each clock stops
+
+Filled on every delivery (`OsmTileTimings` in `osm-data-source.ts.md`). The
+intervals abut without overlapping, and the boundaries are the whole point:
+
+- **`slotWaitMs`** — inside `withConcurrencyLimit`, and 0 when the slot was
+  taken synchronously. Passed DOWN to the fetch rather than measured inside it,
+  because queueing is a real stage of the wait: folded into transport it reads
+  as a slow server, dropped it reads as time that never happened.
+- **`transportMs`** — opened before the retry loop and closed after
+  `response.text()`, so it deliberately spans every attempt and every backoff
+  sleep. `attempts` is reported beside it for that reason.
+- **`decodeMs` / `parseMs`** — `JSON.parse` and `parseOverpassJson`, split
+  because the plan predicts one of them dominates a warm click and a single
+  number covering both would rank them together and name neither.
+- **`joinedMs`** — a dedup joiner's own wall wait. It shares the features and
+  paid none of the fetch, so every other duration is 0 for it.
+
+`readAndDecode` is a separate method **for memory, not tidiness**: returning
+drops the frame holding the ~21 MB body string, which inlined would stay
+reachable through `parseOverpassJson`. `response.json()` used to make this moot
+by keeping the intermediate engine-owned; splitting the two costs is what made
+the string ours to release.
+
+Durations go through `elapsedMs`, which floors at zero. A hostile clock is not
+expected — that is what `monotonicNow` is for — but a negative duration makes
+the reconciliation sum close by CANCELLING, so the one gate that would catch a
+clock problem goes quiet exactly when it should shout.

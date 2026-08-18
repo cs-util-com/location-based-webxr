@@ -59,6 +59,7 @@ import {
   getScene,
   getCamera,
   getArWorldGroup,
+  getRenderer,
   type SessionEndInfo,
 } from './webxr-session.js';
 
@@ -153,6 +154,11 @@ describe('session-end hook (F3)', () => {
     expect(getScene()).toBeNull();
     expect(getCamera()).toBeNull();
     expect(getArWorldGroup()).toBeNull();
+    // `getRenderer()` joins the leak proof for the same reason and one extra:
+    // consumers are told to restore whatever they change on it, and a stale
+    // renderer handed to the next session would let a restore land on an object
+    // nothing draws with — a settings change that silently does nothing.
+    expect(getRenderer()).toBeNull();
     expect(container.querySelectorAll('canvas')).toHaveLength(0);
   });
 

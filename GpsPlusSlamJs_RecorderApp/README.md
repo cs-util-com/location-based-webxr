@@ -23,7 +23,9 @@
 
 ## ⚠️ CRITICAL: This App Uses the GpsPlusSlamJs Library
 
-**DO NOT create a custom Redux store.** This app **MUST** use the `gps-plus-slam-js` library for all GPS/AR alignment logic.
+**DO NOT create a custom Redux store.** This app **MUST** use the shared GPS/AR alignment logic rather than reimplementing it.
+
+**It reaches that logic through `gps-plus-slam-app-framework`, not through a direct core dependency.** `package.json` lists `gps-plus-slam-app-framework` and no `gps-plus-slam-js`; there is not a single direct `gps-plus-slam-js` import in `src/`. Core symbols arrive via the framework's curated re-export surface — see `state/recorder-store.ts`. Mentions of a direct core dependency further down belong to the historical bootstrap record and no longer describe this app.
 
 ### Why This Matters
 
@@ -33,33 +35,35 @@
 
 ### Required Integration Steps
 
-1. **Add Dependency:**
+1. **Add Dependency** — the framework, which re-exports what this app needs:
 
    ```bash
-   npm install ../GpsPlusSlamJs  # or published package name
+   pnpm add gps-plus-slam-app-framework
    ```
 
-2. **Use Library Store:**
+2. **Use the framework's store factory** (see `state/recorder-store.ts`):
 
    ```typescript
-   import { createGpsSlamStore } from 'gps-plus-slam-js';
+   import { createSlamAppStore } from 'gps-plus-slam-app-framework/state/create-slam-app-store';
 
-   const libraryStore = createGpsSlamStore();
-   // Add persistence middleware to save actions to disk
-   // Optionally combine with app-specific state (UI, session metadata)
+   const store = createSlamAppStore(/* app slices, persistence, options */);
+   // Persistence middleware saves actions to disk
+   // App-specific state (UI, session metadata) is combined in here
    ```
 
-3. **Use Library Actions:**
+3. **Use Library Actions** — through the framework's subpaths, never from the core package directly:
 
    ```typescript
    import {
      setZeroPos, // Set GPS zero reference (first GPS reading)
      recordGpsEvent, // Record paired AR+GPS data
-     odometryTrackingRestarted, // Handle AR tracking loss
      type RecordGpsEventPayload,
-     type GpsPoint,
+   } from 'gps-plus-slam-app-framework/state';
+   import {
+     odometryTrackingRestarted, // Handle AR tracking loss
      calcRelativeCoordsInMeters,
-   } from 'gps-plus-slam-js';
+     type GpsPoint,
+   } from 'gps-plus-slam-app-framework/core';
    ```
 
 4. **Subscribe to Alignment Matrix:**
@@ -773,51 +777,55 @@ The `tracking` Redux slice (driven by `webxr-session.ts` during `initAR()`) dete
 ```
 GpsPlusSlamJs_RecorderApp/
 ├── index.html              # Main HTML with setup modal and HUD overlay
-├── package.json            # Dependencies (MUST include gps-plus-slam-js)
+├── package.json            # Dependencies (MUST include gps-plus-slam-app-framework)
 ├── tsconfig.json           # TypeScript configuration
 ├── config/
 │   ├── vite.config.ts      # Vite dev server config
 │   ├── vitest.config.ts    # Vitest test runner config
 │   └── eslint.config.mjs   # ESLint configuration
 └── src/
-    ├── main.ts             # App entry point, store subscription, ref point loading
-    ├── ar/
-    │   ├── webxr-session.ts    # WebXR AR session, Three.js scene hierarchy
-    │   │                        # MUST implement: arWorldGroup pattern, getCurrentArPose()
-    │   └── replay-scene.ts     # Replay Three.js scene (no WebXR), initReplayScene()
-    ├── sensors/
-    │   └── gps.ts              # Geolocation, triggers recordGpsEvent on GPS arrival
-    ├── state/
-    │   ├── store.ts            # Wraps createGpsSlamStore(), persistence middleware
-    │   ├── store.test.ts       # Store unit tests
-    │   ├── recording-coordinator.ts  # GPS event handler, eulerToQuaternion()
-    │   ├── recording-replayer.ts     # Instant replay (all-at-once dispatch, no UI)
-    │   └── replay-engine.ts    # createListenerMiddleware-based timed replay with play/pause/speed
-    ├── storage/
-    │   ├── file-system.ts      # File System Access API persistence
-    │   └── ref-point-loader.ts # Load/save reference points from scenario refPoints/ folder
-    ├── visualization/
-    │   ├── reference-points.ts # RefPointVisualizer class, Three.js spheres
-    │   └── gps-event-markers.ts # GpsEventVisualizer class, raw GPS + fused markers
-    ├── types/
-    │   └── webxr.d.ts          # WebXR & File System Access type declarations
-    └── ui/
-        ├── hud.ts              # HUD overlay and UI event handlers
-        └── map-browser.ts     # Map-centric recording browser (replay selection)
+    ├── main.ts             # App entry point: builds the store, wires every handler below
+    ├── ar/                 # AR wiring ONLY — the session itself lives in the framework
+    │                       # ar-session-resources, create-ar-frame-tick, wire-ar-scene
+    ├── colmap/             # COLMAP export (conversions, serializers, zip contributor)
+    ├── qr/                 # QR recording wiring + depth resolution + debug controller
+    ├── recording/          # Session lifecycle: recording-session-handlers (start/stop),
+    │                       # system-session-end, build-session-summary, image-quality worker
+    ├── ref-points/         # ref-point-handlers — the mark/re-observe flow
+    ├── replay/             # replay-mode + replay-handlers (framework replay engine, app UI)
+    ├── state/              # recorder-store, recording-options, store-ref, and the app-only
+    │                       # slices: ref-points, routing, scenario
+    ├── storage/            # OPFS/File-System-Access persistence: scenario + external file
+    │                       # storage, recording discovery/loader/migration, sync-manager,
+    │                       # and the ref-point importer/loader/merge/recovery cluster
+    ├── ui/                 # HUD (split across hud-*.ts), settings modal, navigation,
+    │                       # map-browser, session-summary, ref-point-picker, dialogs
+    ├── global.d.ts         # WebXR & File System Access type declarations
+    ├── utils/              # ar-session-scope, build-info, dom-helpers, sentry
+    ├── visualization/      # ref-point-visualizer, frame tiles, occluder sink/worker client
+    ├── workers/            # occlusion-mesher.worker.ts
+    └── test-utils/         # e2e-hooks, html-fixtures
 ```
 
-**Key Implementation Files (must exist):**
+**Key implementation files — in THIS app:**
 
-1. **`src/state/store.ts`** - Wraps library store, does NOT create custom actions
-2. **`src/state/recording-coordinator.ts`** - GPS arrival handler, constructs `GpsPoint` objects
-3. **`src/ar/webxr-session.ts`** - Scene hierarchy (`scene → arWorldGroup → camera`), `applyAlignmentMatrix()`
-4. **`src/ar/replay-scene.ts`** - Replay Three.js scene without WebXR, `initReplayScene()`, camera controls
-5. **`src/state/replay-engine.ts`** - `createListenerMiddleware`-based timed replay with play/pause/speed
-6. **`src/storage/ref-point-loader.ts`** - Load/save reference points from scenario's refPoints/ directory
-7. **`src/visualization/reference-points.ts`** - Visualize ref points as Three.js spheres
-8. **`src/visualization/gps-event-markers.ts`** - Visualize raw GPS and fused alignment markers
-9. **`src/storage/recording-discovery.ts`** - Enumerate scenarios + session zips from a picked folder (no DOM)
-10. **`src/main.ts`** - Subscribe to alignment updates, load prior ref points on session start, WebXR detection → replay branch
+1. **`src/state/recorder-store.ts`** - Wraps the framework store; does NOT create custom actions
+2. **`src/storage/ref-point-loader.ts`** - Load/save reference points from the scenario's `refPoints/` directory
+3. **`src/visualization/ref-point-visualizer.ts`** - Visualize ref points as Three.js spheres
+4. **`src/storage/recording-discovery.ts`** - Enumerate scenarios + session zips from a picked folder (no DOM)
+5. **`src/recording/recording-session-handlers.ts`** - The recording lifecycle: start, stop, teardown, ZIP export
+6. **`src/main.ts`** - App entry: builds the store, wires every handler, WebXR detection → replay branch
+
+**Provided by `gps-plus-slam-app-framework`, NOT by this app** — import them,
+never re-implement them. Each of these lived in `src/` earlier in the project's
+history, which is why older notes and reviews still point at recorder paths:
+
+- **`ar/webxr-session`** - Scene hierarchy (`scene → arWorldGroup → camera`), `applyAlignmentMatrix()`, `getCurrentArPose()`
+- **`ar/replay-scene`** - Replay Three.js scene without WebXR, `initReplayScene()`, camera controls
+- **`state/replay-engine`** - `createListenerMiddleware`-based timed replay with play/pause/speed
+- **`state/gps-event-coordinator`** - GPS arrival handler; constructs the `GpsPoint` objects (was `recording-coordinator.ts`)
+- **`visualization/gps-event-markers`** - Visualize raw GPS and fused alignment markers
+- **`sensors/gps`** - Geolocation watch (was `src/sensors/gps.ts`)
 
 ---
 
@@ -840,10 +848,10 @@ const store = configureStore({
 **Correct:**
 
 ```typescript
-import { createGpsSlamStore } from 'gps-plus-slam-js';
+import { createSlamAppStore } from 'gps-plus-slam-app-framework/state/create-slam-app-store';
 
-const libraryStore = createGpsSlamStore();
-// Add persistence middleware, optionally combine with app-specific state
+const store = createSlamAppStore(/* app slices, persistence, options */);
+// See `state/recorder-store.ts` for the recorder's actual wiring
 ```
 
 **Why:** The library's store contains the alignment algorithm. Custom stores can't replay sessions or compute alignment matrices.
@@ -936,7 +944,7 @@ const gpsPoint = {
 **Correct:**
 
 ```typescript
-import { calcRelativeCoordsInMeters } from 'gps-plus-slam-js';
+import { calcRelativeCoordsInMeters } from 'gps-plus-slam-app-framework/core';
 
 const coords = calcRelativeCoordsInMeters(
   { lat: pos.coords.latitude, lon: pos.coords.longitude },
@@ -1072,7 +1080,24 @@ const deviceRotation = eulerToQuaternion(
 
 ## Implementation Checklist
 
-Use this checklist to ensure correct implementation from the start.
+> ⚠️ **HISTORICAL BOOTSTRAP RECORD — do not follow these paths today.** This
+> checklist records how the app was originally stood up, and its file paths and
+> dependency block are the pre-framework layout. Since then the framework was
+> extracted, so several files it tells you to create now live in
+> `gps-plus-slam-app-framework` (`ar/webxr-session`, `ar/replay-scene`,
+> `state/replay-engine`, `state/gps-event-coordinator` — formerly
+> `recording-coordinator.ts` — `visualization/gps-event-markers`, `sensors/gps`)
+> and two were renamed in place (`state/store.ts` → `state/recorder-store.ts`,
+> `visualization/reference-points.ts` → `visualization/ref-point-visualizer.ts`).
+> **The recorder also takes no direct `gps-plus-slam-js` dependency any more** —
+> core symbols come through the framework's curated re-export surface (see
+> `state/recorder-store.ts`), so the dependency block below no longer matches
+> `package.json`.
+>
+> **For the current layout use "Project Structure" and "Key implementation
+> files" above**, which are verified against the tree. Kept because the
+> rationale in each step — why the store is wrapped, why the scene hierarchy is
+> shaped as it is — is still the reason the code looks the way it does.
 
 ### Phase 1: Library Integration
 

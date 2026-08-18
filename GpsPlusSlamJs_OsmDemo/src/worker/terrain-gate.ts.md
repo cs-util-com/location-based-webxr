@@ -23,6 +23,28 @@ R3-3) without the buildings ending up on the previous position's relief.
 
 ## Invariants & assumptions
 
+- ⚠️ **The DATUM is part of a field's identity, not just its position**
+  (2026-08-14). A field is defined by where it was sampled AND by what its
+  heights are measured from: `terrain-field.ts` uses the window-centre height
+  for the desktop view (heights come out as relief around zero) and `−N` for AR
+  (heights come out ellipsoidal, ~99 m at Cologne, which is where the fusion
+  puts the camera). Two fields at one position with different datums are ~99 m
+  apart and are **not** interchangeable, so `GateCentre.undulationM` is in both
+  `keyOf` and `needsTerrainFor`.
+  - **What it cost while it was missing.** AR entry and AR exit both change the
+    datum _without moving the user_, so a position-only comparison answered "no
+    new terrain needed" on exactly the two transitions where the held field is
+    ~99 m out — and the mesh was built on it. The owner reported flying ~50 m
+    above the buildings on first AR entry and landing within ~4 m on the second;
+    the second being right is the tell, because by then the AR field was already
+    held.
+  - **The key had to change with the predicate**, not after it: otherwise an
+    AR-entry wait would be released by the desktop field that settled just
+    before it — the same mismatch one layer down.
+  - `demo-worker.ts` predicted this class of failure ("if the anchor ever gains
+    a second mover … this has to key on the frame origin as well … and it is
+    silent"). It named the wrong mover: the datum got there before the origin,
+    which is **still unkeyed** and remains an open hole.
 - **The join is keyed on the POSITION, never on message order (DEC-R3-20).** The
   first design relied on `postMessage` being ordered and the worker's listener
   running each handler synchronously, so that posting `terrain` before `update`
@@ -55,16 +77,20 @@ R3-3) without the buildings ending up on the previous position's relief.
 ```ts
 const gate = createTerrainGate();
 
-// In the terrain handler:
+// In the terrain handler. `undulationM` is the geoid undulation for AR and
+// `undefined` for the desktop view — settling without it would release an
+// AR-entry wait with a window-centre field, ~99 m out.
 try {
   return await loadTerrain(field, centre, extentM, spacingM, signal);
 } finally {
-  gate.settle(centre);
+  gate.settle({ ...centre, undulationM: geoidUndulationM });
 }
 
-// In the update handler, immediately before building the mesh:
-if (needsTerrainFor(heldCentre, position)) {
-  await gate.waitFor(position, signal);
+// In the update handler, immediately before building the mesh. The build states
+// the datum it REQUIRES; the held field carries the datum it HAS.
+const wanted = { ...position, undulationM: geoidUndulationM };
+if (needsTerrainFor(heldCentre, wanted)) {
+  await gate.waitFor(wanted, signal);
 }
 ```
 

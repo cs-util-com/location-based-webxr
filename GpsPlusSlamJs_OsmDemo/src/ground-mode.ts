@@ -147,6 +147,32 @@ export function groundStrategy(mode: GroundMode): GroundStrategy {
   }
 }
 
+/**
+ * Whether a click on the ground yields a destination worth trusting.
+ *
+ * **ONLY THE CPU PATH DISPLACES THE POSITION BUFFER**, and the raycaster reads
+ * nothing else. `BuildingView.setTerrain` skips the CPU displacement entirely
+ * when the strategy is not `cpu` — that is the whole point of the W23
+ * comparison, which measures the two paths against each other — so under `gpu`
+ * the plane the ray meets is FLAT while the plane the user is looking at is
+ * displaced in the vertex shader.
+ *
+ * The error is HORIZONTAL, which is what makes it worth refusing rather than
+ * tolerating: `main.ts` reads `x` and `z` off the hit to name a lat/lng, so an
+ * oblique click on a hillside lands roughly `relief / tan(elevation)` away from
+ * where the user pointed. Heidelberg is in the corpus precisely because it has
+ * tens of metres of relief inside one tile.
+ *
+ * `none` is refused for the plainer reason: there is no ground on screen to
+ * click, and ordering an agent onto an invisible surface is a click with no
+ * visible cause.
+ *
+ * Raised in review on #274.
+ */
+export function groundIsOrderable(strategy: GroundStrategy): boolean {
+  return strategy === "cpu";
+}
+
 /** How a mode colours the ground. */
 export function groundAppearance(mode: GroundMode): GroundAppearance {
   switch (mode) {

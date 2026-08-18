@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './e2e-test.js';
 
 /**
  * Help Section Tests (Issue 2 - User Feedback 2026-01-27)

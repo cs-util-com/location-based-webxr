@@ -1,5 +1,9 @@
 /**
- * Breadth-first search over an arbitrary state space.
+ * Searches over an arbitrary state space: breadth-first, and A\*.
+ *
+ * `findStatePath` is shortest in STEPS; `findCheapestPath` is cheapest under a
+ * caller-supplied cost (DEC-R13-1). Everything below about states, keys and the
+ * `candidates`/`canEnter` split is shared by both.
  *
  * **Why this is not just "pathfinding over cells".** The first version of pass A
  * keyed its visited set by H3 cell, and review on #257 showed what that costs:
@@ -154,6 +158,275 @@ export function findStatePath<S>(
   }
 
   return undefined;
+}
+
+/**
+ * The extra functions a weighted search needs.
+ *
+ * Deliberately NOT members of {@link StateSpace}. A space describes the world —
+ * how states are enumerated and identified — and has no opinion about price;
+ * hanging `cost` off it would make the three breadth-first callers carry fields
+ * their algorithm ignores, and `columnSpace()` would have to forward a notion of
+ * cost it does not own.
+ */
+export interface CheapestOptions<S> extends SearchOptions {
+  /**
+   * The price of one step. Must be finite and **not negative**.
+   *
+   * A negative edge does not merely slow the search down, it breaks it: this
+   * algorithm settles a state the first time it is popped, which is sound only
+   * while no cheaper way to it can still turn up.
+   *
+   * **TOTAL OVER `candidates`, AND CHEAP.** It is consulted for any candidate
+   * pair the space generates — including steps `canEnter` then refuses — so
+   * "the price of walking through this wall" has to be a number rather than an
+   * error. That mirrors the split the interface already makes: `candidates`
+   * enumerates before legality is considered, and this prices what it
+   * enumerates. Legality belongs in `canEnter`, never in an infinite weight.
+   *
+   * The reason is measured, not stylistic: `canEnter` is the expensive half and
+   * this is arithmetic, so the search asks the cheap question first. See
+   * `expand` in this file.
+   */
+  readonly cost: (from: S, to: S) => number;
+  /**
+   * A lower bound on the remaining cost to the goal. Must be finite and not
+   * negative.
+   *
+   * **CONSISTENCY, NOT MERELY ADMISSIBILITY, IS THE CONTRACT** — because states
+   * are settled on pop rather than re-opened. `h(a) <= cost(a, b) + h(b)` must
+   * hold for every legal step. The production heuristic satisfies it by
+   * construction: straight-line distance obeys the triangle inequality, and
+   * every edge costs at least the distance it spans (the penalty never drops
+   * below 1), so the bound can only be slack.
+   *
+   * A heuristic that returns 0 everywhere is always consistent, and turns this
+   * into Dijkstra.
+   */
+  readonly heuristic: (state: S) => number;
+}
+
+/** Validates one caller-supplied number, naming which one it was. */
+function requireFiniteNonNegative(value: number, what: string): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(
+      `nav/search: ${what} must be a finite number of at least 0, got ${value}`,
+    );
+  }
+  return value;
+}
+
+/**
+ * A frontier entry, with the running cost that ordered it.
+ *
+ * `f` is stored rather than recomputed because the heuristic is a caller's
+ * function: calling it once per push, rather than once per comparison inside the
+ * heap, keeps a costly heuristic from being paid a logarithmic number of times.
+ */
+interface Frontier<S> {
+  readonly state: S;
+  readonly key: string;
+  readonly g: number;
+  readonly f: number;
+}
+
+/**
+ * A binary min-heap over the frontier, ordered by `f` and then by `g` descending.
+ *
+ * PRIVATE ON PURPOSE. It is an implementation detail of one function, it has no
+ * meaning outside it, and exporting it would invite a second user with slightly
+ * different ordering needs.
+ *
+ * **The tie-break is not cosmetic.** Among states with the same `f`, preferring
+ * the larger `g` prefers the one nearer the goal, which reaches the goal after
+ * expanding materially fewer states on open ground — exactly the shape of the
+ * demo's own case, where large areas share one penalty and therefore tie
+ * constantly.
+ */
+class FrontierHeap<S> {
+  private readonly items: Frontier<S>[] = [];
+
+  get size(): number {
+    return this.items.length;
+  }
+
+  push(item: Frontier<S>): void {
+    this.items.push(item);
+    let at = this.items.length - 1;
+    while (at > 0) {
+      const parent = (at - 1) >> 1;
+      if (!this.before(this.items[at]!, this.items[parent]!)) break;
+      this.swap(at, parent);
+      at = parent;
+    }
+  }
+
+  pop(): Frontier<S> | undefined {
+    const top = this.items[0];
+    if (top === undefined) return undefined;
+    const last = this.items.pop()!;
+    if (this.items.length > 0) {
+      this.items[0] = last;
+      let at = 0;
+      for (;;) {
+        const left = at * 2 + 1;
+        const right = left + 1;
+        let best = at;
+        if (
+          left < this.items.length &&
+          this.before(this.items[left]!, this.items[best]!)
+        ) {
+          best = left;
+        }
+        if (
+          right < this.items.length &&
+          this.before(this.items[right]!, this.items[best]!)
+        ) {
+          best = right;
+        }
+        if (best === at) break;
+        this.swap(at, best);
+        at = best;
+      }
+    }
+    return top;
+  }
+
+  private before(a: Frontier<S>, b: Frontier<S>): boolean {
+    return a.f === b.f ? a.g > b.g : a.f < b.f;
+  }
+
+  private swap(a: number, b: number): void {
+    const held = this.items[a]!;
+    this.items[a] = this.items[b]!;
+    this.items[b] = held;
+  }
+}
+
+/**
+ * The CHEAPEST route from `start` to the first state satisfying `isGoal`, under
+ * {@link CheapestOptions.cost}.
+ *
+ * The weighted counterpart of {@link findStatePath}, and the algorithm
+ * DEC-R13-1 asks for. Its contract matches the BFS everywhere it can:
+ * `undefined` means no route exists, and exhausting the expansion cap throws
+ * rather than returning a blank a caller could not tell apart from one.
+ *
+ * **THE GOAL IS TESTED ON POP, NOT ON DISCOVERY, and that is the whole
+ * difference from the BFS.** Breadth-first may answer the moment it touches the
+ * goal, because the first touch is along a shortest path by construction. Here
+ * the first touch is merely the first, and a cheaper way to the same place can
+ * still be sitting in the frontier — answering early would return a valid route
+ * that is not the cheapest one, which is the failure this function exists to
+ * prevent.
+ *
+ * **`canEnter` is consulted per EDGE here, not once per discovered state.** The
+ * BFS may skip an already-seen state before paying for the decision because
+ * every route to it is equally good; with weights, a later, cheaper approach to
+ * the same state is a real thing and its legality is a different question. The
+ * saving survives in the form that is still sound: a SETTLED state is skipped
+ * before `canEnter` is asked, and on a large open space most candidates are
+ * settled.
+ *
+ * @throws `RangeError` if the cap is invalid or reached, or if `cost` or
+ *   `heuristic` returns a negative or non-finite number.
+ */
+export function findCheapestPath<S>(
+  start: S,
+  isGoal: (state: S) => boolean,
+  space: StateSpace<S>,
+  options: CheapestOptions<S>,
+): S[] | undefined {
+  const canEnter = space.canEnter ?? (() => true);
+  const startKey = space.key(start);
+  const countExpansion = expansionGuard(settleCap(options), startKey);
+
+  if (isGoal(start)) return [start];
+
+  const cameFrom = new Map<string, Visit<S>>([
+    [startKey, { state: start, from: undefined }],
+  ]);
+  /** Cheapest known cost from the start, per key. */
+  const bestG = new Map<string, number>([[startKey, 0]]);
+  /** Keys already popped, whose cost can no longer improve. */
+  const settled = new Set<string>();
+
+  const frontier = new FrontierHeap<S>();
+  frontier.push({
+    state: start,
+    key: startKey,
+    g: 0,
+    f: requireFiniteNonNegative(options.heuristic(start), "heuristic"),
+  });
+
+  for (;;) {
+    const current = frontier.pop();
+    if (current === undefined) return undefined;
+    // A STALE ENTRY. The heap has no decrease-key, so a state improved while it
+    // sat in the frontier is pushed again and the old entry is dropped here.
+    // Cheaper than maintaining handles, and it is why `settled` exists at all.
+    if (settled.has(current.key)) continue;
+    settled.add(current.key);
+    countExpansion();
+
+    // ON POP, for the reason in the header: the first touch of the goal is not
+    // necessarily the cheapest way to it.
+    if (isGoal(current.state)) return trace(cameFrom, current.key);
+
+    expand(current);
+  }
+
+  /**
+   * Offers every improving, legal neighbour of `from` to {@link relax}.
+   *
+   * **THE ORDER OF THE THREE TESTS IS THE PERFORMANCE OF THIS SEARCH**, and it
+   * is the opposite of the breadth-first one's. There, `canEnter` could run at
+   * most once per discovered state, because every route to a state was equally
+   * good; with weights a later and cheaper approach is a real thing, so
+   * legality has to be asked per edge — and `canEnter` is the expensive half
+   * (point-in-polygon and a height lookup, against `cost`'s arithmetic).
+   *
+   * So the cheap tests go first: already settled, then "could this even be an
+   * improvement". Only an edge that would actually change the answer is worth
+   * asking a geometric question about. Asking `canEnter` first cost a measured
+   * 2.56 s on `agent-route.test.ts`'s sealed-courtyard case — the one that
+   * exhausts everything reachable — against a 2 s budget that exists because
+   * this runs on the demo's click path.
+   *
+   * The contract this implies for a caller: `cost` must be cheap, and it may be
+   * called for a step that turns out to be illegal.
+   */
+  function expand(from: Frontier<S>): void {
+    for (const next of space.candidates(from.state)) {
+      const nextKey = space.key(next);
+      if (nextKey === from.key || settled.has(nextKey)) continue;
+      const g =
+        from.g +
+        requireFiniteNonNegative(options.cost(from.state, next), "cost");
+      const known = bestG.get(nextKey);
+      if (known !== undefined && known <= g) continue;
+      if (!canEnter(from.state, next)) continue;
+      relax(next, nextKey, g, from.key);
+    }
+  }
+
+  /**
+   * Records `next` as reached from `fromKey` at cost `g`.
+   *
+   * Split out to keep the loop readable rather than for reuse — "remember three
+   * things about this state, consistently" is the one place a slip produces a
+   * valid-looking route that is not the cheapest.
+   */
+  function relax(next: S, nextKey: string, g: number, fromKey: string): void {
+    bestG.set(nextKey, g);
+    cameFrom.set(nextKey, { state: next, from: fromKey });
+    frontier.push({
+      state: next,
+      key: nextKey,
+      g,
+      f: g + requireFiniteNonNegative(options.heuristic(next), "heuristic"),
+    });
+  }
 }
 
 /** Walks the parent links back from `key` to the root. */

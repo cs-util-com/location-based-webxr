@@ -30,6 +30,13 @@
 import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
+import {
+  composeClickSummary,
+  composeClickTimings,
+  type ClickSummary,
+  type ClickTimings,
+} from "./click-timings.js";
+import { nowMs, nowEpochMs } from "./monotonic-clock.js";
 import { isLayerEnabled } from "./layers.js";
 import type { AnchorHolder } from "./scene-anchor.js";
 import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
@@ -61,6 +68,16 @@ interface RefreshWorker {
       includeCells: boolean;
       /** The underground diagnostic layer, same rule. */
       includeUnderground: boolean;
+      /** Epoch ms at post time, so the worker can report its queue wait. */
+      postedAtEpochMs: number;
+      /**
+       * The datum this mesh must stand on — see `protocol.ts`.
+       *
+       * The mesh build declares it so the worker can tell a matching field from
+       * a stale one; AR entry does not move the user, so the position alone
+       * cannot distinguish an ellipsoidal field from a window-centre one.
+       */
+      geoidUndulationM?: number;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -133,6 +150,48 @@ export interface RefreshCycleOptions extends StoreAccess {
    * is what lets the camera pivot on the user without a worker round-trip.
    */
   readonly anchors: AnchorHolder;
+  /**
+   * The datum the mesh must stand on, read at post time.
+   *
+   * A GETTER rather than a value, because it changes with the MODE and this
+   * cycle outlives an AR session. Returns the geoid undulation while AR runs
+   * and `undefined` on the desktop; `main.ts` owns the single held value so the
+   * terrain load and the mesh build cannot state different datums.
+   *
+   * Omitted behaves exactly as before, which is what keeps the existing tests
+   * meaningful rather than merely passing.
+   */
+  readonly geoidUndulationM?: () => number | undefined;
+  /**
+   * The nine-stage breakdown for one pass, once it is complete.
+   *
+   * **A callback rather than a `console.info` here**, for the reason `onMesh`
+   * is one: this module is tested without a DOM and without a worker, and a
+   * cycle that printed for itself could not be asserted on. `main.ts` wires it
+   * to the console, exactly as it does for `GeoEventStats`.
+   *
+   * Optional so nothing that does not want the numbers has to take them — but
+   * the cycle always COMPUTES them, because a breakdown that only exists when
+   * someone is watching is a breakdown that is broken when they start.
+   */
+  readonly onTimings?: (timings: ClickTimings) => void;
+  /**
+   * The WHOLE CLICK, once its rings have all published.
+   *
+   * **Separate from `onTimings` because the per-ring lines cannot be summed to
+   * it, and the difference is the point.** Each ring's `wallMs` is one worker
+   * round trip plus its draw; everything else the cycle does — the
+   * `fetchStarted` dispatch and its subscriber renders, the per-ring layer
+   * reads, both guards, the gaps between passes, and printing the lines
+   * themselves — falls outside every one of them.
+   *
+   * Worse, the per-ring residual is structurally blind to all of it: the
+   * algebra in `click-timings.ts` shows page time CANCELS, leaving only
+   * unattributed worker time. So without this clock a page-side stage nobody
+   * enumerated could never surface — which is exactly the class of defect this
+   * whole instrument was built after missing.
+   */
+  readonly onClickSummary?: (summary: ClickSummary) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -151,7 +210,8 @@ function messageOf(error: unknown): string {
 export function createRefreshCycle(
   options: RefreshCycleOptions,
 ): LatestOnly<void> {
-  const { store, actions, worker, onMesh, anchors } = options;
+  const { store, actions, worker, onMesh, anchors, onTimings, onClickSummary } =
+    options;
 
   return latestOnly(async (_input: void, signal) => {
     const { position, category } = selectOsmView(store.getState());
@@ -162,6 +222,20 @@ export function createRefreshCycle(
     // initial load) reads the same origin it read last time, which is exactly
     // right: the ENU frame belongs to the scene, not to this call.
     const frameOrigin = anchors.origin;
+
+    // THE CLICK-LEVEL WALL CLOCK, OPENED BEFORE THE DISPATCH (r504 review).
+    // It used to open twenty-two lines below, after `fetchStarted` — while
+    // three separate places (this file's `onClickSummary` doc, `ClickSummary`
+    // in `click-timings.ts`, and `main.ts`) all said `pageResidualMs` covers
+    // "the `fetchStarted` dispatch and its subscriber renders".
+    //
+    // A synchronous store dispatch with subscriber renders behind it is
+    // EXACTLY the page-side stage this summary exists to make visible, and it
+    // was the one page-side stage the docs named by hand while measuring none
+    // of it. Since `pageResidualMs` is the only clock in the instrument that
+    // can ever see page time — the per-ring algebra cancels it — an unmeasured
+    // page stage here is invisible everywhere.
+    const clickStart = nowMs();
     store.dispatch(
       actions.fetchStarted(
         `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`,
@@ -181,6 +255,7 @@ export function createRefreshCycle(
       // origin, none of which a widening ring touches. The worker decides which
       // kind of reply to send and the callback merges it — see `MeshUpdate`.
       // This was recorded here as a known cost for one round.
+      const rings: ClickTimings[] = [];
       for (const radius of PROGRESSIVE_RADII) {
         // THE CELL ARRAY ONLY TRAVELS IF SOMETHING DRAWS IT (round 10, stage B).
         // Read per ring rather than captured once, so toggling the layer
@@ -196,7 +271,16 @@ export function createRefreshCycle(
           selectLayers(store.getState()),
           "underground",
         );
-        const { snapshot, mesh } = await worker.call(
+        // STAGE 8's ANCHOR. Clocked wholly on THIS side, and paired with the
+        // worker's own `workerTotalMs` clocked wholly on that side, so the
+        // clone cost is a difference of two durations rather than of two
+        // timestamps. A dedicated worker has its own `performance.timeOrigin`,
+        // which makes a cross-boundary timestamp subtraction an offset rather
+        // than an elapsed time — and every existing timing in this demo is
+        // taken inside the worker, so nothing here warned about it.
+        const datum = options.geoidUndulationM?.();
+        const callStart = nowMs();
+        const { snapshot, mesh, workerTimings } = await worker.call(
           "update",
           {
             position,
@@ -205,9 +289,22 @@ export function createRefreshCycle(
             radius,
             includeCells,
             includeUnderground,
+            // ON AN ABSOLUTE TIMELINE, so the worker can subtract it from its
+            // own reading and get the QUEUE WAIT. That is the one duration
+            // neither side can measure alone: the page sees post-to-reply, the
+            // worker sees handler-start-to-end, and the gap between them is
+            // where a busy worker hides. See `monotonic-clock.ts`.
+            postedAtEpochMs: nowEpochMs(),
+            // THE DATUM THIS BUILD REQUIRES. Read at post time, not captured at
+            // construction: the cycle outlives an AR session and the datum
+            // changes with the mode. Spread conditionally because
+            // `exactOptionalPropertyTypes` distinguishes absent from undefined,
+            // and the protocol means ABSENT by "desktop datum".
+            ...(datum === undefined ? {} : { geoidUndulationM: datum }),
           },
           { signal },
         );
+        const roundTripMs = Math.max(0, nowMs() - callStart);
         // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the
         // call before it resolves, but there is a real race: if the worker's reply
         // has already landed when the newer input arrives, the promise is already
@@ -241,8 +338,39 @@ export function createRefreshCycle(
         // new snapshot's cells over the PREVIOUS mesh — one frame of buildings
         // belonging to somewhere else, which is the class of disagreement the
         // store was introduced to make impossible.
+        // STAGE 9 — the three.js upload and the store dispatch that drives the
+        // status line. Clocked around BOTH, because the ordering constraint
+        // above means they are one indivisible step from the user's point of
+        // view: the frame the user sees is the one after this pair.
+        const drawStart = nowMs();
         onMesh(mesh);
         store.dispatch(actions.snapshotReady(snapshot));
+        const drawMs = Math.max(0, nowMs() - drawStart);
+
+        // REPORTED AFTER THE PUBLISH, so measuring never delays what the user
+        // is waiting for. Always computed, even with no listener: a breakdown
+        // that only exists when someone is watching is one that is broken when
+        // they start watching.
+        const ring = composeClickTimings({
+          radius,
+          pipeline: snapshot.timings,
+          worker: workerTimings,
+          roundTripMs,
+          drawMs,
+        });
+        rings.push(ring);
+        onTimings?.(ring);
+      }
+      // AFTER THE LOOP, so it covers the gaps between passes and the per-ring
+      // bookkeeping. Reported only when at least one ring published: a run that
+      // was superseded before publishing anything has no click to summarise,
+      // and a "0 ms across 0 rings" line would be noise on every abort — of
+      // which there is one per click the user makes while a fetch is in
+      // flight, i.e. the common case on a slow network.
+      if (rings.length > 0) {
+        onClickSummary?.(
+          composeClickSummary(Math.max(0, nowMs() - clickStart), rings),
+        );
       }
     } catch (error) {
       // A SUPERSEDED RUN IS NOT A FAILURE, and treating it as one was the

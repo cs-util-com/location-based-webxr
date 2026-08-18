@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 /**
  * Tier 0 smoke + capability-gate e2e for the persistent-anchor starter.

@@ -4,7 +4,7 @@
 
 Pulls the six neighbouring res-7 fetch tiles in the background, one at a time,
 and drops them the moment the user leaves (W8, DEC-R2-6) — so crossing a tile
-boundary stops being an unpredictable 18–110 s stall.
+boundary stops being an unpredictable ~15–90 s stall.
 
 ## Public API
 
@@ -31,7 +31,7 @@ boundary stops being an unpredictable 18–110 s stall.
 - **Nothing is requested twice.** Already-loaded tiles are skipped, the in-flight
   tile is never also queued, and the queue is bounded at 6 — the ring of a
   position overlaps the ring of the next one by up to four tiles, so without this
-  a two-step walk would queue the same 28–68 MB tile twice.
+  a two-step walk would queue the same ~21 MB tile twice.
 - **A failure is not an error.** Nothing was promised, and the next click fetches
   it in the foreground. Stopping the queue on a 429 would be the worst of both.
 - **The result is NOT merged into the index.** A prefetched tile is written to

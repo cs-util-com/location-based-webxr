@@ -163,12 +163,18 @@ export function cellToBoundingBox(cell: string): BoundingBox {
  *
  * **A union of exact-key statements, NOT a key regex — this is the difference
  * between a working client and a broken one.** Measured 2026-07-28 on a res-7
- * tile: the union returned 200 OK in 18.2 s (28.31 MB, 21,847 elements), while
+ * tile: the union returned 200 OK while
  * `nwr[~"^(k1|k2|...)$"~"."]` over the same 32 keys returned 504 after 8 s. The
  * regex form makes Overpass evaluate a pattern against every key of every
  * element in the bbox and degrades with the alternation count; exact-key
  * statements use the key index. This one query form is why the project spent a
  * day believing public Overpass instances were saturated.
+ *
+ * **That run's payload figures are RETRACTED and only its verdict survives.**
+ * It recorded 28.31 MB / 21,847 elements for the tile; both were withdrawn on
+ * 2026-08-09 (N2/W2, `resolutions.ts` FETCH_RES) as under half the real payload
+ * with no host or artefact behind them. The union-beats-regex comparison does
+ * not depend on either number — a 200 against a 504 is the whole result.
  *
  * - **`nw` for nodes and ways, plus a SEPARATE areal-relation statement per key**
  *   (F32, adopted 2026-08-03). It was `nwr`, which took every relation touching

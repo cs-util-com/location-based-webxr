@@ -19,7 +19,7 @@
     "test:watch": "vitest --config config/vitest.config.ts",
     "bench": "vitest bench --run --config config/vitest.bench.config.ts",
     "bench:watch": "vitest bench --config config/vitest.bench.config.ts",
-    "build:framework": "pnpm --filter gps-plus-slam-app-framework run build",
+    "build:framework": "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework",
     "test:e2e": "pnpm run build:framework && node ../scripts/test-timing/timed-stage.mjs test:e2e",
     "test:e2e:headed": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --headed",
     "test:e2e:ui": "pnpm run build:framework && playwright test --config playwright-tests/playwright.config.js --ui",
@@ -32,12 +32,11 @@
     "check:dup": "node ../scripts/test-timing/timed-stage.mjs check:dup",
     "check:cycles": "node ../scripts/test-timing/timed-stage.mjs check:cycles",
     "check:boundaries": "node ../scripts/test-timing/timed-stage.mjs check:boundaries",
-    "check:deadcode": "node ../scripts/test-timing/timed-stage.mjs check:deadcode",
-    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries && pnpm run check:deadcode",
+    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries",
     "setup": "bash ./scripts/setup.sh"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.15.0"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.11.2",

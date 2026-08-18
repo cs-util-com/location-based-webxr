@@ -29,7 +29,7 @@
  * @see terrain-cycle.ts.md
  */
 
-import { type LatLng } from "gps-plus-slam-osm";
+import { type FallbackProviderStats, type LatLng } from "gps-plus-slam-osm";
 
 import type { HeightfieldData } from "./heightfield.js";
 import { latestOnly, type LatestOnly } from "./latest-only.js";
@@ -52,6 +52,24 @@ export interface TerrainState {
   readonly field: HeightfieldData | undefined;
   /** One phrase for the status line, never empty. */
   readonly note: string;
+  /**
+   * Which DEM composition sampled `field` — the worker provider's `sourceId`.
+   *
+   * Applied atomically with the field for the same reason the note is: a
+   * label that arrived on its own could describe a provider the current
+   * field was never sampled through.
+   */
+  readonly demSourceId: string;
+  /**
+   * Which member of the composition served, as position counts — the worker's
+   * snapshot of the provider's cumulative stats at this load.
+   *
+   * Applied atomically with the field and the source id, and for the same
+   * reason: the HUD's "which DEM actually served" suffix must describe the
+   * field on screen, never a snapshot from another load. Absent when the
+   * worker did not report one; the HUD then shows the composed id alone.
+   */
+  readonly demStats?: FallbackProviderStats | undefined;
   /**
    * Where the window was sampled, in the scene's frame — even on failure.
    *
@@ -91,6 +109,15 @@ export interface TerrainLoad {
   readonly centre: LatLng;
   /** Where the scene's ENU frame is anchored — what the heights mean. */
   readonly frameOrigin: LatLng;
+  /**
+   * Geoid undulation N at the frame origin, metres. AR mode only.
+   *
+   * PRESENT means "give me absolute heights against the ellipsoid"; absent
+   * means the desktop behaviour, relief against the window centre. AR cannot
+   * use the default because the window follows the user, so that datum moves
+   * mid-session and takes the scene Y baseline with it.
+   */
+  readonly geoidUndulationM?: number;
 }
 
 export interface TerrainCycleOptions {
@@ -131,6 +158,9 @@ export function createTerrainCycle(
         frameOrigin: load.frameOrigin,
         extentM,
         spacingM,
+        ...(load.geoidUndulationM === undefined
+          ? {}
+          : { geoidUndulationM: load.geoidUndulationM }),
       },
       { signal },
     );

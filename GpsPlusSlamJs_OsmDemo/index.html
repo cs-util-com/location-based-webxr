@@ -4,6 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OSM affordance demo</title>
+    <!--
+      A DATA-URI ICON, matching the RecorderApp and the landing page rather than
+      inventing a second convention. Without it the browser requests
+      `/favicon.ico` unprompted and logs a 404 on every load — noise in the one
+      place a real error would show.
+      It survived many sessions because HEADLESS Chromium never requests a
+      favicon, so no e2e could see it however the console filter was written.
+      `gallery.html` carries the same link for the same reason.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ef4444'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23fff'/%3E%3C/svg%3E"
+      type="image/svg+xml"
+    />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -64,6 +78,209 @@
         grid-template-columns: 1fr 1fr;
         min-height: 0;
         position: relative;
+      }
+
+      /*
+        AR MOUNT POINT. OUT OF FLOW IN BOTH STATES, and that is the whole rule.
+
+        `main` is a two-column grid with no explicit rows, so an in-flow third
+        child lands in an implicit second row -- and because both implicit rows
+        are `auto` and stretch, the map/3D row loses roughly half of main s
+        height to an empty band. Caught in review; no gate could see it, since
+        the height assertion runs only at the mobile viewport and the canvas
+        check compares against #scene s own box however small that gets.
+
+        `:empty` is doing real work: with no session the element is display:none
+        and cannot affect the grid at all. Once `initAR` inserts its canvas and
+        DOM-overlay root it becomes a fixed, viewport-sized layer, which is what
+        the framework already sizes its canvas for.
+      */
+      #ar-root {
+        position: fixed;
+        inset: 0;
+      }
+
+      #ar-root:empty {
+        display: none;
+      }
+
+      /*
+        The only message surface an immersed user can see (AR milestone 3).
+        WebXR composites ONLY the dom-overlay root's subtree over the camera
+        feed, and the header's status line is outside it — so a warning written
+        there is invisible for exactly as long as it is relevant.
+
+        `pointer-events: none` because it must never eat a tap: `#ar-root` is a
+        full-viewport fixed layer, and a message sitting in it that swallowed
+        input would be the same regression the `:empty` rule above exists for.
+      */
+      .ar-toast {
+        position: absolute;
+        left: 50%;
+        bottom: 12vh;
+        transform: translateX(-50%);
+        /* Viewport-relative only. A `min(34rem, 88vw)` cap is what this wants,
+           but the CSS validator in the gate rejects `min()` here — and the rem
+           half only ever binds on a wide desktop viewport, where AR does not
+           run. */
+        max-width: 88vw;
+        padding: 0.6rem 0.9rem;
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 88%);
+        color: #f2f4f8;
+        font-size: 0.95rem;
+        line-height: 1.35;
+        text-align: center;
+        /* Against a camera feed of unknown brightness, the panel needs an edge
+           of its own or it dissolves into a light-coloured scene. */
+        border: 1px solid rgb(242 244 248 / 25%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+        pointer-events: none;
+      }
+
+      /*
+        The measurement readout (AR milestone 4). Top-left, monospace, one
+        number per line: read at arm's length while walking, where a run-on
+        sentence is unreadable and a glance is looking for one figure.
+
+        `pointer-events: none` for the same reason as the toast — `#ar-root` is
+        a full-viewport fixed layer and nothing in it may eat a tap.
+      */
+      .ar-hud {
+        position: absolute;
+        /* A plain offset, not `max(0.75rem, env(safe-area-inset-top))`: the
+           gate's CSS validator rejects `max()` here, the same way it rejects
+           `min()` on the toast's width. Under a notch this can sit high; that
+           is M5's UI polish, and it is recorded rather than silently accepted. */
+        top: 2.5rem;
+        left: 0.75rem;
+        padding: 0.4rem 0.6rem;
+        border-radius: 0.4rem;
+        background: rgb(17 19 26 / 72%);
+        color: #cfe3ff;
+        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+        font-size: 0.78rem;
+        line-height: 1.5;
+        /* The lines are joined with "\n"; without this they collapse. */
+        white-space: pre-line;
+        pointer-events: none;
+      }
+
+      /*
+        The expand/collapse toggle (DEC-H2), which must OPT BACK IN to input.
+
+        `.ar-hud` above sets `pointer-events: none` so the readout can never eat
+        a tap, and that inherits — so without this rule the button is inert in a
+        real browser while every jsdom test still passes, because jsdom does no
+        hit-testing. A control that is unclickable only on the device it exists
+        for is exactly the failure the co-located CSS is here to prevent.
+      */
+      .ar-hud-toggle {
+        display: block;
+        margin-top: 0.3rem;
+        padding: 0.15rem 0.5rem;
+        border: 1px solid rgb(207 227 255 / 40%);
+        border-radius: 0.3rem;
+        background: rgb(17 19 26 / 72%);
+        color: #cfe3ff;
+        font-family: inherit;
+        font-size: 0.85rem;
+        line-height: 1.2;
+        cursor: pointer;
+        pointer-events: auto;
+      }
+
+      /*
+        The manual elevation nudge (DEC-E1). Bottom-centre, above the toast's
+        band, so it is reachable with a thumb while the phone is held up.
+
+        NOT `pointer-events: none`, unlike the readout and the toast: this one
+        exists to be pressed. It is a direct child of `#ar-root`, which sets no
+        pointer-events of its own, so it needs no opt-in the way the HUD's
+        toggle does.
+      */
+      .ar-elevation {
+        position: absolute;
+        bottom: 4vh;
+        left: 50%;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.4rem 0.6rem;
+        transform: translateX(-50%);
+        border: 1px solid rgb(242 244 248 / 25%);
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 88%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+      }
+
+      .ar-elevation-button {
+        /* A 2.5rem square is the smallest reliable touch target; against a
+           camera feed of unknown brightness it also needs an edge of its own. */
+        width: 2.5rem;
+        height: 2.5rem;
+        border: 1px solid rgb(242 244 248 / 35%);
+        border-radius: 0.4rem;
+        background: rgb(36 40 52 / 92%);
+        color: #f2f4f8;
+        font-size: 1.35rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      /*
+        The compass-influence slider (DEC-E2). Above the elevation nudge so the
+        two stack rather than overlap, and wide enough that 0-1 is draggable
+        with a thumb rather than being a 20-pixel target.
+      */
+      .ar-compass {
+        position: absolute;
+        /* NOT 12vh — that is `.ar-toast`'s band, and the far-travel toast fires
+           at 2 km, i.e. during exactly the long walk this slider is being
+           measured on. The two would paint over each other at the moment both
+           matter most (PR #311 review, finding 4). */
+        bottom: 20vh;
+        left: 50%;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: center;
+        max-width: 88vw;
+        padding: 0.4rem 0.6rem;
+        transform: translateX(-50%);
+        border: 1px solid rgb(242 244 248 / 25%);
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 88%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+      }
+
+      .ar-compass-slider {
+        width: 55vw;
+      }
+
+      .ar-compass-value {
+        min-width: 9rem;
+        color: #f2f4f8;
+        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+        font-size: 0.9rem;
+      }
+
+      /* The two states a user would otherwise read as a broken control: not
+         accepting input yet, and taking ~15-30 fixes to express a change. */
+      .ar-compass-hint {
+        width: 100%;
+        color: #9aa3b8;
+        font-size: 0.72rem;
+        text-align: center;
+      }
+
+      .ar-elevation-value {
+        min-width: 4.5rem;
+        color: #f2f4f8;
+        font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+        font-size: 0.95rem;
+        text-align: center;
       }
 
       /* Floats over the split rather than taking a column (DEC-17). */
@@ -268,6 +485,21 @@
       #scene {
         border-left: 1px solid #2a2f3d;
         position: relative;
+      }
+      /* THE IN-PROGRESS STATE FOR ORDERING THE AGENT (stage 4, DEC-R11-3).
+         The root CLAUDE.md requires an async UI action to show a distinguishable
+         in-progress state, and the element that was "pressed" here is the canvas
+         itself — there is no button to relabel. A route is a worker round trip,
+         and its SLOWEST reply is "no route": the search has to exhaust its
+         frontier before it can know, which is what every mis-click across a wall
+         does. So the wait is real and most likely exactly when the user has
+         clicked somewhere unreachable.
+
+         The attribute is also what the e2e reads, for the same reason
+         `data-frame-origin` exists: an attribute cannot be observed before it is
+         written by mistake. */
+      #scene[data-routing="true"] {
+        cursor: progress;
       }
 
       /* THE CANVAS IS SIZED BY CSS, AND ONLY BY CSS (W1, finding R3-2).
@@ -524,6 +756,15 @@
       .legend-empty {
         font-style: italic;
       }
+      /* What the DATA reaches, beside a ramp that no longer moves (DEC-H7).
+         Dimmer than the ramp's own end labels on purpose: the ramp is the
+         scale and this is an annotation on it, so it must not read as a third
+         endpoint. */
+      .legend-observed {
+        margin-left: 0.5rem;
+        opacity: 0.75;
+        font-variant-numeric: tabular-nums;
+      }
       .legend-band {
         display: inline-flex;
         align-items: center;
@@ -620,6 +861,20 @@
         Next geo-event
       </button>
       <!--
+        AR MODE (DEC-12, AR milestone 1). HIDDEN BY DEFAULT and revealed by
+        `arButtonState`, never by this markup: the device may not support
+        immersive AR, and on a device that does, entry still waits for a first
+        GPS fix because the scene is anchored to the framework's `zero`.
+
+        THE MAP STAYS. DEC-12 is explicit that AR is an additional mode, not a
+        replacement — the reference consumer's pattern hides its map view
+        inversely to AR support, which here would cost every WebXR-capable
+        phone the only interface that can drive the data.
+      -->
+      <button type="button" id="enter-ar" class="geo-event-button" hidden>
+        AR
+      </button>
+      <!--
         THE GROUND MODE (W11, DEC-R3-3). NOT a layer — it does not add or remove
         anything from the scene, it chooses which surface is drawn as the ground:
         the CPU-displaced plane, the GPU-displaced one (W23's A/B comparison), or
@@ -650,6 +905,33 @@
     <main>
       <div id="map"></div>
       <div id="scene"></div>
+      <!--
+        WHERE `initAR` MOUNTS (AR milestone 1). Its OWN element rather than
+        `<main>` or `#scene`: the framework inserts a full-screen canvas plus a
+        DOM-overlay root as children of whatever it is given, and both `#map`
+        and `#scene` are grid-laid children that the demo sizes itself. Handing
+        either over would put a full-screen canvas inside a sized cell and
+        leave the demo's own resize observer fighting it.
+
+        Empty and zero-sized until a session starts; the framework's canvas is
+        positioned by the UA once the session is immersive.
+      -->
+      <!--
+        NO `aria-hidden` (r510 review). It carried one, statically, and nothing
+        ever toggled it — which silently made the AR toast's `role="status"` /
+        `aria-live="polite"` inert, because an `aria-hidden` subtree is removed
+        from the accessibility tree wholesale. The toast exists precisely to
+        reach a user who cannot see the header's status line, so hiding it from
+        assistive technology defeated it for the one audience with the fewest
+        alternatives.
+
+        Nothing is needed in its place: the container is `display: none` while
+        `:empty` (see the CSS above), which keeps it out of the accessibility
+        tree whenever no session is running. The HUD inside it carries its own
+        `aria-hidden`, because a readout that changes twice a second forever
+        should not be announced.
+      -->
+      <div id="ar-root"></div>
       <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
            two views to ~450 px each on a laptop, which is the width that made
            the 3D pane useless on a phone. -->

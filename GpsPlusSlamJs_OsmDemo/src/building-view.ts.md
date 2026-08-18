@@ -11,8 +11,26 @@ map scored.
   (the geometry is built in the WORKER now; this file only turns typed arrays
   into three.js objects, which is what its header always claimed it was for),
   `renderCells(mesh)`, `setTerrain(field | undefined)`,
-  `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`.
-  Navigation is `MapControls`, attached internally; there is nothing to call.
+  `setGroundDebug(enabled)`, `clearScene()`, `resize()`, `dispose()`,
+  `followRoute(path)`, `clearRoute()`, `agentAt()`, `cameraView()`,
+  `lookAtFrom(target, distanceM)`,
+  `attachContentTo(root, frame)`, `localRoot`.
+  - **`attachContentTo` / `localRoot` are the AR seam** (plan milestone 0). The
+    map-derived content — the layer group, the cell mesh and its outlines —
+    lives on a `SceneContent` root that can be handed to the framework's scene
+    graph and taken back. **The `frame` argument is not cosmetic:** this view's
+    scene is X=East, Y=Up, Z=−North and the GPS-world frame is NUE, so
+    attaching without `"gps-world-nue"` renders the city 90° off. See
+    [`scene-content.ts.md`](scene-content.ts.md) for the mapping, what stays
+    behind, and why picking in AR needs the raycast set resolved first.
+    Navigation is `MapControls`, attached internally; there is nothing to call —
+    but the view now REPORTS it through the `onCameraMove(view)` option, fired on
+    every `change` and deliberately unthrottled, because sampling is a policy the
+    page can see and the view cannot (DEC-R13-7, `throttle.ts`).
+  - `lookAtFrom` translates then dollies, both relative, for the same reason
+    `recentreOn` exists: recomputing the camera from a distance and two angles
+    would place the target correctly and quietly re-derive the ORIENTATION —
+    which is exactly the pose data DEC-R13-7 chose not to store.
 - `TERRAIN_SPACING_M` — 12 m, the Terrarium z13 pixel pitch at this latitude.
 - `MeshLayers` and `BuildingStats` — **re-exported from `mesh-layers.ts`**, which
   owns them because it owns what they describe. `BuildingStats` is `volumes`,
@@ -37,8 +55,75 @@ map scored.
   that never stops drawing. Damping still works: `controls.update()` emits
   another `change` while the camera eases, which schedules the next frame, so
   the sequence sustains itself and then stops.
+  - **The walking agent is the ONE thing that schedules a frame from inside a
+    frame** (stage 4, DEC-R11-15), and it stops on its own: the callback only
+    re-arms while `advanceWalk()` returns `true`. A walk that never finished
+    would be the permanent loop this whole invariant exists against — which is
+    why `pointAlong`'s `done` is asserted as hard as its position, and why the
+    e2e's second half asserts the scene going QUIET rather than moving.
+    - **SINCE ROUND 13 IT TAKES TWO CONDITIONS, NOT ONE**, and the second is the
+      part a future reader most needs: `advanceWalk()` returns `false` only once
+      `pointAlong` reports `done` **AND** `followerSettled` agrees. The agent is
+      a damped body now (`agent-follower.ts`), so it is ~2.4 m behind when the
+      path is consumed — ending on `done` alone froze it short of its
+      destination, with the drawn line finishing somewhere it never reached.
+    - The invariant survives because the follower **provably settles**: a
+      property test pins that it reaches the end of any generated route, so
+      `false` still means "nothing is moving" rather than "the path ran out".
+  - **`data-frames` on the container is the observable behind that.** It is a
+    monotonic counter written in the same callback, and it joins the family
+    `publishFrameState` started with `data-frame-origin` and
+    `data-ground-centre`: "the scene went quiet" has no machine-readable
+    definition otherwise, and a screenshot comparison also passes for a scene
+    that stopped drawing entirely. `data-route` and `data-agent` are the other
+    two members — the second exists so "the agent did not teleport back to the
+    start" is assertable.
+  - **The route's material must be `transparent`.** `WebGLRenderer` draws the
+    opaque list first and `renderOrder` only sorts WITHIN a list, so an opaque
+    line with `RENDER_ORDER.route` ranks above the translucent layers in the
+    table and loses to them on screen. That is the #256 finding on the
+    underground lines, repeated here and caught in review on #274.
 - **`dispose()` cancels the pending frame FIRST.** An orphaned frame callback
   touching a disposed WebGL context crashes rather than leaks.
+  - This is why `clearRoute()` is split into a `removeRoute()` that does not
+    repaint: `dispose()` calls the latter, because the public form requests a
+    frame and would schedule one behind the cancellation's back.
+- **The route and the agent live on the SCENE, not on `this.group`** — for the
+  same reason the affordance grid is also kept out of the group (though the grid
+  now sits on `this.content`, see below): `clear()` empties
+  the group on every mesh rebuild, and a route dropped by an unrelated republish
+  would read as the agent having been cancelled. The scene's frame is fixed
+  (round 5B), so a publish does not invalidate their coordinates; only a
+  re-anchor does, and `main.ts` calls `clearRoute()` there.
+  - **The agent mesh is removed but NOT disposed by `clearRoute()`.** It is built
+    once and reused for every route; freeing it there would make the second route
+    draw nothing at all, which three does not report as an error. `dispose()`
+    frees it.
+- **The raycast set gained the ground and the buildings in stage 4**
+  (DEC-R11-17). Buildings are still not selectable — `resolvePick` stops at the
+  first one and never returns it — but they must be RAYCAST so a click on a
+  facade does not fall through to the ground behind it. The ground carries
+  `userData.ground`, and the marker and the membership are one fact rather than
+  two: setting the membership without the marker is a silent no-op, which is
+  exactly how the first implementation failed (the ray hit the plane, the hit
+  could not be identified, and the click read as a dead control).
+  - **The ground joins it only while `visible` AND on the CPU displacement
+    path.** three's raycaster does not skip invisible objects, so `visible` has
+    to be checked here; and only the CPU path writes the displaced POSITION
+    BUFFER, which is the only geometry a ray meets. Under `gpu` the ray would
+    hit a FLAT plane while the user looks at a shader-displaced one, and since
+    the destination is read as `x`/`z` the error is horizontal — roughly
+    `relief / tan(elevation)` on an oblique click. See `groundIsOrderable`.
+  - **Picking blocks on the DRAWN volume; navigation blocks on the SOLID one.**
+    `solidBuildingFootprints` lets an agent under a `building=roof` canopy and a
+    `min_height > 0` arch, while `userData.solid` is per CHUNK and a chunk
+    cannot say which of its buildings is passable — so a canopy is walkable and
+    still swallows the click. Known gap, not an inconsistency to close by making
+    canopies solid again.
+- **`agentAt()` is where the NEXT order plans from.** Reading the user's
+  position for both is what shipped first and made the agent teleport back to
+  the start on a second order without moving. `undefined` until the first route
+  and again after `clearRoute()`, so the user's position is only the start.
 - **`MapControls`, not `OrbitControls` (DEC-5).** Pan-first suits a top-down city
   view. Both ship inside the `three` package the demo already depends on, so
   neither is a new dependency.
@@ -115,7 +200,7 @@ map scored.
 
 - **It draws geometry the WORKER built; it no longer builds any.** `render()` used
   to take the merged features and call `buildBuildings`/`buildTrees` itself. Both
-  moved into `worker/demo-worker.ts`, because the features are 28–68 MB and must
+  moved into `worker/demo-worker.ts`, because the features are ~21 MB and must
   not cross the boundary to produce geometry that crosses back — the package's
   mesh output is `Float32Array` precisely so the BUFFERS transfer instead. The ENU
   frame anchoring and the terrain sampling moved with them.
@@ -295,3 +380,33 @@ occluded by the very ground they exist to be seen under. The material is also
 **transparent**, and that is load-bearing: three draws the opaque list first and
 `renderOrder` only sorts within a list, so an opaque line outranked the
 affordance slabs in the table while losing to them on screen.
+
+## `suspend()` / `resume()` — the desktop renderer while AR runs (M5)
+
+**Hidden but resident**, which §3 of the AR plan decided rather than left open.
+The GL context, the compiled programs, the uploaded geometry and every setting
+survive; only the loop and the visibility stop. Two live GL contexts on the
+phone is the accepted cost, and what buys it is an **instant** return to the map
+instead of rebuilding a 2.8 km mesh.
+
+- **The guard is inside `requestFrame`, not at the call sites.** A dozen paths
+  reach it — a terrain load landing, a snapshot publishing, a resize, a camera
+  change — and a suspended view can still be driven down any of them. Guarding
+  the call sites is a list the next one added will not be on.
+- **A pending frame is CANCELLED, not merely un-scheduled.** `requestFrame`
+  coalesces, so a callback can already be in flight when AR starts; left alone
+  it renders the desktop scene once, on the frame after the session began, for
+  nothing.
+- **`visibility`, never `display`.** A `display: none` canvas has a zero-sized
+  box and this class observes its container with a `ResizeObserver`, so hiding
+  that way resizes the drawing buffer to 0×0 — and returning from AR finds a
+  renderer sized for an element that had no size. Blank pane, no error.
+- **`resume()` schedules a frame explicitly**, because the scene is static and
+  frames are on demand: nothing else would repaint it, and the pane would stay
+  as it was when the session started — which, having been hidden, means blank.
+- Both are idempotent, and `resume()` is safe without a prior `suspend()`.
+
+`main.ts` calls them from `startWalking` / `stopWalking`, the two functions both
+AR exits already pass through — including the Android back gesture, where
+nothing calls `ArMode.dispose()`. `ar-walk-wiring.test.ts` pins that pairing by
+location; `building-view-content.test.ts` pins the four invariants above.

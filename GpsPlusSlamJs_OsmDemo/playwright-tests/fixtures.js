@@ -107,8 +107,34 @@ const isRuleSheet = (url) => /(^|\.)docs\.google\.com$/i.test(url.hostname);
 const isTerrarium = (url) =>
   /(^|\.)s3\.amazonaws\.com$/i.test(url.hostname) &&
   url.pathname.includes("/terrarium/");
+/**
+ * The PRIMARY DEM since the Mapterhorn+AWS composition landed: the app asks
+ * this host first and falls back to the AWS tiles above only for tiles it
+ * does not have. Both hosts are DEM tiles and share ONE route handler, so
+ * `holdTerrain`/`failTerrain` govern the DEM as a whole — failing only the
+ * primary would quietly turn every "outage" test into a fallback test.
+ */
+const isMapterhorn = (url) =>
+  /(^|\.)tiles\.mapterhorn\.com$/i.test(url.hostname);
+/** Either DEM host — what the `terrain` counter and the DEM routes match. */
+const isDemTile = (url) => isTerrarium(url) || isMapterhorn(url);
 const isBasemap = (url) =>
   /(^|\.)tile\.openstreetmap\.org$/i.test(url.hostname);
+/**
+ * The Leaflet stylesheet `index.html` loads from a CDN.
+ *
+ * **THE SUITE WAS NOT ACTUALLY OFFLINE**, despite `playwright.config.js` saying
+ * so. `index.html` links `https://unpkg.com/leaflet@1.9.4/dist/leaflet.css` and
+ * nothing here intercepted it, so every run fetched it for real. Harmless while
+ * the console test swallowed `Failed to load resource` wholesale; the moment
+ * that filter was narrowed to genuine aborts, a CDN hiccup — a 429, a DNS
+ * failure, a dropped connection — would have failed a test about the app.
+ * Raised in review on #279.
+ *
+ * Served from the local `leaflet` dependency, which is the same file the CDN
+ * would return for the pinned version.
+ */
+const isCdnStylesheet = (url) => /(^|\.)unpkg\.com$/i.test(url.hostname);
 
 /**
  * Routes the app's outside world to checked-in data.
@@ -131,6 +157,26 @@ export async function stubNetwork(page, options = {}) {
     releaseTerrain: () => {
       releaseTerrain();
     },
+    /**
+     * Makes every LATER Overpass query hang until {@link releaseOverpass}.
+     *
+     * ARMED AT CALL TIME rather than through an option, because the tests that
+     * need it need the FIRST fetch to succeed: they boot a populated scene and
+     * then assert what happens to it while the NEXT fetch is in flight — which
+     * is a real ~15–90 s window in the app and would otherwise be a race in the
+     * suite. (`holdTerrain` is an option because the DEM is only interesting
+     * before it has ever answered.)
+     */
+    holdOverpass: () => {
+      overpassHeld = new Promise((resolve) => {
+        releaseOverpass = resolve;
+      });
+    },
+    /** Lets a held query through. Safe to call when nothing is held. */
+    releaseOverpass: () => {
+      releaseOverpass();
+      overpassHeld = undefined;
+    },
   };
   const payload = JSON.stringify(parkPayload());
   /** Resolved by `counts.releaseTerrain()`; see the `holdTerrain` option. */
@@ -138,6 +184,9 @@ export async function stubNetwork(page, options = {}) {
   const terrainHeld = new Promise((resolve) => {
     releaseTerrain = resolve;
   });
+  /** Pending only between `holdOverpass()` and `releaseOverpass()`. */
+  let overpassHeld;
+  let releaseOverpass = () => undefined;
 
   await page.route(isOverpass, async (route) => {
     // Counted SEPARATELY from queries. A single combined counter cannot express
@@ -164,6 +213,10 @@ export async function stubNetwork(page, options = {}) {
     }
 
     counts.overpassQuery++;
+
+    // Counted BEFORE the hold, so a test can see the request was issued while
+    // still deciding when it may answer.
+    if (overpassHeld !== undefined) await overpassHeld;
 
     const status = options.overpassStatus ?? 200;
     if (status !== 200) {
@@ -214,7 +267,21 @@ export async function stubNetwork(page, options = {}) {
       ),
     }),
   );
-  // Terrarium DEM tiles. Served as a REAL 2x2 PNG rather than aborted, so the
+  // The Leaflet stylesheet, from the local dependency rather than the CDN. See
+  // `isCdnStylesheet`: without this the suite genuinely reached unpkg on every
+  // run, and a CDN hiccup would now fail the console test.
+  await page.route(isCdnStylesheet, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/css",
+      body: readFileSync(
+        join(here, "..", "node_modules", "leaflet", "dist", "leaflet.css"),
+        "utf8",
+      ),
+    }),
+  );
+  // DEM tiles — BOTH hosts (Mapterhorn primary, AWS Terrarium fallback),
+  // through one handler. Served as a REAL 2x2 PNG rather than aborted, so the
   // decode + sample path runs for real: an aborted tile would exercise only the
   // "terrain unavailable" branch and the displaced-ground code would never be
   // reached by any test. The four pixels encode distinct heights, so the
@@ -222,7 +289,17 @@ export async function stubNetwork(page, options = {}) {
   //
   // Terrarium decodes as (r * 256 + g + b / 256) - 32768, so r = 128, g = 0
   // is exactly 0 m and larger g values step up one metre each.
-  await page.route(isTerrarium, async (route) => {
+  //
+  // MAPTERHORN GETS THE SAME 2x2 PNG, deliberately, not a 512-px WebP: the
+  // provider's tile arithmetic is size-invariant (its own library tests pin
+  // the 512-px rescale) and `createImageBitmap` sniffs bytes rather than
+  // trusting the `.webp` URL, so the identical tile keeps the PRIMARY path —
+  // the one production takes — exercised for real while staying deterministic.
+  // Answering the primary means the AWS fallback is expected to receive no
+  // requests in an ordinary run; it stays intercepted so a fallback fetch can
+  // never leak to the network.
+  /** @param {import('@playwright/test').Route} route */
+  const serveDemTile = async (route) => {
     // `holdTerrain` STALLS the DEM indefinitely, until the test releases it (W3).
     //
     // A HOLD RATHER THAN A DELAY, and the difference is the difference between
@@ -247,11 +324,16 @@ export async function stubNetwork(page, options = {}) {
       contentType: "image/png",
       body: terrariumPng(),
     });
-  });
+  };
+  await page.route(isMapterhorn, serveDemTile);
+  await page.route(isTerrarium, serveDemTile);
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (isBasemap(url)) counts.basemap++;
-    if (isTerrarium(url)) counts.terrain++;
+    // One counter for the DEM as a whole: which host answered is the app's
+    // composition detail, and every existing assertion is about "did the DEM
+    // get asked", not about the member that replied.
+    if (isDemTile(url)) counts.terrain++;
   });
 
   return counts;
@@ -302,6 +384,81 @@ export async function waitForRefresh(page) {
   await expect(page.locator("#status")).not.toContainText("widening", {
     timeout: 30000,
   });
+}
+
+/**
+ * The same recording, installed BEFORE the page's own scripts run.
+ *
+ * WHY A SECOND HELPER RATHER THAN A FLAG ON THE FIRST. `recordStatus` answers
+ * "what has the status line said SINCE NOW" and its other caller depends on
+ * that: `data-and-caching.spec.js` starts recording after its setup and asserts
+ * a message never appeared. This one answers "what has it said SINCE BOOT".
+ * Both are legitimate; conflating them behind one name is how the next reader
+ * picks the wrong one.
+ *
+ * WHY IT EXISTS. The widening step asserts that a TRANSIENT marker was seen —
+ * it is on screen only between the first ring publishing and the last — and it
+ * failed twice in five full-suite runs while passing 5/5 alone. `recordStatus`
+ * installs its observer with `page.evaluate` AFTER `page.goto`, and `goto`
+ * resolves on `load`, by which time the app is already booting; under load that
+ * round trip can land after the whole widening phase is over. Installing at
+ * document-start removes the window rather than shrinking it.
+ *
+ * `#status` does not exist that early, so the recorder waits for it: it watches
+ * `document` until the node appears (NOT `documentElement`, which can be null
+ * at document-start — see the comment at the observer), then observes the node
+ * itself and stops watching. Call this BEFORE `page.goto`.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<() => Promise<string[]>>} reads the history so far
+ */
+export async function recordStatusFromBoot(page) {
+  await page.addInitScript(() => {
+    /** @type {string[]} */
+    const seen = [];
+    /** @type {Record<string, unknown>} */ (window).__statusHistory = seen;
+
+    /** @param {Element} node */
+    const record = (node) => {
+      const text = node.textContent ?? "";
+      if (seen.length === 0 || text !== seen[seen.length - 1]) seen.push(text);
+    };
+
+    const attach = () => {
+      const node = document.getElementById("status");
+      if (node === null) return false;
+      record(node);
+      new MutationObserver(() => {
+        record(node);
+      }).observe(node, { childList: true, characterData: true, subtree: true });
+      return true;
+    };
+
+    if (attach()) return;
+    // The document is still being parsed. Watch for the node rather than
+    // guessing at a ready event — `DOMContentLoaded` would work today and would
+    // silently stop working if the shell ever rendered `#status` from script.
+    //
+    // OBSERVING `document`, NOT `document.documentElement`. An init script runs
+    // at document-start, where `documentElement` can still be null — and
+    // `observe(null, …)` THROWS, which aborts the rest of this script silently.
+    // That is not hypothetical: the first version did exactly that and recorded
+    // zero entries, which reads identically to "the marker never appeared".
+    // `document` always exists, and childList+subtree on it sees the same
+    // mutations.
+    const waiting = new MutationObserver(() => {
+      if (attach()) waiting.disconnect();
+    });
+    waiting.observe(document, { childList: true, subtree: true });
+  });
+
+  return () =>
+    page.evaluate(
+      () =>
+        /** @type {string[]} */ (
+          /** @type {Record<string, unknown>} */ (window).__statusHistory ?? []
+        ),
+    );
 }
 
 /**
@@ -445,25 +602,41 @@ export async function expectCanvasFillsContainer(page) {
 }
 
 /**
- * A 2x2 Terrarium DEM tile with four distinct heights.
+ * A 2x2 Terrarium DEM tile: a low plateau with one 40 m corner.
  *
  * ENCODED HERE rather than checked in as a binary, because the interesting part
  * is the ENCODING and a base64 blob hides it. Terrarium stores height as
  * `(r * 256 + g + b / 256) - 32768`, so `r = 128, g = 0` is exactly 0 m and each
- * step of `g` is one metre. The four pixels below are 0 / 20 / 40 / 10 m, which
- * is enough relief for a test to tell a displaced plane from a flat one.
+ * step of `g` is one metre.
+ *
+ * WHY THREE ZEROS AND ONE 40, not four distinct heights. The provider samples a
+ * tile at its DECODED size (the library's tile-size fix), so a 2x2 tile is one
+ * smooth bilinear surface per z13 tile (~3 km at the fixture's latitude) —
+ * `h = 40·x·y` with this layout. The previous four-value tile put the low
+ * ground mid-distance from `AT_FIXTURE`, where scene fog washes the ramp's
+ * saturated floor colour out and the ramp test's "cool end on screen" count
+ * read zero. With the single high corner the user stands ON the low plateau:
+ * the ramp floor is close and saturated, the 40 m corner keeps the surface
+ * measurably non-flat (~±7 m within the near field, ±40 m in view), and the
+ * displacement A/B still runs over real slopes.
  *
  * Written as a real PNG rather than a stub so the whole path runs for real:
  * fetch, decode, sample, displace. An aborted tile would exercise only the
  * "terrain unavailable" branch, and the displaced-ground code would never be
  * reached by any test in the suite.
+ *
+ * HISTORY WORTH KEEPING: before the library's tile-size fix, the provider
+ * sampled this 2x2 tile at 256-px offsets, so clamping pinned every read to
+ * one pixel and the whole tile decoded to a constant 10 m — meaning every
+ * pre-fix relief assertion in this suite ran against a flat field and proved
+ * nothing about displacement.
  */
 function terrariumPng() {
   const heights = [
     [128, 0, 0],
-    [128, 20, 0],
+    [128, 0, 0],
+    [128, 0, 0],
     [128, 40, 0],
-    [128, 10, 0],
   ];
   // Raw scanlines: one filter byte (0 = none) then RGB triples.
   const raw = Buffer.concat([

@@ -14,6 +14,18 @@
  *
  * - **Cologne Cathedral** (n = 927): p05 = 0, p50 = **0.048**, p90 = 3.9e3,
  *   p99 = 8.1e6, max = 1.4e12. **46.3 % score above 1; 44.9 % above 9.**
+ *   - ⚠️ **THE MAX ROTTED, and this file exists to stop exactly that.** Measured
+ *     2026-08-13 it is **1.7e11**, not 1.4e12 — an order of magnitude out. The
+ *     re-measure note below says "the max is unchanged", and that claim is what
+ *     was wrong; the narrative it introduced ("nine orders instead of twelve")
+ *     only computes at 1.7e11, so the prose had already followed the new value
+ *     while the header line stayed behind. Found by review comparing this file
+ *     against `category-score-distributions.test.ts`, which reports 1.7e11 for
+ *     the identical measurement.
+ *   - **Nothing could catch it**: the span assertion below is `> 9`, which
+ *     passes at either figure. A max assertion is added at the end of this file
+ *     so the recorded order of magnitude now has a guard, which is the whole
+ *     argument for this being a test rather than a script.
  * - **Heidelberg Altstadt** (n = 931): p50 = **0.8**, **29.8 % above 9.**
  *
  * **Q-R6-4 — `heat > 9` is in the BULK, not the tail.** The gate is inherited
@@ -23,7 +35,10 @@
  * number.** The C# heat map was a sum of counts; ours is a product of rule
  * factors, and 9 means something entirely different in each.
  *
- * **Q-R6-3 — the distribution spans TWELVE orders of magnitude** (0 to 1.4e12),
+ * **Q-R6-3 — the distribution spans ELEVEN orders of magnitude at Cologne**
+ * (0 to 1.7e11 — this said twelve and 1.4e12 until the max was re-measured on
+ * 2026-08-13; Heidelberg spans seventeen, so "twelve orders" remains a fair
+ * description of the corpus and of the score MODEL generally),
  * because a product of factors compounds. That decides the aggregate question in
  * a way the C# reference cannot: a SUM over a coarse cell's children is
  * dominated by its single largest child, so sum and max are very nearly the same
@@ -51,10 +66,14 @@
  * - **Q-R6-4 is untouched.** `heat > 9` still selects 51.1 %% of Cologne and
  *   29.8 %% of Heidelberg — the bulk, not the tail. DEC-R9-3, which rests on
  *   this, needs no revisiting.
- * - **Q-R6-3 holds at nine orders instead of twelve** at Cologne, because the
- *   max is unchanged and only the median rose. Sum and max are still the same
+ * - **Q-R6-3 holds at nine orders instead of twelve** at Cologne, because
+ *   mostly the median rose. ⚠️ **This said "the max is unchanged", and that is
+ *   the claim the 2026-08-13 re-measure falsifies** — the max is 1.7e11, not
+ *   the 1.4e12 recorded above it. The conclusion is unaffected (nine orders of
+ *   SPAN is what decides Q-R6-3, and 1.7e11 / 43.2 is 9.6). Sum and max are still the same
  *   statistic to within a rounding error, so a genuine average must still be
- *   geometric. Heidelberg still spans twelve.
+ *   geometric. Heidelberg spans SEVENTEEN (0.8 to 3.0e17), so the corpus as a
+ *   whole still spans more than twelve.
  *
  * What DID change is the argument for a quantile gate, which is now stronger:
  * the two sites' medians differ by ~54x and the sign of the difference REVERSED,
@@ -161,7 +180,7 @@ describe("the corpus score distribution (§6 step 0)", () => {
     // max and mean are not three meaningfully different aggregates — they are
     // one statistic and two scalings of it. A genuine average has to be
     // geometric.
-    // NINE, not ten, since the below-surface fix: the max is unchanged and the
+    // NINE, not ten, since the below-surface fix: mostly the
     // median rose ~900x, so the SPAN narrowed while the distribution itself did
     // not change shape. The conclusion is untouched — sum and max are still the
     // same statistic to within a rounding error at nine orders as at twelve.
@@ -199,6 +218,28 @@ describe("the corpus score distribution (§6 step 0)", () => {
     expect(
       fractionAbove(COLOGNE, 9) / fractionAbove(COLOGNE, 1e5),
     ).toBeGreaterThan(5);
+  });
+
+  it("pins the MAX's order of magnitude, which had rotted unnoticed", () => {
+    // ADDED 2026-08-13. This file's header recorded Cologne's max as 1.4e12 and
+    // the true figure is 1.7e11 — an order of magnitude out, sitting in a file
+    // whose stated reason for being a test rather than a script is that "a
+    // script produces a figure that is right on the day and silently rots".
+    //
+    // Nothing here could catch it: the span assertion is `> 9`, which passes at
+    // either value, and the median is asserted only as `> 1`. The recorded max
+    // was load-bearing — `heat-colours.ts.md` cites it as the accepted cost of
+    // the fixed colour cap — and was checked by nobody.
+    //
+    // Asserted as a RANGE rather than a value: the point is to catch a drift of
+    // an order of magnitude, not to break on the rule table gaining a row.
+    const cologneMax = COLOGNE[COLOGNE.length - 1] ?? 0;
+    expect(Math.log10(cologneMax)).toBeGreaterThan(10);
+    expect(Math.log10(cologneMax)).toBeLessThan(12);
+
+    const heidelbergMax = HEIDELBERG[HEIDELBERG.length - 1] ?? 0;
+    expect(Math.log10(heidelbergMax)).toBeGreaterThan(16);
+    expect(Math.log10(heidelbergMax)).toBeLessThan(18);
   });
 
   it("differs enough between the two sites to rule out one global constant", () => {

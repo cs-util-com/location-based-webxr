@@ -22,8 +22,21 @@ pixel grid, fetched once each and reused as the user moves.
     - **An abort is swallowed into "degrade to what is held"**, on the same path
       as a DEM outage. Cancellation is not an error the 3D pane should have to
       handle, and the caller re-checks the signal regardless.
-  - `sampleGrid({ frame, extentM, spacingM, centreEnu? })` → `HeightfieldData` — a bounded,
-    fixed-shape grid rendered from the lattice, for crossing the worker boundary.
+  - `sampleGrid({ frame, extentM, spacingM, centreEnu?, absoluteDatum? })` →
+    `HeightfieldData` — a bounded, fixed-shape grid rendered from the lattice,
+    for crossing the worker boundary.
+    - **`absoluteDatum: { undulationMetres }` is AR mode's datum** (milestone 1).
+      Present, the returned `datum` is `−N` and heights read as **ellipsoidal**;
+      absent, it is the height at the window centre and heights read as relief.
+      Desktop uses the default and must keep using it.
+    - The distinction that matters is not the units, it is that **the absolute
+      datum does not depend on the window**. The window follows the user, so a
+      window-centre datum moves mid-session and shifts the whole scene's Y
+      baseline — which AR cannot tolerate and desktop never notices, because the
+      camera is framed relative to the same moving surface.
+    - Takes a number rather than a `GeoidModel` because a model is a function
+      and functions do not survive a structured clone; the page samples `N` once
+      at the frame origin, which is uniform to ~5 cm across a city.
   - `postCount` — held posts, so the eviction bound is testable.
 
 ## Invariants & assumptions
@@ -65,9 +78,10 @@ pixel grid, fetched once each and reused as the user moves.
 ## Examples
 
 ```ts
-const field = createTerrainField({
-  provider: new TerrariumProvider({ decodePng }),
-});
+// The demo composes Mapterhorn-primary + AWS-fallback behind one caching
+// fetch via `createDemProvider` (see dem-provider.ts.md); any single
+// `ElevationProvider` works the same way here.
+const field = createTerrainField({ provider: demProvider });
 await field.ensureAround(centre, extentM * Math.SQRT2); // grow (incremental)
 const grid = field.sampleGrid({ frame, extentM, spacingM }); // render (bounded)
 ```

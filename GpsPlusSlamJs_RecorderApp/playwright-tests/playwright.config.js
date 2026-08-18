@@ -13,6 +13,14 @@ const captureArtifacts = process.env.PLAYWRIGHT_CAPTURE === '1';
 
 export default defineConfig({
   testDir: '.',
+  // REFUSE TO RUN AGAINST A DEV SERVER OLDER THAN THE LAST LIBRARY BUILD.
+  // `reuseExistingServer` below asks only whether the URL responds, and a server
+  // that predates a rebuild of a linked workspace library still rewrites imports
+  // to content-hashed files the rebuild renamed away — one 404, no boot, and every
+  // spec that waits for the app times out looking exactly like a code defect.
+  // That cost a session and a mislabelled commit on 2026-08-16.
+  // See scripts/e2e/dev-server-freshness.mjs.md.
+  globalSetup: '../../scripts/e2e/playwright-global-setup.mjs',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

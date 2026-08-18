@@ -42,13 +42,31 @@ and the H3 grid, and the hot path of the whole package.
   courtyard is not covered by its building.
 - Non-finite coordinates are skipped rather than producing a bogus cell.
 - Results are duplicate-free and unordered.
+- **A HOLE-FREE polygon is covered by [`cell-overlap.ts`](./cell-overlap.ts.md),
+  not by h3** (2026-08-09 perf loop). It reproduces `containmentOverlapping`
+  exactly and declines whenever it is unsure, so h3 still answers for rings with
+  holes, rings too large to be worth covering by hand, and anything degenerate.
+  The switch is on ring COUNT rather than on the fast path trying and giving up:
+  h3 subtracts holes and the fast path has no equivalent, so a cell buried inside
+  a courtyard would be covered when it must not be, and restricting by count
+  makes that impossible rather than merely untested.
 
 ## Cost
 
-Measured 2026-07-28 (desktop Node), indexing a 19-chunk working set: 2.8–8.7 ms
-per chunk depending on density. The dense-city fixture is at ~87 % of the plan's
-10 ms budget, which is why the Web Worker requirement is load-bearing rather
-than precautionary.
+**The h3 polygon call costs ~0.5–0.8 ms whatever it returns**, which is why the
+fast path exists. Measured on devbox-win11: a 1×20 m quad returning 7 cells at
+res 13 costs 675 µs, and at res 7, returning a single cell, the same call still
+costs 296 µs. All four `POLYGON_TO_CELLS_FLAGS` cost the same, so it is the
+experimental entry point rather than the overlapping semantics — `containmentCenter`
+through it costs 600 µs against 71 µs for the stable `polygonToCells` returning
+identical output. Anything covering many small rings therefore pays for the
+number of CALLS: `nav/obstacles.ts` made 3 397 of them over the site corpus for
+2 829 ms.
+
+Earlier figure, measured 2026-07-28 (desktop Node), indexing a 19-chunk working
+set: 2.8–8.7 ms per chunk depending on density. The dense-city fixture was at
+~87 % of the plan's 10 ms budget, which is why the Web Worker requirement is
+load-bearing rather than precautionary.
 
 **Callers indexing against a working set must clip first** — see `clip.ts`.
 

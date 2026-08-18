@@ -129,6 +129,114 @@ export function consensusProvider(
   };
 }
 
+/**
+ * Which source served how many positions, accumulated for a provider's life.
+ *
+ * WHY THIS EXISTS. The composed provider deliberately carries no per-sample
+ * provenance — the seam returns plain heights — so without an aggregate
+ * surface a consumer cannot tell "the high-resolution primary served this
+ * session" from "everything quietly fell back to the coarse global DEM",
+ * although the two differ by an order of magnitude in what a residual against
+ * them means. Counts are POSITIONS, not requests: a position is what the
+ * consumer's question is about, and one batched call can carry thousands.
+ */
+export interface FallbackProviderStats {
+  /** Positions the primary answered. */
+  primaryAnswered: number;
+  /** Gap positions the fallback filled. */
+  fallbackAnswered: number;
+  /** Positions neither source answered (including a failed fallback's gaps). */
+  unanswered: number;
+}
+
+/** What {@link fallbackProvider} returns: the seam plus its stats surface. */
+export type FallbackElevationProvider = ElevationProvider & {
+  readonly stats: FallbackProviderStats;
+};
+
+/**
+ * The primary answers; the fallback fills only the gaps.
+ *
+ * WHY THIS BEATS {@link consensusProvider} FOR TWO SOURCES OF VERY DIFFERENT
+ * QUALITY. A median of two samples degenerates to their average, so wherever
+ * both sources answer, a high-resolution primary (say, national LiDAR) is
+ * blended with a coarse global fallback and its resolution advantage is simply
+ * thrown away — the worst of both, delivered smoothly. Consensus is the right
+ * tool when the sources are peers and disagreement is the signal; when one
+ * source is strictly better wherever it has data, the right composition is
+ * explicit precedence: the primary's answers survive untouched, the fallback
+ * is consulted ONLY for positions the primary returned `undefined`, and every
+ * seam in the output is attributable to a known coverage boundary rather than
+ * to an anonymous blend.
+ *
+ * The retry is batched — one fallback call carrying just the missing
+ * positions, results merged back at their original indices — so the fallback's
+ * quota is spent only on true gaps. A fallback failure degrades those gaps to
+ * `undefined` and never destroys the primary's answers; an abort from either
+ * stage propagates, per the seam's contract.
+ */
+export function fallbackProvider(
+  primary: ElevationProvider,
+  fallback: ElevationProvider,
+  options: { readonly sourceId?: string } = {},
+): FallbackElevationProvider {
+  const stats: FallbackProviderStats = {
+    primaryAnswered: 0,
+    fallbackAnswered: 0,
+    unanswered: 0,
+  };
+  return {
+    attribution: [primary.attribution, fallback.attribution]
+      .filter((a) => a !== "")
+      .join(" · "),
+    sourceId: options.sourceId ?? `${primary.sourceId}+${fallback.sourceId}`,
+    stats,
+
+    async elevationAt(positions, signal) {
+      const first = await primary.elevationAt(positions, signal);
+
+      // Indices the primary left unanswered, with their positions kept
+      // alongside so the fallback batch and the merge use the same pairing.
+      const gapIndices: number[] = [];
+      const gapPositions: LatLng[] = [];
+      positions.forEach((position, i) => {
+        if (first[i] === undefined) {
+          gapIndices.push(i);
+          gapPositions.push(position);
+        }
+      });
+      // Copying via `positions` (not `first`) keeps the output's length pinned
+      // to the input even if a misbehaving primary returned a short array.
+      const merged = positions.map((_, i) => first[i]);
+      // Counted once the primary has settled, so an abort during the fallback
+      // stage still leaves the primary's serving on the record.
+      stats.primaryAnswered += positions.length - gapIndices.length;
+      if (gapIndices.length === 0) return merged;
+
+      let filled: readonly (number | undefined)[];
+      try {
+        filled = await fallback.elevationAt(gapPositions, signal);
+      } catch (error) {
+        // The contract says providers do not throw for missing data, but a
+        // misbehaving fallback must not destroy the primary's answers. An
+        // abort is different: it is a cancellation, not a data problem.
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        signal?.throwIfAborted();
+        stats.unanswered += gapIndices.length;
+        return merged;
+      }
+      let filledCount = 0;
+      gapIndices.forEach((positionIndex, j) => {
+        merged[positionIndex] = filled[j];
+        if (filled[j] !== undefined) filledCount += 1;
+      });
+      stats.fallbackAnswered += filledCount;
+      stats.unanswered += gapIndices.length - filledCount;
+      return merged;
+    },
+  };
+}
+
 /** Median of a sample list, `undefined` when empty. */
 export function median(values: readonly number[]): number | undefined {
   if (values.length === 0) return undefined;

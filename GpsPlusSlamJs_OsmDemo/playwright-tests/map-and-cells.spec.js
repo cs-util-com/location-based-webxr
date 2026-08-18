@@ -9,7 +9,12 @@
  * reasoning for why the whole suite is offline.
  */
 
-import { test, expect } from "@playwright/test";
+import {
+  test,
+  expect,
+  attachOnFailure,
+  createPageDiagnostics,
+} from "./e2e-test.js";
 
 import {
   AT_FIXTURE,
@@ -52,8 +57,21 @@ let shared;
 /** @type {{category: string, cells: boolean, showBelow: boolean}} */
 let baseline;
 
+/**
+ * THE SHARED PAGE'S OWN DIAGNOSTICS. `e2e-test.js` wraps the `page` fixture, and
+ * this file does not use it — so without this wiring the largest spec file in the
+ * suite would be the one place a browser-side failure stays invisible. Created
+ * before the first navigation, because a boot failure is exactly what it is for.
+ *
+ * @type {ReturnType<typeof createPageDiagnostics>}
+ */
+let sharedDiagnostics;
+
 test.beforeAll(async ({ browser }) => {
   shared = await browser.newPage();
+  sharedDiagnostics = createPageDiagnostics(shared, {
+    baseUrl: test.info().project.use.baseURL,
+  });
   await stubNetwork(shared);
   await shared.goto(AT_FIXTURE);
   await waitForRefresh(shared);
@@ -73,6 +91,21 @@ test.afterAll(async () => {
 // this hook into all five subject describes, or guarding on the test's name).
 test.beforeEach(async () => {
   await resetUi(shared, baseline);
+});
+
+// Attach what the browser said, then clear it: one collector serves every test in
+// this file, so without the reset each attachment would replay its predecessors'.
+// TWO TOOLS DISAGREE HERE, and the disable is the resolution rather than a
+// shortcut. Playwright REQUIRES a hook's first argument to be an object
+// destructuring pattern — `async (_fixtures, testInfo)` fails at collection with
+// "First argument must use the object destructuring pattern" — while eslint's
+// `no-empty-pattern` rejects the `{}` that requirement forces. This hook needs no
+// fixture at all, and naming one (`{ page }`) would instantiate a browser context
+// for every test in the file, which is precisely what this file avoids.
+// eslint-disable-next-line no-empty-pattern
+test.afterEach(async ({}, testInfo) => {
+  await attachOnFailure(sharedDiagnostics, testInfo);
+  sharedDiagnostics.reset();
 });
 
 test.describe("the affordance map", () => {
@@ -260,10 +293,14 @@ test.describe("the affordance map", () => {
       // proves a person could tell. Until the legend landed, the only place the
       // app named the current category was inside a tooltip, so the reported
       // symptom — "switching category did not reset the map" — was reachable with
-      // this test passing: every category scores nearly every rule, and
-      // `heatScale` re-normalises to each category's own maximum, so the same
-      // hexagons come back in similar colours. The legend is the fix, and this is
-      // the assertion that keeps it honest.
+      // this test passing: every category scores nearly every rule, so the same
+      // hexagons come back in similar colours whichever one is selected. The
+      // legend is the fix, and this is the assertion that keeps it honest.
+      //
+      // (This used to cite `heatScale` re-normalising to each category's own
+      // maximum. DEC-H5 deleted that mechanism and the reason outlived it: the
+      // ambiguity is the OVERLAP between categories, which a fixed ramp does
+      // nothing about.)
       await expect(shared.locator("#legend .legend-category")).toHaveText(
         other,
       );
@@ -781,6 +818,15 @@ test.describe("selecting a region", () => {
     await page.locator("#layer-cells").uncheck();
     await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
 
+    // AND THE GROUND HIDDEN, which is the narrow case DEC-R11-21 left this
+    // behaviour alive in. Stage 4 made a click on drawn ground ORDER THE AGENT,
+    // and the ground outranks a region — because the slabs blanket the demo's
+    // opening view, and with the old order the agent could never be ordered at
+    // all. `building-view.ts` keeps a hidden ground plane out of the raycast
+    // set, so with the "none" ground mode the slab genuinely is the thing under
+    // the pointer and this route to `regionSelected` still exists.
+    await page.locator("#ground-mode").selectOption("none");
+
     const canvas = page.locator("#scene canvas");
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("no canvas box");
@@ -912,8 +958,22 @@ test.describe("the geo-event", () => {
     await expect(page.locator("#geo-event-date")).not.toHaveValue("");
     await expect(page.locator("#geo-event-time")).not.toHaveValue("");
 
+    // FAILS RATHER THAN SKIPS (owner decision 2026-08-17). This used to be
+    // `test.skip(drawn === 0, "fixture yielded no event to clear")`, which read
+    // like a data problem and is actually a CLOCK one: the geo-event is a pure
+    // function of tile and quarter-hour, so whether this test executes at all
+    // depended on which quarter-hour the suite happened to run in. Three runs of
+    // the same commit reported 56, 56 and 54-passed-2-skipped — and every one of
+    // them looked green. A test that cannot run is a defect, not a pass.
     const drawn = await page.locator("#map .geo-winner").count();
-    test.skip(drawn === 0, "fixture yielded no event to clear");
+    expect(
+      drawn,
+      "no geo-event was drawn for the fixture tile in the CURRENT quarter-hour, " +
+        "so this test cannot exercise clearing one. The event is a pure function " +
+        "of tile and quarter-hour; the fix is to pin the clock or choose a " +
+        "tile/instant known to yield one, not to skip. See " +
+        "2026-08-17-0019-geo-event-e2e-wall-clock-skip-followup.md",
+    ).toBeGreaterThan(0);
 
     await page.locator("#geo-event-clear").click();
     await expect(picker).toBeHidden();
@@ -947,8 +1007,18 @@ test.describe("the geo-event", () => {
     // Only meaningful if something was actually drawn — a fixture with no
     // qualifying ground has nothing to clear, and asserting on it would make
     // this pass for the wrong reason.
+    //
+    // FAILS RATHER THAN SKIPS, for the reason given at the sibling assertion
+    // above: "nothing was drawn" is a wall-clock condition, and skipping on it
+    // let this test silently stop covering anything in some quarter-hours while
+    // the run still reported success.
     const drawn = await page.locator("#map .geo-winner").count();
-    test.skip(drawn === 0, "fixture yielded no event to clear");
+    expect(
+      drawn,
+      "no geo-event was drawn for the fixture tile in the CURRENT quarter-hour, " +
+        "so this test cannot exercise the markers coming down. See " +
+        "2026-08-17-0019-geo-event-e2e-wall-clock-skip-followup.md",
+    ).toBeGreaterThan(0);
 
     const other = await page.evaluate(() => {
       const select = document.getElementById("category");

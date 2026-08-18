@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 /**
  * Tier 0 smoke: the page loads without console errors and the desktop

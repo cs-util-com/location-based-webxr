@@ -35,9 +35,39 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
 - **OPFS works here, and is better here.** `navigator.storage.getDirectory()` is
   available in workers, and OPFS offers synchronous access handles only off the
   main thread. The tile cache moved with the fetching rather than staying behind.
-- **The merged features never leave.** They are 28–68 MB. `explainCell` and the
+  - **One store, three tenants**: Overpass tiles (`osm/v{n}/…`), the rule table
+    (`rules/v1/…`) and — since the Mapterhorn composition — DEM tile bytes,
+    keyed by full request URL through `createCachingTileFetch`. The key
+    families cannot collide, so a second OPFS directory would buy nothing.
+- **The DEM provider is composed in [`dem-provider.ts`](../dem-provider.ts.md)**
+  (Mapterhorn primary, AWS Terrarium fallback, one shared caching fetch), not
+  inline in `init` — `init` needs `navigator.storage` and `OffscreenCanvas`, so
+  wiring built there is untestable by construction. `init` supplies only the
+  browser-bound pieces (the store, `browserPngDecoder()`) and records the
+  provider's `sourceId`, which every `terrain` reply carries back as
+  `TerrainResult.demSourceId` so the page labels a field with the provider
+  that actually sampled it. Each reply also snapshots the provider's
+  cumulative serving counters into `TerrainResult.demStats` (copied, so the
+  page's snapshot cannot mutate under a later batch) — the aggregate answer
+  to "which member of the composition actually served", which the AR readout
+  renders as the primary's share.
+- **The merged features never leave.** They are ~21 MB. `explainCell` and the
   mesh build both run here _because_ that is where the features are; answering
   either on the main thread would mean shipping them across.
+- **The obstacle index is held here too, and is built LAZILY** — on the first
+  `planRoute` request of a feature set, not on the publish path
+  (`obstacle-index-cache.ts`, DEC-R11-19 amending DEC-R11-16). The corpus
+  measurement put a res-13 sweep at ~1 900–2 700 covered cells and a few hundred
+  milliseconds per extract, on extracts smaller than the demo's own working set,
+  so building it inside `buildMesh` would slow every publish for a feature most
+  sessions never use. It is keyed on `pipeline.loadedTileCount()` rather than on
+  the mesh planner's key, because that key also carries `terrainStamp` and
+  terrain does not change what blocks an agent.
+- **`planRoute` is the one SYNCHRONOUS long handler**, so it delays the next
+  `update`. Its expansion cap (`agent-route.ts`) is therefore a publish-latency
+  bound as well as a click-freeze bound, and `abort` cannot preempt it — the
+  search never yields to check the signal. This is the one place where the
+  `inFlight` cancellation below does not actually stop work.
 - **`inFlight` maps request id → `AbortController`**, which is what makes `abort`
   stop real work rather than just discard a reply.
   - **The signal has to go INTO the work, not only be checked after it.** Both
@@ -74,3 +104,33 @@ suite, all 24 tests of which now run through it (notably the OPFS cache-hit test
 the terrain test and the details-panel test, which exercise the three non-trivial
 handlers). `worker-round-trip.test.ts` and `rpc-client.test.ts` cover the boundary
 it sits behind.
+
+## `workerTimings` — stages 6 and 7
+
+The `update` handler reports `terrainWaitMs`, `meshMs` and its own
+`workerTotalMs` beside the snapshot (click-path plan, milestone 3), plus
+`prefetchMs` (queueing the neighbour ring) and `queueMs` (post-to-dispatch).
+
+- **Beside the snapshot, not on it.** `DemoPipeline.update` builds the snapshot
+  before either stage has happened; the terrain join and the mesh build are this
+  handler's work. Putting them on the snapshot would mean mutating it after the
+  fact.
+- **`terrainWaitMs` is the stage the plan's first enumeration missed.** W3 runs
+  the terrain load concurrently with the fetch and the scoring, so the join
+  costs nothing when those are slow — and a fully cached refresh is exactly when
+  they are not, which is the corner where a concurrent load becomes a visible
+  wait. Legitimately zero on a category change or a widening ring.
+- **`workerTotalMs` exists so the page can derive the clone cost** without
+  subtracting a worker timestamp from a page one. See `click-timings.ts.md`.
+
+- **`queueMs` is the one measurement that crosses the boundary**, and
+  deliberately: it is post-to-dispatch, which neither side can see alone. The
+  page stamps `nowEpochMs()` into the request; the handler subtracts it from its
+  own. `performance.timeOrigin` makes that a real duration rather than an
+  offset, and this worker also runs the concurrent DEM load (W3), so an `update`
+  can sit here behind ~55 000 heightfield samples. Until this existed that time
+  was folded into the page-side term and read as structured-clone cost — a
+  completely different remedy.
+- **`prefetchMs`** — queueing the background neighbour ring. Small and
+  synchronous, enumerated because an unenumerated step in this handler is
+  exactly what the residual exists to catch.

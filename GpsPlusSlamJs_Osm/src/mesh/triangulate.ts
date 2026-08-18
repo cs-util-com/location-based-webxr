@@ -177,8 +177,35 @@ function rightmostIndex(
 /**
  * The ring vertex nearest to `from` whose connecting segment crosses nothing.
  *
- * O(ring²) in the worst case, which is fine: holes are rare, and a building
- * with a courtyard has tens of vertices, not thousands.
+ * CANDIDATES ARE VISITED NEAREST-FIRST AND THE SEARCH STOPS AT THE FIRST VISIBLE
+ * ONE, which is the whole performance story of this function. The obvious
+ * formulation — walk the ring in order, and re-test visibility whenever
+ * something closer turns up — is quadratic for a reason that is easy to miss:
+ * the running best distance only tightens on a candidate that turned out to be
+ * VISIBLE, so until the first visible one is found it is still infinite and
+ * *every* candidate pays a full `crossesRing` scan of the ring's edges. On the
+ * Royal Parks relation in `london-westminster` (1 031 outer points, 33 holes
+ * after clipping to the demo's extent) that was 8 812 `crossesRing` calls and
+ * **5.2 million segment-intersection tests**, 41.7 ms of the 42.5 ms the whole
+ * triangulation took. Nearest-first makes it 33 calls — one per hole — and
+ * 0.96 ms. See `triangulate.ts.md` for the numbers and `triangulate.bench.ts`.
+ *
+ * ORDER IS THE ONLY THING THAT CHANGED — nearest-first returns the same vertex
+ * the ring-order scan did, ties included, because it keeps the FIRST of equal
+ * distances exactly as `distance >= bestDistance` did. Two one-off differentials
+ * against the previous implementation found zero differences: `triangulate`'s
+ * full output over all 7 141 corpus polygons, and the bridged ring over the 157
+ * holed ones plus 20 000 generated cases.
+ *
+ * Still O(ring²) per hole in the worst case, when every candidate nearer than the
+ * answer is blocked — but that worst case is now reached only by input that
+ * genuinely has that many blocked candidates, rather than by every input.
+ *
+ * HOLES ARE RARE IN BUILDINGS, NOT IN AREAS, and that distinction is what makes
+ * the cost real rather than theoretical. A courtyard gives a building one inner
+ * ring; a landuse or natural relation routinely carries dozens. Any reasoning
+ * here that assumes "a handful of holes" is reasoning about the building
+ * extruder, which stopped being the only caller when the plate layer arrived.
  */
 function nearestVisible(
   vertices: readonly EnuPoint[],
@@ -188,19 +215,35 @@ function nearestVisible(
   const p = vertices[from];
   if (p === undefined) return -1;
 
-  let best = -1;
-  let bestDistance = Number.POSITIVE_INFINITY;
+  // Candidates found nearest but NOT visible. Normally empty: the nearest ring
+  // vertex is visible on the first try for every hole in the corpus, so this
+  // allocates nothing per candidate and the loop below runs once.
+  const blocked = new Set<number>();
 
-  for (const candidate of ring) {
-    const q = vertices[candidate];
-    if (q === undefined) continue;
-    const distance = (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
-    if (distance >= bestDistance) continue;
-    if (crossesRing(vertices, ring, p, q)) continue;
-    best = candidate;
-    bestDistance = distance;
+  // Terminates because every pass either returns or blocks one more index, and
+  // `ring` holds finitely many distinct ones. It does repeat indices — a bridge
+  // puts its attachment vertex in twice — and blocking by index value covers
+  // every occurrence at once, which is also why a repeat costs nothing.
+  for (;;) {
+    let best = -1;
+    let bestPoint: EnuPoint | undefined;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const candidate of ring) {
+      if (blocked.has(candidate)) continue;
+      const q = vertices[candidate];
+      if (q === undefined) continue;
+      const distance = (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
+      if (distance >= bestDistance) continue;
+      best = candidate;
+      bestPoint = q;
+      bestDistance = distance;
+    }
+
+    if (bestPoint === undefined) return -1; // nothing left to try: no bridge
+    if (!crossesRing(vertices, ring, p, bestPoint)) return best;
+    blocked.add(best);
   }
-  return best;
 }
 
 function crossesRing(

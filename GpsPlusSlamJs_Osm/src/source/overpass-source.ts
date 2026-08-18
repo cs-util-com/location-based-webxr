@@ -16,7 +16,11 @@
  */
 
 import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
-import { OSM_ATTRIBUTION } from "./osm-data-source.js";
+import {
+  OSM_ATTRIBUTION,
+  elapsedMs,
+  joinedTimings,
+} from "./osm-data-source.js";
 import { parseOverpassJson } from "../model/overpass-parser.js";
 import {
   buildTileQuery,
@@ -121,6 +125,17 @@ export interface OverpassSourceOptions {
   readonly backoff?: BackoffOptions;
   readonly random?: () => number;
   readonly now?: () => number;
+  /**
+   * MONOTONIC clock for durations, deliberately separate from {@link now}.
+   *
+   * `now` is epoch milliseconds and is user-visible provenance — `fetchedAt`
+   * renders as "OSM data from March 2026" — so it cannot be swapped for a
+   * monotonic source. But `Date.now()` steps backwards on an NTP correction,
+   * and a fetch measured in tens of seconds is exactly where that lands,
+   * producing a negative `transportMs` inside a breakdown whose whole job is to
+   * add up. Two clocks, each doing the one thing it is right for.
+   */
+  readonly monotonicNow?: () => number;
   readonly sleepImpl?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Cap on `stats.attempts`. See {@link OverpassStats}. */
   readonly maxAttemptLog?: number;
@@ -238,6 +253,7 @@ export class OverpassSource implements OsmDataSource {
   private readonly backoff: BackoffOptions;
   private readonly random: () => number;
   private readonly now: () => number;
+  private readonly monotonicNow: () => number;
   private readonly sleepImpl: (
     ms: number,
     signal?: AbortSignal,
@@ -294,6 +310,7 @@ export class OverpassSource implements OsmDataSource {
     this.backoff = resolved.backoff;
     this.random = resolved.random;
     this.now = resolved.now;
+    this.monotonicNow = resolved.monotonicNow;
     this.sleepImpl = resolved.sleepImpl;
     this.selectKeys = resolved.selectKeys;
     this.maxAttemptLog = resolved.maxAttemptLog;
@@ -329,24 +346,33 @@ export class OverpassSource implements OsmDataSource {
     }
   }
 
-  fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
-    if (this.inFlight.has(tile)) this.stats.deduplicated++;
+  async fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
+    // READ BEFORE JOINING, because joining is what makes this caller a joiner.
+    const joined = this.inFlight.has(tile);
+    if (joined) this.stats.deduplicated++;
+    const startedAt = this.monotonicNow();
     // The joined callers' signals are deliberately NOT the one the request runs
     // on — see `in-flight-requests.ts`. The movement trigger and an explicit
     // prefetch are the two callers most likely to collide here, and they have
     // different lifetimes.
-    return this.inFlight.join(
+    const result = await this.inFlight.join(
       tile,
       (dedupSignal) =>
-        this.withConcurrencyLimit(() =>
-          this.fetchTileUncached(tile, dedupSignal),
+        this.withConcurrencyLimit((slotWaitMs) =>
+          this.fetchTileUncached(tile, slotWaitMs, dedupSignal),
         ),
       signal,
     );
+    if (!joined) return result;
+    return {
+      ...result,
+      timings: joinedTimings(elapsedMs(startedAt, this.monotonicNow())),
+    };
   }
 
   private async fetchTileUncached(
     tile: string,
+    slotWaitMs: number,
     signal?: AbortSignal,
   ): Promise<OsmTileResult> {
     // Take a slot BEFORE building anything. Refusing here is the whole point of
@@ -360,7 +386,7 @@ export class OverpassSource implements OsmDataSource {
       );
     }
     try {
-      return await this.fetchTileWithSlot(tile, signal);
+      return await this.fetchTileWithSlot(tile, slotWaitMs, signal);
     } finally {
       this.budget.release();
     }
@@ -368,6 +394,7 @@ export class OverpassSource implements OsmDataSource {
 
   private async fetchTileWithSlot(
     tile: string,
+    slotWaitMs: number,
     signal?: AbortSignal,
   ): Promise<OsmTileResult> {
     const query = buildTileQuery(
@@ -377,6 +404,11 @@ export class OverpassSource implements OsmDataSource {
     );
 
     let lastError: unknown;
+    // TRANSPORT IS CLOCKED AROUND THE WHOLE LOOP, backoff sleeps included, and
+    // `attempts` is reported next to it so the two readings that produce the
+    // same number stay distinguishable: a big `transportMs` at one attempt is a
+    // slow server, and the same figure at three attempts is mostly sleeping.
+    const transportStart = this.monotonicNow();
     // attempt 0 is the initial try; 1..maxRetries are retries.
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       throwIfAborted(signal);
@@ -408,7 +440,11 @@ export class OverpassSource implements OsmDataSource {
         recorded = true;
 
         if (response.ok) {
-          return await this.toResult(tile, endpoint, response);
+          return await this.toResult(tile, endpoint, response, {
+            slotWaitMs,
+            transportStart,
+            attempts: attempt + 1,
+          });
         }
 
         if (!RETRYABLE_STATUSES.has(response.status)) {
@@ -530,15 +566,68 @@ export class OverpassSource implements OsmDataSource {
     await this.sleepImpl(delay, signal);
   }
 
+  /**
+   * Body to decoded payload, with the two costs told apart.
+   *
+   * **ITS OWN FRAME ON PURPOSE, and that is the whole reason this is not
+   * inlined.** `response.json()` does both steps in one opaque call and its
+   * intermediate string is engine-owned, collectable the instant parsing ends.
+   * Splitting them means holding a ~21 MB body — up to ~42 MB as a JS string —
+   * in a local, and inlined that local would stay reachable through
+   * `parseOverpassJson` as well, on a phone, alongside both the decoded payload
+   * and the constructed features. Returning drops the frame and the string with
+   * it; a `text = undefined` line would say the same thing but is exactly the
+   * kind of assignment a linter deletes.
+   */
+  private async readAndDecode(
+    response: Response,
+    transportStart: number,
+  ): Promise<{
+    readonly payload: unknown;
+    readonly transportMs: number;
+    readonly decodeMs: number;
+  }> {
+    const bodyText = await response.text();
+    const transportMs = elapsedMs(transportStart, this.monotonicNow());
+    const decodeStart = this.monotonicNow();
+    const payload: unknown = JSON.parse(bodyText);
+    return {
+      payload,
+      transportMs,
+      decodeMs: elapsedMs(decodeStart, this.monotonicNow()),
+    };
+  }
+
   private async toResult(
     tile: string,
     endpoint: string,
     response: Response,
+    clocks: {
+      readonly slotWaitMs: number;
+      readonly transportStart: number;
+      readonly attempts: number;
+    },
   ): Promise<OsmTileResult> {
-    // `.json()` on an HTML error page throws; that is a retryable-shaped
-    // failure, so let it propagate into the attempt loop's catch.
-    const payload: unknown = await response.json();
+    // READ AS TEXT, THEN PARSE, rather than `response.json()` — the one
+    // production change the fetch/parse split costs. `.json()` does both in one
+    // opaque step, and the two are the terms the click-path plan needs told
+    // apart: V8 decoding ~21 MB of text is a different cost from
+    // `parseOverpassJson` walking the elements, and a single number covering
+    // both ranks them together and names neither.
+    //
+    // `JSON.parse` on an HTML error page throws exactly as `.json()` did; that
+    // is a retryable-shaped failure, so let it propagate into the attempt
+    // loop's catch. (The comment that used to name `.json()` here moved with
+    // the code rather than being left describing a method that is gone.)
+    const { payload, transportMs, decodeMs } = await this.readAndDecode(
+      response,
+      clocks.transportStart,
+    );
+
+    const parseStart = this.monotonicNow();
     const parsed = parseOverpassJson(payload);
+    const parseMs = elapsedMs(parseStart, this.monotonicNow());
+
     return {
       tile,
       features: parsed.features,
@@ -549,6 +638,14 @@ export class OverpassSource implements OsmDataSource {
       ...(parsed.osmBaseTimestamp !== undefined
         ? { osmBaseTimestamp: parsed.osmBaseTimestamp }
         : {}),
+      timings: {
+        servedBy: "network",
+        slotWaitMs: clocks.slotWaitMs,
+        transportMs,
+        decodeMs,
+        parseMs,
+        attempts: clocks.attempts,
+      },
     };
   }
 
@@ -586,15 +683,28 @@ export class OverpassSource implements OsmDataSource {
    * So a releaser with someone queued never decrements: it passes its own slot
    * on, already counted, and only the last one out turns the light off.
    */
-  private async withConcurrencyLimit<T>(task: () => Promise<T>): Promise<T> {
+  /**
+   * @param task receives how long it waited for its slot, in ms.
+   *   **Passed down rather than measured inside** because the wait is a real
+   *   stage of the click the user is waiting through: folded into
+   *   `transportMs` it reads as a slow server, and dropped it reads as time
+   *   that never happened. The plan found it the same way it found the terrain
+   *   join — by reading the handler, not from the stage list.
+   */
+  private async withConcurrencyLimit<T>(
+    task: (slotWaitMs: number) => Promise<T>,
+  ): Promise<T> {
+    const queuedAt = this.monotonicNow();
+    let slotWaitMs = 0;
     if (this.active >= this.maxConcurrent) {
       await new Promise<void>((resolve) => this.queue.push(resolve));
+      slotWaitMs = elapsedMs(queuedAt, this.monotonicNow());
       // No `active++` here: the slot arrived already counted.
     } else {
       this.active++;
     }
     try {
-      return await task();
+      return await task(slotWaitMs);
     } finally {
       const next = this.queue.shift();
       if (next === undefined) this.active--;
@@ -626,6 +736,19 @@ function validateOptions(options: OverpassSourceOptions): void {
 }
 
 /**
+ * A monotonic millisecond clock, falling back where there is no `performance`.
+ *
+ * The fallback is for a runtime that has not defined the global — some test
+ * environments, and older embedded ones. Durations are reported in whole
+ * milliseconds, so the two clocks agree to well within the reporting
+ * resolution; what matters is that a missing global cannot throw inside the
+ * fetch path.
+ */
+function defaultMonotonicNow(): number {
+  return typeof performance === "undefined" ? Date.now() : performance.now();
+}
+
+/**
  * Every default in one place, so the constructor is an assignment list rather
  * than a wall of `??` — which is both easier to read and easier to keep in step
  * with the sidecar's documented defaults.
@@ -640,6 +763,7 @@ function defaultOptions() {
     backoff: {} as BackoffOptions,
     random: Math.random,
     now: Date.now,
+    monotonicNow: defaultMonotonicNow,
     sleepImpl: sleep,
     maxAttemptLog: DEFAULT_MAX_ATTEMPT_LOG,
     selectKeys: OVERPASS_SELECT_KEYS,

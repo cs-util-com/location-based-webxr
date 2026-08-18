@@ -15,10 +15,18 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import { latLngToCell, gridDisk } from "h3-js";
-import { columnsAdjacent, STEP_THRESHOLD_M } from "./column.js";
+import {
+  columnsAdjacent,
+  neighbourSpacingM,
+  MAX_GROUND_GRADIENT,
+  STEP_THRESHOLD_M,
+} from "./column.js";
 import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 
 const ORIGIN = latLngToCell(50.9413, 6.9583, AFFORDANCE_RES);
+
+/** The run the grade is measured over — the same one the predicate uses. */
+const NEIGHBOUR_SPACING_M = neighbourSpacingM(AFFORDANCE_RES);
 
 /** The origin and its six neighbours — every cell a step could reach. */
 const RING = gridDisk(ORIGIN, 1);
@@ -42,68 +50,109 @@ const cellIn = (cells: readonly string[]) => fc.constantFrom(...cells);
 const column = (cells: readonly string[]) =>
   fc.record({ cell: cellIn(cells), heightM: height });
 
+/**
+ * A state that also knows its ground — the shape the SEARCH actually produces.
+ *
+ * HOISTED AFTER PR REVIEW (2026-08-18). The properties below were all written
+ * against `column`, which carries no `groundM`, so every one of them proved
+ * its invariant for the ORIGINAL arm of the rule only — the union's second arm
+ * was never reached by symmetry, reflexivity, threshold monotonicity or the
+ * ring-2 oracle. They held, but the sidecar claimed coverage the suite did not
+ * have, which is the failure mode this file exists to prevent.
+ *
+ * The properties now run over BOTH shapes where the distinction is meaningful.
+ */
+const groundedColumn = (cells: readonly string[]) =>
+  fc.record({ cell: cellIn(cells), heightM: height, groundM: height });
+
 describe("column adjacency properties", () => {
-  it("is symmetric", () => {
+  it("is symmetric, grounded or not", () => {
     // A pathfinder over an UNDIRECTED graph is only correct if the edge
     // relation is genuinely undirected. If a one-way drop is ever wanted it
     // has to be a deliberate feature, not an artefact of argument order.
+    for (const shape of [column, groundedColumn]) {
+      fc.assert(
+        fc.property(shape(RING), shape(RING), (a, b) => {
+          expect(columnsAdjacent(a, b)).toBe(columnsAdjacent(b, a));
+        }),
+      );
+    }
+  });
+
+  it("is reflexive for every finite height, grounded or not", () => {
     fc.assert(
-      fc.property(column(RING), column(RING), (a, b) => {
-        expect(columnsAdjacent(a, b)).toBe(columnsAdjacent(b, a));
+      fc.property(cellIn(RING), height, height, (cell, heightM, groundM) => {
+        const bare = { cell, heightM };
+        expect(columnsAdjacent(bare, bare)).toBe(true);
+        // A GROUND MUST NOT COST A STATE ITS OWN REFLEXIVITY. Same cell, so the
+        // run is zero and the grade term has no budget at all — the one place a
+        // sign slip in the decomposition would show up as a state that cannot
+        // reach itself.
+        const grounded = { cell, heightM, groundM };
+        expect(columnsAdjacent(grounded, grounded)).toBe(true);
       }),
     );
   });
 
-  it("is reflexive for every finite height", () => {
-    fc.assert(
-      fc.property(cellIn(RING), height, (cell, heightM) => {
-        expect(columnsAdjacent({ cell, heightM }, { cell, heightM })).toBe(
-          true,
-        );
-      }),
-    );
-  });
-
-  it("never loses an edge when the threshold is raised", () => {
+  it("never loses an edge when the threshold is raised, grounded or not", () => {
     // MONOTONICITY. A more capable agent must reach at least everywhere a less
     // capable one can. The obvious way to break this — comparing the wrong
     // pair, or letting the threshold leak into the neighbourhood test — makes
     // raising the limit disconnect something, which would be baffling to debug
     // from a route that got WORSE after a tuning change.
-    fc.assert(
-      fc.property(
-        column(RING),
-        column(RING),
-        fc.double({ min: 0, max: 20, noNaN: true, noDefaultInfinity: true }),
-        fc.double({ min: 0, max: 20, noNaN: true, noDefaultInfinity: true }),
-        (a, b, t1, t2) => {
-          const low = Math.min(t1, t2);
-          const high = Math.max(t1, t2);
-          // Stated as "never adjacent at the low limit but not at the high
-          // one" rather than as an `if`, because a conditional `expect` can
-          // silently assert NOTHING when the guard never holds — the exact
-          // failure mode this branch keeps finding.
-          const lost =
-            columnsAdjacent(a, b, low) && !columnsAdjacent(a, b, high);
-          expect(lost).toBe(false);
-        },
-      ),
-    );
+    for (const shape of [column, groundedColumn]) {
+      fc.assert(
+        fc.property(
+          shape(RING),
+          shape(RING),
+          fc.double({ min: 0, max: 20, noNaN: true, noDefaultInfinity: true }),
+          fc.double({ min: 0, max: 20, noNaN: true, noDefaultInfinity: true }),
+          (a, b, t1, t2) => {
+            const low = Math.min(t1, t2);
+            const high = Math.max(t1, t2);
+            // Stated as "never adjacent at the low limit but not at the high
+            // one" rather than as an `if`, because a conditional `expect` can
+            // silently assert NOTHING when the guard never holds — the exact
+            // failure mode this branch keeps finding.
+            const lost =
+              columnsAdjacent(a, b, { stepThresholdM: low }) &&
+              !columnsAdjacent(a, b, { stepThresholdM: high });
+            expect(lost).toBe(false);
+          },
+        ),
+      );
+    }
   });
 
-  it("never joins cells outside the ring, at any height or threshold", () => {
-    // The height clause must not be able to CREATE adjacency — only remove it.
+  it("never joins cells outside the ring, at any height, limit or ground", () => {
+    // NEITHER height clause may CREATE adjacency — only remove it. Run over the
+    // grounded shape too, and with the gradient wide open, because the slope
+    // arm is a second way into the same answer and a neighbourhood test placed
+    // inside one arm would leave the other unguarded.
     fc.assert(
       fc.property(
-        column(OUTSIDE),
+        groundedColumn(OUTSIDE),
+        height,
         height,
         fc.double({ min: 0, max: 1000, noNaN: true, noDefaultInfinity: true }),
-        (far, originHeight, threshold) => {
+        fc.double({ min: 0, max: 1000, noNaN: true, noDefaultInfinity: true }),
+        (far, originHeight, originGround, threshold, gradient) => {
+          const limits = {
+            stepThresholdM: threshold,
+            maxGroundGradient: gradient,
+          };
           expect(
             columnsAdjacent(
               { cell: ORIGIN, heightM: originHeight },
               far,
-              threshold,
+              limits,
+            ),
+          ).toBe(false);
+          expect(
+            columnsAdjacent(
+              { cell: ORIGIN, heightM: originHeight, groundM: originGround },
+              far,
+              limits,
             ),
           ).toBe(false);
         },
@@ -127,6 +176,76 @@ describe("column adjacency properties", () => {
         expect(
           columnsAdjacent({ cell: ORIGIN, heightM: originHeight }, other),
         ).toBe(Math.abs(originHeight - other.heightM) <= STEP_THRESHOLD_M);
+      }),
+    );
+  });
+
+  it("never loses an edge when the gradient limit is raised", () => {
+    // MONOTONICITY, FOR THE SECOND LIMIT. The step threshold has had this
+    // property since the module existed; a slope allowance that failed it
+    // would be the same baffling regression — a route that gets worse after
+    // the agent is made more capable — reintroduced through the new door.
+    fc.assert(
+      fc.property(
+        groundedColumn(RING),
+        groundedColumn(RING),
+        fc.double({ min: 0, max: 5, noNaN: true, noDefaultInfinity: true }),
+        fc.double({ min: 0, max: 5, noNaN: true, noDefaultInfinity: true }),
+        (a, b, g1, g2) => {
+          const low = Math.min(g1, g2);
+          const high = Math.max(g1, g2);
+          const lost =
+            columnsAdjacent(a, b, { maxGroundGradient: low }) &&
+            !columnsAdjacent(a, b, { maxGroundGradient: high });
+          expect(lost).toBe(false);
+        },
+      ),
+    );
+  });
+
+  it("never refuses a step the absolute rule admitted", () => {
+    // THE SAFETY PROPERTY OF THE WHOLE CHANGE. Knowing where the ground is can
+    // only ever ADD edges: the surface-to-surface reading is the rule this
+    // module shipped with, kept verbatim as one arm of a union. So no route
+    // that a caller has today can vanish because it started supplying a
+    // ground — which is a claim worth machine-checking rather than asserting,
+    // since a later "simplification" that folds the two arms together would
+    // break it silently and only on sloped ground.
+    fc.assert(
+      fc.property(
+        column(RING),
+        column(RING),
+        height,
+        height,
+        (a, b, groundA, groundB) => {
+          const bare = columnsAdjacent(a, b);
+          const grounded = columnsAdjacent(
+            { ...a, groundM: groundA },
+            { ...b, groundM: groundB },
+          );
+          expect(bare && !grounded).toBe(false);
+        },
+      ),
+    );
+  });
+
+  it("ignores the ground entirely when both states walk on it", () => {
+    // THE CLAIM THE FIX RESTS ON, stated as an algebraic identity rather than
+    // as an example: for an agent standing ON the ground in both cells the
+    // step term is zero by construction, so adjacency is the grade alone. If
+    // this ever fails, the decomposition has leaked the absolute height
+    // difference back into the answer — which is the defect being fixed.
+    fc.assert(
+      fc.property(height, height, (groundA, groundB) => {
+        const withinGrade =
+          Math.abs(groundA - groundB) <=
+          MAX_GROUND_GRADIENT * NEIGHBOUR_SPACING_M;
+        expect(
+          columnsAdjacent(
+            { cell: ORIGIN, heightM: groundA, groundM: groundA },
+            { cell: RING[1]!, heightM: groundB, groundM: groundB },
+          ),
+        ).toBe(withinGrade);
       }),
     );
   });

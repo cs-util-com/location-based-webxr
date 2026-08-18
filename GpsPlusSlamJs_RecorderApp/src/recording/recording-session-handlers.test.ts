@@ -813,8 +813,8 @@ describe('handleStartRecording', () => {
   it('cleanupForNewRecording stops the live feeds too — captures, watches, analyzer worker (teardown parity with performStop)', async () => {
     // Why this test matters (recurring PR #115/#120/#123 review finding):
     // performStop was the only path that stopped captures/watches and disposed
-    // the quality-gate worker; cleanupForNewRecording (the XR-session-end /
-    // start-over path) only cleared subscriptions and trackers, so a session
+    // the quality-gate worker; cleanupForNewRecording (the start-over path)
+    // only cleared subscriptions and trackers, so a session
     // torn down through it left the camera/GPS feeds running and the worker
     // alive. Both paths now share stopLiveFeeds().
     const opts: RecordingOptions = {

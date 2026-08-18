@@ -1,5 +1,5 @@
 // @ts-check
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 // Why these tests matter: the landing's logic is unit-tested, but only a
 // real browser exercises the WebGL boot, the anime.js scrub, and the DOM

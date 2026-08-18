@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 /**
  * Pixel-level render proof for the desktop simulator's HUD indicators.

@@ -2,21 +2,21 @@
 
 ## Purpose
 
-One table of the six places the OSM demo is tested at and can be navigated to,
+One table of the eight places the OSM demo is tested at and can be navigated to,
 shared by the offline fixture suite and the demo's location picker so the two
 cannot drift apart.
 
 ## Public API
 
-- `CorpusTrait` — closed union of the six kinds of awkwardness a site is chosen
+- `CorpusTrait` — closed union of the eight kinds of awkwardness a site is chosen
   for: `landmark-parts`, `relief`, `messy-tagging`, `coastline`,
-  `dense-highrise`, `non-european-tagging`.
+  `dense-highrise`, `non-european-tagging`, `bridge-structure`, `gated-perimeter`.
 - `CorpusSite` — `{ id, name, position, trait, reason, captureRes }`.
   - `id` is filename- and URL-safe (`/^[a-z0-9-]+$/`) because it becomes
     `src/testdata/sites/<id>.json` and is a URL-parameter candidate.
   - `captureRes` is the H3 resolution of that site's captured extract, and it is
     **per site** rather than global — see the invariant below.
-- `CORPUS_SITES: readonly CorpusSite[]` — the six, in no significant order.
+- `CORPUS_SITES: readonly CorpusSite[]` — the eight, in no significant order.
   Sylt sits on the promenade rather than on the open beach: centred on the sand
   the extract contained one coastline way and no buildings, which is a coastline
   but not a testable one.
@@ -26,9 +26,24 @@ cannot drift apart.
 
 ## Invariants & assumptions
 
-- **Exactly six sites, each with a distinct `trait`.** The six are a spread, not
+- **Exactly eight sites, each with a distinct `trait`.** They are a spread, not
   a sample; two sites sharing a trait would leave one kind of awkwardness
-  untested while the table still looked complete. Asserted in `sites.test.ts`.
+  untested while the table still looked complete. Asserted in `sites.test.ts` —
+  both the count and the exact trait list, so growing the table is a decision
+  rather than an edit.
+- **The two Londons were added by DEC-R12-9, and the reason is worth keeping.**
+  The eighth testing session was run at London, which the demo's picker offered
+  and the corpus did not cover — so every number measured for that session's
+  barrier findings came from six other places. The notes did not say WHICH
+  London, and the two picker entries are different shapes, so both were captured
+  rather than one guessed. That forced two new traits, since reusing
+  `messy-tagging` is impossible under the uniqueness rule above:
+  - `bridge-structure` (Tower Bridge) — a way CARRIED BY masonry: 55 road-versus-
+    building crossings in plan, 38 of them tagged `bridge`, `tunnel` or `layer`.
+    The hazard DEC-R12-1 refuses to cut gaps on.
+  - `gated-perimeter` (Westminster) — a landmark enclosed by mapped barriers
+    carrying gates: 73 solid barriers with 13 gate/entrance nodes sitting exactly
+    on them, the most of any site after Cologne. The case DEC-R12-1 does cut on.
 - **`cologne-cathedral` must stay.** It is the only site that can reproduce the
   open R3-1/R4-7 finding; removing it silently makes that finding
   irreproducible. Asserted by name.

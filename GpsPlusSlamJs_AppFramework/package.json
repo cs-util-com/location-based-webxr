@@ -53,7 +53,7 @@
     "setup": "bash ./scripts/setup.sh"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.15.0"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.11.2",

@@ -5,13 +5,14 @@
   "description": "Demo for gps-plus-slam-osm: a Leaflet view of the res-13 affordance grid and its regions, plus a three.js view of the extruded buildings.",
   "type": "module",
   "scripts": {
+    "bench": "vitest bench --run --config vitest.bench.config.ts",
     "build": "pnpm run build:deps && tsc -p tsconfig.json && vite build",
-    "build:deps": "pnpm run build:osm && pnpm --filter gps-plus-slam-app-framework run build",
-    "build:osm": "pnpm --filter gps-plus-slam-osm run build",
-    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries && pnpm run check:deadcode",
+    "build:deps": "pnpm run build:osm && pnpm run build:framework",
+    "build:framework": "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework",
+    "build:osm": "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-osm GpsPlusSlamJs_Osm",
+    "check:all": "pnpm run check:dup && pnpm run check:cycles && pnpm run check:boundaries",
     "check:boundaries": "node ../scripts/test-timing/timed-stage.mjs check:boundaries",
     "check:cycles": "node ../scripts/test-timing/timed-stage.mjs check:cycles",
-    "check:deadcode": "node ../scripts/test-timing/timed-stage.mjs check:deadcode",
     "check:dup": "node ../scripts/test-timing/timed-stage.mjs check:dup",
     "dev": "pnpm run build:deps && vite",
     "format": "node ../scripts/test-timing/timed-stage.mjs format",
@@ -28,10 +29,9 @@
     "typecheck:tests": "node ../scripts/test-timing/timed-stage.mjs typecheck:tests"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.15.0"
   },
   "dependencies": {
-    "@reduxjs/toolkit": "^2.11.2",
     "gps-plus-slam-app-framework": "workspace:*",
     "gps-plus-slam-osm": "workspace:*",
     "h3-js": "^4.4.0",

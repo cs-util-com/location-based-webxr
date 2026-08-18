@@ -25,10 +25,13 @@ import {
   cellToLatLng,
   cellToParent,
   gridDisk,
+  gridDistance,
   latLngToCell,
 } from "h3-js";
 
 import { AffordanceIndex } from "./affordance-index.js";
+import { loadSite } from "../test-utils/load-fixtures.js";
+import { parseOverpassJson } from "../model/overpass-parser.js";
 import { isBelowSurface } from "../model/below-surface.js";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { parseRuleTable } from "../rules/rule-table.js";
@@ -351,8 +354,10 @@ describe("a tile arriving late", () => {
 
     // The two-stage funnel: a cheap raw-position bbox test runs for every
     // feature, and only survivors are ring-stitched and classified. At res 7 a
-    // fetch tile holds ~21,800 features and a chunk needs a handful, so
-    // converting all of them would be the cost this class exists to avoid.
+    // fetch tile is estimated at ~40,000–116,000 features (the ~21,800 once
+    // quoted here is retracted — see `resolutions.ts` FETCH_RES) and a chunk
+    // needs a handful, so converting all of them would be the cost this class
+    // exists to avoid.
     const far = { lat: 51.4, lng: 7.6 };
     index.acceptTile(tile(far, [patch(9, far, { landuse: "grass" })], 3_000));
 
@@ -426,6 +431,57 @@ describe("eviction", () => {
     for (const chunk of result.workingSet) {
       expect(index.chunk(chunk)).toBeDefined();
     }
+  });
+
+  it("drops the FURTHEST chunk, even when a nearer one was held longer", () => {
+    // WHY THIS TEST MATTERS. `evictBeyond`'s docstring promises "furthest-first
+    // rather than least-recently-used: the access pattern is spatial, not
+    // temporal". Nothing asserted the ordering — the test above only checks that
+    // the working set survives, which is true under ANY eviction order.
+    //
+    // The distance function used to saturate: it looped `ring <= SCORE_DISK_RADIUS
+    // + 1` and returned a constant beyond, so every chunk past ring 3 compared
+    // EQUAL. Ties are stable and the candidate array is Map insertion order, so
+    // eviction silently became oldest-first past ~198 m — dropping ground the user
+    // just walked away from in preference to ground far behind them. Reported from
+    // London: heat-map cells cleared right after a short jump.
+    //
+    // The two chunks below are deliberately BOTH outside the old cap, and the
+    // nearer one is inserted FIRST, so the old behaviour evicts exactly the wrong
+    // one and the new behaviour evicts exactly the right one.
+    const home = latLngToCell(HOME.lat, HOME.lng, SCORE_CHUNK_RES);
+    const ringAt = (steps: number) =>
+      gridDisk(home, steps).find(
+        (cell) => gridDistance(home, cell) === steps,
+      ) as string;
+    const near = ringAt(5);
+    const far = ringAt(12);
+
+    // How many chunks a settled working set holds, measured rather than assumed —
+    // deriving it from SCORE_DISK_MAX_RADIUS would restate the constant the
+    // production code already derives and drift with it.
+    const probe = newIndex();
+    probe.update(HOME, SCORE_DISK_MAX_RADIUS);
+    const workingSetSize = probe.scoredChunks().length;
+
+    // Room for the working set and exactly ONE of the two outliers.
+    const index = new AffordanceIndex({
+      table: TABLE,
+      maxChunks: workingSetSize + 1,
+    });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+
+    // Insertion order is near-then-far: the order that makes oldest-first and
+    // furthest-first disagree.
+    index.ensureScored(cellToChildren(near, AFFORDANCE_RES).slice(0, 1));
+    index.ensureScored(cellToChildren(far, AFFORDANCE_RES).slice(0, 1));
+    expect(index.chunk(near)).toBeDefined();
+    expect(index.chunk(far)).toBeDefined();
+
+    index.update(HOME, SCORE_DISK_MAX_RADIUS);
+
+    expect(index.chunk(far)).toBeUndefined();
+    expect(index.chunk(near)).toBeDefined();
   });
 });
 
@@ -1332,4 +1388,138 @@ describe("belowSurfaceFeatures — what the scorer excluded", () => {
       );
     });
   });
+});
+
+describe("mergedFeatures — the read accessor the spatial index reads", () => {
+  it("exposes the merged features rather than making a second copy", () => {
+    // Why this test matters: decision 12.4 asked for this accessor and it turned
+    // out to exist already — so what was missing was never the method, it was
+    // any test of the two properties a second consumer depends on. Identity,
+    // not just contents, is what proves no copy is made: at 14-55 MB resident a
+    // second merged copy is not affordable on a phone.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+
+    expect(index.mergedFeatures().size).toBe(1);
+    expect(index.mergedFeatures()).toBe(index.mergedFeatures());
+  });
+
+  it("reflects a later tile, so the two features cannot disagree about what is loaded", () => {
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+    index.acceptTile(
+      tile(HOME, [
+        patch(1, HOME, { landuse: "grass" }),
+        patch(2, HOME, { leisure: "park" }),
+      ]),
+    );
+
+    expect(index.mergedFeatures().size).toBe(2);
+  });
+
+  it("is a SNAPSHOT: a held reference goes stale after acceptTile", () => {
+    // Why this test matters: `acceptTile` replaces the map rather than mutating
+    // it, so a caller that caches the reference keeps serving the old world
+    // silently — no error, just outdated answers. The hazard is documented on
+    // the accessor, and pinned here so a future change to live-view semantics
+    // has to come past a failing test rather than through prose nobody re-reads.
+    const index = new AffordanceIndex({ table: TABLE });
+    index.acceptTile(tile(HOME, [patch(1, HOME, { landuse: "grass" })]));
+    const held = index.mergedFeatures();
+
+    index.acceptTile(
+      tile(HOME, [
+        patch(1, HOME, { landuse: "grass" }),
+        patch(2, HOME, { leisure: "park" }),
+      ]),
+    );
+
+    expect(held.size).toBe(1);
+    expect(index.mergedFeatures().size).toBe(2);
+    expect(index.mergedFeatures()).not.toBe(held);
+  });
+});
+
+/**
+ * OFF BY DEFAULT, and the number it produced is in the test below.
+ *
+ * 364 ms run alone, but scoring 343 chunks over real corpus features exceeds the
+ * 5 s per-test cap under gate contention -- the same 15-20x inflation
+ * `cell-overlap.differential.test.ts` measured and refused to pay. Set to true to
+ * reproduce.
+ */
+const TIME_EXHAUSTIVE_SCAN = false;
+
+describe("what an exhaustive scan of one event tile costs", () => {
+  it.skipIf(!TIME_EXHAUSTIVE_SCAN)(
+    "times scoring all 343 res-11 chunks of a res-8 tile",
+    () => {
+      // WHY THIS TEST MATTERS. Two geo-event fixes have now been refuted on the
+      // same invariant: **anything that searches more of the event tile must score
+      // more of it.** Heat-weighted seeding needs a field that does not exist, and
+      // a res-11 climb far enough to matter needs 684 chunks against a 488 cap.
+      //
+      // What survives is not climbing at all: a res-8 tile holds exactly 7^3 = 343
+      // res-11 chunks, which is FEWER than the climb variants need, and once they
+      // are scored the true maximum can simply be read off. Cache pressure is
+      // settled — 343 plus a 61-chunk working set is 404, under the 488 cap, so it
+      // evicts nothing. **Wall-clock was the one number missing**, and a geo-event
+      // is a button press.
+      // REAL CORPUS DATA, not a synthetic patch. Scoring cost is driven by how
+      // many features each chunk must consider, so a fixture with one grass square
+      // measures the loop and not the work: it reported 13 ms, which is a floor.
+      const site = loadSite("london-westminster");
+      const features = [...parseOverpassJson(site.payload).features];
+      const index = new AffordanceIndex({ table: TABLE });
+      index.acceptTile({
+        tile: latLngToCell(site.centre.lat, site.centre.lng, FETCH_RES),
+        features,
+        fetchedAt: 1_000,
+        sourceId: "test",
+        schemaVersion: OVERPASS_SCHEMA_VERSION,
+        skipped: [],
+      });
+
+      const eventTile = cellToParent(
+        latLngToCell(site.centre.lat, site.centre.lng, SCORE_CHUNK_RES),
+        8,
+      );
+      const chunks = cellToChildren(eventTile, SCORE_CHUNK_RES);
+      expect(chunks.length).toBe(343);
+
+      // One res-13 cell per chunk is enough: `ensureScored` maps each to its
+      // res-11 parent and scores the whole chunk.
+      const seeds = chunks.map(
+        (chunk) => cellToChildren(chunk, AFFORDANCE_RES)[0] as string,
+      );
+
+      const started = performance.now();
+      index.ensureScored(seeds);
+      const ms = performance.now() - started;
+
+      process.stdout.write(
+        `[exhaustive tile scan] chunks=${chunks.length} ` +
+          `scored=${index.scoredChunks().length} in ${ms.toFixed(0)} ms\n`,
+      );
+
+      // MEASURED 364 ms over london-westminster's 2 259 features, against 13 ms
+      // for a one-feature synthetic patch -- which is why the synthetic version was
+      // replaced rather than kept.
+      //
+      // **IT IS STILL A LOWER BOUND, and the reason is the same one that blocks
+      // every other full-scale number in this package: no fixture holds a full
+      // tile.** An Overpass bbox extract covers roughly 2 % of the res-8 event
+      // tile its features land in, so most of these 343 chunks are empty and
+      // nearly free to score. A genuinely full tile would cost more, and by how
+      // much is NOT established here.
+      //
+      // So what this settles is narrow and worth stating exactly: an exhaustive
+      // scan is **not obviously unaffordable**, which is what the alternative
+      // designs needed to know. It does not establish that it IS affordable.
+      //
+      // Reports rather than pins: this decides a design nobody has committed to,
+      // and a threshold chosen now would be a threshold fitted to one machine.
+      expect(index.scoredChunks().length).toBeGreaterThan(300);
+    },
+  );
 });

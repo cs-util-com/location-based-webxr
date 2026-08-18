@@ -25,6 +25,26 @@ import type {
   DepthPoint as StoreDepthPoint,
 } from './ar-types';
 
+// STATIC, NOT `await import(...)` INSIDE THE TESTS, and that is the whole point
+// of this block (2026-08-09). These three modules were imported dynamically from
+// within test bodies, which put a module graph — `gps-plus-slam-js`, redux
+// toolkit, the store types — inside vitest's 5 s PER-TEST budget. Uncontended
+// that is invisible: this file runs in 767 ms. Under the root cascade's parallel
+// load, where this worker may be the first to pull that graph, it twice blew the
+// budget and failed the whole 21-minute gate on
+// `extractOdomPosition returns Vector3`.
+//
+// Hoisting does not make the work cheaper, it moves it out of a per-test cap and
+// into module load, which has none — and `gps-event-coordinator.property.test.ts`
+// already imports the same module this way without ever timing out.
+import { DepthSampler } from '../ar/depth-sampler';
+import { recordDepthSample } from '../state/recording-slice';
+import {
+  eulerToQuaternion,
+  extractOdomPosition,
+  extractOdomRotation,
+} from '../state/gps-event-coordinator';
+
 describe('AR Types', () => {
   describe('ARPose', () => {
     it('has the expected structure', () => {
@@ -116,20 +136,20 @@ describe('AR Types', () => {
     });
   });
 
-  describe('Type re-exports', () => {
-    it('DepthPoint is re-exported from depth-sampler', async () => {
-      // This verifies the re-export works correctly
-      const depthSampler = await import('../ar/depth-sampler');
-      // If DepthPoint wasn't re-exported, this would fail at compile time
-      // At runtime we verify the module exports what we expect
-      expect(depthSampler).toBeDefined();
-    });
-
-    it('DepthPoint is re-exported from gps-plus-slam-js', async () => {
-      const lib = await import('gps-plus-slam-js');
-      expect(lib).toBeDefined();
-    });
-  });
+  // DELETED 2026-08-09: two tests that asserted nothing.
+  //
+  // `DepthPoint is re-exported from depth-sampler` and `... from
+  // gps-plus-slam-js` each did `await import(...)` and then
+  // `expect(theModule).toBeDefined()`. A module namespace object is always
+  // defined once the import resolves, so neither could fail for the reason it
+  // named — and their own comment said as much: _"If DepthPoint wasn't
+  // re-exported, this would fail at compile time"_. That compile-time check is
+  // real and is what `typecheck:tests` runs; the runtime half was a whole-library
+  // import bought for a tautology.
+  //
+  // The re-export they meant to guard is still guarded: `DepthPoint` is imported
+  // as a type at the top of this file, so `typecheck:tests` fails if it stops
+  // being exported.
 
   describe('Cross-module type consistency', () => {
     /**
@@ -138,9 +158,7 @@ describe('AR Types', () => {
      * structure as the canonical definition. If someone accidentally creates
      * a different local interface, this test will catch the mismatch.
      */
-    it('depth-sampler DepthSample.points matches canonical DepthPoint structure', async () => {
-      const { DepthSampler } = await import('../ar/depth-sampler');
-
+    it('depth-sampler DepthSample.points matches canonical DepthPoint structure', () => {
       const capturedSamples: Array<{ points: readonly DepthPoint[] }> = [];
       const sampler = new DepthSampler({
         onSampleCaptured: (sample) => capturedSamples.push(sample),
@@ -189,11 +207,8 @@ describe('AR Types', () => {
      * to the store's recordDepthSample action without transformation, proving
      * end-to-end compatibility between the sampler and the store at runtime.
      */
-    it('DepthSampler produces a sample compatible with the store', async () => {
-      const recorderSlice = await import('../state/recording-slice');
-      const { DepthSampler } = await import('../ar/depth-sampler');
-
-      expect(recorderSlice.recordDepthSample).toBeDefined();
+    it('DepthSampler produces a sample compatible with the store', () => {
+      expect(recordDepthSample).toBeDefined();
 
       const capturedSamples: DepthSample[] = [];
       const sampler = new DepthSampler({
@@ -556,9 +571,7 @@ describe('AR Types', () => {
      * Since RecordGpsEventPayload.odomPosition is Vector3, the extractor
      * should return Vector3 directly for type consistency.
      */
-    it('extractOdomPosition returns Vector3', async () => {
-      const { extractOdomPosition } =
-        await import('../state/gps-event-coordinator');
+    it('extractOdomPosition returns Vector3', () => {
       const pose: ARPose = {
         position: { x: 1, y: 2, z: 3 },
         orientation: { x: 0, y: 0, z: 0, w: 1 },
@@ -575,9 +588,7 @@ describe('AR Types', () => {
      * Since RecordGpsEventPayload.odomRotation is Quaternion, the extractor
      * should return Quaternion directly for type consistency.
      */
-    it('extractOdomRotation returns Quaternion', async () => {
-      const { extractOdomRotation } =
-        await import('../state/gps-event-coordinator');
+    it('extractOdomRotation returns Quaternion', () => {
       const pose: ARPose = {
         position: { x: 0, y: 0, z: 0 },
         orientation: { x: 0.1, y: 0.2, z: 0.3, w: 0.9 },
@@ -592,9 +603,7 @@ describe('AR Types', () => {
      * eulerToQuaternion previously returned mutable [number, number, number, number].
      * It should return Quaternion for consistency with the library types.
      */
-    it('eulerToQuaternion returns Quaternion', async () => {
-      const { eulerToQuaternion } =
-        await import('../state/gps-event-coordinator');
+    it('eulerToQuaternion returns Quaternion', () => {
       const result = eulerToQuaternion(0, 0, 0);
       expectTypeOf(result).toEqualTypeOf<Quaternion>();
       expect(result).toHaveLength(4);

@@ -63,11 +63,36 @@ export interface AnchorOptions {
   /**
    * The user chose a new place rather than travelling to it.
    *
-   * Re-anchors with no distance test. Under AR this must never be set: the
-   * framework's `zero` is immutable, and re-anchoring during a live session
-   * would reintroduce the very disagreement this module removes.
+   * Re-anchors with no distance test. Under AR this must never be set — see
+   * {@link AnchorOptions.frozen}, which enforces that rather than trusting it.
    */
   readonly declared?: boolean;
+
+  /**
+   * An AR session is live: the origin must not move for any reason.
+   *
+   * **NOT THE SAME AS "`declared` is unset", and that is the whole point**
+   * (plan §2.4). AR never sets `declared`, so the origin looks safe already —
+   * but {@link nextAnchor} re-anchors on DISTANCE independently past
+   * {@link REANCHOR_THRESHOLD_M}, so a long walk or one wild fix moves the
+   * frame under a live session with nothing in AR's code having asked for it.
+   *
+   * Why that is fatal rather than untidy: the framework's `zero` is immutable
+   * for the session. A scene frame that moves and a GPS frame that does not are
+   * two disagreeing origins — precisely the disagreement the fixed-origin work
+   * removed — and the city jumps by kilometres.
+   *
+   * **Beats `declared`.** The site picker stays reachable while AR runs
+   * (DEC-12 keeps the map), and honouring a picker jump would move the scene
+   * frame away from a `zero` that cannot follow. The user's route to a new
+   * origin is to RELOAD the page there. Leaving AR and re-entering does not do
+   * it: `setZeroPos` is a no-op once set, so a new session re-reads the same
+   * `zero` (r509 review corrected the opposite claim here).
+   *
+   * Does NOT suppress the first anchor: `current === undefined` is a seed, not
+   * a re-anchor, and the holder is constructed before AR ever starts.
+   */
+  readonly frozen?: boolean;
 }
 
 /**
@@ -92,7 +117,22 @@ export function nextAnchor(
     );
   }
 
-  if (current === undefined || options.declared === true) {
+  // THE SEED IS NOT A RE-ANCHOR, so it is decided before `frozen` is consulted:
+  // there is no origin to protect yet, and freezing here would hand back
+  // `undefined`.
+  if (current === undefined) {
+    return { origin: position, reanchored: true };
+  }
+
+  // BEFORE the `declared` branch, deliberately. A live AR session outranks the
+  // site picker, because moving the scene frame away from an immutable `zero`
+  // is a worse outcome than ignoring a jump. The user's route to a new origin
+  // is a reload, not leaving AR — `setZeroPos` is a no-op once set.
+  if (options.frozen === true) {
+    return { origin: current, reanchored: false };
+  }
+
+  if (options.declared === true) {
     return { origin: position, reanchored: true };
   }
 

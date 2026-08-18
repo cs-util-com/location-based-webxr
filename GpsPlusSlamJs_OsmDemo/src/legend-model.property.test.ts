@@ -22,6 +22,15 @@ import fc from "fast-check";
 import { legendModel } from "./legend-model.js";
 
 /** Includes the values the live sheet has actually produced, and the hostile ones. */
+/**
+ * What the DATA does, for tests that are about the RAMP rather than the data.
+ *
+ * Non-degenerate on purpose: `legendModel` keys its "nothing here" message on
+ * `aboveThresholdCount` now (DEC-H7), so a zero here would put every test below
+ * into the empty state.
+ */
+const SOME_DATA = { aboveThresholdCount: 12, observedMax: 8 };
+
 const scoreArb = fc.oneof(
   fc.constantFrom(0, 1, 0.5, 2, 8, 1587),
   fc.double({ min: -100, max: 10000, noNaN: true }),
@@ -37,7 +46,7 @@ describe("legendModel is total over every scale the sheet can produce", () => {
         fc.string(),
         fc.boolean(),
         (scale, category, show) => {
-          const model = legendModel(scale, category, show);
+          const model = legendModel(scale, category, show, SOME_DATA);
           for (const stop of [...model.ramp, ...model.bands]) {
             expect(stop.colour).toMatch(/^#[0-9a-f]{6}$/);
           }
@@ -50,7 +59,7 @@ describe("legendModel is total over every scale the sheet can produce", () => {
     // A legend reading "1 … NaN" is a bug report the reader cannot act on.
     fc.assert(
       fc.property(scaleArb, fc.boolean(), (scale, show) => {
-        const model = legendModel(scale, "walkable", show);
+        const model = legendModel(scale, "walkable", show, SOME_DATA);
         const labels = [
           model.minLabel,
           model.maxLabel,
@@ -71,7 +80,8 @@ describe("legendModel is total over every scale the sheet can produce", () => {
     fc.assert(
       fc.property(fc.string(), (category) => {
         expect(
-          legendModel({ threshold: 1, max: 8 }, category, true).category,
+          legendModel({ threshold: 1, max: 8 }, category, true, SOME_DATA)
+            .category,
         ).toBe(category);
       }),
     );
@@ -80,7 +90,7 @@ describe("legendModel is total over every scale the sheet can produce", () => {
   it("shows bands exactly when asked, and always all three", () => {
     fc.assert(
       fc.property(scaleArb, fc.boolean(), (scale, show) => {
-        const bands = legendModel(scale, "walkable", show).bands;
+        const bands = legendModel(scale, "walkable", show, SOME_DATA).bands;
         expect(bands).toHaveLength(show ? 3 : 0);
       }),
     );

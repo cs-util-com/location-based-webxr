@@ -44,7 +44,23 @@ export type CorpusTrait =
   /** Tall buildings packed together, the worst case for the far field. */
   | "dense-highrise"
   /** A tagging culture that is not the one every fixture so far was captured in. */
-  | "non-european-tagging";
+  | "non-european-tagging"
+  /**
+   * A way CARRIED BY masonry, where crossing in plan says nothing about passing.
+   *
+   * The hazard DEC-R12-1 refuses to cut gaps on: a road that crosses a barrier
+   * or a building footprint on the map is normally running above or below it,
+   * and a rule that opened a hole there would let an agent walk through a wall
+   * that is really there.
+   */
+  | "bridge-structure"
+  /**
+   * A landmark ENCLOSED by mapped barriers carrying gates and entrances.
+   *
+   * The case DEC-R12-1 does cut on, and the one the corpus could not exercise:
+   * the gap rule fires only where OSM maps a gate node on the barrier's own way.
+   */
+  | "gated-perimeter";
 
 export interface CorpusSite {
   /** Stable, filename- and URL-safe. Becomes `testdata/sites/<id>.json`. */
@@ -134,6 +150,30 @@ export const CORPUS_SITES: readonly CorpusSite[] = [
     trait: "non-european-tagging",
     reason:
       "A different tagging culture: multilingual names, different amenity and building value distributions, and address conventions no fixture captured in Germany exercises.",
+    captureRes: 9,
+  },
+  // THE TWO LONDONS (DEC-R12-9). The eighth testing session was run at London,
+  // which the picker offered and the corpus did not cover — so every number
+  // measured for that session's barrier findings came from six other places.
+  // The notes do not say which of the two picker entries was on screen, and the
+  // two are different shapes, so both are captured rather than one guessed.
+  // The ids match the picker's, which is what makes `?site=` reach them.
+  {
+    id: "london-tower-bridge",
+    name: "London — Tower Bridge",
+    position: { lat: 51.5055, lng: -0.0754 },
+    trait: "bridge-structure",
+    reason:
+      "Two masonry towers over the Thames with a road deck between them: ways that cross buildings and barriers in plan while running above or below them, which is exactly the case DEC-R12-1 refuses to cut a gap for.",
+    captureRes: 9,
+  },
+  {
+    id: "london-westminster",
+    name: "London — Westminster",
+    position: { lat: 51.5007, lng: -0.1246 },
+    trait: "gated-perimeter",
+    reason:
+      "A palace enclosed by mapped walls and railings carrying gate and entrance nodes — the case DEC-R12-1 DOES open a gap for, and the one no other corpus site exercises at scale.",
     captureRes: 9,
   },
 ];

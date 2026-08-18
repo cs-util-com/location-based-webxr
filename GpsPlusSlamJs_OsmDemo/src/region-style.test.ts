@@ -15,10 +15,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { heatColour, heatScale } from "./heat-colours.js";
+import { fixedScale, heatColour } from "./heat-colours.js";
 import { regionStyle } from "./region-style.js";
 
-const SCALE = heatScale([1, 4, 20, 100], 1);
+const SCALE = fixedScale(1);
 
 /** `heatColour` as `#rrggbb`, the form Leaflet takes. */
 function expectedHex(score: number): string {

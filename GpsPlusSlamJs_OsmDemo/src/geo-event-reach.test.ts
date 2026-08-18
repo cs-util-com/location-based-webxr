@@ -11,7 +11,7 @@
  * WHAT IT FOUND, and it is a defect rather than a cost. `DemoPipeline.geoEvent`
  * admitted a neighbouring event tile when **that tile's own fetch tile** was
  * already loaded, and its docstring gives the reason: "a neighbour whose data is
- * missing costs an 18–110 s download… the rest are skipped". But the ensure set
+ * missing costs a ~15–90 s download… the rest are skipped". But the ensure set
  * built for an admitted neighbour reaches ~550 m past its centre in every
  * direction, into fetch tiles nobody checked — so the download it promised to
  * skip happened anyway. The gate tested the centre; the work needs the reach.
@@ -190,7 +190,7 @@ describe("a geo-event's reach, measured in fetch tiles", () => {
     // than a repair.
     //
     // `DemoPipeline.geoEvent`'s docstring justifies the neighbour gate by
-    // saying a neighbour whose data is missing "costs an 18–110 s download", so
+    // saying a neighbour whose data is missing "costs a ~15–90 s download", so
     // those are skipped. The old gate checked `toFetchTile(neighbour)` — the
     // neighbour's CENTRE. The ensure set built for that neighbour then reaches
     // ~550 m past its centre in every direction, into fetch tiles the gate

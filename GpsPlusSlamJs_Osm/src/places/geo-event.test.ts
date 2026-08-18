@@ -27,6 +27,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  rankedPeaks,
+  bestPickOverField,
+  EXHAUSTIVE_SHORTLIST,
   CANDIDATES_PER_BATCH,
   QUARTER_HOUR_MS,
   bestPickForTile,
@@ -848,5 +851,305 @@ describe("CANDIDATES_PER_BATCH is the caller's contract, not a private detail", 
         count: CANDIDATES_PER_BATCH,
       }),
     );
+  });
+});
+
+describe("the winner is the warmest NEIGHBOURHOOD, not the warmest cell", () => {
+  it("settles on a low-scoring cell that is surrounded by high ones", () => {
+    // WHY THIS TEST MATTERS. This is the single most confusing thing about the
+    // feature from a user's point of view, and it was reported as a suspected
+    // bug from a live session: the marker sat on a cell whose tooltip read
+    // `battleArea = 1` while visibly higher-scoring cells sat right beside it.
+    //
+    // It is correct, and it is `GetHeatForTilePlusNeighbours` in the C#.
+    // `climbToLocalMaximum` maximises the sum over a cell AND its neighbours,
+    // so being SURROUNDED by strength beats being strong: a weak cell in the
+    // middle of a warm cluster outranks a strong cell on that cluster's edge,
+    // because the edge cell's own neighbourhood reaches out into the cold.
+    //
+    // The fixture is the reported screenshot: a ring of 1.37s around a single
+    // 1, on an otherwise flat field of 1.
+    const values: Record<string, number> = {};
+    for (let x = -4; x <= 8; x += 1) {
+      for (let y = -4; y <= 8; y += 1) values[`${x},${y}`] = 1;
+    }
+    for (const [dx, dy] of [
+      [-1, -1],
+      [0, -1],
+      [1, -1],
+      [-1, 0],
+      [1, 0],
+      [-1, 1],
+      [0, 1],
+      [1, 1],
+    ]) {
+      values[`${3 + dx},${3 + dy}`] = 1.37;
+    }
+
+    const neighbourhood = (cell: string): number =>
+      gridNeighbours(cell).reduce((sum, at) => sum + (values[at] ?? 0), 0);
+
+    // The centre is the WEAKEST cell of the nine and the warmest neighbourhood.
+    expect(values["3,3"]).toBe(1);
+    expect(values["3,2"]).toBe(1.37);
+    expect(neighbourhood("3,3")).toBeGreaterThan(neighbourhood("3,2"));
+
+    const climbed = climbToLocalMaximum({
+      start: "0,0",
+      heatAt: fieldFrom(values),
+      neighbours: gridNeighbours,
+      steps: 5,
+    });
+
+    expect(climbed.left).toBe(false);
+    expect(climbed.cell).toBe("3,3");
+    // The pick's OWN score is the lowest in its cluster — which is the thing
+    // that looks wrong on the map and is not.
+    expect(values[climbed.cell]).toBe(1);
+  });
+
+  it("is what lets the gate pass a cluster and reject a lone spike", () => {
+    // The counterweight, and why the design is the one the C# chose. The gate
+    // is `heat > neighbours(cell).length * threshold` — a sum over the
+    // neighbourhood — so one very high cell surrounded by identity ground does
+    // NOT qualify, while a broad, mildly-warm district does. An event is meant
+    // to land somewhere you can play, not on one lucky hexagon.
+    const spike: Record<string, number> = {};
+    for (let x = -4; x <= 8; x += 1) {
+      for (let y = -4; y <= 8; y += 1) spike[`${x},${y}`] = 1;
+    }
+    spike["3,3"] = 4;
+
+    const climbed = climbToLocalMaximum({
+      start: "3,3",
+      heatAt: fieldFrom(spike),
+      neighbours: gridNeighbours,
+      steps: 5,
+    });
+
+    // Nine cells at the identity would sum to 9; the spike lifts it to 12.
+    const gate = gridNeighbours("3,3").length * 1;
+    expect(climbed.heat).toBe(12);
+    expect(climbed.heat > gate).toBe(true);
+
+    // But move the spike's neighbours below the identity and the same cell
+    // fails the gate, however high it is on its own — the district is judged,
+    // not the hexagon.
+    //
+    // `steps: 0` so the climb reports THIS cell's neighbourhood rather than
+    // wherever it would wander off to. Written the other way round first, and
+    // it measured the wrong cell: from an isolated spike the climb walks OUT
+    // to the surrounding field, whose neighbourhood is warmer than the pit the
+    // spike sits in — true, and not the claim being made here.
+    const isolated: Record<string, number> = { ...spike };
+    for (const at of gridNeighbours("3,3")) {
+      if (at !== "3,3") isolated[at] = 0.5;
+    }
+    const alone = climbToLocalMaximum({
+      start: "3,3",
+      heatAt: fieldFrom(isolated),
+      neighbours: gridNeighbours,
+      steps: 0,
+    });
+    expect(alone.cell).toBe("3,3");
+    expect(alone.heat).toBe(8);
+    expect(alone.heat > gate).toBe(false);
+  });
+});
+
+describe("rankedPeaks — the exhaustive alternative to climbing", () => {
+  /** A tiny field laid out as a line of cells, so neighbours are predictable. */
+  const line = ["a", "b", "c", "d", "e", "f", "g"];
+  const neighbours = (cell: string): string[] => {
+    const i = line.indexOf(cell);
+    return [line[i - 1], line[i + 1]].filter(
+      (c): c is string => c !== undefined,
+    );
+  };
+
+  it("finds the global maximum a climb would miss", () => {
+    // The point of the whole change: a scan cannot get stuck, so the tallest
+    // ground is found wherever it is.
+    // A THREE-CELL PLATEAU, not a single spike, and the difference matters:
+    // the ranking is by NEIGHBOURHOOD heat, so a lone tall cell TIES with the
+    // cell beside it (both neighbourhoods contain it). The first version of
+    // this fixture used one spike and the tie fell to the alphabetical
+    // tie-break, which looked like a bug in the code and was a bug in the test.
+    const heat: Record<string, number> = {
+      a: 1,
+      b: 1,
+      c: 1,
+      d: 1,
+      e: 9,
+      f: 9,
+      g: 9,
+    };
+    const peaks = rankedPeaks({
+      cells: line,
+      heatAt: (c) => heat[c],
+      neighbours,
+      topN: 1,
+    });
+    expect(peaks[0]?.cell).toBe("f");
+  });
+
+  it("returns SEPARATED peaks, not one hill listed N times", () => {
+    // Without the exclusion this returns f, then its neighbours e and g — one
+    // place three times — and the rotation would have nothing to rotate between.
+    const heat: Record<string, number> = {
+      a: 1,
+      b: 20,
+      c: 1,
+      d: 1,
+      e: 9,
+      f: 9,
+      g: 9,
+    };
+    const peaks = rankedPeaks({
+      cells: line,
+      heatAt: (c) => heat[c],
+      neighbours,
+      topN: 2,
+    });
+    expect(peaks.map((p) => p.cell)).toEqual(["f", "b"]);
+  });
+
+  it("skips unscored ground rather than reading it as cold", () => {
+    // `undefined` is "nobody looked", not "nothing there" — the distinction
+    // `cellState` exists to preserve. A cell nobody scored cannot be a peak.
+    const heat: Record<string, number | undefined> = {
+      a: 1,
+      b: undefined,
+      c: 5,
+    };
+    const peaks = rankedPeaks({
+      cells: ["a", "b", "c"],
+      heatAt: (c) => heat[c],
+      neighbours: () => [],
+      topN: 3,
+    });
+    expect(peaks.map((p) => p.cell)).toEqual(["c", "a"]);
+  });
+
+  it("orders ties by cell id, so clients that must agree do", () => {
+    const heat: Record<string, number> = { z: 5, a: 5 };
+    const peaks = rankedPeaks({
+      cells: ["z", "a"],
+      heatAt: (c) => heat[c],
+      neighbours: () => [],
+      topN: 2,
+    });
+    expect(peaks.map((p) => p.cell)).toEqual(["a", "z"]);
+  });
+});
+
+describe("bestPickOverField — the exhaustive pick, and its weighting", () => {
+  /**
+   * WHY THIS WHOLE BLOCK MATTERS. `bestPickOverField` shipped wired into the
+   * demo (`demo-pipeline.ts` passes `cellsOfTile`) with **no test of its own** —
+   * `rankedPeaks` was covered, the pick built on top of it was not. So the one
+   * thing the exhaustive path adds beyond ranking, the heat-weighted roll, was
+   * asserted only by a docstring.
+   */
+
+  /** Isolated cells: no neighbours, so neighbourhood heat is the cell's own. */
+  const alone = (): string[] => [];
+
+  /** Peak plus five bumps — the fixture the weighting docstring computes on. */
+  const peakAndBumps: Record<string, number> = {
+    "0,0": 560,
+    "10,0": 84,
+    "20,0": 84,
+    "30,0": 84,
+    "40,0": 84,
+    "50,0": 84,
+  };
+
+  const pickAt = (
+    eventTime: number,
+    heat: Record<string, number> = peakAndBumps,
+  ): ReturnType<typeof bestPickOverField> =>
+    bestPickOverField({
+      cells: Object.keys(heat),
+      globalSeed: 42,
+      eventTime,
+      toLatLng: gridToLatLng,
+      heatAt: (cell) => heat[cell],
+      neighbours: alone,
+    });
+
+  it("refuses ground the map itself calls unusable", () => {
+    // The SHARED quality gate, `heat > neighbours(cell).length × threshold`.
+    // Nine neighbours (the grid includes the cell itself) against heat 3 fails
+    // it, and a refusal must be `undefined` — never a pick on bad ground, which
+    // would put an event where the map draws nothing.
+    const thin: Record<string, number> = { "0,0": 3, "1,0": 3 };
+    expect(
+      bestPickOverField({
+        cells: Object.keys(thin),
+        globalSeed: 42,
+        eventTime: Date.UTC(2026, 7, 2, 10, 15),
+        toLatLng: gridToLatLng,
+        heatAt: (cell) => thin[cell],
+        neighbours: gridNeighbours,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined over ground nobody has scored", () => {
+    // Not a crash and not a pick at the origin: an unscored field simply has no
+    // event in it, the same way `rankedPeaks` skips unscored cells.
+    expect(pickAt(Date.UTC(2026, 7, 2, 10, 15), {})).toBeUndefined();
+  });
+
+  it("is identical for the same seed and minute, and quantised to minutes", () => {
+    // DETERMINISM IS THE FEATURE. Two clients agree without coordinating only
+    // if the pick depends on nothing but seed and whole minute — so a clock a
+    // few seconds out must not move the event.
+    const at = Date.UTC(2026, 7, 2, 10, 15);
+    expect(pickAt(at)).toEqual(pickAt(at));
+    expect(pickAt(at + 59_000)).toEqual(pickAt(at));
+  });
+
+  it("reports the shortlist it beat, capped at EXHAUSTIVE_SHORTLIST", () => {
+    // `evaluated` is what the map draws beside the pick. For the scan these are
+    // genuine runners-up rather than the climb's discarded seeds, and there are
+    // never more of them than the shortlist — ten separated peaks still yield
+    // six, or the map would claim the search considered more than it ranked.
+    const wide: Record<string, number> = {};
+    for (let i = 0; i < 10; i += 1) wide[`${i * 10},0`] = 100 + i;
+
+    const pick = pickAt(Date.UTC(2026, 7, 2, 10, 15), wide);
+    expect(pick?.evaluated).toHaveLength(EXHAUSTIVE_SHORTLIST);
+    // Nothing was climbed, so the reported candidate IS the chosen position.
+    expect(pick?.candidate).toEqual(pick?.position);
+    expect(pick?.position).toEqual(gridToLatLng(pick?.cell ?? ""));
+  });
+
+  it("weights by heat rather than rolling uniformly over the shortlist", () => {
+    // THE ARITHMETIC THE DOCSTRING CLAIMS, now executable. A peak at 560 against
+    // five bumps at 84 is 560/980 of the total heat, so it must win ≈57 % of
+    // minutes — not the 1-in-6 (17 %) a uniform roll over the shortlist gives.
+    //
+    // Sampled over 1 200 consecutive minutes, which is deterministic: the roll
+    // is `stableHash`, not a PRNG, so this is a fixed number and not a flake.
+    const start = Date.UTC(2026, 7, 2, 0, 0);
+    const minutes = 1200;
+    let peakWins = 0;
+    const winners = new Set<string>();
+    for (let m = 0; m < minutes; m += 1) {
+      const pick = pickAt(start + m * 60_000);
+      winners.add(pick?.cell ?? "none");
+      if (pick?.cell === "0,0") peakWins += 1;
+    }
+
+    const share = peakWins / minutes;
+    expect(share).toBeGreaterThan(0.5);
+    expect(share).toBeLessThan(0.65);
+
+    // AND THE ROTATION SURVIVES THE WEIGHTING, which is the other half: every
+    // shortlisted place must stay reachable, or the event is static forever —
+    // the regression `EXHAUSTIVE_SHORTLIST` exists to prevent.
+    expect(winners.size).toBe(Object.keys(peakAndBumps).length);
   });
 });

@@ -32,14 +32,26 @@ export {
 
 export { barrierFootprints } from "./barrier-shape.js";
 
+export type { GateOpenings } from "./barrier-gates.js";
+export {
+  GATE_GAP_M,
+  NO_GATES,
+  gateOpenings,
+  splitAtGates,
+} from "./barrier-gates.js";
+
 export type { BarrierDimensions } from "./barriers.js";
 export {
+  barrierCentrelines,
   isSolidBarrier,
   resolveBarrier,
   DEFAULT_BARRIER_HEIGHT_M,
   DEFAULT_CITY_WALL_HEIGHT_M,
   DEFAULT_BARRIER_THICKNESS_M,
 } from "./barriers.js";
+
+export type { BarrierVolume, BuildBarriersOptions } from "./barrier-volumes.js";
+export { buildBarriers } from "./barrier-volumes.js";
 
 export type { MeshData } from "./mesh-data.js";
 export { MeshBuilder } from "./mesh-data.js";
@@ -50,8 +62,12 @@ export type { ExtrudedBuilding } from "./extrude.js";
 export type { RoofMesh, RoofOptions } from "./roof.js";
 export { buildRoof } from "./roof.js";
 
-export type { BuildBuildingsOptions, BuildingVolume } from "./buildings.js";
-export { buildBuildings } from "./buildings.js";
+export type {
+  BuildBuildingsOptions,
+  BuildingVolume,
+  SolidFootprint,
+} from "./buildings.js";
+export { buildBuildings, solidBuildingFootprints } from "./buildings.js";
 
 export type { Rgb } from "./feature-colours.js";
 export {
@@ -86,7 +102,13 @@ export type {
 export { buildRegionSlabs } from "./region-slabs.js";
 
 export type { BuildRoadsOptions, RoadRibbon } from "./roads.js";
-export { buildRoads, isRoad, roadWidthM } from "./roads.js";
+export {
+  buildRoads,
+  isBridgeCrossing,
+  isPedestrianPath,
+  isRoad,
+  roadWidthM,
+} from "./roads.js";
 
 export type { BuildPoiOptions, PoiMarker } from "./poi.js";
 export { POI_KEYS, buildPoiMarkers, isPoiNode, poiKind } from "./poi.js";

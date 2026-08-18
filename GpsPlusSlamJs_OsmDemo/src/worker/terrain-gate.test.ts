@@ -174,3 +174,87 @@ describe("needsTerrainFor", () => {
     expect(needsTerrainFor(HERE, { lat: THERE.lat, lng: HERE.lng })).toBe(true);
   });
 });
+
+describe("the datum is part of the gate's identity (AR entry, 2026-08-14)", () => {
+  /**
+   * WHY THESE TESTS EXIST — a field report with two numbers.
+   *
+   * The owner entered AR and was "flying roughly 50 m above the OSM buildings";
+   * they left, re-entered, and were "about 4 m below" — i.e. right, to within
+   * ordinary GPS-altitude and DEM error. The first entry was wrong and the
+   * second was fine, which is the signature of a field built against the wrong
+   * DATUM rather than of a broken solve.
+   *
+   * The mechanism: `terrain-field.ts` uses the WINDOW-CENTRE height as its
+   * datum for the desktop view (so heights come out as relief around zero) and
+   * `−N` for AR (so heights come out ellipsoidal, ~99 m at Cologne, which is
+   * where the fusion puts the camera). AR entry re-runs the pass at the
+   * UNCHANGED store position, so a gate keyed on lat/lng alone answers "no new
+   * terrain needed" and the mesh is built on the desktop field while the camera
+   * is lifted to ellipsoidal height. On the second entry the AR field is
+   * already held, which is why it looked fine.
+   *
+   * `demo-worker.ts:675-685` predicted exactly this class of failure — "if the
+   * anchor ever gains a second mover … this has to key on the frame origin as
+   * well … and it is silent". It named the wrong mover: the datum became the
+   * second one, not the origin.
+   */
+  const AT = { lat: 50.9413, lng: 6.9583 };
+
+  it("needs new terrain when the datum changes but the position does not", () => {
+    // The AR-entry case exactly: same position, desktop field held, absolute
+    // datum now required. Answering `false` here is the bug.
+    expect(
+      needsTerrainFor(
+        { ...AT, undulationM: undefined },
+        { ...AT, undulationM: 46.2 },
+      ),
+    ).toBe(true);
+  });
+
+  it("needs new terrain when AR leaves and the datum goes back to the window", () => {
+    // The mirror case on AR exit, which has the same hole: the held field is
+    // ellipsoidal and the desktop view wants relief around zero.
+    expect(
+      needsTerrainFor(
+        { ...AT, undulationM: 46.2 },
+        { ...AT, undulationM: undefined },
+      ),
+    ).toBe(true);
+  });
+
+  it("does NOT need new terrain when position and datum both match", () => {
+    // The other half, and the one that keeps the gate cheap: a category change
+    // or a widening ring must still skip the wait, or W3's win is given back.
+    expect(
+      needsTerrainFor(
+        { ...AT, undulationM: 46.2 },
+        { ...AT, undulationM: 46.2 },
+      ),
+    ).toBe(false);
+    expect(
+      needsTerrainFor(
+        { ...AT, undulationM: undefined },
+        { ...AT, undulationM: undefined },
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps two datums at one position as SEPARATE settled entries", () => {
+    // The gate remembers one settled centre. If the key ignored the datum, an
+    // AR-entry wait would be released by the desktop field that settled before
+    // it — the same bug one layer down, and the reason `keyOf` has to change
+    // with the predicate rather than after it.
+    const gate = createTerrainGate();
+    gate.settle({ ...AT, undulationM: undefined });
+
+    let released = false;
+    void gate.waitFor({ ...AT, undulationM: 46.2 }).then(() => {
+      released = true;
+    });
+
+    return Promise.resolve().then(() => {
+      expect(released).toBe(false);
+    });
+  });
+});

@@ -89,6 +89,7 @@ function fullMesh(): TransferableMesh {
     parts: 25,
     guessedHeights: 7,
     approximateRoofs: 2,
+    barriers: 4,
   } as unknown as TransferableMesh;
 }
 
@@ -110,6 +111,7 @@ function emptyMesh(): TransferableMesh {
     parts: 0,
     guessedHeights: 0,
     approximateRoofs: 0,
+    barriers: 0,
   };
 }
 
@@ -773,6 +775,10 @@ describe("drawMeshLayers — the counters", () => {
     expect(stats.triangles).toBe(0);
     expect(stats.guessedHeights).toBe(0);
     expect(stats.approximateRoofs).toBe(0);
+    // Barriers ride in the buildings layer (DEC-R11-11), so they go dark with
+    // it. A barrier count surviving a switched-off buildings layer would be the
+    // status line describing geometry nobody can see.
+    expect(stats.barriers).toBe(0);
     // The layers still on are untouched by the one that went off.
     expect(stats.trees).toBe(1);
     expect(stats.plates).toBe(3);
@@ -786,6 +792,7 @@ describe("drawMeshLayers — the counters", () => {
       triangles: 1,
       guessedHeights: 7,
       approximateRoofs: 2,
+      barriers: 4,
       trees: 1,
       plates: 3,
       plateTriangles: 1,
@@ -810,7 +817,7 @@ describe("drawMeshLayers — the counters", () => {
       areas: false,
     });
     for (const value of Object.values(stats)) expect(value).toBe(0);
-    expect(Object.keys(stats)).toHaveLength(12);
+    expect(Object.keys(stats)).toHaveLength(13);
   });
 });
 

@@ -20,39 +20,100 @@ import {
   describeScale,
   heatColour,
   heatFraction,
-  heatScale,
+  fixedScale,
+  HEAT_CAP,
   toHex,
 } from "./heat-colours.js";
 
-describe("building the scale from the data", () => {
-  it("uses the highest score present, so each category gets its own range", () => {
-    // `walkable` in a city saturates where `restingArea` has a few cells at 6.
-    // A fixed scale would render most categories uniformly dark and hide the
-    // variation the session exists to judge.
-    expect(heatScale([1, 5, 35], 1)).toEqual({ threshold: 1, max: 35 });
+describe("the scale is FIXED, not derived from what is on screen (DEC-H5)", () => {
+  it("tops out at the measured cap whatever the threshold is", () => {
+    expect(fixedScale(1)).toEqual({ threshold: 1, max: HEAT_CAP });
+    expect(fixedScale(9)).toEqual({ threshold: 9, max: HEAT_CAP });
   });
 
-  it("never drops below the threshold, even if every score is at it", () => {
-    expect(heatScale([1, 1], 1).max).toBe(1);
+  it("gives the same score the same colour regardless of its neighbours", () => {
+    // THE WHOLE POINT OF THE CHANGE, and the property the derived scale could
+    // not have. `heatScale` took the maximum score on screen, so a cell's
+    // colour depended on cells the user could not see: walk far enough for the
+    // hottest cell to leave the retained set and every remaining cell
+    // brightened with no change in its own data — the picture reporting a
+    // change that did not happen.
+    //
+    // With a constant ceiling the two scales below ARE the same scale, so this
+    // is now true by construction. Asserted anyway, because it is the
+    // requirement rather than an implementation detail: a future per-category
+    // or per-place cap would break it and should have to argue with this test.
+    const hereWithAHotCell = fixedScale(1);
+    const aKilometreLater = fixedScale(1);
+
+    expect(heatColour(42, hereWithAHotCell)).toEqual(
+      heatColour(42, aKilometreLater),
+    );
   });
 
-  it("ignores non-finite scores rather than propagating them", () => {
-    // A NaN max would make every fraction NaN and every cell black — a total
-    // blackout caused by one bad cell.
-    expect(heatScale([5, Number.NaN, 10], 1).max).toBe(10);
+  it("reads anything above the cap as the top of the ramp", () => {
+    // The accepted cost of DEC-H5: `walkable` runs to 1e11 at Cologne and 3e17
+    // at Heidelberg, so ~10-14 % of coloured cells saturate. An outstanding
+    // spot stops being distinguishable from a merely very good one — which is
+    // the trade for the same score meaning the same thing everywhere.
+    expect(heatFraction(HEAT_CAP, fixedScale(1))).toBe(1);
+    expect(heatFraction(HEAT_CAP * 1e7, fixedScale(1))).toBe(1);
+  });
+
+  it("keeps the cap above a threshold the sheet puts above it", () => {
+    // A REGRESSION THE FIXED RAMP INTRODUCED (r513 review). `heatScale` seeded
+    // `max = threshold`, so `max >= threshold` held by construction; a constant
+    // cap does not. Thresholds come from a publicly editable sheet, and this
+    // file's sibling already exercises 250 000 as a realistic large one.
+    //
+    // Without the guard the span goes non-positive and EVERY score reads 0 —
+    // a uniformly dark map from one sheet edit, with no message explaining it.
+    const hostile = fixedScale(250_000);
+    expect(hostile.max).toBeGreaterThan(hostile.threshold);
+    expect(heatFraction(hostile.threshold * 5, hostile)).toBeGreaterThan(0);
+    expect(heatFraction(hostile.max, hostile)).toBe(1);
+  });
+
+  it("does NOT move the cap for a threshold that still leaves a ramp", () => {
+    // THE GUARD'S FIRST VERSION OVER-FIRED BY A DECADE (r513 review). It was
+    // `Math.max(HEAT_CAP, threshold * 10)`, which engages at `threshold > 1e3`
+    // — so a threshold of 2 000, which still has two thirds of a ramp, would
+    // silently have been given 2e4.
+    //
+    // In that band the cap becomes PER-CATEGORY, which is the one thing DEC-H5
+    // exists to remove and which `describeScale` promises to the reader in as
+    // many words. The band is the part a reasonable sheet edit can reach, so it
+    // is the part that matters most.
+    for (const threshold of [1, 9, 1_001, 2_000, 9_999]) {
+      expect(fixedScale(threshold).max).toBe(HEAT_CAP);
+    }
+  });
+
+  it("still leaves the weakest measured category most of the ramp", () => {
+    // The objection `heat-colours.ts` used to carry — that a fixed scale makes
+    // most categories look uniformly dark — measured rather than argued.
+    // `treasureReward` at Cologne tops out at 518, the weakest of the six.
+    expect(heatFraction(518, fixedScale(1))).toBeGreaterThan(0.6);
   });
 });
 
 describe("the ramp is logarithmic, which is the point", () => {
-  const scale = heatScale([100], 1);
+  const scale = fixedScale(1);
 
   it("gives equal RATIOS equal steps", () => {
-    // 1 -> 10 -> 100 is two equal ratios, so it must be two equal colour steps.
-    // Under a linear ramp 10 would sit at 9% and the map would look empty.
+    // 1 -> 10 -> 100 -> 1000 is three equal ratios, so it must be three equal
+    // colour steps. Under a linear ramp 10 would sit at 0.09 % of a 1e4 scale
+    // and the map would look empty.
+    //
+    // The quarter-steps are the fixed cap showing through: the ramp now spans
+    // four decades for every category, so a decade is always a quarter of it
+    // wherever you are standing. That constancy IS the change.
     const atTen = heatFraction(10, scale);
     const atHundred = heatFraction(100, scale);
-    expect(atTen).toBeCloseTo(0.5, 6);
-    expect(atHundred).toBeCloseTo(1, 6);
+    const atThousand = heatFraction(1000, scale);
+    expect(atTen).toBeCloseTo(0.25, 6);
+    expect(atHundred).toBeCloseTo(0.5, 6);
+    expect(atThousand).toBeCloseTo(0.75, 6);
   });
 
   it("puts anything at or below the threshold off the ramp entirely", () => {
@@ -63,20 +124,25 @@ describe("the ramp is logarithmic, which is the point", () => {
   });
 
   it("clamps rather than running off the ramp", () => {
-    expect(heatFraction(1000, scale)).toBe(1);
+    // Now reachable in normal data rather than only in theory: `walkable` runs
+    // to 1e11 and 3e17 at the two corpus sites, against a 1e4 cap.
+    expect(heatFraction(HEAT_CAP + 1, scale)).toBe(1);
+    expect(heatFraction(1e17, scale)).toBe(1);
   });
 
-  it("collapses to flat when every score is identical", () => {
-    // max === threshold would divide by zero. A flat map is the correct picture
-    // of flat data; NaN is a black screen with no explanation.
-    const flat = heatScale([1, 1, 1], 1);
-    expect(heatFraction(1, flat)).toBe(0);
-    expect(Number.isNaN(heatFraction(2, flat))).toBe(false);
+  it("keeps the degenerate guard, though the fixed scale cannot reach it", () => {
+    // `max === threshold` divides by zero, and NaN is a black screen with no
+    // explanation. `fixedScale` can no longer produce that — the cap is always
+    // above any sane threshold — but `heatFraction` is exported and takes a
+    // `HeatScale` from anywhere, so the guard stays and stays tested.
+    const degenerate = { threshold: 1, max: 1 };
+    expect(heatFraction(1, degenerate)).toBe(0);
+    expect(Number.isNaN(heatFraction(2, degenerate))).toBe(false);
   });
 });
 
 describe("colours", () => {
-  const scale = heatScale([100], 1);
+  const scale = fixedScale(1);
 
   it("runs from the dark end to the bright end", () => {
     const low = heatColour(1.01, scale);
@@ -106,9 +172,12 @@ describe("describeScale", () => {
   it("states the numbers behind the picture", () => {
     // Without this the demo answers "does it look plausible?" rather than "is 1
     // really the identity here?", and only the second is worth a session.
-    const text = describeScale(heatScale([35], 1));
+    const text = describeScale(fixedScale(1));
     expect(text).toContain("1");
-    expect(text).toContain("35");
+    // The cap, and the fact that it IS a cap — a reader who does not know the
+    // top is fixed will misread a field of saturated cells as a flat field.
+    expect(text).toContain("1e4");
+    expect(text).toMatch(/FIXED/);
     expect(text).toMatch(/identity/);
   });
 
@@ -127,7 +196,7 @@ describe("abbreviating the tail (DEC-R6b-6)", () => {
    * by a very long number: a screenshot showed `walkable 1 … 27992463056732.17`.
    * That is not an outlier — the score is a PRODUCT of rule factors and products
    * compound, so round 6's corpus measurement found `walkable` at Cologne
-   * spanning twelve orders of magnitude (p99 = 8.1e6, max = 1.4e12).
+   * spanning eleven orders of magnitude (p99 = 8.1e6, max = 1.7e11).
    *
    * A full-precision decimal is the wrong presentation for that quantity at
    * almost any position, so above 1e4 the legend switches to exponential.
@@ -211,14 +280,14 @@ describe("a non-positive threshold from the rule table", () => {
    * A single bad sheet edit would blank the entire map.
    */
   it("does not produce NaN for threshold 0", () => {
-    const scale = heatScale([10, 35], 0);
+    const scale = fixedScale(0);
     expect(Number.isNaN(heatFraction(10, scale))).toBe(false);
     expect(toHex(heatColour(10, scale))).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("does not produce NaN for a negative threshold", () => {
     // `Math.log` of a negative is NaN, which poisons the span directly.
-    const scale = heatScale([10, 35], -5);
+    const scale = fixedScale(-5);
     expect(Number.isNaN(heatFraction(10, scale))).toBe(false);
     expect(toHex(heatColour(10, scale))).toMatch(/^#[0-9a-f]{6}$/);
   });
@@ -227,7 +296,7 @@ describe("a non-positive threshold from the rule table", () => {
     // Degrading to the bottom of the ramp is a defensible answer for a
     // degenerate scale; an invalid fill string is not, because Leaflet drops
     // the path entirely and the map looks like there is no data.
-    const scale = heatScale([1, 10, 100], 0);
+    const scale = fixedScale(0);
     for (const score of [1, 10, 100]) {
       expect(toHex(heatColour(score, scale))).toMatch(/^#[0-9a-f]{6}$/);
     }

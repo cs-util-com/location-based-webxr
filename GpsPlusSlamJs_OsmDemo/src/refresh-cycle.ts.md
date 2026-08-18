@@ -62,3 +62,34 @@ subscribe(
 ## Tests
 
 `refresh-cycle.test.ts`, against a fake pipeline and a real store — the phase sequence is observable _during_ the fetch (two independent witnesses); intent is read at call time, not captured; overlapping refreshes coalesce to the most recent intent; a data failure clears the snapshot and reports the message; a thrown non-`Error` still reports; the next successful refresh recovers; and `renderSafely` reports a view failure **without** discarding the snapshot, does not touch the store on success, and lets one failing view fail without stopping the next.
+
+## `onTimings` — the nine-stage breakdown
+
+Added 2026-08-11 (click-path plan, milestone 3). The cycle measures the two
+page-side stages and hands the composed breakdown to a callback.
+
+- **`roundTripMs`** around `worker.call` and **`drawMs`** around the
+  `onMesh` + dispatch pair — both clocked wholly on this side. The worker
+  reports its own total, clocked wholly on that side, and `click-timings.ts`
+  derives the clone cost from the difference. **Never a timestamp
+  subtraction across the boundary**: a dedicated worker has its own
+  `performance.timeOrigin`.
+- **`drawMs` covers both the mesh hand-over and the dispatch**, because the
+  ordering rule above makes them one indivisible step from the user's point of
+  view — the frame the user sees is the one after the pair.
+- **Reported after the publish**, so measuring never delays what the user is
+  waiting for.
+- **A callback, not a `console.info`.** This module is tested without a DOM and
+  without a worker; a cycle that printed for itself could not be asserted on.
+  `main.ts` wires it to the console, as it already does for `GeoEventStats`.
+- **Always computed, even with no listener.** A breakdown that only exists when
+  someone is watching is one that is broken when they start watching. The
+  composition therefore happens on its own line and only its DELIVERY is
+  optional — `onTimings?.(composeClickTimings(…))` would short-circuit the whole
+  call expression and compute nothing, which is the opposite of this claim.
+- **The click clock opens BEFORE the `fetchStarted` dispatch.** A synchronous
+  store dispatch with subscriber renders behind it is a real page-side stage,
+  and `pageResidualMs` is the only clock in the instrument that can see page
+  time at all — the per-ring algebra cancels it. Opened after the dispatch, as
+  it was until the r504 review, that stage was unmeasurable everywhere while
+  three documents claimed it was covered.

@@ -40,6 +40,12 @@ const anyAction = fc.oneof(
       lng: fc.double({ min: -180, max: 180, noNaN: true }),
     })
     .map((p) => actions.positionChanged(p)),
+  fc
+    .record({
+      lat: fc.double({ min: -85, max: 85, noNaN: true }),
+      lng: fc.double({ min: -180, max: 180, noNaN: true }),
+    })
+    .map((p) => actions.placeChanged(p)),
   fc.string().map((c) => actions.categoryChanged(c)),
   fc.boolean().map((b) => actions.showBelowThresholdChanged(b)),
   fc
@@ -136,6 +142,54 @@ describe('createOsmViewSlice invariants', () => {
     );
   });
 
+  it('a DECLARED place change ALWAYS clears the snapshot and the geo-event', () => {
+    // The counterweight to the invariant above, and the pair is the point
+    // (DEC-R12-8, DEC-R12-10). Whatever sequence got the state here, saying "I
+    // am somewhere else" must leave nothing on screen that describes where the
+    // user was — the scene the session watched persist for 20-30 s, and the
+    // geo-event whose bearing now points across an ocean.
+    fc.assert(
+      fc.property(
+        anySequence,
+        fc.record({
+          lat: fc.double({ min: -85, max: 85, noNaN: true }),
+          lng: fc.double({ min: -180, max: 180, noNaN: true }),
+        }),
+        (sequence, position) => {
+          const after = reducer(
+            stateAfter(sequence),
+            actions.placeChanged(position)
+          );
+          expect(after.snapshot).toBeUndefined();
+          expect(after.geoEvent).toBeUndefined();
+          expect(after.selectedCell).toBeUndefined();
+        }
+      )
+    );
+  });
+
+  it('a DECLARED place change leaves the PRESENTATION untouched, from any reachable state', () => {
+    // The other half of what makes this a place change rather than a reset: how
+    // the user is looking does not change because they went somewhere else.
+    fc.assert(
+      fc.property(
+        anySequence,
+        fc.record({
+          lat: fc.double({ min: -85, max: 85, noNaN: true }),
+          lng: fc.double({ min: -180, max: 180, noNaN: true }),
+        }),
+        (sequence, position) => {
+          const before = stateAfter(sequence);
+          const after = reducer(before, actions.placeChanged(position));
+          expect(after.category).toBe(before.category);
+          expect(after.groundMode).toBe(before.groundMode);
+          expect(after.layers).toBe(before.layers);
+          expect(after.showBelowThreshold).toBe(before.showBelowThreshold);
+        }
+      )
+    );
+  });
+
   it('every reachable state survives a JSON round-trip', () => {
     // RTK's default middleware throws on non-serialisable state in development,
     // and the store is persisted/devtools-inspected in the consumer. A Map, a
@@ -151,12 +205,21 @@ describe('createOsmViewSlice invariants', () => {
   it('position and category only ever change through their own actions', () => {
     // Guards against a future action quietly resetting the view — the kind of
     // coupling a store is supposed to remove, not introduce.
+    //
+    // TWO ACTIONS WRITE THE POSITION since DEC-R12-8, so the invariant is about
+    // the last of EITHER rather than the last `positionChanged`. Naming only one
+    // of them would let the other set the position unobserved, which is the
+    // coupling this test exists to catch.
+    const POSITION_WRITERS = new Set<string>([
+      actions.positionChanged.type,
+      actions.placeChanged.type,
+    ]);
     fc.assert(
       fc.property(anySequence, (sequence) => {
         const state = stateAfter(sequence);
         const lastPosition = [...sequence]
           .reverse()
-          .find((a) => a.type === actions.positionChanged.type);
+          .find((a) => POSITION_WRITERS.has(a.type));
         const lastCategory = [...sequence]
           .reverse()
           .find((a) => a.type === actions.categoryChanged.type);

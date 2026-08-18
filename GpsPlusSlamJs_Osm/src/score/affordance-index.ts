@@ -38,7 +38,7 @@ import {
   cellToBoundary,
   cellToChildren,
   cellToParent,
-  gridDisk,
+  gridDistance,
   latLngToCell,
 } from "h3-js";
 
@@ -310,6 +310,25 @@ export class AffordanceIndex {
      * comment rather than measured.
      */
     scoresByCellBuilds: 0,
+    /**
+     * Cells `coverCells` produced, BEFORE the per-chunk filter throws most away.
+     *
+     * **THE INPUT SIDE OF THE FUNNEL, and nothing could see it** (r514 review).
+     * Every other number here counts what was KEPT, and kept cells are capped
+     * at `chunks x 49` by construction — `distribute` files a cell only if
+     * `cellToChunk` has it. So the cost of covering a feature against the
+     * batch's whole bounding box was invisible: delete the `clipToBbox` in
+     * `scoreChunks` and every existing assertion still passes, with the suite
+     * grinding as the only signal.
+     *
+     * That made the one claim `oversize-feature-guard.test.ts` exists for — the
+     * clip is what keeps a continental feature affordable — the one thing it
+     * could not pin. With this it is a direct assertion instead of a
+     * replicated-geometry argument.
+     *
+     * Cumulative over the index's life, like its neighbours here.
+     */
+    cellsCovered: 0,
   };
 
   constructor(options: AffordanceIndexOptions) {
@@ -725,7 +744,26 @@ export class AffordanceIndex {
     return true;
   }
 
-  /** Features currently merged in, for callers that need the raw data. */
+  /**
+   * Features currently merged in, for callers that need the raw data.
+   *
+   * **This is what decision 12.4 asks for, and it already existed.** The spatial
+   * index needs exactly the set this class maintains: tiles overlap,
+   * `mergeTiles` resolves them, and at 14–55 MB resident a second merged copy is
+   * not affordable on a phone. Reading this one also inherits `acceptTile`'s
+   * merge and invalidation, so the two consumers cannot drift apart about what
+   * is loaded.
+   *
+   * **NOT A LIVE VIEW — a snapshot whose identity changes.** `acceptTile`
+   * replaces the whole map rather than mutating it, so a caller that holds the
+   * returned reference keeps the world as of its call and then serves stale data
+   * silently, with no error to notice. Re-read after every `acceptTile`; the
+   * chunk list that call returns is the signal something changed.
+   *
+   * **Returned uncopied and must be treated as read-only.** `ReadonlyMap` says
+   * so in the type; copying instead would reintroduce the second copy this
+   * accessor exists to avoid.
+   */
   mergedFeatures(): ReadonlyMap<OsmFeatureKey, OsmFeature> {
     return this.features;
   }
@@ -810,12 +848,36 @@ export class AffordanceIndex {
    * per-chunk one. `affordance-index.test.ts` pins this by scoring the same
    * chunks in differently-composed batches and comparing.
    *
-   * The TWO-STAGE FUNNEL is unchanged, exactly as the reference queries its
-   * quadtree: a cheap bbox test over EVERY feature, then the expensive work
-   * only for survivors. The bbox comes from the raw inline positions, so a
-   * feature the user will never walk near is never ring-stitched, never
-   * classified area-vs-line and never converted at all. That matters at res 7:
-   * a fetch tile holds ~21,800 features and a working set needs a handful.
+   * The TWO-STAGE FUNNEL is unchanged: a cheap bbox test over EVERY feature,
+   * then the expensive work only for survivors. The bbox comes from the raw
+   * inline positions, so a feature the user will never walk near is never
+   * ring-stitched, never classified area-vs-line and never converted at all.
+   * That matters at res 7: a fetch tile is estimated at **~40,000–116,000
+   * features** and a working set needs a handful.
+   *
+   * ⚠️ **THIS IS A LINEAR SWEEP, AND THIS COMMENT USED TO SAY IT WAS "exactly
+   * as the reference queries its quadtree".** It is not: a quadtree does not
+   * visit every feature, and there is no tree here — every merged feature of
+   * every held tile is bbox-tested on every scoring pass, and tiles are never
+   * evicted, so the sweep grows for the whole session. The claim was the
+   * sentence most likely to convince a reader that an index already exists.
+   *
+   * The sweep is defensible on cost — measured at ~1.1 ms across a res-7 tile's
+   * features, so a tree "saves ~1 ms per move"
+   * (`GpsPlusSlamJs_Docs/docs/2026-07-31-1005-osm-spatial-index-design.md` §1) —
+   * and NOT defensible on capability: the same doc reframes the index as a
+   * requirement for AR frame-loop queries, which this shape cannot answer at
+   * all. That index was planned to ship (`…2026-08-10-0634-osm-spatial-index-build-plan.md`
+   * §1: "`flatbush` ships, as a real `dependencies` entry"); the supporting
+   * modules landed and the index did not, so `package.json` still has no
+   * `dependencies` block. See
+   * `GpsPlusSlamJs_Docs/docs/2026-08-13-2305-osm-spatial-structure-review-findings.md`.
+   *
+   * The ~21,800 this used to quote is RETRACTED (2026-08-09) — see
+   * `resolutions.ts` FETCH_RES, which withdraws the 21,847-element figure, and
+   * `GpsPlusSlamJs_Docs/docs/2026-08-09-1728-osm-spatial-index-build-cost-plan.md`
+   * §14.4 for the three methods that bracket the replacement. The bracket is an
+   * ESTIMATE: no fixture contains a full res-7 tile.
    */
   private scoreChunks(
     targets: readonly string[],
@@ -839,7 +901,13 @@ export class AffordanceIndex {
       const clipped = clipToBbox(cached.geometry, selection);
       if (clipped === undefined) continue;
 
-      distribute(clipped, key, feature, cellToChunk, buckets);
+      this.stats.cellsCovered += distribute(
+        clipped,
+        key,
+        feature,
+        cellToChunk,
+        buckets,
+      );
     }
 
     for (const target of targets) {
@@ -992,6 +1060,10 @@ export class AffordanceIndex {
  * whole rectangle, and only the cells belonging to a chunk being scored are
  * wanted. A feature lands in `kept` for a chunk only if it actually reached one
  * of that chunk's cells, which is what keeps `ScoredChunk.tiles` per-chunk.
+ *
+ * **Returns how many cells the cover produced**, i.e. the count BEFORE that
+ * drop. See `stats.cellsCovered`: the gap between this and what survives is the
+ * price of clipping to a bounding box, and it was previously unobservable.
  */
 function distribute(
   geometry: OsmGeometry,
@@ -999,8 +1071,10 @@ function distribute(
   feature: OsmFeature,
   cellToChunk: ReadonlyMap<string, string>,
   buckets: ReadonlyMap<string, ChunkBucket>,
-): void {
+): number {
+  let covered = 0;
   for (const coverage of coverCells(geometry, AFFORDANCE_RES)) {
+    covered += 1;
     const owner = cellToChunk.get(coverage.cell);
     if (owner === undefined) continue;
     const bucket = buckets.get(owner);
@@ -1012,6 +1086,7 @@ function distribute(
     else cell.push(entry);
     bucket.kept.set(key, feature);
   }
+  return covered;
 }
 
 /** One chunk's collected coverage, before it is scored. */
@@ -1041,12 +1116,40 @@ function planBatch(targets: readonly string[]): {
 } {
   const cellToChunk = new Map<string, string>();
   const buckets = new Map<string, ChunkBucket>();
-  let bounds: Bbox | undefined;
 
   for (const target of targets) {
     for (const cell of childCells(target)) cellToChunk.set(cell, target);
     buckets.set(target, { byCell: new Map(), kept: new Map() });
-    const padded = padBbox(chunkBbox(target), CHUNK_MARGIN_DEG);
+  }
+
+  return { cellToChunk, buckets, selection: selectionBoxFor(targets) };
+}
+
+/**
+ * The box a batch of chunks is clipped and selected against.
+ *
+ * **EXPORTED SO A TEST CAN ASK THE REAL QUESTION** (r514 review).
+ * `oversize-feature-guard.test.ts` asserts that this box stays ~1.8x the area
+ * of the chunks inside it — the claim that the union-padding is amortised, and
+ * the reason a feature larger than the batch stays affordable. It had a private
+ * COPY of this loop and of {@link CHUNK_MARGIN_DEG}, so the one production knob
+ * the assertion exists to guard was the one it could not see: raising the margin
+ * would grow the real box while the test kept measuring 0.0005 and passing.
+ *
+ * **The margin itself stays module-private.** Exporting it was the cheaper half
+ * of the same fix and is redundant once this function exists — the test needs
+ * the box, not the constant — and `check:deadcode` refuses the unused export,
+ * which is the right answer.
+ *
+ * The union is a BOUNDING BOX, not a union of shapes, which is why the cost of
+ * a batch grows with its SPREAD rather than with its chunk count. That is
+ * harmless for the compact disc `update` passes and is an open question for the
+ * scattered set `ensureScored` can receive — see the test's header.
+ */
+export function selectionBoxFor(chunks: readonly string[]): Bbox {
+  let bounds: Bbox | undefined;
+  for (const chunk of chunks) {
+    const padded = padBbox(chunkBbox(chunk), CHUNK_MARGIN_DEG);
     bounds =
       bounds === undefined
         ? padded
@@ -1059,9 +1162,9 @@ function planBatch(targets: readonly string[]): {
   }
 
   if (bounds === undefined) {
-    throw new Error("planBatch needs at least one chunk");
+    throw new Error("selectionBoxFor needs at least one chunk");
   }
-  return { cellToChunk, buckets, selection: bounds };
+  return bounds;
 }
 
 /**
@@ -1076,8 +1179,11 @@ function planBatch(targets: readonly string[]): {
  * derived from it.
  *
  * The memoisation bought nothing worth that: measured at **9.1 µs per call**,
- * against a `scoreChunk` that bbox-tests every one of a tile's ~21,800 features
- * in the same pass. The result is also used only as a membership `Set` inside a
+ * against a `scoreChunk` that bbox-tests every one of a tile's features in the
+ * same pass — an estimated ~40,000–116,000 of them, the ~21,800 once quoted
+ * here being retracted (see `scoreChunks`). The comparison is unaffected: the
+ * bbox sweep is the larger term at either count.
+ * The result is also used only as a membership `Set` inside a
  * single `scoreChunk` call, so it has no reason to outlive it.
  *
  * Note `cellToChildren` is an INDEX partition, not a geometric one — a child can
@@ -1112,13 +1218,33 @@ function* rawPositions(feature: OsmFeature): Generator<LatLng> {
   }
 }
 
-/** How many grid steps apart two cells of the same resolution are, capped. */
+/**
+ * How many grid steps apart two cells of the same resolution are.
+ *
+ * **CORRECTED FROM a `gridDisk` ring scan that SATURATED** (2026-08-10). It
+ * looped `ring <= SCORE_DISK_RADIUS + 1` and returned a constant for anything
+ * further, so every chunk past ring 3 compared EQUAL. `evictBeyond` sorts by
+ * this; ties are stable and its candidate array is `Map` insertion order, so
+ * "furthest-first" silently degraded to **oldest-first past ~198 m** — the
+ * opposite of what its docstring promises, and worst exactly where the promise
+ * matters. Reported from London as heat-map cells clearing right after a short
+ * jump: the ground just walked away from is the oldest, so it went first while
+ * chunks five to twenty times further away stayed.
+ *
+ * `gridDistance` is exact and has no cap. It **throws** for cells whose
+ * relationship H3 cannot express in its local IJ coordinates — across a
+ * pentagon, or very far apart — and the honest answer there is "further than
+ * anything measurable", so a failure sorts to the front of the eviction queue
+ * rather than being silently treated as adjacent. `cell-coverage.ts` catches
+ * around `gridPathCells` for the same reason.
+ */
 function ringDistance(from: string, to: string): number {
   if (from === to) return 0;
-  for (let ring = 1; ring <= SCORE_DISK_RADIUS + 1; ring++) {
-    if (gridDisk(from, ring).includes(to)) return ring;
+  try {
+    return gridDistance(from, to);
+  } catch {
+    return Number.POSITIVE_INFINITY;
   }
-  return SCORE_DISK_RADIUS + 2;
 }
 
 function cellBbox(cell: string): Bbox {
@@ -1136,7 +1262,12 @@ function cellBbox(cell: string): Bbox {
  * The cache this replaces was module-level and unbounded, growing per chunk
  * while `evictBeyond` dropped the chunks themselves. Measured cost of the call
  * it avoided: **2.55 µs**. Its hottest caller is `acceptTile`, which runs it
- * once per held chunk — at most 256 — behind a network fetch measured at 18 s.
+ * once per held chunk — bounded by {@link DEFAULT_MAX_CHUNKS} — behind a
+ * network fetch measured in tens of seconds.
+ *
+ * The bound is named rather than written out because it is DERIVED. This
+ * comment said "at most 256" until 2026-08-11, which was the hard-coded cap W7
+ * replaced precisely because a widened scored disk left it thrashing.
  */
 function chunkBbox(chunk: string): Bbox {
   return cellBbox(chunk);

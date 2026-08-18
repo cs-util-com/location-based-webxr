@@ -19,6 +19,12 @@
     or partially filtered runs); its test count sums the count-bearing
     stages.
   - Timing/recording failures are warnings; they never change the exit code.
+  - **A stage may also fail the gate on wall clock** — see
+    [budget.mjs](budget.mjs.md). Two ordering rules matter here: the budget is
+    checked AFTER the stage's own pass/fail (so a red stage reports its own
+    failure, not a budget message about work that never finished), and
+    `process.env` is passed through, because the ceiling is a same-machine
+    median and CI records none of its own.
 - Examples: `pnpm test` inside `GpsPlusSlamJs_AppFramework/` → runs format →
   lint → typecheck → typecheck:tests → test:unit, then prints the table.
 - Tests: `chain-guard.test.mjs` covers the drift warnings;

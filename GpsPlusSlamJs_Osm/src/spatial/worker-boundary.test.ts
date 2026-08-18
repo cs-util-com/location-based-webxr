@@ -13,7 +13,7 @@
  *
  * So a type can pass a JSON test and break in a worker, or pass a clone test and
  * break in the blob store. Both boundaries are real here — the worker for
- * parsing 28 MB tiles off the render thread, the store for caching scored
+ * parsing ~21 MB tiles off the render thread, the store for caching scored
  * chunks — so both are asserted, and where they disagree the test says which
  * one the type is allowed to fail.
  *

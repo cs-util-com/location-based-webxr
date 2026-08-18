@@ -25,7 +25,11 @@ import {
 } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
 
 import type { CellMesh } from "./cell-mesh.js";
-import type { GroundAppearance, GroundStrategy } from "./ground-mode.js";
+import {
+  groundIsOrderable,
+  type GroundAppearance,
+  type GroundStrategy,
+} from "./ground-mode.js";
 import { TERRAIN_EXTENT_M, type Heightfield } from "./heightfield.js";
 import { heightRampColours } from "./height-ramp.js";
 import {
@@ -33,14 +37,24 @@ import {
   cellPreset,
   type CellPreset,
 } from "./cell-presets.js";
+import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
+import { SceneContent, type ContentFrame } from "./scene-content.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
 import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { RENDER_ORDER } from "./layer-order.js";
-import { resolvePick, type Pick } from "./pick.js";
+import {
+  followerAt,
+  followerSettled,
+  stepFollower,
+  type Follower,
+} from "./agent-follower.js";
+import { isPickGesture, type PointerOrigin } from "./pick-gesture.js";
+import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
+import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
 import { DEFAULT_TIME_OF_DAY, sunAt } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
@@ -73,17 +87,12 @@ export type GroundDisplacement = GroundStrategy;
  */
 export const TERRAIN_SPACING_M = 12;
 
-/**
- * How much of the score colour is added back as emissive on the cells (DEC-S1).
- *
- * TUNED BY LOOKING, which is the only way this could have been settled. At 0
- * the grid read visibly darker than the same cells on the 2D map beside it — the
- * diffuse term dimming the data. At 0.85 the value matched and the rim bevel
- * vanished, because emissive is unlit and a large constant flattens exactly the
- * shading the bevel exists to create. 0.5 is the point where the grid reads at
- * roughly the map's value and the facets are still there.
+/*
+ * `CELL_EMISSIVE_INTENSITY` moved to `cell-materials.ts` with the shader patch
+ * that reads it. Its tuning note went with it: at 0 the grid read visibly
+ * darker than the same cells on the 2D map, at 0.85 the rim bevel vanished, and
+ * 0.5 is where the value matches and the facets survive (DEC-S1).
  */
-const CELL_EMISSIVE_INTENSITY = 0.5;
 
 /**
  * How far the camera can see, metres (W21, R4-16; W5, R5-4, DEC-R5-3).
@@ -219,6 +228,29 @@ export const GROUND_SEGMENTS = Math.min(
   Math.round((TERRAIN_EXTENT_M * 2) / TERRAIN_SPACING_M),
 );
 
+/**
+ * The route polyline and the agent share ONE colour, and that is the point.
+ *
+ * They are two halves of the same answer — the plan and the thing executing it —
+ * so a second colour would invite reading them as unrelated. Orange because
+ * nothing else in this scene is: the affordance ramp owns the red-to-green axis
+ * (DEC-R4-5 requires it to stay the loudest thing on screen), buildings are
+ * class-coloured pastels, and roads are grey.
+ */
+const ROUTE_COLOUR = 0xff7a1a;
+
+/**
+ * The agent's size, in metres.
+ *
+ * VISIBLE AT CITY SCALE rather than human-sized. The camera looks at a 2.4 km
+ * scene from ~200 m up; a 1.8 m figure is sub-pixel there, and an agent nobody
+ * can find is the same as no agent. 4 m is roughly a storey — big enough to
+ * follow, small enough to read as standing on the ground rather than looming
+ * over it.
+ */
+const AGENT_HEIGHT_M = 4;
+const AGENT_RADIUS_M = 1.2;
+
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
   /**
@@ -230,11 +262,41 @@ export interface BuildingViewOptions {
    * silently selects the cell behind it as though it had been chosen.
    */
   readonly onPick?: (pick: Pick) => void;
+  /**
+   * Called whenever the camera moves, with where it is looking (DEC-R13-7).
+   *
+   * THE VIEW REPORTS, THE PAGE DECIDES. Debouncing and writing the URL are
+   * `main.ts`'s business — this fires on every `MapControls` change, which is
+   * once per drag frame, and a view that throttled on its caller's behalf would
+   * be guessing at a policy it cannot see.
+   */
+  readonly onCameraMove?: (view: CameraView) => void;
+}
+
+/** Where the camera is aimed, in scene coordinates, and from how far. */
+export interface CameraView {
+  readonly target: ScenePoint;
+  readonly distanceM: number;
 }
 
 export class BuildingView {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
+  /**
+   * The map-derived content, as one subtree with a swappable parent.
+   *
+   * **THE AR SEAM** (plan milestone 0). Everything geographic hangs off this —
+   * the drawn mesh layers, the res-13 cell mesh and outlines, the underground
+   * lines — so AR mode can move the lot under the framework's scene root with
+   * one call. Lights, the ground plane, the sun rig and the NPC stay on
+   * `this.scene` deliberately: AR supplies its own lighting, hides the ground,
+   * and does not render the agent.
+   *
+   * Attached to `this.scene` here, which is the desktop arrangement and is
+   * unchanged by the extraction. See `scene-content.ts` for why the subtree is
+   * named rather than left implicit.
+   */
+  private readonly content = new SceneContent(this.scene);
   private readonly camera: THREE.PerspectiveCamera;
   /**
    * Watches the CONTAINER, not the window (W1, finding R3-2).
@@ -267,6 +329,45 @@ export class BuildingView {
   private readonly sun: THREE.DirectionalLight;
   /** The pending rAF handle, so `dispose()` can cancel it. */
   private frame: number | undefined;
+  /** Whether the desktop view is hidden and not drawing — see {@link suspend}. */
+  private suspended = false;
+  /**
+   * Frames rendered since construction, published on the container (stage 4).
+   *
+   * The observable behind the e2e's "the scene goes quiet" assertion. See
+   * `requestFrame`, which is the only place it moves.
+   */
+  private frames = 0;
+  /** The planned route's polyline, replaced wholesale like the cell grid. */
+  private routeLine:
+    | THREE.Line<THREE.BufferGeometry, THREE.Material>
+    | undefined;
+  /** The agent itself — one marker, created on the first route (DEC-R11-15). */
+  private agent: THREE.Mesh<THREE.BufferGeometry, THREE.Material> | undefined;
+  /**
+   * The walk in progress: the path, when it started, and what to call at the end.
+   *
+   * HELD RATHER THAN CLOSED OVER, so a second order replaces the first instead
+   * of running two walks against one marker — and so `dispose()` can drop it.
+   */
+  /**
+   * The walk in progress: the exact path, when it began, and the BODY on it.
+   *
+   * `follower` is what the user actually sees (DEC-R13-3/4): the drawn polyline
+   * keeps showing the planner's own hex centres, while the agent moves as a mass
+   * accelerating towards a target that slides along them. `lastFrameAt` is held
+   * because the follower is integrated per elapsed second rather than per frame
+   * — a rAF-counted step would make the motion depend on the display's refresh
+   * rate, which is the failure `agent-follower.test.ts` pins directly.
+   */
+  private walk:
+    | {
+        path: readonly ScenePoint[];
+        startedAt: number;
+        lastFrameAt: number;
+        follower: Follower;
+      }
+    | undefined;
   /** The affordance grid, kept separate so `clear()` does not drop it. */
   private cellMesh: THREE.Mesh | undefined;
   /** The outline-treated cells' boundaries (W13). Lifecycle follows the grid. */
@@ -283,6 +384,8 @@ export class BuildingView {
   private readonly onPointerDown: (event: PointerEvent) => void;
   private readonly onPointerStart: (event: PointerEvent) => void;
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
+  /** The AR shell material while a session runs; see `setArShellMaterial`. */
+  private arShellMaterial: THREE.Material | undefined;
   /**
    * The scattering sky and the environment map derived from it (§1).
    *
@@ -452,7 +555,7 @@ export class BuildingView {
       FAR_PLANE_M,
     );
 
-    this.scene.add(this.group);
+    this.content.add(this.group);
     // Ambient LOWERED from 0.55. Ambient light is flat by definition — it adds the
     // same amount to every facet regardless of its normal — so it was actively
     // washing out the only cue that distinguishes one ground facet from the next.
@@ -560,6 +663,12 @@ export class BuildingView {
     // CHAINED onto the displacement hook rather than replacing it; see
     // `ground-slope-shader.ts` for why that is the failure worth guarding.
     installGroundSlope(this.groundMaterial, this.groundUniforms);
+    // WHAT MAKES A CLICK ON IT A DESTINATION (DEC-R11-17). The marker and the
+    // raycast membership are one fact rather than two that can disagree — the
+    // same pairing `regionId` and `poiInstances` already use. Setting one
+    // without the other is a silent no-op: the ray hits the plane, `resolvePick`
+    // cannot identify the hit, and the click reads as a dead control.
+    this.ground.userData["ground"] = true;
     this.scene.add(this.ground);
 
     // FAR PLANE 2400 m — 4000, then 1200, now 2400. See `FAR_PLANE_M` for why
@@ -608,12 +717,24 @@ export class BuildingView {
       // `PMREMGenerator.fromScene` on every drag — exactly the per-frame
       // main-thread cost DEC-R3-9's on-demand renderer exists to avoid.
       this.requestFrame();
+      // WHERE THE CAMERA IS LOOKING, reported raw (DEC-R13-7). The ninth session
+      // twice could not point at a finding — "wüsste ich nicht, wie ich dir das
+      // irgendwie sinnvoll als Testbereich nennen kann" — and this is the
+      // observable that fixes it. Unthrottled on purpose; see `onCameraMove`.
+      options.onCameraMove?.(this.cameraView());
     });
 
     // Picking on `pointerup` after a still pointer, not on `click`: MapControls
     // consumes drags, and a click at the end of a 200 px pan would otherwise
     // select whatever cell happened to be under the pointer when it stopped.
-    let downAt: { x: number; y: number } | undefined;
+    //
+    // WHETHER THE GESTURE COUNTS IS `pick-gesture.ts`'s CALL, not this file's
+    // (DEC-R13-8). This class needs a `WebGLRenderer`, so a guard written here
+    // is a guard the unit suite cannot reach — the same reason `pick.ts` holds
+    // the "what did you click" decision one step later in the chain. Note the
+    // ORIGIN IS CLEARED WHATEVER THE ANSWER, so a refused right-click cannot
+    // leave a stale press for the next release to measure against.
+    let downAt: PointerOrigin | undefined;
     // Held, like every other listener here, so `dispose()` can remove it. An
     // anonymous one outlives disposal and keeps the view reachable.
     this.onPointerStart = (event: PointerEvent): void => {
@@ -623,10 +744,7 @@ export class BuildingView {
     this.onPointerDown = (event: PointerEvent): void => {
       const from = downAt;
       downAt = undefined;
-      if (from === undefined) return;
-      const moved =
-        Math.abs(event.clientX - from.x) + Math.abs(event.clientY - from.y);
-      if (moved > 4) return;
+      if (!isPickGesture(from, event)) return;
       const picked = this.pick(event);
       if (picked !== undefined) options.onPick?.(picked);
     };
@@ -998,6 +1116,44 @@ export class BuildingView {
       // why picking got cheaper rather than more expensive.
       if (child.userData["poiInstances"] !== undefined) targets.push(child);
       if (child.userData["regionId"] !== undefined) targets.push(child);
+      // BUILDINGS JOINED IN STAGE 4, AS BLOCKERS (DEC-R11-17). They are still
+      // not selectable — `resolvePick` stops at the first one and never returns
+      // it — but they must be RAYCAST, because the whole point is that a click
+      // on a facade does not fall through to the ground behind it. Barriers
+      // extrude with them (DEC-R11-11), so a wall blocks the click for the same
+      // reason it blocks the agent.
+      //
+      // The cost is real and stated: this is the largest geometry in the scene
+      // and it is now in the picking set. It is bounded by W20's chunking —
+      // three tests bounding boxes before triangles, so most chunks are rejected
+      // on one box test.
+      if (child.userData["solid"] === true) targets.push(child);
+    }
+    // THE GROUND, AND THE REASON THE INVARIANT ABOVE HAD TO CHANGE. Ordering an
+    // agent needs a destination, and until stage 4 a click on open ground
+    // resolved to nothing at all: the affordance grid is off by default, so on
+    // the demo's own default view there was nothing in this list to hit.
+    //
+    // ONLY WHILE IT IS DRAWN **AND ONLY WHILE IT IS THE PLANE ON SCREEN**, and
+    // both halves are load-bearing rather than tidy.
+    //
+    // `visible` because three's raycaster does NOT skip invisible objects —
+    // `intersectObject` tests layers and nothing else — so without it the
+    // "none" mode would send the agent to a surface the user cannot see.
+    //
+    // `groundIsOrderable` because only the CPU path displaces the POSITION
+    // BUFFER, which is the only geometry the raycaster reads. `setTerrain`
+    // skips that displacement under `gpu` (the W23 A/B measures the two paths
+    // against each other), so the ray would meet a FLAT plane while the user
+    // looks at a shader-displaced one — and since `main.ts` names a lat/lng
+    // from the hit's `x` and `z`, the error is HORIZONTAL: roughly
+    // `relief / tan(elevation)` for an oblique click. Raised in review on #274.
+    //
+    // Together they are also what keeps region slabs selectable in 3D at all:
+    // the ground outranks a region (DEC-R11-21), so a plane that was always in
+    // this list would make that branch unreachable.
+    if (this.ground.visible && groundIsOrderable(this.displacement)) {
+      targets.push(this.ground);
     }
     if (targets.length === 0) return undefined;
     // Reduced to what the decision reads. `Intersection` nests `userData` under
@@ -1008,6 +1164,10 @@ export class BuildingView {
         distance: hit.distance,
         faceIndex: hit.faceIndex,
         instanceId: hit.instanceId,
+        // WHERE the ray met the object, flattened like the rest. Only the ground
+        // reads it, and `three`'s `point` is already in world space — which for
+        // this scene is the ENU-derived frame every other coordinate uses.
+        point: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
         userData: hit.object.userData,
       })),
       this.cellForTriangle,
@@ -1074,12 +1234,12 @@ export class BuildingView {
 
   renderCells(mesh: CellMesh): void {
     if (this.cellMesh !== undefined) {
-      this.scene.remove(this.cellMesh);
+      this.content.remove(this.cellMesh);
       disposeMesh(this.cellMesh);
       this.cellMesh = undefined;
     }
     if (this.cellOutlines !== undefined) {
-      this.scene.remove(this.cellOutlines);
+      this.content.remove(this.cellOutlines);
       this.cellOutlines.geometry.dispose();
       this.cellOutlines.material.dispose();
       this.cellOutlines = undefined;
@@ -1101,13 +1261,9 @@ export class BuildingView {
       );
       this.cellOutlines = new THREE.LineSegments(
         outlineGeometry,
-        new THREE.LineBasicMaterial({
-          vertexColors: true,
-          transparent: true,
-          opacity: 0.9,
-        }),
+        cellOutlineMaterial(),
       );
-      this.scene.add(this.cellOutlines);
+      this.content.add(this.cellOutlines);
     }
     this.cellForTriangle = mesh.cellForTriangle;
     if (mesh.indices.length === 0) {
@@ -1127,56 +1283,11 @@ export class BuildingView {
     geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     this.cellMesh = new THREE.Mesh(
       geometry,
-      // LIT SINCE DEC-S1/S2, and it was `MeshBasicMaterial` before. That choice
-      // was not an oversight — an unlit material draws the vertex colour and
-      // stops, so the score colour could not be dimmed by lighting and the
-      // picture could not lie about the analysis.
-      //
-      // WHAT MAKES LIGHTING SAFE HERE, and it is worth checking before anyone
-      // "restores" the old material: every cell is horizontal and coplanar with
-      // every other, there are no shadow maps (DEC-R4-6 deferred them), and the
-      // sun holds a fixed elevation while only its azimuth follows the camera.
-      // So the diffuse term is the SAME CONSTANT for every cell and stays
-      // constant as the camera orbits — the ramp is scaled, never reordered.
-      // What the lighting adds on top is the specular, which is the whole point.
-      //
-      // The rim normals from `cell-bevel.ts` deliberately break that flatness at
-      // the corners. That is decoration on the edge; the tile's face keeps its
-      // value, and the bevel is symmetric so no cell picks up a net tilt.
-      installCellEmissive(
-        new THREE.MeshStandardMaterial({
-          vertexColors: true,
-          // 0.8, UP FROM 0.55 (DEC-S1). The specular is exactly the part alpha
-          // eats, so at 0.55 the highlight this material exists for was 55 % of a
-          // highlight. Two costs were accepted with it: the ground beneath — the
-          // height ramp included, which is the default surface since DEC-R5-4 — is
-          // largely hidden where cells cover it, and the 2D map stays at 0.55, so
-          // "the same cell reads as the same strength of claim in both views" is
-          // no longer literally true. The overlap is a ~250 m disc on a 4.8 km
-          // plane, which is what makes the first cost bearable.
-          // FROM THE PRESET SINCE §3 (DEC-R6-9). 0.8 is the shipped default and
-          // stays the default; the other values are reachable by hotkey so the
-          // trade can be judged by looking rather than argued.
-          opacity: this.cellLook.opacity,
-          // Low, for a tight specular lobe — the same mechanism DEC-R2-1 chose for
-          // the ground, where it is 0.42.
-          roughness: 0.2,
-          metalness: 0,
-          side: THREE.DoubleSide,
-          // FOG IS AN AXIS (§3). It is a no-op today — the cells reach ~250 m and
-          // the haze starts at 1584 m — and stops being one after §6 widens the
-          // radius, which is exactly why DEC-R6-22 keeps the presets alive until
-          // then.
-          fog: this.cellLook.fog,
-          // TRANSPARENT ONLY WHEN IT HAS TO BE. A fully opaque preset that still
-          // declared `transparent: true` would keep paying the transparent
-          // render pass — no depth write, no early-z, sorted every frame — for
-          // nothing, which is exactly the +30 % the shiny-surfaces work measured
-          // and did not address.
-          transparent: this.cellLook.opacity < 1,
-          depthWrite: this.cellLook.opacity >= 1,
-        }),
-      ),
+      // The look, and every decision behind it, lives in `cell-materials.ts`.
+      // It moved there so a test can reach it without a `WebGLRenderer` — AR's
+      // "the content is still visible without an environment map" guard could
+      // not see the grid at all while this was inline (r508 review).
+      cellFaceMaterial(this.cellLook),
     );
     // THE LIFT (§3). Applied to the mesh rather than baked into the vertices,
     // so cycling it costs a transform instead of a worker republish.
@@ -1191,7 +1302,7 @@ export class BuildingView {
     // comparison, so the decision stays a pure function of the hits and can be
     // tested without a renderer.
     this.cellMesh.userData["cellGrid"] = true;
-    this.scene.add(this.cellMesh);
+    this.content.add(this.cellMesh);
     this.requestFrame();
   }
 
@@ -1292,12 +1403,84 @@ export class BuildingView {
    * touching a disposed WebGL context is a crash, not a leak — the same reason
    * the resize listener is held rather than passed inline.
    */
+  /**
+   * Stop drawing and hide the canvas, keeping everything else alive (M5).
+   *
+   * **HIDDEN BUT RESIDENT — the decision §3 records, not one this makes.** The
+   * GL context, the compiled programs, the uploaded geometry and every setting
+   * survive; only the loop and the visibility stop. Two live GL contexts on the
+   * phone is the accepted cost, and what buys it is an instant return to the
+   * map without rebuilding a 2.8 km mesh.
+   *
+   * **A PENDING FRAME IS CANCELLED, not merely un-scheduled.** `requestFrame`
+   * coalesces, so one callback can already be in flight when AR starts — and it
+   * would render the desktop scene once, on the frame after the session began,
+   * for nothing.
+   *
+   * Idempotent. Safe to call when no session ever started.
+   */
+  suspend(): void {
+    if (this.suspended) return;
+    this.suspended = true;
+    if (this.frame !== undefined) {
+      cancelAnimationFrame(this.frame);
+      this.frame = undefined;
+    }
+    // `visibility`, NOT `display`. A `display: none` canvas has a zero-sized
+    // box, and the `ResizeObserver` above would fire with 0×0 and resize the
+    // drawing buffer to nothing — so returning from AR would find a renderer
+    // sized for an element that had no size, which is a blank pane until
+    // something else happens to resize it.
+    this.container.style.visibility = "hidden";
+  }
+
+  /**
+   * Draw and show again. Idempotent, and safe without a prior `suspend()`.
+   *
+   * Schedules a frame explicitly: the scene is static and frames are on demand,
+   * so nothing else would repaint it and the pane would stay as it was when the
+   * session started — which, having been hidden, means blank.
+   */
+  resume(): void {
+    if (!this.suspended) return;
+    this.suspended = false;
+    this.container.style.visibility = "";
+    this.requestFrame();
+  }
+
   private requestFrame(): void {
+    // THE GUARD THAT MAKES `suspend` MEAN ANYTHING. Every one of the dozen
+    // `requestFrame()` call sites in this file is a path a suspended view can
+    // still be driven down — a terrain load landing, a snapshot publishing, a
+    // resize — so refusing here is the only place that covers them all.
+    if (this.suspended) return;
     if (this.frame !== undefined) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = undefined;
       this.controls.update();
+      // BEFORE THE RENDER, so this frame shows where the agent now is rather
+      // than where it was one frame ago.
+      const walking = this.advanceWalk();
       this.renderer.render(this.scene, this.camera);
+      // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
+      // The regression this stage carries is a reintroduced permanent render
+      // loop — measured at ~6x slower e2e with one test into a timeout — and
+      // "quiet" had no machine-readable definition before this: a screenshot
+      // comparison also passes for a scene that stopped drawing, and a sleep
+      // asserts nothing at all.
+      //
+      // A MONOTONIC COUNTER ON THE CONTAINER, which is the same `#scene`
+      // element `publishFrameState` writes `data-frame-origin` and
+      // `data-ground-centre` onto, and for the same stated reason: an attribute
+      // cannot be read before it is written by mistake. A test polls it, sees it
+      // rise while the agent walks, and — the assertion that matters — sees it
+      // STOP rising once the agent arrives.
+      //
+      // Written here rather than in `main.ts` because this is where frames
+      // actually happen; a counter published from anywhere else would be
+      // counting something adjacent to rendering rather than rendering.
+      this.frames += 1;
+      this.container.dataset["frames"] = String(this.frames);
       // Captured immediately after the render: three resets these counters at
       // the START of each render, so any later read would describe a frame that
       // has not happened yet.
@@ -1312,6 +1495,12 @@ export class BuildingView {
       // the camera is moving, which is exactly when the CPU and GPU ground paths
       // differ. The MB panel is meaningful throughout.
       this.perfStats?.update();
+      // THE ONLY THING IN THIS VIEW THAT SCHEDULES A FRAME FROM WITHIN A FRAME,
+      // and it stops on its own: `advanceWalk` returns false the moment the
+      // agent arrives. That is the whole of DEC-R11-15's accepted risk — a loop
+      // that did not stop is the measured ~6x e2e slowdown — and the e2e's
+      // second half asserts the stopping rather than the moving.
+      if (walking) this.requestFrame();
     });
   }
 
@@ -1342,7 +1531,7 @@ export class BuildingView {
    *
    * WHAT MOVED AND WHY. This method used to take the merged features and call
    * `buildBuildings`/`buildTrees` itself. Both now run in the worker, because the
-   * features are 28–68 MB and must not cross the boundary to be turned into
+   * features are ~21 MB and must not cross the boundary to be turned into
    * geometry that crosses back — the package's mesh output is `Float32Array`
    * precisely so the BUFFERS can transfer instead (`mesh/extrude.ts` says so).
    * The ENU frame anchoring and the terrain sampling moved with them.
@@ -1365,6 +1554,13 @@ export class BuildingView {
     // layer detectable, which the longhand form could not: see that file's header.
     const { objects, stats } = drawMeshLayers(mesh, layers, context);
     for (const object of objects) this.group.add(object);
+    // RE-APPLIED AFTER EVERY REBUILD. The objects above are brand new and carry
+    // the desktop material; without this a refetch mid-session would silently
+    // drop the AR look at whatever moment the user walked far enough to trigger
+    // one. Cheap and idempotent when no session is running.
+    if (this.arShellMaterial !== undefined) {
+      this.setArShellMaterial(this.arShellMaterial);
+    }
 
     // SCHEDULED, not rendered inline. A synchronous `renderer.render()` here does
     // put pixels in the drawing buffer, but with `antialias: true` that buffer is
@@ -1450,6 +1646,278 @@ export class BuildingView {
     this.requestFrame();
   }
 
+  /**
+   * Draws the planned route and sends the agent along it (DEC-R11-3/R11-15).
+   *
+   * THE POLYLINE IS ALWAYS DRAWN, which is the decision rather than a detail:
+   * seeing the route go _around_ the wall is the proof, and a line is a far
+   * better test artefact than a moving marker. The walk is the demonstration on
+   * top of it.
+   *
+   * ADDED TO `this.scene`, NOT TO `this.group`, for the same reason the
+   * affordance grid is kept out of the group: `clear()` empties the group on
+   * every mesh rebuild, and a
+   * route dropped by an unrelated republish would look like the agent had been
+   * cancelled. The scene's frame is fixed (round 5B), so a publish does not
+   * invalidate these coordinates — only a re-anchor does, and that calls
+   * {@link clearRoute}.
+   */
+  followRoute(path: readonly ScenePoint[]): void {
+    this.clearRoute();
+    const start = path[0];
+    if (start === undefined) return;
+
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(path.length * 3);
+    for (let i = 0; i < path.length; i += 1) {
+      const point = path[i]!;
+      positions[i * 3] = point.x;
+      positions[i * 3 + 1] = point.y;
+      positions[i * 3 + 2] = point.z;
+    }
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    this.routeLine = new THREE.Line(
+      geometry,
+      // DEPTH TEST OFF, and it is not decoration. The route is lifted one rung
+      // above the affordance ladder (`ROUTE_LIFT_M`), which keeps it off the
+      // ground — but a line crossing behind a building would still be occluded
+      // by it, and half a route is worse than none for the one thing this stage
+      // exists to show. The render order puts it last so it composites on top.
+      //
+      // **AND TRANSPARENT, WHICH IS WHAT MAKES `RENDER_ORDER.route` MEAN
+      // ANYTHING.** `WebGLRenderer` splits its render list into opaque and
+      // transparent and draws opaque FIRST; `renderOrder` only sorts WITHIN a
+      // list. An opaque material with a high rung therefore ranks above the
+      // translucent layers in the table and loses to them on screen — which is
+      // exactly the defect review on #256 found in the underground lines, and
+      // exactly what this line shipped with until review on #274. `areas`,
+      // `cells` and `underground` are all transparent; without this the route
+      // drew before all three and the `underground` diagnostic composited over
+      // it.
+      new THREE.LineBasicMaterial({
+        color: ROUTE_COLOUR,
+        depthTest: false,
+        transparent: true,
+      }),
+    );
+    this.routeLine.renderOrder = RENDER_ORDER.route;
+    this.scene.add(this.routeLine);
+
+    this.agent ??= this.makeAgent();
+    this.scene.add(this.agent);
+    const startedAt = performance.now();
+    // THE FOLLOWER STARTS ON THE PATH, not wherever the agent was standing. A
+    // new route always begins at the agent's own cell (`main.ts` plans from
+    // `agentAt()`), so seeding it here costs nothing and guarantees the first
+    // frame cannot show the body sprinting in from a stale position.
+    this.walk = {
+      path,
+      startedAt,
+      lastFrameAt: startedAt,
+      follower: followerAt(path[0]!),
+    };
+    this.publishRoute(path);
+    this.requestFrame();
+  }
+
+  /**
+   * Publishes the drawn route's SHAPE onto the container, for the e2e.
+   *
+   * WHY AN ATTRIBUTE AND NOT A SCREENSHOT. "The route went around something"
+   * needs a machine-readable definition, and a pixel comparison cannot supply
+   * one — the same argument `publishFrameState` makes in `main.ts`, and this
+   * follows its precedent deliberately rather than inventing a second channel.
+   *
+   * THE PAIR IS THE POINT: walked length AND the straight-line distance between
+   * the same two endpoints. Either number alone proves nothing — "the route is
+   * 180 m" is equally true of a detour and of a straight line to somewhere far
+   * away. Their RATIO is what separates "went around" from "went directly", and
+   * it is what lets a control click assert near-straightness without the test
+   * having to know where anything is in the world.
+   */
+  private publishRoute(path: readonly ScenePoint[]): void {
+    const first = path[0]!;
+    const last = path[path.length - 1]!;
+    const straight = Math.hypot(
+      last.x - first.x,
+      last.y - first.y,
+      last.z - first.z,
+    );
+    this.container.dataset["route"] =
+      `${path.length}:${Math.round(pathLengthM(path))}:${Math.round(straight)}`;
+  }
+
+  /**
+   * Takes the route and the agent down.
+   *
+   * Called on a RE-ANCHOR, which is the one event that invalidates these
+   * coordinates: every point is expressed in the scene's ENU frame, and a
+   * teleport re-takes that frame. An ordinary publish does not — the frame has
+   * been fixed since round 5B — so the route survives a walk across the map.
+   */
+  clearRoute(): void {
+    this.removeRoute();
+    this.requestFrame();
+  }
+
+  /**
+   * The teardown without the repaint.
+   *
+   * SPLIT OUT FOR `dispose()`, which cancels the pending frame FIRST and must
+   * not have one scheduled behind its back — an orphaned rAF callback touching a
+   * disposed GL context is a crash, not a leak, which is exactly why the handle
+   * is held in the first place.
+   */
+  private removeRoute(): void {
+    // The walk goes first, so nothing can advance an agent that is being
+    // removed. Ending it here is also what lets the render loop go quiet.
+    this.walk = undefined;
+    if (this.routeLine !== undefined) {
+      this.scene.remove(this.routeLine);
+      this.routeLine.geometry.dispose();
+      this.routeLine.material.dispose();
+      this.routeLine = undefined;
+    }
+    if (this.agent !== undefined) {
+      // REMOVED BUT NOT DISPOSED. The agent's geometry and material are built
+      // once and reused for every route; freeing them here would make the second
+      // route draw nothing at all, which three does not report as an error.
+      this.scene.remove(this.agent);
+    }
+    delete this.container.dataset["route"];
+    delete this.container.dataset["agent"];
+  }
+
+  /**
+   * Where the agent is standing, in scene coordinates, or `undefined`.
+   *
+   * **THE NEXT ORDER PLANS FROM HERE, NOT FROM THE USER** (raised in review on
+   * #274). `main.ts` read the user's position for both, so a second order
+   * without moving planned from the user again and `followRoute` snapped the
+   * cone back to the start before it began walking — the agent visibly
+   * teleported. One agent means the USER's position is only the agent's until
+   * the agent has been somewhere.
+   *
+   * `undefined` until the first route, and again after `clearRoute()` — which a
+   * re-anchor triggers, and after a teleport these coordinates would mean a
+   * different place anyway.
+   */
+  agentAt(): ScenePoint | undefined {
+    if (this.agent === undefined || this.agent.parent === null)
+      return undefined;
+    const { x, y, z } = this.agent.position;
+    // The cone's ORIGIN is its centre, so its stored `y` sits half a height
+    // above the route it walks. Undone here so a caller gets the point on the
+    // path rather than the middle of the marker.
+    return { x, y: y - AGENT_HEIGHT_M / 2, z };
+  }
+
+  /** Where the camera is aimed, and from how far away. */
+  cameraView(): CameraView {
+    const { target } = this.controls;
+    return {
+      target: { x: target.x, y: target.y, z: target.z },
+      distanceM: this.camera.position.distanceTo(target),
+    };
+  }
+
+  /**
+   * Aims the camera at `target` from `distanceM`, keeping its direction
+   * (DEC-R13-7, the read side).
+   *
+   * TRANSLATION THEN DOLLY, in that order and both relative — the same
+   * discipline `recentreOn` exists to enforce. Recomputing the camera from a
+   * distance and two angles would put the target in the right place and quietly
+   * re-derive the ORIENTATION, which is precisely the pose data DEC-R13-7 chose
+   * not to store: a restored link should look at the right place from the
+   * default angle, not from a guessed one.
+   */
+  lookAtFrom(target: ScenePoint, distanceM: number): void {
+    recentreOn(this.camera, this.controls, target);
+    const away = this.camera.position.clone().sub(this.controls.target);
+    const current = away.length();
+    // A degenerate offset has no direction to scale; leaving the camera where
+    // the recentre put it is better than dividing by zero into `NaN`.
+    if (current > 1e-6 && distanceM > 0) {
+      away.multiplyScalar(distanceM / current);
+      this.camera.position.copy(this.controls.target).add(away);
+      this.controls.update();
+    }
+    this.requestFrame();
+  }
+
+  /** The agent's marker: one cone, built once and reused across routes. */
+  private makeAgent(): THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
+    return new THREE.Mesh(
+      new THREE.ConeGeometry(AGENT_RADIUS_M, AGENT_HEIGHT_M, 10),
+      new THREE.MeshStandardMaterial({
+        color: ROUTE_COLOUR,
+        emissive: ROUTE_COLOUR,
+        // Self-lit enough to stay readable against a shadowed facade or a dark
+        // sun angle. The agent is the thing the user is watching; losing it to
+        // the time of day would read as it having stopped.
+        emissiveIntensity: 0.6,
+        roughness: 0.4,
+        metalness: 0,
+      }),
+    );
+  }
+
+  /**
+   * Moves the agent for this frame, and says whether it is still going.
+   *
+   * **THE RETURN VALUE IS THE FRAME-SCHEDULING CONTRACT** (DEC-R11-15). This
+   * view has no permanent rAF loop — one was measured making the e2e suite ~6x
+   * slower and pushing a test into a timeout — so the walk drives frames only
+   * while it is moving, and `false` here is what lets the scene go quiet again.
+   */
+  private advanceWalk(): boolean {
+    const walk = this.walk;
+    if (walk === undefined) return false;
+    const now = performance.now();
+    const walkedM = ((now - walk.startedAt) / 1000) * AGENT_SPEED_MPS;
+    const at = pointAlong(walk.path, walkedM);
+    if (at === undefined) {
+      this.walk = undefined;
+      return false;
+    }
+
+    // THE TARGET IS STILL THE EXACT PATH (DEC-R13-3). What changed in round 13
+    // is that the agent no longer IS the target: it accelerates towards it, so
+    // the staircase the planner produced stays visible in the drawn line and
+    // out of the motion. `agent-follower.ts` holds the physics and the property
+    // that keeps the smoothed curve inside the corridor the planner cleared.
+    walk.follower = stepFollower(
+      walk.follower,
+      at.point,
+      (now - walk.lastFrameAt) / 1000,
+    );
+    walk.lastFrameAt = now;
+    const shown = walk.follower.position;
+
+    // The path sits ON the ground; the cone's origin is its centre, so half its
+    // height puts its tip up and its base on the route rather than sunk in it.
+    this.agent?.position.set(shown.x, shown.y + AGENT_HEIGHT_M / 2, shown.z);
+    // Published for the e2e, in the family `data-frame-origin` started: without
+    // it, "the agent did not teleport back to the start on a second order" has
+    // no machine-readable definition. Whole metres — the assertion is about
+    // tens of metres of jump, and full precision would churn the attribute on
+    // every frame of the walk.
+    this.container.dataset["agent"] =
+      `${Math.round(shown.x)},${Math.round(shown.z)}`;
+    if (!at.done) return true;
+    // ARRIVAL IS BOTH HALVES NOW, and that is not a detail. The path is
+    // consumed a good two metres before the BODY gets there — that gap is the
+    // smoothing — so stopping on `at.done` alone would freeze the agent short
+    // of its destination and leave the drawn line ending somewhere it never
+    // reached. Keeping the frames coming until it settles is also what keeps
+    // DEC-R11-15's contract honest: `false` here still means "nothing is
+    // moving", which is the only thing that lets the scene go quiet.
+    if (!followerSettled(walk.follower, at.point)) return true;
+    this.walk = undefined;
+    return false;
+  }
+
   private clear(): void {
     for (const child of [...this.group.children]) {
       this.group.remove(child);
@@ -1483,6 +1951,102 @@ export class BuildingView {
     }
   }
 
+  /**
+   * Hand the map-derived content to another scene graph, or take it back.
+   *
+   * **The AR entry and exit point.** AR mode calls this with the framework's
+   * scene root and `"gps-world-nue"`; leaving AR calls it with
+   * {@link localRoot} and `"demo-scene"`.
+   *
+   * **THE FRAME ARGUMENT IS NOT OPTIONAL IN PRACTICE, and an earlier version of
+   * this docstring said the coordinates were "already in the right space".**
+   * They are not: the demo's scene is X=East, Y=Up, Z=−North; the GPS-world
+   * frame is NUE. Attaching without the conversion renders the city 90° off.
+   * `scene-content.ts` owns the mapping and pins it.
+   *
+   * REPARENTING, NOT REBUILDING. The subtree moves whole and keeps its
+   * children, so returning costs nothing — which is what makes the M5 decision
+   * (hide the desktop renderer rather than dispose it) cheap to honour.
+   *
+   * **What does NOT move:** the lights, the ground plane, the sun rig and the
+   * NPC. See `scene-content.ts` for why each stays.
+   */
+  /**
+   * Swap the building meshes to an AR shell material, or restore the desktop one.
+   *
+   * **HELD ON THE VIEW, NOT APPLIED ONCE.** A refresh while AR is running
+   * rebuilds every layer object from the worker payload, and a rebuilt mesh
+   * arrives with the desktop material — so a one-shot swap would silently revert
+   * the moment the user walked far enough to trigger a refetch. `render` re-applies
+   * from this field for exactly that reason.
+   *
+   * **THE BUILDING MESHES ARE IDENTIFIED BY THEIR GEOMETRY**, not by a marker:
+   * `aHeight01` is attached only to the buildings layer (owner decision — ground
+   * layers stay solid), so its presence *is* the membership test and there is no
+   * second thing to keep in sync.
+   *
+   * @param material the shell material, or `undefined` to restore.
+   */
+  setArShellMaterial(material: THREE.Material | undefined): void {
+    this.arShellMaterial = material;
+    this.group.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      // NARROWED EXPLICITLY: `THREE.Mesh`'s default generics leave `geometry`
+      // as `any`, which this package's lint bans — and an unchecked `any` here
+      // would silently accept a mesh with no geometry at all.
+      const geometry = object.geometry as THREE.BufferGeometry;
+      if (geometry.getAttribute("aHeight01") === undefined) return;
+      const original = object.userData["desktopMaterial"] as
+        | THREE.Material
+        | undefined;
+      if (material === undefined) {
+        // RESTORE ONLY IF WE SWAPPED IT. A mesh built after the swap already
+        // carries the desktop material, and overwriting it with `undefined`
+        // would leave a mesh with no material at all.
+        if (original !== undefined) {
+          object.material = original;
+          delete object.userData["desktopMaterial"];
+        }
+        return;
+      }
+      // The FIRST swap is the one that records the original; a second swap must
+      // not record the shell material as the thing to restore.
+      object.userData["desktopMaterial"] ??= object.material;
+      object.material = material;
+    });
+    this.requestFrame();
+  }
+
+  attachContentTo(
+    root: THREE.Object3D,
+    frame: ContentFrame,
+    /**
+     * Where this content's ENU origin sits in the target frame, in metres.
+     *
+     * Required in practice for AR: the city is authored about the demo's scene
+     * anchor and the GPS-world frame is about the framework's `zero`. See
+     * `scene-content.ts`.
+     */
+    originOffset?: {
+      readonly north: number;
+      readonly up: number;
+      readonly east: number;
+    },
+  ): void {
+    this.content.attachTo(root, frame, originOffset);
+  }
+
+  /**
+   * This view's own scene, so a caller that took the content can give it back.
+   *
+   * Exposed rather than remembered by the caller: the parent to restore is a
+   * property of this view, and a caller holding its own copy is a caller that
+   * can restore the wrong one.
+   */
+  get localRoot(): THREE.Object3D {
+    return this.scene;
+  }
+
   dispose(): void {
     // Cancelled FIRST: a frame already queued would otherwise fire against a
     // disposed context, which crashes rather than leaks.
@@ -1492,10 +2056,17 @@ export class BuildingView {
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
     this.containerResize.disconnect();
+    // DETACH BEFORE FREEING, and this only matters once AR has reparented the
+    // content: the framework's scene root outlives this view, so disposing
+    // without detaching leaves a subtree of freed geometry attached to a live
+    // scene. three.js does not report drawing a disposed geometry — the
+    // symptom is silent absence. On desktop this is a no-op in effect, because
+    // the root dies with `this.scene`.
+    this.content.detach();
     this.clear();
-    // `clear()` only walks `this.group`. The ground and the affordance grid are
-    // deliberately added straight to the scene — so that rebuilding the
-    // buildings cannot drop them — which also means nothing else ever frees
+    // `clear()` only walks `this.group`. The ground sits on the scene and the
+    // affordance grid on `this.content`, both OUTSIDE the group — so that
+    // rebuilding the buildings cannot drop them — which also means nothing frees
     // their GPU buffers. Missing these leaks a geometry and a material per
     // disposed view, and the whole point of holding the resize listener and the
     // rAF handle is that this method actually cleans up.
@@ -1518,6 +2089,14 @@ export class BuildingView {
     this.groundRampMaterial.dispose();
     this.heightTexture?.dispose();
     this.clearUnderground();
+    // The route and the agent live on the SCENE, like the grid and the ground,
+    // so `clear()` never sees them and nothing else would free their buffers.
+    // `clearRoute` removes the agent without disposing it — it is reused across
+    // routes — so the disposal has to happen here, once, at the end of the
+    // view's life.
+    this.removeRoute();
+    if (this.agent !== undefined) disposeMesh(this.agent);
+    this.agent = undefined;
     if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
     this.cellMesh = undefined;
     if (this.cellOutlines !== undefined) {
@@ -1624,55 +2203,10 @@ function installGroundDisplacement(
   material.needsUpdate = true;
 }
 
-/**
- * Routes the per-vertex score colour into EMISSIVE as well as diffuse.
- *
- * WHY A SHADER PATCH RATHER THAN A MATERIAL PROPERTY. `emissive` is a single
- * uniform `Color`; `vertexColors` modulates `diffuseColor` and nothing else. So
- * "emissive = the score colour" — which is what DEC-S1's whole argument rests on
- * — is not expressible as a material option. Setting `emissive` to white instead
- * would lift every cell towards white and wash the ramp out, which is the
- * opposite of the goal.
- *
- * WHY IT IS NEEDED AT ALL, discovered by looking rather than by reasoning. The
- * lit material dims the score colour by the diffuse term, and the first
- * screenshot showed the 3D cells reading visibly darker than the same cells on
- * the 2D map. The colour IS the data, so a uniform dimming is still a picture
- * that disagrees with the legend beside it. Adding the colour back as emissive
- * restores the value while leaving the specular — which is the whole point of
- * the lit material — untouched.
- *
- * THE RISK, NAMED. `onBeforeCompile` is the surface that took the entire scene
- * off screen for ten work items when `scene.environment` was set: three logs a
- * shader-compilation failure and then silently does not draw the material. This
- * patch is one additive line against `totalEmissiveRadiance`, which is a
- * `vec3` that exists in every lit fragment shader, and `installGroundDisplacement`
- * below establishes the same pattern. The e2e that counts cell pixels is what
- * catches it if that stops being true.
+/*
+ * `installCellEmissive` — the shader patch that routes the per-vertex score
+ * colour into EMISSIVE as well as diffuse — moved to `cell-materials.ts` with
+ * the material it patches (r508 review). It was unreachable from a test here,
+ * because the only path to it runs through `drawCells`, which needs a
+ * `WebGLRenderer`.
  */
-function installCellEmissive(
-  material: THREE.MeshStandardMaterial,
-): THREE.MeshStandardMaterial {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms["uCellEmissive"] = { value: CELL_EMISSIVE_INTENSITY };
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "#include <common>",
-        `#include <common>
-        uniform float uCellEmissive;`,
-      )
-      // AFTER the emissive chunk, so this adds to whatever it produced rather
-      // than being overwritten by it.
-      .replace(
-        "#include <emissivemap_fragment>",
-        `#include <emissivemap_fragment>
-        #ifdef USE_COLOR_ALPHA
-          totalEmissiveRadiance += vColor.rgb * uCellEmissive;
-        #endif`,
-      );
-  };
-  // Changing `onBeforeCompile` after a program exists needs this; harmless here
-  // because the material is new, and correct if this is ever reused.
-  material.needsUpdate = true;
-  return material;
-}

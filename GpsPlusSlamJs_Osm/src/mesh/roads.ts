@@ -28,6 +28,7 @@
 import type { LatLng, OsmFeature, OsmTags } from "../model/osm-feature.js";
 import { featureKey, type OsmFeatureKey } from "../model/osm-feature.js";
 import { parseLengthMetres } from "./building-heights.js";
+import { isBelowSurface } from "../model/below-surface.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { MeshBuilder, type MeshData } from "./mesh-data.js";
 
@@ -129,6 +130,92 @@ export function roadWidthM(tags: OsmTags): number {
     DEFAULT_LANES[highway] ??
     UNKNOWN_CLASS_LANES;
   return lanes * laneWidthM(lanes);
+}
+
+/**
+ * Whether this way is one a person walks ALONG — the path-ness signal routing
+ * needs (DEC-R2).
+ *
+ * **This is not the same question as the `walkable` score, and conflating them
+ * is what six documents of routing analysis got wrong.** `walkable` rates
+ * GROUND QUALITY: under "can a person walk on this surface", `surface=grass` 9
+ * outranking `highway=footway` 3 is correct, because a footway LINE carries no
+ * surface information of its own. Path-ness is a property of the way. A router
+ * that wants "prefer the paths" needs both, as separate multipliers.
+ *
+ * It also answers a case the score structurally cannot. Scoring is
+ * multiplicative with zero absorbing, so a footbridge sharing a res-13 cell with
+ * a river scores exactly 0 — indistinguishable from open water. The provenance
+ * map still records the footway as a contributor, so this predicate sees the
+ * bridge the score cannot.
+ *
+ * **Allowlist rather than a `highway` presence test**, and it is `PATH_WIDTH_M`'s
+ * key set by construction — one home for the list. A presence test would admit
+ * motorways, and the rule table already scores those 0 for good reason.
+ *
+ * Exclusions are {@link isRoad}'s, deliberately shared: two predicates
+ * disagreeing about one feature is a mistake this package has already had to fix.
+ */
+export function isPedestrianPath(feature: OsmFeature): boolean {
+  if (!isRoad(feature)) return false;
+  const tags = feature.tags as Record<string, string> | undefined;
+  const highway = tags?.["highway"];
+  // `noUncheckedIndexedAccess` makes the lookup `string | undefined`, and
+  // `undefined in PATH_WIDTH_M` is a type error rather than a false — narrow
+  // first. `isRoad` has already established the tag exists; the compiler cannot
+  // see that across the call.
+  return highway !== undefined && highway in PATH_WIDTH_M;
+}
+
+/**
+ * Whether this way is a ground-level crossing carried over something — the
+ * opener for a water bank (DEC-R1).
+ *
+ * **Three earlier formulations of this rule were refuted against real data, so
+ * each clause is here for a named way in `testdata/sites/london-tower-bridge.json`:**
+ *
+ * - **Any truthy `bridge`, not `bridge=yes`.** Tower Bridge's own bascule spans
+ *   are `bridge=movable` — 6 of the 14 ground-level ways at the site the rule
+ *   was written for. An exact match misses the bridge the place is named after.
+ * - **A `highway` is required.** Ways 367652753 / 367653917 are
+ *   `bridge=yes building:part=yes min_height=40`, closed areas carrying no way
+ *   at all. A bare `bridge=*` rule opens the bank along their whole outline,
+ *   from a structure 40 m overhead.
+ * - **`layer` must be ground level.** Ways 153173986 / 153173987 ARE
+ *   `highway=footway bridge=yes` — and sit at `layer=2`, 43 m up, behind a
+ *   turnstile. The highway clause alone admits them.
+ *   - Absent `layer` reads as ground level, because that is the tag's default
+ *     and most simple bridges carry none. Refusing the absent case would drop
+ *     the common bridge to save the rare mis-tagged one.
+ *
+ * - **BELOW THE SURFACE IS NOT A CROSSING**, and that is decided by the SHARED
+ *   {@link isBelowSurface} rather than by a bespoke test here. This rule used to
+ *   be `tunnel === "yes"` plus `level <= 1`, which admitted NEGATIVE layers --
+ *   so a `highway=* bridge=yes layer=-1` way counted as a ground-level deck and,
+ *   through `bridgeDeckLines` -> `addWater`, opened a passage corridor through a
+ *   river bank. It also missed `tunnel=culvert`, which `below-surface.ts` has
+ *   classified as sub-surface all along.
+ *   - The asymmetry was the tell (PR #315 review): `gateOpenings` vetoes a
+ *     below-surface gate node and `canCorroborate` vetoes a below-surface way,
+ *     while this -- the third sibling rule in the same package -- did not. One
+ *     definition now serves all three.
+ */
+export function isBridgeCrossing(feature: OsmFeature): boolean {
+  if (feature.type === "node") return false;
+  const tags = feature.tags as Record<string, string> | undefined;
+  if (tags === undefined) return false;
+
+  const bridge = tags["bridge"];
+  if (bridge === undefined || bridge === "no") return false;
+  if (tags["highway"] === undefined) return false;
+  if (isBelowSurface(feature)) return false;
+
+  const layer = tags["layer"];
+  if (layer === undefined) return true;
+  const level = Number.parseInt(layer, 10);
+  // A layer that is not a number tells us nothing; treat it as ground rather
+  // than as a reason to refuse, matching the absent case.
+  return !Number.isFinite(level) || level <= 1;
 }
 
 /** Whether this builder owns the feature. */

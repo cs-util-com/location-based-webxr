@@ -32,7 +32,7 @@ minScore, maxScore }`. Structural rather than the package's `Region`, so a test
   median being the _only_ thing shown.
 - **Area is scaled to a unit a human reads** — m², then ha past 10 000, then km²
   past 1 000 000.
-- **Non-finite scores render as `—`**, not `Infinity`. `heatScale` filters them
+- **Non-finite scores render as `—`**, not `Infinity`. the pipeline filters them
   upstream, but a panel reading "Infinity" looks like a broken demo rather than
   broken input.
 

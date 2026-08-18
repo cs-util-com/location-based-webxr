@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 /**
  * No-bypass e2e for the 2026-07-18 field report ("spawned spheres showed no

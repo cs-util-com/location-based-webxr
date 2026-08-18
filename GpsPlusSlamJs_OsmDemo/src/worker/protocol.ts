@@ -2,7 +2,7 @@
  * The demo's main-thread ↔ worker contract, as data.
  *
  * WHY A WORKER AT ALL. Everything expensive in this demo ran on the UI thread:
- * an Overpass response measured at 28–68 MB of JSON to parse, a 19-chunk scoring
+ * an Overpass response measured at ~21 MB of JSON to parse, a 19-chunk scoring
  * pass, a mesh build, and (since the terrain extent grew) ~55 000 DEM samples.
  * `gps-plus-slam-osm` was designed for this from the start — it documents itself
  * as worker-safe in six places, its public types are deliberately
@@ -29,6 +29,7 @@
 import type {
   MeshChunk,
   CellExplanation,
+  FallbackProviderStats,
   GeoEvent,
   LatLng,
   MeshData,
@@ -36,7 +37,9 @@ import type {
   TreePlacement,
 } from "gps-plus-slam-osm";
 
+import type { RoutePoint } from "../agent-route.js";
 import type { DemoSnapshot } from "../demo-pipeline.js";
+import type { WorkerStageTimings } from "../click-timings.js";
 import type { GeoEventStats } from "../geo-event-stats.js";
 import type { HeightfieldData } from "../heightfield.js";
 
@@ -121,6 +124,15 @@ export interface TransferableMesh {
   readonly parts: number;
   readonly guessedHeights: number;
   readonly approximateRoofs: number;
+  /**
+   * Solid barriers drawn (DEC-R11-2).
+   *
+   * **Counted because DEC-R11-11 gave up the other way of checking.** Barriers
+   * draw with the buildings, with no toggle and no distinct colour, so there is
+   * no way to isolate them on screen — the count is what tells a walled site
+   * apart from one where the barrier builder silently produced nothing.
+   */
+  readonly barriers: number;
 }
 
 /**
@@ -181,6 +193,16 @@ export type MeshUpdate =
 export interface UpdateResult {
   readonly snapshot: DemoSnapshot;
   readonly mesh: MeshUpdate;
+  /**
+   * Stages 6–7 and the worker's own wall clock.
+   *
+   * **Beside the snapshot rather than on it**, because `DemoPipeline.update`
+   * builds the snapshot before either stage has happened — the terrain join and
+   * the mesh build are the handler's work, not the pipeline's. Putting them on
+   * the snapshot would mean mutating it after the fact, and the point of the
+   * split is that each object records what its own producer measured.
+   */
+  readonly workerTimings: WorkerStageTimings;
 }
 
 export interface TerrainResult {
@@ -195,6 +217,30 @@ export interface TerrainResult {
   readonly field: HeightfieldData | undefined;
   /** One phrase for the status line, never empty. */
   readonly note: string;
+  /**
+   * The worker provider's own `sourceId` — e.g. `mapterhorn+terrarium`.
+   *
+   * ON THE RESULT, NOT A CONSTANT SHARED WITH THE PAGE, so the label the AR
+   * readout renders can only ever describe the provider that actually sampled
+   * this field: a constant imported on both sides would keep agreeing with
+   * itself after the worker's wiring changed. Composed, never per-sample —
+   * the `ElevationProvider` seam carries no per-position provenance (see
+   * `dem-provider.ts`).
+   */
+  readonly demSourceId: string;
+  /**
+   * Which member of the composition actually served, as position counts —
+   * a snapshot of the provider's session-cumulative `stats`, taken when this
+   * result was built.
+   *
+   * THE COUNTS ARE THE SMALLEST HONEST SHAPE. A derived percentage would
+   * invent a rounding and a 0/0 corner here, and would hide the denominator
+   * the reader needs to weigh it; the three raw counters are exactly what the
+   * library's `FallbackProviderStats` surface says, with nothing added.
+   * Optional so a worker (or test fake) that predates the stats keeps its
+   * behaviour — the HUD falls back to the composed id alone.
+   */
+  readonly demStats?: FallbackProviderStats;
   /**
    * Where the window was sampled, in the scene's frame — **reported even when
    * `field` is `undefined`.**
@@ -236,6 +282,22 @@ export interface WorkerCalls {
        * anchor yet behaves exactly as before.
        */
       readonly frameOrigin?: LatLng;
+      /**
+       * The datum this mesh must be built against — the geoid undulation for
+       * AR, omitted for the desktop view.
+       *
+       * **NOT a duplicate of `terrain`'s field of the same name; it is the
+       * REQUEST side of the same fact** (2026-08-14). The terrain call says
+       * "sample a field with this datum"; this says "do not build until the
+       * held field HAS it". Without it the mesh build cannot tell an AR field
+       * from a desktop one, and since AR entry does not move the user, the
+       * gate saw an unchanged position and let the build proceed on ground
+       * measured from a different zero — ~99 m out at Cologne.
+       *
+       * Omitted behaves exactly as before, so a caller that has not adopted AR
+       * is unaffected.
+       */
+      readonly geoidUndulationM?: number;
       readonly category: string;
       /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.
@@ -252,7 +314,8 @@ export interface WorkerCalls {
        *
        * Omitted means yes, so nothing that does not opt out changes. The demo
        * passes `false` whenever the `cells` layer is off -- the default -- and
-       * the page then reads `heatMax` and `cellCount` instead of deriving them
+       * the page then reads `observedMax`, `aboveThresholdCount` and
+       * `cellCount` instead of deriving them
        * from ~24 000 cells it does not draw.
        */
       readonly includeCells?: boolean;
@@ -263,6 +326,15 @@ export interface WorkerCalls {
        * by default, so nothing existing expects the data.
        */
       readonly includeUnderground?: boolean;
+      /**
+       * Epoch ms at which the page POSTED this call — `nowEpochMs()`.
+       *
+       * The one field in this protocol that exists to be compared across the
+       * boundary. The handler subtracts it from its own `nowEpochMs()` to get
+       * the queue wait, which is otherwise invisible: it is neither in the
+       * worker's own clock nor separable from the clone on the page side.
+       */
+      readonly postedAtEpochMs?: number;
     };
     readonly result: UpdateResult;
   };
@@ -370,6 +442,49 @@ export interface WorkerCalls {
       readonly stats: GeoEventStats;
     };
   };
+  /**
+   * A walkable route between two positions (stage 4, DEC-R11-16).
+   *
+   * IT RUNS IN THE WORKER, and it has to, for the same reason `geoEvent` does
+   * one line up. `ObstacleIndex` exposes `obstaclesIn` as a **method** and holds
+   * `Map`s, so it cannot be structured-cloned — the same trap this file's header
+   * describes for `Heightfield.heightAt`. The index therefore cannot cross, and
+   * the route is computed on the side that holds it. A click is a round trip.
+   *
+   * **AND IT RUNS SYNCHRONOUSLY.** `findStatePath` is a plain loop and a worker
+   * handles one message at a time, so a route request delays the next `update`
+   * — i.e. the publish. `agent-route.ts`'s expansion cap is therefore a
+   * publish-latency bound as well as a freeze bound, which is an argument for
+   * keeping it rather than raising it when a route turns out to be too long.
+   * For the same reason an `abort` cannot preempt one: the search never yields
+   * to check the signal, so a second click queues behind the first.
+   */
+  readonly planRoute: {
+    readonly request: {
+      /** Where the agent is standing now. */
+      readonly from: LatLng;
+      /** Where the user clicked. */
+      readonly to: LatLng;
+      /**
+       * Where the scene's ENU frame is anchored — what the ground heights MEAN.
+       *
+       * REQUIRED, unlike the optional `frameOrigin` on the older calls. Those
+       * default to their own `position`/`centre` so a caller predating the fixed
+       * origin keeps its behaviour; nothing predates this one, and a route
+       * silently planned in a frame the scene is not drawn in would put the
+       * polyline somewhere the agent is not.
+       */
+      readonly frameOrigin: LatLng;
+    };
+    /**
+     * The route, or `undefined` when there is none.
+     *
+     * `undefined` deliberately merges "no route exists" with "the search hit its
+     * cap" — see `agent-route.ts`. A UI has nothing to do with the difference,
+     * and both mean "the agent is not going there".
+     */
+    readonly result: readonly RoutePoint[] | undefined;
+  };
   readonly terrain: {
     readonly request: {
       /** Where the user is — what the sampled window is FOR. */
@@ -384,6 +499,21 @@ export interface WorkerCalls {
       readonly frameOrigin?: LatLng;
       readonly extentM: number;
       readonly spacingM: number;
+      /**
+       * Geoid undulation `N` at the frame origin, metres — AR mode only.
+       *
+       * **Present means "give me ABSOLUTE heights against the ellipsoid";
+       * absent means the desktop behaviour** (relief against the window
+       * centre). It is a plain number rather than a `GeoidModel` because a
+       * model is a function and functions do not survive a structured clone —
+       * the page samples it once at the origin and sends the value, which is
+       * uniform to ~5 cm across a city since `N` varies about 1 m per 100 km.
+       *
+       * See `terrain-field.ts`'s `absoluteDatum` for why AR cannot use the
+       * window-centre datum: the window follows the user, so that datum moves
+       * mid-session and takes the whole scene's Y baseline with it.
+       */
+      readonly geoidUndulationM?: number;
     };
     readonly result: TerrainResult;
   };
@@ -452,6 +582,7 @@ const CALL_KINDS = new Set<string>([
   "geoEvent",
   "terrain",
   "cellMesh",
+  "planRoute",
 ] satisfies WorkerCallKind[]);
 
 /**

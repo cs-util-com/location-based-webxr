@@ -17,10 +17,49 @@ import { labelFor, stateForError, type LocateState } from "./locate-state.js";
 
 export interface LocateControlOptions {
   readonly map: L.Map;
-  /** Called with the fix. The caller decides what a new position means. */
-  readonly onLocated: (position: { lat: number; lng: number }) => void;
+  /**
+   * Called with the fix. The caller decides what a new position means.
+   *
+   * `accuracyM` is the browser's reported horizontal accuracy — §4 predicts
+   * this, not rendering, is the binding constraint on whether AR "feels right",
+   * so milestone 4 puts it on screen rather than leaving it to be guessed at.
+   * Leaflet forwards it as `event.accuracy`; `undefined` when it is absent.
+   */
+  readonly onLocated: (position: LocatedFix) => void;
   /** Called with a human-readable failure, for the app's error channel. */
   readonly onError: (message: string) => void;
+}
+
+/**
+ * A fix, whole — every field the framework's `GpsPosition` carries.
+ *
+ * **WIDENED 2026-08-14.** This used to be `{ lat, lng, accuracyM? }`, which was
+ * enough for the map and the refetch gate and silently insufficient for the
+ * fusion: `gps-registration.ts` turns these into `recordGpsEvent`, and without
+ * `altitude`/`altitudeAccuracy` the separate 1-D vertical solve has nothing to
+ * fit. The horizontal alignment would have looked correct while every object
+ * sat at the wrong height, reported as a confident `0.00 m`.
+ *
+ * `lng` rather than `lon` because that is this demo's convention throughout;
+ * `gps-registration.ts` does the one-line rename at the framework boundary,
+ * where `ar-origin.ts` already documents the same mismatch.
+ */
+export interface LocatedFix {
+  readonly lat: number;
+  readonly lng: number;
+  /** Horizontal accuracy in metres, or `undefined` when the browser omits it. */
+  readonly accuracyM?: number | undefined;
+  /** Metres above the WGS-84 ellipsoid on Android — see `ar-origin.ts`. */
+  readonly altitude: number | null;
+  readonly altitudeAccuracy: number | null;
+  readonly heading: number | null;
+  readonly speed: number | null;
+  readonly timestamp: number;
+}
+
+/** A finite number, or `null` — the shape `GpsPosition` wants for absent data. */
+function finiteOrNull(value: number | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 /** How long to wait for a fix before giving up, ms. */
@@ -46,6 +85,10 @@ export class LocateControl {
   private readonly map: L.Map;
   private state: LocateState = "idle";
   private resetTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Whether a continuous watch is running — see {@link startWatch}. */
+  private watching = false;
+  /** Whether the current watch outage has already been reported once. */
+  private watchErrorReported = false;
 
   constructor(options: LocateControlOptions) {
     this.map = options.map;
@@ -86,9 +129,48 @@ export class LocateControl {
     });
 
     this.map.on("locationfound", (event: L.LocationEvent) => {
-      this.setState("located");
-      options.onLocated({ lat: event.latlng.lat, lng: event.latlng.lng });
-      this.scheduleReset();
+      // THE POSITION ALWAYS FLOWS; only the BUTTON is conditional. A watch
+      // delivers ~1 Hz for the whole AR session, and driving the button from
+      // that would flash "Located" once a second and re-arm a reset timer each
+      // time — for something the user did not press. The button belongs to the
+      // one-shot it was pressed for, which is exactly `state === "locating"`.
+      if (this.state === "locating") {
+        this.setState("located");
+        this.scheduleReset();
+      }
+      this.watchErrorReported = false;
+      options.onLocated({
+        lat: event.latlng.lat,
+        lng: event.latlng.lng,
+        accuracyM: Number.isFinite(event.accuracy) ? event.accuracy : undefined,
+        // THE WHOLE FIX, not just the horizontal part (2026-08-14 AR review).
+        // These were dropped here, and dropping them is why the vertical solve
+        // could never work: `applyAltitudeOverride` fits `ref[1] - odom[1]`
+        // weighted by `altitudeAccuracy`, so without either field
+        // `alignmentMatrix[13]` stays structurally zero and the AR HUD's
+        // `worldBaselineY` reads a confident `0.00 m`. The data was always
+        // here — Leaflet copies every numeric `coords` property onto the event
+        // — and was discarded at this boundary.
+        //
+        // `finiteOrNull` rather than a cast: the `@types/leaflet` shape
+        // declares these as plain `number`, but Leaflet only copies the
+        // properties the browser actually provided, so they are `undefined` on
+        // a fix with no altitude — which is most indoor fixes and every
+        // desktop one. The framework's `GpsPosition` wants `null` there, and
+        // `undefined` reaching the weight maths would produce `NaN` rather than
+        // a skipped term.
+        altitude: finiteOrNull(event.altitude),
+        altitudeAccuracy: finiteOrNull(event.altitudeAccuracy),
+        heading: finiteOrNull(event.heading),
+        speed: finiteOrNull(event.speed),
+        // `Date.now()` rather than a cast for the same reason: Leaflet sets
+        // `timestamp` from the browser's fix, but a synthetic `locationfound`
+        // (its own `setView` path, or a test) may omit it, and a `NaN`
+        // timestamp poisons the library's time weighting.
+        timestamp: Number.isFinite(event.timestamp)
+          ? event.timestamp
+          : Date.now(),
+      });
     });
 
     this.map.on("locationerror", (event: L.ErrorEvent) => {
@@ -97,10 +179,94 @@ export class LocateControl {
       const next = stateForError(
         (event as L.ErrorEvent & { code?: number }).code,
       );
+      // A PENDING ONE-SHOT ALWAYS WINS THE BUTTON, even while a watch runs.
+      // Leaflet fires one event for both sources with no discriminator, and
+      // `stopLocate` cannot cancel a one-shot — so swallowing every error while
+      // watching would leave a pressed button stuck at `locating`, disabled,
+      // with no timer to release it (r509 review). `state === "locating"` is
+      // the only evidence that a one-shot is outstanding, and it is exactly the
+      // case that must not be swallowed.
+      if (this.state === "locating") {
+        this.setState(next);
+        options.onError(labelFor(next));
+        this.scheduleReset();
+        return;
+      }
+
+      // ONCE PER OUTAGE WHILE WATCHING. `watchPosition` re-fires its error
+      // callback on every timeout, so an unguarded path would push a toast a
+      // second for as long as the user stayed indoors — burying every other
+      // message the app has. Cleared by the next successful fix above, so a
+      // second outage is reported again.
+      if (this.watching) {
+        if (!this.watchErrorReported) {
+          this.watchErrorReported = true;
+          options.onError(labelFor(next));
+        }
+        return;
+      }
       this.setState(next);
       options.onError(labelFor(next));
       this.scheduleReset();
     });
+  }
+
+  /**
+   * Follow the user continuously instead of taking one fix (AR milestone 3).
+   *
+   * WHY IT REUSES `map.locate` RATHER THAN A SECOND GPS PATH. `locationfound`
+   * already flows to `onLocated`, which is the one place a new position enters
+   * the store. Opening a `navigator.geolocation.watchPosition` alongside it
+   * would be a second source for the same fact, and the two could disagree
+   * about which fix is current — the class of bug `scene-anchor.ts` exists to
+   * prevent one level up.
+   *
+   * **`watch: true` DOES NOT MEAN "refetch on every fix".** Leaflet delivers
+   * roughly 1 Hz; the demo's scoring pass takes 15–90 s and `refresh` is
+   * `latestOnly`, so acting on every fix aborts every run and nothing ever
+   * publishes. `ar-walk-controller.ts` is what makes this safe to turn on, and
+   * turning it on without that controller is the starvation bug in §2.6.
+   *
+   * Idempotent, and does NOT touch the button's state: this is a background
+   * follow, not a user-initiated action, so a pulsing "locating" pin for the
+   * whole AR session would be wrong.
+   */
+  startWatch(): void {
+    if (this.watching) return;
+    this.watching = true;
+    this.map.locate({
+      setView: false,
+      watch: true,
+      timeout: LOCATE_TIMEOUT_MS,
+      // MILLISECONDS OF CACHE AGE the caller will accept — `0` means "never
+      // hand me a cached fix". An earlier comment here described it as a
+      // distance filter, which it is not: the W3C Geolocation API has no
+      // distance filter at all (that is Android's native
+      // `setSmallestDisplacement`, unreachable from the web), and Leaflet
+      // passes these options straight through to `watchPosition` (r509 review).
+      //
+      // Zero is right for a different reason than the one that was written: a
+      // cached fix would make the demo act on a position the user has already
+      // left, and the gate downstream measures displacement from the last
+      // REFETCH, so a stale fix skews that measurement rather than just being
+      // old.
+      maximumAge: 0,
+      enableHighAccuracy: true,
+    });
+  }
+
+  /** Stop following. Idempotent, and safe when no watch is running. */
+  stopWatch(): void {
+    if (!this.watching) return;
+    this.watching = false;
+    this.watchErrorReported = false;
+    // `stopLocate` is `clearWatch(...)` plus a `setView` reset — it CANNOT
+    // cancel a pending one-shot, because the Geolocation API offers no way to
+    // (r509 review corrected the opposite claim here). That is fine and is why
+    // the button is left alone: a one-shot in flight still resolves through
+    // `locationfound` or `locationerror`, so the button finishes its own state
+    // machine either way.
+    this.map.stopLocate();
   }
 
   private start(): void {

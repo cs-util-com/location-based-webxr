@@ -9,11 +9,12 @@
  * reasoning for why the whole suite is offline.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./e2e-test.js";
 
 import {
   AT_FIXTURE,
-  recordStatus,
+  enableCellLayer,
+  recordStatusFromBoot,
   stubNetwork,
   waitForRefresh,
   REPAINT,
@@ -28,12 +29,18 @@ test.describe("the demo boots", () => {
     // clock. `test.step` keeps each one separately named in the report, which is
     // what stops a failure from pointing at a group instead of at a behaviour.
     //
-    // The status observer is installed AFTER `goto` and BEFORE `waitForRefresh`:
-    // it lives in the page, so navigating destroys it, and the widening step
-    // needs it recording across the very boot the other three then assert on.
+    // The status observer is installed BEFORE `goto`, through an init script
+    // that survives the navigation — the widening step needs it recording
+    // across the very boot the other three then assert on, and the marker it
+    // watches for can be gone before an after-`goto` install lands.
     const counts = await stubNetwork(page);
+    // INSTALLED BEFORE `goto`, and that ordering IS the fix. The widening
+    // marker is on screen only between the first ring publishing and the last;
+    // recording from an `evaluate` after `goto` raced the boot and lost it
+    // twice in five full-suite runs. `recordStatusFromBoot` installs at
+    // document-start, so there is no window to lose it in.
+    const history = await recordStatusFromBoot(page);
     await page.goto(AT_FIXTURE);
-    const history = await recordStatus(page);
     await waitForRefresh(page);
 
     await test.step("loads the rule table and populates the category picker", async () => {
@@ -87,6 +94,19 @@ test.describe("the demo boots", () => {
       // a gradient with no units.
       await expect(legend.locator(".legend-min")).toHaveText("1");
       await expect(legend.locator(".legend-max")).not.toBeEmpty();
+      // WHAT THE DATA REACHES, beside the fixed ramp (DEC-H7). Asserted here
+      // because nothing else could: `legend-view.ts` has no unit test, so until
+      // this line deleting the readout entirely stayed green — while
+      // `heat-colours.ts.md` justifies saturating 10–14 % of `walkable` on the
+      // grounds that "the legend compensates, and has to" (r513 review).
+      //
+      // On the TEXT, not on an `aria-label`: a span with no role is
+      // `role="generic"`, where ARIA prohibits an accessible name, so the
+      // attribute is not a reliable channel. Both numbers are visible.
+      await expect(legend.locator(".legend-observed")).toContainText(
+        "max here",
+      );
+      await expect(legend.locator(".legend-observed")).toContainText("above");
     });
 
     await test.step("says it is still widening, and then stops saying it", async () => {
@@ -106,8 +126,19 @@ test.describe("the demo boots", () => {
       const seen = await history();
       // It appeared at least once, alongside a real cell count — a marker on an
       // empty status line would prove nothing about which snapshot it qualified.
+      //
+      // THE HISTORY RIDES ALONG IN THE FAILURE MESSAGE, permanently. This step
+      // failed twice in five full-suite runs while passing 5/5 alone, and the
+      // one thing needed to tell the competing explanations apart is what was
+      // actually recorded: a first entry of `starting…` means the observer was
+      // in place from the beginning and the marker genuinely never appeared,
+      // while a first entry of the settled final text means the recorder was
+      // installed too late to see it. Chasing that with instrumented reruns
+      // costs ~11 minutes an attempt; attaching it here costs nothing and the
+      // next natural failure carries the answer.
       expect(
         seen.filter((t) => /widening/.test(t) && /\d+ cells/.test(t)),
+        `status history (${seen.length} entries):\n${seen.join("\n")}`,
       ).not.toHaveLength(0);
 
       // And it is GONE at the end. `waitForRefresh` now waits for exactly this, so
@@ -150,8 +181,23 @@ test.describe("the browser console", () => {
       // The suite blocks the live rule sheet on purpose; the app reports the
       // degradation in its status line and the fixture asserts on it.
       /Rule table fetch failed/.test(text) ||
-      // Blocked by `stubNetwork`, deliberately.
-      /net::ERR_FAILED|Failed to load resource/.test(text);
+      // Blocked by `stubNetwork`, deliberately. `net::ERR_FAILED` is what
+      // Chrome logs for a route that ABORTS the request, which is what the stub
+      // does — it never answers with a status code.
+      //
+      // `Failed to load resource` IS NO LONGER IGNORED. This clause used to
+      // read `net::ERR_FAILED|Failed to load resource`, which swallowed every
+      // response answered with an error status — a 404, a 429, a 500 — along
+      // with the aborts it was written for. Those are exactly the failures
+      // worth hearing about. Aborted requests are still tolerated above.
+      //
+      // IT IS NOT, HOWEVER, WHY THE `favicon.ico` 404 SURVIVED (corrected in
+      // review on #279). `scene-3d.spec.js` loads `/gallery.html` — a page that
+      // had no favicon either — and asserts an EMPTY console with no filter at
+      // all, and it is green. Headless Chromium in this suite never requests
+      // `/favicon.ico`, so no filter here could have caught it. That one was
+      // only ever visible in a real browser.
+      /net::ERR_FAILED/.test(text);
 
     const real = errors.filter((text) => !ignorable(text));
     expect(real, `unexpected console errors:\n${real.join("\n---\n")}`).toEqual(
@@ -304,6 +350,155 @@ test.describe("the location picker", () => {
     await waitForRefresh(page);
     await expect(page.locator("#status")).toContainText(/\d+ cells/);
   });
+
+  test("clears the old city the moment a new one is DECLARED (DEC-R12-6)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. The eighth testing session jumped New York ->
+    // London, watched the height profile switch immediately, and watched New
+    // York's buildings and cells stay on screen for the 20-30 s the Overpass
+    // fetch took — under a status line that already said London. The status
+    // channel was right and the picture was wrong, so making the status louder
+    // would have fixed nothing; what had to change is that the scene stops
+    // asserting a city the user has left.
+    //
+    // The window is real in the app and would be a race here, so the next fetch
+    // is HELD: everything asserted below happens while London is still loading,
+    // which is exactly the state that was reported.
+    const counts = await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    // The cell grid starts OFF (DEC-R7b-6), and it is the observable here: it is
+    // drawn straight from the snapshot, so "the old city is still on screen" and
+    // "the store still holds it" are the same statement.
+    await enableCellLayer(page);
+
+    const cells = page.locator("#map path.affordance-cell");
+    await expect(cells).not.toHaveCount(0);
+
+    counts.holdOverpass();
+    await page.selectOption("#site", "porto-ribeira");
+
+    // THE ASSERTION. Not "eventually the new city appears" — that was already
+    // true and is what made the defect invisible to the suite. The old city's
+    // cells are gone WHILE the new data is still in flight.
+    await expect(cells).toHaveCount(0, { timeout: 15000 });
+
+    // And the loading channel still explains the empty scene, so the two agree
+    // for the first time rather than contradicting each other.
+    await expect(page.locator("#status")).toContainText(/Fetching/i);
+
+    counts.releaseOverpass();
+    await waitForRefresh(page);
+    await expect(cells).not.toHaveCount(0);
+  });
+
+  test("writes the place into the URL, so a reload comes back to it (DEC-R12-5)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. The read side has parsed `?lat=&lng=` and `?site=`
+    // since round 4 and nothing ever wrote them, so the session's jump to London
+    // survived exactly until a reload. The ask was for a link that can be pasted
+    // into a report and navigated to by this suite — so the round trip through a
+    // real reload is the assertion, not the string alone.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.selectOption("#site", "porto-ribeira");
+    // A NAMED place writes its id: it says WHERE in a link a human reads, and it
+    // survives a re-capture moving the coordinates.
+    await expect
+      .poll(() => new URL(page.url()).search)
+      .toBe("?site=porto-ribeira");
+
+    // The round trip. A reload with no other state must land back at Porto
+    // rather than at the demo's default.
+    await page.reload();
+    await waitForRefresh(page);
+    await expect(page.locator("#site")).toHaveValue("");
+    await expect
+      .poll(() => new URL(page.url()).search)
+      .toBe("?site=porto-ribeira");
+
+    // Moving without naming a place writes COORDINATES instead, and drops the
+    // stale id — a walk away from Porto must not keep claiming to be at Porto.
+    //
+    // NOT ANCHORED AT THE END SINCE STAGE 5 (DEC-R13-7): recentring the 3D view
+    // on a map click moves the camera, so the camera writer adds its own keys.
+    // The assertion that matters is that the PLACE keys are right and the site
+    // id is gone, which is what the two checks below say separately.
+    await page.locator("#map").click({ position: { x: 120, y: 120 } });
+    await expect
+      .poll(() => new URL(page.url()).search)
+      .toMatch(/^\?lat=-?\d+\.\d{5}&lng=-?\d+\.\d{5}/);
+    expect(new URL(page.url()).searchParams.get("site")).toBeNull();
+  });
+
+  test("remembers where the camera was looking, so a finding can be linked (DEC-R13-7)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. This partially reverses DEC-R12-5, and the reason
+    // is a workflow rather than a feature: twice in the ninth session a finding
+    // could not be pointed at — "wüsste ich nicht, wie ich dir das irgendwie
+    // sinnvoll als Testbereich nennen kann". A written parameter nothing reads
+    // back would leave that exactly as broken while looking fixed, so the
+    // assertion is the round trip through a real reload, as for the place above.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+
+    // A DRAG, not a click: panning is what the session was doing when it wanted
+    // the URL to remember. MapControls pans with the primary button.
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.35, {
+      steps: 12,
+    });
+    await page.mouse.up();
+
+    // AFTER THE DEBOUNCE, which is the point of the poll rather than a read:
+    // the write is deliberately not per-frame (400 ms), and asserting
+    // immediately would pass only by accident.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("clat"))
+      .not.toBeNull();
+    const written = new URL(page.url()).searchParams;
+    const clat = Number(written.get("clat"));
+    const clng = Number(written.get("clng"));
+    expect(Number.isFinite(clat)).toBe(true);
+    expect(Number.isFinite(clng)).toBe(true);
+    expect(Number(written.get("cdist"))).toBeGreaterThan(0);
+
+    // THE ROUND TRIP. Reloading must aim the camera back at the same place —
+    // observed through the URL the restored view writes for itself, which is
+    // the only machine-readable statement of where it ended up looking.
+    await page.reload();
+    await waitForRefresh(page);
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(
+      box.x + box.width * 0.5 + 2,
+      box.y + box.height * 0.5,
+      {
+        steps: 2,
+      },
+    );
+    await page.mouse.up();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("clat"))
+      .not.toBeNull();
+    const back = new URL(page.url()).searchParams;
+    // A nudge of two pixels, so the target must land within a few metres of
+    // where it was. Five decimals is ~1.1 m, so 0.001° is a generous ~110 m
+    // bound that still fails outright if the restore did nothing.
+    expect(Math.abs(Number(back.get("clat")) - clat)).toBeLessThan(0.001);
+    expect(Math.abs(Number(back.get("clng")) - clng)).toBeLessThan(0.001);
+  });
 });
 
 test.describe("the header", () => {
@@ -410,9 +605,15 @@ test.describe("the header", () => {
       await expandHeader();
       const attribution = page.locator("#map .leaflet-control-attribution");
       await expect(attribution).toContainText("OpenStreetMap");
-      await expect(attribution).toContainText(
-        /Mapzen|Terrarium|Tilezen|elevation/i,
-      );
+      // PINNED to the AWS credit's own name, not a loose alternation: the old
+      // /Mapzen|Terrarium|Tilezen|elevation/ matched the word "elevation" in
+      // ANY credit, so a build that dropped the AWS line entirely still passed
+      // as long as some elevation credit remained.
+      await expect(attribution).toContainText(/Mapzen/i);
+      // BOTH DEM sources, by name. The composition falls back per tile, so a
+      // session may stand on either — a credit naming only one of them stops
+      // satisfying the obligation the moment the other serves a tile.
+      await expect(attribution).toContainText(/Mapterhorn/i);
 
       await page.locator("#header-toggle").click();
       await expect(page.locator("#header-bar")).toHaveAttribute(
@@ -421,9 +622,8 @@ test.describe("the header", () => {
       );
       // Still there with the bar collapsed — the whole point.
       await expect(attribution).toContainText("OpenStreetMap");
-      await expect(attribution).toContainText(
-        /Mapzen|Terrarium|Tilezen|elevation/i,
-      );
+      await expect(attribution).toContainText(/Mapzen/i);
+      await expect(attribution).toContainText(/Mapterhorn/i);
     });
   });
 });
@@ -858,5 +1058,140 @@ test.describe("the control bar", () => {
         page.locator("#layer-group-overlays #show-below"),
       ).toBeAttached();
     });
+  });
+});
+
+test.describe("the AR entry point", () => {
+  /**
+   * WHY THIS SPEC EXISTS. AR milestone 1 shipped with three false claims that
+   * four green gates all passed: nothing in the demo set the framework's
+   * `zero`, so the button was permanently disabled and `startArMode` had no
+   * reachable caller; the origin adapter was never called; and the geoid was
+   * never sent. Every unit test passed, because each module was correct in
+   * isolation and nothing asserted they were CONNECTED.
+   *
+   * A spec that drives the real button through a real fix is the smallest
+   * thing that would have failed on all three. It cannot enter a session —
+   * WebXR needs a device and headless Chromium has none — so it deliberately
+   * stops at the boundary: does the button become usable, and does pressing it
+   * reach the AR path rather than doing nothing.
+   */
+  test("stays disabled until a GPS fix, then becomes usable", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    // STUBBED, NOT SKIPPED. Headless Chromium reports no immersive-ar, so the
+    // button hides and the GPS gate — the thing this test exists for — never
+    // runs. A `test.skip` here would have been silent coverage loss of exactly
+    // the assertion the milestone most needed, which is the pattern filed in
+    // `2026-08-12-1215-conditional-e2e-skips-hide-coverage-followup.md`.
+    //
+    // Only the SUPPORT PROBE is faked. Nothing here pretends a session can
+    // start; the test stops at the button, which is the boundary a headless
+    // browser can honestly reach.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    const arButton = page.locator("#enter-ar");
+
+    // BEFORE the fix: visible so it is discoverable, disabled because the scene
+    // has nothing to anchor to, and carrying a reason.
+    await expect(arButton).toBeVisible();
+    await expect(arButton).toBeDisabled();
+    await expect(arButton).toHaveAttribute("title", /GPS/i);
+
+    await page.locator(".locate-button").click();
+
+    // AFTER the fix: usable. This is the assertion the milestone's three false
+    // claims all reduce to — without `setZeroPos` being dispatched it never
+    // arrives, however correct every module is on its own.
+    await expect(arButton).toBeEnabled({ timeout: 10000 });
+  });
+
+  test("keeps the map when AR is available — DEC-12", async ({
+    page,
+    context,
+  }) => {
+    // The rule the reference consumer's pattern would break. Asserted in the
+    // real DOM rather than only over the pure state function, because the
+    // failure mode is a call site toggling the map, not the derivation.
+    //
+    // THE STUB IS WHAT MAKES THIS TEST MEAN ANYTHING. Without it headless
+    // Chromium reports no immersive-ar, so AR is never "available" and the two
+    // assertions below hold in every state the app can reach — including with
+    // the whole AR path deleted. The first version omitted it and was exactly
+    // the kind of test this branch keeps retiring.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+    await page.locator(".locate-button").click();
+
+    // AR really is offered here — otherwise the map's survival proves nothing.
+    await expect(page.locator("#enter-ar")).toBeEnabled({ timeout: 10000 });
+
+    await expect(page.locator("#map")).toBeVisible();
+    await expect(page.locator("#scene")).toBeVisible();
+  });
+
+  test("leaves the desktop layout alone while no session is running", async ({
+    page,
+  }) => {
+    // `#ar-root` is a child of the same grid as `#map` and `#scene`. As an
+    // in-flow item with no CSS it added an implicit second row and took roughly
+    // half the height from the views — caught in review, invisible to every
+    // existing gate because the height assertion runs only at the mobile
+    // viewport and the canvas check compares against `#scene`'s own box.
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    const main = await page.locator("main").boundingBox();
+    const scene = await page.locator("#scene").boundingBox();
+
+    // The views fill the row. A stolen implicit row shows up here as roughly
+    // half, so the bound is generous and still discriminating.
+    expect(scene.height).toBeGreaterThan(main.height * 0.9);
+  });
+
+  test("accepts the auto-elevation kill switch in the URL and boots clean", async ({
+    page,
+  }) => {
+    // HONESTY NOTE (cold-review F8): this desktop e2e CANNOT DISCRIMINATE
+    // the kill switch. Headless never enters AR, so no HUD and no estimator
+    // exist with the switch in EITHER position — every assertion below would
+    // pass identically without `autoElevation=off` in the URL. What it can
+    // honestly pin is only that a flagged URL does not break the boot (the
+    // switch's whole surface is the URL, and a boot that chokes on the
+    // parameter would kill the field A/B before it starts). The tests that
+    // DO discriminate the switch are unit tests: the parser in
+    // `ar-elevation-auto.test.ts` (`autoElevationEnabled`) and the wiring in
+    // `ar-mode.test.ts` / `ar-mode.depth-wiring.test.ts` (no depth feature,
+    // no capture, no pipeline without the dep).
+    await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&autoElevation=off`);
+    await waitForRefresh(page);
+
+    await expect(page.locator("#scene")).toBeVisible();
+    // A LAYOUT invariant, not a switch assertion: `#ar-root` must stay
+    // `:empty` on the desktop (it covers the page the moment it is not) —
+    // asserted here so the flagged boot keeps that property too.
+    await expect(page.locator("#ar-root")).toBeEmpty();
   });
 });

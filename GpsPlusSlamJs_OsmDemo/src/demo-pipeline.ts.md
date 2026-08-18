@@ -7,7 +7,7 @@ path, with no DOM in it.
 
 ## Public API
 
-- `class DemoPipeline` — `update(position, category, signal?): Promise<DemoSnapshot>` (the signal is checked PER TILE, which is where the saving is: a tile is 28-68 MB), `scoreFor(cell): CellScore | undefined` (so `explainCell` can be answered inside the worker, where the merged features already are),
+- `class DemoPipeline` — `update(position, category, signal?): Promise<DemoSnapshot>` (the signal is checked PER TILE, which is where the saving is: a tile is ~21 MB), `scoreFor(cell): CellScore | undefined` (so `explainCell` can be answered inside the worker, where the merged features already are),
   `features()`, static `chunkFor(position)`
   - `geoEvent(position, category, now, signal?, options?)` →
     `{ event, stats }`. `options.overlapMinutes` is the C#'s handover window;
@@ -30,7 +30,7 @@ path, with no DOM in it.
     already loaded, not when its centre is.** This was the centre for several
     rounds, which broke the promise the method's own docstring makes — that a
     neighbour whose data is missing is skipped, because loading one costs
-    18–110 s. The ensure set built for an admitted neighbour extends
+    ~15–90 s. The ensure set built for an admitted neighbour extends
     `CLIMB_STEPS + 1` cells past each of its candidates, and its candidates are
     seeded across its whole bounding box: ~550 m past the centre, into fetch
     tiles nothing had checked. Measured at the demo's Manhattan default as six
@@ -44,6 +44,16 @@ path, with no DOM in it.
       (tile, time); only WHICH tiles are visible changes, which is exactly what
       DEC-R9-15 already accepted — "a device that has loaded more discovers more
       of them, and they converge".
+- `interface DemoPipelineOptions` — `source`, `table`, `categories?`,
+  `monotonicNow?`, `maxChunks?`
+  - `maxChunks` is **forwarded** to `AffordanceIndexOptions.maxChunks`, which has
+    always been public; this wrapper simply never passed it on. Omitted means the
+    index's default of 488 (`CHUNKS_PER_WORKING_SET × WORKING_SETS_RETAINED`).
+  - **The cap is what bounds stage 5.** 488 chunks × 49 res-13 children = 23 912
+    cells is the hard ceiling on `scoresByCell`, and therefore on every derive
+    pass, however far the user walks. `derive-growth.test.ts` measures the
+    approach to it and asserts the plateau; its header carries the recorded 3 km
+    table and the ~1.1 s-per-refresh derive cost at the cap.
 - `interface DemoSnapshot` — `cells`, `regions`, `threshold`, `missingTiles`,
   `loadedTiles`, `stats`, `radius`
   - `radius` is which ring of the progressive widening this snapshot describes,
@@ -62,7 +72,7 @@ path, with no DOM in it.
 
 - **`update` checks its `AbortSignal` TWICE, and both are load-bearing.** Once per
   tile in the fetch loop, and once again after the loop before scoring.
-  - The per-tile check is where the bytes are: a tile is 28–68 MB.
+  - The per-tile check is where the bytes are: a tile is ~21 MB.
   - The post-loop check exists because the per-tile one only fires when there IS a
     next tile, and at an interior position the working set needs exactly one. A run
     superseded during its single fetch would otherwise go on to score 19 chunks and
@@ -112,10 +122,23 @@ measured 27–35 ms at the 488-chunk cap, three times per move — and in the
 regions are computed here, and the only other thing the page did with the array
 was derive `heatScale`'s `max`. So ~24 000 cells travelled to produce one number.
 
-The snapshot now reports that number as `heatMax`, plus `cellCount` for the
-status line, and the array is skipped when nothing draws it. `regions`,
-`threshold`, `heatMax` and `cellCount` are reported either way, so the visible
-surface is identical.
+The snapshot now reports `observedMax`, `aboveThresholdCount` and `cellCount`,
+and the array is skipped when nothing draws it. All of those plus `regions` and
+`threshold` are reported either way, so the visible surface is identical.
+
+**Since DEC-H5 `observedMax` is no longer the ramp.** The ramp is fixed at
+`HEAT_CAP`, so this is the highest score PRESENT — reported only so the legend
+can still describe the data on screen, which a constant ramp otherwise removes.
+`aboveThresholdCount` drives the legend's "nothing scores above the bar"
+message; it used to be inferred from `max <= threshold`, which worked only
+because the max was observed and would have died silently under a fixed ramp.
+
+**All four derive reductions are one pass** (DEC-H6/H10). The `values()` spread,
+`cellsAboveThreshold`, the `cells.map` that allocated a score array, and
+`heatScale`'s own scan were four full-length walks over up to 23 912 cells,
+three times per move. They are independent reductions over the same sequence, so
+they fuse into the single loop in `update`. Derive was measured at ~1.1 s per
+refresh at the chunk cap before this — see `derive-growth.test.ts`.
 
 **This withholds nothing from anything that needs cells.** Cell-level algorithms
 run _here_, against the index: the geo-event's hill climb makes thousands of
@@ -133,8 +156,8 @@ switched on.
 const pipeline = new DemoPipeline({ source, table });
 const snapshot = await pipeline.update({ lat: 50.94, lng: 6.96 }, "walkable");
 
-// The default configuration: regions, threshold, heatMax and cellCount, but no
-// ~24 000-cell array to clone.
+// The default configuration: regions, threshold, observedMax,
+// aboveThresholdCount and cellCount, but no ~24 000-cell array to clone.
 const lean = await pipeline.update(at, "walkable", undefined, undefined, {
   includeCells: false,
 });
@@ -167,3 +190,37 @@ serialisable. This drives the real producer and round-trips what it emits.
   replacement would otherwise have been weaker than what it replaced. A
   companion test asserts both halves of that difference, so loosening the guard
   back to `toEqual` fails a line rather than going quiet.
+
+## `DemoSnapshot.timings` — stages 1–5, and why only five
+
+Added 2026-08-11 (click-path plan §8 milestone 2). `update` owns fetch, parse,
+merge, score and derive; the terrain join, the mesh build, the structured clone
+and the draw happen outside it and are added by the worker handler and the page.
+**Reporting all nine from here would produce a "complete" breakdown quietly
+missing four stages** — the plan's own failure mode, one level down.
+
+- **REQUIRED, not optional.** `update` is the only producer of a snapshot and
+  always measures, so optional could only mean "a future path dropped it
+  silently". Hand-built fixtures use `ZERO_STAGE_TIMINGS`.
+- **Per-tile source costs are SUMMED, never sampled.** A working set is 1–3
+  tiles depending on how near a res-7 boundary the click landed, so sampling
+  would divide the fetch stage by three exactly where the click is slowest and
+  read correctly everywhere else.
+- **`mergeMs` is clocked apart from `fetchMs` although `acceptTile` runs inside
+  the fetch loop.** Stage 3 is the term predicted to grow across a session —
+  `this.tiles` never evicts, so `mergeTiles` re-merges everything on every
+  accept and clicking around is quadratic in tiles visited. Folded into
+  fetching, that growth would be invisible, and it is the term nothing has ever
+  measured.
+- **`fetchMs` and `pipelineMs` are wall clocks, and `fetchMs` is what makes the fetch parts
+  falsifiable.** `click-timings.ts` subtracts the per-tile parts from it and
+  reports the difference as `fetchUnattributedMs`. Any set of plausible
+  per-stage numbers adds up to something;
+  only a separately measured whole can say the parts are wrong.
+- **`tilesUnmeasured` is a count, not an absence.** A fixture-backed run must
+  not read as a click whose network cost nothing.
+- Every duration is floored at zero, for the reason `elapsedMs` gives in the OSM
+  package: a negative makes the reconciliation close by cancelling, so the gate
+  that would catch a clock problem goes quiet exactly when it should shout.
+
+Covered by `pipeline-timings.test.ts`.

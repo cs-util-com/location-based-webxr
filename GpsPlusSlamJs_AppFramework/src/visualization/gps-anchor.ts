@@ -142,6 +142,18 @@ function isObjectInAnchoredChain(object: THREE.Object3D): boolean {
  * instead never receives the alignment, so each steady-state re-registration
  * snaps the full alignment delta and the object visibly slides as the user
  * moves — the exact instability the anchor exists to prevent.
+ *
+ * **SCOPE: this is a rule about ANCHORS, not about the scene root.** The
+ * failure above is caused by RE-REGISTRATION — an anchor re-solves its local
+ * position from its GPS point repeatedly, and doing that outside the alignment
+ * applies the whole delta each time. Content that is built ONCE in GPS-world
+ * coordinates and never re-solved has no re-registration and therefore no
+ * slide: it belongs on the scene root, which is the GPS-world frame. See the
+ * "WHERE DO I ATTACH MY CONTENT?" block in `ar/ar-scene-hierarchy.ts`.
+ *
+ * Recorded because this comment has been read as "never parent GPS content to
+ * the scene root", which is not what it says and would send a caller with a
+ * pre-built city mesh down a much harder and wrong path.
  */
 function isDescendantOf(
   object: THREE.Object3D,

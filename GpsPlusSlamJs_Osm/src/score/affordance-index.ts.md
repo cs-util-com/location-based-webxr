@@ -109,10 +109,46 @@ Returns `{state:"scored", score}`, `{state:"empty"}` or `{state:"unknown"}`.
   reference's single best performance idea.
 - **Two-stage funnel**: a cheap bbox test from RAW inline positions over every
   feature, then ring stitching, clipping and covering only for survivors. At
-  res 7 a fetch tile holds ~21,800 features and a working set needs a handful,
-  so converting all of them would be the cost this class exists to avoid. A
+  res 7 a fetch tile is estimated at ~40,000–116,000 features and a working set
+  needs a handful, so converting all of them would be the cost this class exists
+  to avoid. (The ~21,800 previously quoted here is retracted — see
+  `resolutions.ts` FETCH_RES; the replacement is a bracket, not a count, because
+  no fixture holds a full res-7 tile.) A
   failed conversion is cached as a failure so a broken relation is examined
   once, not once per chunk forever.
+  - ⚠️ **It is a LINEAR SWEEP, not a tree.** Every merged feature of every held
+    tile is bbox-tested on every scoring pass, and tiles are never evicted, so
+    the sweep grows for the whole session. `scoreChunks` used to describe this
+    as working "exactly as the reference queries its quadtree", which is wrong
+    in the one way that matters — a quadtree does not visit every feature.
+    - Defensible on **cost**: the whole sweep measures ~1.1 ms across a res-7
+      tile's features, so a tree saves ~1 ms per move
+      ([design §1](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-31-1005-osm-spatial-index-design.md)).
+    - Not defensible on **capability**: AR frame-loop queries ("what is in the
+      direction the user is looking") need real geometry-based overlap lookups,
+      which this shape cannot answer at all. A `flatbush` index was planned to
+      ship as the package's first runtime dependency; the supporting modules
+      (`geometry-overlap`, `bbox-overlap`, `ring-overlap`, the bench) landed and
+      the index did not. See
+      [the 2026-08-13 review findings](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-13-2305-osm-spatial-structure-review-findings.md).
+  - **No oversize guard, unlike `buildFeatureIndex`.** What keeps a
+    continental-extent feature finite here is the clip to the batch's selection
+    box, not a budget. Measured on the `beach` fixture (the entire North Sea as
+    one relation): a radius-4 batch's box is **1.812×** the chunks' own area and
+    holds 5 417 res-13 cells, the clipped cover produces **4 409** of which
+    2 177 are kept, and `update` takes ~93 ms. The bound is a consequence of the
+    scored disc's size and nothing states it — see
+    `oversize-feature-guard.test.ts`.
+  - **`selectionBoxFor` is exported for that test** (r514 review). It had a
+    private copy of the union loop and of `CHUNK_MARGIN_DEG`, so the one
+    production knob its ratio assertion guards was invisible to it — raising the
+    margin would grow the real box while the test kept measuring the old
+    constant and passing.
+  - **`stats.cellsCovered` counts the INPUT side of the per-chunk filter.**
+    Everything else here counts kept cells, which are capped at `chunks × 49` by
+    construction, so the cost of covering against the whole box was
+    unobservable: deleting the clip left every assertion passing and the suite
+    grinding as the only signal.
 - **The whole batch of not-yet-held chunks is scored in ONE pass over the
   features** (`scoreChunks`), not one pass per chunk.
   - Measured 2026-07-29 (perf loop): **84 % of `update`'s time was

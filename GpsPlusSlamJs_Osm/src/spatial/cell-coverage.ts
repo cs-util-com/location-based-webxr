@@ -23,6 +23,7 @@ import {
 } from "h3-js";
 import type { LatLng } from "../model/osm-feature.js";
 import type { OsmGeometry } from "../model/osm-geometry.js";
+import { overlappingCells } from "./cell-overlap.js";
 import { AFFORDANCE_RES } from "./resolutions.js";
 
 /** One cell a feature touches, with how much of it the feature covers. */
@@ -103,6 +104,14 @@ function addPoint(cells: Set<string>, position: LatLng, res: number): void {
  * Holes are subtracted: h3's polygon format takes `[outer, ...holes]` and
  * honours them, so a courtyard inside a building is correctly not covered by
  * the building.
+ *
+ * **A HOLE-FREE RING IS COVERED BY `cell-overlap.ts` INSTEAD, and that is the
+ * hot path.** h3's call costs ~0.5–0.8 ms whatever it returns, which made it the
+ * whole bill for anything that covers many small rings — the obstacle sweep pays
+ * it 3 397 times over the corpus. The fast path reproduces `containmentOverlapping`
+ * exactly and declines whenever it is unsure, so h3 remains the answer for
+ * everything it does not take: rings with holes, rings too large to be worth
+ * covering by hand, and anything degenerate.
  */
 function addPolygon(
   cells: Set<string>,
@@ -118,12 +127,28 @@ function addPolygon(
     .map((ring) => ring.map((p) => [p.lat, p.lng] as [number, number]));
 
   const before = cells.size;
-  for (const cell of polygonToCellsExperimental(
-    polygon,
-    res,
-    POLYGON_TO_CELLS_FLAGS.containmentOverlapping,
-  )) {
-    cells.add(cell);
+  // Only a single ring: with holes, h3 subtracts them and the fast path has no
+  // equivalent — a cell buried inside a courtyard would be covered when it must
+  // not be. Restricting by ring COUNT rather than by trying and giving up keeps
+  // that impossible rather than merely untested.
+  const fast =
+    polygon.length === 1
+      ? overlappingCells(
+          outer.map((p) => ({ x: p.lng, y: p.lat })),
+          res,
+        )
+      : undefined;
+
+  if (fast !== undefined) {
+    for (const cell of fast) cells.add(cell);
+  } else {
+    for (const cell of polygonToCellsExperimental(
+      polygon,
+      res,
+      POLYGON_TO_CELLS_FLAGS.containmentOverlapping,
+    )) {
+      cells.add(cell);
+    }
   }
 
   // Belt-and-braces: guarantee a small feature is never invisible — a 2 m kiosk

@@ -81,6 +81,22 @@ export function groundLift(layer: LayerKind): number {
 export const GROUND_LAYERS = ["plates", "roads", "areas", "cells"] as const;
 
 /**
+ * The planned route's polyline, one rung ABOVE the highest ground layer.
+ *
+ * IT LIVES HERE RATHER THAN IN `route-path.ts` because that is this module's
+ * whole reason for existing: a constant chosen next to the thing that uses it is
+ * a constant chosen against whichever neighbour its author happened to think of.
+ * A route is not a `LayerKind` — it is not toggleable and it is not a claim
+ * about the ground — so it cannot go through `groundLift`, but it is coplanar
+ * with everything that does.
+ *
+ * ABOVE `cells`, which is the top of the ladder, because the route is the thing
+ * the user just asked for. Occluding it behind an affordance overlay would hide
+ * the one artefact stage 4 exists to show (DEC-R11-3).
+ */
+export const ROUTE_LIFT_M = STEP_M * 5;
+
+/**
  * Draw order for the TRANSPARENT layers (DEC-R7b-7).
  *
  * WHY THIS EXISTS AT ALL. Until round 8 nothing in the demo set `renderOrder`,
@@ -114,4 +130,9 @@ export const RENDER_ORDER = Object.freeze({
   // ground they are meant to be seen under. Their material disables depth
   // testing for the same reason, and render order is what then decides.
   underground: 3,
+  // THE TOP RUNG, for the same reason `ROUTE_LIFT_M` is the top of the lift
+  // ladder: the planned route is the artefact stage 4 exists to show
+  // (DEC-R11-3), and a route half-hidden behind a building proves nothing. Its
+  // material disables depth testing, so this is what decides where it lands.
+  route: 4,
 });

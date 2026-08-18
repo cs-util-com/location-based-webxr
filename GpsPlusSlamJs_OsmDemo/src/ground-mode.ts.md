@@ -14,6 +14,14 @@ DEC-R5-4).
 - `DEFAULT_GROUND_MODE` — `"cpu-ramp"`.
 - `groundModeLabel(mode)` — what the picker shows.
 - `groundStrategy(mode)` — which displacement path the mode drives.
+- `groundIsOrderable(strategy)` — whether a click on the ground yields a
+  destination worth trusting. **Only `cpu`.** The raycaster reads the POSITION
+  BUFFER and only the CPU path writes displacement into it, so under `gpu` a ray
+  meets a flat plane while the user looks at a shader-displaced one — and since
+  the destination is taken as `x`/`z`, the error is horizontal (roughly
+  `relief / tan(elevation)` on an oblique click, and Heidelberg has tens of
+  metres of relief in one tile). `none` is refused because there is nothing on
+  screen to click. Raised in review on #274.
 - `groundAppearance(mode)` — `plain` | `slope` | `ramp`.
 - `groundShowsRamp(mode)` — whether the ramp material is used (now derived from
   `groundAppearance`).
