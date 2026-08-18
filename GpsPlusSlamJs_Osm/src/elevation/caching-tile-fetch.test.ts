@@ -284,4 +284,45 @@ describe("scope guards", () => {
       cachingFetch(URL_A, { signal: controller.signal }),
     ).rejects.toMatchObject({ name: "AbortError" });
   });
+
+  it("rejects for an already-aborted signal carried on a Request input, even on a hit", async () => {
+    // Same guarantee as above, spelled the OTHER legal way: the fetch spec lets
+    // the signal ride on the `Request` rather than on `init`, and callers that
+    // build a Request once and reuse it do exactly that. Pre-checking only
+    // `init.signal` made the abort silently ineffective precisely when the
+    // cache was warm — the hit path answered a cancelled request.
+    const store = new MemoryBlobStore();
+    const { impl } = countingNetwork();
+    const cachingFetch = createCachingTileFetch({ store, fetchImpl: impl });
+    await cachingFetch(URL_A); // populate
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      cachingFetch(new Request(URL_A, { signal: controller.signal })),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("does not let an `init` without a real signal detach the Request's", async () => {
+    // The precedence subtlety, pinned: `init.signal` overrides a Request's own
+    // signal, and an explicit `null` detaches it — but under WebIDL a member
+    // set to `undefined` counts as ABSENT, so an init spread that happens to
+    // carry `signal: undefined` must not silently disarm the abort.
+    const store = new MemoryBlobStore();
+    const { impl } = countingNetwork();
+    const cachingFetch = createCachingTileFetch({ store, fetchImpl: impl });
+    await cachingFetch(URL_A); // populate
+
+    const controller = new AbortController();
+    controller.abort();
+    const request = new Request(URL_A, { signal: controller.signal });
+
+    await expect(
+      cachingFetch(request, { signal: undefined }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    // …while an explicit null DOES detach it, per the spec.
+    await expect(
+      cachingFetch(request, { signal: null }),
+    ).resolves.toMatchObject({ status: 200 });
+  });
 });

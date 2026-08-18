@@ -16,7 +16,8 @@ All heights ellipsoidal metres; scene `y = 0` is the WGS84 ellipsoid.
 ```
 sample_i = hitYar_i − terrain(hitENU_i)      // baseline-free, slow, physical
 autoM    = baselineY + robust(sample_i)      // baselineY = alignment[13]
-applied  = autoM + manualTrimM               // composeElevationM, one place
+target   = engaged ? autoM : 0               // the confidence gate (F1)
+applied  = easedToward(target) + manualTrimM // composeElevationM, one place
 ```
 
 - **Sign:** a measured floor ABOVE the DEM surface ⇒ positive ⇒ the city
@@ -41,6 +42,18 @@ applied  = autoM + manualTrimM               // composeElevationM, one place
   composed target at `AUTO_APPLY_RATE_M_PER_S` (1.5 m/s — 3× the estimator's
   rate, so the ease adds little lag on top of the corpus-tuned smoothing),
   and the manual trim stays instant (owner-driven, DEC-E1).
+- **Publishing is NOT applying (cold-review F1):** both framework sidecars
+  (`floor-estimator.ts.md`, `elevation-offset-estimator.ts.md`) state that the
+  estimators REPORT and the CALLER gates, and both spell the gate
+  `confidence >= 0.5`. That contract has teeth: the offset estimator FLOORS a
+  bad hit's weight (`MIN_CONFIDENCE_WEIGHT = 0.01`) instead of rejecting it, so
+  crushed estimates — a floor lock outside the plausibility band, or an
+  extrapolation-clamped plane (confidence × 0.2) — still accumulate past
+  `MIN_OUTPUT_WEIGHT` and publish an `offsetM` at a confidence of hundredths.
+  Ungated, that eased the entire city vertically at 1.5 m/s on evidence the
+  estimator itself rated as worthless. The estimator's own confidence-collapse
+  freeze cannot stand in for the gate: it fires only once an output exists, so
+  it would FREEZE the bad value rather than refuse it.
 - **Slope-correct sampling (plan §2.4):** the DEM is sampled per hit at the
   hit's own ENU, not once at the camera — on a hillside "the floor height" is
   position-dependent and the freshest cells sit metres ahead of the phone.
@@ -59,6 +72,15 @@ applied  = autoM + manualTrimM               // composeElevationM, one place
 - `composeElevationM(autoM, manualTrimM)` — the ONE composition of the
   applied offset; `null` auto contributes zero, so the manual nudge behaves
   exactly as before this feature existed (kill-switch/cold-start contract).
+- `AUTO_ENGAGE_CONFIDENCE` (0.5) / `AUTO_RELEASE_CONFIDENCE` (0.3) /
+  `nextAutoEngaged(previouslyEngaged, confidence)` — the confidence gate as a
+  pure decision with **hysteresis**. Engage at 0.5 (the framework sidecars'
+  own gate value), stay engaged down to 0.3, and treat a non-finite confidence
+  as disengaged. Two thresholds rather than one because a confidence hovering
+  at a single threshold FLAPS, and each flap eases the whole city down and
+  back up at `AUTO_APPLY_RATE_M_PER_S`; the dead band makes engagement a state
+  with memory instead of a per-tick coin flip. A real degradation still
+  crosses it and releases.
 - `createArElevationAuto({ grid, terrainHeightM, anchorOffsetNue })` →
   `{ sample(input): ArElevationAutoState, reset(): void }`.
   - `reset()` (cold-review F2) — back to a true cold start: fresh estimator,
@@ -79,6 +101,15 @@ applied  = autoM + manualTrimM               // composeElevationM, one place
   - `ArElevationAutoState.autoM` is `null` only on a TRUE cold start (never
     had a value, or `reset()` after a tracking restart) or with the kill
     switch — those contribute 0.
+  - `ArElevationAutoState.engaged` is the gate's answer for this tick. While
+    it is false the auto contribution is **zero** and the manual trim behaves
+    exactly as it did before this feature existed, but `autoM` stays published
+    — the measurement is real and belongs on the HUD, labelled as not applied
+    (`ar-measurements.ts` renders `low` / `not applied`). Engaging and
+    releasing both go through `ar-mode.ts`'s ease, so neither ever steps.
+    `reset()` returns to disengaged; the pose-gap hold re-runs the gate on the
+    DECAYED confidence, so a long outage eventually releases rather than
+    leaving the city standing on an unconfirmed value.
   - **A pose/alignment GAP holds the last value instead** (cold-review F3
     revised the earlier flap-to-null rule): a tracking blip that composes as
     0 teleports the city by the full offset and back, while the physical
@@ -121,9 +152,10 @@ const auto = createArElevationAuto({
   terrainHeightM: (enu) => terrainReadout(terrain, enu, arN).terrainHeightM,
   anchorOffsetNue: geometricOffset,
 });
-// per frame (ar-mode.ts eases appliedAutoM toward state.autoM ?? 0 at
+// per frame (ar-mode.ts eases appliedAutoM toward the GATED target at
 // AUTO_APPLY_RATE_M_PER_S before composing — see the two-stage note above):
 const state = auto.sample({ nowMs, cameraPosAr, alignment });
+const targetM = state.engaged && state.autoM !== null ? state.autoM : 0;
 applyElevation(composeElevationM(appliedAutoM, manualTrimM));
 // on odometryTrackingRestarted (same callback as pipeline.clear()):
 auto.reset();
@@ -136,7 +168,11 @@ yawed-alignment variant that a translation-only fixture cannot see), per-hit
 DEM sampling at the hit's own ENU, the AR-datum gate, null on cold start /
 empty grid, the pose-gap hold with decaying confidence (F3), `reset()`
 returning to a true cold start (F2), the tick throttle, the compose
-contract, and the kill-switch parser.
+contract, the kill-switch parser, and the **confidence gate** (F1): a
+standstill stream publishes for 30 ticks and never engages, a walked stream
+engages once it earns the confidence, `reset()` disengages, and
+`nextAutoEngaged` is pinned directly at both thresholds — including the 0.6 →
+0.35 decay that must stay engaged and the drop below 0.3 that must release.
 `ar-elevation-auto.property.test.ts` — `arPointToSceneNue` against the
 `THREE.Vector3.applyMatrix4` oracle over random yaws/translations/points,
 plus the undefined-never-NaN contract (F9). The chain into the scene

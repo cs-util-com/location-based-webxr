@@ -24,6 +24,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createElevationOffsetEstimator,
   DEFAULT_ELEVATION_OFFSET_OPTIONS,
+  MAX_SLEW_DT_S,
   type ElevationOffsetOptions,
   type ElevationOffsetState,
   type ElevationOffsetTick,
@@ -110,6 +111,39 @@ function makeTick(
 }
 
 describe('createElevationOffsetEstimator', () => {
+  it('a long tick GAP buys no extra step budget (slew dt is clamped)', () => {
+    // Why this test matters: the slew budget is `rate × dt`, and `dt` is
+    // wall-clock. A caller that withholds ticks — a pose gap, a suspended
+    // tab, a consumer that skips `update` while tracking is lost — could
+    // therefore hand the estimator a 20 s dt and license a 10 m single-tick
+    // jump of the whole world, against a window that has meanwhile evicted
+    // and holds only the FIRST post-gap tick's samples. A gap must only
+    // DELAY progress, never buy it, and that has to be enforced HERE so no
+    // consumer can opt out of it by withholding ticks.
+    const options: ElevationOffsetOptions = {
+      windowSeconds: 10,
+      // Isolate the slew: the freeze layer would otherwise snapshot the
+      // output on the post-gap step and hide the budget entirely.
+      freeze: { thresholdM: 1e6, lowConfidence: 0 },
+    };
+    const est = createElevationOffsetEstimator(options);
+    let last: ElevationOffsetState | undefined;
+    for (let i = 0; i < 5; i++) {
+      last = est.update(makeTick(i, 0));
+    }
+    expect(last?.offsetM).toBeCloseTo(0, 6);
+
+    // 20 s of silence, then a tick whose window (all older samples evicted)
+    // medians at +10 m.
+    const gapped = est.update({
+      ...makeTick(5, 10),
+      tMs: 4000 + 20_000,
+    });
+    const budgetM =
+      DEFAULT_ELEVATION_OFFSET_OPTIONS.slewRatePerSecondM * MAX_SLEW_DT_S;
+    expect(Math.abs(gapped.offsetM ?? 99)).toBeLessThanOrEqual(budgetM + 1e-9);
+  });
+
   it('outputs null until the window has minimal sample mass', () => {
     const est = createElevationOffsetEstimator();
     // A lone floored-confidence hit carries almost no weight: no output.

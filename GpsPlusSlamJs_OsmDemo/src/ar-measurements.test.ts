@@ -247,9 +247,47 @@ describe("describeArMeasurements — the height decomposition", () => {
     const lines = describeArMeasurements({
       autoOffsetM: 1.4,
       autoConfidence: 0.83,
+      autoEngaged: true,
     });
 
     expect(lines).toContain("auto +1.4 m (conf 0.83)");
+  });
+
+  it("says an unengaged offset is NOT applied (cold-review F1)", () => {
+    // WHY THIS TEST MATTERS. Below the confidence gate the estimator still
+    // publishes a real measurement, but the city is NOT moved by it. A line
+    // reading `auto +1.4 m (conf 0.12)` would have the field observer looking
+    // for a 1.4 m correction that was never applied and concluding the whole
+    // feature is broken — the readout must say which of the two states it is
+    // in, because nothing else on screen can.
+    expect(
+      describeArMeasurements({
+        autoOffsetM: 1.4,
+        autoConfidence: 0.12,
+        autoEngaged: false,
+      }),
+    ).toContain("auto +1.4 m (conf 0.12, low)");
+  });
+
+  it("names both states when an unengaged offset is also frozen", () => {
+    // Both flags are independent and both are diagnostic — neither may be
+    // swallowed by the other.
+    expect(
+      describeArMeasurements({
+        autoOffsetM: -2.5,
+        autoConfidence: 0.08,
+        autoEngaged: false,
+        autoFrozen: true,
+      }),
+    ).toContain("auto -2.5 m (conf 0.08, low, frozen)");
+  });
+
+  it("says 'not applied' when unengaged with no confidence reported", () => {
+    // A bare `low` with no number to qualify it would be meaningless; the
+    // fact that survives is that the value is not on the content.
+    expect(
+      describeArMeasurements({ autoOffsetM: 1.4, autoEngaged: false }),
+    ).toContain("auto +1.4 m (not applied)");
   });
 
   it("signs a negative auto offset and names the frozen state", () => {
@@ -260,6 +298,9 @@ describe("describeArMeasurements — the height decomposition", () => {
       describeArMeasurements({
         autoOffsetM: -2.5,
         autoConfidence: 0.4,
+        // Engaged at 0.40: below the 0.5 ENGAGE threshold but above the 0.3
+        // RELEASE one — the hysteresis dead band, held from a healthier tick.
+        autoEngaged: true,
         autoFrozen: true,
       }),
     ).toContain("auto -2.5 m (conf 0.40, frozen)");

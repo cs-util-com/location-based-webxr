@@ -112,6 +112,7 @@ export {
   type ElevationOffsetState,
   type ElevationOffsetEstimator,
   DEFAULT_ELEVATION_OFFSET_OPTIONS,
+  MAX_SLEW_DT_S,
   createElevationOffsetEstimator,
 } from './elevation-offset-estimator.js';
 

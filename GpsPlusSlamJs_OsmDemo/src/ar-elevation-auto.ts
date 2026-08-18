@@ -33,6 +33,14 @@
  * (`AUTO_APPLY_RATE_M_PER_S`), so no published step ever moves the content
  * in one frame; the manual trim stays instant (owner-driven, DEC-E1).
  *
+ * **PUBLISHING IS NOT APPLYING** (cold-review F1). The framework estimators
+ * REPORT and the caller GATES — both their sidecars say so, and both spell the
+ * gate `confidence >= 0.5`. `ArElevationAutoState.engaged` is that gate, with
+ * hysteresis; see {@link AUTO_ENGAGE_CONFIDENCE}. While it is false the auto
+ * contribution is ZERO and the manual trim behaves exactly as it did before
+ * this feature existed, while `autoM` stays published so the HUD can show the
+ * measurement AND say that it is not applied.
+ *
  * **NO EXTRA GEOID TERM.** In AR the demo's terrain field is sampled with
  * `absoluteDatum = −N` (see `absoluteDatumFor`), so `heightAt` already
  * returns ELLIPSOIDAL DEM+N — the same datum the scene's y = 0 and the
@@ -165,6 +173,16 @@ export interface ArElevationAutoState {
   readonly confidence: number;
   /** True while the freeze layer holds the offset (tower/stairs/bridge). */
   readonly frozen: boolean;
+  /**
+   * Whether {@link autoM} may be APPLIED to the content — the confidence gate
+   * with hysteresis (see {@link nextAutoEngaged}). False whenever `autoM` is
+   * null, and false while the measurement is too weak to move a city on.
+   *
+   * `autoM` stays published either way: the value is a real measurement and
+   * belongs on the HUD (labelled as not applied — see `ar-measurements.ts`).
+   * Engagement is a separate question from whether a number exists.
+   */
+  readonly engaged: boolean;
 }
 
 interface ArElevationAutoInput {
@@ -225,10 +243,60 @@ export interface ArElevationAuto {
  */
 const POSE_GAP_CONFIDENCE_TAU_S = 10;
 
+/**
+ * Published confidence at which the auto contribution starts being APPLIED.
+ *
+ * **THE CALLER IS THE GATE — the framework says so.** Both framework sidecars
+ * (`floor-estimator.ts.md` and `elevation-offset-estimator.ts.md`) state that
+ * the estimators REPORT and callers GATE, and both spell the gate
+ * `confidence >= 0.5` in their usage examples. That contract has a hard edge:
+ * the offset estimator FLOORS a bad hit's weight (`MIN_CONFIDENCE_WEIGHT`)
+ * rather than rejecting it, so a stream of crushed estimates — a floor lock
+ * outside the plausibility band, or an extrapolation-clamped plane (confidence
+ * × 0.2) — still accumulates past the estimator's own `MIN_OUTPUT_WEIGHT` and
+ * publishes an `offsetM` at a confidence of a few hundredths. Ungated, that
+ * eased the entire city vertically on evidence the estimator was itself
+ * reporting as worthless.
+ *
+ * The estimator's confidence-collapse freeze cannot stand in for this gate:
+ * it only fires once an output EXISTS, so it would freeze the bad value in
+ * place rather than refuse it.
+ */
+export const AUTO_ENGAGE_CONFIDENCE = 0.5;
+
+/**
+ * Published confidence below which an ENGAGED contribution is released.
+ *
+ * Strictly below {@link AUTO_ENGAGE_CONFIDENCE} on purpose: with one
+ * threshold, a confidence hovering at it flaps, and every flap eases the whole
+ * city down and back up at the applied ease rate. The dead band between 0.3
+ * and 0.5 makes engagement a state with memory instead of a per-tick coin
+ * flip; a real degradation still crosses it and releases.
+ */
+export const AUTO_RELEASE_CONFIDENCE = 0.3;
+
+/**
+ * The confidence gate, as a pure decision: engage at
+ * {@link AUTO_ENGAGE_CONFIDENCE}, hold until {@link AUTO_RELEASE_CONFIDENCE}.
+ *
+ * A non-finite confidence is treated as disengaged — it must neither read as
+ * "above the threshold" nor latch an existing engagement.
+ */
+export function nextAutoEngaged(
+  previouslyEngaged: boolean,
+  confidence: number,
+): boolean {
+  if (!Number.isFinite(confidence)) return false;
+  return previouslyEngaged
+    ? confidence >= AUTO_RELEASE_CONFIDENCE
+    : confidence >= AUTO_ENGAGE_CONFIDENCE;
+}
+
 const AUTO_OFF: ArElevationAutoState = {
   autoM: null,
   confidence: 0,
   frozen: false,
+  engaged: false,
 };
 
 /** Create the session's auto-elevation estimator. One per AR session. */
@@ -249,11 +317,16 @@ export function createArElevationAuto(
    */
   const holdThroughGap = (gapS: number): ArElevationAutoState => {
     if (state.autoM === null) return AUTO_OFF;
+    const confidence =
+      state.confidence * Math.exp(-gapS / POSE_GAP_CONFIDENCE_TAU_S);
     state = {
       autoM: state.autoM,
-      confidence:
-        state.confidence * Math.exp(-gapS / POSE_GAP_CONFIDENCE_TAU_S),
+      confidence,
       frozen: state.frozen,
+      // The gate runs on the DECAYED confidence, so a long outage eventually
+      // releases the contribution instead of leaving the city standing on a
+      // value nothing has confirmed for a minute.
+      engaged: nextAutoEngaged(state.engaged, confidence),
     };
     return state;
   };
@@ -322,6 +395,7 @@ export function createArElevationAuto(
               autoM: baselineY + est.offsetM,
               confidence: est.confidence,
               frozen: est.frozen,
+              engaged: nextAutoEngaged(state.engaged, est.confidence),
             };
       return state;
     },

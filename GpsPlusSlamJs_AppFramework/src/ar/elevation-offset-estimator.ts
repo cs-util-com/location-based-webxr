@@ -151,6 +151,25 @@ export const DEFAULT_ELEVATION_OFFSET_OPTIONS = {
   },
 } as const;
 
+/**
+ * Upper bound on the slew clock's `dt`, seconds — a GAP MUST NEVER BUY STEP
+ * BUDGET, IT MAY ONLY DELAY PROGRESS.
+ *
+ * The step budget is `slewRatePerSecondM × dt` with `dt` measured in wall
+ * clock, so any stretch without a tick accumulates budget the estimator never
+ * spent: a consumer that withholds `update` while the pose is lost (the AR
+ * demo's `holdThroughGap` does exactly that) would hand back a 20 s dt and
+ * license a 10 m single-tick move of the whole world — against a window that
+ * has meanwhile evicted and holds only the first post-gap tick's samples.
+ * Enforcing the bound HERE rather than asking callers to tick faithfully is
+ * deliberate: no consumer can opt out of it, and every consumer benefits.
+ *
+ * 2 s is ~2 ticks at the intended ~1 Hz cadence — generous enough that a
+ * merely irregular cadence still catches up in one step, small enough that the
+ * worst single step stays at the default 1 m.
+ */
+export const MAX_SLEW_DT_S = 2;
+
 /** Floor for the confidence factor of a sample's weight (never 0 → no ∞/NaN). */
 const MIN_CONFIDENCE_WEIGHT = 0.01;
 /** Floor for the per-tick novelty factor (a standstill still updates, slowly). */
@@ -590,7 +609,13 @@ class SlewLimitedFrozenMedianEstimator implements ElevationOffsetEstimator {
       }
       this.outputM = medianM;
     } else {
-      const dtS = Math.max(0, (tick.tMs - this.outputTMs) / 1000);
+      // CLAMPED dt: see MAX_SLEW_DT_S — an unticked stretch must not be
+      // cashed in as one giant step. The clock still advances to `tick.tMs`
+      // below, so the gap delays the catch-up instead of licensing a jump.
+      const dtS = Math.min(
+        MAX_SLEW_DT_S,
+        Math.max(0, (tick.tMs - this.outputTMs) / 1000)
+      );
       const maxStepM = this.opts.slewRatePerSecondM * dtS;
       const delta = medianM - this.outputM;
       this.outputM += Math.min(maxStepM, Math.max(-maxStepM, delta));

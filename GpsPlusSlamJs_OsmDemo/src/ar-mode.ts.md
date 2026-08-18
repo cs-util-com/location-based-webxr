@@ -140,15 +140,23 @@ the two are one decision.
   behave exactly as before the feature existed. The auto state also feeds the
   HUD's `auto` line beside the raw `above terrain` residual — the pair is the
   M5 instrument (`ar-measurements.ts`).
+  - **Only an ENGAGED auto value reaches the content** (cold-review F1). The
+    eased target is `latestAuto.engaged ? autoM : 0`, never the published
+    value alone: the framework estimators report and the caller gates, and a
+    stream of crushed floor estimates still publishes an `offsetM` at a
+    confidence of hundredths (`ar-elevation-auto.ts.md` has the mechanism).
+    Both thresholds and the hysteresis live in `ar-elevation-auto.ts`; this
+    module only reads `engaged`. The HUD's `auto` line carries `autoEngaged`
+    so it can say `low` rather than imply the city moved.
   - **The applied auto value is EASED, the manual trim is instant**
-    (cold-review F4; DEC-E1). `appliedAutoM` glides toward the published
-    target at `AUTO_APPLY_RATE_M_PER_S` (1.5 m/s, 3× the estimator's slew
+    (cold-review F4; DEC-E1). `appliedAutoM` glides toward the gated target
+    at `AUTO_APPLY_RATE_M_PER_S` (1.5 m/s, 3× the estimator's slew
     rate) per frame, so the cold-start first value and each 1 Hz step reach
-    the content as an ease, never a one-frame step — and a reset/kill eases
-    back to zero the same way. The split is deliberate: a measured signal
-    must arrive gently, an owner override must obey immediately. The HUD
-    shows the estimator's PUBLISHED value; the application catches up to it
-    within a second or two.
+    the content as an ease, never a one-frame step — and a reset/kill, or a
+    RELEASE of the confidence gate, eases back to zero the same way. The
+    split is deliberate: a measured signal must arrive gently, an owner
+    override must obey immediately. The HUD shows the estimator's PUBLISHED
+    value; the application catches up to it within a second or two.
   - **`geometricOffset` doubles as the estimator's `anchorOffsetNue`**, so the
     frame the city is attached in and the frame hits are compared in cannot
     disagree.
@@ -264,7 +272,13 @@ file-wide: `ar-mode.test.ts` keeps the REAL `ar-depth-pipeline` and drives the
 full fold → floor → offset chain to the one observable end (`attachContentTo`'s
 `up`, the HUD's `auto` line, the trim composition, the pre-alignment null, the
 application-time ease of the first value, the estimator reset on a tracking
-restart, the kill-switch flag set); `ar-mode.depth-wiring.test.ts` swaps in a
+restart, the kill-switch flag set, and the confidence gate — a standstill
+stream never moves the content while the HUD tags it `low`, and a release
+eases back to zero instead of snapping). Those tests WALK the alignment
+because the estimator's novelty weighting deliberately deflates a standstill:
+a stationary stream saturates near 0.1 confidence and never engages, so any
+assertion about an applied auto value would hold vacuously without the walk.
+`ar-mode.depth-wiring.test.ts` swaps in a
 spy pipeline to pin the lifecycle wiring itself — every captured sample reaches
 `fold`, `clear` runs in the same callback as the `odometryTrackingRestarted`
 dispatch, and no pipeline exists without the dep.

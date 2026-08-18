@@ -168,7 +168,7 @@ need **opposite** fixes.
   symptom, stated instead of inferred from a scene that looks wrong. Its sign is
   the information: negative means the camera is under the ground, which is the
   state that makes buildings float overhead.
-- **`auto ±X.X m (conf 0.NN[, frozen]) · <dem label>`** — the published
+- **`auto ±X.X m (conf 0.NN[, low][, frozen]) · <dem label>`** — the published
   automatic elevation offset (`ar-elevation-auto.ts`:
   `baseline + robust(floor − DEM)`), shown even collapsed, right under the
   residual it pairs with.
@@ -184,9 +184,17 @@ need **opposite** fixes.
     fused-vertical error live** — and once auto engages, the city can look
     right while `above terrain` still reads +7 m, so the M5 field protocol
     must name which line means what.
+  - **`low` means PUBLISHED BUT NOT APPLIED** (cold-review F1). The demo gates
+    the auto contribution on `autoEngaged`; below the gate the estimator still
+    reports a real measurement but the city does not carry it. Without the tag
+    the line reads `auto +1.4 m (conf 0.12)` and a field observer hunts for a
+    1.4 m correction that was never made, concluding the feature is broken.
+    With no confidence to qualify it the tag reads `not applied` instead, and
+    an ABSENT `autoEngaged` prints no tag at all — this module never invents a
+    state it was not told about.
   - `frozen` names the freeze layer holding the offset while the user climbs
     man-made structure (tower/stairs/bridge) — the state the M5 tower walk
-    watches for, visible nowhere else.
+    watches for, visible nowhere else. Independent of `low`: both can show.
   - Absent whenever the estimator publishes nothing (cold start, kill switch
     `?autoElevation=off`, no alignment) — never `+0.0 m`, which would claim
     measured agreement.

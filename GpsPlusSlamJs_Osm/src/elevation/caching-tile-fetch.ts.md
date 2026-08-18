@@ -66,10 +66,13 @@ provider's existing job.
   fetch-compatible, and serving a POST's answer from a byte cache would be
   wrong in every way.
 - **A pre-aborted signal rejects with `AbortError` even on a hit** — the
-  synthetic path must not be more alive than the network it stands in for.
-  This guarantee is scoped to `init.signal`: a signal carried on a `Request`
-  input is not pre-checked here (it still governs the delegated network fetch,
-  but a warm hit with only a Request-carried signal resolves).
+  synthetic path must not be more alive than the network it stands in for. The
+  guarantee covers **both** legal spellings: `init.signal` and a signal carried
+  on a `Request` input. Precedence follows the fetch spec — `init.signal` wins,
+  an explicit `signal: null` detaches the Request's own, and `signal:
+undefined` counts as ABSENT (a WebIDL member set to `undefined` is not
+  present) so it falls through to the Request's signal rather than disarming
+  it.
 - **Bytes are stored as base64** (`btoa`/`atob`, chunked), because
   `OsmBlobStore` is string-valued; the ~33% overhead is accepted to reuse the
   existing seam unchanged. Works in window, Worker and Node — nothing touches
@@ -82,7 +85,9 @@ provider's existing job.
 `caching-tile-fetch.test.ts` — hit without network (across a wrapper restart),
 the hit marker header, miss persist-and-replay with the body readable in full,
 string/`URL`/`Request` keying, 404 and network-error pass-through, failing
-store write/read, corrupt entry, non-GET bypass, pre-aborted signal.
+store write/read, corrupt entry, non-GET bypass, pre-aborted signal on `init`,
+pre-aborted signal carried on a `Request` input, and the `undefined` vs `null`
+precedence between the two.
 `caching-tile-fetch.property.test.ts` — for any interleaving of hit/miss over
 random URL sequences: every returned body equals the canonical bytes for its
 URL, and the network is called exactly once per distinct URL.

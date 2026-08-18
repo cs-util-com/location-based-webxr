@@ -304,6 +304,34 @@ describe("the automatic elevation offset", () => {
       tracking: { onRestarted: (payload: unknown) => void };
     };
 
+  type FrameFn = (ctx: { dt: number; elapsed: number }) => void;
+  const frameFn = () => registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
+
+  /** Metres per second of simulated walking (see {@link walkFrames}). */
+  const WALK_SPEED_M_PER_S = 1.5;
+
+  /**
+   * Run frames from `fromS` to `toS` while WALKING east at
+   * {@link WALK_SPEED_M_PER_S}.
+   *
+   * Walking is not cosmetic here (cold-review F1): the offset estimator's
+   * novelty weighting deliberately deflates a standstill — correlated
+   * re-observations are not new evidence — so a stationary stream saturates
+   * around 0.1 confidence and never clears the demo's engage gate. The walk is
+   * carried by the ALIGNMENT translation, which moves camera and floor hits
+   * together in ENU while the raw-AR plate stays under the camera; that is
+   * what lets one fixed synthetic grid stand in for a walked one.
+   */
+  const walkFrames = (fromS: number, toS: number, stepS = 1 / 60): number => {
+    const onFrame = frameFn();
+    let elapsed = fromS;
+    for (; elapsed <= toS; elapsed += stepS) {
+      arWorldGroup.matrix.elements[14] = elapsed * WALK_SPEED_M_PER_S;
+      onFrame({ dt: stepS, elapsed });
+    }
+    return elapsed;
+  };
+
   it("requests depth sensing and starts the reconstruction-cadence capture", async () => {
     await startArMode(deps({ autoElevation: { terrainHeightM: () => 100 } }));
 
@@ -345,16 +373,12 @@ describe("the automatic elevation offset", () => {
     depth?.onCaptured(sample);
     depth?.onCaptured(sample);
 
-    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
-      dt: number;
-      elapsed: number;
-    }) => void;
-    // Enough frames for the application-time ease (1.5 m/s, cold-review F4)
+    // Walk far enough to clear the confidence gate (cold-review F1 — the
+    // estimator's confidence climbs ~0.1 per moving tick, so ~5 s), then
+    // enough further for the application-time ease (1.5 m/s, cold-review F4)
     // to converge on the 1.4 m target — the ease itself is pinned in its own
     // test below; this one pins the CONVERGED value reaching the scene.
-    for (let i = 0; i <= 120; i++) {
-      onFrame({ dt: 1 / 60, elapsed: 1 + i / 60 });
-    }
+    walkFrames(1, 9);
 
     const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
     expect(attached.at(-1)?.offset?.up).toBeCloseTo(1.4, 1);
@@ -442,14 +466,21 @@ describe("the automatic elevation offset", () => {
     depth?.onCaptured(sample);
     depth?.onCaptured(sample);
 
-    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
-      dt: number;
-      elapsed: number;
-    }) => void;
-    onFrame({ dt: 1 / 60, elapsed: 1 });
-
-    const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
-    const firstStep = attached.at(-1)?.offset?.up ?? 0;
+    // Walk frame by frame and catch the FIRST frame on which the content
+    // moves at all. Since the confidence gate (cold-review F1) that first
+    // motion is the ENGAGE moment rather than the estimator's first publish —
+    // which makes the step it would take even larger, and the ease even more
+    // load-bearing.
+    const onFrame = frameFn();
+    let firstStep = 0;
+    for (let elapsed = 1; elapsed <= 9 && firstStep === 0; elapsed += 1 / 60) {
+      arWorldGroup.matrix.elements[14] = elapsed * WALK_SPEED_M_PER_S;
+      onFrame({ dt: 1 / 60, elapsed });
+      const applied = view.attachedTo
+        .filter((a) => a.frame === "gps-world-nue")
+        .at(-1)?.offset?.up;
+      firstStep = applied ?? 0;
+    }
     // Moved, but by at most one frame's rate budget (1.5 m/s × 1/60 s), not
     // by the full 1.4 m target.
     expect(firstStep).toBeGreaterThan(0);
@@ -495,30 +526,159 @@ describe("the automatic elevation offset", () => {
     depth?.onCaptured(sample);
     depth?.onCaptured(sample);
 
-    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
-      dt: number;
-      elapsed: number;
-    }) => void;
-    // Warm the chain until the eased value converges on +1.4 m.
-    for (let i = 0; i <= 120; i++) {
-      onFrame({ dt: 1 / 60, elapsed: 1 + i / 60 });
-    }
+    const onFrame = frameFn();
+    // Warm the chain by WALKING, until the value clears the confidence gate
+    // and the eased application converges on +1.4 m. Walking matters here:
+    // with a standstill stream the applied offset never leaves 0, and the
+    // "eases back to zero" assertion at the end of this test would hold
+    // vacuously — it would pass on an estimator that was never engaged.
+    const resumeS = walkFrames(1, 9);
     expect(document.body.textContent).toContain("auto +1.4 m");
+    const beforeRestart = view.attachedTo
+      .filter((a) => a.frame === "gps-world-nue")
+      .at(-1)?.offset?.up;
+    expect(beforeRestart).toBeCloseTo(1.4, 1);
 
     tracking.onRestarted({ some: "payload" });
 
     // The next tick sees a cleared grid AND a cold estimator: the publish
     // must return to null (HUD line gone). WITHOUT the reset the hold branch
     // keeps the dead frame's +1.4 m alive here — this is the discriminator.
-    onFrame({ dt: 1 / 60, elapsed: 4.5 });
+    // +1.5 s so both the ~1 Hz estimator tick and the throttled HUD write
+    // land — a single 1/60 s frame would leave the previous readout on screen
+    // and the assertion below would be about staleness, not about the reset.
+    const restartS = resumeS + 1.5;
+    onFrame({ dt: 1 / 60, elapsed: restartS });
     expect(document.body.textContent ?? "").not.toContain("auto ");
     // And the APPLIED offset eases back toward the auto-off contribution of
     // zero rather than holding the dead-frame value.
     for (let i = 1; i <= 120; i++) {
-      onFrame({ dt: 1 / 60, elapsed: 4.5 + i / 60 });
+      onFrame({ dt: 1 / 60, elapsed: restartS + i / 60 });
     }
     const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
     expect(attached.at(-1)?.offset?.up ?? NaN).toBeCloseTo(0, 5);
+
+    arWorldGroup.matrix.identity();
+    getCurrentArPose.mockReturnValue(null);
+    container.remove();
+  });
+
+  it("never moves the content on a LOW-CONFIDENCE stream (cold-review F1)", async () => {
+    // WHY THIS TEST MATTERS — this is the whole finding. The framework
+    // estimator FLOORS a bad hit's weight rather than rejecting it, so a
+    // stream it rates as near-worthless still accumulates enough mass to
+    // publish an `offsetM`. Ungated, that eased the entire city vertically at
+    // 1.5 m/s on evidence the estimator was itself reporting as ~0.1. A
+    // standstill is the production shape of that stream (novelty weighting
+    // deliberately deflates correlated re-observations), and it is what a
+    // user does while looking at the result.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = fakeView();
+    arWorldGroup.matrix.identity();
+    arWorldGroup.matrix.elements[13] = 98.4;
+    getCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 4.6, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+
+    await startArMode(autoDeps(view, container));
+    const { depth } = sessionCallbacks();
+    const sample = makeWorldPointSample(
+      [0, 4.6, 0],
+      surfacePatch(() => 3, 1, 0.2),
+    );
+    depth?.onCaptured(sample);
+    depth?.onCaptured(sample);
+
+    // STANDING STILL — no alignment translation change — for 30 s: far longer
+    // than the ~5 s a walked stream needs to engage.
+    const onFrame = frameFn();
+    for (let elapsed = 1; elapsed <= 31; elapsed += 1 / 60) {
+      onFrame({ dt: 1 / 60, elapsed });
+    }
+
+    const attached = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    expect(attached.at(-1)?.offset?.up ?? NaN).toBeCloseTo(0, 5);
+    // AND THE READOUT IS HONEST ABOUT IT: the measurement is real and still
+    // shown, tagged as not applied rather than implying the city carries it.
+    expect(document.body.textContent).toContain("auto +1.4 m (conf");
+    expect(document.body.textContent).toContain(", low)");
+    // The manual trim still works exactly as before the feature existed.
+    const plus = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "+",
+    );
+    plus?.click();
+    const trimmed = view.attachedTo.filter((a) => a.frame === "gps-world-nue");
+    expect(trimmed.at(-1)?.offset?.up).toBeCloseTo(1, 5);
+
+    arWorldGroup.matrix.identity();
+    getCurrentArPose.mockReturnValue(null);
+    container.remove();
+  });
+
+  it("EASES back to zero when the auto RELEASES, never snapping (cold-review F1)", async () => {
+    // The release path is not the null path: `autoM` is still published (a
+    // held value), only the confidence has decayed through the hysteresis
+    // band. The contribution must therefore leave the content the same way it
+    // arrived — through the 1.5 m/s ease — because a gate that wrote 0
+    // directly would drop the city 1.4 m in a single frame, which is exactly
+    // the glitch the ease exists to prevent.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = fakeView();
+    arWorldGroup.matrix.identity();
+    arWorldGroup.matrix.elements[13] = 98.4;
+    getCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 4.6, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+
+    await startArMode(autoDeps(view, container));
+    const { depth } = sessionCallbacks();
+    const sample = makeWorldPointSample(
+      [0, 4.6, 0],
+      surfacePatch(() => 3, 1, 0.2),
+    );
+    depth?.onCaptured(sample);
+    depth?.onCaptured(sample);
+
+    const appliedNow = () =>
+      view.attachedTo.filter((a) => a.frame === "gps-world-nue").at(-1)?.offset
+        ?.up ?? Number.NaN;
+
+    let elapsed = walkFrames(1, 9);
+    expect(appliedNow()).toBeCloseTo(1.4, 1);
+
+    // TRACKING IS LOST. The value is HELD (cold-review F3 — a blip must not
+    // teleport the city), but its confidence decays at a 10 s e-folding, so
+    // after ~12 s it crosses the 0.3 release threshold and the contribution
+    // must come off.
+    getCurrentArPose.mockReturnValue(null);
+    const onFrame = frameFn();
+    const trail: number[] = [];
+    for (; elapsed <= 30; elapsed += 1 / 20) {
+      onFrame({ dt: 1 / 20, elapsed });
+      trail.push(appliedNow());
+    }
+
+    // It came off...
+    expect(trail.at(-1) ?? Number.NaN).toBeCloseTo(0, 5);
+    // ...and it EASED: no single frame moved more than one frame's rate
+    // budget (1.5 m/s × 1/20 s = 0.075 m), so there is no snap anywhere in
+    // the trail. A `targetM = 0` written straight to the scene would show up
+    // here as one 1.4 m step.
+    const biggestStep = trail.reduce(
+      (m, v, i) =>
+        i === 0 ? m : Math.max(m, Math.abs(v - (trail[i - 1] ?? v))),
+      0,
+    );
+    expect(biggestStep).toBeLessThanOrEqual(1.5 / 20 + 1e-9);
+    // And the descent was gradual rather than instant — several frames spent
+    // strictly between the two ends.
+    expect(trail.filter((v) => v > 0.05 && v < 1.3).length).toBeGreaterThan(5);
+    // The HUD still shows the held measurement, tagged as not applied.
+    expect(document.body.textContent).toContain(", low)");
 
     arWorldGroup.matrix.identity();
     getCurrentArPose.mockReturnValue(null);

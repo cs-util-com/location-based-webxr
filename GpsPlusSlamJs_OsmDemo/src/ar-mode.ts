@@ -492,8 +492,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // or the kill switch set the buttons behave exactly as they always did —
     // the owner's escape hatch stays live whatever the estimator does.
     //
-    // WHAT IS COMPOSED IS THE EASED AUTO VALUE, not the published one
-    // (cold-review F4): `appliedAutoM` glides toward the estimator's target
+    // WHAT IS COMPOSED IS THE EASED, GATED AUTO VALUE, not the published one
+    // (cold-review F4 for the ease, F1 for the gate — see the frame loop):
+    // `appliedAutoM` glides toward the gated target
     // at AUTO_APPLY_RATE_M_PER_S in the frame loop below, so the cold-start
     // first value and each 1 Hz step reach the content as an ease, never a
     // step. The manual trim bypasses the ease by design (DEC-E1).
@@ -644,7 +645,15 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // of ZERO — the kill-switch/cold-start contract, reached smoothly.
         // `dt` is 0 on the first frame after a reset (framework contract),
         // which correctly moves nothing on that frame.
-        const targetM = autoM ?? 0;
+        // THE CONFIDENCE GATE (cold-review F1): only an ENGAGED auto value
+        // reaches the content. Below the gate the contribution is ZERO — the
+        // manual trim behaves exactly as it did before this feature existed —
+        // while `autoM` stays published for the HUD, which labels it as not
+        // applied. Engagement is hysteretic (`ar-elevation-auto.ts` owns both
+        // thresholds), so a confidence hovering at the boundary cannot flap
+        // the city; and because the target is EASED below, engaging and
+        // releasing both glide at AUTO_APPLY_RATE_M_PER_S rather than step.
+        const targetM = latestAuto.engaged && autoM !== null ? autoM : 0;
         if (appliedAutoM !== targetM) {
           // Non-finite dt (defensive: the contract says a number, but a NaN
           // here would poison appliedAutoM for the rest of the session)
@@ -710,15 +719,18 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
             ? undefined
             : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
-          // THE APPLIED AUTO OFFSET, beside the raw `above terrain` residual
+          // THE PUBLISHED AUTO OFFSET, beside the raw `above terrain` residual
           // the live measurements carry — the pair is the M5 instrument (see
           // `ar-measurements.ts`). Absent while the estimator publishes
-          // nothing, per the readout's no-invented-numbers rule.
+          // nothing, per the readout's no-invented-numbers rule. `autoEngaged`
+          // rides along because published is NOT applied (cold-review F1) and
+          // the readout is the only thing that can say which state this is.
           ...(latestAuto === undefined || latestAuto.autoM === null
             ? {}
             : {
                 autoOffsetM: latestAuto.autoM,
                 autoConfidence: latestAuto.confidence,
+                autoEngaged: latestAuto.engaged,
                 autoFrozen: latestAuto.frozen,
               }),
           ...live,

@@ -99,7 +99,10 @@ export function createCachingTileFetch(
     // A pre-aborted signal must reject exactly as the real fetch would — the
     // synthetic-hit path must not be MORE alive than the network it stands in
     // for, or an abort would "succeed" precisely when the cache is warm.
-    init?.signal?.throwIfAborted();
+    // BOTH legal spellings count: the spec lets the signal ride on the
+    // `Request` input as well as on `init`, and a caller that builds a Request
+    // once and reuses it uses only the former.
+    signalOf(input, init)?.throwIfAborted();
     if (methodOf(input, init) !== "GET") return fetchImpl(input, init);
 
     const url = urlOf(input);
@@ -144,6 +147,24 @@ export function createCachingTileFetch(
   };
 
   return Object.assign(cachingFetch, { stats });
+}
+
+/**
+ * The signal governing this call.
+ *
+ * Per the fetch spec `init.signal` overrides a `Request` input's own signal,
+ * and an explicit `signal: null` DETACHES it — but a member set to `undefined`
+ * counts as absent under WebIDL, so `{ signal: undefined }` must fall through
+ * to the Request's signal rather than silently detaching it.
+ */
+function signalOf(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): AbortSignal | undefined {
+  if (init != null && "signal" in init && init.signal !== undefined) {
+    return init.signal ?? undefined;
+  }
+  return input instanceof Request ? input.signal : undefined;
 }
 
 /** Per the fetch spec, `init.method` overrides a `Request` input's method. */

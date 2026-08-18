@@ -22,11 +22,14 @@ import {
 } from "gps-plus-slam-app-framework/test-utils/synthetic-depth-samples";
 
 import {
+  AUTO_ENGAGE_CONFIDENCE,
+  AUTO_RELEASE_CONFIDENCE,
   AUTO_TICK_INTERVAL_MS,
   arPointToSceneNue,
   autoElevationEnabled,
   composeElevationM,
   createArElevationAuto,
+  nextAutoEngaged,
   type ArElevationAutoOptions,
 } from "./ar-elevation-auto.js";
 
@@ -245,6 +248,134 @@ describe("what feeds the estimator", () => {
     });
 
     expect(state.autoM).toBeNull();
+  });
+});
+
+describe("the confidence gate (cold-review F1)", () => {
+  // Why these tests matter: the framework estimator FLOORS bad hits, it does
+  // not reject them (`MIN_CONFIDENCE_WEIGHT`), so a stream of crushed
+  // estimates — a lock outside the plausibility band, an extrapolation-clamped
+  // plane — still accumulates enough per-hit mass to publish an `offsetM`, at
+  // a published confidence of a few hundredths. Both framework sidecars
+  // (`floor-estimator.ts.md`, `elevation-offset-estimator.ts.md`) say the
+  // CALLER is the gate and use `confidence >= 0.5` in their examples; without
+  // that gate here the demo eased the entire city vertically on evidence it
+  // was itself reporting as worthless. The estimator's own collapse detector
+  // cannot stand in for the gate: it fires only once an output exists, so it
+  // would FREEZE the bad value rather than refuse it.
+
+  it("never engages a standstill stream, however long it publishes", () => {
+    // The exact production shape of the failure: a stationary user. The
+    // estimator's novelty floor deliberately deflates a standstill (correlated
+    // re-observations are not new evidence), so it publishes a perfectly
+    // stable +1.4 m at ~0.10 confidence forever. The VALUE is honest and stays
+    // on the HUD; what must not happen is the city moving on it.
+    const auto = autoWith({ grid: gridWithFloor(4.6, 3) });
+
+    let last = auto.sample({
+      nowMs: 1000,
+      cameraPosAr: [0, 4.6, 0],
+      alignment: translationAlignment(0, 98.4, 0),
+    });
+    for (let i = 1; i < 30; i++) {
+      last = auto.sample({
+        nowMs: 1000 + i * AUTO_TICK_INTERVAL_MS,
+        cameraPosAr: [0, 4.6, 0],
+        alignment: translationAlignment(0, 98.4, 0),
+      });
+      expect(last.engaged).toBe(false);
+    }
+    // Published, and honestly labelled as low — but never engaged.
+    expect(last.autoM).toBeCloseTo(1.4, 1);
+    expect(last.confidence).toBeLessThan(AUTO_ENGAGE_CONFIDENCE);
+  });
+
+  it("engages once a MOVING stream earns the confidence", () => {
+    // The same measurement, walked: novelty weight 1 per tick, so the
+    // estimator's per-tick-normalized confidence climbs 0.1/tick and crosses
+    // the engage threshold on the 5th tick. Below it the contribution is
+    // zero; at and above it the offset is applied.
+    const auto = autoWith({ grid: gridWithFloor(4.6, 3) });
+    const walk = (i: number) =>
+      auto.sample({
+        nowMs: 1000 + i * AUTO_TICK_INTERVAL_MS,
+        cameraPosAr: [0, 4.6, 0],
+        // The alignment carries the walk: camera and hits move together in
+        // ENU while the raw-AR floor plate stays under the camera, which is
+        // what lets a fixed synthetic grid stand in for a walked one.
+        alignment: translationAlignment(0, 98.4, i * 1.5),
+      });
+
+    const first = walk(0);
+    expect(first.autoM).toBeCloseTo(1.4, 1);
+    expect(first.engaged).toBe(false);
+
+    const trail = Array.from({ length: 9 }, (_, k) => walk(k + 1));
+    expect(trail.findIndex((s) => s.engaged)).toBeGreaterThanOrEqual(0);
+    // Engagement never precedes the threshold being met: no state below the
+    // RELEASE floor is ever engaged.
+    expect(
+      trail.filter((s) => s.confidence < AUTO_RELEASE_CONFIDENCE && s.engaged),
+    ).toEqual([]);
+    const last = trail.at(-1);
+    expect(last?.engaged).toBe(true);
+    expect(last?.autoM).toBeCloseTo(1.4, 1);
+  });
+
+  it("returns to disengaged on reset()", () => {
+    const auto = autoWith({ grid: gridWithFloor(4.6, 3) });
+    for (let i = 0; i < 10; i++) {
+      auto.sample({
+        nowMs: 1000 + i * AUTO_TICK_INTERVAL_MS,
+        cameraPosAr: [0, 4.6, 0],
+        alignment: translationAlignment(0, 98.4, i * 1.5),
+      });
+    }
+    auto.reset();
+    const cold = auto.sample({
+      nowMs: 20_000,
+      cameraPosAr: [0, 4.6, 0],
+      alignment: translationAlignment(0, 98.4, 0),
+    });
+    expect(cold.engaged).toBe(false);
+  });
+});
+
+describe("nextAutoEngaged — the hysteresis itself", () => {
+  // Why this test matters: a single threshold makes a value hovering at it
+  // FLAP, and each flap eases the whole city down and back up at 1.5 m/s.
+  // Two thresholds turn the decision into a state with a dead band. The pure
+  // function is tested directly because the exact boundary values are the
+  // contract, and driving them through the real estimator chain could only
+  // approximate them.
+
+  it("needs the ENGAGE threshold to turn on", () => {
+    expect(nextAutoEngaged(false, AUTO_ENGAGE_CONFIDENCE - 1e-6)).toBe(false);
+    expect(nextAutoEngaged(false, AUTO_ENGAGE_CONFIDENCE)).toBe(true);
+    // The release threshold alone is NOT enough to engage — that asymmetry
+    // is the hysteresis.
+    expect(nextAutoEngaged(false, AUTO_RELEASE_CONFIDENCE)).toBe(false);
+  });
+
+  it("stays engaged through a decay from 0.6 to 0.35 and releases below 0.3", () => {
+    let engaged = false;
+    engaged = nextAutoEngaged(engaged, 0.6);
+    expect(engaged).toBe(true);
+    for (const c of [0.55, 0.49, 0.42, 0.35, AUTO_RELEASE_CONFIDENCE]) {
+      engaged = nextAutoEngaged(engaged, c);
+      expect(engaged).toBe(true);
+    }
+    engaged = nextAutoEngaged(engaged, AUTO_RELEASE_CONFIDENCE - 1e-6);
+    expect(engaged).toBe(false);
+    // And re-engaging needs the full ENGAGE threshold again, not 0.3.
+    expect(nextAutoEngaged(false, 0.45)).toBe(false);
+  });
+
+  it("treats a non-finite confidence as disengaged", () => {
+    // Defensive: a NaN must not read as "≥ threshold" by accident, and must
+    // not latch an engaged state on either.
+    expect(nextAutoEngaged(false, Number.NaN)).toBe(false);
+    expect(nextAutoEngaged(true, Number.NaN)).toBe(false);
   });
 });
 

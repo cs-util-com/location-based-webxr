@@ -130,8 +130,11 @@ export interface ArMeasurements {
    */
   readonly terrainHasData?: boolean | undefined;
   /**
-   * The automatic elevation offset currently applied to the content, metres —
+   * The automatic elevation offset the estimator currently publishes, metres —
    * `baseline + robust(floor − DEM)`, from `ar-elevation-auto.ts`.
+   *
+   * **PUBLISHED, NOT NECESSARILY APPLIED** — {@link autoEngaged} is what says
+   * whether the content actually carries it.
    *
    * **THE OTHER HALF OF THE PAIR {@link terrainHeightM}'s residual opens.**
    * `above terrain` is the RAW GPS-vs-DEM residual and is untouched by the
@@ -147,6 +150,16 @@ export interface ArMeasurements {
   readonly autoOffsetM?: number | undefined;
   /** The estimator's confidence in {@link autoOffsetM}, 0..1. */
   readonly autoConfidence?: number | undefined;
+  /**
+   * Whether {@link autoOffsetM} is actually APPLIED to the content — the
+   * demo's confidence gate (`ar-elevation-auto.ts`, cold-review F1).
+   *
+   * False renders as `low` (or `not applied` with no confidence to qualify),
+   * because the alternative is a readout that shows a correction the city
+   * never received and reads as the feature silently failing. Undefined makes
+   * no claim either way — this module never invents a state.
+   */
+  readonly autoEngaged?: boolean | undefined;
   /**
    * True while the freeze layer holds the offset — the user is climbing
    * man-made structure (tower, stairs, bridge) and the world must not ride
@@ -361,12 +374,26 @@ export function describeArMeasurements(
   // difference is the fused-vertical error, live. Absent while the estimator
   // publishes nothing — a zero here would claim measured agreement.
   if (isSignedReading(measurements.autoOffsetM)) {
-    const frozen = measurements.autoFrozen === true;
-    const detail = isUsable(measurements.autoConfidence)
-      ? ` (conf ${measurements.autoConfidence.toFixed(2)}${frozen ? ", frozen" : ""})`
-      : frozen
-        ? " (frozen)"
-        : "";
+    // THE STATE TAGS, in the order a reader needs them: how good the number
+    // is, whether it is on the content at all, and whether the freeze layer
+    // is holding it. `low`/`not applied` is the cold-review F1 line: below
+    // the confidence gate the estimator still publishes a real measurement
+    // but the city is NOT moved by it, and a bare `auto +1.4 m (conf 0.12)`
+    // sends a field observer hunting for a correction that was never made.
+    // An ABSENT `autoEngaged` claims nothing either way — this module never
+    // invents a state it was not told about.
+    const tags: string[] = [];
+    const hasConfidence = isUsable(measurements.autoConfidence);
+    if (hasConfidence) {
+      tags.push(`conf ${measurements.autoConfidence.toFixed(2)}`);
+    }
+    if (measurements.autoEngaged === false) {
+      // `low` reads as "hence not applied" only next to the number it
+      // qualifies; without one, state the fact that survives.
+      tags.push(hasConfidence ? "low" : "not applied");
+    }
+    if (measurements.autoFrozen === true) tags.push("frozen");
+    const detail = tags.length === 0 ? "" : ` (${tags.join(", ")})`;
     // THE DEM RIDES ON THIS LINE TOO (cold-review F7): the offset is a
     // correction against a SPECIFIC DEM, and the terrain line that names it
     // is expanded-only while this line is in the collapsed walking set — so
