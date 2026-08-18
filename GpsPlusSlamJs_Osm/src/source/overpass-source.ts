@@ -412,9 +412,14 @@ export class OverpassSource implements OsmDataSource {
     // attempt 0 is the initial try; 1..maxRetries are retries.
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       throwIfAborted(signal);
-      // Rotate on every attempt, starting at a random offset. Random start (as
-      // the C# reference does) spreads load across the pool instead of every
-      // client hammering endpoint 0 first.
+      // Rotate on every attempt, walking the pool IN ORDER from the front.
+      //
+      // THIS COMMENT DESCRIBED THE OPPOSITE UNTIL 2026-08-19 — "starting at a
+      // random offset … spreads load across the pool" — which is the behaviour
+      // `pickEndpoint` deliberately REMOVED, and its own header (see below)
+      // spends a paragraph explaining why. The stale copy sat right where a
+      // reader looks first, so the retired design was the one on offer at the
+      // call site while the retirement notice was 240 lines away.
       const endpoint = this.pickEndpoint(attempt);
       if (attempt > 0) {
         this.stats.retries++;
