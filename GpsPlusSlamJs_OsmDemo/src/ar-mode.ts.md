@@ -38,6 +38,19 @@ the two are one decision.
   an unsupported device and a missing GPS fix are ordinary outcomes the page
   renders, not exceptions; all of them reach the user through `onError` and
   return an inert handle.
+  - **The promise is guarded END TO END, since 2026-08-18** (PR #316 review).
+    Only the `initAR` call used to sit inside a `try`; everything from the
+    elevation attach to `bootCompleted = true` ran unguarded, so the contract
+    was nearly true rather than true. A throw there left the worst state this
+    module can reach — session LIVE, city already reparented so the desktop map
+    is empty with nothing to give it back, `bootCompleted` still `false` so
+    `onSessionEnd` returns early and `release()` never runs — surfacing only as
+    an **unhandled rejection**, because `main.ts` calls this as
+    `void startArMode(...).then(...)` with no `.catch`. No toast, no
+    `onError`, and the button still reading "Enter AR".
+  - The recovery path reuses `release(true)`, the same teardown a normal exit
+    takes, rather than unwinding by hand — which is what stops the partial-boot
+    path drifting away from the working one.
 - `ArMode` — `{ started, dispose() }`, idempotent. **Drive UI from `started`,
   not from "a handle came back":** a handle always comes back, an inert one on a
   refused permission. Treating that as a live session showed the user an error

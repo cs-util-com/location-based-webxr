@@ -270,6 +270,49 @@ describe("when AR cannot start", () => {
     expect(endARSession).toHaveBeenCalled();
   });
 
+  it("survives a throw AFTER the session opened, rather than rejecting", async () => {
+    // Why this test matters (PR #316 review): the docstring promises
+    // startArMode NEVER REJECTS, but only the initAR call sat inside a try.
+    // Everything from the elevation attach to bootCompleted = true ran
+    // unguarded, and a throw there left the worst available state: the XR
+    // session LIVE, the city already reparented onto the framework scene so the
+    // desktop map is empty with nothing to give it back, bootCompleted still
+    // false so onSessionEnd returns early and release() never runs -- and a
+    // rejected promise that main.ts consumes with a bare void ... .then(), no
+    // catch, so it surfaced only as an unhandled rejection. No toast, no
+    // onError, and the button still read "Enter AR".
+    const view = fakeView();
+    const boom = new Error("attach exploded");
+    const d = deps({
+      buildingView: {
+        ...view,
+        attachContentTo: (
+          root: THREE.Object3D,
+          frame: string,
+          offset?: { north: number; up: number; east: number },
+        ) => {
+          // Only the AR attach throws; the desktop restore must still work, or
+          // the test could not tell "recovered" from "never got that far".
+          if (frame === "gps-world-nue") throw boom;
+          view.attachContentTo(root, frame, offset);
+        },
+      } as unknown as ArModeDeps["buildingView"],
+    });
+
+    // THE CONTRACT ITSELF: resolves, never rejects.
+    const mode = await startArMode(d);
+
+    expect(mode.started).toBe(false);
+    expect(d.onError).toHaveBeenCalled();
+    // The session must not be left running with the city detached.
+    expect(endARSession).toHaveBeenCalled();
+    // And the city goes back to the desktop scene rather than staying orphaned.
+    expect(view.attachedTo.map((a) => a.frame)).toContain("demo-scene");
+    expect(() => {
+      mode.dispose();
+    }).not.toThrow();
+  });
+
   it("reports NOT started, so the button never offers to exit nothing", async () => {
     // The flag added for the "error toast plus an Exit AR button" bug, which
     // had no test at all until the r507 review said so.

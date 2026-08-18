@@ -364,200 +364,226 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     return NOOP_AR_MODE;
   }
 
-  // THE SCENE ROOT, NOT `arWorldGroup`. The root IS the GPS-world frame, so
-  // map-derived content built once belongs there with no inverse-alignment
-  // container; the lerped alignment on `arWorldGroup` moves the CAMERA through
-  // a world that stands still. Two independent readers previously concluded
-  // the opposite, which is why `ar-scene-hierarchy.ts` now says so at the top.
-  //
-  // `"gps-world-nue"` is not optional: the demo's scene is X=East, Y=Up,
-  // Z=−North and the root is NUE, so attaching without it renders the city 90°
-  // off.
-  // THE OFFSET IS NOT OPTIONAL EITHER. The city is authored in ENU about the
-  // demo's scene anchor, not about `zero` — attaching with the rotation alone
-  // put it at the right orientation and the wrong place, by up to the 5 km
-  // re-anchor threshold. `origin` is non-null here: `canEnterAr` returned true.
-  // THE GEOMETRIC OFFSET, COMPUTED ONCE. The manual nudge is summed onto it
-  // below rather than folded into it: `sceneAnchorOffsetNue` returns
-  // `up: 0` as a GUARDED INVARIANT with its own test — a vertical term inside
-  // it would double-count the geoid. The nudge is a user fudge, not a datum
-  // term, so it belongs here at the call site and nowhere else.
-  const geometricOffset = sceneAnchorOffsetNue(
-    deps.origin as FrameworkLatLong,
-    deps.sceneAnchor,
-    deps.enuFrameAt,
-  );
-
-  // RE-ATTACHING IS THE LIVE PATH, and it is safe because `SceneContent.attachTo`
-  // documents its transform as "SET, NEVER ACCUMULATED" — so applying a new
-  // offset is idempotent rather than a second translation stacked on the first.
-  const applyElevation = (offsetM: number) => {
-    deps.buildingView.attachContentTo(scene, "gps-world-nue", {
-      ...geometricOffset,
-      up: geometricOffset.up + offsetM,
-    });
-  };
-  applyElevation(0);
-
-  // AR ONLY. The desktop preview discards `geometricOffset` (it attaches with
-  // "demo-scene", which sets identity), and making it follow would lift the
-  // buildings away from the ground plane, the route line and the NPC agent —
-  // all of which live on the preview's own scene and would stay put.
-  session.elevation = createArElevationControl({
-    root: deps.container,
-    onChange: applyElevation,
-  });
-  session.elevation.attach();
-
-  // THE COMPASS SLIDER (DEC-E2), only when the caller can actually dispatch.
-  if (deps.onCompassSettings !== undefined) {
-    const onCompassSettings = deps.onCompassSettings;
-    session.compass = createArCompassControl({
-      root: deps.container,
-      onChange: onCompassSettings,
-    });
-    session.compass.attach();
-    // READY IMMEDIATELY, and that is a fact rather than an assumption: every
-    // compass setter is a no-op while the store's gps state is null, but AR
-    // entry is GATED on `canEnterAr(deps.origin)`, and a non-null origin IS the
-    // framework's `zero` — so `setZeroPos` has already been dispatched by the
-    // time this line runs. The control's latch stays as the defensive path for
-    // any future caller that is not gated the same way.
-    session.compass.setReady(true);
-  }
-
-  // THE AR LOOK (owner decision 2026-08-16): the "Double-sided X-ray pulse"
-  // shell replaces the desktop material on the buildings for the session, and
-  // is restored in `release()`. Held ON THE VIEW rather than applied once, so a
-  // refetch mid-session cannot silently drop it.
-  session.shell = createArBuildingMaterial();
-  deps.buildingView.setArShellMaterial(session.shell.material);
-
-  // M2. Clears the background so the passthrough shows, widens the depth budget
-  // to 0.5 / 1000, adds fog ending exactly at that far plane, matches the demo's
-  // ACES grading, and pointedly does NOT set an environment map.
-  //
-  // THE RENDERER IS NOT IN THE GUARD ABOVE, deliberately: a missing camera
-  // leaves the city clipping at 200 m, while a missing renderer only leaves it
-  // ungraded. Failing the session over a look is the wrong trade.
-  session.restoreEnvironment = applyArEnvironment(scene, camera, getRenderer());
-
-  session.alignment = enableArWorldGroupAlignment({
-    store: deps.store,
-    arWorldGroup,
-  });
-
-  // M4. The instrument the milestone needs before it can take a measurement:
-  // the desktop status line reports `BuildingView`'s renderer, and the session
-  // draws with a DIFFERENT one, so the number visible during AR described a
-  // renderer that was not producing the frames.
-  session.hud = createArHud(deps.container);
-  const renderer = getRenderer();
-  // FPS IS AVERAGED OVER THE WINDOW, not sampled from one frame (r510 review).
-  // A single `1/dt` spikes routinely on a phone — GC, a worker message, the
-  // terrain field landing — so at 2 Hz the readout would flicker between 60 and
-  // 22 with no way to tell a sustained drop from a hiccup. Counting frames and
-  // dividing by elapsed time is what makes the number answer §4's question.
-  // WHAT `createSceneHierarchy` LEAVES THE MATRIX AT until the fusion writes an
-  // alignment. Cloned from the instance rather than built from a `THREE.Matrix4`
-  // import: this module deliberately imports no three.js, and taken once here it
-  // costs the per-frame sampler nothing.
-  const identityMatrix = arWorldGroup.matrix.clone().identity();
-  let framesThisWindow = 0;
-  // OPENED ON THE FIRST FRAME, NOT AT ZERO. `elapsed` is PAGE-relative — the
-  // frame loop computes it from the rAF timestamp — so a session entered thirty
-  // seconds after load sees its first frame at `elapsed ≈ 30`. Seeding this to
-  // `0` made the first window as long as the page had been open, and the first
-  // reading "0 fps" (r511 review). The framework's docstring said "seconds since
-  // the session started", which is what made it look safe; that is corrected too.
-  let windowOpenedAtS: number | undefined;
-  session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
-    windowOpenedAtS ??= elapsed;
-    framesThisWindow += 1;
-    const windowS = elapsed - windowOpenedAtS;
-    const fps = windowS > 0 ? framesThisWindow / windowS : undefined;
-    // `dt` is unused for the rate now, but it still marks the first frame after
-    // a reset (the framework's contract says `dt` is 0 there), which is the one
-    // sample whose window is meaningless.
-    // THE BREATHING. Driven from `elapsed` -- the frame clock the loop already
-    // computed, monotonic and page-relative -- rather than from wall time, so the
-    // pulse cannot jump when the tab is backgrounded.
-    session.shell?.setTime(elapsed);
-    const live = deps.liveMeasurements?.() ?? {};
-    const wrote = session.hud?.sample(
-      {
-        // THE PREVIOUS FRAME'S COST, and the comment here said "this frame's"
-        // until the r510 review. `WebGLRenderer.render` calls `info.reset()` at
-        // its top, and the framework runs these callbacks BEFORE `render` — so
-        // what is readable now is the last completed frame. At a 2 Hz readout
-        // the one-frame lag is invisible; the mechanism is written down because
-        // the next change will reason from it.
-        drawCost:
-          renderer === null
-            ? undefined
-            : {
-                calls: renderer.info.render.calls,
-                triangles: renderer.info.render.triangles,
-              },
-        fps,
-        // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
-        // written directly by the alignment lerper with `matrixAutoUpdate =
-        // false`, so element 13 is the live baseline rather than a stale copy.
-        //
-        // UNDEFINED UNTIL AN ALIGNMENT EXISTS (r511 review).
-        // `createSceneHierarchy` leaves the matrix at IDENTITY, whose element 13
-        // is a perfectly real `0` — so the readout showed `baseline 0.00 m`
-        // before the fusion had said anything at all. That is the one thing
-        // `ar-measurements.ts` exists to forbid: an unmeasured value rendered as
-        // a number, and this one is worse than most because zero is a plausible
-        // reading. Compared against the whole matrix rather than element 13
-        // alone, because a genuine zero baseline must still be reportable.
-        worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
-          ? undefined
-          : arWorldGroup.matrix.elements[13],
-        // THE FUSED BEARING — what the alignment currently thinks north is,
-        // which is the only way to SEE what the compass slider did.
-        //
-        // WORLD SPACE IS THE GEO FRAME HERE, and that is the whole subtlety.
-        // The hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the
-        // alignment) → basisChangeNode → arpose → camera`, so the camera is a
-        // DESCENDANT of the aligned group and its world transform already
-        // carries the alignment. A direction taken relative to `arWorldGroup`
-        // would be in the AR-odometry frame — the alignment's *domain*, i.e.
-        // un-aligned — and would be a plausible number that is not north.
-        // `ar-scene-hierarchy.ts` records two independent readers getting this
-        // backwards; `nueBearingDeg` carries the axis convention and its tests.
-        fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
-          ? undefined
-          : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
-        ...live,
-      },
-      // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop
-      // already computed, and it is monotonic. **Page-relative, not a session
-      // duration** — this comment said "the session clock" until r513, which is
-      // the wording that caused the fps window to be opened at zero a few lines
-      // above. Safe here because `sample` only ever differences this stamp
-      // against its own previous value; never treat it as an elapsed time.
-      elapsed * 1000,
+  // EVERYTHING PAST THIS POINT IS GUARDED, because the session is now OPEN and
+  // the contract above says this function never rejects (PR #316 review).
+  // Only the `initAR` call used to sit inside a try, so a throw anywhere in the
+  // boot below left the worst state this file has: the XR session live, the
+  // city already reparented onto the framework scene so the desktop map is
+  // empty with nothing to give it back, `bootCompleted` still false so
+  // `onSessionEnd` returns early and `release()` never runs — and a rejected
+  // promise that `main.ts` consumes as `void startArMode(...).then(...)` with no
+  // `.catch`, i.e. an unhandled rejection: no toast, no `onError`, and the
+  // button still reading "Enter AR".
+  try {
+    // THE SCENE ROOT, NOT `arWorldGroup`. The root IS the GPS-world frame, so
+    // map-derived content built once belongs there with no inverse-alignment
+    // container; the lerped alignment on `arWorldGroup` moves the CAMERA through
+    // a world that stands still. Two independent readers previously concluded
+    // the opposite, which is why `ar-scene-hierarchy.ts` now says so at the top.
+    //
+    // `"gps-world-nue"` is not optional: the demo's scene is X=East, Y=Up,
+    // Z=−North and the root is NUE, so attaching without it renders the city 90°
+    // off.
+    // THE OFFSET IS NOT OPTIONAL EITHER. The city is authored in ENU about the
+    // demo's scene anchor, not about `zero` — attaching with the rotation alone
+    // put it at the right orientation and the wrong place, by up to the 5 km
+    // re-anchor threshold. `origin` is non-null here: `canEnterAr` returned true.
+    // THE GEOMETRIC OFFSET, COMPUTED ONCE. The manual nudge is summed onto it
+    // below rather than folded into it: `sceneAnchorOffsetNue` returns
+    // `up: 0` as a GUARDED INVARIANT with its own test — a vertical term inside
+    // it would double-count the geoid. The nudge is a user fudge, not a datum
+    // term, so it belongs here at the call site and nowhere else.
+    const geometricOffset = sceneAnchorOffsetNue(
+      deps.origin as FrameworkLatLong,
+      deps.sceneAnchor,
+      deps.enuFrameAt,
     );
-    // THE WINDOW RESETS ONLY WHEN ONE WAS ACTUALLY WRITTEN, so the average
-    // covers exactly the frames the displayed number describes. Resetting every
-    // frame would make it a single-frame reciprocal again by another route.
-    if (wrote === true) {
-      framesThisWindow = 0;
-      windowOpenedAtS = elapsed;
+
+    // RE-ATTACHING IS THE LIVE PATH, and it is safe because `SceneContent.attachTo`
+    // documents its transform as "SET, NEVER ACCUMULATED" — so applying a new
+    // offset is idempotent rather than a second translation stacked on the first.
+    const applyElevation = (offsetM: number) => {
+      deps.buildingView.attachContentTo(scene, "gps-world-nue", {
+        ...geometricOffset,
+        up: geometricOffset.up + offsetM,
+      });
+    };
+    applyElevation(0);
+
+    // AR ONLY. The desktop preview discards `geometricOffset` (it attaches with
+    // "demo-scene", which sets identity), and making it follow would lift the
+    // buildings away from the ground plane, the route line and the NPC agent —
+    // all of which live on the preview's own scene and would stay put.
+    session.elevation = createArElevationControl({
+      root: deps.container,
+      onChange: applyElevation,
+    });
+    session.elevation.attach();
+
+    // THE COMPASS SLIDER (DEC-E2), only when the caller can actually dispatch.
+    if (deps.onCompassSettings !== undefined) {
+      const onCompassSettings = deps.onCompassSettings;
+      session.compass = createArCompassControl({
+        root: deps.container,
+        onChange: onCompassSettings,
+      });
+      session.compass.attach();
+      // READY IMMEDIATELY, and that is a fact rather than an assumption: every
+      // compass setter is a no-op while the store's gps state is null, but AR
+      // entry is GATED on `canEnterAr(deps.origin)`, and a non-null origin IS the
+      // framework's `zero` — so `setZeroPos` has already been dispatched by the
+      // time this line runs. The control's latch stays as the defensive path for
+      // any future caller that is not gated the same way.
+      session.compass.setReady(true);
     }
-    // Referenced so the first-frame contract stays visible to a reader; the
-    // rate no longer derives from it.
-    void dt;
-  });
 
-  bootCompleted = true;
+    // THE AR LOOK (owner decision 2026-08-16): the "Double-sided X-ray pulse"
+    // shell replaces the desktop material on the buildings for the session, and
+    // is restored in `release()`. Held ON THE VIEW rather than applied once, so a
+    // refetch mid-session cannot silently drop it.
+    session.shell = createArBuildingMaterial();
+    deps.buildingView.setArShellMaterial(session.shell.material);
 
-  return {
-    started: true,
-    dispose: () => {
-      release(true);
-    },
-  };
+    // M2. Clears the background so the passthrough shows, widens the depth budget
+    // to 0.5 / 1000, adds fog ending exactly at that far plane, matches the demo's
+    // ACES grading, and pointedly does NOT set an environment map.
+    //
+    // THE RENDERER IS NOT IN THE GUARD ABOVE, deliberately: a missing camera
+    // leaves the city clipping at 200 m, while a missing renderer only leaves it
+    // ungraded. Failing the session over a look is the wrong trade.
+    session.restoreEnvironment = applyArEnvironment(
+      scene,
+      camera,
+      getRenderer(),
+    );
+
+    session.alignment = enableArWorldGroupAlignment({
+      store: deps.store,
+      arWorldGroup,
+    });
+
+    // M4. The instrument the milestone needs before it can take a measurement:
+    // the desktop status line reports `BuildingView`'s renderer, and the session
+    // draws with a DIFFERENT one, so the number visible during AR described a
+    // renderer that was not producing the frames.
+    session.hud = createArHud(deps.container);
+    const renderer = getRenderer();
+    // FPS IS AVERAGED OVER THE WINDOW, not sampled from one frame (r510 review).
+    // A single `1/dt` spikes routinely on a phone — GC, a worker message, the
+    // terrain field landing — so at 2 Hz the readout would flicker between 60 and
+    // 22 with no way to tell a sustained drop from a hiccup. Counting frames and
+    // dividing by elapsed time is what makes the number answer §4's question.
+    // WHAT `createSceneHierarchy` LEAVES THE MATRIX AT until the fusion writes an
+    // alignment. Cloned from the instance rather than built from a `THREE.Matrix4`
+    // import: this module deliberately imports no three.js, and taken once here it
+    // costs the per-frame sampler nothing.
+    const identityMatrix = arWorldGroup.matrix.clone().identity();
+    let framesThisWindow = 0;
+    // OPENED ON THE FIRST FRAME, NOT AT ZERO. `elapsed` is PAGE-relative — the
+    // frame loop computes it from the rAF timestamp — so a session entered thirty
+    // seconds after load sees its first frame at `elapsed ≈ 30`. Seeding this to
+    // `0` made the first window as long as the page had been open, and the first
+    // reading "0 fps" (r511 review). The framework's docstring said "seconds since
+    // the session started", which is what made it look safe; that is corrected too.
+    let windowOpenedAtS: number | undefined;
+    session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
+      windowOpenedAtS ??= elapsed;
+      framesThisWindow += 1;
+      const windowS = elapsed - windowOpenedAtS;
+      const fps = windowS > 0 ? framesThisWindow / windowS : undefined;
+      // `dt` is unused for the rate now, but it still marks the first frame after
+      // a reset (the framework's contract says `dt` is 0 there), which is the one
+      // sample whose window is meaningless.
+      // THE BREATHING. Driven from `elapsed` -- the frame clock the loop already
+      // computed, monotonic and page-relative -- rather than from wall time, so the
+      // pulse cannot jump when the tab is backgrounded.
+      session.shell?.setTime(elapsed);
+      const live = deps.liveMeasurements?.() ?? {};
+      const wrote = session.hud?.sample(
+        {
+          // THE PREVIOUS FRAME'S COST, and the comment here said "this frame's"
+          // until the r510 review. `WebGLRenderer.render` calls `info.reset()` at
+          // its top, and the framework runs these callbacks BEFORE `render` — so
+          // what is readable now is the last completed frame. At a 2 Hz readout
+          // the one-frame lag is invisible; the mechanism is written down because
+          // the next change will reason from it.
+          drawCost:
+            renderer === null
+              ? undefined
+              : {
+                  calls: renderer.info.render.calls,
+                  triangles: renderer.info.render.triangles,
+                },
+          fps,
+          // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
+          // written directly by the alignment lerper with `matrixAutoUpdate =
+          // false`, so element 13 is the live baseline rather than a stale copy.
+          //
+          // UNDEFINED UNTIL AN ALIGNMENT EXISTS (r511 review).
+          // `createSceneHierarchy` leaves the matrix at IDENTITY, whose element 13
+          // is a perfectly real `0` — so the readout showed `baseline 0.00 m`
+          // before the fusion had said anything at all. That is the one thing
+          // `ar-measurements.ts` exists to forbid: an unmeasured value rendered as
+          // a number, and this one is worse than most because zero is a plausible
+          // reading. Compared against the whole matrix rather than element 13
+          // alone, because a genuine zero baseline must still be reportable.
+          worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
+            ? undefined
+            : arWorldGroup.matrix.elements[13],
+          // THE FUSED BEARING — what the alignment currently thinks north is,
+          // which is the only way to SEE what the compass slider did.
+          //
+          // WORLD SPACE IS THE GEO FRAME HERE, and that is the whole subtlety.
+          // The hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the
+          // alignment) → basisChangeNode → arpose → camera`, so the camera is a
+          // DESCENDANT of the aligned group and its world transform already
+          // carries the alignment. A direction taken relative to `arWorldGroup`
+          // would be in the AR-odometry frame — the alignment's *domain*, i.e.
+          // un-aligned — and would be a plausible number that is not north.
+          // `ar-scene-hierarchy.ts` records two independent readers getting this
+          // backwards; `nueBearingDeg` carries the axis convention and its tests.
+          fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
+            ? undefined
+            : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
+          ...live,
+        },
+        // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop
+        // already computed, and it is monotonic. **Page-relative, not a session
+        // duration** — this comment said "the session clock" until r513, which is
+        // the wording that caused the fps window to be opened at zero a few lines
+        // above. Safe here because `sample` only ever differences this stamp
+        // against its own previous value; never treat it as an elapsed time.
+        elapsed * 1000,
+      );
+      // THE WINDOW RESETS ONLY WHEN ONE WAS ACTUALLY WRITTEN, so the average
+      // covers exactly the frames the displayed number describes. Resetting every
+      // frame would make it a single-frame reciprocal again by another route.
+      if (wrote === true) {
+        framesThisWindow = 0;
+        windowOpenedAtS = elapsed;
+      }
+      // Referenced so the first-frame contract stays visible to a reader; the
+      // rate no longer derives from it.
+      void dt;
+    });
+
+    bootCompleted = true;
+
+    return {
+      started: true,
+      dispose: () => {
+        release(true);
+      },
+    };
+  } catch (error) {
+    // `release(true)` is the SAME teardown a normal exit takes: it hands the
+    // city back to the desktop scene, disposes whatever was built, and ends the
+    // session. Reusing it rather than unwinding by hand is what keeps the
+    // partial-boot path from drifting away from the working one.
+    release(true);
+    deps.onError(
+      error instanceof Error ? error.message : "Failed to start AR.",
+    );
+    return NOOP_AR_MODE;
+  }
 }
