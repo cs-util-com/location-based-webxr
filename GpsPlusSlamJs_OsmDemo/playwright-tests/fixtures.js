@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -89,7 +90,8 @@ export function parkPayload() {
 }
 
 /**
- * Hosts the app talks to that must never be reached from a test.
+ * Hosts the app talks to that must never be reached from a test — DERIVED from
+ * the production pool rather than hand-listed.
  *
  * Matched on HOSTNAME, never as a substring of the whole URL. A pattern like
  * `/overpass/` looks obviously right and is a trap: the app's own module graph
@@ -98,8 +100,35 @@ export function parkPayload() {
  * JSON fixture. The browser then refuses the module for its MIME type and the
  * app never boots — with the only symptom being a status line stuck on
  * "starting…". That cost a debugging round; hence hostnames.
+ *
+ * **THE HAND-WRITTEN PATTERN WAS ALREADY WRONG AND NOTHING NOTICED FOR WEEKS.**
+ * It read
+ * `/(^|\.)overpass[^.]*\.de$|(^|\.)kumi\.systems$|(^|\.)openstreetmap\.fr$/`,
+ * which covers the three FOSSGIS front-ends and `kumi.systems` — but **not
+ * `maps.mail.ru` and not `overpass.private.coffee`**, two of the five entries
+ * in `DEFAULT_OVERPASS_ENDPOINTS`. The suite's own header says these hosts
+ * "must never be reached from a test"; for two of them that was untrue.
+ *
+ * It stayed invisible because endpoint selection was deterministic: the client
+ * always tried `lz4.overpass-api.de` first, so the unmatched hosts were only
+ * reachable on a retry that the fixtures never provoked. The moment selection
+ * became a weighted draw (M6, 2026-08-19), attempt 0 started landing on
+ * `maps.mail.ru` about a third of the time, five specs began escaping to the
+ * real network, and the session-end cascade caught it.
+ *
+ * So the list is now taken from the package the app actually uses. A pool entry
+ * added there is intercepted here automatically, and the drift that hid this
+ * cannot recur.
  */
+const OVERPASS_HOSTNAMES = new Set(
+  DEFAULT_OVERPASS_ENDPOINTS.map((endpoint) => new URL(endpoint).hostname),
+);
+
 const isOverpass = (url) =>
+  OVERPASS_HOSTNAMES.has(url.hostname) ||
+  // Kept beyond the pool: hosts a caller could configure, or that earlier
+  // revisions shipped. Reaching one is still a bug, and a route that fails
+  // closed is the point of this predicate.
   /(^|\.)overpass[^.]*\.de$|(^|\.)kumi\.systems$|(^|\.)openstreetmap\.fr$/i.test(
     url.hostname,
   );
