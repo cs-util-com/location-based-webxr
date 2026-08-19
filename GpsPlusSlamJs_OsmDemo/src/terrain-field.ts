@@ -150,7 +150,15 @@ export interface TerrainField {
     positions: readonly LatLng[],
     heights: readonly (number | undefined)[],
   ): boolean;
-  /** The positions of every post currently held, for an upgrade batch. */
+  /**
+   * The positions of every post currently held.
+   *
+   * NO PRODUCTION CALLER, and that is deliberate rather than an oversight: an
+   * upgrade batch is built by the PROVIDER from the positions it was asked for,
+   * so nothing in the app needs to enumerate the lattice. It exists because
+   * `replacePosts`'s contract is stated in terms of "the posts the lattice
+   * holds", and a test cannot check that rule without being able to name them.
+   */
   heldPositions(): readonly LatLng[];
   /**
    * Posts currently holding an INVENTED height — the mean of whatever answered
@@ -219,6 +227,27 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
    * upgraded without leaving the window on two sources.
    */
   const upgraded = new Set<string>();
+  /**
+   * Upgrade heights that have arrived but do not yet cover the current window.
+   *
+   * WHY THIS EXISTS. `ensureAround` only ever asks the provider for the posts
+   * it is MISSING, so a batch is exactly one `elevationAt` call's positions and
+   * NO batch ever spans an already-filled interior plus a newer rim. Walk one
+   * step while an upgrade is in flight — the ordinary case, given a preferred
+   * source measured at 3–21 s against a fast one at ~1 s — and the window is
+   * then covered by TWO batches: the interior's and the rim's.
+   *
+   * The all-or-nothing rule refuses each of them on its own, correctly: applying
+   * one would leave the window standing on two DEMs, which is the visible step
+   * it exists to prevent. Without somewhere to keep them, both were refused and
+   * discarded, and nothing ever retried — so the upgrade was lost permanently
+   * the moment the user moved. The doc claimed "the next upgrade covering both
+   * takes it"; this is the mechanism that claim needed and did not have.
+   *
+   * Cleared on apply, and pruned with the posts it describes on eviction, so it
+   * cannot outgrow the lattice.
+   */
+  const pendingUpgrade = new Map<string, number>();
   /** The window the last `ensureAround` covered, for the all-or-nothing rule. */
   let lastWindow:
     | { origin: { x: number; y: number }; reach: number }
@@ -376,6 +405,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       // window standing on two DEMs.
       meanFilled.delete(entry.k);
       upgraded.delete(entry.k);
+      pendingUpgrade.delete(entry.k);
     }
   }
 
@@ -542,6 +572,13 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     // window into a flat one.
     if (incoming.size === 0) return false;
 
+    // HELD, NOT APPLIED YET. A batch that covers only part of the window is
+    // not useless — it is one half of a pair — so it waits for its sibling
+    // rather than being discarded. See `pendingUpgrade`.
+    for (const [postKey, height] of incoming) {
+      if (posts.has(postKey)) pendingUpgrade.set(postKey, height);
+    }
+
     const { origin, reach } = lastWindow;
     for (let dy = -reach; dy <= reach; dy++) {
       for (let dx = -reach; dx <= reach; dx++) {
@@ -550,22 +587,27 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
         // standing on — it was evicted, or never arrived — so it cannot make
         // the window mixed.
         if (!posts.has(postKey)) continue;
-        if (incoming.has(postKey) || upgraded.has(postKey)) continue;
+        if (pendingUpgrade.has(postKey) || upgraded.has(postKey)) continue;
         return false;
       }
     }
 
-    for (const [postKey, height] of incoming) {
-      // ONLY POSTS THE LATTICE ALREADY HOLDS. An upgrade batch is built from
-      // the positions the provider was asked for, and eviction may have dropped
-      // some of them since — writing those back would resurrect posts outside
-      // the current window and grow the lattice past its cap through a path the
-      // eviction pass never sees.
+    // COUNTED, so the return value cannot claim a change that did not happen.
+    // Every pending post can legitimately be absent from `posts` by now — the
+    // eviction pass runs between an upgrade being asked for and arriving — and
+    // a `true` here costs the page a full mesh rebuild for a pixel-identical
+    // result, which is exactly what `terrain-upgrade-sink.ts` says must not
+    // happen.
+    let written = 0;
+    for (const [postKey, height] of pendingUpgrade) {
       if (!posts.has(postKey)) continue;
       posts.set(postKey, height);
       upgraded.add(postKey);
       meanFilled.delete(postKey);
+      written += 1;
     }
+    pendingUpgrade.clear();
+    if (written === 0) return false;
     anyData = true;
     return true;
   }

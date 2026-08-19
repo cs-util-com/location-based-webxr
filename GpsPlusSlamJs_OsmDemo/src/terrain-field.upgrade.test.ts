@@ -249,3 +249,96 @@ describe("mean-filled posts are temporary, not permanent", () => {
     expect(calls).toBe(1);
   });
 });
+
+describe("an upgrade that arrives after the user moved (PR #328 review)", () => {
+  /**
+   * WHY THIS BLOCK EXISTS. The all-or-nothing rule refuses a batch that would
+   * leave the window standing on two DEMs — correctly. But `ensureAround` only
+   * ever asks the provider for the posts it is MISSING, so a batch is exactly
+   * one request's positions and NO batch ever spans an already-filled interior
+   * plus a newer rim.
+   *
+   * Walk one step while an upgrade is in flight and the window is covered by
+   * TWO batches. Each is refused on its own, and before this fix both were
+   * discarded with nothing to retry them — so the better heights were lost
+   * PERMANENTLY the moment the user moved. Given the preferred source was
+   * measured at 3–21 s against ~1 s for the fast one, that is the ordinary
+   * case, not an edge one: the headline feature would rarely have worked for
+   * anyone actually walking around.
+   *
+   * The doc claimed "the next upgrade covering both takes it". There was no
+   * mechanism behind that sentence. These tests are what makes it true.
+   */
+
+  const NEXT = { lat: CENTRE.lat + 0.0004, lng: CENTRE.lng };
+
+  it("APPLIES once the interior and the rim have both arrived", async () => {
+    const field = createTerrainField({ provider: flatProvider(100) });
+    await field.ensureAround(CENTRE, RADIUS_M);
+    const interior = field.heldPositions();
+
+    // The user walks before the interior's upgrade lands.
+    await field.ensureAround(NEXT, RADIUS_M);
+    const all = field.heldPositions();
+    const rim = all.filter(
+      (position) =>
+        !interior.some(
+          (held) => held.lat === position.lat && held.lng === position.lng,
+        ),
+    );
+    expect(rim.length).toBeGreaterThan(0);
+
+    // Neither half covers the current window on its own...
+    expect(
+      field.replacePosts(
+        interior,
+        interior.map(() => 200),
+      ),
+    ).toBe(false);
+
+    // ...and the second half completes it.
+    expect(
+      field.replacePosts(
+        rim,
+        rim.map(() => 200),
+      ),
+    ).toBe(true);
+
+    // THE OBSERVABLE, not the return value: the ground the user is standing on
+    // is now the better source, everywhere.
+    const grid = field.sampleGrid({ ...GRID, frame: enuFrameAt(NEXT) });
+    const heights = [...grid.heights].filter((h) => Number.isFinite(h));
+    expect(heights.length).toBeGreaterThan(0);
+    expect(heights.every((h) => h === 200)).toBe(true);
+  });
+
+  it("refuses a batch for posts the lattice does not hold", async () => {
+    // WHAT THIS ACTUALLY COVERS, corrected after mutation. It was written as
+    // "does not report a change when every pending post has been evicted", to
+    // cover the `written === 0` guard — and deleting that guard left this test
+    // GREEN, because a batch of unheld posts is refused earlier, by the window
+    // check.
+    //
+    // The guard is still right and still there, but it is DEFENSIVE rather
+    // than reachable: eviction now prunes `pendingUpgrade` alongside `posts`,
+    // so an entry cannot survive to be written and then be missing. Saying so
+    // is better than a test whose name claims a coverage it does not have —
+    // which is the failure this round has already found three times.
+    const field = createTerrainField({ provider: flatProvider(100) });
+    await field.ensureAround(CENTRE, RADIUS_M);
+
+    // Positions the lattice has never held: far enough away to be outside the
+    // window entirely, so the write loop skips all of them.
+    const elsewhere = [
+      { lat: CENTRE.lat + 5, lng: CENTRE.lng + 5 },
+      { lat: CENTRE.lat + 5.001, lng: CENTRE.lng + 5 },
+    ];
+
+    expect(
+      field.replacePosts(
+        elsewhere,
+        elsewhere.map(() => 200),
+      ),
+    ).toBe(false);
+  });
+});

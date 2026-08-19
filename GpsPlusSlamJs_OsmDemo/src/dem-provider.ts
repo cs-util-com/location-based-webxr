@@ -113,7 +113,13 @@ export const DEM_ATTRIBUTION = `${MAPTERHORN_ATTRIBUTION} · ${TERRARIUM_ATTRIBU
 export const PRIMARY_DEM_TIMEOUT_MS = 30_000;
 
 /**
- * The same bound for the fallback, ms — larger, and NOT optional.
+ * The same bound for the fast source, ms — NOT optional.
+ *
+ * "Larger" until 2026-08-19, and it is not any more: the preferred source's
+ * bound went from 3 s to 30 s with the race, so this 8 s is now the SMALLER of
+ * the two. The asymmetry survived, inverted — see {@link PRIMARY_DEM_TIMEOUT_MS}
+ * — because the roles inverted with it: this one bounds a request the user is
+ * waiting on, that one bounds a request nobody is.
  *
  * The plan said "primary-only", and shipping it that way would have left the
  * identical hang open one provider to the right: AWS has no documented rate
@@ -150,31 +156,6 @@ export const FALLBACK_DEM_TIMEOUT_MS = 8_000;
  * rather than being discarded.
  */
 export const PUBLISH_DEADLINE_MS = 12_000;
-
-/**
- * RAISED FROM 3 s TO 30 s WHEN THE RACE LANDED, and the reason is that the
- * deadline's JOB changed rather than that the old number was wrong.
- *
- * Under `fallbackProvider` the primary's deadline was the only thing that made
- * the fallback reachable at all: the fallback is consulted only for positions
- * the primary returned `undefined` for, so a merely SLOW primary left no gap
- * and the composition waited for it however long it took. 3 s was chosen to cut
- * that short, and it fixed the 15 s stall.
- *
- * It also made the primary unwinnable. Measured 2026-08-19 from one machine,
- * every Mapterhorn tile took 3.0–21.7 s, so a 3 s cut-off meant the
- * LiDAR-derived heights were never served — the stall was traded for a
- * permanent loss of the better data.
- *
- * Under the race nothing waits for the primary: AWS publishes in ~1 s and
- * Mapterhorn is applied whenever it arrives. So the deadline is no longer a
- * latency control at all, only a last-resort guard against a request that never
- * settles and would otherwise hold an upgrade slot open for the life of the
- * page. 30 s sits comfortably above the measured worst case.
- *
- * **Keeping it at 3 s would have shipped a race that can never be won**, which
- * is the same no-op hazard the plan review flagged one layer up.
- */
 
 export interface DemProviderOptions {
   /** Where tile bytes persist — the same blob store the OSM tiles use. */
