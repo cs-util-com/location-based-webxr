@@ -51,8 +51,6 @@ export interface HeaderCollapse {
   /** Collapses or expands, and reports through `onToggle`. */
   set(collapsed: boolean): void;
   readonly collapsed: boolean;
-  /** Expands if collapsed. Called when an error needs to be readable. */
-  revealForError(): void;
   dispose(): void;
 }
 
@@ -107,9 +105,6 @@ export function attachHeaderCollapse(
     set,
     get collapsed() {
       return collapsed;
-    },
-    revealForError: () => {
-      set(false);
     },
     dispose: () => {
       toggle.removeEventListener("click", onClick);

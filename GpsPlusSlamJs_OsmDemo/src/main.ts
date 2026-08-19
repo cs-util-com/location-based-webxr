@@ -64,6 +64,7 @@ import { startArMode, type ArMode } from "./ar-mode.js";
 import { autoElevationEnabled } from "./ar-elevation-auto.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
+import { createToast } from "./toast.js";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
@@ -704,7 +705,10 @@ async function main(): Promise<void> {
   // not an overlay — see `header-collapse.ts`), so both canvases have to be
   // resized and the 3D one repainted. `BuildingView.resize()` schedules its own
   // frame since finding R2-3, so calling it is enough.
-  const headerCollapse = attachHeaderCollapse({
+  // NOT BOUND TO A NAME ANY MORE. The only thing that held it was
+  // `revealForError`, retired with DEC-R2-15 (DEC-U10) now that errors have a
+  // toast; the collapse behaviour itself is entirely user-driven from here on.
+  attachHeaderCollapse({
     header: el("header-bar"),
     toggle: el("header-toggle"),
     onToggle: () => {
@@ -1076,6 +1080,11 @@ async function main(): Promise<void> {
    * session is invisible for exactly as long as it matters (r509 review).
    */
   const arToast = createArToast(el("ar-root"));
+  // THE 2D ERROR CHANNEL (N3, DEC-U10). Until this existed every non-AR
+  // message went to the header status line, which is why the header had to
+  // pop itself open on every error: a message written into a collapsed
+  // header is a message nobody sees. This is what lets that rule retire.
+  const toast = createToast(el("toast-root"));
 
   /**
    * The last painted state, so the DOM is written only when it CHANGES.
@@ -1916,11 +1925,17 @@ async function main(): Promise<void> {
 
   function writeStatus(): void {
     const view = selectOsmView(store.getState());
-    if (view.loading.phase !== "idle") {
-      status.textContent =
-        view.loading.phase === "error"
-          ? `Failed: ${view.loading.message}`
-          : view.loading.message;
+    // THE ERROR PHASE IS NOT RENDERED HERE ANY MORE (DEC-U10). Errors go to
+    // the toast, which is visible whether or not the header is collapsed.
+    // Writing them here as well would be the second channel DEC-R2-15
+    // existed to prevent, and it is what forced the header to expand itself.
+    //
+    // The line falls through to the ordinary summary instead of blanking:
+    // during a failed refetch the previous snapshot is still what is on
+    // screen, so describing it is accurate. A blank line would read as
+    // 'nothing loaded', which is a stronger claim than the failure supports.
+    if (view.loading.phase !== "idle" && view.loading.phase !== "error") {
+      status.textContent = view.loading.message;
       return;
     }
     const snapshot = view.snapshot;
@@ -2043,13 +2058,24 @@ async function main(): Promise<void> {
     (view) => view.loading,
     (loading) => {
       writeStatus();
-      // DEC-R2-15. The status line lives inside the header, and a collapsed
-      // header hides it — so an error would otherwise be written into something
-      // invisible, and the demo would look like it did nothing. Expanding on
-      // error keeps ONE error channel instead of growing a second one, and it
-      // covers every reporter (fetch, either view, the locate button, a dead
-      // worker) rather than just the one that prompted the rule.
-      if (loading.phase === "error") headerCollapse.revealForError();
+      // ERRORS GO TO THE TOAST, AND DEC-R2-15 IS RETIRED (DEC-U10).
+      //
+      // That rule expanded the header on every error, because the status
+      // line inside it was the only channel available and a message written
+      // into a collapsed header is invisible. The owner reported the
+      // self-expanding header as a bug; it was the demo telling the truth
+      // about failures they were independently investigating.
+      //
+      // BOTH HALVES MOVE TOGETHER, and that is not tidiness. Retiring the
+      // expand while errors still wrote to the status line would leave the
+      // message in a collapsed header AND in a toast - the two-channel state
+      // DEC-R2-15 rejected a toast in order to avoid. So `writeStatus` no
+      // longer renders the error phase either; see its comment.
+      //
+      // ACCEPTED COST: a toast is transient where the header stayed open
+      // until dismissed, so an error can now be missed by looking away. The
+      // owner chose that knowingly.
+      if (loading.phase === "error") toast.show(loading.message);
     },
   );
 

@@ -524,6 +524,45 @@ export async function recordStatus(page) {
 }
 
 /**
+ * Records every message the 2D toast shows from now on (N3, DEC-U10).
+ *
+ * WHY THIS EXISTS ALONGSIDE `recordStatus`. Errors used to be written into
+ * `#status` and the header expanded itself so they could be read. From
+ * 2026-08-19 they go to a toast instead and `writeStatus` does not render the
+ * error phase at all — so an assertion that watches only the status line for
+ * a failure message can no longer fail, whatever the app does. Moving the
+ * observation point is what keeps those assertions meaningful rather than
+ * merely green.
+ *
+ * A MutationObserver on the container rather than a poll, for the same reason
+ * `recordStatus` gives: the message is on screen briefly and a poll wide
+ * enough to be cheap is wide enough to miss it, so the test would pass on the
+ * bug.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<() => Promise<string[]>>} reads the history so far
+ */
+export async function recordToasts(page) {
+  await page.evaluate(() => {
+    const seen = [];
+    const root = document.getElementById("toast-root");
+    if (root === null) return;
+    new MutationObserver(() => {
+      const text = root.textContent ?? "";
+      if (text !== "" && text !== seen[seen.length - 1]) seen.push(text);
+    }).observe(root, { childList: true, characterData: true, subtree: true });
+    /** @type {Record<string, unknown>} */ (window).__toastHistory = seen;
+  });
+  return () =>
+    page.evaluate(
+      () =>
+        /** @type {string[]} */ (
+          /** @type {Record<string, unknown>} */ (window).__toastHistory ?? []
+        ),
+    );
+}
+
+/**
  * Counts the pixels of the 3D pane that sit on a HARD EDGE, and says where they
  * are — the palette-independent way of asking "is there geometry on screen?".
  *

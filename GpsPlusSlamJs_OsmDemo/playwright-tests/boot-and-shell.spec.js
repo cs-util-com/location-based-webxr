@@ -756,6 +756,71 @@ test.describe("the mobile layout", () => {
 });
 
 test.describe("my location", () => {
+  test("an error reaches the user with the header COLLAPSED (DEC-U10)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST IS THE ONE STANDING UNDER DEC-U10. Until 2026-08-19 every
+    // non-AR message went to the status line inside the header, and that is
+    // the only reason the header popped itself open on every error: a message
+    // written into a collapsed header is a message nobody sees. The owner
+    // reported that self-expanding behaviour as a bug, so the rule was retired
+    // — which is only safe because errors now go to a toast instead.
+    //
+    // If the toast wiring is ever lost, NOTHING ELSE FAILS. The unit tests for
+    // `toast.ts` still pass, the header correctly stays put, and errors become
+    // completely invisible. That is the whole failure mode, and it is only
+    // observable from the assembled app — which is why this is an e2e and not
+    // another unit test.
+    await page.addInitScript(() => {
+      // A DENIED PERMISSION, not a missing API: the app branches on the error
+      // it gets back, and removing `geolocation` entirely would take a
+      // different path (unsupported) that reports through a different string.
+      const denied = {
+        code: 1,
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+        message: "User denied Geolocation",
+      };
+      Object.defineProperty(navigator, "geolocation", {
+        configurable: true,
+        value: {
+          getCurrentPosition: (_ok, fail) => fail?.(denied),
+          watchPosition: (_ok, fail) => {
+            fail?.(denied);
+            return 1;
+          },
+          clearWatch: () => {},
+        },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // COLLAPSED FIRST. Expanded, the old status line would have been visible
+    // and the test would pass for a build with no toast at all.
+    await page.locator("#header-toggle").click();
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+
+    await page.locator(".locate-button").click();
+
+    // The message itself is the locate control's wording; what this asserts is
+    // that SOMETHING reached a surface the user can see while collapsed.
+    const toast = page.locator("#toast-root .toast");
+    await expect(toast).toHaveText(/./, { timeout: 15000 });
+
+    // AND THE HEADER DID NOT MOVE — the retired rule, asserted as retired.
+    // Without this the test would also pass for a build that reverted DEC-U10
+    // and expanded the header, since the toast would still be there.
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+  });
   test("moves the user to a real fix, and says so while it is working", async ({
     page,
     context,

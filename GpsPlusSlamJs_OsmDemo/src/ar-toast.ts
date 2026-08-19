@@ -22,103 +22,38 @@
  * @see ar-toast.ts.md
  */
 
+import { createToast, type Toast } from "./toast.js";
+
 /** How long a message stays before it fades, ms. */
 export const AR_TOAST_LINGER_MS = 8_000;
 
-export interface ArToast {
-  /** Show a message. Replaces any current one and restarts the timer. */
-  show(message: string): void;
-  /** Take any message down now, and stop the timer. Idempotent. */
-  clear(): void;
-}
+/**
+ * The AR toast is the shared {@link Toast}, in the AR overlay root.
+ *
+ * IT WAS GENERALISED RATHER THAN COPIED when the 2D toast arrived in round two
+ * (N3). The mechanism here — attach empty, write the text one task later,
+ * handle supersession by cancelling rather than by guarding — cost three review
+ * rounds to get right, and none of it is visible in the finished code. A second
+ * hand-written copy in `main.ts` would have reproduced the bugs rather than the
+ * fixes. `toast.ts` carries the reasoning; this file keeps the argument for why
+ * AR needs a channel of its own at all, which is a different question and still
+ * true.
+ *
+ * The linger stays LONGER than the 2D default: a message in AR competes with
+ * the camera feed and with the user's attention on the physical world, and
+ * there is no scrollback to recover it from.
+ */
+export type ArToast = Toast;
 
 /**
  * Create the toast surface inside the AR overlay root.
  *
  * @param root the SAME element passed to `initAR` — anything outside it is not
  *   composited during an immersive session.
- *
- * The element is created once and reused, rather than per message: `#ar-root`
- * is styled `position: fixed; inset: 0` and hidden only while `:empty`, so a
- * toast element living there permanently would keep a full-viewport,
- * click-eating layer over the whole page for the entire time AR is NOT running.
- * That exact regression is recorded in `ar-mode.ts`. It is therefore attached on
- * `show` and removed on `clear`.
  */
 export function createArToast(root: HTMLElement): ArToast {
-  const element = document.createElement("div");
-  element.className = "ar-toast";
-  // POLITE, not assertive: a drift warning is information, not an interruption,
-  // and `alert` would cut across whatever a screen reader is saying.
-  element.setAttribute("role", "status");
-  element.setAttribute("aria-live", "polite");
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  /** The deferred text write. See `show`. */
-  let pending: ReturnType<typeof setTimeout> | undefined;
-
-  const clear = (): void => {
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      timer = undefined;
-    }
-    if (pending !== undefined) {
-      clearTimeout(pending);
-      pending = undefined;
-    }
-    // EMPTIED, not just detached. The next `show` attaches this same element,
-    // and one still carrying the previous text would arrive populated — which
-    // is the exact defect the deferral below exists to remove.
-    element.textContent = "";
-    element.remove();
-  };
-
-  return {
-    show(message: string): void {
-      // ATTACHED IN THIS TASK, POPULATED IN THE NEXT — and the second half is
-      // the part that took two attempts (r511 review, then r513's).
-      //
-      // A live region is announced when its content CHANGES while it is in the
-      // accessibility tree; one inserted already carrying its text is commonly
-      // not announced at all. The first fix reordered the two statements, which
-      // reads correctly and does nothing: browsers do not rebuild the
-      // accessibility tree per DOM operation, they flush queued updates once at
-      // the end of the task. With both mutations in the same task the AT still
-      // sees a region that appeared with its text already in it — the reorder
-      // was unobservable, and the test asserting it observed a state nothing
-      // ever reaches.
-      //
-      // **The separation has to be a task, not a statement.** `setTimeout`
-      // rather than `requestAnimationFrame`, deliberately: rAF is the tighter
-      // fit for "after a rendering step", but it is throttled or paused in a
-      // background tab, and `main.ts` can warn with no XR session running — so
-      // the frame-based version can silently never deliver. A task boundary is
-      // enough for the flush and always fires.
-      //
-      // `append`, not `insertBefore`: `initAR` puts its canvas at the FRONT of
-      // this container, and the toast has to paint over it.
-      // WITHDRAWAL AND SUPERSESSION ARE HANDLED BY CANCELLING THE TIMER, above
-      // and in `clear`, not by guarding inside the callback (r513 review). The
-      // first version tested `element.isConnected` and a sequence number in
-      // there, and neither could ever be true: both `clear()` and a second
-      // `show()` call `clearTimeout(pending)` before anything else, so a
-      // withdrawn or superseded write never runs at all.
-      //
-      // They were deleted rather than kept as belt-and-braces because the
-      // sidecar had begun documenting them as the mechanism — which is the
-      // same defect this whole function exists to fix, one level up: a
-      // description asserting something the code does not do. The two tests
-      // that look like they cover the guards pass on the cancellation, and
-      // their comments now say so.
-      root.append(element);
-      if (pending !== undefined) clearTimeout(pending);
-      pending = setTimeout(() => {
-        pending = undefined;
-        element.textContent = message;
-      }, 0);
-      if (timer !== undefined) clearTimeout(timer);
-      timer = setTimeout(clear, AR_TOAST_LINGER_MS);
-    },
-    clear,
-  };
+  return createToast(root, {
+    className: "ar-toast",
+    lingerMs: AR_TOAST_LINGER_MS,
+  });
 }

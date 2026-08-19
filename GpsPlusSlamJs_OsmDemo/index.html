@@ -138,6 +138,50 @@
         pointer-events: none;
       }
 
+      /* The 2D toast (round two, N3).
+
+         WHY THE PAGE NEEDED ONE AT ALL. Every non-AR message in this demo
+         went to the header status line, and that single fact is what forced
+         the header to pop itself open on every error (DEC-R2-15): a message
+         written into a collapsed header is a message nobody sees. With a
+         channel visible while collapsed, that rule can retire (DEC-U10) -
+         which is why this exists rather than being a nicety.
+
+         `#toast-root` is a FIXED, EMPTY, pointer-events-none layer that is
+         always present, unlike `#ar-root`, which is only safe to leave in
+         the DOM because it collapses via `:empty`. This one has no size of
+         its own - it positions its child and nothing more - so it cannot eat
+         a tap even while a message is showing. That is the regression
+         recorded in `ar-mode.ts`, avoided by construction rather than by a
+         rule someone has to remember.
+
+         BOTTOM-LEFT, not the AR toast's bottom-centre band: the locate and
+         AR controls sit bottom-right (F3a), and so does Leaflet's
+         attribution. */
+      #toast-root {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        z-index: 500;
+        pointer-events: none;
+      }
+
+      .toast {
+        position: fixed;
+        left: 0.75rem;
+        bottom: 0.75rem;
+        max-width: 78vw;
+        padding: 0.55rem 0.85rem;
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 92%);
+        color: #f2f4f8;
+        font-size: 0.9rem;
+        line-height: 1.35;
+        border: 1px solid rgb(242 244 248 / 22%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+        pointer-events: none;
+      }
+
       /*
         The measurement readout (AR milestone 4). Top-left, monospace, one
         number per line: read at arm's length while walking, where a run-on
@@ -932,6 +976,11 @@
         should not be announced.
       -->
       <div id="ar-root"></div>
+      <!-- The 2D message channel. Deliberately NOT inside `#ar-root`: that
+           subtree is what WebXR composites during an immersive session, and
+           a 2D message has to be visible when no session is running. See
+           `toast.ts.md`. -->
+      <div id="toast-root"></div>
       <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
            two views to ~450 px each on a laptop, which is the width that made
            the 3D pane useless on a phone. -->

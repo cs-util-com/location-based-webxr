@@ -98,26 +98,30 @@ describe("attachHeaderCollapse", () => {
     expect(onToggle).not.toHaveBeenCalled();
   });
 
-  it("expands on an error, because the status line lives inside it", () => {
-    // DEC-R2-15. Without this, a locate failure or a fetch failure is written
-    // into a hidden element and the demo looks like it did nothing.
+  it("STAYS COLLAPSED when an error occurs, which DEC-R2-15 used to forbid", () => {
+    // RETIRED 2026-08-19 (DEC-U10). Two tests used to live here asserting the
+    // opposite: that an error expands the header, and that it then stays
+    // expanded. The rule existed because the status line inside the header
+    // was the only channel an error could reach, so a collapsed header made
+    // failures invisible.
+    //
+    // `toast.ts` removed that premise, and the owner reported the
+    // self-expanding header as a bug in the twelfth testing session. Errors
+    // now go to a toast that is visible whether or not the header is
+    // collapsed, and `writeStatus` no longer renders the error phase at all
+    // - both halves together, because retiring only the expand would leave
+    // the message in a collapsed header AND in a toast, which is the
+    // two-channel state DEC-R2-15 rejected a toast in order to avoid.
+    //
+    // This test is what stops the rule being reintroduced by someone reading
+    // the old comment: there is no longer any API here to expand the header
+    // except the user's own toggle.
     const { header, collapse } = setup();
     collapse.set(true);
+
     expect(header.dataset["collapsed"]).toBe("true");
-
-    collapse.revealForError();
-
-    expect(header.dataset["collapsed"]).toBe("false");
-    expect(collapse.collapsed).toBe(false);
-  });
-
-  it("stays expanded after an error rather than collapsing again", () => {
-    // Deliberate: re-collapsing would race the user reading the message.
-    const { collapse } = setup();
-    collapse.set(true);
-    collapse.revealForError();
-    collapse.revealForError();
-    expect(collapse.collapsed).toBe(false);
+    expect(collapse.collapsed).toBe(true);
+    expect("revealForError" in collapse).toBe(false);
   });
 
   it("toggles on Enter and Space, which role=button promises", () => {
