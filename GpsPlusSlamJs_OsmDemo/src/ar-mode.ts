@@ -265,6 +265,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     hud?: ArHud;
     elevation?: ArElevationControl;
     compass?: ArCompassControl;
+    /** The top-of-screen column the readout and the slider live in (DEC-W5). */
+    stack?: HTMLElement;
     shell?: ArBuildingMaterial;
     unregisterFrame?: () => void;
   } = {};
@@ -310,6 +312,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // Same reason as the elevation control above: nothing may be left in
     // `#ar-root`, which is hidden only while `:empty`.
     session.compass?.dispose();
+    // AFTER its two children, so the column goes with them. `#ar-root` is
+    // hidden only while `:empty`, and anything left attached keeps a
+    // full-viewport layer over the page once AR stops — the regression
+    // `ar-compass-control.ts`'s own sidecar records having shipped once.
+    session.stack?.remove();
     // RESTORED BEFORE the city is handed back, so the desktop view never sees
     // an additive, depth-write-free material against its own sky gradient.
     deps.buildingView.setArShellMaterial(undefined);
@@ -538,11 +545,23 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       startDepthCapture(AR_DEPTH_SAMPLER_CONFIG);
     }
 
+    // THE TOP-OF-SCREEN COLUMN the readout and the slider share (G9, DEC-W5).
+    //
+    // A BOX THE DEMO OWNS, not `#ar-root` itself. The framework inserts its
+    // full-screen canvas as `#ar-root`'s first child, in flow with an inline
+    // 100vh height — so making that element a flex column pushed both controls
+    // a full viewport below the fold. This wrapper keeps the column without
+    // touching what the framework puts in the overlay root.
+    const arStack = document.createElement("div");
+    arStack.className = "ar-stack";
+    deps.container.append(arStack);
+    session.stack = arStack;
+
     // THE COMPASS SLIDER (DEC-E2), only when the caller can actually dispatch.
     if (deps.onCompassSettings !== undefined) {
       const onCompassSettings = deps.onCompassSettings;
       session.compass = createArCompassControl({
-        root: deps.container,
+        root: arStack,
         onChange: onCompassSettings,
       });
       session.compass.attach();
@@ -584,7 +603,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // the desktop status line reports `BuildingView`'s renderer, and the session
     // draws with a DIFFERENT one, so the number visible during AR described a
     // renderer that was not producing the frames.
-    session.hud = createArHud(deps.container);
+    session.hud = createArHud(arStack);
     const renderer = getRenderer();
     // FPS IS AVERAGED OVER THE WINDOW, not sampled from one frame (r510 review).
     // A single `1/dt` spikes routinely on a phone — GC, a worker message, the
@@ -672,83 +691,97 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       // computed, monotonic and page-relative -- rather than from wall time, so the
       // pulse cannot jump when the tab is backgrounded.
       session.shell?.setTime(elapsed);
-      const live = deps.liveMeasurements?.() ?? {};
-      const wrote = session.hud?.sample(
-        {
-          // THE PREVIOUS FRAME'S COST, and the comment here said "this frame's"
-          // until the r510 review. `WebGLRenderer.render` calls `info.reset()` at
-          // its top, and the framework runs these callbacks BEFORE `render` — so
-          // what is readable now is the last completed frame. At a 2 Hz readout
-          // the one-frame lag is invisible; the mechanism is written down because
-          // the next change will reason from it.
-          drawCost:
-            renderer === null
+      // NOTHING BELOW IS BUILT UNLESS THE READOUT WILL ACCEPT IT (PR review of
+      // P4/P5, finding 7). `sample` is cheap and its argument is not: this
+      // object costs an ENU transform, a bilinear terrain read and a
+      // great-circle distance, and the loop was paying all of it at display
+      // rate for a readout that takes a value twice a second — roughly 30x more
+      // often than the result is used, inside an XR frame loop, on a phone.
+      //
+      // `due` reads the same `lastWriteMs` `sample` does, so this is one
+      // cadence queried twice rather than two cadences that can drift.
+      const hud = session.hud;
+      if (hud !== undefined && hud.due(elapsed * 1000)) {
+        const live = deps.liveMeasurements?.() ?? {};
+        const wrote = hud.sample(
+          {
+            // THE PREVIOUS FRAME'S COST, and the comment here said "this frame's"
+            // until the r510 review. `WebGLRenderer.render` calls `info.reset()` at
+            // its top, and the framework runs these callbacks BEFORE `render` — so
+            // what is readable now is the last completed frame. At a 2 Hz readout
+            // the one-frame lag is invisible; the mechanism is written down because
+            // the next change will reason from it.
+            drawCost:
+              renderer === null
+                ? undefined
+                : {
+                    calls: renderer.info.render.calls,
+                    triangles: renderer.info.render.triangles,
+                  },
+            fps,
+            // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
+            // written directly by the alignment lerper with `matrixAutoUpdate =
+            // false`, so element 13 is the live baseline rather than a stale copy.
+            //
+            // UNDEFINED UNTIL AN ALIGNMENT EXISTS (r511 review).
+            // `createSceneHierarchy` leaves the matrix at IDENTITY, whose element 13
+            // is a perfectly real `0` — so the readout showed `baseline 0.00 m`
+            // before the fusion had said anything at all. That is the one thing
+            // `ar-measurements.ts` exists to forbid: an unmeasured value rendered as
+            // a number, and this one is worse than most because zero is a plausible
+            // reading. Compared against the whole matrix rather than element 13
+            // alone, because a genuine zero baseline must still be reportable.
+            worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
               ? undefined
+              : arWorldGroup.matrix.elements[13],
+            // THE FUSED BEARING — what the alignment currently thinks north is,
+            // which is the only way to SEE what the compass slider did.
+            //
+            // WORLD SPACE IS THE GEO FRAME HERE, and that is the whole subtlety.
+            // The hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the
+            // alignment) → basisChangeNode → arpose → camera`, so the camera is a
+            // DESCENDANT of the aligned group and its world transform already
+            // carries the alignment. A direction taken relative to `arWorldGroup`
+            // would be in the AR-odometry frame — the alignment's *domain*, i.e.
+            // un-aligned — and would be a plausible number that is not north.
+            // `ar-scene-hierarchy.ts` records two independent readers getting this
+            // backwards; `nueBearingDeg` carries the axis convention and its tests.
+            fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
+              ? undefined
+              : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
+            // THE PUBLISHED AUTO OFFSET, beside the raw `above terrain` residual
+            // the live measurements carry — the pair is the M5 instrument (see
+            // `ar-measurements.ts`). Absent while the estimator publishes
+            // nothing, per the readout's no-invented-numbers rule. `autoEngaged`
+            // rides along because published is NOT applied (cold-review F1) and
+            // the readout is the only thing that can say which state this is.
+            ...(latestAuto === undefined || latestAuto.autoM === null
+              ? {}
               : {
-                  calls: renderer.info.render.calls,
-                  triangles: renderer.info.render.triangles,
-                },
-          fps,
-          // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
-          // written directly by the alignment lerper with `matrixAutoUpdate =
-          // false`, so element 13 is the live baseline rather than a stale copy.
-          //
-          // UNDEFINED UNTIL AN ALIGNMENT EXISTS (r511 review).
-          // `createSceneHierarchy` leaves the matrix at IDENTITY, whose element 13
-          // is a perfectly real `0` — so the readout showed `baseline 0.00 m`
-          // before the fusion had said anything at all. That is the one thing
-          // `ar-measurements.ts` exists to forbid: an unmeasured value rendered as
-          // a number, and this one is worse than most because zero is a plausible
-          // reading. Compared against the whole matrix rather than element 13
-          // alone, because a genuine zero baseline must still be reportable.
-          worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
-            ? undefined
-            : arWorldGroup.matrix.elements[13],
-          // THE FUSED BEARING — what the alignment currently thinks north is,
-          // which is the only way to SEE what the compass slider did.
-          //
-          // WORLD SPACE IS THE GEO FRAME HERE, and that is the whole subtlety.
-          // The hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the
-          // alignment) → basisChangeNode → arpose → camera`, so the camera is a
-          // DESCENDANT of the aligned group and its world transform already
-          // carries the alignment. A direction taken relative to `arWorldGroup`
-          // would be in the AR-odometry frame — the alignment's *domain*, i.e.
-          // un-aligned — and would be a plausible number that is not north.
-          // `ar-scene-hierarchy.ts` records two independent readers getting this
-          // backwards; `nueBearingDeg` carries the axis convention and its tests.
-          fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
-            ? undefined
-            : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
-          // THE PUBLISHED AUTO OFFSET, beside the raw `above terrain` residual
-          // the live measurements carry — the pair is the M5 instrument (see
-          // `ar-measurements.ts`). Absent while the estimator publishes
-          // nothing, per the readout's no-invented-numbers rule. `autoEngaged`
-          // rides along because published is NOT applied (cold-review F1) and
-          // the readout is the only thing that can say which state this is.
-          ...(latestAuto === undefined || latestAuto.autoM === null
-            ? {}
-            : {
-                autoOffsetM: latestAuto.autoM,
-                autoConfidence: latestAuto.confidence,
-                autoEngaged: latestAuto.engaged,
-                autoFrozen: latestAuto.frozen,
-              }),
-          ...live,
-        },
-        // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop
-        // already computed, and it is monotonic. **Page-relative, not a session
-        // duration** — this comment said "the session clock" until r513, which is
-        // the wording that caused the fps window to be opened at zero a few lines
-        // above. Safe here because `sample` only ever differences this stamp
-        // against its own previous value; never treat it as an elapsed time.
-        elapsed * 1000,
-      );
-      // THE WINDOW RESETS ONLY WHEN ONE WAS ACTUALLY WRITTEN, so the average
-      // covers exactly the frames the displayed number describes. Resetting every
-      // frame would make it a single-frame reciprocal again by another route.
-      if (wrote === true) {
-        framesThisWindow = 0;
-        windowOpenedAtS = elapsed;
+                  autoOffsetM: latestAuto.autoM,
+                  autoConfidence: latestAuto.confidence,
+                  autoEngaged: latestAuto.engaged,
+                  autoFrozen: latestAuto.frozen,
+                }),
+            ...live,
+          },
+          // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop
+          // already computed, and it is monotonic. **Page-relative, not a session
+          // duration** — this comment said "the session clock" until r513, which is
+          // the wording that caused the fps window to be opened at zero a few lines
+          // above. Safe here because `sample` only ever differences this stamp
+          // against its own previous value; never treat it as an elapsed time.
+          elapsed * 1000,
+        );
+        // THE WINDOW RESETS ONLY WHEN ONE WAS ACTUALLY WRITTEN, so the average
+        // covers exactly the frames the displayed number describes. Resetting
+        // every frame would make it a single-frame reciprocal again by another
+        // route. `due` and `sample` can still disagree — the toggle repaints
+        // outside the window — so this stays keyed on what `sample` returned.
+        if (wrote) {
+          framesThisWindow = 0;
+          windowOpenedAtS = elapsed;
+        }
       }
     });
 

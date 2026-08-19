@@ -185,36 +185,49 @@
         DOM-overlay root it becomes a fixed, viewport-sized layer, which is what
         the framework already sizes its canvas for.
       */
-      /*
-        THE OVERLAY IS A TOP-ALIGNED COLUMN (G9, DEC-W5).
-
-        Only the two controls that belong at the TOP take part in this flow --
-        the readout and the compass slider. Everything else in here
-        (`.ar-toast`, `.ar-elevation`, the AR offer) stays absolutely
-        positioned and is therefore out of flow and unaffected.
-
-        WHY A FLOW RATHER THAN A SECOND OFFSET. The slider used to be
-        `bottom: 20vh`, centred and up to 88vw wide -- a bar straight across the
-        near content, which is what the thirteenth session reported. Moving it
-        to `top: <some number>` would have put two hard-coded offsets in the
-        same corner, one of which CHANGES HEIGHT AT RUNTIME: the compass box
-        wraps and carries a hint line. That is exactly how the earlier
-        toast/slider overlap happened, and it was a PR #311 review finding. A
-        column cannot overlap itself, so the relationship is a property of the
-        layout instead of two numbers agreeing.
-
-        `align-items: flex-start` so neither control stretches to the full
-        width; `pointer-events` is untouched -- each child still opts in or out
-        for itself, and the container has never set it.
-      */
       #ar-root {
         position: fixed;
         inset: 0;
+      }
+
+      /*
+        THE TOP-ALIGNED COLUMN THE READOUT AND THE SLIDER SHARE (G9, DEC-W5).
+
+        A BOX OF ITS OWN, and the first attempt at this got that wrong in a way
+        no test could see. It made `#ar-root` ITSELF the flex column -- but the
+        framework inserts its full-screen WebGL canvas as that element's FIRST
+        CHILD, in flow, with an inline `height` of 100vh written by
+        `renderer.setSize`. As a flex item that canvas cannot shrink, so the
+        readout and the slider were pushed a full viewport below the fold and
+        were invisible for the entire session. The e2e missed it because its
+        fixture builds `#ar-root`'s contents by hand and omitted the one child
+        that breaks the layout. Found by the PR review, not by the gate.
+
+        So the column lives in a wrapper the demo owns, and `#ar-root` goes back
+        to being a plain block that the canvas can fill.
+
+        SHRINK-WRAPPED ON PURPOSE: `top`/`left` with no `right` or `width`, so
+        the box hugs its widest child instead of spanning the viewport and
+        eating taps in the empty space beside them. `pointer-events` is
+        deliberately NOT set here -- `.ar-hud` opts out for itself and the
+        slider needs input, exactly as before.
+
+        WHY A COLUMN AT ALL. The slider used to be `bottom: 20vh`, centred and
+        up to 88vw wide -- a bar straight across the near content, which is what
+        the thirteenth session reported. Moving it to some `top:` value would
+        have put two hard-coded offsets in one corner, one of which CHANGES
+        HEIGHT AT RUNTIME: the compass box wraps and carries a hint line. That
+        is how the earlier toast/slider overlap happened (PR #311 review,
+        finding 4). A column cannot overlap itself.
+      */
+      .ar-stack {
+        position: absolute;
+        top: 2.5rem;
+        left: 0.75rem;
         display: flex;
         flex-direction: column;
         align-items: flex-start;
         gap: 0.5rem;
-        padding: 2.5rem 0.75rem 0;
       }
 
       #ar-root:empty {
@@ -1084,13 +1097,21 @@
          exists precisely when there is no session yet. */
       .ar-offer {
         position: fixed;
-        bottom: 1.25rem;
+        /* ABOVE THE TOAST BAND (PR review of P3, finding 4). At 1.25rem this
+           overlapped `.toast` in both axes and won on z-index -- covering the
+           app's only 2D message channel, including the GPS failures this very
+           flow produces. The toast sits at `bottom: 0.75rem` and is roughly
+           2.5rem tall, so 4.5rem clears it with room for a two-line message.
+           The narrower cap keeps the box off the bottom-right locate and AR
+           controls, which it would otherwise reach under and, having pointer
+           events, swallow taps on. Both are asserted rather than eyeballed. */
+        bottom: 4.5rem;
         left: 50%;
         z-index: 1000;
         display: flex;
         gap: 0.6rem;
         align-items: center;
-        max-width: 92vw;
+        max-width: 21rem;
         padding: 0.5rem 0.75rem;
         transform: translateX(-50%);
         border: 1px solid rgb(242 244 248 / 25%);
@@ -1099,6 +1120,15 @@
         box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
         color: #f2f4f8;
         font-size: 0.9rem;
+        /* THE BOX MUST NOT EAT A TAP MEANT FOR THE MAP (PR review of P3,
+           finding 4). Bottom-centre of the VIEWPORT lands on the map's own
+           bottom-right controls on a desktop split -- measured at 1280 px, the
+           locate button's box is inside this one -- and raising the offset far
+           enough to clear them is tuning against one viewport, which the mobile
+           sheet then invalidates. The same rule `.ar-hud` and `.ar-toast`
+           already follow: the container is transparent to input and the things
+           that exist to be pressed opt back in below. */
+        pointer-events: none;
       }
 
       .ar-offer[hidden] {
@@ -1106,6 +1136,11 @@
       }
 
       .ar-offer-button {
+        /* OPTS BACK IN. `.ar-offer` above is `pointer-events: none` so it
+           cannot swallow a tap on the map underneath, and that inherits -- so
+           without this the button is inert in a real browser while every jsdom
+           test still passes, which is the trap `.ar-hud-toggle` documents. */
+        pointer-events: auto;
         /* 2.75 rem tall, the same floor the header caret's tap target uses --
            this is the control the whole interaction funnels into, so it is the
            last place to be stingy about target size. */
@@ -1121,6 +1156,8 @@
       }
 
       .ar-offer-dismiss {
+        /* Opts back in, for the same reason as the button above. */
+        pointer-events: auto;
         min-width: 2.75rem;
         min-height: 2.75rem;
         padding: 0;
@@ -1414,10 +1451,6 @@
         should not be announced.
       -->
       <div id="ar-root"></div>
-      <!-- The 2D message channel. Deliberately NOT inside `#ar-root`: that
-           subtree is what WebXR composites during an immersive session, and
-           a 2D message has to be visible when no session is running. See
-           `toast.ts.md`. -->
       <!-- THE AR OFFER (G6, DEC-W2). Shown when a fix arrives that an AR
            PRESS asked for, never when the user merely pressed Locate.
 
@@ -1430,7 +1463,13 @@
            transient user activation, so the session must be asked for from a
            fresh gesture; entering from the fix callback would spend the
            activation the press already used. See `ar-entry.ts`. -->
-      <div id="ar-offer" class="ar-offer" hidden>
+      <div
+        id="ar-offer"
+        class="ar-offer"
+        role="status"
+        aria-live="polite"
+        hidden
+      >
         <span class="ar-offer-text">Found you.</span>
         <button type="button" id="ar-offer-enter" class="ar-offer-button">
           Enter AR now
@@ -1439,11 +1478,15 @@
           type="button"
           id="ar-offer-dismiss"
           class="ar-offer-dismiss"
-          aria-label="Dismiss"
+          aria-label="Dismiss the AR prompt"
         >
           ×
         </button>
       </div>
+      <!-- The 2D message channel. Deliberately NOT inside `#ar-root`: that
+           subtree is what WebXR composites during an immersive session, and
+           a 2D message has to be visible when no session is running. See
+           `toast.ts.md`. -->
       <div id="toast-root"></div>
       <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
            two views to ~450 px each on a laptop, which is the width that made

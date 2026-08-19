@@ -43,6 +43,21 @@ export interface ArHud {
    * copies of a cadence drift.
    */
   sample(measurements: ArMeasurements, nowMs: number): boolean;
+  /**
+   * Whether {@link sample} would ACCEPT a value right now.
+   *
+   * EXISTS SO THE CALLER CAN SKIP BUILDING ONE. `sample` is cheap, but the
+   * argument is not: assembling it costs an ENU transform, a bilinear terrain
+   * read and a great-circle distance, and the frame loop was paying all of that
+   * at display rate to feed a readout that accepts a value twice a second —
+   * about 30x more often than the result is used (PR review of P4/P5, finding
+   * 7). Two comments claimed otherwise; this is the seam that makes them true.
+   *
+   * THE CADENCE STAYS IN ONE PLACE. This is a query on the same
+   * `lastWriteMs` `sample` uses, not a second copy of the interval — the thing
+   * `sample`'s own return value exists to prevent.
+   */
+  due(nowMs: number): boolean;
   /** Take the readout down. Idempotent. */
   dispose(): void;
 }
@@ -174,6 +189,10 @@ export function createArHud(root: HTMLElement): ArHud {
   element.append(values, toggle);
 
   return {
+    due(nowMs: number): boolean {
+      return nowMs - lastWriteMs >= AR_HUD_SAMPLE_MS;
+    },
+
     sample(measurements: ArMeasurements, nowMs: number): boolean {
       if (nowMs - lastWriteMs < AR_HUD_SAMPLE_MS) return false;
       lastWriteMs = nowMs;

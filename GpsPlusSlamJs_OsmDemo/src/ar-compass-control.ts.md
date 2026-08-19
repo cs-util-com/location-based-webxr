@@ -30,8 +30,17 @@ for the 0–1 influence whose mapping lives in `compass-influence.ts`.
     at runtime — this box wraps and carries a hint line. That is exactly how the
     earlier overlap with `.ar-toast` happened (PR #311 review, finding 4), so
     the relationship is now a property of the layout rather than of two numbers
-    agreeing. Only `.ar-hud` and this control take part in the flow; the toast,
-    the elevation nudge and the AR offer stay absolutely positioned.
+    agreeing.
+  - **THE COLUMN IS `.ar-stack`, A BOX `ar-mode.ts` OWNS — not `#ar-root`
+    itself**, and the first attempt got that wrong in a way no test could see.
+    `#ar-root` also holds **the framework's full-screen WebGL canvas**, inserted
+    as its first child, in flow, with an inline 100vh height — so making that
+    element the flex column turned the canvas into an unshrinkable first item
+    and pushed this control and the readout a full viewport below the fold, for
+    the whole session. The other children (`.ar-toast`, `.ar-elevation`, the
+    framework's CSS3D overlay) are absolutely positioned and were never
+    affected. The AR offer is not in `#ar-root` at all — it is a fixed element
+    in `<main>`, because it exists precisely when no session is running.
   - **The old 20vh had a real reason and it is retired, not forgotten:** it
     avoided `.ar-toast`'s 12vh band, because the far-travel toast fires at 2 km,
     during exactly the long walk this slider is measured on. Leaving the bottom

@@ -5,7 +5,9 @@
 ## Public API
 
 - `class LocateControl`
-  - `constructor({ map, onLocated, onError })` — adds itself to the map at `bottomleft`.
+  - `constructor({ map, onLocated, onError })` — adds itself to the map at
+    `bottomright` (DEC-R2-3, the Google Maps convention the feedback named).
+    This line said `bottomleft` until round three and had always been wrong.
   - `start()` — one-shot locate, exactly what pressing the button does.
     Idempotent while one is already in flight. **Public since round three**
     (G6, DEC-W2): the AR button performs this step itself when the app does not

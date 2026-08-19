@@ -108,9 +108,15 @@ describe("arPressAction", () => {
   });
 
   it("LOCATES when an origin exists but no fix is on record", () => {
-    // Defensive: an origin implies a fix arrived once, so this should be
-    // unreachable. It is handled rather than asserted because the alternative
-    // is entering AR having compared the view against nothing.
+    // THIS COMMENT USED TO SAY "an origin implies a fix arrived once, so this
+    // should be unreachable". It was reachable, and the PR review found the
+    // path: `main.ts` cleared its fix variable on any locate FAILURE — a rule
+    // written for readout staleness — so one timed-out lookup made AR
+    // unenterable in a single tap for as long as GPS kept failing. The caller
+    // now passes a never-cleared `lastKnownFixPosition`, so this really is the
+    // defensive case again. Recording that it was NOT, once, is the useful part:
+    // "unreachable" in a comment is a claim about the whole codebase, and this
+    // one was made about a caller that did not exist yet.
     expect(
       arPressAction({
         sessionRunning: false,

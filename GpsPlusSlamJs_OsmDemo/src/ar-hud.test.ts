@@ -254,3 +254,51 @@ describe("createArHud — collapse and expand", () => {
     expect(root.children).toHaveLength(0);
   });
 });
+
+describe("due", () => {
+  /**
+   * WHY THIS MATTERS (PR review of P4/P5, finding 7).
+   *
+   * `sample` is cheap; its ARGUMENT is not. Assembling one costs an ENU
+   * transform, a bilinear terrain read and a great-circle distance, and the XR
+   * frame loop was paying all of that at display rate to feed a readout that
+   * accepts a value twice a second — roughly 30 of every 31 builds discarded,
+   * on a phone, inside the render loop.
+   *
+   * `due` lets the caller skip the build. It is a query on the SAME
+   * `lastWriteMs` that `sample` gates on, deliberately: a caller that kept its
+   * own copy of the interval would be the second cadence `sample`'s return
+   * value already exists to prevent.
+   */
+  const measurements = { fps: 60 };
+
+  it("is true before anything has been sampled", () => {
+    const hud = createArHud(root);
+    expect(hud.due(0)).toBe(true);
+  });
+
+  it("agrees with `sample` on both sides of the window", () => {
+    // THE INVARIANT THAT MAKES IT SAFE TO SKIP THE BUILD: if `due` ever said
+    // false while `sample` would have accepted, the readout would silently stop
+    // updating — a defect that looks exactly like a frozen GPS, which is the
+    // report this whole area came from.
+    const hud = createArHud(root);
+    hud.sample(measurements, 1_000);
+
+    expect(hud.due(1_000 + AR_HUD_SAMPLE_MS - 1)).toBe(false);
+    expect(hud.sample(measurements, 1_000 + AR_HUD_SAMPLE_MS - 1)).toBe(false);
+
+    expect(hud.due(1_000 + AR_HUD_SAMPLE_MS)).toBe(true);
+    expect(hud.sample(measurements, 1_000 + AR_HUD_SAMPLE_MS)).toBe(true);
+  });
+
+  it("does not advance the window by itself", () => {
+    // A query, not a tick. Calling it repeatedly must not starve the readout.
+    const hud = createArHud(root);
+    hud.sample(measurements, 1_000);
+    const later = 1_000 + AR_HUD_SAMPLE_MS;
+    expect(hud.due(later)).toBe(true);
+    expect(hud.due(later)).toBe(true);
+    expect(hud.sample(measurements, later)).toBe(true);
+  });
+});

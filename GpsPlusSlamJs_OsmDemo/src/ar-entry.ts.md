@@ -90,7 +90,8 @@ if (action.kind === "locate") locateControl.start();
 
 ## Tests
 
-`ar-entry.test.ts` — thirteen cases, no DOM. Both branches of the press
+`ar-entry.test.ts` — thirteen cases, no DOM, and `ar-entry.property.test.ts`
+over arbitrary inputs including NaN and infinite coordinates. Both branches of the press
 (no fix, view moved away, at the user, within the gate, session running) and
 every reason the offer must stay silent.
 

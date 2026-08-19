@@ -587,6 +587,23 @@ async function main(): Promise<void> {
    */
   let lastFixPosition: { lat: number; lng: number } | undefined;
   /**
+   * Where the user was last known to be. **Never cleared.**
+   *
+   * SEPARATE FROM `lastFixPosition` BECAUSE THE TWO WANT OPPOSITE THINGS, and
+   * conflating them was a real bug (PR review of P3, finding 2).
+   * `lastFixPosition` is cleared on a locate FAILURE, deliberately (r511
+   * review): a readout that keeps saying "N m from anchor" after the watch died
+   * reads as the user having stopped moving, which is the more misleading half
+   * of a stale display.
+   *
+   * The AR entry gate needs the opposite. It asks "is the app showing where you
+   * are", and a failed lookup does not move the user — so reading the cleared
+   * variable made ONE failed fix render AR unenterable in a single tap for as
+   * long as GPS kept failing, however good the immutable origin was. The
+   * readout must forget a dead fix; the gate must remember where you were.
+   */
+  let lastKnownFixPosition: { lat: number; lng: number } | undefined;
+  /**
    * When the last fix arrived, epoch ms.
    *
    * **A STALE FIX AND A FRESH ONE ARE INDISTINGUISHABLE** on every other line of
@@ -648,6 +665,7 @@ async function main(): Promise<void> {
       lastAltitudeM = position.altitude ?? undefined;
       lastAltitudeAccuracyM = position.altitudeAccuracy ?? undefined;
       lastFixPosition = { lat: position.lat, lng: position.lng };
+      lastKnownFixPosition = lastFixPosition;
       lastFixAtMs = Date.now();
       // REGISTRATION IS NOT GATED, and that separation is the fix for the
       // 2026-08-14 report ("no automatic updates of the user position … the
@@ -744,6 +762,15 @@ async function main(): Promise<void> {
       // the watch failed reads as a fix that is still arriving, which is the
       // opposite of what has happened.
       lastFixAtMs = undefined;
+      // BUT NOT `lastKnownFixPosition`, and NOT the AR intent — see below.
+      //
+      // THE AR PRESS'S INTENT IS SPENT (PR review of P3, finding 1). The
+      // operation it asked for has failed, so the offer it was waiting for must
+      // never arrive. Without this the flag stayed armed indefinitely: press AR
+      // indoors, the one-shot times out, and then a PLAIN GPS PRESS minutes
+      // later pops up "Enter AR now" for a press the user never made — which is
+      // exactly the failure the plan named as worse than the one being fixed.
+      awaitingArFix = false;
       // TO THE SURFACE THE USER CAN ACTUALLY SEE (r511 review). During a
       // session the status line is outside WebXR's dom-overlay root and is not
       // composited at all — which milestone 3 discovered and then left this
@@ -1229,7 +1256,14 @@ async function main(): Promise<void> {
    * one this replaces.
    *
    * Cleared on: entering AR, exiting AR, pressing AR again, the offer being
-   * taken or dismissed, and any position change the user asked for elsewhere.
+   * taken or dismissed, and **a locate failure** — the operation the press
+   * asked for is then spent, so the offer it was waiting for must never come.
+   *
+   * NOT cleared by a map click or a city jump made DURING the wait, and that is
+   * a deliberate gap rather than an oversight: the arriving fix re-centres the
+   * view, so `shouldOfferAr` re-asks `arPressAction` at the moment that
+   * matters and answers correctly either way. `syncArOffer` covers the same
+   * ground once the prompt is actually on screen.
    */
   let awaitingArFix = false;
 
@@ -1237,7 +1271,9 @@ async function main(): Promise<void> {
     arPressAction({
       sessionRunning: arSession !== undefined,
       hasOrigin: canEnterAr(selectZeroReference(store.getState())),
-      lastFix: lastFixPosition,
+      // THE NEVER-CLEARED ONE. See its declaration for why the readout's
+      // variable is the wrong one to gate entry on.
+      lastFix: lastKnownFixPosition,
       viewPosition: selectOsmView(store.getState()).position,
     });
 
@@ -1327,7 +1363,7 @@ async function main(): Promise<void> {
         awaitingFix: awaitingArFix,
         sessionRunning: arSession !== undefined,
         hasOrigin: canEnterAr(selectZeroReference(store.getState())),
-        lastFix: lastFixPosition,
+        lastFix: lastKnownFixPosition,
         viewPosition: selectOsmView(store.getState()).position,
       })
     ) {
@@ -1567,7 +1603,12 @@ async function main(): Promise<void> {
         // THE DEM UNDER THE USER (DEC-H1). `terrain` is declared further down
         // this function body, which is safe because this closure only ever RUNS
         // from a frame callback — long after the whole body has been evaluated.
-        // Sampling costs one bilinear array read, twice a second.
+        // Sampling costs one bilinear array read, twice a second — and it is
+        // ACTUALLY twice a second only since the PR review of P4/P5. This
+        // closure used to be called on every XR frame, with `sample` throwing
+        // ~29 of every 30 results away; `ar-mode.ts` now asks the HUD whether
+        // it is `due` before building any of this. The sentence above was in
+        // the file, describing a cadence the code did not have, the whole time.
         //
         // `hasData` is passed through rather than folded in: `heightfieldFrom`
         // samples FLAT ZERO for a failed load, so the height alone cannot

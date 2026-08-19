@@ -833,25 +833,28 @@ test.describe("the header", () => {
     // which meant the control the row exists for was the one that disappeared
     // the moment the feature was used. The readout now takes its own line
     // instead, and the three controls stay together.
-    await page.locator("#geo-event").click();
-    // WAIT ON THE TOAST FIRST, at the 30 s budget `map-and-cells.spec.js` uses
-    // for the same click. Computing an event scores hundreds of chunks and may
-    // download a tile; asserting the readout directly at 20 s passed in
-    // isolation and timed out in the full suite, where three workers share the
-    // machine. The toast is the signal that the work FINISHED — waiting only on
-    // the readout conflates "still working" with "nothing nearby", since the
-    // readout is written only when a quest is actually found.
-    await expect(page.locator("#toast-root .toast")).toHaveText(
-      /Quest at|No quest nearby/,
-      { timeout: 30000 },
-    );
-    // The fixture does contain one. Asserted rather than assumed: with no quest
-    // the readout stays empty and the geometry below would be measuring the
-    // boot state again — the exact case this step exists to cover.
-    await expect(page.locator("#quest-readout")).toHaveText(
-      /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)/,
-      { timeout: 30000 },
-    );
+    // THE READOUT IS POPULATED DIRECTLY, not by running a quest search, and
+    // that is the right call for a LAYOUT test rather than a shortcut.
+    //
+    // Two earlier versions pressed Show Quests and waited for the real thing.
+    // Both were flaky, for two different reasons, and the second reason is the
+    // one that settles it: the readout is written only when a quest is actually
+    // FOUND, so the step's precondition depends on the search finding something
+    // — and when it reports "No quest nearby" the readout stays empty and the
+    // geometry below silently measures the boot state again. A layout assertion
+    // whose setup can quietly not happen is worse than no assertion.
+    //
+    // What this step is about is what the header does when that span has text
+    // in it. The text's provenance is `event-label.ts`'s business, covered by
+    // its own unit tests and by `map-and-cells.spec.js` end to end. The string
+    // used here is the exact shape those produce.
+    await page.evaluate(() => {
+      const readout = document.querySelector("#quest-readout");
+      if (readout === null) throw new Error("no #quest-readout");
+      readout.textContent = "340 m SW";
+      readout.removeAttribute("hidden");
+    });
+    await expect(page.locator("#quest-readout")).toBeVisible();
     const withReadout = await box("#geo-event");
     const toggleAgain = await box("#header-toggle");
     const siteAgain = await box("#site");
@@ -1527,14 +1530,224 @@ test.describe("the AR entry point", () => {
     // THE OFFER'S BUTTON IS A REAL TAP TARGET. G1 was a control that was
     // correct and too small to use, twice; this is the control the whole
     // interaction funnels into.
+    // 44, NOT 24. The CSS sets `min-height: 2.75rem` and its comment claims
+    // "the same floor the header caret's tap target uses"; asserting 24 let a
+    // regression to just over half that pass. 24 px is the plan's GLYPH-height
+    // floor for the caret, which is a different measurement — the two were
+    // conflated (PR review of P3, finding 8).
     const enterBox = await page.locator("#ar-offer-enter").boundingBox();
-    expect(enterBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+    expect(enterBox?.height ?? 0).toBeGreaterThanOrEqual(44);
 
     // DISMISSIBLE, and it stays dismissed. An offer that reappears on the next
     // fix would fire ~1 Hz under a watch.
     await page.locator("#ar-offer-dismiss").click();
     await expect(offer).toBeHidden();
     await expect(arButton).toBeEnabled();
+  });
+
+  test("forgets the AR intent when the locate it started FAILS", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS — it is a regression test for a bug this milestone
+     * shipped and its own review found.
+     *
+     * The AR press arms an intent and waits for the fix it asked for. The
+     * locate control's failure handler resets three stale-fix variables and did
+     * not reset that intent, so it stayed armed indefinitely. The consequence
+     * was not subtle: press AR indoors, the lookup fails, and then a PLAIN GPS
+     * PRESS minutes later pops up "Enter AR now" for a press the user never
+     * made — verbatim the failure the plan called worse than the one being
+     * fixed, and which the code's own docstring asserted could not happen.
+     *
+     * The gate could not have caught it: nothing exercised the failure path.
+     */
+    // NO GEOLOCATION PERMISSION, so the first lookup fails immediately rather
+    // than after the 15 s timeout.
+    await context.clearPermissions();
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    await page.locator("#enter-ar").click();
+    // The failure surfaces on the channel a user can see.
+    await expect(page.locator("#toast-root .toast")).toContainText(
+      /denied|unavailable|timed out/,
+      { timeout: 15000 },
+    );
+    await expect(page.locator("#ar-offer")).toBeHidden();
+
+    // NOW THE USER PRESSES THE GPS PIN, having given up on AR. This is the
+    // press the offer must not attach itself to.
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.locator(".locate-button").click();
+
+    // The fix really arrives — the hint disappears once entry is direct.
+    await expect(page.locator("#enter-ar")).toHaveAttribute(
+      "title",
+      "Enter AR",
+      { timeout: 10000 },
+    );
+    // ...and no offer, because the press that wanted one failed long ago.
+    await expect(page.locator("#ar-offer")).toBeHidden();
+  });
+
+  test("the offer's button is wired to AR entry, and the prompt clears the offer", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (PR review of P3, finding 6).
+     *
+     * The plan's P3 verification lists "prompt tapped → AR starts". Nothing
+     * asserted it: the other test taps DISMISS, so a listener attached to the
+     * wrong id would have shipped green — an offer whose main button does
+     * nothing, which is the exact complaint this milestone exists to fix, moved
+     * one control along.
+     *
+     * WHAT IT CAN AND CANNOT PROVE. Headless Chromium cannot start an immersive
+     * session, so this stops where the existing AR tests stop: at the boundary.
+     * What it pins is that the press REACHES the AR path — the offer clears and
+     * the entry attempt reports its failure on the 2D channel — which is
+     * exactly what a mis-wired listener would not do.
+     */
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: {
+          isSessionSupported: () => Promise.resolve(true),
+          // Supported, but every request fails — the honest shape for a
+          // headless browser, and it puts the entry attempt on the error path
+          // where this test can see it.
+          requestSession: () => Promise.reject(new Error("no XR device")),
+        },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    await page.locator("#enter-ar").click();
+    await expect(page.locator("#ar-offer")).toBeVisible({ timeout: 10000 });
+
+    await page.locator("#ar-offer-enter").click();
+
+    // The offer goes away on the press, before anything is awaited.
+    await expect(page.locator("#ar-offer")).toBeHidden();
+    // And the AR path really was entered — it reported why it could not start.
+    await expect(page.locator("#toast-root .toast")).toBeVisible({
+      timeout: 15000,
+    });
+  });
+
+  test("keeps the AR offer clear of the toast and of the map's own controls", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (PR review of P3, finding 4).
+     *
+     * The offer shipped at `bottom: 1.25rem`, centred, up to 92vw — overlapping
+     * `.toast` in both axes and winning on z-index. That covers the app's only
+     * 2D message channel, including the GPS failures this very flow produces,
+     * and at its widest it reached under the bottom-right locate and AR
+     * controls where, having pointer events, it would swallow taps.
+     *
+     * Geometry rather than eyeballing, for the same reason the header's row
+     * assertions are geometry: "it looks fine on my screen" is how the first
+     * version got here.
+     */
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    // AT 390 px, WHICH IS THE WHOLE POINT. The overlap this guards is a phone
+    // phenomenon: on a 1280 px desktop the toast sits bottom-LEFT and the offer
+    // is centred, so their boxes never meet and every assertion below holds
+    // whatever the offset is. Mutation testing showed exactly that -- lowering
+    // the offer back into the toast band passed at desktop width.
+    await page.setViewportSize({ width: 390, height: 780 });
+    await page.locator("#enter-ar").click();
+    await expect(page.locator("#ar-offer")).toBeVisible({ timeout: 10000 });
+
+    // A toast, put on screen the way the app does, so the two are measured
+    // together rather than one of them imagined.
+    await page.evaluate(() => {
+      const root = document.querySelector("#toast-root");
+      if (root === null) throw new Error("no #toast-root");
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.textContent = "Location permission denied.";
+      root.append(toast);
+    });
+
+    const offer = await page.locator("#ar-offer").boundingBox();
+    const toast = await page.locator("#toast-root .toast").boundingBox();
+    const locate = await page.locator(".locate-button").boundingBox();
+    if (offer === null || toast === null || locate === null) {
+      throw new Error("no boxes");
+    }
+
+    const overlaps = (a, b) =>
+      a.x < b.x + b.width &&
+      b.x < a.x + a.width &&
+      a.y < b.y + b.height &&
+      b.y < a.y + a.height;
+
+    // THE MESSAGE CHANNEL IS NOT COVERED. This is the harm that geometry can
+    // actually express: a toast hidden under the offer is a GPS error the user
+    // never sees, and this flow produces those.
+    expect(overlaps(offer, toast)).toBe(false);
+
+    // THE MAP'S CONTROLS STAY USABLE — asserted by CLICKING one, not by
+    // measuring boxes. On a desktop split the offer's box does land over the
+    // map's bottom-right controls (`locate` is inside it at 1280 px), and
+    // raising the offset until it does not is tuning against one viewport that
+    // the mobile sheet then invalidates. What matters is that the offer cannot
+    // SWALLOW the tap, which `pointer-events: none` on the container settles
+    // for every viewport at once. Playwright's actionability check fails this
+    // click if anything intercepts it.
+    // STILL SHOWING AT THE MOMENT OF THE CLICK. Without this the click can be
+    // measured against a box the offer no longer occupies, and the assertion
+    // proves nothing -- which is what a mutation run showed the first version
+    // doing.
+    await expect(page.locator("#ar-offer")).toBeVisible();
+    // A TRIAL CLICK: Playwright runs the full actionability check — visible,
+    // stable, receives events — and throws if anything intercepts the point,
+    // without actually clicking.
+    //
+    // WHAT THIS DOES AND DOES NOT GUARD, measured rather than assumed:
+    //
+    // - It holds the property that matters — the offer must never swallow a tap
+    //   meant for the map — and it is the honest way to state it, because the
+    //   obvious version (click, then assert the button changed state) was
+    //   VACUOUS: the AR press above had already put the locate button in
+    //   `located`, so that assertion held whether or not the click landed.
+    // - It does NOT guard `.ar-offer`'s `pointer-events: none`. Mutation testing
+    //   showed this step passing with that rule flipped to `auto`, so on this
+    //   layout the control wins the hit test for some other reason — the
+    //   z-order between a fixed overlay and Leaflet's control stack. The rule
+    //   stays: it follows the pattern `.ar-hud` and `.ar-toast` already set and
+    //   costs nothing. Saying it is tested here would simply be untrue.
+    await page.locator(".locate-button").click({ trial: true });
   });
 
   test("keeps the AR overlay's controls at the TOP, out of the 3D content", async ({
@@ -1556,10 +1769,11 @@ test.describe("the AR entry point", () => {
      * this attaches elements carrying the production class names to the real
      * `#ar-root` and measures what the real CSS does to them.
      *
-     * THE GAP THAT LEAVES, named rather than papered over: nothing here proves
-     * `ar-compass-control.ts` still uses `.ar-compass`. That class name is the
-     * seam between this test and the control, and it is pinned in
-     * `ar-compass-control.test.ts`.
+     * THE GAP THAT REMAINS, named rather than papered over: nothing here proves
+     * `ar-compass-control.ts` still uses `.ar-compass`, or that `ar-mode.ts`
+     * still builds an `.ar-stack` and attaches both controls into it. Those
+     * class names are the seam between this test and the code; the first is
+     * pinned in `ar-compass-control.test.ts`, the second is not pinned at all.
      */
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
@@ -1568,31 +1782,67 @@ test.describe("the AR entry point", () => {
     await page.evaluate(() => {
       const root = document.querySelector("#ar-root");
       if (root === null) throw new Error("no #ar-root");
+      // THE FRAMEWORK'S CANVAS, first child and in flow, exactly as
+      // `webxr-session.ts` inserts it — `insertBefore(renderer.domElement,
+      // container.firstChild)`, with `setSize(innerWidth, innerHeight)` writing
+      // the inline dimensions. THIS is the child the first version of this
+      // fixture omitted, and omitting it is how a blocker passed a green gate:
+      // making `#ar-root` itself the flex column turned this canvas into an
+      // unshrinkable first item and pushed both controls a full viewport below
+      // the fold. A fixture missing the one child that breaks the layout is not
+      // a cheaper version of the real thing; it is a different thing.
+      const canvas = document.createElement("canvas");
+      canvas.style.display = "block";
+      canvas.style.width = "100vw";
+      canvas.style.height = "100vh";
+      root.append(canvas);
+
+      const stack = document.createElement("div");
+      stack.className = "ar-stack";
       const hud = document.createElement("div");
       hud.className = "ar-hud";
       hud.textContent = "lat 50.9413\nlng 6.9580";
+      // The collapse toggle is part of the readout's real box (DEC-H2).
+      const toggle = document.createElement("button");
+      toggle.className = "ar-hud-toggle";
+      toggle.textContent = "more";
+      hud.append(toggle);
       const compass = document.createElement("div");
       compass.className = "ar-compass";
       const slider = document.createElement("input");
       slider.type = "range";
       slider.className = "ar-compass-slider";
+      // `min-width: 9rem`, so leaving it out understated the compass's width.
+      const value = document.createElement("span");
+      value.className = "ar-compass-value";
+      value.textContent = "compass 0.35";
       const hint = document.createElement("span");
       hint.className = "ar-compass-hint";
       hint.textContent = "takes 15-30 fixes to express a change";
-      compass.append(slider, hint);
+      compass.append(slider, value, hint);
       // APPENDED COMPASS-FIRST, deliberately: the column's order comes from CSS
       // `order`, not from attach order, and in a real session the two controls
       // are attached by different modules at different moments.
-      root.append(compass, hud);
+      stack.append(compass, hud);
+      root.append(stack);
     });
 
     const viewport = page.viewportSize();
-    const hudBox = await page.locator("#ar-root .ar-hud").boundingBox();
-    const compassBox = await page.locator("#ar-root .ar-compass").boundingBox();
+    const hudBox = await page
+      .locator("#ar-root .ar-stack .ar-hud")
+      .boundingBox();
+    const compassBox = await page
+      .locator("#ar-root .ar-stack .ar-compass")
+      .boundingBox();
     if (hudBox === null || compassBox === null || viewport === null) {
       throw new Error("no boxes");
     }
 
+    // NEAR THE TOP IN ABSOLUTE TERMS, not merely "above the midpoint". The
+    // relative pair alone would pass on a layout that put the readout at 40%
+    // and the slider at 45% — and the blocker this test missed pushed both a
+    // whole viewport DOWN, which a midpoint check catches only by luck.
+    expect(hudBox.y).toBeLessThan(120);
     // OUT OF THE MIDDLE: the whole slider sits in the upper half.
     expect(compassBox.y + compassBox.height).toBeLessThan(viewport.height / 2);
 
@@ -1634,8 +1884,24 @@ test.describe("the AR entry point", () => {
 
     await page.locator(".locate-button").click();
 
-    // The fix really does arrive — otherwise the absence below proves nothing.
-    await expect(page.locator("#enter-ar")).toBeEnabled({ timeout: 10000 });
+    // THE FIX REALLY DOES ARRIVE, asserted on the LOCATE BUTTON's own state.
+    //
+    // This waited on `#enter-ar` being enabled, which was a proof until this
+    // very milestone made the AR button enabled BEFORE any fix — the same spec
+    // asserts exactly that a few tests above. Geolocation could have been
+    // entirely broken and this test would still have passed, proving only that
+    // `#ar-offer` is hidden at boot, which it always is (PR review of P3,
+    // finding 3).
+    // ON THE AR BUTTON'S HINT, which is DURABLE. `data-state="located"` would
+    // also prove it, but it reverts to `idle` after 4 s — a transient this
+    // assertion would be racing. The hint is present exactly while a press
+    // would locate first, so its ABSENCE proves both that an origin arrived and
+    // that the view is at the user, which is the state the offer would need.
+    await expect(page.locator("#enter-ar")).toHaveAttribute(
+      "title",
+      "Enter AR",
+      { timeout: 10000 },
+    );
     await expect(page.locator("#ar-offer")).toBeHidden();
   });
 
