@@ -27,6 +27,8 @@ import {
 import {
   DEM_ATTRIBUTION,
   DEM_SOURCE_ID,
+  FAST_DEM_SOURCE_ID,
+  PREFERRED_DEM_SOURCE_ID,
   FALLBACK_DEM_TIMEOUT_MS,
   PRIMARY_DEM_TIMEOUT_MS,
   createDemProvider,
@@ -78,6 +80,15 @@ function fakeNetwork(
      * outlives the test and vitest reports an unhandled rejection.
      */
     mapterhornNeverAnswers?: boolean;
+    /**
+     * Mapterhorn answers correctly, but LATE — the field case the race exists
+     * for.
+     *
+     * Microtask ticks rather than timers, so the suite stays synchronous and
+     * deterministic: the point is only that AWS settles first, not how much
+     * wall-clock separates them.
+     */
+    mapterhornDelayTicks?: number;
   } = {},
 ): {
   fetchImpl: typeof fetch;
@@ -115,11 +126,16 @@ function fakeNetwork(
         });
       }
       const status = options.mapterhornStatus ?? 200;
-      return Promise.resolve(
+      const response =
         status === 200
           ? new Response(new Uint8Array([MAPTERHORN_BODY]), { status })
-          : new Response(null, { status }),
-      );
+          : new Response(null, { status });
+      const ticks = options.mapterhornDelayTicks ?? 0;
+      if (ticks <= 0) return Promise.resolve(response);
+      return (async () => {
+        for (let i = 0; i < ticks; i++) await Promise.resolve();
+        return response;
+      })();
     }
     return Promise.resolve(
       new Response(new Uint8Array([AWS_BODY]), { status: 200 }),
@@ -135,7 +151,15 @@ function fakeNetwork(
 const TEST_TIMEOUT_MS = 25;
 
 describe("createDemProvider", () => {
-  it("answers from Mapterhorn and never asks AWS while the primary has data", async () => {
+  it("asks BOTH sources at once instead of the fallback only on a gap", async () => {
+    // CHANGED 2026-08-19 WITH THE RACE. This test used to assert the opposite —
+    // that AWS is never asked while Mapterhorn has data — which was
+    // `fallbackProvider`'s defining behaviour and, as the twelfth testing
+    // session found, its defect: the fallback is consulted only for positions
+    // the primary returned `undefined` for, so a merely SLOW primary leaves no
+    // gap and the fallback is unreachable rather than broken. Asking both is
+    // now the point, and the extra request is what makes the fast answer
+    // available at all.
     const { fetchImpl, urls } = fakeNetwork();
     const provider = createDemProvider({
       store: new MemoryBlobStore(),
@@ -143,13 +167,39 @@ describe("createDemProvider", () => {
       fetchImpl,
     });
 
-    const [height] = await provider.elevationAt([COLOGNE]);
+    await provider.elevationAt([COLOGNE]);
 
-    expect(height).toBe(MAPTERHORN_HEIGHT);
-    expect(urls.length).toBeGreaterThan(0);
-    expect(urls.every((url) => url.includes("tiles.mapterhorn.com"))).toBe(
-      true,
-    );
+    expect(urls.some((url) => url.includes("tiles.mapterhorn.com"))).toBe(true);
+    expect(urls.some((url) => url.includes("s3.amazonaws.com"))).toBe(true);
+  });
+
+  it("publishes AWS immediately and UPGRADES to Mapterhorn when it lands", async () => {
+    // THE MILESTONE, in one test. Measured 2026-08-19, Mapterhorn took
+    // 3.0–21.7 s per tile against AWS's ~1.0 s from the same machine. Round
+    // one's deadline made the fallback reachable by cutting Mapterhorn off at
+    // 3 s, which fixed the stall and permanently gave up the LiDAR heights.
+    // The race gives back both: the fast answer now, the good one shortly
+    // after.
+    //
+    // The assertion that matters is the UPGRADE. A race that publishes AWS and
+    // never upgrades looks identical on screen to a working one — the map shows
+    // terrain either way, just always the coarse kind.
+    const upgrades: (readonly (number | undefined)[])[] = [];
+    const provider = createDemProvider({
+      store: new MemoryBlobStore(),
+      decodePng: fakeDecodePng,
+      fetchImpl: fakeNetwork({ mapterhornDelayTicks: 8 }).fetchImpl,
+      onUpgrade: (_positions, heights) => upgrades.push(heights),
+    });
+
+    const [first] = await provider.elevationAt([COLOGNE]);
+    expect(first).toBe(AWS_HEIGHT);
+    expect(provider.stats.servedBy).toBe(FAST_DEM_SOURCE_ID);
+
+    await provider.awaitUpgrades();
+
+    expect(upgrades).toEqual([[MAPTERHORN_HEIGHT]]);
+    expect(provider.stats.servedBy).toBe(PREFERRED_DEM_SOURCE_ID);
   });
 
   it("falls back to the AWS tiles where Mapterhorn has no tile", async () => {
@@ -199,29 +249,29 @@ describe("createDemProvider", () => {
     // are the only surface saying what ANSWERED. A session that silently fell
     // back to the ~30 m AWS tiles reads identically to a LiDAR-served one on
     // every other number, and the residuals differ by an order of magnitude.
-    const primaryServed = createDemProvider({
-      store: new MemoryBlobStore(),
-      decodePng: fakeDecodePng,
-      fetchImpl: fakeNetwork().fetchImpl,
-    });
-    await primaryServed.elevationAt([COLOGNE]);
-    expect(primaryServed.stats).toEqual({
-      primaryAnswered: 1,
-      fallbackAnswered: 0,
-      unanswered: 0,
-    });
-
+    // CHANGED WITH THE RACE. The stats used to be three position counts and
+    // the HUD showed the primary's share of them. That share was only
+    // meaningful because `fallbackProvider` guaranteed the two sources answered
+    // DISJOINT positions; under a race both answer every position, so the ratio
+    // stops partitioning anything and becomes arithmetically undefined rather
+    // than merely stale. `servedBy` is what stays true.
     const fellBack = createDemProvider({
       store: new MemoryBlobStore(),
       decodePng: fakeDecodePng,
       fetchImpl: fakeNetwork({ mapterhornStatus: 404 }).fetchImpl,
     });
     await fellBack.elevationAt([COLOGNE]);
-    expect(fellBack.stats).toEqual({
-      primaryAnswered: 0,
-      fallbackAnswered: 1,
-      unanswered: 0,
+    expect(fellBack.stats.servedBy).toBe(FAST_DEM_SOURCE_ID);
+
+    const upgraded = createDemProvider({
+      store: new MemoryBlobStore(),
+      decodePng: fakeDecodePng,
+      fetchImpl: fakeNetwork({ mapterhornDelayTicks: 8 }).fetchImpl,
+      onUpgrade: () => {},
     });
+    await upgraded.elevationAt([COLOGNE]);
+    await upgraded.awaitUpgrades();
+    expect(upgraded.stats.servedBy).toBe(PREFERRED_DEM_SOURCE_ID);
   });
 
   it("lets the fallback serve when the primary is SLOW rather than failing", async () => {
@@ -251,13 +301,9 @@ describe("createDemProvider", () => {
     expect(height).toBe(AWS_HEIGHT);
     expect(urls.some((url) => url.includes("tiles.mapterhorn.com"))).toBe(true);
     expect(urls.some((url) => url.includes("s3.amazonaws.com"))).toBe(true);
-    // The positions the deadline rescued are attributed to the fallback, not
-    // silently counted as unanswered — the HUD's share has to stay honest.
-    expect(provider.stats).toEqual({
-      primaryAnswered: 0,
-      fallbackAnswered: 1,
-      unanswered: 0,
-    });
+    // Attributed to the source that actually served, not silently blamed on
+    // nobody — the readout has to stay honest about which DEM is underfoot.
+    expect(provider.stats.servedBy).toBe(FAST_DEM_SOURCE_ID);
   });
 
   it("degrades on a DEADLINE but still propagates a caller's ABORT", async () => {
@@ -303,22 +349,27 @@ describe("createDemProvider", () => {
     // them carry the whole argument, and each is easy to break with a plausible
     // one-line edit:
     //
-    // 1. The primary's is SHORTER. It is a switch to something better; the
-    //    fallback's is a last resort against a hang. Inverting them would make
-    //    the primary the patient one and leave the fast source waiting.
-    // 2. Their SUM is inside the terrain gate's 15 s. `fallbackProvider` is
-    //    strictly serial — it awaits the primary, then the fallback — so the
-    //    worst case is 3 + 8 = 11 s, and if that ever exceeded the gate the
-    //    whole milestone would be undone: the gate would fire again and the
-    //    mesh would be built flat, which is the reported bug.
-    // 3. The margin is real but NOT generous. 11 s of 15 s leaves 4 s for the
-    //    OPFS reads, four WebP decodes, base64 of ~1 MB and the geoid pass that
-    //    all happen outside these budgets. The assertion is written against the
-    //    gate's value so that raising either deadline has to confront it.
-    expect(PRIMARY_DEM_TIMEOUT_MS).toBeLessThan(FALLBACK_DEM_TIMEOUT_MS);
-    expect(PRIMARY_DEM_TIMEOUT_MS + FALLBACK_DEM_TIMEOUT_MS).toBeLessThan(
-      TERRAIN_WAIT_TIMEOUT_MS,
-    );
+    // REWRITTEN 2026-08-19: THE RELATIONSHIPS INVERTED when the race landed,
+    // because the deadlines' jobs changed. Under `fallbackProvider` the two
+    // were serial and the primary's had to be short — it was the only thing
+    // making the fallback reachable — so the invariants were "primary shorter"
+    // and "their sum inside the gate". Under a race they are CONCURRENT and
+    // nothing waits for the primary, so:
+    //
+    // 1. The FAST source's deadline alone must be inside the terrain gate. It
+    //    is now the entire guarantee that something is published before the
+    //    gate fires; the primary's no longer bounds anything a user waits for.
+    //    Breaking this rebuilds the mesh flat, which is the reported bug.
+    // 2. The PREFERRED source's is now LONGER, deliberately. It is a pure
+    //    anti-hang guard on a request nobody is waiting for. Shortening it back
+    //    below the measured worst case would ship a race that can never be won:
+    //    the upgrade would never fire and the LiDAR heights would be lost
+    //    exactly as they were under the 3 s deadline.
+    // 3. It must clear the measured worst case with room — Mapterhorn was
+    //    measured at up to 21.7 s per tile on 2026-08-19.
+    expect(FALLBACK_DEM_TIMEOUT_MS).toBeLessThan(TERRAIN_WAIT_TIMEOUT_MS);
+    expect(PRIMARY_DEM_TIMEOUT_MS).toBeGreaterThan(FALLBACK_DEM_TIMEOUT_MS);
+    expect(PRIMARY_DEM_TIMEOUT_MS).toBeGreaterThan(22_000);
   });
 
   it("identifies the composition for the HUD, and credits BOTH sources", () => {

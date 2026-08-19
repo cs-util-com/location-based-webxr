@@ -323,10 +323,10 @@ describe("describeArMeasurements — the height decomposition", () => {
       autoOffsetM: 1.4,
       autoConfidence: 0.82,
       demSourceId: "mapterhorn+terrarium",
-      demStats: { primaryAnswered: 98, fallbackAnswered: 2, unanswered: 0 },
+      demStats: { servedBy: "mapterhorn", upgrades: 1 },
     });
 
-    expect(lines).toContain("auto +1.4 m (conf 0.82) · mapterhorn 98%");
+    expect(lines).toContain("auto +1.4 m (conf 0.82) · mapterhorn");
   });
 
   it("keeps the auto line suffix-free while no DEM source is reported", () => {
@@ -362,50 +362,58 @@ describe("describeArMeasurements — the height decomposition", () => {
     expect(expanded).toContain("terrain 104.0 m · mapterhorn+terrarium");
   });
 
-  it("shows the primary's share of answered posts when serving stats arrive", () => {
+  it("names the DEM the CURRENT field came from", () => {
     // WHY THIS TEST MATTERS. The composed id names what was ASKED; the stats
-    // say what ANSWERED. A field session standing on the ~30 m fallback while
-    // the line reads like LiDAR would check residuals against the wrong
-    // upstream — the share is what makes the screenshot attributable.
+    // say what is actually underfoot. A field session standing on the ~30 m
+    // global DEM while the line reads like LiDAR would check residuals against
+    // the wrong upstream — the source name is what makes the screenshot
+    // attributable.
+    //
+    // CHANGED 2026-08-19 WITH THE DEM RACE. This used to render the primary's
+    // SHARE of answered posts ("mapterhorn 98%"), and the share was meaningful
+    // only because `fallbackProvider` guaranteed the two sources answered
+    // disjoint positions. Under a race both answer every position, so the ratio
+    // stops partitioning anything and the percentage becomes arithmetically
+    // undefined rather than merely stale. A confident wrong number on a readout
+    // used to judge alignment in the field is worse than a plain name.
     const expanded = describeArMeasurements(
       {
         terrainHeightM: 104,
         terrainHasData: true,
         demSourceId: "mapterhorn+terrarium",
-        demStats: { primaryAnswered: 98, fallbackAnswered: 2, unanswered: 0 },
+        demStats: { servedBy: "mapterhorn", upgrades: 1 },
       },
       { expanded: true },
     );
 
-    expect(expanded).toContain("terrain 104.0 m · mapterhorn 98%");
+    expect(expanded).toContain("terrain 104.0 m · mapterhorn");
   });
 
-  it("names the fallback outright when the primary answered nothing", () => {
-    // 0% is the one share that changes what the number MEANS — everything on
-    // screen is the coarse global DEM — so it is stated as words, not as a
-    // percentage a reader might skim past.
+  it("names the fast source outright while the upgrade has not landed", () => {
+    // The state a cold start spends its first seconds in, and the one worth
+    // being able to read: everything on screen is the coarse global DEM.
     const expanded = describeArMeasurements(
       {
         terrainHeightM: 104,
         terrainHasData: true,
         demSourceId: "mapterhorn+terrarium",
-        demStats: { primaryAnswered: 0, fallbackAnswered: 55, unanswered: 3 },
+        demStats: { servedBy: "terrarium", upgrades: 0 },
       },
       { expanded: true },
     );
 
-    expect(expanded).toContain("terrain 104.0 m · terrarium (fallback)");
+    expect(expanded).toContain("terrain 104.0 m · terrarium");
   });
 
-  it("falls back to the composed id when the stats counted nothing", () => {
-    // All-zero counters carry no serving information (nothing has answered
-    // yet), so the honest label is the composition that was asked.
+  it("falls back to the composed id before anything has served", () => {
+    // "none" carries no serving information — nothing has answered yet — so the
+    // honest label is the composition that was asked.
     const expanded = describeArMeasurements(
       {
         terrainHeightM: 104,
         terrainHasData: true,
         demSourceId: "mapterhorn+terrarium",
-        demStats: { primaryAnswered: 0, fallbackAnswered: 0, unanswered: 12 },
+        demStats: { servedBy: "none", upgrades: 0 },
       },
       { expanded: true },
     );

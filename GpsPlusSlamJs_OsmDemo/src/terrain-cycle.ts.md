@@ -67,3 +67,30 @@ Plus the frame-forwarding pair, added after review on #269: `centre` and `frameO
 That a FAILED load then moves the ground plane is the e2e’s (“keeps the ground under the user even when the terrain fails to load”, driven by `stubNetwork`’s `failTerrain`), since neither the worker nor `BuildingView` can be constructed in a unit test.
 
 Related: `latest-only.ts.md` (the coalescing contract), `refresh-cycle.ts.md` (the other half of the same click), `heightfield.ts.md` (what a field is and why it is relative).
+
+## Collecting the DEM race's better answer (2026-08-19)
+
+`createTerrainCycle` now owns a **second `latestOnly` cycle** that issues the
+`terrainUpgrade` RPC.
+
+**Why the page has to ask at all.** The preferred DEM settles after the
+`terrain` reply was built, and the worker protocol is strictly request/reply
+keyed on `id` — `isWorkerReply` rejects anything without an `id`/`ok` pair,
+so there is no unsolicited worker-to-page channel to announce the upgrade on.
+Adding a push envelope would be real protocol surface for one boolean. Instead
+the reply carries `upgradePending`, and the page asks.
+
+**If that trigger is ever lost, nothing else fails.** The map still shows
+terrain, the provider tests still pass, the worker still applies the better
+heights internally — and the user permanently sees the coarse ones. It has its
+own tests for that reason.
+
+**Why a separate cycle.** The upgrade call waits for the preferred source, which
+was measured at up to 21.7 s per tile. Run inside the load cycle it would hold
+that cycle `busy` for the whole wait, delaying the next position's terrain and
+making every readout keyed on `busy` claim the view is still loading long after
+it finished. `latestOnly` also gives the right cancellation for free: walking
+away supersedes an upgrade for a window nobody is looking at.
+
+The upgrade reply is the SAME shape as `terrain`'s, so `apply` — including the
+`meshOutdated` rebuild — is reused rather than duplicated.

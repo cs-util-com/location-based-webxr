@@ -64,7 +64,8 @@ import {
   isPedestrianPath,
   meshCentroidEnu,
   roadColour,
-  type FallbackProviderStats,
+  type RacingElevationProvider,
+  type RacingProviderStats,
   type LatLng,
   type OsmFeature,
   type RuleTable,
@@ -93,6 +94,7 @@ import { createMeshPlanner } from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
 import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
+import { createTerrainUpgradeSink } from "./terrain-upgrade-sink.js";
 import {
   meshOutdatedByTerrain,
   type MeshBuildRecord,
@@ -156,7 +158,15 @@ interface WorkerState {
    * carry the numbers as of ITS load, copied so the page's snapshot cannot
    * mutate under it.
    */
-  readonly demStats: () => FallbackProviderStats;
+  readonly demStats: () => RacingProviderStats;
+  /**
+   * The racing provider itself, so `terrainUpgrade` can await the loser.
+   *
+   * Held alongside `demStats` rather than replacing it because the two answer
+   * different questions and are read at different moments: `demStats` is
+   * snapshotted into every reply, this is awaited by one RPC.
+   */
+  readonly demProvider: RacingElevationProvider;
 }
 
 let state: WorkerState | undefined;
@@ -654,9 +664,27 @@ async function handle<K extends WorkerCallKind>(
       // Mapterhorn primary, AWS fallback, one caching fetch — lives behind
       // `createDemProvider`, where it is unit-testable; only the browser-bound
       // pieces (this store, the real decoder) are supplied here.
+      // LATE BINDING, and it is unavoidable rather than untidy. The provider
+      // must exist before `createTerrainField` can be given it, and the
+      // upgrade callback must call back INTO that field — a cycle. A `let`
+      // assigned one statement later is the smallest honest way to close it;
+      // the alternative is a setter on the provider, which is the same
+      // mutability with more surface.
+      const upgradeSink: {
+        apply?: (
+          positions: readonly LatLng[],
+          heights: readonly (number | undefined)[],
+        ) => void;
+      } = {};
       const demProvider = createDemProvider({
         store,
         decodePng: browserPngDecoder(),
+        onUpgrade: (positions, heights) =>
+          upgradeSink.apply?.(positions, heights),
+      });
+      const terrainField = createTerrainField({ provider: demProvider });
+      upgradeSink.apply = createTerrainUpgradeSink(terrainField, () => {
+        terrainStamp += 1;
       });
       state = {
         pipeline,
@@ -669,9 +697,10 @@ async function handle<K extends WorkerCallKind>(
             source.fetchTile(tile, prefetchSignal),
           isLoaded: (tile) => pipeline.hasTile(tile),
         }),
-        terrainField: createTerrainField({ provider: demProvider }),
+        terrainField,
         demSourceId: demProvider.sourceId,
         demStats: () => ({ ...demProvider.stats }),
+        demProvider,
       };
       return {
         categories: loaded.table.categories,
@@ -804,12 +833,14 @@ async function handle<K extends WorkerCallKind>(
     case "terrain": {
       const { centre, frameOrigin, extentM, spacingM, geoidUndulationM } =
         payload as WorkerCalls["terrain"]["request"];
-      const { terrainField, demSourceId, demStats } = requireState();
+      const { terrainField, demSourceId, demStats, demProvider } =
+        requireState();
       try {
         return await loadTerrain(
           terrainField,
           demSourceId,
           demStats,
+          () => demProvider.upgradesPending,
           centre,
           frameOrigin ?? centre,
           extentM,
@@ -828,6 +859,37 @@ async function handle<K extends WorkerCallKind>(
         // exists to catch, one layer down.
         terrainGate.settle({ ...centre, undulationM: geoidUndulationM });
       }
+    }
+
+    case "terrainUpgrade": {
+      // WAITS FOR THE LOSER, then re-describes the window it has just improved.
+      //
+      // It does NOT start a load. `loadTerrain` would, and that load would
+      // cancel the very in-flight request whose result this call exists to
+      // collect — the reason this is a distinct kind rather than a second
+      // `terrain` call.
+      //
+      // The reply is the same shape as `terrain`'s on purpose: the page's
+      // existing handling, `meshOutdated` and the rebuild it triggers included,
+      // is reused rather than written twice.
+      const { centre, frameOrigin, extentM, spacingM, geoidUndulationM } =
+        payload as WorkerCalls["terrainUpgrade"]["request"];
+      const { terrainField, demSourceId, demStats, demProvider } =
+        requireState();
+      // Resolves immediately when nothing is pending, so a page that asks
+      // speculatively — or twice — cannot hang.
+      await demProvider.awaitUpgrades();
+      return describeCurrentTerrain(
+        terrainField,
+        demSourceId,
+        demStats,
+        () => demProvider.upgradesPending,
+        centre,
+        frameOrigin ?? centre,
+        extentM,
+        spacingM,
+        geoidUndulationM,
+      );
     }
 
     case "cellMesh": {
@@ -983,7 +1045,14 @@ async function loadTerrain(
   /** The provider's `sourceId`, reported back with the field it sampled. */
   demSourceId: string,
   /** Snapshots the provider's cumulative serving stats for this result. */
-  demStats: () => FallbackProviderStats,
+  demStats: () => RacingProviderStats,
+  /**
+   * How many DEM upgrades are still in flight, read AFTER the load.
+   *
+   * A function for the same reason `demStats` is: the count moves with every
+   * batch, and this result must carry the value as of its own load.
+   */
+  upgradesPending: () => number,
   /** Where the user is. Keys the gate, and says which load this was. */
   centre: LatLng,
   /** Where the scene's frame is anchored. Says what the heights mean. */
@@ -1016,6 +1085,52 @@ async function loadTerrain(
     signal,
   );
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  // The mesh key reads this: a new field means the heights every builder samples
+  // have changed, so the next pass must rebuild rather than re-send slabs (W6).
+  //
+  // BUMPED HERE AND NOT IN `describeCurrentTerrain`, because the upgrade path
+  // shares that function and has already bumped — but only if its replacement
+  // was actually applied. Bumping unconditionally there would report a refused
+  // upgrade as a changed field and rebuild an identical mesh.
+  terrainStamp += 1;
+  return describeCurrentTerrain(
+    terrainField,
+    demSourceId,
+    demStats,
+    upgradesPending,
+    centre,
+    frameOrigin,
+    extentM,
+    spacingM,
+    geoidUndulationM,
+  );
+}
+
+/**
+ * Builds a terrain reply from the field ALREADY held — no fetching, no
+ * cancellation.
+ *
+ * Shared by `terrain` (after its load) and `terrainUpgrade` (after the DEM
+ * race's loser has been applied), so the two replies cannot drift apart. That
+ * shared shape is the point: the page's whole terrain path, including the
+ * `meshOutdated` rebuild, works for an upgrade without knowing an upgrade
+ * happened.
+ *
+ * Synchronous on purpose. Everything it touches is already in memory, and an
+ * `await` in here would reopen the window the abort check above closes.
+ */
+function describeCurrentTerrain(
+  terrainField: TerrainField,
+  demSourceId: string,
+  demStats: () => RacingProviderStats,
+  upgradesPending: () => number,
+  centre: LatLng,
+  frameOrigin: LatLng,
+  extentM: number,
+  spacingM: number,
+  geoidUndulationM: number | undefined,
+): WorkerCalls["terrain"]["result"] {
+  const window = terrainWindowFor({ frameOrigin, centre, extentM });
   const field = terrainField.sampleGrid({
     frame: window.frame,
     centreEnu: window.sampleCentreEnu,
@@ -1044,9 +1159,6 @@ async function loadTerrain(
   // review against the commit before the terrain cache landed, where there was
   // no check here at all and the hole was real.
   terrain = field.hasData ? field : undefined;
-  // The mesh key reads this: a new field means the heights every builder samples
-  // have changed, so the next pass must rebuild rather than re-send slabs (W6).
-  terrainStamp += 1;
   // RECORDED EVEN WHEN THE FIELD IS EMPTY. This is what the mesh build's join
   // reads to decide whether it already has the terrain for its own position, and
   // "the DEM failed here" is an answer to that question. Recording it only on
@@ -1075,6 +1187,12 @@ async function loadTerrain(
     note: describeTerrain(field),
     demSourceId,
     meshOutdated,
+    // READ AFTER THE LOAD, so it reflects upgrades this batch registered. The
+    // page uses it to decide whether to issue `terrainUpgrade`; reading it
+    // before the sampling would always report the previous load's state and
+    // the very first field — the one that matters most, on a cold start —
+    // would never be upgraded.
+    upgradePending: upgradesPending() > 0,
     // SNAPSHOT AT RESULT TIME, after the sampling above, so the counts include
     // this load's own batches. Cumulative for the session — the HUD reports a
     // share, and a share needs the denominator to keep meaning something.

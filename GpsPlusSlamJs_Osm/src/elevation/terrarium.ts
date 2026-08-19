@@ -340,6 +340,19 @@ export interface TerrariumProviderOptions {
    * lands on the degrade branch. Pinned by `terrarium.test.ts`.
    */
   readonly requestTimeoutMs?: number;
+  /**
+   * Overrides the reported `sourceId`.
+   *
+   * ADDED FOR THE DEM RACE. Two instances of this class serve the two ends of
+   * the race — Mapterhorn and AWS Open Data — and they differ only by
+   * `urlTemplate`. With a hardcoded id they were indistinguishable, so
+   * `racingProvider.stats.servedBy` could not name which one the field on
+   * screen came from, which is the one thing that surface exists to say.
+   *
+   * Attribution is deliberately NOT derived from this: both hosts serve
+   * Terrarium-encoded tiles under the same credit.
+   */
+  readonly sourceId?: string;
 }
 
 /**
@@ -347,7 +360,7 @@ export interface TerrariumProviderOptions {
  */
 export class TerrariumProvider implements ElevationProvider {
   readonly attribution = TERRARIUM_ATTRIBUTION;
-  readonly sourceId = "terrarium";
+  readonly sourceId: string;
 
   private readonly decodePng: PngDecoder;
   private readonly fetchImpl: typeof fetch;
@@ -390,6 +403,7 @@ export class TerrariumProvider implements ElevationProvider {
     this.urlTemplate = options.urlTemplate ?? TERRARIUM_URL_TEMPLATE;
     this.maxCachedTiles = options.maxCachedTiles ?? 64;
     this.requestTimeoutMs = options.requestTimeoutMs;
+    this.sourceId = options.sourceId ?? "terrarium";
   }
 
   async elevationAt(

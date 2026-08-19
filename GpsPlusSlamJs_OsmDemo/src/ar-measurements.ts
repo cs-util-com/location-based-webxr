@@ -114,9 +114,10 @@ export interface ArMeasurements {
    */
   readonly demStats?:
     | {
-        readonly primaryAnswered: number;
-        readonly fallbackAnswered: number;
-        readonly unanswered: number;
+        /** `sourceId` of the source the CURRENT field came from. */
+        readonly servedBy: string;
+        /** How many batches have been upgraded to the preferred source. */
+        readonly upgrades: number;
       }
     | undefined;
   /**
@@ -480,15 +481,8 @@ function demServingLabel(
   sourceId: string,
   stats: ArMeasurements["demStats"],
 ): string {
-  const split = sourceId.indexOf("+");
-  if (stats === undefined || split <= 0) return sourceId;
-  const answered = stats.primaryAnswered + stats.fallbackAnswered;
-  if (answered <= 0) return sourceId;
-  if (stats.primaryAnswered === 0) {
-    return `${sourceId.slice(split + 1)} (fallback)`;
-  }
-  const pct = Math.round((stats.primaryAnswered / answered) * 100);
-  return `${sourceId.slice(0, split)} ${pct}%`;
+  if (stats === undefined || stats.servedBy === "none") return sourceId;
+  return stats.servedBy;
 }
 
 /**

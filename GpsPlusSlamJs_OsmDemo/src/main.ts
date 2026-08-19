@@ -29,7 +29,7 @@
 import { cellToLatLng, greatCircleDistance, UNITS } from "h3-js";
 import {
   enuFrameAt,
-  type FallbackProviderStats,
+  type RacingProviderStats,
   type GeoidModel,
   type LatLng,
 } from "gps-plus-slam-osm";
@@ -1563,7 +1563,7 @@ async function main(): Promise<void> {
   // Which member of that composition actually SERVED, as position counts —
   // applied atomically with the field for the same reason. The HUD derives
   // the primary's share from this; absent keeps the composed-id-only label.
-  let demStats: FallbackProviderStats | undefined;
+  let demStats: RacingProviderStats | undefined;
 
   // Coalesced, exactly like `refresh` — the two are driven by the same click and
   // must agree about which position is current. See `terrain-cycle.ts` for the

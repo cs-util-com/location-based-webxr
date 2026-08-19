@@ -33,10 +33,11 @@ import {
   TERRARIUM_ATTRIBUTION,
   TerrariumProvider,
   createCachingTileFetch,
-  fallbackProvider,
-  type FallbackElevationProvider,
+  racingProvider,
+  type LatLng,
   type OsmBlobStore,
   type PngDecoder,
+  type RacingElevationProvider,
 } from "gps-plus-slam-osm";
 
 /**
@@ -50,6 +51,18 @@ import {
  * per-sample tracking.
  */
 export const DEM_SOURCE_ID = "mapterhorn+terrarium";
+
+/**
+ * The two ends of the race, as `RacingProviderStats.servedBy` reports them.
+ *
+ * NAMED EXPLICITLY because both ends are `TerrariumProvider` instances that
+ * differ only by `urlTemplate`. Both reported `sourceId: "terrarium"` until
+ * 2026-08-19, which made `servedBy` unable to distinguish them — i.e. unable to
+ * say the one thing it exists to say.
+ */
+export const PREFERRED_DEM_SOURCE_ID = "mapterhorn";
+/** @see PREFERRED_DEM_SOURCE_ID */
+export const FAST_DEM_SOURCE_ID = "terrarium";
 
 /**
  * The credit the map view must display while terrain is on screen.
@@ -101,7 +114,7 @@ export const DEM_ATTRIBUTION = `${MAPTERHORN_ATTRIBUTION} · ${TERRARIUM_ATTRIBU
  * wording — see `dem-provider.ts.md` on the partial-window hazard, which is why
  * "too short only means coarser heights" is not unconditionally true.
  */
-export const PRIMARY_DEM_TIMEOUT_MS = 3_000;
+export const PRIMARY_DEM_TIMEOUT_MS = 30_000;
 
 /**
  * The same bound for the fallback, ms — larger, and NOT optional.
@@ -119,6 +132,31 @@ export const PRIMARY_DEM_TIMEOUT_MS = 3_000;
  */
 export const FALLBACK_DEM_TIMEOUT_MS = 8_000;
 
+/**
+ * RAISED FROM 3 s TO 30 s WHEN THE RACE LANDED, and the reason is that the
+ * deadline's JOB changed rather than that the old number was wrong.
+ *
+ * Under `fallbackProvider` the primary's deadline was the only thing that made
+ * the fallback reachable at all: the fallback is consulted only for positions
+ * the primary returned `undefined` for, so a merely SLOW primary left no gap
+ * and the composition waited for it however long it took. 3 s was chosen to cut
+ * that short, and it fixed the 15 s stall.
+ *
+ * It also made the primary unwinnable. Measured 2026-08-19 from one machine,
+ * every Mapterhorn tile took 3.0–21.7 s, so a 3 s cut-off meant the
+ * LiDAR-derived heights were never served — the stall was traded for a
+ * permanent loss of the better data.
+ *
+ * Under the race nothing waits for the primary: AWS publishes in ~1 s and
+ * Mapterhorn is applied whenever it arrives. So the deadline is no longer a
+ * latency control at all, only a last-resort guard against a request that never
+ * settles and would otherwise hold an upgrade slot open for the life of the
+ * page. 30 s sits comfortably above the measured worst case.
+ *
+ * **Keeping it at 3 s would have shipped a race that can never be won**, which
+ * is the same no-op hazard the plan review flagged one layer up.
+ */
+
 export interface DemProviderOptions {
   /** Where tile bytes persist — the same blob store the OSM tiles use. */
   readonly store: OsmBlobStore;
@@ -130,24 +168,39 @@ export interface DemProviderOptions {
   readonly primaryTimeoutMs?: number;
   /** Overrides {@link FALLBACK_DEM_TIMEOUT_MS}. Tests use a few ms. */
   readonly fallbackTimeoutMs?: number;
+  /**
+   * Called when Mapterhorn's heights land after AWS's were already published.
+   *
+   * **Late binding is expected and is why this is a callback rather than a
+   * return value.** The worker builds this provider during `init`, BEFORE the
+   * terrain field that consumes the upgrade exists, so the natural wiring is a
+   * closure over a `let` assigned immediately afterwards.
+   */
+  readonly onUpgrade?: (
+    positions: readonly LatLng[],
+    heights: readonly (number | undefined)[],
+  ) => void;
 }
 
 /**
  * Builds the composed provider the terrain field samples through.
  *
- * The primary's answers survive untouched; the fallback is consulted only for
- * positions the primary returned `undefined` — including every tile outside
- * Mapterhorn's coverage, which its server reports as a 404 the provider
- * degrades to `undefined` per position.
+ * BOTH SOURCES ARE ASKED AT ONCE and whichever answers first is published;
+ * when Mapterhorn lands afterwards its heights replace AWS's in place. This
+ * replaced `fallbackProvider`, under which the fallback was consulted only for
+ * positions the primary left `undefined` — so a merely slow primary produced no
+ * gap and the fallback was unreachable rather than broken, which is what made
+ * the demo wait 15 s and then show no elevation at all.
  *
- * The returned provider carries `fallbackProvider`'s `stats` surface —
- * positions served per source, accumulated for the provider's life. The
- * worker snapshots it into every `TerrainResult` so the HUD can say which
- * DEM actually served, not just which composition was asked.
+ * The returned provider carries `racingProvider`'s `stats` surface, whose
+ * `servedBy` names the source the CURRENT field came from. It is deliberately
+ * not the old primary-vs-fallback ratio: that partition only meant something
+ * because `fallbackProvider` guaranteed the two sources answered disjoint
+ * positions, and a race makes both answer every position.
  */
 export function createDemProvider(
   options: DemProviderOptions,
-): FallbackElevationProvider {
+): RacingElevationProvider {
   const tileFetch = createCachingTileFetch({
     store: options.store,
     ...(options.fetchImpl === undefined
@@ -155,16 +208,23 @@ export function createDemProvider(
       : { fetchImpl: options.fetchImpl }),
   });
   const shared = { decodePng: options.decodePng, fetchImpl: tileFetch };
-  return fallbackProvider(
+  return racingProvider(
     new TerrariumProvider({
       ...shared,
       urlTemplate: MAPTERHORN_URL_TEMPLATE,
       requestTimeoutMs: options.primaryTimeoutMs ?? PRIMARY_DEM_TIMEOUT_MS,
+      sourceId: PREFERRED_DEM_SOURCE_ID,
     }),
     new TerrariumProvider({
       ...shared,
       requestTimeoutMs: options.fallbackTimeoutMs ?? FALLBACK_DEM_TIMEOUT_MS,
+      sourceId: FAST_DEM_SOURCE_ID,
     }),
-    { sourceId: DEM_SOURCE_ID },
+    {
+      sourceId: DEM_SOURCE_ID,
+      ...(options.onUpgrade === undefined
+        ? {}
+        : { onUpgrade: options.onUpgrade }),
+    },
   );
 }

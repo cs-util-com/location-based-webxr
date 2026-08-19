@@ -183,3 +183,46 @@ The e2e side: `playwright-tests/fixtures.js` intercepts **both** DEM hosts
 with the same synthetic tile (the provider's tile-size invariance is
 library-tested, so a 2×2 PNG exercises the real path), and
 `boot-and-shell.spec.js` asserts the attribution credits both sources.
+
+## The DEM race (2026-08-19) — what replaced the fallback
+
+`createDemProvider` now returns a **`racingProvider`**, not a
+`fallbackProvider`. Both sources are asked at once, whichever answers first is
+published, and Mapterhorn's heights replace AWS's in place when they land.
+
+**Why the composition changed.** `fallbackProvider` consults the fallback only
+for positions the primary returned `undefined` for. A merely SLOW primary
+therefore leaves no gap, so the fallback was unreachable rather than broken —
+which is what the twelfth testing session saw as "15 s of waiting and then no
+elevation at all".
+
+**Why the deadlines inverted.** Round one bounded the primary at 3 s, which made
+the fallback reachable and fixed the stall. It also made the primary unwinnable:
+Mapterhorn measured 3.0–21.7 s per tile from the reporting machine, so the LiDAR
+heights were never served. Under the race nothing waits for the primary, so its
+deadline stopped being a latency control and became a pure anti-hang guard —
+hence **30 s**, above the measured worst case. The FAST source's 8 s deadline is
+now the whole guarantee that something is published before the terrain gate's
+15 s fires.
+
+- Keeping the primary at 3 s would ship a race that can never be won.
+- `dem-provider.test.ts` asserts the new relationships, and its comment records
+  the old ones so the inversion is not mistaken for drift.
+
+**The two ends are named.** Both are `TerrariumProvider` instances differing
+only by `urlTemplate`, and both reported `sourceId: "terrarium"` until this
+change — which made `stats.servedBy` unable to say which DEM the field came
+from, the one thing it exists for. `PREFERRED_DEM_SOURCE_ID` and
+`FAST_DEM_SOURCE_ID` fix that. `DEM_SOURCE_ID` still names the composition.
+
+**Stats are a different shape now**, deliberately. See
+`racing-provider.ts.md` — the old primary-vs-fallback ratio becomes
+arithmetically undefined when both sources answer every position.
+
+### Known hazard, now fixed rather than filed
+
+The partly-answered window that got mean-filled permanently is fixed in
+`terrain-field.ts`: invented posts are tracked and re-requested on a later
+pass, and their count is reported. It is **not** fixed by `replacePosts` —
+mean-fill requires both sources to fail, which is exactly when there is no
+better answer to upgrade to.

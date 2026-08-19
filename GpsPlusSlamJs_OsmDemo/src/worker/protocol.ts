@@ -29,7 +29,7 @@
 import type {
   MeshChunk,
   CellExplanation,
-  FallbackProviderStats,
+  RacingProviderStats,
   GeoEvent,
   LatLng,
   MeshData,
@@ -229,18 +229,32 @@ export interface TerrainResult {
    */
   readonly demSourceId: string;
   /**
-   * Which member of the composition actually served, as position counts —
-   * a snapshot of the provider's session-cumulative `stats`, taken when this
-   * result was built.
+   * Which source the field in this result came from, plus how the race has
+   * been going — a snapshot of the provider's `stats`, taken when this result
+   * was built.
    *
-   * THE COUNTS ARE THE SMALLEST HONEST SHAPE. A derived percentage would
-   * invent a rounding and a 0/0 corner here, and would hide the denominator
-   * the reader needs to weigh it; the three raw counters are exactly what the
-   * library's `FallbackProviderStats` surface says, with nothing added.
+   * CHANGED WITH THE RACE (2026-08-19). This used to be three position counts
+   * — primary-answered, fallback-answered, unanswered — and the HUD rendered
+   * the primary's share of them. That share was only meaningful because
+   * `fallbackProvider` guaranteed the two sources answered DISJOINT positions;
+   * under a race both answer every position, so the ratio stops partitioning
+   * anything and the percentage becomes arithmetically undefined rather than
+   * merely stale. `servedBy` names the source the current field came from,
+   * which is what stays true and is what a reader actually wants.
+   *
    * Optional so a worker (or test fake) that predates the stats keeps its
    * behaviour — the HUD falls back to the composed id alone.
    */
-  readonly demStats?: FallbackProviderStats;
+  readonly demStats?: RacingProviderStats;
+  /**
+   * Whether a better DEM answer is still in flight for this field.
+   *
+   * THE TRIGGER FOR `terrainUpgrade`, and without it the race is a silent
+   * no-op: the loser lands after this reply is sent, and nothing else would
+   * ever tell the page to ask. Absent or `false` means the published heights
+   * are already the best available and no follow-up call is needed.
+   */
+  readonly upgradePending?: boolean;
   /**
    * Whether this field arrived too late for the mesh already on screen (F1d).
    *
@@ -536,6 +550,36 @@ export interface WorkerCalls {
        * window-centre datum: the window follows the user, so that datum moves
        * mid-session and takes the whole scene's Y baseline with it.
        */
+      readonly geoidUndulationM?: number;
+    };
+    readonly result: TerrainResult;
+  };
+  /**
+   * "The better DEM has landed — apply it and tell me."
+   *
+   * WHY A SECOND RPC AND NOT A PUSH. The loser of the DEM race settles AFTER
+   * the `terrain` reply has already been sent, and there is no unsolicited
+   * worker→page channel to announce it on: the protocol is strictly
+   * request/reply keyed on `id` and {@link isWorkerReply} rejects anything
+   * without an `id`/`ok` pair. Adding a push envelope would be real protocol
+   * surface for one boolean. So the page ASKS, and it knows to ask because
+   * {@link TerrainResult.upgradePending} told it to.
+   *
+   * WHY NOT REUSE `terrain`. That call starts a fresh load and would cancel
+   * the very request whose result we are waiting for.
+   *
+   * The result is the same shape as `terrain`'s, so the page's existing
+   * handling — including the `meshOutdated` rebuild — is reused rather than
+   * duplicated. It resolves immediately when nothing is pending, so a
+   * speculative ask cannot hang.
+   */
+  readonly terrainUpgrade: {
+    readonly request: {
+      /** The window to re-describe once the upgrade has been applied. */
+      readonly centre: LatLng;
+      readonly frameOrigin?: LatLng;
+      readonly extentM: number;
+      readonly spacingM: number;
       readonly geoidUndulationM?: number;
     };
     readonly result: TerrainResult;

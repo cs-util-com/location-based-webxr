@@ -243,3 +243,20 @@ is a real place or direction rather than an impossibility: terrain and altitude
 (the Dead Sea, any basement) and the geoid undulation (about −30 m over India).
 Routing those through `isUsable`'s `>= 0` guard would drop exactly the readings
 that are most surprising.
+
+## The DEM label under the race (2026-08-19)
+
+`demStats` is now `{ servedBy, upgrades }` and the terrain/auto lines print
+`servedBy` — the id of the source the CURRENT field came from.
+
+It used to be three position counts, rendered as the primary's share
+("mapterhorn 98%"). That share was only meaningful because `fallbackProvider`
+guaranteed the two sources answered **disjoint** positions. Under the race both
+answer every position, so the ratio stops partitioning anything and the
+percentage becomes arithmetically **undefined**, not merely stale.
+
+This matters more here than in most readouts: the AR overlay is read in the
+field to judge whether an alignment looks right, and a confident wrong number
+there is worse than a plain name. DEC-U6 accepted that AR upgrades silently with
+no PER-POSITION attribution; a whole-field source name is not per-position and
+is what remains honest.
