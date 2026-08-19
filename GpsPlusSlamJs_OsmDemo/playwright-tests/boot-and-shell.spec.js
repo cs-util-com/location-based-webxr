@@ -338,7 +338,7 @@ test.describe("the location picker", () => {
     // asserted here: the select still rests on the placeholder, and the
     // placeholder is the first option rather than a real place.
     await expect(page.locator("#site")).toHaveValue("");
-    await expect(options.first()).toHaveText("jump to…");
+    await expect(options.first()).toHaveText("Jump to City");
 
     /** Basemap tiles requested from the moment the choice is made. */
     const tilesAfter = [];
@@ -579,11 +579,23 @@ test.describe("the header", () => {
 
       // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4, narrowed by
       // DEC-R6b-5). Collapsing the category picker away would put a primary
-      // input two taps from reach, and hiding the legend would re-create the
-      // round-1 problem it was added to fix. The GROUND picker is no longer on
-      // this list — see the dedicated collapse step below for why.
+      // input two taps from reach. The GROUND picker is no longer on this list
+      // — see the dedicated collapse step below for why.
       await expect(page.locator("#category")).toBeVisible();
-      await expect(page.locator("#legend")).toBeVisible();
+
+      // AND THE LEGEND NOW GOES WITH IT (round three, G3, DEC-W4). This line
+      // asserted the opposite until the thirteenth session, on DEC-1's rule
+      // that SOMETHING on screen must name the active category — the legend was
+      // added for exactly that. What changed is not the rule but who satisfies
+      // it: the category `<select>` asserted one line above moved into the
+      // collapsed bar under its own caption, so it names the category AND can
+      // change it. The legend's last collapsed survivor was the word beside it,
+      // which is why the owner read it as a random "Battle Area".
+      //
+      // `#legend` goes hidden rather than empty-but-present because that word
+      // was its only visible child once DEC-U7 hid the ramp and the numbers.
+      // The expanded legend is untouched — see the dedicated step for it.
+      await expect(page.locator("#legend")).toBeHidden();
 
       await page.locator("#header-toggle").click();
       await expect(header).toHaveAttribute("data-collapsed", "false");
@@ -657,6 +669,132 @@ test.describe("the header", () => {
       await expect(attribution).toContainText(/Mapzen/i);
       await expect(attribution).toContainText(/Mapterhorn/i);
     });
+  });
+
+  test("shows a caret big enough to see, on the row the feedback asked for", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS, and why both halves are GEOMETRY.
+     *
+     * G1 is a repeat. The twelfth session's review raised the caret as a WCAG
+     * 2.2 SC 2.5.8 target-size problem and the fix gave `#header-toggle` a
+     * 2.75 rem box — measurable, correct, and invisible to the complaint. The
+     * owner reported the same thing again the next day: a 0.8 em glyph floating
+     * in a 44 px transparent square is reachable and still looks like a speck.
+     * A test written against the tap target would have passed then too, so the
+     * only assertion worth having is one on what is actually painted.
+     *
+     * The row half is the same trap one control over. The header is a single
+     * `flex-wrap: wrap` row, so which items share a line is decided by width —
+     * a unit test on DOM order passes identically on a one-row desktop layout
+     * and a three-row phone layout, and G2 is a complaint about the phone.
+     *
+     * Reverting `.header-caret` to `font-size: 0.8em` fails the first
+     * assertion; deleting `.header-row-break` or the `#site` width cap fails
+     * the second.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const box = async (selector) => {
+      const measured = await page.locator(selector).boundingBox();
+      if (measured === null) throw new Error(`no box for ${selector}`);
+      return measured;
+    };
+
+    // A REAL ELEMENT is what makes this line possible at all (F9): the caret
+    // used to be `h1::before`, and a pseudo-element is not a DOM node, so
+    // `boundingBox()` could not address it.
+    const caret = await box(".header-caret");
+    expect(caret.height).toBeGreaterThanOrEqual(24);
+
+    // ROW 1: the caret, the city picker, and Show Quests. Compared by the
+    // vertical centre rather than `y`, because the three have different heights
+    // and `align-items: baseline` does not line their tops up.
+    const centre = (b) => b.y + b.height / 2;
+    const toggle = await box("#header-toggle");
+    const site = await box("#site");
+    const quests = await box("#geo-event");
+    expect(Math.abs(centre(site) - centre(toggle))).toBeLessThan(12);
+    expect(Math.abs(centre(quests) - centre(toggle))).toBeLessThan(12);
+
+    // ...and all three fit WITHIN the viewport, which is the arithmetic
+    // DEC-W6's width cap exists for. Without it the picker alone is ~165-180 px
+    // and Show Quests wraps to its own line.
+    expect(quests.x + quests.width).toBeLessThanOrEqual(390);
+
+    // ROW 2 STARTS BELOW: the layer groups are on a lower line, not beside the
+    // button.
+    //
+    // ON A PHONE THIS IS NOT EVIDENCE FOR `.header-row-break`, and saying so is
+    // the point. Mutation testing showed this line passing with the break
+    // deleted: at 390 px the layer groups are far too wide to share a row
+    // whatever the markup says, so the assertion holds for a reason that has
+    // nothing to do with the fix. It is kept because it is what G2 asks for at
+    // the width G2 was reported at — and the step below is what actually holds
+    // the break to account.
+    const layers = await box("#layers");
+    expect(layers.y).toBeGreaterThan(quests.y + quests.height - 1);
+
+    // WITHIN row 2, the category picker comes FIRST — under the caption that
+    // names it, above the switches that describe what to draw for it. The unit
+    // half of this lives in `layer-toggles.test.ts`; what the browser adds is
+    // that it survives real layout.
+    const category = await box("#category");
+    const cells = await box("#layer-cells");
+    expect(category.x).toBeLessThan(cells.x);
+    expect(centre(category)).toBeLessThanOrEqual(centre(cells) + 1);
+
+    // AND THE SPLIT SURVIVES A WIDE WINDOW, which is the assertion
+    // `.header-row-break` actually earns. On a desktop everything in this bar
+    // fits one line, so without the break the requested two rows collapse into
+    // one and G2 is silently unimplemented on every machine that is not a
+    // phone. Deleting `flex-basis: 100%` fails here and nowhere else.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const wideQuests = await box("#geo-event");
+    const wideLayers = await box("#layers");
+    expect(wideLayers.y).toBeGreaterThan(wideQuests.y + wideQuests.height - 1);
+  });
+
+  test("drops the category label from the collapsed bar, and keeps it when expanded", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (G3, DEC-W4).
+     *
+     * `.legend-category` was ADDED to the collapsed bar four hours before the
+     * session that complained about it, by DEC-U7, on the reasoning that DEC-1
+     * required something on screen to name the active category. Between those
+     * two moments the category `<select>` moved into the collapsed bar under
+     * its own caption — naming the category AND able to change it — so the word
+     * became a duplicate sitting next to the control that says the same thing.
+     * The owner read it as a random "Battle Area", which is exactly what a
+     * label with no visible relationship to anything looks like.
+     *
+     * BOTH STATES ARE ASSERTED, and the expanded one is not padding: the
+     * decision is about the COLLAPSED bar, so deleting the element outright
+     * would overshoot and take DEC-1's heading with it.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const label = page.locator("#legend .legend-category");
+    await expect(label).toBeVisible();
+
+    await page.locator("#header-toggle").click();
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+    await expect(label).toBeHidden();
+
+    // The control that replaced it is the one that has to still be there — the
+    // whole justification for hiding the word is that this names the category
+    // and can change it.
+    await expect(page.locator("#category")).toBeVisible();
   });
 });
 
@@ -1113,9 +1251,13 @@ test.describe("the control bar", () => {
       // World, Debug and Ground controls stayed on screen. That is backwards
       // from what the bar is for, and it is what the sixth session reported.
       //
-      // Collapsed now keeps: the category picker, the legend, and the whole
-      // affordance block INCLUDING `show-below`, which moved into that group.
-      // Collapsed now hides: the hint, the status string, World, Debug, Ground.
+      // Collapsed now keeps: the category picker and the whole affordance block
+      // INCLUDING `show-below`, which moved into that group.
+      // Collapsed now hides: the hint, the status string, World, Debug, Ground
+      // — and, since round three, the legend (G3, DEC-W4). It used to be on the
+      // "keeps" list to satisfy DEC-1's requirement that the active category be
+      // named on screen; the category picker one line below now does that, and
+      // does it with a control rather than a label.
       //
       // `show-below` being VISIBLE here is a deliberate reversal. The session's
       // first impression was that its disappearing was a bug; moving it into the
@@ -1129,7 +1271,7 @@ test.describe("the control bar", () => {
       await page.locator("#header-toggle").click();
 
       await expect(page.locator("#category")).toBeVisible();
-      await expect(page.locator("#legend")).toBeVisible();
+      await expect(page.locator("#legend")).toBeHidden();
       await expect(page.locator("#layer-cells")).toBeVisible();
       // HIDDEN, because `cells` is off by default (DEC-U9, 2026-08-19). This
       // line asserted the opposite and was GREEN BECAUSE THE FEATURE WAS

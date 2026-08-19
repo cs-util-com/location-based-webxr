@@ -85,7 +85,11 @@ export function attachSitePicker(options: SitePickerOptions): SitePicker {
 
   const placeholder = document.createElement("option");
   placeholder.value = NO_SITE;
-  placeholder.textContent = "jump to…";
+  // "Jump to City", capitalised, as the thirteenth session asked (G4). The
+  // wording is free: the select is sized by its widest OPTION, not by the
+  // placeholder, so a longer resting label costs no width — and since round
+  // three the element is capped anyway (DEC-W6).
+  placeholder.textContent = "Jump to City";
   select.append(placeholder);
 
   for (const place of PICKER_PLACES) {

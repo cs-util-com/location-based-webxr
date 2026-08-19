@@ -42,6 +42,12 @@ describe("attachSitePicker", () => {
     // it exists. Everything after it is the table.
     const sites = [...select.options].slice(1);
 
+    // ITS WORDING IS PINNED, because the placeholder is the picker's resting
+    // face: it is what a user reads before they know the control is a list of
+    // cities at all, and "jump to…" left the thirteenth session asking what it
+    // jumped to. Capital J and the noun are both the owner's wording (G4).
+    expect(select.options[0]?.textContent).toBe("Jump to City");
+
     // Identity with the table, in order — not a count, and not a set. A count
     // passes when a site is duplicated and another is missing.
     expect(sites.map((option) => option.value)).toEqual(

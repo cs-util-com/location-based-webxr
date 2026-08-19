@@ -57,21 +57,67 @@
         gap: 0.35rem;
         user-select: none;
       }
-      /* The disclosure caret, rotated by the collapsed state. Generated rather
-         than an element, so the markup stays one <h1>. */
-      h1::before {
-        content: "▾";
-        font-size: 0.8em;
+      /* The disclosure caret, rotated by the collapsed state.
+
+         A REAL ELEMENT, not a `::before` (round three, G1/F9). It was
+         generated so the markup could stay one <h1>, and that tidiness cost
+         more than it bought: a pseudo-element is not a DOM node, so
+         Playwright's `boundingBox()` cannot address it and the only route left
+         was reading `getComputedStyle(el, "::before")` — which returns a used
+         pixel size only as a side effect of `#header-toggle` being
+         `inline-flex`, a resolved-value detail rather than a contract. The
+         glyph that the sixth and thirteenth sessions both called too small was
+         therefore the one thing in this bar no test could measure.
+
+         THE SIZE IS THE FIX, not the tap target. 2.75 rem of invisible box went
+         in after the twelfth session's review raised WCAG 2.2 SC 2.5.8, and the
+         owner reported the same complaint again the next day: the control was
+         reachable and still looked like a speck. An accessibility guideline
+         about target size and a person saying "I cannot see it" are not the
+         same complaint. 1.6 rem is ~25.6 px, over the 24 px floor the plan
+         pinned before this rule was written. */
+      .header-caret {
+        display: block;
+        font-size: 1.6rem;
+        line-height: 1;
         color: #9aa3b8;
         transition: transform 0.15s ease;
       }
-      header[data-collapsed="true"] h1::before {
+      header[data-collapsed="true"] .header-caret {
         transform: rotate(-90deg);
       }
       #status,
       #scale {
         color: #9aa3b8;
         font-size: 0.8rem;
+      }
+
+      /* FORCES A ROW BREAK IN A WRAPPING FLEX ROW (G2/F8).
+
+         The header is one `flex-wrap: wrap` row, so which controls share a line
+         is a function of available width, not of source order — asking for "row
+         1, then row 2" by reordering the markup alone produces the requested
+         order and an unrequested layout. A zero-height item at 100% basis is
+         the standard way to say "everything after me starts a new line", and it
+         is preferred over two wrapper elements here because the wrappers would
+         need their own flex context and would change how the existing
+         `header[data-collapsed]` rules reach their targets.
+
+         `aria-hidden` and no text: it is a layout instruction, not content. */
+      .header-row-break {
+        flex-basis: 100%;
+        height: 0;
+        margin: -0.375rem 0;
+      }
+
+      /* CAPPED (DEC-W6). The select is sized by its widest option, and the
+         widest is "London — Tower Bridge" at roughly 165-180 px — which alone
+         pushes the requested first row past a 390 px phone once the caret
+         (44 px), the Show Quests button (7.5 rem) and three gaps are counted.
+         The full name stays readable in the open dropdown; only the resting
+         face is clipped, which is the cheaper half to lose. */
+      #site {
+        max-width: 8.5rem;
       }
       main {
         display: grid;
@@ -922,7 +968,23 @@
 
          NOT A REVERSAL OF DEC-1, therefore. That decision requires a legend
          that NAMES the current category; keeping `.legend-category` satisfies
-         it in full. The ramp came from the later R6b legend work. */
+         it in full. The ramp came from the later R6b legend work.
+
+         AND `.legend-category` NOW GOES TOO, WHEN COLLAPSED (round three, G3,
+         DEC-W4). The paragraph above is preserved because its reasoning was
+         right when written and stopped being right four hours later, which is
+         the useful part: what DEC-1 required was that SOMETHING on screen name
+         the active category, and by the time the owner saw this the category
+         `<select>` had moved into the collapsed bar under its own `Category`
+         caption — naming it AND able to change it. The word became a duplicate
+         sitting beside the control that says the same thing, which is exactly
+         why the thirteenth session read it as a random "Battle Area".
+
+         STILL NOT A REVERSAL OF DEC-1. The thing DEC-1 required is now provided
+         by something better. And it is hidden WHEN COLLAPSED rather than
+         deleted: the argument is about the collapsed bar, so the expanded
+         legend keeps its heading. */
+      header[data-collapsed="true"] #legend .legend-category,
       header[data-collapsed="true"] #legend .legend-strip,
       header[data-collapsed="true"] #legend .legend-min,
       header[data-collapsed="true"] #legend .legend-max,
@@ -989,7 +1051,9 @@
 
            Partially reverses DEC-R2-4, whose collapse rule listed the title
            among the things a collapsed header keeps. -->
-      <h1 id="header-toggle"></h1>
+      <h1 id="header-toggle">
+        <span class="header-caret" aria-hidden="true">▾</span>
+      </h1>
       <!-- THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Before the category
            picker, as the feedback asked. Its options come from the SAME table
            the offline fixture corpus is captured from, so the places a human
@@ -1023,12 +1087,6 @@
       <label class="layer-toggle" id="show-below-label"
         ><input type="checkbox" id="show-below" /> below threshold</label
       >
-      <!-- Per-layer toggles (DEC-R2-10). Independent switches rather than a
-           two-state mode: a mode makes it impossible to view a merged area OVER
-           the cells that produced it, which is the first check anyone makes when a
-           region looks wrong. Populated from ALL_LAYERS so a new builder cannot
-           arrive without a switch. -->
-      <div id="layers" class="layer-toggles"></div>
       <!--
         THE GEO-EVENT TRIGGER (round 9, DEC-R9-13). A BUTTON rather than firing on
         every position change: computing an event can score hundreds of chunks and
@@ -1044,6 +1102,16 @@
       <button type="button" id="geo-event" class="geo-event-button">
         Show Quests
       </button>
+      <!-- ROW 1 ENDS HERE (G2). Everything above shares the first line -- the
+           caret, the city picker and Show Quests with its distance readout --
+           and the layer groups start the second. See `.header-row-break`. -->
+      <span class="header-row-break" aria-hidden="true"></span>
+      <!-- Per-layer toggles (DEC-R2-10). Independent switches rather than a
+           two-state mode: a mode makes it impossible to view a merged area OVER
+           the cells that produced it, which is the first check anyone makes when a
+           region looks wrong. Populated from ALL_LAYERS so a new builder cannot
+           arrive without a switch. -->
+      <div id="layers" class="layer-toggles"></div>
       <!--
         AR MODE (DEC-12, AR milestone 1). HIDDEN BY DEFAULT and revealed by
         `arButtonState`, never by this markup: the device may not support
