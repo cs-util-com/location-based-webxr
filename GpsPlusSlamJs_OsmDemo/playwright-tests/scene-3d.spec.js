@@ -1057,12 +1057,18 @@ test.describe("the 3D view", () => {
       expect(counts.terrain).toBeGreaterThan(0);
 
       // Attribution is required wherever the data is shown, exactly as for OSM —
-      // and it lives in Leaflet's attribution control rather than the header,
+      // and it lives in the map's attribution line rather than the header,
       // because the header collapses and a credit that can be collapsed away does
       // not satisfy the obligation (DEC-R2-4).
+      //
+      // VISIBLE, not merely present in `textContent` (round three, F10). The
+      // line has an expander now, so a `toContainText` assertion here would
+      // match a credit hidden behind it and report the obligation as met.
       await expect(
-        page.locator("#map .leaflet-control-attribution"),
-      ).toContainText(/Terrain|Mapzen/);
+        page
+          .locator("#map .map-attribution-short")
+          .filter({ hasText: /Mapzen/ }),
+      ).toBeVisible();
 
       // And the terrain is actually doing something, not merely fetched. The
       // relief is in the status line because a viewer needs it for the same

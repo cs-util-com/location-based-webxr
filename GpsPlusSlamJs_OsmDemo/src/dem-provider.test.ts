@@ -25,7 +25,7 @@ import {
 } from "gps-plus-slam-osm";
 
 import {
-  DEM_ATTRIBUTION,
+  DEM_ATTRIBUTION_ENTRIES,
   DEM_SOURCE_ID,
   FAST_DEM_SOURCE_ID,
   PREFERRED_DEM_SOURCE_ID,
@@ -394,8 +394,21 @@ describe("createDemProvider", () => {
     expect(DEM_SOURCE_ID).toBe("mapterhorn+terrarium");
 
     // Attribution is an obligation to BOTH upstreams the moment the fallback
-    // can serve a tile, so the displayed constant must name each of them.
-    expect(DEM_ATTRIBUTION).toContain("Mapterhorn");
-    expect(DEM_ATTRIBUTION).toContain("Mapzen");
+    // can serve a tile, so the displayed credits must name each of them.
+    //
+    // ASSERTED ON THE ENTRIES, not on a composed string (round three, DEC-W1).
+    // The attribution line shows a visible SHORT NAME per source and hides only
+    // the long sentence, so the two credits have to stay apart all the way to
+    // the DOM — and both halves of each entry matter now: the short name is
+    // what a user reads without tapping, the full text is what the licence
+    // wording lives in. A composed string could satisfy an assertion here and
+    // still render as one undifferentiated blob.
+    expect(DEM_ATTRIBUTION_ENTRIES.map((entry) => entry.short)).toEqual([
+      "Mapterhorn",
+      "Mapzen/AWS",
+    ]);
+    const full = DEM_ATTRIBUTION_ENTRIES.map((entry) => entry.full).join(" ");
+    expect(full).toContain("Mapterhorn");
+    expect(full).toContain("Mapzen");
   });
 });

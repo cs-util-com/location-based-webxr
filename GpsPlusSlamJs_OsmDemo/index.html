@@ -994,6 +994,48 @@
         display: none;
       }
 
+      /* THE ATTRIBUTION LINE (G5, DEC-W1). One thin line by default: a short
+         name per source, always visible, plus a blue "Attributions" control
+         that reveals the full credit text.
+
+         WHAT MAY NOT COLLAPSE, and why this is not a preference. ODbL requires
+         the OpenStreetMap credit wherever the data is shown, and this repo
+         records the two elevation credits as required "the same as the OSM
+         one" -- which is why they were put in this always-visible bar and not
+         in the collapsible header. So the SHORT NAMES stay outside the
+         expander; only the long sentences move behind it. The owner asked for
+         "one word per attribution" in a thin line, and one short name each is
+         exactly that.
+
+         The control is the demo's own, not Leaflet's -- see
+         `attribution-view.ts` for why -- and keeps the
+         `leaflet-control-attribution` class so Leaflet's own styling still
+         applies underneath these rules. */
+      .map-attribution {
+        max-width: 60vw;
+        line-height: 1.4;
+      }
+
+      .map-attribution-toggle {
+        margin-left: 0.35rem;
+        padding: 0;
+        border: 0;
+        background: none;
+        /* Leaflet's own attribution link colour, so the control reads as the
+           link the feedback asked for rather than as a stray button. */
+        color: #0078a8;
+        font: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
+      /* The three lines the feedback said it may expand to. Kept narrow so a
+         long credit wraps inside the corner rather than across the map. */
+      .map-attribution-full {
+        max-width: 60vw;
+        color: #333;
+      }
+
       /* The identity band is outline-only: "nothing known here" must not paint
          a claim the data does not support. */
       .legend-swatch-identity {

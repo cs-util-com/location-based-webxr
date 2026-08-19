@@ -642,32 +642,63 @@ test.describe("the header", () => {
       );
     });
 
-    await test.step("keeps the terrain attribution visible even when collapsed", async () => {
+    await test.step("keeps every credit VISIBLE, collapsed bar or not", async () => {
       // Attribution is required wherever the data is shown, so it may not be
-      // collapsed away. It moved out of the header into Leaflet's attribution
-      // control (DEC-R2-4), which is always visible.
+      // collapsed away. It lives outside the header (DEC-R2-4) in a line that
+      // is always on screen.
+      //
+      // MIGRATED FROM `toContainText` TO VISIBILITY (round three, G5/F10), and
+      // this is the most important line in the step. `toContainText` matches on
+      // `textContent`, which includes CSS-hidden nodes — so once the line grew
+      // an expander, the old assertions kept passing over credits nobody could
+      // see. The guard for the one rule in this app with legal weight would
+      // have stopped guarding SILENTLY, which is worse than not having it.
+      //
+      // Verified by construction: these locators resolve to the short names in
+      // the resting line, and the expanded panel is asserted separately below.
       await expandHeader();
-      const attribution = page.locator("#map .leaflet-control-attribution");
-      await expect(attribution).toContainText("OpenStreetMap");
-      // PINNED to the AWS credit's own name, not a loose alternation: the old
-      // /Mapzen|Terrarium|Tilezen|elevation/ matched the word "elevation" in
-      // ANY credit, so a build that dropped the AWS line entirely still passed
-      // as long as some elevation credit remained.
-      await expect(attribution).toContainText(/Mapzen/i);
+      const shortNames = page.locator("#map .map-attribution-short");
+      await expect(shortNames).toHaveText([
+        "OpenStreetMap",
+        "Mapterhorn",
+        "Mapzen/AWS",
+      ]);
       // BOTH DEM sources, by name. The composition falls back per tile, so a
       // session may stand on either — a credit naming only one of them stops
-      // satisfying the obligation the moment the other serves a tile.
-      await expect(attribution).toContainText(/Mapterhorn/i);
+      // satisfying the obligation the moment the other serves a tile. And each
+      // is asserted VISIBLE, not merely present.
+      for (const name of ["OpenStreetMap", "Mapterhorn", "Mapzen/AWS"]) {
+        await expect(shortNames.filter({ hasText: name })).toBeVisible();
+      }
+
+      // THE THIN LINE THE FEEDBACK ASKED FOR: the long credit text starts
+      // hidden, and only the short names are on screen.
+      const full = page.locator("#map .map-attribution-full");
+      await expect(full).toBeHidden();
+
+      await page.locator("#map .map-attribution-toggle").click();
+      await expect(full).toBeVisible();
+      await expect(full).toContainText(/Copernicus/i);
+      await expect(full).toContainText(/SRTM/i);
+      await expect(full).toContainText("OpenStreetMap contributors");
+      await page.locator("#map .map-attribution-toggle").click();
+      await expect(full).toBeHidden();
+
+      // AND LEAFLET'S COURTESY LINK IS GONE — the one credit here that is not a
+      // licence term, which the session asked to drop.
+      await expect(
+        page.locator("#map .leaflet-control-attribution a[href*='leafletjs']"),
+      ).toHaveCount(0);
 
       await page.locator("#header-toggle").click();
       await expect(page.locator("#header-bar")).toHaveAttribute(
         "data-collapsed",
         "true",
       );
-      // Still there with the bar collapsed — the whole point.
-      await expect(attribution).toContainText("OpenStreetMap");
-      await expect(attribution).toContainText(/Mapzen/i);
-      await expect(attribution).toContainText(/Mapterhorn/i);
+      // Still VISIBLE with the bar collapsed — the whole point.
+      for (const name of ["OpenStreetMap", "Mapterhorn", "Mapzen/AWS"]) {
+        await expect(shortNames.filter({ hasText: name })).toBeVisible();
+      }
     });
   });
 

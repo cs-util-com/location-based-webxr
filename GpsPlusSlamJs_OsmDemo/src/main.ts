@@ -34,7 +34,7 @@ import {
   type LatLng,
 } from "gps-plus-slam-osm";
 
-import { DEM_ATTRIBUTION } from "./dem-provider.js";
+import { DEM_ATTRIBUTION_ENTRIES } from "./dem-provider.js";
 import { pickDefaultCategory } from "./default-category.js";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
@@ -1817,8 +1817,11 @@ async function main(): Promise<void> {
       // BOTH sources, unconditionally: the composition falls back per tile, so
       // any session may be standing on either DEM. See `dem-provider.ts` for
       // why the credit is a constant rather than the provider's own field.
+      // AN EMPTY LIST, not `undefined`, when there is no terrain — the line
+      // simply stops naming the elevation sources. The OSM credit is not this
+      // caller's to add or remove; `MapView` always carries it.
       mapView.setTerrainAttribution(
-        terrain === undefined ? undefined : DEM_ATTRIBUTION,
+        terrain === undefined ? [] : DEM_ATTRIBUTION_ENTRIES,
       );
       // THE REPORTED CENTRE, not the field's — they are the same on a good
       // load, and only the former exists during an outage.

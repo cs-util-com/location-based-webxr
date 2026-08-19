@@ -40,9 +40,15 @@ fallbackTimeoutMs?, publishTimeoutMs?, onUpgrade? }): RacingElevationProvider` �
   `sourceId`. The worker reports it with every terrain result
   (`TerrainResult.demSourceId`) and the AR readout renders it on the terrain
   line.
-- `DEM_ATTRIBUTION` — the credit `main.ts` hands Leaflet's attribution control
-  while terrain is on screen. Names **both** sources unconditionally, because
-  the fallback can serve any tile the primary lacks.
+- `DEM_ATTRIBUTION_ENTRIES` — the credits `main.ts` hands the map's attribution
+  line while terrain is on screen. Names **both** sources unconditionally,
+  because the fallback can serve any tile the primary lacks.
+  - **Two entries, not one composed string** (round three, DEC-W1). Each carries
+    a `short` name that stays permanently visible and a `full` sentence that
+    lives behind the line's expander, so the two sources have to stay apart all
+    the way to the DOM. The composed `DEM_ATTRIBUTION` constant that used to
+    live here is gone — nothing rendered it once the line took entries, and an
+    exported string with only a test for a reader is a dead export.
 
 ## Why the deadlines exist, and what each one bounds
 
@@ -123,12 +129,16 @@ the only shape that reaches them.
 
 - **`TerrariumProvider` still hardcodes the AWS attribution** whatever
   `urlTemplate` it is given, so the composed provider's own `attribution` field
-  reads as the AWS credit twice and the demo displays the `DEM_ATTRIBUTION`
-  constant instead. **The `sourceId` half of this was fixed on 2026-08-19** —
+  reads as the AWS credit twice and the demo displays its own
+  constants instead. **The `sourceId` half of this was fixed on 2026-08-19** —
   `TerrariumProviderOptions` now accepts one, which the race needed so
   `stats.servedBy` could tell the two instances apart. The attribution half
-  remains: accept `attribution?` too, then derive `DEM_ATTRIBUTION` from the
-  composed provider rather than from a constant.
+  remains: accept `attribution?` too, then derive `DEM_ATTRIBUTION_ENTRIES`
+  from the composed provider rather than from constants. Note the follow-up got
+  slightly harder in round three and slightly more worthwhile: the demo now
+  needs a SHORT name per source as well as the full credit, which a library
+  `attribution` string would not supply — so the honest library shape is a
+  credit object rather than a string.
 - **Per-sample source attribution is deliberately absent.** The
   `ElevationProvider` seam returns heights with no per-position provenance, so
   "which member answered THIS post" is unknowable here; what IS known is the
@@ -161,7 +171,7 @@ const terrainField = createTerrainField({ provider });
 answers), fallback on a primary 404, a repeat query served from the injected
 store with **zero** network fetches (a second provider instance models a
 reload), the serving stats (primary-served against fell-back), and the
-`DEM_SOURCE_ID`/`DEM_ATTRIBUTION` identities.
+`DEM_SOURCE_ID`/`DEM_ATTRIBUTION_ENTRIES` identities.
 
 Two cases carry the deadline and are the ones to keep if anything here is ever
 trimmed:

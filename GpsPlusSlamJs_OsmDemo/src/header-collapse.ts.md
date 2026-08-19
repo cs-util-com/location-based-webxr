@@ -56,9 +56,11 @@ State lives in `header[data-collapsed]`, so the CSS, the tests and
   `data-collapsed` and stops. Every decision about what disappears is CSS in
   `index.html`, and the assertions live in the e2e suite, because jsdom does not
   apply that stylesheet.
-- **Attribution is never collapsed away.** The Terrarium credit moved into
-  Leaflet's attribution control (`MapView.setTerrainAttribution`), which is always
-  visible. The header span was REMOVED rather than kept as a mirror: two copies of
+- **Attribution is never collapsed away.** The Terrarium credit moved into the
+  map's attribution line (`MapView.setTerrainAttribution`), which is always
+  visible. Since round three that line has an expander of its own — and every
+  source keeps a permanently VISIBLE short name outside it (DEC-W1), so the rule
+  in this bullet still holds exactly as written. The header span was REMOVED rather than kept as a mirror: two copies of
   one credit is one too many, and the header copy is the one that disappears on
   collapse — i.e. the copy that does not satisfy the obligation, sitting beside the
   one that does.

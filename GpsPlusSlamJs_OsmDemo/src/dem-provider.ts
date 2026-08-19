@@ -40,6 +40,8 @@ import {
   type RacingElevationProvider,
 } from "gps-plus-slam-osm";
 
+import type { AttributionEntry } from "./attribution-view.js";
+
 /**
  * What the AR readout shows beside the terrain height.
  *
@@ -81,7 +83,10 @@ export const FAST_DEM_SOURCE_ID = "aws-open-data";
  * because `TerrariumProvider` hardcodes the AWS credit whatever `urlTemplate`
  * it is given — the sidecar files that gap as library follow-up.
  */
-export const DEM_ATTRIBUTION = `${MAPTERHORN_ATTRIBUTION} · ${TERRARIUM_ATTRIBUTION}`;
+export const DEM_ATTRIBUTION_ENTRIES: readonly AttributionEntry[] = [
+  { short: "Mapterhorn", full: MAPTERHORN_ATTRIBUTION },
+  { short: "Mapzen/AWS", full: TERRARIUM_ATTRIBUTION },
+];
 
 /**
  * Bound on ONE Mapterhorn tile request, ms — an anti-hang guard, nothing more.

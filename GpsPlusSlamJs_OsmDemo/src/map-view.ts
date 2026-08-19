@@ -17,6 +17,8 @@
  */
 
 import L from "leaflet";
+
+import { AttributionView, type AttributionEntry } from "./attribution-view.js";
 import { cellToBoundary } from "h3-js";
 import type { CellScore, GeoEvent, LatLng, Region } from "gps-plus-slam-osm";
 
@@ -46,6 +48,16 @@ import {
  */
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 
+/**
+ * The OSM credit as the attribution line renders it: a permanently visible
+ * short name, with the full sentence behind the expander (DEC-W1).
+ */
+const OSM_ENTRY: AttributionEntry = {
+  short: "OpenStreetMap",
+  full: OSM_ATTRIBUTION,
+  href: "https://www.openstreetmap.org/copyright",
+};
+
 export interface MapViewOptions {
   readonly container: HTMLElement;
   readonly centre: { lat: number; lng: number };
@@ -74,20 +86,50 @@ export class MapView {
   private readonly userMarker: L.CircleMarker;
   private readonly onCellClick: ((cell: string) => void) | undefined;
   private readonly onRegionClick: ((region: string) => void) | undefined;
-  /** The DEM credit currently in the attribution bar, so it can be removed. */
-  private terrainCredit: string | undefined;
+  /**
+   * The attribution line, which this class owns rather than Leaflet.
+   *
+   * See `attribution-view.ts` for why: Leaflet's own control rebuilds its
+   * `innerHTML` on every credit change, which happens on every terrain apply,
+   * so an expander could not survive inside it.
+   */
+  private readonly attribution = new AttributionView();
 
   constructor(options: MapViewOptions) {
     this.onCellClick = options.onCellClick;
     this.onRegionClick = options.onRegionClick;
-    this.map = L.map(options.container).setView(
-      [options.centre.lat, options.centre.lng],
-      options.zoom ?? 18,
-    );
+    this.map = L.map(options.container, {
+      // OFF, because this view supplies its own (DEC-W1, finding F5). Leaflet's
+      // default control also carries a courtesy "Leaflet" prefix link, which
+      // the thirteenth session asked to drop — switching the control off
+      // disposes of both in one move rather than needing `setPrefix(false)` as
+      // a second mechanism.
+      attributionControl: false,
+    }).setView([options.centre.lat, options.centre.lng], options.zoom ?? 18);
 
+    // ADDED FIRST OF THIS CORNER'S CONTROLS, and that is load-bearing rather
+    // than incidental. Leaflet PREPENDS into a bottom corner
+    // (`corner.insertBefore(container, corner.firstChild)`), so the first
+    // control registered ends up lowest — which is where a credit belongs, with
+    // the AR and locate buttons stacking above it and never over it. An e2e
+    // asserts that relationship by bounding-box arithmetic.
+    const AttributionControl = L.Control.extend({
+      onAdd: (): HTMLElement => {
+        // Without this a tap on the expander also reaches the map underneath
+        // and reads as "the user clicked here to move" — the same guard
+        // `locate-control.ts` needs for the same reason.
+        L.DomEvent.disableClickPropagation(this.attribution.element);
+        return this.attribution.element;
+      },
+    });
+    new AttributionControl({ position: "bottomright" }).addTo(this.map);
+    this.attribution.setEntries([OSM_ENTRY]);
+
+    // NO `attribution` OPTION HERE ANY MORE. It fed Leaflet's control, which is
+    // switched off above, so leaving it would be a credit that looks declared
+    // and renders nowhere. `OSM_ENTRY` is where the obligation is actually met.
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      attribution: OSM_ATTRIBUTION,
     }).addTo(this.map);
 
     // Region outlines are drawn OVER the cells, and the group order here is
@@ -164,26 +206,25 @@ export class MapView {
   }
 
   /**
-   * Adds or removes the elevation source's credit in Leaflet's attribution bar.
+   * Adds or removes the elevation sources' credits in the attribution line.
    *
    * WHY IT LIVES HERE RATHER THAN IN THE HEADER (DEC-R2-4). The header became
    * collapsible, and **attribution may not be collapsed away** — it is required
-   * wherever the data is shown. Leaflet's attribution control is always visible
-   * and is where a credit conventionally goes.
+   * wherever the data is shown. The attribution line is always visible and is
+   * where a credit conventionally goes.
    *
-   * Passing `undefined` REMOVES it, which matters: crediting a DEM source whose
-   * tiles all failed would be a claim about what is on screen. Removal is
-   * idempotent, so a run of failed loads does not need to track what it added.
+   * WHAT "NOT COLLAPSED AWAY" MEANS SINCE ROUND THREE (DEC-W1). The line got an
+   * expander, and the elevation credits stay OUTSIDE it: each source keeps a
+   * permanently visible short name and only its long sentence is behind the
+   * tap. These credits are required "the same as the OSM one", so a design that
+   * hid them until tapped would contradict the paragraph above.
+   *
+   * An EMPTY list removes them, which matters: crediting a DEM source whose
+   * tiles all failed would be a claim about what is on screen. Idempotent, so a
+   * run of failed loads does not need to track what it added.
    */
-  setTerrainAttribution(credit: string | undefined): void {
-    const control = this.map.attributionControl;
-    if (this.terrainCredit !== undefined) {
-      control.removeAttribution(this.terrainCredit);
-      this.terrainCredit = undefined;
-    }
-    if (credit === undefined) return;
-    control.addAttribution(credit);
-    this.terrainCredit = credit;
+  setTerrainAttribution(entries: readonly AttributionEntry[]): void {
+    this.attribution.setEntries([OSM_ENTRY, ...entries]);
   }
 
   /**
