@@ -16,6 +16,14 @@ export {
 } from "./elevation-provider.js";
 
 export type {
+  Heights,
+  RacingElevationProvider,
+  RacingProviderOptions,
+  RacingProviderStats,
+} from "./racing-provider.js";
+export { racingProvider } from "./racing-provider.js";
+
+export type {
   WorldPixel,
   DecodedImage,
   ElevationTile,
