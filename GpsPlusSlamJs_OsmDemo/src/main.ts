@@ -64,6 +64,11 @@ import {
 import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 
 import { arButtonState, type ArSupport } from "./ar-button-state.js";
+import {
+  arPressAction,
+  shouldOfferAr,
+  type ArPressAction,
+} from "./ar-entry.js";
 import { startArMode, type ArMode } from "./ar-mode.js";
 import { autoElevationEnabled } from "./ar-elevation-auto.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
@@ -692,6 +697,13 @@ async function main(): Promise<void> {
       // fix is "I am here", and anchoring the AR scene to a place the user
       // merely looked at is the offset this whole path exists to avoid.
       store.dispatch(setZeroPos({ lat: position.lat, lon: position.lng }));
+      // AND THE SECOND HALF OF AN AR PRESS, if that is what asked for this fix
+      // (DEC-W2). Placed AFTER the dispatches above deliberately: the offer's
+      // promise is "pressing AR now works", and `shouldOfferAr` asks
+      // `arPressAction` to confirm exactly that — which it can only answer
+      // correctly once `zero` and the view position are the ones this fix
+      // produced.
+      maybeOfferAr();
     },
     // `nonFatalError` rather than `fetchFailed` because the BEHAVIOUR is what
     // matters here: a refused GPS permission says nothing about the data on
@@ -1193,6 +1205,29 @@ async function main(): Promise<void> {
   const toast = createToast(el("toast-root"));
 
   /**
+   * Whether an AR press is still waiting for the fix it asked for (DEC-W2).
+   *
+   * OWNED HERE RATHER THAN IN `ar-entry.ts` because it is the one part of the
+   * decision that is a lifetime rather than a rule: it has to be set by the
+   * press, read by the fix that follows, and dropped on anything that
+   * supersedes the intent. An offer that outlives the user's interest — or one
+   * that appears because they pressed the GPS button — is a worse bug than the
+   * one this replaces.
+   *
+   * Cleared on: entering AR, exiting AR, pressing AR again, the offer being
+   * taken or dismissed, and any position change the user asked for elsewhere.
+   */
+  let awaitingArFix = false;
+
+  const currentPressAction = (): ArPressAction =>
+    arPressAction({
+      sessionRunning: arSession !== undefined,
+      hasOrigin: canEnterAr(selectZeroReference(store.getState())),
+      lastFix: lastFixPosition,
+      viewPosition: selectOsmView(store.getState()).position,
+    });
+
+  /**
    * The last painted state, so the DOM is written only when it CHANGES.
    *
    * This runs on every dispatch, and the demo dispatches a ~931-cell snapshot
@@ -1207,9 +1242,14 @@ async function main(): Promise<void> {
   let paintedAr = "";
 
   const paintArButton = (): void => {
+    // BEFORE THE CHANGE GUARD BELOW. The offer can go stale while the button's
+    // own derived state does not change at all — moving the view away turns
+    // "enter" into "locate", which changes `willLocateFirst`, but a later paint
+    // with an unchanged key must not leave a stale prompt on screen either.
+    syncArOffer();
     const state = arButtonState({
       support: arSupport,
-      hasFix: canEnterAr(selectZeroReference(store.getState())),
+      willLocateFirst: currentPressAction().kind === "locate",
       active: arSession !== undefined,
     });
     const key = `${String(state.hidden)}|${String(state.disabled)}|${state.label}|${state.hint ?? ""}`;
@@ -1243,6 +1283,57 @@ async function main(): Promise<void> {
     // longer holds.
     if (state.hint === undefined) arButton.title = state.label;
     else arButton.title = `${state.label} — ${state.hint}`;
+  };
+
+  const arOffer = el("ar-offer");
+
+  /**
+   * Takes the offer down.
+   *
+   * IDEMPOTENT AND CALLED LIBERALLY. The failure mode being designed against is
+   * an offer that outlives the intent behind it, so every path that could make
+   * it stale calls this rather than reasoning about whether it is showing.
+   */
+  const clearArOffer = (): void => {
+    arOffer.hidden = true;
+    awaitingArFix = false;
+  };
+
+  /**
+   * Offers AR entry, if a press asked for the fix that just arrived.
+   *
+   * A REAL CONTROL, NOT A TOAST, and the difference is the point. A toast fades
+   * on its own; this is the second half of an action the user started, so it
+   * has to still be there when they look back at the screen after walking
+   * outside to get a fix.
+   */
+  const maybeOfferAr = (): void => {
+    if (
+      !shouldOfferAr({
+        awaitingFix: awaitingArFix,
+        sessionRunning: arSession !== undefined,
+        hasOrigin: canEnterAr(selectZeroReference(store.getState())),
+        lastFix: lastFixPosition,
+        viewPosition: selectOsmView(store.getState()).position,
+      })
+    ) {
+      return;
+    }
+    arOffer.hidden = false;
+    paintArButton();
+  };
+
+  /**
+   * Takes a showing offer down once it has stopped being true.
+   *
+   * The offer says "enter AR now", so it may not survive the view being moved
+   * somewhere else — a map click or a jump to another city between the fix
+   * landing and the user looking at the screen. Asking `arPressAction` again is
+   * what keeps the prompt and the button from ever disagreeing.
+   */
+  const syncArOffer = (): void => {
+    if (arOffer.hidden) return;
+    if (currentPressAction().kind !== "enter") clearArOffer();
   };
 
   // The probe is a promise and the button starts hidden, so this resolves into
@@ -1413,16 +1504,16 @@ async function main(): Promise<void> {
     arToast.clear();
   };
 
-  arButton.addEventListener("click", () => {
-    if (arSession !== undefined) {
-      arSession.dispose();
-      arSession = undefined;
-      stopWalking();
-      paintArButton();
-      return;
-    }
+  const enterAr = (): void => {
+    awaitingArFix = false;
+    clearArOffer();
     // IN THE GESTURE, not after an await: the permission prompts WebXR raises
     // are only allowed synchronously from a user gesture.
+    //
+    // THE OFFER'S BUTTON IS A SECOND, FRESH GESTURE, which is what keeps that
+    // true on the locate-first path as well (DEC-W2). Nothing calls this from a
+    // timer or from the fix callback — the offer is shown there, and the user
+    // presses it.
     void startArMode({
       container: el("ar-root"),
       store,
@@ -1634,6 +1725,61 @@ async function main(): Promise<void> {
         reloadTerrainForMode();
       }
     });
+  };
+
+  arButton.addEventListener("click", () => {
+    const action = currentPressAction();
+
+    if (action.kind === "exit") {
+      arSession?.dispose();
+      arSession = undefined;
+      stopWalking();
+      awaitingArFix = false;
+      clearArOffer();
+      paintArButton();
+      return;
+    }
+
+    if (action.kind === "locate") {
+      // THE PRESS BECOMES THE GPS BUTTON (G6, DEC-W2). The app does not
+      // currently show where the user is — either no fix has ever arrived, or
+      // the view has been moved away from the last one — and AR anchored to a
+      // place they are not is half of what was reported. When the fix lands,
+      // `maybeOfferAr` offers entry, so the second tap is offered rather than
+      // remembered.
+      //
+      // NOT BOTH AT ONCE, which was planned first and abandoned: `startArMode`
+      // refuses without an origin, so "both" would have been locate plus
+      // nothing. See `ar-entry.ts` for the three invariants that rule out the
+      // alternative of re-anchoring afterwards.
+      // CLEARED FIRST, THEN ARMED — and the order is load-bearing, because
+      // `clearArOffer` drops the intent as well as hiding the prompt. Armed
+      // first, the clear immediately disarmed it and the offer never came.
+      clearArOffer();
+      awaitingArFix = true;
+      // THE IN-PROGRESS STATE IS THE LOCATE BUTTON'S OWN, not a second one
+      // invented here. `locateControl.start()` moves it to "Locating…" and back,
+      // and that control is the thing actually working — a spinner on the AR
+      // button as well would be two indicators for one operation.
+      locateControl.start();
+      paintArButton();
+      return;
+    }
+
+    enterAr();
+  });
+
+  // THE OFFER'S OWN GESTURE. This click is what carries the transient user
+  // activation `navigator.xr.requestSession()` needs — which is the reason the
+  // "press AR, it locates, then offers" shape works where "do both at once"
+  // could not: the session is requested from a fresh press, not from a fix
+  // callback, and no permission prompt is ever raised inside a running session.
+  el("ar-offer-enter").addEventListener("click", () => {
+    enterAr();
+  });
+  el("ar-offer-dismiss").addEventListener("click", () => {
+    clearArOffer();
+    paintArButton();
   });
   // The switches report a whole next set; `toggleLayer` is the only thing that
   // knows how to build a valid one (see `osm-view-slice.ts` for why the action

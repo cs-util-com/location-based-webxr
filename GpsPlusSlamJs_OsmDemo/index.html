@@ -1039,6 +1039,65 @@
         display: none;
       }
 
+      /* THE AR OFFER (G6, DEC-W2). Bottom-centre and above the map's own
+         controls, because it is the one thing on screen the user is waiting
+         for once they have pressed AR without a fix.
+
+         NOT IN THE HEADER: the header collapses, and an offer that can be
+         collapsed away is an offer nobody takes. NOT IN `#ar-root` either --
+         that layer only composites inside an immersive session, and this
+         exists precisely when there is no session yet. */
+      .ar-offer {
+        position: fixed;
+        bottom: 1.25rem;
+        left: 50%;
+        z-index: 1000;
+        display: flex;
+        gap: 0.6rem;
+        align-items: center;
+        max-width: 92vw;
+        padding: 0.5rem 0.75rem;
+        transform: translateX(-50%);
+        border: 1px solid rgb(242 244 248 / 25%);
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 94%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+        color: #f2f4f8;
+        font-size: 0.9rem;
+      }
+
+      .ar-offer[hidden] {
+        display: none;
+      }
+
+      .ar-offer-button {
+        /* 2.75 rem tall, the same floor the header caret's tap target uses --
+           this is the control the whole interaction funnels into, so it is the
+           last place to be stingy about target size. */
+        min-height: 2.75rem;
+        padding: 0 0.9rem;
+        border: 0;
+        border-radius: 0.4rem;
+        background: #1a5cff;
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .ar-offer-dismiss {
+        min-width: 2.75rem;
+        min-height: 2.75rem;
+        padding: 0;
+        border: 1px solid rgb(242 244 248 / 25%);
+        border-radius: 0.4rem;
+        background: none;
+        color: #cfd6e4;
+        font-size: 1.1rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+
       /* THE ATTRIBUTION LINE (G5, DEC-W1). One thin line by default: a short
          name per source, always visible, plus a blue "Attributions" control
          that reveals the full credit text.
@@ -1302,6 +1361,32 @@
            subtree is what WebXR composites during an immersive session, and
            a 2D message has to be visible when no session is running. See
            `toast.ts.md`. -->
+      <!-- THE AR OFFER (G6, DEC-W2). Shown when a fix arrives that an AR
+           PRESS asked for, never when the user merely pressed Locate.
+
+           A REAL CONTROL, NOT A TOAST, and the difference is the whole design.
+           A toast fades on its own; this is the second half of an action the
+           user started, and the wait it follows can be a walk outside to get a
+           fix -- so it has to still be there when they look back at the screen.
+
+           ITS BUTTON IS ALSO WHAT MAKES THE SHAPE LEGAL. requestSession() needs
+           transient user activation, so the session must be asked for from a
+           fresh gesture; entering from the fix callback would spend the
+           activation the press already used. See `ar-entry.ts`. -->
+      <div id="ar-offer" class="ar-offer" hidden>
+        <span class="ar-offer-text">Found you.</span>
+        <button type="button" id="ar-offer-enter" class="ar-offer-button">
+          Enter AR now
+        </button>
+        <button
+          type="button"
+          id="ar-offer-dismiss"
+          class="ar-offer-dismiss"
+          aria-label="Dismiss"
+        >
+          ×
+        </button>
+      </div>
       <div id="toast-root"></div>
       <!-- An OVERLAY on desktop too (DEC-17): a third column would squeeze the
            two views to ~450 px each on a laptop, which is the width that made

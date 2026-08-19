@@ -24,13 +24,23 @@ export type ArSupport = "checking" | "supported" | "unsupported";
 export interface ArButtonInputs {
   readonly support: ArSupport;
   /**
-   * Whether the framework has a `zero` yet.
+   * Whether a press would find the user before starting AR.
    *
-   * The gate is a GPS FIX, not a map click. The demo's position moves on every
-   * click; `zero` is taken from the first fix and is what the alignment matrix
-   * is expressed against. See `ar-origin.ts`.
+   * REPLACED `hasFix`, AND WITH IT THE ONLY DISABLED STATE THIS TYPE HAD
+   * (round three, G6, DEC-W2). The button used to be disabled until the
+   * framework had a `zero`, with the reason carried in `title`/`aria-label` —
+   * neither of which a phone shows. What the thirteenth session met was a
+   * faint square that ignored them, and its report is the strongest possible
+   * evidence that "visible but disabled, with the reason in the accessible
+   * name" does not work on touch.
+   *
+   * So the press now DOES the thing that had to happen first, and this input
+   * says only whether it will. It is `arPressAction(...).kind === "locate"`,
+   * which is a wider question than `hasFix` was: a view moved away from the
+   * user answers true as well, because AR used to be enterable while the scene
+   * was anchored somewhere they are not. See `ar-entry.ts`.
    */
-  readonly hasFix: boolean;
+  readonly willLocateFirst: boolean;
   /** Whether a session is currently running. */
   readonly active: boolean;
 }
@@ -76,16 +86,22 @@ export function arButtonState(inputs: ArButtonInputs): ArButtonState {
     // advertises something they cannot have.
     return { hidden: true, disabled: true, label: "AR" };
   }
-  if (!inputs.hasFix) {
-    // VISIBLE BUT DISABLED, which is the one case where the distinction earns
-    // its keep: this state is temporary and self-resolving, so the button has
-    // to be discoverable before it becomes usable — otherwise it appears
-    // without warning under the user's thumb.
+  if (inputs.willLocateFirst) {
+    // ENABLED, and that is the whole change. This used to be the one disabled
+    // state — "visible but disabled" while waiting for a fix, on the reasoning
+    // that the state is temporary and self-resolving so the control must be
+    // discoverable before it is usable. The control WAS discoverable and did
+    // nothing when discovered, which is what got reported.
+    //
+    // The hint survives, and it is now a promise rather than an excuse: press
+    // this and it will find you first. It still only reaches the accessible
+    // name — no better on touch than before — but nothing rests on it now,
+    // because the button works either way.
     return {
       hidden: false,
-      disabled: true,
-      label: "AR",
-      hint: "Waiting for a GPS fix",
+      disabled: false,
+      label: "Enter AR",
+      hint: "Finds your location first",
     };
   }
   return { hidden: false, disabled: false, label: "Enter AR" };

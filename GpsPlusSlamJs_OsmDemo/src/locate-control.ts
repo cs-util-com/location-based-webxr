@@ -269,7 +269,18 @@ export class LocateControl {
     this.map.stopLocate();
   }
 
-  private start(): void {
+  /**
+   * Runs a one-shot locate, exactly as pressing the button does.
+   *
+   * PUBLIC SINCE ROUND THREE (G6, DEC-W2), because the AR button now performs
+   * this step when the app does not yet know where the user is. It is the same
+   * entry point the button's own click handler uses, deliberately: a second
+   * path into `map.locate()` would be a second place for the control's state
+   * machine to get out of step with what is actually in flight.
+   *
+   * Idempotent while a locate is already running.
+   */
+  start(): void {
     if (this.state === "locating") return;
     if (this.resetTimer !== undefined) clearTimeout(this.resetTimer);
     this.setState("locating");

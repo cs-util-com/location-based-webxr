@@ -812,9 +812,23 @@ test.describe("the header", () => {
     // the moment the feature was used. The readout now takes its own line
     // instead, and the three controls stay together.
     await page.locator("#geo-event").click();
+    // WAIT ON THE TOAST FIRST, at the 30 s budget `map-and-cells.spec.js` uses
+    // for the same click. Computing an event scores hundreds of chunks and may
+    // download a tile; asserting the readout directly at 20 s passed in
+    // isolation and timed out in the full suite, where three workers share the
+    // machine. The toast is the signal that the work FINISHED — waiting only on
+    // the readout conflates "still working" with "nothing nearby", since the
+    // readout is written only when a quest is actually found.
+    await expect(page.locator("#toast-root .toast")).toHaveText(
+      /Quest at|No quest nearby/,
+      { timeout: 30000 },
+    );
+    // The fixture does contain one. Asserted rather than assumed: with no quest
+    // the readout stays empty and the geometry below would be measuring the
+    // boot state again — the exact case this step exists to cover.
     await expect(page.locator("#quest-readout")).toHaveText(
       /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)/,
-      { timeout: 20000 },
+      { timeout: 30000 },
     );
     const withReadout = await box("#geo-event");
     const toggleAgain = await box("#header-toggle");
@@ -1414,7 +1428,7 @@ test.describe("the AR entry point", () => {
    * stops at the boundary: does the button become usable, and does pressing it
    * reach the AR path rather than doing nothing.
    */
-  test("stays disabled until a GPS fix, then becomes usable", async ({
+  test("locates when pressed without a fix, then OFFERS to enter AR", async ({
     page,
     context,
   }) => {
@@ -1440,19 +1454,76 @@ test.describe("the AR entry point", () => {
     await waitForRefresh(page);
 
     const arButton = page.locator("#enter-ar");
+    const offer = page.locator("#ar-offer");
 
-    // BEFORE the fix: visible so it is discoverable, disabled because the scene
-    // has nothing to anchor to, and carrying a reason.
+    // BEFORE ANY FIX: visible AND ENABLED.
+    //
+    // THIS ASSERTED `toBeDisabled()` UNTIL ROUND THREE, with the reason in
+    // `title`. The thirteenth session reported exactly that state as broken —
+    // "wenn ich noch nicht auf Location geklickt habe, dann macht der AR Button
+    // noch nichts" — because a `title` never shows on touch, so what a phone
+    // user meets is a faint square that ignores them. The press now performs
+    // the step it was waiting for (G6, DEC-W2), so there is nothing to disable.
     await expect(arButton).toBeVisible();
-    await expect(arButton).toBeDisabled();
-    await expect(arButton).toHaveAttribute("title", /GPS/i);
+    await expect(arButton).toBeEnabled();
+    // The hint survives as a promise rather than an excuse.
+    await expect(arButton).toHaveAttribute("title", /location/i);
+    await expect(offer).toBeHidden();
+
+    // THE PRESS ACTS AS THE GPS BUTTON. The locate control — not a second
+    // indicator invented for this — is what shows the work in progress.
+    await arButton.click();
+
+    // AND WHEN THE FIX LANDS, ENTRY IS OFFERED rather than the user having to
+    // remember the button. That second tap carries its own transient user
+    // activation, which is what makes this shape legal where "request both at
+    // once" was not.
+    await expect(offer).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("#ar-offer-enter")).toBeVisible();
+
+    // THE OFFER'S BUTTON IS A REAL TAP TARGET. G1 was a control that was
+    // correct and too small to use, twice; this is the control the whole
+    // interaction funnels into.
+    const enterBox = await page.locator("#ar-offer-enter").boundingBox();
+    expect(enterBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+
+    // DISMISSIBLE, and it stays dismissed. An offer that reappears on the next
+    // fix would fire ~1 Hz under a watch.
+    await page.locator("#ar-offer-dismiss").click();
+    await expect(offer).toBeHidden();
+    await expect(arButton).toBeEnabled();
+  });
+
+  test("does NOT offer AR when the user only pressed the GPS button", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS, and why it is the risky half of DEC-W2.
+     *
+     * The offer belongs to the AR press. A prompt that appears because someone
+     * pressed Locate — which a desktop user does constantly, and which every AR
+     * session's own watch does ~1 Hz — is a worse bug than the one being fixed,
+     * and it is the failure mode a "a fix arrived, so offer AR" implementation
+     * would have shipped without anyone noticing in a headless suite.
+     */
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
 
     await page.locator(".locate-button").click();
 
-    // AFTER the fix: usable. This is the assertion the milestone's three false
-    // claims all reduce to — without `setZeroPos` being dispatched it never
-    // arrives, however correct every module is on its own.
-    await expect(arButton).toBeEnabled({ timeout: 10000 });
+    // The fix really does arrive — otherwise the absence below proves nothing.
+    await expect(page.locator("#enter-ar")).toBeEnabled({ timeout: 10000 });
+    await expect(page.locator("#ar-offer")).toBeHidden();
   });
 
   test("keeps the map when AR is available — DEC-12", async ({
