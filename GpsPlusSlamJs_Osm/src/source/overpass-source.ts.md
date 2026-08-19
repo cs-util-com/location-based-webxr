@@ -94,12 +94,40 @@ is effectively required for production use.
 
 ## Tests
 
-`overpass-source.test.ts` — 23 tests, one per discipline item: construction
-guards, the exact request shape and headers, provenance, dedup (including
-release after success and after failure), bounded concurrency, retry on each
-retryable status with endpoint rotation, no-retry on 400, `Retry-After` in both
-forms, jittered fallback, give-up reporting, transport-level throws,
-HTML-in-a-200, and `AbortSignal` before and during a retry wait.
+`overpass-source.test.ts` — one per discipline item: construction guards, the
+exact request shape and headers, provenance, dedup (including release after
+success and after failure), bounded concurrency, retry on each retryable status
+with endpoint rotation, no-retry on 400, `Retry-After` in both forms, jittered
+fallback, give-up reporting, transport-level throws, HTML-in-a-200, and
+`AbortSignal` before and during a retry wait.
+
+**The backoff-duration tests pin the pool to ONE entry, and that is load-bearing
+rather than incidental.** Since 2026-08-19 the client sleeps only when the next
+attempt would return to an operator that has already refused
+([`overpass-operators.ts.md`](./overpass-operators.ts.md)), so against the
+default pool a single failure is followed immediately by a different host and no
+sleep at all — which would leave those assertions vacuous rather than failing.
+A one-entry pool separates "how long is the wait" from "is there a wait", and
+the second question has its own three tests.
+
+## Backoff: when the client waits, and when it just asks somebody else
+
+Rotation and backoff used to be independent — the loop moved to the next
+endpoint on every attempt AND slept the full delay between them. That combination
+is what the twelfth testing session measured as "a 429, and then another thirty
+seconds": the client waited for **FOSSGIS's** quota to recover, honouring
+`Retry-After` up to the 30 s clamp, and then asked `maps.mail.ru`, whose quota
+was never involved.
+
+The rule now: **sleep only when the next attempt would return to a refused
+operator.** Backoff is pressure relief on a quota, so it applies where a quota
+is about to be asked again, and nowhere else. With the default pool a 429 on
+`lz4.` goes straight to `maps.mail.ru` with no wait, and the attempt after that —
+`z.overpass-api.de`, FOSSGIS again — waits as before.
+
+The same predicate also removed a pure-waste sleep nobody had reported: the
+retryable-status path had no `attempt >= maxRetries` guard, so the final attempt
+slept up to 30 s and then fell out of the loop and threw.
 
 ## `timings` — what this source measures, and where each clock stops
 

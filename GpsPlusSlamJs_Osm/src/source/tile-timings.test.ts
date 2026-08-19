@@ -219,6 +219,13 @@ describe("OverpassSource fills timings for a network delivery", () => {
       // near the top of the range is what puts a real sleep on the clock.
       random: () => 0.999,
       backoff: { baseDelayMs: 500 },
+      // A POOL OF ONE, so a retry actually sleeps. Since 2026-08-19 the client
+      // skips the backoff when the next attempt goes to a DIFFERENT operator
+      // (see `shouldWaitBeforeRetry`), and against the default pool a 502 on
+      // entry 0 is followed straight away by `maps.mail.ru`. This test is about
+      // whether the sleep is inside `transportMs`, not about when there is one,
+      // so it pins the pool and leaves the rotation policy to its own tests.
+      endpoints: ["https://lz4.overpass-api.de/api/interpreter"],
     });
 
     const { timings } = await source.fetchTile(TILE);

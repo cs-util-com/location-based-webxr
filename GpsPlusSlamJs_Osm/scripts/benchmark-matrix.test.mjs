@@ -37,6 +37,7 @@ import {
   planCells,
   waitMsBeforeRequest,
 } from "./benchmark-matrix.mjs";
+import { knownOperatorHostnames } from "../src/source/overpass-operators.js";
 
 const BBOX = { south: 50.93, west: 6.94, north: 50.95, east: 6.98 };
 const KEYS = ["highway", "building"];
@@ -498,5 +499,30 @@ describe("the refusal budget decays (F29)", () => {
     // are spaced a minute apart by OPERATOR_COOLDOWN_MS.
     expect(REFUSAL_DECAY_MS).toBeGreaterThan(OPERATOR_COOLDOWN_MS * 2);
     expect(REFUSAL_DECAY_MS).toBeLessThan(30 * 60_000);
+  });
+});
+
+describe("the operator table agrees with production", () => {
+  it("maps every hostname the client groups to the same operator", () => {
+    // WHY THIS TEST MATTERS, and why it lives HERE rather than beside the
+    // production table. The same grouping exists twice: once in
+    // `src/source/overpass-operators.ts`, which the retry policy reads, and
+    // once in this script, which paces the sweep. It cannot be one copy — this
+    // script runs under bare `node` with no build step and cannot import from
+    // `src` (see its header), and the reverse import fails `typecheck:tests`,
+    // which compiles `src/**/*.ts` only. So the duplication is deliberate, and
+    // this assertion is what keeps it honest.
+    //
+    // A drift would not be cosmetic: it would mean the sweep spaces its
+    // requests by a different notion of "operator" than the client retries by,
+    // and the sweep's politeness guarantee is the entire reason it is allowed
+    // to run at all.
+    for (const [hostname, operator] of Object.entries(
+      knownOperatorHostnames(),
+    )) {
+      expect(operatorForUrl(`https://${hostname}/api/interpreter`)).toBe(
+        operator,
+      );
+    }
   });
 });

@@ -367,12 +367,28 @@ describe("retry, rotation and backoff", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * A pool of ONE, so every retry returns to the same operator.
+   *
+   * The three backoff tests below are about **how long** a wait is, and since
+   * 2026-08-19 that is a separate question from **whether** there is one: the
+   * client no longer sleeps when the next attempt goes to a different operator
+   * (see `shouldWaitBeforeRetry`). Against the default pool a single failure is
+   * now followed immediately by a different host and no sleep at all, which
+   * would make these assertions vacuous rather than wrong. Pinning the pool to
+   * one entry isolates the duration arithmetic from the rotation policy, and
+   * the rotation policy has its own tests further down.
+   */
+  const ONE_OPERATOR = ["https://lz4.overpass-api.de/api/interpreter"];
+
   it("honours `Retry-After` in seconds over its own backoff", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(errorResponse(429, { "Retry-After": "7" }))
       .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
-    const { source, sleeps } = makeSource(fetchImpl);
+    const { source, sleeps } = makeSource(fetchImpl, {
+      endpoints: ONE_OPERATOR,
+    });
 
     await source.fetchTile(TILE);
     expect(sleeps).toEqual([7000]);
@@ -386,7 +402,10 @@ describe("retry, rotation and backoff", () => {
         errorResponse(503, { "Retry-After": "Wed, 06 May 2026 03:25:05 GMT" }),
       )
       .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
-    const { source, sleeps } = makeSource(fetchImpl, { now: () => now });
+    const { source, sleeps } = makeSource(fetchImpl, {
+      now: () => now,
+      endpoints: ONE_OPERATOR,
+    });
 
     await source.fetchTile(TILE);
     expect(sleeps).toEqual([5000]);
@@ -403,11 +422,80 @@ describe("retry, rotation and backoff", () => {
     const { source, sleeps } = makeSource(fetchImpl, {
       random: () => 0.999999,
       backoff: { baseDelayMs: 100, maxDelayMs: 10_000 },
+      endpoints: ONE_OPERATOR,
     });
 
     await source.fetchTile(TILE);
     expect(sleeps).toHaveLength(2);
     expect(sleeps[1]!).toBeGreaterThan(sleeps[0]!);
+  });
+
+  it("does NOT sleep when the next attempt goes to a different operator", async () => {
+    // THE REPORTED DEFECT (F2c). The owner saw a 429 from `lz4.overpass-api.de`
+    // followed by "another 30 seconds" before anything appeared. The loop
+    // rotated endpoints on every attempt AND slept the full backoff between
+    // them — so the client waited for FOSSGIS's quota to recover, honouring
+    // `Retry-After` up to a 30 s clamp, and then asked `maps.mail.ru`, whose
+    // quota was never the problem. The sleep bought nothing for the host that
+    // was about to be asked.
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(429, { "Retry-After": "30" }))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source, sleeps } = makeSource(fetchImpl);
+
+    await source.fetchTile(TILE);
+
+    expect(sleeps).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    // Entry 1 is `maps.mail.ru` — a different operator from entry 0's FOSSGIS.
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain("maps.mail.ru");
+  });
+
+  it("DOES sleep once the next attempt would return to a refused operator", async () => {
+    // The other half, and the reason this is not simply "never sleep". Backoff
+    // is pressure relief on a QUOTA, and the default pool returns to FOSSGIS on
+    // attempt 2 (`z.overpass-api.de` — same operator as entry 0, as the servers
+    // themselves report). Asking it again immediately after it refused is what
+    // the backoff is for; the previous behaviour merely applied it to the wrong
+    // attempt.
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source, sleeps } = makeSource(fetchImpl);
+
+    await source.fetchTile(TILE);
+
+    // No sleep before attempt 1 (fossgis → vk-maps), one before attempt 2
+    // (vk-maps → fossgis, already refused).
+    expect(sleeps).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(String(fetchImpl.mock.calls[2]?.[0])).toContain("z.overpass-api.de");
+  });
+
+  it("never sleeps after the LAST attempt, which nothing can use", async () => {
+    // A pure-waste sleep nobody reported, found while fixing F2c: the
+    // retryable-status path had no `attempt >= maxRetries` guard, so the final
+    // attempt slept up to 30 s and then fell out of the loop and threw. With a
+    // one-entry pool every retry sleeps, which isolates the question to whether
+    // the LAST one does.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(errorResponse(429, { "Retry-After": "30" })),
+      );
+    const { source, sleeps } = makeSource(fetchImpl, {
+      endpoints: ONE_OPERATOR,
+      maxRetries: 2,
+    });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow(/429/);
+
+    // Three attempts (0, 1, 2) but only two gaps between them.
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(sleeps).toHaveLength(2);
   });
 
   it("gives up after maxRetries and reports how many attempts it made", async () => {
@@ -500,6 +588,13 @@ describe("AbortSignal support, end to end", () => {
       .fn()
       .mockImplementation(() => Promise.resolve(errorResponse(504)));
     const { source } = makeSource(fetchImpl, {
+      // ONE ENTRY, so a retry wait actually happens. Since 2026-08-19 the
+      // client skips the wait when the next attempt goes to a different
+      // operator, and against the default pool that means the first failure is
+      // followed straight by another host — this test would then abort on the
+      // SECOND gap rather than the first, quietly testing something else.
+      // Pinning the pool keeps it about the abort.
+      endpoints: ["https://lz4.overpass-api.de/api/interpreter"],
       sleepImpl: () => {
         const error = new Error("aborted");
         error.name = "AbortError";

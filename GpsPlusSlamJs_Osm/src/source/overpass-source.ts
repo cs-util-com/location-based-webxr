@@ -39,6 +39,7 @@ import {
 import type { OverpassStatus } from "./overpass-status.js";
 import { parseOverpassStatus } from "./overpass-status.js";
 import { OverpassSlotBudget } from "./slot-budget.js";
+import { operatorForUrl } from "./overpass-operators.js";
 import { InFlightRequests } from "./in-flight-requests.js";
 
 /**
@@ -409,6 +410,10 @@ export class OverpassSource implements OsmDataSource {
     // same number stay distinguishable: a big `transportMs` at one attempt is a
     // slow server, and the same figure at three attempts is mostly sleeping.
     const transportStart = this.monotonicNow();
+    // Operators this tile has already had refused, so the backoff can tell
+    // "wait for a quota to recover" from "ask somebody else". See
+    // `shouldWaitBeforeRetry`.
+    const refusedOperators = new Set<string>();
     // attempt 0 is the initial try; 1..maxRetries are retries.
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       throwIfAborted(signal);
@@ -421,6 +426,10 @@ export class OverpassSource implements OsmDataSource {
       // reader looks first, so the retired design was the one on offer at the
       // call site while the retirement notice was 240 lines away.
       const endpoint = this.pickEndpoint(attempt);
+      // Recorded before the request rather than after it fails: every path out
+      // of this iteration other than success is a refusal, and recording it in
+      // one place beats three.
+      refusedOperators.add(operatorForUrl(endpoint));
       if (attempt > 0) {
         this.stats.retries++;
       }
@@ -461,7 +470,7 @@ export class OverpassSource implements OsmDataSource {
         lastError = new Error(
           `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
         );
-        await this.waitBeforeRetry(attempt, response, signal);
+        await this.waitBeforeRetry(attempt, response, signal, refusedOperators);
       } catch (error) {
         // Aborts and permanent failures must escape the loop rather than be
         // re-attempted. Both were previously caught here and retried: a 400
@@ -491,7 +500,12 @@ export class OverpassSource implements OsmDataSource {
         if (attempt >= this.maxRetries) {
           break;
         }
-        await this.waitBeforeRetry(attempt, undefined, signal);
+        await this.waitBeforeRetry(
+          attempt,
+          undefined,
+          signal,
+          refusedOperators,
+        );
       }
     }
 
@@ -557,11 +571,54 @@ export class OverpassSource implements OsmDataSource {
     this.stats.rateLimited++;
   }
 
+  /**
+   * Whether to sleep before the next attempt — or rotate to a fresh operator
+   * and ask immediately.
+   *
+   * THE DEFECT THIS REMOVES (twelfth testing session, F2c). The loop rotates
+   * endpoints on every attempt AND slept the full backoff between them, so a
+   * 429 from `lz4.overpass-api.de` made the client wait for **FOSSGIS's** quota
+   * to recover — honouring `Retry-After`, clamped at 30 s — and then ask
+   * `maps.mail.ru`, a different operator whose quota was never the problem. The
+   * owner measured a 429 followed by "another 30 seconds" before anything
+   * appeared. The sleep bought nothing for the host about to be asked.
+   *
+   * So the rule is: **sleep only when the next attempt would return to an
+   * operator that has already refused.** With the default pool that means a 429
+   * on `lz4.` goes straight to `maps.mail.ru` (a different operator, no wait),
+   * and only the attempt after that — `z.overpass-api.de`, FOSSGIS again —
+   * waits. Backoff is preserved exactly where it is meaningful, which is
+   * pressure on a quota, and dropped where it was only latency.
+   *
+   * IT ALSO CATCHES A PURE-WASTE SLEEP NOBODY REPORTED: the retryable-status
+   * path had no `attempt >= maxRetries` guard, so the LAST attempt slept up to
+   * 30 s and then fell out of the loop and threw. Nothing could ever use that
+   * time. The first clause below covers it.
+   */
+  private shouldWaitBeforeRetry(
+    attempt: number,
+    refusedOperators: ReadonlySet<string>,
+  ): boolean {
+    // Nothing follows this attempt, so there is nothing to wait for.
+    if (attempt >= this.maxRetries) return false;
+    return refusedOperators.has(operatorForUrl(this.pickEndpoint(attempt + 1)));
+  }
+
+  /**
+   * Waits before the next attempt — **or returns immediately**, when the next
+   * attempt goes somewhere the backoff cannot help.
+   *
+   * The decision lives in {@link shouldWaitBeforeRetry} and is applied HERE
+   * rather than at the two call sites, so "retry pacing" stays one concept in
+   * one place and the loop keeps reading as `…; await waitBeforeRetry(…);`.
+   */
   private async waitBeforeRetry(
     attempt: number,
     response: Response | undefined,
     signal: AbortSignal | undefined,
+    refusedOperators: ReadonlySet<string>,
   ): Promise<void> {
+    if (!this.shouldWaitBeforeRetry(attempt, refusedOperators)) return;
     const delay = nextDelayMs(
       attempt,
       response?.headers.get("Retry-After"),
