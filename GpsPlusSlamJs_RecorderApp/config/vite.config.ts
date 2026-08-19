@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from 'node:url';
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
+import tailwindcss from '@tailwindcss/vite';
 
 interface PackageJsonWithVersion {
   version: string;
@@ -119,6 +120,11 @@ export default defineConfig({
   },
   define: createBuildMetadataDefine(),
   plugins: [
+    // TAILWIND, BUILT HERE RATHER THAN FETCHED AT RUNTIME. It used to come from
+    // `cdn.tailwindcss.com`, which made every page load — including every e2e
+    // `page.goto` — wait on a third-party host. See `styles/tailwind.css` for
+    // what that cost and for the one behavioural difference the swap has.
+    tailwindcss(),
     // Upload source maps to Sentry during production builds.
     // Only loaded when SENTRY_AUTH_TOKEN is set — without it the plugin
     // errors during `vite build`. Local dev and public-repo contributors

@@ -1,0 +1,11 @@
+/* Leaflet's stylesheet, re-exported from the installed package.
+
+   WHY A RE-EXPORT RATHER THAN A COPY: a copy silently goes stale when the
+   dependency is bumped, and nothing would say so. This resolves through the
+   bundler to whatever version package.json actually pins.
+
+   WHY NOT unpkg, which is where this came from until 2026-08-19: a page load
+   that waits on a third-party host fails when that host is slow, and it fails
+   looking like an app defect. See `tailwind.css` in this directory. */
+
+@import "leaflet/dist/leaflet.css";
