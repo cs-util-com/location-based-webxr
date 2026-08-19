@@ -1652,12 +1652,22 @@ async function main(): Promise<void> {
     // switches. Being a real child of `#layer-group-overlays` rather than a
     // sibling styled to look adjacent is what makes it collapse and expand with
     // that block, which is the behaviour the sixth session asked for.
-    extras: {
+    //
+    // THE CATEGORY PICKER FIRST (F3d) — and as of round three that is true
+    // rather than merely claimed. The group is captioned `Category`, so the
+    // control it names belongs at the top of it rather than below the switches
+    // that describe what to draw for it. This comment sat here for a day over a
+    // seam that could only append, so the bar rendered
+    // `Category · cells · areas · ‹select›`; the seam now takes a position and
+    // `layer-toggles.test.ts` holds the order to the screen.
+    extrasBefore: {
+      overlays: [el("category")],
+    },
+    extrasAfter: {
       diagnostics: [el("perf-stats-label")],
-      // THE CATEGORY PICKER FIRST (F3d): the group is captioned `Category`, so
-      // the control it names belongs at the top of it rather than below the
-      // switches that describe what to draw for it.
-      overlays: [el("category"), showBelowLabel],
+      // LAST, after the two switches: it changes which cells `cells` draws, so
+      // it reads as a qualifier on the switch above it rather than a third peer.
+      overlays: [showBelowLabel],
     },
   });
   /**

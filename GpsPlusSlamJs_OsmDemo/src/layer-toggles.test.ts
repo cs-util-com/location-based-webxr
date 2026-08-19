@@ -239,3 +239,116 @@ describe("the switch inventory attachLayerToggles builds", () => {
     }
   });
 });
+
+describe("where an extra control lands inside its group", () => {
+  /**
+   * WHY THIS MATTERS (round three, G2/F7).
+   *
+   * `main.ts` has claimed in a comment since F3d that the category picker sits
+   * FIRST in its group — "the group is captioned `Category`, so the control it
+   * names belongs at the top of it". It did not, and nothing tested it: the
+   * seam appended every extra AFTER the generated switches, so the bar rendered
+   * `Category · cells · areas · ‹select›`. A comment asserting a layout the
+   * code cannot produce is worse than no comment, and it survived because this
+   * file had no `extras` assertion of any kind.
+   *
+   * The two positions are now named at the call site rather than implied, which
+   * is what makes the claim checkable. Deleting `extrasBefore`'s insertion and
+   * appending instead fails the first test here and nothing else in the suite.
+   */
+  const stub = (id: string): HTMLElement => {
+    const node = document.createElement("span");
+    node.id = id;
+    return node;
+  };
+
+  /**
+   * A switch is a `<label>` WRAPPING the input, so the id that identifies it
+   * is the input's. Reading the label's own `className` would render every
+   * switch as the same string and the order assertions would be vacuous.
+   */
+  const childKeys = (group: Element | null): readonly string[] =>
+    [...(group?.children ?? [])].map(
+      // `||`, not `??`: an element with no id has `id === ""`, which `??`
+      // would keep. The caption has no id and must fall through to its class.
+      (child) =>
+        child.querySelector("input")?.id || child.id || child.className,
+    );
+
+  const overlayIds = (container: HTMLElement): readonly string[] =>
+    childKeys(container.querySelector("#layer-group-overlays"));
+
+  it("puts `extrasBefore` between the caption and the first switch", () => {
+    const container = document.createElement("div");
+    attachLayerToggles({
+      container,
+      onChange: () => {},
+      extrasBefore: { overlays: [stub("category")] },
+    });
+
+    // The caption keeps its place at the top — the extra goes after it, not
+    // before it, or the group would render nameless.
+    expect(overlayIds(container)).toEqual([
+      "layer-group-label",
+      "category",
+      "layer-cells",
+      "layer-areas",
+    ]);
+  });
+
+  it("puts `extrasAfter` below the last switch", () => {
+    const container = document.createElement("div");
+    attachLayerToggles({
+      container,
+      onChange: () => {},
+      extrasAfter: { overlays: [stub("show-below-label")] },
+    });
+
+    expect(overlayIds(container)).toEqual([
+      "layer-group-label",
+      "layer-cells",
+      "layer-areas",
+      "show-below-label",
+    ]);
+  });
+
+  it("keeps both, in the order the header actually needs", () => {
+    // The real call: the picker the caption names, then the switches, then the
+    // setting that modifies what one of them draws.
+    const container = document.createElement("div");
+    attachLayerToggles({
+      container,
+      onChange: () => {},
+      extrasBefore: { overlays: [stub("category")] },
+      extrasAfter: { overlays: [stub("show-below-label")] },
+    });
+
+    expect(overlayIds(container)).toEqual([
+      "layer-group-label",
+      "category",
+      "layer-cells",
+      "layer-areas",
+      "show-below-label",
+    ]);
+  });
+
+  it("leaves a group with no extras untouched", () => {
+    const container = document.createElement("div");
+    attachLayerToggles({
+      container,
+      onChange: () => {},
+      extrasBefore: { overlays: [stub("category")] },
+    });
+
+    // Naming one group must not reorder or empty another — the seam is
+    // per-group and the diagnostics group has its own extra in production.
+    expect(childKeys(container.querySelector("#layer-group-world"))).toEqual([
+      "layer-group-label",
+      "layer-buildings",
+      "layer-trees",
+      "layer-plates",
+      "layer-roads",
+      "layer-poi",
+    ]);
+  });
+});

@@ -23,13 +23,21 @@ switch without depending on DOM order.
   what am I inspecting the renderer with.
 - **THE IDS ARE THE CONTRACT.** Every switch keeps `#layer-<name>`; the e2e suite
   locates them that way, so the regrouping moved elements without renaming any.
-- **`extras` puts a non-layer control in a group.** Two use it. The perf panel is
-  a diagnostic and is the only member of that group, but it draws nothing in the
+- **`extrasBefore` / `extrasAfter` put a non-layer control in a group**, above
+  or below its generated switches. Three controls use them. The perf panel is a
+  diagnostic and is the only member of that group, but it draws nothing in the
   scene so it is deliberately not in `ALL_LAYERS` (DEC-R3-18). The `show-below`
-  checkbox joins the **affordance** group (DEC-R6b-5): it is not a layer either —
+  checkbox joins the **overlays** group (DEC-R6b-5): it is not a layer either —
   it changes which cells an existing layer draws — but it is a property of the
-  affordance heat grid and belongs with its switches. Handing the element in
-  beats a second registry or moving DOM after the fact.
+  affordance heat grid and belongs with its switches, underneath them. The
+  category `<select>` joins the same group **above** them. Handing the element
+  in beats a second registry or moving DOM after the fact.
+  - **The position is in the option name because a comment is not a test**
+    (round three, G2/F7). There used to be a single `extras` record that always
+    appended, while `main.ts` asserted in prose that the category picker sat
+    first. It rendered last, and this file had no `extras` assertion of any
+    kind, so nothing contradicted the comment. Callers now have to say where,
+    and `layer-toggles.test.ts` holds each position to the screen.
   - **Group membership is load-bearing, not cosmetic.** The collapsed header
     hides whole groups, so being a real child of `#layer-group-overlays` is what
     keeps `show-below` on screen when the bar collapses. A sibling styled to look
@@ -99,10 +107,12 @@ view keeps drawing what the store says is off).
 ## The overlays group is captioned "Category" now (F3d — 2026-08-19)
 
 `GROUP_LABELS` maps `overlays` to **"Category"**, not "affordance", because the
-category `<select>` itself moved into that group through the existing
-`options.extras` seam — so the control now sits under its own heading.
+category `<select>` itself moved into that group through the
+`options.extrasBefore` seam — so the control now sits directly under its own
+heading, above the switches rather than below them.
 
-`#show-below-label` is also an `overlays` extra, and `main.ts` **hides** it
+`#show-below-label` is also an `overlays` extra — an `extrasAfter` one — and
+`main.ts` **hides** it
 while the `cells` layer is off (DEC-U9). That is a deliberate exception to this
 module's `.layer-busy` rule, which is narrowed in `index.html` to say what it
 governs: a control that is temporarily BUSY stays visible; one that is
