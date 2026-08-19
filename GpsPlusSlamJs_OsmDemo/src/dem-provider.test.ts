@@ -31,6 +31,7 @@ import {
   PREFERRED_DEM_SOURCE_ID,
   FALLBACK_DEM_TIMEOUT_MS,
   PRIMARY_DEM_TIMEOUT_MS,
+  PUBLISH_DEADLINE_MS,
   createDemProvider,
 } from "./dem-provider.js";
 import { TERRAIN_WAIT_TIMEOUT_MS } from "./worker/terrain-gate.js";
@@ -356,19 +357,26 @@ describe("createDemProvider", () => {
     // and "their sum inside the gate". Under a race they are CONCURRENT and
     // nothing waits for the primary, so:
     //
-    // 1. The FAST source's deadline alone must be inside the terrain gate. It
-    //    is now the entire guarantee that something is published before the
-    //    gate fires; the primary's no longer bounds anything a user waits for.
-    //    Breaking this rebuilds the mesh flat, which is the reported bug.
-    // 2. The PREFERRED source's is now LONGER, deliberately. It is a pure
-    //    anti-hang guard on a request nobody is waiting for. Shortening it back
-    //    below the measured worst case would ship a race that can never be won:
-    //    the upgrade would never fire and the LiDAR heights would be lost
-    //    exactly as they were under the 3 s deadline.
-    // 3. It must clear the measured worst case with room — Mapterhorn was
+    // 1. THE PUBLISH DEADLINE is what must fit inside the terrain gate. An
+    //    earlier version of this test asserted the FAST source's deadline
+    //    instead, on the theory that it "is now the entire guarantee that
+    //    something is published". That was false and the milestone review
+    //    caught it: `racingProvider` waits for a usable answer from EITHER arm,
+    //    so a fast source answering "no coverage" at 8 s leaves the batch
+    //    waiting on the preferred arm until ITS 30 s. Breaking this rebuilds
+    //    the mesh flat, which is the originally reported bug.
+    // 2. The publish deadline must exceed the fast source's own, or a
+    //    slow-but-answering AWS is cut off before it can serve.
+    // 3. The PREFERRED source's is now LONGER than either, deliberately: a pure
+    //    anti-hang guard on a request nobody waits for. Shortening it below the
+    //    measured worst case would ship a race that can never be won — the
+    //    upgrade would never fire and the LiDAR heights would be lost exactly as
+    //    they were under the 3 s deadline.
+    // 4. It must clear the measured worst case with room — Mapterhorn was
     //    measured at up to 21.7 s per tile on 2026-08-19.
-    expect(FALLBACK_DEM_TIMEOUT_MS).toBeLessThan(TERRAIN_WAIT_TIMEOUT_MS);
-    expect(PRIMARY_DEM_TIMEOUT_MS).toBeGreaterThan(FALLBACK_DEM_TIMEOUT_MS);
+    expect(PUBLISH_DEADLINE_MS).toBeLessThan(TERRAIN_WAIT_TIMEOUT_MS);
+    expect(PUBLISH_DEADLINE_MS).toBeGreaterThan(FALLBACK_DEM_TIMEOUT_MS);
+    expect(PRIMARY_DEM_TIMEOUT_MS).toBeGreaterThan(PUBLISH_DEADLINE_MS);
     expect(PRIMARY_DEM_TIMEOUT_MS).toBeGreaterThan(22_000);
   });
 

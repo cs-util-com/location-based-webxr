@@ -157,8 +157,10 @@ export interface TerrainField {
    * in their batch — rather than a measured one.
    *
    * Surfaced because nothing else distinguishes the two, in the data or in any
-   * readout, which is how the hazard sat unnoticed. A session can now say "18 %
-   * of this window is made up".
+   * readout, which is how the hazard sat unnoticed. It is carried across the
+   * worker boundary on `TerrainResult.meanFilledPosts`; **no UI shows it yet**,
+   * and that is a filed decision rather than an omission — the twelfth testing
+   * session asked for less diagnostic text, not more.
    */
   readonly meanFilledCount: number;
 }
@@ -304,6 +306,12 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       // every load forever.
       if (measured) {
         meanFilled.delete(postKey);
+        // AND FROM `upgraded`. A post that was upgraded, evicted, and then
+        // re-fetched holds the FAST source's data again — leaving it marked
+        // upgraded would let `replacePosts` treat it as already-good and accept
+        // a batch that leaves the window standing on two DEMs, which is the
+        // step the all-or-nothing rule exists to prevent.
+        upgraded.delete(postKey);
       } else {
         meanFilled.add(postKey);
         upgraded.delete(postKey);
@@ -360,6 +368,14 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     for (const entry of ranked) {
       if (posts.size <= keep) break;
       posts.delete(entry.k);
+      // THE PROVENANCE SETS GO WITH THE POST. They used to outlive it, which
+      // cost two things: `meanFilledCount` counted posts that no longer exist,
+      // so the number was not a property of the window it claimed to describe;
+      // and an evicted-then-refetched post stayed marked `upgraded` while
+      // holding the fast source's data, which let `replacePosts` accept a
+      // window standing on two DEMs.
+      meanFilled.delete(entry.k);
+      upgraded.delete(entry.k);
     }
   }
 
@@ -540,6 +556,12 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     }
 
     for (const [postKey, height] of incoming) {
+      // ONLY POSTS THE LATTICE ALREADY HOLDS. An upgrade batch is built from
+      // the positions the provider was asked for, and eviction may have dropped
+      // some of them since — writing those back would resurrect posts outside
+      // the current window and grow the lattice past its cap through a path the
+      // eviction pass never sees.
+      if (!posts.has(postKey)) continue;
       posts.set(postKey, height);
       upgraded.add(postKey);
       meanFilled.delete(postKey);

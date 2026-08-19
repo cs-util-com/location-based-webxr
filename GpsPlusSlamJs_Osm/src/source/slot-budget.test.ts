@@ -483,3 +483,42 @@ describe("tryAcquire refuses only when EVERY operator is blocked", () => {
     expect(budget.tryAcquire(pool)).toBe(false);
   });
 });
+
+describe("isBlocked asks about the SERVER's quota, not ours", () => {
+  /**
+   * WHY THE DISTINCTION HAS TEETH. `availableFor` reports 0 both when an
+   * operator is penalised AND when the shared allocation is spent — and the
+   * allocation is spent during any ordinary area load, since the default is two
+   * slots and the retry loop runs after this tile already took one. The retry
+   * loop used `availableFor` to decide which endpoints to skip, so under load
+   * every operator looked blocked, the filter emptied, and it fell through to
+   * the unfiltered order: the skip did nothing exactly when it mattered.
+   */
+
+  it("reports a penalised operator as blocked", () => {
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+    budget.penalise(35_000, "fossgis");
+
+    expect(budget.isBlocked("fossgis")).toBe(true);
+    expect(budget.isBlocked("vk-maps")).toBe(false);
+  });
+
+  it("does NOT report an operator as blocked merely because the slots are spent", () => {
+    // The regression this method was extracted for.
+    const budget = new OverpassSlotBudget({ slots: 1 });
+    expect(budget.tryAcquire(["fossgis"])).toBe(true);
+
+    expect(budget.availableFor("fossgis")).toBe(0);
+    expect(budget.isBlocked("fossgis")).toBe(false);
+  });
+
+  it("still honours an unqualified global penalty", () => {
+    const clock = testClock();
+    const budget = new OverpassSlotBudget({ now: clock.now });
+    budget.penalise(35_000);
+
+    expect(budget.isBlocked("fossgis")).toBe(true);
+    expect(budget.isBlocked("vk-maps")).toBe(true);
+  });
+});

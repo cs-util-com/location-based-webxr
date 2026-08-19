@@ -47,13 +47,17 @@
  * reject." Both halves still hold — no caller branches on it, and callers that
  * need a different bound still pass `timeoutMs`.
  *
- * What changed is that this value became one end of a BUDGET. The DEM
- * deadlines in `dem-provider.ts` are only correct while their sum fits inside
- * it: `fallbackProvider` is strictly serial, so a primary and a fallback that
- * together outlast this gate would let it fire again and rebuild the exact bug
- * they were added to remove. That relationship has to be asserted somewhere,
- * and asserting it against a copy of the number would be a copy that can drift
- * from this one. So the export exists to be *read by a test*, not branched on.
+ * What changed is that this value became one end of a BUDGET. That relationship
+ * has to be asserted somewhere, and asserting it against a copy of the number
+ * would be a copy that can drift from this one — so the export exists to be
+ * *read by a test*, not branched on.
+ *
+ * WHICH DEM NUMBER IT BOUNDS CHANGED ON 2026-08-19, and this comment said the
+ * wrong one for a commit. Under `fallbackProvider` the sources were serial and
+ * it was their SUM. Under the race they are concurrent and nothing waits for
+ * the preferred one, so it is `PUBLISH_DEADLINE_MS` — the bound on the
+ * composition — and neither per-source deadline. Asserting the old
+ * relationship would now pass while the real publish path ran past this gate.
  */
 export const TERRAIN_WAIT_TIMEOUT_MS = 15_000;
 

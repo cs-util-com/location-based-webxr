@@ -70,7 +70,7 @@ const dem = racingProvider(mapterhorn, awsTerrarium, {
   onUpgrade: (positions, heights) => applyUpgrade?.(positions, heights),
 });
 
-const field = createTerrainField(dem);
+const field = createTerrainField({ provider: dem });
 applyUpgrade = (positions, heights) => field.replacePosts(positions, heights);
 
 const heights = await dem.elevationAt(posts); // resolves on whichever is first

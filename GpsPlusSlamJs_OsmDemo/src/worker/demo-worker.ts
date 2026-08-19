@@ -879,6 +879,33 @@ async function handle<K extends WorkerCallKind>(
       // Resolves immediately when nothing is pending, so a page that asks
       // speculatively — or twice — cannot hang.
       await demProvider.awaitUpgrades();
+
+      // TWO GUARDS, BOTH ADDED AFTER THE MILESTONE REVIEW FOUND THIS HANDLER
+      // WRITING STATE FOR A WINDOW THE USER HAD LEFT.
+      //
+      // This wait is long — bounded only by the preferred source's 30 s
+      // deadline — and `describeCurrentTerrain` adopts its result as the
+      // worker's current terrain unconditionally. Between the two, the user can
+      // easily have walked somewhere else. Without these checks a superseded
+      // upgrade overwrites `terrain` and `terrainCentre` with the OLD window,
+      // including setting them empty if that window had no data — which is by
+      // name the "older load writes last" interleaving this file's header says
+      // holding the field worker-side prevents.
+      //
+      // The dispatcher suppresses the REPLY on abort but still runs the
+      // handler, so the abort check has to be here rather than left to it.
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      // And the centre check catches the case an abort does not: a load that
+      // completed normally for a different position while this was waiting.
+      // `terrainCentre` is what the worker currently holds; if it has moved on,
+      // this upgrade describes somewhere nobody is looking.
+      if (
+        terrainCentre === undefined ||
+        terrainCentre.lat !== centre.lat ||
+        terrainCentre.lng !== centre.lng
+      ) {
+        throw new DOMException("Terrain upgrade superseded", "AbortError");
+      }
       return describeCurrentTerrain(
         terrainField,
         demSourceId,
@@ -1193,6 +1220,7 @@ function describeCurrentTerrain(
     // the very first field — the one that matters most, on a cold start —
     // would never be upgraded.
     upgradePending: upgradesPending() > 0,
+    meanFilledPosts: terrainField.meanFilledCount,
     // SNAPSHOT AT RESULT TIME, after the sampling above, so the counts include
     // this load's own batches. Cumulative for the session — the HUD reports a
     // share, and a share needs the denominator to keep meaning something.

@@ -9,12 +9,10 @@ the same blob store the OSM tiles persist through.
 ## Public API
 
 - `createDemProvider({ store, decodePng, fetchImpl?, primaryTimeoutMs?,
-fallbackTimeoutMs? }): FallbackElevationProvider` — the seam plus
-  `fallbackProvider`'s live
-  `stats` surface (`{ primaryAnswered, fallbackAnswered, unanswered }`,
-  position counts accumulated for the provider's life). The worker snapshots
-  it into every `TerrainResult.demStats`, and the AR readout renders the
-  primary's share — so a field session can tell which DEM actually served.
+fallbackTimeoutMs?, publishTimeoutMs?, onUpgrade? }): RacingElevationProvider` —
+  the seam plus `racingProvider`'s `stats` surface. **The composition changed
+  on 2026-08-19** from `fallbackProvider` to a race; see the section at the
+  bottom for why, and `racing-provider.ts.md` for the seam itself.
   - `store` — an `OsmBlobStore`; the worker passes the **same** OPFS-backed
     store the OSM tiles and the rule table use. DEM entries are keyed by full
     request URL, so the three key families (`https://…`, `osm/v{n}/…`,
@@ -25,10 +23,18 @@ fallbackTimeoutMs? }): FallbackElevationProvider` — the seam plus
   - `fetchImpl` — the network, defaulting to global `fetch`. Injected so tests
     can count and script requests per host.
   - `primaryTimeoutMs` / `fallbackTimeoutMs` — per-tile deadlines, defaulting to
-    `PRIMARY_DEM_TIMEOUT_MS` (3 s) and `FALLBACK_DEM_TIMEOUT_MS` (8 s). Tests
-    pass a few milliseconds.
-- `PRIMARY_DEM_TIMEOUT_MS`, `FALLBACK_DEM_TIMEOUT_MS` — exported so a test can
-  assert the relationship between them rather than restate the numbers.
+    `PRIMARY_DEM_TIMEOUT_MS` (**30 s**) and `FALLBACK_DEM_TIMEOUT_MS` (8 s).
+  - `publishTimeoutMs` — the bound on the whole composition, default
+    `PUBLISH_DEADLINE_MS` (12 s). **This is the one that keeps the terrain gate
+    from firing**, not the per-source deadlines.
+  - `onUpgrade` — where Mapterhorn's late heights are delivered. Late binding is
+    expected; the worker assigns it after building the terrain field.
+- `PRIMARY_DEM_TIMEOUT_MS`, `FALLBACK_DEM_TIMEOUT_MS`, `PUBLISH_DEADLINE_MS` —
+  exported so a test can assert the relationships between them and the terrain
+  gate rather than restate the numbers.
+- `PREFERRED_DEM_SOURCE_ID` (`"mapterhorn"`) / `FAST_DEM_SOURCE_ID`
+  (`"aws-open-data"`) — what `stats.servedBy` reports. Named explicitly because
+  both ends are `TerrariumProvider` instances differing only by URL.
 
 - `DEM_SOURCE_ID` — `"mapterhorn+terrarium"`, the composed provider's
   `sourceId`. The worker reports it with every terrain result
@@ -38,69 +44,63 @@ fallbackTimeoutMs? }): FallbackElevationProvider` — the seam plus
   while terrain is on screen. Names **both** sources unconditionally, because
   the fallback can serve any tile the primary lacks.
 
-## Why the deadlines exist, and why BOTH sources have one
+## Why the deadlines exist, and what each one bounds
 
-**The failure they remove (2026-08-19 session, §1 of the twelfth-session
-feedback doc).** `fallbackProvider` asks the fallback only for positions the
-primary returned `undefined` for. A primary that is **slow** rather than broken
-produces no such positions — so the fallback is not consulted at all, and a
-working source sits idle behind a stalled one. Measured that day: the four z13
-tiles one terrain window needs took **21.7 s** from Mapterhorn and **1.04 s**
-from AWS, past the consumer's 15 s terrain gate, with `cf-cache-status: HIT` on
-the slow responses (so not a cold origin that would warm up). The owner reported
-it as "the fallback is broken"; the fallback was fine and unreachable.
+**The failure they were introduced for (2026-08-19 session, §1 of the
+twelfth-session feedback doc).** `fallbackProvider` asked the fallback only for
+positions the primary returned `undefined` for. A primary that is **slow**
+rather than broken produces no such positions — so the fallback was not
+consulted at all, and a working source sat idle behind a stalled one. Measured
+that day: the four z13 tiles one terrain window needs took **21.7 s** from
+Mapterhorn and **1.04 s** from AWS, past the consumer's 15 s terrain gate, with
+`cf-cache-status: HIT` on the slow responses. The owner reported it as "the
+fallback is broken"; the fallback was fine and unreachable.
 
-**Why the fallback is bounded too, which the plan did not ask for.** Specifying
-the deadline as primary-only would leave the identical hang one provider to the
-right. AWS measured fast and has no documented rate limit — which is exactly
-what was true of the primary before it wasn't. A deadline whose purpose is that
-no single source can stall the composition has to cover every source in it. The
-values differ because the roles do: the primary's is a switch to something
-better, the fallback's is a last resort against a hang.
+**The race replaced that composition, and the deadlines' jobs changed with it.**
+Three numbers now, each bounding something different:
 
-**The budget, stated as arithmetic rather than as reassurance.**
-`fallbackProvider` is strictly serial — it awaits the primary, then the fallback
-— so the worst case is 3 + 8 = **11 s of the gate's 15 s**. That is a 27 %
-margin, not "well inside" (which is what this paragraph claimed before review),
-and the remaining 4 s has to cover the OPFS reads, four WebP decodes, base64 of
-~1 MB and the geoid pass, none of which these deadlines bound.
-`dem-provider.test.ts` asserts the sum against `TERRAIN_WAIT_TIMEOUT_MS`, so
-raising either value has to confront that margin rather than erode it silently.
+- **`FALLBACK_DEM_TIMEOUT_MS` (8 s)** — one AWS tile request. A last resort
+  against a hang on the source the user actually waits for.
+- **`PRIMARY_DEM_TIMEOUT_MS` (30 s)** — one Mapterhorn tile request. **Nobody
+  waits for this**, so it is a pure anti-hang guard on a request whose only job
+  is to arrive eventually as an upgrade. It was 3 s until the race landed;
+  leaving it there would have shipped a race that can never be won, since every
+  measured Mapterhorn tile exceeds 3 s.
+- **`PUBLISH_DEADLINE_MS` (12 s)** — the whole composition, and **the only one
+  that keeps the terrain gate from firing**.
 
-**What the primary's deadline costs on the connection it was measured from.**
-Every measured Mapterhorn tile exceeded 3 s, so on that link the primary always
-loses: ~3 s of dead time and ~0.5–0.75 MB of abandoned download per new window,
-repeated per window because a timed-out tile is never stored and never
-remembered as slow. That is accepted deliberately — a coarse answer in ~4 s
-beats an accurate one at 15 s — and the thing that removes the trade is the
-race (DEC-T2 / M3), not a larger constant. See `dem-provider.ts`.
+**Why the third exists, which the first version of the race did not have.** The
+per-source deadlines do not bound the composition. `racingProvider` waits for a
+usable answer from EITHER arm and gives up only when BOTH are spent — so a fast
+source that answers "no coverage" at 8 s leaves the batch waiting on the
+preferred arm until its 30 s. Against a 15 s gate that re-creates the reported
+bug exactly: the gate fires, the mesh is built flat, and there is no elevation.
+The milestone review caught it; four texts had asserted the opposite, including
+`lessons-learned.md`.
 
-## Known hazard the deadlines make more reachable
+Expiring the publish deadline publishes an absence and **keeps the upgrade**, so
+a merely-slow preferred source is not discarded, only deferred.
 
-**A partly-answered window is filled with the MEAN of the tiles that did
-answer, permanently.** `terrain-field.ts`'s `ensureAround` writes each post
-once (`if (posts.has(key)) continue`) and substitutes the mean of the known
-heights for any post that came back `undefined`, so a tile that fails while its
-neighbours succeed leaves thousands of posts holding a plausible, wrong,
-un-revisitable height.
+**The trap, if this is ever reimplemented:** a per-request deadline must surface
+as a `TimeoutError`, not an `AbortError`. `TerrariumProvider.load` rethrows
+aborts and degrades everything else, so an `AbortController`-based deadline
+would reject the whole batch while looking like a fix. See `terrarium.ts.md`.
 
-This is **pre-existing**, not introduced here: a 404 on both sources always did
-it. What the deadlines change is how reachable it is, and they narrow it in one
-direction while widening it in another — a primary timeout normally produces no
-gap at all, because the fallback fills exactly those positions, so this needs
-_both_ sources to fail for the same tile.
+## The partly-answered window, and why the race is NOT its fix
 
-Not fixed here because the honest fix is a design decision (all-or-nothing per
-window, or a revisitable lattice — the latter is M3's `replacePosts` work), and
-because M3 may not be built. Filed as a follow-up rather than left implicit:
-see the twelfth-session follow-up doc. **Do not** cite M3 as its mitigation
-without checking M3 shipped.
+**A window where some positions came back `undefined` is filled with the MEAN of
+the ones that answered.** That was permanent until 2026-08-19: mean-filled posts
+were written with the same `posts.set` as measured ones and then skipped by
+`ensureAround`'s write-once guard forever, so a tile that failed while its
+neighbours succeeded left thousands of posts holding a plausible, wrong height
+for the life of the page.
 
-**The trap, if this is ever reimplemented:** the deadline must surface as a
-`TimeoutError`, not an `AbortError`. `TerrariumProvider.load` rethrows aborts
-and degrades everything else, so an `AbortController`-based deadline would
-reject the whole batch and reinstate the unreachable-fallback bug while looking
-like its fix. See `terrarium.ts.md`.
+**It is fixed, but not by `replacePosts`**, and the distinction matters because
+the plan claimed otherwise until its cold review. Mean-fill requires **both**
+sources to fail for a tile — and when both fail there is no better answer to
+upgrade from, so no upgrade ever revisits those posts. `terrain-field.ts` now
+tracks invented posts explicitly and re-requests them on a later pass, which is
+the only shape that reaches them.
 
 ## Invariants & assumptions
 
@@ -121,14 +121,14 @@ like its fix. See `terrarium.ts.md`.
 
 ## Known gaps / follow-ups
 
-- **`TerrariumProvider` hardcodes the AWS attribution and `sourceId`** whatever
-  `urlTemplate` it is given, so the Mapterhorn instance mislabels itself and
-  the composed provider's own `attribution` field reads as the AWS credit
-  twice. The demo therefore displays the `DEM_ATTRIBUTION` constant and pins
-  the composed id via `fallbackProvider`'s `sourceId` option. Library
-  follow-up: accept `attribution?`/`sourceId?` in `TerrariumProviderOptions`,
-  then derive `DEM_ATTRIBUTION` from the composed provider instead of a
-  constant.
+- **`TerrariumProvider` still hardcodes the AWS attribution** whatever
+  `urlTemplate` it is given, so the composed provider's own `attribution` field
+  reads as the AWS credit twice and the demo displays the `DEM_ATTRIBUTION`
+  constant instead. **The `sourceId` half of this was fixed on 2026-08-19** —
+  `TerrariumProviderOptions` now accepts one, which the race needed so
+  `stats.servedBy` could tell the two instances apart. The attribution half
+  remains: accept `attribution?` too, then derive `DEM_ATTRIBUTION` from the
+  composed provider rather than from a constant.
 - **Per-sample source attribution is deliberately absent.** The
   `ElevationProvider` seam returns heights with no per-position provenance, so
   "which member answered THIS post" is unknowable here; what IS known is the
@@ -223,6 +223,9 @@ arithmetically undefined when both sources answer every position.
 
 The partly-answered window that got mean-filled permanently is fixed in
 `terrain-field.ts`: invented posts are tracked and re-requested on a later
-pass, and their count is reported. It is **not** fixed by `replacePosts` —
+pass, and their count is carried on `TerrainResult.meanFilledPosts` — reported
+across the worker boundary, **not yet shown to anyone**, which is a filed
+decision rather than an omission: the twelfth testing session asked for less
+diagnostic text, not more. It is **not** fixed by `replacePosts` —
 mean-fill requires both sources to fail, which is exactly when there is no
 better answer to upgrade to.

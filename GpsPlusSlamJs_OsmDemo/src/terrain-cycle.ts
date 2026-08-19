@@ -87,6 +87,8 @@ export interface TerrainState {
    * has no unsolicited worker-to-page channel to announce it on.
    */
   readonly upgradePending?: boolean | undefined;
+  /** Posts holding an invented height. Carried, not yet displayed. */
+  readonly meanFilledPosts?: number | undefined;
   /**
    * Where the window was sampled, in the scene's frame — even on failure.
    *
@@ -186,6 +188,14 @@ export function createTerrainCycle(
   });
 
   /**
+   * The load this cycle is currently working on, or last finished.
+   *
+   * Compared by IDENTITY, and it exists solely so an outstanding upgrade can
+   * tell that it has been overtaken. See `collectUpgrade`.
+   */
+  let currentLoad: TerrainLoad | undefined;
+
+  /**
    * Collecting the DEM race's slower, better answer — on its OWN cycle.
    *
    * SEPARATE FROM THE LOAD CYCLE ON PURPOSE. This call can wait tens of
@@ -194,19 +204,34 @@ export function createTerrainCycle(
    * position's terrain and making every readout keyed on `busy` claim the view
    * is still loading when it has been complete for half a minute.
    *
-   * `latestOnly` also gives it the right cancellation for free: walking to a
-   * new position supersedes the upgrade wait for the old one, which is exactly
-   * what should happen to an improvement for a window nobody is looking at.
+   * **THAT SEPARATION IS ALSO WHY SUPERSESSION HAS TO BE CHECKED BY HAND.** An
+   * earlier version of this comment claimed `latestOnly` gave the right
+   * cancellation for free — "walking to a new position supersedes the upgrade
+   * wait for the old one". It does not, and the milestone review caught it:
+   * this is a DIFFERENT `latestOnly` with its own controller, so a new LOAD
+   * cannot abort it. It is superseded only by another `collectUpgrade`, which
+   * only happens if the new load ALSO reports an upgrade pending — and on
+   * cached tiles the preferred source wins outright and it does not. The
+   * outstanding call for the old window then survives and calls `apply` with
+   * the old window's field, moving the ground back under a view that had
+   * already moved on.
+   *
+   * Hence the identity check below. The worker carries the same guard on its
+   * own side, because either end alone leaves the other's state stale.
    */
   const collectUpgrade = latestOnly(async (load: TerrainLoad, signal) => {
     const upgraded = await worker.call("terrainUpgrade", payloadFor(load), {
       signal,
     });
     if (signal.aborted) return;
+    if (currentLoad !== load) return;
     apply(upgraded);
   });
 
   return latestOnly(async (load: TerrainLoad, signal) => {
+    // Recorded BEFORE the await, so an upgrade outstanding from a previous
+    // load is already stale by the time this one's reply lands.
+    currentLoad = load;
     const state = await worker.call("terrain", payloadFor(load), { signal });
     // NOTHING IS APPLIED FOR A SUPERSEDED LOAD — the same guard `refresh-cycle.ts`
     // carries, and it matters more here. Usually the abort rejects the call before

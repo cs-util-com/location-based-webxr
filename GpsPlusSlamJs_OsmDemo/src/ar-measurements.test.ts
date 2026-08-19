@@ -323,10 +323,14 @@ describe("describeArMeasurements — the height decomposition", () => {
       autoOffsetM: 1.4,
       autoConfidence: 0.82,
       demSourceId: "mapterhorn+terrarium",
-      demStats: { servedBy: "mapterhorn", upgrades: 1 },
+      demStats: { servedBy: "mapterhorn-lidar", upgrades: 1 },
     });
 
-    expect(lines).toContain("auto +1.4 m (conf 0.82) · mapterhorn");
+    // NOT A SUBSTRING OF THE COMPOSED ID. `demServingLabel` falls back to
+    // `sourceId` — "mapterhorn+terrarium" — when it ignores the stats, and
+    // "· mapterhorn" is a substring of that, so the previous assertion passed
+    // for a function reduced to `return sourceId`.
+    expect(lines).toContain("auto +1.4 m (conf 0.82) · mapterhorn-lidar");
   });
 
   it("keeps the auto line suffix-free while no DEM source is reported", () => {
@@ -381,12 +385,14 @@ describe("describeArMeasurements — the height decomposition", () => {
         terrainHeightM: 104,
         terrainHasData: true,
         demSourceId: "mapterhorn+terrarium",
-        demStats: { servedBy: "mapterhorn", upgrades: 1 },
+        demStats: { servedBy: "mapterhorn-lidar", upgrades: 1 },
       },
       { expanded: true },
     );
 
-    expect(expanded).toContain("terrain 104.0 m · mapterhorn");
+    // A value that is NOT a prefix of the composed id, so the stats-ignored
+    // fallback cannot satisfy this by accident.
+    expect(expanded).toContain("terrain 104.0 m · mapterhorn-lidar");
   });
 
   it("names the fast source outright while the upgrade has not landed", () => {

@@ -570,12 +570,24 @@ test.describe("the header", () => {
       await expect(header).toHaveAttribute("data-collapsed", "false");
     });
 
-    await test.step("expands itself when an error needs to be read", async () => {
-      // DEC-R2-15. The status line lives inside the header, and failures are
-      // reported into it — so a collapsed header would swallow the message and the
-      // demo would look like it did nothing. Driven through a REAL failure (a
-      // refused geolocation permission) rather than by dispatching by hand, because
-      // the wiring from reporter to reveal is the part that can be missing.
+    await test.step("STAYS collapsed when an error occurs, and toasts it instead", async () => {
+      // INVERTED 2026-08-19 (DEC-U10). This step used to assert the opposite —
+      // that an error EXPANDS the header — which was DEC-R2-15, and which
+      // existed only because the status line inside the header was the sole
+      // channel a failure could reach. A message written into a collapsed
+      // header is a message nobody sees.
+      //
+      // The owner reported that self-expanding behaviour as a bug in the
+      // twelfth testing session; it was the demo telling the truth about
+      // failures they were independently investigating. Errors now go to a
+      // toast that is visible whether or not the header is collapsed, and
+      // `writeStatus` no longer renders the error phase at all — both halves
+      // together, because retiring only the expand would leave the message in a
+      // collapsed header AND in a toast, which is the two-channel state
+      // DEC-R2-15 rejected a toast in order to avoid.
+      //
+      // Still driven through a REAL failure rather than a hand-dispatched one:
+      // the wiring from reporter to surface is the part that can be missing.
       await context.clearPermissions();
       await expandHeader();
 
@@ -587,14 +599,15 @@ test.describe("the header", () => {
 
       await page.locator(".locate-button").click();
 
+      // The message reaches a surface the user can actually see...
+      await expect(page.locator("#toast-root .toast")).toContainText(
+        /denied|unavailable|timed out/,
+        { timeout: 15000 },
+      );
+      // ...and the panel did not take over the screen to deliver it.
       await expect(page.locator("#header-bar")).toHaveAttribute(
         "data-collapsed",
-        "false",
-      );
-      // And the message is actually legible, not merely present in the DOM.
-      await expect(page.locator("#status")).toBeVisible();
-      await expect(page.locator("#status")).toContainText(
-        /denied|unavailable|timed out/,
+        "true",
       );
     });
 
@@ -970,8 +983,14 @@ test.describe("my location", () => {
           },
         )
         .toMatch(/denied|unavailable|timeout|idle/);
-      await expect(page.locator("#status")).toContainText(
+      // THE TOAST, NOT THE STATUS LINE (DEC-U10, 2026-08-19). Errors stopped
+      // being written into `#status` when the header's self-expanding rule was
+      // retired — leaving this assertion pointed at the old channel would have
+      // made it fail for a working app, and pointing it at nothing would have
+      // dropped the half of the async-feedback rule this step exists for.
+      await expect(page.locator("#toast-root .toast")).toContainText(
         /denied|unavailable|timed out/,
+        { timeout: 15000 },
       );
     });
   });

@@ -262,3 +262,107 @@ describe("stats say which source the CURRENT field came from", () => {
     expect(provider.stats.upgrades).toBe(1);
   });
 });
+
+describe("the publish deadline — the bound the composition needs (F2)", () => {
+  /**
+   * WHY THIS EXISTS. The per-source deadlines do not bound the composition.
+   * `firstUsable` waits for a usable answer from EITHER arm and gives up only
+   * when BOTH are spent, so a fast source that answers "no coverage" at its own
+   * deadline leaves the caller waiting on the preferred arm until ITS deadline —
+   * which the race raised from 3 s to 30 s. The consumer's terrain gate is 15 s.
+   *
+   * That combination re-creates the exact bug this whole round removes: the gate
+   * fires, the mesh is built flat, and the user sees no elevation. The first
+   * version of this file shipped without the bound and asserted the opposite in
+   * four places, including the curated lessons-learned doc.
+   */
+
+  it("publishes an absence rather than waiting past the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const preferred = deferredProvider("mapterhorn");
+      const fast = deferredProvider("aws");
+      const provider = racingProvider(preferred, fast, {
+        publishTimeoutMs: 5_000,
+      });
+
+      const answer = provider.elevationAt(POSITIONS);
+      // The fast source has no coverage here; the preferred one is still out.
+      fast.resolve([undefined, undefined]);
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(await answer).toEqual([undefined, undefined]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still delivers the preferred answer as an UPGRADE after the deadline", async () => {
+    // The deadline must bound the wait, not discard the work. A source that was
+    // merely slow still has the better heights, and throwing them away would
+    // reintroduce the trade the race exists to remove.
+    vi.useFakeTimers();
+    try {
+      const preferred = deferredProvider("mapterhorn");
+      const fast = deferredProvider("aws");
+      const onUpgrade = vi.fn();
+      const provider = racingProvider(preferred, fast, {
+        publishTimeoutMs: 5_000,
+        onUpgrade,
+      });
+
+      const answer = provider.elevationAt(POSITIONS);
+      fast.resolve([undefined, undefined]);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await answer;
+
+      preferred.resolve([200, 201]);
+      await provider.awaitUpgrades();
+
+      expect(onUpgrade).toHaveBeenCalledWith(POSITIONS, [200, 201]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not wait for the deadline when an answer arrives first", async () => {
+    // The deadline is a ceiling, not a delay. If this ever became a floor, every
+    // load would pay it.
+    vi.useFakeTimers();
+    try {
+      const preferred = deferredProvider("mapterhorn");
+      const fast = deferredProvider("aws");
+      const provider = racingProvider(preferred, fast, {
+        publishTimeoutMs: 5_000,
+      });
+
+      const answer = provider.elevationAt(POSITIONS);
+      fast.resolve([100, 101]);
+
+      expect(await answer).toEqual([100, 101]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not leave a superseded upgrade to write after an abort", async () => {
+    // The publish path re-raises an abort, but the upgrade continuation
+    // outlives it by design — it is waiting for a source still in flight — so
+    // it needs its own check rather than inheriting one.
+    const controller = new AbortController();
+    const preferred = deferredProvider("mapterhorn");
+    const fast = deferredProvider("aws");
+    const onUpgrade = vi.fn();
+    const provider = racingProvider(preferred, fast, { onUpgrade });
+
+    const answer = provider.elevationAt(POSITIONS, controller.signal);
+    fast.resolve([100, 101]);
+    await answer;
+
+    controller.abort();
+    preferred.resolve([200, 201]);
+    await provider.awaitUpgrades();
+
+    expect(onUpgrade).not.toHaveBeenCalled();
+  });
+});

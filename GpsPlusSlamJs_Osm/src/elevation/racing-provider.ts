@@ -56,6 +56,29 @@ export type RacingElevationProvider = ElevationProvider & {
 export interface RacingProviderOptions {
   readonly sourceId?: string;
   /**
+   * Hard bound on how long `elevationAt` may take to PUBLISH, ms.
+   *
+   * WHY THE COMPOSITION NEEDS ITS OWN BOUND, and why per-source deadlines are
+   * not enough. `firstUsable` waits for a usable answer from EITHER arm and
+   * gives up only when BOTH are spent — so a fast source that answers "no
+   * coverage" at its 8 s deadline does not end the batch, it leaves the caller
+   * waiting on the preferred arm for up to ITS deadline, which the race raised
+   * to 30 s. The consumer's terrain gate is 15 s. That combination re-creates
+   * the exact defect this work exists to remove: the gate fires, the mesh is
+   * built flat, and the user sees no elevation.
+   *
+   * The first version of this file shipped without it and asserted the
+   * opposite in four places, including `lessons-learned.md`. Caught by the
+   * milestone review.
+   *
+   * On expiry the batch publishes whatever the fast arm managed (or nothing)
+   * and **still registers the upgrade**, so the preferred source's late answer
+   * is not thrown away — it simply arrives as an upgrade rather than as the
+   * first answer. Omit for an unbounded wait, which is what tests that drive
+   * the arms by hand want.
+   */
+  readonly publishTimeoutMs?: number;
+  /**
    * Called when the preferred source lands after the fast one already
    * published, with the same positions and the better heights.
    *
@@ -114,6 +137,30 @@ async function firstUsable(
 }
 
 /**
+ * Resolves to `undefined` if `work` has not settled within `ms`.
+ *
+ * A plain timer rather than an `AbortSignal`: the losing arm must keep running
+ * so its answer can still arrive as an upgrade. Cancelling it would turn a slow
+ * source into no source, which is the trade the race exists to remove.
+ */
+async function withPublishDeadline(
+  work: Promise<Answered | undefined>,
+  ms: number,
+): Promise<Answered | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    // Cleared on every path, or a node process holds the event loop open for
+    // the full deadline after the work is long done.
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
  * Races `preferred` against `fast`.
  *
  * WHY A RACE AND NOT A DEADLINE. A deadline on the preferred source (round
@@ -157,7 +204,12 @@ export function racingProvider(
 
   const track = (work: Promise<void>): void => {
     pending.add(work);
-    void work.finally(() => pending.delete(work));
+    // `.catch` BEFORE `.finally`, and the order matters. `finally` returns a
+    // NEW promise that rejects with the original reason, and `awaitUpgrades`
+    // attaches `allSettled` to `work` rather than to that derived promise — so
+    // a throwing sink produced an unhandled rejection inside a worker, which is
+    // to say nowhere anyone would see it.
+    void work.catch(() => undefined).finally(() => pending.delete(work));
   };
 
   return {
@@ -189,13 +241,45 @@ export function racingProvider(
         .elevationAt(positions, signal)
         .catch(() => undefined);
 
-      const won = await firstUsable([
+      const arms = [
         preferredAnswer.then((heights) => ({
           id: preferred.sourceId,
           heights,
         })),
         fastAnswer.then((heights) => ({ id: fast.sourceId, heights })),
-      ]);
+      ];
+
+      /**
+       * Registers the preferred source's late answer as an upgrade.
+       *
+       * Called from BOTH exits that publish something other than the preferred
+       * source's own heights — the fast arm winning, and the publish deadline
+       * expiring. The second was missing in the first version, which meant a
+       * batch that timed out threw the better answer away entirely.
+       */
+      const trackUpgrade = (): void => {
+        const sink = options.onUpgrade;
+        if (sink === undefined) return;
+        track(
+          preferredAnswer.then((better) => {
+            // "It answered" is not "it has data". Replacing measured heights
+            // with a batch of `undefined` turns a working window into a hole.
+            if (!usable(better)) return;
+            // AN ABORTED LOAD MUST NOT WRITE EITHER. The publish path re-raises
+            // an abort, but this continuation outlives it by design — it is
+            // waiting for a source that is still in flight — so it needs its
+            // own check rather than inheriting one.
+            if (signal?.aborted === true) return;
+            stats.upgrades += 1;
+            stats.servedBy = preferred.sourceId;
+            sink(positions, better);
+          }),
+        );
+      };
+
+      const won = await (options.publishTimeoutMs === undefined
+        ? firstUsable(arms)
+        : withPublishDeadline(firstUsable(arms), options.publishTimeoutMs));
 
       // Checked before anything is published: an aborted load must not look
       // like a DEM hole, which is the distinction `consensusProvider` makes the
@@ -203,7 +287,11 @@ export function racingProvider(
       signal?.throwIfAborted();
 
       if (won === undefined) {
+        // Either both arms are spent with nothing usable, or the publish
+        // deadline expired first. Both publish an absence — and both still want
+        // the upgrade, because the preferred arm may yet answer.
         stats.emptyBatches += 1;
+        trackUpgrade();
         return positions.map(() => undefined);
       }
 
@@ -216,19 +304,7 @@ export function racingProvider(
       }
 
       stats.fastWins += 1;
-      const sink = options.onUpgrade;
-      if (sink !== undefined) {
-        track(
-          preferredAnswer.then((better) => {
-            // "It answered" is not "it has data". Replacing measured heights
-            // with a batch of `undefined` turns a working window into a hole.
-            if (!usable(better)) return;
-            stats.upgrades += 1;
-            stats.servedBy = preferred.sourceId;
-            sink(positions, better);
-          }),
-        );
-      }
+      trackUpgrade();
       return won.heights;
     },
   };

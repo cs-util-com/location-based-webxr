@@ -127,6 +127,22 @@ export class OverpassSlotBudget {
   }
 
   /**
+   * Whether this operator is under a penalty **right now**, ignoring how many
+   * slots happen to be in use.
+   *
+   * SEPARATE FROM {@link availableFor}, and the distinction is a real defect
+   * this replaced. `availableFor` also returns 0 when the shared allocation is
+   * spent — which is the ordinary state during an area load, since the default
+   * is two slots and two tiles in flight. The retry loop used it to decide
+   * which endpoints to skip, so the skip silently did nothing exactly when it
+   * mattered: under load. This asks the question the retry loop actually has,
+   * which is about the server's quota, not about ours.
+   */
+  isBlocked(operator: string): boolean {
+    return this.now() < this.blockedUntilMs || this.operatorBlocked(operator);
+  }
+
+  /**
    * Takes a slot if one is free.
    *
    * Answers immediately and never waits: whether to give up and serve cache or
@@ -254,7 +270,15 @@ export class OverpassSlotBudget {
       status.slotsAvailable > 0 || status.slotsAvailableAtMs.length > 0;
     if (!availabilityIsKnown) return;
 
-    if (status.slotsAvailable < this.available) {
+    // `slots - inUse`, NOT `this.available`. Since penalties became
+    // per-operator, `available` is no longer forced to 0 by a penalty, so this
+    // comparison became reachable while one operator was blocked — and taking
+    // the pessimistic branch then sets the SHARED `inUse` to the full
+    // allocation, which nothing releases because no `tryAcquire` can succeed at
+    // `inUse === slots`. That is a permanent whole-pool lock reached through
+    // the one seam the per-operator change existed to de-globalise. Comparing
+    // against the raw count restores the pre-2026-08-19 meaning.
+    if (status.slotsAvailable < Math.max(0, this.slots - this.inUse)) {
       // Trust the pessimistic view: assume everything the server has not
       // reported free is spent.
       this.inUse = Math.max(0, this.slots - status.slotsAvailable);

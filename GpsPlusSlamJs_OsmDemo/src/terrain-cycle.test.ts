@@ -513,6 +513,62 @@ describe("collecting the DEM race's better answer (N2)", () => {
     expect(kinds).toEqual(["terrain"]);
   });
 
+  it("does NOT apply an upgrade for a window the user has already left", async () => {
+    // THE DEFECT THE MILESTONE REVIEW FOUND, and it is the nastiest shape this
+    // module can produce: the ground moving back under a view that has already
+    // moved on.
+    //
+    // The upgrade runs on its own `latestOnly`, which a new LOAD cannot abort —
+    // different wrapper, different controller. It is superseded only by another
+    // `collectUpgrade`, and that only happens if the NEW load also reports an
+    // upgrade pending. On cached tiles the preferred source wins outright and it
+    // does not, so the outstanding call for the old window survives and applies
+    // the old window's field on top of the new one. This test drives exactly
+    // that sequence, which is why load B reports `upgradePending: false`.
+    const applied: string[] = [];
+    let releaseUpgrade!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      releaseUpgrade = resolve;
+    });
+    const worker = {
+      call: async (
+        kind: string,
+        payload: { centre: { lat: number; lng: number } },
+      ) => {
+        if (kind === "terrainUpgrade") await pending;
+        return {
+          field: undefined,
+          note: `${kind}@${payload.centre.lat}`,
+          demSourceId: "test-dem",
+          centreEnu: { x: 0, y: 0 },
+          upgradePending: kind === "terrain" && payload.centre.lat === 1,
+        };
+      },
+    };
+
+    const load = createTerrainCycle({
+      worker,
+      extentM: 100,
+      spacingM: 10,
+      apply: (state) => applied.push(state.note),
+    });
+
+    const a = { centre: { lat: 1, lng: 1 }, frameOrigin: { lat: 1, lng: 1 } };
+    const b = { centre: { lat: 2, lng: 2 }, frameOrigin: { lat: 2, lng: 2 } };
+
+    await load(a);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    await load(b);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+
+    // A's upgrade only now comes back, long after B is on screen.
+    releaseUpgrade();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(applied).toEqual(["terrain@1", "terrain@2"]);
+    expect(applied).not.toContain("terrainUpgrade@1");
+  });
+
   it("does not hold the LOAD cycle busy while the upgrade is outstanding", async () => {
     // WHY A SEPARATE CYCLE. The upgrade call can wait tens of seconds for the
     // preferred DEM. Run inside the load cycle it would keep that cycle

@@ -632,7 +632,9 @@ describe("keyCounts — the one-key probe dimension (N1, 2026-08-19)", () => {
     });
 
     expect(new Set(cells.map((cell) => cell.id)).size).toBe(cells.length);
-    expect(cells.every((cell) => cell.id.includes("k"))).toBe(true);
+    // ANCHORED. `includes("k")` matched the `k` in "vk-maps" and would have
+    // passed for ids carrying no key dimension at all.
+    expect(cells.every((cell) => /:k\d+:/.test(cell.id))).toBe(true);
   });
 
   it("omits the key count entirely when only one arm is asked for", () => {

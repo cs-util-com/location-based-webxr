@@ -889,13 +889,20 @@ export class OverpassSource implements OsmDataSource {
     // Spending an attempt on a quota that has already refused is the same
     // waste `shouldWaitBeforeRetry` removes one layer down, and here it is
     // cheaper to avoid: the penalty is known before the request is built.
+    // `isBlocked`, NOT `availableFor`. The latter also reports zero when the
+    // shared allocation is spent, which is the ordinary state during an area
+    // load — two slots, two tiles in flight — and `planAttemptOrder` runs
+    // AFTER this tile's own `tryAcquire` took one. Filtering on it therefore
+    // emptied `live` under load and fell through to the unfiltered order, so
+    // the skip did nothing precisely when it was needed. Found by the
+    // milestone review.
     const live = order.filter(
-      (endpoint) => this.budget.availableFor(operatorForUrl(endpoint)) > 0,
+      (endpoint) => !this.budget.isBlocked(operatorForUrl(endpoint)),
     );
     // NOT an empty order. `fetchTileUncached` only admits a tile when some
-    // operator is free, so this should be unreachable — but a shared budget
-    // can be penalised by another source between the acquire and the draw, and
-    // an empty order would turn that race into a tile that silently makes zero
+    // operator is free, so this is reachable only through a genuine race — a
+    // shared budget penalised by another source between the acquire and the
+    // draw. An empty order would turn that into a tile that silently makes zero
     // requests and reports "no data" rather than a rate limit.
     return live.length > 0 ? live : order;
   }

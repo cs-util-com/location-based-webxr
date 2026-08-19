@@ -136,6 +136,13 @@ describe("racingProvider, over arbitrary answers and arrival orders", () => {
   });
 
   it("only ever upgrades TO the preferred source, and only from usable data", async () => {
+    // THE GUARD ON THE GUARD, added after the milestone review predicted this
+    // exact hole and found it. `delivered` is empty on every run where the
+    // preferred arm won, failed, or answered with holes, and nothing below
+    // required it to be non-empty on ANY run — so deleting the whole upgrade
+    // feature from the provider left this property green. It is the only new
+    // loop in the milestone that lacked the guard the plan mandates.
+    let everDelivered = 0;
     // The direction matters more than the count: an upgrade that fires with the
     // fast source's heights, or with a batch of holes, silently makes the field
     // worse while every "did it upgrade?" assertion stays green.
@@ -156,6 +163,7 @@ describe("racingProvider, over arbitrary answers and arrival orders", () => {
           await racer.elevationAt(POSITIONS);
           await racer.awaitUpgrades();
 
+          everDelivered += delivered.length;
           for (const heights of delivered) {
             expect(preferredResult).not.toBe("fail");
             expect(JSON.stringify(heights)).toBe(
@@ -166,5 +174,11 @@ describe("racingProvider, over arbitrary answers and arrival orders", () => {
         },
       ),
     );
+
+    expect(
+      everDelivered,
+      "no run upgraded, so this property asserted nothing about upgrades — " +
+        "check the generator still produces slow-fast-source cases",
+    ).toBeGreaterThan(0);
   });
 });

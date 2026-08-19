@@ -62,7 +62,14 @@ export const DEM_SOURCE_ID = "mapterhorn+terrarium";
  */
 export const PREFERRED_DEM_SOURCE_ID = "mapterhorn";
 /** @see PREFERRED_DEM_SOURCE_ID */
-export const FAST_DEM_SOURCE_ID = "terrarium";
+/**
+ * @see PREFERRED_DEM_SOURCE_ID
+ *
+ * NOT "terrarium": both sources serve Terrarium-ENCODED tiles, so that name
+ * describes the format and says nothing about which service answered — on a
+ * readout whose entire purpose is naming the service.
+ */
+export const FAST_DEM_SOURCE_ID = "aws-open-data";
 
 /**
  * The credit the map view must display while terrain is on screen.
@@ -77,42 +84,31 @@ export const FAST_DEM_SOURCE_ID = "terrarium";
 export const DEM_ATTRIBUTION = `${MAPTERHORN_ATTRIBUTION} · ${TERRARIUM_ATTRIBUTION}`;
 
 /**
- * How long Mapterhorn gets before a tile degrades to "no data", ms.
+ * Bound on ONE Mapterhorn tile request, ms — an anti-hang guard, nothing more.
  *
- * MEASURED, NOT CHOSEN BY FEEL (2026-08-19 session, §1 of the feedback doc).
- * On one home connection the four z13 tiles a terrain window needs took
- * **21.7 s** from Mapterhorn and **1.04 s** from AWS, and single tiles were
- * 4.5–7.5 s against 0.8–1.2 s. Crucially the slow responses carried
- * `cf-cache-status: HIT`, so this is delivery throughput rather than a cold
- * origin that would warm up.
+ * RAISED FROM 3 s TO 30 s WHEN THE RACE LANDED, because the deadline's JOB
+ * changed rather than because the old number was wrong.
  *
- * 3 s sits above AWS's whole four-tile budget with margin and far below the
- * consumer's 15 s terrain gate, so the fallback always has room to serve and
- * the gate never fires. That is what this number is chosen for.
+ * Under `fallbackProvider` this was the only thing that made the fallback
+ * reachable at all: the fallback is consulted only for positions the primary
+ * returned `undefined` for, so a merely SLOW primary left no gap and the
+ * composition waited for it however long it took. 3 s cut that short and
+ * fixed the reported 15 s stall.
  *
- * **BE HONEST ABOUT WHAT IT COSTS ON THE MEASURED CONNECTION, because an
- * earlier version of this comment was not.** It claimed "a Mapterhorn tile that
- * is merely having a bad moment still wins" — but every single measured
- * Mapterhorn tile above is over 3 s. On that link the primary does not
- * occasionally lose, it always loses: the session pays 3 s of dead time and
- * ~0.5–0.75 MB of abandoned download per new window, and then renders AWS's
- * coarser heights. Nothing negatively caches the timeout either — a tile that
- * times out is never stored and never remembered as slow — so that cost repeats
- * for every new window until `DEC-T8`'s adaptive behaviour exists.
+ * It also made the primary unwinnable. Measured 2026-08-19 from one machine,
+ * every Mapterhorn tile took 3.0-21.7 s — so a 3 s cut-off meant the
+ * LiDAR-derived heights were never served, and the stall was traded for a
+ * permanent loss of the better data.
  *
- * **Why 3 s is still right, given that.** The constant has to behave on links
- * this repo has never measured, not only on the one it was derived from. Where
- * Mapterhorn is healthy it wins and the LiDAR heights are kept; where it is as
- * slow as measured, a coarse answer in ~4 s beats an accurate one at 15 s or
- * never — which is precisely the complaint that started this work. Raising it
- * to let the measured link win would buy accuracy by reinstating the wait.
+ * Under the race nothing waits for this. AWS publishes in ~1 s and Mapterhorn
+ * is applied whenever it arrives, so the only thing left to prevent is a
+ * request that never settles holding an upgrade slot open for the life of the
+ * page. 30 s clears the measured worst case with room.
  *
- * **The real fix for the trade is the race (DEC-T2 / M3), not a better
- * constant**, because the race stops making it a choice: AWS answers
- * immediately and Mapterhorn upgrades the field when it lands. Until then the
- * asymmetry argument for leaning short holds, with one correction to its old
- * wording — see `dem-provider.ts.md` on the partial-window hazard, which is why
- * "too short only means coarser heights" is not unconditionally true.
+ * **It is NOT what keeps the terrain gate from firing** — see
+ * {@link PUBLISH_DEADLINE_MS}, which is. An earlier version of this file said
+ * the fast source's deadline alone did that, which was false: a fast source
+ * answering "no coverage" leaves the batch waiting on THIS deadline.
  */
 export const PRIMARY_DEM_TIMEOUT_MS = 30_000;
 
@@ -131,6 +127,29 @@ export const PRIMARY_DEM_TIMEOUT_MS = 30_000;
  * switch to something better. It is still comfortably inside the 15 s gate.
  */
 export const FALLBACK_DEM_TIMEOUT_MS = 8_000;
+
+/**
+ * Hard bound on how long the composed provider may take to PUBLISH, ms.
+ *
+ * THE ONE THAT KEEPS THE TERRAIN GATE FROM FIRING, and it did not exist in
+ * the first version of the race. The per-source deadlines do not bound the
+ * composition: `racingProvider` waits for a usable answer from EITHER arm and
+ * gives up only when BOTH are spent, so a fast source that answers "no
+ * coverage" at 8 s leaves the batch waiting on the preferred arm until ITS
+ * 30 s deadline. Against a 15 s gate that re-creates the reported bug — the
+ * gate fires, the mesh is built flat, and there is no elevation.
+ *
+ * 12 s: above the fallback's own 8 s so a slow-but-answering AWS is not cut
+ * off, and below `TERRAIN_WAIT_TIMEOUT_MS` with enough margin for the OPFS
+ * reads, four WebP decodes and the geoid pass that all sit outside these
+ * budgets. Asserted against the gate's value in `dem-provider.test.ts`, so
+ * raising either has to confront the other.
+ *
+ * Expiring publishes an absence and **keeps the upgrade**: the preferred
+ * source's late answer arrives as an upgrade instead of as the first answer,
+ * rather than being discarded.
+ */
+export const PUBLISH_DEADLINE_MS = 12_000;
 
 /**
  * RAISED FROM 3 s TO 30 s WHEN THE RACE LANDED, and the reason is that the
@@ -168,6 +187,8 @@ export interface DemProviderOptions {
   readonly primaryTimeoutMs?: number;
   /** Overrides {@link FALLBACK_DEM_TIMEOUT_MS}. Tests use a few ms. */
   readonly fallbackTimeoutMs?: number;
+  /** Overrides {@link PUBLISH_DEADLINE_MS}. Tests use a few ms. */
+  readonly publishTimeoutMs?: number;
   /**
    * Called when Mapterhorn's heights land after AWS's were already published.
    *
@@ -222,6 +243,7 @@ export function createDemProvider(
     }),
     {
       sourceId: DEM_SOURCE_ID,
+      publishTimeoutMs: options.publishTimeoutMs ?? PUBLISH_DEADLINE_MS,
       ...(options.onUpgrade === undefined
         ? {}
         : { onUpgrade: options.onUpgrade }),

@@ -9,6 +9,11 @@ whether a request may be dispatched **right now**.
 
 `new OverpassSlotBudget({ slots?, now?, maxPenaltyMs? })`
 
+- **`available` and `msUntilAvailable()` with no arguments no longer see a
+  penalty**, because every production caller now penalises an OPERATOR and
+  the unqualified block is only set by an unqualified `penalise`. A consumer
+  reading them for a rate-limit UI must pass the operators it cares about, or
+  it will read a budget that never looks penalised.
 - `available: number` — dispatchable slots; `0` while penalised regardless of
   count; `Infinity` when unlimited.
 - `capacity: number`, `unlimited: boolean`

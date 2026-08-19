@@ -256,6 +256,19 @@ export interface TerrainResult {
    */
   readonly upgradePending?: boolean;
   /**
+   * Posts in this field holding an INVENTED height — the mean of whatever
+   * answered in their batch — rather than a measured one.
+   *
+   * REPORTED BUT NOT YET SHOWN ANYWHERE, and that is deliberate rather than an
+   * oversight. Nothing distinguished an invented post from a measured one in
+   * the data or in any readout, which is how a permanent wrong height could sit
+   * unnoticed; carrying the count across the boundary is what makes it
+   * observable at all. Putting it on screen is a separate decision, and the
+   * twelfth testing session asked for LESS diagnostic text rather than more —
+   * so the surface is filed rather than assumed.
+   */
+  readonly meanFilledPosts?: number;
+  /**
    * Whether this field arrived too late for the mesh already on screen (F1d).
    *
    * **A WORKER DECISION CARRIED ON THE REPLY, not a fact the page could

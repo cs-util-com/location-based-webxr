@@ -1,25 +1,168 @@
 /**
- * `OverpassSlotBudget`'s per-operator accounting, over arbitrary penalty
- * sequences.
+ * Slot-budget safety properties.
  *
- * WHY A PROPERTY SPEC AND NOT MORE EXAMPLES. The defect this accounting fixes
- * (F2c) was not a wrong number — it was one operator's refusal leaking into
- * another's account. That is a universally quantified statement about every
- * possible interleaving of penalties, and the example tests next door pin three
- * hand-picked sequences. A leak that needs four penalties in a particular order
- * to appear is exactly what they would miss, and it is exactly the shape a
- * later "simplification" of the map bookkeeping would introduce.
- *
- * The failure mode being guarded is quiet and expensive: a client that refuses
- * to dispatch to a server which never rate-limited it shows the user a blank
- * screen for up to two minutes, and nothing in the UI distinguishes that from a
- * slow network.
+ * TWO GROUPS, AND THE SECOND WAS ONCE WRITTEN OVER THE FIRST. The original four
+ * properties below guard the ALLOCATION — never exceeding it, never reporting a
+ * nonsensical count, always recovering, and never letting a sync make the
+ * client less cautious. The per-operator group beneath them, added 2026-08-19
+ * with the F2c fix, guards ATTRIBUTION. During that change this file was
+ * rewritten rather than extended and all four allocation properties were lost
+ * for one commit — including "never lets more requests be in flight than the
+ * allocation permits", whose own comment calls it the property whose violation
+ * is a blocked IP. They are restored here, and the two groups are kept in one
+ * file because they constrain the same object and a split invites the same
+ * accident.
  */
 
+import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
-
 import { OverpassSlotBudget } from "./slot-budget.js";
+import { parseOverpassStatus } from "./overpass-status.js";
+
+/** One operation against the budget. */
+const operation = fc.oneof(
+  fc.constant({ kind: "acquire" as const }),
+  fc.constant({ kind: "release" as const }),
+  fc.record({
+    kind: fc.constant("penalise" as const),
+    ms: fc.integer({ min: -10_000, max: 300_000 }),
+  }),
+  fc.record({
+    kind: fc.constant("advance" as const),
+    ms: fc.integer({ min: 0, max: 200_000 }),
+  }),
+);
+
+describe("slot budget safety properties", () => {
+  it("NEVER lets more requests be in flight than the allocation permits", () => {
+    // The property whose violation is a blocked IP. Held across arbitrary
+    // interleavings including over-releases, negative penalties and clock jumps.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 8 }),
+        fc.array(operation, { maxLength: 200 }),
+        (slots, ops) => {
+          let now = 1_000_000;
+          const budget = new OverpassSlotBudget({ slots, now: () => now });
+
+          let inFlight = 0;
+          let peak = 0;
+
+          for (const op of ops) {
+            switch (op.kind) {
+              case "acquire":
+                if (budget.tryAcquire()) {
+                  inFlight++;
+                  peak = Math.max(peak, inFlight);
+                }
+                break;
+              case "release":
+                if (inFlight > 0) {
+                  inFlight--;
+                  budget.release();
+                }
+                break;
+              case "penalise":
+                budget.penalise(op.ms);
+                break;
+              case "advance":
+                now += op.ms;
+                break;
+            }
+          }
+
+          expect(peak).toBeLessThanOrEqual(slots);
+        },
+      ),
+    );
+  });
+
+  it("never reports negative or NaN availability", () => {
+    // A NaN here would make `available > 0` false forever and look exactly like
+    // a permanently rate-limited client — a silent, total outage.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 8 }),
+        fc.array(operation, { maxLength: 100 }),
+        (slots, ops) => {
+          let now = 1_000_000;
+          const budget = new OverpassSlotBudget({ slots, now: () => now });
+
+          for (const op of ops) {
+            if (op.kind === "acquire") budget.tryAcquire();
+            else if (op.kind === "release") budget.release();
+            else if (op.kind === "penalise") budget.penalise(op.ms);
+            else now += op.ms;
+
+            expect(Number.isNaN(budget.available)).toBe(false);
+            expect(budget.available).toBeGreaterThanOrEqual(0);
+            expect(budget.msUntilAvailable()).toBeGreaterThanOrEqual(0);
+          }
+        },
+      ),
+    );
+  });
+
+  it("always recovers once the clock passes every penalty", () => {
+    // Liveness, not just safety: a budget that could get permanently stuck
+    // would be indistinguishable from the app being broken. The max-penalty
+    // clamp is what makes this bounded regardless of what the server claims.
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: -10_000, max: 10_000_000 }), {
+          maxLength: 20,
+        }),
+        (penalties) => {
+          let now = 1_000_000;
+          const maxPenaltyMs = 120_000;
+          const budget = new OverpassSlotBudget({
+            slots: 2,
+            now: () => now,
+            maxPenaltyMs,
+          });
+
+          for (const ms of penalties) budget.penalise(ms);
+
+          now += maxPenaltyMs + 1;
+          expect(budget.tryAcquire()).toBe(true);
+        },
+      ),
+    );
+  });
+
+  it("a sync can only ever make the client more cautious, never less", () => {
+    // The asymmetry that encodes the measured /api/status lag. If a sync could
+    // raise availability, the optimistic snapshot observed DURING active
+    // 429-ing would undo the penalty that the 429 just installed.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 2 }),
+        fc.integer({ min: 0, max: 2 }),
+        (acquisitions, reportedFree) => {
+          const budget = new OverpassSlotBudget({ slots: 2 });
+          for (let i = 0; i < acquisitions; i++) budget.tryAcquire();
+          const before = budget.available;
+
+          budget.sync(
+            parseOverpassStatus(
+              [
+                "Connected as: 1",
+                "Current time: 2026-07-28T08:40:04Z",
+                "Rate limit: 2",
+                ...(reportedFree > 0
+                  ? [`${reportedFree} slots available now.`]
+                  : []),
+                "Currently running queries (pid, space limit, time limit, start time):",
+              ].join("\n"),
+            ),
+          );
+
+          expect(budget.available).toBeLessThanOrEqual(before);
+        },
+      ),
+    );
+  });
+});
 
 /** The three operators the default pool actually reaches, plus a self-hosted. */
 const operator = fc.constantFrom(
