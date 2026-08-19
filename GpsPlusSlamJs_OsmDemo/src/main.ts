@@ -138,7 +138,7 @@ import {
 } from "./ground-mode.js";
 import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
-import { isLayerEnabled, layersNeedingData } from "./layers.js";
+import { isLayerEnabled, layersNeedingData, type LayerSet } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import {
@@ -467,11 +467,24 @@ async function main(): Promise<void> {
   // it: without it a press also reaches the map underneath and reads as
   // "the user clicked here to move", so entering AR would first teleport
   // them to the button's own position.
+  /**
+   * The wrapper, held so it can be hidden with its button.
+   *
+   * WHY THE WRAPPER AND NOT JUST THE BUTTON. `.leaflet-bar` carries a border,
+   * a corner radius and a drop shadow of its own, and `.ar-control` reserves
+   * margin below it — so hiding only the button leaves a small empty box
+   * floating above the locate control. That is the state EVERY desktop browser
+   * and every iOS Safari is in, because `arButtonState` hides the button
+   * outright where `immersive-ar` is unsupported. `LocateControl` never hits
+   * this because its button is never hidden.
+   */
+  let arControlWrapper: HTMLElement | undefined;
   const ArControl = L.Control.extend({
     onAdd: (): HTMLElement => {
       const wrapper = L.DomUtil.create("div", "leaflet-bar ar-control");
       wrapper.append(arButton);
       L.DomEvent.disableClickPropagation(wrapper);
+      arControlWrapper = wrapper;
       return wrapper;
     },
   });
@@ -848,7 +861,7 @@ async function main(): Promise<void> {
   const paintGeoEventButton = (busy = geoEventButton.disabled): void => {
     const view = selectOsmView(store.getState());
     geoEventButton.disabled = busy;
-    geoEventButton.textContent = geoEventButtonLabel(view, busy);
+    geoEventButton.textContent = geoEventButtonLabel(busy);
     // THE READOUT, NOT THE BUTTON, CARRIES THE DISTANCE NOW (F4a). Repainted
     // from the same `(position, geoEvent)` the label used to be a function of,
     // which is what makes it re-read as the user walks — F56's recorded win,
@@ -863,7 +876,7 @@ async function main(): Promise<void> {
    * because it needs `refresh` — see `geo-event-cycle.ts` for why a successful
    * search republishes at all.
    */
-  const findGeoEvent = createGeoEventCycle({
+  const runGeoEventSearch = createGeoEventCycle({
     store,
     actions,
     worker,
@@ -894,6 +907,30 @@ async function main(): Promise<void> {
       // eslint-disable-next-line no-console -- the benchmark's only output.
       console.info(describeGeoEventStats(stats));
     },
+  });
+
+  /**
+   * The quest search, COALESCED (DEC-U13).
+   *
+   * WHY THE WRAPPER EXISTS, and it was claimed before it did. DEC-U13 makes the
+   * category picker live while a search runs, so two searches can genuinely be
+   * asked for in quick succession — and `worker.call` is a plain id-keyed RPC
+   * with no coalescing of its own, so both would resolve and both would
+   * dispatch, in completion order. That is the stale-wins race the decision was
+   * written to prevent.
+   *
+   * `latestOnly` gives the three things the decision asked for: at most one
+   * search in flight, the newest input winning, and the abandoned run's late
+   * result discarded rather than published.
+   *
+   * **The comment on the button's handler asserted this before it was true.**
+   * It named a `latestOnly` "inside `createGeoEventCycle`" that did not exist;
+   * what actually discarded a superseded result was a category comparison deep
+   * in the cycle, and that only guarded the store publish — not the toast or
+   * the map pan. Found by the milestone review.
+   */
+  const findGeoEvent = latestOnly(async (requested: number | undefined) => {
+    await runGeoEventSearch(requested);
   });
 
   /**
@@ -1047,14 +1084,21 @@ async function main(): Promise<void> {
     // choice to be visible immediately.
     //
     // AND IT IS LIVE WHILE THE SEARCH RUNS (DEC-U13), chosen over
-    // visible-but-disabled. Changing the category mid-search cancels and
-    // restarts rather than queueing: the picker and the map must agree when
-    // things settle, and `latestOnly` inside `createGeoEventCycle` is what
-    // discards the abandoned run's late result. The accepted cost is that
-    // flipping rapidly on a slow connection completes nothing until you stop.
+    // visible-but-disabled. The picker and the map must agree once things
+    // settle, which `latestOnly` around `findGeoEvent` is what delivers — see
+    // its definition. The accepted cost is that flipping rapidly on a slow
+    // connection completes nothing until you stop.
+    //
+    // OPENED ONLY WHEN IT IS CLOSED. `open()` refills the date and time inputs
+    // from the held quest, so calling it unconditionally would silently discard
+    // whatever the user had just typed — press the button after editing the
+    // time and your edit is replaced by the old value. The previous two-press
+    // design closed on the second press and could not hit this.
     const held = selectOsmView(store.getState()).geoEvent;
-    geoEventPicker.open(new Date(held?.eventTime ?? Date.now()));
-    void findGeoEvent();
+    if (!geoEventPicker.isOpen) {
+      geoEventPicker.open(new Date(held?.eventTime ?? Date.now()));
+    }
+    void findGeoEvent(undefined);
   });
 
   /**
@@ -1173,6 +1217,7 @@ async function main(): Promise<void> {
     paintedAr = key;
 
     arButton.hidden = state.hidden;
+    if (arControlWrapper !== undefined) arControlWrapper.hidden = state.hidden;
     arButton.disabled = state.disabled;
     // THE GLYPH IS CONSTANT; THE WORDING MOVES TO THE ACCESSIBLE NAME (F3a).
     //
@@ -1182,7 +1227,16 @@ async function main(): Promise<void> {
     // state, exactly as `.locate-button` does: on touch a `title` never shows,
     // so the accessible name is the only thing that reaches everyone.
     arButton.textContent = "AR";
-    arButton.setAttribute("aria-label", state.label);
+    // THE HINT GOES IN THE NAME, not only in `title`. "Supported but no GPS
+    // fix yet" is the one state `arButtonState` distinguishes hidden from
+    // disabled for — and without this its accessible name is just "AR",
+    // identical to every other state, so the distinction the whole type exists
+    // for never reaches anyone. `title` alone cannot carry it: this file
+    // argues three lines up that a title never shows on touch.
+    arButton.setAttribute(
+      "aria-label",
+      state.hint === undefined ? state.label : `${state.label} — ${state.hint}`,
+    );
     arButton.dataset["arActive"] = String(arSession !== undefined);
     // Cleared rather than left stale: the hint explains a DISABLED state, and
     // a tooltip surviving into the enabled one describes a condition that no
@@ -1606,7 +1660,28 @@ async function main(): Promise<void> {
       overlays: [el("category"), showBelowLabel],
     },
   });
+  /**
+   * DEC-U9: the below-threshold checkbox is hidden while `cells` is off.
+   *
+   * ITS OWN FUNCTION BECAUSE THE SUBSCRIBER IS NOT ENOUGH, and the first
+   * version of this shipped that bug. `subscribe` captures the current value at
+   * registration and fires only when it CHANGES, so a control painted only from
+   * there is never painted at all until the user touches something — and
+   * `cells` is OFF in `DEFAULT_LAYERS`, which is precisely the state that should
+   * hide this. The checkbox was therefore visible on every fresh load, in the
+   * one configuration DEC-U9 exists to cover.
+   */
+  const paintShowBelow = (layers: LayerSet): void => {
+    showBelowLabel.hidden = !layers.cells;
+  };
+
   layerToggles.render(selectLayers(store.getState()));
+  paintShowBelow(selectLayers(store.getState()));
+  // THE SAME FIRST-PAINT GAP AS `paintShowBelow`, one control over. The readout
+  // is written only by `paintGeoEventButton`, which is reached from
+  // change-subscribers and from `setBusy` — so before the first press it was
+  // present, empty and visible, holding open a gap in the header's flex row.
+  paintGeoEventButton();
 
   // --- state out ----------------------------------------------------------
 
@@ -2238,6 +2313,17 @@ async function main(): Promise<void> {
     (view) => view.category,
     () => {
       void refresh();
+      // THE RESTART HALF OF DEC-U13. The decision is "cancel and restart", and
+      // only the cancel half existed: the cycle refuses to publish a result
+      // whose category has moved on, which leaves the user with no quest AND
+      // no running search — the picker live, the map empty, and nothing
+      // happening until they press again.
+      //
+      // Gated on `busy` so a category change with no search in flight does not
+      // start one uninvited; the search is a real cost (it can score hundreds
+      // of chunks and download a tile), which is why it is a button in the
+      // first place.
+      if (findGeoEvent.busy) void findGeoEvent(undefined);
     },
   );
 
@@ -2258,7 +2344,7 @@ async function main(): Promise<void> {
       // applied; this hides one that does not apply at all, and collapsing
       // still keeps it while `cells` is on. The `.layer-busy` comment is
       // narrowed to say exactly that — busy stays visible, inapplicable goes.
-      showBelowLabel.hidden = !layers.cells;
+      paintShowBelow(layers);
       // TURNING THE CELL LAYER ON HAS TO FETCH THE CELLS (round 10, stage B).
       // Every other layer only changes what is drawn from data already held, so
       // a redraw is enough; `cells` is different because the snapshot

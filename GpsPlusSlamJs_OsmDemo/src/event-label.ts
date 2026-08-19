@@ -177,33 +177,26 @@ export function describeGeoEvent(
 }
 
 /**
- * The button's label for a whole view state — the WHOLE of what it displays.
+ * The button's label: one of two constants, and never a description.
  *
- * A PURE FUNCTION OF (busy, position, event), which is what makes the label
- * state rather than a side effect of the last thing that happened. It used to
- * be written at the call site on success and reset to the resting text on
- * failure, so it could disagree with the map: a failed search reset a label that
- * described markers still on screen, and nothing put it back.
+ * REWRITTEN 2026-08-19 (F4a). This used to be a pure function of
+ * `(busy, position, event)` that returned the whole description — which is
+ * exactly why the button grew from "Next geo-event" to "Event at 14:15 ·
+ * 640 m NE · searched 7 tiles" and back on every press, the resizing the
+ * owner reported.
  *
- * The consequence worth knowing about: because the distance is measured from the
- * CURRENT position, the label re-reads as the user walks — "640 m NE" becomes
- * "210 m NE" — which is the behaviour F56 wanted and previously could not have,
- * since the string was frozen at the moment the search returned.
+ * The behaviour that paragraph used to describe — a distance that RE-READS
+ * as the user walks — was F56's real win and is not gone: it moved to
+ * {@link geoEventReadout}. This function keeps only the part that must not
+ * change size.
+ *
+ * TWO constants and not one: `GEO_EVENT_BUSY_LABEL` is the in-progress state
+ * root `CLAUDE.md`'s async-feedback rule requires, so collapsing to a single
+ * string would delete the feedback rather than the resizing. They differ in
+ * width, so the button also carries a `min-width` — a constant label on an
+ * auto-width button is only half the fix.
  */
-export function geoEventButtonLabel(view: unknown, busy: boolean): string {
-  // ONE OF TWO CONSTANTS (F4a), never the description.
-  //
-  // The button used to render `describeGeoEvent`, which is why it grew from
-  // "Next geo-event" to "Event at 14:15 · 640 m NE · searched 7 tiles" and back
-  // — the resizing the owner reported. The description now goes to the toast
-  // and the readout below.
-  //
-  // TWO constants and not one: `Finding…` is the in-progress state root
-  // `CLAUDE.md`'s async-feedback rule requires, and deleting it to make the
-  // label truly constant would remove the feedback the rule is about. They
-  // differ in width, so the button carries a `min-width` — a constant label on
-  // an auto-width button is only half the fix.
-  void view;
+export function geoEventButtonLabel(busy: boolean): string {
   return busy ? GEO_EVENT_BUSY_LABEL : GEO_EVENT_IDLE_LABEL;
 }
 

@@ -153,7 +153,6 @@ export function createGeoEventCycle(
       });
       event = answer.event;
       onStats?.(answer.stats);
-      if (event !== undefined) onFound?.(event);
     } catch (error) {
       // The PREVIOUS event deliberately stays published. A search that failed
       // says nothing about the one already on the map, and taking it down would
@@ -185,6 +184,20 @@ export function createGeoEventCycle(
     // in step. An empty `picks` is published too: "no event nearby" is a result,
     // and it is what takes the previous search's markers down.
     store.dispatch(actions.geoEventFound(event));
+
+    // AFTER THE SUPERSESSION GUARD, and that placement is the whole point.
+    //
+    // The first version called this the instant the RPC resolved, twenty lines
+    // above the category check — so a search abandoned by a category change
+    // still panned the map to the old category's winner and announced it in a
+    // toast, while the store correctly refused to publish it. The user saw the
+    // viewport yanked to a quest that is deliberately not drawn.
+    //
+    // That is the same defect class the DEM upgrade path was fixed for earlier
+    // in this round: a long-running callback outliving the state it describes.
+    // Anything with a user-visible side effect belongs on this side of the
+    // guard, beside the dispatch it agrees with.
+    onFound?.(event);
 
     // ITS OWN CATCH, and the wording is the reason. `refresh` is `latestOnly`,
     // which never rejects, so this is unreachable with the real wiring — but

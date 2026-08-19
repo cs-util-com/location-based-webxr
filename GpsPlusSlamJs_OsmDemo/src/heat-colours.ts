@@ -242,11 +242,11 @@ export function formatScore(value: number): string {
 }
 
 /**
- * Largest value {@link formatFixedScore} will spell out rather than abbreviate.
+ * SMALLEST value {@link formatFixedScore} abbreviates rather than spells out.
  *
- * A million prints as nine characters with its separators. Past that the label
- * starts growing without bound again, which is the instability DEC-R6b-6 chose
- * the exponential form to avoid.
+ * A million is where the label starts growing without bound again, which is the
+ * instability DEC-R6b-6 chose the exponential form to avoid. Everything below
+ * it fits in at most seven characters plus separators.
  */
 const SPELL_OUT_BELOW = 1e6;
 
@@ -264,22 +264,29 @@ const SPELL_OUT_BELOW = 1e6;
  * **WHY THIS IS A THRESHOLD AND NOT AN UNCONDITIONAL SPELL-OUT**, which is what
  * DEC-U8 was written expecting. That decision rested on the ramp's top being
  * the constant `HEAT_CAP` — true for every category whose threshold is below
- * it, which is the case the owner saw. It is NOT universal: `scaleFor` falls
+ * it, which is the case the owner saw. It is NOT universal: `fixedScale` falls
  * back to `threshold * 10` once a threshold reaches the cap, so a rule table
  * with a high threshold can put a ten-digit number on this label. Spelling that
  * out unconditionally would reintroduce exactly the defect DEC-R6b-6 removed,
  * in the place it was reported from. The premise was checked against
  * `scaleFor` rather than taken from the decision text.
  *
- * Grouped with thin spaces rather than commas: the legend is read at a glance
+ * Grouped with a NARROW NO-BREAK space (U+202F) rather than commas: the legend
+ * is read at a glance
  * on a phone, and a comma sits one keystroke away from meaning a decimal point
  * in most of the languages this demo is looked at in.
+ *
+ * NO-BREAK matters as much as narrow. A plain thin space (U+2009) is a line-break
+ * opportunity under UAX-14, and `#legend` is a wrapping flex row — so on a narrow
+ * header the endpoint could render as `10` on one line and `000` on the next,
+ * which is the line instability DEC-R6b-6 exists to prevent, reintroduced by its
+ * own narrowing.
  */
 export function formatFixedScore(value: number): string {
   if (Math.abs(value) >= SPELL_OUT_BELOW) return formatScore(value);
   return round(value)
     .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, "\u2009");
+    .replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
 }
 
 function round(value: number): number {

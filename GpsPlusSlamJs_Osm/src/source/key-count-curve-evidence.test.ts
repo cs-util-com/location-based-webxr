@@ -23,7 +23,11 @@ import { dirname, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const packageRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
 
 interface CurveRow {
   readonly operator: string;

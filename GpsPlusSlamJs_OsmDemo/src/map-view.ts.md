@@ -130,3 +130,16 @@ and solves it differently (a vertical tick) for the same reason: silently
 dropping nodes would hide a whole class of excluded feature — bins, subway
 entrances, shafts — from the diagnostic whose job is showing what was silently
 dropped.
+
+## `panTo` (F4c, DEC-U12 — 2026-08-19)
+
+- `panTo(position)` — slides the viewport to `position` at the current zoom.
+
+**It is deliberately NOT `centreOn`, and reusing that one here would be a live
+bug.** `centreOn` calls `setPosition` first, so panning to a quest would also
+teleport the user's own marker onto it. `centreOn` is for a DECLARED position
+change — the location picker, the locate button — where moving the marker is
+exactly right; `panTo` is for looking somewhere.
+
+Holding the zoom is what makes this a pan rather than the viewport takeover F56
+declined.

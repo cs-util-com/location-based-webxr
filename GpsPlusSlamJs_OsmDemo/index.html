@@ -596,6 +596,30 @@
         outline: 2px solid #7cc4ff;
         outline-offset: 1px;
       }
+      /* `[hidden]` MUST STILL WIN (DEC-U9). A bare `display` on an element type
+         overrides the user agent's `[hidden] { display: none }`, so a label
+         given `hidden` in script stayed on screen -- which is how DEC-U9
+         shipped inert in N4: the attribute was set correctly and changed
+         nothing. Same specificity, declared after, so it takes precedence
+         without `!important`. */
+      /* THE TAP TARGET, not just the glyph (F3b follow-up). Dropping the title
+         text left this control as a single 0.8 rem caret -- roughly 13 x 19 CSS
+         px, under WCAG 2.2 SC 2.5.8's 24 x 24 minimum and far under the 44-48 px
+         platform guidance, on the milestone whose whole subject is the phone.
+         The aria-label fixed the NAME; this fixes the TARGET. */
+      #header-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.75rem;
+        min-height: 2.75rem;
+        margin: 0;
+        cursor: pointer;
+      }
+
+      header label[hidden] {
+        display: none;
+      }
       header label {
         display: inline-flex;
         align-items: center;

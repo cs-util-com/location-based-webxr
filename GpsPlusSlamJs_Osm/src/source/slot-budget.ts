@@ -306,10 +306,12 @@ export class OverpassSlotBudget {
       // Server clock in, local clock out — a device with a skewed clock still
       // waits the right duration.
       //
-      // ATTRIBUTED to the operator whose `/api/status` this is. `syncBudget`
-      // deliberately asks the pool's FIRST entry rather than a drawn one, so
-      // this recovery time describes exactly one operator; penalising the whole
-      // pool with it would re-create the bug at a second call site.
+      // ATTRIBUTED to the operator whose `/api/status` this is, which the
+      // CALLER must name. A status page describes exactly one instance, so
+      // applying its recovery time to the whole pool would re-create the F2c
+      // bug at a second call site. (`syncBudget` used to be that caller and was
+      // deleted in DEC-V3; the parameter outlives it because the constraint
+      // does.)
       this.penalise(status.nextSlotAtMs - status.serverTimeMs, operator);
     }
   }

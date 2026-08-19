@@ -95,3 +95,22 @@ which the `view.layers` subscriber checks via `layersNeedingData`; see
 `layers.ts.md`) and _"switching the cells layer off clears the
 grid in BOTH views"_ (the registry has to reach the map as well as the scene, or one
 view keeps drawing what the store says is off).
+
+## The overlays group is captioned "Category" now (F3d — 2026-08-19)
+
+`GROUP_LABELS` maps `overlays` to **"Category"**, not "affordance", because the
+category `<select>` itself moved into that group through the existing
+`options.extras` seam — so the control now sits under its own heading.
+
+`#show-below-label` is also an `overlays` extra, and `main.ts` **hides** it
+while the `cells` layer is off (DEC-U9). That is a deliberate exception to this
+module's `.layer-busy` rule, which is narrowed in `index.html` to say what it
+governs: a control that is temporarily BUSY stays visible; one that is
+INAPPLICABLE to the current mode is removed.
+
+Two things that bit when it shipped, both worth knowing before touching it
+again: the hiding has to be painted on FIRST LOAD as well as from the layers
+subscriber (`subscribe` fires on change only, and `cells` is off by default —
+so the one state DEC-U9 exists for was never painted), and `[hidden]` must be
+given precedence over `header label { display: inline-flex }`, or the attribute
+is set and nothing happens.

@@ -104,6 +104,20 @@ describe("legendModel — the ramp", () => {
     expect(model.description).toContain("1.4e12");
   });
 
+  it("spells the RAMP'S TOP out, which is what the owner reported", () => {
+    // THE HEADLINE OF DEC-U8, and it was asserted nowhere. Every other test in
+    // this file happens to use a value where the two formatters agree, so
+    // reverting `legend-model.ts` to `formatScore` passed the entire suite
+    // while undoing the owner's request on the surface they reported it from.
+    const model = legendModel(fixedScale(1), "walkable", false, {
+      observedMax: 512.4,
+      aboveThresholdCount: 3,
+    });
+
+    expect(model.maxLabel).toBe("10 000");
+    expect(model.maxLabel).not.toContain("e4");
+  });
+
   it("spells a readable threshold out in the empty-state message", () => {
     // DEC-U8, 2026-08-19. This used to assert `2.5e5`, because every endpoint
     // was abbreviated alike. The owner asked for the ramp's numbers to be
@@ -114,7 +128,7 @@ describe("legendModel — the ramp", () => {
     // nothing-here has to be said by the data rather than inferred from a
     // collapsed ramp.
     const model = legendModel(fixedScale(250000), "x", false, NOTHING_HERE);
-    expect(model.emptyMessage).toContain("250 000");
+    expect(model.emptyMessage).toContain("250 000");
     expect(model.emptyMessage).not.toContain("2.5e5");
   });
 

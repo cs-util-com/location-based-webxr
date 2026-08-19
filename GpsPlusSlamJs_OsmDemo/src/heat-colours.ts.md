@@ -94,3 +94,25 @@ caption.textContent = describeScale(scale);
 `heat-colours.test.ts` — equal ratios giving equal steps, the threshold being
 off-ramp, clamping, the degenerate collapse, monotonicity, valid hex, and the
 scale description including the identity and the rounded max.
+
+## `formatFixedScore` (DEC-U8 — 2026-08-19)
+
+- `formatFixedScore(value)` — a ramp endpoint, spelled out with narrow
+  no-break separators (`10 000`) below **1e6**, and abbreviated by
+  `formatScore` at or above it.
+
+**Why a threshold rather than an unconditional spell-out**, which is what the
+decision was written expecting. DEC-U8 rested on the ramp's top being the
+constant `HEAT_CAP` — true for every category whose threshold sits under it,
+which is the case the owner reported. It is not universal: `fixedScale` falls
+back to `threshold * 10` once a threshold reaches the cap, so a rule table with
+a high threshold can put ten digits on that label. Spelling that out
+unconditionally would reintroduce the defect DEC-R6b-6 removed, in the place it
+was reported from.
+
+**U+202F, not U+2009.** A plain thin space is a line-break opportunity under
+UAX-14 and `#legend` is a wrapping flex row, so the endpoint could split across
+two lines — the same instability, arriving by a new route.
+
+`formatScore` is unchanged and still serves the OBSERVED maximum, which
+genuinely reaches `1.7e11`.

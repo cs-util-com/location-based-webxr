@@ -95,3 +95,19 @@ Three e2e cover what only a browser shows: that collapsing transfers height to t
 3D view (asserted as a height change, not visibility), that a **real** refused
 geolocation permission expands the bar, and that the attribution survives a
 collapse.
+
+## The accessible name (F3b — 2026-08-19)
+
+The control's visible text was removed and only the caret remains, so
+`attachHeaderCollapse` now sets an explicit **`aria-label`** that tracks the
+state — "Show details" when collapsed, "Hide details" when expanded.
+
+**That text WAS the accessible name.** An empty `role="button"` announces as
+nothing, and `aria-expanded` is not a substitute: it says what state the control
+is in, never what it controls. Both are needed. It is correct on first paint
+because `apply()` runs at attach.
+
+`revealForError()` is **gone** (DEC-U10). It expanded the header whenever an
+error occurred, which existed only because the status line inside the header was
+the sole channel a failure could reach; errors now go to a toast that is visible
+either way. Collapse is entirely user-driven from here on.

@@ -17,6 +17,8 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  formatFixedScore,
+  formatScore,
   describeScale,
   heatColour,
   heatFraction,
@@ -300,5 +302,44 @@ describe("a non-positive threshold from the rule table", () => {
     for (const score of [1, 10, 100]) {
       expect(toHex(heatColour(score, scale))).toMatch(/^#[0-9a-f]{6}$/);
     }
+  });
+});
+
+describe("formatFixedScore — the ramp's endpoints, spelled out (DEC-U8)", () => {
+  /**
+   * WHY THIS BLOCK EXISTS. The owner asked for `1e4` on the legend to be
+   * written out, and the milestone review found the change ASSERTED NOWHERE:
+   * every existing legend test used a value where the two formatters agree, so
+   * reverting `legend-model.ts` to the old formatter — undoing the request, on
+   * the exact surface it was reported from — left the whole suite green.
+   *
+   * `HEAT_CAP` is where they differ, which is why it leads.
+   */
+
+  it("spells out the cap, which is the number the owner actually saw", () => {
+    expect(formatFixedScore(1e4)).toBe("10 000");
+    // The old behaviour, for contrast — and the reason a separate formatter
+    // exists rather than a change to this one: the observed maximum still needs
+    // the short form, because it genuinely reaches 1.7e11.
+    expect(formatScore(1e4)).toBe("1e4");
+  });
+
+  it("groups the digits, and leaves small numbers alone", () => {
+    expect(formatFixedScore(1)).toBe("1");
+    expect(formatFixedScore(999)).toBe("999");
+    expect(formatFixedScore(250000)).toBe("250 000");
+  });
+
+  it("ABBREVIATES once a value would grow without bound", () => {
+    // The half that keeps DEC-R6b-6 alive. `fixedScale` falls back to
+    // `threshold * 10` once a threshold reaches the cap, so a high-threshold
+    // rule table can put ten digits here — and spelling that out would
+    // reintroduce the jumping line width in the place it was reported from.
+    expect(formatFixedScore(1e6)).toBe("1e6");
+    expect(formatFixedScore(2.5e9)).toBe("2.5e9");
+  });
+
+  it("does not corrupt a fractional score", () => {
+    expect(formatFixedScore(3.6)).toBe("3.6");
   });
 });

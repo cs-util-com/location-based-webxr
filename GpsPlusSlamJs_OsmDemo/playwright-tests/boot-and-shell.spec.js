@@ -320,13 +320,18 @@ test.describe("the location picker", () => {
     const options = page.locator("#site option");
     await expect(options).not.toHaveCount(1);
     // ASSERTED ON THE SELECT, NOT ON AN OPTION (2026-08-19). This line used to
-    // read `expect(options.first()).toHaveValue("")`, which is invalid usage:
-    // `toHaveValue` rejects anything that is not an input, textarea or select,
-    // and an `<option>` is none of them. It began failing with "Not an input
-    // element" when F3c unwrapped the picker from its `<label>`, and why the
-    // wrapper made it pass is genuinely unexplained — recorded as unexplained
-    // rather than given a tidy story, because the assertion was wrong either
-    // way and a plausible-but-invented mechanism is worse than none.
+    // read `expect(options.first()).toHaveValue("")`, and an `<option>` is not
+    // an input, textarea or select — so it began failing with "Not an input
+    // element" the moment F3c unwrapped the picker from its `<label>`.
+    //
+    // WHY THE WRAPPER MADE IT PASS, since an earlier version of this comment
+    // recorded that as unexplained: Playwright's `inputValue` retargets with
+    // `follow-label`. For an element that is not itself a form control it takes
+    // `element.closest("label")` and uses that label's `.control` — so an
+    // `<option>` inside `<label>location <select id="site">…</label>` resolved
+    // to the SELECT, whose value is `""`. Removing the wrapper removed the
+    // retarget path. Recording a checkable mechanism as a mystery is worse than
+    // not mentioning it: it tells the next reader not to look.
     //
     // What the test actually needs to catch is the picker never running, which
     // leaves the placeholder selected and alone. Both halves of that are
@@ -1126,7 +1131,19 @@ test.describe("the control bar", () => {
       await expect(page.locator("#category")).toBeVisible();
       await expect(page.locator("#legend")).toBeVisible();
       await expect(page.locator("#layer-cells")).toBeVisible();
-      await expect(page.locator("#show-below")).toBeVisible();
+      // HIDDEN, because `cells` is off by default (DEC-U9, 2026-08-19). This
+      // line asserted the opposite and was GREEN BECAUSE THE FEATURE WAS
+      // BROKEN: the paint ran only from a change-subscriber, so the default
+      // state was never painted at all. The old comment called the visibility
+      // "a deliberate reversal", which it had been — of an older decision, and
+      // DEC-U9 reverses it back for a different reason: this control has
+      // nothing to be below the threshold OF while the cells are not drawn.
+      //
+      // The collapse behaviour it was really testing is unchanged and still
+      // covered: with `cells` ON the checkbox collapses and expands with the
+      // affordance block it belongs to, which is asserted in
+      // map-and-cells.spec.js.
+      await expect(page.locator("#show-below")).toBeHidden();
 
       await expect(page.locator("#status")).toBeHidden();
       await expect(page.locator("#layer-group-world")).toBeHidden();

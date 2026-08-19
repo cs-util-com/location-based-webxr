@@ -101,3 +101,24 @@ Around it: `event-label.test.ts` covers the derived label (including that it
 re-reads as the user walks), `osm-view-slice.test.ts` covers when the store
 clears the event, and `map-and-cells.spec.js` covers the button-to-map wiring
 and that a category change takes the markers down.
+
+## `onFound`, and where it must sit (2026-08-19)
+
+The options gained **`onFound?(event)`** — called with a quest the search
+actually produced. It drives the toast announcement and the map pan.
+
+**It fires AFTER the supersession guard, beside the store dispatch, and that
+placement is the contract.** The first version called it the instant the RPC
+resolved, twenty lines earlier — so a search abandoned by a category change
+still panned the map to the old category's winner and announced it, while the
+store correctly refused to publish it. Anything with a user-visible side effect
+belongs on the same side of that guard as the dispatch it agrees with.
+
+It is not called when the search fails: the previous quest deliberately stays
+published, and announcing it again would report a stale result as new.
+
+**The caller wraps this cycle in `latestOnly`** (`main.ts`), because the
+picker is live during a search (DEC-U13) and `worker.call` has no coalescing of
+its own — two presses would otherwise produce two RPCs that both dispatch, in
+completion order. Any label quoted above as the button's text is stale; see
+`event-label.ts.md`.

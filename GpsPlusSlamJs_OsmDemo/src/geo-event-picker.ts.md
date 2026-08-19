@@ -68,3 +68,20 @@ valid search, clear-and-close, and the toggle.
 
 `event-instant.test.ts` owns the date arithmetic underneath it, including the
 local-versus-UTC parsing trap and the roll-over rejection.
+
+## It opens on the FIRST press now (F4f, DEC-U13 — 2026-08-19)
+
+Anything above describing a second press is stale. `main.ts` calls **`open()`**
+on every press of the quest button, alongside the search rather than instead of
+it, and guards on `isOpen` so a press while it is already open does **not**
+re-open it — `open()` refills the date and time inputs from the held quest, so
+calling it unconditionally would silently discard whatever the user had typed.
+
+**`toggle()` therefore has no production caller.** It is kept as the honest
+primitive and exercised by its own test; a reader should not infer that pressing
+the button twice closes the dialog.
+
+The picker stays **live while a search runs** (DEC-U13, chosen over
+visible-but-disabled). A category change cancels the running search and starts a
+new one; the coalescing that makes that safe is `latestOnly` around
+`findGeoEvent` in `main.ts`, not anything in this module.

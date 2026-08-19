@@ -30,7 +30,8 @@ whether a request may be dispatched **right now**.
   given operators, not the longest.
 - `sync(status: OverpassStatus, operator?): void` — correct from
   `/api/status`. Any penalty it derives is attributed to `operator`, because
-  `syncBudget` polls one nominated endpoint rather than the whole pool.
+  the CALLER must name: a status page describes exactly one instance, so
+  applying its recovery time to the whole pool would re-create the F2c bug.
 
 ## Invariants & assumptions
 

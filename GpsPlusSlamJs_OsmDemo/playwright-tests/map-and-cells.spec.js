@@ -911,9 +911,14 @@ test.describe("the geo-event", () => {
     // is the reported one.
     await expect(button).toHaveText(/Show Quests/);
 
-    // And nothing failed: a geo-event error routes through the same channel a
-    // fetch failure does, so the header would be showing it.
-    await expect(page.locator("#status")).not.toContainText("geo-event failed");
+    // And nothing failed. WATCHED ON THE TOAST, not the status line: errors
+    // stopped being written to `#status` when the header's self-expanding rule
+    // was retired (DEC-U10), so `geo-event failed` can never appear there and
+    // this assertion held for a broken app too. Its sibling in
+    // boot-and-shell.spec.js was repointed at the time; this one was missed.
+    await expect(page.locator("#toast-root .toast")).not.toContainText(
+      "geo-event failed",
+    );
 
     // If it found one, it is on the map. The winner carries a class of its own
     // so this cannot pass on a candidate marker.
@@ -939,14 +944,45 @@ test.describe("the geo-event", () => {
         /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)/,
       );
 
-      // PRESENT, not VISIBLE, and the difference is a real property of the
-      // feature rather than a test convenience. An event tile is ~900 m across
-      // and the demo opens at zoom 18, which shows a couple of hundred metres --
-      // so the winner is very often outside the viewport, and Leaflet renders an
-      // off-screen path as `d="M0 0"`, which reads as hidden. Asserting
-      // visibility would make this test pass or fail on where the seeded
-      // candidate happened to land.
+      // VISIBLE, NOT MERELY PRESENT — AND THAT IS THE PAN'S TEST (F4c,
+      // DEC-U12, 2026-08-19).
+      //
+      // This used to assert PRESENCE only, with a comment explaining that an
+      // event tile is ~900 m across against a viewport showing a couple of
+      // hundred metres, so the winner is very often outside it and Leaflet
+      // renders an off-screen path as `d="M0 0"` — which reads as hidden.
+      //
+      // That reasoning was exactly what F56's label existed to compensate for,
+      // and DEC-U12 removes the premise: the map now pans to the winner, so it
+      // is ON SCREEN. Asserting visibility is therefore both stronger and the
+      // only test the pan has — without it, deleting the `panTo` call leaves
+      // the whole suite green.
       await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+
+      // THE WINNER IS AT THE VIEWPORT CENTRE, WHICH IS THE PAN (F4c, DEC-U12).
+      //
+      // `toBeVisible()` was tried first and is NOT a test of the pan: with the
+      // `panTo` call deleted the seeded winner still happened to be on screen,
+      // so the assertion passed against the mutant. Centring is the thing
+      // `panTo` actually does, so it is the thing to assert.
+      //
+      // This also replaces an older comment claiming the winner is "very often
+      // outside the viewport" and that asserting visibility would make the test
+      // depend on where the candidate landed. That was true, and DEC-U12
+      // removed the premise it rested on.
+      const winnerBox = await page
+        .locator("#map .geo-winner")
+        .first()
+        .boundingBox();
+      const mapBox = await page.locator("#map").boundingBox();
+      if (winnerBox === null || mapBox === null) throw new Error("no boxes");
+      const offset = Math.hypot(
+        winnerBox.x + winnerBox.width / 2 - (mapBox.x + mapBox.width / 2),
+        winnerBox.y + winnerBox.height / 2 - (mapBox.y + mapBox.height / 2),
+      );
+      // Generous, because a marker's anchor is its tip rather than its centre
+      // and the pane animates — but far tighter than "somewhere on screen".
+      expect(offset).toBeLessThan(80);
       await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
     }
   });
@@ -1088,6 +1124,35 @@ test.describe("the geo-event", () => {
 });
 
 test.describe("the cell layer toggle", () => {
+  test("hides 'below threshold' while the cell layer is off (DEC-U9)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST EXISTS, and it is not tidiness: the bug it catches shipped.
+    //
+    // DEC-U9 hides this checkbox while `cells` is off, because it has nothing
+    // to be below the threshold OF. The first implementation painted it only
+    // from the layers SUBSCRIBER — and `subscribe` fires on CHANGE, never on
+    // registration. `cells` is off in DEFAULT_LAYERS, so the one state the
+    // decision exists to cover was the one state never painted, and the
+    // checkbox was visible on every fresh load.
+    //
+    // THE FIRST ASSERTION IS THE WHOLE POINT. A test that only toggled the
+    // layer and back would have passed against the broken build, because every
+    // path it exercised went through the subscriber.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const showBelow = page.locator("#show-below-label");
+    await expect(showBelow).toBeHidden();
+
+    await page.locator("#layer-cells").check();
+    await expect(showBelow).toBeVisible();
+
+    await page.locator("#layer-cells").uncheck();
+    await expect(showBelow).toBeHidden();
+  });
+
   /**
    * WHY THIS TEST EXISTS (F58).
    *

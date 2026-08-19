@@ -259,28 +259,17 @@ describe("geoEventButtonLabel", () => {
   // (F4a), so it no longer formats a time and no longer takes a formatter --
   // the fixed-clock helper the other blocks use would be unused surface.
 
-  it("rests when nothing has been found", () => {
-    expect(
-      geoEventButtonLabel({ position: COLOGNE, geoEvent: undefined }, false),
-    ).toBe(GEO_EVENT_IDLE_LABEL);
+  it("rests when no search is running", () => {
+    expect(geoEventButtonLabel(false)).toBe(GEO_EVENT_IDLE_LABEL);
   });
 
-  it("says it is working, whatever is currently held", () => {
-    // The busy state wins over the held event: while a search is running, the
-    // previous result's description would claim the button is idle.
-    expect(
-      geoEventButtonLabel(
-        {
-          position: COLOGNE,
-          geoEvent: {
-            eventTime: 0,
-            picks: [pickAt(50.94, 6.97)],
-            tilesSearched: 7,
-          },
-        },
-        true,
-      ),
-    ).toBe(GEO_EVENT_BUSY_LABEL);
+  it("says it is working while one is", () => {
+    // NARROWED 2026-08-19. This used to read "whatever is currently held",
+    // because the label was a function of the held quest too and the busy state
+    // had to WIN over it. The label no longer sees the quest at all (F4a), so
+    // there is nothing left for busy to win over — asserting that framing now
+    // would describe a conflict the code cannot have.
+    expect(geoEventButtonLabel(true)).toBe(GEO_EVENT_BUSY_LABEL);
   });
 
   it("is ONE OF TWO CONSTANTS, so the button stops resizing (F4a)", () => {
@@ -292,21 +281,12 @@ describe("geoEventButtonLabel", () => {
     // TWO constants and not one: `Finding…` is the in-progress state root
     // `CLAUDE.md`'s async-feedback rule requires, so collapsing to a single
     // string would delete the feedback rather than the resizing.
-    const geoEvent = {
-      eventTime: 0,
-      picks: [pickAt(50.9435, 6.9603)],
-      tilesSearched: 7,
-    };
-
-    expect(geoEventButtonLabel({ position: COLOGNE, geoEvent }, false)).toBe(
-      GEO_EVENT_IDLE_LABEL,
-    );
-    expect(
-      geoEventButtonLabel({ position: COLOGNE, geoEvent: undefined }, false),
-    ).toBe(GEO_EVENT_IDLE_LABEL);
-    expect(geoEventButtonLabel({ position: COLOGNE, geoEvent }, true)).toBe(
-      GEO_EVENT_BUSY_LABEL,
-    );
+    // NO QUEST FIXTURE HERE ANY MORE, and its absence is the assertion. The
+    // label used to take the view and describe whatever was held; it now takes
+    // only `busy`, so there is no state a quest could vary. A test that still
+    // built one would be implying the function can see it.
+    expect(geoEventButtonLabel(false)).toBe(GEO_EVENT_IDLE_LABEL);
+    expect(geoEventButtonLabel(true)).toBe(GEO_EVENT_BUSY_LABEL);
   });
 });
 
