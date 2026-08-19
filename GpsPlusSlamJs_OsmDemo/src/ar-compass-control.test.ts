@@ -42,6 +42,16 @@ describe("createArCompassControl", () => {
     expect(root.children).toHaveLength(0);
     control.attach();
     expect(root.children).toHaveLength(1);
+
+    // AND IT CARRIES `.ar-compass`, which is a contract with the stylesheet
+    // rather than decoration (round three, G9, DEC-W5). Placement is now a
+    // property of `#ar-root`'s column, and the e2e that measures it has to
+    // attach its OWN element carrying this class — a real AR session is
+    // unreachable in headless Chromium. So this assertion is the seam that
+    // keeps that test measuring the thing this module actually builds; without
+    // it, renaming the class here would move the slider back into the middle of
+    // the view with the whole suite green.
+    expect(root.children[0]?.className).toBe("ar-compass");
   });
 
   it("removes itself on dispose, and both calls are idempotent", () => {

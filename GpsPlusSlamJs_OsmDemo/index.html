@@ -185,9 +185,36 @@
         DOM-overlay root it becomes a fixed, viewport-sized layer, which is what
         the framework already sizes its canvas for.
       */
+      /*
+        THE OVERLAY IS A TOP-ALIGNED COLUMN (G9, DEC-W5).
+
+        Only the two controls that belong at the TOP take part in this flow --
+        the readout and the compass slider. Everything else in here
+        (`.ar-toast`, `.ar-elevation`, the AR offer) stays absolutely
+        positioned and is therefore out of flow and unaffected.
+
+        WHY A FLOW RATHER THAN A SECOND OFFSET. The slider used to be
+        `bottom: 20vh`, centred and up to 88vw wide -- a bar straight across the
+        near content, which is what the thirteenth session reported. Moving it
+        to `top: <some number>` would have put two hard-coded offsets in the
+        same corner, one of which CHANGES HEIGHT AT RUNTIME: the compass box
+        wraps and carries a hint line. That is exactly how the earlier
+        toast/slider overlap happened, and it was a PR #311 review finding. A
+        column cannot overlap itself, so the relationship is a property of the
+        layout instead of two numbers agreeing.
+
+        `align-items: flex-start` so neither control stretches to the full
+        width; `pointer-events` is untouched -- each child still opts in or out
+        for itself, and the container has never set it.
+      */
       #ar-root {
         position: fixed;
         inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        padding: 2.5rem 0.75rem 0;
       }
 
       #ar-root:empty {
@@ -281,13 +308,17 @@
         a full-viewport fixed layer and nothing in it may eat a tap.
       */
       .ar-hud {
-        position: absolute;
-        /* A plain offset, not `max(0.75rem, env(safe-area-inset-top))`: the
-           gate's CSS validator rejects `max()` here, the same way it rejects
-           `min()` on the toast's width. Under a notch this can sit high; that
-           is M5's UI polish, and it is recorded rather than silently accepted. */
-        top: 2.5rem;
-        left: 0.75rem;
+        /* IN THE COLUMN, not absolutely positioned (G9, DEC-W5). Its old
+           `top: 2.5rem; left: 0.75rem` moved to `#ar-root`'s padding, so the
+           inset is stated once for everything in the stack rather than
+           per-control.
+
+           The note that used to live here still applies to that padding: it is
+           a plain offset, not `max(0.75rem, env(safe-area-inset-top))`, because
+           the gate's CSS validator rejects `max()` in this file the same way it
+           rejects `min()` on the toast's width. Under a notch it can sit high;
+           that is M5's UI polish, recorded rather than silently accepted. */
+        order: 0;
         padding: 0.4rem 0.6rem;
         border-radius: 0.4rem;
         background: rgb(17 19 26 / 72%);
@@ -368,13 +399,18 @@
         with a thumb rather than being a 20-pixel target.
       */
       .ar-compass {
-        position: absolute;
-        /* NOT 12vh — that is `.ar-toast`'s band, and the far-travel toast fires
-           at 2 km, i.e. during exactly the long walk this slider is being
-           measured on. The two would paint over each other at the moment both
-           matter most (PR #311 review, finding 4). */
-        bottom: 20vh;
-        left: 50%;
+        /* AT THE TOP, UNDER THE READOUT (G9, DEC-W5). It was `bottom: 20vh`,
+           centred and up to 88vw wide, i.e. a bar across the near content --
+           "currently it's in the middle of the screen and occludes basically
+           the AR 3D content".
+
+           THE OLD REASON FOR 20vh IS RETIRED, NOT IGNORED: that number avoided
+           `.ar-toast`'s 12vh band, because the far-travel toast fires at 2 km,
+           during exactly the long walk this slider is measured on (PR #311
+           review, finding 4). Leaving the bottom of the screen entirely means
+           there is nothing left to collide with down there -- and the column
+           above means it cannot collide with the readout either. */
+        order: 1;
         display: flex;
         gap: 0.5rem;
         flex-wrap: wrap;
@@ -382,7 +418,6 @@
         align-items: center;
         max-width: 88vw;
         padding: 0.4rem 0.6rem;
-        transform: translateX(-50%);
         border: 1px solid rgb(242 244 248 / 25%);
         border-radius: 0.6rem;
         background: rgb(17 19 26 / 88%);

@@ -1537,6 +1537,76 @@ test.describe("the AR entry point", () => {
     await expect(arButton).toBeEnabled();
   });
 
+  test("keeps the AR overlay's controls at the TOP, out of the 3D content", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (G9, DEC-W5).
+     *
+     * "Currently it's in the middle of the screen and occludes basically the AR
+     * 3D content." The compass slider was `bottom: 20vh`, centred and up to
+     * 88vw wide — a bar straight across the near content.
+     *
+     * WHAT IT ACTUALLY TESTS, STATED PLAINLY: the STYLESHEET, not the wiring.
+     * The compass control only exists inside an immersive session, and headless
+     * Chromium reports no `immersive-ar` — stubbing the support probe gets the
+     * button enabled but cannot make a session start, which the existing AR
+     * tests say outright. jsdom is no help either: it applies no stylesheet and
+     * does no layout, so the one thing that changed here is invisible to it. So
+     * this attaches elements carrying the production class names to the real
+     * `#ar-root` and measures what the real CSS does to them.
+     *
+     * THE GAP THAT LEAVES, named rather than papered over: nothing here proves
+     * `ar-compass-control.ts` still uses `.ar-compass`. That class name is the
+     * seam between this test and the control, and it is pinned in
+     * `ar-compass-control.test.ts`.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.evaluate(() => {
+      const root = document.querySelector("#ar-root");
+      if (root === null) throw new Error("no #ar-root");
+      const hud = document.createElement("div");
+      hud.className = "ar-hud";
+      hud.textContent = "lat 50.9413\nlng 6.9580";
+      const compass = document.createElement("div");
+      compass.className = "ar-compass";
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.className = "ar-compass-slider";
+      const hint = document.createElement("span");
+      hint.className = "ar-compass-hint";
+      hint.textContent = "takes 15-30 fixes to express a change";
+      compass.append(slider, hint);
+      // APPENDED COMPASS-FIRST, deliberately: the column's order comes from CSS
+      // `order`, not from attach order, and in a real session the two controls
+      // are attached by different modules at different moments.
+      root.append(compass, hud);
+    });
+
+    const viewport = page.viewportSize();
+    const hudBox = await page.locator("#ar-root .ar-hud").boundingBox();
+    const compassBox = await page.locator("#ar-root .ar-compass").boundingBox();
+    if (hudBox === null || compassBox === null || viewport === null) {
+      throw new Error("no boxes");
+    }
+
+    // OUT OF THE MIDDLE: the whole slider sits in the upper half.
+    expect(compassBox.y + compassBox.height).toBeLessThan(viewport.height / 2);
+
+    // AND IT CANNOT OVERLAP THE READOUT, which is why the fix is a flex column
+    // rather than a second hard-coded offset. The compass box changes height at
+    // runtime — it wraps and carries a hint line — and two offsets that must not
+    // collide is exactly how the earlier toast/slider overlap happened (PR #311
+    // review, finding 4).
+    expect(compassBox.y).toBeGreaterThanOrEqual(hudBox.y + hudBox.height);
+
+    // The readout stays first — it is the thing being read while walking.
+    expect(hudBox.y).toBeLessThan(compassBox.y);
+  });
+
   test("does NOT offer AR when the user only pressed the GPS button", async ({
     page,
     context,

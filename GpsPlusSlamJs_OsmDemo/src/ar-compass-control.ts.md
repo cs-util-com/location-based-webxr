@@ -20,6 +20,26 @@ for the 0–1 influence whose mapping lives in `compass-influence.ts`.
 
 ## Invariants & assumptions
 
+- **IT SITS AT THE TOP OF THE OVERLAY, in `#ar-root`'s column** (round three,
+  G9, DEC-W5), under the HUD readout and above nothing. It used to be
+  `bottom: 20vh`, centred and up to 88vw wide — the thirteenth session's report
+  was that it "occludes basically the AR 3D content", which at that width and
+  position it did.
+  - **A COLUMN, NOT A SECOND OFFSET.** Moving it to a `top:` value would have
+    put two hard-coded offsets in the same corner, one of which changes height
+    at runtime — this box wraps and carries a hint line. That is exactly how the
+    earlier overlap with `.ar-toast` happened (PR #311 review, finding 4), so
+    the relationship is now a property of the layout rather than of two numbers
+    agreeing. Only `.ar-hud` and this control take part in the flow; the toast,
+    the elevation nudge and the AR offer stay absolutely positioned.
+  - **The old 20vh had a real reason and it is retired, not forgotten:** it
+    avoided `.ar-toast`'s 12vh band, because the far-travel toast fires at 2 km,
+    during exactly the long walk this slider is measured on. Leaving the bottom
+    of the screen entirely means there is nothing down there to collide with.
+  - **The class name `.ar-compass` is a contract with the stylesheet**, and the
+    e2e that measures the placement attaches its own element carrying it —
+    because a real AR session is unreachable in headless Chromium. What keeps
+    the two in step is this module's own test asserting the class it builds.
 - **It stays OUT of `#ar-root` until `attach()` and removes itself on
   `dispose()`.** That element is `position: fixed; inset: 0` and hidden only
   while `:empty`, so anything left attached keeps a full-viewport layer over the
