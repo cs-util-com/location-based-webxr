@@ -170,6 +170,20 @@ const OPERATOR_BY_HOSTNAME = Object.freeze({
   "maps.mail.ru": "vk-maps",
 });
 
+/**
+ * Every hostname this table groups.
+ *
+ * Exported only so the cross-check against `src/source/overpass-operators.ts`
+ * can compare KEY SETS in both directions. Walking one table and querying the
+ * other catches a host missing from that other table, but not a host present
+ * only in the one being walked — and both directions matter, because the two
+ * tables are deliberately duplicated (this script runs under bare `node` with
+ * no build step and cannot import from `src`).
+ */
+export function knownOperatorHostnames() {
+  return OPERATOR_BY_HOSTNAME;
+}
+
 /** The hostname of a URL, or the URL itself when it will not parse. */
 export function hostnameOf(url) {
   try {

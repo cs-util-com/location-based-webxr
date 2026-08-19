@@ -144,9 +144,12 @@ was never involved.
 
 The rule now: **sleep only when the next attempt would return to a refused
 operator.** Backoff is pressure relief on a quota, so it applies where a quota
-is about to be asked again, and nowhere else. With the default pool a 429 on
-`lz4.` goes straight to `maps.mail.ru` with no wait, and the attempt after that —
-`z.overpass-api.de`, FOSSGIS again — waits as before.
+is about to be asked again, and nowhere else.
+
+With the default pool, the draw puts three different operators in the first
+three attempts, so **none of the first three waits** and the first wait falls
+before the fourth. (This paragraph described the pre-M6 walk — "`z.` waits as
+before" — for one commit after the draw made it untrue.)
 
 The same predicate also removed a pure-waste sleep nobody had reported: the
 retryable-status path had no `attempt >= maxRetries` guard, so the final attempt

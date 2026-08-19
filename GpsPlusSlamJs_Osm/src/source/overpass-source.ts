@@ -202,11 +202,34 @@ const DEFAULT_MAX_CONCURRENT = 2;
  * configuration, silently. `endpoint-order.ts` now returns a permutation and
  * this reaches all of it.
  *
- * Note what this does NOT cost: attempts are not free requests. Every one is
- * gated by the slot budget, most are now spent on a DIFFERENT operator from the
- * last (`shouldWaitBeforeRetry`), and a permanent failure still escapes the loop
- * immediately. The fifth attempt only happens when four operators-worth of
- * hosts have each refused.
+ * **WHAT IT COSTS, stated properly — an earlier version of this comment claimed
+ * it cost nothing and was wrong three times over.** It said every attempt is
+ * gated by the slot budget (it is not: `tryAcquire` runs once per TILE, in
+ * `fetchTileUncached`, and all five attempts ride that one slot), that the
+ * fifth attempt needs "four operators-worth of hosts" to refuse (the default
+ * pool has THREE operators), and that the change was free (it is not).
+ *
+ * For a tile where everything refuses, against the default pool:
+ *
+ * - **requests to FOSSGIS go from 2 to 3.** The draw spends attempts 0–2 on
+ *   three distinct operators, so the added attempts are the remaining FOSSGIS
+ *   entries — i.e. the extra request goes to a quota already known to have said
+ *   no.
+ * - **backoff sleeps go from 1 to 2**, because attempts 3 and 4 both follow a
+ *   refused operator. With `Retry-After` that is up to +30 s of wall clock.
+ *
+ * That is the price of making a pool entry reachable at all, and it is paid
+ * only on the fully-refusing path — a permanent failure still escapes the loop
+ * immediately, and any success ends it. It is recorded here rather than
+ * defended, because the results doc's own finding is that 504s are the normal
+ * path (25 % of attempts), so this is not a corner case. **The follow-up worth
+ * taking:** once every distinct operator has refused, the remaining entries are
+ * near-certainly futile, and stopping there would recover both the request and
+ * the sleep.
+ *
+ * **The number is coupled to the DEFAULT pool's size**, and it travels: a
+ * caller passing a single self-hosted endpoint inherits five attempts and four
+ * sleeps against one host. Override `maxRetries` alongside `endpoints`.
  */
 const DEFAULT_MAX_RETRIES = 4;
 
@@ -225,13 +248,21 @@ const DEFAULT_MAX_RETRIES = 4;
  * - **private.coffee** — res 7: 59.9 (n=3), res 8: 179.3 (n=1). Answered
  *   **4 of 7**.
  *
- * **What the data supports, stated no more strongly than that.** FOSSGIS and VK
- * are indistinguishable: their res-8 medians differ by 0.2 s, and VK's single
- * fastest res-7 sample is n=1. So they are close, not ranked — 4:3 records a
- * slight preference on availability (82 % against 75 %) and on having several
- * times the samples, and nothing more. `private.coffee` IS separated, on both
- * axes at once: 57 % availability and medians 2.2x (res 7) to 8.3x (res 8) the
- * best, including one 179 s success.
+ * **What the data supports, stated no more strongly than that.**
+ * `private.coffee` IS separated, on both axes at once: 57 % availability, and
+ * medians 2.2x (res 7) to 8.3x (res 8) FOSSGIS's, including one 179 s success.
+ * That demotion is evidence-backed.
+ *
+ * **The 4:3 between the two fast operators is NOT.** Their res-8 medians differ
+ * by 0.2 s; the availability gap is 9/11 against 3/4, which one flipped result
+ * would erase; and FOSSGIS has more samples only because the benchmark's host
+ * list carries three FOSSGIS URLs to VK's one, which is a property of the
+ * inventory rather than of the operator. An earlier version of this comment
+ * offered those last two as grounds — a reviewer was right that they are noise
+ * and circularity respectively. **4:3 is a near-tie broken arbitrarily**, and it
+ * is written down as arbitrary so nobody later "preserves" a ranking that was
+ * never measured. 1:1 would be equally defensible; what matters is that neither
+ * is anywhere near `private.coffee`.
  *
  * A weight computed as `1 / median` would be a precise function of noise —
  * `spatial/resolutions.ts` records the same work at 15.1 / 32.9 / 82.9 / 91.1 s
@@ -675,11 +706,17 @@ export class OverpassSource implements OsmDataSource {
    * appeared. The sleep bought nothing for the host about to be asked.
    *
    * So the rule is: **sleep only when the next attempt would return to an
-   * operator that has already refused.** With the default pool that means a 429
-   * on `lz4.` goes straight to `maps.mail.ru` (a different operator, no wait),
-   * and only the attempt after that — `z.overpass-api.de`, FOSSGIS again —
-   * waits. Backoff is preserved exactly where it is meaningful, which is
-   * pressure on a quota, and dropped where it was only latency.
+   * operator that has already refused.** Backoff is preserved exactly where it
+   * is meaningful — pressure on a quota — and dropped where it was only
+   * latency.
+   *
+   * With the default pool and the M6 draw, the first three attempts go to three
+   * DIFFERENT operators, so none of them waits; the first wait is before the
+   * **fourth** attempt, which is the first that must revisit a refused quota.
+   * (This paragraph said "the attempt after that — `z.overpass-api.de`" until
+   * the M6 draw landed and made it false: under the old fixed walk the third
+   * attempt was `z.`, FOSSGIS again. The test in the same commit had the new
+   * behaviour right while this comment still described the old one.)
    *
    * IT ALSO CATCHES A PURE-WASTE SLEEP NOBODY REPORTED: the retryable-status
    * path had no `attempt >= maxRetries` guard, so the LAST attempt slept up to

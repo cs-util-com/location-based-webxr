@@ -33,6 +33,7 @@ import {
   backoffDelayMs,
   buildMatrixDocument,
   buildMatrixQuery,
+  knownOperatorHostnames as scriptOperatorHostnames,
   operatorForUrl,
   planCells,
   waitMsBeforeRequest,
@@ -578,5 +579,19 @@ describe("the operator table agrees with production", () => {
         operator,
       );
     }
+  });
+
+  it("covers the same hostnames in BOTH directions", () => {
+    // The loop above only walks the src table, so a hostname present only in
+    // the SCRIPT's copy would pass — and that is one of the two drift
+    // directions the duplication comment claims to close. A host this script
+    // spaces requests for but the client does not recognise would be retried
+    // as if it were independent.
+    //
+    // Set equality rather than another loop: it fails on an addition to either
+    // side, which is the whole point.
+    expect(new Set(Object.keys(scriptOperatorHostnames()))).toEqual(
+      new Set(Object.keys(knownOperatorHostnames())),
+    );
   });
 });

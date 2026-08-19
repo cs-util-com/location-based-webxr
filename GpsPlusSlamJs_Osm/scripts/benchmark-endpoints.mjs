@@ -43,8 +43,8 @@
  * next to the script that writes it.
  */
 
-import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { latLngToCell, cellToBoundary } from "h3-js";
 
@@ -139,6 +139,52 @@ const ENDPOINTS = [
 
 /** Seconds to wait between hosts. Politeness, not correctness. */
 const GAP_SECONDS = 5;
+
+/**
+ * Where `--matrix` writes when `--out` is not given.
+ *
+ * This file is cited BY NAME in `src/spatial/resolutions.ts` as the source of
+ * the 15.1 / 32.9 / 82.9 / 91.1 s figures a good deal of this repo's latency
+ * reasoning rests on. See {@link resolveOutputPath}.
+ */
+const DEFAULT_OUT_NAME = "overpass-matrix-sweep.json";
+
+/**
+ * The `--matrix` output path, or an exit if writing there would destroy data.
+ *
+ * **FAIL CLOSED, because the first version of `--out` did not actually disarm
+ * anything.** It left the default pointing at {@link DEFAULT_OUT_NAME} and the
+ * write unconditional, so it added a safety you had to remember to engage —
+ * and `stringArg` treats a value starting with `--` as absent, so the plausible
+ * typo `--out --repeats 2` fell back to the default and would have overwritten
+ * the protected artefact anyway.
+ *
+ * Refusing costs a retyped command. The failure it replaces destroys a
+ * measurement that took ~20 minutes of donated server time and that production
+ * constants cite.
+ *
+ * It EXITS rather than returning a result the caller must branch on: this is a
+ * CLI entry point, there is exactly one sensible response to either refusal,
+ * and `runMatrix` is already at its complexity limit.
+ */
+function resolveOutputPath(outDir, outName) {
+  const outPath = join(outDir, outName);
+  // `--out ../../elsewhere.json` would escape `docs/`. A flag whose purpose is
+  // protecting one directory should not be able to write outside it.
+  if (!resolve(outPath).startsWith(resolve(outDir))) {
+    console.error(`--out must name a file inside ${outDir}`);
+    process.exit(1);
+  }
+  if (existsSync(outPath) && !process.argv.includes("--force")) {
+    console.error(
+      `refusing to overwrite ${outPath}\n` +
+        `  pass --out <new-name>.json for a new run, or --force to replace it.\n` +
+        `  (dated names are the convention: overpass-sweep-YYYY-MM-DD-<what>.json)`,
+    );
+    process.exit(1);
+  }
+  return outPath;
+}
 
 /**
  * The key list and query form, kept identical to `capture-fixtures.mjs`.
@@ -408,8 +454,7 @@ async function runMatrix() {
   // `--matrix` run silently overwrote it, and the only warning was that nobody
   // had done it yet. A run that is not meant to REPLACE the reference should
   // say so on the command line.
-  const outName = stringArg("out", "overpass-matrix-sweep.json");
-  const outPath = join(outDir, outName);
+  const outPath = resolveOutputPath(outDir, stringArg("out", DEFAULT_OUT_NAME));
 
   const results = [];
   const lastRequestAt = {};

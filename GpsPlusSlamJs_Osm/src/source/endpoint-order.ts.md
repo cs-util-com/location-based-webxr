@@ -63,7 +63,24 @@ const order = planEndpointOrder(endpoints, OPERATOR_WEIGHTS, Math.random);
 // attempt N uses order[N] — and there is an order[N] for every N < endpoints.length
 ```
 
+- **Termination is structural.** The round-robin drains until every queue is
+  empty, rather than looping until `order.length` reaches `endpoints.length`.
+  The second form is correct only while the queues hold exactly as many items as
+  the pool — an invariant nothing enforced. Both attempts to mutation-test this
+  function broke it and produced an **infinite loop** instead of a wrong answer,
+  which in a Web Worker is a frozen app with no error and a property spec that
+  hangs rather than fails.
+
 ## Tests
+
+`endpoint-order.property.test.ts` — the contract as three universally quantified
+statements over generated pools (duplicates and skewed operator counts
+included), generated weights (including `0`, negative, `NaN`, `Infinity`) and
+generated draws: the result is a permutation, the first _k_ entries are _k_
+distinct operators, and nothing throws. Plus an empty pool terminating.
+Mutation-checked: de-duplicating URLs during grouping fails the permutation
+property. **It hung instead, until the loop was made structurally safe** — which
+is why that change is part of this module rather than a footnote.
 
 `endpoint-order.test.ts`. The three that carry the design:
 

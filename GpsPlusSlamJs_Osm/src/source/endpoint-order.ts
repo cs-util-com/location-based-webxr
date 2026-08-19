@@ -38,8 +38,15 @@ import { operatorForUrl } from "./overpass-operators.js";
  */
 export type OperatorWeights = Readonly<Record<string, number>>;
 
-/** Used for any operator the weights do not mention. */
-export const DEFAULT_OPERATOR_WEIGHT = 1;
+/**
+ * Used for any operator the weights do not mention.
+ *
+ * NOT exported: nothing outside this file reads it, and the root `knip` stage
+ * rejects an export with no importer. (It was exported for one commit and
+ * caught by the cascade gate — the second time in this session, both times
+ * because the per-package gate cannot see that stage.)
+ */
+const DEFAULT_OPERATOR_WEIGHT = 1;
 
 /**
  * The endpoints to try, in the order to try them.
@@ -89,11 +96,26 @@ export function planEndpointOrder(
   const queues = operatorOrder.map((operator) => [
     ...(byOperator.get(operator) ?? []),
   ]);
+  // TERMINATION IS STRUCTURAL, not a consequence of an invariant held
+  // elsewhere. This loop used to read `while (order.length < endpoints.length)`,
+  // which is correct only while the queues hold exactly as many items as the
+  // pool — true today, guarded by nothing. Two attempts to mutation-test this
+  // function both broke that invariant (one by de-duplicating URLs during
+  // grouping, one by skipping a push) and both produced an INFINITE LOOP rather
+  // than a wrong answer. That is the worst possible failure here: this runs in a
+  // worker, so a spin is a frozen app with no error, and the property spec that
+  // should have caught a dropped endpoint hung instead of failing.
+  //
+  // Draining until every queue is empty cannot spin: each pass either moves at
+  // least one item or ends the loop.
   const order: string[] = [];
-  while (order.length < endpoints.length) {
+  for (let moved = true; moved; ) {
+    moved = false;
     for (const queue of queues) {
       const next = queue.shift();
-      if (next !== undefined) order.push(next);
+      if (next === undefined) continue;
+      order.push(next);
+      moved = true;
     }
   }
   return order;
