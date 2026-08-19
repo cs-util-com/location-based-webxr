@@ -357,6 +357,14 @@ export class OverpassSource implements OsmDataSource {
   readonly sourceId = "overpass";
 
   private readonly endpoints: readonly string[];
+  /**
+   * The distinct operators this pool can reach, in no particular order.
+   *
+   * Held because the slot budget's only refusal point runs BEFORE an endpoint
+   * is drawn (see `fetchTileUncached`) and therefore has to be told which
+   * quotas are even in play. Computed once: the pool is immutable.
+   */
+  private readonly poolOperators: readonly string[];
   private readonly fetchImpl: typeof fetch;
   private readonly maxConcurrent: number;
   private readonly maxRetries: number;
@@ -429,6 +437,7 @@ export class OverpassSource implements OsmDataSource {
     this.operatorWeights = resolved.operatorWeights;
     this.budget =
       resolved.budget ?? new OverpassSlotBudget({ now: () => this.now() });
+    this.poolOperators = [...new Set(this.endpoints.map(operatorForUrl))];
   }
 
   /**
@@ -457,7 +466,7 @@ export class OverpassSource implements OsmDataSource {
       });
       if (!response.ok) return undefined;
       const status = parseOverpassStatus(await response.text());
-      this.budget.sync(status);
+      this.budget.sync(status, operatorForUrl(endpoint));
       return status;
     } catch {
       return undefined;
@@ -496,11 +505,19 @@ export class OverpassSource implements OsmDataSource {
     // Take a slot BEFORE building anything. Refusing here is the whole point of
     // the budget: a request not sent cannot be rate-limited, and the caller is
     // far better placed than we are to decide between serving cache and waiting.
-    if (!this.budget.tryAcquire()) {
+    // QUALIFIED BY THE POOL, and that qualification is the F2c fix at this
+    // level. This runs once per tile, before any endpoint is drawn, so an
+    // unqualified ask would refuse the tile whenever ANY operator held a
+    // penalty — which is how one 429 from FOSSGIS used to stop the client
+    // talking to VK for 35 s. Refusing only when every operator is blocked
+    // keeps `RateLimitedError` meaning "there is nowhere to go", which is what
+    // `CachingSource`'s stale-serve and `area-loader`'s prefetch back-off both
+    // branch on.
+    if (!this.budget.tryAcquire(this.poolOperators)) {
       this.stats.rateLimited++;
       throw new RateLimitedError(
         `Overpass slot budget exhausted for tile ${tile}`,
-        this.budget.msUntilAvailable(),
+        this.budget.msUntilAvailable(this.poolOperators),
       );
     }
     try {
@@ -581,7 +598,7 @@ export class OverpassSource implements OsmDataSource {
             `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
           );
         }
-        this.noteRateLimit(response);
+        this.noteRateLimit(response, endpoint);
         lastError = new Error(
           `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
         );
@@ -683,13 +700,20 @@ export class OverpassSource implements OsmDataSource {
    * otherwise a second tile fetched in the same tick walks straight into the
    * same wall and earns a second strike.
    */
-  private noteRateLimit(response: Response): void {
+  private noteRateLimit(response: Response, endpoint: string): void {
     if (response.status !== 429) return;
     const retryAfterMs = parseRetryAfterMs(
       response.headers.get("Retry-After"),
       this.now(),
     );
-    this.budget.penalise(retryAfterMs ?? DEFAULT_RATE_LIMIT_PENALTY_MS);
+    // THE ENDPOINT IS PASSED IN, not read off `response.url`. Tests inject a
+    // fake `fetchImpl` whose responses carry no url, and a silently
+    // unattributed penalty would fall back to blocking the whole pool — the
+    // bug, restored, in exactly the configuration that tests it.
+    this.budget.penalise(
+      retryAfterMs ?? DEFAULT_RATE_LIMIT_PENALTY_MS,
+      operatorForUrl(endpoint),
+    );
     this.stats.rateLimited++;
   }
 
@@ -857,7 +881,23 @@ export class OverpassSource implements OsmDataSource {
    * `endpoint-order.ts` — this is the seam, not the policy.
    */
   private planAttemptOrder(): readonly string[] {
-    return planEndpointOrder(this.endpoints, this.operatorWeights, this.random);
+    const order = planEndpointOrder(
+      this.endpoints,
+      this.operatorWeights,
+      this.random,
+    );
+    // Spending an attempt on a quota that has already refused is the same
+    // waste `shouldWaitBeforeRetry` removes one layer down, and here it is
+    // cheaper to avoid: the penalty is known before the request is built.
+    const live = order.filter(
+      (endpoint) => this.budget.availableFor(operatorForUrl(endpoint)) > 0,
+    );
+    // NOT an empty order. `fetchTileUncached` only admits a tile when some
+    // operator is free, so this should be unreachable — but a shared budget
+    // can be penalised by another source between the acquire and the draw, and
+    // an empty order would turn that race into a tile that silently makes zero
+    // requests and reports "no data" rather than a rate limit.
+    return live.length > 0 ? live : order;
   }
 
   /**

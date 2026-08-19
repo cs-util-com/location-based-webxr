@@ -42,8 +42,20 @@ export class OverpassSlotBudget {
 
   private slots: number;
   private inUse = 0;
-  /** Absolute time before which nothing may be dispatched. */
+  /**
+   * Absolute time before which nothing may be dispatched, whatever the
+   * operator. Set only by an unqualified {@link penalise}.
+   */
   private blockedUntilMs = 0;
+  /**
+   * Absolute time before which ONE operator may not be dispatched to.
+   *
+   * Keyed by the operator id `operatorForUrl` returns, not by hostname: three
+   * of the five default endpoints are FOSSGIS mirrors sharing one quota, so a
+   * per-host account would let a 429 from `lz4.overpass-api.de` be answered by
+   * asking `overpass-api.de` — the same wall, one hop along.
+   */
+  private readonly operatorBlockedUntilMs = new Map<string, number>();
   private isUnlimited = false;
 
   constructor(options: SlotBudgetOptions = {}) {
@@ -73,9 +85,45 @@ export class OverpassSlotBudget {
    * was under enough stress to misreport.
    */
   get available(): number {
+    return this.freeSlots();
+  }
+
+  /**
+   * Slots dispatchable right now **to one named operator**.
+   *
+   * Differs from {@link available} only by that operator's own penalty; the
+   * allocation itself is shared, because it models this client's outbound
+   * concurrency rather than any server's quota.
+   */
+  availableFor(operator: string): number {
+    return this.freeSlots([operator]);
+  }
+
+  /**
+   * Slots dispatchable given the operators a caller could actually reach.
+   *
+   * `undefined` or empty means "unqualified" and answers on the global penalty
+   * alone — the pre-2026-08-19 behaviour, kept because this class is exported
+   * from the package index and external callers hold it.
+   */
+  private freeSlots(operators?: readonly string[]): number {
     if (this.now() < this.blockedUntilMs) return 0;
+    // EVERY operator, not any. A pool with one live operator left is still a
+    // pool this client can fetch from, and refusing here is precisely the bug
+    // being fixed. See `tryAcquire`.
+    if (
+      operators !== undefined &&
+      operators.length > 0 &&
+      operators.every((operator) => this.operatorBlocked(operator))
+    ) {
+      return 0;
+    }
     if (this.isUnlimited) return Number.POSITIVE_INFINITY;
     return Math.max(0, this.slots - this.inUse);
+  }
+
+  private operatorBlocked(operator: string): boolean {
+    return this.now() < (this.operatorBlockedUntilMs.get(operator) ?? 0);
   }
 
   /**
@@ -87,10 +135,10 @@ export class OverpassSlotBudget {
    *
    * Every `true` must be paired with exactly one {@link release}.
    */
-  tryAcquire(): boolean {
+  tryAcquire(operators?: readonly string[]): boolean {
     // NOT short-circuited on `isUnlimited`: a penalty from a real 429 must
     // still block, even on an instance claiming no limit. See `available`.
-    if (this.available <= 0) return false;
+    if (this.freeSlots(operators) <= 0) return false;
     // Counted SYMMETRICALLY, including while unlimited. Callers pair every
     // `true` with a `release()` in a `finally`, so skipping the increment here
     // let those releases drive `inUse` to 0 against acquisitions that were
@@ -122,9 +170,20 @@ export class OverpassSlotBudget {
    * 429s in flight, letting a short second penalty cancel a long first one puts
    * the client straight back into the wall.
    */
-  penalise(ms: number): void {
+  penalise(ms: number, operator?: string): void {
     const clamped = Math.min(Math.max(0, ms), this.maxPenaltyMs);
-    this.blockedUntilMs = Math.max(this.blockedUntilMs, this.now() + clamped);
+    const until = this.now() + clamped;
+    if (operator === undefined) {
+      this.blockedUntilMs = Math.max(this.blockedUntilMs, until);
+      return;
+    }
+    // Longest-wins WITHIN an operator, for the reason above; independent
+    // ACROSS them, because a short penalty from one server must neither
+    // shorten nor lengthen another's.
+    this.operatorBlockedUntilMs.set(
+      operator,
+      Math.max(this.operatorBlockedUntilMs.get(operator) ?? 0, until),
+    );
   }
 
   /**
@@ -135,10 +194,24 @@ export class OverpassSlotBudget {
    * already awaiting, so there is no meaningful duration to report. A non-zero
    * value always means "the server told us to wait".
    */
-  msUntilAvailable(): number {
+  msUntilAvailable(operators?: readonly string[]): number {
     // Reported even when unlimited, for the same reason: a 429 we actually
     // received is better evidence than a rate-limit line we were told.
-    return Math.max(0, this.blockedUntilMs - this.now());
+    const global = Math.max(0, this.blockedUntilMs - this.now());
+    if (operators === undefined || operators.length === 0) return global;
+    // THE SOONEST, not the longest. This value becomes
+    // `RateLimitedError.retryAfterMs`, which `area-loader`'s prefetch sleeps
+    // on; reporting the longest would idle past the moment the
+    // faster-recovering operator could legitimately have been asked.
+    const soonest = Math.min(
+      ...operators.map((operator) =>
+        Math.max(
+          0,
+          (this.operatorBlockedUntilMs.get(operator) ?? 0) - this.now(),
+        ),
+      ),
+    );
+    return Math.max(global, soonest);
   }
 
   /**
@@ -154,7 +227,7 @@ export class OverpassSlotBudget {
    * The allocation SIZE is always adopted, since a self-hosted or
    * differently-configured instance may allow more or fewer than the public 2.
    */
-  sync(status: OverpassStatus): void {
+  sync(status: OverpassStatus, operator?: string): void {
     this.isUnlimited = status.unlimited;
     if (status.unlimited) {
       // Deliberately does NOT clear an existing penalty. A server reporting
@@ -190,7 +263,12 @@ export class OverpassSlotBudget {
     if (status.slotsAvailable <= 0 && status.nextSlotAtMs !== undefined) {
       // Server clock in, local clock out — a device with a skewed clock still
       // waits the right duration.
-      this.penalise(status.nextSlotAtMs - status.serverTimeMs);
+      //
+      // ATTRIBUTED to the operator whose `/api/status` this is. `syncBudget`
+      // deliberately asks the pool's FIRST entry rather than a drawn one, so
+      // this recovery time describes exactly one operator; penalising the whole
+      // pool with it would re-create the bug at a second call site.
+      this.penalise(status.nextSlotAtMs - status.serverTimeMs, operator);
     }
   }
 }

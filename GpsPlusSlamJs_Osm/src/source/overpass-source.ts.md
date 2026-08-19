@@ -183,3 +183,28 @@ Durations go through `elapsedMs`, which floors at zero. A hostile clock is not
 expected — that is what `monotonicNow` is for — but a negative duration makes
 the reconciliation sum close by CANCELLING, so the one gate that would catch a
 clock problem goes quiet exactly when it should shout.
+
+## Rate-limit attribution (F2c, 2026-08-19)
+
+A 429 penalises **only the operator that issued it**. Three facts make this
+non-obvious in the code:
+
+- `tryAcquire` runs once per **tile**, in `fetchTileUncached`, before any
+  endpoint is drawn — so it is passed `poolOperators` and refuses only when
+  every one of them is blocked. That keeps `RateLimitedError` meaning "there is
+  nowhere to go", which is what `CachingSource`'s stale-serve and
+  `area-loader`'s prefetch back-off branch on.
+- `noteRateLimit` takes the **endpoint** as a parameter rather than reading
+  `response.url`, because tests inject a fake `fetchImpl` whose responses carry
+  no url; an unattributed penalty silently falls back to blocking the whole
+  pool, which is the defect restored in exactly the configuration that tests it.
+- `planAttemptOrder` filters out endpoints whose operator is currently blocked,
+  and falls back to the unfiltered order if that would leave nothing — a shared
+  budget can be penalised by another source between the acquire and the draw,
+  and an empty order would make the tile issue zero requests and report "no
+  data" instead of a rate limit.
+
+**What this does NOT establish.** DEC-U2 chose to fix this without first
+reproducing which mechanism caused the owner's reported 30 s stall — the retry
+sleep (fixed in round one) or this global block. Both are now fixed; which one
+they hit is unknown and is not claimed either way.

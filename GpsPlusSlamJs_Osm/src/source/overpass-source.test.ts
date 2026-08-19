@@ -754,10 +754,16 @@ describe("the slot budget gates dispatch", () => {
     expect(budget.available).toBe(1);
   });
 
-  it("penalises the SHARED budget on a 429, not just this request's retry", async () => {
+  it("penalises the SHARED budget on a 429, attributed to the refusing operator", async () => {
     // A second tile requested in the same tick must not walk into the same wall
     // and earn a second strike. The penalty belongs to the client, not to the
     // request that discovered it.
+    //
+    // CHANGED 2026-08-19 (F2c, DEC-U2). This test used to assert an
+    // UNQUALIFIED `msUntilAvailable()` of 42 s and that the very next tile was
+    // refused — i.e. it pinned the defect: one operator's 429 stopping the
+    // client reaching the other two. The sharing it was written to protect is
+    // still asserted, now per operator.
     const fetchImpl = vi
       .fn()
       .mockImplementation(() =>
@@ -767,8 +773,11 @@ describe("the slot budget gates dispatch", () => {
     const { source } = makeSource(fetchImpl, { budget, maxRetries: 0 });
 
     await expect(source.fetchTile(TILE)).rejects.toThrow();
-    expect(budget.msUntilAvailable()).toBe(42_000);
-    await expect(source.fetchTile(TILE_B)).rejects.toThrow(RateLimitedError);
+    // The draw with `random: () => 0` opens on lz4.overpass-api.de, a FOSSGIS
+    // mirror, so that is the quota the 429 spent.
+    expect(budget.msUntilAvailable(["fossgis"])).toBe(42_000);
+    expect(budget.availableFor("fossgis")).toBe(0);
+    expect(budget.availableFor("vk-maps")).toBeGreaterThan(0);
   });
 
   it("falls back to a measured default penalty when 429 carries no Retry-After", async () => {
@@ -781,7 +790,86 @@ describe("the slot budget gates dispatch", () => {
     const { source } = makeSource(fetchImpl, { budget, maxRetries: 0 });
 
     await expect(source.fetchTile(TILE)).rejects.toThrow();
-    expect(budget.msUntilAvailable()).toBeGreaterThanOrEqual(30_000);
+    expect(budget.msUntilAvailable(["fossgis"])).toBeGreaterThanOrEqual(30_000);
+  });
+});
+
+describe("one operator's 429 does not block the others (F2c, DEC-U2)", () => {
+  /**
+   * WHY THESE TESTS MATTER. The owner reported "a 429, then another thirty
+   * seconds before anything appeared". Round one fixed one mechanism that
+   * produces that number — the retry sleeping before it rotated — and left a
+   * second untouched: a single 429 penalised ONE GLOBAL slot budget, so the
+   * client stopped dispatching to every operator for ~35 s. On a cold start
+   * with an empty cache that is 35 s of blank screen.
+   *
+   * DEC-U2 chose to fix the second without first reproducing which one the
+   * owner actually hit, so these tests are the evidence that the second is
+   * gone; nothing here proves which mechanism caused the original report, and
+   * the docs say so rather than claiming otherwise.
+   */
+
+  it("sends the NEXT tile to a live operator instead of refusing it", async () => {
+    // The whole point: FOSSGIS said no, VK never did, and VK is reachable in
+    // the same tick.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation((url: string) =>
+        Promise.resolve(
+          url.includes("overpass-api.de")
+            ? errorResponse(429, { "Retry-After": "35" })
+            : jsonResponse(OK_BODY),
+        ),
+      );
+    const budget = new OverpassSlotBudget({ slots: 2, now: () => 1_000_000 });
+    const { source } = makeSource(fetchImpl, { budget, maxRetries: 0 });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    fetchImpl.mockClear();
+
+    await expect(source.fetchTile(TILE_B)).resolves.toBeDefined();
+    const asked = fetchImpl.mock.calls.map((call) => String(call[0]));
+    expect(asked.every((url) => !url.includes("overpass-api.de"))).toBe(true);
+  });
+
+  it("refuses the tile once EVERY operator is blocked, so the cache can step in", async () => {
+    // The other half of the contract, and the one a careless fix deletes.
+    // `CachingSource` serves a stale copy and `area-loader` backs its prefetch
+    // off ONLY on `RateLimitedError`; if the budget stops throwing it when
+    // there is genuinely nowhere to go, both silently stop working.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(errorResponse(429, { "Retry-After": "35" })),
+      );
+    const budget = new OverpassSlotBudget({ slots: 2, now: () => 1_000_000 });
+    const { source } = makeSource(fetchImpl, { budget });
+
+    // maxRetries defaults to 4 over a pool of three operators, so one tile is
+    // enough to collect a refusal from all of them.
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+
+    await expect(source.fetchTile(TILE_B)).rejects.toThrow(RateLimitedError);
+  });
+
+  it("reports the SOONEST recovery, not the longest, when everything is blocked", async () => {
+    // This number becomes `RateLimitedError.retryAfterMs`, which the prefetch
+    // sleeps on. Reporting the longest would idle past the moment the
+    // faster-recovering operator could legitimately have been asked again.
+    const budget = new OverpassSlotBudget({ slots: 2, now: () => 1_000_000 });
+    budget.penalise(35_000, "fossgis");
+    budget.penalise(12_000, "vk-maps");
+    budget.penalise(20_000, "private.coffee");
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source } = makeSource(fetchImpl, { budget });
+
+    await expect(source.fetchTile(TILE)).rejects.toMatchObject({
+      name: "RateLimitedError",
+      retryAfterMs: 12_000,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 
