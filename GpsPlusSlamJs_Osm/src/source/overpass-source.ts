@@ -36,8 +36,6 @@ import {
   parseRetryAfterMs,
   sleep,
 } from "./backoff.js";
-import type { OverpassStatus } from "./overpass-status.js";
-import { parseOverpassStatus } from "./overpass-status.js";
 import { OverpassSlotBudget } from "./slot-budget.js";
 import { operatorForUrl } from "./overpass-operators.js";
 import { planEndpointOrder, type OperatorWeights } from "./endpoint-order.js";
@@ -438,39 +436,6 @@ export class OverpassSource implements OsmDataSource {
     this.budget =
       resolved.budget ?? new OverpassSlotBudget({ now: () => this.now() });
     this.poolOperators = [...new Set(this.endpoints.map(operatorForUrl))];
-  }
-
-  /**
-   * Re-syncs the slot budget from `/api/status`.
-   *
-   * Costs no slot. Worth calling on start-up and after a 429, but **not** as a
-   * pre-flight check before each request: measured 2026-07-28, `/api/status`
-   * lags actual consumption badly enough that it reported a full allocation
-   * free while concurrent queries were being 429'd. The local budget is the
-   * authority; this only corrects it.
-   *
-   * Failures are swallowed: a status endpoint that is down or has changed shape
-   * must not stop us fetching tiles, it only means we fly on local accounting.
-   */
-  async syncBudget(signal?: AbortSignal): Promise<OverpassStatus | undefined> {
-    // THE POOL'S FIRST ENTRY, not a drawn one. This asks a host how many slots
-    // it will give us, and the answer is only useful for the host most likely
-    // to be asked for a tile — which the weights make the first entry, most of
-    // the time. Drawing here would sample a different host than the fetch does
-    // and correct the budget against a quota we may never spend.
-    const endpoint = this.endpoints[0] as string;
-    try {
-      const response = await this.fetchImpl(statusUrlFor(endpoint), {
-        headers: { "User-Agent": this.userAgent },
-        ...(signal !== undefined ? { signal } : {}),
-      });
-      if (!response.ok) return undefined;
-      const status = parseOverpassStatus(await response.text());
-      this.budget.sync(status, operatorForUrl(endpoint));
-      return status;
-    } catch {
-      return undefined;
-    }
   }
 
   async fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
@@ -1021,17 +986,6 @@ function stripUndefined<T extends object>(source: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(source).filter(([, value]) => value !== undefined),
   ) as Partial<T>;
-}
-
-/**
- * `.../api/interpreter` → `.../api/status` on the same instance.
- *
- * Derived rather than configured separately, so a consumer pointing at a
- * self-hosted instance cannot end up reading one server's budget while querying
- * another's — which would be worse than not checking at all.
- */
-function statusUrlFor(endpoint: string): string {
-  return endpoint.replace(/\/api\/interpreter\/?$/, "/api/status");
 }
 
 function hostOf(endpoint: string): string {

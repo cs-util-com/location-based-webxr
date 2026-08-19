@@ -128,7 +128,7 @@ Three consequences worth knowing:
   gave four attempts against a five-entry pool and bare `overpass-api.de` was
   **unreachable in the shipped configuration** — silently, since nothing named
   it.
-- **`syncBudget` deliberately does NOT draw.** It asks one host how many slots
+
   it will grant, and that answer is only useful for the host most likely to be
   asked for a tile; drawing would sample a different host from the one the
   fetch goes to.
@@ -208,3 +208,27 @@ non-obvious in the code:
 reproducing which mechanism caused the owner's reported 30 s stall — the retry
 sleep (fixed in round one) or this global block. Both are now fixed; which one
 they hit is unknown and is not claimed either way.
+
+## `syncBudget` was removed (DEC-V3, 2026-08-19)
+
+It fetched `/api/status` from the pool's first entry and fed the result to the
+slot budget. **It had no production caller in either repo** — only tests — and
+the reason it never acquired one is the measurement the budget is built on:
+`/api/status` lags actual consumption badly enough that three concurrent queries
+returned `200, 429, 200` while a status read 600 ms into the burst still
+reported the full allocation free. The local budget is authoritative precisely
+because that snapshot cannot be trusted, which left this correcting a view that
+does not need correcting.
+
+The per-operator work of the same day also found a latent whole-pool lock
+reachable only through it. Fixing a latent bug in code nobody calls is worse
+value than removing the code.
+
+**What survives, and why:**
+
+- `OverpassSlotBudget.sync` — DEC-V3 said to remove it too "if nothing else
+  needs it", and something does: it is the only way `isUnlimited` is ever set,
+  so deleting it would take the whole unlimited-instance path with it.
+- `overpass-status.ts` — a declared package entry point in
+  `config/tsdown.config.ts`, i.e. deliberate public API for a consumer that
+  wants to read a status page itself. It simply has no in-repo consumer now.

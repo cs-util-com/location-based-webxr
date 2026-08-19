@@ -243,6 +243,24 @@ export class OverpassSlotBudget {
    * The allocation SIZE is always adopted, since a self-hosted or
    * differently-configured instance may allow more or fewer than the public 2.
    */
+  /**
+   * NO LONGER CALLED FROM ANYWHERE IN THIS REPO (DEC-V3, 2026-08-19), and kept
+   * anyway — which is the opposite of what that decision expected, so here is
+   * why.
+   *
+   * `OverpassSource.syncBudget` was deleted: it fetched `/api/status` to feed
+   * this, had no production caller, and existed to correct a view the
+   * measurement above says does not need correcting. DEC-V3 said to delete this
+   * method too "if nothing else needs it". Something does — **this is the only
+   * way `isUnlimited` is ever set.** Removing it would make `unlimited`
+   * permanently false and take `capacity`, the "a real 429 outranks a claim of
+   * no limit" rule and their tests down with it, which is a much larger
+   * deletion of live defensive behaviour than the decision contemplated.
+   *
+   * So it stays as public surface on a class consumers hold directly. The
+   * latent whole-pool lock it carried is fixed (see the `slots - inUse`
+   * comparison below); it is no longer a trap for the next caller.
+   */
   sync(status: OverpassStatus, operator?: string): void {
     this.isUnlimited = status.unlimited;
     if (status.unlimited) {
