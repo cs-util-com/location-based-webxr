@@ -73,15 +73,33 @@ export const DEM_ATTRIBUTION = `${MAPTERHORN_ATTRIBUTION} · ${TERRARIUM_ATTRIBU
  * `cf-cache-status: HIT`, so this is delivery throughput rather than a cold
  * origin that would warm up.
  *
- * 3 s sits above AWS's whole four-tile budget with margin, and far below the
- * consumer's 15 s terrain gate — so a Mapterhorn tile that is merely having a
- * bad moment still wins, while one that is behaving as measured gets out of the
- * way in time for the fallback to serve and the gate never fires.
+ * 3 s sits above AWS's whole four-tile budget with margin and far below the
+ * consumer's 15 s terrain gate, so the fallback always has room to serve and
+ * the gate never fires. That is what this number is chosen for.
  *
- * **The cost of being wrong is asymmetric, which is why the number leans
- * short.** Too short only means coarser heights for that window, and the
- * upgrade path (planned as M3) reclaims them. Too long means the flat-ground
- * failure this constant exists to remove.
+ * **BE HONEST ABOUT WHAT IT COSTS ON THE MEASURED CONNECTION, because an
+ * earlier version of this comment was not.** It claimed "a Mapterhorn tile that
+ * is merely having a bad moment still wins" — but every single measured
+ * Mapterhorn tile above is over 3 s. On that link the primary does not
+ * occasionally lose, it always loses: the session pays 3 s of dead time and
+ * ~0.5–0.75 MB of abandoned download per new window, and then renders AWS's
+ * coarser heights. Nothing negatively caches the timeout either — a tile that
+ * times out is never stored and never remembered as slow — so that cost repeats
+ * for every new window until `DEC-T8`'s adaptive behaviour exists.
+ *
+ * **Why 3 s is still right, given that.** The constant has to behave on links
+ * this repo has never measured, not only on the one it was derived from. Where
+ * Mapterhorn is healthy it wins and the LiDAR heights are kept; where it is as
+ * slow as measured, a coarse answer in ~4 s beats an accurate one at 15 s or
+ * never — which is precisely the complaint that started this work. Raising it
+ * to let the measured link win would buy accuracy by reinstating the wait.
+ *
+ * **The real fix for the trade is the race (DEC-T2 / M3), not a better
+ * constant**, because the race stops making it a choice: AWS answers
+ * immediately and Mapterhorn upgrades the field when it lands. Until then the
+ * asymmetry argument for leaning short holds, with one correction to its old
+ * wording — see `dem-provider.ts.md` on the partial-window hazard, which is why
+ * "too short only means coarser heights" is not unconditionally true.
  */
 export const PRIMARY_DEM_TIMEOUT_MS = 3_000;
 

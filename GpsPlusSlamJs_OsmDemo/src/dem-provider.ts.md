@@ -8,8 +8,9 @@ the same blob store the OSM tiles persist through.
 
 ## Public API
 
-- `createDemProvider({ store, decodePng, fetchImpl? }):
-FallbackElevationProvider` — the seam plus `fallbackProvider`'s live
+- `createDemProvider({ store, decodePng, fetchImpl?, primaryTimeoutMs?,
+fallbackTimeoutMs? }): FallbackElevationProvider` — the seam plus
+  `fallbackProvider`'s live
   `stats` surface (`{ primaryAnswered, fallbackAnswered, unanswered }`,
   position counts accumulated for the provider's life). The worker snapshots
   it into every `TerrainResult.demStats`, and the AR readout renders the
@@ -57,8 +58,43 @@ no single source can stall the composition has to cover every source in it. The
 values differ because the roles do: the primary's is a switch to something
 better, the fallback's is a last resort against a hang.
 
-Both sit well inside the consumer's 15 s terrain gate, so the gate should now be
-unreachable in ordinary operation rather than routinely hit.
+**The budget, stated as arithmetic rather than as reassurance.**
+`fallbackProvider` is strictly serial — it awaits the primary, then the fallback
+— so the worst case is 3 + 8 = **11 s of the gate's 15 s**. That is a 27 %
+margin, not "well inside" (which is what this paragraph claimed before review),
+and the remaining 4 s has to cover the OPFS reads, four WebP decodes, base64 of
+~1 MB and the geoid pass, none of which these deadlines bound.
+`dem-provider.test.ts` asserts the sum against `TERRAIN_WAIT_TIMEOUT_MS`, so
+raising either value has to confront that margin rather than erode it silently.
+
+**What the primary's deadline costs on the connection it was measured from.**
+Every measured Mapterhorn tile exceeded 3 s, so on that link the primary always
+loses: ~3 s of dead time and ~0.5–0.75 MB of abandoned download per new window,
+repeated per window because a timed-out tile is never stored and never
+remembered as slow. That is accepted deliberately — a coarse answer in ~4 s
+beats an accurate one at 15 s — and the thing that removes the trade is the
+race (DEC-T2 / M3), not a larger constant. See `dem-provider.ts`.
+
+## Known hazard the deadlines make more reachable
+
+**A partly-answered window is filled with the MEAN of the tiles that did
+answer, permanently.** `terrain-field.ts`'s `ensureAround` writes each post
+once (`if (posts.has(key)) continue`) and substitutes the mean of the known
+heights for any post that came back `undefined`, so a tile that fails while its
+neighbours succeed leaves thousands of posts holding a plausible, wrong,
+un-revisitable height.
+
+This is **pre-existing**, not introduced here: a 404 on both sources always did
+it. What the deadlines change is how reachable it is, and they narrow it in one
+direction while widening it in another — a primary timeout normally produces no
+gap at all, because the fallback fills exactly those positions, so this needs
+_both_ sources to fail for the same tile.
+
+Not fixed here because the honest fix is a design decision (all-or-nothing per
+window, or a revisitable lattice — the latter is M3's `replacePosts` work), and
+because M3 may not be built. Filed as a follow-up rather than left implicit:
+see the twelfth-session follow-up doc. **Do not** cite M3 as its mitigation
+without checking M3 shipped.
 
 **The trap, if this is ever reimplemented:** the deadline must surface as a
 `TimeoutError`, not an `AbortError`. `TerrariumProvider.load` rethrows aborts

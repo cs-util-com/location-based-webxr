@@ -140,13 +140,46 @@ export function createCachingTileFetch(
     try {
       const bytes = await response.clone().arrayBuffer();
       await store.put(url, toBase64(new Uint8Array(bytes)));
-    } catch {
-      stats.storeFailures++;
+    } catch (error) {
+      // A CANCELLED BODY IS NOT A STORAGE FAILURE, and conflating them makes
+      // this counter lie in the one situation someone would consult it.
+      //
+      // Headers can arrive within a deadline while the body is still streaming
+      // when it expires — likely, for the ~293 KB tiles this wraps. The clone's
+      // `arrayBuffer()` then rejects and lands here, with nothing yet written
+      // and nothing to write. Counting it as a store failure would report "the
+      // cache is not retaining" (per `storeFailures`' own docs, a quota or
+      // permission problem) for what is actually a slow network — pointing a
+      // reader at the disk when the answer is the link.
+      //
+      // Not counted anywhere else here either, deliberately: the provider
+      // already counts the same event as a timeout, and one event incrementing
+      // two counters would overstate both.
+      if (!isCancellation(error)) stats.storeFailures++;
     }
     return response;
   };
 
   return Object.assign(cachingFetch, { stats });
+}
+
+/**
+ * Whether a rejection is "the request was called off" rather than a real fault.
+ *
+ * The two names are the two ways that happens: a caller's `AbortController` and
+ * a deadline's `AbortSignal.timeout`. Both mean the bytes never arrived, so
+ * there was never anything to persist — see the call site for why counting them
+ * as storage failures would send a reader after the wrong problem.
+ *
+ * A named predicate rather than an inline conjunction because the surrounding
+ * function is at its complexity limit, and because this is a concept the file
+ * refers to twice over (here and in the signal handling below).
+ */
+function isCancellation(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
 }
 
 /**

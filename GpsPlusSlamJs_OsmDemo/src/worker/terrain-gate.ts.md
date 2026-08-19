@@ -106,11 +106,17 @@ removed so a session of thousands of builds cannot leak.
 re-load is waited for again rather than answered from the previous one". They
 do not, and the gate does not behave that way: a re-load at the **same** centre
 is answered from the previous settle, because nothing ever clears `settledKey`
-and the gate is never told that a load has started. Two tests now pin the two
-halves separately — displacement by a different centre, and the same-centre
-pass-through — and the module header explains why the limitation is a design
-boundary rather than a defect, plus what a caller must do about it (put the
-distinguishing fact in `keyOf`).
+and the gate is never told that a load has started.
+
+Two behaviours, two tests, and **no new test was needed for the second** —
+which the first version of this note got wrong as well. _"returns immediately
+when that centre has already settled"_ already pinned the same-centre
+pass-through; a test added alongside it turned out to be the same three lines
+under a name it could not honour (there is no load-start API to exercise), and
+review removed it. The surviving test's name and comment now carry the
+limitation, and the module header explains why it is a design boundary rather
+than a defect, plus what a caller must do about it: put the distinguishing fact
+in `keyOf`, as `undulationM` already does.
 
 `needsTerrainFor`'s own tests cover the regression the join can cause: a category
 change and every widening ring must **not** wait, or the demo stalls on the full

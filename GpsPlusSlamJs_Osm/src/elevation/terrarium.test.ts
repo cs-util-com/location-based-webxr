@@ -329,27 +329,28 @@ describe("TerrariumProvider", () => {
   });
 
   /**
-   * A fetch that honours its signal and otherwise never answers.
-   *
-   * A bare never-resolving promise would leave the request pending past the end
-   * of the test; rejecting with the signal's own reason is also what a real
-   * `fetch` does, which is the behaviour the deadline is written against.
-   */
-  /**
    * A signal's abort reason as an `Error`.
    *
    * `signal.reason` is typed `any`, and `prefer-promise-reject-errors` is right
    * to refuse it: a fake that rejected with a non-Error would let production
    * code take a path a real `fetch` never offers. In practice the reason IS an
-   * Error — Node's `DOMException` extends it, which is what lets `load`
-   * discriminate `AbortError` from `TimeoutError` by name at all — so the
-   * fallback is unreachable belt-and-braces rather than a real branch.
+   * Error — `DOMException.prototype`'s prototype is `Error.prototype` per
+   * WebIDL, in Node and in every current browser — which is what lets `load`
+   * discriminate `AbortError` from `TimeoutError` by name at all. The fallback
+   * is belt-and-braces rather than a reachable branch.
    */
   const abortReasonOf = (signal: AbortSignal): Error => {
     const reason: unknown = signal.reason;
     return reason instanceof Error ? reason : new Error(String(reason));
   };
 
+  /**
+   * A fetch that honours its signal and otherwise never answers.
+   *
+   * A bare never-resolving promise would leave the request pending past the end
+   * of the test; rejecting with the signal's own reason is also what a real
+   * `fetch` does, which is the behaviour the deadline is written against.
+   */
   const stalledFetch = () =>
     vi.fn(
       (_url: string, init?: { signal?: AbortSignal }) =>
@@ -441,29 +442,43 @@ describe("TerrariumProvider", () => {
     expect(seen).toEqual(["TimeoutError"]);
   });
 
-  it("applies ONE deadline per tile, shared by every joined caller", async () => {
+  it("spends ONE budget per tile, so a LATE joiner inherits what is left of it", async () => {
     // Why this test matters: the deadline is composed with `InFlightRequests`'
-    // internal controller, not with any one caller's signal, so it is a
-    // property of the TILE rather than of the request that happened to start
-    // it. Both callers must therefore see the same degraded answer from the
-    // same single fetch. Stating it as a test because the alternative reading
-    // — a per-caller budget — is the intuitive one and is not what this does.
+    // internal controller, not with any one caller's signal, so it belongs to
+    // the TILE rather than to the request that happened to start it. The
+    // intuitive alternative — a per-caller budget — is not what this does, and
+    // the difference is only visible to a caller that arrives LATE.
+    //
+    // An earlier version of this test started both callers in the same tick,
+    // which cannot tell the two designs apart: with simultaneous starts a
+    // per-caller budget expires at the same moment as a shared one. Under
+    // review that was worth having only as "dedup still works when a deadline
+    // is set", which is not the property named. So the second caller joins
+    // halfway through, and the assertion is on WHEN it settles: shared means it
+    // degrades with the first caller, per-caller would give it a fresh budget
+    // and settle it a full timeout later.
     const fetchImpl = stalledFetch();
     const provider = new TerrariumProvider({
       decodePng,
       fetchImpl,
       zoom: 13,
-      requestTimeoutMs: 20,
+      requestTimeoutMs: 60,
     });
     const at = [{ lat: 50.94, lng: 6.95 }];
 
-    const [first, second] = await Promise.all([
-      provider.elevationAt(at),
-      provider.elevationAt(at),
-    ]);
+    const startedAt = Date.now();
+    const first = provider.elevationAt(at);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const second = provider.elevationAt(at);
 
-    expect(first).toEqual([undefined]);
-    expect(second).toEqual([undefined]);
+    expect(await second).toEqual([undefined]);
+    const elapsed = Date.now() - startedAt;
+    // The shared budget expires ~60 ms after the FIRST caller started. A
+    // per-caller budget would expire ~60 ms after the second one did, i.e.
+    // ~100 ms. The midpoint discriminates with room for scheduler jitter.
+    expect(elapsed).toBeLessThan(85);
+
+    expect(await first).toEqual([undefined]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

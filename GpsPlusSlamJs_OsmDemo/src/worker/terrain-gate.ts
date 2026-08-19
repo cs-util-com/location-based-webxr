@@ -41,11 +41,21 @@
  * Terrarium tile is small and slow only on a cold network), short enough that a
  * user is not looking at a frozen scene.
  *
- * NOT EXPORTED: nothing outside this module has any business branching on it,
+ * EXPORTED SINCE 2026-08-19, and the reason it was not is worth keeping. It
+ * used to say: "nothing outside this module has any business branching on it,
  * and an export nobody imports is dead surface the dead-code gate is right to
- * reject. Callers that need a different bound pass `timeoutMs`.
+ * reject." Both halves still hold — no caller branches on it, and callers that
+ * need a different bound still pass `timeoutMs`.
+ *
+ * What changed is that this value became one end of a BUDGET. The DEM
+ * deadlines in `dem-provider.ts` are only correct while their sum fits inside
+ * it: `fallbackProvider` is strictly serial, so a primary and a fallback that
+ * together outlast this gate would let it fire again and rebuild the exact bug
+ * they were added to remove. That relationship has to be asserted somewhere,
+ * and asserting it against a copy of the number would be a copy that can drift
+ * from this one. So the export exists to be *read by a test*, not branched on.
  */
-const TERRAIN_WAIT_TIMEOUT_MS = 15_000;
+export const TERRAIN_WAIT_TIMEOUT_MS = 15_000;
 
 /** A position, structurally — this module never looks at anything else. */
 export interface GateCentre {

@@ -33,8 +33,14 @@
  * @see terrain-arrival.ts.md
  */
 
-/** A position, structurally. This module never looks at anything else. */
-export interface ArrivalPosition {
+/**
+ * A position, structurally. This module never looks at anything else.
+ *
+ * NOT exported: it appears only inside the two shapes below, both of which are,
+ * so nothing outside can need to name it — and an export nobody imports is dead
+ * surface the root dead-code gate rejects.
+ */
+interface ArrivalPosition {
   readonly lat: number;
   readonly lng: number;
 }

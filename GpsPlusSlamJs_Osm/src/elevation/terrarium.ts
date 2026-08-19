@@ -203,15 +203,22 @@ export function fromWorldPixel(
   return { lat, lng };
 }
 
-/** Key for a decoded tile in the cache. */
 /**
  * The signal governing one tile fetch: the caller's, the deadline's, or both.
  *
- * `AbortSignal.any` is only reached when there really are two, because it
- * allocates a signal that stays subscribed to its sources until it is collected
- * — pointless overhead on the common path where only one exists. Returning the
- * single source unchanged also keeps its `reason` identity intact, which the
- * `AbortError` / `TimeoutError` discrimination in `load` depends on.
+ * `AbortSignal.any` is only reached when there really are two, purely to avoid
+ * allocating a composite that stays subscribed to its sources until it is
+ * collected. **That is the whole reason, and an earlier version of this comment
+ * claimed a second one that is false:** `AbortSignal.any` also preserves its
+ * source's `reason` *identity* (the spec assigns the source's reason object to
+ * the composite), so the `AbortError` / `TimeoutError` discrimination in `load`
+ * does not depend on the single-source path at all.
+ *
+ * Worth knowing before trusting the shape: with a deadline configured, the
+ * single-source path is never taken. `load` always has the dedup controller's
+ * signal, so `present.length` is 2 whenever `requestTimeoutMs` is set and 1
+ * otherwise. The zero case is unreachable today and kept only so the helper is
+ * total rather than partial.
  */
 function composeSignals(
   ...signals: readonly (AbortSignal | undefined)[]
@@ -222,6 +229,7 @@ function composeSignals(
   return AbortSignal.any(present);
 }
 
+/** Key for a decoded tile in the cache. */
 function tileKey(z: number, x: number, y: number): string {
   return `${z}/${x}/${y}`;
 }
@@ -359,7 +367,21 @@ export class TerrariumProvider implements ElevationProvider {
    */
   private readonly inFlight = new InFlightRequests<ElevationTile | undefined>();
 
-  readonly stats = { fetches: 0, cacheHits: 0, decodeFailures: 0 };
+  /**
+   * `timeouts` is counted SEPARATELY from `decodeFailures`, and that split is
+   * the point rather than tidiness. Both degrade a tile to `undefined` through
+   * the same catch, so folding them together makes "the primary is too slow"
+   * indistinguishable from "the primary is serving corrupt tiles" — two
+   * problems with entirely different remedies. It is also the only per-source
+   * evidence of slowness this package records, which is where any future
+   * adaptive behaviour would have to start.
+   */
+  readonly stats = {
+    fetches: 0,
+    cacheHits: 0,
+    decodeFailures: 0,
+    timeouts: 0,
+  };
 
   constructor(options: TerrariumProviderOptions) {
     this.decodePng = options.decodePng;
@@ -477,8 +499,14 @@ export class TerrariumProvider implements ElevationProvider {
       // fail instead of degrading — the failure the deadline exists to prevent.
       if (error instanceof Error && error.name === "AbortError") throw error;
       // Everything else degrades: a missing or corrupt terrain tile means "no
-      // elevation here", never a thrown batch.
-      this.stats.decodeFailures++;
+      // elevation here", never a thrown batch. COUNTED APART, though, because
+      // "too slow" and "corrupt" are the same outcome and completely different
+      // problems — see `stats`.
+      if (error instanceof Error && error.name === "TimeoutError") {
+        this.stats.timeouts++;
+      } else {
+        this.stats.decodeFailures++;
+      }
       return undefined;
     }
   }

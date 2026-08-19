@@ -27,8 +27,11 @@ import {
 import {
   DEM_ATTRIBUTION,
   DEM_SOURCE_ID,
+  FALLBACK_DEM_TIMEOUT_MS,
+  PRIMARY_DEM_TIMEOUT_MS,
   createDemProvider,
 } from "./dem-provider.js";
+import { TERRAIN_WAIT_TIMEOUT_MS } from "./worker/terrain-gate.js";
 
 const COLOGNE: LatLng = { lat: 50.9413, lng: 6.9583 };
 
@@ -258,16 +261,19 @@ describe("createDemProvider", () => {
   });
 
   it("degrades on a DEADLINE but still propagates a caller's ABORT", async () => {
-    // WHY THIS TEST MATTERS - it pins a trap that would invert M1's intent.
+    // WHY THIS TEST MATTERS: it pins the COMPOSITION's two cancellation
+    // outcomes, which a caller of `createDemProvider` has to be able to tell
+    // apart — a deadline yields heights, an abort yields a rejection.
     //
-    // `TerrariumProvider.load` rethrows anything whose `name` is "AbortError"
-    // and degrades everything else to `undefined`. So a deadline implemented
-    // with a plain `AbortController.abort()` would REJECT the whole batch
-    // rather than degrade it, and the fallback would never run - exactly the
-    // failure the deadline exists to remove, reintroduced by the fix.
-    // `AbortSignal.timeout` yields a `TimeoutError`, which lands on the
-    // degrade branch. The two halves are asserted together because it is the
-    // DIFFERENCE between them that has to hold.
+    // WHAT IT DOES NOT PIN, corrected after review. An earlier version of this
+    // comment claimed it covered `TerrariumProvider.load`'s rethrow of
+    // `AbortError`. It does not: the caller's rejection is delivered by
+    // `InFlightRequests.attach`, which races the caller's own signal and
+    // rejects it directly, so `load`'s catch is never consulted on this path.
+    // Replacing that catch with a bare `catch { return undefined }` would leave
+    // this test passing. The rethrow is genuinely pinned one layer down, by
+    // `terrarium.test.ts`'s "propagates an abort instead of degrading", which
+    // rejects the fetch itself with an `AbortError` and no signal in play.
     const deadlineOnly = createDemProvider({
       store: new MemoryBlobStore(),
       decodePng: fakeDecodePng,
@@ -288,6 +294,31 @@ describe("createDemProvider", () => {
     }).elevationAt([COLOGNE], controller.signal);
     controller.abort();
     await expect(aborted).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("keeps both deadlines in the order and the budget the design depends on", () => {
+    // WHY THIS TEST MATTERS, and why the constants are exported at all.
+    //
+    // The two values are not independent settings — three relationships between
+    // them carry the whole argument, and each is easy to break with a plausible
+    // one-line edit:
+    //
+    // 1. The primary's is SHORTER. It is a switch to something better; the
+    //    fallback's is a last resort against a hang. Inverting them would make
+    //    the primary the patient one and leave the fast source waiting.
+    // 2. Their SUM is inside the terrain gate's 15 s. `fallbackProvider` is
+    //    strictly serial — it awaits the primary, then the fallback — so the
+    //    worst case is 3 + 8 = 11 s, and if that ever exceeded the gate the
+    //    whole milestone would be undone: the gate would fire again and the
+    //    mesh would be built flat, which is the reported bug.
+    // 3. The margin is real but NOT generous. 11 s of 15 s leaves 4 s for the
+    //    OPFS reads, four WebP decodes, base64 of ~1 MB and the geoid pass that
+    //    all happen outside these budgets. The assertion is written against the
+    //    gate's value so that raising either deadline has to confront it.
+    expect(PRIMARY_DEM_TIMEOUT_MS).toBeLessThan(FALLBACK_DEM_TIMEOUT_MS);
+    expect(PRIMARY_DEM_TIMEOUT_MS + FALLBACK_DEM_TIMEOUT_MS).toBeLessThan(
+      TERRAIN_WAIT_TIMEOUT_MS,
+    );
   });
 
   it("identifies the composition for the HUD, and credits BOTH sources", () => {
