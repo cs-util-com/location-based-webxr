@@ -595,3 +595,76 @@ describe("the operator table agrees with production", () => {
     );
   });
 });
+
+describe("keyCounts — the one-key probe dimension (N1, 2026-08-19)", () => {
+  /**
+   * WHY THIS DIMENSION EXISTS. The 2026-08-19 re-measurement found that a 343x
+   * smaller area is not faster: res 7 (21.2 MB) came back in 27.7 s and res 10
+   * (0.33 MB) in 20.5 s, so the ~22 s floor is not about area. The untested
+   * explanation is that it is query PLANNING over 32 separate key statements.
+   *
+   * WHY IT IS A CELL DIMENSION AND NOT A FLAG. Overpass latency swings with
+   * time of day badly enough that this repo has retracted three figures drawn
+   * from samples taken minutes apart. A one-key run followed by a 32-key run
+   * would confound the key count with the hour; interleaving them as cells of
+   * one sweep is the only way the difference means anything.
+   */
+
+  it("plans a cell per key count, so both arms ride the same sweep", () => {
+    const cells = planCells({
+      hosts: [{ url: "https://overpass-api.de/api/interpreter", note: "a" }],
+      resolutions: [7],
+      forms: ["areal-only"],
+      keyCounts: [1, 32],
+    });
+
+    expect(cells.map((cell) => cell.keyCount).sort()).toEqual([1, 32]);
+  });
+
+  it("puts the key count in the id, so two arms are distinguishable", () => {
+    // Two cells with the same id are indistinguishable in the artefact, which
+    // is the failure the round index was added to prevent. Same argument.
+    const cells = planCells({
+      hosts: [{ url: "https://overpass-api.de/api/interpreter", note: "a" }],
+      resolutions: [7],
+      forms: ["areal-only"],
+      keyCounts: [1, 32],
+    });
+
+    expect(new Set(cells.map((cell) => cell.id)).size).toBe(cells.length);
+    expect(cells.every((cell) => cell.id.includes("k"))).toBe(true);
+  });
+
+  it("omits the key count entirely when only one arm is asked for", () => {
+    // Every artefact written before 2026-08-19 has no key dimension, and the
+    // ids in them are cited by name in the results docs. A sweep that does not
+    // use the dimension must keep producing the old ids.
+    const [cell] = planCells({
+      hosts: [{ url: "https://overpass-api.de/api/interpreter", note: "a" }],
+      resolutions: [7],
+      forms: ["areal-only"],
+    });
+
+    expect(cell.id).not.toMatch(/:k\d+/);
+    expect(cell.keyCount).toBeUndefined();
+  });
+});
+
+describe("buildMatrixQuery honours a key count", () => {
+  it("emits exactly the requested number of key statements", () => {
+    // The measurement's whole comparison rests on this number, so it is
+    // asserted here rather than trusted to the caller's slice.
+    const bbox = { south: 50, west: 6, north: 51, east: 7 };
+    const keys = ["amenity", "shop", "leisure", "tourism"];
+
+    const one = buildMatrixQuery({
+      bbox,
+      keys: keys.slice(0, 1),
+      form: "plain",
+    });
+    const all = buildMatrixQuery({ bbox, keys, form: "plain" });
+
+    expect((one.match(/nwr\[/g) ?? []).length).toBe(1);
+    expect((all.match(/nwr\[/g) ?? []).length).toBe(4);
+  });
+});

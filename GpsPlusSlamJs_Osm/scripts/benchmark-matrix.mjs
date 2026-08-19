@@ -302,41 +302,61 @@ export function planCells({
   resolutions,
   forms = QUERY_FORMS,
   repeats = 1,
+  /**
+   * How many key statements each cell's query carries (N1, 2026-08-19).
+   *
+   * A DIMENSION RATHER THAN A FLAG, because Overpass latency swings with the
+   * hour badly enough that this repo has retracted three figures drawn from
+   * samples minutes apart. Running the one-key arm and the full arm as cells of
+   * the SAME interleaved sweep is the only way their difference means anything.
+   *
+   * `undefined` — the default — reproduces the pre-N1 ids exactly, because the
+   * results docs cite those ids by name.
+   */
+  keyCounts = undefined,
 }) {
   const ordered = FORM_RUN_ORDER.filter((form) => forms.includes(form));
   const cells = [];
 
+  // `[undefined]` rather than an empty list: the loop must run once for a sweep
+  // that does not use the dimension, and `undefined` is what suppresses both
+  // the id suffix and the field.
+  const keyArms = keyCounts === undefined ? [undefined] : keyCounts;
+
   for (const form of ordered) {
     for (const res of resolutions) {
-      // REPEATS ARE A ROUND-LEVEL LOOP, not a per-cell one, and the difference
-      // is the whole reason they exist.
-      //
-      // The question repeats answer is "what is the SPREAD of this host's
-      // latency" — `resolutions.ts` records four res-7 samples at 15.1 / 32.9 /
-      // 82.9 / 91.1 s and concludes the timings "do not replicate at all". Three
-      // measurements of one host taken back to back would mostly measure one
-      // moment: the same queue depth, the same neighbours, the same weather. So
-      // round `r` runs the whole interleaved group before round `r+1` starts,
-      // which spreads each host's samples across the run and lets the operator
-      // cooldown fall between them for free.
-      //
-      // The round index rides the id, because two cells with the same id would
-      // be indistinguishable in the artefact — and telling repeats apart is the
-      // point of collecting them.
-      for (let round = 0; round < repeats; round++) {
-        const group = hosts.map((host) => ({
-          // `operatorForUrl` for BOTH halves of the id. It promises never to
-          // throw — an unparseable URL becomes its own key — and a bare
-          // `new URL(...)` one expression later defeated exactly that guarantee.
-          id: `${form}:res${res}:${operatorForUrl(host.url)}:${hostnameOf(host.url)}${repeats > 1 ? `:r${round}` : ""}`,
-          url: host.url,
-          note: host.note,
-          operator: operatorForUrl(host.url),
-          res,
-          form,
-          ...(repeats > 1 ? { round } : {}),
-        }));
-        cells.push(...interleaveByOperator(group));
+      for (const keyCount of keyArms) {
+        // REPEATS ARE A ROUND-LEVEL LOOP, not a per-cell one, and the difference
+        // is the whole reason they exist.
+        //
+        // The question repeats answer is "what is the SPREAD of this host's
+        // latency" — `resolutions.ts` records four res-7 samples at 15.1 / 32.9 /
+        // 82.9 / 91.1 s and concludes the timings "do not replicate at all". Three
+        // measurements of one host taken back to back would mostly measure one
+        // moment: the same queue depth, the same neighbours, the same weather. So
+        // round `r` runs the whole interleaved group before round `r+1` starts,
+        // which spreads each host's samples across the run and lets the operator
+        // cooldown fall between them for free.
+        //
+        // The round index rides the id, because two cells with the same id would
+        // be indistinguishable in the artefact — and telling repeats apart is the
+        // point of collecting them.
+        for (let round = 0; round < repeats; round++) {
+          const group = hosts.map((host) => ({
+            // `operatorForUrl` for BOTH halves of the id. It promises never to
+            // throw — an unparseable URL becomes its own key — and a bare
+            // `new URL(...)` one expression later defeated exactly that guarantee.
+            id: `${form}:res${res}${keyCount === undefined ? "" : `:k${keyCount}`}:${operatorForUrl(host.url)}:${hostnameOf(host.url)}${repeats > 1 ? `:r${round}` : ""}`,
+            url: host.url,
+            note: host.note,
+            operator: operatorForUrl(host.url),
+            res,
+            form,
+            ...(keyCount === undefined ? {} : { keyCount }),
+            ...(repeats > 1 ? { round } : {}),
+          }));
+          cells.push(...interleaveByOperator(group));
+        }
       }
     }
   }

@@ -391,6 +391,19 @@ function readmitIfQuiet({ hostname, cell, dropped, refusals, notes }) {
   console.log(`  ${hostname} re-admitted after a quiet ${minutes} min`);
 }
 
+/**
+ * The key statements one cell's query carries (N1).
+ *
+ * Its own function because `runMatrix` sits at the lint complexity ceiling and
+ * because "which keys does this arm ask for" is a rule worth pointing at: the
+ * slice is taken from the FRONT of the capture script's list, so the one-key
+ * arm always asks the same key and the comparison is not also a comparison of
+ * which key was picked.
+ */
+function keysForCell(cell, keys) {
+  return cell.keyCount === undefined ? keys : keys.slice(0, cell.keyCount);
+}
+
 async function runMatrix() {
   const centre = {
     lat: arg("lat", DEFAULT_CENTRE.lat),
@@ -424,11 +437,16 @@ async function runMatrix() {
   // repo has already had to retract three latency figures that were quoted as
   // if it could.
   const repeats = Math.max(1, arg("repeats", 1));
+  // `--key-counts 1,32` runs both arms of the one-key probe in ONE interleaved
+  // sweep (N1, 2026-08-19). Omitted, the sweep is exactly what it was before
+  // the dimension existed, ids included.
+  const keyCounts = listArg("key-counts", undefined);
   const cells = planCells({
     hosts: ENDPOINTS,
     resolutions,
     forms,
     repeats,
+    keyCounts,
   }).map((cell) => ({
     ...cell,
     centre,
@@ -534,7 +552,11 @@ async function runMatrix() {
 
     const tile = latLngToCell(cell.centre.lat, cell.centre.lng, cell.res);
     const bbox = bboxOfCell(tile);
-    const query = buildMatrixQuery({ bbox, keys, form: cell.form });
+    const query = buildMatrixQuery({
+      bbox,
+      keys: keysForCell(cell, keys),
+      form: cell.form,
+    });
 
     process.stdout.write(
       `[${results.length + 1}/${cells.length}] ${cell.form} res${cell.res} ${hostname} … `,
@@ -599,7 +621,18 @@ async function runMatrix() {
       }
     }
 
-    results.push({ ...cellRecord(cell), tile, ...measured });
+    // `keyCount` PER ROW, not only in the document header. The offline test
+    // that reads this artefact has to be able to prove it is comparing a
+    // one-key row against a full one; a header-level count cannot do that for a
+    // sweep that carries both arms, and an assertion that cannot be falsified
+    // is the failure mode `operator-weights-evidence.test.ts` already shipped
+    // once.
+    results.push({
+      ...cellRecord(cell),
+      tile,
+      keyCount: keysForCell(cell, keys).length,
+      ...measured,
+    });
     write();
   }
 
