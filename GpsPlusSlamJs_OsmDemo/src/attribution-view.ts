@@ -40,6 +40,9 @@ export interface AttributionEntry {
 /** What separates the short names in the resting line. */
 const SEPARATOR = " · ";
 
+/** Makes each instance's panel id unique — a page may hold more than one map. */
+let instances = 0;
+
 export class AttributionView {
   readonly element: HTMLElement;
   private readonly line: HTMLElement;
@@ -74,6 +77,13 @@ export class AttributionView {
     this.details = document.createElement("div");
     this.details.className = "map-attribution-full";
     this.details.hidden = true;
+    // THE DISCLOSURE PATTERN NEEDS BOTH HALVES. `aria-expanded` says what state
+    // the control is in; `aria-controls` says WHAT it controls, and without it a
+    // screen-reader user has no programmatic route from the button to the
+    // content it reveals. The id is unique per instance because a page could
+    // hold two maps.
+    this.details.id = `map-attribution-full-${String(++instances)}`;
+    this.toggle.setAttribute("aria-controls", this.details.id);
 
     this.toggle.addEventListener("click", () => {
       this.setExpanded(!this.expanded);

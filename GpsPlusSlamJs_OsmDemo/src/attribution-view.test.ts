@@ -67,6 +67,13 @@ describe("AttributionView", () => {
     v.setEntries([OSM, MAPTERHORN, AWS]);
 
     expect(restingText(v)).toBe("OpenStreetMap · Mapterhorn · Mapzen/AWS");
+    // THE RENDERED LINE, separators included. `restingText` reads only the
+    // name spans and joins them with a separator it supplies itself, so it
+    // would pass with `SEPARATOR` set to "" — the assertion that LOOKS like it
+    // covers the separator is checking a string the test built.
+    expect(v.element.querySelector(".map-attribution-line")?.textContent).toBe(
+      "OpenStreetMap · Mapterhorn · Mapzen/AWS",
+    );
     expect(v.element.querySelector(".map-attribution-full")).toHaveProperty(
       "hidden",
       true,
@@ -99,6 +106,18 @@ describe("AttributionView", () => {
     expect(toggle(v).getAttribute("aria-expanded")).toBe("false");
     toggle(v).click();
     expect(toggle(v).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("points the toggle at the panel it reveals", () => {
+    // `aria-expanded` says what STATE the control is in and never what it
+    // controls. Without `aria-controls` a screen-reader user has no
+    // programmatic route from the button to the revealed content.
+    const v = view();
+    v.setEntries([OSM]);
+
+    const panel = v.element.querySelector(".map-attribution-full");
+    expect(panel?.id).toBeTruthy();
+    expect(toggle(v).getAttribute("aria-controls")).toBe(panel?.id);
   });
 
   it("KEEPS the expanded state across a re-render", () => {

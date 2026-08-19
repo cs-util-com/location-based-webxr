@@ -91,6 +91,13 @@ raster basemap.
   - **`setTerrainAttribution` takes entries, not a string**, and an empty list
     is how the elevation credits are removed. The OSM credit is not the
     caller's to add or remove: this class always carries it.
+  - ⚠️ **A layer's `attribution:` option is now SILENTLY INERT.** Leaflet
+    guards with `&& this._map.attributionControl`, so a tile layer or plugin
+    added with one does not throw — its credit simply never appears. Nothing in
+    the suite catches that today; it is recorded here rather than only in a code
+    comment because the person who hits it will be adding a second layer, not
+    reading `map-view.ts`'s constructor. **Every credit must go through
+    `AttributionView`.**
 - **Everything interpolated into a tooltip or popup is escaped** — see
   [`escape-html.ts.md`](./escape-html.ts.md). `bindTooltip` and `bindPopup` render HTML, and
   `category` is a column header from the publicly editable rule sheet; the

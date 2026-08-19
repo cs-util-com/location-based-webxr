@@ -461,12 +461,23 @@ async function main(): Promise<void> {
    * AR support.
    */
   const arButton = el<HTMLButtonElement>("enter-ar");
-  // ABOVE THE LOCATE BUTTON, in Leaflet's own bottom-right stack (F3a).
+  // IN LEAFLET'S OWN BOTTOM-RIGHT STACK, above the attribution credit (F3a).
   //
-  // Added BEFORE the `LocateControl` below so it sits above it: Leaflet
-  // appends controls to the corner in registration order, and the locate
-  // button is itself deliberately above the attribution credit, which may
-  // not be obstructed.
+  // THIS COMMENT SAID "ABOVE THE LOCATE BUTTON … Leaflet APPENDS controls to
+  // the corner in registration order" AND WAS WRONG ON BOTH COUNTS (PR review
+  // of the attribution milestone, finding 3). Leaflet PREPENDS into a bottom
+  // corner — `corner.insertBefore(container, corner.firstChild)` — so the
+  // FIRST control registered ends up LOWEST. Registration order here is
+  // attribution, then AR, then locate, which renders top-to-bottom as
+  // locate / AR / attribution.
+  //
+  // So the locate button is above this one, not below it, and has been since
+  // the AR control was added. Left as it renders rather than swapped: the part
+  // that is load-bearing is that BOTH sit above the attribution credit, which
+  // may not be obstructed, and that is true either way. Which of the two
+  // buttons is uppermost is a preference nobody has stated, and inverting it
+  // silently inside a review-application commit would be a UI change the owner
+  // never asked for. Flagged instead.
   //
   // `disableClickPropagation` for the same reason the locate control needs
   // it: without it a press also reaches the map underneath and reads as
@@ -613,9 +624,12 @@ async function main(): Promise<void> {
     },
   });
 
-  // MOUNTED HERE, immediately before the locate control, so Leaflet stacks it
-  // above: the corner fills in registration order, and locate is itself
-  // deliberately above the attribution credit, which may not be obstructed.
+  // MOUNTED BEFORE THE LOCATE CONTROL, which puts it ABOVE the attribution
+  // credit and BELOW the locate button — see the comment beside `arButton`
+  // above for why that is the opposite of what this used to claim. What
+  // matters and is true: Leaflet prepends into a bottom corner, the attribution
+  // control registers first in `map-view.ts`, and so the credit stays lowest
+  // and unobstructed.
   new ArControl({ position: "bottomright" }).addTo(mapView.map);
 
   const locateControl = new LocateControl({

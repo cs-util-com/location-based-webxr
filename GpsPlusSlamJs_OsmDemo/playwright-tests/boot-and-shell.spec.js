@@ -676,6 +676,28 @@ test.describe("the header", () => {
       const full = page.locator("#map .map-attribution-full");
       await expect(full).toBeHidden();
 
+      // AND IT IS ACTUALLY ONE LINE, at the 390 px width this describe runs at.
+      // That is the milestone's acceptance criterion and nothing tested it —
+      // which is how a `max-width: 60vw` "safety" cap shipped that wrapped the
+      // bar to two lines on a phone while every other assertion stayed green.
+      // Two line-heights at Leaflet's 0.75 rem/1.4 is ~34 px, so 26 px
+      // separates one line from two without pinning an exact height.
+      const restingBox = await page
+        .locator("#map .map-attribution-line")
+        .boundingBox();
+      expect(restingBox?.height ?? 0).toBeLessThan(26);
+
+      // THE EXPANDER IS BIG ENOUGH TO PRESS. It shipped at roughly 65 x 17 px —
+      // `font: inherit` resolves to Leaflet's 0.75 rem and the rule set
+      // `padding: 0` — which is under WCAG 2.2 SC 2.5.8's 24 px floor and
+      // SMALLER than the header caret the owner complained about twice. The one
+      // new touch control in the milestone about a control being wrong on a
+      // phone. 24 rather than 44 is deliberate: the request was for a thin line.
+      const toggleBox = await page
+        .locator("#map .map-attribution-toggle")
+        .boundingBox();
+      expect(toggleBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+
       await page.locator("#map .map-attribution-toggle").click();
       await expect(full).toBeVisible();
       await expect(full).toContainText(/Copernicus/i);
@@ -1211,13 +1233,34 @@ test.describe("my location", () => {
       if (mapBox === null) throw new Error("no map box");
       expect(box.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
       expect(box.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
-      if (attribution !== null) {
-        // Strictly above it, not overlapping it.
-        expect(box.y + box.height).toBeLessThanOrEqual(attribution.y + 1);
-      }
+      // UNCONDITIONAL, and that is the fix rather than a tidy-up. This used to
+      // read `if (attribution !== null) { … }`, and `boundingBox()` returns
+      // null for a hidden element — so once the attribution control gained a
+      // hidden state (it hides itself when there is nothing to credit), a
+      // regression that hid the credit would have made this guard SKIP rather
+      // than fail. Same vacuity class as the `toContainText` assertions, in the
+      // one assertion their migration did not touch.
+      expect(attribution).not.toBeNull();
+      // Strictly above it, not overlapping it.
+      expect(box.y + box.height).toBeLessThanOrEqual((attribution?.y ?? 0) + 1);
+
+      // AND THE CREDIT IS INSIDE THE MAP, not merely "visible". `toBeVisible()`
+      // does not detect an element clipped by an ancestor's `overflow: hidden`,
+      // which `.leaflet-container` sets — and on mobile the map is a
+      // drag-resizable sheet, so "off the bottom of a short sheet" is a
+      // reachable state that every other assertion here would call fine.
+      expect(
+        (attribution?.y ?? 0) + (attribution?.height ?? 0),
+      ).toBeLessThanOrEqual(mapBox.y + mapBox.height + 1);
+      // ON THE VISIBLE SHORT NAME, not on the container's `textContent`. This
+      // was the one `toContainText` the F10 migration missed, and it is the
+      // exact shape that assertion class fails at: it matches a credit hidden
+      // behind the expander and reports the obligation as met.
       await expect(
-        page.locator("#map .leaflet-control-attribution"),
-      ).toContainText("OpenStreetMap");
+        page.locator("#map .map-attribution-short").filter({
+          hasText: "OpenStreetMap",
+        }),
+      ).toBeVisible();
     });
 
     await test.step("reports a denied permission instead of hanging on 'locating…'", async () => {

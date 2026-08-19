@@ -1115,14 +1115,32 @@
          `attribution-view.ts` for why -- and keeps the
          `leaflet-control-attribution` class so Leaflet's own styling still
          applies underneath these rules. */
-      .map-attribution {
-        max-width: 60vw;
-        line-height: 1.4;
-      }
-
+      /* NO `max-width` HERE, and its absence is deliberate (PR review of this
+         milestone, finding 2). A 60vw cap looked like prudence and was the one
+         thing breaking the milestone's own acceptance criterion: Leaflet's
+         corner is absolutely positioned inside the map pane, so the box is
+         ALREADY bounded by the map's width, and 60vw of a 390 px phone is a
+         224 px content box against ~318 px of resting content -- so the "one
+         thin line" wrapped to two, on exactly the viewport the e2e runs at. On
+         desktop the map is ~50vw, so the cap never bound there and the rule was
+         inert where it was harmless and harmful where it was not. */
       .map-attribution-toggle {
+        /* A REAL TAP TARGET, and this is the third time in two days the same
+           lesson has been paid for. `font: inherit` resolves to Leaflet's
+           0.75 rem, so with `padding: 0` this control shipped at roughly
+           65 x 17 px -- under WCAG 2.2 SC 2.5.8's 24 x 24 floor, and smaller
+           than the header caret whose size the owner complained about twice.
+           It is the only new touch control in the milestone whose whole subject
+           is a control being wrong on a phone.
+
+           1.5 rem = 24 px, NOT the 2.75 rem the header toggle uses, and that is
+           a judgement rather than an oversight: the owner asked for a thin line,
+           and a 44 px control is most of the height they asked to get rid of.
+           24 px is the accessibility floor, and unlike the caret this control
+           has a large easy-to-hit sibling in the resting line beside it. */
+        min-height: 1.5rem;
         margin-left: 0.35rem;
-        padding: 0;
+        padding: 0 0.25rem;
         border: 0;
         background: none;
         /* Leaflet's own attribution link colour, so the control reads as the
@@ -1133,11 +1151,15 @@
         cursor: pointer;
       }
 
-      /* The three lines the feedback said it may expand to. Kept narrow so a
-         long credit wraps inside the corner rather than across the map. */
+      /* The three lines the feedback said it may expand to.
+         NO `max-width` and NO `color`: both were duplicates of what Leaflet's
+         own `.leaflet-control-attribution` already gives this subtree, and the
+         comment that used to sit here claimed the width cap was what kept a long
+         credit inside the corner. The corner does that. A comment describing a
+         mechanism the code does not implement is what the next reader builds
+         on. */
       .map-attribution-full {
-        max-width: 60vw;
-        color: #333;
+        padding-top: 0.15rem;
       }
 
       /* The identity band is outline-only: "nothing known here" must not paint
