@@ -23,6 +23,7 @@ import {
   distanceMetres,
   formatDistance,
   geoEventButtonLabel,
+  geoEventReadout,
 } from "./event-label.js";
 
 const COLOGNE = { lat: 50.9375, lng: 6.9603 };
@@ -199,7 +200,7 @@ describe("describeGeoEvent", () => {
     // AND HOW MUCH GROUND WAS LOOKED AT (F57). "No event nearby" alone cannot
     // distinguish "there is none" from "you have not loaded enough to know" --
     // and under DEC-R9-15 the second is a real, common state.
-    expect(label).toBe("No event nearby · searched 1 tile");
+    expect(label).toBe("No quest nearby · searched 1 tile");
   });
 });
 
@@ -225,32 +226,42 @@ describe("describeGeoEvent — the searched area (F57)", () => {
     ).toContain("searched 4 tiles");
   });
 
-  it("reports it on the SUCCESS path too, not only when nothing was found", () => {
-    // THE HALF THAT IS EASY TO SKIP. Two people standing together can find
-    // different NUMBERS of events under DEC-R9-15 while agreeing about each one
-    // — so the coverage matters when something IS found, not just when nothing
-    // is. Reporting it only on the empty branch would answer the question only
-    // for the person who sees nothing.
-    const label = describeGeoEvent(
+  it("DROPS it from the success path, and keeps it when nothing was found", () => {
+    // INVERTED 2026-08-19 (F4e). This used to assert the count on BOTH paths,
+    // on the reasoning that two people standing together can find different
+    // NUMBERS of quests under DEC-R9-15 while agreeing about each one.
+    //
+    // The owner called it noise on success, and on success it is: there is a
+    // marker on the map, which answers the question the count was helping with.
+    // The empty case is different and unchanged - it is the only thing
+    // distinguishing "there is none here" from "you have not loaded enough to
+    // know" (F57), and the second reads as a bug. So this keeps BOTH halves
+    // rather than simply dropping one.
+    const found = describeGeoEvent(
       { lat: 0, lng: 0 },
       { eventTime: 0, picks: [pickAt(0.005, 0.005)], tilesSearched: 7 },
       at,
     );
-    expect(label).toContain("Event at");
-    expect(label).toContain("searched 7 tiles");
+    expect(found).toContain("Quest at");
+    expect(found).not.toContain("searched");
+
+    const empty = describeGeoEvent(
+      { lat: 0, lng: 0 },
+      { eventTime: 0, picks: [], tilesSearched: 7 },
+      at,
+    );
+    expect(empty).toContain("searched 7 tiles");
   });
 });
 
 describe("geoEventButtonLabel", () => {
-  const at = (): string => "14:15";
+  // NO INJECTED CLOCK HERE ANY MORE. The label stopped being a description
+  // (F4a), so it no longer formats a time and no longer takes a formatter --
+  // the fixed-clock helper the other blocks use would be unused surface.
 
   it("rests when nothing has been found", () => {
     expect(
-      geoEventButtonLabel(
-        { position: COLOGNE, geoEvent: undefined },
-        false,
-        at,
-      ),
+      geoEventButtonLabel({ position: COLOGNE, geoEvent: undefined }, false),
     ).toBe(GEO_EVENT_IDLE_LABEL);
   });
 
@@ -268,47 +279,98 @@ describe("geoEventButtonLabel", () => {
           },
         },
         true,
-        at,
       ),
     ).toBe(GEO_EVENT_BUSY_LABEL);
   });
 
-  it("RE-READS as the user walks, because it is derived rather than frozen", () => {
-    // WHY THIS TEST MATTERS. The label used to be written once, at the moment
-    // the search returned, so "640 m NE" stayed on the button however far the
-    // user then walked — a number that was wrong the instant they moved, on a
-    // control whose whole purpose (F56) is to say where to go. Deriving it from
-    // (position, event) is what fixes that, and this is the assertion that
-    // would fail if anyone froze the string again.
+  it("is ONE OF TWO CONSTANTS, so the button stops resizing (F4a)", () => {
+    // INVERTED 2026-08-19. This label used to be the whole description, which
+    // is exactly why the button grew from "Next geo-event" to "Event at 14:15 ·
+    // 640 m NE · searched 7 tiles" and back on every press — the resizing the
+    // owner reported.
+    //
+    // TWO constants and not one: `Finding…` is the in-progress state root
+    // `CLAUDE.md`'s async-feedback rule requires, so collapsing to a single
+    // string would delete the feedback rather than the resizing.
     const geoEvent = {
       eventTime: 0,
       picks: [pickAt(50.9435, 6.9603)],
       tilesSearched: 7,
     };
-    const far = geoEventButtonLabel({ position: COLOGNE, geoEvent }, false, at);
-    const near = geoEventButtonLabel(
-      { position: { lat: 50.9425, lng: 6.9603 }, geoEvent },
-      false,
-      at,
-    );
 
-    expect(far).toContain("670 m N");
-    expect(near).toContain("110 m N");
+    expect(geoEventButtonLabel({ position: COLOGNE, geoEvent }, false)).toBe(
+      GEO_EVENT_IDLE_LABEL,
+    );
+    expect(
+      geoEventButtonLabel({ position: COLOGNE, geoEvent: undefined }, false),
+    ).toBe(GEO_EVENT_IDLE_LABEL);
+    expect(geoEventButtonLabel({ position: COLOGNE, geoEvent }, true)).toBe(
+      GEO_EVENT_BUSY_LABEL,
+    );
+  });
+});
+
+describe("geoEventReadout — what survives of F56", () => {
+  it("RE-READS as the user walks, because it is derived rather than frozen", () => {
+    // MOVED HERE FROM `geoEventButtonLabel` (F4a, 2026-08-19), and moving it
+    // rather than deleting it is the point. F56's recorded win was that the
+    // distance updates as the user walks — a number frozen when the search
+    // returned is wrong the instant they move, on a readout whose whole purpose
+    // is saying where to go.
+    //
+    // Making the button constant deletes that, and NEITHER of its replacements
+    // brings it back: a toast fades, and a map pan does not restate. The
+    // milestone review of the plan caught the loss; this readout is what
+    // preserves it, so this is the assertion that would fail if anyone froze
+    // the string again — or removed the readout as redundant.
+    const geoEvent = {
+      eventTime: 0,
+      picks: [pickAt(50.9435, 6.9603)],
+      tilesSearched: 7,
+    };
+
+    expect(geoEventReadout({ position: COLOGNE, geoEvent })).toContain(
+      "670 m N",
+    );
+    expect(
+      geoEventReadout({ position: { lat: 50.9425, lng: 6.9603 }, geoEvent }),
+    ).toContain("110 m N");
   });
 
-  it("describes an empty result rather than resting, so the search is visible", () => {
-    // "No event nearby · searched 7 tiles" and "Next geo-event" are different
-    // claims: the first says a search ran and found nothing, the second says
-    // none has run. Collapsing them makes a real answer look like inaction.
+  it("is EMPTY with no quest, so the caller can hide it rather than reserve space", () => {
+    expect(geoEventReadout({ position: COLOGNE, geoEvent: undefined })).toBe(
+      "",
+    );
+  });
+
+  it("is empty for a search that found nothing", () => {
+    // A quest with no picks is a real answer — "a search ran and found nothing"
+    // — but there is no distance to report, and printing "0 m N" would point
+    // the user at their own feet. The toast carries that outcome instead.
     expect(
-      geoEventButtonLabel(
-        {
-          position: COLOGNE,
-          geoEvent: { eventTime: 0, picks: [], tilesSearched: 7 },
-        },
-        false,
-        at,
-      ),
-    ).toBe("No event nearby · searched 7 tiles");
+      geoEventReadout({
+        position: COLOGNE,
+        geoEvent: { eventTime: 0, picks: [], tilesSearched: 7 },
+      }),
+    ).toBe("");
+  });
+
+  it("carries DISTANCE AND BEARING ONLY, not the time or the tile count", () => {
+    // Those do not change as the user moves, so they belong in the transient
+    // message that announced the result rather than in a readout whose whole
+    // purpose is that it keeps changing. Without this, the readout drifts back
+    // into being the old label under a new name.
+    const readout = geoEventReadout({
+      position: COLOGNE,
+      geoEvent: {
+        eventTime: 0,
+        picks: [pickAt(50.9435, 6.9603)],
+        tilesSearched: 7,
+      },
+    });
+
+    expect(readout).not.toContain("searched");
+    expect(readout).not.toContain("Quest at");
+    expect(readout).toBe("670 m N");
   });
 });

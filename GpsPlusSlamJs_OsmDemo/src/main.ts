@@ -45,7 +45,11 @@ import {
   writePlace,
 } from "./url-state.js";
 import { describeDrawCost } from "./draw-cost.js";
-import { geoEventButtonLabel } from "./event-label.js";
+import {
+  describeGeoEvent,
+  geoEventButtonLabel,
+  geoEventReadout,
+} from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
 import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar";
 import { setZeroPos } from "gps-plus-slam-app-framework/state";
@@ -442,6 +446,7 @@ async function main(): Promise<void> {
    * wired further down, once `refresh` exists — see `geo-event-cycle.ts`.
    */
   const geoEventButton = el<HTMLButtonElement>("geo-event");
+  const questReadout = el("quest-readout");
   /**
    * AR mode's entry point (DEC-12, AR milestone 1).
    *
@@ -841,11 +846,16 @@ async function main(): Promise<void> {
    * F56 wanted and a frozen string could not give.
    */
   const paintGeoEventButton = (busy = geoEventButton.disabled): void => {
+    const view = selectOsmView(store.getState());
     geoEventButton.disabled = busy;
-    geoEventButton.textContent = geoEventButtonLabel(
-      selectOsmView(store.getState()),
-      busy,
-    );
+    geoEventButton.textContent = geoEventButtonLabel(view, busy);
+    // THE READOUT, NOT THE BUTTON, CARRIES THE DISTANCE NOW (F4a). Repainted
+    // from the same `(position, geoEvent)` the label used to be a function of,
+    // which is what makes it re-read as the user walks — F56's recorded win,
+    // and the thing a constant label would otherwise have deleted.
+    const readout = geoEventReadout(view);
+    questReadout.textContent = readout;
+    questReadout.hidden = readout === "";
   };
 
   /**
@@ -859,6 +869,22 @@ async function main(): Promise<void> {
     worker,
     setBusy: paintGeoEventButton,
     republish: () => refresh(),
+    // THE TWO THINGS THAT REPLACE THE BUTTON'S OLD LABEL (F4a, F4c, DEC-U12).
+    //
+    // The description used to BE the button, which is why it grew and shrank on
+    // every press. It now goes to the toast — where it is a result announcement
+    // rather than a control's caption — and the map pans to the winner so the
+    // marker is actually on screen, which is what F56's label existed to
+    // substitute for.
+    //
+    // `panTo`, NOT `centreOn`: that one moves the user's own marker first, so
+    // reusing it would teleport the user onto the quest.
+    onFound: (event) => {
+      const view = selectOsmView(store.getState());
+      toast.show(describeGeoEvent(view.position, event));
+      const nearest = event.picks[0];
+      if (nearest !== undefined) mapView.panTo(nearest.position);
+    },
     // W7's benchmark line. `console.info` rather than the status bar: it is a
     // developer diagnostic taken once per press, and the status line is already
     // carrying the cell counts a user reads. `describeGeoEventStats` puts the
@@ -1012,12 +1038,23 @@ async function main(): Promise<void> {
    * edit is "the same place two hours later".
    */
   geoEventButton.addEventListener("click", () => {
+    // THE PICKER OPENS ON THE FIRST PRESS (F4f, DEC-U13), alongside the search
+    // rather than instead of it.
+    //
+    // It used to take two presses: the first searched, and only a second — with
+    // an event already held — opened the picker. That made the second press
+    // mean something different from the first, and the owner asked for the
+    // choice to be visible immediately.
+    //
+    // AND IT IS LIVE WHILE THE SEARCH RUNS (DEC-U13), chosen over
+    // visible-but-disabled. Changing the category mid-search cancels and
+    // restarts rather than queueing: the picker and the map must agree when
+    // things settle, and `latestOnly` inside `createGeoEventCycle` is what
+    // discards the abandoned run's late result. The accepted cost is that
+    // flipping rapidly on a slow connection completes nothing until you stop.
     const held = selectOsmView(store.getState()).geoEvent;
-    if (held === undefined) {
-      void findGeoEvent();
-      return;
-    }
-    geoEventPicker.toggle(new Date(held.eventTime));
+    geoEventPicker.open(new Date(held?.eventTime ?? Date.now()));
+    void findGeoEvent();
   });
 
   /**

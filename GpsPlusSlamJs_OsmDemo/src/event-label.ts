@@ -8,8 +8,18 @@
  * worked and where to look, without moving the camera.
  *
  * MOVING THE CAMERA WAS THE ALTERNATIVE AND WAS DECLINED (F56, owner decision
- * 2026-08-04). This demo does not take over the viewport uninvited; a HUD in
- * the 3D view is scoped as its own round.
+ * 2026-08-04) — **AND THAT WAS REVERSED ON 2026-08-19 (DEC-U12).** The map now
+ * pans to the winner at the current zoom when the button is pressed. The
+ * objection F56 recorded was to an UNINVITED viewport takeover, and a move
+ * triggered by an explicit press is not uninvited; holding the zoom is what
+ * keeps it a pan rather than a takeover.
+ *
+ * So the paragraph above is why this module used to carry the whole
+ * description, and it no longer does: the button is one of two constants
+ * (F4a), the description goes to the toast, and what survives here is
+ * {@link geoEventReadout} — the distance and bearing that re-read as the user
+ * walks, which was F56's actual win and is the one thing neither the pan nor
+ * the toast replaces.
  *
  * Pure and separately testable, because the arithmetic — a bearing across the
  * antimeridian, a distance that should read "1.2 km" not "1204 m" — has more
@@ -23,8 +33,17 @@ import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 /** The eight compass points, in bearing order from north. */
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
 
-/** The button's resting label. Matches `index.html`, which renders it first. */
-export const GEO_EVENT_IDLE_LABEL = "Next geo-event";
+/**
+ * The button's resting label. Matches `index.html`, which renders it first.
+ *
+ * "QUESTS" IS A UI WORD ONLY (DEC-U11). The store, the worker protocol, this
+ * module and every doc still say `geoEvent`; the owner accepted that the button
+ * and the console will disagree, and a rename through the code was declined
+ * because it would have been a wide mechanical diff over the same worker
+ * protocol the DEM race was changing in the same round — which is where a real
+ * change hides.
+ */
+export const GEO_EVENT_IDLE_LABEL = "Show Quests";
 
 /** The button's in-progress label. */
 export const GEO_EVENT_BUSY_LABEL = "Finding…";
@@ -143,11 +162,18 @@ export function describeGeoEvent(
   const searched = `searched ${event.tilesSearched} tile${event.tilesSearched === 1 ? "" : "s"}`;
 
   const nearest = event.picks[0];
-  if (nearest === undefined) return `No event nearby · ${searched}`;
+  if (nearest === undefined) return `No quest nearby · ${searched}`;
 
+  // THE TILE COUNT IS GONE FROM THE SUCCESS PATH (F4e), and kept above.
+  //
+  // The owner called it noise, and on success it is: there is a marker on the
+  // map, which answers the question the count was helping with. In the EMPTY
+  // case it is the only thing distinguishing "there is none here" from "you
+  // have not loaded enough to know" (F57), and the second reads as a bug — so
+  // that half stays exactly as it was.
   const metres = distanceMetres(user, nearest.position);
   const where = compassPoint(bearingDegrees(user, nearest.position));
-  return `Event at ${formatTime(event.eventTime)} · ${formatDistance(metres)} ${where} · ${searched}`;
+  return `Quest at ${formatTime(event.eventTime)} · ${formatDistance(metres)} ${where}`;
 }
 
 /**
@@ -164,12 +190,47 @@ export function describeGeoEvent(
  * "210 m NE" — which is the behaviour F56 wanted and previously could not have,
  * since the string was frozen at the moment the search returned.
  */
-export function geoEventButtonLabel(
-  view: { position: LatLng; geoEvent: GeoEvent | undefined },
-  busy: boolean,
-  formatTime?: (at: number) => string,
-): string {
-  if (busy) return GEO_EVENT_BUSY_LABEL;
-  if (view.geoEvent === undefined) return GEO_EVENT_IDLE_LABEL;
-  return describeGeoEvent(view.position, view.geoEvent, formatTime);
+export function geoEventButtonLabel(view: unknown, busy: boolean): string {
+  // ONE OF TWO CONSTANTS (F4a), never the description.
+  //
+  // The button used to render `describeGeoEvent`, which is why it grew from
+  // "Next geo-event" to "Event at 14:15 · 640 m NE · searched 7 tiles" and back
+  // — the resizing the owner reported. The description now goes to the toast
+  // and the readout below.
+  //
+  // TWO constants and not one: `Finding…` is the in-progress state root
+  // `CLAUDE.md`'s async-feedback rule requires, and deleting it to make the
+  // label truly constant would remove the feedback the rule is about. They
+  // differ in width, so the button carries a `min-width` — a constant label on
+  // an auto-width button is only half the fix.
+  void view;
+  return busy ? GEO_EVENT_BUSY_LABEL : GEO_EVENT_IDLE_LABEL;
+}
+
+/**
+ * The standing, compact readout beside the button.
+ *
+ * WHY THIS EXISTS AT ALL, and it is not in the original feedback. F56's
+ * recorded win was that the label RE-READS AS THE USER WALKS — "640 m NE"
+ * becoming "210 m NE" — because it is a pure function of the current position
+ * rather than a string frozen when the search returned. Making the button
+ * constant (F4a) deletes that, and neither of its replacements brings it back:
+ * a toast fades, and a map pan does not restate anything. The milestone review
+ * of the plan caught the loss; this is what preserves it.
+ *
+ * DISTANCE AND BEARING ONLY — no time, no tile count. Those do not change as
+ * the user moves, so they belong in the transient message that announced the
+ * result, not in a readout whose whole purpose is that it keeps changing.
+ *
+ * Empty string when there is no quest, so the caller can hide the element
+ * rather than reserve space for nothing.
+ */
+export function geoEventReadout(view: {
+  position: LatLng;
+  geoEvent: GeoEvent | undefined;
+}): string {
+  const nearest = view.geoEvent?.picks[0];
+  if (nearest === undefined) return "";
+  const metres = distanceMetres(view.position, nearest.position);
+  return `${formatDistance(metres)} ${compassPoint(bearingDegrees(view.position, nearest.position))}`;
 }

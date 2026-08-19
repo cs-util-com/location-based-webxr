@@ -204,6 +204,22 @@ export class MapView {
   }
 
   /**
+   * Slides the viewport to `position` WITHOUT claiming the user is there.
+   *
+   * THE DIFFERENCE FROM {@link centreOn} IS THE WHOLE POINT, and reusing that
+   * one here would be a live bug: it calls {@link setPosition} first, so panning
+   * to a quest would also teleport the user's own marker onto it. `centreOn` is
+   * for a DECLARED place change (the location picker), where moving the marker
+   * is exactly right; this is for looking somewhere.
+   *
+   * Same zoom, deliberately (DEC-U12). Keeping it is what makes this a pan
+   * rather than the viewport takeover F56 declined.
+   */
+  panTo(position: { lat: number; lng: number }): void {
+    this.map.setView([position.lat, position.lng], this.map.getZoom());
+  }
+
+  /**
    * Removes everything derived from a snapshot, leaving the basemap and the
    * user marker.
    *

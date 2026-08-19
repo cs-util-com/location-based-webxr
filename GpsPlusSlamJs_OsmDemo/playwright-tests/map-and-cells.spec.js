@@ -880,18 +880,36 @@ test.describe("the geo-event", () => {
     await waitForRefresh(page);
 
     const button = page.locator("#geo-event");
-    await expect(button).toHaveText(/Next geo-event/);
+    // "Show Quests" since 2026-08-19 (F4b). A UI STRING ONLY (DEC-U11): the
+    // store, the worker protocol and every doc still say `geoEvent`, which is
+    // why the selector below is unchanged and only the visible text moved.
+    //
+    // The label is also one of two CONSTANTS now (F4a) rather than the whole
+    // description, so a test asserting it no longer proves a search ran -- what
+    // proves that is the marker on the map and the toast, both asserted
+    // elsewhere in this file.
+    await expect(button).toHaveText(/Show Quests/);
 
     await button.click();
 
-    // The label must reach a terminal state. Either outcome is a pass — a
-    // fixture with no qualifying ground genuinely has no event, and asserting
-    // "an event was found" would make this test depend on the fixture's heat
-    // rather than on the wiring.
-    await expect(button).toHaveText(/Event at|No event nearby/, {
+    // THE RESULT MOVED OFF THE BUTTON (F4a, 2026-08-19). It used to become the
+    // description — which is exactly why it grew and shrank on every press —
+    // and the outcome is now announced in the toast instead. So the terminal
+    // state is asserted where it actually appears.
+    //
+    // Either outcome is a pass: a fixture with no qualifying ground genuinely
+    // has no quest, and asserting "one was found" would make this test depend
+    // on the fixture's heat rather than on the wiring.
+    const toast = page.locator("#toast-root .toast");
+    await expect(toast).toHaveText(/Quest at|No quest nearby/, {
       timeout: 30_000,
     });
     await expect(button).toBeEnabled();
+    // AND THE BUTTON WENT BACK TO ITS CONSTANT, which is the half that would
+    // otherwise go unasserted: a button still reading "Finding…" after the
+    // search settled is the async-feedback defect, and a button that grew again
+    // is the reported one.
+    await expect(button).toHaveText(/Show Quests/);
 
     // And nothing failed: a geo-event error routes through the same channel a
     // fetch failure does, so the header would be showing it.
@@ -899,14 +917,26 @@ test.describe("the geo-event", () => {
 
     // If it found one, it is on the map. The winner carries a class of its own
     // so this cannot pass on a candidate marker.
-    const label = await button.textContent();
-    if (label?.includes("Event at") === true) {
+    const announced = (await toast.textContent()) ?? "";
+    if (announced.includes("Quest at")) {
       // THE DISTANCE AND DIRECTION ARE THE POINT (F56), not decoration. The
       // winner is usually off-screen, so this string is the only feedback the
       // user gets; a label that lost them would look identical to a working
       // one on a map that happens to be showing nothing.
-      expect(label).toMatch(
-        /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW) · searched \d+ tiles?$/,
+      // THE TILE COUNT IS GONE FROM THE SUCCESS PATH (F4e) and the distance
+      // now lives in its own standing readout (F4a), so this asserts both
+      // surfaces rather than one string:
+      //
+      // - the toast announces WHAT happened, once;
+      // - the readout keeps saying WHERE, and re-reads as the user walks, which
+      //   is F56's recorded win and the thing a constant label would otherwise
+      //   have deleted.
+      expect(announced).toMatch(
+        /Quest at .+ · \d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)$/,
+      );
+      expect(announced).not.toContain("searched");
+      await expect(page.locator("#quest-readout")).toHaveText(
+        /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)/,
       );
 
       // PRESENT, not VISIBLE, and the difference is a real property of the
@@ -928,11 +958,17 @@ test.describe("the geo-event", () => {
    * quarter-hour — so within one 15-minute slot the second press could not
    * produce anything new, and it read as a broken button.
    *
+   * INVERTED 2026-08-19 (F4f, DEC-U13). The two-press behaviour was itself the
+   * fix for that complaint, and the owner then reported the two-step as the
+   * problem: the choice should be visible on the FIRST press. The picker now
+   * opens alongside the search rather than instead of it, so a second press no
+   * longer means something different from the first — which removes the
+   * original complaint by a different route.
+   *
    * The unit tests cover the dialog's own behaviour. What only an e2e can show
-   * is that the BUTTON changed meaning: one press searches, the next opens the
-   * picker rather than searching again.
+   * is that one press does both.
    */
-  test("opens a time picker on the second press, and can clear the event", async ({
+  test("opens a time picker on the FIRST press, and can clear the event", async ({
     page,
   }) => {
     await stubNetwork(page);
@@ -944,15 +980,20 @@ test.describe("the geo-event", () => {
     await expect(picker).toBeHidden();
 
     await button.click();
-    await expect(button).toHaveText(/Event at|No event nearby/, {
-      timeout: 30_000,
-    });
-    // The FIRST press searched rather than asking when — the common case stays
-    // one tap.
-    await expect(picker).toBeHidden();
 
-    await button.click();
+    // THE PICKER IS ALREADY OPEN (F4f, DEC-U13) — that is the whole change.
+    // It used to take a second press, which made the second press mean
+    // something different from the first; the owner asked for the choice to be
+    // visible immediately, so it opens alongside the search.
     await expect(picker).toBeVisible();
+
+    // AND THE SEARCH RAN ANYWAY, which is the half that would otherwise go
+    // unasserted: a picker that opened INSTEAD of searching would satisfy the
+    // line above and break the common one-tap case.
+    await expect(page.locator("#toast-root .toast")).toHaveText(
+      /Quest at|No quest nearby/,
+      { timeout: 30_000 },
+    );
     // Pre-filled from the event on the map, so the common edit is "later", not
     // "type a whole date".
     await expect(page.locator("#geo-event-date")).not.toHaveValue("");
@@ -978,8 +1019,11 @@ test.describe("the geo-event", () => {
     await page.locator("#geo-event-clear").click();
     await expect(picker).toBeHidden();
     await expect(page.locator("#map .geo-winner")).toHaveCount(0);
-    // The label is derived from the same state, so it goes back with them.
-    await expect(button).toHaveText(/Next geo-event/);
+    // THE READOUT is what is derived from that state now, so it is what goes
+    // back with the markers (F4a). The button's label is a constant and would
+    // read "Show Quests" whether or not the clear worked — asserting it here
+    // would be an assertion that cannot fail.
+    await expect(page.locator("#quest-readout")).toBeHidden();
   });
 
   /**
@@ -1000,9 +1044,11 @@ test.describe("the geo-event", () => {
 
     const button = page.locator("#geo-event");
     await button.click();
-    await expect(button).toHaveText(/Event at|No event nearby/, {
-      timeout: 30_000,
-    });
+    // The outcome is announced in the toast now, not on the button (F4a).
+    await expect(page.locator("#toast-root .toast")).toHaveText(
+      /Quest at|No quest nearby/,
+      { timeout: 30_000 },
+    );
 
     // Only meaningful if something was actually drawn — a fixture with no
     // qualifying ground has nothing to clear, and asserting on it would make
@@ -1032,10 +1078,12 @@ test.describe("the geo-event", () => {
 
     await expect(page.locator("#map .geo-winner")).toHaveCount(0);
     await expect(page.locator("#map .geo-candidate")).toHaveCount(0);
-    // The label is derived from the same state, so it must go back with them —
-    // a button still describing an event that is no longer drawn is the same
-    // disagreement in a different pane.
-    await expect(button).toHaveText(/Next geo-event/);
+    // THE READOUT is derived from that state now, so it is what must go back
+    // with them (F4a) — a readout still naming a distance to a quest that is no
+    // longer drawn is the same disagreement in a different pane. The button's
+    // label is a constant and would read "Show Quests" either way, so asserting
+    // it here would be an assertion that cannot fail.
+    await expect(page.locator("#quest-readout")).toBeHidden();
   });
 });
 

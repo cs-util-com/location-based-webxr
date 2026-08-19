@@ -89,6 +89,19 @@ export interface GeoEventCycleOptions {
    * for a diagnostic line.
    */
   readonly onStats?: (stats: GeoEventStats) => void;
+  /**
+   * Called with a quest the search actually produced.
+   *
+   * WHY A CALLBACK AND NOT A STORE SUBSCRIPTION. The two things it drives —
+   * announcing the result in a toast, and panning the map to the winner — are
+   * responses to THIS PRESS, not properties of the current state. A subscriber
+   * on `view.geoEvent` would also fire when the same event is republished by a
+   * refresh, panning the map out from under someone who did not ask.
+   *
+   * Not called when the search fails: the previous quest deliberately stays
+   * published, and announcing it again would report a stale result as new.
+   */
+  readonly onFound?: (event: GeoEvent) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -114,6 +127,7 @@ export function createGeoEventCycle(
     republish,
     now = () => Date.now(),
     onStats,
+    onFound,
   } = options;
 
   return async (requested?: number): Promise<void> => {
@@ -139,6 +153,7 @@ export function createGeoEventCycle(
       });
       event = answer.event;
       onStats?.(answer.stats);
+      if (event !== undefined) onFound?.(event);
     } catch (error) {
       // The PREVIOUS event deliberately stays published. A search that failed
       // says nothing about the one already on the map, and taking it down would

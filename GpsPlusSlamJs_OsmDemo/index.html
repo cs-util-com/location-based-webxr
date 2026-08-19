@@ -740,7 +740,23 @@
       /* The locate button (DEC-R2-3): a SQUARE icon, bottom-right, so it matches
          the maps convention and — unlike the old text button — does not change
          size when it fails. */
+      /* A STANDING, UNOBTRUSIVE READOUT (F4a): distance and bearing only,
+         which are the parts that change as the user moves. Dimmer than the
+         button beside it -- it is a fact about the map, not a control. */
+      .quest-readout {
+        color: #b9c0cf;
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
       .geo-event-button {
+        /* CONSTANT LABEL AND A FLOOR ON THE WIDTH (F4a). The label is one of
+           two constants now, but `Show Quests` and `Finding...` are
+           different lengths -- so without this the button still resizes on
+           every press, which is the reported defect with a smaller
+           amplitude. Wide enough for the longer of the two. */
+        min-width: 7.5rem;
         font: inherit;
         color: #e6e8ef;
         background: #2a2f3d;
@@ -996,8 +1012,13 @@
         interaction. It also makes WHEN it ran visible, which matters on a
         diagnostic surface.
       -->
+      <!-- THE STANDING DISTANCE READOUT (F4a). The button's label became a
+           constant so it would stop resizing, which deletes F56's actual
+           win: a distance that re-reads as the user walks. A toast fades
+           and a pan does not restate, so this is what preserves it. -->
+      <span id="quest-readout" class="quest-readout"></span>
       <button type="button" id="geo-event" class="geo-event-button">
-        Next geo-event
+        Show Quests
       </button>
       <!--
         AR MODE (DEC-12, AR milestone 1). HIDDEN BY DEFAULT and revealed by
