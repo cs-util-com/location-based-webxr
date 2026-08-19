@@ -76,6 +76,21 @@ export function attachHeaderCollapse(
   function apply(): void {
     header.dataset["collapsed"] = String(collapsed);
     toggle.setAttribute("aria-expanded", String(!collapsed));
+    // THE ACCESSIBLE NAME, SET HERE BECAUSE THE TITLE TEXT IS GONE (F3b).
+    //
+    // This element used to read "OSM affordance demo", and that text WAS the
+    // control's name — a screen reader announced "OSM affordance demo, button,
+    // expanded". Dropping the text for a tidier bar leaves a button that
+    // announces as nothing at all, which is a regression nobody sees and no
+    // visual test can catch.
+    //
+    // `aria-expanded` alone is not a substitute: it says what STATE the control
+    // is in, never what it controls. Both are needed, and the label tracks the
+    // state so the announcement stays a sentence rather than a contradiction.
+    toggle.setAttribute(
+      "aria-label",
+      collapsed ? "Show details" : "Hide details",
+    );
     onToggle();
   }
 

@@ -124,6 +124,25 @@ describe("attachHeaderCollapse", () => {
     expect("revealForError" in collapse).toBe(false);
   });
 
+  it("keeps an accessible NAME after the title text was removed (F3b)", () => {
+    // WHY THIS TEST EXISTS. The control used to be an <h1> reading "OSM
+    // affordance demo", and that text was its accessible name — a screen reader
+    // announced "OSM affordance demo, button, expanded". F3b removed the text
+    // for a tidier bar, which leaves a role="button" that announces as NOTHING.
+    //
+    // That is a regression no visual check and no e2e screenshot can see, and
+    // the element still looks and behaves correctly to anyone using a mouse. So
+    // the name is asserted as an attribute, and asserted to TRACK THE STATE:
+    // aria-expanded says what state the control is in, never what it controls.
+    const { toggle, collapse } = setup();
+
+    expect(toggle.getAttribute("aria-label")).toBe("Hide details");
+    collapse.set(true);
+    expect(toggle.getAttribute("aria-label")).toBe("Show details");
+    collapse.set(false);
+    expect(toggle.getAttribute("aria-label")).toBe("Hide details");
+  });
+
   it("toggles on Enter and Space, which role=button promises", () => {
     const { toggle, collapse } = setup();
     toggle.dispatchEvent(

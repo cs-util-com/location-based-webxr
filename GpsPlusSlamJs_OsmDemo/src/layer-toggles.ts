@@ -59,7 +59,7 @@ function groupOf(layer: LayerKind): LayerGroup {
 
 /** Group captions, in the order the groups appear. */
 const GROUP_LABELS: readonly (readonly [LayerGroup, string])[] = [
-  ["overlays", "affordance"],
+  ["overlays", "Category"],
   ["world", "world"],
   ["diagnostics", "debug"],
 ];

@@ -319,7 +319,21 @@ test.describe("the location picker", () => {
     // the picker never running at all, which leaves the placeholder alone.
     const options = page.locator("#site option");
     await expect(options).not.toHaveCount(1);
-    await expect(options.first()).toHaveValue("");
+    // ASSERTED ON THE SELECT, NOT ON AN OPTION (2026-08-19). This line used to
+    // read `expect(options.first()).toHaveValue("")`, which is invalid usage:
+    // `toHaveValue` rejects anything that is not an input, textarea or select,
+    // and an `<option>` is none of them. It began failing with "Not an input
+    // element" when F3c unwrapped the picker from its `<label>`, and why the
+    // wrapper made it pass is genuinely unexplained — recorded as unexplained
+    // rather than given a tidy story, because the assertion was wrong either
+    // way and a plausible-but-invented mechanism is worse than none.
+    //
+    // What the test actually needs to catch is the picker never running, which
+    // leaves the placeholder selected and alone. Both halves of that are
+    // asserted here: the select still rests on the placeholder, and the
+    // placeholder is the first option rather than a real place.
+    await expect(page.locator("#site")).toHaveValue("");
+    await expect(options.first()).toHaveText("jump to…");
 
     /** Basemap tiles requested from the moment the choice is made. */
     const tilesAfter = [];

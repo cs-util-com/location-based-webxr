@@ -241,6 +241,47 @@ export function formatScore(value: number): string {
   return value.toExponential(1).replace("e+", "e").replace(".0e", "e");
 }
 
+/**
+ * Largest value {@link formatFixedScore} will spell out rather than abbreviate.
+ *
+ * A million prints as nine characters with its separators. Past that the label
+ * starts growing without bound again, which is the instability DEC-R6b-6 chose
+ * the exponential form to avoid.
+ */
+const SPELL_OUT_BELOW = 1e6;
+
+/**
+ * A score at one of the ramp's endpoints, spelled out when it reasonably can be.
+ *
+ * DEC-U8, and it narrows DEC-R6b-6 rather than reversing it. The owner asked
+ * for `1e4` to be written out. The exponential form exists so a twelve-digit
+ * score cannot make the legend's line width jump on every repaint, and that
+ * argument is still correct for the OBSERVED maximum, which really does reach
+ * `1.7e11` — but the file's own comment already conceded its cost at the other
+ * end: "`12000` prints as `1.2e4`, which is arguably worse than the plain
+ * number".
+ *
+ * **WHY THIS IS A THRESHOLD AND NOT AN UNCONDITIONAL SPELL-OUT**, which is what
+ * DEC-U8 was written expecting. That decision rested on the ramp's top being
+ * the constant `HEAT_CAP` — true for every category whose threshold is below
+ * it, which is the case the owner saw. It is NOT universal: `scaleFor` falls
+ * back to `threshold * 10` once a threshold reaches the cap, so a rule table
+ * with a high threshold can put a ten-digit number on this label. Spelling that
+ * out unconditionally would reintroduce exactly the defect DEC-R6b-6 removed,
+ * in the place it was reported from. The premise was checked against
+ * `scaleFor` rather than taken from the decision text.
+ *
+ * Grouped with thin spaces rather than commas: the legend is read at a glance
+ * on a phone, and a comma sits one keystroke away from meaning a decimal point
+ * in most of the languages this demo is looked at in.
+ */
+export function formatFixedScore(value: number): string {
+  if (Math.abs(value) >= SPELL_OUT_BELOW) return formatScore(value);
+  return round(value)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, "\u2009");
+}
+
 function round(value: number): number {
   // Multiplicative scores produce things like 3.6000000000000005. Rounding at
   // the PRESENTATION boundary keeps the oracle values exact in the model, which

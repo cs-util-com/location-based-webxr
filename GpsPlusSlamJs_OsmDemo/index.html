@@ -635,7 +635,15 @@
       }
       /* IN PROGRESS (F58): enabling the cell layer refetches, measured at ~1.9 s.
          Dimmed and non-interactive, never hidden -- a control that disappears
-         reads as a bug. */
+         reads as a bug.
+
+         NARROWED 2026-08-19 (DEC-U9), so this file does not carry a rule its
+         own markup breaks. It governs a control that is TEMPORARILY BUSY,
+         which is what this class is for: the setting still applies, it just
+         cannot be touched this instant, and removing it would make the panel
+         jump for a moment. A control that is INAPPLICABLE to the current mode
+         is a different case and IS removed -- `#show-below-label` while the
+         cell layer is off has nothing to be below the threshold OF. */
       .layer-toggle.layer-busy {
         opacity: 0.55;
         cursor: progress;
@@ -685,6 +693,48 @@
       header[data-collapsed="true"] #layer-group-world,
       header[data-collapsed="true"] #layer-group-diagnostics {
         display: none;
+      }
+
+      /* The AR button (F3a): the same square, stacked ABOVE locate.
+
+         TEXT RATHER THAN A PICTOGRAM, deliberately. There is no established
+         icon for "enter AR" that reads without a label, and two characters in a
+         2 rem box are legible and unambiguous. The glyph stays "AR" in every
+         state -- including while a session is running, where the label says
+         "Exit AR" -- because a square that changes width is the resizing defect
+         this whole round is removing elsewhere. `data-ar-active` carries the
+         difference visually; `aria-label` carries it to everyone else. */
+      .ar-control {
+        margin-bottom: 0.35rem;
+      }
+
+      .ar-button {
+        width: 2rem;
+        height: 2rem;
+        padding: 0;
+        border: 0;
+        background: #fff;
+        color: #1a1c22;
+        font-size: 0.78rem;
+        font-weight: 700;
+        line-height: 2rem;
+        text-align: center;
+        cursor: pointer;
+      }
+
+      .ar-button[disabled] {
+        /* VISIBLE BUT DIMMED, never hidden: "supported, no GPS fix yet" is
+           temporary and self-resolving, so the control has to be discoverable
+           BEFORE it becomes usable -- otherwise it appears without warning
+           under the user's thumb. That distinction is the reason
+           `arButtonState` separates hidden from disabled at all. */
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      .ar-button[data-ar-active="true"] {
+        background: #1a5cff;
+        color: #fff;
       }
 
       /* The locate button (DEC-R2-3): a SQUARE icon, bottom-right, so it matches
@@ -815,6 +865,33 @@
         gap: 0.25rem;
         margin-left: 0.4rem;
       }
+
+      /* THE RAMP GOES, THE CATEGORY NAME STAYS (F3e / DEC-U7).
+
+         PLACED AFTER the base `.legend-*` rules, for the reason the collapse
+         block below states about `.hint` and `#status`: stylelint's
+         `no-descending-specificity` wants the lower-specificity selectors
+         first, and these override them.
+
+         The owner asked not to see "diesen Heatmap-Balken mit von 1 bis 1E4"
+         in the collapsed bar. That is the strip and its numbers, not the word
+         beside them -- and the word is load-bearing: DEC-1 added this legend
+         precisely because nothing else on screen named the active category, so
+         removing it wholesale would re-create the round-1 confusion the legend
+         exists to fix.
+
+         NOT A REVERSAL OF DEC-1, therefore. That decision requires a legend
+         that NAMES the current category; keeping `.legend-category` satisfies
+         it in full. The ramp came from the later R6b legend work. */
+      header[data-collapsed="true"] #legend .legend-strip,
+      header[data-collapsed="true"] #legend .legend-min,
+      header[data-collapsed="true"] #legend .legend-max,
+      header[data-collapsed="true"] #legend .legend-observed,
+      header[data-collapsed="true"] #legend .legend-band,
+      header[data-collapsed="true"] #legend .legend-empty {
+        display: none;
+      }
+
       /* The identity band is outline-only: "nothing known here" must not paint
          a claim the data does not support. */
       .legend-swatch-identity {
@@ -864,29 +941,47 @@
       <!-- Tapping the title collapses the whole bar (DEC-R2-4). It is the title
            AND the control, as the feedback asked; `header-collapse.ts` gives it
            role/tabindex/aria-expanded so it is reachable by keyboard too. -->
-      <h1 id="header-toggle">OSM affordance demo</h1>
+      <!-- TEXT REMOVED, CARET KEPT (F3b, 2026-08-19). The caret is a CSS
+           `::before` on this element, so the control survives the text
+           going. Its ACCESSIBLE NAME did not: this text was it, and an
+           empty `role="button"` announces as nothing. `header-collapse.ts`
+           now sets an explicit `aria-label` that tracks the state.
+
+           Partially reverses DEC-R2-4, whose collapse rule listed the title
+           among the things a collapsed header keeps. -->
+      <h1 id="header-toggle"></h1>
       <!-- THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Before the category
            picker, as the feedback asked. Its options come from the SAME table
            the offline fixture corpus is captured from, so the places a human
            can reach are exactly the places the suite covers. Populated from
            `site-picker.ts`; the markup carries no place names. -->
-      <label
-        >location
-        <select id="site"></select
-      ></label>
-      <label
-        >category
-        <select id="category"></select
-      ></label>
+      <!-- LABEL TEXT DROPPED, ACCESSIBLE NAME KEPT (F3c). The wrapper's
+           word was pure markup on a bar that has to fit a phone; the
+           `aria-label` is what a screen reader used to get from it. -->
+      <select id="site" aria-label="location"></select>
+      <!-- MOVED INTO THE CATEGORY GROUP AT RUNTIME (F3d), the same seam
+           `#show-below-label` uses. It stays here in the source because
+           this is where the header's own controls live and
+           `layer-toggles.ts` builds `#layers` from scratch; `main.ts` hands
+           it over as an `overlays` extra. The group's caption now reads
+           `Category`, so the picker sits under its own heading. -->
+      <select id="category" aria-label="category"></select>
       <!-- MOVED INTO THE AFFORDANCE GROUP AT RUNTIME (DEC-R6b-5). It stays here
            in the source because this is where the header's own controls live and
            `layer-toggles.ts` builds `#layers` from scratch; `main.ts` hands the
            label over as an `overlays` extra, the same seam the perf switch uses.
            The `id` exists so it can be handed over by name rather than by
-           walking up from the checkbox. -->
+           walking up from the checkbox.
+
+           AND IT IS NOW HIDDEN WHILE THE CELL LAYER IS OFF (DEC-U9), which
+           partially reverses the paragraph above. That move was made so this
+           setting would STAY VISIBLE, after the sixth session complained it was
+           the only one that collapsed. The trigger is different: collapse still
+           keeps it while `cells` is on, and what removes it now is the setting
+           having nothing to apply to. See `.layer-busy` above for the narrowed
+           rule. -->
       <label class="layer-toggle" id="show-below-label"
-        ><input type="checkbox" id="show-below" /> show cells below the
-        threshold</label
+        ><input type="checkbox" id="show-below" /> below threshold</label
       >
       <!-- Per-layer toggles (DEC-R2-10). Independent switches rather than a
            two-state mode: a mode makes it impossible to view a merged area OVER
@@ -915,9 +1010,17 @@
         inversely to AR support, which here would cost every WebXR-capable
         phone the only interface that can drive the data.
       -->
-      <button type="button" id="enter-ar" class="geo-event-button" hidden>
-        AR
-      </button>
+      <!-- MOVED INTO A LEAFLET CONTROL AT RUNTIME (F3a, 2026-08-19), above
+           the locate button in the bottom-right corner. It stays here in
+           the source for the same reason the pickers do: this is where the
+           header's controls live, and `main.ts` hands it over.
+
+           SQUARE AND ICON-ONLY, matching `.locate-button` (DEC-R2-3). The
+           label text moves to `title`/`aria-label` rather than being
+           deleted -- that wording is the only thing distinguishing the four
+           states `arButtonState` models, and on touch a `title` never
+           shows, so the accessible name is what carries it. -->
+      <button type="button" id="enter-ar" class="ar-button" hidden>AR</button>
       <!--
         THE GROUND MODE (W11, DEC-R3-3). NOT a layer — it does not add or remove
         anything from the scene, it chooses which surface is drawn as the ground:
@@ -942,7 +1045,6 @@
         <input type="checkbox" id="perf-stats" />
         perf
       </label>
-      <span class="hint">click the map to move</span>
       <span id="status">starting…</span>
       <div id="legend"></div>
     </header>

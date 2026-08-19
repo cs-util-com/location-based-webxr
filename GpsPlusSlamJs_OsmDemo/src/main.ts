@@ -81,6 +81,7 @@ import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
 import { summariseRegion } from "./region-summary.js";
+import L from "leaflet";
 import { LocateControl } from "./locate-control.js";
 import { createGpsRegistration, toGpsPosition } from "./gps-registration.js";
 // THE FRAMEWORK CALLS THE REGISTRATION LOOP NEEDS. Narrow subpaths, not the
@@ -450,6 +451,25 @@ async function main(): Promise<void> {
    * AR support.
    */
   const arButton = el<HTMLButtonElement>("enter-ar");
+  // ABOVE THE LOCATE BUTTON, in Leaflet's own bottom-right stack (F3a).
+  //
+  // Added BEFORE the `LocateControl` below so it sits above it: Leaflet
+  // appends controls to the corner in registration order, and the locate
+  // button is itself deliberately above the attribution credit, which may
+  // not be obstructed.
+  //
+  // `disableClickPropagation` for the same reason the locate control needs
+  // it: without it a press also reaches the map underneath and reads as
+  // "the user clicked here to move", so entering AR would first teleport
+  // them to the button's own position.
+  const ArControl = L.Control.extend({
+    onAdd: (): HTMLElement => {
+      const wrapper = L.DomUtil.create("div", "leaflet-bar ar-control");
+      wrapper.append(arButton);
+      L.DomEvent.disableClickPropagation(wrapper);
+      return wrapper;
+    },
+  });
   const detailsPanel = new DetailsPanel({
     container: el("details"),
     onClose: () => store.dispatch(actions.cellSelected(undefined)),
@@ -569,6 +589,11 @@ async function main(): Promise<void> {
       endSession,
     },
   });
+
+  // MOUNTED HERE, immediately before the locate control, so Leaflet stacks it
+  // above: the corner fills in registration order, and locate is itself
+  // deliberately above the attribution credit, which may not be obstructed.
+  new ArControl({ position: "bottomright" }).addTo(mapView.map);
 
   const locateControl = new LocateControl({
     map: mapView.map,
@@ -1112,12 +1137,21 @@ async function main(): Promise<void> {
 
     arButton.hidden = state.hidden;
     arButton.disabled = state.disabled;
-    arButton.textContent = state.label;
+    // THE GLYPH IS CONSTANT; THE WORDING MOVES TO THE ACCESSIBLE NAME (F3a).
+    //
+    // The button is a 2 rem square now, and "Exit AR" does not fit one without
+    // making it grow — which is the resizing defect being removed elsewhere in
+    // this round. So the face always reads "AR" and `aria-label` carries the
+    // state, exactly as `.locate-button` does: on touch a `title` never shows,
+    // so the accessible name is the only thing that reaches everyone.
+    arButton.textContent = "AR";
+    arButton.setAttribute("aria-label", state.label);
+    arButton.dataset["arActive"] = String(arSession !== undefined);
     // Cleared rather than left stale: the hint explains a DISABLED state, and
     // a tooltip surviving into the enabled one describes a condition that no
     // longer holds.
-    if (state.hint === undefined) arButton.removeAttribute("title");
-    else arButton.title = state.hint;
+    if (state.hint === undefined) arButton.title = state.label;
+    else arButton.title = `${state.label} — ${state.hint}`;
   };
 
   // The probe is a promise and the button starts hidden, so this resolves into
@@ -1529,7 +1563,10 @@ async function main(): Promise<void> {
     // that block, which is the behaviour the sixth session asked for.
     extras: {
       diagnostics: [el("perf-stats-label")],
-      overlays: [showBelowLabel],
+      // THE CATEGORY PICKER FIRST (F3d): the group is captioned `Category`, so
+      // the control it names belongs at the top of it rather than below the
+      // switches that describe what to draw for it.
+      overlays: [el("category"), showBelowLabel],
     },
   });
   layerToggles.render(selectLayers(store.getState()));
@@ -2171,6 +2208,20 @@ async function main(): Promise<void> {
     (view) => view.layers,
     (layers, previousLayers) => {
       layerToggles.render(layers);
+      // HIDDEN, NOT DIMMED (DEC-U9), and that reverses two recorded decisions.
+      //
+      // `.layer-toggle.layer-busy` says "dimmed and non-interactive, never
+      // hidden — a control that disappears reads as a bug", and `index.html`
+      // separately records `show-below` being moved INTO this group so that it
+      // stays visible, after the sixth session complained it was the only
+      // setting that collapsed. The owner chose hidden knowing both.
+      //
+      // WHAT MAKES THAT DEFENSIBLE is that the triggers differ. The sixth
+      // session's complaint was about COLLAPSE hiding a setting that still
+      // applied; this hides one that does not apply at all, and collapsing
+      // still keeps it while `cells` is on. The `.layer-busy` comment is
+      // narrowed to say exactly that — busy stays visible, inapplicable goes.
+      showBelowLabel.hidden = !layers.cells;
       // TURNING THE CELL LAYER ON HAS TO FETCH THE CELLS (round 10, stage B).
       // Every other layer only changes what is drawn from data already held, so
       // a redraw is enough; `cells` is different because the snapshot
