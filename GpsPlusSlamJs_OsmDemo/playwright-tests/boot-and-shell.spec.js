@@ -735,26 +735,47 @@ test.describe("the header", () => {
       return measured;
     };
 
-    // A REAL ELEMENT is what makes this line possible at all (F9): the caret
-    // used to be `h1::before`, and a pseudo-element is not a DOM node, so
-    // `boundingBox()` could not address it.
+    // AN SVG WHOSE BOX IS ITS INK, which is what makes this line mean the thing
+    // the plan pinned ("rendered glyph height >= 24 CSS px").
+    //
+    // Two attempts got here. The caret was `h1::before`, and a pseudo-element
+    // is not a DOM node, so `boundingBox()` could not address it at all. The
+    // first fix made it a <span> holding "▾" -- addressable, but the box was
+    // `font-size` x `line-height` regardless of content, and ▾ is U+25BE BLACK
+    // DOWN-POINTING *SMALL* TRIANGLE, whose ink is ~0.4-0.5 em. So this
+    // assertion passed at 25.6 px while the owner was shown a ~12 px triangle:
+    // a measurable proxy standing in for the visible thing, in the test written
+    // to stop that happening a third time. The path now fills the element edge
+    // to edge, so the box IS the triangle.
     const caret = await box(".header-caret");
     expect(caret.height).toBeGreaterThanOrEqual(24);
 
-    // ROW 1: the caret, the city picker, and Show Quests. Compared by the
-    // vertical centre rather than `y`, because the three have different heights
-    // and `align-items: baseline` does not line their tops up.
     const centre = (b) => b.y + b.height / 2;
     const toggle = await box("#header-toggle");
     const site = await box("#site");
     const quests = await box("#geo-event");
+
+    // DEC-W6 FIRST, because it is the assertion that cannot be marginal, and
+    // therefore the one that should report the breakage.
+    //
+    // The layout consequence below is a real guard on this machine -- removing
+    // the cap does push Show Quests off row 1 -- but the uncapped picker is
+    // ~165-180 px against ~361 px of content width, so whether it survives
+    // depends on the user agent's default select font, which differs between a
+    // Windows dev machine and a Linux CI container. Ordered the other way round
+    // the marginal assertion failed first and this one never ran.
+    //
+    // (It also replaced `quests.x + quests.width <= 390`, which could not fail
+    // at all: a WRAPPED button starts at the header's left padding and ends
+    // around 134 px, satisfying the bound in exactly the state it was written
+    // to catch.)
+    expect(site.width).toBeLessThanOrEqual(136);
+
+    // ROW 1: the caret, the city picker, and Show Quests. Compared by the
+    // vertical centre rather than `y`, because the three have different heights
+    // and `align-items: baseline` does not line their tops up.
     expect(Math.abs(centre(site) - centre(toggle))).toBeLessThan(12);
     expect(Math.abs(centre(quests) - centre(toggle))).toBeLessThan(12);
-
-    // ...and all three fit WITHIN the viewport, which is the arithmetic
-    // DEC-W6's width cap exists for. Without it the picker alone is ~165-180 px
-    // and Show Quests wraps to its own line.
-    expect(quests.x + quests.width).toBeLessThanOrEqual(390);
 
     // ROW 2 STARTS BELOW: the layer groups are on a lower line, not beside the
     // button.
@@ -773,17 +794,46 @@ test.describe("the header", () => {
     // names it, above the switches that describe what to draw for it. The unit
     // half of this lives in `layer-toggles.test.ts`; what the browser adds is
     // that it survives real layout.
+    // THE X-ORDER IS THE ASSERTION; the centre comparison only rules out the
+    // picker having been pushed onto a line BELOW the switches, and on its own
+    // would pass with it on a line above them.
     const category = await box("#category");
     const cells = await box("#layer-cells");
     expect(category.x).toBeLessThan(cells.x);
     expect(centre(category)).toBeLessThanOrEqual(centre(cells) + 1);
+
+    // AND ROW 1 SURVIVES A QUEST BEING FOUND -- the state it was described for,
+    // and the one the first version of this test never entered.
+    //
+    // `#quest-readout` is `hidden` until then, so it is not a flex item and
+    // costs nothing at boot; with "340 m SW" in it the row goes about 30 px over
+    // a 390 px phone and the LAST item wraps. It used to sit before the button,
+    // which meant the control the row exists for was the one that disappeared
+    // the moment the feature was used. The readout now takes its own line
+    // instead, and the three controls stay together.
+    await page.locator("#geo-event").click();
+    await expect(page.locator("#quest-readout")).toHaveText(
+      /\d+(\.\d+)? (m|km) (N|NE|E|SE|S|SW|W|NW)/,
+      { timeout: 20000 },
+    );
+    const withReadout = await box("#geo-event");
+    const toggleAgain = await box("#header-toggle");
+    const siteAgain = await box("#site");
+    expect(Math.abs(centre(siteAgain) - centre(toggleAgain))).toBeLessThan(12);
+    expect(Math.abs(centre(withReadout) - centre(toggleAgain))).toBeLessThan(
+      12,
+    );
 
     // AND THE SPLIT SURVIVES A WIDE WINDOW, which is the assertion
     // `.header-row-break` actually earns. On a desktop everything in this bar
     // fits one line, so without the break the requested two rows collapse into
     // one and G2 is silently unimplemented on every machine that is not a
     // phone. Deleting `flex-basis: 100%` fails here and nowhere else.
-    await page.setViewportSize({ width: 1280, height: 800 });
+    //
+    // 1920 rather than 1280: at 1280 the margin was about 30 px, so one more
+    // switch or a wider font stack would have made it vacuous the way the
+    // 390 px version already was.
+    await page.setViewportSize({ width: 1920, height: 900 });
     const wideQuests = await box("#geo-event");
     const wideLayers = await box("#layers");
     expect(wideLayers.y).toBeGreaterThan(wideQuests.y + wideQuests.height - 1);
@@ -1276,7 +1326,7 @@ test.describe("the control bar", () => {
       ).toBeVisible();
     });
 
-    await test.step("collapses to the title, category, affordance block and legend", async () => {
+    await test.step("collapses to the title, the category picker and the affordance block", async () => {
       // DEC-R6b-5 REDREW THIS LINE, and the shape of the change is the point.
       // Before round 7 exactly ONE setting collapsed — `show-below` — while the
       // World, Debug and Ground controls stayed on screen. That is backwards
@@ -1338,7 +1388,7 @@ test.describe("the control bar", () => {
 
     await test.step("puts show-below inside the affordance group, not beside it", async () => {
       // The MOVE, asserted structurally rather than by position on screen —
-      // `layer-toggles.ts` has an `extras` hook for exactly this (the perf
+      // `layer-toggles.ts` has an `extrasAfter` hook for exactly this (the perf
       // switch already uses it), so the checkbox is a child of the group rather
       // than a sibling that happens to render nearby. A CSS-only fix would look
       // identical collapsed and wrong the moment the groups are reordered.

@@ -103,10 +103,28 @@ export function attachSitePicker(options: SitePickerOptions): SitePicker {
     select.append(option);
   }
 
+  /**
+   * Puts the chosen place's full name in the element's own `title`.
+   *
+   * The select is width-capped since round three (DEC-W6) so the header's first
+   * row fits a 390 px phone, which means a long resting face is CLIPPED — and a
+   * user whose selection reads "London — Tower B…" otherwise has no way to read
+   * it back without reopening the list. This restores that, on a pointer device
+   * at least; on touch the open list remains the answer, which is why the cap
+   * was judged the cheaper half to lose in the first place.
+   */
+  const paintTitle = (): void => {
+    const place = placeById(select.value);
+    if (place === undefined) select.removeAttribute("title");
+    else select.title = place.name;
+  };
+  paintTitle();
+
   // Held rather than anonymous, so `dispose()` can actually remove it. The same
   // rule every listener in `building-view.ts` follows: an orphaned listener
   // keeps the whole view graph reachable.
   const onChange = (): void => {
+    paintTitle();
     const place = placeById(select.value);
     // Unknown ids are ignored rather than reported or thrown. A browser
     // restores a stale `<select>` value across a reload when the option list

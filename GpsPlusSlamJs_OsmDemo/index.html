@@ -78,8 +78,27 @@
          pinned before this rule was written. */
       .header-caret {
         display: block;
-        font-size: 1.6rem;
-        line-height: 1;
+        /* THE ELEMENT'S BOX IS THE INK, and that is the whole reason this is an
+           SVG rather than a character (PR review of the first fix, finding 2).
+
+           The previous attempt was a <span> holding "▾" at `font-size: 1.6rem;
+           line-height: 1`, and its box measured 25.6 px WHATEVER was inside it
+           -- `content: ""` would have measured the same. Worse, ▾ is U+25BE
+           BLACK DOWN-POINTING *SMALL* TRIANGLE, whose ink is roughly 0.4-0.5 em:
+           about 10-13 px of visible triangle in that 25.6 px box. So the test
+           asserting ">= 24 px" was measuring a line box and the owner was still
+           being shown a speck -- a measurable proxy standing in for the visible
+           thing, which is exactly how G1 came back a SECOND time. Repeating it
+           inside the test written to prevent a third is the reason this comment
+           is long.
+
+           The viewBox is the triangle's exact bounds and these two lengths hold
+           the same 21:16 ratio, so the path fills the element edge to edge and
+           `boundingBox()` returns the painted triangle. Same argument
+           `locate-control.ts` makes for its inline-SVG pin: a glyph renders
+           differently on every platform's font and cannot be measured. */
+        width: 2.1rem;
+        height: 1.6rem;
         color: #9aa3b8;
         transition: transform 0.15s ease;
       }
@@ -103,7 +122,22 @@
          need their own flex context and would change how the existing
          `header[data-collapsed]` rules reach their targets.
 
-         `aria-hidden` and no text: it is a layout instruction, not content. */
+         `aria-hidden` and no text: it is a layout instruction, not content.
+
+         THE NEGATIVE MARGIN IS GAP ARITHMETIC, not a nudge. A break item adds a
+         SECOND row to the flex container, so the header's `gap: 0.75rem` is
+         charged twice down the cross axis where it should be charged once;
+         -0.375rem top and bottom cancels the extra exactly. It is therefore
+         COUPLED TO `header`'s gap -- change one and this must change with it --
+         and nothing tests header height, so this sentence is the only thing
+         standing between that coupling and a silent regression.
+
+         THE BREAK IS NOT SUPPRESSED WHEN THE BAR COLLAPSES, deliberately. A
+         collapsed desktop bar is two rows now where it used to be one. The
+         alternative is a rule that hides the break while collapsed, which would
+         make the collapsed and expanded bars disagree about where row 1 ends --
+         and G2 is a request about the resting layout, not about the collapsed
+         one. Recorded rather than silently accepted. */
       .header-row-break {
         flex-basis: 100%;
         height: 0;
@@ -115,7 +149,17 @@
          pushes the requested first row past a 390 px phone once the caret
          (44 px), the Show Quests button (7.5 rem) and three gaps are counted.
          The full name stays readable in the open dropdown; only the resting
-         face is clipped, which is the cheaper half to lose. */
+         face is clipped, which is the cheaper half to lose -- and
+         `site-picker.ts` puts the chosen place's full name in the element's
+         `title`, so a clipped selection is still recoverable on a pointer
+         device.
+
+         UNCONDITIONAL, though DEC-W6 argues only from the 390 px phone. A
+         desktop row has ~900 px of slack and does not need the cap; scoping it
+         to a media query would mean the picker changes width at a breakpoint
+         for no reason a user could see, and a control that resizes itself is
+         the defect this round removed elsewhere. One width everywhere is the
+         cheaper answer. */
       #site {
         max-width: 8.5rem;
       }
@@ -984,13 +1028,14 @@
          by something better. And it is hidden WHEN COLLAPSED rather than
          deleted: the argument is about the collapsed bar, so the expanded
          legend keeps its heading. */
-      header[data-collapsed="true"] #legend .legend-category,
-      header[data-collapsed="true"] #legend .legend-strip,
-      header[data-collapsed="true"] #legend .legend-min,
-      header[data-collapsed="true"] #legend .legend-max,
-      header[data-collapsed="true"] #legend .legend-observed,
-      header[data-collapsed="true"] #legend .legend-band,
-      header[data-collapsed="true"] #legend .legend-empty {
+      /* THE WHOLE LEGEND, not a list of its children. The enumeration this
+         replaces named seven classes in order to keep an eighth --
+         `.legend-category` -- and with that survivor gone (DEC-W4) the list had
+         no discriminating job left, only the ability to drift: one new legend
+         child and a stray element appears in the collapsed bar, while the two
+         e2e assert the CONTAINER and would not notice. Hiding `#legend` says
+         what those tests check. */
+      header[data-collapsed="true"] #legend {
         display: none;
       }
 
@@ -1085,16 +1130,26 @@
       <!-- Tapping the title collapses the whole bar (DEC-R2-4). It is the title
            AND the control, as the feedback asked; `header-collapse.ts` gives it
            role/tabindex/aria-expanded so it is reachable by keyboard too. -->
-      <!-- TEXT REMOVED, CARET KEPT (F3b, 2026-08-19). The caret is a CSS
-           `::before` on this element, so the control survives the text
-           going. Its ACCESSIBLE NAME did not: this text was it, and an
-           empty `role="button"` announces as nothing. `header-collapse.ts`
-           now sets an explicit `aria-label` that tracks the state.
+      <!-- TEXT REMOVED, CARET KEPT (F3b, 2026-08-19). The caret is a
+           `<svg class="header-caret">` inside this element (round three,
+           G1/F9 -- it was a CSS `::before` until then, and a pseudo-element
+           cannot be measured by a browser test, which is why the one
+           complaint this bar kept getting had no guard). Its ACCESSIBLE NAME
+           did not survive the text going: this text was it, and an empty
+           `role="button"` announces as nothing. `header-collapse.ts` now
+           sets an explicit `aria-label` that tracks the state.
 
            Partially reverses DEC-R2-4, whose collapse rule listed the title
            among the things a collapsed header keeps. -->
       <h1 id="header-toggle">
-        <span class="header-caret" aria-hidden="true">▾</span>
+        <svg
+          class="header-caret"
+          viewBox="0 0 21 16"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M0 0 H21 L10.5 16 Z" fill="currentColor" />
+        </svg>
       </h1>
       <!-- THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Before the category
            picker, as the feedback asked. Its options come from the SAME table
@@ -1136,14 +1191,24 @@
         interaction. It also makes WHEN it ran visible, which matters on a
         diagnostic surface.
       -->
-      <!-- THE STANDING DISTANCE READOUT (F4a). The button's label became a
-           constant so it would stop resizing, which deletes F56's actual
-           win: a distance that re-reads as the user walks. A toast fades
-           and a pan does not restate, so this is what preserves it. -->
-      <span id="quest-readout" class="quest-readout"></span>
       <button type="button" id="geo-event" class="geo-event-button">
         Show Quests
       </button>
+      <!-- THE STANDING DISTANCE READOUT (F4a). The button's label became a
+           constant so it would stop resizing, which deletes F56's actual
+           win: a distance that re-reads as the user walks. A toast fades
+           and a pan does not restate, so this is what preserves it.
+
+           AFTER THE BUTTON, NOT BEFORE IT (PR review of the row-order fix,
+           finding 1). It is `hidden` until a quest is found, so it costs
+           nothing at boot and the first row fits comfortably -- but with
+           "340 m SW" in it the row goes about 30 px over a 390 px phone, and
+           whichever item is LAST is the one that wraps. Before the button that
+           was Show Quests: the control the row exists for would have been
+           pushed off it the moment the feature was used, in the one state the
+           layout was never measured in. Ordered this way the readout takes its
+           own line instead, which is the cheaper thing to lose. -->
+      <span id="quest-readout" class="quest-readout"></span>
       <!-- ROW 1 ENDS HERE (G2). Everything above shares the first line -- the
            caret, the city picker and Show Quests with its distance readout --
            and the layer groups start the second. See `.header-row-break`. -->

@@ -256,10 +256,27 @@ describe("where an extra control lands inside its group", () => {
    * is what makes the claim checkable. Deleting `extrasBefore`'s insertion and
    * appending instead fails the first test here and nothing else in the suite.
    */
-  const stub = (id: string): HTMLElement => {
-    const node = document.createElement("span");
-    node.id = id;
-    return node;
+  /**
+   * A stand-in for a real extra.
+   *
+   * `show-below-label` is a `<label>` WRAPPING its input in production, so
+   * `childKeys` below resolves it to `"show-below"` rather than to the label's
+   * own id. The stub is built the same way for that reason — a bare `<span>`
+   * would exercise a shape the real extras do not have, and the assertions
+   * would then say nothing about the case that ships.
+   */
+  const stub = (id: string, wrapsInput = false): HTMLElement => {
+    if (!wrapsInput) {
+      const node = document.createElement("span");
+      node.id = id;
+      return node;
+    }
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.id = id;
+    label.append(input);
+    return label;
   };
 
   /**
@@ -301,14 +318,15 @@ describe("where an extra control lands inside its group", () => {
     attachLayerToggles({
       container,
       onChange: () => {},
-      extrasAfter: { overlays: [stub("show-below-label")] },
+      // WRAPPING ITS INPUT, exactly as `#show-below-label` does in the markup.
+      extrasAfter: { overlays: [stub("show-below", true)] },
     });
 
     expect(overlayIds(container)).toEqual([
       "layer-group-label",
       "layer-cells",
       "layer-areas",
-      "show-below-label",
+      "show-below",
     ]);
   });
 
@@ -320,7 +338,7 @@ describe("where an extra control lands inside its group", () => {
       container,
       onChange: () => {},
       extrasBefore: { overlays: [stub("category")] },
-      extrasAfter: { overlays: [stub("show-below-label")] },
+      extrasAfter: { overlays: [stub("show-below", true)] },
     });
 
     expect(overlayIds(container)).toEqual([
@@ -328,7 +346,7 @@ describe("where an extra control lands inside its group", () => {
       "category",
       "layer-cells",
       "layer-areas",
-      "show-below-label",
+      "show-below",
     ]);
   });
 
@@ -341,7 +359,9 @@ describe("where an extra control lands inside its group", () => {
     });
 
     // Naming one group must not reorder or empty another — the seam is
-    // per-group and the diagnostics group has its own extra in production.
+    // per-group, and in production the diagnostics group carries an extra of
+    // its own while this one, `world`, carries none. It is `world` that is
+    // asserted here precisely because it should be untouched either way.
     expect(childKeys(container.querySelector("#layer-group-world"))).toEqual([
       "layer-group-label",
       "layer-buildings",
