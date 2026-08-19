@@ -242,6 +242,29 @@ export interface TerrainResult {
    */
   readonly demStats?: FallbackProviderStats;
   /**
+   * Whether this field arrived too late for the mesh already on screen (F1d).
+   *
+   * **A WORKER DECISION CARRIED ON THE REPLY, not a fact the page could
+   * derive.** Two of its three inputs — the terrain stamp, and what the
+   * standing mesh was built against — are worker module state that nothing
+   * else crosses the boundary. A page-side copy of them would be a second
+   * source of truth for "what is the geometry standing on", which is the
+   * divergence `worker/terrain-gate.ts` exists to prevent.
+   *
+   * **It rides this reply rather than a push**, because the protocol is
+   * strictly request/reply keyed on `id` (`isWorkerReply` rejects anything
+   * without one), and a new envelope type is real surface to add for a
+   * boolean that already has a message going the right way.
+   *
+   * `true` means "please refresh"; the page still declines while a refresh is
+   * in flight. See `worker/terrain-arrival.ts` for why the decision is biased
+   * so heavily towards staying quiet — a spurious `true` aborts a live 15–90 s
+   * Overpass fetch, which is worse than the stall it was written to fix.
+   *
+   * Optional so a fake worker in a test that predates it keeps its behaviour.
+   */
+  readonly meshOutdated?: boolean;
+  /**
    * Where the window was sampled, in the scene's frame — **reported even when
    * `field` is `undefined`.**
    *

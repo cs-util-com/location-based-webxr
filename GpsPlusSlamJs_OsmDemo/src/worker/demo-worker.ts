@@ -94,6 +94,10 @@ import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
 import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
 import {
+  meshOutdatedByTerrain,
+  type MeshBuildRecord,
+} from "./terrain-arrival.js";
+import {
   isWorkerEnvelope,
   type TransferableMesh,
   type WorkerCallKind,
@@ -522,6 +526,27 @@ const obstacleIndex = createObstacleIndexCache(buildObstacleIndex);
 let terrainStamp = 0;
 
 /**
+ * What the mesh currently on screen was built from (F1d).
+ *
+ * Read only by the `terrain` handler, to answer "did this field arrive too late
+ * for the mesh that is already drawn?" — see `terrain-arrival.ts` for why that
+ * question is asked here and not on the page. `undefined` until the first build.
+ */
+let lastMeshBuild: MeshBuildRecord | undefined;
+
+/**
+ * `update` handlers currently running.
+ *
+ * A COUNTER RATHER THAN A BOOLEAN because nothing serialises the handlers: the
+ * page can post a second `update` (a category change, a widening ring) while
+ * the first is still waiting at the terrain gate, and a boolean cleared by
+ * whichever finished first would report "idle" with one still running. That
+ * false idle is exactly what would let the late-terrain signal abort a live
+ * Overpass fetch — see `TerrainArrival.updatesInFlight`.
+ */
+let updatesInFlight = 0;
+
+/**
  * Builds what this pass actually needs to send.
  *
  * The region slabs are ALWAYS rebuilt, because they are a product of SCORING and
@@ -753,6 +778,16 @@ async function handle<K extends WorkerCallKind>(
       const meshStart = nowMs();
       const mesh = meshUpdateFor(snapshot, pipeline, frameOrigin ?? position);
       const meshMs = Math.max(0, nowMs() - meshStart);
+      // WHAT THIS MESH IS STANDING ON (F1d). Recorded unconditionally, INCLUDING
+      // when the planner decided against a full rebuild: the record answers
+      // "which field is the geometry on screen sampled against", and a
+      // regions-only pass leaves that geometry exactly where the previous full
+      // build put it — on the field whose stamp is current now. Recording only
+      // on a full build would leave a stale stamp here and make the terrain
+      // handler signal a rebuild that is not needed.
+      //
+      // NO DATUM, unlike `terrainCentre` — see `MeshBuildRecord.centre`.
+      lastMeshBuild = { centre: position, terrainStamp };
       return {
         snapshot,
         mesh,
@@ -1022,10 +1057,24 @@ async function loadTerrain(
   // position is what let an AR-entry mesh build stand on the desktop field,
   // ~99 m out. See `GateCentre.undulationM`.
   terrainCentre = { ...centre, undulationM: geoidUndulationM };
+  // DID THIS FIELD ARRIVE TOO LATE FOR THE MESH ALREADY ON SCREEN? (F1d.)
+  //
+  // Computed AFTER the stamp bump above, so `terrainStamp` is the value any
+  // rebuild would use, and BEFORE the reply is built, so the page learns about
+  // it on the same message that delivers the field. The alternative — an
+  // unsolicited worker→page push — has no wire: the protocol is strictly
+  // request/reply keyed on `id` and `isWorkerReply` rejects anything without
+  // one, so a new envelope type would be real protocol surface for a boolean.
+  const meshOutdated = meshOutdatedByTerrain(lastMeshBuild, {
+    centre,
+    terrainStamp,
+    updatesInFlight,
+  });
   return {
     field: terrain,
     note: describeTerrain(field),
     demSourceId,
+    meshOutdated,
     // SNAPSHOT AT RESULT TIME, after the sampling above, so the counts include
     // this load's own batches. Cumulative for the session — the HUD reports a
     // share, and a share needs the denominator to keep meaning something.
@@ -1125,6 +1174,15 @@ self.addEventListener("message", (event: MessageEvent) => {
   const controller = new AbortController();
   inFlight.set(id, controller);
 
+  // COUNTED HERE RATHER THAN INSIDE THE HANDLER (F1d). The `terrain` handler
+  // asks "is an update already going to rebuild the mesh?" before it signals a
+  // late arrival, and the honest answer spans the whole dispatch — a handler
+  // that has returned but whose reply has not been posted is still going to
+  // produce a rebuild. Counting at this seam gets that for free from the
+  // `.finally` below, and needs no try/finally threaded through a handler whose
+  // only exit is a `return` sixty lines down.
+  if (kind === "update") updatesInFlight += 1;
+
   // EVERY path replies. An exception in a worker rejects nothing on the main
   // thread, so a request whose failure is not turned into a message is a promise
   // that never settles — a demo that silently stops, which is strictly worse
@@ -1147,6 +1205,11 @@ self.addEventListener("message", (event: MessageEvent) => {
       },
     )
     .finally(() => {
+      // In the `finally`, so an aborted or throwing update still releases the
+      // count. A counter that leaked upwards would silence the late-terrain
+      // rebuild for the rest of the session — a failure that looks exactly like
+      // the bug it was added to fix.
+      if (kind === "update") updatesInFlight -= 1;
       inFlight.delete(id);
     });
 });

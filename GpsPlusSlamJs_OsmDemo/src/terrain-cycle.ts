@@ -71,6 +71,15 @@ export interface TerrainState {
    */
   readonly demStats?: FallbackProviderStats | undefined;
   /**
+   * The worker's verdict that this field arrived too late for the mesh already
+   * drawn, so a refresh is warranted (F1d).
+   *
+   * The caller decides whether to act: `main.ts` declines while a refresh is
+   * already running, because `refresh` is `latestOnly` and would abort it. See
+   * `worker/terrain-arrival.ts`.
+   */
+  readonly meshOutdated?: boolean | undefined;
+  /**
    * Where the window was sampled, in the scene's frame — even on failure.
    *
    * Carried separately from `field` precisely because `field` is `undefined`

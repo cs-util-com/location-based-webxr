@@ -1624,6 +1624,7 @@ async function main(): Promise<void> {
       centreEnu,
       demSourceId: loadedSourceId,
       demStats: loadedStats,
+      meshOutdated,
     }) => {
       terrain = field === undefined ? undefined : heightfieldFrom(field);
       terrainNote = note;
@@ -1654,6 +1655,19 @@ async function main(): Promise<void> {
       // THE REPORTED CENTRE, not the field's — they are the same on a good
       // load, and only the former exists during an outage.
       publishFrameState(anchors.origin, centreEnu);
+      // THE LATE-TERRAIN REBUILD (F1d). The worker owns the decision — it is
+      // the only side that knows the terrain stamp and what the standing mesh
+      // was built against (see `worker/terrain-arrival.ts`); all that is left
+      // here is to act on it.
+      //
+      // THE `busy` CHECK IS NOT BELT AND BRACES, even though the worker already
+      // suppresses the signal while an update is in flight. The two guards
+      // watch different windows: the worker's closes when the update handler's
+      // reply is posted, this one when the page has finished applying it. A
+      // terrain reply delivered in that gap would otherwise call a `latestOnly`
+      // `refresh` mid-run and abort the Overpass fetch it is waiting on — the
+      // regression this whole milestone was re-planned to avoid.
+      if (meshOutdated === true && !refresh.busy) void refresh();
     },
   });
 
