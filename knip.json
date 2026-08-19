@@ -73,6 +73,7 @@
         "jscpd",
         "postcss-html",
         "stylelint-config-standard",
+        "tailwindcss",
         "webxr-polyfill"
       ]
     },

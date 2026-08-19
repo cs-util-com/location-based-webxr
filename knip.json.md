@@ -99,3 +99,21 @@ This config is verified by running it: `pnpm run check:deadcode`. No
 unit tests cover it — knip itself is the gate. The
 [follow-up doc](../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-28-knip-unused-exports-followup.md)
 lists the current findings; the report is also visible in CI.
+
+## `tailwindcss` in the recorder's `ignoreDependencies` (2026-08-19)
+
+Knip reads JavaScript and TypeScript, not CSS. The recorder pulls Tailwind in
+through `@import "tailwindcss"` in `styles/tailwind.css`, so no `.ts` file
+mentions it and knip reports it as an unused devDependency.
+
+**It must nevertheless be a DIRECT dependency**, not a transitive one via
+`@tailwindcss/vite`: pnpm's strict `node_modules` layout means a bare
+`@import "tailwindcss"` resolves only when the importing workspace declares
+the package itself.
+
+The alternative — teaching knip to parse CSS imports — is a much larger change
+for one entry. What actually protects this is
+`GpsPlusSlamJs_RecorderApp/src/no-external-page-assets.test.ts`: if Tailwind
+ever stopped being built and went back to a CDN, that test fails. So the ignore
+here cannot hide a regression, only a bookkeeping question knip is not equipped
+to answer.
