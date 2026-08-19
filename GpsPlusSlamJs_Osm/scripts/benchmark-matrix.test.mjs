@@ -233,6 +233,60 @@ describe("planCells", () => {
     expect(cells).toHaveLength(3 * 2 * 2);
   });
 
+  it("multiplies the plan by `repeats`, with distinguishable ids", () => {
+    // WHY REPEATS EXIST AT ALL (DEC-T4). Every artefact this script has produced
+    // is n=1 per cell, and `spatial/resolutions.ts` records four res-7 samples
+    // spanning 15.1 to 91.1 s with the conclusion that the timings "do not
+    // replicate at all". A comparison drawn from single samples either side of
+    // that spread cannot mean anything — this repo has already retracted three
+    // latency figures quoted as though it could.
+    //
+    // The ids must differ, or two samples of the same cell are indistinguishable
+    // in the artefact and the distribution cannot be reconstructed from it.
+    const cells = planCells({
+      hosts: HOSTS,
+      resolutions: [7],
+      forms: ["areal-only"],
+      repeats: 3,
+    });
+
+    expect(cells).toHaveLength(3 * 3);
+    expect(new Set(cells.map((cell) => cell.id)).size).toBe(cells.length);
+    expect(cells.every((cell) => typeof cell.round === "number")).toBe(true);
+  });
+
+  it("runs repeats as ROUNDS, so one host's samples are spread across the run", () => {
+    // WHY THIS ORDERING AND NOT THREE-IN-A-ROW. Three back-to-back measurements
+    // of one host mostly measure one moment — the same queue depth, the same
+    // neighbours. The spread this is collected to characterise lives BETWEEN
+    // moments, so each round runs the whole group before the next begins, which
+    // also lets the operator cooldown fall between a host's samples for free.
+    const cells = planCells({
+      hosts: HOSTS,
+      resolutions: [7],
+      forms: ["areal-only"],
+      repeats: 2,
+    });
+
+    // The first round is complete before the second one starts.
+    const rounds = cells.map((cell) => cell.round);
+    expect(rounds.slice(0, 3).every((r) => r === 0)).toBe(true);
+    expect(rounds.slice(3).every((r) => r === 1)).toBe(true);
+  });
+
+  it("leaves ids and shape untouched when repeats is 1", () => {
+    // The default has to stay byte-compatible with every artefact already
+    // committed, or a re-run's rows stop matching the ones they are compared
+    // against — and comparing across runs is the only reason to keep them.
+    const [cell] = planCells({
+      hosts: [HOSTS[0]],
+      resolutions: [7],
+      forms: ["areal-only"],
+    });
+    expect(cell.id).not.toMatch(/:r\d+$/);
+    expect(cell.round).toBeUndefined();
+  });
+
   it("orders the form axis outermost, cheapest-hypothesis first", () => {
     // WHY: DEC-R5-10 accepted ~1.2-3.4 GB, and which end of that range the run
     // actually lands on depends on this order. If `clipped` collapses the

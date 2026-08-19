@@ -110,6 +110,29 @@ sleep at all — which would leave those assertions vacuous rather than failing.
 A one-entry pool separates "how long is the wait" from "is there a wait", and
 the second question has its own three tests.
 
+## Endpoint selection: a weighted draw, not a walk
+
+`DEFAULT_OVERPASS_ENDPOINTS` is no longer the selection rule — it is the
+inventory. Which endpoint an attempt uses comes from
+[`endpoint-order.ts`](./endpoint-order.ts.md), which draws over **operators**
+(weighted by `DEFAULT_OPERATOR_WEIGHTS`) and returns a permutation of the pool
+for that one tile.
+
+Three consequences worth knowing:
+
+- **The first attempts hit distinct operators.** With the default pool that is
+  three different quotas before any repeat, which is what makes a retry
+  informative — under the old `attempt % length` walk, attempt 2 returned to
+  FOSSGIS and a 429 on attempt 0 largely predicted it.
+- **`maxRetries` rose from 3 to 4.** The loop is `attempt <= maxRetries`, so 3
+  gave four attempts against a five-entry pool and bare `overpass-api.de` was
+  **unreachable in the shipped configuration** — silently, since nothing named
+  it.
+- **`syncBudget` deliberately does NOT draw.** It asks one host how many slots
+  it will grant, and that answer is only useful for the host most likely to be
+  asked for a tile; drawing would sample a different host from the one the
+  fetch goes to.
+
 ## Backoff: when the client waits, and when it just asks somebody else
 
 Rotation and backoff used to be independent — the loop moved to the next

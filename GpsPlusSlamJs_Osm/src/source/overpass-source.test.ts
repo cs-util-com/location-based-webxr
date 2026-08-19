@@ -22,10 +22,12 @@ import {
   OverpassSource,
   RateLimitedError,
   DEFAULT_OVERPASS_ENDPOINTS,
+  DEFAULT_OPERATOR_WEIGHTS,
 } from "./overpass-source.js";
 import { OverpassSlotBudget } from "./slot-budget.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
 import { FETCH_RES } from "../spatial/resolutions.js";
+import { operatorForUrl } from "./overpass-operators.js";
 
 const TILE = latLngToCell(50.9413, 6.9583, FETCH_RES);
 const TILE_B = latLngToCell(52.52, 13.405, FETCH_RES);
@@ -59,8 +61,11 @@ function makeSource(
   const source = new OverpassSource({
     userAgent: "gps-plus-slam-osm-tests/1.0 (+https://example.invalid)",
     fetchImpl: fetchImpl as unknown as typeof fetch,
-    // Zero jitter. Endpoint choice no longer depends on `random` at all — the
-    // pool is walked in preference order — so this only pins the backoff.
+    // `random` drives TWO things since M6: the backoff jitter and the per-tile
+    // endpoint draw. Zero pins both deterministically — zero jitter, and a draw
+    // that always takes the heaviest operator first, so the default order is
+    // lz4 → maps.mail.ru → private.coffee → z. → overpass-api.de. Tests that
+    // care about the distribution rather than one sequence override it.
     random: () => 0,
     now: () => 1_000_000,
     sleepImpl: (ms: number) => {
@@ -324,35 +329,85 @@ describe("retry, rotation and backoff", () => {
     },
   );
 
-  it("always starts at the FIRST endpoint, whatever `random` returns", async () => {
+  it("prefers the heaviest operator without ALWAYS starting there", async () => {
     /**
-     * WHY THIS MATTERS. The pool is a PREFERENCE ORDER, measured
-     * 2026-07-28: `lz4` and VK answered the same res-7 tile in 27.6 s and
-     * 22.9 s, `private.coffee` in 110.4 s, and the FOSSGIS main entry 504'd.
-     * A 4.2x spread is the difference between a usable demo and one that
-     * looks broken.
+     * THIS TEST REPLACES ONE THAT ASSERTED THE OPPOSITE, and the replacement is
+     * deliberate rather than incidental — deleting a guard written to stop a
+     * specific silent regression needs saying out loud.
      *
-     * `pickEndpoint` used to start at a RANDOM offset, which spread load but
-     * also made the order decorative — every client drew uniformly, so the
-     * slowest instance served a quarter of all traffic. Ordering the list
-     * without this change would have looked like a fix and done nothing, so
-     * the test pins the property rather than the list.
+     * It used to read "always starts at the FIRST endpoint, whatever `random`
+     * returns", and it existed for a good reason: `pickEndpoint` had started at
+     * a RANDOM offset, which spread load but made the pool order decorative —
+     * every client drew uniformly, so the slowest instance served its full
+     * share. Measured 2026-07-28, that share was 4.2x slower than the fastest
+     * host. Ordering the list without removing the random start "would have
+     * looked like a fix and done nothing", so the test pinned the property.
      *
-     * `random` is still injected — it drives backoff jitter (see the
-     * exponential-growth test below), which is the one place randomness is
-     * still wanted.
+     * What the strict order then cost is what the twelfth testing session
+     * reported: EVERY client tries entry 0 first, so entry 0 hands out 429s.
+     * The property worth pinning is therefore no longer "always first" but
+     * "usually first" — the preference survives, the herd does not.
+     *
+     * Both halves are asserted, because a draw that always returned the
+     * heaviest would satisfy the first and reinstate the bug.
      */
+    const firstHosts = new Set<string>();
+    let heaviestFirst = 0;
+    const draws = 200;
+
+    for (let i = 0; i < draws; i++) {
+      const fetchImpl = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+      // A deterministic sweep across [0, 1) rather than Math.random, so this
+      // samples the distribution exactly and cannot flake.
+      const { source } = makeSource(fetchImpl, {
+        random: () => (i + 0.5) / draws,
+      });
+      await source.fetchTile(TILE);
+
+      const host = String(fetchImpl.mock.calls[0]![0]);
+      firstHosts.add(host);
+      if (operatorForUrl(host) === "fossgis") heaviestFirst++;
+    }
+
+    // THE EXPECTED SHARE IS DERIVED FROM THE WEIGHTS, not hardcoded. The
+    // weights are expected to move whenever the pool is re-measured, and a
+    // literal band here would turn every honest re-weighting into a spurious
+    // failure — which is how a test stops being maintained. What must hold
+    // across any weighting is that the draw REALISES the weights.
+    const total = Object.values(DEFAULT_OPERATOR_WEIGHTS).reduce(
+      (sum, w) => sum + w,
+      0,
+    );
+    const expected = (DEFAULT_OPERATOR_WEIGHTS["fossgis"] ?? 1) / total;
+    expect(heaviestFirst / draws).toBeGreaterThan(expected - 0.05);
+    expect(heaviestFirst / draws).toBeLessThan(expected + 0.05);
+
+    // …and more than one host must be able to open, or the preference has
+    // quietly become the strict order again. This is the half that the test
+    // this replaced would have failed.
+    expect(firstHosts.size).toBeGreaterThan(1);
+  });
+
+  it("spends its first attempts on DISTINCT operators", async () => {
+    // The property that makes a retry mean something, and the reason the draw
+    // is over operators rather than entries. Five entries are three operators,
+    // so an entry-level draw gives FOSSGIS three tickets and a 429 on one
+    // predicts a 429 on the next.
     const fetchImpl = vi
       .fn()
-      .mockImplementationOnce(() => Promise.resolve(errorResponse(504)))
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockResolvedValueOnce(errorResponse(429))
       .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
-    // Under the old behaviour this offset started at the LAST endpoint.
-    const { source } = makeSource(fetchImpl, { random: () => 0.999999 });
+    const { source } = makeSource(fetchImpl, { random: () => 0.42 });
 
     await source.fetchTile(TILE);
 
-    expect(fetchImpl.mock.calls[0]![0]).toBe(DEFAULT_OVERPASS_ENDPOINTS[0]);
-    expect(fetchImpl.mock.calls[1]![0]).toBe(DEFAULT_OVERPASS_ENDPOINTS[1]);
+    const operators = fetchImpl.mock.calls.map((call) =>
+      operatorForUrl(String(call[0])),
+    );
+    expect(new Set(operators).size).toBe(operators.length);
   });
 
   it("does NOT retry a non-retryable status", async () => {
@@ -454,13 +509,19 @@ describe("retry, rotation and backoff", () => {
 
   it("DOES sleep once the next attempt would return to a refused operator", async () => {
     // The other half, and the reason this is not simply "never sleep". Backoff
-    // is pressure relief on a QUOTA, and the default pool returns to FOSSGIS on
-    // attempt 2 (`z.overpass-api.de` — same operator as entry 0, as the servers
-    // themselves report). Asking it again immediately after it refused is what
-    // the backoff is for; the previous behaviour merely applied it to the wrong
-    // attempt.
+    // is pressure relief on a QUOTA, so it belongs exactly where a quota that
+    // has already refused is about to be asked again — which, with three
+    // operators in the pool, is the FOURTH attempt.
+    //
+    // UPDATED BY M6, and the update is the improvement rather than a
+    // regression in the test. Before the weighted draw the fixed order was
+    // lz4 → mail.ru → z., and z. is FOSSGIS again, so the first repeat came on
+    // attempt 2. The draw visits all three distinct operators before repeating
+    // any, so the first repeat — and therefore the first wait — moved one
+    // attempt later.
     const fetchImpl = vi
       .fn()
+      .mockResolvedValueOnce(errorResponse(429))
       .mockResolvedValueOnce(errorResponse(429))
       .mockResolvedValueOnce(errorResponse(429))
       .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
@@ -468,11 +529,14 @@ describe("retry, rotation and backoff", () => {
 
     await source.fetchTile(TILE);
 
-    // No sleep before attempt 1 (fossgis → vk-maps), one before attempt 2
-    // (vk-maps → fossgis, already refused).
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    // Three fresh operators, then a repeat: exactly one wait, before the repeat.
     expect(sleeps).toHaveLength(1);
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(String(fetchImpl.mock.calls[2]?.[0])).toContain("z.overpass-api.de");
+    const operators = fetchImpl.mock.calls.map((call) =>
+      operatorForUrl(String(call[0])),
+    );
+    expect(new Set(operators.slice(0, 3)).size).toBe(3);
+    expect(operators.slice(0, 3)).toContain(operators[3]);
   });
 
   it("never sleeps after the LAST attempt, which nothing can use", async () => {
@@ -496,6 +560,29 @@ describe("retry, rotation and backoff", () => {
     // Three attempts (0, 1, 2) but only two gaps between them.
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(sleeps).toHaveLength(2);
+  });
+
+  it("can reach EVERY endpoint in the default pool before giving up", async () => {
+    // WHY maxRetries WENT FROM 3 TO 4. The loop is `attempt <= maxRetries`, so
+    // 3 gave four attempts against a five-entry pool — and under the old
+    // `attempt % length` selection that made bare `overpass-api.de`
+    // unreachable by any request, in the shipped configuration, with nothing
+    // naming it. A host in the pool that nothing can ever ask is not a fallback,
+    // it is decoration.
+    //
+    // Asserted on the DEFAULTS deliberately: the bug was a relationship between
+    // two constants, so a test that set either of them locally would pin an
+    // arrangement no user has.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(errorResponse(504)));
+    const { source } = makeSource(fetchImpl);
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow(/attempt\(s\)/);
+
+    const asked = new Set(fetchImpl.mock.calls.map((call) => String(call[0])));
+    expect(asked.size).toBe(DEFAULT_OVERPASS_ENDPOINTS.length);
+    expect([...asked].sort()).toEqual([...DEFAULT_OVERPASS_ENDPOINTS].sort());
   });
 
   it("gives up after maxRetries and reports how many attempts it made", async () => {

@@ -1,0 +1,713 @@
+{
+  "measuredAt": "2026-08-19T01:01:43.676Z",
+  "centre": {
+    "lat": 50.9413,
+    "lng": 6.9583
+  },
+  "keyCount": 32,
+  "plannedCells": 24,
+  "complete": true,
+  "cooldownMs": 60000,
+  "notes": [
+    "overpass.kumi.systems dropped after 2 recent refusals against private.coffee (504 Gateway Timeout)",
+    "overpass-api.de dropped after 2 recent refusals against fossgis (504 Gateway Timeout)",
+    "overpass.kumi.systems re-admitted: private.coffee has not refused in the last 10 min"
+  ],
+  "totals": {
+    "bytes": 205432452,
+    "requests": 24,
+    "byOperator": {
+      "fossgis": 107665069,
+      "private.coffee": 67418940,
+      "vk-maps": 30348443
+    }
+  },
+  "cells": [
+    {
+      "id": "areal-only:res8:fossgis:overpass-api.de:r0",
+      "url": "https://overpass-api.de/api/interpreter",
+      "note": "FOSSGIS main",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:private.coffee:overpass.private.coffee:r0",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:fossgis:lz4.overpass-api.de:r0",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:private.coffee:overpass.kumi.systems:r0",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "note": "legacy alias this package hardcodes; the wiki says it became private.coffee",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:fossgis:z.overpass-api.de:r0",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — likewise",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:vk-maps:maps.mail.ru:r0",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "note": "VK Maps",
+      "operator": "vk-maps",
+      "res": 8,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:fossgis:overpass-api.de:r1",
+      "url": "https://overpass-api.de/api/interpreter",
+      "note": "FOSSGIS main",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:private.coffee:overpass.private.coffee:r1",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:fossgis:lz4.overpass-api.de:r1",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:private.coffee:overpass.kumi.systems:r1",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "note": "legacy alias this package hardcodes; the wiki says it became private.coffee",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:fossgis:z.overpass-api.de:r1",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — likewise",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res8:vk-maps:maps.mail.ru:r1",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "note": "VK Maps",
+      "operator": "vk-maps",
+      "res": 8,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:fossgis:overpass-api.de:r0",
+      "url": "https://overpass-api.de/api/interpreter",
+      "note": "FOSSGIS main",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:private.coffee:overpass.private.coffee:r0",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "operator": "private.coffee",
+      "res": 7,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:fossgis:lz4.overpass-api.de:r0",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:private.coffee:overpass.kumi.systems:r0",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "note": "legacy alias this package hardcodes; the wiki says it became private.coffee",
+      "operator": "private.coffee",
+      "res": 7,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:fossgis:z.overpass-api.de:r0",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — likewise",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:vk-maps:maps.mail.ru:r0",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "note": "VK Maps",
+      "operator": "vk-maps",
+      "res": 7,
+      "form": "areal-only",
+      "round": 0,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:fossgis:overpass-api.de:r1",
+      "url": "https://overpass-api.de/api/interpreter",
+      "note": "FOSSGIS main",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:private.coffee:overpass.private.coffee:r1",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "operator": "private.coffee",
+      "res": 7,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:fossgis:lz4.overpass-api.de:r1",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:private.coffee:overpass.kumi.systems:r1",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "note": "legacy alias this package hardcodes; the wiki says it became private.coffee",
+      "operator": "private.coffee",
+      "res": 7,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:fossgis:z.overpass-api.de:r1",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "note": "FOSSGIS backend — likewise",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    },
+    {
+      "id": "areal-only:res7:vk-maps:maps.mail.ru:r1",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "note": "VK Maps",
+      "operator": "vk-maps",
+      "res": 7,
+      "form": "areal-only",
+      "round": 1,
+      "centre": {
+        "lat": 50.9413,
+        "lng": 6.9583
+      },
+      "site": "cologne-cathedral"
+    }
+  ],
+  "results": [
+    {
+      "id": "areal-only:res8:fossgis:overpass-api.de:r0",
+      "url": "https://overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "FOSSGIS main",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 23335,
+      "totalMs": 26061,
+      "bytes": 4575775
+    },
+    {
+      "id": "areal-only:res8:private.coffee:overpass.private.coffee:r0",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 37722,
+      "totalMs": 37722,
+      "bytes": 695
+    },
+    {
+      "id": "areal-only:res8:fossgis:lz4.overpass-api.de:r0",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 23792,
+      "totalMs": 24232,
+      "bytes": 4575775
+    },
+    {
+      "id": "areal-only:res8:private.coffee:overpass.kumi.systems:r0",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "legacy alias this package hardcodes; the wiki says it became private.coffee",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 33018,
+      "totalMs": 33019,
+      "bytes": 695
+    },
+    {
+      "id": "areal-only:res8:fossgis:z.overpass-api.de:r0",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "FOSSGIS backend — likewise",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 21022,
+      "totalMs": 21348,
+      "bytes": 4575775
+    },
+    {
+      "id": "areal-only:res8:vk-maps:maps.mail.ru:r0",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "operator": "vk-maps",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "VK Maps",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 19443,
+      "totalMs": 19937,
+      "bytes": 4575774
+    },
+    {
+      "id": "areal-only:res8:fossgis:overpass-api.de:r1",
+      "url": "https://overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "FOSSGIS main",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 21270,
+      "totalMs": 21642,
+      "bytes": 4575775
+    },
+    {
+      "id": "areal-only:res8:private.coffee:overpass.private.coffee:r1",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 178759,
+      "totalMs": 179328,
+      "bytes": 4557979
+    },
+    {
+      "id": "areal-only:res8:fossgis:lz4.overpass-api.de:r1",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 18530,
+      "totalMs": 18840,
+      "bytes": 4575775
+    },
+    {
+      "id": "areal-only:res8:private.coffee:overpass.kumi.systems:r1",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "operator": "private.coffee",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "areal-only:res8:fossgis:z.overpass-api.de:r1",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "FOSSGIS backend — likewise",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 10384,
+      "totalMs": 10384,
+      "bytes": 695
+    },
+    {
+      "id": "areal-only:res8:vk-maps:maps.mail.ru:r1",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "operator": "vk-maps",
+      "res": 8,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "881fa19991fffff",
+      "note": "VK Maps",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 22428,
+      "totalMs": 22780,
+      "bytes": 4575774
+    },
+    {
+      "id": "areal-only:res7:fossgis:overpass-api.de:r0",
+      "url": "https://overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "FOSSGIS main",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 13053,
+      "totalMs": 13053,
+      "bytes": 695
+    },
+    {
+      "id": "areal-only:res7:private.coffee:overpass.private.coffee:r0",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "operator": "private.coffee",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 58030,
+      "totalMs": 59944,
+      "bytes": 20943798
+    },
+    {
+      "id": "areal-only:res7:fossgis:lz4.overpass-api.de:r0",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 24652,
+      "totalMs": 25836,
+      "bytes": 21196201
+    },
+    {
+      "id": "areal-only:res7:private.coffee:overpass.kumi.systems:r0",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "operator": "private.coffee",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "legacy alias this package hardcodes; the wiki says it became private.coffee",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 31468,
+      "totalMs": 31468,
+      "bytes": 695
+    },
+    {
+      "id": "areal-only:res7:fossgis:z.overpass-api.de:r0",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "FOSSGIS backend — likewise",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 20477,
+      "totalMs": 21640,
+      "bytes": 21196201
+    },
+    {
+      "id": "areal-only:res7:vk-maps:maps.mail.ru:r0",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "operator": "vk-maps",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "VK Maps",
+      "ok": false,
+      "status": "504 Gateway Timeout",
+      "firstByteMs": 33655,
+      "totalMs": 33655,
+      "bytes": 695
+    },
+    {
+      "id": "areal-only:res7:fossgis:overpass-api.de:r1",
+      "url": "https://overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "skipped": "host dropped after refusals"
+    },
+    {
+      "id": "areal-only:res7:private.coffee:overpass.private.coffee:r1",
+      "url": "https://overpass.private.coffee/api/interpreter",
+      "operator": "private.coffee",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "Private.coffee — the canonical name the wiki now lists",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 31403,
+      "totalMs": 33228,
+      "bytes": 20971280
+    },
+    {
+      "id": "areal-only:res7:fossgis:lz4.overpass-api.de:r1",
+      "url": "https://lz4.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "FOSSGIS backend — included to CONFIRM it shares the main quota, not as a competitor",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 35046,
+      "totalMs": 43615,
+      "bytes": 21196201
+    },
+    {
+      "id": "areal-only:res7:private.coffee:overpass.kumi.systems:r1",
+      "url": "https://overpass.kumi.systems/api/interpreter",
+      "operator": "private.coffee",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "legacy alias this package hardcodes; the wiki says it became private.coffee",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 84268,
+      "totalMs": 86446,
+      "bytes": 20943798
+    },
+    {
+      "id": "areal-only:res7:fossgis:z.overpass-api.de:r1",
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "FOSSGIS backend — likewise",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 23887,
+      "totalMs": 29657,
+      "bytes": 21196201
+    },
+    {
+      "id": "areal-only:res7:vk-maps:maps.mail.ru:r1",
+      "url": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+      "operator": "vk-maps",
+      "res": 7,
+      "form": "areal-only",
+      "site": "cologne-cathedral",
+      "tile": "871fa1999ffffff",
+      "note": "VK Maps",
+      "ok": true,
+      "status": "200 OK",
+      "firstByteMs": 15202,
+      "totalMs": 15874,
+      "bytes": 21196200
+    }
+  ]
+}

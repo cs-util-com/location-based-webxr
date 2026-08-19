@@ -31,6 +31,27 @@ import { metresToDegrees } from "./clip.js";
  * of res-8 cells covered, so this is one request per move instead of seven —
  * and moves are ~7x rarer because a res-7 cell is crossed far less often.
  *
+ * **RE-OPENED AND RE-CONFIRMED ON 2026-08-19, this time with a measurement of
+ * the alternative rather than an argument against it** (DEC-T4/DEC-T11; the
+ * twelfth testing session asked for res 8 to be reconsidered). Measured on the
+ * `areal-only` form, FOSSGIS medians:
+ *
+ * - res 7 — 21.2 MB — **27.7 s** (n=4)
+ * - res 8 — 4.58 MB — **21.6 s** (n=5)
+ * - res 10 — 0.33 MB — **~21.5 s**
+ *
+ * **Latency here is almost entirely FIXED COST.** A res-10 cell is 1/343 the
+ * area and 1/64 the payload of a res-7 cell and takes the same time. So res 8
+ * buys 6 s on the first tile and costs 3.1x on the SAME ground — seven cells
+ * against two concurrent slots is ~86 s — plus seven times the requests. The
+ * 2026-07-28 decision stands, now for a measured reason.
+ *
+ * That finding has a consequence beyond this constant, recorded here because
+ * this comment is where the next person will look: **asking Overpass for less
+ * ground does not make it answer sooner.** Any plan whose speed-up is "fetch a
+ * smaller area" is already refuted; see
+ * `GpsPlusSlamJs_Docs/docs/2026-08-19-0430-overpass-endpoint-and-resolution-remeasure-results.md`.
+ *
  * **A res-7 tile is ~21 MB of decompressed JSON.** That figure — not the
  * request — is the number to design against; it is why parsing belongs in a
  * worker. It is the sturdiest number in this package: 21.1 MB in the 2026-08-01

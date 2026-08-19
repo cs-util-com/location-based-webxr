@@ -40,11 +40,23 @@ import type { OverpassStatus } from "./overpass-status.js";
 import { parseOverpassStatus } from "./overpass-status.js";
 import { OverpassSlotBudget } from "./slot-budget.js";
 import { operatorForUrl } from "./overpass-operators.js";
+import { planEndpointOrder, type OperatorWeights } from "./endpoint-order.js";
 import { InFlightRequests } from "./in-flight-requests.js";
 
 /**
- * Default endpoint pool, in PREFERENCE ORDER — `pickEndpoint` walks it from the
- * front and does not shuffle.
+ * Default endpoint pool.
+ *
+ * **THE ORDER IS NO LONGER THE SELECTION RULE (M6, 2026-08-19).** It used to be:
+ * `pickEndpoint` walked this list from the front and did not shuffle, so every
+ * client tried entry 0 first — the herding that decision knowingly accepted, and
+ * the 429 the twelfth testing session reported. Selection now happens in
+ * `endpoint-order.ts`, as a weighted draw over OPERATORS
+ * ({@link DEFAULT_OPERATOR_WEIGHTS}), and this list contributes two things to
+ * it: which endpoints exist, and the order of an operator's own entries.
+ *
+ * The measurement below is kept because it is still the evidence for the
+ * weights, and because the two facts it establishes about the pool's SHAPE —
+ * which entries are the same instance — do not expire the way the timings do.
  *
  * Ordered from a measurement, not a guess. All six known free global instances
  * were timed on one identical res-7 Cologne tile on 2026-07-28 21:43 UTC
@@ -138,6 +150,15 @@ export interface OverpassSourceOptions {
    */
   readonly monotonicNow?: () => number;
   readonly sleepImpl?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /**
+   * Relative likelihood per OPERATOR in the per-tile endpoint draw.
+   *
+   * Defaults to {@link DEFAULT_OPERATOR_WEIGHTS}. Supply your own when you pass
+   * a custom `endpoints` pool, or the operators in it fall back to the neutral
+   * weight and the draw is uniform over them — which is exactly the behaviour
+   * the 2026-07-28 measurement removed.
+   */
+  readonly operatorWeights?: OperatorWeights;
   /** Cap on `stats.attempts`. See {@link OverpassStats}. */
   readonly maxAttemptLog?: number;
 }
@@ -170,7 +191,65 @@ export interface OverpassStats {
 
 /** Matches the measured `Rate limit: 2` on the public instances. */
 const DEFAULT_MAX_CONCURRENT = 2;
-const DEFAULT_MAX_RETRIES = 3;
+
+/**
+ * Retries after the first attempt.
+ *
+ * **RAISED FROM 3 TO 4 ON 2026-08-19, and the old value made a pool entry
+ * unreachable.** The loop is `attempt <= maxRetries`, so 3 gave attempts 0–3 —
+ * four of the five endpoints. With the old `attempt % length` selection that
+ * meant bare `overpass-api.de` was never asked by any request, in the shipped
+ * configuration, silently. `endpoint-order.ts` now returns a permutation and
+ * this reaches all of it.
+ *
+ * Note what this does NOT cost: attempts are not free requests. Every one is
+ * gated by the slot budget, most are now spent on a DIFFERENT operator from the
+ * last (`shouldWaitBeforeRetry`), and a permanent failure still escapes the loop
+ * immediately. The fifth attempt only happens when four operators-worth of
+ * hosts have each refused.
+ */
+const DEFAULT_MAX_RETRIES = 4;
+
+/**
+ * How the pool's three operators are weighted in the per-tile draw.
+ *
+ * **FROM A MEASUREMENT, AND DELIBERATELY COARSER THAN IT.** The run is
+ * `docs/overpass-sweep-2026-08-19-arealonly-res78.json` — 24 cells, the
+ * `areal-only` form production actually sends, two resolutions, two rounds —
+ * written up in
+ * `GpsPlusSlamJs_Docs/docs/2026-08-19-0430-overpass-endpoint-and-resolution-remeasure-results.md`.
+ * Successes only, median seconds:
+ *
+ * - **fossgis** — res 7: 27.7 (n=4), res 8: 21.6 (n=5). Answered **9 of 11**.
+ * - **vk-maps** — res 7: 15.9 (n=1), res 8: 21.4 (n=2). Answered **3 of 4**.
+ * - **private.coffee** — res 7: 59.9 (n=3), res 8: 179.3 (n=1). Answered
+ *   **4 of 7**.
+ *
+ * **What the data supports, stated no more strongly than that.** FOSSGIS and VK
+ * are indistinguishable: their res-8 medians differ by 0.2 s, and VK's single
+ * fastest res-7 sample is n=1. So they are close, not ranked — 4:3 records a
+ * slight preference on availability (82 % against 75 %) and on having several
+ * times the samples, and nothing more. `private.coffee` IS separated, on both
+ * axes at once: 57 % availability and medians 2.2x (res 7) to 8.3x (res 8) the
+ * best, including one 179 s success.
+ *
+ * A weight computed as `1 / median` would be a precise function of noise —
+ * `spatial/resolutions.ts` records the same work at 15.1 / 32.9 / 82.9 / 91.1 s
+ * — so these are tiers, and `operator-weights-evidence.test.ts` guards only
+ * what the run can settle: that a materially more RELIABLE operator is never
+ * weighted below a less reliable one.
+ *
+ * **These expire.** The strict order they replaced was one sample per host from
+ * one location at one time of day, and it lasted three weeks before a field
+ * session reported the herding it caused. Re-run
+ * `node scripts/benchmark-endpoints.mjs --matrix --forms areal-only
+ * --resolutions 8,7 --repeats 2 --out <dated>.json` and revise.
+ */
+export const DEFAULT_OPERATOR_WEIGHTS: OperatorWeights = Object.freeze({
+  fossgis: 4,
+  "vk-maps": 3,
+  "private.coffee": 1,
+});
 
 /**
  * Default `[timeout:]`. See `overpass-query.ts` — high on purpose, because
@@ -295,6 +374,7 @@ export class OverpassSource implements OsmDataSource {
 
   private readonly selectKeys: readonly string[];
   private readonly maxAttemptLog: number;
+  private readonly operatorWeights: OperatorWeights;
 
   constructor(options: OverpassSourceOptions) {
     const resolved = { ...defaultOptions(), ...stripUndefined(options) };
@@ -315,6 +395,7 @@ export class OverpassSource implements OsmDataSource {
     this.sleepImpl = resolved.sleepImpl;
     this.selectKeys = resolved.selectKeys;
     this.maxAttemptLog = resolved.maxAttemptLog;
+    this.operatorWeights = resolved.operatorWeights;
     this.budget =
       resolved.budget ?? new OverpassSlotBudget({ now: () => this.now() });
   }
@@ -332,7 +413,12 @@ export class OverpassSource implements OsmDataSource {
    * must not stop us fetching tiles, it only means we fly on local accounting.
    */
   async syncBudget(signal?: AbortSignal): Promise<OverpassStatus | undefined> {
-    const endpoint = this.pickEndpoint(0);
+    // THE POOL'S FIRST ENTRY, not a drawn one. This asks a host how many slots
+    // it will give us, and the answer is only useful for the host most likely
+    // to be asked for a tile — which the weights make the first entry, most of
+    // the time. Drawing here would sample a different host than the fetch does
+    // and correct the budget against a quota we may never spend.
+    const endpoint = this.endpoints[0] as string;
     try {
       const response = await this.fetchImpl(statusUrlFor(endpoint), {
         headers: { "User-Agent": this.userAgent },
@@ -414,18 +500,16 @@ export class OverpassSource implements OsmDataSource {
     // "wait for a quota to recover" from "ask somebody else". See
     // `shouldWaitBeforeRetry`.
     const refusedOperators = new Set<string>();
+    // DRAWN ONCE FOR THIS TILE. See `planAttemptOrder`.
+    const attemptOrder = this.planAttemptOrder();
     // attempt 0 is the initial try; 1..maxRetries are retries.
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       throwIfAborted(signal);
-      // Rotate on every attempt, walking the pool IN ORDER from the front.
-      //
-      // THIS COMMENT DESCRIBED THE OPPOSITE UNTIL 2026-08-19 — "starting at a
-      // random offset … spreads load across the pool" — which is the behaviour
-      // `pickEndpoint` deliberately REMOVED, and its own header (see below)
-      // spends a paragraph explaining why. The stale copy sat right where a
-      // reader looks first, so the retired design was the one on offer at the
-      // call site while the retirement notice was 240 lines away.
-      const endpoint = this.pickEndpoint(attempt);
+      // Walk the order drawn for this tile. The modulo is a backstop for a
+      // `maxRetries` larger than the pool, not the selection rule — the rule is
+      // in `endpoint-order.ts`, and the order it returns already guarantees
+      // that the first attempts hit distinct operators.
+      const endpoint = attemptOrder[attempt % attemptOrder.length] as string;
       // Recorded before the request rather than after it fails: every path out
       // of this iteration other than success is a refusal, and recording it in
       // one place beats three.
@@ -470,7 +554,13 @@ export class OverpassSource implements OsmDataSource {
         lastError = new Error(
           `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
         );
-        await this.waitBeforeRetry(attempt, response, signal, refusedOperators);
+        await this.waitBeforeRetry(
+          attempt,
+          response,
+          signal,
+          refusedOperators,
+          attemptOrder,
+        );
       } catch (error) {
         // Aborts and permanent failures must escape the loop rather than be
         // re-attempted. Both were previously caught here and retried: a 400
@@ -505,6 +595,7 @@ export class OverpassSource implements OsmDataSource {
           undefined,
           signal,
           refusedOperators,
+          attemptOrder,
         );
       }
     }
@@ -598,10 +689,12 @@ export class OverpassSource implements OsmDataSource {
   private shouldWaitBeforeRetry(
     attempt: number,
     refusedOperators: ReadonlySet<string>,
+    attemptOrder: readonly string[],
   ): boolean {
     // Nothing follows this attempt, so there is nothing to wait for.
     if (attempt >= this.maxRetries) return false;
-    return refusedOperators.has(operatorForUrl(this.pickEndpoint(attempt + 1)));
+    const next = attemptOrder[(attempt + 1) % attemptOrder.length] as string;
+    return refusedOperators.has(operatorForUrl(next));
   }
 
   /**
@@ -617,8 +710,11 @@ export class OverpassSource implements OsmDataSource {
     response: Response | undefined,
     signal: AbortSignal | undefined,
     refusedOperators: ReadonlySet<string>,
+    attemptOrder: readonly string[],
   ): Promise<void> {
-    if (!this.shouldWaitBeforeRetry(attempt, refusedOperators)) return;
+    if (!this.shouldWaitBeforeRetry(attempt, refusedOperators, attemptOrder)) {
+      return;
+    }
     const delay = nextDelayMs(
       attempt,
       response?.headers.get("Retry-After"),
@@ -712,23 +808,19 @@ export class OverpassSource implements OsmDataSource {
   }
 
   /**
-   * The endpoint for `attempt`, walking the pool IN ORDER from the front.
+   * The endpoints this tile will try, in order — drawn once per fetch.
    *
-   * Deliberately not randomised any more. The previous version started at a
-   * random offset to spread load "instead of every client hammering endpoint 0
-   * first" — a real property, given up knowingly, because it also made the pool
-   * order decorative: every client drew uniformly, so the slowest instance
-   * served its full share of traffic. Measured 2026-07-28, that share was 4.2x
-   * slower than the fastest host on an identical res-7 tile, which is the
-   * difference between a usable demo and one that looks broken.
+   * ONCE PER FETCH, NOT PER ATTEMPT, and that is what makes the sequence mean
+   * anything: the draw decides an ORDER, and re-drawing between attempts would
+   * let the same operator come up twice while another had never been tried.
+   * `shouldWaitBeforeRetry` reads the same array to see where the next attempt
+   * is going, so both must be looking at one decision.
    *
-   * The cost is herding: every client now tries `endpoints[0]` first. That is
-   * acceptable only because the pool is ordered with a FOSSGIS backend in
-   * front, and it is the reason the list must stay short and be re-measured
-   * rather than treated as settled.
+   * The design and the two versions it replaces are documented in
+   * `endpoint-order.ts` — this is the seam, not the policy.
    */
-  private pickEndpoint(attempt: number): string {
-    return this.endpoints[attempt % this.endpoints.length]!;
+  private planAttemptOrder(): readonly string[] {
+    return planEndpointOrder(this.endpoints, this.operatorWeights, this.random);
   }
 
   /**
@@ -828,6 +920,7 @@ function defaultOptions() {
     monotonicNow: defaultMonotonicNow,
     sleepImpl: sleep,
     maxAttemptLog: DEFAULT_MAX_ATTEMPT_LOG,
+    operatorWeights: DEFAULT_OPERATOR_WEIGHTS,
     selectKeys: OVERPASS_SELECT_KEYS,
     budget: undefined as OverpassSlotBudget | undefined,
   };

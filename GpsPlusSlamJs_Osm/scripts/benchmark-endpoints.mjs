@@ -249,6 +249,16 @@ function arg(name, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+/** A single string CLI value, e.g. `--out sweep-2026-08-19.json`. */
+function stringArg(name, fallback) {
+  const at = process.argv.indexOf(`--${name}`);
+  if (at === -1) return fallback;
+  const value = process.argv[at + 1];
+  // A flag with nothing after it, or followed by the next flag, is a typo
+  // rather than a request for the empty string.
+  return value === undefined || value.startsWith("--") ? fallback : value;
+}
+
 /** Comma-separated numeric CLI list, e.g. `--resolutions 7,8,9`. */
 function listArg(name, fallback) {
   const at = process.argv.indexOf(`--${name}`);
@@ -358,13 +368,26 @@ async function runMatrix() {
   // scheduled last inherits every refusal. A single-form run gives that form the
   // whole budget.
   const forms = stringListArg("forms", [...QUERY_FORMS]);
-  const cells = planCells({ hosts: ENDPOINTS, resolutions, forms }).map(
-    (cell) => ({
-      ...cell,
-      centre,
-      site: "cologne-cathedral",
-    }),
-  );
+  // `--repeats N` measures each cell N times, in N interleaved rounds.
+  //
+  // ADDED 2026-08-19 for DEC-T4, which asks for "a distribution rather than a
+  // single sample". Everything this script has produced so far is n=1 per cell,
+  // and `resolutions.ts` is explicit that Overpass latency "does not replicate
+  // at all" — four res-7 samples spanning 15.1 to 91.1 s. A comparison drawn
+  // from single samples on either side of it cannot mean anything, and this
+  // repo has already had to retract three latency figures that were quoted as
+  // if it could.
+  const repeats = Math.max(1, arg("repeats", 1));
+  const cells = planCells({
+    hosts: ENDPOINTS,
+    resolutions,
+    forms,
+    repeats,
+  }).map((cell) => ({
+    ...cell,
+    centre,
+    site: "cologne-cathedral",
+  }));
 
   // The optional final leg (plan §3): the same form x resolution sweep at a site
   // with almost no non-areal relations. If Heidelberg barely moves while Cologne
@@ -376,7 +399,17 @@ async function runMatrix() {
 
   const outDir = join(__dirname, "..", "docs");
   mkdirSync(outDir, { recursive: true });
-  const outPath = join(outDir, "overpass-matrix-sweep.json");
+  // `--out <name>` writes somewhere other than the canonical artefact.
+  //
+  // ADDED 2026-08-19 BECAUSE THE DEFAULT PATH IS A LOADED GUN. It is
+  // unconditional, and `overpass-matrix-sweep.json` is the artefact
+  // `spatial/resolutions.ts` cites by name for the 15.1 / 32.9 / 82.9 / 91.1 s
+  // figures that half this repo's latency reasoning rests on. A second
+  // `--matrix` run silently overwrote it, and the only warning was that nobody
+  // had done it yet. A run that is not meant to REPLACE the reference should
+  // say so on the command line.
+  const outName = stringArg("out", "overpass-matrix-sweep.json");
+  const outPath = join(outDir, outName);
 
   const results = [];
   const lastRequestAt = {};
