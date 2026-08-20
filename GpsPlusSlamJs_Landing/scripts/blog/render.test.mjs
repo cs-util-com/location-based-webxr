@@ -135,3 +135,91 @@ describe("renderIndex", () => {
     expect(html).toContain(`<link rel="canonical" href="${ORIGIN}/blog/" />`);
   });
 });
+
+describe("a post body is untrusted input", () => {
+  // Why these tests matter: the blog's source is the project's GitHub WIKI, and
+  // a wiki on a public repo is world-writable unless "Restrict edits to
+  // collaborators only" is ticked — a setting the build cannot see, the REST API
+  // does not expose, and an admin can untick later without touching this code.
+  // The first version of render.mjs passed raw HTML through on the strength of
+  // that assumption. These pin the two rules that replaced it, and they are
+  // written as ATTACKS rather than as "renders markdown correctly", because the
+  // property that matters is what does NOT come out.
+  //
+  // The D14 publication gate is not a second line of defence here: it guards the
+  // meta block, so it stops an unpublished page going live and does nothing
+  // about the body of a page that is already published.
+
+  /** @param {string} body */
+  const render = (body) => renderPost(post({ body }), { origin: ORIGIN });
+
+  it("drops a script tag rather than shipping it to the site", () => {
+    const html = render("Intro\n\n<script>alert(document.cookie)</script>\n");
+
+    expect(html).not.toContain("<script>alert");
+    expect(html).not.toContain("document.cookie");
+  });
+
+  it("drops inline HTML too, not just block-level", () => {
+    // Block and inline raw HTML are different token types in marked; an
+    // implementation that only handled the block case would pass the test above
+    // and still ship `<img onerror=...>` in the middle of a sentence.
+    const html = render('A sentence <img src=x onerror="alert(1)"> continues.\n');
+
+    expect(html).not.toContain("onerror");
+    expect(html).toContain("A sentence");
+    expect(html).toContain("continues.");
+  });
+
+  it("neutralises a javascript: link written in pure markdown", () => {
+    // Dropping HTML alone would close one door and leave this one open —
+    // `[text](javascript:…)` needs no HTML at all.
+    const html = render("[click me](javascript:alert(1))\n");
+
+    expect(html).not.toContain("javascript:");
+    // The words survive; only the link is removed. Deleting the text would
+    // silently rewrite the author's sentence.
+    expect(html).toContain("click me");
+  });
+
+  it("is not fooled by control characters inside the scheme", () => {
+    // Browsers resolve `java\tscript:` and `java\nscript:` as `javascript:`, so
+    // a prefix test on the raw string is bypassable in one keystroke.
+    const html = render("[x](java\tscript:alert(1)) [y](java\nscript:alert(1))\n");
+
+    expect(html.toLowerCase()).not.toContain("javascript:");
+  });
+
+  it("blocks a data: URL in an image", () => {
+    const html = render(
+      "![alt](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)\n",
+    );
+
+    expect(html).not.toContain("data:text/html");
+    expect(html).toContain("alt");
+  });
+
+  it("still renders the links and images a real post needs", () => {
+    // The guard has to be narrow enough to leave ordinary writing alone,
+    // otherwise it will be removed the first time it is inconvenient.
+    const html = render(
+      "[docs](https://gps.csutil.com/docs) and [home](/) and " +
+        "[mail](mailto:code@csutil.com) and [top](#intro)\n\n" +
+        "![shot](/img/shot.png)\n",
+    );
+
+    expect(html).toContain('href="https://gps.csutil.com/docs"');
+    expect(html).toContain('href="/"');
+    expect(html).toContain('href="mailto:code@csutil.com"');
+    expect(html).toContain('href="#intro"');
+    expect(html).toContain('src="/img/shot.png"');
+  });
+
+  it("still renders ordinary markdown structure", () => {
+    const html = render("## Heading\n\n- one\n- two\n\n`code`\n");
+
+    expect(html).toContain("<h2");
+    expect(html).toContain("<li>");
+    expect(html).toContain("<code>");
+  });
+});

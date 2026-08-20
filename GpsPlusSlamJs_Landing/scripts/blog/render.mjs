@@ -9,16 +9,38 @@
  * bearing part of this module, not the styling.
  *
  * Markdown is rendered with `marked` at BUILD time; it is a devDependency and
- * nothing ships to the visitor's browser. Post bodies are written by the
- * project's own pipeline into a repository only the owner can push to, so the
- * markdown is trusted and raw HTML inside it is passed through deliberately
- * (diagrams, `<video>` embeds). Metadata is a different matter — it lands in
- * HTML attributes, so it is always escaped.
+ * nothing ships to the visitor's browser. Metadata lands in HTML attributes and
+ * is always escaped.
+ *
+ * POST BODIES ARE TREATED AS UNTRUSTED. An earlier version of this file passed
+ * raw HTML through, justified by "a repository only the owner can push to". The
+ * source is the project's **GitHub wiki**, and a wiki on a public repo is
+ * world-writable unless *Restrict edits to collaborators only* is ticked — a
+ * setting this build cannot see, that the REST API does not expose, and that
+ * anyone with admin access can untick later without touching this code. Betting
+ * the security of a public site on a checkbox in another product's settings page
+ * is not a decision this module gets to make quietly, so it does not make it.
+ *
+ * Two rules, both enforced here rather than assumed:
+ *
+ * 1. **Raw HTML in a post body is dropped**, block and inline alike. Posts get
+ *    markdown formatting only. This costs the `<video>`/diagram embeds the old
+ *    comment anticipated; none exist yet, and when one is wanted the honest way
+ *    to add it is an explicit allowlist, not a hole.
+ * 2. **Link and image URLs are scheme-allowlisted** — `http`, `https`, `mailto`,
+ *    fragments, and site-relative paths. Markdown alone can carry
+ *    `[text](javascript:…)`, so dropping HTML without this would close one door
+ *    and leave the other open.
+ *
+ * Deliberately NOT a general-purpose HTML sanitiser: hand-rolling one is a
+ * well-known way to ship a subtly broken allowlist, and adding a dependency for
+ * a capability nothing currently uses is the worse trade. Dropping is total, and
+ * total is auditable.
  *
  * Plan: GpsPlusSlamJs_Docs/docs/2026-08-20-0555-marketing-content-automation-plan.md
  */
 
-import { marked } from "marked";
+import { Marked } from "marked";
 
 /** @typedef {import('./post-meta.mjs').Post} Post */
 
@@ -43,6 +65,78 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+/**
+ * Schemes a post body may link to. Anything else renders as inert text.
+ *
+ * `#…` is a same-page fragment and `/…`, `./…`, `../…` are site-relative; both
+ * are safe by construction. A bare `www.example.com` is intentionally NOT here —
+ * it is scheme-less and a browser would resolve it as a relative path anyway.
+ */
+const SAFE_URL = /^(?:https?:|mailto:|#|\.{0,2}\/)/i;
+
+/**
+ * @param {unknown} href raw URL from the markdown source
+ * @returns {string | null} the URL if it is safe to emit, else null
+ */
+function safeUrl(href) {
+  if (typeof href !== "string") return null;
+  // Strip C0 controls and whitespace BEFORE testing. `java\tscript:` and
+  // `java\nscript:` are both resolved as `javascript:` by browsers, so a naive
+  // prefix test on the raw string is bypassable in one keystroke.
+  const collapsed = href.replace(/[\u0000-\u0020]/g, "");
+  if (collapsed === "") return null;
+  return SAFE_URL.test(collapsed) ? collapsed : null;
+}
+
+/**
+ * The renderer that enforces the two rules in this module's header.
+ *
+ * A LOCAL `Marked` INSTANCE, not `marked.use(...)`: the latter mutates a shared
+ * global, so any other importer of `marked` in this process would silently
+ * inherit (or, worse, later override) this policy.
+ */
+const safeMarked = new Marked({
+  renderer: {
+    /** Raw HTML — block and inline both arrive here — is dropped entirely. */
+    html() {
+      return "";
+    },
+    /**
+     * @param {{ href?: string, title?: string | null, tokens: unknown[] }} token
+     */
+    link(token) {
+      // @ts-expect-error marked's renderer `this` is the parser context
+      const text = this.parser.parseInline(token.tokens);
+      const href = safeUrl(token.href);
+      if (href === null) {
+        // Keep the words, lose the link. Deleting the text would silently
+        // rewrite the author's sentence.
+        return text;
+      }
+      const title =
+        typeof token.title === "string" && token.title !== ""
+          ? ` title="${escapeHtml(token.title)}"`
+          : "";
+      return `<a href="${escapeHtml(href)}"${title}>${text}</a>`;
+    },
+    /**
+     * @param {{ href?: string, title?: string | null, text?: string }} token
+     */
+    image(token) {
+      const href = safeUrl(token.href);
+      const alt = escapeHtml(token.text ?? "");
+      if (href === null) {
+        return alt;
+      }
+      const title =
+        typeof token.title === "string" && token.title !== ""
+          ? ` title="${escapeHtml(token.title)}"`
+          : "";
+      return `<img src="${escapeHtml(href)}" alt="${alt}"${title}>`;
+    },
+  },
+});
 
 /** Minimal, self-contained, theme-aware styling. No external requests. */
 const STYLE = `
@@ -167,7 +261,7 @@ export function renderPost(post, { origin }) {
     `        <h1>${escapeHtml(post.title)}</h1>\n` +
     `        <time datetime="${escapeHtml(post.date)}">${escapeHtml(post.date)}</time>\n` +
     tags +
-    `${marked.parse(post.body, { async: false })}\n` +
+    `${safeMarked.parse(post.body, { async: false })}\n` +
     `      </article>`;
   return page({
     title: post.title,
