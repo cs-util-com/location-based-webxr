@@ -4,7 +4,7 @@
 
 ## Latest
 
-Last recorded 2026-08-19T23:57:37.484Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r537` @ `72ae9c9f`
+Last recorded 2026-08-20T06:38:59.885Z · machine `f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)` · branch `r538` @ `3bc67a74`
 
 _Header describes the most recent write only; standalone stage runs update single rows. Median = the stage's same-machine history median. Per-recording provenance lives in the JSON block._
 
@@ -16,7 +16,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 | `check:dup` | 0.7 s | ≈ | 0.7 s | – | – | |
 | `check:cycles` | 0.8 s | ≈ | 0.9 s | – | – | |
 | `check:boundaries` | 1.4 s | ≈ | 1.3 s | – | – | |
-| `typecheck` | 1.6 s | ≈ | 1.3 s | – | – | |
+| `typecheck` | 5.2 s | +3.6 s (+230 %) | 1.3 s | – | – | 🔺 slower |
 | `typecheck:tests` | 1.8 s | ≈ | 1.4 s | – | – | |
 | `test:unit` | 1.8 s | ≈ | 1.8 s | 58 passed | 0 | |
 | `build:framework` | 0.1 s | ≈ | 0.1 s | – | – | |
@@ -32,7 +32,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 - `check:dup`: 0.7, 0.8, 0.7, 0.6, 0.6, 0.7, 0.6, 0.7, 0.7, 0.6
 - `check:cycles`: 0.8, 1.0, 0.9, 0.9, 0.8, 0.9, 0.8, 0.9, 0.9, 0.8
 - `check:boundaries`: 1.4, 1.7, 1.4, 1.1, 1.3, 1.4, 1.2, 1.3, 1.3, 1.1
-- `typecheck`: 1.6, 2.0, 1.3, 1.2, 1.2, 1.3, 1.2, 1.3, 1.2, 1.2
+- `typecheck`: 5.2, 1.6, 2.0, 1.3, 1.2, 1.2, 1.3, 1.2, 1.3, 1.2
 - `typecheck:tests`: 1.8, 2.3, 1.5, 1.3, 1.3, 1.7, 1.3, 1.4, 1.4, 1.2
 - `test:unit`: 1.8, 2.0, 1.8, 1.7, 1.7, 1.8, 1.8, 1.9, 2.1, 1.7
 - `build:framework`: 0.1, 0.2, 0.1, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1
@@ -43,7 +43,7 @@ _Header describes the most recent write only; standalone stage runs update singl
 ```json
 {
   "version": 1,
-  "meta": {"project":"GpsPlusSlamJs_WayfindingHudDemo","lastWrite":{"ts":"2026-08-19T23:57:37.484Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"72ae9c9f","branch":"r537"}},
+  "meta": {"project":"GpsPlusSlamJs_WayfindingHudDemo","lastWrite":{"ts":"2026-08-20T06:38:59.885Z","machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","machineLabel":"f936c64e (11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 8 threads)","git":"3bc67a74","branch":"r538"}},
   "stages": {
     "format": { "history": [
       {"ts":"2026-08-19T23:57:00.501Z","durationMs":986,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"72ae9c9f"},
@@ -130,6 +130,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-09T00:56:57.049Z","durationMs":3641,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"da0e56e"}
     ] },
     "typecheck": { "history": [
+      {"ts":"2026-08-20T06:38:59.885Z","durationMs":5178,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"3bc67a74"},
       {"ts":"2026-08-19T23:57:12.457Z","durationMs":1569,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"72ae9c9f"},
       {"ts":"2026-08-19T17:03:39.490Z","durationMs":1967,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"059041c4"},
       {"ts":"2026-08-19T08:53:21.042Z","durationMs":1326,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"48b59703"},
@@ -138,8 +139,7 @@ _Header describes the most recent write only; standalone stage runs update singl
       {"ts":"2026-08-18T19:09:00.310Z","durationMs":1268,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"2e2e30fc"},
       {"ts":"2026-08-18T18:09:56.103Z","durationMs":1230,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"689b0fb5"},
       {"ts":"2026-08-18T17:36:56.505Z","durationMs":1323,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"31d903ca"},
-      {"ts":"2026-08-18T16:03:51.550Z","durationMs":1241,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d8b86420"},
-      {"ts":"2026-08-18T15:12:45.242Z","durationMs":1212,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"bf3d5f80"}
+      {"ts":"2026-08-18T16:03:51.550Z","durationMs":1241,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"d8b86420"}
     ] },
     "typecheck:tests": { "history": [
       {"ts":"2026-08-19T23:57:14.368Z","durationMs":1840,"tests":null,"machine":"f936c64e|11th-Gen-Intel-R-Core-TM-i7-1185G7-3-00G|8","git":"72ae9c9f"},
