@@ -8,9 +8,14 @@ between "the owner flipped a wiki page to published" and "it is on the site".
 - `buildBlog({ wikiDir, outDir, origin, log? }): { published: number, drafts: number }`
 - CLI: `node scripts/blog/build-blog.mjs [--wiki <dir>] [--out <dir>] [--origin <url>]`
   - Wiki location resolves from `--wiki`, else `BLOG_WIKI_DIR`, else the
-    sibling checkout `../location-based-webxr.wiki`.
+    sibling checkout `../location-based-webxr.wiki`, else a shallow clone of
+    the public wiki repo into `node_modules/.cache/blog-wiki` — the build-host
+    path. Precedence and its failure modes live in
+    [`wiki-source.mjs`](./wiki-source.mjs.md).
   - Output defaults to the repo's `dist-site/`; origin to
     `https://gps.csutil.com`.
+- Invoked by the root `scripts/build-site.mjs` as the last step of the site
+  build, which is what puts `/blog/` into the deploy tree.
 
 ## Output layout
 

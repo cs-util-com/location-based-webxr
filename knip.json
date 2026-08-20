@@ -124,10 +124,13 @@
       "entry": [
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
-        "config/eslint.config.mjs"
+        "config/eslint.config.mjs",
+        "scripts/blog/build-blog.mjs",
+        "scripts/blog/trigger-deploy.mjs"
       ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "scripts/blog/**/*.mjs"
       ],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",

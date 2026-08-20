@@ -28,13 +28,22 @@
  * local checkout clones the public wiki repo first — it needs no credentials.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildCatalog, buildSitemap } from './catalog.mjs';
 import { parsePost } from './post-meta.mjs';
 import { renderIndex, renderPost } from './render.mjs';
+import { resolveWikiDir } from './wiki-source.mjs';
 
 const DEFAULT_ORIGIN = 'https://gps.csutil.com';
 
@@ -109,11 +118,20 @@ function flag(argv, name) {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const argv = process.argv.slice(2);
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-  const wikiDir = resolve(
-    flag(argv, '--wiki') ??
-      process.env['BLOG_WIKI_DIR'] ??
-      join(repoRoot, '..', 'location-based-webxr.wiki')
-  );
+  const wikiDir = resolveWikiDir({
+    envDir: flag(argv, '--wiki') ?? process.env['BLOG_WIKI_DIR'],
+    siblingDir: resolve(repoRoot, '..', 'location-based-webxr.wiki'),
+    cloneDir: resolve(repoRoot, 'node_modules', '.cache', 'blog-wiki'),
+    exists: existsSync,
+    clone: (url, dir) => {
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dirname(dir), { recursive: true });
+      console.log(`• Cloning ${url}`);
+      execFileSync('git', ['clone', '--depth', '1', url, dir], {
+        stdio: 'inherit',
+      });
+    },
+  });
   const outDir = resolve(flag(argv, '--out') ?? join(repoRoot, 'dist-site'));
   const origin = flag(argv, '--origin') ?? DEFAULT_ORIGIN;
 

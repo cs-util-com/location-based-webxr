@@ -28,7 +28,7 @@ const SITE_NAME = 'Location-Based WebXR';
  * @param {string} value
  * @returns {string} safe inside both an HTML attribute and element text
  */
-export function escapeHtml(value) {
+function escapeHtml(value) {
   return String(value)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')

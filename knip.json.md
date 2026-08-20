@@ -82,6 +82,14 @@ entirely after confirming they were only transitively pulled in.
   plugin auto-detects `src/main.ts` from `index.html`; explicit entries
   for the stylelint config and `playwright-tests/**` (the e2e smoke
   suite); the three stylelint tooling packages ignored.
+  - **Plus `scripts/blog/`, which is node tooling rather than app code**: the
+    blog renderer that turns the project wiki's markdown into `/blog/`. Both
+    of its outside callers are invisible to static analysis, so both are
+    explicit entries — `build-blog.mjs` is spawned as a child process by the
+    root `scripts/build-site.mjs`, and `trigger-deploy.mjs` is called by the
+    local publishing run. Without the matching `project` glob, knip does not
+    look inside the directory at all and reported `marked` — the build-time
+    markdown renderer — as an unused devDependency.
 - **GpsPlusSlamJs_OsmDemo** — two entries are listed explicitly because
   knip's Vite plugin finds neither of them. `src/worker/demo-worker.ts`
   is reached through `new Worker(new URL(...), { type: "module" })`,

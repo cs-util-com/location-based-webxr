@@ -11,7 +11,9 @@
 - `renderIndex(posts: readonly Post[], { origin: string }): string` — the
   `/blog/` listing, sorted newest first; renders an explicit "No posts
   published yet." when empty.
-- `escapeHtml(value: string): string` — attribute/text-safe escaping.
+
+Escaping is module-private: every string that reaches an HTML attribute goes
+through it on the way out, so there is nothing for a caller to do.
 
 ## Invariants & assumptions
 
