@@ -48,6 +48,27 @@ import { resolveWikiDir } from "./wiki-source.mjs";
 const DEFAULT_ORIGIN = "https://gps.csutil.com";
 
 /**
+ * Wiki pages that are navigation rather than content, and are therefore not
+ * posts at all.
+ *
+ * `Home` is the wiki's landing page and cannot be deleted — GitHub recreates
+ * it if you try. Names beginning with an underscore are gollum's reserved
+ * meta-pages (`_Sidebar`, `_Footer`, `_Header`), which GitHub renders as
+ * chrome around every other page.
+ *
+ * They would be withheld anyway, since none carries a `blog-meta` block — but
+ * they would be withheld AS DRAFTS, each logging a reason on every build. That
+ * turns the draft log, which exists so a person can confirm nothing leaked,
+ * into a list with permanent entries in it.
+ *
+ * @param {string} fileName
+ * @returns {boolean}
+ */
+function isWikiMetaPage(fileName) {
+  return /^(?:home\.md|_)/i.test(fileName);
+}
+
+/**
  * @param {object} options
  * @param {string} options.wikiDir checkout of the wiki repository
  * @param {string} options.outDir deploy tree root; `blog/` is created inside
@@ -62,7 +83,12 @@ export function buildBlog({ wikiDir, outDir, origin, log = () => {} }) {
         `an empty /blog/ — deploying it would unpublish every existing post.`,
     );
   }
-  const fileNames = readdirSync(wikiDir).filter((name) => /\.md$/i.test(name));
+  // Meta-pages are dropped BEFORE the emptiness check below, so a wiki holding
+  // nothing but a Home page still trips the guard rather than quietly
+  // deploying an empty /blog/ over a working one.
+  const fileNames = readdirSync(wikiDir).filter(
+    (name) => /\.md$/i.test(name) && !isWikiMetaPage(name),
+  );
   if (fileNames.length === 0) {
     throw new Error(
       `build-blog: no markdown pages in ${wikiDir}. Refusing to build an ` +

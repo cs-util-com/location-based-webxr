@@ -33,8 +33,13 @@ dist-site/blog/
   build — the D19 corollary.
 - **Drafts are never written**, and each is logged with its reason so the owner
   can see why a page stayed hidden.
-- Non-post wiki pages (`Home.md`, `_Sidebar.md`, …) need no special-casing:
-  having no `blog-meta` block already makes them drafts.
+- **Non-post wiki pages are excluded by name, not left to the draft gate.**
+  `Home.md` and anything starting with `_` (`_Sidebar`, `_Footer`, `_Header`)
+  are navigation, not content. Having no `blog-meta` block would make them
+  drafts anyway, but then every build would log a withheld-draft reason for
+  each — permanent noise in the one log that exists so a person can confirm
+  nothing leaked. The exclusion runs **before** the emptiness check, so a wiki
+  containing only a Home page still trips the hard error above.
 - The wiki repository is **public**, so a build host clones it without
   credentials.
 
@@ -49,5 +54,7 @@ node GpsPlusSlamJs_Landing/scripts/blog/build-blog.mjs \
 
 `build-blog.test.mjs` — the emitted tree (index, per-post pages, sitemap),
 drafts absent from both output and sitemap, the missing-wiki and no-markdown
-hard errors, and draft reasons reaching the log. Tests write into a `mkdtemp`
+hard errors, draft reasons reaching the log, meta-pages producing neither
+output nor a draft-log line, and a meta-pages-only wiki still tripping the
+emptiness guard. Tests write into a `mkdtemp`
 directory; no fixtures are checked in.
