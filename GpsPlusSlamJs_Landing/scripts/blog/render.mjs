@@ -84,7 +84,19 @@ function safeUrl(href) {
   // Strip C0 controls and whitespace BEFORE testing. `java\tscript:` and
   // `java\nscript:` are both resolved as `javascript:` by browsers, so a naive
   // prefix test on the raw string is bypassable in one keystroke.
-  const collapsed = href.replace(/[\u0000-\u0020]/g, "");
+  //
+  // Done by code point rather than by a regex character class, because a class
+  // covering this range trips `no-control-regex`, and the rule-compliant regex
+  // spellings are either an eslint-disable or unreadable escape soup. The
+  // predicate simply says what it means.
+  //
+  // The STRIPPED form is what gets returned, not the original: a URL carrying a
+  // raw control character is malformed whatever it points at, and emitting the
+  // original after testing the stripped one would hand back precisely the
+  // string the test just rejected.
+  const collapsed = Array.from(href)
+    .filter((character) => character.charCodeAt(0) > 0x20)
+    .join("");
   if (collapsed === "") return null;
   return SAFE_URL.test(collapsed) ? collapsed : null;
 }

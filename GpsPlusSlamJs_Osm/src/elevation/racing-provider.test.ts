@@ -262,7 +262,7 @@ describe("stats say which source the CURRENT field came from", () => {
     expect(provider.stats.upgrades).toBe(1);
   });
 
-  it("goes back to \"none\" when a later batch has no heights at all", async () => {
+  it('goes back to "none" when a later batch has no heights at all', async () => {
     // Why this test matters: `servedBy` is documented as "the source whose
     // heights are current, or `none`", and the empty path used to leave the
     // PREVIOUS batch's id in place. The AR readout then named a DEM for a field

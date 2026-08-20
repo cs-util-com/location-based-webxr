@@ -164,7 +164,9 @@ describe("a post body is untrusted input", () => {
     // Block and inline raw HTML are different token types in marked; an
     // implementation that only handled the block case would pass the test above
     // and still ship `<img onerror=...>` in the middle of a sentence.
-    const html = render('A sentence <img src=x onerror="alert(1)"> continues.\n');
+    const html = render(
+      'A sentence <img src=x onerror="alert(1)"> continues.\n',
+    );
 
     expect(html).not.toContain("onerror");
     expect(html).toContain("A sentence");
@@ -185,7 +187,9 @@ describe("a post body is untrusted input", () => {
   it("is not fooled by control characters inside the scheme", () => {
     // Browsers resolve `java\tscript:` and `java\nscript:` as `javascript:`, so
     // a prefix test on the raw string is bypassable in one keystroke.
-    const html = render("[x](java\tscript:alert(1)) [y](java\nscript:alert(1))\n");
+    const html = render(
+      "[x](java\tscript:alert(1)) [y](java\nscript:alert(1))\n",
+    );
 
     expect(html.toLowerCase()).not.toContain("javascript:");
   });
