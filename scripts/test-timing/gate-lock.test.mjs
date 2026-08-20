@@ -137,8 +137,45 @@ describe('decideGateLock', () => {
       isAlive: alive,
       now: 1_000_000 + 60_000,
     });
-    expect(decision.action).toBe('acquire');
+    expect(decision.action).toBe('override');
     expect(decision.reason).toMatch(/override/i);
+  });
+
+  it('overriding does NOT take the incumbent\'s lock away from it', () => {
+    // Why this test matters: the first version returned `acquire` here, and
+    // `acquire` makes the run write its own record over the incumbent's and
+    // DELETE it on exit. So one person opting in to run concurrently silently
+    // disarmed the guard for the NEXT run, which had opted in to nothing — a
+    // guard you can switch off on someone else's behalf is worse than no guard,
+    // because it still reads as protection.
+    //
+    // `override` is a distinct action precisely so `run-gate.mjs` can proceed
+    // without setting `ownsLock`. Caught in review of PR #330, not by the
+    // original tests, which only asserted that the override let the run start.
+    const decision = decideGateLock({
+      existing: lockRecord(),
+      env: { [GATE_ALLOW_CONCURRENT_ENV]: '1' },
+      isAlive: alive,
+      now: 1_000_000 + 60_000,
+    });
+    expect(decision.action).not.toBe('acquire');
+    expect(decision.action).not.toBe('steal');
+    // It must still name who holds the tree, so the operator knows what they
+    // are running alongside.
+    expect(decision.reason).toContain('run-a');
+  });
+
+  it('overriding an UNCONTENDED tree still takes the lock normally', () => {
+    // The override must not leave the tree unguarded when there was nothing to
+    // override in the first place — otherwise habitually exporting the variable
+    // would disable the guard permanently.
+    const decision = decideGateLock({
+      existing: null,
+      env: { [GATE_ALLOW_CONCURRENT_ENV]: '1' },
+      isAlive: alive,
+      now: 1_000_000,
+    });
+    expect(decision.action).toBe('acquire');
   });
 
   it('ignores an empty override value, which is how a unset shell var arrives', () => {

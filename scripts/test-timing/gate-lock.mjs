@@ -49,7 +49,7 @@ export const LOCK_FILE_NAME = '.gate-run.lock';
 
 /**
  * @typedef {object} LockDecision
- * @property {'acquire' | 'reenter' | 'steal' | 'refuse'} action
+ * @property {'acquire' | 'reenter' | 'steal' | 'refuse' | 'override'} action
  * @property {string} reason human-readable, shown when it is not `acquire`
  */
 
@@ -70,9 +70,21 @@ export const LOCK_FILE_NAME = '.gate-run.lock';
 export function decideGateLock({ existing, env, isAlive, now }) {
   const override = env[GATE_ALLOW_CONCURRENT_ENV];
   if (typeof override === 'string' && override !== '' && override !== '0') {
+    // AN OVERRIDING RUN DOES NOT TAKE OWNERSHIP when someone else holds the
+    // lock. The first version returned `acquire` unconditionally, which
+    // overwrote the incumbent's record and then DELETED it on exit — so an
+    // opt-in override silently disarmed the guard for the next run, which had
+    // not opted in to anything. A guard that can be switched off for someone
+    // else is worse than one that cannot be switched off at all.
+    if (existing !== null) {
+      return {
+        action: 'override',
+        reason: `${GATE_ALLOW_CONCURRENT_ENV} set — concurrency guard override in effect; run ${existing.runId} (pid ${existing.pid}) still owns this tree and keeps its lock`,
+      };
+    }
     return {
       action: 'acquire',
-      reason: `${GATE_ALLOW_CONCURRENT_ENV} set — concurrency guard override in effect; a competing gate run may be mutating this tree`,
+      reason: `${GATE_ALLOW_CONCURRENT_ENV} set — concurrency guard override in effect, but nothing else owns this tree`,
     };
   }
 

@@ -32,10 +32,16 @@ insofar as an orphan's parent is gone, so its lock is reclaimable.
 
 - `decideGateLock({ existing, env, isAlive, now }) → { action, reason }` — the
   whole rule, pure. `action` is one of:
-  - `acquire` — nothing owns the tree (or the override is set); take the lock
+  - `acquire` — nothing owns the tree; take the lock
   - `reenter` — this gate is part of a run already holding the lock; touch nothing
   - `steal` — the recorded owner is gone or the lock is past `MAX_LOCK_AGE_MS`
   - `refuse` — another live run owns the tree; `reason` is the full message
+  - `override` — the escape hatch was set AND someone else holds the lock:
+    **proceed without taking ownership**. Distinct from `acquire` for a reason
+    found in review of PR #330: the first version returned `acquire` here, so an
+    overriding run overwrote the incumbent's record and then *deleted it on
+    exit* — one person opting in silently disarmed the guard for the next run,
+    which had opted in to nothing.
 - `pidAlive(pid) → boolean` — the real liveness probe. Separate and exported
   **because it is the part that broke**: `process.kill(pid, 0)` reports by
   throwing, `ESRCH` means dead and `EPERM` means alive, and an inline version
@@ -74,6 +80,14 @@ insofar as an orphan's parent is gone, so its lock is reclaimable.
   itself on stderr — the same "never silent" rule the skip-browser banner follows.
   Empty string and `0` do not count as set, which is how an unset shell variable
   commonly arrives.
+  - **It opts YOU in, never the next run.** With a lock present the decision is
+    `override`, which leaves `ownsLock` false, so the incumbent's record is
+    neither rewritten nor cleared. With no lock present it is a normal
+    `acquire`, so habitually exporting the variable does not permanently
+    disable the guard.
+  - Children of an overriding run inherit the variable through `process.env`
+    and take the same branch, which is why an overriding *cascade* still runs
+    its package gates instead of refusing them.
 
 ## Examples
 

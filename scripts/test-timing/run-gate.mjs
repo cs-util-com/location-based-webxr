@@ -152,8 +152,13 @@ if (lockDecision.action === 'acquire' || lockDecision.action === 'steal') {
     console.warn(`test-timing: ${lockDecision.reason}`);
   }
 }
-if (lockDecision.action === 'acquire' && /override/i.test(lockDecision.reason)) {
+if (
+  lockDecision.action === 'override' ||
+  (lockDecision.action === 'acquire' && /override/i.test(lockDecision.reason))
+) {
   // NAMED, never silent: the same rule the skip-browser banner follows.
+  // `override` deliberately leaves `ownsLock` false, so this run neither
+  // rewrites the incumbent's record nor clears it on the way out.
   console.warn(`\n⚠ test-timing: ${lockDecision.reason}\n`);
 }
 

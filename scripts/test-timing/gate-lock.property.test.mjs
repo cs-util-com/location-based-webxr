@@ -67,10 +67,15 @@ describe('gate lock invariants', () => {
     );
   });
 
-  it('the override always wins, whatever the tree looks like', () => {
+  it('the override always lets the run proceed, but never seizes a live lock', () => {
     // The escape hatch has to be unconditional or it is not an escape hatch —
     // a guard that can wedge the gate with no way past it is a worse failure
     // than the concurrency it prevents.
+    //
+    // But "proceed" must not mean "take ownership": when a lock exists, the
+    // overriding run has to leave it alone, or opting in for yourself disarms
+    // the guard for whoever runs next. That is the PR #330 finding, pinned here
+    // for every input rather than only the one case the example test covers.
     fc.assert(
       fc.property(
         fc.option(arbRecord, { nil: null }),
@@ -89,13 +94,16 @@ describe('gate lock invariants', () => {
             isAlive: () => alive,
             now,
           });
-          expect(decision.action).toBe('acquire');
+          // Always allowed to start...
+          expect(['acquire', 'override']).toContain(decision.action);
+          // ...but ownership is taken ONLY when the tree was free.
+          expect(decision.action).toBe(existing === null ? 'acquire' : 'override');
         }
       )
     );
   });
 
-  it('always returns one of the four known actions, with a reason', () => {
+  it('always returns one of the five known actions, with a reason', () => {
     fc.assert(
       fc.property(
         fc.option(arbRecord, { nil: null }),
@@ -109,7 +117,7 @@ describe('gate lock invariants', () => {
             isAlive: () => alive,
             now,
           });
-          expect(['acquire', 'reenter', 'steal', 'refuse']).toContain(
+          expect(['acquire', 'reenter', 'steal', 'refuse', 'override']).toContain(
             decision.action
           );
           expect(typeof decision.reason).toBe('string');
