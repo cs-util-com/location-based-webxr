@@ -457,26 +457,57 @@ describe("TerrariumProvider", () => {
     // halfway through, and the assertion is on WHEN it settles: shared means it
     // degrades with the first caller, per-caller would give it a fresh budget
     // and settle it a full timeout later.
+    // THE DURATIONS ARE DELIBERATELY LARGE, and that is the fix for a flake
+    // this test failed three times with (87, 95 and 103 ms against an 85 ms
+    // bound) — including once on a verifiably idle machine with no competing
+    // gate run.
+    //
+    // The reason is not the machine: `AbortSignal.timeout` is a platform timer
+    // that fires on the event loop, and vitest runs ~130 test files across
+    // worker threads, so a 60 ms deadline routinely lands 30-40 ms late. That
+    // overshoot is a fixed cost, so the cure is to make it small RELATIVE to
+    // the thing being measured rather than to keep re-guessing the bound.
+    //
+    // Widening the bound was the obvious move and is the wrong one: the
+    // per-caller design settles at ~100 ms, so any bound near or above that
+    // stops telling the two designs apart, and the test would pass for both —
+    // vacuous, which is worse than deleted, because it still reads as coverage.
+    //
+    // `AbortSignal.timeout` is not controlled by `vi.useFakeTimers`, so a
+    // deterministic virtual clock is not available without changing production
+    // code to accept an injected timer. Scaling up costs ~0.6 s and no risk.
+    const TIMEOUT_MS = 600;
+    const JOIN_AFTER_MS = 400;
+    // Shared budget → the late joiner settles ~TIMEOUT_MS after the FIRST
+    // caller started. A per-caller budget would give it a fresh one, settling
+    // it at ~JOIN_AFTER_MS + TIMEOUT_MS. The midpoint discriminates, now with
+    // ~200 ms of headroom on either side instead of ~25 ms.
+    const SHARED_MS = TIMEOUT_MS;
+    const PER_CALLER_MS = JOIN_AFTER_MS + TIMEOUT_MS;
+    const DISCRIMINATOR_MS = (SHARED_MS + PER_CALLER_MS) / 2;
+
     const fetchImpl = stalledFetch();
     const provider = new TerrariumProvider({
       decodePng,
       fetchImpl,
       zoom: 13,
-      requestTimeoutMs: 60,
+      requestTimeoutMs: TIMEOUT_MS,
     });
     const at = [{ lat: 50.94, lng: 6.95 }];
 
     const startedAt = Date.now();
     const first = provider.elevationAt(at);
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await new Promise((resolve) => setTimeout(resolve, JOIN_AFTER_MS));
     const second = provider.elevationAt(at);
 
     expect(await second).toEqual([undefined]);
     const elapsed = Date.now() - startedAt;
-    // The shared budget expires ~60 ms after the FIRST caller started. A
-    // per-caller budget would expire ~60 ms after the second one did, i.e.
-    // ~100 ms. The midpoint discriminates with room for scheduler jitter.
-    expect(elapsed).toBeLessThan(85);
+    expect(elapsed).toBeLessThan(DISCRIMINATOR_MS);
+    // AND NOT INSTANTLY. The original assertion was one-sided, so a provider
+    // that gave up immediately — dedup broken, or the deadline applied to the
+    // wrong thing — would have satisfied it. "Settled early" and "settled on
+    // the shared deadline" are different outcomes and only one is correct.
+    expect(elapsed).toBeGreaterThanOrEqual(JOIN_AFTER_MS);
 
     expect(await first).toEqual([undefined]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
