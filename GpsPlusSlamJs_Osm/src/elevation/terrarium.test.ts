@@ -476,15 +476,8 @@ describe("TerrariumProvider", () => {
     // `AbortSignal.timeout` is not controlled by `vi.useFakeTimers`, so a
     // deterministic virtual clock is not available without changing production
     // code to accept an injected timer. Scaling up costs ~0.6 s and no risk.
-    const TIMEOUT_MS = 600;
-    const JOIN_AFTER_MS = 400;
-    // Shared budget → the late joiner settles ~TIMEOUT_MS after the FIRST
-    // caller started. A per-caller budget would give it a fresh one, settling
-    // it at ~JOIN_AFTER_MS + TIMEOUT_MS. The midpoint discriminates, now with
-    // ~200 ms of headroom on either side instead of ~25 ms.
-    const SHARED_MS = TIMEOUT_MS;
-    const PER_CALLER_MS = JOIN_AFTER_MS + TIMEOUT_MS;
-    const DISCRIMINATOR_MS = (SHARED_MS + PER_CALLER_MS) / 2;
+    const TIMEOUT_MS = 300;
+    const JOIN_AFTER_MS = 200;
 
     const fetchImpl = stalledFetch();
     const provider = new TerrariumProvider({
@@ -495,21 +488,50 @@ describe("TerrariumProvider", () => {
     });
     const at = [{ lat: 50.94, lng: 6.95 }];
 
+    // THE DISCRIMINATOR IS THE GAP BETWEEN THE TWO SETTLE TIMES, not the
+    // absolute elapsed time of either. That is what makes this robust:
+    //
+    // - a SHARED budget releases both callers on the same deadline event, so
+    //   they settle in the same tick and the gap is ~0
+    // - a PER-CALLER budget gives the late joiner a fresh timeout, so it
+    //   settles JOIN_AFTER_MS later and the gap is ~200 ms
+    //
+    // Scheduler lateness — the 30-40 ms this test kept losing to — delays the
+    // deadline event itself, so it moves BOTH timestamps by the same amount and
+    // cancels in the difference. An absolute bound could not do that: it had to
+    // out-margin the lateness, which is why the previous version needed 600 ms
+    // timeouts to buy headroom, and still only reached ~5x the observed noise.
+    //
+    // The gap is a difference between two `Date.now()` reads in the same tick,
+    // so its own noise is sub-millisecond against a 100 ms bound.
+    const settledAt = new Map<string, number>();
+    const stamp =
+      (name: string) =>
+      <T>(value: T): T => {
+        settledAt.set(name, Date.now());
+        return value;
+      };
+
     const startedAt = Date.now();
-    const first = provider.elevationAt(at);
+    const first = provider.elevationAt(at).then(stamp("first"));
     await new Promise((resolve) => setTimeout(resolve, JOIN_AFTER_MS));
-    const second = provider.elevationAt(at);
+    const second = provider.elevationAt(at).then(stamp("second"));
 
     expect(await second).toEqual([undefined]);
-    const elapsed = Date.now() - startedAt;
-    expect(elapsed).toBeLessThan(DISCRIMINATOR_MS);
-    // AND NOT INSTANTLY. The original assertion was one-sided, so a provider
-    // that gave up immediately — dedup broken, or the deadline applied to the
-    // wrong thing — would have satisfied it. "Settled early" and "settled on
-    // the shared deadline" are different outcomes and only one is correct.
-    expect(elapsed).toBeGreaterThanOrEqual(JOIN_AFTER_MS);
-
     expect(await first).toEqual([undefined]);
+
+    const gapMs = Math.abs(
+      (settledAt.get("second") ?? 0) - (settledAt.get("first") ?? 0),
+    );
+    expect(gapMs).toBeLessThan(JOIN_AFTER_MS / 2);
+
+    // AND NOT INSTANTLY. Without this, a provider that gave up immediately —
+    // dedup broken, or the deadline applied to the wrong thing — would settle
+    // both callers together and satisfy the gap assertion perfectly.
+    // One-sided in the SAFE direction: load can only make elapsed larger, so
+    // this cannot flake however contended the machine is.
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(JOIN_AFTER_MS);
+
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

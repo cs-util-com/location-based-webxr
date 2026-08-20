@@ -256,30 +256,36 @@ describe("what one refresh actually transfers", () => {
       score: cell.scores["walkable"] ?? 1,
     }));
 
-    const timeClone = (value: unknown): number => {
-      // Warm once, so the first-call cost of the clone machinery is not
-      // attributed to the payload.
-      structuredClone(value);
-      const started = performance.now();
-      for (let n = 0; n < 5; n += 1) structuredClone(value);
-      return (performance.now() - started) / 5;
-    };
-
-    const fullMs = timeClone(snapshot.cells);
-    const slimMs = timeClone(slimCells);
-
-    // The invariant, not the timing: the slim shape must be cheaper to clone.
-    // Asserted as a ratio rather than an absolute, because absolute timings on
-    // a shared CI runner are exactly the flaky test this repo does not want.
-    // MEASURED 2026-08-04, 931 cells (one ring):
-    //   full 3.21 ms, slim 0.65 ms -- 4.9x.
+    // THE INVARIANT IS ASSERTED ON GRAPH SIZE, NOT ON A CLOCK (2026-08-20).
     //
-    // Per pass, and a move runs three. The number that matters is the one at
-    // the 488-chunk cap, which the sibling test below measures directly rather
-    // than extrapolating -- linear scaling is an assumption, and this round
-    // exists because an unmeasured assumption was wrong.
-    expect(slimMs).toBeLessThan(fullMs);
-    expect(fullMs / slimMs).toBeGreaterThan(1.5);
+    // What replaced what, and why: this used to read
+    //   expect(slimMs).toBeLessThan(fullMs);          // ZERO margin
+    //   expect(fullMs / slimMs).toBeGreaterThan(1.5); // ratio, tiny denominator
+    // The first is the exact shape that lost a coin toss elsewhere in this file
+    // at 67.59 vs 66.84 ms. The second divides by a ~0.65 ms measurement, and a
+    // ratio is only robust when its denominator is large enough to resolve —
+    // which is the lesson `multipolygon-builder.test.ts` records after its own
+    // ratio failed at 17x.
+    //
+    // `structuredClone` cost is monotone in the size of the object graph, and
+    // the slim shape is cheaper *because* it carries two fields per cell
+    // instead of a whole `scores` map. Asserting the size difference states
+    // that cause directly and cannot be moved by a busy machine.
+    //
+    // MEASURED 2026-08-20, 931 cells (one ring): serialized full 135 927 bytes
+    // vs slim 35 379 — 3.84x — while the clone time ratio was 5.54x. The bound
+    // is set at 2x, leaving ~1.9x headroom on the measured size ratio.
+    //
+    // WHERE THIS IS WEAKER, stated plainly: it proves the payload is smaller,
+    // not that cloning it is faster. A pathological change that shrank the
+    // bytes while making the graph more expensive to clone (many more small
+    // objects, say) would satisfy this and not the old assertion. The sibling
+    // test below still measures real clone cost at the 488-chunk cap, so that
+    // property is not unguarded.
+    const fullBytes = JSON.stringify(snapshot.cells).length;
+    const slimBytes = JSON.stringify(slimCells).length;
+
+    expect(slimBytes * 2).toBeLessThanOrEqual(fullBytes);
   });
 
   it("measures the clone cost at the 488-chunk cap, not just at one ring", async () => {
@@ -318,8 +324,13 @@ describe("what one refresh actually transfers", () => {
     // already in memory?" is that it is in the WORKER's memory and every byte is
     // deep-copied into the page's.
     //
-    // Asserted as a floor rather than an exact figure so a faster machine does
-    // not fail it; the exact measurement lives in the plan and the comment.
+    // WHY THIS ONE KEEPS ITS CLOCK (2026-08-20 wall-clock review). It is a
+    // LOWER bound, so it fails only if the machine is FAST — contention, which
+    // is what makes every other timing assertion here flaky, can only push the
+    // measurement further from failing. The one thing that could trip it is
+    // future hardware, and 35.1 ms measured against a 5 ms floor is ~7x of
+    // headroom in that direction. The claim is also irreducibly about time:
+    // "this is a visible main-thread pause" has no structural restatement.
     expect(cloneMs).toBeGreaterThan(5);
   });
 

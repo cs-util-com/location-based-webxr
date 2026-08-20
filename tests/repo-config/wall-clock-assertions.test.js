@@ -92,22 +92,18 @@ const ALLOWLIST = new Map([
     'Lower bound on a duration the test deliberately burned (spin to now()+20 ms). Load can only make the measured value larger, so the assertion cannot flake.',
   ],
 
-  // --- Known-weak, scheduled for migration (plan M2/M3) ---
+  // --- Migrated 2026-08-20 (plan M2/M3), and the verdicts still pending ---
   [
     'GpsPlusSlamJs_Osm/src/elevation/terrarium.test.ts',
-    'KNOWN WEAK, plan M2: expected ~600 ms against a 800 ms discriminator is 1.33x headroom, below the >=10x bar, and it uses real timers plus AbortSignal.timeout. Scaling it 10x cut the flake rate without making it admissible.',
-  ],
-  [
-    'GpsPlusSlamJs_OsmDemo/src/agent-route.test.ts',
-    'KNOWN WEAK, plan M2: a 3000 ms bound already RAISED from 2000 ms because it failed one run in three in isolation. <2x margin against a regression that ran past 5 s.',
+    'MIGRATED (M2): the absolute bound is replaced by the GAP between the two callers settle times. A shared budget releases both on one deadline (gap ~0); a per-caller budget settles the second ~200 ms later. Scheduler lateness moves both stamps equally and cancels.',
   ],
   [
     'GpsPlusSlamJs_AppFramework/src/state/persistence-middleware.performance.test.ts',
-    'KNOWN WEAK, plan M3: the scaling RATIO (bound 4) is the half that flaked at 9.53; the 1 ms absolute ceiling beside it has never failed.',
+    'MIGRATED (M3): the ratio now accumulates a 200 ms measurement window instead of dividing by a ~1 ms one, which is what let a bound of 4 be observed at 9.53. Separately filed: the test does not appear to exercise the queue at all.',
   ],
   [
     'GpsPlusSlamJs_OsmDemo/src/refresh-payload.test.ts',
-    'KNOWN WEAK, plan M3: three assertions remain after the bench migration moved only one, including a zero-margin slimMs < fullMs.',
+    'MIGRATED (M3): the zero-margin comparison and the small-denominator ratio are replaced by a payload-size assertion. The one clock left is a LOWER bound at the cap, which contention can only push away from failing.',
   ],
   [
     'GpsPlusSlamJs_Osm/src/mesh/poi-hosts-cost.test.ts',
