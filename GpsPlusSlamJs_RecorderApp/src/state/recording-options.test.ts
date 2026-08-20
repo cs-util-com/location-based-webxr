@@ -273,12 +273,20 @@ describe('recording-options', () => {
 
     it('default-fills qualityFilter when missing (pre-feature persisted options)', () => {
       // A persisted options object from before this feature lacks qualityFilter
-      // entirely; it must load with the gate DISABLED (the safe default).
+      // entirely, so it inherits whatever ships as the default.
+      //
+      // CHANGED 2026-08-20: that used to mean "the gate stays off", because the
+      // threshold was an unvalidated placeholder. It is now corpus-tuned and
+      // enabled, so an options blob that never expressed a preference gets the
+      // gate. Deliberate — see the decision in the blur-benchmark findings doc.
+      // An explicit 'enabled: false' is still preserved (next test but one).
       const result = validateImageOptions({ quality: 0.5 });
       expect(result.qualityFilter).toEqual(
         DEFAULT_RECORDING_OPTIONS.images.qualityFilter
       );
-      expect(result.qualityFilter.enabled).toBe(false);
+      expect(result.qualityFilter.enabled).toBe(
+        DEFAULT_RECORDING_OPTIONS.images.qualityFilter.enabled
+      );
     });
 
     it('preserves a valid qualityFilter group', () => {

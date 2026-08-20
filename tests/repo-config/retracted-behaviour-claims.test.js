@@ -60,6 +60,33 @@ const REMOVED_BEHAVIOURS = [
       'while still correcting if alignment drifts far enough that content would otherwise be left in a stale spot',
     ],
   },
+  {
+    // NOT a behaviour removal — a retracted MEASUREMENT, kept here rather than
+    // in the figures guard because it is a claim about how the system behaves
+    // over time, and because it reached three READMEs and four articles from a
+    // single unsourced sentence. The corpus (51 recordings) puts the median at
+    // ~120 s to come within a metre of the estimate's own final answer, with
+    // ~7 m still remaining at ~20 s. The two are not the same quantity, which
+    // is precisely why the short form must not circulate unqualified.
+    // CONTEXT REQUIRED, like the sibling guard's bare-duration entry: "15
+    // seconds" alone appears in timeouts, budgets and test durations all over
+    // this tree, and a guard that cries wolf gets disabled. The context words
+    // are what make a match mean "someone is stating a convergence time".
+    //
+    // The pattern was ALSO wrong on first writing — it required "of walking"
+    // and so missed one of the two sentences that actually shipped ("for
+    // roughly 15 seconds in representative outdoor conditions"). The
+    // witness check below caught it, which is the entire reason that check
+    // exists.
+    pattern: /\b(?:roughly|about|after|for)\s+(?:15|fifteen)\s+seconds\b/i,
+    context: /\b(?:walk|walked|walking|drift|alignment|converg)/i,
+    label:
+      '"roughly 15 seconds of walking" as a convergence claim (retracted 2026-08-20 — the only corpus measurement is a ~2 min median)',
+    witnesses: [
+      'After roughly 15 seconds of walking in representative outdoor conditions, visible drift typically drops well below raw GPS',
+      'Once the user has walked for roughly 15 seconds in representative outdoor conditions, the solver has enough baseline',
+    ],
+  },
 ];
 
 /**
@@ -114,18 +141,25 @@ function scanTree() {
     }
     // Cheap pre-filter: the overwhelming majority of files contain none of the
     // trigger words, and skipping their line split is what keeps this under a
-    // second.
-    if (!/alignment/i.test(text)) {
+    // second. Every entry's context words must appear here, or that entry
+    // silently stops being enforced on files the filter drops.
+    if (!/alignment|walk|drift|converg/i.test(text)) {
       continue;
     }
     text.split('\n').forEach((line, index) => {
       if (MARKERS.test(line)) {
         return;
       }
-      for (const { pattern, label } of REMOVED_BEHAVIOURS) {
-        if (pattern.test(line)) {
-          found.get(label)?.push(`${file}:${index + 1}`);
+      for (const { pattern, context, label } of REMOVED_BEHAVIOURS) {
+        if (!pattern.test(line)) {
+          continue;
         }
+        // A context requirement is a per-entry narrowing: the pattern says
+        // "this shape of words", the context says "and it is about this".
+        if (context && !context.test(line)) {
+          continue;
+        }
+        found.get(label)?.push(`${file}:${index + 1}`);
       }
     });
   }
@@ -139,9 +173,12 @@ describe('removed behaviour is not described as current', () => {
   // mode the sibling guard was rewritten for.
   it.each(REMOVED_BEHAVIOURS)(
     'matches the sentences that actually shipped: $label',
-    ({ pattern, witnesses }) => {
+    ({ pattern, context, witnesses }) => {
       for (const witness of witnesses) {
         expect(witness).toMatch(pattern);
+        if (context) {
+          expect(witness).toMatch(context);
+        }
       }
     }
   );

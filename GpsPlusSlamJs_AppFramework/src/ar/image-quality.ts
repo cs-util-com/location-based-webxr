@@ -153,8 +153,13 @@ export const QUALITY_FILTER_CONSTRAINTS = {
  * {@link QUALITY_FILTER_CONSTRAINTS} with non-finite values falling back to the
  * default (a stored `NaN` is `typeof 'number'` and would survive a bare clamp).
  * A missing/nullish group default-fills entirely, so a config persisted before
- * the gate existed loads with the gate DISABLED (its safe default) rather than
- * crashing. `blurMetric` is membership-validated against {@link BLUR_METRIC_IDS}
+ * the gate existed loads with the CURRENT shipped defaults rather than
+ * crashing. Note what that means since 2026-08-20: those defaults now have the
+ * gate **enabled** at k = 0.8, so an old stored config inherits the gate rather
+ * than inheriting the off state it was written under. That is intended — the
+ * threshold is corpus-tuned and the alternative is a silent population of
+ * installs that never gets the improvement — but it is a behaviour change for
+ * a persisted config, not merely a new default for new ones. `blurMetric` is membership-validated against {@link BLUR_METRIC_IDS}
  * with an explicit `'variance-of-laplacian'` fallback, because the field is
  * OPTIONAL — a config predating the metric toggle must resolve to the original
  * behavior (2026-07-12 blur-metric-toggle plan).
