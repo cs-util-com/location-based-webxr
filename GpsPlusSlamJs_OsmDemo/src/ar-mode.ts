@@ -739,7 +739,16 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       // while. That is the same trap the fps sampler below documents.
       if (descentStartS === undefined && descentM === 0 && !descentDone) {
         descentStartS = elapsed;
-        descentM = descentStartM;
+        // ASKED FOR, NOT RE-DERIVED (DEC-Y14). This used to be
+        // `descentM = descentStartM`, a hand-rolled copy of "the offset at t=0"
+        // — and `descentStartM` is a POSITIVE height, so after the sign fix this
+        // one line still attached the city ABOVE the user for a single frame
+        // before the block below recomputed it. It self-healed within the frame,
+        // which is precisely why it survived: the endpoint assertions read the
+        // last attach and never saw it. Deriving it from `descentOffsetM` means
+        // the frame convention lives in exactly one place and cannot drift here
+        // again.
+        descentM = descentOffsetM({ elapsedS: 0, startM: descentStartM });
         applyComposed();
       }
       windowOpenedAtS ??= elapsed;

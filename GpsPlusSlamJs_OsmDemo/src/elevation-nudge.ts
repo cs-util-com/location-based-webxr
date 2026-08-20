@@ -46,8 +46,10 @@ export const NUDGE_STEP_M = 1;
  * number.** The old comment justified 50 as "five times the reported symptom",
  * which was the right bound while the nudge's only job was nulling a ~10 m
  * vertical error. Q5's entry fly-down starts the session at the 3D view's camera
- * height and eases down, so the user can now legitimately be a long way up and
- * want to come down by hand if the descent is interrupted — a case the old
+ * height and eases toward it, so the user can now legitimately be a long way
+ * BELOW the city and want to walk it up by hand if the entry move is
+ * interrupted (DEC-Y14 inverted that frame; the limit is symmetric, so the
+ * constraint itself is unchanged) — a case the old
  * bound made unreachable.
  *
  * **What still holds, and is why this is not simply raised further:** the

@@ -90,7 +90,8 @@ describe("the limit's REASONING, not just its value (Q5)", () => {
    *
    * The bound moved from 50 m to 100 m in round four because Q5's entry
    * fly-down starts the session at the 3D view's camera height, so a user can
-   * legitimately be a long way up and want to come down by hand if the descent
+   * legitimately be a long way BELOW the city and want to walk it up by hand if
+   * the entry move
    * is interrupted. These pin the properties that made 100 acceptable, so the
    * next change has to argue with something.
    */

@@ -45,10 +45,12 @@ written from the **content's** frame: the offset is negative and increases.
   abruptly, which at arm's length looks like the scene was dropped.
 - **`DESCENT_MAX_START_M` is at or below `NUDGE_LIMIT_M`, and that is a real
   constraint** — it was 120 against a nudge reach of 100 until a test caught it.
-  If the descent may begin above what the manual nudge can reach, an
-  **interrupted** descent leaves the user unable to walk the scene back down by
-  hand: the unrecoverable state the nudge's limit exists to prevent, arriving by
-  a route that limit was not written for. Asserted in `elevation-nudge.test.ts`.
+  If the move may begin further than the manual nudge can reach, an
+  **interrupted** entry leaves the user unable to walk the scene back **up** by
+  hand — the city is left low, not high (DEC-Y14 inverted the frame; the
+  constraint survives because `NUDGE_LIMIT_M` is symmetric ±100). That is the
+  unrecoverable state the nudge's limit exists to prevent, arriving by a route
+  that limit was not written for. Asserted in `elevation-nudge.test.ts`.
 - **An automatic move gets the tighter bound**, deliberately: the user did not
   ask for this height and has not been given a reason to expect it.
 - **Every non-finite or negative input collapses to 0** — "no descent" — rather
@@ -92,7 +94,7 @@ reaches `attachContentTo` composed, that a ground-level view changes nothing,
 that the fade is driven, and that the landing is announced exactly once.
 
 Both blocks are **mutation-verified**: a descent that never lands fails three
-wiring tests including the landing signal, and one that never lifts fails three
+wiring tests including the landing signal, and one that never SINKS fails three
 others.
 
 One note for anyone tightening `descentOffsetM`: given the smoothstep curve and

@@ -1414,12 +1414,12 @@ describe("the AR entry fly-down (H5, Q5)", () => {
    * the "typechecks but never renders" gap, and here also the "gets clobbered by
    * the next auto tick" gap that `applyElevation` setting-rather-than-
    * accumulating creates. Those two ARE pinned here: mutating the descent so it
-   * never lifts fails three of these.
+   * never sinks fails three of these.
    *
    * MUTATION-VERIFIED, and the route there is worth recording because the first
    * conclusion was wrong. A descent that never lands — `DESCENT_FALL_S` raised
    * so the fall outlives the session — fails three of these, including the
-   * landing signal. A descent that never lifts fails three others.
+   * landing signal. An entry move that never sinks fails three others.
    *
    * **But mutating `if (t >= 1) return 0;` to `return start` changes nothing
    * here, and that is NOT a gap in these tests.** That branch is unreachable
@@ -1461,6 +1461,42 @@ describe("the AR entry fly-down (H5, Q5)", () => {
 
   const upAt = (view: ReturnType<typeof fakeView>): number | undefined =>
     applied(view).at(-1);
+
+  it("NEVER attaches the city above the user, on any frame of the entry", async () => {
+    // Why this test matters: the DEC-Y14 fix negated `descentOffsetM`, but
+    // `ar-mode` also seeded the term by hand — `descentM = descentStartM`, a
+    // POSITIVE height — before the descent block recomputed it later in the same
+    // callback. So the very first `applyComposed()` attached the city ~60 m over
+    // the user's head, i.e. the exact defect the fix is named after, surviving
+    // for one attach.
+    //
+    // It self-healed within the frame, which is why every other assertion here
+    // missed it: `upAt` reads the LAST attach, and the monotonicity check starts
+    // at the trough and therefore steps straight over a stray positive at index
+    // 1. The recorded sequence was literally [0, +60, -60, …].
+    //
+    // This assertion looks at EVERY attached value instead of the endpoints or a
+    // suffix, which is the only shape that catches a one-frame flash. Found by
+    // cold review of the DEC-Y14 commit, not by the tests that commit added.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = viewAtHeight(START_M);
+
+    await startArMode(
+      deps({
+        container,
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+    runFrames(1, 12);
+
+    const ups = applied(view);
+    expect(ups.length).toBeGreaterThan(3);
+    expect(
+      ups.filter((up) => up > 1e-9),
+      `the city was attached ABOVE the user on ${ups.filter((up) => up > 1e-9).length} frame(s): ${ups.join(", ")}`,
+    ).toEqual([]);
+  });
 
   it("sinks the city to the 3D view's camera DEPTH and raises it to zero", async () => {
     const container = document.createElement("div");

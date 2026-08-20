@@ -42,8 +42,9 @@ export const DESCENT_FALL_S = 4;
  * **AT OR BELOW `NUDGE_LIMIT_M`, and that is a real constraint rather than a
  * coincidence — it was 120 against a nudge reach of 100 until a test caught
  * it.** If the descent may begin above what the manual nudge can reach, an
- * INTERRUPTED descent leaves the user unable to walk the scene back down by
- * hand: exactly the unrecoverable state the nudge's own limit exists to
+ * INTERRUPTED descent leaves the user unable to walk the scene back UP by
+ * hand — the city is left low, not high (DEC-Y14 inverted the frame; the
+ * constraint is unchanged because `NUDGE_LIMIT_M` is symmetric): exactly the unrecoverable state the nudge's own limit exists to
  * prevent, arriving by a route that limit was not written for. The relationship
  * is asserted in `elevation-nudge.test.ts`.
  *
@@ -65,8 +66,11 @@ export interface DescentInput {
 /**
  * The descent's contribution to the elevation composition, metres.
  *
- * `startM` at `elapsedS <= DESCENT_HOLD_S`, easing to exactly `0` at
- * `DESCENT_HOLD_S + DESCENT_FALL_S` and staying there.
+ * **`-startM`** at `elapsedS <= DESCENT_HOLD_S`, easing to exactly `0` at
+ * `DESCENT_HOLD_S + DESCENT_FALL_S` and staying there. The return is NEGATIVE
+ * or zero: the city sits BELOW the user and rises to meet them (DEC-Y14), while
+ * `startM` itself stays a positive height. See the body for why the frame is
+ * converted here rather than at the call sites.
  *
  * **Every non-finite or negative input collapses to 0**, i.e. to "no descent",
  * rather than propagating: this value is added to the elevation the city is
