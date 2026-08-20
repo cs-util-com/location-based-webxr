@@ -1,0 +1,171 @@
+// Repo-meta test: behaviour this repo has REMOVED is not still described as current.
+//
+// Why this test matters: `retracted-osm-figures.test.js` guards retracted
+// *numbers*. This is the same defect class for retracted *behaviour*, and it
+// has now happened once, expensively:
+//
+//   2026-06-06 — `createGpsAnchor`'s **large-jump bypass** (an on-screen snap
+//   that overrode the frustum gate on a >2°/4 m/20 m alignment delta) was
+//   removed, because once the whole frame rides one lerped `arWorldGroup`
+//   matrix a large jump is already absorbed smoothly for the entire view, so a
+//   per-anchor on-screen snap only manufactured a visible hard jump. The
+//   removal is recorded in `gps-anchor.ts.md`. THREE README sites went on
+//   describing the bypass as live for over two months — including the public
+//   front page of the repo.
+//
+//   Found 2026-08-20, and not by a gate: by a fact-check of marketing drafts
+//   that had faithfully paraphrased the stale README into claims that were the
+//   exact inverse of the shipped code. A wrong sentence in a README is the
+//   input to everything downstream — the next plan, the next article, the next
+//   developer's mental model — which is precisely how a doc bug becomes a
+//   public credibility problem.
+//
+// What it does NOT do: judge whether a description is right. It enforces only
+// that specific, formally-removed behaviours are not stated as current. A NEW
+// wrong description is still invisible here, and no automated check fixes that.
+
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { describe, it, expect } from 'vitest';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/**
+ * Behaviours this repo has removed, each with the sentences that actually
+ * shipped describing them as live.
+ *
+ * `witnesses` is not decoration. `retracted-osm-figures.test.js` records that
+ * its first latency pattern matched nothing that had ever been wrong in this
+ * tree and missed everything that had — so every pattern here is asserted
+ * against the real historical text below, and a pattern that stops matching
+ * its own witness fails the suite.
+ */
+const REMOVED_BEHAVIOURS = [
+  {
+    pattern: /\blarge(r)?\s+alignment\s+jumps?\b[^.]{0,140}?\b(bypass|force|override)/i,
+    label:
+      "createGpsAnchor's large-jump bypass (removed 2026-06-06 — the on-screen commit is suppressed regardless of correction size; see gps-anchor.ts.md)",
+    witnesses: [
+      'larger alignment jumps bypass that gate so the object does not stay in a stale location',
+      'Large alignment jumps still force a correction so content does not remain in a stale location.',
+    ],
+  },
+  {
+    pattern: /\balignment\s+drifts?\s+far\s+enough\b/i,
+    label:
+      'the "corrects anyway once drift is large enough" phrasing of the same removed bypass (removed 2026-06-06)',
+    witnesses: [
+      'while still correcting if alignment drifts far enough that content would otherwise be left in a stale spot',
+    ],
+  },
+];
+
+/**
+ * Language that marks the behaviour as history or as an explicit negation,
+ * rather than as a live claim.
+ *
+ * Deliberately narrow, for the reason the sibling guard records at length: a
+ * marker set made of ordinary English rehabilitates by coincidence, which is
+ * indistinguishable from not having the gate. Each entry here either names the
+ * removal or negates the specific verb the pattern matched.
+ */
+const MARKERS =
+  /\b(removed|retracted|superseded|no longer exists|does not (force|bypass|override|stay)|not size-limited|no large-jump)\b/i;
+
+/** @returns {string[]} tracked .md and .ts files, excluding this guard itself */
+function trackedDocs() {
+  return execFileSync('git', ['ls-files', '*.md', '*.ts'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((file) => !file.endsWith('retracted-behaviour-claims.test.js'));
+}
+
+/**
+ * ONE pass over the tree for ALL patterns, memoised.
+ *
+ * The scan covers ~1850 tracked files and ~3.7 MB. Re-reading that per
+ * behaviour put the suite over vitest's default 5 s timeout the moment a
+ * second behaviour was added — i.e. the guard's cost grew with exactly the
+ * thing it is meant to accumulate, which would have made every future entry
+ * an argument about test speed instead of about correctness.
+ *
+ * @type {Map<string, string[]> | undefined}
+ */
+let offendersByLabel;
+
+/** @returns {Map<string, string[]>} label → "file:line" of live claims */
+function scanTree() {
+  if (offendersByLabel !== undefined) {
+    return offendersByLabel;
+  }
+  const found = new Map(REMOVED_BEHAVIOURS.map(({ label }) => [label, []]));
+  for (const file of trackedDocs()) {
+    let text;
+    try {
+      text = readFileSync(resolve(repoRoot, file), 'utf8');
+    } catch {
+      continue; // deleted-but-tracked during a rebase; not this gate's job
+    }
+    // Cheap pre-filter: the overwhelming majority of files contain none of the
+    // trigger words, and skipping their line split is what keeps this under a
+    // second.
+    if (!/alignment/i.test(text)) {
+      continue;
+    }
+    text.split('\n').forEach((line, index) => {
+      if (MARKERS.test(line)) {
+        return;
+      }
+      for (const { pattern, label } of REMOVED_BEHAVIOURS) {
+        if (pattern.test(line)) {
+          found.get(label)?.push(`${file}:${index + 1}`);
+        }
+      }
+    });
+  }
+  offendersByLabel = found;
+  return found;
+}
+
+describe('removed behaviour is not described as current', () => {
+  // Why this test matters: it proves the patterns are not vacuous. A guard that
+  // matches nothing passes forever and protects nothing — the exact failure
+  // mode the sibling guard was rewritten for.
+  it.each(REMOVED_BEHAVIOURS)(
+    'matches the sentences that actually shipped: $label',
+    ({ pattern, witnesses }) => {
+      for (const witness of witnesses) {
+        expect(witness).toMatch(pattern);
+      }
+    }
+  );
+
+  it('accepts a corrected sentence that names the removal', () => {
+    // The replacement text must pass, or the guard blocks its own fix.
+    const corrected =
+      'A per-anchor large-jump bypass existed until 2026-06-06 and was removed: ' +
+      'a large alignment jump does not force an on-screen correction.';
+    const matched = REMOVED_BEHAVIOURS.some(({ pattern }) =>
+      pattern.test(corrected)
+    );
+    expect(matched).toBe(true);
+    expect(corrected).toMatch(MARKERS);
+  });
+
+  it.each(REMOVED_BEHAVIOURS)(
+    'is not stated as current anywhere in the tree: $label',
+    ({ label }) => {
+      const offenders = scanTree().get(label) ?? [];
+      expect(
+        offenders,
+        `${label}\nStated as current at:\n  ${offenders.join('\n  ')}`
+      ).toEqual([]);
+    }
+  );
+});
