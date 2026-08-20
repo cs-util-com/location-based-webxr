@@ -1462,7 +1462,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
   const upAt = (view: ReturnType<typeof fakeView>): number | undefined =>
     applied(view).at(-1);
 
-  it("starts the city at the 3D view's camera height and lands it at zero", async () => {
+  it("sinks the city to the 3D view's camera DEPTH and raises it to zero", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const view = viewAtHeight(START_M);
@@ -1474,9 +1474,10 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       }),
     );
 
-    // The first frame lifts it — the hold is what makes the move legible.
+    // The first frame SINKS it (DEC-Y14) — the hold is what makes the move
+    // legible. r541 lifted it instead, putting the city over the user's head.
     runFrames(1, 1);
-    expect(upAt(view)).toBeCloseTo(START_M, 1);
+    expect(upAt(view)).toBeCloseTo(-START_M, 1);
 
     // And it is back on the ground once the hold plus the fall have run.
     runFrames(1, 10);
@@ -1489,21 +1490,22 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     // nothing here looked at the values in between.
     const ups = applied(view);
     expect(ups.length).toBeGreaterThan(3);
-    const between = ups.filter((up) => up > 1 && up < START_M - 1);
+    const between = ups.filter((up) => up < -1 && up > -START_M + 1);
     expect(
       between.length,
-      "the descent never passed through an intermediate height",
+      "the ascent never passed through an intermediate depth",
     ).toBeGreaterThan(0);
-    // And it is monotone down FROM THE PEAK, so it cannot have bounced.
+    // And it is monotone UP FROM THE TROUGH, so it cannot have bounced.
     //
-    // From the peak rather than from the first entry, because `ar-mode` calls
+    // From the trough rather than from the first entry, because `ar-mode` calls
     // `applyElevation(0)` once at setup — so the recorded sequence legitimately
-    // starts at 0, rises to the entry height on the first frame, and only then
-    // descends. Checking from index 0 fails on correct code, which is how this
-    // assertion was written the first time.
-    const peak = ups.indexOf(Math.max(...ups));
-    for (let i = peak + 1; i < ups.length; i += 1) {
-      expect(ups[i]).toBeLessThanOrEqual((ups[i - 1] ?? 0) + 1e-6);
+    // starts at 0, SINKS to the entry depth on the first frame, and only then
+    // rises. Checking from index 0 fails on correct code, which is how this
+    // assertion was written the first time. Inverted with DEC-Y14 along with
+    // the direction it describes.
+    const trough = ups.indexOf(Math.min(...ups));
+    for (let i = trough + 1; i < ups.length; i += 1) {
+      expect(ups[i]).toBeGreaterThanOrEqual((ups[i - 1] ?? 0) - 1e-6);
     }
   });
 

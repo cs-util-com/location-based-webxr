@@ -79,10 +79,19 @@ export function descentOffsetM(input: DescentInput): number {
   if (!Number.isFinite(elapsedS) || !Number.isFinite(startM)) return 0;
   const start = Math.min(DESCENT_MAX_START_M, Math.max(0, startM));
   if (start === 0) return 0;
-  if (elapsedS <= DESCENT_HOLD_S) return start;
+  // NEGATIVE, and that is the whole point (DEC-Y14). `applyElevation` writes
+  // `up: geometricOffset.up + offsetM`, so a POSITIVE term raises the city over
+  // the user's head — which is what r541 shipped and what the field reported as
+  // "genau falsch rum". The intent is that the CAMERA starts high; since the XR
+  // camera is the device pose and cannot be moved, the world is moved instead,
+  // and a camera at +H above the world is the world at −H below the camera.
+  //
+  // `startM` stays a POSITIVE height in the API — the caller passes the height
+  // it was looking from, and the frame conversion happens here, once.
+  if (elapsedS <= DESCENT_HOLD_S) return -start;
   const t = (elapsedS - DESCENT_HOLD_S) / DESCENT_FALL_S;
   if (t >= 1) return 0;
-  return start * (1 - smoothstep(t));
+  return -start * (1 - smoothstep(t));
 }
 
 /**
@@ -107,7 +116,14 @@ export function cameraFadeAlpha(input: DescentInput): number {
   if (!Number.isFinite(start) || start <= 0) return 1;
   // Proportional to how far the descent has come, so the camera is fully
   // visible exactly when the scene lands.
-  const remaining = offset / start;
+  //
+  // MAGNITUDE, not the signed value (DEC-Y14). The offset is negative — the
+  // city rises from below — and dividing the signed value here would make
+  // `remaining` negative, `1 − remaining` exceed 1, and the clamp below pin the
+  // alpha at 1 for the whole descent: the camera fully visible from the first
+  // frame, with the fade silently gone. That is the invisible bug a bare sign
+  // flip would have traded the visible one for.
+  const remaining = Math.abs(offset) / start;
   return Math.min(1, Math.max(0, 1 - remaining));
 }
 

@@ -6,10 +6,26 @@ The AR entry fly-down (H5, round four Q5): the session starts at the height the
 user was already looking from in the 3D view, holds, then eases to ground while
 the camera feed fades in.
 
+**"Fly-down" names what the CAMERA does, and that is the whole trap.** What the
+user sees is the city **rising from below** to meet them — the two descriptions
+are the same motion in different frames of reference, and reading the milestone's
+name as a description of the content is precisely how r541 shipped the city
+falling out of the sky. Anything in this module that carries a direction is
+written from the **content's** frame: the offset is negative and increases.
+
 ## Public API
 
-- `descentOffsetM({ elapsedS, startM }): number` — the descent's contribution to
-  the elevation composition, metres.
+- `descentOffsetM({ elapsedS, startM }): number` — the move's contribution to the
+  elevation composition, metres. **The return is NEGATIVE or zero**, and its
+  magnitude shrinks to 0: the city starts below the user and rises to meet them.
+  `startM` is still a POSITIVE height (the height the 3D view was looking from);
+  the frame conversion happens inside, once.
+  - **Why negative (DEC-Y14).** The intent is that the CAMERA starts high, but
+    the XR camera is the device pose and cannot be moved, so the world is moved
+    instead — and a camera at `+H` above the world is the world at `−H` below the
+    camera. `applyElevation` writes `up: geometricOffset.up + offsetM`, so a
+    positive term would raise the city over the user's head. r541 shipped exactly
+    that and it was reported from the field as inverted.
 - `cameraFadeAlpha({ elapsedS, startM }): number` — the camera feed's opacity,
   `[0,1]`; 0 = passthrough hidden, 1 = fully visible.
 - `descentComplete({ elapsedS, startM }): boolean` — the end-state signal.

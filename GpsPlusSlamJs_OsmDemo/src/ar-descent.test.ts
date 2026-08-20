@@ -24,13 +24,71 @@ import {
 
 const START_M = 60;
 
+describe("the direction of travel (DEC-Y14)", () => {
+  /**
+   * Why these tests matter: r541 shipped this term POSITIVE, and a positive
+   * offset RAISES the content — `applyElevation` writes
+   * `up: geometricOffset.up + offsetM`. So the city started above the user and
+   * descended onto them, which is the inverse of the intent and was reported
+   * from the field as "genau falsch rum".
+   *
+   * The intent has always been that the CAMERA starts high. The XR camera is
+   * the device pose and cannot be moved, so the height is simulated by moving
+   * the world instead: a camera at +H above the world is identical to the world
+   * at −H below the camera. The term must therefore be NEGATIVE and rise to 0.
+   *
+   * Q5's name — "the fly-down" — describes the camera, and reading it as
+   * describing the content is how the sign got lost. These tests pin the frame
+   * of reference so the next reader cannot make the same substitution.
+   */
+
+  it("starts BELOW the user, not above", () => {
+    expect(descentOffsetM({ elapsedS: 0, startM: START_M })).toBeLessThan(0);
+  });
+
+  it("stays below or level for the whole descent, never above", () => {
+    // The single assertion that would have caught r541. A positive value here
+    // means the city is over the user's head.
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 20, noNaN: true }), (elapsedS) => {
+        expect(
+          descentOffsetM({ elapsedS, startM: START_M }),
+        ).toBeLessThanOrEqual(0);
+      }),
+    );
+  });
+
+  it("keeps the camera fade sweeping 0 to 1 despite the negative offset", () => {
+    // Why this test matters: `cameraFadeAlpha` divides by the offset and clamps
+    // into [0,1]. A bare sign flip makes `remaining` negative, so `1 − remaining`
+    // exceeds 1 and the clamp PINS the alpha at 1 for the entire descent — the
+    // camera would be fully visible from the first frame and the fade would
+    // silently cease to exist. The visible bug would be traded for an invisible
+    // one, which is why the sign change is not a one-character edit.
+    expect(cameraFadeAlpha({ elapsedS: 0, startM: START_M })).toBeCloseTo(0, 6);
+    expect(
+      cameraFadeAlpha({
+        elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S,
+        startM: START_M,
+      }),
+    ).toBeCloseTo(1, 6);
+    // And strictly rising in between, so it is a fade rather than a jump.
+    const mid = cameraFadeAlpha({
+      elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S / 2,
+      startM: START_M,
+    });
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+  });
+});
+
 describe("descentOffsetM", () => {
-  it("HOLDS at the starting height for the first few seconds", () => {
+  it("HOLDS at the starting depth for the first few seconds", () => {
     // The request is "nach ein paar Sekunden fängt er dann an". Without the
     // hold the scene is already falling before the user has looked up from the
     // button they pressed, which reads as a slow load rather than a move.
     for (const elapsedS of [0, 1, DESCENT_HOLD_S]) {
-      expect(descentOffsetM({ elapsedS, startM: START_M })).toBe(START_M);
+      expect(descentOffsetM({ elapsedS, startM: START_M })).toBe(-START_M);
     }
   });
 
@@ -51,16 +109,20 @@ describe("descentOffsetM", () => {
       elapsedS: DESCENT_HOLD_S + 0.01,
       startM: START_M,
     });
-    expect(START_M - justAfterHold).toBeLessThan(0.05);
+    expect(Math.abs(justAfterHold - -START_M)).toBeLessThan(0.05);
 
     const justBeforeEnd = descentOffsetM({
       elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S - 0.01,
       startM: START_M,
     });
-    expect(justBeforeEnd).toBeLessThan(0.05);
+    expect(Math.abs(justBeforeEnd)).toBeLessThan(0.05);
   });
 
-  it("is monotone non-increasing, so the city never rises mid-descent", () => {
+  it("is monotone non-DEcreasing, so the city never sinks mid-ascent", () => {
+    // RENAMED AND INVERTED with DEC-Y14, not merely re-greened. The old title
+    // said "never rises mid-descent" and, once the sign was corrected, asserted
+    // the exact opposite of the behaviour it named. The city now travels UP
+    // from below, so the offset must never decrease.
     fc.assert(
       fc.property(
         fc.double({ min: 0, max: 20, noNaN: true }),
@@ -69,8 +131,8 @@ describe("descentOffsetM", () => {
           const [earlier, later] = a <= b ? [a, b] : [b, a];
           expect(
             descentOffsetM({ elapsedS: later, startM: START_M }),
-          ).toBeLessThanOrEqual(
-            descentOffsetM({ elapsedS: earlier, startM: START_M }) + 1e-9,
+          ).toBeGreaterThanOrEqual(
+            descentOffsetM({ elapsedS: earlier, startM: START_M }) - 1e-9,
           );
         },
       ),
@@ -81,11 +143,14 @@ describe("descentOffsetM", () => {
     // The 3D view can sit a kilometre up. Starting AR there means looking at
     // nothing, with no way to tell the session from a failed load.
     expect(descentOffsetM({ elapsedS: 0, startM: 5000 })).toBe(
-      DESCENT_MAX_START_M,
+      -DESCENT_MAX_START_M,
     );
   });
 
-  it("never returns a non-finite or negative offset, for any input", () => {
+  it("never returns a non-finite or POSITIVE offset, for any input", () => {
+    // INVERTED with DEC-Y14: a positive value here is the defect r541 shipped -
+    // the city over the user's head. The bound that matters is now the upper
+    // one, and the magnitude is still capped.
     fc.assert(
       fc.property(
         fc.oneof(
@@ -100,8 +165,8 @@ describe("descentOffsetM", () => {
         (elapsedS, startM) => {
           const offset = descentOffsetM({ elapsedS, startM });
           expect(Number.isFinite(offset)).toBe(true);
-          expect(offset).toBeGreaterThanOrEqual(0);
-          expect(offset).toBeLessThanOrEqual(DESCENT_MAX_START_M);
+          expect(offset).toBeLessThanOrEqual(0);
+          expect(offset).toBeGreaterThanOrEqual(-DESCENT_MAX_START_M);
         },
       ),
     );
