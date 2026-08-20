@@ -71,9 +71,35 @@ With the clip restored:
 
 ### The clip is load-bearing and nothing guards it
 
-**A 15× speedup for byte-identical output.** The production and unclipped runs
-produce the *same 1 520 plates* — the clip removes work, not content, at this
-scale. Which means:
+**[CORRECTED 2026-08-21] The original wording here said "a 15× speedup for
+byte-identical output". The speedup is real and was re-verified; "byte-identical"
+was false.**
+
+The first measurement ran the variants in a fixed order, so it could not
+separate the clip from JIT warm-up. Re-measured with a discarded warm-up pass
+and the variant order alternated across three repeats: **unclipped ~2 160 ms
+against ~135 ms clipped**, regardless of which ran first. The ~16× stands.
+
+What was wrong was the claim about the output. Both builds return the **same
+1 520 plates**, but not the same geometry:
+
+- unclipped — **329 520** mesh floats
+- production clip — **142 530** mesh floats
+
+So the clip removes **~57 % of the vertices** while keeping every plate. The
+mechanism is that clipping happens before `ringToEnu` and therefore before
+triangulation: a few large ways (parks, water, landuse) reach far beyond the
+rendered extent, and trimming them is where the time goes. Equal plate count was
+measured and then over-generalised into "identical output" — the kind of
+substitution this repo has a lesson about.
+
+**That correction is what made a guard possible.** "Byte-identical" implies
+nothing observable to assert; "same plates, far fewer vertices" is a
+deterministic, machine-checkable property with no clock in it. It is now pinned
+by `GpsPlusSlamJs_Osm/src/mesh/plates-clip.test.ts`, which was
+mutation-tested: with `clipTo` ignored, all three assertions fail.
+
+The original consequences still hold:
 
 - Anyone removing or widening `clipTo`, or calling `buildAreaPlates` without it
   from a new call site, gets a ~1.8 s regression **with no visible difference**
@@ -82,10 +108,10 @@ scale. Which means:
 - This is exactly the shape of defect that reaches production: no output change,
   no assertion, only a stopwatch nobody reads.
 
-**Recommended follow-up**, not taken here because it is a behaviour guard rather
-than part of this investigation: a test asserting that `buildAreaPlates` with the
-production clip does strictly less work than without it, at equal output length.
-That is machine-checkable and does not encode a wall-clock number.
+**DONE 2026-08-21**: `plates-clip.test.ts` asserts equal plate counts and
+strictly fewer mesh floats with the production clip, plus a vacuity check that
+the fixture genuinely has geometry outside the box. Mutation-tested by making
+`polygonsOf` ignore `clipTo`: all three assertions fail on the mutant.
 
 ## What is still unexplained, stated rather than guessed
 
