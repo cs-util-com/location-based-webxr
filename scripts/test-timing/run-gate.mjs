@@ -156,7 +156,7 @@ if (lockDecision.action === 'acquire' || lockDecision.action === 'steal') {
   // property that it "degrades to absent, never to fatal". Setting nothing
   // puts children on the un-nested path, where a dead owner's lock is stolen
   // (see gate-lock.test.mjs, 'steals a lock whose owner is gone'), which is
-  // what degrading to absent actually means. Found in review of PR #623.
+  // what degrading to absent actually means. Found in review of PR #331.
   //
   // This branch is REACHABLE HERE in a way it is not in the library: the root
   // cascade runs each package's gate through this same file, so the children

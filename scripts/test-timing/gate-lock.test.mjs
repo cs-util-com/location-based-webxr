@@ -123,7 +123,7 @@ describe('decideGateLock', () => {
     // refused, a failed lock WRITE would turn a green gate red — the exact
     // opposite of the module's stated property that it degrades to absent,
     // never to fatal. The pair below pins both halves of that reasoning.
-    // Found in review of PR #623.
+    // Found in review of PR #331.
     const withStaleInheritance = decideGateLock({
       existing: lockRecord({ runId: 'someone-else' }),
       env: { [GATE_RUN_ENV]: 'ours' },
@@ -198,7 +198,7 @@ describe('decideGateLock', () => {
     // from this decision. It used to detect the override by regex-matching the
     // reason PROSE, so rewording one sentence in this file would have silently
     // stopped the warning printing while the override kept working - a guard
-    // that is off and no longer says so. Found in review of PR #623.
+    // that is off and no longer says so. Found in review of PR #331.
     const contended = decideGateLock({
       existing: lockRecord(),
       env: { [GATE_ALLOW_CONCURRENT_ENV]: '1' },

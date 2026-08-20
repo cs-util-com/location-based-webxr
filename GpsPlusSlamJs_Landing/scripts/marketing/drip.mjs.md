@@ -27,6 +27,15 @@ else, which today is everything).
   owner will never know did not happen.
 - Credentials are never read here — a transport is supplied by the caller, so
   this module has nothing to leak.
+- **The per-channel rate limit is NOT one of the guarantees above.**
+  `selectDue` enforces `minIntervalMs` and `maxPerWindow` entirely from the
+  `history` argument, and `runDrip` never mutates, returns or persists it —
+  there is no `--history-out`, so the file it reads is only ever updated by
+  hand. Two `--post` runs against `reddit` (21-day interval) with no manual
+  edit in between will both send. Stated here because the list above would
+  otherwise read as if the interval guard were enforced; the fix (append the
+  send time, return the updated history, persist it atomically, and decide how
+  a mid-batch transport failure keeps the ids already sent) is filed, not done.
 
 ## Tests
 

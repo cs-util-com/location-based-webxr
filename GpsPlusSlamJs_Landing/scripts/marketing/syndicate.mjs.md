@@ -6,17 +6,19 @@ builders only — nothing here performs a request.
 ## Public API
 
 - `devToArticle(post, { origin })` — Forem payload with `canonical_url`.
-  Throws on more than four tags, and on two tags that normalise to the same
-  token (`three.js` / `threejs`), which Forem rejects as a duplicate.
-  Throws above four tags; normalises `three.js` → `threejs`.
+  Normalises tags to the alphanumeric form the API accepts
+  (`three.js` → `threejs`). Throws above four tags, and throws when two tags
+  normalise to the SAME token, which Forem rejects as a duplicate. Tags that
+  normalise to empty are dropped, so `["!!!", "???"]` is not a collision.
 - `xComposerUrl({ text, url })` — prefilled composer URL. Throws when the text
   plus the link's fixed allowance exceeds the limit.
 - `blueskyRecord({ text, url, createdAt })` — post record with the link as a
   facet. `createdAt` is an ISO 8601 string and is REQUIRED: the
   `app.bsky.feed.post` lexicon demands it, and this module has no clock of its
   own, so the caller passes one (`drip.mjs` threads `runDrip`'s `now` down).
-  Throws when it is missing rather than defaulting.
-  Throws above the **byte** limit.
+  Throws when it is missing rather than defaulting — and throws on that BEFORE
+  the length check, so an over-long post with no `createdAt` reports the field
+  the caller can fix. Also throws above the **byte** limit (not characters).
 - `mastodonStatus({ text, url })` — appends the link only if absent.
 - `mediumImportSteps(post, { origin })` — manual steps; Medium has no API for
   new integrations.
