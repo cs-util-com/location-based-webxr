@@ -191,6 +191,27 @@ export function racingProvider(
   fast: ElevationProvider,
   options: RacingProviderOptions = {},
 ): RacingElevationProvider {
+  // THE ARMS ARE TOLD APART BY `sourceId` ALONE — `won.id === preferred.sourceId`
+  // below is the only discriminator — so identical ids make a FAST win look like
+  // a preferred win: it takes the `preferredWins` branch, never calls
+  // `trackUpgrade()`, and the preferred source's better heights are fetched,
+  // resolved and discarded. The stats are wrong the same way, and all of it is
+  // silent.
+  //
+  // NOT HYPOTHETICAL. `TerrariumProvider` defaults `sourceId` to "terrarium", so
+  // the natural two-arm construction gives both the same id — and that is what
+  // shipped until 2026-08-19, when `dem-provider.ts` started naming them. That
+  // fix is downstream; nothing here stopped the next caller repeating it.
+  //
+  // Checked at construction rather than per call: the ids are known here, this
+  // runs once, and a throw at wiring time is findable in a way a silently
+  // disabled upgrade path is not.
+  if (preferred.sourceId === fast.sourceId) {
+    throw new Error(
+      `racingProvider needs distinct sourceIds to tell the arms apart; both are "${preferred.sourceId}"`,
+    );
+  }
+
   const stats: RacingProviderStats = {
     servedBy: "none",
     upgrades: 0,

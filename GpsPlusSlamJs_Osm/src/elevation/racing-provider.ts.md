@@ -12,6 +12,21 @@ heights, and swaps the better source's heights in when they land.
   - `fast` — the source worth showing immediately.
   - `options.sourceId` — overrides the composed id, default
     `` `${preferred.sourceId}|${fast.sourceId}` ``.
+  - **THROWS at construction when the two arms share a `sourceId`.** The arms are
+    told apart by that id alone (`won.id === preferred.sourceId`), so identical
+    ids make a FAST win look like a preferred win: it takes the `preferredWins`
+    branch, never calls `trackUpgrade()`, and the preferred source's better
+    heights are fetched, resolved and **discarded**. The stats are wrong the same
+    way, and all of it is silent.
+    - **Not hypothetical.** `TerrariumProvider` defaults `sourceId` to
+      `"terrarium"`, so the natural two-arm construction gives both the same id —
+      and that is what shipped until 2026-08-19, when `dem-provider.ts` started
+      naming them `mapterhorn` / `aws-open-data`. That fix is downstream; nothing
+      here stopped the next caller repeating it, and neither this file's tests
+      nor the property spec had ever constructed a same-id pair.
+    - Checked once at construction rather than per call: the ids are known there,
+      and a throw at wiring time is findable in a way a silently disabled upgrade
+      path is not. Found by a PR review bot on #329.
   - `options.onUpgrade(positions, heights)` — called when `preferred` lands
     after `fast` already published. **Late binding is expected**: the worker
     builds the provider before the terrain field that consumes the upgrade, so

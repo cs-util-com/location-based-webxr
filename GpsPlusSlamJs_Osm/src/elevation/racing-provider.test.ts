@@ -366,3 +366,50 @@ describe("the publish deadline — the bound the composition needs (F2)", () => 
     expect(onUpgrade).not.toHaveBeenCalled();
   });
 });
+
+describe("distinct sourceIds are a precondition, not a convention", () => {
+  /**
+   * Why this test matters: `racingProvider` tells its two arms apart by
+   * `sourceId` alone (`won.id === preferred.sourceId`). Give both the same id
+   * and a FAST-arm win is misread as a preferred win, so it takes the
+   * `preferredWins` branch, never calls `trackUpgrade()`, and the preferred
+   * source's better heights are fetched, resolved and thrown away. The stats
+   * are wrong the same way. All of it silent.
+   *
+   * This is not hypothetical: `TerrariumProvider` defaults `sourceId` to
+   * `"terrarium"`, so the natural two-arm construction gives both the same id,
+   * and that is what this repo ran until 2026-08-19. The demo now names its
+   * arms explicitly, so nothing is broken today — but nothing stopped the next
+   * caller repeating it, and neither this file nor the property spec ever
+   * constructed a same-id pair.
+   *
+   * Found by a PR review bot on #329 and fixed as its own commit.
+   */
+  it("throws at construction when both arms carry the same sourceId", () => {
+    const arm = (sourceId: string): ElevationProvider => ({
+      sourceId,
+      attribution: "test",
+      elevationAt: () => Promise.resolve([]),
+    });
+
+    expect(() => racingProvider(arm("terrarium"), arm("terrarium"))).toThrow(
+      /distinct sourceIds/i,
+    );
+    // The message must name the offending id, or a caller with several
+    // providers has to bisect to find which pair collided.
+    expect(() => racingProvider(arm("terrarium"), arm("terrarium"))).toThrow(
+      /terrarium/,
+    );
+  });
+
+  it("accepts distinct ids, which is the shipped configuration", () => {
+    const arm = (sourceId: string): ElevationProvider => ({
+      sourceId,
+      attribution: "test",
+      elevationAt: () => Promise.resolve([]),
+    });
+    expect(() =>
+      racingProvider(arm("mapterhorn"), arm("aws-open-data")),
+    ).not.toThrow();
+  });
+});
