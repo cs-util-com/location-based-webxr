@@ -312,6 +312,13 @@ export function racingProvider(
         // deadline expired first. Both publish an absence — and both still want
         // the upgrade, because the preferred arm may yet answer.
         stats.emptyBatches += 1;
+        // AND THE CURRENT SOURCE IS NOW NOTHING. Leaving the previous batch's
+        // id in place made the AR readout name a DEM for a batch it has no
+        // heights from — the interface documents `or "none"` for exactly this
+        // state, and `servedBy` is described as "which source the current
+        // heights came from", of which there are none. A stale attribution is
+        // worse than an absent one here, because it reads as working.
+        stats.servedBy = "none";
         trackUpgrade();
         return positions.map(() => undefined);
       }

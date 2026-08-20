@@ -133,9 +133,15 @@ export const PRIMARY_DEM_TIMEOUT_MS = 30_000;
  * primary that never answers did. A deadline whose whole point is that no
  * single source can stall the composition has to cover every source in it.
  *
- * Longer than the primary's because the roles differ: there is nothing behind
- * the fallback, so its deadline is a last resort against a hang rather than a
- * switch to something better. It is still comfortably inside the 15 s gate.
+ * SHORTER than the primary's, and the reason is the roles, not the numbers: a
+ * user is waiting on this request, so its deadline is a promise about how long
+ * the screen can stay empty; nobody is waiting on the primary's, so that one is
+ * only a last resort against a hang. It is comfortably inside the 15 s gate.
+ *
+ * (This paragraph said "Longer than the primary's" until 2026-08-20 — a
+ * pre-race sentence that survived the edit which inverted the two bounds, and
+ * so contradicted the correction eighteen lines above it. Found in review of
+ * PR #330.)
  */
 export const FALLBACK_DEM_TIMEOUT_MS = 8_000;
 

@@ -261,6 +261,36 @@ describe("stats say which source the CURRENT field came from", () => {
     expect(provider.stats.servedBy).toBe("mapterhorn");
     expect(provider.stats.upgrades).toBe(1);
   });
+
+  it("goes back to \"none\" when a later batch has no heights at all", async () => {
+    // Why this test matters: `servedBy` is documented as "the source whose
+    // heights are current, or `none`", and the empty path used to leave the
+    // PREVIOUS batch's id in place. The AR readout then named a DEM for a field
+    // it had no data from — a stale attribution, which is worse than an absent
+    // one because it reads as working. Found in review of PR #330.
+    const preferred = deferredProvider("mapterhorn");
+    const fast = deferredProvider("aws");
+    const provider = racingProvider(preferred, fast, { onUpgrade: () => {} });
+
+    const first = provider.elevationAt(POSITIONS);
+    fast.resolve([100, 101]);
+    await first;
+    expect(provider.stats.servedBy).toBe("aws");
+
+    // Second batch: both arms spent with nothing usable.
+    const emptyPreferred = deferredProvider("mapterhorn");
+    const emptyFast = deferredProvider("aws");
+    const empty = racingProvider(emptyPreferred, emptyFast, {
+      onUpgrade: () => {},
+    });
+    const second = empty.elevationAt(POSITIONS);
+    emptyFast.resolve([undefined, undefined]);
+    emptyPreferred.resolve([undefined, undefined]);
+    await second;
+
+    expect(empty.stats.emptyBatches).toBeGreaterThan(0);
+    expect(empty.stats.servedBy).toBe("none");
+  });
 });
 
 describe("the publish deadline — the bound the composition needs (F2)", () => {
