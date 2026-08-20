@@ -133,6 +133,11 @@ function assertLandingHtml(htmlPath) {
     '/physics/',
     '/wayfinding/',
     '/osm/',
+    // Not a demo, but required for the same reason: this footer link is the
+    // only inbound path a crawler has to /blog/, and the canonical-copy
+    // argument (the blog should outrank the GitHub wiki copy of the same
+    // article) rests entirely on it.
+    '/blog/',
   ];
   const missingLinks = requiredDemoLinks.filter(
     (link) => !html.includes(`href="${link}"`)
@@ -177,6 +182,8 @@ function assertSiteTree() {
     // published yet"), so its absence means the blog step did not run at all.
     'blog/index.html',
     'blog/sitemap.xml',
+    // Carries the `Sitemap:` line that points crawlers at blog/sitemap.xml.
+    'robots.txt',
   ];
   const missing = required.filter((rel) => !existsSync(join(distSite, rel)));
   if (missing.length > 0) {

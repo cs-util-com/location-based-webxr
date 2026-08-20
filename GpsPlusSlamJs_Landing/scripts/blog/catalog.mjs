@@ -22,34 +22,52 @@
 /**
  * @param {readonly Post[]} posts every parsed wiki page
  * @returns {Catalog}
- * @throws {Error} when two published posts resolve to the same slug — the
- *   second would overwrite the first in `dist-site` with no other symptom
- *   than an article vanishing from the site.
+ *
+ * A slug collision **withholds every colliding post** rather than throwing.
+ * Blast radius is the reason: this runs inside the site build, after eight
+ * Vite builds, so throwing on a content mistake typed into the wiki's browser
+ * UI would fail the whole deploy and take `/recorder/`, `/osm/` and every
+ * other app down with it — blocking an unrelated hotfix over a blog typo.
+ * Withholding is also the consistent choice: an unrecognised status already
+ * means "draft", and "I cannot tell which of these two owns this URL" is the
+ * same kind of not-understanding. Publishing an arbitrary winner would be a
+ * coin flip that silently drops the other article.
  */
 export function buildCatalog(posts) {
-  const published = posts
-    .filter((post) => post.status === 'published')
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const drafts = posts.filter((post) => post.status !== 'published');
+  const candidates = posts.filter((post) => post.status === "published");
 
-  /** @type {Map<string, string[]>} */
+  /** @type {Map<string, Post[]>} */
   const bySlug = new Map();
-  for (const post of published) {
-    bySlug.set(post.slug, [...(bySlug.get(post.slug) ?? []), post.title]);
+  for (const post of candidates) {
+    bySlug.set(post.slug, [...(bySlug.get(post.slug) ?? []), post]);
   }
-  const collisions = [...bySlug.entries()].filter(
-    ([, titles]) => titles.length > 1
-  );
-  if (collisions.length > 0) {
-    const detail = collisions
-      .map(([slug, titles]) => `${slug} (${titles.join(', ')})`)
-      .join('; ')
-      .replace(/^/, '');
-    throw new Error(
-      `blog: ${collisions.length} slug collision(s) among published posts: ${detail}. ` +
-        `Give one of them a different \`slug:\` in its blog-meta block.`
-    );
+
+  /** @type {Post[]} */
+  const withheld = [];
+  for (const [slug, claimants] of bySlug) {
+    if (claimants.length < 2) {
+      continue;
+    }
+    const titles = claimants.map((post) => post.title).join(", ");
+    for (const post of claimants) {
+      withheld.push({
+        ...post,
+        status: "draft",
+        draftReason:
+          `slug ${JSON.stringify(slug)} is claimed by ${claimants.length} posts ` +
+          `(${titles}) — give all but one a different \`slug:\``,
+      });
+    }
   }
+
+  const withheldSlugs = new Set(withheld.map((post) => post.slug));
+  const published = candidates
+    .filter((post) => !withheldSlugs.has(post.slug))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const drafts = [
+    ...posts.filter((post) => post.status !== "published"),
+    ...withheld,
+  ];
 
   return { published, drafts };
 }
@@ -62,10 +80,10 @@ export function buildCatalog(posts) {
  *   submitted to a search engine.
  */
 export function buildSitemap(published, { origin }) {
-  const draft = published.find((post) => post.status !== 'published');
+  const draft = published.find((post) => post.status !== "published");
   if (draft) {
     throw new Error(
-      `buildSitemap: refusing to list draft ${JSON.stringify(draft.slug)}`
+      `buildSitemap: refusing to list draft ${JSON.stringify(draft.slug)}`,
     );
   }
   const entries = [
@@ -73,12 +91,12 @@ export function buildSitemap(published, { origin }) {
     ...published.map(
       (post) =>
         `  <url>\n    <loc>${origin}/blog/${post.slug}/</loc>\n` +
-        `    <lastmod>${post.date}</lastmod>\n  </url>`
+        `    <lastmod>${post.date}</lastmod>\n  </url>`,
     ),
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${entries.join('\n')}
+${entries.join("\n")}
 </urlset>
 `;
 }

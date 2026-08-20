@@ -36,13 +36,23 @@ slug: why-outdoor-webxr-drifts
 - **The gate is one-directional.** Anything not fully understood is a draft. A
   missed publication is an inconvenience; an accidental one is public and
   irreversible.
+- **The `blog-meta` block must be the FIRST thing in the file.** An
+  unanchored matcher took the first block anywhere in the document, so a page
+  that merely _documents_ the marker inside a fenced code block published on
+  its own example and overrode its real `status: draft`. The page most likely
+  to contain that fence is the "how to write a post" page — i.e. this one.
+  Requiring the block to come first removes the bypass outright: nothing can
+  precede it, so nothing can impersonate it.
+- **Fenced code is masked before the title is matched**, so a `# comment`
+  inside a ```bash fence cannot become the article's `<title>`, `<h1>`and`og:title` — and cannot be silently deleted from the published snippet.
 - A post is published **only** when: a `blog-meta` block exists, `status`
   trims/lowercases to exactly `published`, `date` is a real `YYYY-MM-DD`
   calendar day (`2026-02-31` is rejected — `Date` would roll it into March),
   and the slug is non-empty.
 - **Every draft carries a `draftReason`**; a silent draft is unactionable.
-- `title` is the first `#` heading, else the humanised page name; that heading
-  is stripped from `body` so it cannot render twice.
+- `title` is the first `#` heading **outside a code fence**, else the
+  humanised page name; that heading is stripped from `body` so it cannot
+  render twice.
 - `description` falls back to the first prose paragraph (fenced code, headings
   and list markers skipped), capped at 200 characters.
 - `slug` is lowercase `[a-z0-9-]+`, from `slug:` if given, else the page name.
@@ -50,7 +60,7 @@ slug: why-outdoor-webxr-drifts
 ## Examples
 
 ```js
-const post = parsePost('Home.md', '# Home\n\nWelcome.\n');
+const post = parsePost("Home.md", "# Home\n\nWelcome.\n");
 // → { status: 'draft', draftReason: 'no blog-meta block', … }
 ```
 

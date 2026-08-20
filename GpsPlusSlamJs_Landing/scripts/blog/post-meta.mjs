@@ -36,10 +36,33 @@
  * @property {string} body markdown body, meta block and title heading removed
  */
 
-const META_BLOCK_RE = /<!--\s*blog-meta\s*\n([\s\S]*?)-->/;
+// ANCHORED TO THE START OF THE FILE, and deliberately so. An unanchored
+// matcher took the FIRST `blog-meta` block anywhere in the document, so a page
+// that merely *documents* the marker inside a fenced code block published on
+// the example and overrode its own `status: draft`. The page most likely to
+// contain that fence is the "how to write a post" page. Requiring the block to
+// be the first thing in the file removes the bypass outright: nothing can
+// precede it, so nothing can impersonate it.
+// The BOM is written as an escape, not as itself: a literal U+FEFF in source
+// is invisible in every editor and diff, and `no-irregular-whitespace` fails
+// the gate on it.
+const META_BLOCK_RE = /^\uFEFF?\s*<!--\s*blog-meta\s*\r?\n([\s\S]*?)-->/;
 const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TITLE_RE = /^#\s+(.+?)\s*$/m;
+const FENCE_RE = /```[\s\S]*?```/g;
 const DESCRIPTION_MAX = 200;
+
+/**
+ * Blank out fenced code while preserving length and line structure, so a `#`
+ * comment inside a ```bash fence cannot be mistaken for the article's heading.
+ * Offsets in the masked text address the same characters as in the original.
+ *
+ * @param {string} source
+ * @returns {string}
+ */
+function maskFences(source) {
+  return source.replace(FENCE_RE, (block) => block.replace(/[^\n]/g, " "));
+}
 
 /**
  * @param {string} value
@@ -47,11 +70,11 @@ const DESCRIPTION_MAX = 200;
  */
 function slugify(value) {
   return value
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 /**
@@ -86,13 +109,13 @@ function isCalendarDate(value) {
 function parseMetaBlock(block) {
   /** @type {Record<string, string>} */
   const meta = {};
-  for (const line of block.split('\n')) {
-    const separator = line.indexOf(':');
+  for (const line of block.split("\n")) {
+    const separator = line.indexOf(":");
     if (separator === -1) {
       continue;
     }
     const key = line.slice(0, separator).trim().toLowerCase();
-    if (key === '') {
+    if (key === "") {
       continue;
     }
     meta[key] = line.slice(separator + 1).trim();
@@ -109,17 +132,17 @@ function parseMetaBlock(block) {
  * @returns {string}
  */
 function firstParagraph(body) {
-  const withoutFences = body.replace(/```[\s\S]*?```/g, '');
+  const withoutFences = body.replace(/```[\s\S]*?```/g, "");
   for (const block of withoutFences.split(/\n\s*\n/)) {
-    const text = block.trim().replace(/\s+/g, ' ');
-    if (text === '' || /^[#>\-*+|]/.test(text)) {
+    const text = block.trim().replace(/\s+/g, " ");
+    if (text === "" || /^[#>\-*+|]/.test(text)) {
       continue;
     }
     return text.length > DESCRIPTION_MAX
       ? `${text.slice(0, DESCRIPTION_MAX - 1).trimEnd()}…`
       : text;
   }
-  return '';
+  return "";
 }
 
 /**
@@ -135,31 +158,39 @@ function firstParagraph(body) {
  * @returns {Post}
  */
 export function parsePost(fileName, source) {
-  if (typeof fileName !== 'string') {
-    throw new TypeError('parsePost: fileName must be a string');
+  if (typeof fileName !== "string") {
+    throw new TypeError("parsePost: fileName must be a string");
   }
-  if (typeof source !== 'string') {
-    throw new TypeError('parsePost: source must be a string');
+  if (typeof source !== "string") {
+    throw new TypeError("parsePost: source must be a string");
   }
 
-  const pageName = fileName.replace(/\.md$/i, '');
+  const pageName = fileName.replace(/\.md$/i, "");
   const metaMatch = META_BLOCK_RE.exec(source);
   const meta = metaMatch?.[1] ? parseMetaBlock(metaMatch[1]) : undefined;
 
-  const withoutMeta = metaMatch ? source.replace(META_BLOCK_RE, '') : source;
-  const titleMatch = TITLE_RE.exec(withoutMeta);
-  const title = titleMatch?.[1] ?? pageName.replace(/[-_]+/g, ' ').trim();
-  const body = (titleMatch ? withoutMeta.replace(TITLE_RE, '') : withoutMeta)
-    .replace(/^\s*\n/, '')
+  const withoutMeta = metaMatch ? source.slice(metaMatch[0].length) : source;
+  // Match the heading against fence-masked text, then cut it out of the real
+  // text at the same offset: a heading found here is outside any fence, so the
+  // two strings are identical across the match.
+  const titleMatch = TITLE_RE.exec(maskFences(withoutMeta));
+  const title = titleMatch?.[1] ?? pageName.replace(/[-_]+/g, " ").trim();
+  const body = (
+    titleMatch
+      ? withoutMeta.slice(0, titleMatch.index) +
+        withoutMeta.slice(titleMatch.index + titleMatch[0].length)
+      : withoutMeta
+  )
+    .replace(/^\s*\n/, "")
     .trimEnd();
 
-  const slugSource = meta?.['slug'] ? meta['slug'] : pageName;
-  const date = meta?.['date'] ?? '';
-  const description = meta?.['description']
-    ? meta['description']
+  const slugSource = meta?.["slug"] ? meta["slug"] : pageName;
+  const date = meta?.["date"] ?? "";
+  const description = meta?.["description"]
+    ? meta["description"]
     : firstParagraph(body);
-  const tags = (meta?.['tags'] ?? '')
-    .split(',')
+  const tags = (meta?.["tags"] ?? "")
+    .split(",")
     .map((tag) => tag.trim())
     .filter(Boolean);
 
@@ -168,14 +199,14 @@ export function parsePost(fileName, source) {
   /** @type {string | undefined} */
   let draftReason;
   if (!meta) {
-    draftReason = 'no blog-meta block';
-  } else if ((meta['status'] ?? '').trim().toLowerCase() !== 'published') {
-    draftReason = `status is ${JSON.stringify(meta['status'] ?? '')}`;
-  } else if (date === '') {
-    draftReason = 'no date';
+    draftReason = "no blog-meta block";
+  } else if ((meta["status"] ?? "").trim().toLowerCase() !== "published") {
+    draftReason = `status is ${JSON.stringify(meta["status"] ?? "")}`;
+  } else if (date === "") {
+    draftReason = "no date";
   } else if (!isCalendarDate(date)) {
     draftReason = `date ${JSON.stringify(date)} is not a real YYYY-MM-DD day`;
-  } else if (slug === '') {
+  } else if (slug === "") {
     // A page named only of punctuation (or an empty `slug:` override) leaves
     // nothing to build a URL from, and would publish to `/blog//`.
     draftReason = `page name ${JSON.stringify(slugSource)} yields an empty slug`;
@@ -184,7 +215,7 @@ export function parsePost(fileName, source) {
   return {
     slug,
     title,
-    status: draftReason ? 'draft' : 'published',
+    status: draftReason ? "draft" : "published",
     ...(draftReason ? { draftReason } : {}),
     date,
     description,

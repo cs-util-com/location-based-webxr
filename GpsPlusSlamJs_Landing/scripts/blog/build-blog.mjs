@@ -28,7 +28,7 @@
  * local checkout clones the public wiki repo first — it needs no credentials.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -36,16 +36,16 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
-} from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { buildCatalog, buildSitemap } from './catalog.mjs';
-import { parsePost } from './post-meta.mjs';
-import { renderIndex, renderPost } from './render.mjs';
-import { resolveWikiDir } from './wiki-source.mjs';
+import { buildCatalog, buildSitemap } from "./catalog.mjs";
+import { parsePost } from "./post-meta.mjs";
+import { renderIndex, renderPost } from "./render.mjs";
+import { resolveWikiDir } from "./wiki-source.mjs";
 
-const DEFAULT_ORIGIN = 'https://gps.csutil.com';
+const DEFAULT_ORIGIN = "https://gps.csutil.com";
 
 /**
  * @param {object} options
@@ -59,46 +59,46 @@ export function buildBlog({ wikiDir, outDir, origin, log = () => {} }) {
   if (!existsSync(wikiDir)) {
     throw new Error(
       `build-blog: wiki checkout not found at ${wikiDir}. Refusing to build ` +
-        `an empty /blog/ — deploying it would unpublish every existing post.`
+        `an empty /blog/ — deploying it would unpublish every existing post.`,
     );
   }
   const fileNames = readdirSync(wikiDir).filter((name) => /\.md$/i.test(name));
   if (fileNames.length === 0) {
     throw new Error(
       `build-blog: no markdown pages in ${wikiDir}. Refusing to build an ` +
-        `empty /blog/ — see the note above about unpublishing.`
+        `empty /blog/ — see the note above about unpublishing.`,
     );
   }
 
   const posts = fileNames.map((fileName) =>
-    parsePost(fileName, readFileSync(join(wikiDir, fileName), 'utf8'))
+    parsePost(fileName, readFileSync(join(wikiDir, fileName), "utf8")),
   );
   const { published, drafts } = buildCatalog(posts);
 
-  const blogDir = join(outDir, 'blog');
+  const blogDir = join(outDir, "blog");
   mkdirSync(blogDir, { recursive: true });
   writeFileSync(
-    join(blogDir, 'index.html'),
+    join(blogDir, "index.html"),
     renderIndex(published, { origin }),
-    'utf8'
+    "utf8",
   );
   writeFileSync(
-    join(blogDir, 'sitemap.xml'),
+    join(blogDir, "sitemap.xml"),
     buildSitemap(published, { origin }),
-    'utf8'
+    "utf8",
   );
   for (const post of published) {
     const postDir = join(blogDir, post.slug);
     mkdirSync(postDir, { recursive: true });
     writeFileSync(
-      join(postDir, 'index.html'),
+      join(postDir, "index.html"),
       renderPost(post, { origin }),
-      'utf8'
+      "utf8",
     );
     log(`  published: ${post.slug} (${post.date})`);
   }
   for (const post of drafts) {
-    log(`  draft:     ${post.slug} — ${post.draftReason ?? 'unknown reason'}`);
+    log(`  draft:     ${post.slug} — ${post.draftReason ?? "unknown reason"}`);
   }
 
   return { published: published.length, drafts: drafts.length };
@@ -115,25 +115,28 @@ function flag(argv, name) {
 }
 
 // CLI entry — skipped when imported by tests.
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))
+) {
   const argv = process.argv.slice(2);
-  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
   const wikiDir = resolveWikiDir({
-    envDir: flag(argv, '--wiki') ?? process.env['BLOG_WIKI_DIR'],
-    siblingDir: resolve(repoRoot, '..', 'location-based-webxr.wiki'),
-    cloneDir: resolve(repoRoot, 'node_modules', '.cache', 'blog-wiki'),
+    envDir: flag(argv, "--wiki") ?? process.env["BLOG_WIKI_DIR"],
+    siblingDir: resolve(repoRoot, "..", "location-based-webxr.wiki"),
+    cloneDir: resolve(repoRoot, "node_modules", ".cache", "blog-wiki"),
     exists: existsSync,
     clone: (url, dir) => {
       rmSync(dir, { recursive: true, force: true });
       mkdirSync(dirname(dir), { recursive: true });
       console.log(`• Cloning ${url}`);
-      execFileSync('git', ['clone', '--depth', '1', url, dir], {
-        stdio: 'inherit',
+      execFileSync("git", ["clone", "--depth", "1", url, dir], {
+        stdio: "inherit",
       });
     },
   });
-  const outDir = resolve(flag(argv, '--out') ?? join(repoRoot, 'dist-site'));
-  const origin = flag(argv, '--origin') ?? DEFAULT_ORIGIN;
+  const outDir = resolve(flag(argv, "--out") ?? join(repoRoot, "dist-site"));
+  const origin = flag(argv, "--origin") ?? DEFAULT_ORIGIN;
 
   console.log(`• Building blog from ${wikiDir}`);
   const result = buildBlog({
@@ -143,6 +146,6 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
     log: (line) => console.log(line),
   });
   console.log(
-    `• Blog: ${result.published} published, ${result.drafts} draft(s) withheld`
+    `• Blog: ${result.published} published, ${result.drafts} draft(s) withheld`,
   );
 }

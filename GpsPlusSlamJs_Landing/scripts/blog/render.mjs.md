@@ -22,6 +22,11 @@ through it on the way out, so there is nothing for a caller to do.
   the canonical link is wrong, the dev.to copy or the indexable GitHub wiki
   copy wins the search result — the exact failure D6 exists to avoid.
 - Canonical URLs are `{origin}/blog/{slug}/`, always absolute.
+- **The card image is not optional.** The head declares
+  `twitter:card: summary_large_image`, and that with no image renders _worse_
+  than `summary` would — a bare text card, on exactly the channels this blog
+  exists to feed. `og:image`/`twitter:image` point at the landing page's
+  existing `{origin}/og-card.png`.
 - **Metadata is always escaped; post bodies are not sanitised.** Bodies come
   from a repository only the owner can push to, so raw HTML in markdown
   (diagrams, `<video>`) is passed through deliberately. If authorship ever
@@ -34,7 +39,7 @@ through it on the way out, so there is nothing for a caller to do.
 ## Examples
 
 ```js
-const html = renderPost(post, { origin: 'https://gps.csutil.com' });
+const html = renderPost(post, { origin: "https://gps.csutil.com" });
 // → '<!doctype html>…<link rel="canonical" href="https://gps.csutil.com/blog/slug/" />…'
 ```
 

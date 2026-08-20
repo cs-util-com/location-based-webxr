@@ -32,10 +32,10 @@ precedence rather than best-effort fallback.
 ```js
 const wikiDir = resolveWikiDir({
   envDir: process.env.BLOG_WIKI_DIR,
-  siblingDir: resolve(repoRoot, '..', 'location-based-webxr.wiki'),
-  cloneDir: resolve(repoRoot, 'node_modules', '.cache', 'blog-wiki'),
+  siblingDir: resolve(repoRoot, "..", "location-based-webxr.wiki"),
+  cloneDir: resolve(repoRoot, "node_modules", ".cache", "blog-wiki"),
   exists: existsSync,
-  clone: (url, dir) => execFileSync('git', ['clone', '--depth', '1', url, dir]),
+  clone: (url, dir) => execFileSync("git", ["clone", "--depth", "1", url, dir]),
 });
 ```
 

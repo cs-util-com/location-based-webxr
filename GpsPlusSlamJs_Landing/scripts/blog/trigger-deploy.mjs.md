@@ -25,6 +25,12 @@ found this before any code existed.
   it lives in a gitignored local env file (`CLOUDFLARE_DEPLOY_HOOK_URL`), never
   in either repository, and **never in an error message** — local logs get
   pasted into chats and issues.
+  - Enforced by **redaction, not by care**. Node's fetch failures embed the URL
+    they were handed (`connect ECONNREFUSED for https://…/deploy/<secret>`), so
+    passing the cause's message through verbatim leaked the credential. Both
+    the full URL and its final path segment are scrubbed from the rendered
+    message; the cause object is still attached for a debugger. The test that
+    proves this was itself broken first — see below.
 - Cloudflare deploy hooks take a bare `POST` with no body and no auth header.
 
 ## Examples
@@ -37,3 +43,10 @@ await triggerDeploy({ hookUrl: process.env.CLOUDFLARE_DEPLOY_HOOK_URL });
 
 `trigger-deploy.test.mjs` — the POST itself, the unconfigured refusal, non-2xx
 and network failures, and that the secret never appears in an error message.
+
+The last of those was **asserting nothing** until 2026-08-20: it used
+`rejects.toThrow(expect.not.stringContaining(...))`, and `toThrow` hands an
+asymmetric matcher the Error _object_, for which `stringContaining` is false —
+so the negated form passed for every possible error, including one that
+interpolated the URL. It now asserts on `err.message` directly, and the moment
+it did, it failed on a real leak.

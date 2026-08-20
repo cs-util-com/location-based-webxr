@@ -18,11 +18,18 @@
  * Plan: GpsPlusSlamJs_Docs/docs/2026-08-20-0555-marketing-content-automation-plan.md
  */
 
-import { marked } from 'marked';
+import { marked } from "marked";
 
 /** @typedef {import('./post-meta.mjs').Post} Post */
 
-const SITE_NAME = 'Location-Based WebXR';
+const SITE_NAME = "Location-Based WebXR";
+
+// The landing page's existing social card, served from the site root
+// (GpsPlusSlamJs_Landing/public/og-card.png -> dist-site/og-card.png). Declaring
+// `summary_large_image` without one made every shared blog link render as a bare
+// text card, which is worse than declaring `summary` would have been — on the
+// channels this blog exists to feed.
+const OG_IMAGE_PATH = "/og-card.png";
 
 /**
  * @param {string} value
@@ -30,11 +37,11 @@ const SITE_NAME = 'Location-Based WebXR';
  */
 function escapeHtml(value) {
   return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 /** Minimal, self-contained, theme-aware styling. No external requests. */
@@ -85,10 +92,11 @@ footer.site { border-top: 1px solid var(--rule); color: var(--muted); font-size:
  * @param {string} input.title
  * @param {string} input.description
  * @param {string} input.canonical absolute URL of this page
+ * @param {string} input.origin deployment origin, for the absolute card image
  * @param {string} input.body already-rendered HTML for the <main>
  * @returns {string}
  */
-function page({ title, description, canonical, body }) {
+function page({ title, description, canonical, origin, body }) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
   return `<!doctype html>
@@ -104,7 +112,9 @@ function page({ title, description, canonical, body }) {
     <meta property="og:title" content="${safeTitle}" />
     <meta property="og:description" content="${safeDescription}" />
     <meta property="og:url" content="${escapeHtml(canonical)}" />
+    <meta property="og:image" content="${escapeHtml(origin)}${OG_IMAGE_PATH}" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="${escapeHtml(origin)}${OG_IMAGE_PATH}" />
     <style>${STYLE}</style>
   </head>
   <body>
@@ -141,17 +151,17 @@ ${body}
  * @returns {string} complete HTML document
  */
 export function renderPost(post, { origin }) {
-  if (post.status !== 'published') {
+  if (post.status !== "published") {
     throw new Error(
       `renderPost: refusing to render draft ${JSON.stringify(post.slug)} ` +
-        `(${post.draftReason ?? 'no reason recorded'})`
+        `(${post.draftReason ?? "no reason recorded"})`,
     );
   }
   const canonical = `${origin}/blog/${post.slug}/`;
   const tags =
     post.tags.length > 0
-      ? `      <p class="meta">${post.tags.map((tag) => escapeHtml(tag)).join(' · ')}</p>\n`
-      : '';
+      ? `      <p class="meta">${post.tags.map((tag) => escapeHtml(tag)).join(" · ")}</p>\n`
+      : "";
   const body =
     `      <article>\n` +
     `        <h1>${escapeHtml(post.title)}</h1>\n` +
@@ -163,6 +173,7 @@ export function renderPost(post, { origin }) {
     title: post.title,
     description: post.description,
     canonical,
+    origin,
     body,
   });
 }
@@ -183,9 +194,9 @@ export function renderIndex(posts, { origin }) {
         `          <h2><a href="/blog/${escapeHtml(post.slug)}/">${escapeHtml(post.title)}</a></h2>\n` +
         `          <time datetime="${escapeHtml(post.date)}">${escapeHtml(post.date)}</time>\n` +
         `          <p>${escapeHtml(post.description)}</p>\n` +
-        `        </li>`
+        `        </li>`,
     )
-    .join('\n');
+    .join("\n");
   const body =
     `      <h1>Blog</h1>\n` +
     `      <p class="meta">Notes on outdoor AR in the browser — GPS, WebXR, and what actually holds still.</p>\n` +
@@ -195,8 +206,9 @@ export function renderIndex(posts, { origin }) {
   return page({
     title: `Blog — ${SITE_NAME}`,
     description:
-      'Notes on building location-based AR on the open web: GPS and WebXR sensor fusion, outdoor tracking stability, and install-free AR.',
+      "Notes on building location-based AR on the open web: GPS and WebXR sensor fusion, outdoor tracking stability, and install-free AR.",
     canonical: `${origin}/blog/`,
+    origin,
     body,
   });
 }
