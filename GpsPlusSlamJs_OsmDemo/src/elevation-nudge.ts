@@ -40,10 +40,23 @@ export const NUDGE_STEP_M = 1;
  *
  * A bound rather than free travel, because the failure mode of a stuck button —
  * or of a user hunting for a city that is missing for some other reason — is
- * pushing the whole scene somewhere it can never be seen again. 50 m is five
- * times the reported symptom, so it does not constrain the job it exists for.
+ * pushing the whole scene somewhere it can never be seen again.
+ *
+ * **100 m since 2026-08-20, was 50 — and the REASONING moved, not just the
+ * number.** The old comment justified 50 as "five times the reported symptom",
+ * which was the right bound while the nudge's only job was nulling a ~10 m
+ * vertical error. Q5's entry fly-down starts the session at the 3D view's camera
+ * height and eases down, so the user can now legitimately be a long way up and
+ * want to come down by hand if the descent is interrupted — a case the old
+ * bound made unreachable.
+ *
+ * **What still holds, and is why this is not simply raised further:** the
+ * failure mode is unchanged, and 100 m is still recoverable at the 1 m step
+ * within a few seconds of holding. The descent has its own, tighter cap
+ * (`DESCENT_MAX_START_M`) for the same reason — an automatic move needs a
+ * stricter bound than a deliberate one.
  */
-export const NUDGE_LIMIT_M = 50;
+export const NUDGE_LIMIT_M = 100;
 
 /**
  * One press.

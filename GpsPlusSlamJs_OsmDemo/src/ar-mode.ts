@@ -48,6 +48,12 @@ import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visuali
 import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import { getCompassDiagnostics } from "gps-plus-slam-app-framework/state";
+import {
+  cameraFadeAlpha,
+  descentComplete,
+  descentOffsetM,
+  DESCENT_MAX_START_M,
+} from "./ar-descent.js";
 
 import type { BuildingView } from "./building-view.js";
 import type { LatLng } from "gps-plus-slam-osm";
@@ -144,6 +150,16 @@ export interface ArModeDeps {
   readonly store: TrackingSubscribableStore & SubscribableStore;
   /** Where the city currently lives. Its content is borrowed, not copied. */
   readonly buildingView: BuildingView;
+  /**
+   * Called once when the entry fly-down lands (Q5).
+   *
+   * THE END-STATE SIGNAL, and it is not decoration: a descent that STALLS is
+   * indistinguishable from the recorded "flying roughly 50 m above the OSM
+   * buildings" datum bug, and that ambiguity is what would make a field report
+   * unactionable. Optional, so a caller that does not want to say anything is
+   * unchanged.
+   */
+  readonly onDescentComplete?: () => void;
   /** The session's anchor — the framework's `zero`, already read by the caller. */
   readonly origin: FrameworkLatLong | null;
   /**
@@ -526,9 +542,30 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // step. The manual trim bypasses the ease by design (DEC-E1).
     let autoM: number | null = null;
     let manualTrimM = 0;
+    /**
+     * The entry fly-down (Q5). `descentStartS` is the frame clock reading the
+     * descent began at, cleared once it lands so the term costs nothing for the
+     * rest of the session; `descentM` is its current contribution.
+     */
+    let descentStartS: number | undefined;
+    let descentM = 0;
+    /** Latched, so the one-shot start guard cannot re-arm after the landing. */
+    let descentDone = false;
+    /**
+     * Where the descent starts: the height the user was already looking from in
+     * the 3D view, capped.
+     *
+     * Taken ONCE at entry rather than read per frame — the desktop camera keeps
+     * living while AR runs, and a descent that tracked it would move the city
+     * because something off-screen moved.
+     */
+    const descentStartM = Math.min(
+      DESCENT_MAX_START_M,
+      Math.max(0, deps.buildingView.cameraHeightM?.() ?? 0),
+    );
     let appliedAutoM = 0;
     const applyComposed = () => {
-      applyElevation(composeElevationM(appliedAutoM, manualTrimM));
+      applyElevation(composeElevationM(appliedAutoM, manualTrimM, descentM));
     };
     applyElevation(0);
 
@@ -694,6 +731,17 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // The last auto state, held for the HUD between the ~1 Hz ticks.
     let latestAuto: ArElevationAutoState | undefined;
     session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
+      // THE DESCENT'S CLOCK STARTS ON THE FIRST FRAME, not at `startArMode`.
+      // `elapsed` is PAGE-relative — a session entered thirty seconds after load
+      // sees its first frame at `elapsed ≈ 30` — so anchoring to 0 would make
+      // the hold and the fall both already over before a single frame ran, and
+      // the feature would silently do nothing on any page that had been open a
+      // while. That is the same trap the fps sampler below documents.
+      if (descentStartS === undefined && descentM === 0 && !descentDone) {
+        descentStartS = elapsed;
+        descentM = descentStartM;
+        applyComposed();
+      }
       windowOpenedAtS ??= elapsed;
       framesThisWindow += 1;
       const windowS = elapsed - windowOpenedAtS;
@@ -755,6 +803,43 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           applyComposed();
         }
       }
+      // THE ENTRY FLY-DOWN (H5, Q5), driven from the same `elapsed` clock as the
+      // breathing below — monotonic and page-relative, so a backgrounded tab
+      // cannot make the city jump.
+      //
+      // A THIRD TERM IN THE COMPOSITION, never its own `applyElevation` call:
+      // that function SETS rather than accumulates, and the auto ease above
+      // re-applies the composition whenever it moves, so a descent written the
+      // obvious way is clobbered within a frame or two.
+      if (descentStartS !== undefined) {
+        const input = {
+          elapsedS: elapsed - descentStartS,
+          startM: descentStartM,
+        };
+        const nextDescentM = descentOffsetM(input);
+        if (nextDescentM !== descentM) {
+          descentM = nextDescentM;
+          applyComposed();
+        }
+        // THE CAMERA FADE (DEC-Y3): one animated number on the renderer's own
+        // clear alpha. AR entry sets `scene.background = null`, and on that path
+        // the clear uses `clearColor`/`clearAlpha` — both animatable, with the
+        // framework's renderer already built `alpha: true`. No geometry, no
+        // render-order discipline, and no backdrop that could occlude content.
+        getRenderer()?.setClearAlpha(1 - cameraFadeAlpha(input));
+        if (descentComplete(input)) {
+          // THE VISIBLE END-STATE SIGNAL the plan requires. A descent that
+          // STALLS is otherwise indistinguishable from the recorded "flying
+          // roughly 50 m above the OSM buildings" datum bug, and that ambiguity
+          // is what would make a field report unactionable. Saying so once, on
+          // arrival, is the cheapest way to tell them apart.
+          descentStartS = undefined;
+          descentDone = true;
+          getRenderer()?.setClearAlpha(0);
+          deps.onDescentComplete?.();
+        }
+      }
+
       // THE BREATHING. Driven from `elapsed` -- the frame clock the loop already
       // computed, monotonic and page-relative -- rather than from wall time, so the
       // pulse cannot jump when the tab is backgrounded.

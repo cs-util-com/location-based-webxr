@@ -199,6 +199,12 @@ beforeEach(() => {
     // renderer, so a fixture without it would make the sampler look fragile
     // when it is not.
     info: { render: { calls: 0, triangles: 0 } },
+    // `setClearAlpha` is what the Q5 entry fade drives — one animated number on
+    // the `scene.background === null` path. Present on every real renderer, so
+    // a fixture without it would make the fade look fragile when it is not, and
+    // would fail fifteen unrelated tests the first time the frame loop touches
+    // it. Same argument as `info.render` above.
+    setClearAlpha: vi.fn(),
   } as unknown as THREE.WebGLRenderer;
   getRenderer.mockReturnValue(renderer);
   getCurrentArPose.mockReturnValue(null);
@@ -1396,5 +1402,182 @@ describe("the AR building shell", () => {
     sessionOptions.onSessionEnd();
 
     expect(view.shellCalls.at(-1)).toBeUndefined();
+  });
+});
+
+describe("the AR entry fly-down (H5, Q5)", () => {
+  /**
+   * Why these tests matter: the descent moves the whole city on the same axis
+   * the auto-elevation estimator and the manual trim already move it. The curve
+   * is proven in `ar-descent.test.ts`; what only this file can prove is that it
+   * reaches `attachContentTo` as a COMPOSED term rather than as its own write —
+   * the "typechecks but never renders" gap, and here also the "gets clobbered by
+   * the next auto tick" gap that `applyElevation` setting-rather-than-
+   * accumulating creates. Those two ARE pinned here: mutating the descent so it
+   * never lifts fails three of these.
+   *
+   * MUTATION-VERIFIED, and the route there is worth recording because the first
+   * conclusion was wrong. A descent that never lands — `DESCENT_FALL_S` raised
+   * so the fall outlives the session — fails three of these, including the
+   * landing signal. A descent that never lifts fails three others.
+   *
+   * **But mutating `if (t >= 1) return 0;` to `return start` changes nothing
+   * here, and that is NOT a gap in these tests.** That branch is unreachable
+   * through the frame loop: `1 - smoothstep(t)` underflows to exactly 0 a frame
+   * BEFORE `t` reaches 1, so the descent reports complete and the block stops
+   * before that line can run. The branch still matters for a caller that skips
+   * frames, and `ar-descent.test.ts` covers it directly at `end + 60`.
+   *
+   * The lesson, since half an hour went into it: **a surviving mutant is not
+   * evidence of a weak test until the mutant is shown to be reachable.**
+   */
+  const START_M = 60;
+
+  /**
+   * A local frame driver rather than the walking one above: the descent is
+   * driven purely by `elapsed`, and simulating a walk here would add motion the
+   * feature does not read while making the test look like it depended on it.
+   */
+  const runFrames = (fromS: number, toS: number, stepS = 1 / 60): void => {
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (input: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+    for (let elapsed = fromS; elapsed <= toS; elapsed += stepS) {
+      onFrame({ dt: stepS, elapsed });
+    }
+  };
+
+  const viewAtHeight = (heightM: number) => {
+    const view = fakeView();
+    Object.assign(view, { cameraHeightM: () => heightM });
+    return view;
+  };
+
+  const applied = (view: ReturnType<typeof fakeView>): number[] =>
+    view.attachedTo
+      .filter((a) => a.frame === "gps-world-nue")
+      .map((a) => a.offset?.up ?? 0);
+
+  const upAt = (view: ReturnType<typeof fakeView>): number | undefined =>
+    applied(view).at(-1);
+
+  it("starts the city at the 3D view's camera height and lands it at zero", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = viewAtHeight(START_M);
+
+    await startArMode(
+      deps({
+        container,
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+
+    // The first frame lifts it — the hold is what makes the move legible.
+    runFrames(1, 1);
+    expect(upAt(view)).toBeCloseTo(START_M, 1);
+
+    // And it is back on the ground once the hold plus the fall have run.
+    runFrames(1, 10);
+    expect(upAt(view)).toBeCloseTo(0, 2);
+
+    // IT ANIMATED THROUGH THE COMPOSITION, rather than being lifted once and
+    // set down once. Mutation testing found the first version of these
+    // assertions green against a descent that STALLED at full height forever —
+    // the exact failure the end-state signal exists to distinguish — because
+    // nothing here looked at the values in between.
+    const ups = applied(view);
+    expect(ups.length).toBeGreaterThan(3);
+    const between = ups.filter((up) => up > 1 && up < START_M - 1);
+    expect(
+      between.length,
+      "the descent never passed through an intermediate height",
+    ).toBeGreaterThan(0);
+    // And it is monotone down FROM THE PEAK, so it cannot have bounced.
+    //
+    // From the peak rather than from the first entry, because `ar-mode` calls
+    // `applyElevation(0)` once at setup — so the recorded sequence legitimately
+    // starts at 0, rises to the entry height on the first frame, and only then
+    // descends. Checking from index 0 fails on correct code, which is how this
+    // assertion was written the first time.
+    const peak = ups.indexOf(Math.max(...ups));
+    for (let i = peak + 1; i < ups.length; i += 1) {
+      expect(ups[i]).toBeLessThanOrEqual((ups[i - 1] ?? 0) + 1e-6);
+    }
+  });
+
+  it("does nothing at all when the 3D view was already at ground level", async () => {
+    // The contract that keeps every existing session unchanged: entering AR
+    // from a ground-level view must behave exactly as it did before Q5.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = viewAtHeight(0);
+
+    await startArMode(
+      deps({
+        container,
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+    runFrames(1, 1);
+
+    expect(upAt(view) ?? 0).toBeCloseTo(0, 5);
+  });
+
+  it("fades the camera feed in, and clears it fully on landing", async () => {
+    // DEC-Y3: one animated number on `renderer.setClearAlpha`, valid because AR
+    // entry sets `scene.background = null`. Hidden at the start (alpha 1) so the
+    // first moment of AR looks like the 3D view the user was just in, and fully
+    // transparent when the city lands.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = viewAtHeight(START_M);
+    const setClearAlpha = renderer.setClearAlpha as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    setClearAlpha.mockClear();
+
+    await startArMode(
+      deps({
+        container,
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+    runFrames(1, 1);
+    expect(setClearAlpha.mock.calls.at(-1)?.[0]).toBeCloseTo(1, 2);
+
+    runFrames(1, 10);
+    expect(setClearAlpha.mock.calls.at(-1)?.[0]).toBe(0);
+  });
+
+  it("announces the landing, so a STALLED descent is distinguishable", async () => {
+    // The end-state signal. Without it, a descent that stops half-way is
+    // indistinguishable from the recorded "flying roughly 50 m above the OSM
+    // buildings" datum bug — and that ambiguity is what would make a field
+    // report unactionable.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const onDescentComplete = vi.fn();
+
+    await startArMode(
+      deps({
+        container,
+        buildingView: viewAtHeight(
+          START_M,
+        ) as unknown as ArModeDeps["buildingView"],
+        onDescentComplete,
+      }),
+    );
+
+    runFrames(1, 1);
+    expect(onDescentComplete).not.toHaveBeenCalled();
+
+    runFrames(1, 10);
+    expect(onDescentComplete).toHaveBeenCalledTimes(1);
+
+    // ONCE, not once per frame: a signal that repeats is a signal nobody reads.
+    runFrames(1, 5);
+    expect(onDescentComplete).toHaveBeenCalledTimes(1);
   });
 });

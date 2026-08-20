@@ -1829,6 +1829,19 @@ export class BuildingView {
   }
 
   /** Where the camera is aimed, and from how far away. */
+  /**
+   * The camera's height above the scene origin, metres.
+   *
+   * **Read, not derived.** `cameraView().distanceM` plus the scene's nominal
+   * 29° tilt would give an estimate, but `MapControls` lets the user orbit, so
+   * that tilt is a starting value rather than an invariant — and the AR entry
+   * descent starts from this number, so an estimate would put the session at a
+   * height the user was never actually at.
+   */
+  cameraHeightM(): number {
+    return this.camera.position.y;
+  }
+
   cameraView(): CameraView {
     const { target } = this.controls;
     return {

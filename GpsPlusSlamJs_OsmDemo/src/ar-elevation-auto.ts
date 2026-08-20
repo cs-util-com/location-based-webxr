@@ -143,15 +143,25 @@ export function arPointToSceneNue(
 }
 
 /**
- * The one composition of the applied offset: `auto + manual trim`, with a
- * null auto contributing ZERO — the kill-switch/cold-start contract that the
- * manual nudge behaves exactly as it did before this feature existed.
+ * The one composition of the applied offset: `auto + manual trim + descent`,
+ * with a null auto contributing ZERO — the kill-switch/cold-start contract that
+ * the manual nudge behaves exactly as it did before that feature existed.
+ *
+ * **THE DESCENT IS A TERM HERE, NOT A WRITE ELSEWHERE (Q5).** `applyElevation`
+ * SETS the applied offset rather than accumulating it, and the frame loop
+ * re-applies this composition whenever the eased auto value moves — so an entry
+ * animation written as its own call to `applyElevation` would be CLOBBERED
+ * within a frame or two rather than merely contending with the estimator. Adding
+ * it here is what makes the two compose.
+ *
+ * It defaults to 0, so every existing caller is unchanged.
  */
 export function composeElevationM(
   autoM: number | null,
   manualTrimM: number,
+  descentM = 0,
 ): number {
-  return (autoM ?? 0) + manualTrimM;
+  return (autoM ?? 0) + manualTrimM + descentM;
 }
 
 export interface ArElevationAutoState {
