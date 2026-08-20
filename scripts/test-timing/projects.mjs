@@ -84,8 +84,14 @@ const BUILD_OSM_STAGE = Object.freeze({
 });
 
 /** Format command shared by the app packages (framework differs). */
+// `"scripts"` is in the list because it was NOT, and that was a hole: the
+// Landing package grew node-side build tooling under `scripts/blog/` that no
+// format stage could see, so 15 files drifted out of style with a green gate.
+// `GpsPlusSlamJs_Osm`'s stage already listed `"scripts"`; this makes the shared
+// command match. `--no-error-on-unmatched-pattern` keeps it a no-op for the
+// packages that have no `scripts/` directory.
 const APP_FORMAT_COMMAND =
-  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" index.html README.md package.json';
+  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" "scripts" index.html README.md package.json';
 
 /**
  * The stage set shared verbatim by the four uniform demo apps (AnchorStarter,

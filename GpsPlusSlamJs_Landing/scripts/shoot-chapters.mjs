@@ -14,13 +14,23 @@ import { chromium } from "@playwright/test";
 import { mkdirSync } from "fs";
 import { resolve } from "path";
 
-const CHAPTER_IDS = ["hero", "qr", "fusion", "dive", "anywhere", "gallery", "cta"];
+const CHAPTER_IDS = [
+  "hero",
+  "qr",
+  "fusion",
+  "dive",
+  "anywhere",
+  "gallery",
+  "cta",
+];
 const STORY_DURATION_MS = 7000; // CHAPTER_COUNT * CHAPTER_DURATION_MS
 /** Scrub smoothing tau is 240ms — this settles displayed progress fully. */
 const SETTLE_MS = 1400;
 
 const args = process.argv.slice(2).filter((a) => a !== "--");
-const palettes = (args.find((a) => a.startsWith("--palettes=")) ?? "--palettes=dark")
+const palettes = (
+  args.find((a) => a.startsWith("--palettes=")) ?? "--palettes=dark"
+)
   .split("=")[1]
   .split(",");
 const mobile = args.includes("--mobile");
@@ -85,9 +95,7 @@ try {
           [ms, STORY_DURATION_MS],
         );
       } else {
-        await page
-          .locator(`#chapter-${target}`)
-          .scrollIntoViewIfNeeded();
+        await page.locator(`#chapter-${target}`).scrollIntoViewIfNeeded();
       }
       await page.waitForTimeout(SETTLE_MS);
       const name = target.replace(":", "");
