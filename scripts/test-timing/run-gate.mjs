@@ -147,15 +147,28 @@ if (lockDecision.action === 'acquire' || lockDecision.action === 'steal') {
     console.warn(`test-timing: could not take the gate lock: ${String(error)}`);
   }
   // Children inherit this and re-enter instead of competing — see gate-lock.mjs.
-  process.env[GATE_RUN_ENV] = runId;
+  //
+  // ONLY when we actually own the record on disk. If `writeLock` threw, the
+  // disk still holds whatever was there before — on the `steal` path that is
+  // ANOTHER run's record — and a child inheriting our runId would find a
+  // mismatch, take the nested branch and `refuse` with exit 1. That turns a
+  // write failure into a RED GATE, contradicting the module's stated safety
+  // property that it "degrades to absent, never to fatal". Setting nothing
+  // puts children on the un-nested path, where a dead owner's lock is stolen
+  // (see gate-lock.test.mjs, 'steals a lock whose owner is gone'), which is
+  // what degrading to absent actually means. Found in review of PR #623.
+  //
+  // This branch is REACHABLE HERE in a way it is not in the library: the root
+  // cascade runs each package's gate through this same file, so the children
+  // exist.
+  if (ownsLock) {
+    process.env[GATE_RUN_ENV] = runId;
+  }
   if (lockDecision.action === 'steal') {
     console.warn(`test-timing: ${lockDecision.reason}`);
   }
 }
-if (
-  lockDecision.action === 'override' ||
-  (lockDecision.action === 'acquire' && /override/i.test(lockDecision.reason))
-) {
+if (lockDecision.overridden === true) {
   // NAMED, never silent: the same rule the skip-browser banner follows.
   // `override` deliberately leaves `ownsLock` false, so this run neither
   // rewrites the incumbent's record nor clears it on the way out.

@@ -8,7 +8,10 @@ else, which today is everything).
 
 - `runDrip({ queue, history, now, origin?, channels?, transports?, post?, log? })`
   → `{ posted, packs, withheld }`
-- `buildPack(item, { origin })` → `{ channel, instructions, payload? }`
+- `buildPack(item, { origin, now })` → `{ channel, instructions, payload? }`.
+  `now` is epoch ms and is passed straight through to `blueskyRecord`, whose
+  `createdAt` the lexicon requires; `syndicate.mjs` is deliberately clock-free,
+  so this pipeline reads the clock exactly once, in `runDrip`'s caller.
 - CLI: `node scripts/marketing/drip.mjs --queue q.json --history h.json [--post] [--packs-out packs.json]`
 
 ## Invariants & assumptions

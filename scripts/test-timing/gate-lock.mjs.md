@@ -60,8 +60,14 @@ insofar as an orphan's parent is gone, so its lock is reclaimable.
   If those took the lock, the first package gate would steal it from the cascade
   that spawned it and release it on its own exit, leaving the remaining ~20
   minutes unprotected. Enforced by a property test.
-- **A live, recent, independently-owned lock is always refused.** Also a
-  property test — this is the guarantee the module exists for.
+- **A live, recent, independently-owned lock is refused**, once it is on disk.
+  Also a property test — this is the guarantee the module exists for. The read
+  and the write are NOT atomic, so two runs starting within the same few
+  milliseconds can both see no lock and both acquire; the scenario this module
+  targets — a second cascade started minutes into the first — is unaffected, and
+  the fix (`writeFileSync(..., { flag: 'wx' })`, re-read and re-decide on
+  `EEXIST`) is filed rather than done. Stated here because the guarantee above
+  would otherwise read as unconditional.
 - **Re-entrancy travels by environment.** The outermost run writes
   `GATE_RUN_ID` into `process.env`; `run-stage.mjs` spawns children with
   `{ ...process.env }`, so they inherit it. A child whose inherited id does not
@@ -72,6 +78,11 @@ insofar as an orphan's parent is gone, so its lock is reclaimable.
   would hide it for a long time.
 - **It degrades to absent, never to fatal.** An unreadable lock counts as no
   lock; a lock that cannot be written logs a warning and the gate runs anyway.
+  That second half has a wiring obligation `run-gate.mjs` must honour: it may
+  export `GATE_RUN_ID` only when the write SUCCEEDED. Exporting it after a
+  failed write on the `steal` path hands children an id that does not match the
+  record still on disk, and they refuse with exit 1 — a failed write becoming a
+  red gate, which is precisely what this invariant forbids.
   A guard that can wedge the gate with no way past it is worse than the
   concurrency it prevents.
 - **`MAX_LOCK_AGE_MS` is 3 h**, well above the slowest observed cascade (~23 min,

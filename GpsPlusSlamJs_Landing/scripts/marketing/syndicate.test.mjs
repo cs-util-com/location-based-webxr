@@ -29,6 +29,8 @@ const post = (overrides = {}) => ({
   ...overrides,
 });
 
+const CREATED_AT = "2026-08-20T21:40:00.000Z";
+
 describe("devToArticle", () => {
   it("carries the canonical URL back to the blog", () => {
     const payload = devToArticle(post(), { origin: ORIGIN });
@@ -63,6 +65,19 @@ describe("devToArticle", () => {
     expect(payload.article.tags).toEqual(["threejs", "webxr"]);
   });
 
+  it("refuses two tags that normalise to the same token", () => {
+    // Why this test matters: normalisation is lossy, so "three.js" and
+    // "threejs" both become "threejs" and Forem rejects the article for a
+    // duplicate tag. Before this guard the payload was built happily and the
+    // rejection only showed up as an API error on a real publish — the failure
+    // mode this module's header explicitly argues against.
+    expect(() =>
+      devToArticle(post({ tags: ["three.js", "threejs"] }), {
+        origin: ORIGIN,
+      }),
+    ).toThrow(/both normalise/i);
+  });
+
   it("refuses a post with no slug rather than producing a bare-origin canonical", () => {
     expect(() => devToArticle(post({ slug: "" }), { origin: ORIGIN })).toThrow(
       /slug/i,
@@ -95,6 +110,7 @@ describe("blueskyRecord", () => {
     const record = blueskyRecord({
       text: "Read this: https://gps.csutil.com/blog/x/",
       url: `${ORIGIN}/blog/x/`,
+      createdAt: CREATED_AT,
     });
 
     expect(record.$type).toBe("app.bsky.feed.post");
@@ -105,12 +121,41 @@ describe("blueskyRecord", () => {
     expect(facet.index.byteEnd).toBeGreaterThan(facet.index.byteStart);
   });
 
+  it("stamps the createdAt the lexicon requires", () => {
+    // Why this test matters: app.bsky.feed.post REQUIRES createdAt, and
+    // com.atproto.repo.createRecord rejects a record without it. It used to be
+    // absent from the returned record and optional in the annotation, so
+    // drip.mjs handed the operator a pack labelled "Post this record:" that
+    // could not be posted.
+    const record = blueskyRecord({
+      text: "Read this",
+      url: `${ORIGIN}/blog/x/`,
+      createdAt: CREATED_AT,
+    });
+
+    expect(record.createdAt).toBe(CREATED_AT);
+  });
+
+  it("refuses to guess a createdAt, because it has no clock", () => {
+    // The module is deliberately clock-free (its output has to be reproducible
+    // in tests). Defaulting to Date.now() here would make that quietly untrue,
+    // so the omission has to fail loudly at the seam instead.
+    expect(() =>
+      // @ts-expect-error deliberately omitting the required field
+      blueskyRecord({ text: "Read this", url: `${ORIGIN}/blog/x/` }),
+    ).toThrow(/createdAt/i);
+  });
+
   it("measures the limit in BYTES, not characters", () => {
     // Bluesky's cap is on UTF-8 bytes; an emoji-heavy post that looks short
     // can exceed it, and that is exactly the post nobody tests.
     const emoji = "🛰️".repeat(120);
     expect(() =>
-      blueskyRecord({ text: emoji, url: `${ORIGIN}/blog/x/` }),
+      blueskyRecord({
+        text: emoji,
+        url: `${ORIGIN}/blog/x/`,
+        createdAt: CREATED_AT,
+      }),
     ).toThrow(/too long/i);
   });
 
@@ -118,6 +163,7 @@ describe("blueskyRecord", () => {
     const record = blueskyRecord({
       text: "a".repeat(280),
       url: `${ORIGIN}/blog/x/`,
+      createdAt: CREATED_AT,
     });
 
     expect(record.text).toHaveLength(280);

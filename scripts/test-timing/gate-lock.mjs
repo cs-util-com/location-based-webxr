@@ -51,6 +51,10 @@ export const LOCK_FILE_NAME = '.gate-run.lock';
  * @typedef {object} LockDecision
  * @property {'acquire' | 'reenter' | 'steal' | 'refuse' | 'override'} action
  * @property {string} reason human-readable, shown when it is not `acquire`
+ * @property {boolean} [overridden] set when GATE_ALLOW_CONCURRENT forced the
+ *   decision. STRUCTURAL on purpose: run-gate.mjs used to detect this by
+ *   regex-matching the reason PROSE, so rewording a sentence would have
+ *   silently stopped the "the guard is off" warning from printing.
  */
 
 /**
@@ -79,11 +83,13 @@ export function decideGateLock({ existing, env, isAlive, now }) {
     if (existing !== null) {
       return {
         action: 'override',
+        overridden: true,
         reason: `${GATE_ALLOW_CONCURRENT_ENV} set — concurrency guard override in effect; run ${existing.runId} (pid ${existing.pid}) still owns this tree and keeps its lock`,
       };
     }
     return {
       action: 'acquire',
+      overridden: true,
       reason: `${GATE_ALLOW_CONCURRENT_ENV} set — concurrency guard override in effect, but nothing else owns this tree`,
     };
   }

@@ -121,6 +121,7 @@ describe("buildPack", () => {
   it("gives X a prefilled composer link and warns about media", () => {
     const pack = buildPack(item({ channel: "x", text: "Short post" }), {
       origin: ORIGIN,
+      now: NOW,
     });
 
     expect(pack.instructions.join(" ")).toContain("x.com/intent/post");
@@ -128,14 +129,20 @@ describe("buildPack", () => {
   });
 
   it("gives Medium the import steps, not an API payload", () => {
-    const pack = buildPack(item({ channel: "medium" }), { origin: ORIGIN });
+    const pack = buildPack(item({ channel: "medium" }), {
+      origin: ORIGIN,
+      now: NOW,
+    });
 
     expect(pack.payload).toBeUndefined();
     expect(pack.instructions.join(" ")).toMatch(/import/i);
   });
 
   it("tells a human posting to a community to check its rules first", () => {
-    const pack = buildPack(item({ channel: "reddit" }), { origin: ORIGIN });
+    const pack = buildPack(item({ channel: "reddit" }), {
+      origin: ORIGIN,
+      now: NOW,
+    });
 
     expect(pack.instructions.join(" ")).toMatch(/self-promotion rules/i);
   });
@@ -143,6 +150,7 @@ describe("buildPack", () => {
   it("builds a real API payload for dev.to, carrying the canonical link", () => {
     const pack = buildPack(item({ channel: "devto", tags: ["webxr"] }), {
       origin: ORIGIN,
+      now: NOW,
     });
 
     expect(pack.payload.article.canonical_url).toBe(
@@ -150,8 +158,26 @@ describe("buildPack", () => {
     );
   });
 
+  it("gives Bluesky a record that is actually postable", () => {
+    // Why this test matters: the pack is labelled "Post this record:", and a
+    // record missing the lexicon-required createdAt is rejected by
+    // com.atproto.repo.createRecord — so the pack read as ready while it was
+    // not. The clock is threaded in from the caller rather than read inside
+    // syndicate.mjs, which is why this can assert the exact value.
+    const pack = buildPack(item({ channel: "bluesky", text: "Drift" }), {
+      origin: ORIGIN,
+      now: NOW,
+    });
+
+    expect(pack.payload.$type).toBe("app.bsky.feed.post");
+    expect(pack.payload.createdAt).toBe(new Date(NOW).toISOString());
+  });
+
   it("falls back to a hand-send instruction for a channel it does not know", () => {
-    const pack = buildPack(item({ channel: "linkedin" }), { origin: ORIGIN });
+    const pack = buildPack(item({ channel: "linkedin" }), {
+      origin: ORIGIN,
+      now: NOW,
+    });
 
     expect(pack.instructions.join(" ")).toMatch(/by hand/i);
   });

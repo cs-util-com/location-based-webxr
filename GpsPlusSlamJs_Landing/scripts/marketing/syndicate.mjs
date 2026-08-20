@@ -76,9 +76,30 @@ export function devToArticle(post, { origin }) {
         `(${rawTags.join(", ")}). Choose which four matter.`,
     );
   }
-  const tags = rawTags
-    .map((tag) => tag.toLowerCase().replace(/[^a-z0-9]/g, ""))
-    .filter(Boolean);
+  // Normalisation is lossy, so it can COLLIDE: "three.js" and "threejs" both
+  // become "threejs", and Forem rejects an article carrying a duplicate tag.
+  // Silently de-duplicating would be quiet in the wrong direction for a module
+  // whose stance is refuse-rather-than-truncate, so this names the pair and
+  // stops — the same shape as the four-tag check above.
+  /** @type {string[]} */
+  const tags = [];
+  /** @type {Map<string, string>} */
+  const firstSeenAs = new Map();
+  for (const raw of rawTags) {
+    const tag = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!tag) {
+      continue;
+    }
+    const collidesWith = firstSeenAs.get(tag);
+    if (collidesWith !== undefined) {
+      throw new Error(
+        `syndicate: dev.to tags "${collidesWith}" and "${raw}" both normalise ` +
+          `to "${tag}", and Forem rejects duplicate tags. Drop one.`,
+      );
+    }
+    firstSeenAs.set(tag, raw);
+    tags.push(tag);
+  }
 
   return {
     article: {
@@ -119,10 +140,23 @@ export function xComposerUrl({ text, url }) {
  * A Bluesky post record, with the link marked as a facet so it renders as a
  * link rather than as plain text.
  *
- * @param {{ text: string, url: string }} input
- * @returns {{ $type: string, text: string, createdAt?: string, facets: Array<{ index: { byteStart: number, byteEnd: number }, features: Array<{ $type: string, uri: string }> }> }}
+ * `createdAt` is REQUIRED by the `app.bsky.feed.post` lexicon — a record
+ * without it is rejected by `com.atproto.repo.createRecord`. This module is
+ * deliberately clock-free, so the caller's clock has to supply it rather than
+ * this function reading one; it is validated here so the omission surfaces at
+ * the seam instead of at the API.
+ *
+ * @param {{ text: string, url: string, createdAt: string }} input
+ * @returns {{ $type: string, text: string, createdAt: string, facets: Array<{ index: { byteStart: number, byteEnd: number }, features: Array<{ $type: string, uri: string }> }> }}
  */
-export function blueskyRecord({ text, url }) {
+export function blueskyRecord({ text, url, createdAt }) {
+  if (typeof createdAt !== "string" || createdAt === "") {
+    throw new Error(
+      "syndicate: blueskyRecord needs an ISO 8601 createdAt — " +
+        "app.bsky.feed.post requires it, and this module has no clock of its " +
+        "own by design, so the caller must pass one.",
+    );
+  }
   const encoder = new TextEncoder();
   const bytes = encoder.encode(text).length;
   if (bytes > BLUESKY_BYTE_LIMIT) {
@@ -145,7 +179,7 @@ export function blueskyRecord({ text, url }) {
     });
   }
 
-  return { $type: "app.bsky.feed.post", text, facets };
+  return { $type: "app.bsky.feed.post", text, createdAt, facets };
 }
 
 /**

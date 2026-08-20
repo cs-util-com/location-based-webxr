@@ -115,6 +115,34 @@ describe('decideGateLock', () => {
     expect(decision.action).toBe('refuse');
   });
 
+  it('lets a child with NO inherited runId reclaim a stale foreign lock', () => {
+    // Why this test matters: this is the fallback the write-failure guard in
+    // run-gate.mjs RELIES ON. When `writeLock` throws, the owner deliberately
+    // stops exporting GATE_RUN_ID, so its children arrive here with no env var
+    // and a lock on disk that belongs to someone else. If that combination
+    // refused, a failed lock WRITE would turn a green gate red — the exact
+    // opposite of the module's stated property that it degrades to absent,
+    // never to fatal. The pair below pins both halves of that reasoning.
+    // Found in review of PR #623.
+    const withStaleInheritance = decideGateLock({
+      existing: lockRecord({ runId: 'someone-else' }),
+      env: { [GATE_RUN_ENV]: 'ours' },
+      isAlive: dead,
+      now: 1_000_000 + 60_000,
+    });
+    // Inheriting a runId we never wrote is what would have been fatal...
+    expect(withStaleInheritance.action).toBe('refuse');
+
+    // ...and exporting nothing is what makes it survivable.
+    const withoutInheritance = decideGateLock({
+      existing: lockRecord({ runId: 'someone-else' }),
+      env: {},
+      isAlive: dead,
+      now: 1_000_000 + 60_000,
+    });
+    expect(withoutInheritance.action).toBe('steal');
+  });
+
   it('re-enters when a nested run finds its parent lock already cleared', () => {
     // Losing the race with the parent's own cleanup must not fail the gate: a
     // nested run never owns the lock, so there is nothing for it to repair.
@@ -163,6 +191,38 @@ describe('decideGateLock', () => {
     // It must still name who holds the tree, so the operator knows what they
     // are running alongside.
     expect(decision.reason).toContain('run-a');
+  });
+
+  it('flags an override STRUCTURALLY, not by the wording of its reason', () => {
+    // Why this test matters: run-gate.mjs prints the 'the guard is off' banner
+    // from this decision. It used to detect the override by regex-matching the
+    // reason PROSE, so rewording one sentence in this file would have silently
+    // stopped the warning printing while the override kept working - a guard
+    // that is off and no longer says so. Found in review of PR #623.
+    const contended = decideGateLock({
+      existing: lockRecord(),
+      env: { [GATE_ALLOW_CONCURRENT_ENV]: '1' },
+      isAlive: alive,
+      now: 1_000_000 + 60_000,
+    });
+    const free = decideGateLock({
+      existing: null,
+      env: { [GATE_ALLOW_CONCURRENT_ENV]: '1' },
+      isAlive: alive,
+      now: 1_000_000,
+    });
+    // BOTH override paths must be flagged - the contended one and the free one.
+    expect(contended.overridden).toBe(true);
+    expect(free.overridden).toBe(true);
+
+    // And a normal decision must not be.
+    const normal = decideGateLock({
+      existing: null,
+      env: {},
+      isAlive: alive,
+      now: 1_000_000,
+    });
+    expect(normal.overridden).toBeUndefined();
   });
 
   it('overriding an UNCONTENDED tree still takes the lock normally', () => {

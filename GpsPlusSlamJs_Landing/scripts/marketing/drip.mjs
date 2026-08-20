@@ -39,10 +39,13 @@ const DEFAULT_ORIGIN = "https://gps.csutil.com";
  * Build the human-sendable pack for one due item.
  *
  * @param {import('./schedule.mjs').QueueItem & { title?: string, text?: string, slug?: string, tags?: string[], body?: string, description?: string }} item
- * @param {{ origin: string }} options
+ * @param {{ origin: string, now: number }} options `now` is epoch ms; Bluesky's
+ *   lexicon requires a `createdAt` on the record and `syndicate.mjs` has no
+ *   clock of its own, so the one clock reading in this pipeline is threaded
+ *   from `runDrip`'s caller down to here.
  * @returns {{ channel: string, instructions: string[], payload?: unknown }}
  */
-export function buildPack(item, { origin }) {
+export function buildPack(item, { origin, now }) {
   const url = item.slug ? `${origin}/blog/${item.slug}/` : origin;
   const text = item.text ?? item.title ?? "";
 
@@ -95,7 +98,11 @@ export function buildPack(item, { origin }) {
       return {
         channel: "bluesky",
         instructions: ["Post this record:"],
-        payload: blueskyRecord({ text: `${text}\n\n${url}`, url }),
+        payload: blueskyRecord({
+          text: `${text}\n\n${url}`,
+          url,
+          createdAt: new Date(now).toISOString(),
+        }),
       };
     case "mastodon":
       return {
@@ -157,7 +164,7 @@ export async function runDrip({
   const packs = [];
 
   for (const { item, mode } of due) {
-    const pack = buildPack(item, { origin });
+    const pack = buildPack(item, { origin, now });
     const transport = transports[item.channel];
     const canSend = post && mode === "auto" && typeof transport === "function";
 

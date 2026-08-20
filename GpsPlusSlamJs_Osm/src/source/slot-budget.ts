@@ -242,8 +242,7 @@ export class OverpassSlotBudget {
    *
    * The allocation SIZE is always adopted, since a self-hosted or
    * differently-configured instance may allow more or fewer than the public 2.
-   */
-  /**
+   *
    * NO LONGER CALLED FROM ANYWHERE IN THIS REPO (DEC-V3, 2026-08-19), and kept
    * anyway — which is the opposite of what that decision expected, so here is
    * why.
