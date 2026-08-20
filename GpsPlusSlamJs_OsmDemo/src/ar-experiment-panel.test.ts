@@ -146,6 +146,35 @@ describe("createArExperimentPanel", () => {
     expect(tolerance.value).toBe("15");
   });
 
+  it("warns in the 25° label that the trust dead band is gone there", () => {
+    // Why this test matters: 25 is above the library's default drop tolerance
+    // of 20 and this demo never sets that, so at this arm trust is never lost
+    // (every sample within 25° agrees) and any real disagreement drops it at
+    // once — the `ramp` gate's HOLD branch cannot run. The panel exists to
+    // COMPARE trust-gate behaviour, so an arm that silently switches that
+    // behaviour off is the one place a label is load-bearing rather than
+    // decorative. The arm is kept because it is the census's 74-of-81
+    // baseline; only the silence about it was wrong.
+    build();
+    const tolerance = control("ar-exp-tolerance") as HTMLSelectElement;
+    const labels = [...tolerance.options].map((option) => option.textContent);
+
+    expect(labels).toEqual(["8", "15", "25 (no dead band)"]);
+  });
+
+  it("keeps the tolerance VALUE numeric even where the label is annotated", () => {
+    // The annotation must never reach the value: `publish` does
+    // `Number.parseInt(tolerance.value, 10)`, so a label baked into the value
+    // would still parse to 25 and hide the break, or become NaN and silently
+    // reconfigure the solve. Pins the value/label split the note relies on.
+    build();
+    const tolerance = control("ar-exp-tolerance") as HTMLSelectElement;
+    tolerance.value = "25";
+
+    expect(Number.parseInt(tolerance.value, 10)).toBe(25);
+    expect(tolerance.value).not.toMatch(/dead band/);
+  });
+
   it("starts every control at the shipped configuration", () => {
     build();
     expect((control("ar-exp-prior") as HTMLInputElement).checked).toBe(true);

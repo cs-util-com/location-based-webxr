@@ -37,6 +37,29 @@ const GATE_MODES: readonly CompassTrustGateMode[] = ["off", "binary", "ramp"];
  */
 const TOLERANCES_DEG: readonly number[] = [8, 15, 25];
 
+/**
+ * Annotations shown in the dropdown but NOT part of the stored value.
+ *
+ * 25 is above the library's default `compassTrustDropToleranceDeg` of 20, and
+ * the demo never sets that, so at this arm the hysteresis DEAD BAND is
+ * inverted: every sample within 25° agrees (so trust is never lost — the corpus
+ * measured compass-vs-GPS offsets of −4.3…+18.8°, all inside 25°), and every
+ * sample that does disagree is by definition also outside 20° (so trust drops
+ * at once). The `ramp` gate's HOLD branch, which exists to ride that band, is
+ * unreachable there.
+ *
+ * The arm is KEPT rather than replaced, because the 2026-08-20 census swept
+ * exactly these three values and 25 is the one with the 74-of-81 baseline —
+ * substituting 19 would buy a working dead band at the cost of a number nothing
+ * has ever measured. What was actually wrong is that the panel offered the
+ * degenerate arm without saying so, which is the part this label fixes.
+ *
+ * See `GpsPlusSlamJs_Docs/docs/2026-08-20-2015-agree-tolerance-can-invert-the-trust-dead-band-followup.md`.
+ */
+const OPTION_NOTES: Readonly<Record<string, string>> = {
+  "25": "(no dead band)",
+};
+
 export interface ArExperimentPanelOptions {
   readonly root: HTMLElement;
   readonly initial?: CompassExperiments;
@@ -140,7 +163,10 @@ export function createArExperimentPanel(
     for (const value of values) {
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = value;
+      // The VALUE stays bare so it round-trips through parseInt; only the
+      // label carries the annotation. See OPTION_NOTES for why one exists.
+      const note = OPTION_NOTES[value];
+      option.textContent = note === undefined ? value : `${value} ${note}`;
       input.append(option);
     }
     input.value = selected;

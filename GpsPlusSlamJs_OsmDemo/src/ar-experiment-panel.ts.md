@@ -28,6 +28,17 @@ four Q2 step 5).
   default (trust latches on 55 of 81 corpus recordings), 15 is what this demo
   ships (64 of 81), 25 is the widest measured arm (74 of 81). A value outside
   that set would have no baseline to be read against.
+  - **The 25 arm is labelled `25 (no dead band)` in the dropdown**, because it
+    is above the library's default `compassTrustDropToleranceDeg` of 20 and this
+    demo never sets that. There, every sample within 25° agrees (so trust is
+    never lost — the corpus's compass-vs-GPS offsets span −4.3…+18.8°, all
+    inside 25°) and any real disagreement is also outside 20° (so trust drops at
+    once), which makes the `ramp` gate's HOLD branch unreachable. The arm is
+    kept rather than replaced so the census baseline still applies; the label is
+    what stops a panel built to COMPARE trust gating from silently offering an
+    arm with the gating switched off. The annotation lives only in the option's
+    text — the `value` stays bare so `Number.parseInt` still round-trips it.
+    Background: `GpsPlusSlamJs_Docs/docs/2026-08-20-2015-agree-tolerance-can-invert-the-trust-dead-band-followup.md`.
 - **compass health gate** → `requireCompassWebXRConsistency`.
 
 Labelled by what they do, not by their config-field names: this is read outdoors
