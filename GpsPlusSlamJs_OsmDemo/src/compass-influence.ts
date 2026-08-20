@@ -44,32 +44,120 @@
  * taken in one useless against the other.
  */
 export const COMPASS_INFLUENCE_STEP = 0.05;
+/**
+ * Where the slider starts.
+ *
+ * **0.8 since 2026-08-20, was 0.1.** Two independent reasons, and the field one
+ * came first: the owner reported 0.8 as consistently fixing perceived rotation
+ * across several sessions. The 2026-08-20 trust-gate census then measured 0.8
+ * with the `ramp` gate as better than `binary` on both stability columns —
+ * visible jumps 263 vs 285, fine wobble 0.071° vs 0.078° — at an accuracy
+ * difference three orders of magnitude below the effect of the weight change
+ * itself.
+ *
+ * **It is NOT free**, and the number is here so nobody has to guess: against the
+ * shipped 0.1 the same census measures +2.9° of walk-heading error and +3.6 m
+ * of RMS **against the GPS track**. Whether that is error or correction is
+ * exactly what the corpus cannot say, because it has no yaw reference
+ * independent of GPS.
+ */
+export const COMPASS_INFLUENCE_DEFAULT = 0.8;
 
-/** Where the slider starts — the library's own `compassSteadyStateMaxWeight`. */
-export const COMPASS_INFLUENCE_DEFAULT = 0.1;
+/** The three-way trust gate, mirroring the library's own union. */
+export type CompassTrustGateMode = "off" | "binary" | "ramp";
 
-/** The four dispatches that together mean "the compass has this much say". */
+/**
+ * The experimental compass options, exposed as controls so the trade is
+ * measured on a street rather than argued in a document.
+ *
+ * Every one of these is a library setting that ships OFF or at a different
+ * value, and two of them are documented there as not field-validated. They are
+ * grouped here because they are only interpretable together.
+ */
+export interface CompassExperiments {
+  /**
+   * The master switch. `true` = Stage C, the trust-gated continuum; `false` =
+   * fall back to the **validated** Stage 0 the RecorderApp ships.
+   */
+  readonly rotationPriorEnabled: boolean;
+  /** How the Stage-C vote is gated on trust. */
+  readonly trustGateMode: CompassTrustGateMode;
+  /** C-prime — re-solves the alignment on compass-weighted pairs once trusted. */
+  readonly pairSelectionEnabled: boolean;
+  /** How close compass and GPS yaw must agree before trust is granted. */
+  readonly trustToleranceDeg: number;
+  /** The compass-health gate, which down-weights a drifting compass. */
+  readonly webXRConsistencyEnabled: boolean;
+}
+
+/**
+ * What the demo ships.
+ *
+ * **`ramp` rather than the library's `binary`**, and the demo opts in alone so
+ * every other consumer is unchanged. At a vote weight of 0.8 the binary gate
+ * steps the vote by the FULL weight on every trust flip — the mechanism the
+ * census identifies as the source of added yaw jumps, and one that scales with
+ * the weight, so it is eight times more visible at 0.8 than at the old 0.1.
+ *
+ * **Tolerance 15°, not the library's 8°.** At 8°, against field compass-vs-GPS
+ * offsets of -4.3…+18.8°, trust reaches `trusted` on 55 of 81 corpus recordings
+ * against 64 at 15° — i.e. the experiment is substantially switched off by its
+ * own threshold, which is part of why the RecorderApp's results were
+ * inconclusive.
+ */
+export const COMPASS_EXPERIMENT_DEFAULTS: CompassExperiments = {
+  rotationPriorEnabled: true,
+  trustGateMode: "ramp",
+  pairSelectionEnabled: true,
+  trustToleranceDeg: 15,
+  webXRConsistencyEnabled: false,
+};
+
+/** The dispatches that together mean "the compass has this much say". */
 export interface CompassSettings {
   /** `setCompassRotationPriorEnabled` — Stage C, the trust-gated continuum. */
   readonly rotationPriorEnabled: boolean;
   /**
-   * `setColdStartOverrideEnabled` — **false at every position**, including the
-   * non-zero ones. Left on, its curve drives yaw alongside the prior and the
-   * slider is no longer the thing being measured.
+   * `setColdStartOverrideEnabled` — **false at every position while the prior is
+   * on**. Left on it would be inert anyway (the two stages are an `if/else` on
+   * the same weight, and the prior wins), but false is the honest statement of
+   * which stage is driving.
+   *
+   * **It flips back to `true` when the prior is switched OFF**, and that half is
+   * not optional: without it, "prior off" silences the compass entirely instead
+   * of returning to the validated Stage 0, so the toggle would compare the
+   * experiment against nothing rather than against the baseline.
    */
   readonly coldStartOverrideEnabled: boolean;
-  /** `setCompassExperimentEnabled` — the 15° tolerance that lets trust exist. */
+  /** `setCompassExperimentEnabled` — the combo that makes trust reachable. */
   readonly experimentEnabled: boolean;
   /** `setCompassVoteWeight` — validated to `[0,1]` by the library. */
   readonly voteWeight: number;
+  /** `setCompassTrustGateMode`. */
+  readonly trustGateMode: CompassTrustGateMode;
+  /** `setCompassPairSelectionEnabled` — overrides the combo, which sets it on. */
+  readonly pairSelectionEnabled: boolean;
+  /** `setCompassTrustAgreeToleranceDeg` — overrides the combo's pinned 15°. */
+  readonly trustToleranceDeg: number;
+  /** `setCompassWebXRConsistencyEnabled`. */
+  readonly webXRConsistencyEnabled: boolean;
 }
 
-/** Everything off: the only combination that genuinely silences the compass. */
+/**
+ * Everything off: the only combination that genuinely silences the compass.
+ *
+ * **No experimental toggle can reintroduce it**, because "GPS only" is the
+ * control arm of every comparison made with this slider.
+ */
 const SILENT: CompassSettings = {
   rotationPriorEnabled: false,
   coldStartOverrideEnabled: false,
   experimentEnabled: false,
   voteWeight: 0,
+  trustGateMode: "binary",
+  pairSelectionEnabled: false,
+  trustToleranceDeg: COMPASS_EXPERIMENT_DEFAULTS.trustToleranceDeg,
+  webXRConsistencyEnabled: false,
 };
 
 /**
@@ -85,17 +173,52 @@ const SILENT: CompassSettings = {
  * not silence. Said explicitly because this docstring claimed the opposite
  * until the PR #313 review, while the sidecar and the code were both right.
  */
-export function compassSettingsFor(influence: number): CompassSettings {
+export function compassSettingsFor(
+  influence: number,
+  experiments: CompassExperiments = COMPASS_EXPERIMENT_DEFAULTS,
+): CompassSettings {
   if (!Number.isFinite(influence)) return SILENT;
   const weight = Math.min(1, Math.max(0, influence));
   if (weight === 0) return SILENT;
   return {
-    rotationPriorEnabled: true,
-    coldStartOverrideEnabled: false,
+    rotationPriorEnabled: experiments.rotationPriorEnabled,
+    // THE FALL-THROUGH, and it is the half that is easy to miss: with the prior
+    // off the solve uses Stage 0, whose flag this app otherwise pins false — so
+    // without flipping it back, "prior off" would mean "no compass at all"
+    // rather than "the validated baseline".
+    coldStartOverrideEnabled: !experiments.rotationPriorEnabled,
     experimentEnabled: true,
     voteWeight: weight,
+    trustGateMode: experiments.trustGateMode,
+    pairSelectionEnabled: experiments.pairSelectionEnabled,
+    trustToleranceDeg: experiments.trustToleranceDeg,
+    webXRConsistencyEnabled: experiments.webXRConsistencyEnabled,
   };
 }
+
+/**
+ * What the solve last published about the compass, for the readout.
+ *
+ * Every field optional and every absence meaningful: before the first fix
+ * nothing has been measured, and rendering `now 0.00` there would claim the
+ * compass is contributing nothing — a different fact from having no measurement.
+ */
+export interface CompassLiveState {
+  /** `0` = yaw unobservable (cold start); `1` = fully observable. */
+  readonly observability?: number | undefined;
+  /** The blend weight the solve actually used this event. */
+  readonly appliedWeight?: number | undefined;
+  /** The trust machine's state, which decides whether the target is in play. */
+  readonly trust?: "dormant" | "untrusted" | "trusted" | undefined;
+}
+
+/**
+ * Observability at or above which the library validates the compass against GPS
+ * yaw — the same threshold `COMPASS_TRUST_OBSERVABLE_THRESHOLD` uses. Below it
+ * the weight is `1 − observability` whatever the slider says, which is the
+ * "cold start" phase.
+ */
+const OBSERVABLE_THRESHOLD = 0.5;
 
 /**
  * The label beside the slider.
@@ -103,13 +226,51 @@ export function compassSettingsFor(influence: number): CompassSettings {
  * **The ends are NAMED, not just numbered.** Outdoors, `0.00` does not tell
  * anyone that the compass is now ignored entirely, and that is the single most
  * useful thing the control can say about where it is set.
+ *
+ * **AND THE LIVE VALUE IS SHOWN BESIDE THE TARGET (DEC-Y12).** The slider sets a
+ * STEADY-STATE target that only applies once yaw is observable and the compass
+ * is trusted; before that the solve uses a completely different number. The old
+ * readout showed `compass 0.10` while, standing still, the compass had 100% of
+ * the say — describing the steady state during cold start, which is exactly the
+ * regime being judged.
+ *
+ * **The `untrusted` phase is the most valuable thing here.** An untrusted
+ * Stage-C vote collapses to `1 − observability` for EVERY weight, so a 0.1
+ * session and a 0.8 session are byte-identical and nothing else on screen would
+ * distinguish them.
  */
-export function describeCompassInfluence(influence: number): string {
+export function describeCompassInfluence(
+  influence: number,
+  live?: CompassLiveState,
+): string {
   const weight = Number.isFinite(influence)
     ? Math.min(1, Math.max(0, influence))
     : 0;
   const value = `compass ${weight.toFixed(2)}`;
   if (weight === 0) return `${value} — GPS only`;
-  if (weight === 1) return `${value} — full`;
-  return value;
+  // The other named end, kept from the original readout: at 1.00 the slider is
+  // no longer a vote, and "full" says that where a bare number does not.
+  if (weight === 1 && live?.appliedWeight === undefined) {
+    return `${value} — full`;
+  }
+
+  const applied = live?.appliedWeight;
+  if (applied === undefined || !Number.isFinite(applied)) {
+    // Nothing measured yet, or a poisoned value from a replayed solve. Showing
+    // the target alone is honest; `compass NaN` on a readout whose purpose is
+    // trust is worse than showing less.
+    return live === undefined ? value : `${value} target`;
+  }
+
+  const observability = live?.observability;
+  const phase =
+    typeof observability === "number" &&
+    Number.isFinite(observability) &&
+    observability < OBSERVABLE_THRESHOLD
+      ? "cold start"
+      : live?.trust === "trusted"
+        ? "trusted"
+        : "untrusted";
+
+  return `${value} target — now ${applied.toFixed(2)} ${phase}`;
 }

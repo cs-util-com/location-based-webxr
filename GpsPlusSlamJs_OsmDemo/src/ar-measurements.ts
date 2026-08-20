@@ -73,6 +73,20 @@ export interface ArMeasurements {
   /** The fix's reported VERTICAL accuracy, metres. Often absent. */
   readonly altitudeAccuracyM?: number | undefined;
   /**
+   * The camera's height above the floor plane, metres — its `y` in the WebXR
+   * `local-floor` reference space.
+   *
+   * **The only quantity on this readout that answers "how high am I holding
+   * the phone".** `gps-dem` cannot: it is GPS altitude minus DEM and no pose
+   * reaches it. `alt - worldBaselineY` cannot either: `alt` carries the same
+   * +/-10-20 m GNSS vertical noise, and `worldBaselineY` is the AR ORIGIN, which
+   * moves only when the alignment is re-solved.
+   *
+   * Absent before the first pose. A zero here would claim the phone is on the
+   * ground.
+   */
+  readonly cameraHeightM?: number | undefined;
+  /**
    * The DEM height under the user, **ellipsoidal** metres (DEC-H1).
    *
    * Already comparable to {@link altitudeM} with no conversion at the call
@@ -289,7 +303,11 @@ export function describeArMeasurements(
       measurements.fixAccuracyM < 10
         ? measurements.fixAccuracyM.toFixed(1)
         : Math.round(measurements.fixAccuracyM).toString();
-    lines.push(`fix ±${accuracy} m`);
+    // `gps`, NOT `fix` (H7). Two different lines both began with `fix` — this
+    // one is a horizontal accuracy, the other an age — so a glance at the
+    // readout had to parse the rest of the line to know which quantity it was
+    // looking at. They now name different things.
+    lines.push(`gps ±${accuracy} m`);
   }
 
   if (isUsable(measurements.metresFromAnchor)) {
@@ -333,7 +351,10 @@ export function describeArMeasurements(
     // Centimetres, because the question is whether it JUMPS. A metre of drift
     // over a walk is expected; ten centimetres between two glances is not, and
     // whole metres would hide it.
-    lines.push(`baseline ${measurements.worldBaselineY.toFixed(2)} m`);
+    // `world floor`, NOT `baseline` (H7). "Baseline" named nothing a reader
+    // could picture; this is the fusion's estimate of where the ground plane
+    // sits, and it is the AR ORIGIN rather than anything about the camera.
+    lines.push(`world floor ${measurements.worldBaselineY.toFixed(2)} m`);
   }
 
   // THE DEM'S OWN STATE FIRST, because everything below depends on whether it
@@ -362,12 +383,37 @@ export function describeArMeasurements(
     );
   }
 
-  // THE LINE THE READOUT EXISTS FOR (DEC-H1/H5). Chest height should read about
-  // +1.5 m; a steady +10 m is the reported symptom, and its SIGN separates the
-  // two filed causes that need opposite fixes. Always shown, never expanded-only.
+  // THE LINE THE READOUT EXISTS FOR (DEC-H1/H5), NAMED BY ITS OPERANDS (H8).
+  //
+  // It was called `above terrain`, which reads as "how high the phone is above
+  // the ground" and was reported as incomprehensible. It is not that number and
+  // cannot be: this is `altitudeM - terrainHeightM`, GPS altitude minus DEM, and
+  // NO POSE REACHES THIS MODULE AT ALL — raising the phone cannot move it. The
+  // documentation claiming "chest height reads about +1.5 m" was false in five
+  // places, one of them a test NAME. It is deleted rather than reworded: GNSS
+  // vertical error is +/-10-20 m, so a 1.5 m target sits far inside the noise of
+  // the quantity it was meant to calibrate.
+  //
+  // A steady +10 m is the reported symptom, and its SIGN separates the two filed
+  // causes that need opposite fixes. Always shown, never expanded-only.
+  // The REAL holding height is the `camera` line below.
   if (terrainUsable && isSignedReading(measurements.altitudeM)) {
     const residual = measurements.altitudeM - measurements.terrainHeightM;
-    lines.push(`above terrain ${signed(residual)} m`);
+    lines.push(`gps-dem ${signed(residual)} m`);
+  }
+
+  // THE HONEST HOLDING HEIGHT (DEC-Y5), which already existed as a computed
+  // value and was discarded one line from here: the camera's `y` in the
+  // `local-floor` reference space, whose zero is the floor plane. Unlike
+  // `gps-dem` it RESPONDS to raising the phone, and unlike `alt - baseline` it
+  // carries no GNSS vertical noise — `baseline` is the AR ORIGIN, not the
+  // camera, and moves only when the alignment is re-solved.
+  //
+  // Centimetres, because the question is "is this about 1.5 m or about 15",
+  // and absent rather than zero before the first pose: `camera 0.00 m` would
+  // claim the phone is lying on the ground.
+  if (isSignedReading(measurements.cameraHeightM)) {
+    lines.push(`camera ${measurements.cameraHeightM.toFixed(2)} m`);
   }
 
   // THE PAIRED LINE, always visible like the residual above: `above terrain`
@@ -425,9 +471,9 @@ export function describeArMeasurements(
     if (measurements.fixAgeMs > STALE_FIX_MS) {
       // COLLAPSED TOO — see `pushExpanded`. A fix this old makes every other
       // number on the readout describe somewhere the user has left.
-      lines.push(`fix ${seconds} s ago — STALE`);
+      lines.push(`gps age ${seconds} s — STALE`);
     } else {
-      pushExpanded(`fix ${seconds} s ago`);
+      pushExpanded(`gps age ${seconds} s`);
     }
   }
 
@@ -435,7 +481,10 @@ export function describeArMeasurements(
     // WHOLE DEGREES. The comparison this exists for — fused against the
     // library's compass bearing — is a tens-of-degrees question, and a decimal
     // reads as precision the alignment does not have.
-    pushExpanded(`fused ${Math.round(measurements.fusedBearingDeg)}°`);
+    // NAMED AS A HEADING (H7). `fused 214°` did not say what was fused or what
+    // the degrees measure; the comparison this line exists for is against the
+    // compass, so it must announce itself as the same kind of quantity.
+    pushExpanded(`heading ${Math.round(measurements.fusedBearingDeg)}° fused`);
   }
 
   const position = measurements.position;
@@ -446,7 +495,14 @@ export function describeArMeasurements(
   ) {
     // SIX DECIMALS — about 0.1 m, finer than any fix, and the precision an
     // external elevation service expects to be handed back.
-    pushExpanded(`${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`);
+    // LABELLED RAW (DEC-Y2), and the label is the opposite of what H7 asked
+    // for. The session suggested calling it "fused GPS"; it is the last fix
+    // straight from the Geolocation API, untouched by the alignment. Renaming
+    // raw data as fused would ADD a false claim in the round whose purpose is
+    // removing them.
+    pushExpanded(
+      `raw gps ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`,
+    );
   }
 
   return lines;

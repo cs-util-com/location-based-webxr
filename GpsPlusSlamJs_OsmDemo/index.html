@@ -93,11 +93,28 @@
            is long.
 
            The viewBox is the triangle's exact bounds and these two lengths hold
-           the same 21:16 ratio, so the path fills the element edge to edge and
+           the same 1:1 ratio, so the path fills the element edge to edge and
            `boundingBox()` returns the painted triangle. Same argument
            `locate-control.ts` makes for its inline-SVG pin: a glyph renders
-           differently on every platform's font and cannot be measured. */
-        width: 2.1rem;
+           differently on every platform's font and cannot be measured.
+
+           SQUARE SINCE THE FOURTEENTH SESSION (H1), and the ratio is the fix,
+           not the size. The owner reported the caret as "about twice as big as
+           the Show Quests button" while asking for it to be "as tall as the
+           Jump-to-City dropdown" -- and the HEIGHT WAS ALREADY RIGHT, 25.6 px
+           against that control's ~26.4. What read as double was a solid filled
+           triangle 33.6 px WIDE, wider than it was tall, beside a bordered box
+           of thin text: equal height, very unequal ink. Narrowing 21:16 to
+           16:16 cuts the painted area by ~24% and leaves the height, the thing
+           the owner actually specified, untouched and still over the 24 px
+           floor.
+
+           BOTH LENGTHS MUST MOVE TOGETHER. `preserveAspectRatio` defaults to
+           `meet`, so changing one alone letterboxes the ink inside the box --
+           the element would still measure 24 px while the visible triangle
+           shrank below it, which is precisely the measurable-proxy failure the
+           paragraph above exists to record. */
+        width: 1.6rem;
         height: 1.6rem;
         color: #9aa3b8;
         transition: transform 0.15s ease;
@@ -322,9 +339,11 @@
       */
       .ar-hud {
         /* IN THE COLUMN, not absolutely positioned (G9, DEC-W5). Its old
-           `top: 2.5rem; left: 0.75rem` moved to `#ar-root`'s padding, so the
-           inset is stated once for everything in the stack rather than
-           per-control.
+           `top: 2.5rem; left: 0.75rem` moved to `.ar-stack`'s own offsets --
+           NOT to `#ar-root`'s padding, as this comment claimed until a PR
+           review caught it: `#ar-root` is only `position: fixed; inset: 0` and
+           has no padding at all. The inset is still stated once for everything
+           in the stack rather than per-control; it is just stated on the stack.
 
            The note that used to live here still applies to that padding: it is
            a plain offset, not `max(0.75rem, env(safe-area-inset-top))`, because
@@ -337,8 +356,13 @@
         background: rgb(17 19 26 / 72%);
         color: #cfe3ff;
         font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
-        font-size: 0.78rem;
-        line-height: 1.5;
+        /* ONE STEP DOWN FROM 0.78rem (H7). The readout gained lines faster than
+           the screen gained room, and the session asked for it denser. The SPACE
+           this buys is asserted where it is actually contested -- the 390 px
+           bottom-stack test in Q4 -- rather than by pinning this number, which
+           no mutation could make meaningfully wrong. */
+        font-size: 0.7rem;
+        line-height: 1.45;
         /* The lines are joined with "\n"; without this they collapse. */
         white-space: pre-line;
         pointer-events: none;
@@ -377,15 +401,113 @@
         pointer-events of its own, so it needs no opt-in the way the HUD's
         toggle does.
       */
-      .ar-elevation {
+      /*
+        THE BOTTOM STACK (H6, DEC-Y10/Y12). Two rows, and the second is forced
+        by arithmetic rather than chosen.
+
+        Measured at 390 px with the round-four tap targets: elevation is
+        2 x 2rem + 3rem + gaps + padding + border = ~149 px, the gear adds
+        ~40 px, leaving ~180 px for the slider. The live readout is ~40
+        characters and cannot share a row with any of it -- so it gets its own
+        line beneath. Two earlier versions of this row discovered that in CSS
+        instead of in arithmetic, and overflowed.
+
+        ONE CONTAINER, not three absolutely-positioned controls: the compass box
+        changes height at runtime and the readout's text changes length with the
+        phase, and two hard-coded offsets that must not collide is exactly how
+        the earlier toast/slider overlap happened (PR #311 review, finding 4).
+      */
+      .ar-bottom {
         position: absolute;
         bottom: 4vh;
         left: 50%;
         display: flex;
-        gap: 0.5rem;
+        flex-direction: column;
         align-items: center;
-        padding: 0.4rem 0.6rem;
+        gap: 0.35rem;
+        max-width: 96vw;
         transform: translateX(-50%);
+      }
+
+      .ar-bottom-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      /*
+        The experiment gear (DEC-Y10). Square, at the elevation buttons' size so
+        the row reads as one control strip rather than three.
+      */
+      .ar-gear-wrap {
+        position: relative;
+      }
+
+      .ar-gear {
+        width: 2rem;
+        height: 2rem;
+        border: 1px solid rgb(242 244 248 / 35%);
+        border-radius: 0.4rem;
+        background: rgb(36 40 52 / 92%);
+        color: #f2f4f8;
+        font-size: 1.05rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      /*
+        The panel itself: ABOVE the gear, not below it, because the gear sits at
+        the bottom of the screen and a panel opening downward would be off it.
+        Absolutely positioned so opening it cannot reflow the row underneath --
+        a row that changed height on open would move the slider out from under
+        the thumb that just pressed the gear.
+      */
+      .ar-experiments {
+        position: absolute;
+        right: 0;
+        bottom: 2.4rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+        min-width: 12rem;
+        padding: 0.5rem 0.6rem;
+        border: 1px solid rgb(242 244 248 / 25%);
+        border-radius: 0.6rem;
+        background: rgb(17 19 26 / 96%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+      }
+
+      .ar-experiments-row {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: #e6e8ef;
+        font-size: 0.78rem;
+        white-space: nowrap;
+      }
+
+      /* A CLASS, not `.ar-experiments-row select`. The descendant form outranks
+         the bare `select` rule further down this file, which stylelint's
+         `no-descending-specificity` rejects — and rightly: whichever of the two
+         wins would depend on source order rather than on intent. */
+      .ar-experiments-select {
+        font: inherit;
+        color: #f2f4f8;
+        background: rgb(36 40 52 / 92%);
+        border: 1px solid rgb(242 244 248 / 35%);
+        border-radius: 0.25rem;
+      }
+
+      .ar-elevation {
+        /* IN THE ROW NOW, not absolutely positioned (H6). Its old
+           `bottom: 4vh; left: 50%; translateX(-50%)` moved to `.ar-bottom`, so
+           the offset is stated once for the whole stack rather than per
+           control -- and the slider beside it can no longer overlap it, which
+           two hard-coded offsets would eventually have done. */
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+        padding: 0.35rem 0.5rem;
         border: 1px solid rgb(242 244 248 / 25%);
         border-radius: 0.6rem;
         background: rgb(17 19 26 / 88%);
@@ -393,10 +515,20 @@
       }
 
       .ar-elevation-button {
-        /* A 2.5rem square is the smallest reliable touch target; against a
-           camera feed of unknown brightness it also needs an edge of its own. */
-        width: 2.5rem;
-        height: 2.5rem;
+        /* 2rem, DOWN FROM 2.5rem, and this deliberately overturns a recorded
+           floor (DEC-Y7, owner decision 2026-08-20). The old comment called
+           2.5rem "the smallest reliable touch target ... against a camera feed
+           of unknown brightness", and that judgement was not wrong -- it was
+           made before the compass slider had to share the row.
+
+           The arithmetic that forced it: at 390 px, 2 x 2.5rem + 4.5rem value +
+           gaps + padding is ~189 px, and the compass box alone already exceeds
+           its own max-width. Something had to give, and the VALUE BOX kept its
+           size (3rem) because a readout that cannot be read at arm's length is
+           worse than a button that needs a second try. 32 px still clears
+           WCAG 2.2 SC 2.5.8's 24 px floor with room. */
+        width: 2rem;
+        height: 2rem;
         border: 1px solid rgb(242 244 248 / 35%);
         border-radius: 0.4rem;
         background: rgb(36 40 52 / 92%);
@@ -412,7 +544,15 @@
         with a thumb rather than being a 20-pixel target.
       */
       .ar-compass {
-        /* AT THE TOP, UNDER THE READOUT (G9, DEC-W5). It was `bottom: 20vh`,
+        /* AT THE BOTTOM SINCE H6, beside the elevation control -- "diesen
+           Kompass-Slider würde ich eigentlich gerne nach unten packen neben die
+           Plus-Minus-UI". That partially reverses DEC-W5, which put it in the
+           TOP stack; G9's complaint was that it sat in the MIDDLE of the view,
+           and the bottom satisfies that as well as the top did. The readout it
+           carries now wraps onto its own line -- see `.ar-compass-value`.
+
+           The previous note, kept because its reasoning still constrains this:
+           it was `bottom: 20vh`,
            centred and up to 88vw wide, i.e. a bar across the near content --
            "currently it's in the middle of the screen and occludes basically
            the AR 3D content".
@@ -423,14 +563,12 @@
            review, finding 4). Leaving the bottom of the screen entirely means
            there is nothing left to collide with down there -- and the column
            above means it cannot collide with the readout either. */
-        order: 1;
         display: flex;
-        gap: 0.5rem;
+        gap: 0.4rem;
         flex-wrap: wrap;
         justify-content: center;
         align-items: center;
-        max-width: 88vw;
-        padding: 0.4rem 0.6rem;
+        padding: 0.35rem 0.5rem;
         border: 1px solid rgb(242 244 248 / 25%);
         border-radius: 0.6rem;
         background: rgb(17 19 26 / 88%);
@@ -438,11 +576,21 @@
       }
 
       .ar-compass-slider {
-        width: 55vw;
+        /* FIXED, not 55vw. In the bottom row the slider shares its line with the
+           elevation control (~149 px) and the gear (~40 px); a viewport-relative
+           width would overflow a 390 px phone by ~60 px, which is how the two
+           previous versions of this row broke. */
+        width: 9rem;
       }
 
       .ar-compass-value {
-        min-width: 9rem;
+        /* FULL WIDTH ON ITS OWN LINE (DEC-Y12). The readout now reads
+           `compass 0.80 target — now 1.00 cold start`, ~40 characters, which
+           cannot share a row with a slider at any font size worth reading
+           outdoors. `flex-basis: 100%` makes `.ar-compass`'s wrap put it on the
+           second line rather than squeezing the slider. */
+        flex-basis: 100%;
+        text-align: center;
         color: #f2f4f8;
         font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
         font-size: 0.9rem;
@@ -458,7 +606,10 @@
       }
 
       .ar-elevation-value {
-        min-width: 4.5rem;
+        /* 3rem, down from 4.5 (DEC-Y7). The narrowest that still fits a signed
+           metre value with one decimal at this font size -- the readout is the
+           part of this control that must stay legible outdoors. */
+        min-width: 3rem;
         color: #f2f4f8;
         font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
         font-size: 0.95rem;
@@ -1211,6 +1362,12 @@
            24 px is the accessibility floor, and unlike the caret this control
            has a large easy-to-hit sibling in the resting line beside it. */
         min-height: 1.5rem;
+        /* AND A WIDTH FLOOR (H3). The label became a single "…", so the box no
+           longer gets its width from the text -- without this the control
+           shrinks to roughly 24 x 12 and satisfies a height-only floor while
+           being unpressable. WCAG 2.2 SC 2.5.8 is 24 px in BOTH directions and
+           only one of them was ever pinned. */
+        min-width: 1.5rem;
         margin-left: 0.35rem;
         padding: 0 0.25rem;
         border: 0;
@@ -1297,11 +1454,11 @@
       <h1 id="header-toggle">
         <svg
           class="header-caret"
-          viewBox="0 0 21 16"
+          viewBox="0 0 16 16"
           aria-hidden="true"
           focusable="false"
         >
-          <path d="M0 0 H21 L10.5 16 Z" fill="currentColor" />
+          <path d="M0 0 H16 L8 16 Z" fill="currentColor" />
         </svg>
       </h1>
       <!-- THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Before the category

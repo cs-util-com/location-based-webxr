@@ -187,3 +187,45 @@ describe("AttributionView", () => {
     expect(v.element.hidden).toBe(true);
   });
 });
+
+describe("the expander label (H3, fourteenth session)", () => {
+  /**
+   * Why these tests matter: the owner asked for the word "Attributions" to
+   * become "…" so the resting line stays thin. A one-character label is a real
+   * accessibility hazard — a screen reader announces "button, horizontal
+   * ellipsis" — so the visible text and the ACCESSIBLE name have to diverge
+   * here, and the accessible name is the part that must stay descriptive.
+   *
+   * The width floor is the second half. Shrinking the label shrinks the box,
+   * and this control has already been under the 24 px tap floor once; a height
+   * floor alone would let it pass at 24 × 12.
+   */
+  it("shows an ellipsis but is still ANNOUNCED as what it does", () => {
+    const v = view();
+    v.setEntries([OSM]);
+    const button = toggle(v);
+
+    expect(button.textContent).toBe("…");
+    // Not "contains" — an aria-label that merely mentions attributions while
+    // the name is still the ellipsis would pass a looser assertion.
+    expect(button.getAttribute("aria-label")).toMatch(/attribution/i);
+    // The disclosure contract from round three must survive the relabel: these
+    // two are what make the ellipsis mean anything to a screen reader at all.
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(button.getAttribute("aria-controls")).toBeTruthy();
+  });
+
+  it("keeps the accessible name stable while the state changes", () => {
+    // `aria-expanded` carries the state; the NAME must not also change, or the
+    // control announces as two different buttons depending on where it is.
+    const v = view();
+    v.setEntries([OSM]);
+    const button = toggle(v);
+    const name = button.getAttribute("aria-label");
+
+    button.click();
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.getAttribute("aria-label")).toBe(name);
+    expect(button.textContent).toBe("…");
+  });
+});

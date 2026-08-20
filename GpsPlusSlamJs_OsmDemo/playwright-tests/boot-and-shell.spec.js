@@ -697,6 +697,10 @@ test.describe("the header", () => {
         .locator("#map .map-attribution-toggle")
         .boundingBox();
       expect(toggleBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+      // BOTH DIRECTIONS, since H3 replaced the label with a single "…" and the
+      // box stopped getting its width from the text. A height-only floor would
+      // pass at 24 x 12, which is the shape this control would now take.
+      expect(toggleBox?.width ?? 0).toBeGreaterThanOrEqual(24);
 
       await page.locator("#map .map-attribution-toggle").click();
       await expect(full).toBeVisible();
@@ -772,6 +776,22 @@ test.describe("the header", () => {
     const caret = await box(".header-caret");
     expect(caret.height).toBeGreaterThanOrEqual(24);
 
+    // H1, FOURTEENTH SESSION -- the same control, now too BIG. "Der ist jetzt
+    // zu groß ... sollte so hoch sein wie das 'Jump to City'-Dropdown ...
+    // ungefähr doppelt so groß wie der 'Show Quests'-Button."
+    //
+    // THE HEIGHT WAS ALREADY RIGHT: 25.6 px against Show Quests' ~26.4. So an
+    // assertion on height cannot express this complaint -- it passes unchanged,
+    // and strict equality would demand making the caret BIGGER. What reads as
+    // double is the WIDTH of a solid filled triangle, 33.6 px, wider than it is
+    // tall, sitting beside a bordered box of thin text. Equal height, very
+    // unequal ink.
+    //
+    // Hence a width assertion, and a RATIO rather than a pixel count: pinning
+    // "no wider than tall" survives the next time the height moves, which it
+    // has done three times in three sessions.
+    expect(caret.width).toBeLessThanOrEqual(caret.height);
+
     const centre = (b) => b.y + b.height / 2;
     const toggle = await box("#header-toggle");
     const site = await box("#site");
@@ -798,6 +818,13 @@ test.describe("the header", () => {
     // and `align-items: baseline` does not line their tops up.
     expect(Math.abs(centre(site) - centre(toggle))).toBeLessThan(12);
     expect(Math.abs(centre(quests) - centre(toggle))).toBeLessThan(12);
+
+    // THE OWNER'S OWN TARGET, pinned as a relationship instead of a rem value:
+    // "so hoch wie das 'Jump to City'-Dropdown". A rem value drifts the next
+    // time that control's padding or font changes, and then this caret is wrong
+    // again for a reason nobody edited. 4 px of slack because the two are
+    // different kinds of box, not because the number is soft.
+    expect(Math.abs(caret.height - quests.height)).toBeLessThanOrEqual(4);
 
     // ROW 2 STARTS BELOW: the layer groups are on a lower line, not beside the
     // button.
@@ -1750,7 +1777,7 @@ test.describe("the AR entry point", () => {
     await page.locator(".locate-button").click({ trial: true });
   });
 
-  test("keeps the AR overlay's controls at the TOP, out of the 3D content", async ({
+  test("keeps the AR overlay's controls OUT of the 3D content, top and bottom", async ({
     page,
   }) => {
     /**
@@ -1807,34 +1834,77 @@ test.describe("the AR entry point", () => {
       toggle.className = "ar-hud-toggle";
       toggle.textContent = "more";
       hud.append(toggle);
+      stack.append(hud);
+      root.append(stack);
+
+      // THE BOTTOM STACK (H6): elevation + slider + gear on one row, the
+      // compass readout on its own line beneath. Built with the production
+      // class names and the production content lengths, because the whole
+      // question this test answers is whether the real CSS fits them.
+      const bottom = document.createElement("div");
+      bottom.className = "ar-bottom";
+      const bottomRow = document.createElement("div");
+      bottomRow.className = "ar-bottom-row";
+
+      const elevation = document.createElement("div");
+      elevation.className = "ar-elevation";
+      const down = document.createElement("button");
+      down.className = "ar-elevation-button";
+      down.textContent = "−";
+      const value = document.createElement("span");
+      value.className = "ar-elevation-value";
+      value.textContent = "+0.0 m";
+      const up = document.createElement("button");
+      up.className = "ar-elevation-button";
+      up.textContent = "+";
+      elevation.append(down, value, up);
+
       const compass = document.createElement("div");
       compass.className = "ar-compass";
       const slider = document.createElement("input");
       slider.type = "range";
       slider.className = "ar-compass-slider";
-      // `min-width: 9rem`, so leaving it out understated the compass's width.
-      const value = document.createElement("span");
-      value.className = "ar-compass-value";
-      value.textContent = "compass 0.35";
+      // THE FULL-LENGTH READOUT, not a short one. `compass 0.80 target — now
+      // 1.00 cold start` is what DEC-Y12 renders, and a shorter placeholder
+      // would let a row that cannot hold the real string pass.
+      const readout = document.createElement("span");
+      readout.className = "ar-compass-value";
+      readout.textContent = "compass 0.80 target — now 1.00 cold start";
       const hint = document.createElement("span");
       hint.className = "ar-compass-hint";
       hint.textContent = "takes 15-30 fixes to express a change";
-      compass.append(slider, value, hint);
-      // APPENDED COMPASS-FIRST, deliberately: the column's order comes from CSS
-      // `order`, not from attach order, and in a real session the two controls
-      // are attached by different modules at different moments.
-      stack.append(compass, hud);
-      root.append(stack);
+      compass.append(slider, readout, hint);
+
+      const gearWrap = document.createElement("div");
+      gearWrap.className = "ar-gear-wrap";
+      const gear = document.createElement("button");
+      gear.className = "ar-gear";
+      gear.textContent = "⚙";
+      gearWrap.append(gear);
+
+      bottomRow.append(elevation, gearWrap);
+      bottom.append(bottomRow, compass);
+      root.append(bottom);
     });
 
     const viewport = page.viewportSize();
     const hudBox = await page
       .locator("#ar-root .ar-stack .ar-hud")
       .boundingBox();
-    const compassBox = await page
-      .locator("#ar-root .ar-stack .ar-compass")
+    const bottomBox = await page.locator("#ar-root .ar-bottom").boundingBox();
+    const rowBox = await page
+      .locator("#ar-root .ar-bottom .ar-bottom-row")
       .boundingBox();
-    if (hudBox === null || compassBox === null || viewport === null) {
+    const compassBox = await page
+      .locator("#ar-root .ar-bottom .ar-compass")
+      .boundingBox();
+    if (
+      hudBox === null ||
+      bottomBox === null ||
+      rowBox === null ||
+      compassBox === null ||
+      viewport === null
+    ) {
       throw new Error("no boxes");
     }
 
@@ -1843,18 +1913,38 @@ test.describe("the AR entry point", () => {
     // and the slider at 45% — and the blocker this test missed pushed both a
     // whole viewport DOWN, which a midpoint check catches only by luck.
     expect(hudBox.y).toBeLessThan(120);
-    // OUT OF THE MIDDLE: the whole slider sits in the upper half.
-    expect(compassBox.y + compassBox.height).toBeLessThan(viewport.height / 2);
 
-    // AND IT CANNOT OVERLAP THE READOUT, which is why the fix is a flex column
-    // rather than a second hard-coded offset. The compass box changes height at
-    // runtime — it wraps and carries a hint line — and two offsets that must not
-    // collide is exactly how the earlier toast/slider overlap happened (PR #311
-    // review, finding 4).
-    expect(compassBox.y).toBeGreaterThanOrEqual(hudBox.y + hudBox.height);
+    // THE SLIDER MOVED TO THE BOTTOM (H6), INVERTING WHAT THIS TEST USED TO
+    // ASSERT — and the inversion is deliberate, not drift.
+    //
+    // It read `compassBox.y + compassBox.height < viewport.height / 2`, pinning
+    // DEC-W5's top-of-screen column. The fourteenth session asked for the
+    // slider "nach unten ... neben die Plus-Minus-UI". G9's original complaint,
+    // which DEC-W5 answered, was that the slider sat in the MIDDLE of the view
+    // and occluded the AR content — and the bottom satisfies that just as well
+    // as the top did, so the earlier decision is superseded rather than broken.
+    expect(compassBox.y).toBeGreaterThan(viewport.height / 2);
 
-    // The readout stays first — it is the thing being read while walking.
-    expect(hudBox.y).toBeLessThan(compassBox.y);
+    // AND THE READOUT IS BELOW THE ROW, not beside it. This is the assertion
+    // that would have caught the two earlier versions of this row: the row is
+    // ~189 px of controls and the readout is ~40 characters, so a single-row
+    // layout overflows a phone. Stated as "the readout starts below the row's
+    // bottom edge" rather than as a pixel count, so it survives a font change.
+    expect(compassBox.y).toBeGreaterThanOrEqual(rowBox.y + rowBox.height - 1);
+
+    // NOTHING OVERFLOWS THE VIEWPORT HORIZONTALLY, which is the failure the
+    // arithmetic in `.ar-bottom`'s comment predicts if anyone puts the readout
+    // back on the row or restores the 55vw slider.
+    expect(bottomBox.x).toBeGreaterThanOrEqual(0);
+    expect(bottomBox.x + bottomBox.width).toBeLessThanOrEqual(
+      viewport.width + 1,
+    );
+
+    // AND IT STAYS CLEAR OF THE TOAST BAND. `.ar-toast` sits at 12vh, and the
+    // far-travel toast fires at 2 km — during exactly the long walk this slider
+    // is used on. A second row makes the stack taller, so this is the
+    // constraint the extra row actually threatens (PR #311 review, finding 4).
+    expect(bottomBox.y).toBeGreaterThan(viewport.height * 0.12);
   });
 
   test("does NOT offer AR when the user only pressed the GPS button", async ({

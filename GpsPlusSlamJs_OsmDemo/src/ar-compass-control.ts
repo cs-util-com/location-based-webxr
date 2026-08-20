@@ -29,6 +29,8 @@
 
 import {
   COMPASS_INFLUENCE_DEFAULT,
+  type CompassLiveState,
+  type CompassExperiments,
   COMPASS_INFLUENCE_STEP,
   compassSettingsFor,
   describeCompassInfluence,
@@ -43,6 +45,12 @@ export interface ArCompassControlOptions {
    * never before {@link ArCompassControl.setReady}`(true)`.
    */
   readonly onChange: (settings: CompassSettings) => void;
+  /**
+   * The experimental options to send alongside the weight, read at dispatch
+   * time rather than captured — the gear panel owns them and they change while
+   * this control is alive.
+   */
+  readonly experiments?: () => CompassExperiments;
   /** Starting influence. Defaults to {@link COMPASS_INFLUENCE_DEFAULT}. */
   readonly initialInfluence?: number | undefined;
 }
@@ -59,6 +67,17 @@ export interface ArCompassControl {
    * made before the first fix is applied rather than lost.
    */
   setReady(ready: boolean): void;
+  /**
+   * Publish what the solve last reported, so the readout can show the LIVE
+   * weight beside the target. Cheap and idempotent; call it at the HUD's own
+   * ~1 Hz rather than per frame — a per-fix readout flickers.
+   */
+  setLive(next: CompassLiveState): void;
+  /**
+   * Re-send the current slider position with the caller's current experiments.
+   * For the gear panel, whose changes must not drop the weight.
+   */
+  republish(): void;
   /** Take it down and release the DOM. Idempotent. */
   dispose(): void;
 }
@@ -80,6 +99,16 @@ export function createArCompassControl(
    * measuring settings the UI did not describe.
    */
   let pending = true;
+
+  /**
+   * The solve's last published compass state, for the readout (DEC-Y12).
+   *
+   * `undefined` until something calls {@link ArCompassControl.setLive}, which is
+   * how the readout distinguishes "not measured yet" from "measured as zero" —
+   * a distinction that matters here more than almost anywhere, because an
+   * untrusted vote reads as 0 for every slider position.
+   */
+  let live: CompassLiveState | undefined;
 
   const element = document.createElement("div");
   element.className = "ar-compass";
@@ -105,12 +134,23 @@ export function createArCompassControl(
   hint.className = "ar-compass-hint";
 
   const render = (): void => {
-    readout.textContent = describeCompassInfluence(influence);
+    readout.textContent = describeCompassInfluence(influence, live);
     // THE TWO STATES A USER WOULD OTHERWISE READ AS A BROKEN CONTROL: not
     // accepting input yet, and accepting it but taking half a minute to show.
     hint.textContent = ready
       ? "takes ~15–30 fixes to express"
       : "waiting for a GPS fix";
+  };
+
+  /**
+   * Re-send the current position with whatever the experiment panel now holds.
+   *
+   * `compassSettingsFor` maps the influence AND the experiments together, so a
+   * panel change must resend the weight — otherwise the store would take the new
+   * experiments alongside a default weight nobody chose.
+   */
+  const republish = (): void => {
+    apply();
   };
 
   const apply = (): void => {
@@ -121,7 +161,7 @@ export function createArCompassControl(
       return;
     }
     pending = false;
-    options.onChange(compassSettingsFor(influence));
+    options.onChange(compassSettingsFor(influence, options.experiments?.()));
   };
 
   // `input`, not `change`: on a range control `change` fires only when the
@@ -143,6 +183,11 @@ export function createArCompassControl(
     },
     influence() {
       return influence;
+    },
+    republish,
+    setLive(next: CompassLiveState) {
+      live = next;
+      render();
     },
     setReady(next: boolean) {
       const wasReady = ready;

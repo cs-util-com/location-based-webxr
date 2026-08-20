@@ -71,7 +71,17 @@ export class AttributionView {
     this.toggle = document.createElement("button");
     this.toggle.type = "button";
     this.toggle.className = "map-attribution-toggle";
-    this.toggle.textContent = "Attributions";
+    // AN ELLIPSIS, AND A NAME THAT IS NOT ONE (H3). The owner asked for the
+    // word to go so the resting line stays thin -- but a one-character label
+    // announces as "button, horizontal ellipsis", which says nothing about what
+    // pressing it does. So the VISIBLE text and the ACCESSIBLE name diverge
+    // here on purpose, and it is the accessible name that carries the meaning.
+    //
+    // The name is deliberately state-free: `aria-expanded` below already
+    // carries open/closed, and a name that changed with it would announce as
+    // two different controls depending on where the user found it.
+    this.toggle.textContent = "…";
+    this.toggle.setAttribute("aria-label", "Show map attributions");
     this.toggle.setAttribute("aria-expanded", "false");
 
     this.details = document.createElement("div");

@@ -123,6 +123,17 @@ export const TERRAIN_SPACING_M = 12;
 export const FAR_PLANE_M = 2400;
 
 /**
+ * The scene camera's VERTICAL field of view, degrees (three.js convention).
+ *
+ * Exported because `map-zoom-to-camera.ts` needs it to convert a map zoom into
+ * a camera distance, and a second literal `55` there would silently stop
+ * agreeing with this one the first time the FOV is tuned — the two views would
+ * then disagree about how much ground is on screen, which is the exact thing
+ * that conversion exists to make them agree about.
+ */
+export const CAMERA_VFOV_DEG = 55;
+
+/**
  * Where the ground plane sits, given the window the terrain was sampled in.
  *
  * ENU `(x, y)` becomes scene `(x, 0, -y)` — the same axis convention every other
@@ -679,7 +690,12 @@ export class BuildingView {
     // 55° FOV is unchanged and is a different knob: the round-5 note said "field
     // of view" and then corrected itself to the far plane, which was the right
     // correction.
-    this.camera = new THREE.PerspectiveCamera(55, 1, 0.5, FAR_PLANE_M);
+    this.camera = new THREE.PerspectiveCamera(
+      CAMERA_VFOV_DEG,
+      1,
+      0.5,
+      FAR_PLANE_M,
+    );
     this.camera.position.set(140, 110, 140);
     this.camera.lookAt(0, 10, 0);
 

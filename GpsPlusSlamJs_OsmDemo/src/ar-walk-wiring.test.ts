@@ -394,3 +394,58 @@ describe("a failed geoid import cannot leave a live session with no walk", () =>
     expect(failure).toContain("return;");
   });
 });
+
+describe("the map zoom is wired to the 3D camera in main.ts", () => {
+  /**
+   * Why these tests matter: the conversion is unit-tested in
+   * `map-zoom-to-camera.test.ts`, but a pure function nothing calls changes
+   * nothing on screen. This is the M1 shape the AR-measurement guard above was
+   * written for — correct in isolation, unasserted in connection — and the
+   * connection here is a Leaflet event listener that no type checks.
+   */
+  it("listens on zoomEND, not on every frame of a pinch", () => {
+    // `zoom` fires continuously through a pinch or an animated button press.
+    // Re-aiming the camera on each one fights the gesture and rewrites the
+    // shareable camera URL dozens of times per interaction. One event per
+    // settled zoom is the contract, and the wrong event name is invisible
+    // everywhere else — it would simply feel bad on a phone.
+    expect(CODE).toContain('mapView.map.on("zoomend"');
+    expect(CODE).not.toContain('mapView.map.on("zoom"');
+  });
+
+  it("dollies to the converted distance while KEEPING the camera's target", () => {
+    // `lookAtFrom(cameraView().target, d)` preserves where the camera is
+    // looking and changes only how far away it is. Passing a different target
+    // would teleport the 3D view on every map zoom, and panning the map — which
+    // the session did NOT ask to couple — would start moving the 3D scene.
+    const handler = CODE.match(
+      /mapView\.map\.on\("zoomend", \(\) => \{[\s\S]*?\n {2}\}\);/,
+    )?.[0];
+    expect(handler).toBeDefined();
+    expect(handler).toContain("cameraDistanceForZoom({");
+    expect(handler).toMatch(
+      /lookAtFrom\(\s*buildingView\.cameraView\(\)\.target,\s*distanceM,?\s*\)/,
+    );
+  });
+
+  it("feeds the conversion the map's own zoom, latitude and pane width", () => {
+    // Each of these is in the formula for a reason and each is silently
+    // substitutable with a plausible wrong value: a hardcoded latitude, the
+    // window width instead of the map pane's, or a stale zoom. None would throw.
+    const handler = CODE.match(
+      /mapView\.map\.on\("zoomend", \(\) => \{[\s\S]*?\n {2}\}\);/,
+    )?.[0];
+    expect(handler).toContain("mapView.map.getZoom()");
+    expect(handler).toContain("mapView.map.getCenter().lat");
+    expect(handler).toContain("mapView.map.getContainer().clientWidth");
+  });
+
+  it("takes the field of view from the camera that actually renders", () => {
+    // A second literal `55` here would stop agreeing with `building-view.ts`
+    // the first time the FOV is tuned, and the two views would then disagree
+    // about how much ground is on screen — the exact thing this feature exists
+    // to make them agree about.
+    expect(CODE).toContain("vfovDeg: CAMERA_VFOV_DEG");
+    expect(CODE).not.toMatch(/vfovDeg:\s*55/);
+  });
+});

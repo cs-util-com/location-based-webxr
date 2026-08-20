@@ -47,6 +47,7 @@ import {
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization";
 import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
+import { getCompassDiagnostics } from "gps-plus-slam-app-framework/state";
 
 import type { BuildingView } from "./building-view.js";
 import type { LatLng } from "gps-plus-slam-osm";
@@ -79,7 +80,14 @@ import {
   createArBuildingMaterial,
   type ArBuildingMaterial,
 } from "./ar-building-material.js";
-import type { CompassSettings } from "./compass-influence.js";
+import {
+  COMPASS_EXPERIMENT_DEFAULTS,
+  type CompassSettings,
+} from "./compass-influence.js";
+import {
+  createArExperimentPanel,
+  type ArExperimentPanel,
+} from "./ar-experiment-panel.js";
 import {
   canEnterAr,
   nueBearingDeg,
@@ -265,8 +273,14 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     hud?: ArHud;
     elevation?: ArElevationControl;
     compass?: ArCompassControl;
-    /** The top-of-screen column the readout and the slider live in (DEC-W5). */
+    /** The top-of-screen column the readout lives in (DEC-W5). */
     stack?: HTMLElement;
+    /**
+     * The bottom-of-screen stack: elevation + slider + gear on one row, the
+     * compass readout on its own line beneath (H6, DEC-Y10/Y12).
+     */
+    bottom?: HTMLElement;
+    experiments?: ArExperimentPanel;
     shell?: ArBuildingMaterial;
     unregisterFrame?: () => void;
   } = {};
@@ -312,11 +326,16 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // Same reason as the elevation control above: nothing may be left in
     // `#ar-root`, which is hidden only while `:empty`.
     session.compass?.dispose();
+    session.experiments?.dispose();
     // AFTER its two children, so the column goes with them. `#ar-root` is
     // hidden only while `:empty`, and anything left attached keeps a
     // full-viewport layer over the page once AR stops — the regression
     // `ar-compass-control.ts`'s own sidecar records having shipped once.
     session.stack?.remove();
+    // AND THE BOTTOM STACK, for the same reason: `#ar-root` is hidden only
+    // while `:empty`, so an orphaned container keeps a full-viewport layer over
+    // the page once AR stops.
+    session.bottom?.remove();
     // RESTORED BEFORE the city is handed back, so the desktop view never sees
     // an additive, depth-write-free material against its own sky gradient.
     deps.buildingView.setArShellMaterial(undefined);
@@ -517,8 +536,30 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // "demo-scene", which sets identity), and making it follow would lift the
     // buildings away from the ground plane, the route line and the NPC agent —
     // all of which live on the preview's own scene and would stay put.
+    // THE BOTTOM STACK (H6, DEC-Y10). Two rows, and the second one is forced by
+    // arithmetic rather than chosen: measured at 390 px the elevation control is
+    // ~149 px with the round-four tap targets (2 rem buttons, a 3 rem value box)
+    // and the gear adds ~40 px, leaving ~180 px for a slider — while the live
+    // readout (DEC-Y12) is ~40 characters and cannot share a row with anything.
+    // So row one is elevation + slider + gear, and the readout gets its own line
+    // beneath. Discovering that in CSS instead of stating it here is how the
+    // previous two attempts at this row ended up overflowing.
+    //
+    // ONE CONTAINER, not three absolutely-positioned controls. The compass box
+    // changes height at runtime and the readout's text length changes with the
+    // phase, so two hard-coded offsets that must not collide is exactly how the
+    // earlier toast/slider overlap happened (PR #311 review, finding 4).
+    const arBottom = document.createElement("div");
+    arBottom.className = "ar-bottom";
+    deps.container.append(arBottom);
+    session.bottom = arBottom;
+
+    const arBottomRow = document.createElement("div");
+    arBottomRow.className = "ar-bottom-row";
+    arBottom.append(arBottomRow);
+
     session.elevation = createArElevationControl({
-      root: deps.container,
+      root: arBottomRow,
       onChange: (offsetM) => {
         manualTrimM = offsetM;
         applyComposed();
@@ -557,21 +598,48 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     deps.container.append(arStack);
     session.stack = arStack;
 
-    // THE COMPASS SLIDER (DEC-E2), only when the caller can actually dispatch.
+    // THE COMPASS SLIDER (DEC-E2) AND THE EXPERIMENT PANEL (DEC-Y10), only when
+    // the caller can actually dispatch.
+    //
+    // BOTH IN THE BOTTOM ROW SINCE H6: "diesen Kompass-Slider würde ich
+    // eigentlich gerne nach unten packen neben die Plus-Minus-UI". That
+    // partially reverses DEC-W5, which put the slider in the top stack — G9's
+    // original complaint was that it sat in the MIDDLE of the view, and the
+    // bottom satisfies that just as well as the top did.
     if (deps.onCompassSettings !== undefined) {
       const onCompassSettings = deps.onCompassSettings;
-      session.compass = createArCompassControl({
-        root: arStack,
+      // Held so a panel change can re-publish the slider's current position:
+      // `compassSettingsFor` maps influence AND experiments together, so a
+      // toggle change must resend the weight or the store would take the
+      // experiments with a default weight.
+      let experiments = COMPASS_EXPERIMENT_DEFAULTS;
+
+      const compass = createArCompassControl({
+        root: arBottom,
         onChange: onCompassSettings,
+        experiments: () => experiments,
       });
-      session.compass.attach();
+      session.compass = compass;
+      compass.attach();
       // READY IMMEDIATELY, and that is a fact rather than an assumption: every
       // compass setter is a no-op while the store's gps state is null, but AR
       // entry is GATED on `canEnterAr(deps.origin)`, and a non-null origin IS the
       // framework's `zero` — so `setZeroPos` has already been dispatched by the
       // time this line runs. The control's latch stays as the defensive path for
       // any future caller that is not gated the same way.
-      session.compass.setReady(true);
+      compass.setReady(true);
+
+      session.experiments = createArExperimentPanel({
+        root: arBottomRow,
+        initial: experiments,
+        onChange: (next) => {
+          experiments = next;
+          // RE-PUBLISH THROUGH THE SLIDER, not directly: the store needs one
+          // coherent configuration, and the slider owns the weight half of it.
+          compass.republish();
+        },
+      });
+      session.experiments.attach();
     }
 
     // THE AR LOOK (owner decision 2026-08-16): the "Double-sided X-ray pulse"
@@ -703,6 +771,53 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       const hud = session.hud;
       if (hud !== undefined && hud.due(elapsed * 1000)) {
         const live = deps.liveMeasurements?.() ?? {};
+        // THE COMPASS READOUT (DEC-Y12), on the HUD's own ~1 Hz rather than per
+        // frame: these change once per GPS event, and a per-frame readout would
+        // flicker while saying nothing new.
+        //
+        // Read through the library's selector rather than off the state tree, so
+        // the demo does not depend on where the fields live. Absence is passed
+        // through as absence — the readout distinguishes "not measured yet" from
+        // "measured as zero", and with an untrusted vote those look identical in
+        // the number alone.
+        // MAPPED FIELD BY FIELD, not spread. The selector returns the whole
+        // `TrustMemory` object; the readout wants its `state` string. Passing
+        // the selector's result straight through typechecked only because the
+        // framework's built `dist` was stale at the time — it would have
+        // rendered every session as "untrusted" on device while every test
+        // passed. Naming the three fields makes the adapter visible and makes a
+        // future shape change a compile error rather than a wrong readout.
+        // GUARDED, because this is a DEBUG READOUT and it runs in the frame
+        // loop. `getCompassDiagnostics` is licence-gated like every other public
+        // selector and throws when the store was not built through
+        // `createSlamAppStore` — a legitimate configuration for a harness or a
+        // future embedder. A readout that cannot be drawn must never stop the
+        // session drawing: the failure mode without this is that AR dies at the
+        // first HUD tick, which is a far worse outcome than a missing line.
+        try {
+          // CAST, and the `try` above is what makes it safe rather than
+          // hopeful. `ArModeDeps.store` is typed as the framework's minimal
+          // `SubscribableStore` on purpose — this module needs a subscription
+          // and nothing else, and widening it to the full `GpsSlamState` would
+          // make every test fixture build a whole store. The selector reads
+          // three optional fields and the guard catches a store that cannot
+          // answer, so the narrow type is a documentation choice rather than a
+          // safety one. The parameter type is derived from the selector itself, so
+          // the demo needs no direct dependency on the library to name it.
+          const compassState = getCompassDiagnostics(
+            deps.store.getState() as unknown as Parameters<
+              typeof getCompassDiagnostics
+            >[0],
+          );
+          session.compass?.setLive({
+            observability: compassState.observability,
+            appliedWeight: compassState.appliedWeight,
+            trust: compassState.trust?.state,
+          });
+        } catch {
+          // Leave the readout showing the target alone, which is what it shows
+          // before anything has been measured — an honest "no live value".
+        }
         const wrote = hud.sample(
           {
             // THE PREVIOUS FRAME'S COST, and the comment here said "this frame's"
@@ -734,6 +849,18 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
             worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
               ? undefined
               : arWorldGroup.matrix.elements[13],
+            // THE REAL HOLDING HEIGHT (DEC-Y5), which the auto sampler above
+            // already reads and this readout already had every reason to show.
+            // The framework requests `local-floor` as a REQUIRED feature
+            // (`webxr-session.ts`), so the pose's `y` is height above the floor
+            // plane — the only quantity here that answers "how high am I holding
+            // the phone", and the one a reader was previously trying to get out
+            // of `above terrain`, which cannot express it at all.
+            //
+            // `?? undefined` rather than a fallback number: before the first
+            // pose there is no camera, and `camera 0.00 m` would claim the phone
+            // is lying on the ground.
+            cameraHeightM: getCurrentArPose()?.position.y,
             // THE FUSED BEARING — what the alignment currently thinks north is,
             // which is the only way to SEE what the compass slider did.
             //

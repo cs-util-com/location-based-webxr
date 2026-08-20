@@ -55,10 +55,10 @@ describe("describeArMeasurements", () => {
     // exactly what the milestone is looking at. At 30 m the tenth is precision
     // the fix does not have.
     expect(describeArMeasurements({ fixAccuracyM: 4.53 })).toEqual([
-      "fix ±4.5 m",
+      "gps ±4.5 m",
     ]);
     expect(describeArMeasurements({ fixAccuracyM: 28.4 })).toEqual([
-      "fix ±28 m",
+      "gps ±28 m",
     ]);
   });
 
@@ -87,7 +87,7 @@ describe("describeArMeasurements", () => {
     expect(lines).toEqual([
       "12 draws / 1,000 tri",
       "60 fps",
-      "fix ±6.0 m",
+      "gps ±6.0 m",
       "40 m from anchor",
     ]);
   });
@@ -109,7 +109,7 @@ describe("the vertical baseline — §4's prediction, on screen", () => {
     // world under the user — so unlike the other numbers this one is not
     // filtered on `>= 0`; the sign is the information.
     expect(describeArMeasurements({ worldBaselineY: -0.42 })).toEqual([
-      "baseline -0.42 m",
+      "world floor -0.42 m",
     ]);
   });
 
@@ -117,7 +117,7 @@ describe("the vertical baseline — §4's prediction, on screen", () => {
     // A metre of drift across a walk is expected. Ten centimetres between two
     // glances is not — and whole metres would hide exactly that.
     expect(describeArMeasurements({ worldBaselineY: 1.234 })).toEqual([
-      "baseline 1.23 m",
+      "world floor 1.23 m",
     ]);
   });
 
@@ -126,7 +126,7 @@ describe("the vertical baseline — §4's prediction, on screen", () => {
     // moved the world vertically at all. The `>= 0` filter the other fields use
     // would be wrong, and the `undefined` check has to be what excludes it.
     expect(describeArMeasurements({ worldBaselineY: 0 })).toEqual([
-      "baseline 0.00 m",
+      "world floor 0.00 m",
     ]);
   });
 
@@ -191,42 +191,78 @@ describe("altitude readout", () => {
  * module exists to refuse.
  */
 describe("describeArMeasurements — the height decomposition", () => {
-  it("shows the residual between GPS altitude and the terrain under the user", () => {
-    // THE LINE THE WHOLE READOUT IS FOR. A phone at chest height should read
-    // about +1.5 m; a steady +10 m is the reported symptom, stated instead of
-    // inferred from a scene that looks wrong.
+  it("NAMES ITS TWO OPERANDS instead of claiming a height above the ground", () => {
+    // H8, AND THE LABEL WAS THE DEFECT. `above terrain` reads as "how high the
+    // phone is above the ground", and the owner reported it as
+    // incomprehensible. It is not that number and cannot be: the formula is
+    // `altitudeM - terrainHeightM`, GPS altitude minus DEM, and this module has
+    // no pose input at all — no camera position reaches it, so raising the
+    // phone cannot move it by a millimetre.
+    //
+    // The old "chest height should read about +1.5 m" expectation was deleted
+    // rather than reworded: GNSS vertical error is +/-10-20 m, so 1.5 m is far
+    // inside the noise of the very quantity being read. A calibration target
+    // smaller than its own measurement's noise is not a target.
+    //
+    // The real holding height is asserted separately below, from the camera's
+    // own `y` in the local-floor reference space.
     const lines = describeArMeasurements({
       altitudeM: 105.5,
       terrainHeightM: 104,
       terrainHasData: true,
     });
 
-    expect(lines).toContain("above terrain +1.5 m");
+    expect(lines).toContain("gps-dem +1.5 m");
+    // The old label must be GONE, not merely joined by a new one — a readout
+    // carrying both would still be read the old way.
+    expect(lines.some((line) => line.startsWith("above terrain"))).toBe(false);
   });
 
-  it("signs a NEGATIVE residual, which means the camera is under the ground", () => {
-    // The sign is the information: below the terrain is the state that makes
-    // buildings float overhead.
+  it("signs the residual, because the sign separates the two filed causes", () => {
+    // Still the information — but it means "GPS altitude is BELOW the DEM
+    // here", not "the camera is under the ground". The old test NAME asserted
+    // the false reading, which is the worst place for it: a name is what a
+    // reader trusts without checking the body.
     expect(
       describeArMeasurements({
         altitudeM: 94,
         terrainHeightM: 104,
         terrainHasData: true,
       }),
-    ).toContain("above terrain -10.0 m");
+    ).toContain("gps-dem -10.0 m");
   });
 
   it("refuses the residual when the DEM never loaded", () => {
     // `heightfieldFrom` samples FLAT ZERO when `hasData` is false, so a failed
-    // terrain load would otherwise produce a confident "above terrain +105.5 m".
+    // terrain load would otherwise produce a confident "gps-dem +105.5 m".
     const lines = describeArMeasurements({
       altitudeM: 105.5,
       terrainHeightM: 0,
       terrainHasData: false,
     });
 
-    expect(lines.some((line) => line.startsWith("above terrain"))).toBe(false);
+    expect(lines.some((line) => line.startsWith("gps-dem"))).toBe(false);
     expect(lines).toContain("terrain: no DEM");
+  });
+
+  it("shows the REAL holding height, from the camera's local-floor y", () => {
+    // DEC-Y5. The honest "how high are you holding the phone" number already
+    // existed as a computed value and was thrown away: the camera's y in the
+    // `local-floor` reference space, whose zero is the floor plane. Unlike
+    // `gps-dem` it RESPONDS to raising the phone, and unlike `alt - baseline`
+    // it carries no GNSS vertical noise.
+    expect(describeArMeasurements({ cameraHeightM: 1.42 })).toContain(
+      "camera 1.42 m",
+    );
+  });
+
+  it("omits the camera height rather than inventing a zero", () => {
+    // Before the first frame there is no pose, and `camera 0.00 m` would claim
+    // the phone is on the ground — the same false-confidence failure the
+    // `no DEM` case exists to refuse.
+    expect(
+      describeArMeasurements({}).some((line) => line.startsWith("camera ")),
+    ).toBe(false);
   });
 
   it("warns about a missing DEM even while COLLAPSED", () => {
@@ -483,7 +519,7 @@ describe("describeArMeasurements — the height decomposition", () => {
     // SIX DECIMALS -- a screenshot without coordinates cannot be checked
     // against an external elevation service, returned to, or correlated with
     // another screenshot.
-    expect(expanded).toContain("50.941234, 6.958765");
+    expect(expanded).toContain("raw gps 50.941234, 6.958765");
   });
 
   it("says out loud when NO geoid correction is being applied", () => {
@@ -516,10 +552,10 @@ describe("describeArMeasurements — the height decomposition", () => {
     // "the alignment drifted" is often "no fix has arrived for 40 s".
     expect(
       describeArMeasurements({ fixAgeMs: 3200 }, { expanded: true }),
-    ).toContain("fix 3 s ago");
+    ).toContain("gps age 3 s");
     expect(describeArMeasurements({ fixAgeMs: 3200 })).toEqual([]);
     expect(describeArMeasurements({ fixAgeMs: 42_000 })).toContain(
-      "fix 42 s ago — STALE",
+      "gps age 42 s — STALE",
     );
   });
 
@@ -529,7 +565,7 @@ describe("describeArMeasurements — the height decomposition", () => {
     // wrong. Either line alone says nothing.
     expect(
       describeArMeasurements({ fusedBearingDeg: 137.4 }, { expanded: true }),
-    ).toContain("fused 137°");
+    ).toContain("heading 137° fused");
   });
 
   it("drops every new value when it is not finite", () => {

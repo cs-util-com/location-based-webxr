@@ -163,11 +163,36 @@ need **opposite** fixes.
   it as a confident hundred-metre error. False suppresses both and prints
   `terrain: no DEM` — **and that warning shows even collapsed**, because a
   warning only visible when expanded is a warning nobody sees.
-- **The residual, `above terrain ±X m`** — derived here rather than passed in.
-  Chest height should read about **+1.5 m**; a steady **+10 m** is the reported
-  symptom, stated instead of inferred from a scene that looks wrong. Its sign is
-  the information: negative means the camera is under the ground, which is the
-  state that makes buildings float overhead.
+- **The residual, `gps-dem ±X m`** — derived here rather than passed in:
+  `altitudeM − terrainHeightM`, GPS altitude minus DEM. A steady **+10 m** is
+  the reported symptom, stated instead of inferred from a scene that looks
+  wrong. Its sign is the information: negative means the GPS altitude sits
+  **below the DEM** at this position.
+  - **It was called `above terrain`, and that label was a defect** (H8,
+    2026-08-20). It reads as "how high the phone is above the ground", the owner
+    reported it as incomprehensible, and it is not that number and cannot be:
+    **no pose reaches this module at all**, so raising the phone cannot move it.
+  - **The "chest height reads about +1.5 m" expectation is deleted, not
+    reworded.** GNSS vertical error is ±10–20 m, so a 1.5 m calibration target
+    sat far inside the noise of the quantity it was meant to calibrate. It had
+    propagated to **five** places — this sidecar (twice), the code comment, a
+    HUD design review, a test **name** and a test **comment** — and three
+    successive plan revisions each stated a different count while enumerating
+    them. **Verify by searching for the claim, never by re-listing its sites.**
+  - The old sidecar also stated "negative means the camera is under the
+    ground". Same defect, same fix: it means the GPS altitude is below the DEM.
+- **The holding height, `camera X.XX m`** — the camera's `y` in the WebXR
+  `local-floor` reference space, whose zero is the floor plane. **The only line
+  here that answers "how high am I holding the phone"**, and the one a reader
+  was previously trying to get out of `gps-dem`.
+  - The framework requests `local-floor` as a **required** feature
+    (`webxr-session.ts`), so the zero is the floor and not an arbitrary origin.
+  - `alt − worldBaselineY` is NOT a substitute and was rejected as one:
+    `alt` carries the same ±10–20 m GNSS vertical noise that disqualified the
+    residual, and `worldBaselineY` is the AR **origin**, which moves only when
+    the alignment is re-solved.
+  - **Absent before the first pose**, never zero — `camera 0.00 m` would claim
+    the phone is lying on the ground.
 - **`auto ±X.X m (conf 0.NN[, low][, frozen]) · <dem label>`** — the published
   automatic elevation offset (`ar-elevation-auto.ts`:
   `baseline + robust(floor − DEM)`), shown even collapsed, right under the
@@ -178,11 +203,11 @@ need **opposite** fixes.
     names it is expanded-only, and this line is in the collapsed walking set
     — without the suffix a walking screenshot shows a correction with no way
     to tell LiDAR from ~30 m SRTM. Absent id, absent suffix.
-  - **The pair IS the instrument** (plan §2.6): `above terrain` is the RAW
+  - **The pair IS the instrument** (plan §2.6): `gps-dem` is the RAW
     GPS-vs-DEM residual and is untouched by the offset; `auto` is the
     estimator's correction on the same axis. **Their difference exposes the
     fused-vertical error live** — and once auto engages, the city can look
-    right while `above terrain` still reads +7 m, so the M5 field protocol
+    right while `gps-dem` still reads +7 m, so the M5 field protocol
     must name which line means what.
   - **`low` means PUBLISHED BUT NOT APPLIED** (cold-review F1). The demo gates
     the auto contribution on `autoEngaged`; below the gate the estimator still

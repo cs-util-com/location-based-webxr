@@ -109,13 +109,17 @@ nothing, and `aria-expanded` is not a substitute: it says what state the control
 is in, never what it controls. Both are needed. It is correct on first paint
 because `apply()` runs at attach.
 
-**The caret is a `<span class="header-caret">` since round three**, not the
-`h1::before` it was when the paragraph above was written. It carries
-`aria-hidden`, so nothing here changes: the accessible name still comes entirely
-from the `aria-label` this module sets. What changed is that the glyph can now
-be MEASURED — a pseudo-element is not a DOM node, so `boundingBox()` could not
-address it, and the caret being too small on a phone was the one complaint in
-this bar no test could express. See `index.html`'s `.header-caret` rule and the
+**The caret is an inline `<svg class="header-caret">` since round three**, not
+the `h1::before` it was when the paragraph above was written, and not the
+`<span>` an earlier draft of this sidecar described — that shape was **rejected**
+by the round-three review, because a `<span>` holding "▾" measures its line box
+rather than its ink, which is how a `>= 24 px` assertion passed while the owner
+was shown a ~12 px triangle. It carries `aria-hidden`, so nothing here changes:
+the accessible name still comes entirely from the `aria-label` this module sets.
+What changed is that the glyph can now be MEASURED — a pseudo-element is not a
+DOM node, so `boundingBox()` could not address it, and the caret being too small
+on a phone was the one complaint in this bar no test could express. See
+`index.html`'s `.header-caret` rule and the
 e2e _"shows a caret big enough to see, on the row the feedback asked for"_.
 
 `revealForError()` is **gone** (DEC-U10). It expanded the header whenever an

@@ -128,12 +128,14 @@ describe("createArCompassControl", () => {
     control.setReady(true);
 
     drag(0);
-    expect(onChange).toHaveBeenLastCalledWith({
-      rotationPriorEnabled: false,
-      coldStartOverrideEnabled: false,
-      experimentEnabled: false,
-      voteWeight: 0,
-    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rotationPriorEnabled: false,
+        coldStartOverrideEnabled: false,
+        experimentEnabled: false,
+        voteWeight: 0,
+      }),
+    );
   });
 
   it("reports while dragging, not only when the finger lifts", () => {
@@ -219,12 +221,14 @@ describe("createArCompassControl — the initial value reaches the store", () =>
     control.setReady(true);
 
     // Zero is the position where silence would be least visible and most wrong.
-    expect(onChange).toHaveBeenLastCalledWith({
-      rotationPriorEnabled: false,
-      coldStartOverrideEnabled: false,
-      experimentEnabled: false,
-      voteWeight: 0,
-    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rotationPriorEnabled: false,
+        coldStartOverrideEnabled: false,
+        experimentEnabled: false,
+        voteWeight: 0,
+      }),
+    );
   });
 
   it("still does not dispatch twice for a repeated setReady", () => {

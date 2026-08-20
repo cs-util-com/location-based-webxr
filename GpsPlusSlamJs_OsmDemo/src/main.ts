@@ -28,6 +28,7 @@
 
 import { cellToLatLng, greatCircleDistance, UNITS } from "h3-js";
 import {
+  describeGeoid,
   enuFrameAt,
   type RacingProviderStats,
   type GeoidModel,
@@ -53,13 +54,18 @@ import {
 import { describeExtent } from "./fetch-extent.js";
 import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar";
 import { setZeroPos } from "gps-plus-slam-app-framework/state";
-// The four that together mean "the compass has this much say" — see
-// `compass-influence.ts` for why silencing it is not one setting.
+// The eight that together mean "the compass has this much say, under these
+// experimental conditions" — see `compass-influence.ts` for why silencing it is
+// not one setting, and why the last four exist at all.
 import {
   setColdStartOverrideEnabled,
   setCompassExperimentEnabled,
   setCompassRotationPriorEnabled,
   setCompassVoteWeight,
+  setCompassTrustGateMode,
+  setCompassPairSelectionEnabled,
+  setCompassTrustAgreeToleranceDeg,
+  setCompassWebXRConsistencyEnabled,
 } from "gps-plus-slam-app-framework/state";
 import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 
@@ -122,10 +128,12 @@ import { createTerrainCycle } from "./terrain-cycle.js";
 import { fixedScale, heatColour } from "./heat-colours.js";
 import {
   BuildingView,
+  CAMERA_VFOV_DEG,
   TERRAIN_SPACING_M,
   type BuildingStats,
   type CameraView,
 } from "./building-view.js";
+import { cameraDistanceForZoom } from "./map-zoom-to-camera.js";
 import { throttle } from "./throttle.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
 import { createAgentCycle } from "./agent-cycle.js";
@@ -1087,6 +1095,34 @@ async function main(): Promise<void> {
   }, CAMERA_URL_SAMPLE_MS);
   reportCameraView = (view) => writeCameraView(view);
 
+  // H2 — THE MAP'S +/- NOW DRIVE THE 3D CAMERA.
+  //
+  // `zoomend`, not `zoom`: Leaflet fires `zoom` continuously through a pinch or
+  // an animated button press, and re-aiming the camera on every one of those
+  // fights the user's gesture and rewrites the shareable camera URL dozens of
+  // times per interaction (`writeCameraView` is sampled, but the target moves
+  // regardless). `zoomend` is one event per settled zoom.
+  //
+  // THE TARGET IS KEPT, only the distance changes — `lookAtFrom` is the
+  // read/write pair's write side and preserves the camera's direction, so this
+  // dollies rather than teleporting. Panning the map deliberately does NOT move
+  // the 3D view; the session asked for zoom.
+  mapView.map.on("zoomend", () => {
+    const canvas = el("scene");
+    const height = canvas.clientHeight;
+    const distanceM = cameraDistanceForZoom({
+      zoom: mapView.map.getZoom(),
+      latDeg: mapView.map.getCenter().lat,
+      paneWidthPx: mapView.map.getContainer().clientWidth,
+      // A zero height would divide to Infinity; the conversion rejects a
+      // non-finite aspect and falls back to its clamp, but computing NaN here
+      // and relying on that is a worse contract than not producing it.
+      aspect: height > 0 ? canvas.clientWidth / height : 1,
+      vfovDeg: CAMERA_VFOV_DEG,
+    });
+    buildingView.lookAtFrom(buildingView.cameraView().target, distanceM);
+  });
+
   // AND THE READ SIDE, WHICH IS THE HALF MOST EASILY FORGOTTEN: a link nothing
   // honours is worse than no link. Applied once, at boot, after the anchor
   // exists — a later application would fight the user's own dragging.
@@ -1646,6 +1682,22 @@ async function main(): Promise<void> {
           ...(arUndulationM === undefined
             ? {}
             : { geoidUndulationM: arUndulationM }),
+          // WHICH MODEL PRODUCED THAT NUMBER (H7). The undulation alone cannot
+          // expose the `ZERO_GEOID` trap the line above exists for: a zero
+          // undulation from a real model and a zero from "no geoid loaded" print
+          // identically, and only the second puts the whole scene tens of metres
+          // out. `describeGeoid` is the library's own answer, and for
+          // `ZERO_GEOID` it returns a full warning SENTENCE rather than an id —
+          // which is deliberate on its side and is why this line can never be
+          // merged with another.
+          //
+          // Read from the resolved model, never re-derived: `geoidModel` is
+          // populated by the same lazy import that produced `arUndulationM`, so
+          // an absent model here means the readout says nothing rather than
+          // naming a model that did not serve.
+          ...(geoidModel === undefined
+            ? {}
+            : { geoidModelId: describeGeoid(geoidModel) }),
           ...(here === undefined
             ? {}
             : { position: { lat: here.lat, lng: here.lng } }),
@@ -1669,6 +1721,19 @@ async function main(): Promise<void> {
       // cold-start override, whose curve is identical and which is on by
       // default. Silencing the compass takes all of these together.
       onCompassSettings: (settings) => {
+        // EIGHT DISPATCHES, NOT ONE (DEC-E2, extended round four).
+        // `compass-influence.ts` holds why the first four cannot be collapsed:
+        // "influence 0" is not "vote weight 0" — at weight 0 the steady-state
+        // formula is `1 − observability`, a FULL override exactly when yaw is
+        // poorly observable, and switching the prior off falls through to the
+        // cold-start override, whose curve is identical.
+        //
+        // THE ORDER MATTERS FOR THE LAST THREE. `setCompassExperimentEnabled`
+        // maps a fixed published combo — rotation prior, tolerance 15, pair
+        // selection on — so the standalone setters must come AFTER it or the
+        // combo would overwrite the toggles the gear panel just changed. The
+        // library's own mapping applies groups in the same order and pins it
+        // with a test; this is the consumer-side half of that contract.
         store.dispatch(
           setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
         );
@@ -1677,6 +1742,16 @@ async function main(): Promise<void> {
         );
         store.dispatch(setCompassExperimentEnabled(settings.experimentEnabled));
         store.dispatch(setCompassVoteWeight(settings.voteWeight));
+        store.dispatch(setCompassTrustGateMode(settings.trustGateMode));
+        store.dispatch(
+          setCompassPairSelectionEnabled(settings.pairSelectionEnabled),
+        );
+        store.dispatch(
+          setCompassTrustAgreeToleranceDeg(settings.trustToleranceDeg),
+        );
+        store.dispatch(
+          setCompassWebXRConsistencyEnabled(settings.webXRConsistencyEnabled),
+        );
       },
       onEnded: () => {
         // Fires for the Android back gesture too, where nothing called

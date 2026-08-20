@@ -406,7 +406,7 @@ describe("the automatic elevation offset", () => {
 
   it("contributes nothing before an alignment exists", async () => {
     // The identity matrix's element 13 is a perfectly real 0 — publishing a
-    // "baseline 0" offset before the fusion has said anything is the exact
+    // "world floor 0" offset before the fusion has said anything is the exact
     // trap `worldBaselineY` already refuses. The nudge channel must stay pure
     // manual until an alignment lands.
     const container = document.createElement("div");
@@ -874,7 +874,7 @@ describe("when AR cannot start", () => {
     onFrame({ dt: 1 / 60, elapsed: 0 });
 
     expect(liveMeasurements).toHaveBeenCalled();
-    expect(document.body.textContent).toContain("fix ±6.2 m");
+    expect(document.body.textContent).toContain("gps ±6.2 m");
     expect(document.body.textContent).toContain("alt 51.4 m ±3.5 m");
     expect(document.body.textContent).toContain("145 m from anchor");
   });
@@ -1093,7 +1093,7 @@ describe("the AR readout's frame rate", () => {
       }) => void;
       onFrame({ dt: 1 / 60, elapsed: 1 / 60 });
 
-      expect(document.body.textContent).toContain("baseline -0.37 m");
+      expect(document.body.textContent).toContain("world floor -0.37 m");
       arWorldGroup.matrix.elements[13] = 0;
     });
   });
@@ -1161,7 +1161,7 @@ describe("the readout refuses to invent numbers (r511 review)", () => {
       }) => void;
       onFrame({ dt: 1 / 60, elapsed: 1 });
 
-      expect(document.body.textContent).toContain("baseline 0.00 m");
+      expect(document.body.textContent).toContain("world floor 0.00 m");
       arWorldGroup.matrix.identity();
     });
   });
@@ -1213,12 +1213,12 @@ describe("the readout refuses to invent numbers (r511 review)", () => {
       onFrame({ dt: 1 / 60, elapsed: 1 });
 
       expect(document.body.textContent).toContain(
-        `fused ${Math.round(worldBearing as number)}°`,
+        `heading ${Math.round(worldBearing as number)}° fused`,
       );
       // And explicitly NOT the un-aligned reading, which is the regression this
       // test exists to catch rather than merely a different number.
       expect(document.body.textContent).not.toContain(
-        `fused ${Math.round(unaligned as number)}°`,
+        `heading ${Math.round(unaligned as number)}° fused`,
       );
 
       window.localStorage.removeItem("osm-demo:ar-hud-expanded");
@@ -1314,12 +1314,14 @@ describe("the compass slider reaches the store", () => {
 
     // ALL FOUR, and the zero end especially: one setter would leave the
     // cold-start override driving yaw while the label reads "GPS only".
-    expect(onCompassSettings).toHaveBeenLastCalledWith({
-      rotationPriorEnabled: false,
-      coldStartOverrideEnabled: false,
-      experimentEnabled: false,
-      voteWeight: 0,
-    });
+    expect(onCompassSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rotationPriorEnabled: false,
+        coldStartOverrideEnabled: false,
+        experimentEnabled: false,
+        voteWeight: 0,
+      }),
+    );
   });
 
   it("is usable immediately, because AR entry already required a fix", async () => {
