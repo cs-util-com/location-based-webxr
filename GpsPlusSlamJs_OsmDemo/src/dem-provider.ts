@@ -63,7 +63,6 @@ export const DEM_SOURCE_ID = "mapterhorn+terrarium";
  * say the one thing it exists to say.
  */
 export const PREFERRED_DEM_SOURCE_ID = "mapterhorn";
-/** @see PREFERRED_DEM_SOURCE_ID */
 /**
  * @see PREFERRED_DEM_SOURCE_ID
  *
