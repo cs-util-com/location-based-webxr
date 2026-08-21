@@ -40,8 +40,14 @@ export const ENTRY_GROUND_EXTENT_M = 400;
  * ground looks like. Kept as a literal rather than imported from
  * `building-view.ts`: that module pulls in the whole desktop scene, and this one
  * is loaded inside an XR session.
+ *
+ * NOT EXPORTED. It was, and the workspace dead-code check caught it: nothing
+ * outside this module reads it, and the obvious consumer -- a test asserting it
+ * matches the desktop ground -- cannot exist, because `building-view.ts` sets
+ * that colour inline in a material rather than exporting it. An export with no
+ * reader is a claim of an API that is not one.
  */
-export const ENTRY_GROUND_COLOUR = 0x6b7280;
+const ENTRY_GROUND_COLOUR = 0x6b7280;
 
 /**
  * How opaque the entry ground is, `[0,1]`.

@@ -17,9 +17,11 @@ ground rising.
 
 - `ENTRY_GROUND_EXTENT_M = 400` — half-width of the plane, metres. Inside the AR
   camera's 1000 m far plane so it cannot clip mid-fade.
-- `ENTRY_GROUND_COLOUR = 0x6b7280` — the 3D view's ground colour, duplicated as a
-  literal rather than imported: `building-view.ts` pulls in the whole desktop
-  scene and this module is loaded inside an XR session.
+- `ENTRY_GROUND_COLOUR` is **module-private**, not exported. It was exported at
+  first and the workspace dead-code check rejected it: nothing outside this file
+  reads it, and the obvious consumer — a test asserting it matches the desktop
+  ground — cannot exist, because `building-view.ts` sets that colour inline in a
+  material rather than exporting it.
 - `entryGroundOpacity(input: DescentInput): number` — `[0,1]`. Derived as
   `1 - cameraFadeAlpha(input)` rather than re-implemented, because the camera
   fading in and the ground fading out are one visual event and a second curve
