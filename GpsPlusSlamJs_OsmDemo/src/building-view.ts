@@ -162,7 +162,24 @@ export function groundPositionFor(centreEnu: {
  * Two thirds of the way out, so the fade is gradual enough to read as distance
  * rather than as a wall — the whole reason the far plane can be lowered at all.
  */
-export const FOG_NEAR_M = FAR_PLANE_M * 0.66;
+/**
+ * Where the haze starts, as a fraction of the far plane.
+ *
+ * A RATIO RATHER THAN A SECOND DISTANCE, and the shape is deliberate.
+ * `ar-scene-environment.ts` records removing exactly the alternative: "This was
+ * two constants with `AR_FOG_FAR_M = AR_CAMERA_FAR_M` and a test asserting they
+ * were equal -- a test that could not fail. ... One constant makes the invariant
+ * unbreakable rather than merely watched." The same argument applies here, and
+ * it is what lets `setFarPlane` move both with nothing left to keep in step.
+ *
+ * NOT EXPORTED: nothing outside this module reads it, and the workspace
+ * dead-code check rejects an export with no reader -- as it did for
+ * `ENTRY_GROUND_COLOUR` earlier on this branch. `FOG_NEAR_M` below is the
+ * exported face of the same relationship.
+ */
+const FOG_NEAR_RATIO = 0.66;
+
+export const FOG_NEAR_M = FAR_PLANE_M * FOG_NEAR_RATIO;
 
 /**
  * Upper bound on plane subdivisions per axis.
@@ -765,6 +782,63 @@ export class BuildingView {
       if (picked !== undefined) options.onPick?.(picked);
     };
     this.container.addEventListener("pointerup", this.onPointerDown);
+  }
+
+  /**
+   * Move how far the view draws (r541 Q9/Q10, owner decision 2026-08-21).
+   *
+   * **THE FOG MOVES WITH IT, and that is why this is a method rather than a
+   * setter on one field.** `THREE.Fog` is linear and is built with
+   * `far = FAR_PLANE_M`, so every fragment past it is already fully fog
+   * coloured. Raising the camera's `far` alone draws more geometry and shows
+   * the identical image -- a control that reports 'nothing changed' about the
+   * engine when it is only true of itself. Not news: `far-field.test.ts`
+   * already asserts the relationship and calls it 'the specific way raising
+   * the far plane alone goes wrong'.
+   *
+   * **THE GROUND PLANE DELIBERATELY DOES NOT MOVE.** Seeing empty scene past
+   * its edge is acceptable (owner, 2026-08-21). Seeing INVENTED terrain is
+   * not, and widening the plane past the height field is how that happens:
+   * `surfaceHeight` clamps its sample index per axis and the GPU path uses
+   * `ClampToEdgeWrapping`, so the edge profile extrudes outward as stripes
+   * that read as relief and are fabricated -- finding R2-9, named in
+   * `moveGroundTo`'s own comment. So this touches the camera and the fog and
+   * nothing else.
+   *
+   * **A DEBUG INSTRUMENT, NOT A NEW DEFAULT.** `FAR_PLANE_M` is unchanged and
+   * `far-field.test.ts` still pins the shipped view; passing `FAR_PLANE_M`
+   * here restores it exactly.
+   *
+   * Non-finite or non-positive input is ignored rather than applied: this
+   * number reaches the projection matrix, where a `NaN` renders nothing at all
+   * and raises no error -- which reads as 'the 3D view is empty' and is
+   * indistinguishable from half a dozen other causes.
+   */
+  setFarPlane(farPlaneM: number): void {
+    if (!Number.isFinite(farPlaneM) || farPlaneM <= 0) return;
+    this.camera.far = farPlaneM;
+    this.camera.updateProjectionMatrix();
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.near = farPlaneM * FOG_NEAR_RATIO;
+      this.scene.fog.far = farPlaneM;
+    }
+  }
+
+  /**
+   * How far the view is currently drawing, metres -- read back from the CAMERA.
+   *
+   * Read back rather than remembered, so a readout painted from it reports what
+   * the projection matrix actually holds. One fed from the REQUESTED value
+   * would keep saying 24000 while a `setFarPlane` that had stopped writing the
+   * camera did nothing at all.
+   */
+  farPlaneM(): number {
+    return this.camera.far;
+  }
+
+  /** Where the haze currently starts, metres -- read back from the FOG. */
+  fogNearM(): number {
+    return this.scene.fog instanceof THREE.Fog ? this.scene.fog.near : 0;
   }
 
   /**

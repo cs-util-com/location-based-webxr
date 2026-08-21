@@ -133,6 +133,7 @@ import {
   type BuildingStats,
   type CameraView,
 } from "./building-view.js";
+import { renderDistanceFor } from "./render-distance.js";
 import { cameraDistanceForZoom } from "./map-zoom-to-camera.js";
 import { throttle } from "./throttle.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
@@ -1940,7 +1941,7 @@ async function main(): Promise<void> {
       overlays: [el("category")],
     },
     extrasAfter: {
-      diagnostics: [el("perf-stats-label")],
+      diagnostics: [el("perf-stats-label"), el("render-distance-label")],
       // LAST, after the two switches: it changes which cells `cells` draws, so
       // it reads as a qualifier on the switch above it rather than a third peer.
       overlays: [showBelowLabel],
@@ -1962,6 +1963,33 @@ async function main(): Promise<void> {
   };
 
   layerToggles.render(selectLayers(store.getState()));
+
+  /**
+   * The render-distance dial (r541 Q9/Q10, owner decision 2026-08-21).
+   *
+   * THE ARITHMETIC LIVES HERE, NOT IN THE VIEW, and the import direction is
+   * why: `render-distance.ts` reads `FAR_PLANE_M` from `building-view.ts`, so
+   * the view importing it back would be a cycle and `check:cycles` would
+   * reject it. `BuildingView.setFarPlane` therefore takes plain metres.
+   *
+   * THE READOUT IS PAINTED FROM THE CAMERA (`farPlaneM()`, `fogNearM()`),
+   * never from the slider, so it cannot report a distance the projection
+   * matrix does not have.
+   */
+  const renderDistanceInput = el<HTMLInputElement>("render-distance");
+  const renderDistanceValue = el("render-distance-value");
+  const paintRenderDistance = (): void => {
+    renderDistanceValue.textContent = `draw ${Math.round(
+      buildingView.farPlaneM(),
+    )} m · haze ${Math.round(buildingView.fogNearM())} m`;
+  };
+  renderDistanceInput.addEventListener("input", () => {
+    const multiplier = Number.parseFloat(renderDistanceInput.value);
+    buildingView.setFarPlane(renderDistanceFor(multiplier).farPlaneM);
+    paintRenderDistance();
+  });
+  // PAINTED ONCE AT BOOT, so the readout is not stale before the first drag.
+  paintRenderDistance();
   paintShowBelow(selectLayers(store.getState()));
   // THE SAME FIRST-PAINT GAP AS `paintShowBelow`, one control over. The readout
   // is written only by `paintGeoEventButton`, which is reached from

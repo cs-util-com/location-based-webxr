@@ -1785,6 +1785,27 @@
         <input type="checkbox" id="perf-stats" />
         perf
       </label>
+      <!--
+        THE RENDER-DISTANCE DIAL (r541 Q9/Q10). A debug instrument, not a new
+        default: at 1x it writes back exactly the shipped far plane, so the
+        view is unchanged until the operator moves it.
+
+        THE READOUT IS PAINTED FROM THE CAMERA, not from the slider, so it
+        reports what the projection matrix actually holds rather than what was
+        asked for.
+      -->
+      <label class="layer-toggle" id="render-distance-label">
+        <input
+          type="range"
+          id="render-distance"
+          min="1"
+          max="10"
+          step="1"
+          value="1"
+          aria-label="Render distance multiplier"
+        />
+        <span id="render-distance-value">draw 2400 m</span>
+      </label>
       <span id="status">starting…</span>
       <div id="legend"></div>
     </header>

@@ -410,3 +410,52 @@ instead of rebuilding a 2.8 km mesh.
 AR exits already pass through — including the Android back gesture, where
 nothing calls `ArMode.dispose()`. `ar-walk-wiring.test.ts` pins that pairing by
 location; `building-view-content.test.ts` pins the four invariants above.
+
+## `setFarPlane()` — the render-distance dial (r541 Q9/Q10)
+
+A **debug instrument, not a new default.** `FAR_PLANE_M` is unchanged and
+`far-field.test.ts` still pins the shipped view; passing `FAR_PLANE_M` restores
+it exactly, and the control is inert at 1x.
+
+- `setFarPlane(farPlaneM: number): void` — writes `camera.far`, calls
+  `updateProjectionMatrix()`, and moves **both** fog terms. Non-finite or
+  non-positive input is ignored rather than applied: the value reaches the
+  projection matrix, where a `NaN` renders nothing and raises no error.
+- `farPlaneM(): number` — read back from the **camera**.
+- `fogNearM(): number` — read back from the **fog**.
+
+**Why the fog moves with it.** `THREE.Fog` is linear and built with
+`far = FAR_PLANE_M`, so every fragment past it is already fully fog coloured.
+Moving the camera alone draws more geometry and shows the identical image — a
+control that reports "nothing changed" about the engine when it is only true of
+itself. Not a new discovery: `far-field.test.ts` already asserts the
+relationship and calls it "the specific way raising the far plane alone goes
+wrong".
+
+**Why the ground plane does NOT move.** Seeing empty scene past its edge is
+acceptable (owner decision, 2026-08-21). Seeing **invented** terrain is not, and
+widening the plane past the height field is how that happens: `surfaceHeight`
+clamps its sample index per axis and the GPU path uses `ClampToEdgeWrapping`, so
+the edge profile extrudes outward as stripes that read as relief and are
+fabricated — finding R2-9, named in `moveGroundTo`. So this method touches the
+camera and the fog and nothing else.
+
+**Why the readbacks exist.** The debug readout is painted from them, never from
+the slider, so it reports what the projection matrix actually holds. A readout
+fed from the requested value would keep saying 24000 while a `setFarPlane` that
+had stopped writing the camera did nothing — and the e2e that asserts the text
+would pass against it.
+
+**Where the arithmetic lives:** `main.ts`, not here. `render-distance.ts` reads
+`FAR_PLANE_M` from this module, so importing it back would be a cycle that
+`check:cycles` rejects. `setFarPlane` therefore takes plain metres.
+
+**Tests:** `scene-3d.spec.js`, "the render-distance dial moves the camera AND the
+fog, and is inert at 1x". It cannot be a unit test — `BuildingView` constructs a
+`WebGLRenderer`, as `building-view-content.test.ts` records.
+
+**Known limits, unfixed and deliberate:** `MAX_CAMERA_DISTANCE_M = 1200` caps how
+far the MAP zoom can pull the camera back, so at high multipliers the operator
+must wheel-dolly out instead (that path has no cap); and `url-state`s
+`MAX_DISTANCE_M = 2400` rejects a camera target beyond it, so a far-out view
+cannot be shared by link.

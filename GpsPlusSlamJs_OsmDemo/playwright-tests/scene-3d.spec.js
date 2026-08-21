@@ -1941,4 +1941,56 @@ test.describe("the NPC agent", () => {
       await expect(panel).toBeVisible();
     });
   });
+
+  test("the render-distance dial moves the camera AND the fog, and is inert at 1x", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r541 Q9/Q10, owner decision 2026-08-21).
+     *
+     * "Der 3D-View läuft stabil auf 60 FPS. Ich würde gerne wissen, wie viel
+     * weiter man rendern könnte." The dial is the instrument for answering that
+     * on a session that has accumulated tiles.
+     *
+     * WHAT IT ASSERTS AND WHY IT IS NOT VACUOUS. The readout is painted from
+     * `buildingView.farPlaneM()` and `fogNearM()`, which read back from the
+     * CAMERA and the FOG rather than from the slider — so asserting the text
+     * proves the projection matrix and the fog were actually written. A readout
+     * fed from the requested value would keep reporting 24000 while a
+     * `setFarPlane` that had stopped writing the camera did nothing.
+     *
+     * THE FOG HALF IS THE POINT, not a bonus. `THREE.Fog` is linear and built
+     * with `far = FAR_PLANE_M`, so everything past it is already fully fog
+     * coloured: moving the camera's far plane alone would draw more geometry
+     * and show an identical image. That is the failure this pins.
+     *
+     * `BuildingView` constructs a `WebGLRenderer`, so none of this can be a unit
+     * test — `building-view-content.test.ts` records that constraint.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const readout = page.locator("#render-distance-value");
+
+    // INERT AT 1x (DEC-Y24). The shipped view must be untouched until the
+    // operator moves the dial, so the boot state reports the shipped far plane
+    // and its 0.66 haze — 2400 and 1584.
+    await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+
+    const slider = page.locator("#render-distance");
+    await slider.fill("10");
+    await slider.dispatchEvent("input");
+
+    // BOTH MOVED, BY THE SAME FACTOR. 10x is 24000, and the haze keeps its
+    // 0.66 ratio at 15840 — a far plane that moved without the fog would read
+    // "draw 24000 m · haze 1584 m" and fail here.
+    await expect(readout).toHaveText("draw 24000 m · haze 15840 m");
+
+    // AND BACK, so the dial is reversible on the street rather than a one-way
+    // door that needs a reload to undo.
+    await slider.fill("1");
+    await slider.dispatchEvent("input");
+    await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+  });
 });
