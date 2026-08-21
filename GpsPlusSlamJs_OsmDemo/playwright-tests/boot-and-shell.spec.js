@@ -2135,6 +2135,41 @@ test.describe("the AR entry point", () => {
     await waitForRefresh(page);
     await buildArOverlayFixture(page);
 
+    // FLUSH AT THE BOTTOM, AND CONFINED TO THE BOTTOM QUARTER (r541, Q8).
+    //
+    // Reported as "floats mid-screen instead of sitting flush at the bottom
+    // edge". MEASURED, before and after the wrap fix, at this viewport:
+    //
+    //   before: height 189.4 px, top 620.8, bottom 810.25, gap below 33.75
+    //   after:  height 133.0 px, top 677.2, bottom 810.25, gap below 33.75
+    //
+    // THE BOTTOM EDGE NEVER MOVED. `bottom: 4vh` was always working, so the
+    // bar was never mis-positioned in Chromium -- it was 56 px TALLER, because
+    // the readout wrapped to three lines plus a wrapped hint, and a box anchored
+    // at the bottom grows UPWARD. That is why it read as floating.
+    //
+    // The 0.75 threshold is calibrated against those two numbers rather than
+    // chosen: the pre-fix layout fails it by 12 px and the current one clears it
+    // by 44. A looser bound (0.66) passes both and would guard nothing.
+    const placement = await page.evaluate(() => {
+      const el = document.querySelector("#ar-root .ar-bottom");
+      if (el === null) throw new Error("no .ar-bottom");
+      const r = el.getBoundingClientRect();
+      return {
+        top: r.top,
+        gapBelow: window.innerHeight - r.bottom,
+        viewportH: window.innerHeight,
+      };
+    });
+    expect(
+      placement.gapBelow,
+      `the control stack sits ${Math.round(placement.gapBelow)} px off the bottom edge`,
+    ).toBeLessThanOrEqual(placement.viewportH * 0.06);
+    expect(
+      placement.top,
+      `the control stack reaches up to ${Math.round(placement.top)} px, into the AR content`,
+    ).toBeGreaterThan(placement.viewportH * 0.75);
+
     const measured = await page.evaluate(() => {
       const lineCount = (selector) => {
         const el = document.querySelector(selector);
