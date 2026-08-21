@@ -774,7 +774,25 @@ test.describe("the header", () => {
     // to stop that happening a third time. The path now fills the element edge
     // to edge, so the box IS the triangle.
     const caret = await box(".header-caret");
-    expect(caret.height).toBeGreaterThanOrEqual(24);
+    // H2, r541 -- REPORTED TOO BIG A SECOND TIME, and the fix is to put this
+    // floor on the element it was always about.
+    //
+    // The 24 came from WCAG 2.2 SC 2.5.8, which governs the POINTER TARGET.
+    // `#header-toggle` satisfies that on its own at 2.75rem (44 px), asserted
+    // directly below -- so applying 24 to the painted INK held the caret at
+    // 25.6 px for a reason that had already been met elsewhere. That is why
+    // three fixes each passed a measurement and left the owner still saying it
+    // was wrong: every assertion was on the wrong thing.
+    //
+    // The ink keeps a floor, because a caret can genuinely become a speck --
+    // that was the sixth and thirteenth sessions complaint -- but the floor is
+    // now about legibility rather than about reachability, and is set below the
+    // shipped 17.6 px so ordinary tuning does not trip it.
+    expect(caret.height).toBeGreaterThanOrEqual(14);
+    // AND SMALLER THAN THE TAP TARGET, which is the relationship the last three
+    // sessions kept collapsing. If these two are ever equal again, the ink has
+    // been sized by an accessibility rule a second time.
+    expect(caret.height).toBeLessThan(40);
 
     // H1, FOURTEENTH SESSION -- the same control, now too BIG. "Der ist jetzt
     // zu groß ... sollte so hoch sein wie das 'Jump to City'-Dropdown ...
@@ -794,6 +812,12 @@ test.describe("the header", () => {
 
     const centre = (b) => b.y + b.height / 2;
     const toggle = await box("#header-toggle");
+    // THE TARGET FLOOR, on the element WCAG 2.2 SC 2.5.8 is actually about.
+    // Moved here from the caret in r541 (H2): the caret is what you SEE, this is
+    // what you HIT, and conflating them is what made three consecutive fixes
+    // measure the wrong quantity. Shrinking the ink must never shrink this.
+    expect(toggle.width).toBeGreaterThanOrEqual(24);
+    expect(toggle.height).toBeGreaterThanOrEqual(24);
     const site = await box("#site");
     const quests = await box("#geo-event");
 

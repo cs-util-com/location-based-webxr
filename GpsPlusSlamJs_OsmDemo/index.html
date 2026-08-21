@@ -124,7 +124,34 @@
            `meet`, so changing one alone letterboxes the ink inside the box --
            the element would still measure 24 px while the visible triangle
            shrank below it, which is precisely the measurable-proxy failure the
-           paragraph above exists to record. */
+           paragraph above exists to record.
+
+           SIZE UNCHANGED AT r541, DELIBERATELY, THOUGH IT WAS REPORTED TOO BIG
+           A SECOND TIME. The size is pinned by an explicit OWNER instruction
+           from the fourteenth session -- "so hoch wie das 'Jump to City'-
+           Dropdown" -- which `boot-and-shell.spec.js` holds as a relationship
+           (`|caret.height - quests.height| <= 4`) rather than a rem value. A
+           junior developer's r541 report says it is still too big. Those are two
+           people disagreeing about a visual judgement, and this file is not the
+           place to pick a winner: the conflict is filed with its evidence in
+           `GpsPlusSlamJs_Docs/docs/2026-08-21-caret-size-instructions-conflict-followup.md`.
+
+           WHAT DID CHANGE is which element carries which floor, and that was a
+           real defect independent of the size. The old e2e asserted the PAINTED
+           INK was >= 24 px, a number that comes from WCAG 2.2 SC 2.5.8 -- a rule
+           about the POINTER TARGET. `#header-toggle` satisfies that on its own
+           at 2.75 rem (44 px). So the ink was held at 25.6 px by a requirement
+           another element already meets, which is the thread running through all
+           three previous attempts: a pseudo-element that could not be measured,
+           a line box that measured the same when empty, a triangle whose WIDTH
+           read as double -- every assertion on the wrong thing. The target floor
+           now sits on the toggle and the ink keeps a legibility floor of its own.
+
+           AND NOTE WHY THE TEMPTING FIX IS BARRED: lightening the triangle to a
+           stroke would cut apparent size while the box stayed 25.6 px and every
+           assertion kept passing -- the exact measurable-proxy failure the
+           paragraph above exists to prevent. Any real change here must move the
+           element, so the measurement follows it. */
         width: 1.6rem;
         height: 1.6rem;
         color: #9aa3b8;
