@@ -868,7 +868,20 @@ test.describe("the header", () => {
     // time that control's padding or font changes, and then this caret is wrong
     // again for a reason nobody edited. 4 px of slack because the two are
     // different kinds of box, not because the number is soft.
-    expect(Math.abs(caret.height - quests.height)).toBeLessThanOrEqual(4);
+    // COMPARED AGAINST THE DROPDOWN, which is what the instruction named.
+    // This asserted against `#geo-event` (Show Quests) while the paragraph above
+    // quoted "so hoch wie das Jump to City-Dropdown" - a different control
+    // (`#site`). They happen to be within a few px of each other today, so the
+    // pin passed while tracking the wrong thing, and its stated virtue
+    // ("survives the dropdown s own styling changing") was the one property it
+    // did not have. Caught in review of PR #624.
+    //
+    // Worth noting for whoever settles the size question: if the caret and Show
+    // Quests are within 4 px, the owner s "ungefaehr doppelt so gross wie der
+    // Show Quests-Button" was never about HEIGHT - which is why the H1 fix
+    // narrowed the width instead, and why a fourth height tweak is unlikely to
+    // be the answer.
+    expect(Math.abs(caret.height - site.height)).toBeLessThanOrEqual(4);
 
     // ROW 2 STARTS BELOW: the layer groups are on a lower line, not beside the
     // button.
