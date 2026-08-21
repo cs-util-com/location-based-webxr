@@ -574,8 +574,28 @@ test.describe("the header", () => {
       const sceneAfter = await scene.boundingBox();
       if (after === null || sceneAfter === null) throw new Error("no boxes");
       expect(after.height).toBeLessThan(before.height);
-      // The height went to the 3D view rather than nowhere.
-      expect(sceneAfter.height).toBeGreaterThan(sceneBefore.height);
+      // WHAT COLLAPSING MEANS CHANGED WITH Q11, and this assertion said the old
+      // thing. It was "the height went to the 3D view rather than nowhere",
+      // asserting the scene grew — true while the header was a `body` grid ROW,
+      // because hiding it handed real height back.
+      //
+      // At this viewport the header now FLOATS over the views, so the scene is
+      // already the full 780 px before the tap and collapsing uncovers pixels
+      // rather than returning height. The old assertion could only fail, and it
+      // failed with `Received: 780` against a 780 px viewport — i.e. it broke
+      // BECAUSE the milestone succeeded.
+      //
+      // Updated rather than deleted: the property still worth pinning is that
+      // collapsing never COSTS the 3D view height, which is what would happen if
+      // the header were ever put back in flow while the rest of this layout
+      // assumed otherwise.
+      expect(sceneAfter.height).toBeGreaterThanOrEqual(sceneBefore.height);
+      const viewport = page.viewportSize();
+      if (viewport === null) throw new Error("no viewport");
+      expect(
+        sceneAfter.height,
+        "the scene should span the viewport once the header floats (Q11)",
+      ).toBeGreaterThanOrEqual(viewport.height - 1);
 
       // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4, narrowed by
       // DEC-R6b-5). Collapsing the category picker away would put a primary

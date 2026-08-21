@@ -1440,7 +1440,65 @@
          browser s full-bleed-plus-overlays pattern rather than inventing a
          second visual language. */
       @media (width <= 860px) {
+        /* THE HEADER FLOATS — ON PHONES ONLY (Q11).
+
+           The field report is specifically about phone height ("auf meinem
+           Handybildschirm"), and `header-collapse.ts` records the cause exactly:
+           `body` is `grid-template-rows: auto 1fr`, so the header is a ROW whose
+           height comes OUT of `main` rather than covering it. Here it is taken
+           out of flow so the views own the whole viewport.
+
+           SCOPED TO THIS BREAKPOINT AFTER A REAL FAILURE, not out of caution.
+           Floating it at every width put the bar on top of the map's own
+           top-left controls: Leaflet gives `.leaflet-top` a z-index of 1000, so
+           the zoom buttons intercepted every click on `#header-toggle`, and
+           raising the header above them would only have inverted the problem by
+           burying the zoom buttons. On a phone the map is a bottom SHEET
+           (`align-self: end` below), so its controls sit mid-screen and there is
+           nothing up here to collide with. Desktop keeps the header as a row,
+           where the height it costs is not scarce. */
+        body {
+          grid-template-rows: 1fr;
+        }
+        header {
+          grid-area: 1 / 1;
+          align-self: start;
+          z-index: 600;
+
+          /* TRANSPARENT TO THE POINTER EXCEPT ON ITS OWN CONTROLS, which is what
+             makes this a HUD rather than a lid. Omitting it broke TEN e2e specs
+             — the map click, the 3D hotkeys, the location picker's URL write —
+             each reported as `locator.click` timing out on an element that was
+             "visible, enabled and stable", the signature of an intercepted
+             click. */
+          pointer-events: none;
+
+          /* NOT `backdrop-filter`, and that is a constraint rather than taste:
+             the dom-overlay research (plan §12) established that the overlay
+             root is a BACKDROP ROOT, so a blur cannot touch the AR camera feed
+             at all. Frosted glass would look right here and silently do nothing
+             in the one place contrast matters most. */
+          /* rgb() slash-alpha rather than color-mix(): stylelint s csstree
+             validator rejects color-mix as an invalid background value, and a
+             lint rule that cannot parse a value is not a reason to disable the
+             rule. #11131a at 82 %. */
+          background: rgb(17 19 26 / 82%);
+        }
+        /* Broad on purpose rather than a list of control selectors: a list would
+           silently stop covering a control added later, and the symptom would be
+           an unclickable button rather than a red test. */
+        header > * {
+          pointer-events: auto;
+        }
+        /* Collapsing now only uncovers pixels rather than handing back viewport,
+           which is a real change in what the feature is for. Kept because the
+           error rule (DEC-R2-15) depends on the state existing, and because
+           uncovering the top of the map is still worth a tap. */
+        header[data-collapsed="true"] {
+          border-bottom-color: transparent;
+        }
         main {
+          grid-area: 1 / 1;
           grid-template-columns: 1fr;
           grid-template-rows: 1fr;
         }
