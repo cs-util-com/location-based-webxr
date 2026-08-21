@@ -239,6 +239,20 @@ const entryFiles = [
   // resolution at runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
   'src/visualization/wayfinding-hud.ts',
   'src/visualization/wayfinding-placement.ts',
+  // In-world clickable billboard: pure reducer/layout/reconcile + Three.js view
+  'src/visualization/clamp.ts',
+  'src/visualization/panel-geometry.ts',
+  'src/visualization/canvas-panel.ts',
+  'src/visualization/billboard-math.ts',
+  'src/visualization/tap-gate.ts',
+  'src/visualization/pointer-tap-picker.ts',
+  'src/visualization/playback-transport.ts',
+  'src/visualization/panel-layout.ts',
+  'src/visualization/transport-reconcile.ts',
+  'src/visualization/audio-player.ts',
+  'src/visualization/transport-panel-view.ts',
+  'src/visualization/billboard-interaction.ts',
+  'src/visualization/clickable-billboard.ts',
 ];
 
 export default defineConfig({
