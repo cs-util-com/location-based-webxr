@@ -980,9 +980,23 @@ test.describe("the geo-event", () => {
         winnerBox.x + winnerBox.width / 2 - (mapBox.x + mapBox.width / 2),
         winnerBox.y + winnerBox.height / 2 - (mapBox.y + mapBox.height / 2),
       );
-      // Generous, because a marker's anchor is its tip rather than its centre
-      // and the pane animates — but far tighter than "somewhere on screen".
-      expect(offset).toBeLessThan(80);
+      // 8 px, DERIVED: the settled offset measures 0.2 px, so this is 40x the
+      // real value and still catches anything that moves the target off centre.
+      //
+      // IT USED TO BE 80, justified by a comment saying a marker's anchor is
+      // its tip rather than its centre. That is false for THIS marker —
+      // `map-view.ts` sets `iconAnchor: [QUEST_MARKER_PX / 2, ...]` and says
+      // why — and the slack it bought hid a real defect for as long as it
+      // existed: Leaflet's cached container size was ~122 px too tall, so
+      // every `setView` landed its target 61 px below the visible centre. The
+      // old bound passed at 61.2 locally and failed at 86.5 on CI, which is
+      // the only reason anyone looked.
+      //
+      // So a wider bound here would not have been a tolerance — it would have
+      // been the defect's hiding place. If this fails, suspect the map's size
+      // cache (`map-view.ts` observes the container for exactly this) before
+      // suspecting the number.
+      expect(offset).toBeLessThan(8);
       await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
     }
   });

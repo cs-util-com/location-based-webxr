@@ -95,6 +95,27 @@ export class MapView {
    */
   private readonly attribution = new AttributionView();
 
+  /**
+   * Keeps Leaflet's CACHED container size honest.
+   *
+   * Leaflet measures the container once, in `L.map(...)`, and reuses that
+   * size for every projection afterwards. `trackResize` (on by default)
+   * refreshes it on a WINDOW resize only — a container that changes size
+   * because this page's own layout changed never reaches it.
+   *
+   * That is not hypothetical here. Measured 2026-08-21: the cache was ~122 px
+   * TALLER than the real container, so `setView` centred its target at
+   * `cachedHeight / 2` and left it **61 px below the visible centre** — every
+   * pan, every `centreOn`, and the initial view. It surfaced as a geo-event
+   * quest that landed near the middle instead of in it, and it had been
+   * invisible because the e2e that measures exactly this allowed 80 px.
+   *
+   * Held as a field so a future `dispose` can disconnect it; there is no
+   * teardown path on this view today, and the observer lives as long as the
+   * map does.
+   */
+  private readonly containerResize: ResizeObserver | undefined;
+
   constructor(options: MapViewOptions) {
     this.onCellClick = options.onCellClick;
     this.onRegionClick = options.onRegionClick;
@@ -106,6 +127,23 @@ export class MapView {
       // a second mechanism.
       attributionControl: false,
     }).setView([options.centre.lat, options.centre.lng], options.zoom ?? 18);
+
+    // Observed rather than called once: the layout that made the cache stale
+    // settles AFTER construction, and anything that resizes the map later
+    // (an opening panel, an orientation change) has the same effect. The
+    // observer fires immediately with the current size, so it also corrects
+    // whatever `L.map` measured a moment ago.
+    //
+    // Guarded because ResizeObserver does not exist in the jsdom environment
+    // the unit tests run in — the guard is what keeps this file importable
+    // there, not a claim that browsers might lack it.
+    this.containerResize =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => {
+            this.map.invalidateSize();
+          });
+    this.containerResize?.observe(options.container);
 
     // ADDED FIRST OF THIS CORNER'S CONTROLS, and that is load-bearing rather
     // than incidental. Leaflet PREPENDS into a bottom corner
