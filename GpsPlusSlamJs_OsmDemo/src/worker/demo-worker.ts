@@ -93,7 +93,11 @@ import { terrainWindowFor } from "../terrain-window.js";
 import { createMeshPlanner } from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
-import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
+import {
+  createTerrainGate,
+  needsTerrainFor,
+  sameGateCentre,
+} from "./terrain-gate.js";
 import { createTerrainUpgradeSink } from "./terrain-upgrade-sink.js";
 import {
   meshOutdatedByTerrain,
@@ -899,10 +903,18 @@ async function handle<K extends WorkerCallKind>(
       // completed normally for a different position while this was waiting.
       // `terrainCentre` is what the worker currently holds; if it has moved on,
       // this upgrade describes somewhere nobody is looking.
+      // THE DATUM IS PART OF THE IDENTITY, exactly as in `needsTerrainFor`,
+      // `keyOf` and `terrainCentre` itself. This compared `lat`/`lng` only, and
+      // AR entry and AR exit both re-sample at the UNCHANGED position with a
+      // different datum — so an upgrade issued before the switch passed the
+      // guard and `describeCurrentTerrain` re-sampled the window against the
+      // wrong datum, leaving the worker holding a field ~99 m from the camera.
+      // Found in review of PR #334.
       if (
-        terrainCentre === undefined ||
-        terrainCentre.lat !== centre.lat ||
-        terrainCentre.lng !== centre.lng
+        !sameGateCentre(terrainCentre, {
+          ...centre,
+          undulationM: geoidUndulationM,
+        })
       ) {
         throw new DOMException("Terrain upgrade superseded", "AbortError");
       }

@@ -127,6 +127,33 @@ function keyOf(centre: GateCentre): string {
 }
 
 /**
+ * Whether two centres name the SAME field — position and datum together.
+ *
+ * **EXPORTED SO EVERY SUPERSESSION CHECK USES ONE DEFINITION.** `keyOf`'s own
+ * docstring warns that "changing the predicate without changing the key would
+ * move the bug one layer down rather than fix it", and that is exactly what had
+ * happened elsewhere: `demo-worker.ts`'s terrain-upgrade guard compared `lat`
+ * and `lng` only, while this module, `needsTerrainFor` and `terrainCentre`
+ * itself all treat the datum as part of the identity.
+ *
+ * The hole that opened: AR entry and AR exit both re-sample at the UNCHANGED
+ * position with a different datum, so a slow upgrade issued before the switch
+ * passed a lat/lng-only guard and re-sampled the held field against the wrong
+ * datum — leaving the worker holding a field ~99 m from where the camera is.
+ * That is the "flying ~50 m above the buildings on first entry" symptom this
+ * module's `undulationM` was added to remove, arriving through the one seam
+ * that did not check it. Found in review of PR #334.
+ *
+ * `undefined` on the left means "nothing held yet", which is never a match.
+ */
+export function sameGateCentre(
+  held: GateCentre | undefined,
+  wanted: GateCentre,
+): boolean {
+  return held !== undefined && keyOf(held) === keyOf(wanted);
+}
+
+/**
  * Whether a mesh build at `position` must wait for terrain.
  *
  * `held` is the centre the worker's current field belongs to, or `undefined`

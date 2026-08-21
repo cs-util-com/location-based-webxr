@@ -15,7 +15,11 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
+import {
+  createTerrainGate,
+  needsTerrainFor,
+  sameGateCentre,
+} from "./terrain-gate.js";
 
 const HERE = { lat: 50.9413, lng: 6.9583 };
 const THERE = { lat: 50.9231, lng: 6.9445 };
@@ -273,5 +277,74 @@ describe("the datum is part of the gate's identity (AR entry, 2026-08-14)", () =
     return Promise.resolve().then(() => {
       expect(released).toBe(false);
     });
+  });
+});
+
+describe("sameGateCentre — one definition of field identity", () => {
+  // WHY THESE TESTS MATTER (PR #334 review).
+  //
+  // `demo-worker.ts`'s terrain-upgrade supersession guard compared `lat` and
+  // `lng` only, while this module, `needsTerrainFor` and `terrainCentre` itself
+  // all treat the DATUM as part of a field's identity. AR entry and AR exit both
+  // re-sample at the UNCHANGED position with a different datum, so an upgrade
+  // issued before the switch passed that guard and re-sampled the held field
+  // against the wrong datum — leaving the worker holding a field ~99 m from
+  // where the camera is. That is the "flying ~50 m above the buildings on first
+  // entry" symptom `GateCentre.undulationM` was added to remove, returning
+  // through the one seam that did not check it.
+  //
+  // The predicate is extracted and exported precisely so it can be tested: the
+  // guard's own call site cannot be, because `demo-worker.ts` needs
+  // `navigator.storage` and `OffscreenCanvas` to construct.
+
+  const P = { lat: 50.9413, lng: 6.958 };
+
+  it("is the AR entry case: same position, different datum, NOT the same field", () => {
+    // The whole bug in one assertion. A lat/lng-only comparison returns true
+    // here, which is what let the stale upgrade through.
+    expect(
+      sameGateCentre(
+        { ...P, undulationM: undefined },
+        { ...P, undulationM: 46.2 },
+      ),
+    ).toBe(false);
+  });
+
+  it("is the AR exit case too — the datum going AWAY is just as much a change", () => {
+    expect(
+      sameGateCentre(
+        { ...P, undulationM: 46.2 },
+        { ...P, undulationM: undefined },
+      ),
+    ).toBe(false);
+  });
+
+  it("matches when position and datum both agree, so upgrades still land", () => {
+    // The other direction matters as much: a predicate that never matches would
+    // discard every legitimate upgrade and quietly disable the whole path.
+    expect(
+      sameGateCentre({ ...P, undulationM: 46.2 }, { ...P, undulationM: 46.2 }),
+    ).toBe(true);
+    expect(
+      sameGateCentre(
+        { ...P, undulationM: undefined },
+        { ...P, undulationM: undefined },
+      ),
+    ).toBe(true);
+  });
+
+  it("treats a moved position as a different field, datum notwithstanding", () => {
+    expect(
+      sameGateCentre(
+        { ...P, undulationM: 46.2 },
+        { lat: P.lat + 0.001, lng: P.lng, undulationM: 46.2 },
+      ),
+    ).toBe(false);
+  });
+
+  it("never matches when nothing is held yet", () => {
+    // `undefined` is "the worker has loaded no field", which cannot be the field
+    // an upgrade describes.
+    expect(sameGateCentre(undefined, { ...P, undulationM: 46.2 })).toBe(false);
   });
 });
