@@ -29,7 +29,16 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : 3,
+  // ONE worker, locally as well as in CI (decided 2026-08-17, DEC-N8). Every
+  // failure this suite has produced on a developer machine was a TIMEOUT, never
+  // an assertion: three parallel workers each drive a full WebGL scene, so they
+  // queue on one GPU instead of overlapping, and the queueing is what expires the
+  // per-test budget. Measured on the same box that had been failing: serial, all
+  // seven specs finished in 26.6 s, with one dropping 39.6 s -> 907 ms. Three
+  // workers therefore buy latency and flakes, not throughput. The sibling
+  // Landing and OsmDemo suites reached the same setting from their own
+  // measurements — see their configs for the numbers.
+  workers: 1,
   reporter: process.env.CI
     ? [["github"], ["json", { outputFile: "../test-results/results.json" }]]
     : [["list"], ["html", { open: "never" }]],
