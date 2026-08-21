@@ -20,6 +20,99 @@ import {
   REPAINT,
 } from "./fixtures.js";
 
+/**
+ * The AR overlay's real DOM, built inside `#ar-root` with the production
+ * class names and the production content lengths.
+ *
+ * EXTRACTED SO IT CAN BE MEASURED AT MORE THAN ONE VIEWPORT, which is the
+ * gap the r541 field report walked into: the layout test below did its
+ * arithmetic against "a 390 px phone" in the comments while running at the
+ * suite's 1280 px Desktop Chrome. A stack that fits a desktop and folds on a
+ * phone passed it, and the phone is the only device this overlay ships to.
+ */
+async function buildArOverlayFixture(page) {
+  await page.evaluate(() => {
+    const root = document.querySelector("#ar-root");
+    if (root === null) throw new Error("no #ar-root");
+    // THE FRAMEWORK'S CANVAS, first child and in flow, exactly as
+    // `webxr-session.ts` inserts it — `insertBefore(renderer.domElement,
+    // container.firstChild)`, with `setSize(innerWidth, innerHeight)` writing
+    // the inline dimensions. THIS is the child the first version of this
+    // fixture omitted, and omitting it is how a blocker passed a green gate:
+    // making `#ar-root` itself the flex column turned this canvas into an
+    // unshrinkable first item and pushed both controls a full viewport below
+    // the fold. A fixture missing the one child that breaks the layout is not
+    // a cheaper version of the real thing; it is a different thing.
+    const canvas = document.createElement("canvas");
+    canvas.style.display = "block";
+    canvas.style.width = "100vw";
+    canvas.style.height = "100vh";
+    root.append(canvas);
+
+    const stack = document.createElement("div");
+    stack.className = "ar-stack";
+    const hud = document.createElement("div");
+    hud.className = "ar-hud";
+    hud.textContent = "lat 50.9413\nlng 6.9580";
+    // The collapse toggle is part of the readout's real box (DEC-H2).
+    const toggle = document.createElement("button");
+    toggle.className = "ar-hud-toggle";
+    toggle.textContent = "more";
+    hud.append(toggle);
+    stack.append(hud);
+    root.append(stack);
+
+    // THE BOTTOM STACK (H6): elevation + slider + gear on one row, the
+    // compass readout on its own line beneath. Built with the production
+    // class names and the production content lengths, because the whole
+    // question this test answers is whether the real CSS fits them.
+    const bottom = document.createElement("div");
+    bottom.className = "ar-bottom";
+    const bottomRow = document.createElement("div");
+    bottomRow.className = "ar-bottom-row";
+
+    const elevation = document.createElement("div");
+    elevation.className = "ar-elevation";
+    const down = document.createElement("button");
+    down.className = "ar-elevation-button";
+    down.textContent = "−";
+    const value = document.createElement("span");
+    value.className = "ar-elevation-value";
+    value.textContent = "+0.0 m";
+    const up = document.createElement("button");
+    up.className = "ar-elevation-button";
+    up.textContent = "+";
+    elevation.append(down, value, up);
+
+    const compass = document.createElement("div");
+    compass.className = "ar-compass";
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.className = "ar-compass-slider";
+    // THE FULL-LENGTH READOUT, not a short one. `compass 0.80 target — now
+    // 1.00 cold start` is what DEC-Y12 renders, and a shorter placeholder
+    // would let a row that cannot hold the real string pass.
+    const readout = document.createElement("span");
+    readout.className = "ar-compass-value";
+    readout.textContent = "compass 0.80 target — now 1.00 cold start";
+    const hint = document.createElement("span");
+    hint.className = "ar-compass-hint";
+    hint.textContent = "takes 15-30 fixes to express a change";
+    compass.append(slider, readout, hint);
+
+    const gearWrap = document.createElement("div");
+    gearWrap.className = "ar-gear-wrap";
+    const gear = document.createElement("button");
+    gear.className = "ar-gear";
+    gear.textContent = "⚙";
+    gearWrap.append(gear);
+
+    bottomRow.append(elevation, gearWrap);
+    bottom.append(bottomRow, compass);
+    root.append(bottom);
+  });
+}
+
 test.describe("the demo boots", () => {
   test("loads the rule table, draws a basemap, reports its scale, and says when it is still widening", async ({
     page,
@@ -1863,86 +1956,7 @@ test.describe("the AR entry point", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await page.evaluate(() => {
-      const root = document.querySelector("#ar-root");
-      if (root === null) throw new Error("no #ar-root");
-      // THE FRAMEWORK'S CANVAS, first child and in flow, exactly as
-      // `webxr-session.ts` inserts it — `insertBefore(renderer.domElement,
-      // container.firstChild)`, with `setSize(innerWidth, innerHeight)` writing
-      // the inline dimensions. THIS is the child the first version of this
-      // fixture omitted, and omitting it is how a blocker passed a green gate:
-      // making `#ar-root` itself the flex column turned this canvas into an
-      // unshrinkable first item and pushed both controls a full viewport below
-      // the fold. A fixture missing the one child that breaks the layout is not
-      // a cheaper version of the real thing; it is a different thing.
-      const canvas = document.createElement("canvas");
-      canvas.style.display = "block";
-      canvas.style.width = "100vw";
-      canvas.style.height = "100vh";
-      root.append(canvas);
-
-      const stack = document.createElement("div");
-      stack.className = "ar-stack";
-      const hud = document.createElement("div");
-      hud.className = "ar-hud";
-      hud.textContent = "lat 50.9413\nlng 6.9580";
-      // The collapse toggle is part of the readout's real box (DEC-H2).
-      const toggle = document.createElement("button");
-      toggle.className = "ar-hud-toggle";
-      toggle.textContent = "more";
-      hud.append(toggle);
-      stack.append(hud);
-      root.append(stack);
-
-      // THE BOTTOM STACK (H6): elevation + slider + gear on one row, the
-      // compass readout on its own line beneath. Built with the production
-      // class names and the production content lengths, because the whole
-      // question this test answers is whether the real CSS fits them.
-      const bottom = document.createElement("div");
-      bottom.className = "ar-bottom";
-      const bottomRow = document.createElement("div");
-      bottomRow.className = "ar-bottom-row";
-
-      const elevation = document.createElement("div");
-      elevation.className = "ar-elevation";
-      const down = document.createElement("button");
-      down.className = "ar-elevation-button";
-      down.textContent = "−";
-      const value = document.createElement("span");
-      value.className = "ar-elevation-value";
-      value.textContent = "+0.0 m";
-      const up = document.createElement("button");
-      up.className = "ar-elevation-button";
-      up.textContent = "+";
-      elevation.append(down, value, up);
-
-      const compass = document.createElement("div");
-      compass.className = "ar-compass";
-      const slider = document.createElement("input");
-      slider.type = "range";
-      slider.className = "ar-compass-slider";
-      // THE FULL-LENGTH READOUT, not a short one. `compass 0.80 target — now
-      // 1.00 cold start` is what DEC-Y12 renders, and a shorter placeholder
-      // would let a row that cannot hold the real string pass.
-      const readout = document.createElement("span");
-      readout.className = "ar-compass-value";
-      readout.textContent = "compass 0.80 target — now 1.00 cold start";
-      const hint = document.createElement("span");
-      hint.className = "ar-compass-hint";
-      hint.textContent = "takes 15-30 fixes to express a change";
-      compass.append(slider, readout, hint);
-
-      const gearWrap = document.createElement("div");
-      gearWrap.className = "ar-gear-wrap";
-      const gear = document.createElement("button");
-      gear.className = "ar-gear";
-      gear.textContent = "⚙";
-      gearWrap.append(gear);
-
-      bottomRow.append(elevation, gearWrap);
-      bottom.append(bottomRow, compass);
-      root.append(bottom);
-    });
+    await buildArOverlayFixture(page);
 
     const viewport = page.viewportSize();
     const hudBox = await page
@@ -2002,6 +2016,131 @@ test.describe("the AR entry point", () => {
     // is used on. A second row makes the stack taller, so this is the
     // constraint the extra row actually threatens (PR #311 review, finding 4).
     expect(bottomBox.y).toBeGreaterThan(viewport.height * 0.12);
+  });
+
+  test("keeps the AR bottom stack readable on a 390 px phone", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r541 field report, Q8; owner disagreement on Q4).
+     *
+     * "Der Kompass-Balken nutzt etwa die halbe Breite und bricht auf vier
+     * Zeilen um, wo zwei reichen würden." The owner confirmed Q4 is NOT done.
+     *
+     * THE TEST ABOVE CANNOT SEE THIS, and that is the point of this one. It
+     * asserts nothing OVERFLOWS the viewport — which a box that is too NARROW
+     * passes trivially — and it runs at the suite's 1280 px Desktop Chrome
+     * while doing its arithmetic against "a 390 px phone" in the comments. Both
+     * halves of that gap are what let a folded stack ship.
+     *
+     * WHAT IS ASSERTED, and why these two together are not vacuous in either
+     * direction:
+     *
+     * - the readout and the hint each render on ONE line box, which forces the
+     *   compass box WIDE enough for the real 40-character string;
+     * - nothing overflows the viewport, which caps it.
+     *
+     * Line boxes are counted with `Range.getClientRects()` — one rect per line
+     * — rather than by dividing height by an assumed line-height, so the count
+     * stays true if the font or the leading changes.
+     */
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    await buildArOverlayFixture(page);
+
+    const measured = await page.evaluate(() => {
+      const lineCount = (selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`no ${selector}`);
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getClientRects().length;
+      };
+      const width = (selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`no ${selector}`);
+        return el.getBoundingClientRect().width;
+      };
+      return {
+        readoutLines: lineCount("#ar-root .ar-bottom .ar-compass-value"),
+        hintLines: lineCount("#ar-root .ar-bottom .ar-compass-hint"),
+        compassWidth: width("#ar-root .ar-bottom .ar-compass"),
+        rowWidth: width("#ar-root .ar-bottom .ar-bottom-row"),
+        bottomWidth: width("#ar-root .ar-bottom"),
+      };
+    });
+
+    // ONE LINE EACH. `compass 0.80 target — now 1.00 cold start` is ~40
+    // characters at 0.9rem monospace, i.e. ~345 px of ink; it fits a 390 px
+    // phone with room to spare, and only fails to fit when the box around it
+    // has been shrunk to its slider.
+    expect(
+      measured.readoutLines,
+      `the compass readout wraps to ${measured.readoutLines} lines in a ${Math.round(measured.compassWidth)} px box`,
+    ).toBe(1);
+    expect(
+      measured.hintLines,
+      `the compass hint wraps to ${measured.hintLines} lines`,
+    ).toBe(1);
+
+    // AND THE BOX FILLS THE COLUMN, stated as an equality rather than as
+    // "wider than the row". Two separate properties ride on this:
+    //
+    // - the "nutzt etwa die halbe Breite" half of the report: `.ar-bottom` is
+    //   a centred flex COLUMN, so a shrink-to-fit child sizes to its widest
+    //   unwrappable item -- the 9rem slider -- and the readout then wrapped
+    //   inside ~195 px however much room the phone actually had;
+    // - the box must not RESIZE as the readout text changes. The fusion phase
+    //   makes that string change length at runtime, so a shrink-to-fit box
+    //   grows and shrinks under a stationary slider. A ">= rowWidth" bound
+    //   passed with `align-self: stretch` deleted, which a mutation run
+    //   showed; this equality is what actually pins that rule.
+    expect(
+      measured.compassWidth,
+      "the compass box does not fill the bottom column",
+    ).toBeCloseTo(measured.bottomWidth, 0);
+
+    // STILL CAPPED. Without this the two assertions above are satisfied by any
+    // box wide enough to overflow the screen, which is the failure the previous
+    // two versions of this row actually shipped.
+    expect(measured.bottomWidth).toBeLessThanOrEqual(390);
+
+    // AND IT DOES NOT RESIZE WHEN THE READOUT GETS SHORTER, which is the
+    // property `align-self: stretch` actually carries -- and the reason this
+    // step exists at all.
+    //
+    // A MUTATION RUN CAUGHT THE FIRST VERSION OF THIS BEING VACUOUS. With the
+    // long 40-character string the box exceeds the column`s width anyway and
+    // clamps to it, so deleting the rule changed nothing measurable and the
+    // equality above passed either way. The readout is only that long during
+    // cold start; once the fusion settles it is short, shrink-to-fit collapses
+    // the box to its 9rem slider, and the bar visibly narrows under a
+    // stationary control. Re-measuring with the SHORT string is what makes the
+    // rule load-bearing instead of decorative.
+    const shortened = await page.evaluate(() => {
+      const readout = document.querySelector(
+        "#ar-root .ar-bottom .ar-compass-value",
+      );
+      const hint = document.querySelector(
+        "#ar-root .ar-bottom .ar-compass-hint",
+      );
+      if (readout === null || hint === null) throw new Error("no readout");
+      readout.textContent = "compass 0.80";
+      hint.textContent = "";
+      const box = document.querySelector("#ar-root .ar-bottom .ar-compass");
+      const column = document.querySelector("#ar-root .ar-bottom");
+      if (box === null || column === null) throw new Error("no box");
+      return {
+        compassWidth: box.getBoundingClientRect().width,
+        bottomWidth: column.getBoundingClientRect().width,
+      };
+    });
+    expect(
+      shortened.compassWidth,
+      "the compass box shrinks to its slider once the readout text is short",
+    ).toBeCloseTo(shortened.bottomWidth, 0);
   });
 
   test("does NOT offer AR when the user only pressed the GPS button", async ({

@@ -470,7 +470,26 @@
         flex-direction: column;
         align-items: center;
         gap: 0.35rem;
-        max-width: 96vw;
+        /* A WIDTH, NOT ONLY A CAP -- and this is the r541 field report's
+           "nutzt etwa die halbe Breite ... bricht auf vier Zeilen um".
+           `max-width` alone leaves this column shrink-to-fit, so it sized to
+           its widest child (the ~189 px control row) and the compass box
+           beneath inherited that width. The 40-character readout then wrapped
+           to THREE lines inside ~195 px on a 390 px phone while every
+           assertion passed: the layout test checked that nothing OVERFLOWED,
+           which a box that is too NARROW satisfies for free.
+
+           Capped at 26rem so a desktop split does not get a 1200 px bar. Below
+           ~360 px of viewport the readout wraps again, which is stated rather
+           than fixed -- the target device is 390 px, and a font-size rule for
+           the last 30 px would be tuning against a phone nobody has reported
+           from. */
+        width: 96vw;
+        /* `width` + `max-width` rather than `min(96vw, 26rem)`: the stylesheet
+           linter's csstree validator rejects `min()` here, as it rejected
+           `color-mix()` in this file before. The pair means exactly the same
+           thing and is valid everywhere. */
+        max-width: 26rem;
         transform: translateX(-50%);
       }
 
@@ -609,6 +628,22 @@
            there is nothing left to collide with down there -- and the column
            above means it cannot collide with the readout either. */
         display: flex;
+        /* FULL WIDTH OF THE COLUMN, not shrink-to-fit. `.ar-bottom` centres its
+           children, which is right for the control row and wrong for this box.
+
+           NOT WHAT FIXES THE WRAPPING -- the width on `.ar-bottom` does that on
+           its own, and a mutation run confirmed this rule can be deleted with
+           the wrap assertion still passing. What it fixes is a SECOND thing:
+           shrink-to-fit sizes this box to its text, and the readout text
+           changes length as the fusion phase changes, so the bar would visibly
+           grow and shrink under a stationary slider. Stretch pins it to the
+           column.
+
+           MEASURED BOTH WAYS: deleting this rule collapses the box from 374 px
+           to 280 px once the readout is short, and leaves it unchanged while
+           the readout is long -- which is why the test measures the SHORT
+           string too. */
+        align-self: stretch;
         gap: 0.4rem;
         flex-wrap: wrap;
         justify-content: center;
