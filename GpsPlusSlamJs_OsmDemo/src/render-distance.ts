@@ -53,8 +53,24 @@ import { TERRAIN_EXTENT_M } from "./heightfield.js";
  * looking distance at 10× may be the sampling, not the ground.
  *
  * The ceiling therefore exists to bound **draw cost and legibility**, not to
- * prevent a crash. 10× is where the reporter's own question runs out rather than
- * a measured limit, and finding the affordable value is what the control is for.
+ * prevent a crash.
+ *
+ * **AND 10x IS DELIBERATE, AGAINST A MEASUREMENT THAT LOOKED LIKE IT REFUTED IT**
+ * (owner decision, 2026-08-21). A spike measured the COLD-START working set --
+ * `fetchWorkingSet` is the user’s res-7 tile plus its ring of six -- and found a
+ * guaranteed loaded radius of 1048-2346 m and a best-case reach of ~5 km, which
+ * says a 24 km far plane can only ever draw empty space. That reasoning is
+ * correct about a session that has just started and wrong about the system:
+ * `DemoPipeline.loaded` is **never evicted** (its own cost docstring: "`this.tiles`
+ * is never evicted, so the cost of clicking around is quadratic in tiles
+ * visited"), so a session that has been walked around holds far more city, and
+ * testing 10x on such a session is exactly what this constant is for.
+ *
+ * The measurement, and the retraction, are in
+ * `2026-08-21-1420-render-distance-is-data-bound-findings.md`.
+ *
+ * So 10x remains where the reporter's own question runs out rather than a
+ * measured limit, and finding the affordable value is what the control is for.
  */
 export const MAX_RENDER_MULTIPLIER = 10;
 
