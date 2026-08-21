@@ -64,7 +64,27 @@
         display: flex;
         flex-wrap: wrap;
         gap: 0.75rem;
-        align-items: baseline;
+        /* CENTRE, NOT BASELINE (r543 field report: "immer noch nicht auf einer
+           Hoehe mit dem Jump To City Dropdown").
+
+           `#header-toggle` is an inline-flex button whose only child is an SVG.
+           A flex container with no baseline-aligned text SYNTHESISES its
+           baseline from its bottom margin edge, so a 44 px tall toggle lined
+           its BOTTOM up with the other controls text baseline and the caret
+           inside it floated well above the dropdown centre. Nothing was wrong
+           with the caret box; the row was aligning it by a rule that does not
+           apply to a control with no text in it.
+
+           NOT REPRODUCED IN CHROMIUM, AND THAT IS STATED RATHER THAN GLOSSED.
+           A mutation run at both 1280 px and 390 px shows the caret sitting
+           level with the dropdown under EITHER rule, so the e2e cannot tell
+           these two apart and does not prove this fix. The reporter is on a
+           real Android device, where a native `<select>` is taller than the
+           headless one and baseline synthesis therefore lands somewhere else.
+           `center` is immune to both the select height and the synthesis rule;
+           `baseline` depends on both. That is why it changes -- a defensive
+           fix on a hypothesis, not a verified repair. */
+        align-items: center;
       }
       h1 {
         font-size: 1rem;
@@ -92,8 +112,13 @@
          owner reported the same complaint again the next day: the control was
          reachable and still looked like a speck. An accessibility guideline
          about target size and a person saying "I cannot see it" are not the
-         same complaint. 1.6 rem is ~25.6 px, over the 24 px floor the plan
-         pinned before this rule was written. */
+         same complaint.
+
+         THE SIZE SENTENCE THAT USED TO END THIS PARAGRAPH IS GONE: it said
+         "1.6 rem is ~25.6 px, over the 24 px floor the plan pinned". Both
+         numbers are stale -- the caret is 0.9 rem since r543, and the 24 px
+         floor was moved off the ink onto #header-toggle, where the rule it came
+         from actually applies. See the size block below. */
       .header-caret {
         display: block;
         /* THE ELEMENT'S BOX IS THE INK, and that is the whole reason this is an
@@ -133,34 +158,59 @@
            shrank below it, which is precisely the measurable-proxy failure the
            paragraph above exists to record.
 
-           SIZE UNCHANGED AT r541, DELIBERATELY, THOUGH IT WAS REPORTED TOO BIG
-           A SECOND TIME. The size is pinned by an explicit OWNER instruction
-           from the fourteenth session -- "so hoch wie das 'Jump to City'-
-           Dropdown" -- which `boot-and-shell.spec.js` holds as a relationship
-           (`|caret.height - quests.height| <= 4`) rather than a rem value. A
-           junior developer's r541 report says it is still too big. Those are two
-           people disagreeing about a visual judgement, and this file is not the
-           place to pick a winner: the conflict is filed with its evidence in
-           `GpsPlusSlamJs_Docs/docs/2026-08-21-caret-size-instructions-conflict-followup.md`.
+           SUPERSEDED AT r543 -- and this paragraph is what the old one said,
+           corrected, because a cold review found the stale version sitting
+           directly above the new rule contradicting it point for point.
 
-           WHAT DID CHANGE is which element carries which floor, and that was a
-           real defect independent of the size. The old e2e asserted the PAINTED
-           INK was >= 24 px, a number that comes from WCAG 2.2 SC 2.5.8 -- a rule
-           about the POINTER TARGET. `#header-toggle` satisfies that on its own
-           at 2.75 rem (44 px). So the ink was held at 25.6 px by a requirement
-           another element already meets, which is the thread running through all
-           three previous attempts: a pseudo-element that could not be measured,
-           a line box that measured the same when empty, a triangle whose WIDTH
-           read as double -- every assertion on the wrong thing. The target floor
-           now sits on the toggle and the ink keeps a legibility floor of its own.
+           It read: "SIZE UNCHANGED AT r541, DELIBERATELY ... pinned by an
+           explicit OWNER instruction from the fourteenth session -- so hoch wie
+           das Jump to City-Dropdown -- which boot-and-shell.spec.js holds as
+           |caret.height - quests.height| <= 4." All three claims are now false:
+           the size DID change (1.6rem -> 0.9rem), the owner replaced that
+           instruction with "match the dropdown TEXT" after a fourth report, and
+           that assertion no longer exists. It also named the wrong control --
+           the pin compared against #geo-event while quoting the #site dropdown.
+
+           WHAT REMAINS TRUE, and is the durable half: which element carries
+           which floor. The old e2e asserted the PAINTED INK was >= 24 px, a
+           number from WCAG 2.2 SC 2.5.8 -- a rule about the POINTER TARGET.
+           #header-toggle satisfies that on its own at 2.75 rem (44 px). So the
+           ink was held at 25.6 px by a requirement another element already
+           meets, which is the thread running through all three earlier
+           attempts: a pseudo-element that could not be measured, a line box
+           that measured the same when empty, a triangle whose WIDTH read as
+           double -- every assertion on the wrong thing. The target floor sits
+           on the toggle; the ink is now pinned to the dropdown's live font
+           size instead of to a floor of its own.
 
            AND NOTE WHY THE TEMPTING FIX IS BARRED: lightening the triangle to a
-           stroke would cut apparent size while the box stayed 25.6 px and every
-           assertion kept passing -- the exact measurable-proxy failure the
+           stroke would cut apparent size while the box kept its measured height and
+           every assertion kept passing -- the exact measurable-proxy failure the
            paragraph above exists to prevent. Any real change here must move the
            element, so the measurement follows it. */
-        width: 1.6rem;
-        height: 1.6rem;
+        /* SIZED TO THE DROPDOWN TEXT (owner decision, r543). Reported too big
+           for the THIRD time -- sessions fourteen, r541 and r543 -- and every
+           previous fix moved it by a notch and was reported again.
+
+           0.9rem of SOLID TRIANGLE, against the dropdown text beside it at
+           0.8rem. The one-notch difference is deliberate and is the whole
+           reason a number appears here rather than `font-size: inherit`: the
+           caret is filled ink and the text is thin strokes, so matching them
+           exactly makes the caret read HEAVIER than the label it sits next to.
+
+           THIS REPLACES AN OWNER PIN THAT SAID THE OPPOSITE. The fourteenth
+           session instruction was "so hoch wie das Jump to City-Dropdown", held
+           in the e2e as |caret.height - site.height| <= 4 -- and that pin is
+           what blocked this change once already. It is superseded by an
+           explicit later decision from the same owner, not weakened to make a
+           test pass. See the caret-conflict follow-up doc.
+
+           BOTH LENGTHS MOVE TOGETHER -- `preserveAspectRatio` defaults to
+           `meet`, so changing one alone letterboxes the ink inside the box and
+           the element keeps measuring a size the eye no longer sees. That is
+           the measurable-proxy failure this control has produced three times. */
+        width: 0.9rem;
+        height: 0.9rem;
         color: #9aa3b8;
         transition: transform 0.15s ease;
       }
@@ -539,6 +589,28 @@
         border-radius: 0.6rem;
         background: rgb(17 19 26 / 96%);
         box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+      }
+
+      /*
+        THE PANEL ACTUALLY CLOSES (r541 + r543 field reports, DEC-Y16).
+
+        `ar-experiment-panel.ts` opens and closes by writing `body.hidden`,
+        which works through the USER-AGENT stylesheet rule `[hidden] { display:
+        none }`. The `display: flex` above is an AUTHOR rule, and author rules
+        beat user-agent rules whatever their specificity -- so `hidden` did
+        nothing at all. The panel was permanently visible and the gear toggled
+        a flag with no visual effect, which is precisely what a dead button
+        looks like from the outside. Reported twice, two branches apart, and
+        diagnosed twice as an input problem before anyone looked at the
+        cascade.
+
+        THIS IS THE GENERAL HAZARD, not a quirk of this panel: any author
+        `display` on an element that also uses the `hidden` attribute silently
+        disables `hidden`. Setting `display` and using `hidden` on the same
+        element always needs this companion rule.
+      */
+      .ar-experiments[hidden] {
+        display: none;
       }
 
       .ar-experiments-row {

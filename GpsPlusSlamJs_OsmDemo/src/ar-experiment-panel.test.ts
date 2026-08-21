@@ -193,3 +193,48 @@ describe("createArExperimentPanel", () => {
     }).not.toThrow();
   });
 });
+
+describe("the seam the CSS guard depends on", () => {
+  // WHY THESE TESTS MATTER (r541 + r543, DEC-Y26).
+  //
+  // The panel was permanently visible because `.ar-experiments { display: flex }`
+  // in the author stylesheet defeats the user-agent `[hidden] { display: none }`
+  // the `hidden` property works through. The fix is a CSS rule,
+  // `.ar-experiments[hidden] { display: none }`, and the e2e that guards it
+  // builds its own DOM with that class name — so it would stay green if this
+  // module renamed the class or stopped using `hidden`, and the reported bug
+  // would come back in full. Cold review flagged that uncoupled seam.
+  //
+  // These two assertions ARE the coupling. They are deliberately about
+  // implementation details, which is unusual and justified: the details are
+  // load-bearing because a stylesheet three files away selects on them.
+
+  it("names the panel body with the class the stylesheet selects on", () => {
+    const root = document.createElement("div");
+    createArExperimentPanel({ root, onChange: () => {} }).attach();
+
+    expect(
+      root.querySelector(".ar-experiments"),
+      "the CSS guard selects .ar-experiments; this module no longer emits it",
+    ).not.toBeNull();
+  });
+
+  it("closes via the `hidden` property, which is what the CSS rule keys on", () => {
+    const root = document.createElement("div");
+    const panel = createArExperimentPanel({ root, onChange: () => {} });
+    panel.attach();
+
+    const body = root.querySelector(".ar-experiments");
+    // MOUNTS CLOSED, and this is where DEC-Y16's reasoning went wrong: the
+    // panel really does mount with `hidden` set, so "the toggle is dead" could
+    // not on its own explain a panel that was reported permanently VISIBLE.
+    // What was missing is that `hidden` had no visual effect at all.
+    expect(body?.hasAttribute("hidden")).toBe(true);
+
+    const gear = root.querySelector<HTMLButtonElement>(".ar-gear");
+    gear?.click();
+    expect(body?.hasAttribute("hidden")).toBe(false);
+    gear?.click();
+    expect(body?.hasAttribute("hidden")).toBe(true);
+  });
+});
