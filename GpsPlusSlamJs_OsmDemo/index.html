@@ -2,7 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      `viewport-fit=cover` is REQUIRED for `env(safe-area-inset-*)` to return
+      anything but 0. Without it, CSS that pins an element to the true bottom
+      edge of a phone resolves its inset to nothing and the element sits wherever
+      layout leaves it — silently, with CSS that reads as correct. This matters
+      most inside the WebXR `dom-overlay`, where the compass bar is meant to sit
+      flush at the bottom. See the plan's §12 dom-overlay research.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <title>OSM affordance demo</title>
     <!--
       A DATA-URI ICON, matching the RecorderApp and the landing page rather than
