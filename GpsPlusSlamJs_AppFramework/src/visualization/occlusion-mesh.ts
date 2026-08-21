@@ -66,7 +66,6 @@ const MESH_NAME = 'occupancy-occluder';
 const DEBUG_MESH_NAME = 'occupancy-occluder-debug';
 const DEBUG_WIREFRAME_MESH_NAME = 'occupancy-occluder-debug-wireframe';
 
-/** Default render order — well before virtual content (which is ≥ 0). */
 /**
  * Mesher used when the caller names none. `'greedy'` merges coplanar faces for
  * the fewest triangles at the same occluded volume — free, because the occluder
@@ -75,6 +74,7 @@ const DEBUG_WIREFRAME_MESH_NAME = 'occupancy-occluder-debug-wireframe';
  */
 const DEFAULT_MESH_MODE: MeshMode = 'greedy';
 
+/** Default render order — well before virtual content (which is ≥ 0). */
 const DEFAULT_RENDER_ORDER = -1;
 
 /** Opacity of the matcap debug skin — see-through enough to read the real scene

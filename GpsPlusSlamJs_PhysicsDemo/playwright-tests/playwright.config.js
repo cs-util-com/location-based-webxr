@@ -28,12 +28,19 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // ONE worker, locally as well as in CI (decided 2026-08-17, DEC-N8). Every
-  // failure this suite has produced on a developer machine was a TIMEOUT, never
-  // an assertion: three parallel workers each drive a full WebGL scene, so they
-  // queue on one GPU instead of overlapping, and the queueing is what expires the
-  // per-test budget. Measured on the same box that had been failing: serial, all
-  // seven specs finished in 26.6 s, with one dropping 39.6 s -> 907 ms. Three
+  // ONE worker, locally as well as in CI (decided 2026-08-17, DEC-N8). Three
+  // parallel workers each drive a full WebGL scene, so they queue on one GPU
+  // instead of overlapping, and the queueing is what expires the per-test
+  // budget — every failure these suites produced on a developer machine was a
+  // TIMEOUT, never an assertion.
+  //
+  // THE MEASUREMENT BEHIND DEC-N8 WAS TAKEN ON THE WAYFINDING SUITE, not here:
+  // serial, its seven tests finished in 26.6 s with one dropping 39.6 s ->
+  // 907 ms. The reasoning transfers (same GPU, same contention), the numbers do
+  // not — an earlier version of this comment was pasted verbatim into three
+  // configs and claimed "all seven specs" in each, which is true of none of
+  // them. Found in review of PR #336.
+  // This suite: 2 spec files, 2 tests — not separately measured.
   // workers therefore buy latency and flakes, not throughput. The sibling
   // Landing and OsmDemo suites reached the same setting from their own
   // measurements — see their configs for the numbers.
