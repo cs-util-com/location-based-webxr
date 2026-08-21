@@ -140,14 +140,14 @@ describe('OcclusionMesh', () => {
     occluder.dispose();
   });
 
-  it('greedy-merges a flat slab (default greedy=true) to fewer triangles', () => {
+  it('greedy-merges a flat slab (the default mode) to fewer triangles', () => {
     const cells: GridCell[] = [];
     for (let x = 0; x < 5; x++)
       for (let y = 0; y < 5; y++) cells.push([x, y, 0]);
 
     const greedy = new OcclusionMesh(new THREE.Group());
     greedy.update(cells, 0.15);
-    const perFace = new OcclusionMesh(new THREE.Group(), { greedy: false });
+    const perFace = new OcclusionMesh(new THREE.Group(), { mode: 'per-face' });
     perFace.update(cells, 0.15);
 
     // 5×5×1 slab: greedy → 6 quads (12 tris); per-face → 70 quads (140 tris).
@@ -160,6 +160,36 @@ describe('OcclusionMesh', () => {
     perFace.dispose();
   });
 
+  it('ignores getCellPoint on the default mesher, which is what lets one field hold the mode', () => {
+    // Why this test matters: `OcclusionMeshOptions` used to carry BOTH a legacy
+    // boolean `greedy` and a newer `mode`, and `update()` chose between them with
+    // a ternary that passed `getCellPoint` down the `mode` branch only. Collapsing
+    // the two into one always-resolved `mode` field means `getCellPoint` is now
+    // passed on the default path too, so the collapse is behaviour-preserving
+    // ONLY IF the default mesher ignores it. That is documented in
+    // `MeshOccupiedCellsOptions` — this pins it, because a future default change
+    // to a centroid-consuming mode would silently alter the no-options occluder.
+    const cells: GridCell[] = [];
+    for (let x = 0; x < 5; x++)
+      for (let y = 0; y < 5; y++) cells.push([x, y, 0]);
+    const wildlyOffset = (c: GridCell): Vector3 => [
+      c[0] * 0.15 + 9,
+      c[1] * 0.15 - 9,
+      c[2] * 0.15 + 9,
+    ];
+
+    const without = new OcclusionMesh(new THREE.Group());
+    without.update(cells, 0.15);
+    const with_ = new OcclusionMesh(new THREE.Group());
+    with_.update(cells, 0.15, wildlyOffset);
+
+    // A centroid 9 m off would be impossible to miss if it were consumed.
+    expect(with_.getTriangleCount()).toBe(without.getTriangleCount());
+    expect(with_.getAabbs()).toEqual(without.getAabbs());
+
+    without.dispose();
+    with_.dispose();
+  });
   it('mode "smooth" builds the surface-nets sheet and consumes getCellPoint (additive opt-in)', () => {
     const cells: GridCell[] = [];
     for (let x = 0; x < 5; x++)
@@ -203,7 +233,7 @@ describe('OcclusionMesh', () => {
     // Geometry is applied → triangle count matches the precomputed buffer…
     expect(occluder.getTriangleCount()).toBe(indices.length / 3);
     // …and equals what a synchronous update() of the same cells would produce.
-    const sync = new OcclusionMesh(new THREE.Group(), { greedy: false });
+    const sync = new OcclusionMesh(new THREE.Group(), { mode: 'per-face' });
     sync.update(cells, 0.15);
     expect(occluder.getTriangleCount()).toBe(sync.getTriangleCount());
     // The worker path does not populate the AABB physics hook (documented).

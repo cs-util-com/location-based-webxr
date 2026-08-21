@@ -67,6 +67,14 @@ const DEBUG_MESH_NAME = 'occupancy-occluder-debug';
 const DEBUG_WIREFRAME_MESH_NAME = 'occupancy-occluder-debug-wireframe';
 
 /** Default render order — well before virtual content (which is ≥ 0). */
+/**
+ * Mesher used when the caller names none. `'greedy'` merges coplanar faces for
+ * the fewest triangles at the same occluded volume — free, because the occluder
+ * never renders colour. Changing it changes what a no-options `OcclusionMesh`
+ * draws, including the framework's own replay session.
+ */
+const DEFAULT_MESH_MODE: MeshMode = 'greedy';
+
 const DEFAULT_RENDER_ORDER = -1;
 
 /** Opacity of the matcap debug skin — see-through enough to read the real scene
@@ -226,18 +234,18 @@ function createOccluderDebugMatcap(): THREE.DataTexture {
 
 export interface OcclusionMeshOptions {
   /**
-   * Merge coplanar faces (fewer triangles, same occluded volume). Default
-   * true — the occluder is invisible, so the coarser triangulation is free.
-   * Ignored when {@link OcclusionMeshOptions.mode} is set.
-   */
-  readonly greedy?: boolean;
-  /**
-   * Mesher strategy (additive opt-in; 2026-06-30 occluder-tuning, F2). When set
-   * it takes precedence over {@link greedy}. `'smooth'` selects the surface-nets
-   * mesher that hugs the measured per-cell centroids — pass a `getCellPoint`
-   * provider to {@link OcclusionMesh.update} for it to read. Left **unset by
-   * default** so existing behaviour (greedy cubes) is byte-for-byte unchanged
-   * until the smooth occluder is confirmed on-device.
+   * Mesher strategy. Defaults to {@link DEFAULT_MESH_MODE} (`'greedy'` — coplanar
+   * faces merged; the occluder is invisible, so the coarser triangulation is
+   * free). `'smooth'` selects the surface-nets mesher that hugs the measured
+   * per-cell centroids — pass a `getCellPoint` provider to
+   * {@link OcclusionMesh.update} for it to read.
+   *
+   * This replaced a legacy `greedy?: boolean` that sat beside it and was chosen
+   * between by a ternary (removed 2026-08-21). The boolean had **zero**
+   * production callers — the recorder and the physics demo both always pass a
+   * `mode`, and the framework's replay session passes no options at all — which
+   * is the same reason the identical boolean shim was deleted one layer down,
+   * from `meshOccupiedCells`, on 2026-07-10.
    */
   readonly mode?: MeshMode;
   /**
@@ -255,8 +263,8 @@ export interface OcclusionMeshOptions {
  */
 export class OcclusionMesh {
   private readonly arSpaceNode: THREE.Object3D;
-  private readonly greedy: boolean;
-  private readonly mode: MeshMode | undefined;
+  /** Always resolved: `options.mode ?? DEFAULT_MESH_MODE`, never undefined. */
+  private readonly mode: MeshMode;
   private readonly material: THREE.MeshBasicMaterial;
   private readonly mesh: THREE.Mesh;
   private geometry: THREE.BufferGeometry;
@@ -283,8 +291,7 @@ export class OcclusionMesh {
    */
   constructor(arSpaceNode: THREE.Object3D, options: OcclusionMeshOptions = {}) {
     this.arSpaceNode = arSpaceNode;
-    this.greedy = options.greedy ?? true;
-    this.mode = options.mode;
+    this.mode = options.mode ?? DEFAULT_MESH_MODE;
     this.geometry = new THREE.BufferGeometry();
     // Invisible depth-writer: contributes only to the depth buffer, so virtual
     // content's normal depth test hides fragments behind the real surface.
@@ -356,9 +363,13 @@ export class OcclusionMesh {
     getCellPoint?: (cell: GridCell) => Vector3 | null
   ): void {
     if (this.disposed) return;
-    const meshOptions: MeshOccupiedCellsOptions = this.mode
-      ? { mode: this.mode, getCellPoint }
-      : { mode: this.greedy ? 'greedy' : 'per-face' };
+    // `getCellPoint` is passed unconditionally: the centroid-consuming modes
+    // read it, and the others document that they ignore it (pinned by the
+    // "ignores getCellPoint on the default mesher" test).
+    const meshOptions: MeshOccupiedCellsOptions = {
+      mode: this.mode,
+      getCellPoint,
+    };
     const { positions, indices, aabbs } = meshOccupiedCells(
       cells,
       cellSizeM,
