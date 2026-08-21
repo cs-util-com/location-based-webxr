@@ -466,6 +466,61 @@ describe("servedBy across overlapping batches (PR #334 review)", () => {
     };
   }
 
+  it("does not let an OLD batch's late PUBLISH claim a newer batch's readout", async () => {
+    // WHY THIS TEST MATTERS. The PR #334 fix guarded the UPGRADE continuation
+    // and left the two publish-path writes unconditional, so the same defect
+    // stayed open through the other door — found in review of PR #336. No
+    // upgrade is involved here at all:
+    //
+    //   1. batch A dispatched, then batch B dispatched
+    //   2. B's preferred arm wins first  -> servedBy = mapterhorn, B's heights
+    //      are what the field is rebuilt from
+    //   3. A's fast arm finally wins     -> servedBy = aws            <-- WRONG
+    //
+    // Nothing forces two in-flight `elevationAt` calls to resolve in dispatch
+    // order, and the worker's terrain-upgrade path deliberately overlaps them.
+    const preferred = queuedProvider("mapterhorn");
+    const fast = queuedProvider("aws");
+    const provider = racingProvider(preferred, fast);
+
+    const batchA = provider.elevationAt(POSITIONS);
+    const batchB = provider.elevationAt(POSITIONS);
+
+    // B publishes FIRST, on the preferred arm.
+    preferred.release(1, [210, 211]);
+    expect(await batchB).toEqual([210, 211]);
+    expect(provider.stats.servedBy).toBe("mapterhorn");
+
+    // A publishes SECOND, on the fast arm. Its heights are stale; its
+    // attribution must not replace the newer batch's.
+    fast.release(0, [200, 201]);
+    expect(await batchA).toEqual([200, 201]);
+    expect(provider.stats.servedBy).toBe("mapterhorn");
+  });
+
+  it("does not let an OLD batch's empty publish blank a newer batch's readout", async () => {
+    // The `servedBy = "none"` write has the same shape as the one above: a
+    // stale batch that finds nothing usable would blank a readout that has
+    // already moved on. `emptyBatches` stays unconditional, because it counts
+    // batches, not what is on screen.
+    const preferred = queuedProvider("mapterhorn");
+    const fast = queuedProvider("aws");
+    const provider = racingProvider(preferred, fast);
+
+    const batchA = provider.elevationAt(POSITIONS);
+    const batchB = provider.elevationAt(POSITIONS);
+
+    preferred.release(1, [210, 211]);
+    expect(await batchB).toEqual([210, 211]);
+    expect(provider.stats.servedBy).toBe("mapterhorn");
+
+    // A finds nothing on either arm.
+    preferred.release(0, [undefined, undefined]);
+    fast.release(0, [undefined, undefined]);
+    expect(await batchA).toEqual([undefined, undefined]);
+    expect(provider.stats.emptyBatches).toBe(1);
+    expect(provider.stats.servedBy).toBe("mapterhorn");
+  });
   it("does not let an OLD batch's late upgrade claim a newer batch's readout", async () => {
     // WHY THIS TEST MATTERS. `trackUpgrade`'s continuation outlives its own
     // call by design -- it is waiting for a source still in flight -- and it

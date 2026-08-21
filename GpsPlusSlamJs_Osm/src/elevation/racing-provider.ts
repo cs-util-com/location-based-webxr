@@ -272,6 +272,23 @@ export function racingProvider(
       // CAPTURED AT DISPATCH, read in the continuation below. A counter read
       // at continuation time would compare a batch against itself.
       const batch = ++latestBatch;
+
+      /**
+       * `servedBy` describes what is ON SCREEN, so only the newest batch may
+       * write it. Every write goes through here — the PR #334 fix guarded the
+       * upgrade continuation only, and left the two publish-path writes
+       * unconditional, so the same defect stayed open through the other door
+       * (found in review of PR #336). Two `elevationAt` calls are not forced
+       * to resolve in dispatch order, and the worker's terrain-upgrade path
+       * deliberately overlaps them.
+       *
+       * The COUNTERS stay unconditional on purpose: `upgrades`,
+       * `emptyBatches`, `preferredWins` and `fastWins` count batches, which is
+       * true of a batch whenever it happens, whatever else has landed since.
+       */
+      const publishServedBy = (sourceId: string): void => {
+        if (batch === latestBatch) stats.servedBy = sourceId;
+      };
       // Both dispatched before either is awaited — that is the race. A `for
       // await` here would serialise them and quietly restore `fallbackProvider`
       // behaviour with worse code.
@@ -312,11 +329,7 @@ export function racingProvider(
             // own check rather than inheriting one.
             if (signal?.aborted === true) return;
             stats.upgrades += 1;
-            // ONLY IF THIS BATCH IS STILL THE NEWEST. `stats.upgrades` above stays
-            // unconditional on purpose: it counts batches that were upgraded,
-            // which is true whenever this runs. `servedBy` is the order-sensitive
-            // one, because it describes what is ON SCREEN right now.
-            if (batch === latestBatch) stats.servedBy = preferred.sourceId;
+            publishServedBy(preferred.sourceId);
             sink(positions, better);
           }),
         );
@@ -342,12 +355,12 @@ export function racingProvider(
         // state, and `servedBy` is described as "which source the current
         // heights came from", of which there are none. A stale attribution is
         // worse than an absent one here, because it reads as working.
-        stats.servedBy = "none";
+        publishServedBy("none");
         trackUpgrade();
         return positions.map(() => undefined);
       }
 
-      stats.servedBy = won.id;
+      publishServedBy(won.id);
 
       if (won.id === preferred.sourceId) {
         // The good source won outright. Nothing to upgrade to.
