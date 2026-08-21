@@ -118,6 +118,36 @@ test.describe("the header as an overlay (Q11)", () => {
       "data-collapsed",
       "false",
     );
-    await page.locator("#map").click({ timeout: 5000 });
+
+    // CLICKED WHERE THE HEADER ACTUALLY IS, which the second version still got
+    // wrong. It clicked `#map` — a bottom sheet at `align-self: end`, whose
+    // centre on 390×780 sits near y≈604 while the header ends around y≈100. No
+    // amount of `pointer-events` on the bar could ever have made that click
+    // fail, so the assertion named pass-through and tested nothing about it.
+    // Third time: aim INSIDE the header's own box, at a gap between its
+    // controls, and require the press to reach the canvas underneath.
+    const header = await page.locator("header").boundingBox();
+    if (header === null) throw new Error("no box for header");
+
+    const reached = await page.evaluate(
+      ({ x, y }) => {
+        const el = document.elementFromPoint(x, y);
+        return {
+          tag: el?.tagName ?? "none",
+          id: el instanceof HTMLElement ? el.id : "",
+          insideHeader:
+            el?.closest("header") !== null &&
+            el?.closest("header") !== undefined,
+        };
+      },
+      // The far right of the header's own strip: inside its box, past the last
+      // control, so anything hit there is the BAR rather than a button.
+      { x: header.x + header.width - 4, y: header.y + header.height / 2 },
+    );
+
+    expect(
+      reached.insideHeader,
+      `a press on the header's empty area hit ${reached.tag}#${reached.id} instead of passing through to the view beneath`,
+    ).toBe(false);
   });
 });

@@ -29,10 +29,15 @@ request rather than two (DEC-Y23).
   ground plane's geometry, where a `NaN` renders nothing and raises no error; the
   field report would read "the 3D view is empty", which is indistinguishable from
   several unrelated causes.
-- **The ceiling is about memory, not taste.** `GROUND_SEGMENTS` derives from
-  `TERRAIN_EXTENT_M * 2 / TERRAIN_SPACING_M`, so vertex count grows with the
-  extent; an unbounded multiplier kills the tab, which teaches the operator
-  nothing about where the affordable limit was.
+- **The ceiling is about draw cost and legibility, NOT memory** — the original
+  wording here claimed an unbounded multiplier would OOM because
+  `GROUND_SEGMENTS` grows with the extent. It does not: the derivation is capped
+  at `MAX_GROUND_SEGMENTS` (480), and at 10x the derived 4000 is discarded.
+  - **What degrades is resolution.** With the segment count pinned, widening the
+    plane grows each quad from ~12 m to ~120 m, so the distant relief the
+    control exists to reveal is what gets coarser as the dial turns. A flat-
+    looking distance at 10x may be the sampling rather than the ground, and that
+    has to be read before drawing a conclusion from the experiment.
 - **It does NOT fetch more terrain data.** The extent controls how far the
   already-sampled field is drawn. If the field is only sampled to 2400 m, a
   larger extent draws a flat or extrapolated skirt — and that limit may itself be

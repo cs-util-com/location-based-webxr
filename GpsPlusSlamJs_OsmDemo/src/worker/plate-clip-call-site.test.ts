@@ -40,15 +40,40 @@ describe("the production area-plate call site", () => {
     // The measured cost of not doing so: ~2 160 ms against ~135 ms, with the
     // same plate count returned either way — so nothing downstream looks wrong
     // and no other assertion in the repo fires.
-    const calls = [
-      ...source.matchAll(/buildAreaPlates\s*\(([\s\S]{0,400}?)\)\s*;/g),
-    ];
+    // ENUMERATED BY COUNTING PARENTHESES, not by matching a closing `);`.
+    //
+    // The first version required the call to end in `)` `;` within 400
+    // characters, which silently skipped the two shapes that matter most —
+    // `buildAreaPlates(all, options).filter(...)` and any call whose arguments
+    // ran long. Since `calls.length` was only checked against zero, the existing
+    // clipped call kept the guard green while an added unclipped one in either
+    // shape went unseen. That is precisely "a new call site without it", one of
+    // the three regressions this file names. Caught in review of PR #333.
+    const calls = [];
+    for (const match of source.matchAll(/buildAreaPlates\s*\(/g)) {
+      // Walk from the opening paren to its partner, so the argument list is
+      // bounded by structure rather than by a guessed character budget.
+      let depth = 0;
+      let end = match.index + match[0].length - 1;
+      for (; end < source.length; end += 1) {
+        const char = source[end];
+        if (char === "(") depth += 1;
+        else if (char === ")") {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      calls.push({
+        args: source.slice(match.index + match[0].length, end),
+        at: source.slice(0, match.index).split("\n").length,
+      });
+    }
     expect(calls.length).toBeGreaterThan(0);
 
-    for (const [whole, args] of calls) {
+    for (const call of calls) {
       expect(
-        args,
-        `a buildAreaPlates call omits clipTo, which costs ~2 s per full mesh build and changes nothing visible:\n${whole}`,
+        call.args,
+        `demo-worker.ts:${call.at} calls buildAreaPlates without clipTo, which costs ~2 s per full mesh build and changes nothing visible`,
       ).toMatch(/clipTo\s*:/);
     }
   });

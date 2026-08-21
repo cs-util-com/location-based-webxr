@@ -26,6 +26,16 @@
 import { describeDrawCost, type DrawCost } from "./draw-cost.js";
 
 /**
+ * The widest a HUD line may be before it wraps on a 390 px phone.
+ *
+ * Characters rather than pixels, deliberately: the readout is a monospace-ish
+ * run of short tokens at 0.9 rem, and a pixel measurement here would be the
+ * load-sensitive kind of assertion this repo has spent two sessions removing
+ * from its gates.
+ */
+const MAX_LINE_CHARS = 40;
+
+/**
  * Two readouts on one line, or whichever one exists (Q7).
  *
  * **Not an all-or-nothing group**, and that is the whole reason this is a
@@ -38,10 +48,19 @@ import { describeDrawCost, type DrawCost } from "./draw-cost.js";
  * than items in a list, and a middle dot survives being read at arm's length
  * against a camera feed better than punctuation that sits on the baseline.
  */
-function pair(left: string, right: string): string {
-  if (left === "") return right;
-  if (right === "") return left;
-  return `${left} · ${right}`;
+function pair(left: string, right: string): string[] {
+  if (left === "") return right === "" ? [] : [right];
+  if (right === "") return [left];
+  const merged = `${left} · ${right}`;
+  // FALLS BACK TO TWO LINES RATHER THAN OVERFLOWING (PR #333 review). The height
+  // pair carries an optional `± N m` accuracy suffix that phones routinely
+  // report, and with it the merged line reaches 43 characters against a budget
+  // of 40 — so the ordinary case, not an extreme, wrapped on a 390 px screen.
+  //
+  // Wrapping is worse than not pairing: a merged line that wraps costs the same
+  // two rows AND loses the alignment that made the pair readable. Pairing is an
+  // optimisation, so it declines when it would not pay.
+  return merged.length <= MAX_LINE_CHARS ? [merged] : [left, right];
 }
 
 /** Everything the AR readout can show. Every field optional and independent. */
@@ -331,8 +350,7 @@ export function describeArMeasurements(
   const fps = isUsable(measurements.fps)
     ? `${Math.round(measurements.fps)} fps`
     : "";
-  const renderCost = pair(cost, fps);
-  if (renderCost !== "") lines.push(renderCost);
+  lines.push(...pair(cost, fps));
 
   if (isUsable(measurements.fixAccuracyM)) {
     // ONE DECIMAL BELOW 10 m, none above. The interesting distinction near the
@@ -398,8 +416,7 @@ export function describeArMeasurements(
 
   // Emitted here, at the point the second half becomes known, so the height
   // pair keeps its place in the readout's order (Q7).
-  const heights = pair(altitude, worldFloor);
-  if (heights !== "") lines.push(heights);
+  lines.push(...pair(altitude, worldFloor));
 
   // THE DEM'S OWN STATE FIRST, because everything below depends on whether it
   // loaded at all. `false` is a claim; `undefined` is only "not reported".

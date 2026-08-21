@@ -289,6 +289,14 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     hud?: ArHud;
     elevation?: ArElevationControl;
     compass?: ArCompassControl;
+    /**
+     * Removes the `beforexrselect` handler from the PAGE-lifetime overlay root.
+     *
+     * Named here rather than left unregistered because `deps.container` is
+     * `el("ar-root")` and outlives every session: a handler added per entry and
+     * never removed accumulates for the life of the tab (PR #333 review).
+     */
+    releaseXrSelect?: () => void;
     /** The top-of-screen column the readout lives in (DEC-W5). */
     stack?: HTMLElement;
     /**
@@ -333,6 +341,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // THE FRAME CALLBACK FIRST. It reads the renderer and writes the DOM, and
     // both are about to be torn down — an unregister that ran after the scene
     // changed would leave one more sample running against half-dead state.
+    session.releaseXrSelect?.();
     session.unregisterFrame?.();
     session.hud?.dispose();
     // BEFORE the city is handed back, so the control cannot outlive the scene
@@ -397,9 +406,21 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // Registered BEFORE `initAR` so no frame of a live session is unprotected, and
   // on the overlay root itself because the event is composed and bubbles from
   // whichever child was hit.
-  deps.container.addEventListener("beforexrselect", (event) => {
+  //
+  // REGISTERED INTO `release()`'s DISCIPLINE, not outside it (PR #333 review).
+  // `deps.container` is `el("ar-root")` — a PAGE-lifetime element, not something
+  // built per session — so a listener added here and never removed accumulates
+  // one handler per AR entry for the life of the tab. Today that is N idempotent
+  // `preventDefault()` calls and therefore benign, which is exactly why it would
+  // have survived: the next listener added to this element by someone following
+  // the pattern would not be benign.
+  const cancelXrSelect = (event: Event): void => {
     event.preventDefault();
-  });
+  };
+  deps.container.addEventListener("beforexrselect", cancelXrSelect);
+  session.releaseXrSelect = () => {
+    deps.container.removeEventListener("beforexrselect", cancelXrSelect);
+  };
 
   try {
     await initAR(

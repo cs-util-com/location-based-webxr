@@ -35,12 +35,26 @@ import { TERRAIN_EXTENT_M } from "./heightfield.js";
 /**
  * The largest multiplier the control offers.
  *
- * The reporter asked to "really push it to the extreme", and 10× is that. It is
- * a CEILING rather than free travel because the ground plane's vertex count
- * grows with the extent — `GROUND_SEGMENTS` is derived from
- * `TERRAIN_EXTENT_M * 2 / TERRAIN_SPACING_M` — so an unbounded multiplier is an
- * out-of-memory rather than a slow frame, and a browser tab that dies tells the
- * operator nothing about where the affordable limit was.
+ * The reporter asked to "really push it to the extreme", and 10× is that.
+ *
+ * **THE ORIGINAL RATIONALE HERE WAS WRONG, and the correction matters for
+ * whoever wires this.** It said an unbounded multiplier would be an
+ * out-of-memory because `GROUND_SEGMENTS` derives from
+ * `TERRAIN_EXTENT_M * 2 / TERRAIN_SPACING_M`. That derivation is **capped**:
+ * `GROUND_SEGMENTS = Math.min(MAX_GROUND_SEGMENTS, derived)`, and
+ * `MAX_GROUND_SEGMENTS` is 480. At 10x
+ * the derived value is 4000 against a cap of 480, so the vertex count is pinned
+ * and cannot grow at all. Caught in review of PR #333.
+ *
+ * What actually degrades is **resolution, not memory**: with the segment count
+ * fixed, widening the plane grows each quad from ~12 m to ~120 m, so the terrain
+ * relief the reporter wants to see further away is exactly what gets coarser as
+ * they turn the dial. That is worth knowing before reading the result — a flat-
+ * looking distance at 10× may be the sampling, not the ground.
+ *
+ * The ceiling therefore exists to bound **draw cost and legibility**, not to
+ * prevent a crash. 10× is where the reporter's own question runs out rather than
+ * a measured limit, and finding the affordable value is what the control is for.
  */
 export const MAX_RENDER_MULTIPLIER = 10;
 

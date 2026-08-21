@@ -806,8 +806,8 @@ test.describe("the header", () => {
     //
     // The ink keeps a floor, because a caret can genuinely become a speck --
     // that was the sixth and thirteenth sessions complaint -- but the floor is
-    // now about legibility rather than about reachability, and is set below the
-    // shipped 17.6 px so ordinary tuning does not trip it.
+    // now about legibility rather than about reachability, and is set well
+    // below the shipped 1.6 rem (25.6 px) so ordinary tuning does not trip it.
     expect(caret.height).toBeGreaterThanOrEqual(14);
     // AND SMALLER THAN THE TAP TARGET, which is the relationship the last three
     // sessions kept collapsing. If these two are ever equal again, the ink has

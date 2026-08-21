@@ -3,17 +3,24 @@
   <head>
     <meta charset="utf-8" />
     <!--
-      `viewport-fit=cover` is REQUIRED for `env(safe-area-inset-*)` to return
-      anything but 0. Without it, CSS that pins an element to the true bottom
-      edge of a phone resolves its inset to nothing and the element sits wherever
-      layout leaves it — silently, with CSS that reads as correct. This matters
-      most inside the WebXR `dom-overlay`, where the compass bar is meant to sit
-      flush at the bottom. See the plan's §12 dom-overlay research.
+      NO `viewport-fit=cover`, DELIBERATELY, and it was added and then reverted.
+
+      Opting in does two things: it makes `env(safe-area-inset-*)` non-zero, and
+      it extends the layout viewport UNDER the system bars. This package consumes
+      no safe-area inset anywhere — the AR bottom stack uses a plain `bottom:
+      4vh`, and the top offset at the `.ar-hud` rule says outright that it is a
+      plain offset rather than a `max(..., env(safe-area-inset-top))`.
+
+      So the only live effect would be the second half: content pushed further
+      down, under the navigation bar. That is the WRONG DIRECTION for the very
+      symptom it was meant to help — a compass bar reported as not sitting flush
+      at the bottom. Caught in review of PR #333.
+
+      Opting in is still the right move the day something consumes the insets,
+      and `ar-overlay-contract.test.ts` pins exactly that coupling so the two
+      halves cannot be separated again.
     -->
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OSM affordance demo</title>
     <!--
       A DATA-URI ICON, matching the RecorderApp and the landing page rather than

@@ -69,10 +69,18 @@ describe("describeArMeasurements", () => {
       // characters; the assertion is on the budget the layout was designed
       // against, not on a measured pixel width, because the latter is exactly
       // the load-sensitive assertion this repo has been removing.
+      // `altitudeAccuracyM` IS PART OF THE WIDEST CASE, and leaving it out was
+      // the hole in the first version of this test: `main.ts` feeds it from
+      // `coords.altitudeAccuracy`, which phones routinely report at 10–30 m, so
+      // the `±` suffix is the ordinary case rather than an extreme. Without it
+      // the fixture asserted a budget the shipped code does not hold — a normal
+      // European fix already produces `alt 170.3 m ±12.3 m · world floor
+      // -1.23 m`, which is 41 characters. Caught in review of PR #333.
       const lines = describeArMeasurements({
         drawCost: { calls: 999, triangles: 9_999_999 },
         fps: 120,
         altitudeM: -123.4,
+        altitudeAccuracyM: 12.3,
         worldBaselineY: -12.34,
       });
 
