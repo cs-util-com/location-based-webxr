@@ -20,6 +20,71 @@ describe("describeArMeasurements", () => {
     expect(describeArMeasurements({})).toEqual([]);
   });
 
+  describe("pairing, so the readout reads as groups not a list (Q7)", () => {
+    /**
+     * Why these tests matter: the r541 field report said the HUD "macht noch
+     * nicht so viel Sinn" because related quantities sit on separate lines —
+     * "das 30 FPS und das 40 Draws könnte nebeneinander sein", and altitude with
+     * world floor likewise. On a phone the readout is tall and each line is
+     * short, so the vertical space is spent on whitespace rather than data.
+     *
+     * Pairing is done at CONSTRUCTION rather than by a later merge pass,
+     * because which lines belong together is a semantic question and a
+     * width-driven auto-merge would join whatever happened to be adjacent.
+     */
+
+    it("puts the two render-cost numbers on ONE line", () => {
+      const lines = describeArMeasurements({
+        drawCost: { calls: 42, triangles: 812_345 },
+        fps: 30,
+      });
+
+      expect(lines).toContain("42 draws / 812,345 tri · 30 fps");
+      // And not also as separate lines, which would double the readout.
+      expect(lines).not.toContain("30 fps");
+    });
+
+    it("still shows either one alone when the other is missing", () => {
+      // The pair must not become an all-or-nothing group: fps is available from
+      // the first frame, the draw cost only once something has been rendered,
+      // so a naive join would blank a live number while waiting for its partner.
+      expect(describeArMeasurements({ fps: 30 })).toContain("30 fps");
+      expect(
+        describeArMeasurements({ drawCost: { calls: 42, triangles: 8 } }),
+      ).toContain("42 draws / 8 tri");
+    });
+
+    it("puts altitude and world floor on ONE line", () => {
+      const lines = describeArMeasurements({
+        altitudeM: 123.4,
+        worldBaselineY: -1.23,
+      });
+
+      expect(lines).toContain("alt 123.4 m · world floor -1.23 m");
+    });
+
+    it("keeps a merged line short enough for a 390 px phone", () => {
+      // Q3's constraint still governs: a merge is only worth doing where the
+      // merged line still fits. At the HUD's 0.9rem this is roughly 40
+      // characters; the assertion is on the budget the layout was designed
+      // against, not on a measured pixel width, because the latter is exactly
+      // the load-sensitive assertion this repo has been removing.
+      const lines = describeArMeasurements({
+        drawCost: { calls: 999, triangles: 9_999_999 },
+        fps: 120,
+        altitudeM: -123.4,
+        worldBaselineY: -12.34,
+      });
+
+      for (const line of lines) {
+        expect(
+          line.length,
+          `too long for a phone: ${line}`,
+        ).toBeLessThanOrEqual(40);
+      }
+    });
+  });
+
   it("reports the AR renderer's draw cost", () => {
     const lines = describeArMeasurements({
       drawCost: { calls: 42, triangles: 812_345 },
@@ -85,8 +150,12 @@ describe("describeArMeasurements", () => {
     });
 
     expect(lines).toEqual([
-      "12 draws / 1,000 tri",
-      "60 fps",
+      // PAIRED since Q7 — the two render-cost numbers share the first line.
+      // Updated rather than re-greened: the order this test defends is
+      // unchanged, only the grouping is, and the property it exists for (a
+      // glance finds the same number in the same place) is what makes the pair
+      // an improvement rather than a violation.
+      "12 draws / 1,000 tri · 60 fps",
       "gps ±6.0 m",
       "40 m from anchor",
     ]);

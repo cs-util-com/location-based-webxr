@@ -25,6 +25,25 @@
 
 import { describeDrawCost, type DrawCost } from "./draw-cost.js";
 
+/**
+ * Two readouts on one line, or whichever one exists (Q7).
+ *
+ * **Not an all-or-nothing group**, and that is the whole reason this is a
+ * function rather than a template literal at each site: the halves of a pair
+ * become available at different times — fps from the first frame, the draw cost
+ * only once something has rendered — so joining them unconditionally would blank
+ * a number that is already known while it waits for a partner.
+ *
+ * `·` rather than a comma because both halves are independent quantities rather
+ * than items in a list, and a middle dot survives being read at arm's length
+ * against a camera feed better than punctuation that sits on the baseline.
+ */
+function pair(left: string, right: string): string {
+  if (left === "") return right;
+  if (right === "") return left;
+  return `${left} · ${right}`;
+}
+
 /** Everything the AR readout can show. Every field optional and independent. */
 export interface ArMeasurements {
   /** From the AR renderer's `info.render` — NOT the desktop view's. */
@@ -277,6 +296,16 @@ export function describeArMeasurements(
   options: ArReadoutOptions = {},
 ): readonly string[] {
   const lines: string[] = [];
+  /**
+   * The two height terms, held rather than pushed so they can share a line.
+   *
+   * They are read together or not at all — `alt` is what GPS reported and
+   * `world floor` is where the alignment put the ground, and the interesting
+   * quantity is the relationship between them. Separate lines made a reader do
+   * the pairing by eye every time (Q7).
+   */
+  let altitude = "";
+  let worldFloor = "";
   const expanded = options.expanded === true;
   /**
    * Push a line only when the readout is expanded.
@@ -288,12 +317,22 @@ export function describeArMeasurements(
     if (expanded) lines.push(line);
   };
 
+  // PAIRED, NOT LISTED (Q7). The two render-cost numbers answer one question —
+  // "is this frame affordable" — and on a phone each occupied a whole line of a
+  // readout that is already tall. The field report asked for them side by side.
+  //
+  // Joined here rather than by a later width-driven merge pass: which lines
+  // belong together is semantic, and an auto-merge would pair whatever happened
+  // to be adjacent. `pair` also keeps either half usable alone, which matters
+  // because fps is live from the first frame while the draw cost only appears
+  // once something has rendered — an all-or-nothing group would blank a number
+  // that is already known.
   const cost = describeDrawCost(measurements.drawCost);
-  if (cost !== "") lines.push(cost);
-
-  if (isUsable(measurements.fps)) {
-    lines.push(`${Math.round(measurements.fps)} fps`);
-  }
+  const fps = isUsable(measurements.fps)
+    ? `${Math.round(measurements.fps)} fps`
+    : "";
+  const renderCost = pair(cost, fps);
+  if (renderCost !== "") lines.push(renderCost);
 
   if (isUsable(measurements.fixAccuracyM)) {
     // ONE DECIMAL BELOW 10 m, none above. The interesting distinction near the
@@ -336,7 +375,7 @@ export function describeArMeasurements(
     const accuracy = isUsable(measurements.altitudeAccuracyM)
       ? ` ±${measurements.altitudeAccuracyM.toFixed(1)} m`
       : "";
-    lines.push(`alt ${measurements.altitudeM.toFixed(1)} m${accuracy}`);
+    altitude = `alt ${measurements.altitudeM.toFixed(1)} m${accuracy}`;
   }
 
   if (
@@ -354,8 +393,13 @@ export function describeArMeasurements(
     // `world floor`, NOT `baseline` (H7). "Baseline" named nothing a reader
     // could picture; this is the fusion's estimate of where the ground plane
     // sits, and it is the AR ORIGIN rather than anything about the camera.
-    lines.push(`world floor ${measurements.worldBaselineY.toFixed(2)} m`);
+    worldFloor = `world floor ${measurements.worldBaselineY.toFixed(2)} m`;
   }
+
+  // Emitted here, at the point the second half becomes known, so the height
+  // pair keeps its place in the readout's order (Q7).
+  const heights = pair(altitude, worldFloor);
+  if (heights !== "") lines.push(heights);
 
   // THE DEM'S OWN STATE FIRST, because everything below depends on whether it
   // loaded at all. `false` is a claim; `undefined` is only "not reported".

@@ -38,6 +38,20 @@ worldBaselineY? }`, every field optional and independent.
   looking for one number, not an overview.
 - **Fixed order**, so a glance always finds the same number in the same place. A
   readout that reorders as values appear has to be re-read each time.
+- **Related readouts are PAIRED onto one line** with a middle dot (Q7): the two
+  render-cost numbers together, and `alt` with `world floor` together. The field
+  report was that the readout reads as an undifferentiated list; on a phone each
+  short line was costing a whole row.
+  - **A pair is not an all-or-nothing group.** Its halves become available at
+    different times — fps from the first frame, the draw cost only once
+    something has rendered — so `pair()` emits whichever exists rather than
+    waiting for both. Joining unconditionally would blank a number that is
+    already known.
+  - **Paired at construction, not by a later width-driven merge.** Which lines
+    belong together is semantic; an auto-merge would join whatever happened to
+    be adjacent.
+  - A merged line must still fit a 390 px phone — about 40 characters at the
+    HUD size. Pinned by a test over the widest plausible values.
 - **Precision follows what the reader can act on**: a tenth of a metre below
   10 m of fix accuracy and none above (the interesting band is 4.5 versus 8 m;
   at 30 m the tenth is precision the fix does not have); metres under a
@@ -49,7 +63,7 @@ worldBaselineY? }`, every field optional and independent.
 
 ```ts
 describeArMeasurements({ drawCost: { calls: 12, triangles: 1000 }, fps: 59.6 });
-// ["12 draws / 1,000 tri", "60 fps"]
+// ["12 draws / 1,000 tri · 60 fps"]
 ```
 
 ## Tests
