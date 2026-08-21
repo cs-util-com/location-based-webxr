@@ -104,3 +104,43 @@ reports complete first. The branch is still correct and still needed for a
 caller that skips frames, and `ar-descent.test.ts` covers it directly. Do not
 read a surviving mutation on that line as a coverage gap; see
 `GpsPlusSlamJs_Docs/docs/2026-08-20-1055-descent-wiring-test-survives-a-stall-mutation-followup.md`.
+
+## The entry gate (r543)
+
+`descentMayStart({ waitedS, estimateReady })` — whether the descent may begin.
+
+**The jump it removes.** _"Das erste Mal ... starte ich bei Altitude null ...
+wodurch ich dann erstmal sehr weit unter der Open Street Map Welt bin und dann
+wird meine Altitude gefixt, so dass ich dann auf einmal über die OSM Welt
+springe."_ The descent used to begin on the first frame, when the auto-elevation
+term is still `0` because no estimate has arrived. The city was therefore placed
+by an uncorrected datum, and the correction landed **mid-descent**, as a jump. A
+second entry looked fine because the estimate was already warm.
+
+- `estimateReady` means **engaged**, not merely present: an unengaged estimate
+  contributes zero to the composition, so starting on one starts on the same `0`
+  the jump comes from.
+- `DESCENT_ESTIMATE_WAIT_S = 3` is a **fallback, not a budget**. A device with no
+  depth and no DEM never engages the estimator, and an unbounded wait there is a
+  black screen with no way out — worse than the jump.
+- A non-finite `waitedS` collapses to **"not yet"**, never to "go": failing the
+  other way places the city from the zeroed estimate this gate exists to wait
+  for, i.e. straight back into the reported bug.
+
+**How `ar-mode.ts` uses it, and why the shape is not the obvious one.** The city
+is attached **eagerly** at `startArMode`, already at descent depth, and the
+passthrough is held **black** until the gate opens. The first attach is _not_
+deferred to the frame that opens the gate, because `attachContentTo` can throw
+and `startArMode`'s `catch` is what turns that into a clean rollback — moving the
+attach into the frame callback moved it out of that catch, leaving a live session
+with no city and no error. A test written for exactly that path caught it.
+
+The auto term is then **snapped**, not eased, on the frame the gate opens: the
+ease exists so a live correction cannot jump under someone who is looking at it,
+and nothing has been visible during the wait.
+
+Note also that `ar-mode.ts`'s start guard no longer tests `descentM === 0`. With
+the city attached at descent depth, `descentM` is already `-startM` on the first
+frame, so that condition would never hold again and silently disabled the whole
+descent — four tests caught it, all reporting the city stuck at its starting
+depth.

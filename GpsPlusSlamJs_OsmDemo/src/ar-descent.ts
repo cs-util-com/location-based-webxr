@@ -142,3 +142,63 @@ export function cameraFadeAlpha(input: DescentInput): number {
 export function descentComplete(input: DescentInput): boolean {
   return descentOffsetM(input) === 0;
 }
+
+/**
+ * How long the entry waits for the elevation estimate before giving up on it.
+ *
+ * A FALLBACK, NOT A BUDGET. The estimator needs a depth frame and a DEM sample,
+ * and on a device that supplies neither it never engages at all — so a wait with
+ * no ceiling is a black screen with no way out, which is a worse failure than
+ * the jump this gate exists to remove.
+ *
+ * **THREE SECONDS IS A GUESS, and it may well be too short.** The estimator
+ * engages at `AUTO_ENGAGE_CONFIDENCE`, and its confidence is built from depth
+ * observations that need MOTION -- `ar-mode.test.ts` reaches an engaged state
+ * only by walking for ~5 s, and a user entering AR is standing still. If that
+ * is representative, this fallback is the NORMAL path rather than the
+ * exception, and the correction then arrives through the ease at 1.5 m/s: a
+ * 10 m residual takes 6.7 s against a 6 s descent, so it lands mid-descent and
+ * outlasts it. Filed with the arithmetic and the field measurement to take, in
+ * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
+ *
+ * It is NOT raised speculatively: a longer black screen is a real cost, and
+ * without the engagement distribution any other value is the same guess.
+ */
+export const DESCENT_ESTIMATE_WAIT_S = 3;
+
+export interface DescentStartGate {
+  /** Seconds since the session's first frame. */
+  readonly waitedS: number;
+  /**
+   * Whether the elevation estimator has produced an ENGAGED value.
+   *
+   * Engaged, not merely present: an unengaged estimate contributes zero to the
+   * composition, so starting on one would start on the same 0 the jump comes
+   * from.
+   */
+  readonly estimateReady: boolean;
+}
+
+/**
+ * Whether the entry descent may begin.
+ *
+ * **THE JUMP THIS REMOVES** (r543 field report): "das erste Mal ... starte ich
+ * bei Altitude null ... wodurch ich dann erstmal sehr weit unter der Open Street
+ * Map Welt bin und dann wird meine Altitude gefixt, so dass ich dann auf einmal
+ * über die OSM Welt springe". The descent used to start on the first frame,
+ * when the auto elevation term is still 0 because no estimate has arrived. The
+ * city was therefore placed by an uncorrected datum, and the correction landed
+ * mid-descent as a jump. The second entry looked fine because the estimate was
+ * already warm.
+ *
+ * **Non-finite `waitedS` collapses to "not yet"**, never to "go": a `NaN` clock
+ * reading that started the descent would place the city from the same zeroed
+ * estimate this gate exists to wait for, i.e. it would fail back into precisely
+ * the reported bug.
+ */
+export function descentMayStart(gate: DescentStartGate): boolean {
+  if (gate.estimateReady) return true;
+  return (
+    Number.isFinite(gate.waitedS) && gate.waitedS >= DESCENT_ESTIMATE_WAIT_S
+  );
+}

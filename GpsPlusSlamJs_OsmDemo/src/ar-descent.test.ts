@@ -16,7 +16,9 @@ import * as fc from "fast-check";
 import {
   cameraFadeAlpha,
   descentComplete,
+  descentMayStart,
   descentOffsetM,
+  DESCENT_ESTIMATE_WAIT_S,
   DESCENT_FALL_S,
   DESCENT_HOLD_S,
   DESCENT_MAX_START_M,
@@ -240,5 +242,63 @@ describe("descentComplete", () => {
         startM: START_M,
       }),
     ).toBe(true);
+  });
+});
+
+describe("descentMayStart — the entry gate (r543)", () => {
+  // WHY THESE TESTS MATTER. The r543 field report: entering AR the first time
+  // placed the city from an elevation estimate that had not arrived, so the
+  // user started far under the world and everything jumped when the estimate
+  // landed. The descent must not begin until the number it is measured from
+  // exists — but it must still begin on a device that never produces one.
+
+  it("starts as soon as an ENGAGED estimate exists, without waiting out the clock", () => {
+    expect(descentMayStart({ waitedS: 0, estimateReady: true })).toBe(true);
+  });
+
+  it("holds while the estimate is missing", () => {
+    // The whole point: this is the state the reported jump came from.
+    expect(descentMayStart({ waitedS: 0, estimateReady: false })).toBe(false);
+    expect(
+      descentMayStart({
+        waitedS: DESCENT_ESTIMATE_WAIT_S - 0.01,
+        estimateReady: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("gives up and starts anyway once the wait is over", () => {
+    // A device with no depth and no DEM never engages the estimator. Waiting
+    // forever there is a black screen with no way out — a worse failure than
+    // the jump.
+    expect(
+      descentMayStart({
+        waitedS: DESCENT_ESTIMATE_WAIT_S,
+        estimateReady: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("treats a non-finite clock as 'not yet', never as 'go'", () => {
+    // Failing the other way would place the city from the zeroed estimate this
+    // gate exists to wait for — i.e. straight back into the reported bug.
+    // BOTH MEMBERS OF THE CLASS. The first version wrote
+    // `Number.POSITIVE_INFINITY * 0` for the second case, which IS `NaN` -- so
+    // it tested the same input twice and never passed an infinity at all. It
+    // would not have caught a mutation from `Number.isFinite` to
+    // `!Number.isNaN`. Cold review caught it.
+    for (const bad of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ]) {
+      expect(descentMayStart({ waitedS: bad, estimateReady: false })).toBe(
+        false,
+      );
+    }
+    // ...but an engaged estimate still wins, because then the clock is moot.
+    expect(descentMayStart({ waitedS: Number.NaN, estimateReady: true })).toBe(
+      true,
+    );
   });
 });

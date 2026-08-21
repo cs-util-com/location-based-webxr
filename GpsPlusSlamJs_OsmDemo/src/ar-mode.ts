@@ -48,8 +48,10 @@ import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visuali
 import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import { getCompassDiagnostics } from "gps-plus-slam-app-framework/state";
+import { createArEntryGround, entryGroundOpacity } from "./ar-entry-ground.js";
 import {
   cameraFadeAlpha,
+  descentMayStart,
   descentComplete,
   descentOffsetM,
   DESCENT_MAX_START_M,
@@ -306,6 +308,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     bottom?: HTMLElement;
     experiments?: ArExperimentPanel;
     shell?: ArBuildingMaterial;
+    // `| undefined` EXPLICITLY, because `exactOptionalPropertyTypes` is on:
+    // the landing branch CLEARS this field, and without the union a bare `?`
+    // means "may be absent", not "may be set to undefined".
+    entryGround?: ReturnType<typeof createArEntryGround> | undefined;
     unregisterFrame?: () => void;
   } = {};
 
@@ -363,6 +369,13 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     session.bottom?.remove();
     // RESTORED BEFORE the city is handed back, so the desktop view never sees
     // an additive, depth-write-free material against its own sky gradient.
+    // THE ENTRY GROUND, BEFORE the city is handed back. It is an opaque,
+    // screen-sized plane in the AR scene; anything that leaves it behind turns
+    // the passthrough into a grey lid. Disposing here as well as on landing is
+    // deliberate belt-and-braces -- a session ended DURING the descent never
+    // reaches the landing branch, and that is the common case when someone
+    // backs out because the entry looked wrong.
+    session.entryGround?.dispose();
     deps.buildingView.setArShellMaterial(undefined);
     session.shell?.material.dispose();
     // On BOTH exits, and NOT because the framework's objects are shared —
@@ -586,6 +599,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
      * rest of the session; `descentM` is its current contribution.
      */
     let descentStartS: number | undefined;
+    /** The frame clock reading of the session's first frame (r543 entry gate). */
+    let contentAttached = false;
+    let firstFrameS: number | undefined;
     let descentM = 0;
     /** Latched, so the one-shot start guard cannot re-arm after the landing. */
     let descentDone = false;
@@ -602,10 +618,67 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       Math.max(0, deps.buildingView.cameraHeightM?.() ?? 0),
     );
     let appliedAutoM = 0;
+    /**
+     * Move everything that lives on the vertical axis, together.
+     *
+     * THE ENTRY GROUND MOVES HERE AND NOWHERE ELSE, which is the whole reason
+     * this function grew a body. It was positioned at its creation and again in
+     * the frame loop, and both call sites used `descentM` alone -- so the
+     * ground sat `auto + trim` metres from the surface the buildings stand on.
+     * Fixing the two call sites left a THIRD path uncovered: the manual nudge
+     * re-attaches the city through here without touching the frame loop, so the
+     * ground lagged a nudge until the next frame. Three call sites, one of them
+     * missed, is the argument for none.
+     */
     const applyComposed = () => {
-      applyElevation(composeElevationM(appliedAutoM, manualTrimM, descentM));
+      const composedM = composeElevationM(appliedAutoM, manualTrimM, descentM);
+      applyElevation(composedM);
+      session.entryGround?.setHeightM(geometricOffset.up + composedM);
     };
-    applyElevation(0);
+    // ATTACHED AT DESCENT DEPTH, NOT AT ZERO -- the r543 entry jump.
+    //
+    // This used to be `applyElevation(0)`, which put the city at the height an
+    // auto-elevation term of 0 implies, because no estimate has arrived on the
+    // first frame. "Das erste Mal ... starte ich bei Altitude null ... wodurch
+    // ich dann erstmal sehr weit unter der Open Street Map Welt bin und dann
+    // wird meine Altitude gefixt, so dass ich dann auf einmal über die OSM Welt
+    // springe." The correction landed mid-descent, as a jump.
+    //
+    // THE FIX IS TWO HALVES AND NEEDS BOTH. The city goes straight to the
+    // descent's starting depth here, and the frame loop holds the passthrough
+    // BLACK until the estimate lands (see `descentMayStart`) -- so the frames
+    // in which the city is placed from an uncorrected datum are frames nobody
+    // sees. The auto term is then SNAPPED rather than eased, under that black,
+    // and the descent begins from a position that is already right.
+    //
+    // WHY EAGERLY AT ALL, rather than deferring the first attach to the frame
+    // that opens the gate: `attachContentTo` can throw, and `startArMode`'s
+    // catch is what turns that into a clean rollback -- `onError`, the session
+    // ended, the button restored. Moving the first attach into the frame
+    // callback moved it OUT of that catch, leaving a live session with no city
+    // and no error. A test written for exactly that path caught it.
+    descentM = descentOffsetM({ elapsedS: 0, startM: descentStartM });
+
+    // THE ENTRY GROUND (r543). "Dass ich den Ground sehe, wenn die Open Street
+    // Map Welt weit unter mir spawnt und der dann rausgefadet wird, während die
+    // auf mich zufliegt."
+    //
+    // BEFORE the attach below, so `applyComposed` places both in one call and
+    // the ground can never be positioned by a formula of its own.
+    //
+    // ONLY WHEN THERE IS A DESCENT. Entering from a ground-level 3D view gives
+    // `descentStartM === 0`, and a floor with nothing to fall from is just a
+    // lid over the camera.
+    if (descentStartM > 0) {
+      const entryGround = createArEntryGround();
+      entryGround.setOpacity(
+        entryGroundOpacity({ elapsedS: 0, startM: descentStartM }),
+      );
+      scene.add(entryGround.mesh);
+      session.entryGround = entryGround;
+    }
+
+    applyComposed();
 
     // AR ONLY. The desktop preview discards `geometricOffset` (it attaches with
     // "demo-scene", which sets identity), and making it follow would lift the
@@ -775,19 +848,86 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       // the hold and the fall both already over before a single frame ran, and
       // the feature would silently do nothing on any page that had been open a
       // while. That is the same trap the fps sampler below documents.
-      if (descentStartS === undefined && descentM === 0 && !descentDone) {
-        descentStartS = elapsed;
-        // ASKED FOR, NOT RE-DERIVED (DEC-Y14). This used to be
-        // `descentM = descentStartM`, a hand-rolled copy of "the offset at t=0"
-        // — and `descentStartM` is a POSITIVE height, so after the sign fix this
-        // one line still attached the city ABOVE the user for a single frame
-        // before the block below recomputed it. It self-healed within the frame,
-        // which is precisely why it survived: the endpoint assertions read the
-        // last attach and never saw it. Deriving it from `descentOffsetM` means
-        // the frame convention lives in exactly one place and cannot drift here
-        // again.
-        descentM = descentOffsetM({ elapsedS: 0, startM: descentStartM });
-        applyComposed();
+      // THE ENTRY GATE (r543). The descent -- and the first attach with it --
+      // waits for the elevation estimate it is measured from.
+      //
+      // THE CLOCK STILL STARTS ON THE FIRST FRAME, not at `startArMode`.
+      // `elapsed` is PAGE-relative: a session entered thirty seconds after
+      // load sees its first frame at `elapsed ~= 30`, so anchoring to 0 would
+      // make the hold and the fall both already over before a single frame
+      // ran. That is the same trap the fps sampler below documents.
+      firstFrameS ??= elapsed;
+      // NO `descentM === 0` TERM ANY MORE, and dropping it was required rather
+      // than tidy: the city is now attached at descent depth by `startArMode`,
+      // so `descentM` is already `-startM` on the first frame and that
+      // condition would never hold again. Left in place it silently disabled
+      // the entire descent -- four tests caught it, all reporting the city
+      // stuck at its starting depth. `descentStartS === undefined` already
+      // means "not begun" and `descentDone` already means "finished".
+      if (descentStartS === undefined && !descentDone) {
+        // NO ESTIMATOR AT ALL MEANS NOTHING TO WAIT FOR, and this arm is the
+        // difference between a gate and a stall. `auto` is undefined when the
+        // caller wired no DEM sampler or the kill switch is set, and then no
+        // estimate is ever coming -- so waiting out the fallback would delay
+        // every such session by three black seconds to no purpose. The gate is
+        // about a value that is ON ITS WAY, not about the absence of one.
+        // TWO WAYS TO HAVE NOTHING TO WAIT FOR, and both must open the gate
+        // immediately or it becomes a stall.
+        //
+        // NO ESTIMATOR: `auto` is undefined when the caller wired no DEM
+        // sampler or the kill switch is set, so no estimate is ever coming.
+        //
+        // NO DESCENT: `descentStartM === 0` -- entered from a ground-level 3D
+        // view, or from a `buildingView` that reports no camera height at all,
+        // since that read is optional-chained. There is then no entry
+        // transition to hide the wait behind: `cameraFadeAlpha` returns 1 for a
+        // zero start, so nothing fades and the black hold below would be up to
+        // THREE SECONDS of opaque black ending in a hard cut. That is worse
+        // than the jump this gate exists to remove, and it would hit every
+        // such session rather than only the first. Caught in cold review.
+        const estimateReady =
+          auto === undefined ||
+          descentStartM === 0 ||
+          (latestAuto?.engaged === true && autoM !== null);
+        if (
+          !descentMayStart({ waitedS: elapsed - firstFrameS, estimateReady })
+        ) {
+          // BLACK WHILE WAITING, on the same channel the descent fade uses, so
+          // the two cannot disagree about what the screen shows. Without this
+          // the wait would be plain passthrough and would read as AR having
+          // failed to load anything.
+          getRenderer()?.setClearAlpha(1);
+        } else {
+          // SNAP THE AUTO TERM RATHER THAN EASE IT, exactly once, and only here.
+          // The ease below exists so a LIVE correction cannot make the city jump
+          // under someone who is looking at it -- but nothing is on screen yet,
+          // so there is nothing to jump, and easing from 0 would spend the whole
+          // descent travelling to the position the descent is measured from.
+          // NOT COVERED BY A TEST, and the reason is itself the finding: the
+          // estimator cannot engage inside the 3 s wait in any existing
+          // fixture (it needs ~5 s of walking), so this branch is unreachable
+          // there and mutating it to a bare 0 leaves the suite green. Writing
+          // the test needs a field measurement first -- see the followup doc
+          // named beside DESCENT_ESTIMATE_WAIT_S.
+          appliedAutoM = estimateReady && autoM !== null ? autoM : 0;
+          descentStartS = elapsed;
+          // ASKED FOR, NOT RE-DERIVED (DEC-Y14). This used to be
+          // `descentM = descentStartM`, a hand-rolled copy of "the offset at
+          // t=0" -- and `descentStartM` is a POSITIVE height, so after the sign
+          // fix that one line still attached the city ABOVE the user for a
+          // single frame before the block below recomputed it. It self-healed
+          // within the frame, which is precisely why it survived: the endpoint
+          // assertions read the last attach and never saw it.
+          descentM = descentOffsetM({ elapsedS: 0, startM: descentStartM });
+          // AND RE-APPLY, which is what corrects the auto term: the eager attach
+          // at entry used 0, and `applyComposed` is where the snapped value
+          // above reaches the city -- under the black that has been held since
+          // entry. This line was duplicated, with the comment attached to the
+          // dead copy, until a cold review pointed out that recomputing a pure
+          // function of two unchanged values cannot correct anything.
+          applyComposed();
+          contentAttached = true;
+        }
       }
       windowOpenedAtS ??= elapsed;
       framesThisWindow += 1;
@@ -836,7 +976,13 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // the city; and because the target is EASED below, engaging and
         // releasing both glide at AUTO_APPLY_RATE_M_PER_S rather than step.
         const targetM = latestAuto.engaged && autoM !== null ? autoM : 0;
-        if (appliedAutoM !== targetM) {
+        // NOT BEFORE THE FIRST ATTACH (r543). Until the entry gate above has
+        // put the city in the scene there is nothing to ease -- and easing
+        // anyway would call `applyComposed`, which IS the attach, defeating
+        // the gate by the back door. The gate snaps `appliedAutoM` to its
+        // target at the moment it attaches, so this block has nothing left to
+        // do on that frame either.
+        if (contentAttached && appliedAutoM !== targetM) {
           // Non-finite dt (defensive: the contract says a number, but a NaN
           // here would poison appliedAutoM for the rest of the session)
           // moves nothing, like the documented dt = 0 reset frame.
@@ -874,6 +1020,13 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // framework's renderer already built `alpha: true`. No geometry, no
         // render-order discipline, and no backdrop that could occlude content.
         getRenderer()?.setClearAlpha(1 - cameraFadeAlpha(input));
+        // THE GROUND RIDES THE SAME TERM THE CITY DOES, read from `descentM`
+        // rather than recomputed, so the two cannot disagree about where the
+        // ground is by even one frame.
+        // NO HEIGHT CALL HERE. `applyComposed` above already moved the ground
+        // with the city on the frames where `descentM` changed, and a second
+        // call site is exactly how the two got out of step in the first place.
+        session.entryGround?.setOpacity(entryGroundOpacity(input));
         if (descentComplete(input)) {
           // THE VISIBLE END-STATE SIGNAL the plan requires. A descent that
           // STALLS is otherwise indistinguishable from the recorded "flying
@@ -883,6 +1036,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           descentStartS = undefined;
           descentDone = true;
           getRenderer()?.setClearAlpha(0);
+          // GONE ON LANDING, not merely transparent. This is the moment the
+          // entry is over, and a plane that survives it is the one failure
+          // this feature can produce that is worse than not having it.
+          session.entryGround?.dispose();
+          session.entryGround = undefined;
           deps.onDescentComplete?.();
         }
       }

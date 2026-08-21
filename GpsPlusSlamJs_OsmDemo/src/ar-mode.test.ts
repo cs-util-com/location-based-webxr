@@ -21,6 +21,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as THREE from "three";
+import { DESCENT_FALL_S, DESCENT_HOLD_S } from "./ar-descent.js";
 
 /**
  * IN `vi.hoisted`, WHICH IS NOT OPTIONAL HERE.
@@ -1494,6 +1495,158 @@ describe("the AR entry fly-down (H5, Q5)", () => {
 
   const upAt = (view: ReturnType<typeof fakeView>): number | undefined =>
     applied(view).at(-1);
+
+  it("HOLDS the descent behind a black screen until the elevation estimate lands", async () => {
+    // WHY THIS TEST MATTERS (r543 field report). "Das erste Mal ... starte ich
+    // bei Altitude null ... wodurch ich dann erstmal sehr weit unter der Open
+    // Street Map Welt bin und dann wird meine Altitude gefixt, so dass ich dann
+    // auf einmal über die OSM Welt springe."
+    //
+    // The descent used to begin on the very first frame, when the auto term is
+    // still 0 because no estimate has arrived. So the city was placed by an
+    // uncorrected datum and the correction landed mid-descent, as a jump. This
+    // pins the whole gate through the frame loop, which `ar-descent.test.ts`
+    // cannot do: that file only owns the arithmetic.
+    const view = viewAtHeight(START_M);
+    const setClearAlpha = renderer.setClearAlpha as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    setClearAlpha.mockClear();
+    await startArMode(
+      deps({
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+        // AN ESTIMATOR THAT IS WIRED BUT NEVER FED. No depth samples are
+        // delivered below, so it never engages — which is exactly the state the
+        // first seconds of every real session are in.
+        autoElevation: { terrainHeightM: () => 100 },
+      }),
+    );
+
+    // TWO SECONDS OF FRAMES -- INSIDE the wait, not past it, and the exact
+    // frame range is what makes the black-screen assertion below mean
+    // anything. The first version ran to elapsed 5, but the fallback opens the
+    // gate at elapsed 4 (`firstFrameS` is 1 plus a 3 s wait) and the descent
+    // then spends its own 2 s hold at `cameraFadeAlpha === 0`, i.e. also
+    // writing a clear alpha of 1. So `.at(-1)` was reading the DESCENT fade
+    // and passed with the gate's own black hold deleted. Cold review caught it.
+    runFrames(1, 3);
+    expect(
+      upAt(view),
+      "the city moved before the elevation estimate arrived",
+    ).toBeCloseTo(-START_M, 2);
+    // AND THE SCREEN IS BLACK, not passthrough. Without this the wait reads as
+    // AR having failed to load, which is the failure mode a silent gate has.
+    expect(setClearAlpha.mock.calls.at(-1)?.[0]).toBeCloseTo(1, 2);
+
+    // AND STILL HELD AT ELAPSED 5, one second past the fallback: the descent
+    // has begun by then, so this checks the handover rather than the wait.
+    runFrames(3, 5);
+
+    // NOT A STALL: the fallback still starts the descent on a device whose
+    // estimator never engages, or the gate would be a black screen with no way
+    // out — strictly worse than the jump it removes.
+    //
+    // NOTE THE CLOCK. `DESCENT_ESTIMATE_WAIT_S` is measured from the FIRST
+    // frame (elapsed 1 here), not from page load, so the fallback opens at
+    // elapsed 4 and the descent then needs its own hold plus fall on top.
+    runFrames(5, 14);
+    expect(upAt(view), "the fallback never released the descent").toBeCloseTo(
+      0,
+      2,
+    );
+  });
+
+  /**
+   * The entry ground, found by SHAPE rather than by a name or a marker flag.
+   *
+   * `THREE.Mesh` is generic and `instanceof` narrows it to `Mesh<any, any>`, so
+   * reading `.geometry.type` off the narrowed value is an unsafe `any` access.
+   * The cast is to the base geometry type, which is what `Mesh` actually holds.
+   */
+  const entryGroundIn = (root: THREE.Object3D): THREE.Mesh | undefined =>
+    root.children.find(
+      (child): child is THREE.Mesh =>
+        child instanceof THREE.Mesh &&
+        (child.geometry as THREE.BufferGeometry).type === "PlaneGeometry",
+    );
+  it("puts a ground under the entry, rides it down, and REMOVES it on landing", async () => {
+    // WHY THIS TEST MATTERS (r543). The reporter wanted a floor to fall
+    // towards, and AR had never drawn one. The risk this feature carries is not
+    // that the fade looks wrong — it is an opaque, screen-sized plane LEFT in
+    // the AR scene, which turns the passthrough into a grey lid. So the
+    // assertion that matters most is the removal, not the appearance.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = viewAtHeight(START_M);
+    await startArMode(
+      deps({
+        container,
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+
+    const groundOf = () => entryGroundIn(scene);
+
+    const ground = groundOf();
+    expect(ground, "no entry ground was added").toBeDefined();
+    // IT STARTS WHERE THE CITY STARTS — the relative motion is the effect. A
+    // ground pinned to the user would stand still while the city moved, which
+    // reads as objects drifting rather than as ground rising.
+    expect(ground?.position.y).toBeCloseTo(-START_M, 2);
+    expect((ground?.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(
+      1,
+      2,
+    );
+
+    // A NONZERO MANUAL TRIM FIRST, and it is what makes the next assertion
+    // bite. With auto and trim both at zero the two candidate formulas --
+    // `descentM` alone and the full composition -- return the same number, so
+    // the equality below passed against the defect it exists to catch. A
+    // mutation run is what surfaced that; the nudge is the cheapest way to make
+    // one of those terms nonzero.
+    const nudgeUp = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "+",
+    );
+    if (nudgeUp === undefined) throw new Error("no + button");
+    nudgeUp.click();
+
+    // THE GROUND IS AT THE CITY'S OWN HEIGHT, stated as an EQUALITY against
+    // the offset the content was actually attached with rather than against a
+    // recomputed number.
+    //
+    // WHY AN EQUALITY. The first version positioned the ground from the
+    // descent term alone while the city is attached at `compose(auto, trim,
+    // descent)` -- so the ground sat `auto + trim` metres from the surface the
+    // buildings stand on, and the bigger the datum correction the worse it
+    // floated. Every assertion here passed, because this fixture leaves both
+    // of those terms at zero. Comparing against the ATTACHED value cannot go
+    // stale that way: whatever the city does, the ground has to do.
+    expect(groundOf()?.position.y).toBeCloseTo(upAt(view) ?? Number.NaN, 6);
+
+    // MID-DESCENT: risen with the city, and part-way faded.
+    runFrames(1, 1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2);
+    const midY = groundOf()?.position.y ?? Number.NaN;
+    expect(midY).toBeCloseTo(upAt(view) ?? Number.NaN, 6);
+    expect(midY).toBeGreaterThan(-START_M);
+    expect(midY).toBeLessThan(0);
+
+    // AND GONE once the city lands — removed from the scene, not merely
+    // transparent. A transparent full-screen quad is still sorted and blended
+    // every frame for the rest of the session.
+    runFrames(1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2, 14);
+    expect(groundOf(), "the entry ground outlived the entry").toBeUndefined();
+  });
+
+  it("adds NO entry ground when there is no height to fall from", async () => {
+    // Entering from a ground-level 3D view has nothing to descend, so a floor
+    // would be a lid over the camera with no transition to justify it.
+    const view = viewAtHeight(0);
+    await startArMode(
+      deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
+    );
+
+    expect(entryGroundIn(scene)).toBeUndefined();
+  });
 
   it("NEVER attaches the city above the user, on any frame of the entry", async () => {
     // Why this test matters: the DEC-Y14 fix negated `descentOffsetM`, but
