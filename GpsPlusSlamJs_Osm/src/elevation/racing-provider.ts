@@ -212,6 +212,23 @@ export function racingProvider(
     );
   }
 
+  /**
+   * Which `elevationAt` batch is the newest, so a late upgrade cannot claim a
+   * readout that has moved on.
+   *
+   * `trackUpgrade`'s continuation OUTLIVES its own call by design — it is
+   * waiting for a source still in flight — and it used to write `servedBy`
+   * unconditionally. With two batches overlapping: A's fast answer publishes
+   * terrarium, B's fast answer publishes terrarium, then A's preferred answer
+   * lands and writes mapterhorn. The readout then names Mapterhorn while the
+   * heights on screen are B's Terrarium ones — inverting the one property the
+   * interface doc promises, "which source the current heights came from".
+   *
+   * Same class as the stale attribution the `won === undefined` branch below
+   * was fixed for: a stale id reads as working. Found in review of PR #334.
+   */
+  let latestBatch = 0;
+
   const stats: RacingProviderStats = {
     servedBy: "none",
     upgrades: 0,
@@ -252,6 +269,9 @@ export function racingProvider(
     },
 
     async elevationAt(positions, signal) {
+      // CAPTURED AT DISPATCH, read in the continuation below. A counter read
+      // at continuation time would compare a batch against itself.
+      const batch = ++latestBatch;
       // Both dispatched before either is awaited — that is the race. A `for
       // await` here would serialise them and quietly restore `fallbackProvider`
       // behaviour with worse code.
@@ -292,7 +312,11 @@ export function racingProvider(
             // own check rather than inheriting one.
             if (signal?.aborted === true) return;
             stats.upgrades += 1;
-            stats.servedBy = preferred.sourceId;
+            // ONLY IF THIS BATCH IS STILL THE NEWEST. `stats.upgrades` above stays
+            // unconditional on purpose: it counts batches that were upgraded,
+            // which is true whenever this runs. `servedBy` is the order-sensitive
+            // one, because it describes what is ON SCREEN right now.
+            if (batch === latestBatch) stats.servedBy = preferred.sourceId;
             sink(positions, better);
           }),
         );

@@ -443,3 +443,94 @@ describe("distinct sourceIds are a precondition, not a convention", () => {
     ).not.toThrow();
   });
 });
+
+describe("servedBy across overlapping batches (PR #334 review)", () => {
+  /**
+   * A provider that hands out a FRESH controllable answer per call, so two
+   * `elevationAt` batches can be in flight at once. `deferredProvider` above
+   * settles once and cannot express this.
+   */
+  function queuedProvider(sourceId: string) {
+    const settles: ((h: readonly (number | undefined)[]) => void)[] = [];
+    return {
+      attribution: sourceId,
+      sourceId,
+      elevationAt: () =>
+        new Promise<readonly (number | undefined)[]>((r) => settles.push(r)),
+      /** Release the nth call's answer, 0-based. */
+      release: (n: number, heights: readonly (number | undefined)[]) => {
+        const settle = settles[n];
+        if (settle === undefined) throw new Error(`no call ${n}`);
+        settle(heights);
+      },
+    };
+  }
+
+  it("does not let an OLD batch's late upgrade claim a newer batch's readout", async () => {
+    // WHY THIS TEST MATTERS. `trackUpgrade`'s continuation outlives its own
+    // call by design -- it is waiting for a source still in flight -- and it
+    // used to write `servedBy` unconditionally. The interleaving below is the
+    // one the PR #334 review described, and it is reachable with the current
+    // wiring:
+    //
+    //   1. batch A: fast wins        -> servedBy = aws, upgrade tracked
+    //   2. batch B: fast wins        -> servedBy = aws
+    //   3. batch A's preferred lands -> servedBy = mapterhorn  <-- WRONG
+    //
+    // The heights on screen are batch B's Terrarium ones, while the readout
+    // names Mapterhorn. That inverts the one property `servedBy` promises, and
+    // `demServingLabel` is the only signal a field session has for "am I
+    // standing on LiDAR or on the 30 m fallback?".
+    const preferred = queuedProvider("mapterhorn");
+    const fast = queuedProvider("aws");
+    const onUpgrade = vi.fn();
+    const provider = racingProvider(preferred, fast, { onUpgrade });
+
+    const batchA = provider.elevationAt(POSITIONS);
+    fast.release(0, [100, 101]);
+    expect(await batchA).toEqual([100, 101]);
+    expect(provider.stats.servedBy).toBe("aws");
+
+    const batchB = provider.elevationAt(POSITIONS);
+    fast.release(1, [110, 111]);
+    expect(await batchB).toEqual([110, 111]);
+    expect(provider.stats.servedBy).toBe("aws");
+
+    // B's preferred answer settles with NO usable data, so B contributes no
+    // upgrade of its own and cannot be the thing that sets `servedBy` below.
+    // Released first only so `awaitUpgrades` has something to resolve on -- a
+    // still-pending B would hang the flush rather than test anything.
+    preferred.release(1, [undefined, undefined]);
+
+    // A's preferred answer finally lands, long after B published.
+    preferred.release(0, [200, 201]);
+    await provider.awaitUpgrades();
+
+    // THE UPGRADE STILL FIRES -- the caller may still want those heights, and
+    // the count still counts a batch that was upgraded.
+    expect(onUpgrade).toHaveBeenCalledWith(POSITIONS, [200, 201]);
+    expect(provider.stats.upgrades).toBe(1);
+    // BUT THE ATTRIBUTION STAYS WITH WHAT IS ACTUALLY ON SCREEN.
+    expect(
+      provider.stats.servedBy,
+      "an older batch's upgrade renamed the current source",
+    ).toBe("aws");
+  });
+
+  it("still attributes the upgrade when its batch IS the newest", async () => {
+    // The other direction, so the guard cannot be satisfied by never writing:
+    // with one batch in flight the upgrade must still claim the readout.
+    const preferred = queuedProvider("mapterhorn");
+    const fast = queuedProvider("aws");
+    const provider = racingProvider(preferred, fast, { onUpgrade: vi.fn() });
+
+    const only = provider.elevationAt(POSITIONS);
+    fast.release(0, [100, 101]);
+    expect(await only).toEqual([100, 101]);
+
+    preferred.release(0, [200, 201]);
+    await provider.awaitUpgrades();
+
+    expect(provider.stats.servedBy).toBe("mapterhorn");
+  });
+});
