@@ -901,7 +901,7 @@ test.describe("the header", () => {
     // that was the sixth and thirteenth sessions complaint -- but the floor is
     // now about legibility rather than about reachability, and is set well
     // below the shipped 1.6 rem (25.6 px) so ordinary tuning does not trip it.
-    expect(caret.height).toBeGreaterThanOrEqual(14);
+    expect(caret.height).toBeGreaterThanOrEqual(11);
     // AND SMALLER THAN THE TAP TARGET, which is the relationship the last three
     // sessions kept collapsing. If these two are ever equal again, the ink has
     // been sized by an accessibility rule a second time.
@@ -956,25 +956,48 @@ test.describe("the header", () => {
     expect(Math.abs(centre(site) - centre(toggle))).toBeLessThan(12);
     expect(Math.abs(centre(quests) - centre(toggle))).toBeLessThan(12);
 
-    // THE OWNER'S OWN TARGET, pinned as a relationship instead of a rem value:
-    // "so hoch wie das 'Jump to City'-Dropdown". A rem value drifts the next
-    // time that control's padding or font changes, and then this caret is wrong
-    // again for a reason nobody edited. 4 px of slack because the two are
-    // different kinds of box, not because the number is soft.
-    // COMPARED AGAINST THE DROPDOWN, which is what the instruction named.
-    // This asserted against `#geo-event` (Show Quests) while the paragraph above
-    // quoted "so hoch wie das Jump to City-Dropdown" - a different control
-    // (`#site`). They happen to be within a few px of each other today, so the
-    // pin passed while tracking the wrong thing, and its stated virtue
-    // ("survives the dropdown s own styling changing") was the one property it
-    // did not have. Caught in review of PR #624.
+    // SIZED TO THE DROPDOWN TEXT, AND LEVEL WITH IT (r543 field report).
     //
-    // Worth noting for whoever settles the size question: if the caret and Show
-    // Quests are within 4 px, the owner s "ungefaehr doppelt so gross wie der
-    // Show Quests-Button" was never about HEIGHT - which is why the H1 fix
-    // narrowed the width instead, and why a fourth height tweak is unlikely to
-    // be the answer.
-    expect(Math.abs(caret.height - site.height)).toBeLessThanOrEqual(4);
+    // THIS REPLACES THE OWNER PIN THAT SAID THE OPPOSITE, and the supersession
+    // is the point rather than a detail. The fourteenth session asked for the
+    // caret "so hoch wie das Jump to City-Dropdown" and this line held
+    // |caret.height - site.height| <= 4, which is exactly what blocked the
+    // shrink when it was attempted at r541 and reverted. The same owner has
+    // since decided the caret should match the dropdown TEXT instead. A later
+    // explicit decision replaces an earlier one; the test is not weakened to
+    // let a change through.
+    //
+    // MEASURED AGAINST THE LIVE FONT SIZE, not a rem constant, so the caret
+    // cannot drift the next time the dropdown is restyled -- which is the
+    // property the old relationship pin was written for and is worth keeping.
+    const siteFontPx = await page.evaluate(() => {
+      const el = document.querySelector("#site");
+      if (el === null) throw new Error("no #site");
+      return Number.parseFloat(getComputedStyle(el).fontSize);
+    });
+    // One notch above the text, deliberately: the caret is a FILLED triangle
+    // and the label is thin strokes, so equal sizes make the caret read
+    // heavier. The window is tight enough that a return to 1.6 rem (25.6 px)
+    // fails it by a wide margin.
+    expect(caret.height).toBeGreaterThanOrEqual(siteFontPx);
+    expect(caret.height).toBeLessThanOrEqual(siteFontPx + 4);
+
+    // AND LEVEL WITH THE DROPDOWN -- "immer noch nicht auf einer Hoehe mit dem
+    // Jump To City Dropdown". The header used `align-items: baseline`, and a
+    // flex button whose only child is an SVG has no text baseline, so the
+    // browser synthesised one from its bottom margin edge: the 44 px toggle
+    // hung its BOTTOM on the row's text baseline and the caret sat well above
+    // the dropdown's centre. 2 px, because centred means centred -- the 12 px
+    // slack used above is for controls of genuinely different heights.
+    //
+    // THIS ASSERTION DOES NOT PROVE THE FIX, and says so rather than implying
+    // otherwise: a mutation run passes it with the header back on `baseline`,
+    // at 1280 px and at 390 px alike. Chromium cannot reproduce the reported
+    // misalignment; the reporter is on a native Android `<select>`, which is
+    // taller than the headless one and moves the synthesised baseline. What
+    // this assertion DOES do is stop the caret from being knocked off centre by
+    // some later change, which is worth having on its own.
+    expect(Math.abs(centre(caret) - centre(site))).toBeLessThanOrEqual(2);
 
     // ROW 2 STARTS BELOW: the layer groups are on a lower line, not beside the
     // button.
@@ -1053,6 +1076,68 @@ test.describe("the header", () => {
     const wideQuests = await box("#geo-event");
     const wideLayers = await box("#layers");
     expect(wideLayers.y).toBeGreaterThan(wideQuests.y + wideQuests.height - 1);
+  });
+
+  test("keeps the caret level with the city dropdown on a 390 px phone", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r543 field report).
+     *
+     * "Dieses Dreieck ganz oben links bei Jump To City ist immer noch zu groß
+     * und immer noch nicht auf einer Höhe mit dem Jump To City Dropdown."
+     *
+     * WHAT THIS TEST IS FOR, STATED HONESTLY — an earlier version of this
+     * docblock overclaimed and a cold review caught it.
+     *
+     * It implied this viewport can see a misalignment the desktop test cannot.
+     * **It cannot.** The mutation run passes with the header back on
+     * `baseline` at 390 px exactly as it does at 1280 px; Chromium reproduces
+     * the reported symptom at NEITHER width, which is why the fix ships
+     * labelled as a hypothesis (a native Android `<select>` is taller than the
+     * headless one and moves the synthesised baseline).
+     *
+     * What this test genuinely adds is the SIZE pin at the width the reports
+     * come from — the phone stylesheet is free to restyle either the caret or
+     * the dropdown below 860 px, where the header becomes a floating overlay,
+     * and the desktop assertions would not notice. Two separate defects this
+     * session were invisible because their tests ran at the wrong viewport;
+     * the alignment check here rides along as a cheap regression guard rather
+     * than as proof of anything.
+     */
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const measured = await page.evaluate(() => {
+      const rect = (selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`no ${selector}`);
+        const r = el.getBoundingClientRect();
+        return { y: r.y, height: r.height, centre: r.y + r.height / 2 };
+      };
+      const site = document.querySelector("#site");
+      if (site === null) throw new Error("no #site");
+      return {
+        caret: rect(".header-caret"),
+        site: rect("#site"),
+        siteFontPx: Number.parseFloat(getComputedStyle(site).fontSize),
+      };
+    });
+
+    // LEVEL WITH THE DROPDOWN. Same 2 px window as the desktop check: centred
+    // means centred, and the wider slack elsewhere is for controls of
+    // genuinely different heights sharing a row.
+    expect(
+      Math.abs(measured.caret.centre - measured.site.centre),
+      `caret centre ${measured.caret.centre.toFixed(1)} vs dropdown ${measured.site.centre.toFixed(1)}`,
+    ).toBeLessThanOrEqual(2);
+
+    // AND STILL SIZED TO THE DROPDOWN'S TEXT here too, because the phone
+    // stylesheet is free to restyle either of them.
+    expect(measured.caret.height).toBeGreaterThanOrEqual(measured.siteFontPx);
+    expect(measured.caret.height).toBeLessThanOrEqual(measured.siteFontPx + 4);
   });
 
   test("drops the category label from the collapsed bar, and keeps it when expanded", async ({
@@ -2141,6 +2226,74 @@ test.describe("the AR entry point", () => {
       shortened.compassWidth,
       "the compass box shrinks to its slider once the readout text is short",
     ).toBeCloseTo(shortened.bottomWidth, 0);
+  });
+
+  test("hides the AR experiment panel when it is marked hidden", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r541 and r543 field reports, DEC-Y16).
+     *
+     * "Der Settings Button funktioniert immer noch nicht" and "das wird halt
+     * gar nicht ein/ausgeblendet, das ist immer sichtbar" — reported twice,
+     * two branches apart.
+     *
+     * THE CAUSE IS A CSS CASCADE RULE, not an event problem, and that matters
+     * because two rounds of diagnosis went looking in the wrong place.
+     * `ar-experiment-panel.ts` opens and closes by writing `body.hidden`, which
+     * takes effect through the USER-AGENT stylesheet's `[hidden] { display:
+     * none }`. `.ar-experiments` sets `display: flex` in the AUTHOR stylesheet,
+     * and author rules beat user-agent rules whatever their specificity. So
+     * `hidden` did nothing at all: the panel was permanently visible, and the
+     * gear toggled a flag with no visual effect — which is exactly what a dead
+     * button looks like.
+     *
+     * ONE CAUSE, BOTH SYMPTOMS. The plan's DEC-Y16 argued they had to be two
+     * independent failures, reasoning that a panel which mounts CLOSED cannot
+     * be reported as permanently VISIBLE by a broken toggle. The premise was
+     * right and the conclusion was wrong, because the panel never actually
+     * mounted closed on screen — only in the DOM.
+     *
+     * jsdom cannot see this (no stylesheet, no cascade) and the unit test that
+     * asserts `body.hidden` passes against the defect, which is why this one is
+     * an e2e measuring `display` rather than the attribute.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const display = await page.evaluate(() => {
+      const root = document.querySelector("#ar-root");
+      if (root === null) throw new Error("no #ar-root");
+      const wrap = document.createElement("div");
+      wrap.className = "ar-gear-wrap";
+      const body = document.createElement("div");
+      body.className = "ar-experiments";
+      // EXACTLY WHAT THE PRODUCTION CODE WRITES at mount and on close.
+      body.hidden = true;
+      const row = document.createElement("label");
+      row.className = "ar-experiments-row";
+      row.textContent = "rotation prior";
+      body.append(row);
+      wrap.append(body);
+      root.append(wrap);
+      return {
+        hidden: getComputedStyle(body).display,
+        // AND THE OPEN STATE STILL LAYS OUT, so the fix cannot be "display:
+        // none always", which would hide the panel for good and make the gear
+        // genuinely dead rather than merely looking it.
+        shown: (() => {
+          body.hidden = false;
+          return getComputedStyle(body).display;
+        })(),
+      };
+    });
+
+    expect(
+      display.hidden,
+      "the experiment panel still renders while marked hidden",
+    ).toBe("none");
+    expect(display.shown).toBe("flex");
   });
 
   test("does NOT offer AR when the user only pressed the GPS button", async ({
