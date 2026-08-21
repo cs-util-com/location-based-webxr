@@ -865,12 +865,6 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       // stuck at its starting depth. `descentStartS === undefined` already
       // means "not begun" and `descentDone` already means "finished".
       if (descentStartS === undefined && !descentDone) {
-        // NO ESTIMATOR AT ALL MEANS NOTHING TO WAIT FOR, and this arm is the
-        // difference between a gate and a stall. `auto` is undefined when the
-        // caller wired no DEM sampler or the kill switch is set, and then no
-        // estimate is ever coming -- so waiting out the fallback would delay
-        // every such session by three black seconds to no purpose. The gate is
-        // about a value that is ON ITS WAY, not about the absence of one.
         // TWO WAYS TO HAVE NOTHING TO WAIT FOR, and both must open the gate
         // immediately or it becomes a stall.
         //
