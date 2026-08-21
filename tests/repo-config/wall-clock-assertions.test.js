@@ -107,15 +107,15 @@ const ALLOWLIST = new Map([
   ],
   [
     'GpsPlusSlamJs_Osm/src/mesh/poi-hosts-cost.test.ts',
-    'VERDICT PENDING, plan M4: a 5 s smoke alarm with wide headroom, but the design it rejects is hypothetical rather than measured, so it meets only half the admission bar.',
+    'ADMITTED (plan M4). Both halves of the bar are now met with numbers. Headroom: the 2026-08-21 mesh investigation timed this call at 5/10/34/118 ms across k=1..4 on a quiet machine, so the 5 s ceiling sits ~147x above the value it guards. And the design it rejects is measured, not hypothetical: pairsConsidered is pinned by a count above, which leaves a constant-factor regression inside containsPoint as the one failure no count can see.',
   ],
   [
     'GpsPlusSlamJs_Osm/src/spatial/chunk-cost.test.ts',
-    'VERDICT PENDING, plan M4: its comment says the per-chunk timing is "never asserted" and the next line asserts it is > 0. The comment, not the code, is what an earlier plan cited as a model.',
+    'RESOLVED (plan M4) by DELETING the assertion, which makes the comment true. `expect(perChunk).toBeGreaterThan(0)` could not tell a fast index from a slow one - any work at all elapses more than zero - and could only FAIL on a fast machine, where a coarse timer quantises a short measurement to exactly 0. The per-chunk figure is still reported.',
   ],
   [
     'GpsPlusSlamJs_Osm/src/testdata/sites/site-obstacle-index-cost.test.ts',
-    'VERDICT PENDING, plan M4: asserts buildMs > 0 — a clock comparison in the same shape merge-and-score-cost rejected.',
+    'RESOLVED (plan M4) by DELETING the `> 0` half, for the reason merge-and-score-cost was rejected: it distinguishes nothing and can only fail on a fast machine whose coarse timer reports 0. The `Number.isFinite` half stays - it catches a broken clock or a measurement that never ran, which is what would make the header figures meaningless.',
   ],
 
   // --- Clock arithmetic present, but the assertions are not on it ---

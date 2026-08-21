@@ -222,6 +222,20 @@ describe("annotatePoiHosts cost growth", () => {
     // copies on a developer machine) because `chunk-cost` was reverted after a
     // 100 ms ceiling failed at 104 ms under the nine-package cascade. It is a
     // smoke alarm, NOT a performance budget: tighten it and it will flake.
+    //
+    // ADMITTED under plan M4, and the headroom is now MEASURED rather than
+    // asserted. The 2026-08-21 mesh investigation timed this same call across
+    // scales on a quiet machine: 5 ms at k=1, 10 ms at k=2, 34 ms at k=3 (this
+    // fixture), 118 ms at k=4 — i.e. ~7 ns per pair, with the broad phase doing
+    // four float compares. So the ceiling sits ~147x above the value it guards,
+    // which is what makes it a smoke alarm rather than a budget.
+    //
+    // And the design it rejects is no longer hypothetical either, which was the
+    // half of the admission bar this entry failed. The same investigation
+    // established that `pairsConsidered` grows as markers x candidates exactly,
+    // so a COUNT is already pinned above — leaving a constant-factor regression
+    // inside `containsPoint` as the one failure no count can see. That is a real
+    // gap with a measured baseline, not a speculative one.
     expect(nine.ms).toBeLessThan(5_000);
   });
 });
