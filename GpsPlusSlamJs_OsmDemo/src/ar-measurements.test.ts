@@ -12,7 +12,10 @@
 
 import { describe, it, expect } from "vitest";
 
-import { describeArMeasurements } from "./ar-measurements.js";
+import {
+  describeArMeasurements,
+  type ArMeasurements,
+} from "./ar-measurements.js";
 
 describe("describeArMeasurements", () => {
   it("says nothing at all before anything has been measured", () => {
@@ -164,8 +167,11 @@ describe("describeArMeasurements", () => {
       // glance finds the same number in the same place) is what makes the pair
       // an improvement rather than a violation.
       "12 draws / 1,000 tri · 60 fps",
-      "gps ±6.0 m",
-      "40 m from anchor",
+      // PAIRED SINCE r543 — "GPS 7 Meter, 0 Meter from Anchor, die beiden
+      // sollten in eine Zeile." Both answer "how well do we know where you
+      // are", and each was taking a whole line of a readout that is already
+      // tall on a phone.
+      "gps ±6.0 m · 40 m from anchor",
     ]);
   });
 
@@ -289,7 +295,16 @@ describe("describeArMeasurements — the height decomposition", () => {
       terrainHasData: true,
     });
 
-    expect(lines).toContain("gps-dem +1.5 m");
+    // FOLDED INTO THE ALTITUDE LINE AS A PARENTHETICAL (r543). "GPS Dem habe
+    // ich keine Ahnung was das sein soll ... das könnte man noch in die Zeile
+    // mit dazu packen und dann einfach quasi in Klammern +0,5 irgendwie statt
+    // dass man da GPS Dem schreibt, was sowieso kein Mensch versteht."
+    //
+    // The NUMBER is kept, and that is deliberate: its SIGN separates the two
+    // filed causes that need opposite fixes, so dropping it would lose a
+    // diagnostic. Only the unreadable label goes.
+    expect(lines).toContain("alt 105.5 m (+1.5)");
+    expect(lines.some((line) => line.startsWith("gps-dem"))).toBe(false);
     // The old label must be GONE, not merely joined by a new one — a readout
     // carrying both would still be read the old way.
     expect(lines.some((line) => line.startsWith("above terrain"))).toBe(false);
@@ -306,7 +321,7 @@ describe("describeArMeasurements — the height decomposition", () => {
         terrainHeightM: 104,
         terrainHasData: true,
       }),
-    ).toContain("gps-dem -10.0 m");
+    ).toContain("alt 94.0 m (-10.0)");
   });
 
   it("refuses the residual when the DEM never loaded", () => {
@@ -328,8 +343,13 @@ describe("describeArMeasurements — the height decomposition", () => {
     // `local-floor` reference space, whose zero is the floor plane. Unlike
     // `gps-dem` it RESPONDS to raising the phone, and unlike `alt - baseline`
     // it carries no GNSS vertical noise.
+    // `floor distance`, NOT `camera` (r543). "Ja Camera ist die Höhe vom
+    // Boden. Camera könnte man dann halt Floor Distance stattdessen
+    // schreiben, das ist wahrscheinlich eindeutiger." `camera` named the
+    // sensor rather than the quantity, and the quantity is what a reader
+    // needs: how far the phone is above the floor plane.
     expect(describeArMeasurements({ cameraHeightM: 1.42 })).toContain(
-      "camera 1.42 m",
+      "floor distance 1.42 m",
     );
   });
 
@@ -338,7 +358,9 @@ describe("describeArMeasurements — the height decomposition", () => {
     // the phone is on the ground — the same false-confidence failure the
     // `no DEM` case exists to refuse.
     expect(
-      describeArMeasurements({}).some((line) => line.startsWith("camera ")),
+      describeArMeasurements({}).some((line) =>
+        line.startsWith("floor distance "),
+      ),
     ).toBe(false);
   });
 
@@ -660,5 +682,94 @@ describe("describeArMeasurements — the height decomposition", () => {
     );
 
     expect(lines).toEqual([]);
+  });
+});
+
+describe("the altitude line's width budget (r543)", () => {
+  // WHY THIS TEST MATTERS. Folding the residual into the altitude line was
+  // asked for to make the readout SHORTER, and it is not monotonic in that
+  // direction: `pair` falls back to two lines above MAX_LINE_CHARS (40), and
+  // the altitude half grew by ~7 characters. So on a fix that also reports a
+  // vertical accuracy the merge can break — losing the `gps-dem` line but
+  // gaining a split, for a net saving of zero. A cold review pointed out that
+  // nothing pinned the boundary. This test IS the boundary.
+
+  it("saves a line when there is no vertical accuracy, and costs none when there is", () => {
+    // THE HONEST GUARANTEE, measured rather than assumed -- the first version
+    // of this test demanded a merge that cannot happen and failed on its own
+    // arithmetic.
+    //
+    // The arithmetic, since the boundary is the whole point:
+    //
+    // - WITH a vertical accuracy: `alt 105.5 m ±3.0 m (+1.5)` is 25 chars, and
+    //   ` · world floor 0.12 m` brings it to 46 -- over the 40-char budget, so
+    //   the pair splits. Before the fold the alt half was 18 chars and the pair
+    //   merged at 39, with `gps-dem` on its own line. Two lines either way.
+    // - WITHOUT one: `alt 105.5 m (+1.5)` merges at 39 for ONE line, against
+    //   two before. A real saving, and the Geolocation API makes vertical
+    //   accuracy optional, so many devices land here.
+    //
+    // So the fold is never worse and sometimes better -- which is a weaker
+    // claim than "it makes the readout shorter", and is the true one.
+    const heightOf = (m: ArMeasurements) =>
+      describeArMeasurements(m).filter(
+        (line) =>
+          line.startsWith("alt ") ||
+          line.startsWith("world floor ") ||
+          line.startsWith("gps-dem"),
+      );
+
+    // NO VERTICAL ACCURACY -- one line, down from two.
+    const lean = heightOf({
+      altitudeM: 105.5,
+      terrainHeightM: 104,
+      terrainHasData: true,
+      worldBaselineY: 0.12,
+    });
+    expect(lean, `did not merge: ${lean.join(" | ")}`).toHaveLength(1);
+    expect(lean[0]).toContain("(+1.5)");
+    expect(lean[0]).toContain("world floor");
+
+    // WITH ONE -- two lines, the same as before the fold, and never three.
+    const wide = heightOf({
+      altitudeM: 105.5,
+      altitudeAccuracyM: 3,
+      terrainHeightM: 104,
+      terrainHasData: true,
+      worldBaselineY: 0.12,
+    });
+    expect(
+      wide,
+      `grew to ${wide.length} lines: ${wide.join(" | ")}`,
+    ).toHaveLength(2);
+    // AND THE RESIDUAL IS STILL THERE, so "fewer lines" can never be achieved
+    // by quietly dropping the number whose sign separates two filed causes.
+    expect(wide.join(" ")).toContain("(+1.5)");
+  });
+
+  it("never emits a line wider than the phone budget", () => {
+    // The property the merge exists to protect, asserted directly rather than
+    // through the merge: no individual line may exceed MAX_LINE_CHARS, whatever
+    // combination of readings produced it.
+    const lines = describeArMeasurements(
+      {
+        altitudeM: -105.5,
+        altitudeAccuracyM: 12.5,
+        terrainHeightM: 104,
+        terrainHasData: true,
+        worldBaselineY: -10.25,
+        fixAccuracyM: 6,
+        metresFromAnchor: 2400,
+        fps: 60,
+      },
+      { expanded: true },
+    );
+
+    for (const line of lines) {
+      expect(
+        line.length,
+        `too wide for a phone: "${line}"`,
+      ).toBeLessThanOrEqual(40);
+    }
   });
 });

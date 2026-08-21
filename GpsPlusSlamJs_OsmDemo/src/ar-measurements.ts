@@ -325,6 +325,9 @@ export function describeArMeasurements(
    */
   let altitude = "";
   let worldFloor = "";
+  /** The position-quality pair, held for the same reason as the height pair. */
+  let gps = "";
+  let anchor = "";
   const expanded = options.expanded === true;
   /**
    * Push a line only when the readout is expanded.
@@ -364,7 +367,7 @@ export function describeArMeasurements(
     // one is a horizontal accuracy, the other an age — so a glance at the
     // readout had to parse the rest of the line to know which quantity it was
     // looking at. They now name different things.
-    lines.push(`gps ±${accuracy} m`);
+    gps = `gps ±${accuracy} m`;
   }
 
   if (isUsable(measurements.metresFromAnchor)) {
@@ -375,8 +378,23 @@ export function describeArMeasurements(
       measurements.metresFromAnchor < 1000
         ? `${Math.round(measurements.metresFromAnchor)} m`
         : `${(measurements.metresFromAnchor / 1000).toFixed(1)} km`;
-    lines.push(`${distance} from anchor`);
+    anchor = `${distance} from anchor`;
   }
+
+  // PAIRED, NOT LISTED (r543): "GPS 7 Meter, 0 Meter from Anchor, die beiden
+  // sollten in eine Zeile." Both answer one question -- how well is the
+  // position known -- and each took a whole line of a readout that is already
+  // tall on a phone. Same reasoning as the render-cost pair above, and the same
+  // `pair` helper, so either half stays usable alone: the accuracy is live from
+  // the first fix while the anchor distance only exists once a session has one.
+  lines.push(...pair(gps, anchor));
+
+  // THE DEM'S OWN STATE FIRST, because everything below depends on whether it
+  // loaded at all. `false` is a claim; `undefined` is only "not reported".
+  //
+  // HOISTED ABOVE THE ALTITUDE LINE at r543: the residual is now folded into
+  // that line, so its DEM guard has to be known before the line is built.
+  const demFailed = measurements.terrainHasData === false;
 
   // SIGNED, like the baseline below and NOT filtered through `isUsable`, whose
   // `>= 0` is right for an accuracy and wrong here: Schiphol, the Dead Sea and
@@ -393,7 +411,29 @@ export function describeArMeasurements(
     const accuracy = isUsable(measurements.altitudeAccuracyM)
       ? ` ±${measurements.altitudeAccuracyM.toFixed(1)} m`
       : "";
-    altitude = `alt ${measurements.altitudeM.toFixed(1)} m${accuracy}`;
+    // THE RESIDUAL, IN PARENTHESES, INSTEAD OF ITS OWN `gps-dem` LINE (r543).
+    //
+    // "GPS Dem habe ich keine Ahnung was das sein soll ... das könnte man noch
+    // in die Zeile mit dazu packen und dann einfach quasi in Klammern +0,5
+    // irgendwie statt dass man da GPS Dem schreibt, was sowieso kein Mensch
+    // versteht." The reporter also guessed correctly what it relates to, which
+    // is the argument for moving it rather than deleting it: it belongs beside
+    // the altitude it is derived from.
+    //
+    // THE NUMBER STAYS, ONLY THE LABEL GOES, and that distinction is load-
+    // bearing. This is `altitudeM - terrainHeightM`, and its SIGN separates the
+    // two filed causes that need opposite fixes -- a diagnostic the round-four
+    // plan relies on. Dropping the value to satisfy "nobody understands it"
+    // would answer a readability complaint by removing evidence.
+    //
+    // Guarded on the DEM exactly as the old line was: `heightfieldFrom` samples
+    // FLAT ZERO when `hasData` is false, so an unguarded residual would render
+    // a confident `(+105.5)` out of a failed terrain load.
+    const residual =
+      !demFailed && isSignedReading(measurements.terrainHeightM)
+        ? ` (${signed(measurements.altitudeM - measurements.terrainHeightM)})`
+        : "";
+    altitude = `alt ${measurements.altitudeM.toFixed(1)} m${accuracy}${residual}`;
   }
 
   if (
@@ -418,9 +458,6 @@ export function describeArMeasurements(
   // pair keeps its place in the readout's order (Q7).
   lines.push(...pair(altitude, worldFloor));
 
-  // THE DEM'S OWN STATE FIRST, because everything below depends on whether it
-  // loaded at all. `false` is a claim; `undefined` is only "not reported".
-  const demFailed = measurements.terrainHasData === false;
   if (demFailed) {
     // COLLAPSED TOO. Without the DEM the ground is flat zero, so every building
     // stands at the wrong height — a silent failure that the render cannot
@@ -444,24 +481,16 @@ export function describeArMeasurements(
     );
   }
 
-  // THE LINE THE READOUT EXISTS FOR (DEC-H1/H5), NAMED BY ITS OPERANDS (H8).
+  // THE `gps-dem` LINE IS GONE, folded into the altitude line above (r543).
   //
-  // It was called `above terrain`, which reads as "how high the phone is above
-  // the ground" and was reported as incomprehensible. It is not that number and
-  // cannot be: this is `altitudeM - terrainHeightM`, GPS altitude minus DEM, and
-  // NO POSE REACHES THIS MODULE AT ALL — raising the phone cannot move it. The
-  // documentation claiming "chest height reads about +1.5 m" was false in five
-  // places, one of them a test NAME. It is deleted rather than reworded: GNSS
-  // vertical error is +/-10-20 m, so a 1.5 m target sits far inside the noise of
-  // the quantity it was meant to calibrate.
-  //
-  // A steady +10 m is the reported symptom, and its SIGN separates the two filed
-  // causes that need opposite fixes. Always shown, never expanded-only.
-  // The REAL holding height is the `camera` line below.
-  if (terrainUsable && isSignedReading(measurements.altitudeM)) {
-    const residual = measurements.altitudeM - measurements.terrainHeightM;
-    lines.push(`gps-dem ${signed(residual)} m`);
-  }
+  // Its history is worth keeping because it is a chain of the same mistake. It
+  // was called `above terrain`, which reads as "how high the phone is above the
+  // ground" -- a number it is not and cannot be: no pose reaches this module at
+  // all, so raising the phone cannot move it. Documentation claiming "chest
+  // height reads about +1.5 m" was false in five places, one of them a test
+  // NAME. Renaming it to name its operands fixed the falsehood and left it
+  // unreadable, which is what r543 reported. The real holding height is the
+  // `floor distance` line below.
 
   // THE HONEST HOLDING HEIGHT (DEC-Y5), which already existed as a computed
   // value and was discarded one line from here: the camera's `y` in the
@@ -474,12 +503,23 @@ export function describeArMeasurements(
   // and absent rather than zero before the first pose: `camera 0.00 m` would
   // claim the phone is lying on the ground.
   if (isSignedReading(measurements.cameraHeightM)) {
-    lines.push(`camera ${measurements.cameraHeightM.toFixed(2)} m`);
+    // `floor distance`, NOT `camera` (r543). "Camera ist die Höhe vom Boden.
+    // Camera könnte man dann halt Floor Distance stattdessen schreiben, das ist
+    // wahrscheinlich eindeutiger." The old label named the SENSOR; the reader
+    // needs the QUANTITY, and `camera 1.18 m` reads as a property of the camera
+    // rather than as a distance to the floor.
+    lines.push(`floor distance ${measurements.cameraHeightM.toFixed(2)} m`);
   }
 
-  // THE PAIRED LINE, always visible like the residual above: `above terrain`
-  // is untouched by the offset, this is the estimator's view, and their
-  // difference is the fused-vertical error, live. Absent while the estimator
+  // THE PAIRED LINE. It used to say "always visible like the residual above,
+  // `above terrain` is untouched by the offset" -- naming two things that no
+  // longer exist where it claimed: `above terrain` was renamed two rounds ago,
+  // and the residual moved INTO the altitude line at r543. Cold review caught
+  // the stale wording.
+  //
+  // What it is about: the altitude line's residual is GPS-minus-DEM and is
+  // untouched by the estimator's offset; THIS line is the estimator's own view,
+  // and the difference between the two is the fused-vertical error, live. Absent while the estimator
   // publishes nothing — a zero here would claim measured agreement.
   if (isSignedReading(measurements.autoOffsetM)) {
     // THE STATE TAGS, in the order a reader needs them: how good the number

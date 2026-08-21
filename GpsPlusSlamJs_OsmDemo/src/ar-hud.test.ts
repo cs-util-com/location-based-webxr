@@ -166,7 +166,10 @@ describe("createArHud — collapse and expand", () => {
     const hud = createArHud(root);
     hud.sample(measurements, 0);
 
-    expect(root.textContent).toContain("gps-dem +1.5 m");
+    // FOLDED INTO THE ALTITUDE LINE at r543 -- see `ar-measurements.ts`. The
+    // number is what this assertion is about, and it is unchanged; only the
+    // unreadable `gps-dem` label went.
+    expect(root.textContent).toContain("alt 105.5 m (+1.5)");
     expect(root.textContent).not.toContain("geoid N");
 
     toggle().click();
@@ -217,7 +220,10 @@ describe("createArHud — collapse and expand", () => {
     try {
       const hud = createArHud(root);
       expect(() => hud.sample(measurements, 0)).not.toThrow();
-      expect(root.textContent).toContain("gps-dem +1.5 m");
+      // FOLDED INTO THE ALTITUDE LINE at r543 -- see `ar-measurements.ts`. The
+      // number is what this assertion is about, and it is unchanged; only the
+      // unreadable `gps-dem` label went.
+      expect(root.textContent).toContain("alt 105.5 m (+1.5)");
       expect(() => toggle().click()).not.toThrow();
       expect(root.textContent).toContain("geoid N +46.2 m");
       hud.dispose();

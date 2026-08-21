@@ -177,7 +177,17 @@ need **opposite** fixes.
   it as a confident hundred-metre error. False suppresses both and prints
   `terrain: no DEM` — **and that warning shows even collapsed**, because a
   warning only visible when expanded is a warning nobody sees.
-- **The residual, `gps-dem ±X m`** — derived here rather than passed in:
+- **The residual, now `(±X)` INSIDE the altitude line** — derived here rather
+  than passed in. It had its own `gps-dem` line until r543: _"GPS Dem habe ich
+  keine Ahnung was das sein soll ... das könnte man noch in die Zeile mit dazu
+  packen und dann einfach quasi in Klammern +0,5 irgendwie statt dass man da GPS
+  Dem schreibt, was sowieso kein Mensch versteht."_ The NUMBER is kept and only
+  the label goes — its sign separates two filed causes that need opposite fixes,
+  so dropping the value would answer a readability complaint by removing
+  evidence. The reporter also guessed correctly what it relates to, which is the
+  argument for moving it beside the altitude rather than deleting it. Its DEM
+  guard is unchanged, and `demFailed` is now computed above the altitude line so
+  the guard is known before that line is built.
   `altitudeM − terrainHeightM`, GPS altitude minus DEM. A steady **+10 m** is
   the reported symptom, stated instead of inferred from a scene that looks
   wrong. Its sign is the information: negative means the GPS altitude sits
@@ -195,7 +205,11 @@ need **opposite** fixes.
     them. **Verify by searching for the claim, never by re-listing its sites.**
   - The old sidecar also stated "negative means the camera is under the
     ground". Same defect, same fix: it means the GPS altitude is below the DEM.
-- **The holding height, `camera X.XX m`** — the camera's `y` in the WebXR
+- **The holding height, `floor distance X.XX m`** — renamed from `camera` at
+  r543: _"Camera ist die Höhe vom Boden. Camera könnte man dann halt Floor
+  Distance stattdessen schreiben, das ist wahrscheinlich eindeutiger."_ The old
+  label named the SENSOR where the reader needs the QUANTITY. It is the camera's
+  `y` in the WebXR
   `local-floor` reference space, whose zero is the floor plane. **The only line
   here that answers "how high am I holding the phone"**, and the one a reader
   was previously trying to get out of `gps-dem`.
@@ -205,7 +219,7 @@ need **opposite** fixes.
     `alt` carries the same ±10–20 m GNSS vertical noise that disqualified the
     residual, and `worldBaselineY` is the AR **origin**, which moves only when
     the alignment is re-solved.
-  - **Absent before the first pose**, never zero — `camera 0.00 m` would claim
+  - **Absent before the first pose**, never zero — `floor distance 0.00 m` would claim
     the phone is lying on the ground.
 - **`auto ±X.X m (conf 0.NN[, low][, frozen]) · <dem label>`** — the published
   automatic elevation offset (`ar-elevation-auto.ts`:
@@ -299,3 +313,16 @@ field to judge whether an alignment looks right, and a confident wrong number
 there is worse than a plain name. DEC-U6 accepted that AR upgrades silently with
 no PER-POSITION attribution; a whole-field source name is not per-position and
 is what remains honest.
+
+## Pairing (r543)
+
+`gps ±X m` and `N m from anchor` now share a line — _"GPS 7 Meter, 0 Meter from
+Anchor, die beiden sollten in eine Zeile."_ Both answer one question, how well
+the position is known, and each was taking a whole line of a readout that is
+already tall on a phone.
+
+Joined through the same `pair` helper as the render-cost pair, for the same
+reason: which lines belong together is **semantic**, and a width-driven merge
+pass would pair whatever happened to be adjacent. `pair` also keeps either half
+usable alone, which matters because the accuracy is live from the first fix while
+the anchor distance only exists once a session has an anchor.
