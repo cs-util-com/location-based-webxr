@@ -384,6 +384,23 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // callback only fires inside a live session, after the assignment.
   let auto: ArElevationAuto | undefined;
 
+  // ONE TAP MUST BE ONE EVENT (DEC-Y18). Inside an `immersive-ar` session with
+  // `dom-overlay`, a tap on the overlay fires a DOM `click` AND generates an XR
+  // `select`, and cancelling `beforexrselect` suppresses only the XR half.
+  //
+  // The spec is explicit that this has "no effect on DOM event processing", so
+  // it can never stop a button working — the failure it prevents is the reverse:
+  // a control firing twice through two paths, where anything stateful on the
+  // select side can undo what the click just did. That is one candidate for the
+  // gear button reported as dead in r541.
+  //
+  // Registered BEFORE `initAR` so no frame of a live session is unprotected, and
+  // on the overlay root itself because the event is composed and bubbles from
+  // whichever child was hit.
+  deps.container.addEventListener("beforexrselect", (event) => {
+    event.preventDefault();
+  });
+
   try {
     await initAR(
       deps.container,

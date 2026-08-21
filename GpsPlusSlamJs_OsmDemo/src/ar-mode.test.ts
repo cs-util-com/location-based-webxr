@@ -1405,6 +1405,39 @@ describe("the AR building shell", () => {
   });
 });
 
+describe("the dom-overlay input contract (DEC-Y18)", () => {
+  it("cancels beforexrselect, so one tap is not also an XR select", () => {
+    // Why this test matters: during an `immersive-ar` session with `dom-overlay`
+    // a tap on the overlay fires a DOM `click` AND an XR `select`, unless
+    // `beforexrselect` is cancelled. The spec is explicit that cancelling it has
+    // "no effect on DOM event processing" — so this can never SUPPRESS a button;
+    // what it prevents is the button firing twice through two different paths,
+    // where a stateful select handler can undo what the click just did. That is
+    // one candidate for the reported dead gear button.
+    //
+    // DEFENSIVE, and not proven to be the cause: the research pass found an
+    // unfixed Chrome bug (touch offset by the top-bar height) that would produce
+    // the same symptom, and only a device can tell them apart. This fix is
+    // correct either way, which is why it is worth having and why it is kept
+    // separately revertible.
+    const container = document.createElement("div");
+    document.body.append(container);
+
+    void startArMode(deps({ container }));
+
+    const event = new Event("beforexrselect", {
+      bubbles: true,
+      cancelable: true,
+    });
+    container.dispatchEvent(event);
+
+    expect(
+      event.defaultPrevented,
+      "beforexrselect was not cancelled, so a tap on the overlay also reaches the XR session",
+    ).toBe(true);
+  });
+});
+
 describe("the AR entry fly-down (H5, Q5)", () => {
   /**
    * Why these tests matter: the descent moves the whole city on the same axis
