@@ -341,6 +341,12 @@ export class MeshBuilder {
     // frame, the buffers are in the RIGHT-HANDED render frame. See the class
     // docstring for why the reflection also forces the winding reversal below.
     const at = this.pxLen;
+    // MEASURED AND NOT TAKEN: hoisting the capacity test inline here, and
+    // calling `grownF32` only on a miss, is worth −0.2 % on `buildBuildings`.
+    // A 2026-08-22 profile made it look like a 21 % lever (`grownF32` 15.2 %
+    // of that builder, `grownU32` 5.5 %); it is not, and the sampler's
+    // attribution to a tiny always-taken call is what to distrust. See
+    // `mesh-data.ts.md`.
     this.px = grownF32(this.px, at, 3);
     this.nx = grownF32(this.nx, at, 3);
     this.px[at] = x;
