@@ -1144,6 +1144,105 @@ test.describe("the geo-event", () => {
     // it here would be an assertion that cannot fail.
     await expect(page.locator("#quest-readout")).toBeHidden();
   });
+
+  test("keeps the map's own controls tappable, and stays small, once the picker is open", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (field report, 2026-08-23).
+     *
+     * "Behind it the DPS and AR buttons are not clickable anymore because this
+     * quest box is on top of the AR button. I can't first click Show Quest and
+     * then switch to AR mode because I just can't click the AR button."
+     *
+     * The picker shipped at `right: 0.5rem; bottom: 0.5rem; z-index: 1000` —
+     * the exact corner `main.ts` moves the AR and locate buttons into at
+     * runtime, and above them in z-order. With `max-width: calc(100% - 1rem)`
+     * it also spanned the pane on a phone, so it covered the map as well as the
+     * controls.
+     *
+     * A TRIAL CLICK rather than a box comparison, following the AR offer's own
+     * guard: what matters is that the picker cannot SWALLOW a tap meant for the
+     * control, and Playwright's actionability check states exactly that.
+     * Overlap arithmetic would pass the moment the boxes merely touch.
+     */
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // AT 390 px, WHICH IS THE WHOLE POINT — the report is a phone one. On a
+    // desktop split the picker has room to the left of the controls and every
+    // assertion below holds whatever the width rule is.
+    await page.setViewportSize({ width: 390, height: 780 });
+
+    await page.locator("#geo-event").click();
+    await expect(page.locator("#geo-event-picker")).toBeVisible();
+
+    // THE PICKER MUST NOT COVER THE CONTROLS AT ALL — geometry, not a tap.
+    //
+    // ⚠️ A TRIAL CLICK WAS THE FIRST INSTRUMENT HERE AND IT PASSED ON A BROKEN
+    // LAYOUT. Measured at 390 px, the picker's box was x 8→382, y 697→772 and
+    // the AR button's x 346→378, y 712→744 — the control ENTIRELY inside the
+    // overlay — and Playwright still found it actionable, because Leaflet's
+    // control happens to win the hit test in desktop Chromium. The field
+    // report says it does not win on a real phone.
+    //
+    // So tap-through is a z-order coincidence and cannot be the assertion. The
+    // precedent guard on `#ar-offer` makes the opposite choice deliberately,
+    // for the opposite reason: that overlay legitimately overlaps these
+    // controls on a desktop split, so only the tap can be asserted. This one
+    // must simply not be there.
+    const overlaps = (a, b) =>
+      a.x < b.x + b.width &&
+      b.x < a.x + a.width &&
+      a.y < b.y + b.height &&
+      b.y < a.y + a.height;
+
+    const arBox = await page.locator("#enter-ar").boundingBox();
+    const locateBox = await page.locator(".locate-button").boundingBox();
+    const pickerBox = await page.locator("#geo-event-picker").boundingBox();
+    if (arBox === null || locateBox === null || pickerBox === null) {
+      throw new Error("no boxes");
+    }
+
+    // Both, because the report named both and they share a stack — a fix that
+    // clears one by moving up a row leaves the other underneath.
+    expect(overlaps(pickerBox, arBox)).toBe(false);
+    expect(overlaps(pickerBox, locateBox)).toBe(false);
+
+    // And the tap still has to land, which is the harm the user actually felt.
+    await page.locator("#enter-ar").click({ trial: true });
+    await page.locator(".locate-button").click({ trial: true });
+
+    // AND IT DOES NOT SPAN THE SCREEN. The tap is the harm; the width is the
+    // complaint — "unnecessarily large … it fills the entire screen space".
+    // Two thirds is deliberately loose: this pins that a bound EXISTS, not a
+    // particular design, so a later re-layout does not fail here for being
+    // different rather than for being wrong.
+    expect(pickerBox.width).toBeLessThan(390 * 0.67);
+
+    // AND IT DOES NOT COVER THE TOAST, which is the app's only 2D message
+    // channel — and this very flow writes to it ("Quest at …" / "No quest
+    // nearby"). The `#ar-offer` guard makes the same assertion for the same
+    // reason: a message hidden under an overlay is one the user never sees.
+    const toastBox = await page
+      .locator("#toast-root .toast")
+      .first()
+      .boundingBox();
+    if (toastBox !== null) {
+      expect(overlaps(pickerBox, toastBox)).toBe(false);
+    }
+  });
 });
 
 test.describe("the cell layer toggle", () => {

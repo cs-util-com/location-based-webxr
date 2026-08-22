@@ -928,21 +928,43 @@
         display: none;
       }
       /* The geo-event picker sits opposite the hotkey list so the two cannot
-         cover each other — both are bottom-anchored overlays over the map. */
+         cover each other — both are bottom-anchored overlays over the map.
+
+         CLEAR OF THE MAP'S CONTROL COLUMN, and it was not (field report,
+         2026-08-23): "the DPS and AR buttons are not clickable anymore
+         because this quest box is on top of the AR button". `main.ts` moves
+         the AR and locate buttons into Leaflet's bottom-right corner at
+         runtime, which is exactly where this was pinned — measured at 390 px,
+         the AR button's box sat ENTIRELY inside this one's.
+
+         The right offset reserves that column: two 2rem buttons plus their
+         margins. Do not reduce it without moving the controls. */
       #geo-event-picker {
         position: absolute;
-        right: 0.5rem;
-        bottom: 0.5rem;
+        right: 3.25rem;
+        /* ABOVE THE TOAST BAND, measured rather than eyeballed. `.toast` is
+           `left: 0.75rem; bottom: 0.75rem; max-width: 78vw` — 304 px at 390 px
+           wide — so at phone width there is no horizontal gap to sit in and the
+           separation has to be vertical. 6rem clears a TWO-line toast, which is
+           the case that matters: this flow writes "Quest at …" and "No quest
+           nearby" into that channel, and a one-line clearance would cover the
+           second line of the longer one. */
+        bottom: 6rem;
         z-index: 1000;
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: 0.4rem;
-        /* Bounded by the pane rather than by a fixed width: `min()` reads as an
-           invalid value to the CSS validator in the gate, and the pane bound is
-           the one that actually matters on a phone. The content is narrower
-           than this on a desktop anyway, and `flex-wrap` handles the rest. */
-        max-width: calc(100% - 1rem);
+        /* SMALL BY DEFAULT, and it used to be `max-width: calc(100% - 1rem)` —
+           i.e. as wide as the pane, which on a phone is the whole screen. The
+           same report: "it is unnecessarily large. Especially the width causes
+           problems because it fills the entire screen space."
+
+           A fixed width with a pane-relative cap: the width is what keeps it
+           small on a phone, the cap is what stops it overflowing a narrow one.
+           `min()` is not used because the gate's CSS validator rejects it. */
+        width: 13rem;
+        max-width: calc(100% - 4rem);
         padding: 0.5rem 0.7rem;
         background: #171b26f2;
         border: 1px solid #2a2f3d;
