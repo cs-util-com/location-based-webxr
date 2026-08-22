@@ -101,11 +101,17 @@ async function buildArOverlayFixture(page) {
   // WHY THIS CHANGED. Everything above is a replica built with production class
   // names, and the compass replica had ALREADY DRIFTED: it rendered
   // "takes 15-30 fixes to express a change" (37 characters, ASCII hyphen)
-  // against production's "takes ~15–30 fixes to express" (29, en dash). The
-  // layout question this fixture exists to answer is whether the real CSS fits
-  // the real strings, and a replica that is eight characters too long answers a
-  // different question. J5 was about to widen that gap by editing the copy by
-  // hand — the exact drift the spec's own comment warned about.
+  // against the production string OF THAT DAY, "takes ~15–30 fixes to express"
+  // (29, en dash). The layout question this fixture exists to answer is whether
+  // the real CSS fits the real strings, and a replica that is eight characters
+  // too long answers a different question. J5 was about to widen that gap by
+  // editing the copy by hand — the exact drift the spec's own comment warned
+  // about.
+  //
+  // BOTH OF THOSE STRINGS ARE NOW HISTORY, which is the point: J5 shortened
+  // production again in this same branch, to "~15–30 fixes to show" (20). A
+  // replica would have needed a third hand-edit to keep up. This fixture did
+  // not, because it renders whatever `ar-compass-control.ts` renders.
   //
   // MOUNTED BY DYNAMIC IMPORT OF THE SOURCE MODULE, which needs NO
   // production-visible export: the e2e runs against the Vite DEV server (see
@@ -2159,10 +2165,13 @@ test.describe("the AR entry point", () => {
      * builds an `.ar-stack` and attaches both controls into it.
      *
      * The replica was not a hypothetical risk: its hint read
-     * "takes 15-30 fixes to express a change" against production's
-     * "takes ~15–30 fixes to express" — eight characters longer, with an ASCII
-     * hyphen for the en dash. A layout test whose strings are wrong is
-     * answering a different question than the one it claims.
+     * "takes 15-30 fixes to express a change" against the production string of
+     * the day, "takes ~15–30 fixes to express" — eight characters longer, with
+     * an ASCII hyphen for the en dash. A layout test whose strings are wrong is
+     * answering a different question than the one it claims. Production has
+     * since moved on again (J5 shortened the hint to "~15–30 fixes to show"),
+     * so neither quoted string is current — read them as the history that
+     * motivated mounting the real module.
      */
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);

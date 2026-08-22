@@ -32,9 +32,16 @@ with the alignment applied. Nothing is multiplied here — `fusedBearingDeg` in
   transposed with respect to each other. A silent transposition yields a
   coordinate that looks entirely reasonable and points somewhere the user has
   never been. `ar-scene-hierarchy.ts` records two independent readers getting
-  this frame backwards, which is why the test asserts a north-only displacement
-  never moves longitude, as a property over the whole range rather than as one
-  example.
+  this frame backwards, which is why the axis independence is pinned as a
+  `fast-check` property rather than by examples.
+  - **The examples alone were not enough, and the first version of this sidecar
+    overstated them.** It called the hand-rolled northward loop in
+    `ar-fused-gps.test.ts` "a property over the whole range"; that loop walks
+    one origin with the east term pinned to zero. The frame's longitude scale is
+    latitude-DEPENDENT (`cos(lat)`), so a transposed implementation produces an
+    error that shrinks toward the equator and can agree with a table of examples
+    taken at a single latitude. Raised by the PR #340 review; the property test
+    is what closes it.
 - **`y` is deliberately unused and deliberately NOT validated.** It is height, it
   comes from a different source than the horizontal terms, and suppressing a good
   position because the altitude is unusable would hide the line exactly when the
@@ -79,6 +86,16 @@ const fused = fusedGpsFrom(frame, camera.getWorldPosition(scratch));
 
 ## Tests
 
+- `ar-fused-gps.property.test.ts` — the axis mapping over arbitrary origins
+  (|lat| ≤ 70, poles excluded because `cos(lat)` diverges there) and arbitrary
+  poses: nothing but the north term moves latitude, nothing but the east term
+  moves longitude, latitude follows the north term monotonically, and the
+  finite-guard rule holds. Verified to have teeth by mutation — transposing the
+  two axes fails three of its four properties.
+  - The monotonic property carries a **step floor of 1 cm**, and the reason is
+    in the test: a bare `step > 0` admits denormal doubles, which cannot move a
+    latitude of ~50 whatever the implementation does. That first draft failed —
+    the property was false as stated, not violated by the code.
 - `ar-fused-gps.test.ts` — the origin round-trips; `x` moves latitude only and
   `z` moves longitude only; `y` is ignored entirely; a northward sweep is
   monotonic in latitude; non-finite horizontal terms yield `undefined` while a
