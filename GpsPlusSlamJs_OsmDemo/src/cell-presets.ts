@@ -24,7 +24,7 @@
  * default and the losing branches are deleted in the same commit as the
  * decision. **That cannot happen until §6 has landed**, because two of the axes
  * are premised on the wider heat radius: the opacity trade is only bearable
- * because the grid covers a ~250 m disc today, and `fog: false` is a no-op until
+ * because the grid covers a ~326 m disc today, and `fog: false` is a no-op until
  * the cells reach far enough for haze to touch them.
  *
  * @see cell-presets.ts.md

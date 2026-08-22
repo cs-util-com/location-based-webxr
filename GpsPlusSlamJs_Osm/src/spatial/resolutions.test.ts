@@ -296,11 +296,12 @@ describe("scoreWorkingSet — progressive radii (W16, DEC-R2-30)", () => {
     expect(scoreWorkingSet(CHUNK, 2.7)).toEqual(scoreWorkingSet(CHUNK, 2));
   });
 
-  it("reaches 61 chunks at the maximum radius", () => {
-    // 1 + 6 + 12 + 18 + 24 = 61, the hexagonal ring sum. Pinned as a NUMBER
-    // because DEC-R2-30 was taken on a stated cost, and a change to the radius
-    // that did not change this count would mean the constant is not being read.
-    expect(scoreWorkingSet(CHUNK, SCORE_DISK_MAX_RADIUS)).toHaveLength(61);
+  it("reaches 127 chunks at the maximum radius", () => {
+    // 1 + 6 + 12 + 18 + 24 + 30 + 36 = 127, the hexagonal ring sum. Pinned as a
+    // NUMBER because the radius decisions were taken on a stated cost, and a
+    // change to the radius that did not change this count would mean the
+    // constant is not being read. Was 61 at radius 4; DEC-K1 raised it to 6.
+    expect(scoreWorkingSet(CHUNK, SCORE_DISK_MAX_RADIUS)).toHaveLength(127);
   });
 });
 
@@ -317,7 +318,7 @@ describe("EVENT_TILE_RES — the geo-event tile", () => {
   });
 
   it("contains the scored disk it has to cover", () => {
-    // A res-8 hexagon has a ~460 m inradius and the scored disk reaches ~250 m
+    // A res-8 hexagon has a ~460 m inradius and the scored disk reaches ~326 m
     // from the user, so a climb starting anywhere in the tile stays inside the
     // ground the ensure step can cover. If this ever inverted, candidates near
     // a tile edge would need data from two fetch tiles to be judged at all.

@@ -73,7 +73,7 @@ describe("penaltyFor", () => {
   /**
    * DEC-R13-12, AND THE REASON IT AMENDS DEC-R13-2. "Unscored costs 1" would
    * make unknown ground at least as cheap as the best mapped path and strictly
-   * cheaper than ordinary grass, so A\* would route AROUND the ~250 m scored
+   * cheaper than ordinary grass, so A\* would route AROUND the ~326 m scored
    * disk. An unscored cell is the score identity instead — the same `?? 1` the
    * heat scale already uses for a cell with no entry in a category.
    */

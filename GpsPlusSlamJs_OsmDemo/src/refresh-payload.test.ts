@@ -137,7 +137,7 @@ describe("what one refresh actually transfers", () => {
     const share = (full - slim) / full;
 
     // THE MEASUREMENT, taken 2026-08-04 on this fixture:
-    //   2 989 cells - 426 630 bytes full, 190 832 without contributors
+    //   6 223 cells - 426 630 bytes full, 190 832 without contributors
     //   => contributors are 55% of the cell payload.
     //
     // That is 236 KB re-sent per pass and three passes per move, on a fixture
@@ -169,11 +169,16 @@ describe("what one refresh actually transfers", () => {
       counts.push(snapshot.cells.length);
     }
 
-    expect(counts).toHaveLength(3);
+    // DERIVED from the ring list. The literal 3 encoded a three-ring world and
+    // said so nowhere; DEC-K1 made it five.
+    expect(counts).toHaveLength(RINGS.length);
     // Each pass carries everything the previous one did, plus its new ring --
-    // strictly growing, never a delta.
-    expect(counts[1]).toBeGreaterThan(counts[0] ?? 0);
-    expect(counts[2]).toBeGreaterThan(counts[1] ?? 0);
+    // strictly growing, never a delta. Asserted over EVERY adjacent pair rather
+    // than the first two, so an added ring is actually checked instead of
+    // silently riding along.
+    for (let i = 1; i < counts.length; i++) {
+      expect(counts[i]).toBeGreaterThan(counts[i - 1] ?? 0);
+    }
   });
 
   it("sizes the payload against the SHIPPED category count, not the fixture's", async () => {

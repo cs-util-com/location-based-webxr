@@ -49,7 +49,7 @@ explaining one, came across as-is.
   not just the default, because presets are reachable by hotkey.
 - **`fog` comes from the preset and is an axis, not a constant** (§3,
   DEC-R6-22). The "prototype" preset sets it false.
-  - Safe today in both modes: the grid covers a ~250 m disc, desktop haze starts
+  - Safe today in both modes: the grid covers a ~326 m disc, desktop haze starts
     at 1584 m and AR's at 400 m, so the flag is a no-op.
   - **It stops being one when §6 widens the heat radius**, and in AR the
     consequence is worse than on desktop — fog there ends exactly at the far

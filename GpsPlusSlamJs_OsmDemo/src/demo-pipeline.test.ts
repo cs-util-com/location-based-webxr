@@ -650,6 +650,16 @@ describe("DemoPipeline.geoEvent", () => {
     expect(notTheCentres).toEqual([]);
   });
 
+  // 20 s, RAISED FROM THE 5 s DEFAULT BY DEC-K1 — and the reason is the cost of
+  // the change rather than a slow machine. This test runs five full
+  // `update()` passes at `SCORE_DISK_MAX_RADIUS`, which the radius 4 -> 6 rise
+  // took from 61 to 127 chunks each. Measured 8.1 s afterwards against ~4 s
+  // before, so it crossed the default while the suite's workers were busy and
+  // passed when run alone — the shape that reads as flakiness and is not.
+  //
+  // The fixture is NOT trimmed to fit: "five tiles, ~290 chunks" against "one
+  // tile, ~127" is what makes the comparison falsifiable, and shrinking it to
+  // save seconds would weaken the assertion to protect a timeout.
   it("reports THIS search's pinned set, not the session's high-water mark", async () => {
     // WHY THIS TEST MATTERS. `stats.chunksPinnedPeak` on the index is a
     // session-lifetime maximum that is deliberately never reset — its own test
@@ -666,7 +676,7 @@ describe("DemoPipeline.geoEvent", () => {
     // Big: enough ground loaded that several neighbours qualify — five tiles,
     // ~290 chunks. Small: a position 150 km away with nothing loaded around it,
     // so no neighbour qualifies and only the centre's reach is pinned — one
-    // tile, ~61 chunks. A factor of five apart, so this cannot pass by accident.
+    // tile, ~127 chunks. Still far enough apart that this cannot pass by accident.
     const pipeline = new DemoPipeline({ source: wideSource(), table: TABLE });
     for (const offset of [0, 0.01, -0.01, 0.02, -0.02]) {
       await pipeline.update(
@@ -691,7 +701,7 @@ describe("DemoPipeline.geoEvent", () => {
     // And the session maximum really did stay at the bigger value, so the
     // assertion above is about a leak that was available to happen.
     expect(pipeline.stats().chunksPinnedPeak).toBe(big.stats.chunksPinnedPeak);
-  });
+  }, 20_000);
 
   it("measures over-cap against THIS search's pins, not a stale eviction", async () => {
     // WHY THE INDEX'S OWN COUNTER CANNOT ANSWER THIS. `evictBeyond` runs from

@@ -187,11 +187,16 @@ describe("scoring a feature larger than the batch", () => {
     // itself. A continental feature clipped to a ~488 m box is a few thousand
     // res-13 cells; unclipped it is the whole North Sea and this number would
     // be astronomically larger — or `polygonToCellsExperimental` would throw.
-    // Measured 4 409, against 2 177 kept and a box that holds 5 417. Pinned to
-    // the same tightness as the geometry below and for the same reason: it is
-    // deterministic, so a wide window would only hide what it exists to catch.
-    expect(index.stats.cellsCovered).toBeGreaterThan(4_000);
-    expect(index.stats.cellsCovered).toBeLessThan(5_000);
+    // Measured 7 620 at `SCORE_DISK_MAX_RADIUS` 6. Pinned to the same tightness
+    // as the geometry below and for the same reason: it is deterministic, so a
+    // wide window would only hide what it exists to catch.
+    //
+    // It read 4 409 while the radius was 4. DEC-K1 widened the disc, so the clip
+    // box grew and the cover grew with it — the number moving is the test doing
+    // its job, not a regression. What it still catches is the clip DISAPPEARING,
+    // which would put the whole North Sea in here or throw.
+    expect(index.stats.cellsCovered).toBeGreaterThan(7_000);
+    expect(index.stats.cellsCovered).toBeLessThan(8_200);
   });
 
   it("pays ~1.8x for the batch's bounding box, which is the claimed amortisation", () => {
@@ -216,12 +221,20 @@ describe("scoring a feature larger than the batch", () => {
 
     // A hexagonal disc's bounding box plus one shared margin. **Pinned tightly
     // rather than bracketed**, because this is H3 geometry at a fixed place
-    // with no clock in it — the measured value is 1.82 and it is reproducible,
+    // with no clock in it — the measured value is 1.61 and it is reproducible,
     // so a wide window would only hide the regression the number exists to
-    // catch. Under 1 would mean the box no longer contains its chunks; over
-    // ~1.9 would mean the margin had stopped being amortised.
-    expect(boxArea / chunkArea).toBeGreaterThan(1.7);
-    expect(boxArea / chunkArea).toBeLessThan(1.9);
+    // catch. Under 1 would mean the box no longer contains its chunks; a rise
+    // back toward ~1.9 would mean the margin had stopped being amortised.
+    //
+    // ⚠️ IT WAS 1.82 AT RADIUS 4, AND FALLING IS THE EXPECTED DIRECTION. The
+    // margin is padded onto the UNION once, so a larger disc spreads the same
+    // perimeter cost over more chunks and the ratio drops toward the
+    // hexagon-in-rectangle limit. DEC-K1's wider disc therefore made the
+    // amortisation this test names BETTER, which is worth stating: a future
+    // reader seeing 1.61 against a comment saying 1.82 would otherwise suspect
+    // the box had stopped containing its chunks.
+    expect(boxArea / chunkArea).toBeGreaterThan(1.5);
+    expect(boxArea / chunkArea).toBeLessThan(1.7);
 
     // And in the units the cover is paid in. **This figure IS the header's
     // retraction** — the first version of this test computed 265 726 against a
@@ -238,7 +251,10 @@ describe("scoring a feature larger than the batch", () => {
     // second assertion was decoration. Now the ratio comes from H3's res-11
     // area and this line from the package's res-13 constant, so they can
     // genuinely disagree.
-    expect(covered).toBeGreaterThan(5_000);
-    expect(covered).toBeLessThan(6_000);
+    // Measured 10 015 at radius 6; it read ~5 417 at radius 4. The box grew
+    // with the disc, and this line is pinned to the decade it occupies for the
+    // reason the paragraph above gives.
+    expect(covered).toBeGreaterThan(9_200);
+    expect(covered).toBeLessThan(11_000);
   });
 });

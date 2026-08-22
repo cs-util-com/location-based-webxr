@@ -32,7 +32,7 @@ None. Entry point only, loaded by `index.html`.
   - **A cell now does BOTH** (stage 3, DEC-R13-6): it opens the details panel
     AND sends the agent to the cell centre. Before that, a cell hit stopped at
     the store, so wherever the grid was drawn the agent could not be ordered —
-    masked only by the grid being off by default and covering ~250 m, and a real
+    masked only by the grid being off by default and covering ~326 m, and a real
     blocker the moment coverage grows.
     - **Accepted cost, stated:** every inspection click also moves the agent and
       re-plans the route. The escape hatch, if a session finds that annoying, is

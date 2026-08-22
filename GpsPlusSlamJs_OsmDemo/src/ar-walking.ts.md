@@ -35,7 +35,7 @@ starves the cycle** (plan §2.6):
   - **Above ~30 m**, because an urban fix wanders 10–30 m while the phone sits
     still. A threshold inside that band turns standing on a corner into a
     continuous refresh loop: the starvation case with no walking involved.
-  - **Below ~124 m**, because the scoring working set reaches ~250 m
+  - **Below ~124 m**, because the scoring working set reaches ~326 m
     (`SCORE_DISK_MAX_RADIUS = 4`). A refresh triggered after D metres lands
     1.4·T metres later at walking pace, so the user is `D + 1.4·T` from the last
     scored centre when the data arrives — `D + 126` at the 90 s worst case. Past

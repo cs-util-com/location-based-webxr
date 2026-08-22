@@ -83,7 +83,7 @@ function setOf(enabled: Iterable<LayerKind>): LayerSet {
  * again unless it is deliberately scheduled.
  *
  * **`cells` off**, because the 2D map draws one Leaflet polygon per cell and the
- * final scoring ring is ~2 989 of them. The 3D grid is a single merged draw call
+ * final scoring ring is ~6 223 of them. The 3D grid is a single merged draw call
  * and costs almost nothing, so this is a composition decision in 3D and a real
  * cost in 2D.
  *

@@ -5,6 +5,13 @@
  * WHY THIS EXISTS. `refresh-payload.test.ts` measures the clone of the plain
  * object array at 3.2 ms for one ring and **35.1 ms for the 24 206 cells the
  * 488-chunk cache holds** — three times per move, against a 16 ms frame budget.
+ *
+ * ⚠️ **THOSE FIGURES WERE MEASURED AT A 488-CHUNK CAP, AND THE CAP IS NOW
+ * 1 016** (DEC-K1 raised the scoring radius from 4 to 6, and the cap derives
+ * from it). The measurement is kept as recorded rather than rescaled — a
+ * doubled cell count is not necessarily a doubled clone cost — but it now
+ * UNDERSTATES today's worst case, which is the direction that matters for an
+ * argument about a frame budget.
  * The demo already moves mesh geometry zero-copy through typed arrays; the cell
  * array was the one large payload still being copied.
  *

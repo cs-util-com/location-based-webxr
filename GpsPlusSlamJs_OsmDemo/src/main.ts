@@ -321,7 +321,7 @@ async function main(): Promise<void> {
         // AND IT ORDERS (stage 3, DEC-R13-6). Before this, a cell hit returned
         // from `pick.ts` and stopped here, so wherever the grid was drawn the
         // agent could not be sent — masked only by the grid being off by
-        // default and covering ~250 m, and a real blocker the moment coverage
+        // default and covering ~326 m, and a real blocker the moment coverage
         // grows. The rejected alternatives were a modifier split (clean, but it
         // hides inspection behind a gesture touch does not have) and making
         // cells unclickable in 3D (removes a feature that works).
@@ -417,7 +417,7 @@ async function main(): Promise<void> {
       buildingView.setCellPreset(activePreset);
       // ONLY WHEN THE BUFFERS ACTUALLY CHANGE. Opacity, fog and lift are
       // material and transform settings the view applies itself; republishing
-      // for them would make every press wait on the worker over up to ~2 989
+      // for them would make every press wait on the worker over up to ~6 223
       // cells, and the hotkey would feel broken.
       if (needsMeshRebuild(previous, activePreset)) redrawFromSnapshot();
       writeStatus();

@@ -27,7 +27,7 @@
  * @see refresh-cycle.ts.md
  */
 
-import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
+import { PROGRESSIVE_RADII, SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import {
@@ -87,18 +87,16 @@ interface RefreshWorker {
  * The ring radii one refresh scores, in order (W16, DEC-R2-30).
  *
  * DERIVED, not listed. The two constants are the decision; a hand-written
- * `[2, 3, 4]` would be a third place the radius lives and the one that silently
- * disagrees when either constant moves.
+ * MOVED TO `resolutions.ts` (DEC-K1): the list is now exported beside the two
+ * constants it derives from, so the data-only tests can import it instead of
+ * re-deriving it. One of those hand-derived copies was `[R, R + 1, MAX]`, which
+ * stayed green while silently measuring a working set the cycle never builds.
  *
  * The FIRST entry is the full original working set, and that is the requirement
  * rather than an accident of ordering: the user waits for the first answer and
  * for nothing else, so progressive scoring must not make it later. Starting at
  * ring 0 to make the steps uniform would do exactly that.
  */
-const PROGRESSIVE_RADII: readonly number[] = Array.from(
-  { length: SCORE_DISK_MAX_RADIUS - SCORE_DISK_RADIUS + 1 },
-  (_, step) => SCORE_DISK_RADIUS + step,
-);
 
 /**
  * Whether a snapshot of this radius is the LAST one a refresh will publish (F42).

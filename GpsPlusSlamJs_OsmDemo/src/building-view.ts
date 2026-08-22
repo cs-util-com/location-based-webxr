@@ -616,7 +616,7 @@ export class BuildingView {
     // working set reaches ~128 m from the user, so a 2 km plane is mostly ground
     // no cell is ever scored on". **Every number in that argument had expired**:
     // the plane has been `TERRAIN_EXTENT_M * 2` since round 3, the working set
-    // reaches ~250 m (`SCORE_DISK_MAX_RADIUS = 4`), and the decision it defended
+    // reaches ~326 m (`SCORE_DISK_MAX_RADIUS = 4`), and the decision it defended
     // was reversed twice — first by DEC-R2-8, then by DEC-R5-3.
     //
     // The size is not a scoring question at all any more, and that is the useful
@@ -1071,7 +1071,7 @@ export class BuildingView {
    * transform, so they are applied here and cost nothing. The geometry axes —
    * real extrusion and score-as-height — change the vertex buffers, which are
    * built in the worker; the caller republishes for those and NOT for these,
-   * because a republish over ~2 989 cells on every keypress would make the
+   * because a republish over ~6 223 cells on every keypress would make the
    * hotkey feel broken.
    *
    * The preset is HELD as well as applied: the grid mesh is replaced on every

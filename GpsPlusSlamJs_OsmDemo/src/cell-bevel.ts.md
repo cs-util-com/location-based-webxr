@@ -15,7 +15,7 @@ camera orbits.
 ## Invariants & assumptions
 
 - **It is a lie, and the bound is the point.** The tiles stay flat; real
-  extrusion would be ~3× the vertices on up to 2 989 cells rebuilt every publish
+  extrusion would be ~3× the vertices on up to 6 223 cells rebuilt every publish
   (DEC-S2 weighed and rejected it). Setting `strength` to `0` returns exactly the
   old flat surface, which is what makes the whole thing reviewable as one number
   rather than as a revert.

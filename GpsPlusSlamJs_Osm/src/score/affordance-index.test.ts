@@ -446,16 +446,24 @@ describe("eviction", () => {
     // just walked away from in preference to ground far behind them. Reported from
     // London: heat-map cells cleared right after a short jump.
     //
-    // The two chunks below are deliberately BOTH outside the old cap, and the
-    // nearer one is inserted FIRST, so the old behaviour evicts exactly the wrong
-    // one and the new behaviour evicts exactly the right one.
+    // The two chunks below are deliberately BOTH outside the working set, and
+    // the nearer one is inserted FIRST, so the old behaviour evicts exactly the
+    // wrong one and the new behaviour evicts exactly the right one.
+    //
+    // ⚠️ THE RINGS ARE DERIVED FROM THE RADIUS, and used to be the literals 5
+    // and 12. Ring 5 sat outside the disc while `SCORE_DISK_MAX_RADIUS` was 4;
+    // DEC-K1 raised it to 6, which pulled ring 5 INSIDE the working set. The
+    // "near" chunk was then never a candidate for eviction at all and the test
+    // failed — correctly, but for a reason that has nothing to do with the
+    // ordering it exists to pin. A literal that silently changes meaning when a
+    // constant moves is the failure this whole file keeps finding.
     const home = latLngToCell(HOME.lat, HOME.lng, SCORE_CHUNK_RES);
     const ringAt = (steps: number) =>
       gridDisk(home, steps).find(
         (cell) => gridDistance(home, cell) === steps,
       ) as string;
-    const near = ringAt(5);
-    const far = ringAt(12);
+    const near = ringAt(SCORE_DISK_MAX_RADIUS + 1);
+    const far = ringAt(SCORE_DISK_MAX_RADIUS + 8);
 
     // How many chunks a settled working set holds, measured rather than assumed —
     // deriving it from SCORE_DISK_MAX_RADIUS would restate the constant the

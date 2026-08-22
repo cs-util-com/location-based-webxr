@@ -107,6 +107,7 @@ import { describe, it, expect } from "vitest";
 import { cellToBoundary } from "h3-js";
 import {
   OVERPASS_SCHEMA_VERSION,
+  PROGRESSIVE_RADII,
   SCORE_DISK_MAX_RADIUS,
   SCORE_DISK_RADIUS,
   parseRuleTable,
@@ -127,14 +128,27 @@ const STEP_M = 100;
 /** Long enough to plateau at {@link GATE_MAX_CHUNKS}. 30 reproduces the table. */
 const STEPS = 14;
 
+/** Chunks in one working set at the production radius: `3r² + 3r + 1`. */
+const CHUNKS_PER_WORKING_SET =
+  3 * SCORE_DISK_MAX_RADIUS * SCORE_DISK_MAX_RADIUS +
+  3 * SCORE_DISK_MAX_RADIUS +
+  1;
+
 /**
  * The cap the GATE walks against. `undefined` reproduces the recorded table.
  *
- * 120 rather than 488: it is still nearly two full radius-4 working sets, so
- * eviction is doing the same job it does in production, and the plateau arrives
- * after three steps instead of twenty-six.
+ * **TWO WORKING SETS, DERIVED — and it used to be the literal 120.** The intent
+ * was always "nearly two full working sets, so eviction does the same job it
+ * does in production, and the plateau arrives after three steps instead of
+ * twenty-six". 120 expressed that while a working set was 61 chunks.
+ *
+ * When DEC-K1 raised the radius to 6, one working set became 127 chunks — so
+ * the literal silently became a cap SMALLER THAN A SINGLE WORKING SET. The
+ * walk could then never reach the plateau the test asserts, and it failed
+ * loudly, which is the good outcome; the bad one would have been a number that
+ * still passed while measuring something else.
  */
-const GATE_MAX_CHUNKS: number | undefined = 120;
+const GATE_MAX_CHUNKS: number | undefined = 2 * CHUNKS_PER_WORKING_SET;
 
 /** res-13 children per res-11 chunk — the multiplier on the chunk cap. */
 const CELLS_PER_CHUNK = 49;
@@ -144,16 +158,15 @@ const METRES_PER_DEGREE_LAT = 111_320;
 /**
  * The rings one refresh actually publishes — `PROGRESSIVE_RADII`.
  *
- * Re-derived rather than imported, so a data-only test does not drag
- * `refresh-cycle.ts` and its store dependency in. Walking with only the narrow
- * ring would exercise a working set a third the size of the one the cap was
- * chosen against, which is the wrong question.
+ * IMPORTED NOW, not re-derived. It used to be written out as
+ * `[R, R + 1, MAX]` here, to avoid dragging `refresh-cycle.ts` and its store
+ * dependency in — correct only while exactly three rings existed. Raising
+ * `SCORE_DISK_MAX_RADIUS` to 6 turned it into `[2, 3, 6]`, which would have
+ * kept PASSING while measuring a working set the cycle never builds. The list
+ * now lives in `resolutions.ts` beside the constants it derives from, which is
+ * store-free, so the reason for the copy is gone.
  */
-const RINGS: readonly number[] = [
-  SCORE_DISK_RADIUS,
-  SCORE_DISK_RADIUS + 1,
-  SCORE_DISK_MAX_RADIUS,
-];
+const RINGS: readonly number[] = PROGRESSIVE_RADII;
 
 /**
  * Ground cover at factor 3, striped with industrial land at 0.2.

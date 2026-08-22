@@ -19,7 +19,7 @@
  *   One is also the admissibility floor, so "unscored costs 1" would make
  *   unknown ground at least as cheap as the best mapped path and strictly
  *   cheaper than ordinary grass — giving A\* a standing incentive to route
- *   AROUND the ~250 m scored disk, the inverse of what was asked for. An
+ *   AROUND the ~326 m scored disk, the inverse of what was asked for. An
  *   unscored cell is the score IDENTITY instead, which is the same `?? 1` the
  *   heat scale already applies to a cell with no entry in a category.
  * - **what the log is measured against** (DEC-R13-13). Fixed constants, NOT a

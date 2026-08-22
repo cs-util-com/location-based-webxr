@@ -132,9 +132,39 @@ export const FETCH_DISK_RADIUS = 1;
 export const SCORE_DISK_RADIUS = 2;
 
 /**
- * How far scoring eventually reaches, in `gridDisk` rings (W16, DEC-R2-30).
+ * How far scoring eventually reaches, in `gridDisk` rings (W16, DEC-R2-30;
+ * raised 4 -> 6 by DEC-K1, 2026-08-22).
  *
- * 4 rings = 61 chunks = ~2 989 res-13 cells, reaching ~250 m from the user.
+ * 6 rings = 127 chunks = ~6 223 res-13 cells, reaching ~326 m from the user
+ * (`6 x 49.6 m` centre-to-centre plus a 28.66 m edge).
+ *
+ * **RAISED ON A FIELD REPORT, once the build got fast enough to afford it.**
+ * Three performance commits (typed-array mesh accumulators, an indexed POI
+ * host join, an indexed building part-to-outline assignment) removed the cost
+ * that justified stopping at 4, and the reporter asked for "noch einen
+ * weiteren Ring oder vielleicht sogar zwei".
+ *
+ * **THE CONSTRAINT THAT ALMOST STOPPED THIS WAS MISREAD, and the correction is
+ * why 6 rather than 5.** A first draft argued the grid must stay under
+ * `AR_FOG_NEAR_M = 400`. That is where AR's fade BEGINS; a `fog: false`
+ * material never fades and clips at `AR_CAMERA_FAR_M = 1000`. Against the real
+ * ceiling ~326 m is comfortable. A second draft argued from the ~10 ms
+ * per-chunk frame budget, which is the cost of ONE chunk and does not move
+ * with the ring count at all.
+ *
+ * ⚠️ **IT ALSO RAISES THE SCORE-CACHE CEILING, which is a separate decision
+ * the owner took knowingly.** `affordance-index.ts` derives
+ * `CHUNKS_PER_WORKING_SET` from this constant, so the retained-chunk cap goes
+ * 488 -> 1 016 and the `scoresByCell` ceiling 23 912 -> 49 784 cells. At the
+ * corpus-measured 808 bytes/cell that is ~19.3 MB -> ~40 MB serialised, and
+ * `chunk-cap.corpus.test.ts` warns real heap is several times that. That test
+ * bounds per-chunk cost only, so **no gate asserts the total** - a phone-side
+ * eviction would arrive as a field report rather than a red test.
+ *
+ * **Network cost is mitigated by ordering, not avoided:** a wider outermost
+ * ring straddles res-7 fetch boundaries more often, and each new tile is
+ * ~21 MB / 15-90 s. Ring 6 is emitted LAST, so a stall there delays the outer
+ * ring rather than the first answer.
  *
  * **`SCORE_DISK_RADIUS` is still what the FIRST pass scores, and that is the
  * point rather than an implementation detail.** The rings beyond it are scored
@@ -146,7 +176,34 @@ export const SCORE_DISK_RADIUS = 2;
  * The C# reference's analogue is one ring of ~153 m tiles around a ~153 m
  * centre; two extra rings here is the same shape at this grid's scale.
  */
-export const SCORE_DISK_MAX_RADIUS = 4;
+export const SCORE_DISK_MAX_RADIUS = 6;
+
+/**
+ * The rings one refresh publishes, inner first: `[2, 3, 4, 5, 6]`.
+ *
+ * **DERIVED AND EXPORTED FROM HERE, because three separate places were deriving
+ * it by hand and one of them was wrong.** `refresh-cycle.ts` computed it
+ * privately; `refresh-cycle.test.ts` wrote `[SCORE_DISK_RADIUS, 3,
+ * SCORE_DISK_MAX_RADIUS]` with a bare literal in the middle; and
+ * `derive-growth.test.ts` wrote `[R, R + 1, MAX]`, which was correct only while
+ * exactly three rings existed. Raising `SCORE_DISK_MAX_RADIUS` turned that last
+ * one into `[2, 3, 6]` — a list that still PASSED while silently measuring a
+ * working set the cycle never builds.
+ *
+ * That is the failure worth designing against: a hard-coded ring list does not
+ * go red when the radius moves, it goes quietly wrong. Living here means the
+ * data-only tests can import it without dragging `refresh-cycle.ts` and its
+ * store dependency in, which is the reason they re-derived it in the first
+ * place.
+ *
+ * The FIRST entry is the full original working set, and that is a requirement
+ * rather than an accident of ordering: the user waits for the first answer and
+ * for nothing else, so progressive scoring must not make it later.
+ */
+export const PROGRESSIVE_RADII: readonly number[] = Array.from(
+  { length: SCORE_DISK_MAX_RADIUS - SCORE_DISK_RADIUS + 1 },
+  (_, step) => SCORE_DISK_RADIUS + step,
+);
 
 /**
  * Number of res-13 children a res-11 chunk normally has: 7^2, two levels down.
