@@ -88,6 +88,14 @@ None. Entry point only, loaded by `index.html`.
   moved" passing for "nothing is sampled where you are". `data-*` rather than a
   `window` global, matching `data-state` on the locate button and
   `data-collapsed` on the header.
+  - **The e2e that reads these must not pin a map pixel** (J2, 2026-08-22).
+    Both scene-frame tests walked the user by clicking `#map` at a hard-coded
+    `(60, 60)`, which only works while that pixel is bare map. Leaflet holds the
+    map's CENTRE, so anything that changes the header's height re-frames the
+    view — the header growing ~7 px slid a region under that pixel, region paths
+    call `stopPropagation`, and the walk silently never happened. `fixtures.js`'s
+    `walkByMapClick` now hit-tests for a click point instead; the same trap took
+    a cell-panel test with it.
 - **The views are subscribers, not callees.** Since the round-1 store migration
   (2026-07-29, DEC-4) nothing here decides who draws first: `main.ts` dispatches
   intent, and each view redraws when the state it reads changes. It still owns

@@ -1140,6 +1140,103 @@ test.describe("the header", () => {
     expect(measured.caret.height).toBeLessThanOrEqual(measured.siteFontPx + 4);
   });
 
+  test("puts every header control in a block over a fully transparent bar", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (J2/J3/J4, DEC-J5..DEC-J7).
+     *
+     * "Ich möchte, dass du diesen Hintergrund komplett 100 % transparent machst
+     * und stattdessen noch mehr von diesen Boxen benutzt ... so sorgt man dafür,
+     * dass noch mehr vom Hintergrund, von der 3D-Szene, sichtbar ist."
+     *
+     * AT 390 px, because that is where the change is real. Above 860 px the
+     * header is a layout ROW whose background already matches `body`, so
+     * "transparent" is invisible there; below it, the bar floats over the 3D
+     * view and the 82 % scrim is what the report is about.
+     *
+     * THE BLOCK MEMBERSHIP IS ASSERTED AS A SHARED ANCESTOR, not as a class on
+     * each control. What the owner asked for is that these controls read as one
+     * group; an assertion per element passes just as well when each sits in a
+     * block of its own, which is the opposite arrangement.
+     *
+     * `#status-block`'s membership would otherwise be UNGUARDED: `#legend` is a
+     * `<div>`, so if `.header-block` ever loses its `display: flex` the status
+     * line and the legend stack silently, with the header simply growing taller
+     * and no assertion noticing. The nav block has three existing centre-
+     * alignment assertions that would fail; this one has none.
+     */
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const measured = await page.evaluate(() => {
+      const el = (selector) => {
+        const found = document.querySelector(selector);
+        if (found === null) throw new Error(`no ${selector}`);
+        return found;
+      };
+      const blockOf = (selector) => {
+        const block = el(selector).closest(".header-block");
+        return block === null ? null : block.id || "(unnamed block)";
+      };
+      const rect = (selector) => {
+        const r = el(selector).getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, height: r.height };
+      };
+      return {
+        headerBackground: getComputedStyle(el("header")).backgroundColor,
+        blocks: {
+          caret: blockOf("#header-toggle"),
+          site: blockOf("#site"),
+          quests: blockOf("#geo-event"),
+          questReadout: blockOf("#quest-readout"),
+          status: blockOf("#status"),
+          legend: blockOf("#legend"),
+        },
+        groundModeInWorld:
+          el("#ground-mode-label").closest("#layer-group-world") !== null,
+        radii: [...document.querySelectorAll(".header-block")].map((b) =>
+          Number.parseFloat(getComputedStyle(b).borderTopLeftRadius),
+        ),
+        navBlock: rect("#nav-block"),
+        categoryBlock: rect("#layer-group-overlays"),
+      };
+    });
+
+    // FULLY TRANSPARENT, not merely more transparent. `rgba(0, 0, 0, 0)` is what
+    // a computed `background: transparent` reports.
+    expect(measured.headerBackground).toBe("rgba(0, 0, 0, 0)");
+
+    // ONE block for the navigation row, ONE for the readouts underneath.
+    expect(measured.blocks.caret).toBe("nav-block");
+    expect(measured.blocks.site).toBe("nav-block");
+    expect(measured.blocks.quests).toBe("nav-block");
+    expect(measured.blocks.questReadout).toBe("nav-block");
+    expect(measured.blocks.status).toBe("status-block");
+    expect(measured.blocks.legend).toBe("status-block");
+
+    // THE ONE CONTROL THE REPORT DID NOT MENTION. Left loose it would be the
+    // only bare thing on a transparent bar, which is the next session's finding.
+    expect(measured.groundModeInWorld).toBe(true);
+
+    // J3: "die Ecken nicht ganz so rund". `999px` is a full pill and was the
+    // outlier in this codebase -- everything else rounds between 3 and 10 px.
+    // A ceiling rather than an exact value, so ordinary tuning does not trip it.
+    expect(measured.radii.length).toBeGreaterThan(0);
+    for (const radius of measured.radii) expect(radius).toBeLessThanOrEqual(12);
+
+    // J4: "die haben gerade so einen seltsamen Abstand zueinander." Expressed as
+    // the MEASUREMENT rather than as a CSS value, because the row break's
+    // negative margin is gap arithmetic -- change `row-gap` without changing
+    // that margin and the distance doubles while the declaration still reads
+    // 0.3rem.
+    const gap = measured.categoryBlock.top - measured.navBlock.bottom;
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(6);
+  });
+
   test("drops the category label from the collapsed bar, and keeps it when expanded", async ({
     page,
   }) => {

@@ -359,9 +359,19 @@ describe("where an extra control lands inside its group", () => {
     });
 
     // Naming one group must not reorder or empty another — the seam is
-    // per-group, and in production the diagnostics group carries an extra of
-    // its own while this one, `world`, carries none. It is `world` that is
-    // asserted here precisely because it should be untouched either way.
+    // per-group, so a group nobody named keeps exactly its generated switches.
+    //
+    // THE RATIONALE THAT USED TO BE HERE IS GONE, and the correction is worth
+    // keeping. It said `world` was chosen "precisely because" it carries no
+    // extra in production, unlike diagnostics. Since J2/DEC-J5 that is false —
+    // `main.ts` wires `ground-mode-label` into `world`. The test never depended
+    // on it (these options are built here, not read from the app), but a comment
+    // asserting a production fact that has stopped being true is worse than no
+    // comment: the next reader trusts it. Cold review caught it in the plan,
+    // before the change landed.
+    //
+    // `world` is still a fine choice — it is simply "a group this call does not
+    // name", which is the whole property under test.
     expect(childKeys(container.querySelector("#layer-group-world"))).toEqual([
       "layer-group-label",
       "layer-buildings",

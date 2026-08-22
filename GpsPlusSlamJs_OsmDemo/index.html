@@ -63,7 +63,35 @@
         border-bottom: 1px solid #2a2f3d;
         display: flex;
         flex-wrap: wrap;
-        gap: 0.75rem;
+        /* FULLY TRANSPARENT (J2, DEC-J5). "Diesen Hintergrund komplett 100 %
+           transparent machen und stattdessen noch mehr von diesen Boxen
+           benutzen ... so sorgt man dafür, dass noch mehr vom Hintergrund, von
+           der 3D-Szene, sichtbar ist."
+
+           UNCONDITIONAL, though it only DOES anything below 860 px. Above that
+           the header is a layout row whose background already matches `body`'s
+           `#11131a`, so this is invisible there — and one rule everywhere is
+           cheaper than a breakpoint-scoped one that can drift. The translucency
+           it gives up moves onto `.header-block`. */
+        background: transparent;
+        /* TWO AXES, TWO NUMBERS — `gap: <row> <column>` — and the split is the
+           J4 fix. The horizontal gap between controls in a row was right; the
+           vertical gap between the nav block and the Category block below it
+           read as "ein seltsamer Abstand".
+
+           WRITTEN AS THE SHORTHAND, not as `row-gap` + `column-gap`: stylelint's
+           `declaration-block-no-redundant-longhand-properties` rejects the pair
+           when both are present, and it is right — one declaration is where a
+           reader looks.
+
+           ⚠️ THE ROW HALF IS HALF THE DISTANCE YOU WANT BETWEEN ROWS, because
+           `.header-row-break` adds a second flex row and the gap is therefore
+           charged twice down the cross axis. That rule used to carry a negative
+           margin claiming to cancel the extra charge; it never did (Chromium
+           clamps a negative outer cross size to 0) — see `.header-row-break`.
+           0.15rem here renders as ~4.8 px between the nav block and the
+           Category block, which the J4 e2e measures. */
+        gap: 0.15rem 0.75rem;
         /* CENTRE, NOT BASELINE (r543 field report: "immer noch nicht auf einer
            Hoehe mit dem Jump To City Dropdown").
 
@@ -236,13 +264,29 @@
 
          `aria-hidden` and no text: it is a layout instruction, not content.
 
-         THE NEGATIVE MARGIN IS GAP ARITHMETIC, not a nudge. A break item adds a
-         SECOND row to the flex container, so the header's `gap: 0.75rem` is
-         charged twice down the cross axis where it should be charged once;
-         -0.375rem top and bottom cancels the extra exactly. It is therefore
-         COUPLED TO `header`'s gap -- change one and this must change with it --
-         and nothing tests header height, so this sentence is the only thing
-         standing between that coupling and a silent regression.
+         THE NEGATIVE MARGIN IS GONE, AND IT NEVER WORKED. It was
+         `margin: -0.375rem 0`, described as exact gap arithmetic: a break item
+         adds a SECOND flex row, so the row gap is charged twice down the cross
+         axis where it should be charged once, and half of it top and bottom was
+         meant to cancel the extra.
+
+         MEASURED, IT CANCELLED NOTHING. A zero-height flex item with -h top and
+         -h bottom has a NEGATIVE outer cross size, and Chromium clamps the
+         line's cross size to 0 rather than letting it pull the rows together --
+         so the break has always cost a full doubled row gap. At 390 px the
+         distance between the nav block and the Category block measured 9.59 px
+         against a 4.8 px `row-gap`: exactly 2x, i.e. the margin contributed 0.
+
+         Nobody noticed because the rule's own comment said it: "nothing tests
+         header height, so this sentence is the only thing standing between that
+         coupling and a silent regression". The sentence was wrong from the day
+         it was written (361cfa73) and the coupling it guarded did not exist.
+
+         WHAT REPLACES IT is the honest version of the same intent: the header's
+         `row-gap` is set to HALF the distance wanted between rows, because the
+         break charges it twice. That is now pinned by measurement rather than by
+         prose -- the J4 e2e asserts the rendered distance, so changing `row-gap`
+         without meaning to goes red.
 
          THE BREAK IS NOT SUPPRESSED WHEN THE BAR COLLAPSES, deliberately. A
          collapsed desktop bar is two rows now where it used to be one. The
@@ -253,7 +297,6 @@
       .header-row-break {
         flex-basis: 100%;
         height: 0;
-        margin: -0.375rem 0;
       }
 
       /* CAPPED (DEC-W6). The select is sized by its widest option, and the
@@ -1121,6 +1164,29 @@
         font-size: 0.78rem;
         color: #9aa3b8;
       }
+      /* THE ONE BLOCK VISUAL, shared by the generated layer groups and the two
+         hand-written blocks the header now wraps its own controls in (DEC-J5).
+
+         ONE RULE SET RATHER THAN TWO, because the owner asked for these boxes
+         to be used "überall so konsistent" — and two rule sets is how "the
+         Category box and the Jump-to-City box look slightly different" becomes
+         a finding three sessions from now.
+
+         THE LAYOUT HALF IS NOT OPTIONAL. `#header-toggle` is an `<h1>` and
+         `#legend` is a `<div>`, both block-level: a block that is not a flex
+         container puts each of them on its own line. Three existing e2e
+         assertions catch that for `#nav-block`; `#status-block` would just get
+         quietly taller, which is why the J2 e2e asserts its membership too.
+
+         `border-radius` is 0.5rem, down from a full 999px pill (J3, DEC-J6).
+         The pill was the outlier here, not the house style — AR panels are
+         0.6rem, AR buttons 0.4rem, the details panel 6px, the layer chips 4px.
+
+         THE BACKGROUND CARRIES THE TRANSLUCENCY THE HEADER GAVE UP: `#171b26`
+         at the same 82 % the floating bar used, so the controls keep their
+         contrast against an arbitrary 3D scene while the gaps between them stop
+         costing anything. */
+      .header-block,
       .layer-group {
         display: flex;
         flex-wrap: wrap;
@@ -1128,8 +1194,8 @@
         gap: 0.45rem;
         padding: 0.15rem 0.5rem 0.15rem 0.4rem;
         border: 1px solid #262b38;
-        border-radius: 999px;
-        background: #171b26;
+        border-radius: 0.5rem;
+        background: rgb(23 27 38 / 82%);
       }
       .layer-group-label {
         color: #6f7995;
@@ -1432,6 +1498,20 @@
         display: none;
       }
 
+      /* AND THE BLOCK THAT HOLDS THEM (DEC-J5). `#status` and `#legend` are both
+         hidden when collapsed by rules above, and both are now children of
+         `#status-block` -- which keeps its padding, border and background
+         regardless, so without this the collapsed bar gains a small empty
+         rounded pill.
+
+         CAUGHT IN COLD REVIEW, and worth recording why no test would have: the
+         existing collapse e2e asserts that the two CHILDREN are hidden, which
+         stays true. A container that outlives its visible contents is invisible
+         to a test written about the contents. */
+      header[data-collapsed="true"] #status-block {
+        display: none;
+      }
+
       /* THE AR OFFER (G6, DEC-W2). Bottom-centre and above the map's own
          controls, because it is the one thing on screen the user is waiting
          for once they have pressed AR without a fix.
@@ -1633,12 +1713,25 @@
              the dom-overlay research (plan §12) established that the overlay
              root is a BACKDROP ROOT, so a blur cannot touch the AR camera feed
              at all. Frosted glass would look right here and silently do nothing
-             in the one place contrast matters most. */
-          /* rgb() slash-alpha rather than color-mix(): stylelint s csstree
-             validator rejects color-mix as an invalid background value, and a
-             lint rule that cannot parse a value is not a reason to disable the
-             rule. #11131a at 82 %. */
-          background: rgb(17 19 26 / 82%);
+             in the one place contrast matters most. Kept after the scrim itself
+             went (DEC-J5) because it constrains whatever replaces it.
+
+             THE SCRIM IS GONE. It was `rgb(17 19 26 / 82%)`, and J2 asked for it
+             at 0 %: the same 82 % now lives on `.header-block`, so the controls
+             keep their contrast and the gaps between them stop covering the 3D
+             view. The base `header` rule sets `background: transparent`
+             unconditionally, so there is nothing to override here. */
+
+          /* AND NO BOTTOM RULE. The border lives on the base `header` rule, so
+             with no bar behind it a 1 px `#2a2f3d` line is simply drawn across
+             the middle of the 3D view.
+
+             ⚠️ THIS IS WHY THE MEDIA BLOCK DECLARES IT: a cold review of the
+             plan caught the draft saying "delete the media query's
+             border-bottom", which would have removed nothing and left the line
+             on screen — the exact thing DEC-J5 exists to get rid of. Desktop
+             keeps its border, where it separates a real row from the views. */
+          border-bottom: none;
         }
         /* Broad on purpose rather than a list of control selectors: a list would
            silently stop covering a control added later, and the symptom would be
@@ -1646,13 +1739,16 @@
         header > * {
           pointer-events: auto;
         }
-        /* Collapsing now only uncovers pixels rather than handing back viewport,
-           which is a real change in what the feature is for. Kept because the
-           error rule (DEC-R2-15) depends on the state existing, and because
+        /* THE COLLAPSED-STATE BORDER RULE IS GONE (DEC-J5), because the border
+           it hid is gone: `border-bottom: none` above removes it in BOTH
+           states at this breakpoint, so `border-bottom-color: transparent` here
+           was a rule with nothing left to do.
+
+           The paragraph it carried is preserved because it is still true of the
+           STATE, which very much still exists: collapsing on a phone now only
+           uncovers pixels rather than handing back viewport, and it is kept
+           because the error rule (DEC-R2-15) depends on the state, and because
            uncovering the top of the map is still worth a tap. */
-        header[data-collapsed="true"] {
-          border-bottom-color: transparent;
-        }
         main {
           grid-area: 1 / 1;
           grid-template-columns: 1fr;
@@ -1703,33 +1799,50 @@
 
            Partially reverses DEC-R2-4, whose collapse rule listed the title
            among the things a collapsed header keeps. -->
-      <h1 id="header-toggle">
-        <svg
-          class="header-caret"
-          viewBox="0 0 16 16"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path d="M0 0 H16 L8 16 Z" fill="currentColor" />
-        </svg>
-      </h1>
-      <!-- THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Before the category
+      <!-- THE NAVIGATION BLOCK (J2, DEC-J5). The caret, the city picker, Show
+           Quests and its distance readout, in one rounded box.
+
+           "Jump to City und Show Quests kommen dann zusammen in einen Block mit
+           dem Pfeil, der links neben Jump to City ist."
+
+           THE QUEST READOUT IS IN HERE TOO, and the report named only three of
+           the four. It is `hidden` until a quest is found and then reads e.g.
+           "340 m SW" -- an annotation on the button beside it, so it belongs in
+           the button's box. Leaving it outside would put a bare fragment of text
+           next to a block, which is the arrangement this change exists to end.
+
+           A WRAPPER, and `header > *` still reaches every control inside it:
+           `pointer-events` inherits, so the block being the direct child is
+           enough. That selector is deliberately broad for this reason -- ten e2e
+           specs failed the last time a control fell outside it. -->
+      <div id="nav-block" class="header-block">
+        <h1 id="header-toggle">
+          <svg
+            class="header-caret"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M0 0 H16 L8 16 Z" fill="currentColor" />
+          </svg>
+        </h1>
+        <!-- THE EXAMPLE-LOCATION PICKER (W5, DEC-R4-11). Before the category
            picker, as the feedback asked. Its options come from the SAME table
            the offline fixture corpus is captured from, so the places a human
            can reach are exactly the places the suite covers. Populated from
            `site-picker.ts`; the markup carries no place names. -->
-      <!-- LABEL TEXT DROPPED, ACCESSIBLE NAME KEPT (F3c). The wrapper's
+        <!-- LABEL TEXT DROPPED, ACCESSIBLE NAME KEPT (F3c). The wrapper's
            word was pure markup on a bar that has to fit a phone; the
            `aria-label` is what a screen reader used to get from it. -->
-      <select id="site" aria-label="location"></select>
-      <!-- MOVED INTO THE CATEGORY GROUP AT RUNTIME (F3d), the same seam
+        <select id="site" aria-label="location"></select>
+        <!-- MOVED INTO THE CATEGORY GROUP AT RUNTIME (F3d), the same seam
            `#show-below-label` uses. It stays here in the source because
            this is where the header's own controls live and
            `layer-toggles.ts` builds `#layers` from scratch; `main.ts` hands
            it over as an `overlays` extra. The group's caption now reads
            `Category`, so the picker sits under its own heading. -->
-      <select id="category" aria-label="category"></select>
-      <!-- MOVED INTO THE AFFORDANCE GROUP AT RUNTIME (DEC-R6b-5). It stays here
+        <select id="category" aria-label="category"></select>
+        <!-- MOVED INTO THE AFFORDANCE GROUP AT RUNTIME (DEC-R6b-5). It stays here
            in the source because this is where the header's own controls live and
            `layer-toggles.ts` builds `#layers` from scratch; `main.ts` hands the
            label over as an `overlays` extra, the same seam the perf switch uses.
@@ -1743,20 +1856,20 @@
            keeps it while `cells` is on, and what removes it now is the setting
            having nothing to apply to. See `.layer-busy` above for the narrowed
            rule. -->
-      <label class="layer-toggle" id="show-below-label"
-        ><input type="checkbox" id="show-below" /> below threshold</label
-      >
-      <!--
+        <label class="layer-toggle" id="show-below-label"
+          ><input type="checkbox" id="show-below" /> below threshold</label
+        >
+        <!--
         THE GEO-EVENT TRIGGER (round 9, DEC-R9-13). A BUTTON rather than firing on
         every position change: computing an event can score hundreds of chunks and
         may download a tile, and clicking around the map is this demo primary
         interaction. It also makes WHEN it ran visible, which matters on a
         diagnostic surface.
       -->
-      <button type="button" id="geo-event" class="geo-event-button">
-        Show Quests
-      </button>
-      <!-- THE STANDING DISTANCE READOUT (F4a). The button's label became a
+        <button type="button" id="geo-event" class="geo-event-button">
+          Show Quests
+        </button>
+        <!-- THE STANDING DISTANCE READOUT (F4a). The button's label became a
            constant so it would stop resizing, which deletes F56's actual
            win: a distance that re-reads as the user walks. A toast fades
            and a pan does not restate, so this is what preserves it.
@@ -1770,7 +1883,8 @@
            pushed off it the moment the feature was used, in the one state the
            layout was never measured in. Ordered this way the readout takes its
            own line instead, which is the cheaper thing to lose. -->
-      <span id="quest-readout" class="quest-readout"></span>
+        <span id="quest-readout" class="quest-readout"></span>
+      </div>
       <!-- ROW 1 ENDS HERE (G2). Everything above shares the first line -- the
            caret, the city picker and Show Quests with its distance readout --
            and the layer groups start the second. See `.header-row-break`. -->
@@ -1848,8 +1962,19 @@
         />
         <span id="render-distance-value">draw 2400 m</span>
       </label>
-      <span id="status">starting…</span>
-      <div id="legend"></div>
+      <!-- THE READOUT BLOCK (J2, DEC-J5). "Der zusätzliche Debug-Text und die
+           Farbskala ... die können ja auch dann zusammen in einen Block, weil
+           die haben ja noch keinen."
+
+           BOTH ARE ALREADY HIDDEN WHEN COLLAPSED by their own rules, and the
+           BLOCK is hidden too -- see `header[data-collapsed="true"]
+           #status-block`. Without that the collapsed bar keeps an empty pill,
+           which no existing test could see because both e2e assert the
+           children. -->
+      <div id="status-block" class="header-block">
+        <span id="status">starting…</span>
+        <div id="legend"></div>
+      </div>
     </header>
     <main>
       <div id="map"></div>

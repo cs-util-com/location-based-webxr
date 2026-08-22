@@ -23,6 +23,7 @@ import {
   stubNetwork,
   waitForRefresh,
   enableCellLayer,
+  walkByMapClick,
   REPAINT,
 } from "./fixtures.js";
 
@@ -481,22 +482,19 @@ test.describe("explaining one cell", () => {
       // The click has to land on BARE map, and that is not incidental. A click on
       // a cell selects without moving — Leaflet's `bindPopup` stops propagation,
       // so the map's own click handler never fires — while a click on empty map
-      // moves without selecting. Asserting the precondition means a fixture whose
-      // grid grows to cover this point fails loudly here rather than quietly
-      // passing for the wrong reason.
-      const point = { x: 60, y: 60 };
-      const box = await shared.locator("#map").boundingBox();
-      if (box === null) throw new Error("no map box");
-      const onCell = await shared.evaluate(
-        ([x, y]) =>
-          document
-            .elementFromPoint(x, y)
-            ?.classList.contains("affordance-cell") === true,
-        [box.x + point.x, box.y + point.y],
-      );
-      expect(onCell).toBe(false);
-
-      await shared.locator("#map").click({ position: point });
+      // moves without selecting.
+      //
+      // THE PRECONDITION IS NOW ENFORCED BY CONSTRUCTION rather than asserted
+      // after the fact. This step used to pin `{x: 60, y: 60}` and check that
+      // nothing was under it, with a comment predicting that "a fixture whose
+      // grid grows to cover this point fails loudly here". What actually moved
+      // was not the fixture but the MAP: Leaflet holds the centre, so the
+      // header growing ~7 px (J2's blocks) re-framed the view and slid a cell
+      // under that pixel. The prediction was right about the failure mode and
+      // wrong about the cause, which is why the fix is to stop naming a pixel:
+      // `walkByMapClick` hit-tests candidates and throws if the map is wholly
+      // covered — the same loud failure, without the standing coin-flip.
+      await walkByMapClick(shared);
       await expect(panel).toBeHidden();
     });
   });

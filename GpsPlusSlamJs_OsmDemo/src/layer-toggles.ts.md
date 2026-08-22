@@ -24,7 +24,8 @@ switch without depending on DOM order.
 - **THE IDS ARE THE CONTRACT.** Every switch keeps `#layer-<name>`; the e2e suite
   locates them that way, so the regrouping moved elements without renaming any.
 - **`extrasBefore` / `extrasAfter` put a non-layer control in a group**, above
-  or below its generated switches. Three controls use them. The perf panel is a
+  or below its generated switches. Four controls use them since J2 — see "the
+  ground picker" below. The perf panel is a
   diagnostic and is the only member of that group, but it draws nothing in the
   scene so it is deliberately not in `ALL_LAYERS` (DEC-R3-18). The `show-below`
   checkbox joins the **overlays** group (DEC-R6b-5): it is not a layer either —
@@ -103,6 +104,26 @@ which the `view.layers` subscriber checks via `layersNeedingData`; see
 `layers.ts.md`) and _"switching the cells layer off clears the
 grid in BOTH views"_ (the registry has to reach the map as well as the scene, or one
 view keeps drawing what the store says is off).
+
+## The ground picker joins `world` (J2, DEC-J5 — 2026-08-22)
+
+`#ground-mode-label` was a loose `<label>` sitting as a direct child of the
+header. J2 put every header control into a rounded block and made the bar itself
+fully transparent, which left this one control as the only bare thing on screen —
+i.e. the next session's finding. `main.ts` now hands it over as an
+`extrasAfter.world` extra.
+
+**`world` rather than a block of its own.** That group answers "what is in the
+world", and the ground mode chooses which surface is drawn as the ground. It is
+still deliberately **not** a layer: `ALL_LAYERS` means things drawn
+independently, and this is one thing drawn three ways, exclusively — which is
+exactly why it needs the extras seam rather than the registry.
+
+**`layer-toggles.test.ts` used `world` as its "group nobody named" control and
+said so in prose**, on the grounds that `world` carries no extra in production.
+That stopped being true here. The test never depended on it — it builds its own
+options — but the comment did, and it has been corrected rather than left to be
+trusted. Cold review caught it in the plan, before this landed.
 
 ## The overlays group is captioned "Category" now (F3d — 2026-08-19)
 

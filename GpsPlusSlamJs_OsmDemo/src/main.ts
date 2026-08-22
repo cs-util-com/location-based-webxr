@@ -1945,6 +1945,17 @@ async function main(): Promise<void> {
       // LAST, after the two switches: it changes which cells `cells` draws, so
       // it reads as a qualifier on the switch above it rather than a third peer.
       overlays: [showBelowLabel],
+      // THE GROUND PICKER JOINS `world` (J2, DEC-J5). It was a loose `<label>`
+      // sitting as a direct header child, and J2 puts every control in a block —
+      // so left alone it would be the ONE bare thing on a now-transparent bar,
+      // i.e. the next session's finding.
+      //
+      // `world` rather than a block of its own: the group answers "what is in
+      // the world", and the ground mode chooses which surface is drawn as the
+      // ground. It is not a layer (`ALL_LAYERS` means things drawn
+      // independently; this is one thing drawn three ways and is exclusive),
+      // which is exactly why it needs the extras seam rather than the registry.
+      world: [el("ground-mode-label")],
     },
   });
   /**

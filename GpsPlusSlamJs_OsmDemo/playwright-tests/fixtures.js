@@ -920,6 +920,102 @@ export async function enableCellLayer(page) {
 }
 
 /**
+ * Walk the user by clicking bare map — a spot chosen at runtime, not pinned.
+ *
+ * WHY THIS EXISTS — a real failure, not a precaution. `map-view.ts` binds region
+ * polygons with `L.DomEvent.stopPropagation(event)` and says why: "the map's own
+ * click handler moves the user, and a region covers most of the screen — without
+ * this, selecting a region would also teleport you into it." Correct for the
+ * product, and it means a click landing on a region performs NO walk at all.
+ *
+ * The two scene-frame tests clicked a hard-coded `(60, 60)` and depended on that
+ * pixel being bare map. Which geography sits under a fixed pixel is a function
+ * of the map's SIZE — Leaflet holds the centre, so anything that changes the
+ * header's height re-frames the view. A ~7 px header change (J2's blocks) moved
+ * that pixel across a `battleArea` boundary, and both tests failed with the
+ * frame simply never moving.
+ *
+ * SO THE MARGIN WAS SINGLE-DIGIT PIXELS, and moving the magic number would only
+ * re-arm the trap. A first attempt switched the `areas` layer off instead, which
+ * does not work and is worth recording: `areas` governs only the region FILL.
+ * `map-view.ts` is explicit that the dashed boundary is deliberately NOT behind
+ * that flag ("it answers 'where does this end', which does not stop mattering
+ * when the fill answers 'how good is it'"), so the polygons — and their click
+ * handlers — stay on screen either way.
+ *
+ * What works is asking the browser what a click at each candidate would ACTUALLY
+ * hit, via `elementFromPoint`. Bounding boxes were tried first and are useless
+ * here: four scattered regions' boxes blanket the whole map, so every candidate
+ * was rejected. Hit-testing is exact — it accounts for the real path geometry
+ * and, for an unfilled region, for the fact that only the stroke is painted.
+ *
+ * Cells do not need avoiding: their handler does not stop propagation, so a
+ * click through one still walks.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {{minDistancePx?: number}} [options]
+ */
+export async function walkByMapClick(page, options = {}) {
+  const minDistancePx = options.minDistancePx ?? 100;
+
+  const position = await page.evaluate((minDistance) => {
+    const map = document.querySelector("#map");
+    if (map === null) throw new Error("no #map");
+    const bounds = map.getBoundingClientRect();
+    const centre = { x: bounds.width / 2, y: bounds.height / 2 };
+
+    /** What would swallow a click instead of letting the map walk. */
+    const swallows = (element) => {
+      if (element === null) return true;
+      return (
+        // A region path calls `stopPropagation` outright (see the docblock).
+        element.closest("path.region-outline") !== null ||
+        // A CELL blocks it too, by a different route: cells are bound with
+        // `bindPopup`, and opening a popup stops the map's own click handler
+        // firing. So a click on a cell SELECTS without moving, which is the
+        // precondition `map-and-cells.spec.js` used to assert by hand.
+        element.closest("path.affordance-cell") !== null ||
+        // An open popup covers map it does not belong to.
+        element.closest(".leaflet-popup") !== null ||
+        // Anything inside a Leaflet control is a button, not the map.
+        element.closest(".leaflet-control") !== null
+      );
+    };
+
+    let best = null;
+    let rejected = 0;
+    for (let y = 10; y <= bounds.height - 10; y += 8) {
+      for (let x = 10; x <= bounds.width - 10; x += 8) {
+        const hit = document.elementFromPoint(bounds.left + x, bounds.top + y);
+        if (swallows(hit)) {
+          rejected += 1;
+          continue;
+        }
+        const distance = Math.hypot(x - centre.x, y - centre.y);
+        // FAR ENOUGH TO BE A WALK. The user marker sits at the centre and the
+        // callers assert the ground window moved more than 20 m; a click a few
+        // pixels from where they already stand would not clear that.
+        if (distance < minDistance) continue;
+        // The CLOSEST qualifying point, so the move stays a walk rather than a
+        // jump toward the 5 km re-anchor threshold the callers also bound.
+        if (best === null || distance < best.distance) {
+          best = { x, y, distance };
+        }
+      }
+    }
+    if (best === null) {
+      throw new Error(
+        `no bare-map click point (${rejected} candidates were swallowed)`,
+      );
+    }
+    return { x: best.x, y: best.y };
+  }, minDistancePx);
+
+  await page.locator("#map").click({ position });
+  return position;
+}
+
+/**
  * The UI state a shared-page spec file starts every test from.
  *
  * CAPTURED, NOT HARD-CODED. The category the demo opens on is chosen by
