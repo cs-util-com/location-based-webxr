@@ -45,16 +45,36 @@ put it there is worth not repeating.**
   and are now linear in the working set. **Safe by construction:** a point
   outside a ring's bounding box cannot be inside the ring, so the reject can only
   skip work, never drop a host.
-- **What is NOT fixed:** the loop still visits every pair, so the _shape_ is
-  still O(markers × candidates) — the reject only made each pair ~20× cheaper.
-  Making it linear needs either a broad-phase index over candidates or clipping
-  the mesh input to the rendered extent. See
-  `GpsPlusSlamJs_Docs/docs/2026-08-15-1051-osm-demo-mesh-cost-plan.md` §4.1b/§4.2.
+- **~~What is NOT fixed~~ — FIXED 2026-08-22, by the first of the two options
+  this bullet named.** It used to read: _"the loop still visits every pair, so
+  the shape is still O(markers × candidates) … making it linear needs either a
+  broad-phase index over candidates or clipping the mesh input to the rendered
+  extent"_ (see
+  `GpsPlusSlamJs_Docs/docs/2026-08-15-1051-osm-demo-mesh-cost-plan.md`
+  §4.1b/§4.2). `host-grid.ts` is that index.
+  - **Pairs reached at nine copies: 5 331 420 → 1 754**, and 9× the input now
+    costs **11×** the pairs rather than 81×.
+  - **The stage went 205.4 → 18.3 ms** in the demo's whole mesh build, from
+    17.3 % of it to 1.7 %. Isolated, `poi-hosts.bench.ts` reads
+    197.15 → 13.42 ms at k=4.
+  - **Output is unchanged and that is asserted, not argued.** The grid returns a
+    SUPERSET in ascending candidate order, so all three filters below it and the
+    resulting host order are exactly as they were; `poi-hosts-cost.test.ts`
+    carries a differential against an exhaustive scan.
 - **The guard is `poi-hosts-cost.test.ts`** and it asserts _counts_, not
-  milliseconds — it runs the same site at 1 and 9 copies and fails if ray casts
-  grow faster than ~12× for 9× the input. A wall-clock threshold was rejected
-  because `chunk-cost`'s 100 ms ceiling flaked at 104 ms under the nine-package
-  cascade.
+  milliseconds — it runs the same site at 1 and 9 copies and fails if ray casts,
+  or now pairs, grow faster than ~12× for 9× the input. A wall-clock threshold
+  was rejected because `chunk-cost`'s 100 ms ceiling flaked at 104 ms under the
+  nine-package cascade.
+  - **That guard earned its keep during this very change.** The first version of
+    the index held oversized candidates in a flat list checked by every marker,
+    which reintroduced the quadratic with a smaller constant — 72 % of the
+    remaining pairs at nine copies. The pair-growth assertion failed at 25.7×
+    against its 12× bound, and the multi-level grid is the answer to it.
+  - It also required **replacing** the old
+    `pairsConsidered === markers × candidates` assertion, which pinned the shape
+    of the algorithm rather than any behaviour. Its own docstring had called that
+    "documenting the cross product rather than bounding it".
 
 ## Invariants & assumptions
 
@@ -127,3 +147,16 @@ those are where a marker disappears:
   the next rather than giving up.
 - `hostScale` clamped at both ends and safe on degenerate spans.
 - `footprintAnchor`'s middle, its empty case, and its stated vertex-mean bias.
+
+`poi-hosts-cost.test.ts` — how the pass GROWS, at 1 copy of the site against 9,
+in counts rather than milliseconds. It pins that ray casts and pairs both grow
+~9× rather than ~81×, that pairs reached stay under 1 % of the cross product,
+and — the assertion that made the 2026-08-22 index safe to ship — that the
+annotated output is identical to an exhaustive scan's, hosts and order alike.
+
+`poi-hosts.bench.ts` — the cost itself, at two scales, because the constant is
+tiny and the exponent was two. A single-scale number is how the 2026-08-21
+investigation got this function's weight wrong by ~20×.
+
+`host-grid.test.ts` and `host-grid.property.test.ts` cover the index underneath
+— see `host-grid.ts.md`.

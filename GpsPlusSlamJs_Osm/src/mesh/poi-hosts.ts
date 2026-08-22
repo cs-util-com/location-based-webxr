@@ -38,6 +38,7 @@
 
 import type { OsmFeatureKey } from "../model/osm-feature.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
+import { buildHostGrid } from "./host-grid.js";
 import { poiModelFor } from "./poi-models.js";
 import type { EnuPoint } from "./enu.js";
 
@@ -377,6 +378,14 @@ export function annotatePoiHosts<T extends PlacedMarker>(
     candidate,
     anchor: footprintAnchor(candidate.footprint),
   }));
+  // INDEXED, NOT SCANNED (2026-08-22). The broad phase below is four float
+  // compares, so the constant was always tiny — but the shape was
+  // `markers x candidates` and both grow with the working set, which made this
+  // the last quadratic in the mesh build and 17.3 % of it. The grid returns a
+  // superset of the candidates whose bounds contain the marker, in ASCENDING
+  // candidate order, so every filter below and the resulting host order are
+  // exactly as they were. See `host-grid.ts` for why the order is the hard part.
+  const grid = buildHostGrid(prepared.map((entry) => entry.anchor));
   return markers.map((marker) => {
     // HOISTED OUT OF THE PAIR LOOP. `hostMatches` reads only `marker.kind` and
     // `candidate.layer`, and there are exactly two layers — so re-deriving it
@@ -388,7 +397,10 @@ export function annotatePoiHosts<T extends PlacedMarker>(
       plates: hostMatches(marker.kind, { layer: "plates" }),
     };
     const hosts: PoiHostAnchor[] = [];
-    for (const { candidate, anchor } of prepared) {
+    for (const index of grid.candidatesAt(marker.position)) {
+      const { candidate, anchor } = prepared[
+        index
+      ] as (typeof prepared)[number];
       if (stats !== undefined) stats.pairsConsidered++;
       if (!matches[candidate.layer]) continue;
       // THE BROAD PHASE. Four float compares before the ray cast, which walks
