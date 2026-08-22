@@ -71,14 +71,24 @@ const LEVEL_FACTOR = 16;
 const LEVEL_COUNT = 3;
 
 /**
- * Smallest grid pitch, metres.
+ * Pitch used when the candidates have no extent at all.
  *
- * A floor rather than a pure average, because a working set of only tiny
- * footprints would otherwise pick a pitch so fine that a marker's own cell
- * lookup dominates. 8 m is below a small building and above the point where the
- * cell count explodes over a 4.8 km extent.
+ * **UNIT-FREE, AND THAT IS THE POINT.** This was `MIN_PITCH_M = 8` — a floor in
+ * METRES — until 2026-08-22, and it silently broke the second caller. Nothing
+ * here knows what a coordinate means: `annotatePoiHosts` passes ENU metres and
+ * `assignPartsToOutlines` is generic over the frame, so `solidBuildingFootprints`
+ * passes **lat/lng degrees**, where a building's mean extent is ~0.0001 and a
+ * floor of 8 makes one cell cover the planet. The index then pruned nothing and
+ * cost its own overhead: measured **+16.8 %** on that caller, a real regression
+ * that the metric caller could not show.
+ *
+ * A floor is not needed for its stated purpose either. Tiny footprints want a
+ * fine pitch — one cell each is the ideal, not a hazard. The only degenerate
+ * case is a mean extent of exactly zero, i.e. every candidate a point, and any
+ * positive pitch is correct there because correctness never depends on the
+ * pitch — only the amount of pruning does.
  */
-const MIN_PITCH_M = 8;
+const DEGENERATE_PITCH = 1;
 
 /** The index. Opaque to callers — build it, then ask it about points. */
 export interface HostGrid {
@@ -243,10 +253,11 @@ function cellKey(col: number, row: number): number {
 /**
  * The finest pitch, from the candidates themselves rather than a constant.
  *
- * The MEAN box extent. A pitch near the typical footprint puts most candidates
- * in one cell — measured median 1, 99th percentile 18 — while the outliers that
- * would drag a mean upward are promoted to a coarser level rather than
- * distorting this one.
+ * The MEAN box extent, **in whatever units the caller is using** — see
+ * {@link DEGENERATE_PITCH} for why nothing here may assume metres. A pitch near
+ * the typical footprint puts most candidates in one cell (measured on ENU
+ * buildings: median 1, 99th percentile 18), while the outliers that would drag a
+ * mean upward are promoted to a coarser level rather than distorting this one.
  *
  * The mean rather than the median because it needs no sort, and this runs over
  * every candidate on the mesh path.
@@ -259,7 +270,7 @@ function pitchFor(bounds: readonly CandidateBounds[]): number {
     total += box.maxX - box.minX + (box.maxY - box.minY);
     counted += 1;
   }
-  if (counted === 0) return MIN_PITCH_M;
   // `total` holds width + height per box, so this is the mean of both extents.
-  return Math.max(MIN_PITCH_M, total / (2 * counted));
+  const mean = counted === 0 ? 0 : total / (2 * counted);
+  return mean > 0 ? mean : DEGENERATE_PITCH;
 }

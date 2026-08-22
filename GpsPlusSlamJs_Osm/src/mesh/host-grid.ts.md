@@ -56,8 +56,19 @@ of them.
   footprint with no vertices contains nothing, and `withinFootprintBounds`
   already rejects every point against it. Letting one reach the grid would
   produce a negative cell span.
+- **UNIT-FREE, and this was got wrong first.** Two callers, two frames:
+  `annotatePoiHosts` passes ENU **metres**, and `assignPartsToOutlines` is
+  generic over the frame so `solidBuildingFootprints` passes **lat/lng degrees**,
+  where a building's extent is ~0.0001 rather than ~13. The first version had a
+  `MIN_PITCH_M = 8` floor; in degrees that makes one cell cover the planet, so
+  the index pruned nothing and charged its own overhead — a measured **+16.8 %**
+  regression on the degree-frame caller, invisible to the metre-frame one and
+  failing no test. Only a bench on that caller found it. There is no floor now:
+  the pitch is the mean extent in whatever units arrive, with a fallback used
+  only when that mean is exactly zero (every candidate a point), because
+  correctness never depends on the pitch — only the amount of pruning does.
 - **The finest pitch comes from the candidates, not from a constant** — the mean
-  box extent, floored at `MIN_PITCH_M` (8 m). The mean rather than the median
+  box extent. The mean rather than the median
   because it needs no sort on a mesh-path call, and because the outliers that
   would drag a mean upward are promoted to a coarser level rather than distorting
   this one. Measured on `london-westminster`: pitch ~13 m, median footprint
@@ -97,6 +108,14 @@ independent and are what the gate asserts: the cross product at 9 copies of the
 fixture is 5 331 420 pairs, of which the index reaches **1 754** — and at 1 copy
 it reaches 160, so 9× the input costs **11×** the pairs rather than 81×.
 
+Second caller, `buildings.bench.ts`, over the same replicated fixture:
+
+- the hot path itself — `assignPartsToOutlines` plus `smallestContaining` —
+  **~102 → ~24 ms per call at k=4, −76 %**, out of the profile's top ten
+- `solidBuildingFootprints` k=4 — **156.20 → 85.95 ms (−45.0 %)**
+- `buildBuildings` k=4 — **487.65 → 430.08 ms (−11.8 %)**, diluted by the
+  extrusion work around the rule
+
 ## Tests
 
 `host-grid.test.ts` covers the properties the caller depends on: ascending order
@@ -104,6 +123,11 @@ including across a level merge, no false negatives against an exhaustive scan,
 oversized candidates reaching a query whose own cell is empty, inverted boxes
 never being indexed, negative coordinates (half of every ENU frame), and an
 empty candidate list.
+
+Its `buildHostGrid is unit-free` block pins the property the metre-floor
+regression violated: the same arrangement at a 100 000× scale ratio must prune
+identically, with a non-vacuity check that both are actually pruning. Plus the
+all-points case, which is the one input with no extent to take a pitch from.
 
 `host-grid.property.test.ts` generates boxes spanning four orders of magnitude —
 so both sides of the promotion threshold are reached without the test naming it

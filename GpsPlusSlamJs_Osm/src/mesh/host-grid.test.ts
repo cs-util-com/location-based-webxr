@@ -157,3 +157,59 @@ describe("buildHostGrid", () => {
     expect([...hits]).toContain(0);
   });
 });
+
+/**
+ * WHY THESE TESTS MATTER. `buildHostGrid` is used in TWO coordinate frames:
+ * `annotatePoiHosts` passes ENU metres, and `assignPartsToOutlines` is generic
+ * over the frame so `solidBuildingFootprints` passes **lat/lng degrees**, where
+ * a building's extent is ~0.0001 rather than ~13.
+ *
+ * The first version of this file had a `MIN_PITCH_M = 8` floor. In degrees that
+ * makes a single cell cover the planet, so the index pruned NOTHING and charged
+ * its own overhead — a measured **+16.8 %** regression on the degree-frame
+ * caller, invisible to the metre-frame one. Nothing failed; it was found only
+ * because that caller happened to be benched.
+ *
+ * So the property is that pruning depends on the SHAPE of the input and not on
+ * its scale. These tests state it directly, at a scale ratio of 100 000×.
+ */
+describe("buildHostGrid is unit-free", () => {
+  /** `count` boxes of `size`, spaced `size * 4` apart along x. */
+  function spread(count: number, size: number): CandidateBounds[] {
+    const out: CandidateBounds[] = [];
+    for (let i = 0; i < count; i++) {
+      const x = i * size * 4;
+      out.push({
+        minX: x,
+        maxX: x + size,
+        minY: 0,
+        maxY: size,
+      });
+    }
+    return out;
+  }
+
+  it("prunes identically whether coordinates are metres or degrees", () => {
+    // The same arrangement at two scales must give the same answer, because
+    // nothing about a grid over bounding boxes is scale-dependent.
+    const metres = buildHostGrid(spread(300, 10));
+    const degrees = buildHostGrid(spread(300, 0.0001));
+    const inMetres = [...metres.candidatesAt({ x: 0, y: 0 })];
+    const inDegrees = [...degrees.candidatesAt({ x: 0, y: 0 })];
+    expect(inDegrees).toEqual(inMetres);
+    // And it must actually be pruning in both, or the equality above is the
+    // vacuous "both returned everything" that the regression looked like.
+    expect(inMetres.length).toBeLessThan(20);
+  });
+
+  it("still answers when every candidate is a single point", () => {
+    // Mean extent is exactly zero here, which is the one case that needs a
+    // fallback pitch — a zero pitch would divide by zero and produce NaN cells.
+    const points: CandidateBounds[] = [];
+    for (let i = 0; i < 10; i++) {
+      points.push({ minX: i, maxX: i, minY: 0, maxY: 0 });
+    }
+    const grid = buildHostGrid(points);
+    expect([...grid.candidatesAt({ x: 3, y: 0 })]).toContain(3);
+  });
+});
