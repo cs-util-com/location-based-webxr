@@ -75,13 +75,27 @@ Driven by the same clock as the descent, so the two cannot drift apart: a camera
 that finished fading before the city landed would show the real world with a city
 still floating above it, which is the datum-bug picture.
 
-Rendered via `renderer.setClearAlpha` rather than a backdrop mesh (DEC-Y3): AR
-entry sets `scene.background = null`, and on that path the clear uses the
-renderer's own `clearColor`/`clearAlpha`, both animatable, with the framework's
-renderer already built `alpha: true`. One number, no geometry, no render-order
-discipline, no backdrop that could occlude content. A backdrop mesh is the
-fallback if this does not composite as expected on device; both fail identically
-on an additive-blend display, so that caveat does not choose between them.
+**Rendered by a backdrop mesh — [`ar-entry-veil.ts`](./ar-entry-veil.ts.md) —
+and NOT by `renderer.setClearAlpha` (DEC-J1, overturning DEC-Y3).**
+
+DEC-Y3 chose the clear alpha, reasoning that AR entry sets
+`scene.background = null`, that the clear then uses the renderer's own
+`clearColor`/`clearAlpha`, and that the framework's renderer is built
+`alpha: true`. **All three premises are true and the conclusion is still false.**
+`WebGLBackground.render()` reads `renderer.xr.getEnvironmentBlendMode()` _after_
+applying that clear and overwrites it — `(0,0,0,0)` for `alpha-blend`, which is
+every video-passthrough phone, and `(0,0,0,1)` for `additive`, where opaque black
+_is_ transparent. So the camera was visible from the first frame, which is what
+the fifteenth field session reported.
+
+**No gate here could have caught it.** `getEnvironmentBlendMode()` returns
+`'opaque'` outside an XR session, so the override never fires in vitest or in
+headless Chromium, and the assertion that `setClearAlpha` had been called passed
+the whole time against a call that did nothing on device. `ar-mode.test.ts` now
+asserts the opposite — that it is **never** called.
+
+`cameraFadeAlpha` itself is unchanged and still correct; only its consumer moved.
+`entryVeilAlpha` is defined as `1 - cameraFadeAlpha`, so the two cannot drift.
 
 ## Tests
 

@@ -113,6 +113,22 @@ import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
 
 const COLOGNE = { lat: 50.9413, lon: 6.9583 };
 
+/**
+ * How opaque the entry veil currently is, or `undefined` when there is none.
+ *
+ * Found by GEOMETRY TYPE rather than by a name or a marker flag, for the same
+ * reason the entry ground's finder was: a marker is a second thing to keep in
+ * sync, and the veil is the only sphere anything puts in this scene.
+ */
+const veilAlphaIn = (root: THREE.Object3D): number | undefined => {
+  const mesh = root.children.find(
+    (child): child is THREE.Mesh =>
+      child instanceof THREE.Mesh &&
+      (child.geometry as THREE.BufferGeometry).type === "SphereGeometry",
+  );
+  return (mesh?.material as THREE.MeshBasicMaterial | undefined)?.opacity;
+};
+
 /** A `BuildingView` stand-in recording where its content was sent. */
 function fakeView() {
   const localRoot = new THREE.Scene();
@@ -200,11 +216,16 @@ beforeEach(() => {
     // renderer, so a fixture without it would make the sampler look fragile
     // when it is not.
     info: { render: { calls: 0, triangles: 0 } },
-    // `setClearAlpha` is what the Q5 entry fade drives — one animated number on
-    // the `scene.background === null` path. Present on every real renderer, so
-    // a fixture without it would make the fade look fragile when it is not, and
-    // would fail fifteen unrelated tests the first time the frame loop touches
-    // it. Same argument as `info.render` above.
+    // `setClearAlpha` USED to be the entry fade (DEC-Y3) and is now the thing
+    // this file asserts is NEVER called (DEC-J1). It stays on the fixture for
+    // exactly that reason: a spy that is absent cannot prove absence of a call,
+    // it just throws somewhere else.
+    //
+    // Why the old mechanism had to go: `WebGLBackground.render()` reads
+    // `xr.getEnvironmentBlendMode()` AFTER applying our clear and overwrites it
+    // to (0,0,0,0) for `alpha-blend` — every video-passthrough phone. Outside a
+    // session that mode reads `'opaque'`, so the override never fires here and
+    // the old assertions passed against a call that did nothing on device.
     setClearAlpha: vi.fn(),
   } as unknown as THREE.WebGLRenderer;
   getRenderer.mockReturnValue(renderer);
@@ -1507,13 +1528,12 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     // uncorrected datum and the correction landed mid-descent, as a jump. This
     // pins the whole gate through the frame loop, which `ar-descent.test.ts`
     // cannot do: that file only owns the arithmetic.
+    const container = document.createElement("div");
+    document.body.append(container);
     const view = viewAtHeight(START_M);
-    const setClearAlpha = renderer.setClearAlpha as unknown as ReturnType<
-      typeof vi.fn
-    >;
-    setClearAlpha.mockClear();
     await startArMode(
       deps({
+        container,
         buildingView: view as unknown as ArModeDeps["buildingView"],
         // AN ESTIMATOR THAT IS WIRED BUT NEVER FED. No depth samples are
         // delivered below, so it never engages — which is exactly the state the
@@ -1523,20 +1543,25 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     );
 
     // TWO SECONDS OF FRAMES -- INSIDE the wait, not past it, and the exact
-    // frame range is what makes the black-screen assertion below mean
-    // anything. The first version ran to elapsed 5, but the fallback opens the
-    // gate at elapsed 4 (`firstFrameS` is 1 plus a 3 s wait) and the descent
-    // then spends its own 2 s hold at `cameraFadeAlpha === 0`, i.e. also
-    // writing a clear alpha of 1. So `.at(-1)` was reading the DESCENT fade
-    // and passed with the gate's own black hold deleted. Cold review caught it.
+    // frame range is what makes the opaque-veil assertion below mean anything.
+    // The first version ran to elapsed 5, but the fallback opens the gate at
+    // elapsed 4 (`firstFrameS` is 1 plus a 3 s wait) and the descent then spends
+    // its own 2 s hold at `cameraFadeAlpha === 0`, i.e. also fully opaque. So
+    // reading the LAST value was reading the DESCENT fade and passed with the
+    // gate's own hold deleted. Cold review caught it.
     runFrames(1, 3);
     expect(
       upAt(view),
       "the city moved before the elevation estimate arrived",
     ).toBeCloseTo(-START_M, 2);
-    // AND THE SCREEN IS BLACK, not passthrough. Without this the wait reads as
+    // AND THE CAMERA IS HIDDEN, not passthrough. Without this the wait reads as
     // AR having failed to load, which is the failure mode a silent gate has.
-    expect(setClearAlpha.mock.calls.at(-1)?.[0]).toBeCloseTo(1, 2);
+    expect(veilAlphaIn(scene)).toBeCloseTo(1, 2);
+    // AND THE WAITING LINE IS UP (DEC-J11). A held picture with no motion does
+    // not say whether the entry is working or stalled.
+    expect(container.querySelector(".ar-entry-wait")?.textContent).toContain(
+      "Finding your position",
+    );
 
     // AND STILL HELD AT ELAPSED 5, one second past the fallback: the descent
     // has begun by then, so this checks the handover rather than the wait.
@@ -1557,24 +1582,28 @@ describe("the AR entry fly-down (H5, Q5)", () => {
   });
 
   /**
-   * The entry ground, found by SHAPE rather than by a name or a marker flag.
+   * The entry veil, found by SHAPE rather than by a name or a marker flag.
    *
    * `THREE.Mesh` is generic and `instanceof` narrows it to `Mesh<any, any>`, so
    * reading `.geometry.type` off the narrowed value is an unsafe `any` access.
    * The cast is to the base geometry type, which is what `Mesh` actually holds.
    */
-  const entryGroundIn = (root: THREE.Object3D): THREE.Mesh | undefined =>
+  const entryVeilIn = (root: THREE.Object3D): THREE.Mesh | undefined =>
     root.children.find(
       (child): child is THREE.Mesh =>
         child instanceof THREE.Mesh &&
-        (child.geometry as THREE.BufferGeometry).type === "PlaneGeometry",
+        (child.geometry as THREE.BufferGeometry).type === "SphereGeometry",
     );
-  it("puts a ground under the entry, rides it down, and REMOVES it on landing", async () => {
-    // WHY THIS TEST MATTERS (r543). The reporter wanted a floor to fall
-    // towards, and AR had never drawn one. The risk this feature carries is not
-    // that the fade looks wrong — it is an opaque, screen-sized plane LEFT in
-    // the AR scene, which turns the passthrough into a grey lid. So the
-    // assertion that matters most is the removal, not the appearance.
+  it("veils the camera for the entry, follows it, and REMOVES it on landing", async () => {
+    // WHY THIS TEST MATTERS (J1, DEC-J1). The shipped veil was
+    // `renderer.setClearAlpha`, which is dead inside an XR session, so the
+    // field saw the camera from the first frame. This pins the replacement
+    // through the frame loop, which `ar-entry-veil.test.ts` cannot do: that file
+    // only owns the curve and the material.
+    //
+    // The risk this feature carries is NOT that the fade looks wrong -- it is an
+    // opaque, screen-filling surface LEFT in the AR scene, which turns the
+    // passthrough into a lid. So the assertion that matters most is the removal.
     const container = document.createElement("div");
     document.body.append(container);
     const view = viewAtHeight(START_M);
@@ -1585,67 +1614,77 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       }),
     );
 
-    const groundOf = () => entryGroundIn(scene);
+    const veilOf = () => entryVeilIn(scene);
 
-    const ground = groundOf();
-    expect(ground, "no entry ground was added").toBeDefined();
-    // IT STARTS WHERE THE CITY STARTS — the relative motion is the effect. A
-    // ground pinned to the user would stand still while the city moved, which
-    // reads as objects drifting rather than as ground rising.
-    expect(ground?.position.y).toBeCloseTo(-START_M, 2);
-    expect((ground?.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(
+    expect(veilOf(), "no entry veil was added").toBeDefined();
+    expect((veilOf()?.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(
       1,
       2,
     );
 
-    // A NONZERO MANUAL TRIM FIRST, and it is what makes the next assertion
-    // bite. With auto and trim both at zero the two candidate formulas --
-    // `descentM` alone and the full composition -- return the same number, so
-    // the equality below passed against the defect it exists to catch. A
-    // mutation run is what surfaced that; the nudge is the cheapest way to make
-    // one of those terms nonzero.
-    const nudgeUp = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent === "+",
-    );
-    if (nudgeUp === undefined) throw new Error("no + button");
-    nudgeUp.click();
+    // CENTRED ON THE CAMERA, NOT ON THE CITY -- the opposite of the entry ground
+    // it replaces, and the reason this module has no three-call-site hazard. A
+    // veil that tracked the city would swing out of view as the city rose.
+    camera.position.set(3, 4, 5);
+    camera.updateMatrixWorld(true);
+    runFrames(1, 1.2);
+    expect(veilOf()?.position.toArray()).toEqual([3, 4, 5]);
 
-    // THE GROUND IS AT THE CITY'S OWN HEIGHT, stated as an EQUALITY against
-    // the offset the content was actually attached with rather than against a
-    // recomputed number.
-    //
-    // WHY AN EQUALITY. The first version positioned the ground from the
-    // descent term alone while the city is attached at `compose(auto, trim,
-    // descent)` -- so the ground sat `auto + trim` metres from the surface the
-    // buildings stand on, and the bigger the datum correction the worse it
-    // floated. Every assertion here passed, because this fixture leaves both
-    // of those terms at zero. Comparing against the ATTACHED value cannot go
-    // stale that way: whatever the city does, the ground has to do.
-    expect(groundOf()?.position.y).toBeCloseTo(upAt(view) ?? Number.NaN, 6);
+    // MID-DESCENT: part-way faded, and still present.
+    runFrames(1.2, 1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2);
+    const midAlpha = (veilOf()?.material as THREE.MeshBasicMaterial).opacity;
+    expect(midAlpha).toBeGreaterThan(0);
+    expect(midAlpha).toBeLessThan(1);
 
-    // MID-DESCENT: risen with the city, and part-way faded.
-    runFrames(1, 1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2);
-    const midY = groundOf()?.position.y ?? Number.NaN;
-    expect(midY).toBeCloseTo(upAt(view) ?? Number.NaN, 6);
-    expect(midY).toBeGreaterThan(-START_M);
-    expect(midY).toBeLessThan(0);
-
-    // AND GONE once the city lands — removed from the scene, not merely
-    // transparent. A transparent full-screen quad is still sorted and blended
-    // every frame for the rest of the session.
+    // AND GONE once the city lands -- removed from the scene, not merely
+    // transparent. A transparent screen-filling mesh is still submitted, sorted
+    // and blended every frame for the rest of the session.
     runFrames(1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2, 14);
-    expect(groundOf(), "the entry ground outlived the entry").toBeUndefined();
+    expect(veilOf(), "the entry veil outlived the entry").toBeUndefined();
+    // AND SO IS THE WAITING LINE (DEC-J11).
+    expect(container.querySelector(".ar-entry-wait")).toBeNull();
   });
 
-  it("adds NO entry ground when there is no height to fall from", async () => {
-    // Entering from a ground-level 3D view has nothing to descend, so a floor
-    // would be a lid over the camera with no transition to justify it.
+  it("NEVER calls setClearAlpha, because it does nothing inside an XR session", async () => {
+    // WHY THIS TEST MATTERS, and it is the one assertion that would have caught
+    // the shipped defect. `WebGLBackground.render()` applies our clear and then
+    // reads `xr.getEnvironmentBlendMode()`, overwriting it to (0,0,0,0) for
+    // `alpha-blend` -- i.e. on every phone this demo targets. The old tests
+    // asserted the CALL was made, which was true and meaningless.
+    //
+    // Outside a session that mode reads 'opaque', so no gate here can observe
+    // the override. Asserting the call is never made is the closest a test can
+    // get to "the dead mechanism has not come back".
+    const container = document.createElement("div");
+    document.body.append(container);
+    const setClearAlpha = renderer.setClearAlpha as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    setClearAlpha.mockClear();
+
+    await startArMode(
+      deps({
+        container,
+        buildingView: viewAtHeight(
+          START_M,
+        ) as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+    runFrames(1, 14);
+
+    expect(setClearAlpha).not.toHaveBeenCalled();
+  });
+
+  it("adds NO entry veil when there is no height to fall from", async () => {
+    // Entering from a ground-level 3D view has nothing to descend, so there is
+    // no fade to run -- and `cameraFadeAlpha` returns 1 for a zero start, so a
+    // veil there would be an opaque lid that never lifts.
     const view = viewAtHeight(0);
     await startArMode(
       deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
     );
 
-    expect(entryGroundIn(scene)).toBeUndefined();
+    expect(entryVeilIn(scene)).toBeUndefined();
   });
 
   it("NEVER attaches the city above the user, on any frame of the entry", async () => {
@@ -1749,18 +1788,15 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     expect(upAt(view) ?? 0).toBeCloseTo(0, 5);
   });
 
-  it("fades the camera feed in, and clears it fully on landing", async () => {
-    // DEC-Y3: one animated number on `renderer.setClearAlpha`, valid because AR
-    // entry sets `scene.background = null`. Hidden at the start (alpha 1) so the
-    // first moment of AR looks like the 3D view the user was just in, and fully
-    // transparent when the city lands.
+  it("fades the camera feed in, and hands it over fully on landing", async () => {
+    // DEC-J1, replacing DEC-Y3. The veil is opaque at the start so the first
+    // moment of AR looks like the 3D view the user was just in, and EXACTLY zero
+    // when the city lands -- not "close to", because a veil at 0.01 is still a
+    // wash over the camera and reads as "AR looks murky" rather than as a fade
+    // bug.
     const container = document.createElement("div");
     document.body.append(container);
     const view = viewAtHeight(START_M);
-    const setClearAlpha = renderer.setClearAlpha as unknown as ReturnType<
-      typeof vi.fn
-    >;
-    setClearAlpha.mockClear();
 
     await startArMode(
       deps({
@@ -1769,10 +1805,12 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       }),
     );
     runFrames(1, 1);
-    expect(setClearAlpha.mock.calls.at(-1)?.[0]).toBeCloseTo(1, 2);
+    expect(veilAlphaIn(scene)).toBeCloseTo(1, 2);
 
     runFrames(1, 10);
-    expect(setClearAlpha.mock.calls.at(-1)?.[0]).toBe(0);
+    // GONE, not transparent: the veil is disposed on landing, so there is no
+    // opacity left to read. That is a stronger statement than `=== 0`.
+    expect(veilAlphaIn(scene)).toBeUndefined();
   });
 
   it("announces the landing, so a STALLED descent is distinguishable", async () => {

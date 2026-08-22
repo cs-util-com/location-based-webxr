@@ -105,14 +105,32 @@ export function descentOffsetM(input: DescentInput): number {
  * scene); 1 = the camera is fully visible. Driven by the same clock as the
  * descent so the two cannot drift apart.
  *
- * **Rendered via `renderer.setClearAlpha`, not a backdrop mesh** (DEC-Y3): AR
- * entry sets `scene.background = null`, and on that path the clear uses the
- * renderer's own `clearColor`/`clearAlpha`, both animatable, with the framework's
- * renderer already built `alpha: true`. One number, no geometry, no render-order
- * discipline, and no risk of a backdrop occluding content. A backdrop mesh is
- * the fallback if this is found not to composite as expected on device; both
- * fail identically on an additive-blend display, so that caveat does not choose
- * between them.
+ * **Rendered by a backdrop mesh — `ar-entry-veil.ts` — and NOT by
+ * `renderer.setClearAlpha` (DEC-J1, overturning DEC-Y3).**
+ *
+ * DEC-Y3 chose the clear alpha, reasoning that AR entry sets
+ * `scene.background = null`, that the clear then uses the renderer's own
+ * `clearColor`/`clearAlpha`, and that the framework's renderer is built
+ * `alpha: true`. **All three premises are true and the conclusion is still
+ * false.** `WebGLBackground.render()` has a branch that runs LAST:
+ *
+ * ```js
+ * const environmentBlendMode = renderer.xr.getEnvironmentBlendMode();
+ * if (environmentBlendMode === 'additive') state.buffers.color.setClear(0,0,0,1, …);
+ * else if (environmentBlendMode === 'alpha-blend') state.buffers.color.setClear(0,0,0,0, …);
+ * ```
+ *
+ * Every video-passthrough session reports `alpha-blend`, so the clear is forced
+ * fully transparent and the camera is visible from the first frame. The
+ * fifteenth field session reported exactly that. `setClearAlpha` cannot veil the
+ * camera in ANY `immersive-ar` session, on any device, with this renderer.
+ *
+ * **No gate here could have caught it**: `getEnvironmentBlendMode()` returns
+ * `'opaque'` outside a session, so the override never fires in vitest or in
+ * headless Chromium, and the assertion that `setClearAlpha` had been called
+ * passed the whole time against a call that did nothing.
+ *
+ * **This function is unchanged and still right** — only its consumer moved.
  */
 export function cameraFadeAlpha(input: DescentInput): number {
   const offset = descentOffsetM(input);

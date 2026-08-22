@@ -48,9 +48,8 @@ import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visuali
 import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import { getCompassDiagnostics } from "gps-plus-slam-app-framework/state";
-import { createArEntryGround, entryGroundOpacity } from "./ar-entry-ground.js";
+import { createArEntryVeil, entryVeilAlpha } from "./ar-entry-veil.js";
 import {
-  cameraFadeAlpha,
   descentMayStart,
   descentComplete,
   descentOffsetM,
@@ -114,6 +113,15 @@ import * as THREE from "three";
  * and the value is consumed synchronously in the line after it is written.
  */
 const forward = new THREE.Vector3();
+
+/**
+ * Scratch for the camera's world position, reused every frame by the entry veil.
+ *
+ * SEPARATE FROM `forward`, and not merely for tidiness: both are written in the
+ * same frame callback, and `getWorldDirection` and `getWorldPosition` would
+ * otherwise clobber each other between the two reads.
+ */
+const veilCentre = new THREE.Vector3();
 
 /**
  * How fast the APPLIED auto elevation may move the content, metres/second
@@ -311,7 +319,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // `| undefined` EXPLICITLY, because `exactOptionalPropertyTypes` is on:
     // the landing branch CLEARS this field, and without the union a bare `?`
     // means "may be absent", not "may be set to undefined".
-    entryGround?: ReturnType<typeof createArEntryGround> | undefined;
+    entryVeil?: ReturnType<typeof createArEntryVeil> | undefined;
+    entryWait?: HTMLElement | undefined;
     unregisterFrame?: () => void;
   } = {};
 
@@ -369,13 +378,20 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     session.bottom?.remove();
     // RESTORED BEFORE the city is handed back, so the desktop view never sees
     // an additive, depth-write-free material against its own sky gradient.
-    // THE ENTRY GROUND, BEFORE the city is handed back. It is an opaque,
-    // screen-sized plane in the AR scene; anything that leaves it behind turns
-    // the passthrough into a grey lid. Disposing here as well as on landing is
+    // THE ENTRY VEIL, BEFORE the city is handed back. It is an opaque,
+    // screen-filling surface in the AR scene; anything that leaves it behind
+    // turns the passthrough into a lid. Disposing here as well as on landing is
     // deliberate belt-and-braces -- a session ended DURING the descent never
     // reaches the landing branch, and that is the common case when someone
     // backs out because the entry looked wrong.
-    session.entryGround?.dispose();
+    session.entryVeil?.dispose();
+    session.entryVeil = undefined;
+    // AND THE WAITING LINE WITH IT (DEC-J11). It is removed when the descent
+    // starts, but a session abandoned DURING the hold never gets there, and a
+    // stranded "finding your position..." is a claim about a session that has
+    // ended.
+    session.entryWait?.remove();
+    session.entryWait = undefined;
     deps.buildingView.setArShellMaterial(undefined);
     session.shell?.material.dispose();
     // On BOTH exits, and NOT because the framework's objects are shared —
@@ -633,7 +649,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     const applyComposed = () => {
       const composedM = composeElevationM(appliedAutoM, manualTrimM, descentM);
       applyElevation(composedM);
-      session.entryGround?.setHeightM(geometricOffset.up + composedM);
+      // NOTHING FOR THE VEIL HERE. Unlike the entry ground it replaced, the
+      // veil is centred on the CAMERA rather than on the city, so the elevation
+      // composition cannot move it -- which removes the three-call-site hazard
+      // this function was grown to contain.
     };
     // ATTACHED AT DESCENT DEPTH, NOT AT ZERO -- the r543 entry jump.
     //
@@ -659,23 +678,46 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // and no error. A test written for exactly that path caught it.
     descentM = descentOffsetM({ elapsedS: 0, startM: descentStartM });
 
-    // THE ENTRY GROUND (r543). "Dass ich den Ground sehe, wenn die Open Street
-    // Map Welt weit unter mir spawnt und der dann rausgefadet wird, während die
-    // auf mich zufliegt."
+    // THE ENTRY VEIL (J1, DEC-J1). "Eine Schicht ... die zwischen dem
+    // Kamerahintergrundbild und den 3D-OpenStreetMap-Szenendaten ist ... erst
+    // komplett sichtbar ... und dann ... herausgefadet wird."
     //
-    // BEFORE the attach below, so `applyComposed` places both in one call and
-    // the ground can never be positioned by a formula of its own.
+    // IT REPLACES BOTH the entry GROUND (r543, reversed by the same session that
+    // asked for this) AND `renderer.setClearAlpha`, which was the shipped veil
+    // and is dead inside an XR session -- three's `WebGLBackground.render()`
+    // overwrites the clear to (0,0,0,0) for every `alpha-blend` environment.
+    // See `ar-entry-veil.ts.md`.
     //
     // ONLY WHEN THERE IS A DESCENT. Entering from a ground-level 3D view gives
-    // `descentStartM === 0`, and a floor with nothing to fall from is just a
-    // lid over the camera.
+    // `descentStartM === 0`, and `cameraFadeAlpha` returns 1 for a zero start,
+    // so there is nothing to fade: a veil there would be an opaque lid that
+    // never lifts.
     if (descentStartM > 0) {
-      const entryGround = createArEntryGround();
-      entryGround.setOpacity(
-        entryGroundOpacity({ elapsedS: 0, startM: descentStartM }),
+      const entryVeil = createArEntryVeil();
+      entryVeil.setAlpha(
+        entryVeilAlpha({ elapsedS: 0, startM: descentStartM }),
       );
-      scene.add(entryGround.mesh);
-      session.entryGround = entryGround;
+      entryVeil.follow(camera.getWorldPosition(new THREE.Vector3()));
+      scene.add(entryVeil.mesh);
+      session.entryVeil = entryVeil;
+
+      // THE WAITING LINE (DEC-J11). The hold before the descent can last
+      // `DESCENT_ESTIMATE_WAIT_S`, and a static picture with no motion for that
+      // long does not say whether the entry is working or stalled -- the same
+      // ambiguity `descentComplete` exists to remove at the other end.
+      //
+      // NOT "the screen would otherwise be blank", which an earlier draft
+      // claimed: the city is already attached below the user by the eager
+      // attach above, and the additive shell draws OVER the veil, so the hold
+      // shows the city 60-100 m down. It is the absence of MOTION that is
+      // ambiguous, not the absence of pixels.
+      const entryWait = document.createElement("p");
+      entryWait.className = "ar-entry-wait";
+      entryWait.setAttribute("role", "status");
+      entryWait.setAttribute("aria-live", "polite");
+      entryWait.textContent = "Finding your position…";
+      deps.container.append(entryWait);
+      session.entryWait = entryWait;
     }
 
     applyComposed();
@@ -875,10 +917,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // view, or from a `buildingView` that reports no camera height at all,
         // since that read is optional-chained. There is then no entry
         // transition to hide the wait behind: `cameraFadeAlpha` returns 1 for a
-        // zero start, so nothing fades and the black hold below would be up to
-        // THREE SECONDS of opaque black ending in a hard cut. That is worse
-        // than the jump this gate exists to remove, and it would hit every
-        // such session rather than only the first. Caught in cold review.
+        // zero start, so nothing fades and the hold below would be up to THREE
+        // SECONDS of opaque veil ending in a hard cut. That is worse than the
+        // jump this gate exists to remove, and it would hit every such session
+        // rather than only the first. Caught in cold review.
         const estimateReady =
           auto === undefined ||
           descentStartM === 0 ||
@@ -886,11 +928,17 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         if (
           !descentMayStart({ waitedS: elapsed - firstFrameS, estimateReady })
         ) {
-          // BLACK WHILE WAITING, on the same channel the descent fade uses, so
+          // OPAQUE WHILE WAITING, on the same channel the descent fade uses, so
           // the two cannot disagree about what the screen shows. Without this
           // the wait would be plain passthrough and would read as AR having
           // failed to load anything.
-          getRenderer()?.setClearAlpha(1);
+          //
+          // AND FOLLOWING THE CAMERA THROUGHOUT. The user can turn on the spot
+          // during the hold, and a veil left where the session started would
+          // swing off the screen edge -- the one failure DEC-J2 chose a sphere
+          // to avoid, given away for free by not re-centring it.
+          session.entryVeil?.setAlpha(1);
+          session.entryVeil?.follow(camera.getWorldPosition(veilCentre));
         } else {
           // SNAP THE AUTO TERM RATHER THAN EASE IT, exactly once, and only here.
           // The ease below exists so a LIVE correction cannot make the city jump
@@ -1008,19 +1056,20 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           descentM = nextDescentM;
           applyComposed();
         }
-        // THE CAMERA FADE (DEC-Y3): one animated number on the renderer's own
-        // clear alpha. AR entry sets `scene.background = null`, and on that path
-        // the clear uses `clearColor`/`clearAlpha` — both animatable, with the
-        // framework's renderer already built `alpha: true`. No geometry, no
-        // render-order discipline, and no backdrop that could occlude content.
-        getRenderer()?.setClearAlpha(1 - cameraFadeAlpha(input));
-        // THE GROUND RIDES THE SAME TERM THE CITY DOES, read from `descentM`
-        // rather than recomputed, so the two cannot disagree about where the
-        // ground is by even one frame.
-        // NO HEIGHT CALL HERE. `applyComposed` above already moved the ground
-        // with the city on the frames where `descentM` changed, and a second
-        // call site is exactly how the two got out of step in the first place.
-        session.entryGround?.setOpacity(entryGroundOpacity(input));
+        // THE CAMERA FADE (DEC-J1), on the veil rather than on the renderer.
+        //
+        // THIS USED TO BE `setClearAlpha(1 - cameraFadeAlpha(input))`, and it
+        // did nothing on any device: `WebGLBackground.render()` reads
+        // `xr.getEnvironmentBlendMode()` AFTER applying our clear and forces
+        // (0,0,0,0) for `alpha-blend`, which is every video-passthrough phone.
+        // The unit test asserting the call was made passed the whole time.
+        //
+        // THE WAITING LINE GOES THE MOMENT THE DESCENT DOES (DEC-J11): the
+        // ambiguity it answers is "is anything happening", and something is.
+        session.entryWait?.remove();
+        session.entryWait = undefined;
+        session.entryVeil?.follow(camera.getWorldPosition(veilCentre));
+        session.entryVeil?.setAlpha(entryVeilAlpha(input));
         if (descentComplete(input)) {
           // THE VISIBLE END-STATE SIGNAL the plan requires. A descent that
           // STALLS is otherwise indistinguishable from the recorded "flying
@@ -1029,12 +1078,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           // arrival, is the cheapest way to tell them apart.
           descentStartS = undefined;
           descentDone = true;
-          getRenderer()?.setClearAlpha(0);
           // GONE ON LANDING, not merely transparent. This is the moment the
-          // entry is over, and a plane that survives it is the one failure
-          // this feature can produce that is worse than not having it.
-          session.entryGround?.dispose();
-          session.entryGround = undefined;
+          // entry is over, and a veil that survives it is the one failure this
+          // feature can produce that is worse than not having it.
+          session.entryVeil?.dispose();
+          session.entryVeil = undefined;
           deps.onDescentComplete?.();
         }
       }

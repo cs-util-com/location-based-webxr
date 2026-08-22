@@ -347,6 +347,48 @@
       }
 
       /*
+        THE ENTRY WAITING LINE (J1, DEC-J11).
+
+        The entry gate can hold for `DESCENT_ESTIMATE_WAIT_S` before the descent
+        starts, and a held picture with no MOTION does not say whether the entry
+        is working or stalled — the same ambiguity the landing announcement
+        exists to remove at the other end.
+
+        NOT "the screen would otherwise be blank", which an earlier draft
+        claimed. The city is already attached below the user by the time this
+        shows, and the additive shell draws OVER the veil, so the hold shows the
+        city 60–100 m down. It is the stillness that is ambiguous, not the
+        emptiness.
+
+        CENTRED AND UNSTYLED BEYOND LEGIBILITY: it is present for at most three
+        seconds and is removed the instant the descent begins, so a panel with a
+        border and a shadow would draw more attention leaving than it earns
+        while it is up.
+
+        `pointer-events: none` for the same reason `.ar-toast` carries it —
+        `#ar-root` is a full-viewport fixed layer, and anything in it that
+        swallowed a tap would be the regression the `:empty` rule above exists
+        for.
+      */
+      .ar-entry-wait {
+        position: absolute;
+        top: 45%;
+        left: 50%;
+        margin: 0;
+        transform: translateX(-50%);
+        max-width: 88vw;
+        color: #f2f4f8;
+        font-size: 1rem;
+        text-align: center;
+        /* Against a veil this dark the text is legible on its own, but the veil
+           is FADING — by the time it is half gone the camera feed behind it is
+           of unknown brightness, so the shadow is what keeps the line readable
+           for its last moments. */
+        text-shadow: 0 1px 6px rgb(0 0 0 / 70%);
+        pointer-events: none;
+      }
+
+      /*
         The only message surface an immersed user can see (AR milestone 3).
         WebXR composites ONLY the dom-overlay root's subtree over the camera
         feed, and the header's status line is outside it — so a warning written
