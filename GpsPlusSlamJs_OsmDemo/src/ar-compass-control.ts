@@ -68,6 +68,16 @@ export interface ArCompassControl {
    */
   setReady(ready: boolean): void;
   /**
+   * Briefly replace the readout with a confirmation, then restore it.
+   *
+   * For settings whose effect is real but INVISIBLE — the trust gate changes
+   * only what the next GPS observation solves with, and the view lerps toward
+   * the result — where silence reads as a control that did nothing.
+   *
+   * A live update arriving mid-announcement does not erase it.
+   */
+  announce(text: string, holdMs?: number): void;
+  /**
    * Publish what the solve last reported, so the readout can show the LIVE
    * weight beside the target. Cheap and idempotent; call it at the HUD's own
    * ~1 Hz rather than per frame — a per-fix readout flickers.
@@ -81,6 +91,15 @@ export interface ArCompassControl {
   /** Take it down and release the DOM. Idempotent. */
   dispose(): void;
 }
+
+/**
+ * How long a confirmation holds the readout, milliseconds.
+ *
+ * 2.5 s: long enough to be read on a phone held at arm's length outdoors,
+ * short enough that the influence readout — which is the row's real job — is
+ * not hidden while the user goes back to watching the alignment settle.
+ */
+const ANNOUNCE_HOLD_MS = 2500;
 
 export function createArCompassControl(
   options: ArCompassControlOptions,
@@ -133,8 +152,19 @@ export function createArCompassControl(
   const hint = document.createElement("span");
   hint.className = "ar-compass-hint";
 
+  /**
+   * A confirmation that temporarily replaces the influence readout.
+   *
+   * `undefined` means "show the normal text". While it is set, `render()`
+   * shows it instead — so a live update arriving mid-announcement does not
+   * silently erase the acknowledgement the user just asked for.
+   */
+  let announcement: string | undefined;
+  let announceTimer: ReturnType<typeof setTimeout> | undefined;
+
   const render = (): void => {
-    readout.textContent = describeCompassInfluence(influence, live);
+    readout.textContent =
+      announcement ?? describeCompassInfluence(influence, live);
     // THE TWO STATES A USER WOULD OTHERWISE READ AS A BROKEN CONTROL: not
     // accepting input yet, and accepting it but taking half a minute to show.
     // SHORTENED FOR THE ROW IT NOW SHARES (DEC-J8). "takes ~15–30 fixes to
@@ -217,7 +247,44 @@ export function createArCompassControl(
       // something the UI did not describe. Found in review of PR #311.
       if (next && !wasReady && pending) apply();
     },
+    /**
+     * Show a short confirmation, then fall back to the influence readout.
+     *
+     * THE SETTING THIS EXISTS FOR PRODUCES NO VISIBLE CHANGE BY DESIGN, which
+     * is why silence read as a broken control: the alignment recomputes only
+     * on the next GPS observation and the view lerps toward it. A confirmation
+     * is the honest feedback — it says the change was ACCEPTED without
+     * promising the scene will move.
+     */
+    announce(text: string, holdMs = ANNOUNCE_HOLD_MS) {
+      announcement = text;
+      render();
+      if (announceTimer !== undefined) clearTimeout(announceTimer);
+      announceTimer = setTimeout(() => {
+        announcement = undefined;
+        announceTimer = undefined;
+        render();
+      }, holdMs);
+    },
     dispose() {
+      // THE TIMER FIRST, and unconditionally: it closes over `render`, which
+      // writes into an element this is about to detach.
+      //
+      // ⚠️ THIS IS HYGIENE, NOT A VISIBLE BUG, and an earlier version of this
+      // comment claimed otherwise — that a leaked timer "would clear the NEW
+      // control's announcement" on a re-entry. It cannot: each control owns
+      // its own element, so a callback firing after dispose writes into a
+      // detached node and nothing on screen changes. Mutation-testing proved
+      // it, by leaving the test that asserted it green.
+      //
+      // What it does buy is a pending callback not outliving the session that
+      // created it. `ar-compass-control.test.ts` asserts the scheduler is
+      // empty after dispose, which is the only thing that can actually fail.
+      if (announceTimer !== undefined) {
+        clearTimeout(announceTimer);
+        announceTimer = undefined;
+      }
+      announcement = undefined;
       if (!attached) return;
       element.remove();
       attached = false;

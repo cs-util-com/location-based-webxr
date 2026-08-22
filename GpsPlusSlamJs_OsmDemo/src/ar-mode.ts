@@ -94,6 +94,7 @@ import {
 } from "./ar-building-material.js";
 import {
   COMPASS_EXPERIMENT_DEFAULTS,
+  describeTrustGate,
   type CompassSettings,
 } from "./compass-influence.js";
 import {
@@ -895,10 +896,24 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         root: arBottomRow,
         initial: experiments,
         onChange: (next) => {
+          const gateChanged = next.trustGateMode !== experiments.trustGateMode;
           experiments = next;
           // RE-PUBLISH THROUGH THE SLIDER, not directly: the store needs one
           // coherent configuration, and the slider owns the weight half of it.
           compass.republish();
+          // AND SAY SO (DEC-K6). The trust gate is read live, on every GPS
+          // observation — but nothing re-solves on the dispatch, the matrix is
+          // recomputed only when the next fix arrives, and the view lerps
+          // toward it. So a correct change produces NO visible motion, the
+          // panel closes itself, and a field session reasonably concluded the
+          // setting was being ignored.
+          //
+          // Announced only when the gate actually MOVED: a confirmation that
+          // fires for every panel interaction, including ones that changed
+          // nothing, is noise and stops being read.
+          if (gateChanged) {
+            compass.announce(describeTrustGate(next.trustGateMode));
+          }
         },
       });
       session.experiments.attach();

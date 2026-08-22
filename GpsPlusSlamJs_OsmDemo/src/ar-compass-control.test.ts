@@ -11,7 +11,10 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { COMPASS_INFLUENCE_DEFAULT } from "./compass-influence.js";
+import {
+  COMPASS_INFLUENCE_DEFAULT,
+  describeTrustGate,
+} from "./compass-influence.js";
 import { createArCompassControl } from "./ar-compass-control.js";
 
 function harness(initialInfluence?: number) {
@@ -263,5 +266,98 @@ describe("createArCompassControl — the initial value reaches the store", () =>
     control.setReady(true);
     control.setReady(true);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the trust-gate confirmation (DEC-K6)", () => {
+  /**
+   * Why these tests matter: this is the one control in the panel whose correct
+   * behaviour is INVISIBLE. The gate is re-read on every GPS observation, but
+   * nothing re-solves on the dispatch, the matrix is recomputed only when the
+   * next fix arrives, and the view lerps toward it — so a field session
+   * switched ramp/binary, saw nothing move, and reported the setting as
+   * ignored. The confirmation is the only thing standing between "correct" and
+   * "looks broken".
+   */
+  it("names the mode, and spells out the one that means something else", () => {
+    // `binary` and `ramp` are two shapes of the same gate; `off` is a different
+    // kind of setting — the compass is trusted unconditionally — so it gets
+    // words rather than a bare mode name.
+    expect(describeTrustGate("ramp")).toBe("gate ramp");
+    expect(describeTrustGate("binary")).toBe("gate binary");
+    expect(describeTrustGate("off")).toBe("gate off — compass always trusted");
+  });
+
+  it("replaces the readout, then restores it", () => {
+    vi.useFakeTimers();
+    try {
+      const root = document.createElement("div");
+      const control = createArCompassControl({ root, onChange: () => {} });
+      control.attach();
+      const readout = root.querySelector(".ar-compass-value");
+      const before = readout?.textContent;
+
+      control.announce("gate binary");
+      expect(readout?.textContent).toBe("gate binary");
+
+      // AND IT COMES BACK. A confirmation that never cleared would hide the
+      // influence readout for the rest of the session — the row's real job.
+      vi.advanceTimersByTime(5_000);
+      expect(readout?.textContent).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is not erased by a live update that arrives while it is showing", () => {
+    // THE RACE THIS WOULD LOSE WITHOUT THE FLAG. `setLive` runs at ~1 Hz from
+    // the HUD, so a confirmation held for 2.5 s overlaps at least two of them.
+    // A `render()` that unconditionally wrote the influence text would wipe the
+    // acknowledgement within a second of the user asking for it.
+    vi.useFakeTimers();
+    try {
+      const root = document.createElement("div");
+      const control = createArCompassControl({ root, onChange: () => {} });
+      control.attach();
+      const readout = root.querySelector(".ar-compass-value");
+
+      control.announce("gate binary");
+      control.setLive({ appliedWeight: 0.4, observability: 0.9 });
+      expect(readout?.textContent).toBe("gate binary");
+
+      vi.advanceTimersByTime(5_000);
+      expect(readout?.textContent).toContain("compass");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels its pending timer on dispose, so nothing is left scheduled", () => {
+    // WHY THIS ASSERTS THE TIMER AND NOT THE READOUT, and the first draft got
+    // this wrong. That draft disposed one control, created another in the same
+    // root, and claimed the leaked timer would "clear the NEW control's
+    // announcement". IT CANNOT: each control owns its own element, so a timer
+    // that fires after dispose writes into a DETACHED node and nothing visible
+    // changes. Mutation-testing proved it — deleting the cleanup entirely left
+    // that test green.
+    //
+    // So the readout cannot witness this, and the honest observable is the
+    // scheduler itself. What the cleanup actually buys is hygiene: a pending
+    // callback holding a closure over a torn-down control, fired after the
+    // session ended. Small, real, and worth a test that can fail.
+    vi.useFakeTimers();
+    try {
+      const root = document.createElement("div");
+      const control = createArCompassControl({ root, onChange: () => {} });
+      control.attach();
+
+      control.announce("gate binary");
+      expect(vi.getTimerCount()).toBe(1);
+
+      control.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

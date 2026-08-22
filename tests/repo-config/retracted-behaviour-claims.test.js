@@ -195,6 +195,19 @@ describe('removed behaviour is not described as current', () => {
     expect(corrected).toMatch(MARKERS);
   });
 
+  // NO RAISED TIMEOUT HERE, AND THAT IS A DELIBERATE REVERSAL. On 2026-08-22
+  // this case timed out at 8.8 s against vitest's 5 s default and was about to
+  // be given 30 s, on the reasoning that the scan grows with the repository.
+  //
+  // THAT DIAGNOSIS WAS WRONG. Measured again on a quiet machine the same day:
+  // **1.9 s**. The 8.8 s reading was taken while a second full gate was running
+  // in the same tree - a 4.7x inflation, and a condition `gate-lock.mjs` exists
+  // to prevent in the first place.
+  //
+  // So the default stays. Raising a limit to accommodate a state that should
+  // not occur would have hidden the real signal: if this ever times out again,
+  // the first thing to check is whether another gate is running, not whether
+  // the tree got bigger.
   it.each(REMOVED_BEHAVIOURS)(
     'is not stated as current anywhere in the tree: $label',
     ({ label }) => {
