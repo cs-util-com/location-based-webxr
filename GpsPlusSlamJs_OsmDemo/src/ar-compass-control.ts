@@ -137,9 +137,12 @@ export function createArCompassControl(
     readout.textContent = describeCompassInfluence(influence, live);
     // THE TWO STATES A USER WOULD OTHERWISE READ AS A BROKEN CONTROL: not
     // accepting input yet, and accepting it but taking half a minute to show.
-    hint.textContent = ready
-      ? "takes ~15–30 fixes to express"
-      : "waiting for a GPS fix";
+    // SHORTENED FOR THE ROW IT NOW SHARES (DEC-J8). "takes ~15–30 fixes to
+    // express" is 29 characters against ~208 px of cell beside a 9 rem slider —
+    // it fits by arithmetic with roughly 40 px to spare, which is thin enough
+    // that a wider font or a narrower phone would wrap it and put the box back
+    // to three rows, i.e. undo the change. At 20 characters the slack is ~90 px.
+    hint.textContent = ready ? "~15–30 fixes to show" : "waiting for a GPS fix";
   };
 
   /**
@@ -173,7 +176,15 @@ export function createArCompassControl(
   });
 
   render();
-  element.append(slider, readout, hint);
+  // HINT BEFORE READOUT (J5, DEC-J8), so the box is two rows rather than three:
+  // the hint shares the slider's row and only the 40-character readout takes a
+  // line of its own (DEC-Y12 is untouched — it still cannot share).
+  //
+  // DOM ORDER RATHER THAN A CSS `order`. The hint explains the control it
+  // follows, so a screen reader should meet them in that sequence; reordering
+  // visually would leave the reading order as slider, readout, then an
+  // explanation of the slider.
+  element.append(slider, hint, readout);
 
   return {
     attach() {

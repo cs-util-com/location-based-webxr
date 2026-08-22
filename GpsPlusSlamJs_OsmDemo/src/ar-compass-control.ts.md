@@ -46,9 +46,16 @@ for the 0–1 influence whose mapping lives in `compass-influence.ts`.
     during exactly the long walk this slider is measured on. Leaving the bottom
     of the screen entirely means there is nothing down there to collide with.
   - **The class name `.ar-compass` is a contract with the stylesheet**, and the
-    e2e that measures the placement attaches its own element carrying it —
-    because a real AR session is unreachable in headless Chromium. What keeps
-    the two in step is this module's own test asserting the class it builds.
+    e2e that measures the placement used to attach its own element carrying it —
+    because a real AR session is unreachable in headless Chromium.
+  - **That replica is gone (DEC-J12).** It had already drifted: it rendered
+    `takes 15-30 fixes to express a change` (37 characters, ASCII hyphen)
+    against this module's `takes ~15–30 fixes to express` (29, en dash), so a
+    layout test measuring whether the real CSS fits the real strings was
+    measuring the wrong strings. `boot-and-shell.spec.js` now mounts THIS module
+    by dynamically importing `/src/ar-compass-control.ts` from the page — the
+    e2e runs against the Vite dev server, so no production-visible export was
+    needed. A mutation run (deleting a child here) turns that spec red.
 - **It stays OUT of `#ar-root` until `attach()` and removes itself on
   `dispose()`.** That element is `position: fixed; inset: 0` and hidden only
   while `:empty`, so anything left attached keeps a full-viewport layer over the
@@ -68,10 +75,29 @@ for the 0–1 influence whose mapping lives in `compass-influence.ts`.
 - **It listens to `input`, not `change`.** A range control fires `change` only
   when the finger lifts, which would leave the readout lagging the thumb.
 - **It says why it looks unresponsive**, in two states: `waiting for a GPS fix`
-  before readiness, and `takes ~15–30 fixes to express` after — the applied
-  bearing is smoothed at `coldStartSnapAlpha = 0.15` per GPS event. An
-  instrument that looks broken for half a minute gets dragged again, which
-  restarts the smoothing.
+  before readiness, and `~15–30 fixes to show` after — the applied bearing is
+  smoothed at `coldStartSnapAlpha = 0.15` per GPS event. An instrument that
+  looks broken for half a minute gets dragged again, which restarts the
+  smoothing.
+- **The children are ordered slider, hint, readout** (J5, DEC-J8), which is what
+  makes the box **two rows** instead of three: the hint shares the slider's row
+  and only the ~40-character readout takes a line of its own (DEC-Y12 is
+  untouched — it still cannot share one).
+  - **DOM order, not a CSS `order`.** The hint explains the control it follows,
+    so a screen reader should meet them in that sequence; a visual reorder would
+    leave the reading order as slider, readout, then an explanation of the
+    slider. `ar-compass-control.test.ts` pins the child order.
+  - **The hint text was shortened as part of the move**, from
+    `takes ~15–30 fixes to express` (29 chars) to `~15–30 fixes to show` (20).
+    Beside a 9 rem slider the cell is ~208 px; the old string fit with ~40 px to
+    spare, thin enough that a wider font or a narrower phone would wrap it and
+    put the box back to three rows — undoing the change silently.
+  - **`.ar-compass-slider` carries `flex-shrink: 0` because of this.** `width`
+    on a flex item is `flex: 0 1 auto`, so the hint's `flex: 1 1 auto` could
+    otherwise be satisfied by shrinking the slider instead of using free space,
+    and 9 rem exists so 0–1 is draggable with a thumb outdoors. Cold review found
+    that every assertion originally proposed for the row passes with a 100 px
+    slider; the e2e now pins the rendered width too.
 - **The slider carries an `aria-label`** (`#ar-root` is no longer inert, r510
   review) and the value readout is an `aria-live="polite"` region — it changes
   only on a drag, unlike the HUD.

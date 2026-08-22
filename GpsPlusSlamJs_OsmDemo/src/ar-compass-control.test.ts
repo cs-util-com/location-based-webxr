@@ -169,6 +169,29 @@ describe("createArCompassControl", () => {
     expect(root.textContent).toMatch(/15–30 fixes/);
   });
 
+  it("puts the hint beside the slider, before the readout (J5, DEC-J8)", () => {
+    // WHY THIS TEST MATTERS. "Den könnte man einfach rechts neben den Slider
+    // packen, sodass das dann nur noch zwei Zeilen sind."
+    //
+    // DOM ORDER RATHER THAN A CSS `order`, and that is the reason this is a unit
+    // test at all. The hint explains the control it follows, so a screen reader
+    // should meet them in that sequence — a visual reorder would leave the
+    // reading order saying slider, readout, then an explanation of the slider.
+    //
+    // The WIDTHS are not asserted here: whether the two actually share a row is
+    // a layout question, and jsdom has no layout. `boot-and-shell.spec.js`
+    // measures the rendered rows against the real stylesheet.
+    const { root, control } = harness();
+    control.attach();
+    const box = root.querySelector(".ar-compass");
+    const classes = [...(box?.children ?? [])].map((child) => child.className);
+    expect(classes).toEqual([
+      "ar-compass-slider",
+      "ar-compass-hint",
+      "ar-compass-value",
+    ]);
+  });
+
   it("gives the slider an accessible name", () => {
     const { control, slider } = harness();
     control.attach();

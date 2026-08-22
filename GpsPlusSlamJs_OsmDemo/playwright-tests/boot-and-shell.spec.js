@@ -84,22 +84,6 @@ async function buildArOverlayFixture(page) {
     up.textContent = "+";
     elevation.append(down, value, up);
 
-    const compass = document.createElement("div");
-    compass.className = "ar-compass";
-    const slider = document.createElement("input");
-    slider.type = "range";
-    slider.className = "ar-compass-slider";
-    // THE FULL-LENGTH READOUT, not a short one. `compass 0.80 target — now
-    // 1.00 cold start` is what DEC-Y12 renders, and a shorter placeholder
-    // would let a row that cannot hold the real string pass.
-    const readout = document.createElement("span");
-    readout.className = "ar-compass-value";
-    readout.textContent = "compass 0.80 target — now 1.00 cold start";
-    const hint = document.createElement("span");
-    hint.className = "ar-compass-hint";
-    hint.textContent = "takes 15-30 fixes to express a change";
-    compass.append(slider, readout, hint);
-
     const gearWrap = document.createElement("div");
     gearWrap.className = "ar-gear-wrap";
     const gear = document.createElement("button");
@@ -108,8 +92,42 @@ async function buildArOverlayFixture(page) {
     gearWrap.append(gear);
 
     bottomRow.append(elevation, gearWrap);
-    bottom.append(bottomRow, compass);
+    bottom.append(bottomRow);
     root.append(bottom);
+  });
+
+  // THE COMPASS CONTROL IS THE REAL ONE (DEC-J12), not a hand-built copy.
+  //
+  // WHY THIS CHANGED. Everything above is a replica built with production class
+  // names, and the compass replica had ALREADY DRIFTED: it rendered
+  // "takes 15-30 fixes to express a change" (37 characters, ASCII hyphen)
+  // against production's "takes ~15–30 fixes to express" (29, en dash). The
+  // layout question this fixture exists to answer is whether the real CSS fits
+  // the real strings, and a replica that is eight characters too long answers a
+  // different question. J5 was about to widen that gap by editing the copy by
+  // hand — the exact drift the spec's own comment warned about.
+  //
+  // MOUNTED BY DYNAMIC IMPORT OF THE SOURCE MODULE, which needs NO
+  // production-visible export: the e2e runs against the Vite DEV server (see
+  // `playwright.config.js`'s `webServer`), so `/src/*.ts` is served and
+  // importable from the page. That is the whole reason DEC-J12's stop condition
+  // ("if it needs an export purely for a test, stop") was never reached.
+  //
+  // ⚠️ IT COUPLES THIS FIXTURE TO THE DEV SERVER. Pointed at a built preview,
+  // the import 404s and this throws — loudly, which is the right failure: a
+  // silent fallback to a replica is what this replaces.
+  await page.evaluate(async () => {
+    const bottom = document.querySelector("#ar-root .ar-bottom");
+    if (bottom === null) throw new Error("no .ar-bottom");
+    const module = await import("/src/ar-compass-control.ts");
+    const control = module.createArCompassControl({
+      root: bottom,
+      onChange: () => {},
+    });
+    control.attach();
+    // READY, because the two hint strings differ in length and the LONGER one
+    // is the steady state this layout has to hold.
+    control.setReady(true);
   });
 }
 
@@ -2128,11 +2146,18 @@ test.describe("the AR entry point", () => {
      * this attaches elements carrying the production class names to the real
      * `#ar-root` and measures what the real CSS does to them.
      *
-     * THE GAP THAT REMAINS, named rather than papered over: nothing here proves
-     * `ar-compass-control.ts` still uses `.ar-compass`, or that `ar-mode.ts`
-     * still builds an `.ar-stack` and attaches both controls into it. Those
-     * class names are the seam between this test and the code; the first is
-     * pinned in `ar-compass-control.test.ts`, the second is not pinned at all.
+     * THE GAP THAT REMAINS, named rather than papered over — and it is HALF the
+     * size it was (DEC-J12). The compass is no longer a replica: the fixture
+     * mounts the real `createArCompassControl`, so its class names, its child
+     * order and its actual strings are the ones measured here. What is still
+     * replica is the surrounding stack, so nothing proves `ar-mode.ts` still
+     * builds an `.ar-stack` and attaches both controls into it.
+     *
+     * The replica was not a hypothetical risk: its hint read
+     * "takes 15-30 fixes to express a change" against production's
+     * "takes ~15–30 fixes to express" — eight characters longer, with an ASCII
+     * hyphen for the en dash. A layout test whose strings are wrong is
+     * answering a different question than the one it claims.
      */
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
@@ -2280,14 +2305,52 @@ test.describe("the AR entry point", () => {
         if (el === null) throw new Error(`no ${selector}`);
         return el.getBoundingClientRect().width;
       };
+      const box = (selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`no ${selector}`);
+        const r = el.getBoundingClientRect();
+        return { x: r.x, width: r.width, centre: r.y + r.height / 2 };
+      };
       return {
         readoutLines: lineCount("#ar-root .ar-bottom .ar-compass-value"),
         hintLines: lineCount("#ar-root .ar-bottom .ar-compass-hint"),
         compassWidth: width("#ar-root .ar-bottom .ar-compass"),
         rowWidth: width("#ar-root .ar-bottom .ar-bottom-row"),
         bottomWidth: width("#ar-root .ar-bottom"),
+        slider: box("#ar-root .ar-bottom .ar-compass-slider"),
+        hint: box("#ar-root .ar-bottom .ar-compass-hint"),
+        readout: box("#ar-root .ar-bottom .ar-compass-value"),
       };
     });
+
+    // TWO ROWS, NOT THREE (J5, DEC-J8). "Den könnte man einfach rechts neben
+    // den Slider packen, sodass das dann nur noch zwei Zeilen sind."
+    //
+    // COMPARED BY VERTICAL CENTRE, not by `y`. `.ar-compass` is
+    // `align-items: center` and a 0.72rem hint is shorter than a range input,
+    // so their TOPS never line up — an assertion on `y` would fail against a
+    // correct implementation. Cold review of the plan caught exactly that.
+    expect(
+      Math.abs(measured.hint.centre - measured.slider.centre),
+      "the compass hint is not on the slider's row",
+    ).toBeLessThanOrEqual(2);
+    // AND TO THE RIGHT of it, so "beside" means beside rather than behind.
+    expect(measured.hint.x).toBeGreaterThanOrEqual(
+      measured.slider.x + measured.slider.width - 1,
+    );
+    // WHILE THE READOUT KEEPS ITS OWN LINE (DEC-Y12, untouched): ~40 characters
+    // cannot share a row with a slider at any font size worth reading outdoors.
+    expect(measured.readout.centre).toBeGreaterThan(measured.slider.centre);
+
+    // THE SLIDER DID NOT PAY FOR IT. `width: 9rem` is `flex: 0 1 auto`, so the
+    // hint's `flex: 1 1 auto` could have been satisfied by shrinking the slider
+    // instead of using the free space — and every other assertion here passes
+    // with a 100 px slider. 9rem is 144 px, and it exists so 0-1 is draggable
+    // with a thumb outdoors.
+    expect(
+      measured.slider.width,
+      `the compass slider shrank to ${Math.round(measured.slider.width)} px`,
+    ).toBeGreaterThanOrEqual(144);
 
     // ONE LINE EACH. `compass 0.80 target — now 1.00 cold start` is ~40
     // characters at 0.9rem monospace, i.e. ~345 px of ink; it fits a 390 px

@@ -818,6 +818,16 @@
            width would overflow a 390 px phone by ~60 px, which is how the two
            previous versions of this row broke. */
         width: 9rem;
+        /* AND IT MAY NOT SHRINK (DEC-J8). `width` on a flex item is `flex: 0 1
+           auto`, so once the hint became `flex: 1 1 auto` beside it, an
+           over-wide row would resolve by shrinking BOTH — and a slider narrower
+           than 9 rem is exactly what DEC-J8 rejected, because 0–1 has to be
+           draggable with a thumb outdoors rather than a fingernail.
+
+           Caught in cold review of the plan: all three assertions originally
+           proposed for this row are satisfied by a 100 px slider, so nothing
+           would have reported it. The e2e now pins the rendered width too. */
+        flex-shrink: 0;
       }
 
       .ar-compass-value {
@@ -834,12 +844,21 @@
       }
 
       /* The two states a user would otherwise read as a broken control: not
-         accepting input yet, and taking ~15-30 fixes to express a change. */
+         accepting input yet, and taking ~15-30 fixes to express a change.
+
+         BESIDE THE SLIDER SINCE J5 (DEC-J8), not on a line of its own: "den
+         könnte man einfach rechts neben den Slider packen, sodass das dann nur
+         noch zwei Zeilen sind". It was `width: 100%`, which forced a third row.
+
+         `flex: 1 1 auto; min-width: 0` takes the rest of the slider's row and
+         lets the text shrink rather than push the row wider. The slider carries
+         `flex-shrink: 0` so this cannot buy its width — see that rule. */
       .ar-compass-hint {
-        width: 100%;
+        flex: 1 1 auto;
+        min-width: 0;
         color: #9aa3b8;
         font-size: 0.72rem;
-        text-align: center;
+        text-align: left;
       }
 
       .ar-elevation-value {
