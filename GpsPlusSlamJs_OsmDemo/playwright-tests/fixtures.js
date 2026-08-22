@@ -104,7 +104,37 @@ export const QUEST_FIXTURE_INSTANT = new Date("2026-06-15T00:00:00.000Z");
  * boots.
  */
 export async function pinQuestClock(page) {
-  await page.clock.setFixedTime(QUEST_FIXTURE_INSTANT);
+  // ⚠️ NOT `page.clock.setFixedTime`, AND THE REASON IS MEASURED. That is the
+  // obvious API and it was the first implementation, but it installs a clock
+  // that reaches further than `Date` — with it in place the app logs
+  // `THREE.WebGLProgram: Shader Error … VALIDATE_STATUS false` twice a few
+  // seconds after boot, and WITHOUT it the same fixture logs none at all,
+  // measured either way.
+  //
+  // A failed shader is the worst kind of failure in this app: three hands the
+  // geometry to the renderer, counts it, reports it in the status line, and
+  // silently does not draw it — `boot-and-shell.spec.js`'s console test exists
+  // because exactly that once emptied the scene while the suite stayed green.
+  // Buying a deterministic quest at the price of a broken shader is a bad
+  // trade, and it would have been invisible: these two specs assert on the 2D
+  // map, which does not care.
+  //
+  // So the pin is as narrow as the need: the geo-event is a pure function of
+  // tile and QUARTER-HOUR, so only `Date` has to lie. Timers, rAF and
+  // `performance.now` are left alone.
+  const fixedMs = QUEST_FIXTURE_INSTANT.getTime();
+  await page.addInitScript((ms) => {
+    const RealDate = Date;
+    // eslint-disable-next-line no-global-assign
+    Date = class extends RealDate {
+      constructor(...args) {
+        super(...(args.length === 0 ? [ms] : args));
+      }
+      static now() {
+        return ms;
+      }
+    };
+  }, fixedMs);
 }
 
 /**

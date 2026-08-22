@@ -35,6 +35,7 @@ import { describe, expect, it } from "vitest";
 
 import { drawMeshLayers } from "./mesh-layers.js";
 import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
+import { questBeaconMaterials } from "./quest-beacon.js";
 import {
   CELL_PRESETS,
   DEFAULT_CELL_PRESET,
@@ -126,6 +127,12 @@ function arMaterials(): { material: THREE.Material; where: string }[] {
       where: `cell face (${preset.name})`,
     })),
     { material: cellOutlineMaterial(), where: "cell outlines" },
+    // THE QUEST BEACONS (N6/DEC-K4). Added by NAME rather than absorbed into
+    // the count below: a bright gold marker is exactly the material class this
+    // file exists for — emissive gold is the natural way to build one, and
+    // reaching for `metalness` or `fog: false` to get the glow is what makes it
+    // draw black or clip at the far plane.
+    ...questBeaconMaterials(),
   ];
 }
 
@@ -170,10 +177,13 @@ describe("AR content — visible without an environment map", () => {
       expect(labels).toContain(`cell face (${preset.name})`);
     }
     expect(labels).toContain("cell outlines");
-    // Six mesh-layer materials: buildings, plates, roads, areas, trees, poi.
+    // The quest beacon is named too, so a beacon that stopped producing a
     // `everyLayer()` gives each exactly one, so anything else means a layer
     // stopped drawing or started drawing twice.
-    expect(labels).toHaveLength(6 + CELL_PRESETS.length + 1);
+    expect(labels).toContain("quest beacon");
+    // Six mesh-layer materials (buildings, plates, roads, areas, trees, poi),
+    // every cell preset, the cell outlines, and the quest beacon.
+    expect(labels).toHaveLength(6 + CELL_PRESETS.length + 2);
   });
 
   it("keeps every material diffuse enough to be lit by lights alone", () => {

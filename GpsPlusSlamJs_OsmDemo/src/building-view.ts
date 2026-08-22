@@ -41,6 +41,8 @@ import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
+import { createQuestBeacons } from "./quest-beacon.js";
+import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
 import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
@@ -325,6 +327,17 @@ export class BuildingView {
    * named rather than left implicit.
    */
   private readonly content = new SceneContent(this.scene);
+
+  /**
+   * The 3D quest markers (N6, DEC-K4).
+   *
+   * ON THE CONTENT ROOT, not the scene: content added straight to the scene is
+   * left behind when AR starts, and a quest you can see on the desktop and not
+   * while walking to it is the wrong half of the feature. `attachTo` applies
+   * `DEMO_TO_NUE` and the ENU offset to the whole subtree, so the placements
+   * stay in demo coordinates and need no per-object conversion.
+   */
+  private readonly questBeacons = createQuestBeacons();
   private readonly camera: THREE.PerspectiveCamera;
   /**
    * Watches the CONTAINER, not the window (W1, finding R3-2).
@@ -584,6 +597,11 @@ export class BuildingView {
     );
 
     this.content.add(this.group);
+    // THE BEACONS JOIN THE CONTENT ROOT ONCE, HERE. An earlier version of this
+    // line landed inside `renderCells`, which attached them only when the cell
+    // grid happened to be rebuilt — so they were absent on a fresh view and the
+    // e2e caught it by measuring nothing when they were cleared.
+    this.content.add(this.questBeacons.root);
     // Ambient LOWERED from 0.55. Ambient light is flat by definition — it adds the
     // same amount to every facet regardless of its normal — so it was actively
     // washing out the only cue that distinguishes one ground facet from the next.
@@ -817,6 +835,23 @@ export class BuildingView {
    * and raises no error -- which reads as 'the 3D view is empty' and is
    * indistinguishable from half a dozen other causes.
    */
+  /**
+   * Show a beacon for every held quest, or none at all.
+   *
+   * A PUBLIC METHOD BECAUSE `content` IS PRIVATE, and deliberately so — the
+   * AR content seam is guarded by source text in
+   * `building-view-content.test.ts`, and a caller reaching into the scene
+   * graph directly would route around that guard entirely.
+   *
+   * REPAINTS, because the demo has no permanent render loop (DEC-R3-9). A
+   * marker added between frames would appear only when something else
+   * happened to request one — which, on a still desktop view, can be never.
+   */
+  setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
+    this.questBeacons.set(placements);
+    this.requestFrame();
+  }
+
   setFarPlane(farPlaneM: number): void {
     if (!Number.isFinite(farPlaneM) || farPlaneM <= 0) return;
     this.camera.far = farPlaneM;

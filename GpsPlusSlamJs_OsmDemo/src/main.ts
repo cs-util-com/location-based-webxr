@@ -125,6 +125,7 @@ import {
   type Heightfield,
 } from "./heightfield.js";
 import { createTerrainCycle } from "./terrain-cycle.js";
+import { questBeaconPlacements } from "./quest-beacon-placement.js";
 import { fixedScale, heatColour } from "./heat-colours.js";
 import {
   BuildingView,
@@ -2753,6 +2754,22 @@ async function main(): Promise<void> {
     (event) => {
       mapView.renderGeoEvent(event);
       paintGeoEventButton();
+      // AND IN 3D (N6, DEC-K4). Same source of truth as the map, in the same
+      // subscriber, so the two views cannot disagree about which quests exist
+      // — which is the whole reason this milestone was asked for.
+      //
+      // NOT A TOGGLE: "Show Quests" is a one-shot search holding a single
+      // event, so the beacons appear when one is held and are cleared when it
+      // goes (a category change clears it).
+      buildingView.setQuestBeacons(
+        event === undefined
+          ? []
+          : questBeaconPlacements(
+              event.picks,
+              enuFrameAt(anchors.origin),
+              terrain,
+            ),
+      );
     },
   );
   // The label's distance is measured from where the user is NOW, so walking
