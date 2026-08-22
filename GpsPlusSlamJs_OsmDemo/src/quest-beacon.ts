@@ -1,10 +1,7 @@
 import * as THREE from "three";
 
 import { GEO_WINNER_COLOUR } from "./surface-colours.js";
-import {
-  QUEST_BEACON_HOVER_M,
-  type QuestBeaconPlacement,
-} from "./quest-beacon-placement.js";
+import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
 
 /**
  * The 3D quest markers (N6, DEC-U14, DEC-K4).
@@ -151,6 +148,3 @@ export function createQuestBeacons(): QuestBeacons {
     },
   };
 }
-
-/** Re-exported so callers need one import for the whole feature. */
-export { QUEST_BEACON_HOVER_M };
