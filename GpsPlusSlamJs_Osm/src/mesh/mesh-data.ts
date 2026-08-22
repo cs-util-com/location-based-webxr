@@ -44,6 +44,55 @@ function rotated(
   return [x, y, z];
 }
 
+/**
+ * Smallest capacity a growing buffer is given, in elements.
+ *
+ * 96 floats is 32 vertices — one `box`, which is the smallest thing any emitter
+ * here builds. Small enough that the thousands of transient POI meshes do not
+ * over-allocate, large enough that none of them grows at all.
+ */
+const INITIAL_CAPACITY = 96;
+
+/**
+ * `array` with room for `extra` more elements past `len`, doubling as needed.
+ *
+ * Returns the SAME array when it already fits, so the common path is one length
+ * comparison. Capacity doubles rather than growing to fit, which is what makes
+ * `n` appends cost `O(n)` amortised instead of `O(n²)`; a single append larger
+ * than the current capacity (a whole mesh arriving through `append`) doubles
+ * until it fits rather than allocating exactly, so a run of large appends does
+ * not reallocate on every one.
+ *
+ * @see grownU32 for the index-buffer twin — two functions rather than one
+ * generic over the constructor, because the generic version needs a cast at
+ * every call site to keep the element type, which costs more clarity than the
+ * duplication does.
+ */
+function grownF32(
+  array: Float32Array,
+  len: number,
+  extra: number,
+): Float32Array {
+  const needed = len + extra;
+  if (needed <= array.length) return array;
+  let capacity = array.length === 0 ? INITIAL_CAPACITY : array.length;
+  while (capacity < needed) capacity *= 2;
+  const grown = new Float32Array(capacity);
+  grown.set(array.subarray(0, len));
+  return grown;
+}
+
+/** {@link grownF32} for the `Uint32Array` index buffer. */
+function grownU32(array: Uint32Array, len: number, extra: number): Uint32Array {
+  const needed = len + extra;
+  if (needed <= array.length) return array;
+  let capacity = array.length === 0 ? INITIAL_CAPACITY : array.length;
+  while (capacity < needed) capacity *= 2;
+  const grown = new Uint32Array(capacity);
+  grown.set(array.subarray(0, len));
+  return grown;
+}
+
 /** A renderable mesh, in the local ENU frame, metres. */
 export interface MeshData {
   /**
@@ -124,19 +173,45 @@ export interface MeshData {
  * reversals" is therefore not a mechanical edit, while one reflection at the
  * boundary is provably complete — no emitter can be missed because no emitter
  * is involved.
+ *
+ * **THE ACCUMULATORS ARE GROWABLE TYPED ARRAYS, AND THAT IS A MEASURED CHOICE.**
+ * They were `number[]` with one `push` per element until 2026-08-22, so every
+ * float made the trip float32 → boxed double → float32 and merging one chunk's
+ * buildings ran ~5.6 million `push` calls. A `--cpu-prof` of the demo's whole
+ * `buildMesh` ranked this class first at **20.6 % of sampled CPU** — `build`
+ * 11.3 %, `append` 6.5 %, `vertex` 2.9 % — ahead of the ear-clipping quadratic
+ * at 8.9 %, plus a share of the 7.7 % spent in GC. Writing into pre-sized
+ * buffers and letting `append` do whole-array `set()` copies took `mergeMeshes`
+ * down **66 %** and the demo's whole mesh build down **24 %**, with
+ * byte-identical output. See `mesh-data.ts.md` for the full numbers and
+ * `mesh-data.bench.ts` for the instrument.
  */
 export class MeshBuilder {
-  private readonly px: number[] = [];
-  private readonly nx: number[] = [];
-  private readonly idx: number[] = [];
+  /**
+   * Positions and normals, in lockstep, with `pxLen` floats written.
+   *
+   * **TYPED AND GROWN BY DOUBLING, not `number[]` with `push`** — see
+   * {@link grownF32} and the class docstring's cost note. The two share one
+   * length because every write path appends to both.
+   */
+  private px: Float32Array = new Float32Array(0);
+  private nx: Float32Array = new Float32Array(0);
+  private pxLen = 0;
+  private idx: Uint32Array = new Uint32Array(0);
+  private idxLen = 0;
   /**
    * Per-vertex RGB, created LAZILY on the first paint.
    *
    * `undefined` until something is actually painted, so an unpainted mesh
    * allocates nothing — see `MeshData.colours` for why that matters on the
    * chunk-meshing path.
+   *
+   * **Its own length**, rather than deriving from `pxLen`, because `append`
+   * deliberately writes the colours BEFORE the positions — the two are briefly
+   * out of step and that ordering is what keeps the backfill correct.
    */
-  private cx: number[] | undefined;
+  private cx: Float32Array | undefined;
+  private cxLen = 0;
   /** The colour `vertex` applies, or `undefined` while nothing is painted. */
   private current: readonly [number, number, number] | undefined;
 
@@ -162,16 +237,18 @@ export class MeshBuilder {
   }
 
   /** Creates the colour array if needed, backfilling existing vertices white. */
-  private ensureColours(): number[] {
-    if (this.cx === undefined) {
-      this.cx = [];
-      // WHITE, NOT THE CURRENT COLOUR. Vertices written before the first paint
-      // were meant to be the model's own colour, and white is the identity
-      // under `vertexColors`. Backfilling with the new colour instead would
-      // retro-paint faces the author had already finished.
-      for (let i = 0; i < this.px.length / 3; i++) this.cx.push(1, 1, 1);
-    }
-    return this.cx;
+  private ensureColours(): void {
+    if (this.cx !== undefined) return;
+    // One RGB triple per vertex written so far, i.e. exactly as many floats as
+    // `positions` has.
+    const colours = new Float32Array(Math.max(INITIAL_CAPACITY, this.pxLen));
+    // WHITE, NOT THE CURRENT COLOUR. Vertices written before the first paint
+    // were meant to be the model's own colour, and white is the identity
+    // under `vertexColors`. Backfilling with the new colour instead would
+    // retro-paint faces the author had already finished.
+    colours.fill(1, 0, this.pxLen);
+    this.cx = colours;
+    this.cxLen = this.pxLen;
   }
 
   /**
@@ -251,7 +328,7 @@ export class MeshBuilder {
     nyv: number,
     nzv: number,
   ): number {
-    const index = this.px.length / 3;
+    const index = this.pxLen / 3;
     // THE IDENTITY PATH IS THE ORIGINAL PATH, byte for byte. Every non-POI mesh
     // in the package builds with an empty stack, and routing those through the
     // rotation arithmetic would drift each coordinate by a rounding error that
@@ -263,11 +340,24 @@ export class MeshBuilder {
     // ENU north arrives as +z and is stored as -z: emitters work in the ENU
     // frame, the buffers are in the RIGHT-HANDED render frame. See the class
     // docstring for why the reflection also forces the winding reversal below.
-    this.px.push(x, y, -z);
-    this.nx.push(nxv, nyv, -nzv);
+    const at = this.pxLen;
+    this.px = grownF32(this.px, at, 3);
+    this.nx = grownF32(this.nx, at, 3);
+    this.px[at] = x;
+    this.px[at + 1] = y;
+    this.px[at + 2] = -z;
+    this.nx[at] = nxv;
+    this.nx[at + 1] = nyv;
+    this.nx[at + 2] = -nzv;
+    this.pxLen = at + 3;
     if (this.cx !== undefined) {
       const [r, g, b] = this.current ?? [1, 1, 1];
-      this.cx.push(r, g, b);
+      const colours = grownF32(this.cx, this.cxLen, 3);
+      colours[this.cxLen] = r;
+      colours[this.cxLen + 1] = g;
+      colours[this.cxLen + 2] = b;
+      this.cx = colours;
+      this.cxLen += 3;
     }
     return index;
   }
@@ -276,7 +366,12 @@ export class MeshBuilder {
     // Reversed because `vertex` reflects. For a reflection M with det(M) = -1,
     // cross(Mu, Mv) = -M(u x v) — so mirroring alone would leave every triangle
     // wound against its own normal, lit correctly and culled backwards.
-    this.idx.push(a, c, b);
+    const at = this.idxLen;
+    this.idx = grownU32(this.idx, at, 3);
+    this.idx[at] = a;
+    this.idx[at + 1] = c;
+    this.idx[at + 2] = b;
+    this.idxLen = at + 3;
   }
 
   /**
@@ -291,36 +386,71 @@ export class MeshBuilder {
    * throwing, and reads as a modelling mistake.
    */
   append(mesh: MeshData): void {
-    const offset = this.px.length / 3;
+    // POSITIONS AND NORMALS ARE ONE BUFFER PAIR HERE, so a mesh whose normals
+    // do not match its positions would silently misalign every vertex after the
+    // join. The old element-wise loop turned that into `NaN` normals instead —
+    // equally wrong and harder to trace — so it is rejected at the boundary.
+    if (mesh.normals.length !== mesh.positions.length) {
+      throw new Error(
+        `MeshBuilder.append: normals (${mesh.normals.length}) must match positions (${mesh.positions.length})`,
+      );
+    }
+    const offset = this.pxLen / 3;
     const vertexCount = mesh.positions.length / 3;
-    // COLOURS FIRST, BEFORE THE POSITIONS ARE PUSHED. `ensureColours` backfills
-    // from the CURRENT vertex count, so running it after the loop would count
-    // the incoming vertices as needing white and then append their real colours
-    // on top — leaving the array longer than the positions by exactly the
-    // appended mesh. Caught by the alignment test, which is why it exists.
+    // COLOURS FIRST, BEFORE THE POSITIONS ARE WRITTEN. `ensureColours` backfills
+    // from the CURRENT vertex count, so running it afterwards would count the
+    // incoming vertices as needing white and then append their real colours on
+    // top — leaving the array longer than the positions by exactly the appended
+    // mesh. Caught by the alignment test, which is why it exists.
     if (mesh.colours !== undefined) {
-      const colours = this.ensureColours();
-      for (const value of mesh.colours) colours.push(value);
+      this.ensureColours();
+      const colours = grownF32(
+        this.cx as Float32Array,
+        this.cxLen,
+        mesh.colours.length,
+      );
+      colours.set(mesh.colours, this.cxLen);
+      this.cx = colours;
+      this.cxLen += mesh.colours.length;
     } else if (this.cx !== undefined) {
       // Already painted, and the incoming mesh is not — white keeps the arrays
       // the same length, and renders it as the model's own colour.
-      for (let i = 0; i < vertexCount; i++) this.cx.push(1, 1, 1);
+      const needed = vertexCount * 3;
+      const colours = grownF32(this.cx, this.cxLen, needed);
+      colours.fill(1, this.cxLen, this.cxLen + needed);
+      this.cx = colours;
+      this.cxLen += needed;
     }
-    for (let i = 0; i < mesh.positions.length; i++) {
-      this.px.push(mesh.positions[i] as number);
-      this.nx.push(mesh.normals[i] as number);
+    // WHOLE-ARRAY COPIES. Both sides are already `Float32Array`, so this is a
+    // memcpy rather than the element-by-element round trip through boxed
+    // doubles that made `append` 6.5 % of the demo's whole mesh build.
+    this.px = grownF32(this.px, this.pxLen, mesh.positions.length);
+    this.px.set(mesh.positions, this.pxLen);
+    this.nx = grownF32(this.nx, this.pxLen, mesh.normals.length);
+    this.nx.set(mesh.normals, this.pxLen);
+    this.pxLen += mesh.positions.length;
+    // The indices are the one buffer that cannot be copied wholesale: each is
+    // re-based onto this builder's vertex numbering.
+    this.idx = grownU32(this.idx, this.idxLen, mesh.indices.length);
+    for (let i = 0; i < mesh.indices.length; i++) {
+      this.idx[this.idxLen + i] = (mesh.indices[i] as number) + offset;
     }
-    for (const index of mesh.indices) this.idx.push(index + offset);
+    this.idxLen += mesh.indices.length;
   }
 
   build(forcedEars = 0): MeshData {
+    // `slice` on a typed array copies exactly the written prefix, so the
+    // returned buffers are the mesh's true size and none of the spare capacity
+    // is transferred to a worker or retained by the scene.
     return {
-      positions: new Float32Array(this.px),
-      normals: new Float32Array(this.nx),
-      indices: new Uint32Array(this.idx),
-      triangleCount: this.idx.length / 3,
+      positions: this.px.slice(0, this.pxLen),
+      normals: this.nx.slice(0, this.pxLen),
+      indices: this.idx.slice(0, this.idxLen),
+      triangleCount: this.idxLen / 3,
       forcedEars,
-      ...(this.cx === undefined ? {} : { colours: new Float32Array(this.cx) }),
+      ...(this.cx === undefined
+        ? {}
+        : { colours: this.cx.slice(0, this.cxLen) }),
     };
   }
 }
