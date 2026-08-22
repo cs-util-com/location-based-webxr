@@ -116,6 +116,11 @@ async function buildArOverlayFixture(page) {
   // ⚠️ IT COUPLES THIS FIXTURE TO THE DEV SERVER. Pointed at a built preview,
   // the import 404s and this throws — loudly, which is the right failure: a
   // silent fallback to a replica is what this replaces.
+  //
+  // AND IT COSTS A KNIP ENTRY: `/src/...` is not node-resolvable from this
+  // file, so the root `check:deadcode` stage fails on it without the
+  // `ignoreUnresolved` line in the repo-root `knip.json` (reasoning in
+  // `knip.json.md`). Rename this module and BOTH places have to move.
   await page.evaluate(async () => {
     const bottom = document.querySelector("#ar-root .ar-bottom");
     if (bottom === null) throw new Error("no .ar-bottom");

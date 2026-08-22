@@ -100,6 +100,23 @@ entirely after confirming they were only transitively pulled in.
   whole gallery as an unused file and `buildGallery` as an unused export,
   which is how it failed the first time it was added. **If another page
   is ever added, its entry belongs here too.**
+  - **`ignoreUnresolved: ["/src/ar-compass-control.ts"]`** — the AR compass
+    e2e mounts the REAL control instead of a replica by
+    `await import("/src/ar-compass-control.ts")` inside `page.evaluate`
+    (`playwright-tests/boot-and-shell.spec.js`). That specifier is resolved by
+    the Vite DEV SERVER at runtime, from the page's root URL — it is not a
+    node-resolvable path relative to the spec file, so knip reports it as an
+    unresolved import and fails the gate at `error` severity.
+    - **The ignore cannot hide a regression here**, which is the only reason it
+      is acceptable: if the module is renamed or moved, the import 404s and the
+      e2e throws immediately. The spec's own comment says so. Knip's static
+      check was never the thing protecting this link; the runtime failure is.
+    - **It is an exact-string ignore, not a glob** — a second such import would
+      fail the gate and have to be added deliberately, which is the point.
+    - Found by the once-per-session root cascade, NOT by the per-commit gate:
+      `test:changed` never runs knip, and neither does any package's own
+      `pnpm test`. `check:deadcode` exists only as a root stage, which is why
+      the M3 commit that introduced the import passed its own gate green.
 
 ## Tests
 
