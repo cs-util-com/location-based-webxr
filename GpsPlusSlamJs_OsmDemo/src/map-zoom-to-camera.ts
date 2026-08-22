@@ -37,15 +37,29 @@ export const MIN_CAMERA_DISTANCE_M = 30;
  * Furthest the camera may go — and this clamp is REQUIRED, not defensive.
  *
  * Leaflet is given no `minZoom` here, so the map can zoom out to z10, which asks
- * for a camera roughly **36 km** away. The far plane is `FAR_PLANE_M = 2400`, so
- * everything would be clipped and the user would get an empty grey screen with
- * no error anywhere.
+ * for a camera roughly **36 km** away. Everything would be clipped and the user
+ * would get an empty grey screen with no error anywhere.
  *
- * 1200 rather than 2400 because the camera is TILTED: at distance `d` the far
+ * **HALF THE FAR PLANE, because the camera is TILTED:** at distance `d` the far
  * edge of the view is considerably further than `d`, so a limit at the far plane
  * itself would still clip the horizon. Half leaves room for the trapezoid.
+ *
+ * **RAISED 1200 → 2400 BY DEC-K2 (2026-08-22), and the reason is the request
+ * that prompted it.** The old value was half of `FAR_PLANE_M = 2400`, the 1x
+ * baseline. The page now boots at `DEFAULT_RENDER_MULTIPLIER`, drawing to
+ * 4800 m, and a map that could still only pull the camera to 1200 m would let
+ * the operator see a quarter of the distance the scene draws. The field ask was
+ * literally "dann kann ich schön weit rauszoomen" — leaving this constant behind
+ * would have delivered the draw distance and withheld the zoom.
+ *
+ * ⚠️ **It tracks the DEFAULT multiplier, not the current one.** Turning the dial
+ * down to 1x leaves this clamp past that far plane, so a fully zoomed-out map
+ * can then clip. Deliberate: the alternative is a clamp that moves under the
+ * user's hand while they drag a different control, and the recovery here is to
+ * zoom back in — visible and immediate, unlike the grey screen the clamp exists
+ * to prevent.
  */
-export const MAX_CAMERA_DISTANCE_M = 1200;
+export const MAX_CAMERA_DISTANCE_M = 2400;
 
 export interface ZoomToCameraInput {
   /** Leaflet zoom level (may be fractional during a pinch). */

@@ -1961,13 +1961,20 @@
         perf
       </label>
       <!--
-        THE RENDER-DISTANCE DIAL (r541 Q9/Q10). A debug instrument, not a new
-        default: at 1x it writes back exactly the shipped far plane, so the
-        view is unchanged until the operator moves it.
+        THE RENDER-DISTANCE DIAL (r541 Q9/Q10; default raised by DEC-K2).
 
-        THE READOUT IS PAINTED FROM THE CAMERA, not from the slider, so it
-        reports what the projection matrix actually holds rather than what was
-        asked for.
+        IT IS NO LONGER A DEBUG-ONLY INSTRUMENT. It used to say "not a new
+        default: at 1x it writes back exactly the shipped far plane". Since
+        DEC-K2 the page BOOTS at 2x, from a field test that asked for 4800 m
+        by name, and the boot path applies this value rather than only
+        painting it.
+
+        THIS `value` IS THE SINGLE SOURCE and must equal
+        `DEFAULT_RENDER_MULTIPLIER` in `render-distance.ts` --
+        `render-distance-markup.test.ts` fails if it does not. A value the
+        boot path does not apply is invisible: the readout is painted from the
+        CAMERA, so it would correctly report the un-applied distance while the
+        thumb sat somewhere else.
       -->
       <label class="layer-toggle" id="render-distance-label">
         <input
@@ -1976,7 +1983,7 @@
           min="1"
           max="10"
           step="1"
-          value="1"
+          value="2"
           aria-label="Render distance multiplier"
         />
         <span id="render-distance-value">draw 2400 m</span>

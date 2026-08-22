@@ -100,13 +100,27 @@ export interface CameraInUrl {
  */
 const MIN_DISTANCE_M = 1;
 /**
- * The far plane, 2400 m — **written out rather than imported**, because this
- * module is deliberately free of the 3D view: importing `FAR_PLANE_M` would
- * make a pure URL parser depend on `building-view.ts` and, through it, on
- * three.js. `url-state.test.ts` asserts the two agree, which is this repo's
+ * The far plane the page BOOTS with, 4800 m — **written out rather than
+ * imported**, because this module is deliberately free of the 3D view:
+ * importing `FAR_PLANE_M` would make a pure URL parser depend on
+ * `building-view.ts` and, through it, on three.js. `url-state.test.ts` asserts
+ * it equals `FAR_PLANE_M * DEFAULT_RENDER_MULTIPLIER`, which is this repo's
  * usual answer to "two values that match today with nothing saying they must".
+ *
+ * **RAISED 2400 → 4800 BY DEC-K2 (2026-08-22).** It used to be the 1x baseline.
+ * Since the page boots at `DEFAULT_RENDER_MULTIPLIER` it drew to 4800 m while
+ * still refusing to SHARE any camera beyond 2400 — so a user who zoomed out and
+ * pasted the link sent a truncated view with no error on either side. That is
+ * the round-trip hole this module's own comments warn about, in the direction
+ * nobody checked when the default moved.
+ *
+ * ⚠️ **A link is bounded by the DEFAULT, and a recipient who has turned their
+ * dial down to 1x can restore a target past their far plane and see nothing.**
+ * Accepted: a pasted link always opens a freshly booted page, which is at the
+ * default; the 1x case is a deliberate act by the recipient with an obvious
+ * remedy, while silent truncation is neither visible nor recoverable.
  */
-export const MAX_DISTANCE_M = 2400;
+export const MAX_DISTANCE_M = 4800;
 
 /**
  * The query string `search` should become for `place`.

@@ -1994,13 +1994,24 @@ async function main(): Promise<void> {
       buildingView.farPlaneM(),
     )} m · haze ${Math.round(buildingView.fogNearM())} m`;
   };
-  renderDistanceInput.addEventListener("input", () => {
+  const applyRenderDistance = (): void => {
     const multiplier = Number.parseFloat(renderDistanceInput.value);
     buildingView.setFarPlane(renderDistanceFor(multiplier).farPlaneM);
     paintRenderDistance();
-  });
-  // PAINTED ONCE AT BOOT, so the readout is not stale before the first drag.
-  paintRenderDistance();
+  };
+  renderDistanceInput.addEventListener("input", applyRenderDistance);
+  // APPLIED AT BOOT, NOT MERELY PAINTED (DEC-K2). The markup's `value` is the
+  // single source for the starting multiplier, so the camera has to be moved to
+  // match it before the first paint.
+  //
+  // IT USED TO CALL `paintRenderDistance()` HERE, which was correct only while
+  // the default was 1x: the applied and un-applied far planes were the same
+  // number, so nothing could disagree. At any other default that line leaves the
+  // thumb and the drawn distance apart, and — because the readout reads the
+  // CAMERA rather than the slider — the text agrees with the camera and the
+  // whole screen looks consistent. `render-distance-markup.test.ts` pins the
+  // markup half; the e2e boot assertion pins this half.
+  applyRenderDistance();
   paintShowBelow(selectLayers(store.getState()));
   // THE SAME FIRST-PAINT GAP AS `paintShowBelow`, one control over. The readout
   // is written only by `paintGeoEventButton`, which is reached from

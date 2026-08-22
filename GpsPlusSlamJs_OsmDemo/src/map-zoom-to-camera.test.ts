@@ -16,6 +16,8 @@ import {
   MAX_CAMERA_DISTANCE_M,
   MIN_CAMERA_DISTANCE_M,
 } from "./map-zoom-to-camera";
+import { FAR_PLANE_M } from "./building-view.js";
+import { DEFAULT_RENDER_MULTIPLIER } from "./render-distance.js";
 
 const BASE = {
   latDeg: 50.94,
@@ -47,11 +49,23 @@ describe("cameraDistanceForZoom", () => {
 
   it("clamps the fully-zoomed-out case instead of asking for 36 km", () => {
     // The reported hazard: Leaflet has no minZoom here, so z10 asks for a
-    // camera far past the 2400 m far plane and the user gets a grey screen.
+    // camera far past the far plane and the user gets a grey screen.
     const d = cameraDistanceForZoom({ ...BASE, zoom: 10 });
     expect(d).toBe(MAX_CAMERA_DISTANCE_M);
-    // And the clamp must actually sit inside the far plane, not merely exist.
-    expect(MAX_CAMERA_DISTANCE_M).toBeLessThan(2400);
+    // And the clamp must actually sit inside the far plane THE PAGE BOOTS WITH,
+    // not the 1x baseline (DEC-K2). The literal 2400 that used to be here was
+    // the baseline, and leaving it would have kept this green while the map
+    // reached only a quarter of the drawn distance — which is the specific
+    // complaint the render-distance default was raised to answer.
+    expect(MAX_CAMERA_DISTANCE_M).toBeLessThan(
+      FAR_PLANE_M * DEFAULT_RENDER_MULTIPLIER,
+    );
+    // HALF, because the camera is tilted: at distance d the far edge of the
+    // view is considerably further than d, so a limit at the far plane itself
+    // would still clip the horizon.
+    expect(MAX_CAMERA_DISTANCE_M).toBe(
+      (FAR_PLANE_M * DEFAULT_RENDER_MULTIPLIER) / 2,
+    );
   });
 
   it("clamps the fully-zoomed-in case rather than putting the camera inside a wall", () => {

@@ -1942,7 +1942,7 @@ test.describe("the NPC agent", () => {
     });
   });
 
-  test("the render-distance dial moves the camera AND the fog, and is inert at 1x", async ({
+  test("the render-distance dial moves the camera AND the fog, boots at 2x, and is still inert at 1x", async ({
     page,
   }) => {
     /**
@@ -1973,10 +1973,18 @@ test.describe("the NPC agent", () => {
 
     const readout = page.locator("#render-distance-value");
 
-    // INERT AT 1x (DEC-Y24). The shipped view must be untouched until the
-    // operator moves the dial, so the boot state reports the shipped far plane
-    // and its 0.66 haze — 2400 and 1584.
-    await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+    // BOOTS AT 2x (DEC-K2, superseding DEC-Y24). It used to say "INERT AT 1x —
+    // the shipped view must be untouched until the operator moves the dial".
+    // A field session tested 4800 m on a phone and asked for it as the default,
+    // so the page now applies the markup's value at boot instead of only
+    // painting it.
+    //
+    // THIS ASSERTION IS THE ONLY THING PINNING THE BOOT PATH. The unit suite
+    // can pin the markup against the constant, but `BuildingView` constructs a
+    // `WebGLRenderer` and cannot be instantiated there — so "the camera was
+    // actually moved to match" is provable only here. Painting without applying
+    // would leave this reading 2400 while the thumb sat at 2.
+    await expect(readout).toHaveText("draw 4800 m · haze 3168 m");
 
     const slider = page.locator("#render-distance");
     await slider.fill("10");
@@ -1989,6 +1997,12 @@ test.describe("the NPC agent", () => {
 
     // AND BACK, so the dial is reversible on the street rather than a one-way
     // door that needs a reload to undo.
+    //
+    // ⚠️ THIS ONE STAYS 2400. It follows an explicit `fill("1")`, so it asserts
+    // the 1x BASELINE and not the boot default — the two were the same number
+    // until DEC-K2 and are not any more. Changing it alongside the boot
+    // expectation above would turn a correct test red; the cold review of the
+    // plan caught exactly that edit.
     await slider.fill("1");
     await slider.dispatchEvent("input");
     await expect(readout).toHaveText("draw 2400 m · haze 1584 m");

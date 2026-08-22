@@ -805,9 +805,12 @@ export class BuildingView {
    * `moveGroundTo`'s own comment. So this touches the camera and the fog and
    * nothing else.
    *
-   * **A DEBUG INSTRUMENT, NOT A NEW DEFAULT.** `FAR_PLANE_M` is unchanged and
-   * `far-field.test.ts` still pins the shipped view; passing `FAR_PLANE_M`
-   * here restores it exactly.
+   * **NO LONGER A DEBUG-ONLY INSTRUMENT (DEC-K2, 2026-08-22).** This used to
+   * say "a debug instrument, not a new default", and that `far-field.test.ts`
+   * pinned the shipped view. `main.ts` now CALLS this at boot with the dial's
+   * markup value, so the shipped view is whatever it applies. `FAR_PLANE_M` is
+   * still unchanged and passing it here still restores the 1x baseline exactly
+   * — that is the part that survived.
    *
    * Non-finite or non-positive input is ignored rather than applied: this
    * number reaches the projection matrix, where a `NaN` renders nothing at all

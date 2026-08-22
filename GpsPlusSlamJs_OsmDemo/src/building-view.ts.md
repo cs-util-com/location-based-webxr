@@ -454,8 +454,19 @@ would pass against it.
 fog, and is inert at 1x". It cannot be a unit test — `BuildingView` constructs a
 `WebGLRenderer`, as `building-view-content.test.ts` records.
 
-**Known limits, unfixed and deliberate:** `MAX_CAMERA_DISTANCE_M = 1200` caps how
-far the MAP zoom can pull the camera back, so at high multipliers the operator
-must wheel-dolly out instead (that path has no cap); and `url-state`s
-`MAX_DISTANCE_M = 2400` rejects a camera target beyond it, so a far-out view
-cannot be shared by link.
+**Known limits, RAISED to match the boot default (DEC-K2, 2026-08-22).** Both
+were derived from the 1x baseline and were acceptable while the dial was a debug
+opt-in; once the page booted at 2x they capped the shipped app instead, and the
+field ask that raised the default was literally about zooming further out.
+
+- `MAX_CAMERA_DISTANCE_M` 1200 → **2400** — half the boot far plane, because the
+  camera is tilted and a limit at the far plane itself would still clip the
+  horizon. The map zoom now reaches half the drawn distance rather than a
+  quarter. The wheel-dolly path still has no cap.
+- `url-state`'s `MAX_DISTANCE_M` 2400 → **4800** — the boot far plane, so a
+  far-out view can be shared by link instead of being silently truncated.
+- ⚠️ **Both track the DEFAULT multiplier, not the live one.** Turning the dial
+  down to 1x leaves each past that far plane, so a fully zoomed-out map can clip
+  and a restored link can land on nothing. Accepted deliberately: the recovery
+  is visible and immediate (zoom back in, or turn the dial up), whereas a
+  silently truncated share link is neither.

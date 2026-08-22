@@ -27,11 +27,20 @@ import { FAR_PLANE_M } from "./building-view.js";
  * has scoped. `BuildingView.setFarPlane` moves the camera and the fog and
  * nothing else.
  *
- * **AN INSTRUMENT, NOT A NEW DEFAULT (DEC-Y24).** `FAR_PLANE_M` is
- * unchanged and `far-field.test.ts` still pins the shipped default view. This module only computes what a
- * deliberately-opted-into debug session should use instead. If wiring it ever
- * requires editing those constants, the design is wrong and gets re-planned
- * rather than the guard relaxed.
+ * **DEC-Y24 IS SUPERSEDED (DEC-K2, 2026-08-22).** It said "an instrument, not a
+ * new default", and that the shipped view was pinned by `far-field.test.ts`.
+ * Both halves have changed and leaving the paragraph would mislead:
+ *
+ * - The dial now BOOTS at `DEFAULT_RENDER_MULTIPLIER`, so it is the default
+ *   picture rather than an opt-in. A field session tested 2x on-device and
+ *   asked for it — "das sieht super aus, dann kann ich schön weit rauszoomen".
+ * - `far-field.test.ts` never pinned the shipped VIEW; it pins the CONSTANT
+ *   `FAR_PLANE_M`, which this change deliberately does not move. Its own
+ *   comment warns about assertions that keep passing while the invariant they
+ *   name goes false, and it had become one. It is re-scoped alongside this.
+ *
+ * `FAR_PLANE_M` is still the 1x baseline and is still unchanged. What moved is
+ * which multiplier the page starts on.
  *
  * Pure on purpose, like `elevation-nudge.ts`, `map-zoom-to-camera.ts` and
  * `ar-descent.ts`: the arithmetic and its invariant are the part worth testing,
@@ -81,6 +90,31 @@ import { FAR_PLANE_M } from "./building-view.js";
  * measured limit, and finding the affordable value is what the control is for.
  */
 export const MAX_RENDER_MULTIPLIER = 10;
+
+/**
+ * The multiplier the page starts on (DEC-K2, 2026-08-22).
+ *
+ * **2x — draw 4800 m, haze 3168 m — chosen from a field test, not a
+ * derivation.** The sixteenth session ran the dial up on a real phone, saw no
+ * performance problem at any setting, and asked for this value specifically.
+ * That is better evidence than anything the gates here can produce, and it is
+ * the whole reason the number is 2 rather than something with a formula behind
+ * it.
+ *
+ * **THE DEFAULT VIEW NOW DRAWS PAST THE GROUND PLATE, AND THAT IS THE ACCEPTED
+ * HALF OF A DECISION WHOSE OTHER HALF STILL HOLDS.** `TERRAIN_EXTENT_M` is
+ * 2400, so at 2x there is empty scene beyond the ground's edge. The owner
+ * decision of 2026-08-21 says exactly that is acceptable and that INVENTED
+ * terrain is not — widening the plate to match would extrude the edge profile
+ * outward as fabricated relief (R2-9). So this constant may be raised; the
+ * ground plate still must not follow it.
+ *
+ * **IT IS THE MARKUP'S VALUE TOO.** `index.html` carries it as the dial's
+ * `value` and the boot path applies `renderDistanceFor` to whatever the input
+ * holds, so the two cannot drift — `render-distance-markup.test.ts` is the
+ * guard. Painting without applying is the specific bug that guard exists for.
+ */
+export const DEFAULT_RENDER_MULTIPLIER = 2;
 
 export interface RenderDistance {
   /**

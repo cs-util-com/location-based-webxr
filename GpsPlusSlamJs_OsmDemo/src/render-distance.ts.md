@@ -38,9 +38,21 @@ this section exists to prevent.
 
 ## Invariants & assumptions
 
-- **Inert at `1`.** The control must change nothing until it is moved; a drift
-  here turns a measurement instrument into a shipped behaviour change, which
-  DEC-Y24 forbids.
+- **Inert at `1`.** `renderDistanceFor(1)` must return today's values exactly.
+  This is still an invariant of the FUNCTION even though the page no longer boots
+  at 1 — it is what makes the dial's bottom stop mean "the baseline", and what
+  `far-field.test.ts` pins its ground-extent assertion against.
+  - ⚠️ **DEC-Y24 ("an instrument, not a new default") IS SUPERSEDED by DEC-K2,
+    2026-08-22.** The page boots at `DEFAULT_RENDER_MULTIPLIER = 2` — draw
+    4800 m, haze 3168 m — because a field session tested that value on a phone
+    and asked for it. So the default view deliberately draws past the 2400 m
+    ground plate; the 2026-08-21 decision that empty scene there is acceptable
+    is what permits it, and the other half of that decision — that the plate
+    must NOT be widened to match — still holds.
+  - **Two constants were raised with it**, because they were derived from the
+    1x baseline and would otherwise have capped the shipped app rather than a
+    debug session: `MAX_CAMERA_DISTANCE_M` 1200 → 2400 (half the boot far
+    plane, for the tilt) and `url-state`'s `MAX_DISTANCE_M` 2400 → 4800.
 - **Every invalid multiplier collapses to `1`** — `NaN`, both infinities, zero,
   negatives, and anything below 1. This number reaches the camera's `far`, where
   a `NaN` renders nothing and raises no error; the field report would read "the
