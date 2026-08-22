@@ -66,6 +66,66 @@ describe("describeArMeasurements", () => {
       expect(lines).toContain("alt 123.4 m · world floor -1.23 m");
     });
 
+    it("still merges them once a phone reports vertical accuracy (J6)", () => {
+      // WHY THIS TEST MATTERS. The pair has ALWAYS been merged by `pair()`, and
+      // the fifteenth session still saw two lines — because `pair()` declines
+      // when the merged string would wrap, and the ORDINARY case exceeded the
+      // 40-character budget: `alt 105.3 m ±3.5 m (+0.5)` (25) plus ` · ` plus
+      // `world floor 0.42 m` (18) is 46. Phones routinely report
+      // `altitudeAccuracy`, so this was the normal state, not an edge case.
+      //
+      // DEC-J6 takes the `±` off the collapsed line rather than renaming
+      // `world floor` to `floor`, which would have saved the same characters
+      // and collided with the `floor distance` line — a different quantity
+      // entirely, and the exact confusion the last three renames of this readout
+      // were removing.
+      const lines = describeArMeasurements({
+        altitudeM: 105.3,
+        altitudeAccuracyM: 3.5,
+        terrainHeightM: 104.8,
+        worldBaselineY: 0.42,
+      });
+
+      expect(lines).toContain("alt 105.3 m (+0.5) · world floor 0.42 m");
+      // 39 of the 40 available, stated so a future edit knows how little slack
+      // is left before `pair()` starts declining again.
+      expect("alt 105.3 m (+0.5) · world floor 0.42 m".length).toBe(39);
+    });
+
+    it("moves the vertical accuracy to the expanded readout, not away", () => {
+      // The number is not dropped — it is the error bar on the altitude and the
+      // reason the residual beside it can be judged at all. It stops competing
+      // for the collapsed line's 40 characters and nothing more.
+      const measurements = {
+        altitudeM: 105.3,
+        altitudeAccuracyM: 3.5,
+        worldBaselineY: 0.42,
+      };
+
+      expect(describeArMeasurements(measurements)).not.toContain(
+        "alt accuracy ±3.5 m",
+      );
+      expect(
+        describeArMeasurements(measurements, { expanded: true }),
+      ).toContain("alt accuracy ±3.5 m");
+    });
+
+    it("still SPLITS the pair when the numbers are genuinely long", () => {
+      // THE LIMIT, pinned rather than pretended away. A deep negative altitude
+      // with a large residual reaches 43 characters even without the accuracy,
+      // so `pair()` declines and gives back two lines — which is correct: a
+      // merged line that wraps costs the same two rows AND loses the alignment
+      // that made the pairing readable. J6 is about the ordinary case.
+      const lines = describeArMeasurements({
+        altitudeM: -430,
+        terrainHeightM: -442.3,
+        worldBaselineY: -12.34,
+      });
+
+      expect(lines).toContain("alt -430.0 m (+12.3)");
+      expect(lines).toContain("world floor -12.34 m");
+    });
+
     it("keeps a merged line short enough for a 390 px phone", () => {
       // Q3's constraint still governs: a merge is only worth doing where the
       // merged line still fits. At the HUD's 0.9rem this is roughly 40
@@ -229,10 +289,22 @@ describe("the vertical baseline — §4's prediction, on screen", () => {
  * point of showing it.
  */
 describe("altitude readout", () => {
-  it("shows the reported altitude with its vertical accuracy", () => {
+  it("shows the reported altitude, with its accuracy one level down (J6)", () => {
+    // THE COLLAPSED LINE CARRIES THE ALTITUDE ALONE since DEC-J6 — the `±` was
+    // what pushed the `alt`/`world floor` pair over the 40-character budget in
+    // the ordinary case, which is what the fifteenth session saw as two lines.
     expect(
       describeArMeasurements({ altitudeM: 123.45, altitudeAccuracyM: 4.2 }),
-    ).toEqual(["alt 123.5 m ±4.2 m"]);
+    ).toEqual(["alt 123.5 m"]);
+    // AND IT IS STILL REPORTED, one level down. Moved, not dropped: it is the
+    // error bar that says whether the residual beside the altitude is worth
+    // reading at all.
+    expect(
+      describeArMeasurements(
+        { altitudeM: 123.45, altitudeAccuracyM: 4.2 },
+        { expanded: true },
+      ),
+    ).toEqual(["alt 123.5 m", "alt accuracy ±4.2 m"]);
   });
 
   it("shows the altitude alone when no vertical accuracy is reported", () => {
@@ -667,6 +739,53 @@ describe("describeArMeasurements — the height decomposition", () => {
     ).toContain("heading 137° fused");
   });
 
+  it("shows the FUSED position directly beneath the raw one (J7)", () => {
+    // WHY THIS TEST MATTERS. "Ist das wirklich raw oder ist das schon die
+    // gefus[t]e Version? ... Könnte man da parallel auch noch die gefus[t]en
+    // GPS-Koordinaten anzeigen?"
+    //
+    // The answer to the first half is DEC-Y2, reaffirmed: the line IS raw, and
+    // the word stays. The answer to the second is this line — and ADJACENCY is
+    // the point of it, not decoration. `raw` only means something next to
+    // something that is not raw; on its own it has been read as ambiguous in two
+    // consecutive sessions.
+    const lines = describeArMeasurements(
+      {
+        position: { lat: 50.941234, lng: 6.958765 },
+        fusedPosition: { lat: 50.941301, lng: 6.958702 },
+      },
+      { expanded: true },
+    );
+
+    const raw = lines.indexOf("raw gps 50.941234, 6.958765");
+    const fused = lines.indexOf("fused gps 50.941301, 6.958702");
+    expect(raw).toBeGreaterThanOrEqual(0);
+    expect(fused).toBe(raw + 1);
+  });
+
+  it("keeps the fused line in the EXPANDED readout only", () => {
+    // The walking HUD gains no height from this. Both halves of the comparison
+    // are expanded-only, which is where the raw line already lived.
+    expect(
+      describeArMeasurements({
+        position: { lat: 50.941234, lng: 6.958765 },
+        fusedPosition: { lat: 50.941301, lng: 6.958702 },
+      }),
+    ).toEqual([]);
+  });
+
+  it("shows the fused line even when there is no raw fix to pair it with", () => {
+    // They are independent readings from independent sources. Suppressing one
+    // because the other is missing would be the all-or-nothing grouping `pair`
+    // exists to avoid.
+    expect(
+      describeArMeasurements(
+        { fusedPosition: { lat: 50.941301, lng: 6.958702 } },
+        { expanded: true },
+      ),
+    ).toEqual(["fused gps 50.941301, 6.958702"]);
+  });
+
   it("drops every new value when it is not finite", () => {
     // Same rule as the rest of the module: unmeasured is omitted, never zero.
     const lines = describeArMeasurements(
@@ -685,32 +804,38 @@ describe("describeArMeasurements — the height decomposition", () => {
   });
 });
 
-describe("the altitude line's width budget (r543)", () => {
+describe("the altitude line's width budget (r543, retargeted by J6)", () => {
   // WHY THIS TEST MATTERS. Folding the residual into the altitude line was
   // asked for to make the readout SHORTER, and it is not monotonic in that
-  // direction: `pair` falls back to two lines above MAX_LINE_CHARS (40), and
-  // the altitude half grew by ~7 characters. So on a fix that also reports a
-  // vertical accuracy the merge can break — losing the `gps-dem` line but
-  // gaining a split, for a net saving of zero. A cold review pointed out that
-  // nothing pinned the boundary. This test IS the boundary.
+  // direction: `pair` falls back to two lines above MAX_LINE_CHARS (40). A cold
+  // review of PR #333 pointed out that nothing pinned the boundary, and this
+  // test IS the boundary.
+  //
+  // RETARGETED BY DEC-J6, NOT WEAKENED, and the distinction matters because the
+  // diff otherwise reads as someone loosening a review finding.
+  //
+  // What it used to pin: with a vertical accuracy present the pair SPLITS
+  // (25 + 3 + 18 = 46 > 40), and that was accepted as "never worse than before
+  // the fold". The fifteenth session then reported the split as the defect —
+  // and since phones routinely report `altitudeAccuracy`, the split was the
+  // ORDINARY case rather than an extreme one. DEC-J6 moves the accuracy to its
+  // own expanded-only line, so the ordinary case now merges at 39.
+  //
+  // The boundary itself is unchanged and still pinned: what splits now is a
+  // genuinely long reading, which is asserted below.
 
-  it("saves a line when there is no vertical accuracy, and costs none when there is", () => {
-    // THE HONEST GUARANTEE, measured rather than assumed -- the first version
-    // of this test demanded a merge that cannot happen and failed on its own
-    // arithmetic.
+  it("merges the ordinary case, with or without a vertical accuracy", () => {
+    // THE ARITHMETIC, since the boundary is the whole point:
     //
-    // The arithmetic, since the boundary is the whole point:
+    // `alt 105.5 m (+1.5)` is 18 chars, ` · ` is 3, `world floor 0.12 m` is
+    // 18 -- 39 against a 40-char budget, so the pair merges. That now holds
+    // WHETHER OR NOT the fix reported a vertical accuracy, because the accuracy
+    // is no longer on this line (DEC-J6); it was what pushed the same reading
+    // to 46 and forced the split the field reported.
     //
-    // - WITH a vertical accuracy: `alt 105.5 m ±3.0 m (+1.5)` is 25 chars, and
-    //   ` · world floor 0.12 m` brings it to 46 -- over the 40-char budget, so
-    //   the pair splits. Before the fold the alt half was 18 chars and the pair
-    //   merged at 39, with `gps-dem` on its own line. Two lines either way.
-    // - WITHOUT one: `alt 105.5 m (+1.5)` merges at 39 for ONE line, against
-    //   two before. A real saving, and the Geolocation API makes vertical
-    //   accuracy optional, so many devices land here.
-    //
-    // So the fold is never worse and sometimes better -- which is a weaker
-    // claim than "it makes the readout shorter", and is the true one.
+    // BOTH CASES ARE ASSERTED, and the second is the one that changed. Keeping
+    // the first is what stops a future edit "fixing" the merge by making the
+    // lean case worse.
     const heightOf = (m: ArMeasurements) =>
       describeArMeasurements(m).filter(
         (line) =>
@@ -730,7 +855,7 @@ describe("the altitude line's width budget (r543)", () => {
     expect(lean[0]).toContain("(+1.5)");
     expect(lean[0]).toContain("world floor");
 
-    // WITH ONE -- two lines, the same as before the fold, and never three.
+    // WITH ONE -- ALSO one line now, which is the J6 change. It was two.
     const wide = heightOf({
       altitudeM: 105.5,
       altitudeAccuracyM: 3,
@@ -738,13 +863,24 @@ describe("the altitude line's width budget (r543)", () => {
       terrainHasData: true,
       worldBaselineY: 0.12,
     });
-    expect(
-      wide,
-      `grew to ${wide.length} lines: ${wide.join(" | ")}`,
-    ).toHaveLength(2);
+    expect(wide, `did not merge: ${wide.join(" | ")}`).toHaveLength(1);
     // AND THE RESIDUAL IS STILL THERE, so "fewer lines" can never be achieved
     // by quietly dropping the number whose sign separates two filed causes.
     expect(wide.join(" ")).toContain("(+1.5)");
+    // NOR BY DROPPING THE ACCURACY. It moved to the expanded readout; a version
+    // that simply deleted it would pass every assertion above.
+    expect(
+      describeArMeasurements(
+        {
+          altitudeM: 105.5,
+          altitudeAccuracyM: 3,
+          terrainHeightM: 104,
+          terrainHasData: true,
+          worldBaselineY: 0.12,
+        },
+        { expanded: true },
+      ),
+    ).toContain("alt accuracy ±3.0 m");
   });
 
   it("never emits a line wider than the phone budget", () => {

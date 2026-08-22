@@ -326,3 +326,78 @@ reason: which lines belong together is **semantic**, and a width-driven merge
 pass would pair whatever happened to be adjacent. `pair` also keeps either half
 usable alone, which matters because the accuracy is live from the first fix while
 the anchor distance only exists once a session has an anchor.
+
+## The vertical accuracy left the altitude line (J6, DEC-J6 — 2026-08-22)
+
+`alt` and `world floor` have been paired since Q7 — the code has always asked
+`pair()` to merge them — and the fifteenth field session **still reported two
+lines**. The cause was not the pairing but its guard: `pair()` declines when the
+merged string would exceed `MAX_LINE_CHARS` (40), and with the vertical accuracy
+present the ORDINARY case is 46:
+
+```
+alt 105.3 m ±3.5 m (+0.5)  ·  world floor 0.42 m
+        25              +3            18          = 46
+```
+
+Phones routinely report `altitudeAccuracy`, so the merge was declining in the
+normal case rather than an extreme one. **No pairing logic could have fixed
+that** — the string was simply too long.
+
+`±X.X m` therefore moves to its own **expanded-only** line, `alt accuracy ±3.5 m`.
+The collapsed pair is then `alt 105.3 m (+0.5) · world floor 0.42 m` — **39 of
+the 40 available**, which is worth knowing before adding anything to either half.
+
+**It is moved, not dropped.** It is the error bar on the altitude and the only
+thing that says whether the residual beside it is worth reading at all: a ±0.5 m
+residual under a ±30 m fix is noise.
+
+**Renaming `world floor` to `floor` was rejected**, though it saves the same six
+characters. A `floor distance` line already exists and means something else
+entirely — how high the phone is being held — and two lines starting with `floor`
+is precisely the confusion the last three renames of this readout were removing.
+
+**The merge is still not universal, and the limit is pinned rather than hidden.**
+A deep negative altitude with a large residual (`alt -430.0 m (+12.3) · world
+floor -12.34 m`) is 43 characters and still splits. That is `pair()` doing its
+job: a merged line that wraps costs the same two rows _and_ loses the alignment
+that made the pairing readable.
+
+**This retargets the PR #333 guard rather than weakening it.** That review added
+the wrap fallback for exactly this pair and pinned "with an accuracy present, the
+pair splits" as acceptable. The field then reported the split as the defect. The
+boundary itself is unchanged and still asserted; what splits now is a genuinely
+long reading.
+
+## `fused gps`, directly beneath `raw gps` (J7, DEC-J9 — 2026-08-22)
+
+The fifteenth session asked, for the second time in three sessions, whether
+`raw gps` was raw or already fused — and offered to drop the word `raw` if it
+was. **It is not**, and dropping it would restore exactly the ambiguity DEC-Y2
+refused. DEC-Y2 is reaffirmed.
+
+What was actually missing is **contrast**. `raw` only carries information when
+something that is not raw sits next to it, and the difference between the two
+lines _is_ the alignment's error, readable at a glance. So the fix for a naming
+complaint is a second line, not a rename.
+
+- Both lines are **expanded-only**, so the walking HUD gains no height.
+- **Not paired onto one line:** `raw gps 50.941234, 6.958765` is 27 characters
+  and the merged pair would be 59 — `pair()` would decline and they would end up
+  on separate lines anyway, having also lost the column alignment that makes two
+  coordinate strings comparable by eye.
+- **Independent of each other.** They come from different sources; an
+  all-or-nothing group would blank a live number while it waited for a partner.
+- Six decimals on both, because the comparison is between them.
+
+**`fusedPosition` is not the more trustworthy of the two, and this readout must
+not imply that it is.** It inherits whatever the alignment does —
+`worldBaselineY` is on this readout precisely because the fourteenth-session plan
+predicted that term would visibly jump. Showing the fused position is what makes
+the jump _measurable_; it is not a claim that it is steady.
+
+The value is computed by [`ar-fused-gps.ts`](./ar-fused-gps.ts.md) and guarded by
+`ar-mode.ts` on the world group's matrix not being identity — the same guard
+`worldBaselineY` and `fusedBearingDeg` use, because under identity the camera's
+world position is raw odometry: a perfectly plausible coordinate meaning "nothing
+has been aligned yet".

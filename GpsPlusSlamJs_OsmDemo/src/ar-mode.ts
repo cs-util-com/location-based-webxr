@@ -49,6 +49,7 @@ import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import { getCompassDiagnostics } from "gps-plus-slam-app-framework/state";
 import { createArEntryVeil, entryVeilAlpha } from "./ar-entry-veil.js";
+import { fusedGpsFrom } from "./ar-fused-gps.js";
 import {
   descentMayStart,
   descentComplete,
@@ -99,6 +100,7 @@ import {
   canEnterAr,
   nueBearingDeg,
   sceneAnchorOffsetNue,
+  toDemoLatLng,
   type FrameworkLatLong,
 } from "./ar-origin.js";
 
@@ -115,13 +117,18 @@ import * as THREE from "three";
 const forward = new THREE.Vector3();
 
 /**
- * Scratch for the camera's world position, reused every frame by the entry veil.
+ * Scratch for the camera's world position, reused every frame.
  *
  * SEPARATE FROM `forward`, and not merely for tidiness: both are written in the
  * same frame callback, and `getWorldDirection` and `getWorldPosition` would
  * otherwise clobber each other between the two reads.
+ *
+ * SHARED BY TWO CONSUMERS, which is safe because they want the SAME quantity and
+ * each re-reads it: the entry veil centres on it every frame, and the readout
+ * back-projects it into GPS at the HUD's ~2 Hz. Sharing a scratch between two
+ * consumers of DIFFERENT quantities is the hazard above; this is not that.
  */
-const veilCentre = new THREE.Vector3();
+const cameraWorld = new THREE.Vector3();
 
 /**
  * How fast the APPLIED auto elevation may move the content, metres/second
@@ -180,8 +187,20 @@ export interface ArModeDeps {
    * between them has to be applied or the city lands in the wrong place.
    */
   readonly sceneAnchor: LatLng;
-  /** The package's `enuFrameAt`, injected so this module stays testable. */
-  readonly enuFrameAt: (origin: LatLng) => { toEnu: (p: LatLng) => EnuPoint };
+  /**
+   * The package's `enuFrameAt`, injected so this module stays testable.
+   *
+   * **`toLatLng` IS PART OF THE CONTRACT since J7** (DEC-J10). It was `toEnu`
+   * only, and both fixtures supplied only that — with an `as ArModeDeps` cast at
+   * the end, so a missing member would not necessarily have been a type error:
+   * it would have surfaced as `frame.toLatLng is not a function` in
+   * `ar-mode.depth-wiring.test.ts`, a file M5 had no reason to touch and which
+   * carries no assertion that would explain the failure. Cold review caught it.
+   */
+  readonly enuFrameAt: (origin: LatLng) => {
+    toEnu: (p: LatLng) => EnuPoint;
+    toLatLng: (p: EnuPoint) => LatLng;
+  };
   readonly onError: (message: string) => void;
   /** Fired when the session ends for ANY reason, including the back gesture. */
   readonly onEnded?: () => void;
@@ -938,7 +957,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           // swing off the screen edge -- the one failure DEC-J2 chose a sphere
           // to avoid, given away for free by not re-centring it.
           session.entryVeil?.setAlpha(1);
-          session.entryVeil?.follow(camera.getWorldPosition(veilCentre));
+          session.entryVeil?.follow(camera.getWorldPosition(cameraWorld));
         } else {
           // SNAP THE AUTO TERM RATHER THAN EASE IT, exactly once, and only here.
           // The ease below exists so a LIVE correction cannot make the city jump
@@ -1068,7 +1087,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // ambiguity it answers is "is anything happening", and something is.
         session.entryWait?.remove();
         session.entryWait = undefined;
-        session.entryVeil?.follow(camera.getWorldPosition(veilCentre));
+        session.entryVeil?.follow(camera.getWorldPosition(cameraWorld));
         session.entryVeil?.setAlpha(entryVeilAlpha(input));
         if (descentComplete(input)) {
           // THE VISIBLE END-STATE SIGNAL the plan requires. A descent that
@@ -1208,6 +1227,27 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
             fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
               ? undefined
               : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
+            // WHERE THE ALIGNMENT THINKS THE USER IS (J7, DEC-J9/DEC-J10), so
+            // the `raw gps` line beside it finally has something to be raw
+            // AGAINST — two sessions in three asked whether it was already
+            // fused.
+            //
+            // THE SAME GUARD AND THE SAME FRAME ARGUMENT as `fusedBearingDeg`
+            // above: the camera is a descendant of `arWorldGroup`, so its WORLD
+            // position is already NUE metres about `zero` with the alignment
+            // applied, and an identity matrix means no alignment has happened —
+            // which would otherwise render as a perfectly plausible coordinate.
+            //
+            // `toDemoLatLng` rather than a cast: `origin` is the framework's
+            // `{lat, lon}` and the OSM frame takes `{lat, lng}`. That adapter
+            // exists to be the alternative to a cast (`ar-origin.ts`).
+            fusedPosition:
+              arWorldGroup.matrix.equals(identityMatrix) || deps.origin === null
+                ? undefined
+                : fusedGpsFrom(
+                    deps.enuFrameAt(toDemoLatLng(deps.origin)),
+                    camera.getWorldPosition(cameraWorld),
+                  ),
             // THE PUBLISHED AUTO OFFSET, beside the raw `above terrain` residual
             // the live measurements carry — the pair is the M5 instrument (see
             // `ar-measurements.ts`). Absent while the estimator publishes

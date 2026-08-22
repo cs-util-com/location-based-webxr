@@ -176,10 +176,17 @@ function deps(overrides: Partial<ArModeDeps> = {}): ArModeDeps {
     // the offset between them is what `ar-mode` has to apply, and a fixture
     // where they coincide would let a missing offset pass.
     sceneAnchor: { lat: 50.9423, lng: 6.9593 },
+    // BOTH DIRECTIONS, and `toLatLng` is the exact inverse of `toEnu` above —
+    // a fixture whose two halves disagree would let a wrong axis mapping in
+    // `ar-fused-gps.ts` pass here while failing on a phone.
     enuFrameAt: (o: { lat: number; lng: number }) => ({
       toEnu: (p: { lat: number; lng: number }) => ({
         x: (p.lng - o.lng) * 70_000,
         y: (p.lat - o.lat) * 111_320,
+      }),
+      toLatLng: (p: { x: number; y: number }) => ({
+        lat: o.lat + p.y / 111_320,
+        lng: o.lng + p.x / 70_000,
       }),
     }),
     onError: vi.fn(),
@@ -903,8 +910,61 @@ describe("when AR cannot start", () => {
 
     expect(liveMeasurements).toHaveBeenCalled();
     expect(document.body.textContent).toContain("gps ±6.2 m");
-    expect(document.body.textContent).toContain("alt 51.4 m ±3.5 m");
+    // THE COLLAPSED HUD CARRIES THE ALTITUDE ALONE since DEC-J6 — the vertical
+    // accuracy moved to the expanded readout so the `alt`/`world floor` pair
+    // fits the 40-character budget in the ordinary case. This test is about the
+    // CADENCE (that the caller is asked for the numbers at all), so what it
+    // needs is that the value arrived, not which line it landed on.
+    expect(document.body.textContent).toContain("alt 51.4 m");
     expect(document.body.textContent).toContain("145 m from anchor");
+  });
+
+  it("reports the FUSED position only once an alignment exists (J7)", async () => {
+    // WHY THIS TEST MATTERS. The line is a back-projection of the camera's
+    // world position, and `arWorldGroup` starts at IDENTITY — under which the
+    // camera's world position is its raw odometry, i.e. a perfectly plausible
+    // coordinate that means "nothing has been aligned yet". Rendering that
+    // beside `raw gps` would invite a comparison between a measurement and an
+    // artefact.
+    //
+    // THE HUD IS EXPANDED here, because both coordinate lines are expanded-only
+    // (DEC-J9) — the walking readout gains no height from this feature. Expanded
+    // through the control's own toggle rather than a test-only flag: the state
+    // belongs to `ar-hud.ts` and reaching past it would prove less.
+    await startArMode(
+      deps({
+        container: document.body,
+        // SOMETHING TO PAINT. The HUD attaches itself only once it has lines,
+        // so its toggle does not exist in the DOM before the first frame.
+        liveMeasurements: () => ({ fixAccuracyM: 6.2 }),
+      }),
+    );
+
+    const onFrame = registerXrFrameUpdate.mock.calls[0]?.[0] as (ctx: {
+      dt: number;
+      elapsed: number;
+    }) => void;
+
+    // IDENTITY: nothing yet.
+    arWorldGroup.matrix.identity();
+    onFrame({ dt: 1 / 60, elapsed: 0 });
+
+    const hudToggle = document.body.querySelector(".ar-hud-toggle");
+    if (!(hudToggle instanceof HTMLButtonElement)) {
+      throw new Error("no HUD toggle");
+    }
+    hudToggle.click();
+    onFrame({ dt: 1 / 60, elapsed: 0.6 });
+    expect(document.body.textContent).not.toContain("fused gps");
+
+    // AN ALIGNMENT, and a camera that is somewhere. Element 13 is the vertical
+    // term; any non-identity matrix opens the guard.
+    arWorldGroup.matrix.makeTranslation(0, 2, 0);
+    camera.position.set(111.32, 1.5, 0);
+    camera.updateMatrixWorld(true);
+    onFrame({ dt: 1 / 60, elapsed: 1.2 });
+
+    expect(document.body.textContent).toContain("fused gps");
   });
 
   it("starts anyway when the framework has no renderer to grade", async () => {
