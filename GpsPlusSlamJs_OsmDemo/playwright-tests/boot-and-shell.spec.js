@@ -2036,6 +2036,30 @@ test.describe("the AR entry point", () => {
     await expect(page.locator("#toast-root .toast")).toBeVisible({
       timeout: 15000,
     });
+
+    // AND `#ar-root` IS EMPTY AGAIN. Nothing may be left in it after a failed
+    // entry: it is `position: fixed; inset: 0` and hidden only while `:empty`,
+    // so any leftover child becomes a click-eating layer over the whole page.
+    // The framework inserts its canvas before requesting the session and does
+    // not clean it up if that rejects, which is what `endARSession()` is for.
+    //
+    // The assertion above would NOT catch that: Playwright's `toBeVisible`
+    // checks box and CSS, not occlusion, so the toast reads as visible from
+    // underneath a covering layer.
+    //
+    // ⚠️ IT DOES NOT CURRENTLY GUARD THE DEC-K5 DOM VEIL, AND SAYING SO IS THE
+    // POINT. That veil is created only when `descentStartM > 0`, and this
+    // fixture boots a view whose desktop camera gives 0 — verified by
+    // mutation: deleting the veil's removal from the refusal path leaves this
+    // test green. Writing it up as the veil's guard would have been an
+    // assertion that looks like a guard and is not, which is the exact fault
+    // this branch fixed elsewhere the same day.
+    //
+    // The veil's leak-on-refusal behaviour is pinned in `ar-mode.test.ts`
+    // instead, where the camera height is controllable — and headless Chromium
+    // cannot start an immersive session anyway, so the rest of the ordering is
+    // unreachable here by construction.
+    await expect(page.locator("#ar-root")).toBeEmpty();
   });
 
   test("keeps the AR offer clear of the toast and of the map's own controls", async ({

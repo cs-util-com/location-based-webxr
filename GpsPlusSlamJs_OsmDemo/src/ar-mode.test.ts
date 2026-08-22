@@ -107,6 +107,7 @@ import {
 import type { DepthSample } from "gps-plus-slam-app-framework/ar/depth-sampler";
 
 import { startArMode, type ArModeDeps } from "./ar-mode.js";
+import { ENTRY_DOM_VEIL_CLASS } from "./ar-entry-dom-veil.js";
 import { AR_DEPTH_SAMPLER_CONFIG } from "./ar-depth-pipeline.js";
 import { nueBearingDeg } from "./ar-origin.js";
 import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
@@ -1901,5 +1902,146 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     // ONCE, not once per frame: a signal that repeats is a signal nobody reads.
     runFrames(1, 5);
     expect(onDescentComplete).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the DOM entry veil (DEC-K5)", () => {
+    /**
+     * Why these tests matter: this veil exists to cover the window between the
+     * XR session being granted — at which point the passthrough camera is
+     * already on screen — and the first WebGL frame. Every failure mode is
+     * either invisible (it uncovers the camera for one frame) or catastrophic
+     * and silent (it is left behind as a full-viewport black rectangle over the
+     * desktop app). Neither shows up in a screenshot taken at any other moment,
+     * and headless Chromium cannot start an immersive session at all, so this
+     * is the only place the ordering can be pinned.
+     */
+    const veilIn = (container: HTMLElement) =>
+      container.querySelector(`.${ENTRY_DOM_VEIL_CLASS}`);
+
+    /**
+     * The frame callback of the MOST RECENT session, not the first.
+     *
+     * Several tests in this block start a session, so `calls[0]` would drive
+     * a torn-down one and silently assert nothing.
+     */
+    const lastFrameFn = () =>
+      registerXrFrameUpdate.mock.calls.at(-1)?.[0] as (ctx: {
+        dt: number;
+        elapsed: number;
+      }) => void;
+
+    it("is up BEFORE the session is requested, not after it resolves", async () => {
+      // THE ASSERTION THAT DEFINES THE MILESTONE. `initAR` is where
+      // `requestSession` lives, so anything that only happens after it resolves
+      // is already too late — the camera has been composited for the whole
+      // duration of that call. This checks from INSIDE the mock, which is the
+      // only vantage point that can tell "before" from "after".
+      const container = document.createElement("div");
+      document.body.append(container);
+      let veilAtRequestTime: Element | null = null;
+      initAR.mockImplementation(() => {
+        veilAtRequestTime = veilIn(container);
+        return Promise.resolve();
+      });
+
+      await startArMode(
+        deps({
+          container,
+          buildingView: viewAtHeight(
+            START_M,
+          ) as unknown as ArModeDeps["buildingView"],
+        }),
+      );
+
+      expect(veilAtRequestTime).not.toBeNull();
+    });
+
+    it("survives the FIRST frame and comes down on the second", async () => {
+      // WHY NOT THE FIRST. Both per-frame hooks run before
+      // `renderer.render(scene, camera)` in the same tick, so when the first
+      // callback fires nothing has been drawn yet and the mesh veil is not on
+      // screen. Removing here would uncover the passthrough for exactly one
+      // frame — the artefact this milestone removes, reintroduced by a trigger
+      // that fires one call too early.
+      const container = document.createElement("div");
+      document.body.append(container);
+      await startArMode(
+        deps({
+          container,
+          buildingView: viewAtHeight(
+            START_M,
+          ) as unknown as ArModeDeps["buildingView"],
+        }),
+      );
+
+      const onFrame = lastFrameFn();
+      onFrame({ dt: 0.016, elapsed: 0.016 });
+      expect(veilIn(container)).not.toBeNull();
+
+      onFrame({ dt: 0.016, elapsed: 0.032 });
+      expect(veilIn(container)).toBeNull();
+    });
+
+    it("is NEVER created when there is no descent to hide", async () => {
+      // `descentStartM === 0` means entering from a ground-level view: no mesh
+      // veil is built and nothing fades, so a DOM veil would be an opaque lid
+      // with nothing to lift it. Gated on the same condition as the mesh, so
+      // the two can never disagree about whether an entry is being veiled.
+      const container = document.createElement("div");
+      document.body.append(container);
+      await startArMode(
+        deps({
+          container,
+          buildingView: viewAtHeight(
+            0,
+          ) as unknown as ArModeDeps["buildingView"],
+        }),
+      );
+
+      expect(veilIn(container)).toBeNull();
+    });
+
+    it("is removed when the session is REFUSED, not left over the app", async () => {
+      // The path a user takes by dismissing the AR permission prompt. The
+      // framework's teardown removes its own canvas and nothing else, so an
+      // opaque child left here blacks out the desktop app on a refusal —
+      // `#ar-root` is `position: fixed; inset: 0` and hidden only while
+      // `:empty`. This repo has shipped that regression once already.
+      const container = document.createElement("div");
+      document.body.append(container);
+      initAR.mockRejectedValueOnce(new Error("user dismissed the prompt"));
+
+      await startArMode(
+        deps({
+          container,
+          buildingView: viewAtHeight(
+            START_M,
+          ) as unknown as ArModeDeps["buildingView"],
+        }),
+      );
+
+      expect(veilIn(container)).toBeNull();
+    });
+
+    it("is removed when the session ends normally", async () => {
+      // The ordinary exit. `release()` runs on dispose and on a
+      // system-initiated end, and removal there is unconditional rather than
+      // frame-count dependent: a session torn down before two frames have run
+      // must not leave the veil behind either.
+      const container = document.createElement("div");
+      document.body.append(container);
+      const mode = await startArMode(
+        deps({
+          container,
+          buildingView: viewAtHeight(
+            START_M,
+          ) as unknown as ArModeDeps["buildingView"],
+        }),
+      );
+
+      expect(veilIn(container)).not.toBeNull();
+      mode.dispose();
+      expect(veilIn(container)).toBeNull();
+    });
   });
 });

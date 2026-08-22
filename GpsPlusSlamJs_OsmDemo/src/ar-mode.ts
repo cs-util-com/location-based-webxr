@@ -49,6 +49,10 @@ import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import { getCompassDiagnostics } from "gps-plus-slam-app-framework/state";
 import { createArEntryVeil, entryVeilAlpha } from "./ar-entry-veil.js";
+import {
+  createArEntryDomVeil,
+  type ArEntryDomVeil,
+} from "./ar-entry-dom-veil.js";
 import { fusedGpsFrom } from "./ar-fused-gps.js";
 import {
   descentMayStart,
@@ -340,6 +344,16 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // means "may be absent", not "may be set to undefined".
     entryVeil?: ReturnType<typeof createArEntryVeil> | undefined;
     entryWait?: HTMLElement | undefined;
+    entryDomVeil?: ArEntryDomVeil | undefined;
+    /**
+     * Frames seen since the veil went up.
+     *
+     * The DOM veil is removed on the SECOND, not the first. Both per-frame
+     * hooks run BEFORE `renderer.render` in the same tick, so "the callback
+     * ran" does not mean "a frame was drawn" — removing on the first would
+     * close a sub-frame race with a trigger that fires one call too early.
+     */
+    framesSinceVeil?: number;
     unregisterFrame?: () => void;
   } = {};
 
@@ -375,6 +389,13 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // THE FRAME CALLBACK FIRST. It reads the renderer and writes the DOM, and
     // both are about to be torn down — an unregister that ran after the scene
     // changed would leave one more sample running against half-dead state.
+    // THE DOM VEIL FIRST, and unconditionally. It is an OPAQUE, full-viewport
+    // child of `#ar-root`, which is `position: fixed; inset: 0` and hidden only
+    // while `:empty` — so one left behind is a black rectangle over the whole
+    // desktop app. The framework's teardown removes only its own canvas, never
+    // arbitrary children, and this repo has shipped exactly that regression
+    // once already.
+    session.entryDomVeil?.remove();
     session.releaseXrSelect?.();
     session.unregisterFrame?.();
     session.hud?.dispose();
@@ -470,6 +491,33 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     deps.container.removeEventListener("beforexrselect", cancelXrSelect);
   };
 
+  /**
+   * How far the city has to fly up, taken BEFORE the session is requested.
+   *
+   * It used to be read after `initAR` resolved. It is read here because the
+   * DOM veil has to be in place before `requestSession` — and it is the same
+   * number either way: `cameraHeightM()` reads the DESKTOP camera, which is
+   * untouched by starting a session.
+   */
+  const descentStartM = Math.min(
+    DESCENT_MAX_START_M,
+    Math.max(0, deps.buildingView.cameraHeightM?.() ?? 0),
+  );
+
+  // THE DOM VEIL GOES UP BEFORE THE SESSION IS ASKED FOR (DEC-K5). From the
+  // moment `requestSession` resolves the passthrough camera is composited, and
+  // nothing is drawn into the XR layer until the first `renderer.render` — an
+  // undrawn `alpha-blend` framebuffer IS the camera image. That window is what
+  // the field report saw as a flash of camera between two blacks, and no scene
+  // mesh can close it because there is no rendered scene yet.
+  //
+  // GATED ON THE SAME CONDITION AS THE MESH VEIL. With `descentStartM === 0`
+  // there is no descent, no mesh veil and nothing to fade, so a DOM veil there
+  // would be an opaque lid with nothing to lift it.
+  if (descentStartM > 0) {
+    session.entryDomVeil = createArEntryDomVeil(deps.container);
+  }
+
   try {
     await initAR(
       deps.container,
@@ -550,6 +598,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     //
     // `endARSession()` is the framework's own teardown and is safe to call
     // against a half-built session; it is what clears both.
+    // AND THE DOM VEIL, which `endARSession` does not touch — it removes the
+    // framework's own canvas and nothing else. This is the path the user takes
+    // by dismissing the AR permission prompt, so leaving an opaque child here
+    // would black out the desktop app on a refusal.
+    session.entryDomVeil?.remove();
     void endARSession();
     deps.onError(
       error instanceof Error ? error.message : "Failed to start AR.",
@@ -566,6 +619,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   const camera = getCamera();
   if (scene === null || arWorldGroup === null || camera === null) {
     deps.onError("AR scene not ready.");
+    // Same reasoning as the reject path above: `endARSession` clears the
+    // framework's canvas, not our overlay children.
+    session.entryDomVeil?.remove();
     void endARSession();
     return NOOP_AR_MODE;
   }
@@ -648,10 +704,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
      * living while AR runs, and a descent that tracked it would move the city
      * because something off-screen moved.
      */
-    const descentStartM = Math.min(
-      DESCENT_MAX_START_M,
-      Math.max(0, deps.buildingView.cameraHeightM?.() ?? 0),
-    );
+
     let appliedAutoM = 0;
     /**
      * Move everything that lives on the vertical axis, together.
@@ -903,6 +956,26 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // The last auto state, held for the HUD between the ~1 Hz ticks.
     let latestAuto: ArElevationAutoState | undefined;
     session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
+      // THE DOM VEIL COMES DOWN ON THE SECOND FRAME, AND THE COUNT IS THE POINT.
+      //
+      // Both per-frame hooks the framework offers run BEFORE
+      // `renderer.render(scene, camera)` in the same tick, so by the time this
+      // callback runs for the first time NOTHING has been drawn yet. Removing
+      // the DOM veil there would uncover the passthrough for exactly the frame
+      // the mesh veil has not been rendered into — closing a sub-frame race
+      // with a trigger that fires one call too early, which is the same class
+      // of mistake this milestone exists to fix.
+      //
+      // On the second callback a full frame has been submitted with the mesh
+      // veil in the scene, so the handover is invisible: same colour, one
+      // opaque layer replacing another.
+      if (session.entryDomVeil !== undefined) {
+        session.framesSinceVeil = (session.framesSinceVeil ?? 0) + 1;
+        if (session.framesSinceVeil >= 2) {
+          session.entryDomVeil.remove();
+          session.entryDomVeil = undefined;
+        }
+      }
       // THE DESCENT'S CLOCK STARTS ON THE FIRST FRAME, not at `startArMode`.
       // `elapsed` is PAGE-relative — a session entered thirty seconds after load
       // sees its first frame at `elapsed ≈ 30` — so anchoring to 0 would make

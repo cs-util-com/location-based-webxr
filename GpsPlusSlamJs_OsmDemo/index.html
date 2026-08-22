@@ -413,6 +413,24 @@
         swallowed a tap would be the regression the `:empty` rule above exists
         for.
       */
+      /* THE DOM ENTRY VEIL (DEC-K5). Covers the window between the session
+         being granted -- at which point the passthrough camera is already
+         composited -- and the first WebGL frame, which no scene mesh can
+         reach. `#ar-root` is the session's dom-overlay root, so the browser
+         composites this over the camera whether or not WebGL drew anything.
+
+         The colour is set inline from `ENTRY_VEIL_COLOUR` so the two veils
+         cannot drift apart; only the geometry lives here.
+
+         `pointer-events: none` because it must never eat a tap: it sits over
+         the whole viewport, and the AR exit affordance is underneath it. */
+      .ar-entry-dom-veil {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+      }
+
       .ar-entry-wait {
         position: absolute;
         top: 45%;
