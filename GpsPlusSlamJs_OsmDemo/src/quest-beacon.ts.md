@@ -52,9 +52,13 @@ metres and cost nothing to fetch.
     instead — the "prototype" preset's failure, on the one object whose job is to
     be seen from far away.
   - So the glow comes from `emissive`, which is neither.
-- **The root is not frustum-culled.** Its bounding sphere is computed from
-  children that move whenever a quest changes, and a stale sphere hides the
-  marker the user is walking towards.
+- ⚠️ **There is deliberately NO `frustumCulled = false`, and this bullet used
+  to claim the opposite.** It said the root must not be culled because a stale
+  group bounding sphere would hide the marker. three.js cannot produce that
+  failure: `projectObject` reads the flag only inside its `isSprite` and
+  `isMesh || isLine || isPoints` branches, so on a `Group` it does nothing at
+  all. The child meshes are culled individually against their own static
+  geometries, which is correct. Caught by the PR #342 review.
 - **Rebuilt wholesale on each `set`**, not diffed: a search returns at most seven
   picks and replaces all of them at once, so a diff would be more code guarding a
   case that does not arise.

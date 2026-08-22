@@ -493,12 +493,17 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   };
 
   /**
-   * How far the city has to fly up, taken BEFORE the session is requested.
+   * Where the descent starts: the height the user was already looking from in
+   * the 3D view, capped.
    *
-   * It used to be read after `initAR` resolved. It is read here because the
-   * DOM veil has to be in place before `requestSession` — and it is the same
-   * number either way: `cameraHeightM()` reads the DESKTOP camera, which is
-   * untouched by starting a session.
+   * **Taken ONCE at entry rather than read per frame** — the desktop camera
+   * keeps living while AR runs, and a descent that tracked it would move the
+   * city because something off-screen moved.
+   *
+   * **Read BEFORE the session is requested (DEC-K5)**, because the DOM veil is
+   * gated on it and has to be in place before `requestSession`. It is the same
+   * number either way: `cameraHeightM()` reads the DESKTOP camera, which
+   * starting a session does not touch.
    */
   const descentStartM = Math.min(
     DESCENT_MAX_START_M,
@@ -515,6 +520,14 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // GATED ON THE SAME CONDITION AS THE MESH VEIL. With `descentStartM === 0`
   // there is no descent, no mesh veil and nothing to fade, so a DOM veil there
   // would be an opaque lid with nothing to lift it.
+  //
+  // ⚠️ AND THE DESKTOP GOES BLACK WHILE THE CONSENT PROMPT IS UP, which is the
+  // accepted price rather than an oversight. `#ar-root` is hidden only while
+  // `:empty`, so inserting the veil makes it cover the page immediately — and
+  // the browser's AR permission dialog sits over that. Waiting until the
+  // session is granted is not available: `initAR` wraps `requestSession`, and
+  // the window this veil exists for opens the moment that call resolves.
+  // Every exit path removes it, so a refusal returns to the desktop view.
   if (descentStartM > 0) {
     session.entryDomVeil = createArEntryDomVeil(deps.container);
   }
@@ -697,14 +710,6 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     let descentM = 0;
     /** Latched, so the one-shot start guard cannot re-arm after the landing. */
     let descentDone = false;
-    /**
-     * Where the descent starts: the height the user was already looking from in
-     * the 3D view, capped.
-     *
-     * Taken ONCE at entry rather than read per frame — the desktop camera keeps
-     * living while AR runs, and a descent that tracked it would move the city
-     * because something off-screen moved.
-     */
 
     let appliedAutoM = 0;
     /**

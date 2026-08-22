@@ -84,18 +84,18 @@ interface RefreshWorker {
 }
 
 /**
- * The ring radii one refresh scores, in order (W16, DEC-R2-30).
+ * `PROGRESSIVE_RADII` LIVES IN `resolutions.ts` NOW (DEC-K1), beside the two
+ * constants it derives from — this file only consumes it.
  *
- * DERIVED, not listed. The two constants are the decision; a hand-written
- * MOVED TO `resolutions.ts` (DEC-K1): the list is now exported beside the two
- * constants it derives from, so the data-only tests can import it instead of
- * re-deriving it. One of those hand-derived copies was `[R, R + 1, MAX]`, which
- * stayed green while silently measuring a working set the cycle never builds.
+ * It moved because three places were deriving the ring list by hand and one of
+ * them was wrong: `derive-growth.test.ts` wrote `[R, R + 1, MAX]`, which at a
+ * radius of 6 becomes `[2, 3, 6]` and would have stayed GREEN while measuring a
+ * working set the cycle never builds. Exporting the derived list is what stops
+ * the next radius change being silent.
  *
- * The FIRST entry is the full original working set, and that is the requirement
+ * The FIRST entry is the full original working set, and that is a requirement
  * rather than an accident of ordering: the user waits for the first answer and
- * for nothing else, so progressive scoring must not make it later. Starting at
- * ring 0 to make the steps uniform would do exactly that.
+ * for nothing else, so progressive scoring must not make it later.
  */
 
 /**

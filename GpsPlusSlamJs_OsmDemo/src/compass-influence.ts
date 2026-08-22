@@ -239,34 +239,6 @@ const OBSERVABLE_THRESHOLD = 0.5;
  * session and a 0.8 session are byte-identical and nothing else on screen would
  * distinguish them.
  */
-/**
- * The trust gate, in the words the readout uses.
- *
- * **WHY A TRANSIENT LINE RATHER THAN A PERMANENT ONE (DEC-K6).** A field
- * session switched the gate between `ramp` and `binary` and reported that
- * nothing happened — "so als würde er einfach komplett ignorieren, was da
- * gerade eingestellt ist".
- *
- * **The maths is correct and no instant jump is possible**: the reducer only
- * writes the field, the alignment matrix is recomputed only when a GPS
- * observation arrives, and the view lerps toward it rather than snapping.
- * `ramp` and `binary` are also mathematically identical outside the
- * `untrusted` regime, and then for at most three steps. So the defect is the
- * missing ACKNOWLEDGEMENT, not the behaviour.
- *
- * It is transient because the readout's row is width-constrained — DEC-J8
- * shortened the hint beside it to 20 characters to stop the box wrapping to
- * three rows — so a permanently appended `· gate binary` would risk undoing
- * that. And it is in the readout because the experiment panel CLOSES itself on
- * change, which is precisely why the change had nothing to look at.
- */
-export function describeTrustGate(mode: CompassTrustGateMode): string {
-  // `off` is the one that deserves words: it means the compass is trusted
-  // unconditionally, which is a different kind of setting from the other two.
-  if (mode === "off") return "gate off — compass always trusted";
-  return `gate ${mode}`;
-}
-
 export function describeCompassInfluence(
   influence: number,
   live?: CompassLiveState,
@@ -301,4 +273,32 @@ export function describeCompassInfluence(
         : "untrusted";
 
   return `${value} target — now ${applied.toFixed(2)} ${phase}`;
+}
+
+/**
+ * The trust gate, in the words the readout uses.
+ *
+ * **WHY A TRANSIENT LINE RATHER THAN A PERMANENT ONE (DEC-K6).** A field
+ * session switched the gate between `ramp` and `binary` and reported that
+ * nothing happened — "so als würde er einfach komplett ignorieren, was da
+ * gerade eingestellt ist".
+ *
+ * **The maths is correct and no instant jump is possible**: the reducer only
+ * writes the field, the alignment matrix is recomputed only when a GPS
+ * observation arrives, and the view lerps toward it rather than snapping.
+ * `ramp` and `binary` are also mathematically identical outside the
+ * `untrusted` regime, and then for at most three steps. So the defect is the
+ * missing ACKNOWLEDGEMENT, not the behaviour.
+ *
+ * It is transient because the readout's row is width-constrained — DEC-J8
+ * shortened the hint beside it to 20 characters to stop the box wrapping to
+ * three rows — so a permanently appended `· gate binary` would risk undoing
+ * that. And it is in the readout because the experiment panel CLOSES itself on
+ * change, which is precisely why the change had nothing to look at.
+ */
+export function describeTrustGate(mode: CompassTrustGateMode): string {
+  // `off` is the one that deserves words: it means the compass is trusted
+  // unconditionally, which is a different kind of setting from the other two.
+  if (mode === "off") return "gate off — compass always trusted";
+  return `gate ${mode}`;
 }

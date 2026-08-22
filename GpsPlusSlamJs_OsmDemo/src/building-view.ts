@@ -634,7 +634,7 @@ export class BuildingView {
     // working set reaches ~128 m from the user, so a 2 km plane is mostly ground
     // no cell is ever scored on". **Every number in that argument had expired**:
     // the plane has been `TERRAIN_EXTENT_M * 2` since round 3, the working set
-    // reaches ~326 m (`SCORE_DISK_MAX_RADIUS = 4`), and the decision it defended
+    // reaches ~326 m (`SCORE_DISK_MAX_RADIUS = 6`), and the decision it defended
     // was reversed twice — first by DEC-R2-8, then by DEC-R5-3.
     //
     // The size is not a scoring question at all any more, and that is the useful
@@ -2189,6 +2189,12 @@ export class BuildingView {
   }
 
   dispose(): void {
+    // THE BEACONS OWN THREE GEOMETRIES AND A MATERIAL, and nothing else frees
+    // them: they hang off `this.content`, so the scene-level teardown below
+    // never sees them, and `quest-beacon.test.ts` exercises `dispose()` in
+    // isolation — which is exactly why the missing call here stayed green.
+    // Caught by the PR #342 review.
+    this.questBeacons.dispose();
     // Cancelled FIRST: a frame already queued would otherwise fire against a
     // disposed context, which crashes rather than leaks.
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);

@@ -91,10 +91,12 @@ export interface QuestBeacons {
 export function createQuestBeacons(): QuestBeacons {
   const root = new THREE.Group();
   root.name = "quest-beacons";
-  // NOT CULLED AS A GROUP. Its bounding sphere is computed from children that
-  // move every time a quest changes, and a stale sphere hides the marker the
-  // user is walking towards — the one object in the scene that must not vanish.
-  root.frustumCulled = false;
+  // NO `frustumCulled = false` HERE, AND THE FIRST VERSION HAD ONE. It claimed a
+  // stale group bounding sphere could hide the marker — a failure three.js
+  // cannot produce: `projectObject` reads that flag only inside its
+  // `isSprite` and `isMesh || isLine || isPoints` branches, so on a `Group` it
+  // is inert. The child meshes are culled individually against their own static
+  // geometries, which is correct. Caught by the PR #342 review.
 
   const material = beaconMaterial();
   const barGeometry = new THREE.BoxGeometry(BAR_W, BAR_H, BAR_W);

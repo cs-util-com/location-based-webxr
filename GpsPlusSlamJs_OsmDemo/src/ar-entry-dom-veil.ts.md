@@ -54,6 +54,13 @@ that.
   `ar-mode.ts` reads `descentStartM` before the session for this reason —
   `cameraHeightM()` reads the DESKTOP camera, which starting a session does not
   touch, so the value is identical either way.
+  - ⚠️ **The desktop therefore goes black while the consent prompt is up, and
+    that is the accepted price.** `#ar-root` is hidden only while `:empty`, so
+    inserting the veil covers the page immediately and the browser's AR
+    permission dialog sits over a black rectangle. Waiting for the grant is not
+    available — `initAR` wraps `requestSession`, and the window this veil exists
+    for opens the moment that call resolves. Every exit path removes it, so a
+    refusal returns to the desktop view. Raised by the PR #342 review.
 - **It comes down on the SECOND frame callback, not the first.** Both per-frame
   hooks run **before** `renderer.render(scene, camera)` in the same tick, so
   when the first callback fires nothing has been drawn. Removing there would
