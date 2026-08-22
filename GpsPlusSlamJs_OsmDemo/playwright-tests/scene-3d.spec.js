@@ -23,6 +23,7 @@ import {
   waitForRefresh,
   enableCellLayer,
   REPAINT,
+  pinQuestClock,
 } from "./fixtures.js";
 
 test.describe("the 3D view", () => {
@@ -2006,5 +2007,56 @@ test.describe("the NPC agent", () => {
     await slider.fill("1");
     await slider.dispatchEvent("input");
     await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+  });
+
+  test("draws a quest beacon in the 3D view, and takes it down again", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST EXISTS NOW AND NOT BEFORE. N6's beacons shipped without an
+     * e2e, deliberately: a search panned the map and left the 3D camera where
+     * it was, so the marker sat outside the frustum — measured at ~370 m out —
+     * and a pixel test could not tell "drawn" from "drawn somewhere else". The
+     * first attempt proved that the hard way: it passed its first assertion by
+     * measuring the map-driven camera move, and reported nothing when the quest
+     * was cleared, because the beacon had never been visible.
+     *
+     * Once the camera follows the search, the marker is in view and pixels mean
+     * what they say. THE CLEAR IS THE ASSERTION THAT CARRIES THE WEIGHT: the
+     * camera does not move when a quest is cleared, so a frame that changes then
+     * changed because the beacon left it.
+     */
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#geo-event").click();
+    // The map marker is the proof a quest was actually found; without it the
+    // pixel work below would be measuring an empty search.
+    await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+
+    await installFrameProbe(page);
+    await stashStableFrame(page);
+
+    // CLEARING IS THE CLEAN EDGE. Searching moves the camera, so the frame
+    // changes either way and proves nothing about the beacon; clearing moves
+    // nothing but the marker.
+    await page.locator("#geo-event-clear").click();
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+
+    // THE FLOOR IS SET FROM A MEASUREMENT, and the measurement moved once.
+    // With the original 6 m mark this read 110 differing pixels; enlarging it
+    // to the size the report asked for took it to 286. 100 sits below both and
+    // far above the only failure that matters — 0, which is what this returned
+    // for the whole time the camera did not follow the search.
+    //
+    // Deliberately not tight: pinning 286 would fail a later restyle for being
+    // different rather than wrong.
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(100);
   });
 });

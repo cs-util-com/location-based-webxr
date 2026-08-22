@@ -959,7 +959,34 @@ async function main(): Promise<void> {
       const view = selectOsmView(store.getState());
       toast.show(describeGeoEvent(view.position, event));
       const nearest = event.picks[0];
-      if (nearest !== undefined) mapView.panTo(nearest.position);
+      if (nearest === undefined) return;
+      mapView.panTo(nearest.position);
+      // AND THE 3D VIEW FOLLOWS (owner decision, 2026-08-23). The map panned
+      // and the camera did not, so the 3D quest beacon N6 added could sit
+      // outside the frustum at the exact moment the user asked where the quest
+      // was — measured at ~370 m out in the demo's own fixture, off screen.
+      //
+      // `lookAtFrom` KEEPS THE CURRENT DIRECTION AND DISTANCE, which is why it
+      // is the right primitive rather than a fresh camera pose: the operator's
+      // zoom and viewing angle are theirs, and a search should move WHERE they
+      // are looking, not how. It is the same read-side discipline DEC-R13-7
+      // chose for restoring a shared link.
+      //
+      // ON THE SEARCH, NOT ON THE STORE SUBSCRIBER that draws the beacons: the
+      // camera should move because the user asked a question, not every time
+      // the held event is re-rendered — and clearing a quest must not fling the
+      // view anywhere.
+      const placement = questBeaconPlacements(
+        [nearest],
+        enuFrameAt(anchors.origin),
+        terrain,
+      )[0];
+      if (placement !== undefined) {
+        buildingView.lookAtFrom(
+          { x: placement.x, y: placement.groundY, z: placement.z },
+          buildingView.cameraView().distanceM,
+        );
+      }
     },
     // W7's benchmark line. `console.info` rather than the status bar: it is a
     // developer diagnostic taken once per press, and the status line is already

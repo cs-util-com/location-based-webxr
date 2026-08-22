@@ -19,16 +19,30 @@ import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
  * @see quest-beacon.ts.md
  */
 
-/** Height of the "!" stem, metres. */
-const BAR_H = 6;
+/**
+ * The mark's dimensions, metres.
+ *
+ * **SIZED FROM A MEASUREMENT, NOT FROM TASTE.** The first version was a 6 m
+ * stem, and once the camera followed the search a screenshot showed it as an
+ * ~8x30 px sliver on a 640 px view — the e2e measured 110 changed pixels when
+ * it was removed. The request was explicit that it be readable at a distance:
+ * "das irgendwie einfach schön groß ist, dass man es auch von ein bisschen
+ * weiter weg sehen kann".
+ *
+ * Roughly doubled in each dimension, which is ~3.4x the pixel area. Kept
+ * short of anything larger because the same mark is seen from GROUND LEVEL in
+ * AR, 15 m up: a stem twice this again would read as a tower rather than a
+ * marker.
+ */
+const BAR_H = 11;
 /** Width and depth of the stem. */
-const BAR_W = 1.4;
+const BAR_W = 2.6;
 /** Radius of the dot below the stem. */
-const DOT_R = 0.9;
+const DOT_R = 1.6;
 /** Gap between stem and dot, as a fraction of the dot's radius. */
 const DOT_GAP = 1.6;
 /** Radius of the line running down to the ground. */
-const STALK_R = 0.16;
+const STALK_R = 0.25;
 
 /**
  * How much of the gold is emitted rather than lit.

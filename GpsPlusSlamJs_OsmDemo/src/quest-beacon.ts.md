@@ -65,18 +65,21 @@ metres and cost nothing to fetch.
 
 ## Known limits
 
-### ⚠️ A quest search moves the MAP but not the 3D CAMERA
+### ~~A quest search moves the MAP but not the 3D CAMERA~~ — FIXED 2026-08-23
 
-Found while trying to write an e2e for this, and it is a product gap rather
-than a test one. `main.ts` calls `mapView.panTo(nearest.position)` on a
-successful search, so the 2D map centres on the quest — **the 3D camera does
-not follow**. In the e2e fixture the winning pick lands ~370 m from the scene
-origin and is simply outside the frustum, so the beacon is drawn and never
-seen.
+It did, and it made the beacon useless at the moment it was wanted: the winner
+landed ~370 m out in the demo's own fixture and sat outside the frustum.
 
-That is the moment a user has just asked _where is the quest_, so it is worth
-deciding on rather than leaving to be rediscovered. Filed, not fixed: moving
-the camera on a search is a UX decision, not a defect with an obvious repair.
+`main.ts`'s `onFound` now calls `BuildingView.lookAtFrom` alongside the map's
+`panTo`. **`lookAtFrom` keeps the current direction and distance** — the
+operator's zoom and angle are theirs, and a search should move _where_ they are
+looking, not _how_. It is on the SEARCH rather than on the store subscriber
+that draws the beacons, so clearing a quest does not fling the view anywhere.
+
+Measured: the clear-the-quest frame diff went **0 → 110 → 286** differing
+pixels — 0 while the camera stayed put, 110 once it followed, 286 after the
+mark was enlarged. Mutation-verified: removing the `lookAtFrom` call returns it
+to 0.
 
 ### Terrain updates do not re-place existing beacons
 
@@ -93,18 +96,16 @@ that path, which is more coupling than the case earns today.
   three invisibility modes, and dispose.
   - **Mutation-verified**: sizing the line from the hover constant instead of the
     beacon's own drop fails two tests.
-- **There is deliberately NO e2e.** A pixel test was written, and it was
-  measuring the wrong thing: the search pans the map, which moves the camera,
-  so the frame changed whether or not a beacon was drawn — while clearing the
-  quest changed nothing, because the beacon was off-screen the whole time. A
-  test that passes for that reason is worse than none, and this branch had
-  already shipped two such assertions before catching them.
-  - **Verified by screenshot instead**: beacons forced to the scene origin
-    render as gold exclamation marks with lines reaching the ground, in the
-    demo's own fixture. The instrumented subscriber confirms real searches
-    produce valid placements (`picks=1, placements=1`, ~370 m out).
-  - An honest e2e needs the camera pointed at the quest first, which is the
-    open question above.
+- `scene-3d.spec.js` → "draws a quest beacon in the 3D view, and takes it down
+  again". **This could not exist until the camera followed the search.** The
+  first attempt measured the map-driven camera move rather than the beacon, and
+  reported nothing when the quest was cleared because the marker had never been
+  visible; it was deleted rather than tuned.
+  - **The CLEAR is the assertion that carries the weight**: searching moves the
+    camera, so that frame changes either way, while clearing moves nothing but
+    the marker.
+  - The floor is 100 differing pixels against a measured 286 — loose on purpose,
+    so a restyle fails for being wrong rather than for being different.
 - `ar-content-materials.test.ts` — the beacon's material is in the AR set by
   name, and the count now includes it.
 - `building-view-content.test.ts` — the beacon root is on the content root.
