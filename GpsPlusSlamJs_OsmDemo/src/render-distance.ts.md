@@ -70,11 +70,18 @@ this section exists to prevent.
 
 ## What this module deliberately does not do
 
-- It does not touch `FAR_PLANE_M`, and `far-field.test.ts` still pins the shipped
-  default view. If wiring this ever requires editing that constant, the design is
-  wrong and gets re-planned rather than the guard relaxed.
-- It ships no new default. The multiplier that turns out to be affordable is a
-  measurement the owner takes with the control, and only then a separate change.
+- It does not touch `FAR_PLANE_M`. That constant is still the 1x baseline, and
+  `far-field.test.ts` pins it against `TERRAIN_EXTENT_M`.
+- **It DOES now ship a default, and this bullet used to deny it.** The text here
+  read "It ships no new default. The multiplier that turns out to be affordable
+  is a measurement the owner takes with the control, and only then a separate
+  change." That separate change is DEC-K2 (2026-08-22): the measurement was
+  taken on a phone, the answer was 2x, and `DEFAULT_RENDER_MULTIPLIER` is it.
+  The page boots there.
+  - ⚠️ **The known consequence:** at 2x the haze starts at 3168 m while the
+    ground plate ends at 2400 m, so the plate's edge is a hard line instead of
+    fading out as it did at 1x. Accepted by owner decision; pinned by
+    `far-field.test.ts` so it cannot change silently.
 - **It does not know about the fog**, deliberately. The fog moves with the far
   plane — it must, or the control is a no-op — but that coupling lives in
   `BuildingView.setFarPlane` as a single ratio, not as a second number here.
@@ -93,8 +100,11 @@ buildingView.setFarPlane(renderDistanceFor(4).farPlaneM);
 
 - `render-distance.test.ts` — inertness at 1×, scaling, the clamp,
   invalid-input collapse, and finiteness/positivity for every input.
-- `scene-3d.spec.js`, "the render-distance dial moves the camera AND the fog, and
-  is inert at 1x" — the wiring, asserted through a readout painted from the
+- `scene-3d.spec.js`, "the render-distance dial moves the camera AND the fog,
+  boots at 2x, and is still inert at 1x" — the wiring, asserted through a readout painted from the
   camera and the fog rather than from the slider. It cannot be a unit test:
   `BuildingView` constructs a `WebGLRenderer`.
-- `far-field.test.ts` (unchanged) — the shipped constants and the default view.
+- `far-field.test.ts` — the 1x baseline against `TERRAIN_EXTENT_M`, and the
+  default view's overhang: that it is real, that it is bounded, and that its haze
+  deliberately starts beyond the ground plate. **Not "unchanged"** — this line
+  said so until DEC-K2 rewrote that file.

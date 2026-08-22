@@ -64,6 +64,50 @@ export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}`;
 export const REPAINT = { timeout: 15000 };
 
 /**
+ * An instant for which the `AT_FIXTURE` tile is known to yield a geo-event.
+ *
+ * **WHY THIS EXISTS.** The geo-event is, by design, a pure function of tile and
+ * quarter-hour — `event-instant.ts` says "the answer is quarter-hourly" and the
+ * feature is built on that property. The consequence for the suite is that
+ * whether a fixture tile yields an event depends on **which quarter-hour the run
+ * happens to start in**, so two tests here could execute or not execute purely
+ * by clock. Three runs of one commit once reported 56, 56, and 54-passed-2-
+ * skipped, and every one of them looked green.
+ *
+ * The skip was later made a loud failure, which is what surfaced this properly:
+ * CI went red on a quarter-hour that yields nothing, on a change that had
+ * touched none of it.
+ *
+ * **PINNING THE CLOCK IS THE FIX THE FOLLOW-UP ASKED FOR** and was blocked on
+ * "a way to inject the instant the app may not expose". Playwright's
+ * `page.clock` supplies it without any production change:
+ * `setFixedTime` pins what the page sees as now, and leaves timers running so
+ * the map, the worker and the toasts behave normally.
+ *
+ * **THE VALUE IS MEASURED, NOT GUESSED.** A throwaway probe swept 32 consecutive
+ * quarter-hours against this fixture; `00:00`, `00:15` and `00:30` on this date
+ * all yield an event (1, 1 and 2 winners respectively). The first is used here.
+ *
+ * ⚠️ **The loud assertion at the call sites STAYS.** Pinning removes the
+ * dependence on when the suite runs; it does not promise this tile keeps
+ * yielding an event if the fixture data or the scoring changes. If that happens
+ * the failure is now deterministic and reproducible instead of appearing in one
+ * quarter-hour out of several — which is the whole gain.
+ *
+ * @see GpsPlusSlamJs_Docs/docs/2026-08-17-0019-geo-event-e2e-wall-clock-skip-followup.md
+ */
+export const QUEST_FIXTURE_INSTANT = new Date("2026-06-15T00:00:00.000Z");
+
+/**
+ * Pin the page's clock so a geo-event test does not inherit the wall clock.
+ * Must be called BEFORE `page.goto`, because the app reads the instant while it
+ * boots.
+ */
+export async function pinQuestClock(page) {
+  await page.clock.setFixedTime(QUEST_FIXTURE_INSTANT);
+}
+
+/**
  * A real captured Overpass response from the OSM package's fixture corpus.
  *
  * `park` is Cologne Volksgarten, which is nowhere near `main.ts`'s default start

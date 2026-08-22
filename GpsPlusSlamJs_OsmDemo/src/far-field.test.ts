@@ -109,9 +109,37 @@ describe("the far field", () => {
     // field test landed.
     expect(defaultFarM).toBeLessThanOrEqual(TERRAIN_EXTENT_M * 2);
 
-    // The haze still has to start inside the drawn distance, or the overhang
-    // ends in the hard edge the fog exists to prevent.
-    expect(defaultFarM * FOG_NEAR_RATIO_APPROX).toBeLessThan(defaultFarM);
+    // ⚠️ THE ACCEPTED CONSEQUENCE, PINNED SO IT CANNOT MOVE SILENTLY. At the
+    // default the haze starts BEYOND the ground plate — 3168 m against a 2400 m
+    // extent — so the plate's edge is a hard line rather than fading out. At 1x
+    // it faded, because fog far == far plane == extent put the edge at full fog.
+    //
+    // THE FIRST VERSION OF THIS ASSERTION WAS A TAUTOLOGY and the PR #341 review
+    // caught it: `defaultFarM * 0.66 < defaultFarM` is true for any ratio below
+    // one, for any far plane, forever. It could not fail, and it sat here
+    // looking like the guard for exactly this property — the third instance in
+    // this file of the failure its own comments name twice.
+    //
+    // Owner decision, 2026-08-22: accepted. Seeing where the ground stops is
+    // inherent to asking to see further, and this exact configuration was
+    // field-tested before the default moved. The assertions below exist so that
+    // anyone who changes the fog ratio, the extent, or the default multiplier
+    // has to come back and re-read that decision rather than discover the edge
+    // on a phone.
+    const defaultFogNearM = defaultFarM * FOG_NEAR_RATIO_APPROX;
+
+    // The band still begins inside the drawn distance — without this the fog
+    // would never engage at all and geometry would vanish at the far plane.
+    expect(defaultFogNearM).toBeLessThan(defaultFarM);
+
+    // And it begins OUTSIDE the ground plate. This is the line that fails if
+    // someone "fixes" the edge by clamping the fog, which is a product change
+    // and not a tidy-up.
+    expect(defaultFogNearM).toBeGreaterThan(TERRAIN_EXTENT_M);
+
+    // The 1x baseline is the regime where the edge does fade, and it must stay
+    // that way: turning the dial down has to restore the old picture exactly.
+    expect(FOG_NEAR_M).toBeLessThan(TERRAIN_EXTENT_M);
   });
 
   it("keeps the ground centred on the user, which is what makes that true", () => {

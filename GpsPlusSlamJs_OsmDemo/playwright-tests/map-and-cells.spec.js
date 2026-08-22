@@ -25,6 +25,7 @@ import {
   enableCellLayer,
   walkByMapClick,
   REPAINT,
+  pinQuestClock,
 } from "./fixtures.js";
 
 /**
@@ -1019,6 +1020,11 @@ test.describe("the geo-event", () => {
   test("opens a time picker on the FIRST press, and can clear the event", async ({
     page,
   }) => {
+    // CLOCK PINNED FIRST (see `pinQuestClock`). The geo-event is a pure
+    // function of tile and quarter-hour, so without this the test executes or
+    // not depending on when the suite runs — CI went red on a quarter-hour
+    // that yields nothing, on a change that touched none of this.
+    await pinQuestClock(page);
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
@@ -1086,6 +1092,11 @@ test.describe("the geo-event", () => {
    * subscriber in `main.ts`, which has no other coverage.
    */
   test("takes the markers down when the category changes", async ({ page }) => {
+    // CLOCK PINNED FIRST (see `pinQuestClock`). The geo-event is a pure
+    // function of tile and quarter-hour, so without this the test executes or
+    // not depending on when the suite runs — CI went red on a quarter-hour
+    // that yields nothing, on a change that touched none of this.
+    await pinQuestClock(page);
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);

@@ -9,7 +9,7 @@ amount of ground (H2 — "the map's +/- should adjust the 3D view's zoom").
 
 - `cameraDistanceForZoom(input: ZoomToCameraInput): number` — metres, always
   finite and always inside `[MIN_CAMERA_DISTANCE_M, MAX_CAMERA_DISTANCE_M]`.
-- `MIN_CAMERA_DISTANCE_M = 30` / `MAX_CAMERA_DISTANCE_M = 1200`.
+- `MIN_CAMERA_DISTANCE_M = 30` / `MAX_CAMERA_DISTANCE_M = 2400`.
 
 `ZoomToCameraInput`: `zoom`, `latDeg`, `paneWidthPx`, `aspect` (width/height),
 `vfovDeg` (three.js vertical FOV — the demo's camera is 55°).
@@ -34,12 +34,22 @@ for.
 ## Invariants & assumptions
 
 - **The clamp is required, not defensive.** Leaflet is given no `minZoom` here,
-  so the map can reach z10 — about **36 km** of camera distance, past the
-  `FAR_PLANE_M = 2400` far plane. Unclamped, the user gets an empty grey screen
+  so the map can reach z10 — about **36 km** of camera distance, far past any
+  far plane the dial can produce. Unclamped, the user gets an empty grey screen
   with no error raised anywhere.
-- **`MAX` is 1200, not 2400**, because the camera is tilted: at distance `d` the
-  far edge of the view is considerably further than `d`, so a limit at the far
-  plane itself would still clip the horizon.
+- **`MAX` is HALF the far plane the page boots with**, because the camera is
+  tilted: at distance `d` the far edge of the view is considerably further than
+  `d`, so a limit at the far plane itself would still clip the horizon.
+  - **Raised 1200 → 2400 by DEC-K2 (2026-08-22).** This bullet used to read
+    "`MAX` is 1200, not 2400" — which argued against the value now shipping.
+    The old figure was half of the 1x baseline; the page boots at
+    `DEFAULT_RENDER_MULTIPLIER`, drawing to 4800 m, and a map that still pulled
+    back only 1200 m would reach a quarter of the drawn distance. The field ask
+    that raised the default was specifically about zooming further out.
+  - ⚠️ **It tracks the DEFAULT multiplier, not the live one.** Turning the dial
+    down to 1x leaves this clamp past that far plane, so a fully zoomed-out map
+    can clip. Deliberate: a clamp that moved under the user's hand while they
+    drag a different control would be worse, and zooming back in is immediate.
 - **`MIN` is 30 m** — below that the 0.5 m near plane and the buildings
   interpenetrate, and a fully-zoomed-in map would put the camera inside a wall.
 - **Every non-finite or degenerate input collapses to `MAX`**, never propagates.
