@@ -85,9 +85,27 @@ npx serve dist-site   # or any static server
 
 ## Tests
 
-No standalone unit test — the script *is* the verification harness for the
-deployment. Its `assertNoBareAbsoluteUrls`, `assertLandingHtml` and
-`assertSiteTree` checks run on every `build:site` invocation (and therefore
-on every Cloudflare deploy), failing fast on regressions. The
-storage-isolation invariant of the deployed apps is covered separately by
+`tests/repo-config/build-site-wiring.test.js` — **a wiring test, not a build**
+(H11, repo-hygiene loop, owner interview 2026-07-20). It pins the five things
+that exist only in this script and fail only in production:
+
+- the landing app builds **first**, into the shared root, and is the only thing
+  that claims `/`;
+- **both** workspace libraries are built before the earliest consuming app —
+  the omission that broke the `/osm/` deployment while every local build passed
+  against a stale `dist`;
+- every subpath app's `--base` **matches** its `--outDir` directory;
+- every built subpath directory is followed by the bare-absolute-URL guard, for
+  its own base;
+- the header's output tree names every directory the script actually builds.
+
+**Mutation-verified:** deleting the `build:osm` call fails one test; pointing
+one app's `--base` at another's directory fails another.
+
+It reads the script's TEXT and cannot see whether vite honours the flags, so a
+move to a data-driven app table would need it rewritten. The real builds stay
+where they were — the script *is* the verification harness for the deployment,
+and its `assertNoBareAbsoluteUrls`, `assertLandingHtml` and `assertSiteTree`
+checks run on every `build:site` invocation, i.e. on every Cloudflare deploy.
+The storage-isolation invariant of the deployed apps is covered separately by
 `anchor-storage.test.ts` and `recording-options.test.ts` (plan Step 6).
