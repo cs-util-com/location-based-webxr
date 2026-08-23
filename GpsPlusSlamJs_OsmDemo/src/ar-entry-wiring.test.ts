@@ -51,7 +51,20 @@ describe("the AR entry readiness gate is wired into main.ts (DEC-M1)", () => {
     // the session teardown both reassign that, so attaching to it would set the
     // flag on whichever pass happened to be current instead of on the entry's.
     expect(CODE).toMatch(
-      /const entryPass = runPassFor\([\s\S]{0,400}?entryPass\.finally\(\(\) => \{\s*arContentReady = true;/,
+      /const entryPass = runPassFor\([\s\S]{0,600}?entryPass\.finally\(\(\) => \{[\s\S]{0,200}?arContentReady = true;/,
+    );
+  });
+
+  it("keys the flag on the entry that started the pass, not on the latest one", () => {
+    // THE RE-ENTRY RACE (milestone review, finding 1). Clearing the flag in
+    // `enterAr` does not cancel the PREVIOUS entry's pending pass — and backing
+    // out of a slow entry to try again is the case `ar-mode.ts` calls common.
+    // Without the generation check, entry #1's pass settling opens entry #2's
+    // veil while its own rebuild is still running: the desktop-datum city
+    // uncovered, which is the failure the gate exists to prevent.
+    expect(CODE).toMatch(/arEntryGeneration \+= 1;/);
+    expect(CODE).toMatch(
+      /const generation = arEntryGeneration;[\s\S]{0,300}?if \(generation !== arEntryGeneration\) return;/,
     );
   });
 

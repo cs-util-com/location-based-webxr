@@ -2159,13 +2159,14 @@ test.describe("the AR entry point", () => {
     // checks box and CSS, not occlusion, so the toast reads as visible from
     // underneath a covering layer.
     //
-    // ⚠️ IT DOES NOT CURRENTLY GUARD THE DEC-K5 DOM VEIL, AND SAYING SO IS THE
-    // POINT. That veil is created only when `descentStartM > 0`, and this
-    // fixture boots a view whose desktop camera gives 0 — verified by
-    // mutation: deleting the veil's removal from the refusal path leaves this
-    // test green. Writing it up as the veil's guard would have been an
-    // assertion that looks like a guard and is not, which is the exact fault
-    // this branch fixed elsewhere the same day.
+    // ⚠️ IT NOW GUARDS THE DEC-K5 DOM VEIL TOO, WHICH IT DID NOT BEFORE
+    // DEC-M1b, and the change is worth recording because the earlier note said
+    // the opposite in detail. That veil used to be created only when
+    // `descentStartM > 0`, and this fixture boots a view whose desktop camera
+    // gives 0 — so deleting the veil's removal from the refusal path left this
+    // test green, verified by mutation at the time. The veil is now created for
+    // EVERY entry, including a refused one, so `#ar-root` really would be
+    // non-empty if that removal were dropped.
     //
     // The veil's leak-on-refusal behaviour is pinned in `ar-mode.test.ts`
     // instead, where the camera height is controllable — and headless Chromium

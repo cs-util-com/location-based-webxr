@@ -1364,6 +1364,15 @@ async function main(): Promise<void> {
    */
   let arContentReady = false;
 
+  /**
+   * Which AR entry the readiness flag belongs to.
+   *
+   * Bumped by every press, and captured by the entry pass's own `finally`, so a
+   * pass belonging to an abandoned entry cannot mark a later one ready. See the
+   * capture site in `startWalking` for the failure it prevents.
+   */
+  let arEntryGeneration = 0;
+
   let arSupport: ArSupport = "checking";
   let arSession: ArMode | undefined;
   /**
@@ -1680,7 +1689,17 @@ async function main(): Promise<void> {
     // session teardown both reassign. `finally`, so a failed fetch opens the
     // gate too: holding the veil to its ceiling on every entry would be a worse
     // outcome than showing a city one ring short.
+    //
+    // ⚠️ AND KEYED ON THE ENTRY THAT STARTED IT (milestone review, finding 1).
+    // Clearing the flag in `enterAr` does not cancel the PREVIOUS entry's
+    // pending pass, and backing out of a slow entry to try again is the common
+    // case — `ar-mode.ts` says so by name. Without this generation check, entry
+    // #1's pass settling would open entry #2's veil while ITS rebuild was still
+    // running: the desktop-datum city uncovered, which is the whole failure
+    // DEC-M1 exists to prevent, on the one path most likely to hit it.
+    const generation = arEntryGeneration;
     void entryPass.finally(() => {
+      if (generation !== arEntryGeneration) return;
       arContentReady = true;
     });
   };
@@ -1714,8 +1733,11 @@ async function main(): Promise<void> {
     clearArOffer();
     // THIS ENTRY'S OWN READINESS, cleared before the session is asked for
     // (DEC-M1). A second entry in the same page session would otherwise start
-    // with the first one's `true` and uncover before its rebuild had run.
+    // with the first one's `true` and uncover before its rebuild had run — and
+    // the generation bump is what stops the FIRST entry's still-pending pass
+    // from setting it again a moment later.
     arContentReady = false;
+    arEntryGeneration += 1;
     // IN THE GESTURE, not after an await: the permission prompts WebXR raises
     // are only allowed synchronously from a user gesture.
     //

@@ -38,6 +38,14 @@ anything worth proving has to live outside it.
     (`drawQuestBeacons`) called from both the `geoEvent` subscriber and the
     terrain-apply handler; `ar-entry-wiring.test.ts` guards that as source text,
     because `main.ts` cannot be unit-run.
+  - ⚠️ **A DEM outage now MOVES the marks**, where it used to leave them where
+    they were: the terrain handler replaces the field with `undefined` on an
+    outage, and re-deriving then puts every mark on relief 0 until the DEM
+    recovers. That is consistent with what the rest of the scene does with the
+    same field, and `groundMeasured: false` still says the ground was not
+    measured — but it is a visible drop and a re-rise in AR, where the field
+    carries absolute heights, and it is a consequence of DEC-M4 rather than an
+    intention of it.
   - **This module stays pure and stateless about it** — it does not remember a
     field or subscribe to anything. The rule is a caller obligation, recorded
     here because the failure is invisible from inside this file: every number it

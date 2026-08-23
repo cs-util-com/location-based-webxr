@@ -1733,7 +1733,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
   const upAt = (view: ReturnType<typeof fakeView>): number | undefined =>
     applied(view).at(-1);
 
-  it("HOLDS the descent behind a black screen until the elevation estimate lands", async () => {
+  it("HOLDS the descent behind a black screen, and releases it without an estimate", async () => {
     // WHY THIS TEST MATTERS (r543 field report). "Das erste Mal ... starte ich
     // bei Altitude null ... wodurch ich dann erstmal sehr weit unter der Open
     // Street Map Welt bin und dann wird meine Altitude gefixt, so dass ich dann
@@ -1744,6 +1744,17 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     // uncorrected datum and the correction landed mid-descent, as a jump. This
     // pins the whole gate through the frame loop, which `ar-descent.test.ts`
     // cannot do: that file only owns the arithmetic.
+    //
+    // ⚠️ SINCE DEC-M2 THE VEIL IS THE BINDING HALF OF THAT GATE, and the
+    // milestone review caught the name claiming otherwise: the entry veil
+    // cannot go before 4 s and the estimate fallback expires at 3 s, so
+    // `descentMayStart` is already satisfied whenever the veil is gone.
+    // `ar-entry-dom-veil.test.ts` pins that relationship as a constant
+    // comparison, which is the only place it can be asserted rather than
+    // coincidentally observed. What this test still proves through the frame
+    // loop is the pair of properties that matter either way: the city does not
+    // move while the screen is black, and a session whose estimator NEVER
+    // engages still lands.
     const container = document.createElement("div");
     document.body.append(container);
     const view = viewAtHeight(START_M);
@@ -1760,11 +1771,10 @@ describe("the AR entry fly-down (H5, Q5)", () => {
 
     // TWO SECONDS OF FRAMES -- INSIDE the wait, not past it, and the exact
     // frame range is what makes the opaque-veil assertion below mean anything.
-    // The first version ran to elapsed 5, but the fallback opens the gate at
-    // elapsed 4 (`firstFrameS` is 1 plus a 3 s wait) and the descent then spends
-    // its own 2 s hold at `cameraFadeAlpha === 0`, i.e. also fully opaque. So
-    // reading the LAST value was reading the DESCENT fade and passed with the
-    // gate's own hold deleted. Cold review caught it.
+    // The first version ran to elapsed 5, but the gate opens earlier than that
+    // and the descent then spends its own 2 s hold with the sphere still fully
+    // opaque. So reading the LAST value was reading the DESCENT hold and passed
+    // with the gate's own hold deleted. Cold review caught it.
     runFrames(1, 3);
     expect(
       upAt(view),
@@ -1922,8 +1932,9 @@ describe("the AR entry fly-down (H5, Q5)", () => {
 
   it("adds NO entry veil when there is no height to fall from", async () => {
     // Entering from a ground-level 3D view has nothing to descend, so there is
-    // no fade to run -- and `cameraFadeAlpha` returns 1 for a zero start, so a
-    // veil there would be an opaque lid that never lifts.
+    // no fade to run -- and `entryVeilAlpha` answers 0 for a zero start, so a
+    // sphere there would be an opaque lid that never lifts. (The DOM veil DOES
+    // cover this entry since DEC-M1b; only the mesh is skipped.)
     const view = viewAtHeight(0);
     await startArMode(
       deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
@@ -2271,12 +2282,17 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     });
 
     it("is removed when the session ends MID-FADE", async () => {
-      // The exit path the fade creates that the hard cut did not: between the
-      // second frame and the end of the fade there is now a ~3 s window in
-      // which the veil is attached and partially opaque. A session torn down in
-      // that window — the back gesture, the headset coming off, ARCore dropping
-      // the session — must still take it down, or the desktop app is left under
-      // a translucent black rectangle.
+      // The exit path the fade creates that the hard cut did not: there is now
+      // a window in which the veil is attached and PARTIALLY TRANSPARENT. A
+      // session torn down in it — the back gesture, the headset coming off,
+      // ARCore dropping the session — must still take it down, or the desktop
+      // app is left under a translucent black rectangle.
+      //
+      // ⚠️ THE SAMPLE POINT HAD TO MOVE WITH DEC-M1, and the milestone review
+      // caught that it had not: the fade no longer starts on the second frame,
+      // so the old frame times tore down during the HOLD, where the veil is
+      // fully opaque and `style.opacity` has never been written. The test still
+      // passed while testing something else.
       const container = document.createElement("div");
       document.body.append(container);
       const mode = await startArMode(
@@ -2288,11 +2304,25 @@ describe("the AR entry fly-down (H5, Q5)", () => {
         }),
       );
 
+      const firstFrameS = 0.016;
       const onFrame = lastFrameFn();
-      onFrame({ dt: 0.016, elapsed: 0.016 });
+      onFrame({ dt: 0.016, elapsed: firstFrameS });
       onFrame({ dt: 0.016, elapsed: 0.032 });
-      onFrame({ dt: 0.016, elapsed: 0.032 + ENTRY_DOM_VEIL_FADE_S / 2 });
-      expect(veilIn(container)).not.toBeNull();
+      // The frame that OPENS the fade (alpha still 1, the curve's own start)...
+      const fadeStartS = firstFrameS + ENTRY_DOM_VEIL_HOLD_S;
+      onFrame({ dt: 0.016, elapsed: fadeStartS });
+      // ...and one half-way through it.
+      onFrame({
+        dt: 0.016,
+        elapsed: fadeStartS + ENTRY_DOM_VEIL_FADE_S / 2,
+      });
+      // MID-FADE, asserted rather than assumed: partially transparent is the
+      // state this exit path exists for.
+      const midway = Number.parseFloat(
+        (veilIn(container) as HTMLElement).style.opacity,
+      );
+      expect(midway).toBeGreaterThan(0);
+      expect(midway).toBeLessThan(1);
 
       mode.dispose();
       expect(veilIn(container)).toBeNull();

@@ -459,6 +459,12 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // arbitrary children, and this repo has shipped exactly that regression
     // once already.
     session.entryDomVeil?.remove();
+    // AND THE FIELD CLEARED, like the mesh veil below it. `remove()` is
+    // idempotent so nothing depended on this, but the descent gate reads
+    // `entryDomVeil === undefined` as "the veil is gone" — leaving a removed
+    // veil in the field is a state where the two disagree, which is worth not
+    // having even where no path reaches it.
+    session.entryDomVeil = undefined;
     session.releaseXrSelect?.();
     session.unregisterFrame?.();
     session.hud?.dispose();
@@ -669,6 +675,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
             // and much larger change. `remove()` is idempotent, so the boot
             // path that follows is unaffected.
             session.entryDomVeil?.remove();
+            session.entryDomVeil = undefined;
             return;
           }
           // NOT `endARSession()` — the session is already ending.
@@ -863,25 +870,34 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       entryVeil.follow(camera.getWorldPosition(new THREE.Vector3()));
       scene.add(entryVeil.mesh);
       session.entryVeil = entryVeil;
-
-      // THE WAITING LINE (DEC-J11). The hold before the descent can last
-      // `DESCENT_ESTIMATE_WAIT_S`, and a static picture with no motion for that
-      // long does not say whether the entry is working or stalled -- the same
-      // ambiguity `descentComplete` exists to remove at the other end.
-      //
-      // NOT "the screen would otherwise be blank", which an earlier draft
-      // claimed: the city is already attached below the user by the eager
-      // attach above, and the additive shell draws OVER the veil, so the hold
-      // shows the city 60-100 m down. It is the absence of MOTION that is
-      // ambiguous, not the absence of pixels.
-      const entryWait = document.createElement("p");
-      entryWait.className = "ar-entry-wait";
-      entryWait.setAttribute("role", "status");
-      entryWait.setAttribute("aria-live", "polite");
-      entryWait.textContent = "Finding your position…";
-      deps.container.append(entryWait);
-      session.entryWait = entryWait;
     }
+
+    // THE WAITING LINE (DEC-J11). The hold before anything moves can last from
+    // `ENTRY_DOM_VEIL_HOLD_S` to the readiness ceiling, and a static picture
+    // with no motion for that long does not say whether the entry is working or
+    // stalled -- the same ambiguity `descentComplete` exists to remove at the
+    // other end.
+    //
+    // OUTSIDE THE DESCENT GATE, unlike the sphere above (milestone review,
+    // finding 4). It used to sit inside it, which was right while the DOM veil
+    // shared that condition: an entry with no fly-in showed the live scene and
+    // had nothing to wait for. DEC-M1b changed that -- a ground-level entry is
+    // now behind an opaque veil for up to ten seconds -- and leaving the line
+    // behind would have made that path a featureless black screen, which is
+    // precisely the ambiguity DEC-J11 wrote it for.
+    //
+    // NOT "the screen would otherwise be blank", which an earlier draft
+    // claimed of the fly-in case: the city is already attached below the user
+    // by the eager attach above, and the additive shell draws OVER the sphere,
+    // so the hold shows the city 60-100 m down. It is the absence of MOTION
+    // that is ambiguous there, not the absence of pixels.
+    const entryWait = document.createElement("p");
+    entryWait.className = "ar-entry-wait";
+    entryWait.setAttribute("role", "status");
+    entryWait.setAttribute("aria-live", "polite");
+    entryWait.textContent = "Finding your position…";
+    deps.container.append(entryWait);
+    session.entryWait = entryWait;
 
     applyComposed();
 
@@ -1119,9 +1135,24 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // `estimateReady` already uses for an absent estimator.
         const contentReady = deps.entryContentReady?.() ?? true;
         const waitedS = elapsed - firstFrameS;
+        // AN UNUSABLE CLOCK OPENS THE GATE, and this is the one place that
+        // rule is inverted (milestone review, finding 5). `entryFadeMayStart`
+        // answers "not yet" for a `NaN`, deliberately: for the FLY-IN, opening
+        // on a meaningless reading would place the city from an uncorrected
+        // datum. But this veil's removal now depends on that gate, and
+        // `firstFrameS` is latched with `??=` — so one `NaN` first reading
+        // would poison every later `waitedS` and leave an opaque element over
+        // a live session forever. That is the lid, arriving through the guard
+        // that was supposed to prevent one.
+        //
+        // `domVeilAlpha(NaN)` already answers 0, i.e. "no veil", so opening
+        // here restores exactly the behaviour this module had before the gate
+        // existed: an unusable clock takes the veil down rather than leaving it.
+        const clockUnusable = !Number.isFinite(waitedS);
         if (
           session.framesSinceVeil >= 2 &&
           (session.domVeilFadeStartS !== undefined ||
+            clockUnusable ||
             entryFadeMayStart({ waitedS, aligned, contentReady }))
         ) {
           if (session.domVeilFadeStartS === undefined) {
@@ -1180,6 +1211,19 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // rather than as a second clock: the veil's own removal condition is
         // its alpha reaching 0, so this cannot disagree with what the screen
         // shows.
+        //
+        // ⚠️ AND IT SUBSUMES THE ESTIMATE WAIT AT TODAY'S CONSTANTS, which the
+        // milestone review caught the plan claiming otherwise. The veil cannot
+        // go before `ENTRY_DOM_VEIL_HOLD_S + ENTRY_DOM_VEIL_FADE_S` = 4 s, and
+        // `descentMayStart`'s fallback expires at `DESCENT_ESTIMATE_WAIT_S` =
+        // 3 s, so by the time `veilGone` is true the second term is already
+        // satisfied on every path INCLUDING the ceiling. It is kept because it
+        // is the honest statement of what the fly-in requires — the r543 jump
+        // is about the estimate, not about the veil — and because the two sets
+        // of constants are owned by different modules and can drift apart.
+        // `ar-entry-dom-veil.test.ts` asserts the relationship so that a future
+        // change to either side surfaces as a red test rather than as a silent
+        // change in which gate is load-bearing.
         const veilGone = session.entryDomVeil === undefined;
         if (
           !veilGone ||
@@ -1347,7 +1391,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         session.entryWait?.remove();
         session.entryWait = undefined;
         session.entryVeil?.follow(camera.getWorldPosition(cameraWorld));
-        session.entryVeil?.setAlpha(entryVeilAlpha(input));
+        // ONCE PER FRAME, and read twice from the same value: the disposal
+        // below asks the same question, and two calls would be two chances for
+        // the alpha the user sees and the alpha the disposal reads to disagree.
+        const veilAlpha = entryVeilAlpha(input);
+        session.entryVeil?.setAlpha(veilAlpha);
         if (!descentDone && descentComplete(input)) {
           // THE VISIBLE END-STATE SIGNAL the plan requires. A descent that
           // STALLS is otherwise indistinguishable from the recorded "flying
@@ -1373,7 +1421,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // and the clock is cleared, after which this whole block costs nothing
         // for the rest of the session. `descentDone` alone latches the one-shot
         // start guard above.
-        if (session.entryVeil !== undefined && entryVeilAlpha(input) <= 0) {
+        if (session.entryVeil !== undefined && veilAlpha <= 0) {
           session.entryVeil.dispose();
           session.entryVeil = undefined;
           descentStartS = undefined;

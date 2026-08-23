@@ -208,11 +208,12 @@ t = 10 s is still uncovered and always will be.
     before fails three.
 - `boot-and-shell.spec.js` — asserts `#ar-root` is empty after a refused entry.
   ⚠️ **This does NOT guard this veil, and the sidecar says so deliberately.**
-  The assertion is about `#ar-root` being empty after a REFUSED entry, which
-  the framework's own teardown satisfies — verified by mutation: deleting the
-  removal from the refusal path leaves the e2e green. (Since DEC-M1b the veil
-  IS created for that fixture, which makes the e2e's silence a stronger reason
-  to keep the unit assertions rather than a weaker one.) It guards the framework's own canvas, which is
+  ⚠️ **That was true until DEC-M1b and is now false**, which is worth keeping
+  rather than quietly rewriting: the veil used to be created only for an entry
+  with a fly-in, and that fixture's desktop camera gives 0 — deleting the
+  removal from the refusal path left the e2e green, verified by mutation. The
+  veil is now created for **every** entry including a refused one, so
+  `#ar-root` really would be non-empty. The e2e is a real guard for it today. It guards the framework's own canvas, which is
   what it guarded before. Recording it as this veil's e2e would have been an
   assertion that looks like a guard and is not.
 

@@ -15,6 +15,7 @@ import {
   entryFadeMayStart,
 } from "./ar-entry-dom-veil.js";
 import { ENTRY_VEIL_COLOUR } from "./ar-entry-veil.js";
+import { DESCENT_ESTIMATE_WAIT_S } from "./ar-descent.js";
 
 /**
  * Why these tests matter: this element exists to be indistinguishable from the
@@ -136,7 +137,7 @@ describe("the fade (DEC-L1)", () => {
     // ⚠️ NOTE THIS IS *NOT* `ar-entry-veil.ts`'s `setAlpha` rule, which clamps
     // `+Infinity` UP to 1. There the input is an opacity and "as opaque as
     // possible" is a real request; here the input is ELAPSED TIME, so an
-    // infinite reading means the fade is long over. `cameraFadeAlpha` is the
+    // infinite reading means the fade is long over. `entryVeilAlpha` is the
     // rule this follows: every degenerate input resolves to "no veil".
     for (const bad of [
       Number.NaN,
@@ -250,6 +251,24 @@ describe("when the entry veil may start fading (DEC-M1)", () => {
         contentReady: false,
       }),
     ).toBe(true);
+  });
+
+  it("cannot open before the fly-in's own estimate wait has expired", () => {
+    // WHICH GATE IS LOAD-BEARING, pinned as a constant relationship — the same
+    // device `elevation-nudge.test.ts` uses for `DESCENT_MAX_START_M` against
+    // the nudge's reach, and for the same reason: the two numbers live in
+    // different modules and nothing else would notice them crossing.
+    //
+    // The milestone review found the plan claiming that on a slow-estimator
+    // path the fly-in "still waits for the estimate". It cannot: the veil
+    // cannot go before HOLD + FADE, and `descentMayStart`'s fallback expires at
+    // `DESCENT_ESTIMATE_WAIT_S`, so once the veil is gone the estimate term is
+    // already true on every path. That is fine — but it must be a stated
+    // relationship rather than an accident, because reversing it would make the
+    // estimate gate load-bearing again with no test noticing.
+    expect(
+      ENTRY_DOM_VEIL_HOLD_S + ENTRY_DOM_VEIL_FADE_S,
+    ).toBeGreaterThanOrEqual(DESCENT_ESTIMATE_WAIT_S);
   });
 
   it("is monotone in time, so a fade can never un-start", () => {
