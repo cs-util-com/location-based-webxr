@@ -183,6 +183,25 @@ export interface ArModeDeps {
    * unchanged.
    */
   readonly onDescentComplete?: () => void;
+  /**
+   * Called ONCE, with seconds since the session's first frame, when the
+   * elevation estimator first engages (owner decision, 2026-08-23).
+   *
+   * **AN INSTRUMENT, NOT A FEATURE.** DEC-L2 lengthened the entry fly-in to
+   * 12 s partly so the auto-elevation correction lands underneath it — and that
+   * argument turns on how long engagement takes while a user stands still,
+   * which has never been measured and which **no gate here can measure**: the
+   * estimator needs depth observations built from motion, and every fixture
+   * that reaches an engaged state does so by walking. See
+   * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
+   *
+   * **Its ABSENCE is also a measurement**: a session where this never fires
+   * says the estimator never engaged, which is the outcome that followup
+   * considers most likely.
+   *
+   * Optional, so a caller that does not want to say anything is unchanged.
+   */
+  readonly onEstimateEngaged?: (afterS: number) => void;
   /** The session's anchor — the framework's `zero`, already read by the caller. */
   readonly origin: FrameworkLatLong | null;
   /**
@@ -735,6 +754,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     let descentM = 0;
     /** Latched, so the one-shot start guard cannot re-arm after the landing. */
     let descentDone = false;
+    /** Latched, so the engagement stamp is announced once per session. */
+    let estimateEngagedReported = false;
 
     let appliedAutoM = 0;
     /**
@@ -1158,6 +1179,23 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           alignment: aligned ? arWorldGroup.matrix.elements : undefined,
         });
         autoM = latestAuto.autoM;
+        // THE ENGAGEMENT STAMP (owner decision, 2026-08-23), and it is an
+        // instrument rather than a feature — see `onEstimateEngaged`.
+        //
+        // ONCE, latched on its own flag rather than on `latestAuto.engaged`
+        // alone: engagement is HYSTERETIC (`ar-elevation-auto.ts` owns both
+        // thresholds), so a confidence hovering at the boundary would otherwise
+        // re-announce every crossing.
+        //
+        // RELATIVE TO THE FIRST FRAME, not to `elapsed`, which is PAGE-relative
+        // — a session entered thirty seconds after load sees its first frame at
+        // `elapsed ~= 30`, and an unsubtracted stamp would report a number that
+        // grows with how long the tab has been open. Same trap the fps sampler
+        // and the descent clock both document.
+        if (latestAuto.engaged && !estimateEngagedReported) {
+          estimateEngagedReported = true;
+          deps.onEstimateEngaged?.(elapsed - (firstFrameS ?? elapsed));
+        }
         // THE APPLICATION-TIME EASE (cold-review F4): glide the applied auto
         // contribution toward the published target at the bounded rate, so a
         // cold-start first value or a 1 Hz step never moves the content in

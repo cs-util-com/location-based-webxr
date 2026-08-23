@@ -383,6 +383,69 @@ describe("the automatic elevation offset", () => {
     return elapsed;
   };
 
+  it("stamps WHEN the elevation estimate engaged, exactly once", async () => {
+    // WHY THIS TEST MATTERS: it is the instrument for a question no gate here
+    // can answer. DEC-L2 lengthened the entry fly-in to 12 s partly so the
+    // auto-elevation correction lands underneath it — but that argument turns
+    // on how long the estimator takes to ENGAGE while a user stands still
+    // holding up a phone, and nobody has ever measured it
+    // (`2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`).
+    // Owner decision, 2026-08-23: put the number on screen in the field rather
+    // than guess at it or widen the wait blindly.
+    //
+    // ONCE, NOT PER FRAME. The estimator's engagement is hysteretic, so a
+    // per-frame call would also re-announce every time confidence crossed back
+    // and forth — a toast that repeats is a toast nobody reads.
+    //
+    // AND ITS ABSENCE IS ALSO A MEASUREMENT: a session where this never fires
+    // says the estimator never engaged at all, which is the outcome the
+    // followup considers most likely.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const onEstimateEngaged = vi.fn();
+    const view = fakeView();
+    // THE POSE IS WHAT THE ESTIMATOR MEASURES FROM: without a camera position
+    // it never builds confidence, and this test would assert nothing.
+    getCurrentArPose.mockReturnValue({
+      position: { x: 0, y: 4.6, z: 0 },
+      orientation: { x: 0, y: 0, z: 0, w: 1 },
+    });
+
+    await startArMode({ ...autoDeps(view, container), onEstimateEngaged });
+
+    const sample = makeWorldPointSample(
+      [0, 4.6, 0],
+      surfacePatch(() => 3, 1, 0.2),
+    );
+    const { depth } = sessionCallbacks();
+    depth?.onCaptured(sample);
+    depth?.onCaptured(sample);
+
+    expect(onEstimateEngaged).not.toHaveBeenCalled();
+
+    // WALKING, for the same reason the test above does: a standstill stream
+    // never clears the confidence gate in this fixture, so a still run would
+    // assert nothing.
+    // FROM A PAGE CLOCK ALREADY AT 30 s, deliberately: `elapsed` is
+    // page-relative, so a stamp that forgot to subtract the first frame would
+    // report ~30+ here and the bound below catches it. Walking from 1 could not
+    // tell the two apart — verified by mutation, which is how this fixture came
+    // to start at 30 rather than at 1.
+    const resumeS = walkFrames(30, 38);
+    expect(onEstimateEngaged).toHaveBeenCalledTimes(1);
+
+    // MEASURED FROM THE FIRST FRAME, not from page load. `elapsed` is
+    // page-relative — a session entered thirty seconds after load sees its
+    // first frame at `elapsed ≈ 30` — so a stamp that forgot to subtract would
+    // report a number that grows with how long the tab has been open, which is
+    // exactly the trap `windowOpenedAtS` and the descent clock both document.
+    const afterS = onEstimateEngaged.mock.calls[0]?.[0] as number;
+    expect(afterS).toBeGreaterThan(0);
+    expect(afterS).toBeLessThan(9);
+
+    walkFrames(resumeS, resumeS + 3);
+    expect(onEstimateEngaged).toHaveBeenCalledTimes(1);
+  });
   it("requests depth sensing and starts the reconstruction-cadence capture", async () => {
     await startArMode(deps({ autoElevation: { terrainHeightM: () => 100 } }));
 

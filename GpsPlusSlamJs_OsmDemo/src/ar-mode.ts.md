@@ -42,6 +42,27 @@ the two are one decision.
   - `store` is the INTERSECTION `TrackingSubscribableStore & SubscribableStore`, because `initAR` and the alignment wiring want different `getState` shapes and neither subsumes the other. Stated as an intersection rather than as the concrete `SlamAppStore`, whose shape changes with the demo's `extraReducers`.
   - `sceneAnchor` and `enuFrameAt` are how the city's own ENU origin is reconciled with the GPS one. The mesh is authored about the demo's anchor and the GPS-world frame is about `zero`; without the offset the city renders at the right orientation and the wrong place.
   - `origin` is the framework's `zero`, read by the caller. `null` means no fix.
+  - `onEstimateEngaged?(afterS)` — **an instrument, not a feature** (owner
+    decision, 2026-08-23). Called ONCE per session, with seconds since the
+    session's first frame, when the elevation estimator first engages.
+    - **Why it exists:** DEC-L2 stretched the entry fly-in to 12 s partly so the
+      auto-elevation correction lands underneath it, and that argument turns on
+      how long engagement takes **while a user stands still** — never measured,
+      and **unmeasurable here**: the estimator's confidence is built from depth
+      observations that need motion, so every fixture that reaches an engaged
+      state does so by walking. See
+      `GpsPlusSlamJs_Docs/docs/2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
+    - **Its absence is also a measurement:** no call in a whole session means
+      the estimator never engaged, which is the outcome that followup considers
+      most likely.
+    - **Relative to the first frame, not to `elapsed`**, which is page-relative.
+      A stamp that forgot to subtract would grow with how long the tab had been
+      open — the same trap the fps sampler and the descent clock document, and
+      the test walks from a page clock of 30 s precisely so it can fail on it.
+    - **Latched on its own flag**, because engagement is hysteretic: keying off
+      `engaged` alone would re-announce every boundary crossing.
+    - `main.ts` renders it as an AR toast rather than a console line: the
+      measurement is taken in the field, where a console needs a cable.
 - `startArMode(deps): Promise<ArMode>` — **never rejects.** A refused session,
   an unsupported device and a missing GPS fix are ordinary outcomes the page
   renders, not exceptions; all of them reach the user through `onError` and

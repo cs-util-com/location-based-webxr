@@ -1700,6 +1700,22 @@ async function main(): Promise<void> {
       sceneAnchor: anchors.origin,
       enuFrameAt,
       onError: (message) => store.dispatch(actions.nonFatalError(message)),
+      // THE ENGAGEMENT STAMP (owner decision, 2026-08-23) — an instrument for a
+      // question no gate can answer: how long the elevation estimator takes to
+      // engage while a user STANDS STILL. DEC-L2's 12 s fly-in was argued partly
+      // from that number, and nobody has ever measured it.
+      //
+      // A TOAST, not `console.info`. The measurement has to be taken in the
+      // field, on a phone, where a console line needs a cable and a laptop —
+      // i.e. where it would never actually be read. The AR readout's row is
+      // width-constrained (DEC-J8), so a transient line is also the only place
+      // this fits. Same reasoning as DEC-K6's trust-gate acknowledgement.
+      //
+      // AND ITS ABSENCE IS THE OTHER HALF OF THE MEASUREMENT: no toast in a
+      // whole session means the estimator never engaged at all.
+      onEstimateEngaged: (afterS) => {
+        arToast.show(`Elevation estimate engaged after ${afterS.toFixed(1)} s`);
+      },
       // THE AUTO ELEVATION OFFSET (plan §2.6). Presence is the switch: the
       // whole group is omitted when the URL kill switch (`?autoElevation=off`)
       // is set, read HERE at entry so a field A/B is one reload. The sampler
