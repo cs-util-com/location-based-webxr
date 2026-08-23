@@ -47,16 +47,42 @@ passed against a call that provably did nothing. `ar-mode.test.ts` now asserts
 - `ENTRY_VEIL_RADIUS_M = 50` — **a range, not a derived number.** Must clear the
   0.5 m near plane by a wide margin and stay inside the 1000 m far plane; roughly
   10–200 m satisfies both.
-- `entryVeilAlpha(input: DescentInput): number` — `[0,1]`. Derived as
-  `1 - cameraFadeAlpha(input)` rather than re-implemented: the camera fading in
-  and the veil fading out are one event, and a second curve could only drift.
+- `ENTRY_VEIL_FADE_S = 2` — how long the sphere takes to fade once the city has
+  landed.
+- `entryVeilAlpha(input: DescentInput): number` — `[0,1]`. **1 for the whole
+  fly-in, then a smoothstepped fade over `ENTRY_VEIL_FADE_S` (DEC-M3).**
+  - **It used to be `1 - cameraFadeAlpha`**, i.e. the exact inverse of how far
+    the city had travelled, on the argument that the camera coming in and the
+    veil going out are one visual event. The eighteenth field session's
+    objection defeats that on its own terms: the event the camera should fade in
+    FOR is the fly-in's **completion**, not its progress — at the half-way point
+    the sphere was ~0.5 transparent with the city still 30 m overhead.
+  - **One clock survives**, which is what mattered about the old rule: this is
+    still a pure function of the descent's `elapsedS`.
+  - **`startM ≤ 0` answers 0** — an explicit guard now, where it used to be
+    inherited from `cameraFadeAlpha`. `ar-mode.ts` depends on it in two places.
 - `createArEntryVeil(): ArEntryVeil` — `{ mesh, follow, setAlpha, dispose }`.
 
 ## Invariants & assumptions
 
 - **The veil must not survive the entry.** An opaque surface left in an AR scene
   is a lid over the passthrough — worse than having no veil at all.
-  - `entryVeilAlpha` returns **exactly** `0` on landing, not "close to".
+  - `entryVeilAlpha` returns **exactly** `0` at `hold + fall + ENTRY_VEIL_FADE_S`,
+    not "close to" — and `ar-mode.ts` disposes the mesh when it reaches 0, so a
+    curve that never quite got there would BE the lid.
+  - ⚠️ **The disposal moved with the curve, and getting only half of that right
+    is the trap.** The frame loop drives the sphere inside
+    `if (descentStartS !== undefined)`, and the landing branch used to clear
+    that in the same breath as disposing. Holding the alpha to landing while
+    leaving the disposal there would drop an opaque veil; moving only the
+    disposal would leave the sphere opaque for the rest of the session. The
+    clock now survives the landing and is cleared where the mesh is disposed.
+  - ⚠️ **A stalled frame loop now freezes the sphere at its most opaque.**
+    `onXRFrame`'s early returns sit above the alpha writes, so a frame that
+    skips rendering freezes the value — which used to mean "part-way faded" and
+    now means "a full lid", over a window that grew from the 2 s hold to the
+    whole entry. The session teardown's disposal is the backstop; a second clock
+    to detect the stall would be a second thing that can disagree.
   - Every degenerate input (`startM` of 0, negative, `NaN`, either infinity; a
     `NaN` clock) resolves to **no veil**.
   - `setAlpha(NaN)` and `setAlpha(-1)` hide the mesh. Three renders a `NaN`

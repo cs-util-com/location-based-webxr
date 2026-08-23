@@ -52,6 +52,7 @@ import { createArEntryVeil, entryVeilAlpha } from "./ar-entry-veil.js";
 import {
   createArEntryDomVeil,
   domVeilAlpha,
+  entryFadeMayStart,
   type ArEntryDomVeil,
 } from "./ar-entry-dom-veil.js";
 import { fusedGpsFrom } from "./ar-fused-gps.js";
@@ -202,6 +203,40 @@ export interface ArModeDeps {
    * Optional, so a caller that does not want to say anything is unchanged.
    */
   readonly onEstimateEngaged?: (afterS: number) => void;
+  /**
+   * Whether the AR entry rebuild has settled (DEC-M1).
+   *
+   * Entering AR re-fetches and re-meshes the city, because the AR datum is
+   * baked into its vertices; until that settles, what is on screen was built
+   * for the desktop datum. The entry veil holds until this says yes, so the
+   * user never meets the ~100 m version of the city.
+   *
+   * **A GETTER, CALLED PER FRAME, NOT A VALUE OR A PROMISE.** The pass it
+   * reports on is started by the caller AFTER `startArMode` resolves, so
+   * nothing readable at construction time can answer this — and a promise here
+   * would need its own lifecycle inside a session that can end at any moment.
+   *
+   * **Absent means "nothing to wait for"**, the convention `estimateReady`
+   * already uses for an absent estimator, so a caller that does not wire it is
+   * not silently held to {@link ENTRY_READY_MAX_WAIT_S}.
+   */
+  readonly entryContentReady?: () => boolean;
+  /**
+   * Called ONCE, when the entry veil begins to fade (DEC-M1a).
+   *
+   * **AN INSTRUMENT, NOT A FEATURE**, like {@link onEstimateEngaged} beside it,
+   * and it exists because `ENTRY_READY_MAX_WAIT_S` is a guess: if a field
+   * session comes back with `aligned: false` or `contentReady: false` here, the
+   * ceiling is the normal path and the black screen is effectively fixed-length
+   * — which is the outcome DEC-M1 rejected in its literal form. Both flags
+   * therefore travel with the time, because the time alone cannot distinguish
+   * "ready at 2 s" from "gave up at 8".
+   */
+  readonly onEntryReady?: (details: {
+    readonly afterS: number;
+    readonly aligned: boolean;
+    readonly contentReady: boolean;
+  }) => void;
   /** The session's anchor — the framework's `zero`, already read by the caller. */
   readonly origin: FrameworkLatLong | null;
   /**
@@ -544,9 +579,15 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // the field report saw as a flash of camera between two blacks, and no scene
   // mesh can close it because there is no rendered scene yet.
   //
-  // GATED ON THE SAME CONDITION AS THE MESH VEIL. With `descentStartM === 0`
-  // there is no descent, no mesh veil and nothing to fade, so a DOM veil there
-  // would be an opaque lid with nothing to lift it.
+  // FOR EVERY ENTRY, NOT ONLY ONE WITH A FLY-IN (DEC-M1b). It used to be gated
+  // on `descentStartM > 0` because without a descent there was no fade to hide
+  // behind, so the veil would have been an opaque block ending in a hard cut.
+  // BOTH HALVES OF THAT ARGUMENT HAVE EXPIRED: DEC-L1 gave the veil its own
+  // fade and DEC-M1 gave it its own end condition. What has not expired is the
+  // reason it is needed — an entry from a ground-level 3D view meets exactly
+  // the same un-aligned city (M2), and gating on the descent left that path
+  // with no cover at all. The MESH veil stays gated on the descent: it hides
+  // the camera during a fly-in, and there is no fly-in there.
   //
   // ⚠️ AND THE DESKTOP GOES BLACK WHILE THE CONSENT PROMPT IS UP, which is the
   // accepted price rather than an oversight. `#ar-root` is hidden only while
@@ -555,9 +596,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // session is granted is not available: `initAR` wraps `requestSession`, and
   // the window this veil exists for opens the moment that call resolves.
   // Every exit path removes it, so a refusal returns to the desktop view.
-  if (descentStartM > 0) {
-    session.entryDomVeil = createArEntryDomVeil(deps.container);
-  }
+  session.entryDomVeil = createArEntryDomVeil(deps.container);
 
   try {
     await initAR(
@@ -813,9 +852,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // See `ar-entry-veil.ts.md`.
     //
     // ONLY WHEN THERE IS A DESCENT. Entering from a ground-level 3D view gives
-    // `descentStartM === 0`, and `cameraFadeAlpha` returns 1 for a zero start,
-    // so there is nothing to fade: a veil there would be an opaque lid that
-    // never lifts.
+    // `descentStartM === 0`, for which `entryVeilAlpha` answers 0 at every
+    // reading — there is no fly-in to hide, so a sphere here would be an opaque
+    // lid that never lifts. The DOM veil covers that entry instead (DEC-M1b).
     if (descentStartM > 0) {
       const entryVeil = createArEntryVeil();
       entryVeil.setAlpha(
@@ -1022,6 +1061,22 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // The last auto state, held for the HUD between the ~1 Hz ticks.
     let latestAuto: ArElevationAutoState | undefined;
     session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
+      // THE FIRST-FRAME STAMP, TAKEN AT THE TOP (DEC-M1). It used to be latched
+      // just above the descent gate, which was its only reader; the veil gate
+      // now measures its hold from the same reading, and two clocks for "how
+      // long has this session been running" is exactly the drift this file has
+      // been bitten by before.
+      firstFrameS ??= elapsed;
+      // WHETHER THE FUSION HAS SOLVED AT ALL, hoisted out of the auto-elevation
+      // block that used to own it (DEC-M1). It gates the veil now, so it must
+      // be computed whatever the estimator configuration is — with
+      // `?autoElevation=off` the old copy never ran at all, and the veil would
+      // have waited out its ceiling on every entry.
+      //
+      // IDENTITY MEANS NO SOLVE HAS LANDED. The framework's lerper applies the
+      // FIRST target instantly rather than animating out of identity, so this
+      // is "a solve has been applied", not "a solve is on its way".
+      const aligned = !arWorldGroup.matrix.equals(identityMatrix);
       // THE DOM VEIL STARTS FADING ON THE SECOND FRAME, AND THE COUNT IS THE
       // POINT.
       //
@@ -1043,15 +1098,39 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       // frame that skipped `renderer.render`, a one-frame seam between the DOM
       // overlay layer and the WebGL layer, or a two-frame margin too thin for
       // the device. A fade covers all three without anyone having to decide
-      // which is real. The fully-black period is unchanged: the fade STARTS
-      // where the removal used to be, at alpha 1.
+      // which is real.
+      //
+      // ⚠️ THE SECOND FRAME IS NOW A FLOOR, NOT THE TRIGGER (DEC-M1). The
+      // eighteenth session asked for a deliberate black period long enough that
+      // the work AR entry starts has finished — *"nach den sechs Sekunden
+      // sollten eigentlich die OpenStreetMap-3D-Sachen alle da sein"* — and
+      // watched an un-aligned city because nothing waited for the first GPS
+      // solve. `entryFadeMayStart` owns both conditions and the hold; this
+      // block owns only the sub-frame race above.
       //
       // REMOVED WHEN THE CURVE REACHES 0, not on a timer of its own, so the
       // element and the opacity cannot disagree about whether the entry is over.
       if (session.entryDomVeil !== undefined) {
         session.framesSinceVeil = (session.framesSinceVeil ?? 0) + 1;
-        if (session.framesSinceVeil >= 2) {
-          session.domVeilFadeStartS ??= elapsed;
+        // CALLED EVERY FRAME UNTIL IT OPENS, and read from `deps` each time
+        // rather than captured: the pass it reports on starts AFTER
+        // `startArMode` resolves, so a value read once at construction would be
+        // `false` forever. Absent means "nothing to wait for", the convention
+        // `estimateReady` already uses for an absent estimator.
+        const contentReady = deps.entryContentReady?.() ?? true;
+        const waitedS = elapsed - firstFrameS;
+        if (
+          session.framesSinceVeil >= 2 &&
+          (session.domVeilFadeStartS !== undefined ||
+            entryFadeMayStart({ waitedS, aligned, contentReady }))
+        ) {
+          if (session.domVeilFadeStartS === undefined) {
+            session.domVeilFadeStartS = elapsed;
+            // THE READINESS STAMP (DEC-M1a). An instrument, not a feature: the
+            // 8 s ceiling is a guess, and this is what turns the next field
+            // session into a measurement of whether it is the normal path.
+            deps.onEntryReady?.({ afterS: waitedS, aligned, contentReady });
+          }
           const alpha = domVeilAlpha(elapsed - session.domVeilFadeStartS);
           if (alpha > 0) {
             session.entryDomVeil.setAlpha(alpha);
@@ -1061,21 +1140,18 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           }
         }
       }
-      // THE DESCENT'S CLOCK STARTS ON THE FIRST FRAME, not at `startArMode`.
-      // `elapsed` is PAGE-relative — a session entered thirty seconds after load
-      // sees its first frame at `elapsed ≈ 30` — so anchoring to 0 would make
-      // the hold and the fall both already over before a single frame ran, and
-      // the feature would silently do nothing on any page that had been open a
-      // while. That is the same trap the fps sampler below documents.
-      // THE ENTRY GATE (r543). The descent -- and the first attach with it --
-      // waits for the elevation estimate it is measured from.
+      // THE ENTRY GATE (r543, extended by DEC-M2). The descent -- and the first
+      // attach with it -- waits for the elevation estimate it is measured from,
+      // AND for the entry veil to be gone.
       //
-      // THE CLOCK STILL STARTS ON THE FIRST FRAME, not at `startArMode`.
-      // `elapsed` is PAGE-relative: a session entered thirty seconds after
-      // load sees its first frame at `elapsed ~= 30`, so anchoring to 0 would
-      // make the hold and the fall both already over before a single frame
-      // ran. That is the same trap the fps sampler below documents.
-      firstFrameS ??= elapsed;
+      // THE VEIL CONDITION IS DEC-M2. The fly-in used to start the moment the
+      // estimate engaged, which on a warm start is the first frame -- so the
+      // city was already rising behind an opaque veil and the user met it
+      // half-finished. Sequencing it behind the veil is what makes the entry
+      // deterministic rather than a race with the estimator.
+      //
+      // The clock these are measured against is `firstFrameS`, latched at the
+      // top of this callback for the reason recorded there.
       // NO `descentM === 0` TERM ANY MORE, and dropping it was required rather
       // than tidy: the city is now attached at descent depth by `startArMode`,
       // so `descentM` is already `-startM` on the first frame and that
@@ -1093,16 +1169,20 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // NO DESCENT: `descentStartM === 0` -- entered from a ground-level 3D
         // view, or from a `buildingView` that reports no camera height at all,
         // since that read is optional-chained. There is then no entry
-        // transition to hide the wait behind: `cameraFadeAlpha` returns 1 for a
-        // zero start, so nothing fades and the hold below would be up to THREE
-        // SECONDS of opaque veil ending in a hard cut. That is worse than the
-        // jump this gate exists to remove, and it would hit every such session
-        // rather than only the first. Caught in cold review.
+        // transition to hide the wait behind: `entryVeilAlpha` answers 0 for a
+        // zero start, so no mesh veil is built and nothing fades. Waiting here
+        // would be an invisible stall.
         const estimateReady =
           auto === undefined ||
           descentStartM === 0 ||
           (latestAuto?.engaged === true && autoM !== null);
+        // THE VEIL FIRST (DEC-M2), and expressed as "the element is gone"
+        // rather than as a second clock: the veil's own removal condition is
+        // its alpha reaching 0, so this cannot disagree with what the screen
+        // shows.
+        const veilGone = session.entryDomVeil === undefined;
         if (
+          !veilGone ||
           !descentMayStart({ waitedS: elapsed - firstFrameS, estimateReady })
         ) {
           // OPAQUE WHILE WAITING, on the same channel the descent fade uses, so
@@ -1167,7 +1247,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       // very frame published. `sample` self-throttles to ~1 Hz.
       if (auto !== undefined) {
         const pose = getCurrentArPose();
-        const aligned = !arWorldGroup.matrix.equals(identityMatrix);
+        // `aligned` COMES FROM THE TOP OF THE CALLBACK NOW (DEC-M1). It was
+        // computed here, which was fine while this block was its only reader —
+        // the veil gate is a second one, and with `?autoElevation=off` this
+        // block does not run at all.
         latestAuto = auto.sample({
           nowMs: elapsed * 1000,
           cameraPosAr:
@@ -1252,11 +1335,12 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         }
         // THE CAMERA FADE (DEC-J1), on the veil rather than on the renderer.
         //
-        // THIS USED TO BE `setClearAlpha(1 - cameraFadeAlpha(input))`, and it
-        // did nothing on any device: `WebGLBackground.render()` reads
-        // `xr.getEnvironmentBlendMode()` AFTER applying our clear and forces
-        // (0,0,0,0) for `alpha-blend`, which is every video-passthrough phone.
-        // The unit test asserting the call was made passed the whole time.
+        // THIS USED TO BE `setClearAlpha(...)`, and it did nothing on any
+        // device: `WebGLBackground.render()` reads `xr.getEnvironmentBlendMode()`
+        // AFTER applying our clear and forces (0,0,0,0) for `alpha-blend`, which
+        // is every video-passthrough phone. The unit test asserting the call was
+        // made passed the whole time. `ar-entry-veil.ts` carries the full
+        // history.
         //
         // THE WAITING LINE GOES THE MOMENT THE DESCENT DOES (DEC-J11): the
         // ambiguity it answers is "is anything happening", and something is.
@@ -1264,20 +1348,40 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         session.entryWait = undefined;
         session.entryVeil?.follow(camera.getWorldPosition(cameraWorld));
         session.entryVeil?.setAlpha(entryVeilAlpha(input));
-        if (descentComplete(input)) {
+        if (!descentDone && descentComplete(input)) {
           // THE VISIBLE END-STATE SIGNAL the plan requires. A descent that
           // STALLS is otherwise indistinguishable from the recorded "flying
           // roughly 50 m above the OSM buildings" datum bug, and that ambiguity
           // is what would make a field report unactionable. Saying so once, on
           // arrival, is the cheapest way to tell them apart.
-          descentStartS = undefined;
+          //
+          // LATCHED, because this block now keeps running after the landing.
           descentDone = true;
-          // GONE ON LANDING, not merely transparent. This is the moment the
-          // entry is over, and a veil that survives it is the one failure this
-          // feature can produce that is worse than not having it.
-          session.entryVeil?.dispose();
-          session.entryVeil = undefined;
           deps.onDescentComplete?.();
+        }
+        // ⚠️ THE VEIL OUTLIVES THE LANDING NOW (DEC-M3), AND THE CLOCK HAS TO
+        // OUTLIVE IT WITH IT. This branch used to clear `descentStartS` and
+        // dispose the veil in the same breath as reporting the landing. Keeping
+        // the disposal here while `entryVeilAlpha` holds at 1 until landing
+        // would have disposed a fully opaque veil -- and clearing the clock
+        // while moving only the disposal would have left the sphere at opacity
+        // 1 for the rest of the session, which is the lid `ar-entry-veil.ts`
+        // calls strictly worse than having no veil at all. The cold review of
+        // this plan caught exactly that.
+        //
+        // So the veil's own alpha is what ends the entry: at 0 it is disposed
+        // and the clock is cleared, after which this whole block costs nothing
+        // for the rest of the session. `descentDone` alone latches the one-shot
+        // start guard above.
+        if (session.entryVeil !== undefined && entryVeilAlpha(input) <= 0) {
+          session.entryVeil.dispose();
+          session.entryVeil = undefined;
+          descentStartS = undefined;
+        } else if (session.entryVeil === undefined && descentDone) {
+          // NO VEIL TO WAIT FOR -- a session that never built one, i.e. a
+          // ground-level entry. The clock stops at the landing, as it always
+          // did.
+          descentStartS = undefined;
         }
       }
 

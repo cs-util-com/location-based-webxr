@@ -25,6 +25,23 @@ anything worth proving has to live outside it.
   `map-view.ts` already draws a gold glyph for each. Drawing one in 3D while the
   map shows seven would manufacture a disagreement in the exact feature the field
   report raised _because_ the two disagree.
+- ⚠️ **THE PLACEMENT IS ONLY AS CURRENT AS THE FIELD IT WAS COMPUTED FROM, and
+  that cost the eighteenth field session a ~100 m defect (DEC-M4).** `groundY`
+  comes from `terrain.heightAt`, which returns `surface − datum` — and the
+  datum is **not a property of the place**, it is a property of the field: the
+  orthometric height at the window centre on the desktop, and `−N` (the negated
+  geoid undulation) once AR entry has resampled it. A placement computed against
+  one and drawn among geometry built against the other is out by
+  `N + centre height`, about **100 m** at the demo's home city.
+  - So the caller must **re-derive placements whenever the field is replaced**,
+    not only when the quest changes. `main.ts` does that in one function
+    (`drawQuestBeacons`) called from both the `geoEvent` subscriber and the
+    terrain-apply handler; `ar-entry-wiring.test.ts` guards that as source text,
+    because `main.ts` cannot be unit-run.
+  - **This module stays pure and stateless about it** — it does not remember a
+    field or subscribe to anything. The rule is a caller obligation, recorded
+    here because the failure is invisible from inside this file: every number it
+    produced was correct for the field it was handed.
 - **North is `-z`, east is `+x`, up is `+y`** — the same reflection as
   `route-path.ts`, `cell-mesh.ts` and the package's `packInstances`. A fourth
   copy disagreeing about which way is north is what
@@ -66,7 +83,14 @@ buildingView.setQuestBeacons(placements);
 ## Tests
 
 - `quest-beacon-placement.test.ts` — the origin case, both axis mappings, the
-  out-of-window refusal, the DEM outage, one-per-pick, and the non-finite skip.
+  out-of-window refusal, the DEM outage, one-per-pick, the non-finite skip, and
+  the **datum sensitivity** above. That last one cannot fail against today's
+  code and says so at length: it documents the ~100 m, while the red test for
+  the actual defect is `ar-entry-wiring.test.ts`, because the arithmetic was
+  never wrong — nothing re-ran it.
+- `quest-beacon-descent.test.ts` — that a beacon on the content root moves with
+  the AR entry fly-in, written to settle the field report's proposed cause
+  (it does move; the datum was the real cause).
 - `quest-beacon-placement.property.test.ts` — axis **independence** over
   arbitrary origins (|lat| ≤ 70) and offsets, northward monotonicity, and the
   constant hover. Framed as independence rather than arithmetic: asserting the

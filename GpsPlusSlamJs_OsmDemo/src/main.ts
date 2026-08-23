@@ -1343,6 +1343,27 @@ async function main(): Promise<void> {
    */
   let arUndulationM: number | undefined;
 
+  /**
+   * Whether THIS AR session's entry pass has settled (DEC-M1).
+   *
+   * The entry veil holds until it has, so the user never meets the city built
+   * against the desktop datum. Three things about its lifecycle are load-bearing
+   * and each was a cold-review finding:
+   *
+   * - **Cleared when an entry STARTS**, not only when one ends. A second entry
+   *   in the same page session would otherwise inherit the first one's `true`
+   *   and the veil would gate on the alignment alone.
+   * - **Set from the promise `startWalking` created**, held in a local — never
+   *   by reading `currentPass` later, which three other paths reassign.
+   * - **Set on BOTH settle paths.** A failed fetch that left this `false` would
+   *   hold every entry to the ceiling for the rest of the page's life.
+   *
+   * The two paths that never reach `startWalking` — the geoid import failing,
+   * and the session ending inside that await — both end the session, so neither
+   * can strand the veil.
+   */
+  let arContentReady = false;
+
   let arSupport: ArSupport = "checking";
   let arSession: ArMode | undefined;
   /**
@@ -1652,8 +1673,16 @@ async function main(): Promise<void> {
     // building at the window-centre datum: the ~98 m error §2.5 exists to
     // remove, disguised as a fusion bug. Without this the datum would first
     // apply after 100 m of walking, and never for a user who stands still.
-    currentPass = runPassFor(selectOsmView(store.getState()).position);
-    void currentPass;
+    const entryPass = runPassFor(selectOsmView(store.getState()).position);
+    currentPass = entryPass;
+    // THE VEIL'S SECOND CONDITION (DEC-M1), taken from the promise created HERE
+    // rather than from `currentPass`, which the position subscriber and the
+    // session teardown both reassign. `finally`, so a failed fetch opens the
+    // gate too: holding the veil to its ceiling on every entry would be a worse
+    // outcome than showing a city one ring short.
+    void entryPass.finally(() => {
+      arContentReady = true;
+    });
   };
 
   /** Stop following. Idempotent, and safe when AR never started. */
@@ -1683,6 +1712,10 @@ async function main(): Promise<void> {
   const enterAr = (): void => {
     awaitingArFix = false;
     clearArOffer();
+    // THIS ENTRY'S OWN READINESS, cleared before the session is asked for
+    // (DEC-M1). A second entry in the same page session would otherwise start
+    // with the first one's `true` and uncover before its rebuild had run.
+    arContentReady = false;
     // IN THE GESTURE, not after an await: the permission prompts WebXR raises
     // are only allowed synchronously from a user gesture.
     //
@@ -1715,6 +1748,32 @@ async function main(): Promise<void> {
       // whole session means the estimator never engaged at all.
       onEstimateEngaged: (afterS) => {
         arToast.show(`Elevation estimate engaged after ${afterS.toFixed(1)} s`);
+      },
+      // WHETHER THE ENTRY REBUILD HAS SETTLED (DEC-M1). The entry veil holds
+      // until this says yes, so the user never meets the city built for the
+      // DESKTOP datum — which is the same ~100 m error the entry pass exists to
+      // remove, and which `startWalking`'s own comment calls "not optional".
+      //
+      // A GETTER, read per frame, for the reason `liveMeasurements` is one: the
+      // pass it reports on is started by `startWalking`, which runs AFTER this
+      // object is built.
+      entryContentReady: () => arContentReady,
+      // AND HOW LONG THAT ACTUALLY TOOK (DEC-M1a), on the same channel and for
+      // the same reason as the engagement stamp above: `ENTRY_READY_MAX_WAIT_S`
+      // is a guess, and a session that reports `aligned: false` or
+      // `contentReady: false` here is one where the ceiling — not the readiness
+      // — ended the black screen. That is the measurement the next field run
+      // has to bring back, and a console line on a phone would never be read.
+      onEntryReady: ({ afterS, aligned, contentReady }) => {
+        const held = [
+          aligned ? undefined : "no alignment",
+          contentReady ? undefined : "no content",
+        ].filter((part) => part !== undefined);
+        arToast.show(
+          held.length === 0
+            ? `Entry ready after ${afterS.toFixed(1)} s`
+            : `Entry gave up waiting after ${afterS.toFixed(1)} s (${held.join(", ")})`,
+        );
       },
       // THE AUTO ELEVATION OFFSET (plan §2.6). Presence is the switch: the
       // whole group is omitted when the URL kill switch (`?autoElevation=off`)
@@ -2213,6 +2272,42 @@ async function main(): Promise<void> {
         : `${Math.round(centreEnu.x)},${Math.round(centreEnu.y)}`;
   };
 
+  /**
+   * Draw the held quest's beacons against the terrain field as it stands NOW
+   * (N6, DEC-K4, re-derived by DEC-M4).
+   *
+   * **WHY THIS IS A FUNCTION AND NOT A LINE IN THE SUBSCRIBER.** It used to be
+   * one, and that was the defect the eighteenth field session reported: the
+   * marks were placed once, when the quest was found, against the field as it
+   * stood at that moment. Entering AR replaces that field with one on a
+   * different datum — `heightAt` returns an ellipsoidal height there and relief
+   * on the desktop — and rebuilds every building, tree and POI against it. The
+   * marks kept the old datum and hung `N + window-centre height` below the
+   * city: ~100 m, the same number this file names elsewhere as the datum error
+   * the entry pass exists to remove.
+   *
+   * So the marks are re-derived wherever their INPUT changes, which is both
+   * when the quest changes and when the field is replaced — the latter also
+   * covering an ordinary walk past the refetch distance, a map click and a
+   * place-picker choice, each of which used to leave the mark on stale ground
+   * with its stalk reaching for a surface that had moved.
+   *
+   * **The event comes from the store**, so there is no second copy of "which
+   * quest is held" to keep in step.
+   */
+  const drawQuestBeacons = (): void => {
+    const event = selectOsmView(store.getState()).geoEvent;
+    buildingView.setQuestBeacons(
+      event === undefined
+        ? []
+        : questBeaconPlacements(
+            event.picks,
+            enuFrameAt(anchors.origin),
+            terrain,
+          ),
+    );
+  };
+
   const loadTerrain = createTerrainCycle({
     worker,
     extentM: TERRAIN_EXTENT_M,
@@ -2234,6 +2329,10 @@ async function main(): Promise<void> {
       // to follow it either way, or a walk during an outage takes the user off
       // the edge of a finite plane.
       buildingView.setTerrain(terrain, centreEnu);
+      // AND THE QUEST MARKS FOLLOW THE GROUND THEY MARK (DEC-M4). Their height
+      // is measured from this field, so replacing it without re-deriving them
+      // is what left them ~100 m under the AR city. See `drawQuestBeacons`.
+      drawQuestBeacons();
       // Attribution is REQUIRED wherever the data is shown, the same as the OSM
       // one — and only shown while the data is actually in use, because
       // crediting a source whose tiles all failed would be a claim about what
@@ -2865,15 +2964,12 @@ async function main(): Promise<void> {
       // NOT A TOGGLE: "Show Quests" is a one-shot search holding a single
       // event, so the beacons appear when one is held and are cleared when it
       // goes (a category change clears it).
-      buildingView.setQuestBeacons(
-        event === undefined
-          ? []
-          : questBeaconPlacements(
-              event.picks,
-              enuFrameAt(anchors.origin),
-              terrain,
-            ),
-      );
+      // THROUGH THE SHARED DRAW (DEC-M4), which reads the held event back from
+      // the store rather than taking the one this subscriber was handed. The
+      // two are the same value — this subscriber fires BECAUSE that slice
+      // changed — and going through one function is what keeps the quest's own
+      // change and the terrain's change producing identical placements.
+      drawQuestBeacons();
     },
   );
   // The label's distance is measured from where the user is NOW, so walking

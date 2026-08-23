@@ -1,6 +1,11 @@
 import * as THREE from "three";
 
-import { cameraFadeAlpha, type DescentInput } from "./ar-descent.js";
+import {
+  DESCENT_FALL_S,
+  DESCENT_HOLD_S,
+  DESCENT_MAX_START_M,
+  type DescentInput,
+} from "./ar-descent.js";
 
 /**
  * The layer between the camera feed and the city during the AR entry (J1).
@@ -68,17 +73,57 @@ export const ENTRY_VEIL_RADIUS_M = 50;
 const ENTRY_VEIL_RENDER_ORDER = -1000;
 
 /**
+ * How long the veil takes to fade once the city has landed (DEC-M3).
+ *
+ * The eighteenth field session: *"Die sollte erst bei 100 % Transparency sein,
+ * wenn wirklich die Kamerafahrt auch zu Ende ist … oder sogar vielleicht nochmal
+ * zwei Sekunden später … weil vorher das Kamerabild noch keinen Sinn macht, weil
+ * es noch kein wirkliches AR-Overlay ist, bis die Gebäude auf der Höhe von der
+ * Kamera sind."*
+ */
+export const ENTRY_VEIL_FADE_S = 2;
+
+/** Smoothstep — zero slope at both ends, like every other fade in this entry. */
+const smoothstep = (t: number): number => t * t * (3 - 2 * t);
+
+/**
  * How opaque the veil is, `[0,1]`.
  *
- * **The exact inverse of the camera fade, derived from it rather than
- * re-implemented.** The two are one visual event — the camera comes in as the
- * veil goes out — so a second curve here could only ever drift from the first.
- * `cameraFadeAlpha` already collapses every degenerate input to "fully visible
- * camera", which becomes "no veil" here: the safe direction, since the failure
- * worth designing against is a veil that outlives the entry.
+ * **1 FOR THE WHOLE FLY-IN, then a {@link ENTRY_VEIL_FADE_S} fade (DEC-M3).**
+ *
+ * **THIS REPLACES `1 − cameraFadeAlpha`, AND THE ARGUMENT IT REPLACES WAS NOT
+ * WRONG SO MUCH AS AIMED AT THE WRONG EVENT.** The old derivation reasoned that
+ * the camera coming in and the veil going out are one visual event, so a second
+ * curve could only drift from the first — true, and it produced a veil whose
+ * opacity was the exact inverse of how far the city had travelled: ~0.5 with the
+ * city still 30 m overhead. The field session's objection is that the event the
+ * camera should fade in FOR is the fly-in's **completion**, not its progress:
+ * passthrough behind a city that has not arrived is two unrelated pictures
+ * rather than an overlay.
+ *
+ * **One clock survives, which is what mattered about the old rule.** This is
+ * still a pure function of the descent's own `elapsedS`, so the two halves
+ * cannot drift; only the curve on that clock changed.
+ *
+ * **`startM ≤ 0` still answers 0**, i.e. "no veil". That used to fall out of
+ * `cameraFadeAlpha` returning 1 for a zero start, and two call sites in
+ * `ar-mode.ts` depend on it: a ground-level entry builds no veil at all, and
+ * building one that never lifted would be the lid this module exists to make
+ * impossible. It is now an explicit guard rather than an inherited one.
+ *
+ * **Every other degenerate input collapses to 0** for the same reason — the
+ * failure worth designing against is a veil that outlives the entry.
  */
 export function entryVeilAlpha(input: DescentInput): number {
-  return 1 - cameraFadeAlpha(input);
+  const { elapsedS, startM } = input;
+  if (!Number.isFinite(elapsedS) || !Number.isFinite(startM)) return 0;
+  const start = Math.min(DESCENT_MAX_START_M, Math.max(0, startM));
+  if (start <= 0) return 0;
+  const landedAtS = DESCENT_HOLD_S + DESCENT_FALL_S;
+  if (elapsedS <= landedAtS) return 1;
+  const t = (elapsedS - landedAtS) / ENTRY_VEIL_FADE_S;
+  if (t >= 1) return 0;
+  return 1 - smoothstep(t);
 }
 
 export interface ArEntryVeil {

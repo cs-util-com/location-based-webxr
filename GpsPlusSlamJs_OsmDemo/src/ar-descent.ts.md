@@ -26,8 +26,6 @@ written from the **content's** frame: the offset is negative and increases.
     camera. `applyElevation` writes `up: geometricOffset.up + offsetM`, so a
     positive term would raise the city over the user's head. r541 shipped exactly
     that and it was reported from the field as inverted.
-- `cameraFadeAlpha({ elapsedS, startM }): number` — the camera feed's opacity,
-  `[0,1]`; 0 = passthrough hidden, 1 = fully visible.
 - `descentComplete({ elapsedS, startM }): boolean` — the end-state signal.
 - `DESCENT_HOLD_S = 2`, `DESCENT_FALL_S = 10`, `DESCENT_MAX_START_M = 100` — a
   **12 s** animation in total.
@@ -49,9 +47,13 @@ it.** Engagement time while standing still has never been measured, which is the
 open question in
 `GpsPlusSlamJs_Docs/docs/2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
 
-**One constant carries both halves of the effect**: `entryVeilAlpha` is
-`1 − cameraFadeAlpha` over the same input, so the sphere's fade stretches with
-the fall and the two cannot drift apart.
+**One clock still carries both halves of the effect**: `entryVeilAlpha` is a
+function of the same `elapsedS`, so the sphere and the fly-in cannot drift
+apart. **It no longer tracks this animation's PROGRESS, though** (DEC-M3): it
+holds at fully opaque until `DESCENT_HOLD_S + DESCENT_FALL_S` and fades only
+afterwards, because the eighteenth session's point was that passthrough behind a
+city that has not arrived is two pictures rather than an overlay. Lengthening
+the fall therefore lengthens the opaque period rather than stretching a fade.
 
 ## Invariants & assumptions
 
@@ -116,14 +118,17 @@ headless Chromium, and the assertion that `setClearAlpha` had been called passed
 the whole time against a call that did nothing on device. `ar-mode.test.ts` now
 asserts the opposite — that it is **never** called.
 
-`cameraFadeAlpha` itself is unchanged and still correct; only its consumer moved.
-`entryVeilAlpha` is defined as `1 - cameraFadeAlpha`, so the two cannot drift.
+⚠️ **`cameraFadeAlpha` is GONE (DEC-M6).** It survived DEC-J1 as the curve the
+mesh veil derived from, and DEC-M3 removed that last caller: the sphere now has
+its own curve on the same clock. The history above is kept here because it is
+about `setClearAlpha`, which is what a future reader will come looking for; the
+curve's own story is in `ar-entry-veil.ts`.
 
 ## Tests
 
 `ar-descent.test.ts` — the curve: the hold, the exact landing, zero slope at both
 ends, monotonicity, the cap, the all-inputs finiteness property, and the
-zero-start contract. Plus `cameraFadeAlpha`'s endpoints and its `[0,1]` bound.
+zero-start contract.
 
 `ar-mode.test.ts` → "the AR entry fly-down (H5, Q5)" — the wiring: that the term
 reaches `attachContentTo` composed, that a ground-level view changes nothing,

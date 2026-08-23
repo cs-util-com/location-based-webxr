@@ -7,9 +7,12 @@ import * as fc from "fast-check";
 import {
   ENTRY_DOM_VEIL_CLASS,
   ENTRY_DOM_VEIL_FADE_S,
+  ENTRY_DOM_VEIL_HOLD_S,
+  ENTRY_READY_MAX_WAIT_S,
   createArEntryDomVeil,
   domVeilAlpha,
   entryDomVeilColour,
+  entryFadeMayStart,
 } from "./ar-entry-dom-veil.js";
 import { ENTRY_VEIL_COLOUR } from "./ar-entry-veil.js";
 
@@ -161,5 +164,119 @@ describe("the fade (DEC-L1)", () => {
     expect(veil.element.style.opacity).toBe("0");
     veil.setAlpha(Number.NaN);
     expect(veil.element.style.opacity).toBe("0");
+  });
+});
+
+describe("when the entry veil may start fading (DEC-M1)", () => {
+  /**
+   * Why these tests matter: this gate is the whole of M1 and M2 from the
+   * eighteenth field session. It replaces "two frames have been drawn" as the
+   * fade's trigger, and the two ways it can be wrong are opposites — opening
+   * early shows a wrongly-rotated city, never opening leaves a black screen
+   * with no way out. Both are pinned below.
+   *
+   * The hold lives HERE and nowhere else (cold review, finding 3). An earlier
+   * draft also put a plateau inside `domVeilAlpha`, which composes to a 6 s
+   * black screen and puts one constant in two places that must agree.
+   */
+  const ready = {
+    waitedS: ENTRY_DOM_VEIL_HOLD_S,
+    aligned: true,
+    contentReady: true,
+  };
+
+  it("waits out the hold even when everything is already ready", () => {
+    // The deliberate pause the field session asked for: "die ersten zwei
+    // Sekunden muss da einfach erstmal nur dieser Text stehen". A warm start
+    // has both readiness conditions on the first frame, so without this term
+    // the entry is instant again — the behaviour being complained about.
+    expect(entryFadeMayStart({ ...ready, waitedS: 0 })).toBe(false);
+    expect(
+      entryFadeMayStart({ ...ready, waitedS: ENTRY_DOM_VEIL_HOLD_S - 0.001 }),
+    ).toBe(false);
+    expect(entryFadeMayStart(ready)).toBe(true);
+  });
+
+  it("holds past the hold while the alignment has not landed (M2)", () => {
+    // THE CORRECTNESS HALF. Until the framework has solved once, the city is
+    // drawn in the phone's arbitrary start heading — the wrongly-rotated
+    // overlay the session reported. Uncovering then is the defect.
+    expect(entryFadeMayStart({ ...ready, aligned: false })).toBe(false);
+    expect(entryFadeMayStart({ ...ready, waitedS: 5, aligned: false })).toBe(
+      false,
+    );
+  });
+
+  it("holds past the hold while the entry rebuild has not settled (M1)", () => {
+    // "Nach den sechs Sekunden sollten die OpenStreetMap-3D-Sachen alle da
+    // sein" — which is a readiness requirement, not a duration.
+    expect(entryFadeMayStart({ ...ready, contentReady: false })).toBe(false);
+  });
+
+  it("opens at the ceiling however un-ready the session is", () => {
+    // THE LID RULE, in gate form. A device that never gets a fix must not be
+    // trapped behind a black screen: `ar-entry-dom-veil.ts` calls an opaque
+    // layer over a live session strictly worse than having no veil at all.
+    expect(
+      entryFadeMayStart({
+        waitedS: ENTRY_READY_MAX_WAIT_S,
+        aligned: false,
+        contentReady: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("collapses an unusable clock reading to 'not yet', like descentMayStart", () => {
+    // The opposite direction from `domVeilAlpha`'s rule, and deliberately so:
+    // there the input is an opacity and the safe answer is "no veil"; here it
+    // is a clock, and a NaN that opened the gate would uncover the camera on
+    // the strength of a reading that means nothing. The ready path below shows
+    // the guard does not swallow a genuinely ready session.
+    for (const bad of [Number.NaN, Number.NEGATIVE_INFINITY]) {
+      expect(entryFadeMayStart({ ...ready, waitedS: bad })).toBe(false);
+      expect(
+        entryFadeMayStart({
+          waitedS: bad,
+          aligned: false,
+          contentReady: false,
+        }),
+      ).toBe(false);
+    }
+    // `+Infinity` is a real "long past the ceiling", so it opens.
+    expect(
+      entryFadeMayStart({
+        waitedS: Number.POSITIVE_INFINITY,
+        aligned: false,
+        contentReady: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("is monotone in time, so a fade can never un-start", () => {
+    // THE PROPERTY THAT MATTERS MOST. The driver latches the fade's start on
+    // the first frame this returns true; if the gate could go false again the
+    // veil would re-opaque mid-fade, which reads as a flicker over a live
+    // session and is unreachable by any single-point test.
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 20, noNaN: true }),
+        fc.double({ min: 0, max: 20, noNaN: true }),
+        fc.boolean(),
+        fc.boolean(),
+        (a, b, aligned, contentReady) => {
+          const [earlier, later] = a <= b ? [a, b] : [b, a];
+          const inputs = { aligned, contentReady };
+          const opensEarlier = entryFadeMayStart({
+            ...inputs,
+            waitedS: earlier,
+          });
+          const opensLater = entryFadeMayStart({ ...inputs, waitedS: later });
+          // Written as an implication rather than as a guarded assertion, so
+          // the property holds in one expression: "open earlier" must imply
+          // "open later", and every other combination is fine.
+          expect(!opensEarlier || opensLater).toBe(true);
+        },
+      ),
+    );
   });
 });

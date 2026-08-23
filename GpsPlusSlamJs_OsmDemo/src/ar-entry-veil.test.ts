@@ -1,10 +1,13 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 
+import * as fc from "fast-check";
+
 import { DESCENT_FALL_S, DESCENT_HOLD_S } from "./ar-descent.js";
 import {
   createArEntryVeil,
   ENTRY_VEIL_COLOUR,
+  ENTRY_VEIL_FADE_S,
   ENTRY_VEIL_RADIUS_M,
   entryVeilAlpha,
 } from "./ar-entry-veil.js";
@@ -36,27 +39,69 @@ const START_M = 60;
 const LANDED_S = DESCENT_HOLD_S + DESCENT_FALL_S;
 
 describe("entryVeilAlpha", () => {
-  it("is fully opaque while the entry holds, so the camera is hidden before the fall", () => {
-    expect(entryVeilAlpha({ elapsedS: 0, startM: START_M })).toBeCloseTo(1, 5);
+  it("is fully opaque for the WHOLE fly-in, not just for the hold (DEC-M3)", () => {
+    // THE ASSERTION THE EIGHTEENTH SESSION ASKED FOR, and the one that fails
+    // against the curve this replaces. `1 - cameraFadeAlpha` tracked the
+    // fly-in's PROGRESS, so the sphere was ~0.5 transparent with the city still
+    // 30 m overhead: passthrough behind geometry that has not arrived, which is
+    // two pictures rather than an overlay.
+    expect(entryVeilAlpha({ elapsedS: 0, startM: START_M })).toBe(1);
+    expect(entryVeilAlpha({ elapsedS: DESCENT_HOLD_S, startM: START_M })).toBe(
+      1,
+    );
+    // Mid-fall -- the exact moment the old curve was half gone.
     expect(
-      entryVeilAlpha({ elapsedS: DESCENT_HOLD_S, startM: START_M }),
-    ).toBeCloseTo(1, 5);
+      entryVeilAlpha({
+        elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S / 2,
+        startM: START_M,
+      }),
+    ).toBe(1);
+    // And still opaque on the landing frame itself.
+    expect(entryVeilAlpha({ elapsedS: LANDED_S, startM: START_M })).toBe(1);
   });
 
-  it("reaches EXACTLY zero on landing, and stays there", () => {
+  it("reaches EXACTLY zero ENTRY_VEIL_FADE_S after the landing, and stays there", () => {
     // Not "close to zero". A veil at 0.01 is still a wash over the camera and
-    // would never be reported as a fade bug — only as "AR looks murky", which
+    // would never be reported as a fade bug -- only as "AR looks murky", which
     // is exactly the class of complaint that takes three sessions to diagnose.
-    expect(entryVeilAlpha({ elapsedS: LANDED_S, startM: START_M })).toBe(0);
+    //
+    // AND IT IS WHAT ENDS THE ENTRY. `ar-mode.ts` disposes the sphere when this
+    // reaches 0 rather than at the landing, so a curve that never got there
+    // would leave an opaque lid over a live session.
+    expect(
+      entryVeilAlpha({
+        elapsedS: LANDED_S + ENTRY_VEIL_FADE_S,
+        startM: START_M,
+      }),
+    ).toBe(0);
     expect(entryVeilAlpha({ elapsedS: LANDED_S + 600, startM: START_M })).toBe(
       0,
     );
   });
 
+  it("is strictly between the ends during the fade, so it reads as a fade", () => {
+    const early = entryVeilAlpha({
+      elapsedS: LANDED_S + ENTRY_VEIL_FADE_S / 4,
+      startM: START_M,
+    });
+    const late = entryVeilAlpha({
+      elapsedS: LANDED_S + (ENTRY_VEIL_FADE_S * 3) / 4,
+      startM: START_M,
+    });
+    expect(early).toBeLessThan(1);
+    expect(early).toBeGreaterThan(0);
+    expect(late).toBeLessThan(early);
+    expect(late).toBeGreaterThan(0);
+  });
+
   it("shows NO veil when there is no descent at all", () => {
     // Entering from a ground-level 3D view has nothing to fall from, so there
-    // is no transition to hide — and a veil with no fade behind it is a lid.
+    // is no transition to hide -- and a veil with no fade behind it is a lid.
     // Every degenerate input lands on this side, which is the safe one.
+    //
+    // THIS GUARD USED TO BE INHERITED from `cameraFadeAlpha` returning 1 for a
+    // zero start; DEC-M3 makes it explicit, and `ar-mode.ts` still depends on
+    // it in two places.
     for (const startM of [
       0,
       -10,
@@ -67,17 +112,31 @@ describe("entryVeilAlpha", () => {
       expect(entryVeilAlpha({ elapsedS: 0, startM })).toBe(0);
     }
     expect(entryVeilAlpha({ elapsedS: Number.NaN, startM: START_M })).toBe(0);
+    expect(
+      entryVeilAlpha({ elapsedS: Number.POSITIVE_INFINITY, startM: START_M }),
+    ).toBe(0);
   });
 
-  it("fades monotonically, never darkening again part-way through", () => {
-    // A veil that comes BACK mid-descent reads as a rendering fault rather than
+  it("never darkens again, at any point on the clock", () => {
+    // A veil that comes BACK mid-entry reads as a rendering fault rather than
     // as a transition, and it is the one artefact a user cannot explain away.
-    let previous = Number.POSITIVE_INFINITY;
-    for (let t = 0; t <= LANDED_S; t += 0.05) {
-      const value = entryVeilAlpha({ elapsedS: t, startM: START_M });
-      expect(value).toBeLessThanOrEqual(previous + 1e-9);
-      previous = value;
-    }
+    // Property-based over the whole entry INCLUDING the post-landing fade,
+    // because that window is new in DEC-M3 and is where a curve written as two
+    // pieces would step.
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 30, noNaN: true }),
+        fc.double({ min: 0, max: 30, noNaN: true }),
+        (a, b) => {
+          const [earlier, later] = a <= b ? [a, b] : [b, a];
+          expect(
+            entryVeilAlpha({ elapsedS: earlier, startM: START_M }),
+          ).toBeGreaterThanOrEqual(
+            entryVeilAlpha({ elapsedS: later, startM: START_M }),
+          );
+        },
+      ),
+    );
   });
 });
 

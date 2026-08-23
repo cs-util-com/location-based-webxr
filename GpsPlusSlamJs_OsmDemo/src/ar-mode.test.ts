@@ -97,6 +97,29 @@ const {
 
 const scene = new THREE.Scene();
 const arWorldGroup = new THREE.Group();
+
+/**
+ * The `elapsed` reading at which the DOM veil has finished fading (DEC-M1).
+ *
+ * **AND THEREFORE THE EARLIEST ANYTHING ELSE IN THE ENTRY CAN HAPPEN (DEC-M2)**
+ * — the fly-in, and with it the content's first attach. Both used to begin on
+ * the first frame whenever nothing was being waited for, which is the default
+ * in these fixtures, so sequencing the entry behind the veil moved every
+ * timeline in this file. Symbolic for the reason `landedAtS` is: the last
+ * retiming cost this suite six red tests.
+ */
+const veilGoneAtS = (firstFrameS: number): number =>
+  firstFrameS + ENTRY_DOM_VEIL_HOLD_S + ENTRY_DOM_VEIL_FADE_S;
+
+/**
+ * When the entry gate opens in these fixtures, with a frame of slack.
+ *
+ * The veil is removed on the first frame whose alpha reaches 0, which at 60 Hz
+ * is up to two steps past the arithmetic — the fade's own start is latched on a
+ * frame rather than on the instant the hold expires. The gate then opens on
+ * that same frame, so two steps of slack cover the pair.
+ */
+const GATE_OPENS_S = veilGoneAtS(1) + 2 / 60;
 // REBUILT PER TEST rather than shared like the scene above, because
 // `applyArEnvironment` mutates it too — and the shared scene already caused
 // exactly that failure once (see the reset in `beforeEach`).
@@ -114,7 +137,10 @@ import { startArMode, type ArModeDeps } from "./ar-mode.js";
 import {
   ENTRY_DOM_VEIL_CLASS,
   ENTRY_DOM_VEIL_FADE_S,
+  ENTRY_DOM_VEIL_HOLD_S,
+  ENTRY_READY_MAX_WAIT_S,
 } from "./ar-entry-dom-veil.js";
+import { ENTRY_VEIL_FADE_S } from "./ar-entry-veil.js";
 import { AR_DEPTH_SAMPLER_CONFIG } from "./ar-depth-pipeline.js";
 import { nueBearingDeg } from "./ar-origin.js";
 import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
@@ -226,6 +252,18 @@ beforeEach(() => {
   initAR.mockResolvedValue(undefined);
   getScene.mockReturnValue(scene);
   getArWorldGroup.mockReturnValue(arWorldGroup);
+  // AN ALIGNMENT THAT HAS ALREADY LANDED, because that is the ordinary state of
+  // a session and not the exception (DEC-M1). The entry veil now holds until
+  // `arWorldGroup.matrix` leaves identity — that is the whole of M2, the
+  // wrongly-rotated city the eighteenth field session reported — so a fixture
+  // left at identity would hold EVERY test in this file behind the 8 s ceiling
+  // and move every landing time in it for a reason that has nothing to do with
+  // what the test is about.
+  //
+  // A YAW, deliberately, rather than a translation: it is what a real alignment
+  // mostly is, and it leaves the `elements[13]`/`[14]` slots that several tests
+  // write for height and walking untouched.
+  arWorldGroup.matrix.makeRotationY(Math.PI / 5);
   // The framework's own planes, so a test can tell "restored" from "never set".
   camera = new THREE.PerspectiveCamera(70, 1, 0.01, 200);
   getCamera.mockReturnValue(camera);
@@ -577,17 +615,33 @@ describe("the automatic elevation offset", () => {
       [0, 4.6, 0],
       surfacePatch(() => 3, 1, 0.2),
     );
+
+    // FIRST, LET THE ENTRY FINISH (DEC-M1/M2). The content's FIRST attach
+    // happens when the entry gate opens, and that gate now waits out the DOM
+    // veil — at which point the auto term is SNAPPED rather than eased, on
+    // purpose and by design: nothing is on screen yet, so there is nothing to
+    // jump. Feeding the estimator before that would measure the snap and call
+    // it a missing ease, which is what this test did when the sequencing
+    // changed under it.
+    const onFrame = frameFn();
+    for (let elapsed = 1; elapsed <= GATE_OPENS_S + 0.5; elapsed += 1 / 60) {
+      onFrame({ dt: 1 / 60, elapsed });
+    }
     depth?.onCaptured(sample);
     depth?.onCaptured(sample);
 
-    // Walk frame by frame and catch the FIRST frame on which the content
+    // NOW walk frame by frame and catch the FIRST frame on which the content
     // moves at all. Since the confidence gate (cold-review F1) that first
     // motion is the ENGAGE moment rather than the estimator's first publish —
     // which makes the step it would take even larger, and the ease even more
     // load-bearing.
-    const onFrame = frameFn();
     let firstStep = 0;
-    for (let elapsed = 1; elapsed <= 9 && firstStep === 0; elapsed += 1 / 60) {
+    const walkFromS = GATE_OPENS_S + 0.5;
+    for (
+      let elapsed = walkFromS;
+      elapsed <= walkFromS + 8 && firstStep === 0;
+      elapsed += 1 / 60
+    ) {
       arWorldGroup.matrix.elements[14] = elapsed * WALK_SPEED_M_PER_S;
       onFrame({ dt: 1 / 60, elapsed });
       const applied = view.attachedTo
@@ -1641,13 +1695,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
   const landedAtS = (gateOpensS: number): number =>
     gateOpensS + DESCENT_HOLD_S + DESCENT_FALL_S;
 
-  /**
-   * The gate opens on the first frame whenever nothing is being waited for —
-   * no estimator wired, or no height to descend from. That is the default in
-   * these fixtures; the one test that wires an estimator waits
-   * `DESCENT_ESTIMATE_WAIT_S` on top and says so at its call site.
-   */
-  const LANDED_S = landedAtS(1);
+  const LANDED_S = landedAtS(GATE_OPENS_S);
 
   /**
    * A local frame driver rather than the walking one above: the descent is
@@ -1731,24 +1779,30 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       "Finding your position",
     );
 
-    // AND STILL HELD AT ELAPSED 5, one second past the fallback: the descent
-    // has begun by then, so this checks the handover rather than the wait.
-    runFrames(3, 5);
+    // AND STILL HELD PAST THE ESTIMATE FALLBACK, because the veil has not
+    // finished (DEC-M2). This is the sequencing the eighteenth session asked
+    // for: whichever of the two conditions is slower decides, and here that is
+    // the veil's 2 s hold plus 2 s fade against the estimate's 3 s.
+    runFrames(3, 1 + DESCENT_ESTIMATE_WAIT_S + 0.5);
+    expect(
+      upAt(view),
+      "the city moved while the entry veil was still up",
+    ).toBeCloseTo(-START_M, 2);
 
     // NOT A STALL: the fallback still starts the descent on a device whose
     // estimator never engages, or the gate would be a black screen with no way
     // out — strictly worse than the jump it removes.
     //
-    // NOTE THE CLOCK. `DESCENT_ESTIMATE_WAIT_S` is measured from the FIRST
-    // frame (elapsed 1 here), not from page load, so the fallback opens at
-    // elapsed 4 and the descent then needs its own hold plus fall on top.
-    // PLUS A FRAME OF SLACK, and it is not padding: the gate opens on the first
-    // frame AT OR AFTER `firstFrame + DESCENT_ESTIMATE_WAIT_S`, which at 60 Hz
-    // is up to 1/60 s later than the wait itself — so the landing is that much
-    // later than `landedAtS` computes. Without the slack this test stops a hair
-    // short, the veil is never disposed, and it leaks into the `scene` the next
-    // tests share.
-    runFrames(5, landedAtS(1 + DESCENT_ESTIMATE_WAIT_S) + 1 / 60);
+    // NOTE THE CLOCK. Both waits are measured from the FIRST frame (elapsed 1
+    // here), not from page load, and the LATER of the two opens the gate. The
+    // frame of slack is not padding: the gate opens on the first frame AT OR
+    // AFTER its condition, which at 60 Hz is up to a step later — and without
+    // it this test stops a hair short of the landing, the veil is never
+    // disposed, and it leaks into the `scene` the next tests share.
+    runFrames(
+      1 + DESCENT_ESTIMATE_WAIT_S + 0.5,
+      landedAtS(Math.max(veilGoneAtS(1), 1 + DESCENT_ESTIMATE_WAIT_S)) + 2 / 60,
+    );
     expect(upAt(view), "the fallback never released the descent").toBeCloseTo(
       0,
       2,
@@ -1801,22 +1855,39 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     // veil that tracked the city would swing out of view as the city rose.
     camera.position.set(3, 4, 5);
     camera.updateMatrixWorld(true);
-    runFrames(1, 1.2);
+    runFrames(1, GATE_OPENS_S + 0.2);
     expect(veilOf()?.position.toArray()).toEqual([3, 4, 5]);
 
-    // MID-DESCENT: part-way faded, and still present.
-    runFrames(1.2, 1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2);
-    const midAlpha = (veilOf()?.material as THREE.MeshBasicMaterial).opacity;
-    expect(midAlpha).toBeGreaterThan(0);
-    expect(midAlpha).toBeLessThan(1);
+    // MID-DESCENT: STILL FULLY OPAQUE (DEC-M3), which is the assertion this
+    // test previously made in reverse. The sphere used to track the fly-in's
+    // progress and was ~half transparent here — with the city still 30 m
+    // overhead, i.e. passthrough behind geometry that has not arrived.
+    runFrames(
+      GATE_OPENS_S + 0.2,
+      GATE_OPENS_S + DESCENT_HOLD_S + DESCENT_FALL_S / 2,
+    );
+    expect((veilOf()?.material as THREE.MeshBasicMaterial).opacity).toBe(1);
 
-    // AND GONE once the city lands -- removed from the scene, not merely
-    // transparent. A transparent screen-filling mesh is still submitted, sorted
-    // and blended every frame for the rest of the session.
-    runFrames(1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2, LANDED_S);
-    expect(veilOf(), "the entry veil outlived the entry").toBeUndefined();
-    // AND SO IS THE WAITING LINE (DEC-J11).
+    // AND STILL THERE, still opaque, on the landing frame itself.
+    runFrames(GATE_OPENS_S + DESCENT_HOLD_S + DESCENT_FALL_S / 2, LANDED_S);
+    expect(
+      veilOf(),
+      "the entry veil went before the city landed",
+    ).toBeDefined();
+    // AND SO IS THE WAITING LINE GONE (DEC-J11) — it goes when the fly-in
+    // starts, not when it ends.
     expect(container.querySelector(".ar-entry-wait")).toBeNull();
+
+    // AND GONE two seconds after the landing -- removed from the scene, not
+    // merely transparent. A transparent screen-filling mesh is still submitted,
+    // sorted and blended every frame for the rest of the session.
+    //
+    // THE REGRESSION THIS PINS is the one the cold review of the plan caught:
+    // holding the sphere opaque to the landing while disposing it there would
+    // have dropped an opaque veil; keeping the disposal and clearing the clock
+    // would have left it opaque forever.
+    runFrames(LANDED_S, LANDED_S + ENTRY_VEIL_FADE_S + 2 / 60);
+    expect(veilOf(), "the entry veil outlived the entry").toBeUndefined();
   });
 
   it("NEVER calls setClearAlpha, because it does nothing inside an XR session", async () => {
@@ -1962,12 +2033,12 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     expect(upAt(view) ?? 0).toBeCloseTo(0, 5);
   });
 
-  it("fades the camera feed in, and hands it over fully on landing", async () => {
-    // DEC-J1, replacing DEC-Y3. The veil is opaque at the start so the first
-    // moment of AR looks like the 3D view the user was just in, and EXACTLY zero
-    // when the city lands -- not "close to", because a veil at 0.01 is still a
-    // wash over the camera and reads as "AR looks murky" rather than as a fade
-    // bug.
+  it("hands the camera over AFTER the landing, not during the fly-in", async () => {
+    // DEC-M3, superseding half of DEC-J1. The veil is opaque at the start so
+    // the first moment of AR looks like the 3D view the user was just in — and
+    // it now STAYS opaque until the city has arrived, because the field session
+    // pointed out that passthrough behind a city still overhead is two
+    // unrelated pictures rather than an AR overlay.
     const container = document.createElement("div");
     document.body.append(container);
     const view = viewAtHeight(START_M);
@@ -1981,9 +2052,26 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     runFrames(1, 1);
     expect(veilAlphaIn(scene)).toBeCloseTo(1, 2);
 
+    // The moment the camera used to be fully handed over: still hidden.
+    // `toBeCloseTo` rather than `toBe`, because `LANDED_S` carries two frames
+    // of stepping slack and the fade has therefore just begun — the previous
+    // behaviour would read 0 here, so the assertion still tells them apart.
     runFrames(1, LANDED_S);
-    // GONE, not transparent: the veil is disposed on landing, so there is no
-    // opacity left to read. That is a stronger statement than `=== 0`.
+    expect(veilAlphaIn(scene)).toBeCloseTo(1, 2);
+
+    // PART-WAY THROUGH THE POST-LANDING FADE: visible, and no longer opaque.
+    runFrames(LANDED_S, LANDED_S + ENTRY_VEIL_FADE_S / 2);
+    const midAlpha = veilAlphaIn(scene) ?? 1;
+    expect(midAlpha).toBeGreaterThan(0);
+    expect(midAlpha).toBeLessThan(1);
+
+    // GONE, not transparent: the veil is disposed once its alpha reaches 0, so
+    // there is no opacity left to read. That is a stronger statement than
+    // `=== 0`.
+    runFrames(
+      LANDED_S + ENTRY_VEIL_FADE_S / 2,
+      LANDED_S + ENTRY_VEIL_FADE_S + 2 / 60,
+    );
     expect(veilAlphaIn(scene)).toBeUndefined();
   });
 
@@ -2069,7 +2157,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       expect(veilAtRequestTime).not.toBeNull();
     });
 
-    it("survives the FIRST frame and starts FADING on the second (DEC-L1)", async () => {
+    it("holds fully opaque for the hold, then fades (DEC-L1, DEC-M1)", async () => {
       // WHY NOT THE FIRST. Both per-frame hooks run before
       // `renderer.render(scene, camera)` in the same tick, so when the first
       // callback fires nothing has been drawn yet and the mesh veil is not on
@@ -2079,10 +2167,14 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       //
       // AND WHY IT NO LONGER VANISHES THERE. DEC-L1 turned the hard cut into a
       // fade because the seventeenth session still saw a flash of camera at the
-      // join. The fade STARTS where the removal used to happen, so the black
-      // period is never shorter than the one this replaces — which is the
-      // property that makes the change incapable of regressing the old
-      // behaviour, and it is what the `toBe("1")` below pins.
+      // join.
+      //
+      // ⚠️ AND WHY THE SECOND FRAME IS NO LONGER THE TRIGGER (DEC-M1). The
+      // eighteenth session watched the fade start immediately and called the
+      // black period "viel zu wenig": what it asked for is a deliberate
+      // `ENTRY_DOM_VEIL_HOLD_S` at full opacity first. The second-frame rule
+      // survives as a FLOOR — the sub-frame race above is unchanged — but the
+      // gate is what opens the fade now.
       const container = document.createElement("div");
       document.body.append(container);
       await startArMode(
@@ -2098,9 +2190,20 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       onFrame({ dt: 0.016, elapsed: 0.016 });
       expect(veilIn(container)).not.toBeNull();
 
-      const fadeStart = 0.032;
+      // TWO FRAMES IN, WHERE THE FADE USED TO START: fully opaque, and staying
+      // that way. This is the assertion that fails against the old behaviour.
+      onFrame({ dt: 0.016, elapsed: 0.032 });
+      expect((veilIn(container) as HTMLElement).style.opacity).toBe("");
+
+      // HALF-WAY THROUGH THE HOLD: still untouched.
+      onFrame({ dt: 0.016, elapsed: 0.016 + ENTRY_DOM_VEIL_HOLD_S / 2 });
+      expect((veilIn(container) as HTMLElement).style.opacity).toBe("");
+
+      // THE FADE OPENS AT THE HOLD, because this fixture is aligned and wires
+      // no content-readiness getter — "nothing to wait for", the same
+      // convention an absent estimator gets.
+      const fadeStart = 0.016 + ENTRY_DOM_VEIL_HOLD_S;
       onFrame({ dt: 0.016, elapsed: fadeStart });
-      expect(veilIn(container)).not.toBeNull();
       expect((veilIn(container) as HTMLElement).style.opacity).toBe("1");
 
       // PART-WAY, and still there: the handover to the mesh veil happens under
@@ -2116,6 +2219,54 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       // transparent full-viewport element is still a compositor layer, and this
       // one sits over the whole session.
       onFrame({ dt: 0.016, elapsed: fadeStart + ENTRY_DOM_VEIL_FADE_S });
+      expect(veilIn(container)).toBeNull();
+    });
+
+    it("holds while the fusion has NOT solved, and gives up at the ceiling (DEC-M1)", async () => {
+      // THE M2 HALF, and the reason the veil grew a gate at all. Until
+      // `arWorldGroup.matrix` leaves identity the city is drawn in the phone's
+      // arbitrary start heading — the wrongly-rotated overlay the eighteenth
+      // session reported, which the old veil uncovered after three seconds
+      // whatever the fusion had or had not done.
+      //
+      // AND THE OTHER DIRECTION IN THE SAME TEST, because they are one
+      // decision: a device that never gets a fix must not be trapped behind a
+      // black screen, so the ceiling opens the fade regardless.
+      arWorldGroup.matrix.identity();
+      const container = document.createElement("div");
+      document.body.append(container);
+      await startArMode(
+        deps({
+          container,
+          buildingView: viewAtHeight(
+            START_M,
+          ) as unknown as ArModeDeps["buildingView"],
+        }),
+      );
+
+      // EVERY READING IS RELATIVE TO THE FIRST FRAME, which is what the gate
+      // measures against — `elapsed` is page-relative and the first frame here
+      // is at 0.016, so a ceiling test written against `elapsed` alone stops a
+      // frame short of it.
+      const firstFrameS = 0.016;
+      const onFrame = lastFrameFn();
+      for (
+        let elapsed = firstFrameS;
+        elapsed < firstFrameS + ENTRY_READY_MAX_WAIT_S - 0.5;
+        elapsed += 1 / 60
+      ) {
+        onFrame({ dt: 1 / 60, elapsed });
+      }
+      // Long past the hold, and long past the 3 s the old veil lasted.
+      expect((veilIn(container) as HTMLElement).style.opacity).toBe("");
+
+      onFrame({ dt: 1 / 60, elapsed: firstFrameS + ENTRY_READY_MAX_WAIT_S });
+      expect((veilIn(container) as HTMLElement).style.opacity).toBe("1");
+
+      onFrame({
+        dt: 1 / 60,
+        elapsed: firstFrameS + ENTRY_READY_MAX_WAIT_S + ENTRY_DOM_VEIL_FADE_S,
+      });
       expect(veilIn(container)).toBeNull();
     });
 
@@ -2147,11 +2298,18 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       expect(veilIn(container)).toBeNull();
     });
 
-    it("is NEVER created when there is no descent to hide", async () => {
-      // `descentStartM === 0` means entering from a ground-level view: no mesh
-      // veil is built and nothing fades, so a DOM veil would be an opaque lid
-      // with nothing to lift it. Gated on the same condition as the mesh, so
-      // the two can never disagree about whether an entry is being veiled.
+    it("covers a ground-level entry too, where only the MESH veil is skipped (DEC-M1b)", async () => {
+      // ⚠️ THIS TEST USED TO ASSERT THE OPPOSITE, and the reversal is the
+      // decision rather than a slip. `descentStartM === 0` means entering from
+      // a ground-level view: no mesh veil is built, and while the DOM veil was
+      // a hard cut with a fixed length, putting one here would have been an
+      // opaque block ending in a snap.
+      //
+      // BOTH HALVES OF THAT ARGUMENT HAVE EXPIRED — DEC-L1 gave the veil a fade
+      // and DEC-M1 gave it a readiness-driven end — while the reason it is
+      // needed applies unchanged: this entry meets exactly the same un-aligned
+      // city that M2 reported, and gating on the descent left it with no cover
+      // at all.
       const container = document.createElement("div");
       document.body.append(container);
       await startArMode(
@@ -2163,6 +2321,21 @@ describe("the AR entry fly-down (H5, Q5)", () => {
         }),
       );
 
+      expect(veilIn(container)).not.toBeNull();
+      // AND THE MESH VEIL IS STILL SKIPPED, which is the half that does not
+      // change: a sphere with no fly-in behind it is a lid.
+      expect(entryVeilIn(scene)).toBeUndefined();
+
+      // AND IT STILL LIFTS. The fade's end condition is the gate, not the
+      // descent, so an entry with no descent is not a black screen forever.
+      const onFrame = lastFrameFn();
+      for (
+        let elapsed = 0.016;
+        elapsed <= GATE_OPENS_S + 0.1;
+        elapsed += 1 / 60
+      ) {
+        onFrame({ dt: 1 / 60, elapsed });
+      }
       expect(veilIn(container)).toBeNull();
     });
 

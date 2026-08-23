@@ -129,6 +129,45 @@ describe("questBeaconPlacements", () => {
     ).toHaveLength(3);
   });
 
+  it("moves with the field's DATUM, which is the ~100 m the AR entry changes (DEC-M4)", () => {
+    // ⚠️ THIS TEST CANNOT FAIL AGAINST TODAY'S CODE, and saying so is the
+    // point: `heightAt` already returns `surface − datum`, so two fields on
+    // different datums already produce different placements. It is executable
+    // documentation of the SIZE of the eighteenth session's defect, not the
+    // red test for it — that one is `ar-entry-wiring.test.ts`, because the
+    // defect was never in the arithmetic. It was that nothing re-ran it when
+    // the field was replaced.
+    //
+    // THE NUMBERS ARE THE REAL ONES. The desktop field's datum is the
+    // orthometric height at the window centre (~50 m at the demo's home city);
+    // the AR field's is `−N`, the negated geoid undulation (~−47 m), so a
+    // surface at 57 m reads as 7 m of relief on the desktop and as 104 m of
+    // ellipsoidal height in AR. A mark placed against the first and drawn among
+    // geometry built against the second hangs `N + centre height` below it —
+    // the same ~98–100 m this codebase names four times as "the datum error the
+    // AR entry pass exists to remove".
+    const surfaceM = 57;
+    const desktop = questBeaconPlacements(
+      [{ position: COLOGNE }],
+      frame,
+      fieldAt({ x: 0, y: 0 }, 2400, surfaceM - 50),
+    );
+    const inAr = questBeaconPlacements(
+      [{ position: COLOGNE }],
+      frame,
+      fieldAt({ x: 0, y: 0 }, 2400, surfaceM + 47),
+    );
+
+    expect((inAr[0]?.y ?? 0) - (desktop[0]?.y ?? 0)).toBeCloseTo(97, 6);
+    // AND THE STALK FOLLOWS IT, which is the half a reader might assume is
+    // independent: it is drawn from `y` down to `groundY`, so a stale placement
+    // leaves the line reaching for a surface that has moved too.
+    expect((inAr[0]?.groundY ?? 0) - (desktop[0]?.groundY ?? 0)).toBeCloseTo(
+      97,
+      6,
+    );
+  });
+
   it("skips a pick whose position is not finite, rather than placing a NaN", () => {
     // A NaN reaching a scene position removes the object from the picture with
     // no error anywhere — the same "the 3D view is empty" report that

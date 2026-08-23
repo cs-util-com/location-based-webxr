@@ -44,12 +44,60 @@ that.
   written twice**: the whole effect depends on the handover between the two
   veils being invisible, and two hex literals that must agree is a shape this
   repo has been bitten by.
-- `ENTRY_DOM_VEIL_FADE_S = 3` — how long the fade-out runs once it starts.
+- `ENTRY_DOM_VEIL_FADE_S = 2` — how long the fade-out runs once it starts.
+  **3 → 2 by DEC-M1**, and the second it lost moved into the hold below rather
+  than being deleted.
+- `ENTRY_DOM_VEIL_HOLD_S = 2` — how long the veil stays fully opaque first.
+  **Lives in the GATE, not in the curve** (cold review of the DEC-M1 plan): a
+  draft that also gave `domVeilAlpha` a plateau composed to a 6 s black screen
+  and put one number in two places that had to agree.
+- `ENTRY_READY_MAX_WAIT_S = 8` — the ceiling, after which the fade starts
+  however un-ready the session is.
 - `domVeilAlpha(elapsedS): number` — the fade curve, `1` at and before 0,
   smoothstepped to exactly `0` at `ENTRY_DOM_VEIL_FADE_S`. **Every non-finite
   reading collapses to `0`, never to `1`** — see the lid rule below.
+- `entryFadeMayStart({ waitedS, aligned, contentReady }): boolean` — whether the
+  fade may begin. **Monotone in `waitedS`**, which the driver depends on: it
+  latches the start on the first `true`, so a gate that could go false again
+  would re-opaque a veil mid-fade. A `NaN` clock collapses to "not yet" — the
+  OPPOSITE direction from `domVeilAlpha`, and deliberately: there the input is
+  an opacity, here it is a clock, and opening on a meaningless reading uncovers
+  the camera.
 - `createArEntryDomVeil(container): ArEntryDomVeil` — inserts the element and
   returns `setAlpha()` plus an **idempotent** `remove()`.
+
+## What the fade waits for (DEC-M1, DEC-M2)
+
+The eighteenth field session watched the fade begin immediately and called the
+black period _"viel zu wenig"_ — and, separately, watched a **wrongly rotated**
+city, because nothing in the entry waited for the first GPS solve. Both are one
+gate now:
+
+- **≥ `ENTRY_DOM_VEIL_HOLD_S` of full opacity**, the deliberate pause that was
+  asked for — _"die ersten zwei Sekunden muss da einfach erstmal nur dieser Text
+  stehen"_.
+- **`aligned`** — `arWorldGroup.matrix` has left identity, i.e. the fusion has
+  solved at least once. Until then the city is drawn in the AR session's own
+  origin frame: right place, arbitrary rotation. Not weakened by the alignment
+  lerper, which applies the FIRST target instantly rather than animating out of
+  identity.
+- **`contentReady`** — the AR entry rebuild has settled. Entering AR re-fetches
+  and re-meshes the city because the AR datum is baked into its vertices;
+  uncovering before that shows the desktop-datum city, ~100 m out.
+- **or `ENTRY_READY_MAX_WAIT_S`**, because an opaque layer with no exit
+  condition is the lid this module exists to avoid.
+
+⚠️ **The ceiling is a guess and may be the normal path.** A full refresh is
+recorded elsewhere in this demo as _"three rings, a worker mesh build, up to
+18 s"_, so on a slow start the veil may reach its ceiling every time — which
+makes the black screen effectively fixed-length, the outcome DEC-M1 rejected in
+its literal form. `onEntryReady` (DEC-M1a) exists to turn that from an argument
+into a field measurement: it reports the wait AND which condition was still
+false.
+
+**The fly-in waits for the veil, not the other way round (DEC-M2).** The descent
+gate now requires the element to be gone, so the city cannot be half-risen when
+the screen clears.
 
 ## The fade, and why it is not a CSS animation (DEC-L1, DEC-L1b)
 
@@ -61,12 +109,12 @@ the DOM-overlay compositor layer and the WebGL layer, or a two-frame margin too
 thin for the device. A fade covers all three, which is a better reason to take
 it than a diagnosis nobody can confirm.
 
-- **The fade STARTS where the removal used to happen**, so the fully-black
-  period is never shorter than the one it replaces — the property that makes
-  this incapable of regressing the old behaviour. Starting it at insertion (the
-  literal reading of the request) was rejected: insertion is before
-  `requestSession`, so a slow permission grant would finish the fade while the
-  consent dialog is still up.
+- **The second frame is now a FLOOR rather than the trigger** (DEC-M1). The
+  sub-frame race below is unchanged — the fade may never start before a frame
+  has actually been drawn with the mesh veil in it — but what OPENS the fade is
+  the readiness gate above. Starting it at insertion (the literal reading of the
+  original request) stays rejected: insertion is before `requestSession`, so a
+  slow permission grant would finish the fade while the consent dialog is up.
 - **Driven from the XR frame loop, not by CSS — on TESTABILITY.** jsdom runs no
   animations, so a CSS fade could be asserted as "a class was added" and nothing
   more; a pure `domVeilAlpha` is testable including its degenerate inputs, which
@@ -81,8 +129,9 @@ it than a diagnosis nobody can confirm.
     `animationend` leaks an _invisible_ element. The honest asymmetry is
     testability alone.
 - ⚠️ **Unmeasured cost:** one full-viewport `style.opacity` write per frame for
-  3 s, in the DOM-overlay layer, which re-rasterises on the browser's schedule.
-  If AR entry gets slower on a device, suspect this first.
+  the fade, in the DOM-overlay layer, which re-rasterises on the browser's
+  schedule. If AR entry gets slower on a device, suspect this first. The write
+  now runs for 2 s rather than 3, but the veil is ATTACHED for up to 8+2.
 
 ## Invariants & assumptions
 
@@ -106,10 +155,13 @@ it than a diagnosis nobody can confirm.
   closing a sub-frame race with a trigger that fires one call too early.
   - **Removal is driven by the alpha, not by a second timer**, so the element
     and its opacity cannot disagree about whether the entry is over.
-- **It is gated on `descentStartM > 0`, the same condition as the mesh veil.**
-  A ground-level entry builds no mesh veil and fades nothing, so a DOM veil
-  there would be an opaque lid with nothing to lift it. Sharing the condition is
-  what stops the two disagreeing about whether an entry is being veiled.
+- **It is created for EVERY entry (DEC-M1b), unlike the mesh veil.** It used to
+  share the mesh's `descentStartM > 0` condition, because a ground-level entry
+  faded nothing and the veil would have been an opaque block ending in a hard
+  cut. DEC-L1 gave it a fade and DEC-M1 gave it a readiness-driven end, so both
+  halves of that argument have expired — while the reason it is needed has not:
+  a ground-level entry meets exactly the same un-aligned city. The MESH veil is
+  still gated on the descent, because a sphere with no fly-in behind it is a lid.
 - **`remove()` is idempotent because the success path calls it twice** — once
   from the frame hook and once from `release()`. A second call that threw would
   surface as a failed AR entry.
@@ -145,19 +197,22 @@ t = 10 s is still uncovered and always will be.
 - `ar-mode.test.ts` → "the DOM entry veil (DEC-K5)" — the ordering, which is the
   part that matters: present when `initAR` is called (asserted from inside the
   mock, the only vantage point that can tell before from after), surviving the
-  first frame, **still attached and at opacity 1 on the second**, part-way faded
-  half-way through, gone at the end of the fade, never created without a
-  descent, and removed on a refused session, a normal end, **and a session that
-  ends mid-fade** — the ~3 s window the fade creates that the hard cut did not.
+  first frame, **untouched on the second and through the hold**, opacity 1 on
+  the frame the gate opens, part-way faded half-way through, gone at the end of
+  the fade, **created for a ground-level entry too while the mesh veil is not**,
+  and removed on a refused session, a normal end, **and a session that ends
+  mid-fade** — the window the fade creates that the hard cut did not.
   - **Mutation-verified, re-run for the fade.** Fading from the first frame
     fails one test; a degenerate clock reading resolving to opaque instead of
     transparent fails one test; creating the veil after `initAR` instead of
     before fails three.
 - `boot-and-shell.spec.js` — asserts `#ar-root` is empty after a refused entry.
   ⚠️ **This does NOT guard this veil, and the sidecar says so deliberately.**
-  The veil is created only when `descentStartM > 0`, and that fixture's desktop
-  camera gives 0 — verified by mutation: deleting the removal from the refusal
-  path leaves the e2e green. It guards the framework's own canvas, which is
+  The assertion is about `#ar-root` being empty after a REFUSED entry, which
+  the framework's own teardown satisfies — verified by mutation: deleting the
+  removal from the refusal path leaves the e2e green. (Since DEC-M1b the veil
+  IS created for that fixture, which makes the e2e's silence a stronger reason
+  to keep the unit assertions rather than a weaker one.) It guards the framework's own canvas, which is
   what it guarded before. Recording it as this veil's e2e would have been an
   assertion that looks like a guard and is not.
 

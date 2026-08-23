@@ -37,28 +37,107 @@ import { ENTRY_VEIL_COLOUR } from "./ar-entry-veil.js";
 export const ENTRY_DOM_VEIL_CLASS = "ar-entry-dom-veil";
 
 /**
- * How long the veil takes to fade out once the handover begins (DEC-L1).
+ * How long the veil takes to fade out once {@link entryFadeMayStart} opens
+ * (DEC-L1, retimed by DEC-M1).
  *
- * **THE CLOCK STARTS WHERE THE HARD REMOVAL USED TO HAPPEN** — the second frame
- * callback — so the fully-black period is never shorter than the one this
- * replaces. The seventeenth field session still saw a flash of camera at that
- * instant; a fade covers it whichever of the three candidate causes is real (a
- * later frame that skipped `renderer.render`, a one-frame seam between the DOM
- * overlay and the WebGL layer, or a two-frame margin that is simply too thin).
+ * **3 → 2 BY DEC-M1**, and the seconds it lost were not deleted: they moved
+ * into {@link ENTRY_DOM_VEIL_HOLD_S}, where the eighteenth field session asked
+ * for them. *"Die ersten zwei Sekunden muss da einfach erstmal nur dieser Text
+ * stehen und überhaupt kein Alpha passieren … und erst nach zwei Sekunden fängt
+ * er dann an rauszufaden, was dann nochmal zwei Sekunden dauert."*
  *
  * **Rejected: starting the fade when the element is inserted.** That is the
- * literal reading of the request, and it is the one variant that can fail —
- * insertion happens BEFORE `requestSession`, so a slow permission grant would
- * finish the fade while the consent dialog is still up.
- *
- * **Rejected: 5 s.** Not for the reason first written down: a semi-transparent
- * DOM veil does dim the city behind it, but the mesh veil behind THIS one is
- * still ~0.97 opaque at 3 s and pinned at 1.0 for the whole estimate-wait
- * fallback, so the difference is negligible. 3 s is what was asked for, and it
- * is the length that spends least on the one cost nobody has measured — a
- * full-viewport opacity write in the DOM-overlay compositor layer, per frame.
+ * literal reading of the earlier request, and it is the one variant that can
+ * fail — insertion happens BEFORE `requestSession`, so a slow permission grant
+ * would finish the fade while the consent dialog is still up.
  */
-export const ENTRY_DOM_VEIL_FADE_S = 3;
+export const ENTRY_DOM_VEIL_FADE_S = 2;
+
+/**
+ * How long the veil stays fully opaque before it may begin fading (DEC-M1).
+ *
+ * **THE HOLD LIVES IN THE GATE, NOT IN THE CURVE, and that is a correction the
+ * cold review made** (finding 3). The first draft of DEC-M1 also gave
+ * {@link domVeilAlpha} a plateau of the same length, which composes to a 6 s
+ * black screen rather than the 4 s the timeline promises — and puts one number
+ * in two places that must agree, the shape this module's own colour derivation
+ * exists to avoid.
+ *
+ * So the curve is a plain fade and this is a precondition of starting it.
+ */
+export const ENTRY_DOM_VEIL_HOLD_S = 2;
+
+/**
+ * How long the veil will wait for a session that never becomes ready (DEC-M1).
+ *
+ * **A CEILING, NOT A BUDGET**, exactly like `DESCENT_ESTIMATE_WAIT_S`: an
+ * opaque full-screen layer with no exit condition is the lid this module calls
+ * strictly worse than having no veil at all, and a device that never gets a fix
+ * would otherwise sit behind a black screen forever.
+ *
+ * ⚠️ **EIGHT SECONDS IS A GUESS, and the cold review was right that its first
+ * justification was circular** — "twice the 4 s the sequence costs when warm"
+ * reasons from the plan's own numbers rather than from a measurement. What is
+ * recorded elsewhere in this demo is that a full refresh can be *"three rings,
+ * a worker mesh build, up to 18 s"*, so on a slow start this ceiling may well
+ * be the normal path — which would make the entry a near-fixed 8 s black
+ * screen, an outcome DEC-M1 explicitly rejected in its literal form.
+ *
+ * It ships anyway, because every alternative is another guess and a longer
+ * black screen is the failure that gets worse the longer you wait. DEC-M1a is
+ * the other half: the entry stamps how long each condition actually took, so
+ * the next field session returns a measurement instead of an impression.
+ */
+export const ENTRY_READY_MAX_WAIT_S = 8;
+
+/** What the entry knows about its own readiness on this frame. */
+export interface EntryFadeGate {
+  /** Seconds since the session's first frame. */
+  readonly waitedS: number;
+  /**
+   * Whether the framework's alignment has left identity, i.e. at least one GPS
+   * solve has landed.
+   *
+   * **THE M2 CONDITION.** Until it is true the city is drawn in the AR
+   * session's own origin frame — *"wrong place, arbitrary rotation"*, in
+   * `gps-registration.ts`'s words about the bug it was written to fix — so
+   * uncovering shows a correctly-placed, wrongly-rotated city.
+   *
+   * Not weakened by the alignment lerper: the framework applies the FIRST
+   * target instantly rather than animating out of identity, so "not identity"
+   * means a fully-applied solve rather than a half-rotated city.
+   */
+  readonly aligned: boolean;
+  /**
+   * Whether the AR entry rebuild has settled.
+   *
+   * The city is re-fetched and re-meshed on entry because the AR datum is baked
+   * into its vertices; until that settles, what is on screen was built for the
+   * desktop datum.
+   */
+  readonly contentReady: boolean;
+}
+
+/**
+ * Whether the veil may begin fading on this frame.
+ *
+ * **Monotone in `waitedS` by construction**, which is the property the driver
+ * depends on: it latches the fade's start on the first frame this returns true,
+ * so a gate that could go false again would re-opaque a veil mid-fade.
+ *
+ * **A non-finite `waitedS` collapses to "not yet"** — the rule `descentMayStart`
+ * follows, and the opposite of {@link domVeilAlpha}'s. The inputs are different
+ * kinds of thing: there it is an opacity, where the safe answer is "no veil";
+ * here it is a clock, and a `NaN` reading that opened the gate would uncover the
+ * camera on the strength of a number that means nothing. `+Infinity` is the one
+ * exception and opens, because it is a real "long past the ceiling".
+ */
+export function entryFadeMayStart(gate: EntryFadeGate): boolean {
+  if (Number.isNaN(gate.waitedS)) return false;
+  if (gate.waitedS >= ENTRY_READY_MAX_WAIT_S) return true;
+  if (!gate.aligned || !gate.contentReady) return false;
+  return gate.waitedS >= ENTRY_DOM_VEIL_HOLD_S;
+}
 
 /** Smoothstep — zero slope at both ends, like every other fade in this entry. */
 const smoothstep = (t: number): number => t * t * (3 - 2 * t);
@@ -81,8 +160,13 @@ const smoothstep = (t: number): number => t * t * (3 - 2 * t);
  * ⚠️ **This is deliberately NOT `ar-entry-veil.ts`'s `setAlpha` rule**, which
  * clamps `+Infinity` UP to 1. There the input is an opacity and "as opaque as
  * possible" is a real request; here it is elapsed time, so an infinite reading
- * means the fade is long over. The rule followed here is `cameraFadeAlpha`'s:
+ * means the fade is long over. The rule followed here is `entryVeilAlpha`'s:
  * every degenerate input resolves to "no veil".
+ *
+ * ⚠️ And it is NOT {@link entryFadeMayStart}'s rule either, which is one file
+ * down: that one takes a clock too, but its unsafe direction is the opposite —
+ * a `NaN` that opened the gate would uncover the camera on the strength of a
+ * reading that means nothing.
  */
 export function domVeilAlpha(elapsedS: number): number {
   if (!Number.isFinite(elapsedS)) return 0;

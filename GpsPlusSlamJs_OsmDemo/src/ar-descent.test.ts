@@ -14,7 +14,6 @@ import { describe, expect, it } from "vitest";
 import * as fc from "fast-check";
 
 import {
-  cameraFadeAlpha,
   descentComplete,
   descentMayStart,
   descentOffsetM,
@@ -60,28 +59,11 @@ describe("the direction of travel (DEC-Y14)", () => {
     );
   });
 
-  it("keeps the camera fade sweeping 0 to 1 despite the negative offset", () => {
-    // Why this test matters: `cameraFadeAlpha` divides by the offset and clamps
-    // into [0,1]. A bare sign flip makes `remaining` negative, so `1 − remaining`
-    // exceeds 1 and the clamp PINS the alpha at 1 for the entire descent — the
-    // camera would be fully visible from the first frame and the fade would
-    // silently cease to exist. The visible bug would be traded for an invisible
-    // one, which is why the sign change is not a one-character edit.
-    expect(cameraFadeAlpha({ elapsedS: 0, startM: START_M })).toBeCloseTo(0, 6);
-    expect(
-      cameraFadeAlpha({
-        elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S,
-        startM: START_M,
-      }),
-    ).toBeCloseTo(1, 6);
-    // And strictly rising in between, so it is a fade rather than a jump.
-    const mid = cameraFadeAlpha({
-      elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S / 2,
-      startM: START_M,
-    });
-    expect(mid).toBeGreaterThan(0);
-    expect(mid).toBeLessThan(1);
-  });
+  // THE CAMERA-FADE HALF OF THIS SIGN GUARD MOVED (DEC-M3). The veil no
+  // longer derives its alpha from the offset -- it holds at 1 for the whole
+  // fly-in and fades afterwards -- so the "a bare sign flip pins the alpha at
+  // 1" trap it guarded cannot arise any more. What survives of it is in
+  // `ar-entry-veil.test.ts`, against the new curve.
 });
 
 describe("descentOffsetM", () => {
@@ -178,54 +160,7 @@ describe("descentOffsetM", () => {
     // AR entered from a ground-level 3D view must behave exactly as it did
     // before this feature existed — including the camera being visible at once.
     expect(descentOffsetM({ elapsedS: 0, startM: 0 })).toBe(0);
-    expect(cameraFadeAlpha({ elapsedS: 0, startM: 0 })).toBe(1);
     expect(descentComplete({ elapsedS: 0, startM: 0 })).toBe(true);
-  });
-});
-
-describe("cameraFadeAlpha", () => {
-  it("starts hidden and ends fully visible", () => {
-    // 0 = passthrough hidden, so the first moment of AR looks like the 3D view
-    // the user was just in — which is the point of starting at their height.
-    expect(cameraFadeAlpha({ elapsedS: 0, startM: START_M })).toBe(0);
-    expect(
-      cameraFadeAlpha({
-        elapsedS: DESCENT_HOLD_S + DESCENT_FALL_S,
-        startM: START_M,
-      }),
-    ).toBe(1);
-  });
-
-  it("reaches full visibility exactly when the scene lands", () => {
-    // Driven by the same clock as the descent so the two cannot drift apart: a
-    // camera that finishes fading before the city lands shows the real world
-    // with a city still floating above it, which is the datum-bug picture.
-    const end = DESCENT_HOLD_S + DESCENT_FALL_S;
-    expect(
-      cameraFadeAlpha({ elapsedS: end - 0.01, startM: START_M }),
-    ).toBeLessThan(1);
-    expect(cameraFadeAlpha({ elapsedS: end, startM: START_M })).toBe(1);
-  });
-
-  it("stays inside [0,1] for any input", () => {
-    fc.assert(
-      fc.property(
-        fc.oneof(
-          fc.double({ min: -50, max: 50, noNaN: true }),
-          fc.constant(Number.NaN),
-        ),
-        fc.oneof(
-          fc.double({ min: -500, max: 5000, noNaN: true }),
-          fc.constant(Number.NaN),
-        ),
-        (elapsedS, startM) => {
-          const alpha = cameraFadeAlpha({ elapsedS, startM });
-          expect(Number.isFinite(alpha)).toBe(true);
-          expect(alpha).toBeGreaterThanOrEqual(0);
-          expect(alpha).toBeLessThanOrEqual(1);
-        },
-      ),
-    );
   });
 });
 
@@ -340,12 +275,8 @@ describe("the total length of the entry animation (DEC-L2)", () => {
       -0.648 * START_M,
       6,
     );
-    // And the veil is still doing its job at that moment, on the same clock:
-    // the camera is only ~35 % faded in.
-    expect(cameraFadeAlpha({ elapsedS: 6, startM: START_M })).toBeCloseTo(
-      0.352,
-      6,
-    );
+    // The veil half of this assertion moved to `ar-entry-veil.test.ts` with
+    // DEC-M3: the sphere no longer tracks the fly-in's progress at all.
   });
 
   it("keeps the hold short, so the extra time goes into visible motion", () => {

@@ -51,9 +51,13 @@ export const DESCENT_HOLD_S = 2;
  * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`,
  * which this change improves the odds of and does not settle.
  *
- * **`entryVeilAlpha` is derived from this same clock**, so the sphere's fade to
- * transparent stretches with it and the two cannot drift apart. One constant,
- * both halves of the effect.
+ * **`entryVeilAlpha` runs on this same clock**, so the sphere and the fly-in
+ * cannot drift apart. It no longer tracks this animation's PROGRESS, though
+ * (DEC-M3): it holds at fully opaque until `DESCENT_HOLD_S + DESCENT_FALL_S`
+ * and fades only afterwards, because the field session's point was that the
+ * camera coming in before the city has arrived shows two unrelated pictures.
+ * Lengthening the fall therefore lengthens the opaque period rather than
+ * stretching a fade.
  */
 export const DESCENT_FALL_S = 10;
 
@@ -122,57 +126,6 @@ export function descentOffsetM(input: DescentInput): number {
   const t = (elapsedS - DESCENT_HOLD_S) / DESCENT_FALL_S;
   if (t >= 1) return 0;
   return -start * (1 - smoothstep(t));
-}
-
-/**
- * The camera feed's opacity while the descent runs, `[0,1]`.
- *
- * 0 = the passthrough is fully hidden (the view looks like the desktop 3D
- * scene); 1 = the camera is fully visible. Driven by the same clock as the
- * descent so the two cannot drift apart.
- *
- * **Rendered by a backdrop mesh — `ar-entry-veil.ts` — and NOT by
- * `renderer.setClearAlpha` (DEC-J1, overturning DEC-Y3).**
- *
- * DEC-Y3 chose the clear alpha, reasoning that AR entry sets
- * `scene.background = null`, that the clear then uses the renderer's own
- * `clearColor`/`clearAlpha`, and that the framework's renderer is built
- * `alpha: true`. **All three premises are true and the conclusion is still
- * false.** `WebGLBackground.render()` has a branch that runs LAST:
- *
- * ```js
- * const environmentBlendMode = renderer.xr.getEnvironmentBlendMode();
- * if (environmentBlendMode === 'additive') state.buffers.color.setClear(0,0,0,1, …);
- * else if (environmentBlendMode === 'alpha-blend') state.buffers.color.setClear(0,0,0,0, …);
- * ```
- *
- * Every video-passthrough session reports `alpha-blend`, so the clear is forced
- * fully transparent and the camera is visible from the first frame. The
- * fifteenth field session reported exactly that. `setClearAlpha` cannot veil the
- * camera in ANY `immersive-ar` session, on any device, with this renderer.
- *
- * **No gate here could have caught it**: `getEnvironmentBlendMode()` returns
- * `'opaque'` outside a session, so the override never fires in vitest or in
- * headless Chromium, and the assertion that `setClearAlpha` had been called
- * passed the whole time against a call that did nothing.
- *
- * **This function is unchanged and still right** — only its consumer moved.
- */
-export function cameraFadeAlpha(input: DescentInput): number {
-  const offset = descentOffsetM(input);
-  const start = Math.min(DESCENT_MAX_START_M, Math.max(0, input.startM));
-  if (!Number.isFinite(start) || start <= 0) return 1;
-  // Proportional to how far the descent has come, so the camera is fully
-  // visible exactly when the scene lands.
-  //
-  // MAGNITUDE, not the signed value (DEC-Y14). The offset is negative — the
-  // city rises from below — and dividing the signed value here would make
-  // `remaining` negative, `1 − remaining` exceed 1, and the clamp below pin the
-  // alpha at 1 for the whole descent: the camera fully visible from the first
-  // frame, with the fade silently gone. That is the invisible bug a bare sign
-  // flip would have traded the visible one for.
-  const remaining = Math.abs(offset) / start;
-  return Math.min(1, Math.max(0, 1 - remaining));
 }
 
 /**
