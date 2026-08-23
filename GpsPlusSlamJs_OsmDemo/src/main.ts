@@ -1179,17 +1179,32 @@ async function main(): Promise<void> {
   // locate button and the site picker recentre on the user. Every one of those
   // raises `moveend`, and a blanket rule would fire on them and re-aim at ground
   // level — undoing a fix made in the PR #344 review.
+  // ⚠️ ARMED ON `dragstart` AND NOTHING ELSE. The first version also armed on
+  // `zoomstart`, to cover a drag that becomes a pinch — and that was a
+  // regression, caught by the milestone review and then measured: Leaflet
+  // raises `moveend` for a ZOOM as well as for a pan, so every wheel or button
+  // zoom consumed the latch and snapped the camera's target to the map centre,
+  // ~100 m in the e2e fixture. That silently undid the `zoomend` handler's
+  // "the target is kept", which matters because the two targets diverge
+  // routinely — a map click recentres the camera without moving the map, a 3D
+  // drag moves the target without moving the map.
+  //
+  // The pinch case is the accepted cost and is smaller: the camera lands on the
+  // centre at the moment the second finger arrived rather than on the final
+  // one. `boot-and-shell.spec.js` guards both halves.
   const mapDrag = createMapDragLatch();
   mapView.map.on("dragstart", () => {
     mapDrag.gestureStarted();
   });
-  // AND ON `zoomstart`, which is not padding: a one-finger drag that gains a
-  // second finger makes Leaflet finish the drag mid-gesture, so a drag-only
-  // latch would aim at the mid-pinch centre and never at the final one. No
-  // programmatic mover changes the zoom, so none of them arms this.
-  mapView.map.on("zoomstart", () => {
-    mapDrag.gestureStarted();
-  });
+  //
+  // ⚠️ AND IT MOVES THE CAMERA WITHOUT LOADING ANYTHING. A map CLICK dispatches
+  // `positionChanged`, which re-anchors, refetches the working set and loads
+  // terrain; a drag does none of that, because it is a LOOK rather than a move
+  // — the same distinction `panTo` and `centreOn` are separated by. Drag far
+  // enough and the 3D view is aimed past the built mesh, at empty space, with
+  // no status line saying so. Recorded rather than fixed: making a drag fetch
+  // would make an idle gesture the most expensive thing in the app, and making
+  // it move the user would teleport them. Flagged to the owner as a decision.
   mapView.map.on("moveend", () => {
     if (!mapDrag.moveEnded()) return;
     const centre = mapView.map.getCenter();

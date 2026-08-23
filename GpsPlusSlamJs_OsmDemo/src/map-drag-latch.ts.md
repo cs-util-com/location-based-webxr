@@ -8,7 +8,7 @@ the map, or did code?** Leaflet's `moveend` cannot tell them apart; this can.
 ## Public API
 
 - `createMapDragLatch(): MapDragLatch`
-  - `gestureStarted()` — arm. Wired to `dragstart` **and** `zoomstart`.
+  - `gestureStarted()` — arm. Wired to `dragstart` **only** — see below.
   - `moveEnded(): boolean` — read and clear. `true` exactly once per armed
     gesture, `false` for every move nobody made.
 
@@ -17,13 +17,22 @@ the map, or did code?** Leaflet's `moveend` cannot tell them apart; this can.
 - **Read-and-clear, not a flag anyone else clears.** A latch left armed fires on
   the next `moveend`, which is very likely to be a programmatic one — i.e. it
   fails into exactly the behaviour it exists to prevent, one event later.
-- **Two arms then one read is ONE move.** A one-finger drag that gains a second
-  finger makes Leaflet finish the drag mid-gesture (`Draggable._onDown` calls
-  `finishDrag()`), so `dragstart` and `zoomstart` can both arrive before any
-  `moveend`. Without this the camera would be re-aimed at the mid-pinch centre.
-- **`zoomstart` is safe to arm on**, because none of the programmatic movers
-  changes the zoom: `panTo` and `centreOn` both call `setView` with
-  `map.getZoom()`.
+- ⚠️ **`zoomstart` IS NOT ARMED ON, and the reason is a measured regression.**
+  The first version did arm on it, to cover a one-finger drag that gains a
+  second finger — Leaflet finishes the drag mid-gesture (`Draggable._onDown`
+  calls `finishDrag()`), so the camera lands on the mid-pinch centre and never
+  on the final one. But **Leaflet raises `moveend` for a ZOOM as well as for a
+  pan**, so every wheel or button zoom consumed the latch and snapped the camera
+  target to the map centre — **~100 m in the e2e fixture** — silently undoing
+  the `zoomend` handler's deliberate "the target is kept".
+  - The two targets diverge routinely: a map click recentres the camera without
+    moving the map, and a 3D drag moves the target without moving the map. That
+    is why reconciling them on a zoom is a defect rather than a tidy-up.
+  - **The pinch imprecision is the accepted cost**, and it is far smaller: the
+    camera lands on the centre at the moment the second finger arrived.
+- **Two arms then one read is still ONE move**, and the unit test keeps saying
+  so: nothing in the latch depends on which event armed it, so a future caller
+  that adds a second arming source cannot get a double move for free.
 - **Read on `moveend`, never on `dragend`.** `dragend` fires when the finger
   lifts, before the inertia glide settles, so the centre read there is not where
   the map ends up. Leaflet raises `moveend` on both drag-end branches — directly
@@ -35,6 +44,13 @@ the map, or did code?** Leaflet's `moveend` cannot tell them apart; this can.
   raises the pending `moveend` first.
 - **Accepted gap:** a keyboard-arrow pan of the map does not move the camera.
   One more event on the same latch if it ever matters.
+- ⚠️ **A drag moves the camera but loads NO DATA.** A map click dispatches
+  `positionChanged`, which re-anchors, refetches the working set and loads
+  terrain; a drag is a LOOK, not a move, so it does none of that. Drag far
+  enough and the 3D view is aimed past the built mesh at empty space, with no
+  status line saying so. Recorded rather than fixed — a fetch on every idle
+  drag would be the most expensive gesture in the app, and moving the user
+  instead would teleport them. Raised with the owner as a decision.
 
 ## Why the camera move itself is not in here
 
@@ -50,7 +66,6 @@ review pointed out it already existed under another name.
 ```ts
 const latch = createMapDragLatch();
 mapView.map.on("dragstart", () => latch.gestureStarted());
-mapView.map.on("zoomstart", () => latch.gestureStarted());
 mapView.map.on("moveend", () => {
   if (!latch.moveEnded()) return;
   const centre = mapView.map.getCenter();

@@ -201,8 +201,16 @@ export function descentComplete(input: DescentInput): boolean {
  * only by walking for ~5 s, and a user entering AR is standing still. If that
  * is representative, this fallback is the NORMAL path rather than the
  * exception, and the correction then arrives through the ease at 1.5 m/s: a
- * 10 m residual takes 6.7 s against a 6 s descent, so it lands mid-descent and
- * outlasts it. Filed with the arithmetic and the field measurement to take, in
+ * 10 m residual takes 6.7 s.
+ *
+ * **DEC-L2 CHANGED THE COMPARISON, not the conclusion.** Against the 6 s
+ * descent this paragraph was written for, that correction outlasted the whole
+ * animation; against 12 s a 10 m residual now fits inside it. It is still not
+ * settled: the 6.7 s runs from ENGAGEMENT, so on this fallback path — descent
+ * from `firstFrame + 3 s`, landing at `firstFrame + 15 s` — the correction is
+ * hidden only if the estimator engages within ~8.3 s of the first frame, and a
+ * 20 m residual outlasts the animation at any engagement time. Filed with the
+ * arithmetic and the field measurement to take, in
  * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
  *
  * It is NOT raised speculatively: a longer black screen is a real cost, and

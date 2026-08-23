@@ -675,6 +675,14 @@ test.describe("the location picker", () => {
       await page.mouse.up();
     };
 
+    // NOTHING WRITTEN YET, asserted rather than assumed. The two-drag
+    // comparison below only means what its comment says if the first reading is
+    // genuinely produced by the first drag — a `clng` already present at boot
+    // would make the poll resolve instantly on a pre-drag value, and the
+    // increase would then be satisfied by one drag. Nothing writes camera keys
+    // at boot today; this is what keeps that true.
+    expect(new URL(page.url()).searchParams.get("clng")).toBeNull();
+
     await dragWest();
     // AFTER THE THROTTLE, which is why this is a poll rather than a read: the
     // camera writer samples rather than writing per frame.
@@ -688,6 +696,61 @@ test.describe("the location picker", () => {
     await expect
       .poll(() => Number(new URL(page.url()).searchParams.get("clng")))
       .toBeGreaterThan(first);
+  });
+
+  test("zooming the 2D map still KEEPS the 3D camera's target (DEC-L4)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS, and it is a regression guard rather than a new
+    // feature: `zoomend` dollies the camera without moving its target, on
+    // purpose — the two views' targets diverge all the time (a map click
+    // recentres the camera without moving the map, a 3D drag moves the target
+    // without moving the map), and a zoom must not silently reconcile them.
+    //
+    // The drag follow added by DEC-L4 can break exactly that, because Leaflet
+    // raises `moveend` for a ZOOM as well as for a pan. The first version of
+    // the latch armed on `zoomstart` to cover a drag that becomes a pinch, and
+    // that made every wheel or button zoom teleport the camera's target to the
+    // map centre. Found in the milestone review; this is the assertion that
+    // would have caught it.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // MAKE THE TWO DIVERGE FIRST, or the assertion is vacuous: with the camera
+    // target already at the map centre, a recentre onto that centre is a no-op
+    // and this test would pass against the defect.
+    //
+    // BY A MAP CLICK, NOT A 3D DRAG, and the difference matters. A click is one
+    // discrete move — it recentres the camera on the clicked point and leaves
+    // the map's centre alone — so the camera URL settles on a final value. A
+    // drag writes through a 400 ms throttle, so the baseline read back is a
+    // MID-drag sample, and the later write reports the drag's true endpoint: a
+    // difference of ~0.0006° that has nothing to do with zooming. The first
+    // version of this test read that as the defect.
+    await page.locator("#map").click({ position: { x: 90, y: 90 } });
+    await waitForRefresh(page);
+
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("clat"))
+      .not.toBeNull();
+    const before = new URL(page.url()).searchParams;
+    const clat = Number(before.get("clat"));
+    const clng = Number(before.get("clng"));
+
+    await page.locator(".leaflet-control-zoom-in").click();
+    // The dolly writes the camera URL again, so waiting for the DISTANCE to
+    // change is what proves the zoom was actually processed — polling for "the
+    // target did not change" would otherwise pass before anything happened.
+    await expect
+      .poll(() => Number(new URL(page.url()).searchParams.get("cdist")))
+      .toBeLessThan(Number(before.get("cdist")));
+
+    const after = new URL(page.url()).searchParams;
+    // Five decimals is ~1.1 m; 0.0005° is a ~55 m bound that still fails
+    // outright if the target was snapped to the map centre.
+    expect(Math.abs(Number(after.get("clat")) - clat)).toBeLessThan(0.0005);
+    expect(Math.abs(Number(after.get("clng")) - clng)).toBeLessThan(0.0005);
   });
 });
 

@@ -30,11 +30,13 @@ export interface MapDragLatch {
   /**
    * Arm it — the user began a gesture that will move the map.
    *
-   * Wired to `dragstart` **and** `zoomstart`. The second is not padding: a
-   * one-finger drag that gains a second finger makes Leaflet finish the drag
-   * mid-gesture, so a drag-only latch fires on the mid-pinch centre and the
-   * final centre is never applied. Neither `panTo` nor `centreOn` changes the
-   * zoom, so no programmatic mover raises `zoomstart`.
+   * ⚠️ **Wired to `dragstart` ONLY, and `zoomstart` is the trap.** Arming on
+   * `zoomstart` looks right — it covers a one-finger drag that gains a second
+   * finger, which makes Leaflet finish the drag mid-gesture — but Leaflet
+   * raises `moveend` for a ZOOM as well as for a pan, so every wheel or button
+   * zoom would consume the latch and snap the camera target to the map centre.
+   * Measured at ~100 m in the e2e fixture. The pinch imprecision is the
+   * smaller cost by a wide margin.
    */
   gestureStarted(): void;
   /**

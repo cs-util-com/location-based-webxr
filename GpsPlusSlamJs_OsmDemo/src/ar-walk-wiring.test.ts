@@ -416,8 +416,20 @@ describe("the map zoom is wired to the 3D camera in main.ts", () => {
   it("dollies to the converted distance while KEEPING the camera's target", () => {
     // `lookAtFrom(cameraView().target, d)` preserves where the camera is
     // looking and changes only how far away it is. Passing a different target
-    // would teleport the 3D view on every map zoom, and panning the map — which
-    // the session did NOT ask to couple — would start moving the 3D scene.
+    // would teleport the 3D view on every map zoom.
+    //
+    // ⚠️ THIS TEST READS SOURCE TEXT AND CANNOT SEE THE BEHAVIOUR, which the
+    // milestone review of DEC-L4 demonstrated: the drag follow armed its latch
+    // on `zoomstart`, Leaflet raises `moveend` for a zoom too, and the camera's
+    // target was snapped to the map centre on every zoom — with this assertion
+    // still green, because the `zoomend` handler's text was untouched. The
+    // behaviour is guarded by `boot-and-shell.spec.js` → "zooming the 2D map
+    // still KEEPS the 3D camera's target"; this one guards the shape only.
+    //
+    // The comment here used to add "and panning the map — which the session did
+    // NOT ask to couple — would start moving the 3D scene". DEC-L4 reversed
+    // that: a USER DRAG of the map now recentres the camera, on request. See
+    // the `moveend` guard below.
     const handler = CODE.match(
       /mapView\.map\.on\("zoomend", \(\) => \{[\s\S]*?\n {2}\}\);/,
     )?.[0];
@@ -447,5 +459,34 @@ describe("the map zoom is wired to the 3D camera in main.ts", () => {
     // to make them agree about.
     expect(CODE).toContain("vfovDeg: CAMERA_VFOV_DEG");
     expect(CODE).not.toMatch(/vfovDeg:\s*55/);
+  });
+
+  it("arms the drag latch on dragstart ONLY, never on zoomstart (DEC-L4)", () => {
+    // WHY THIS TEST MATTERS, and it is the one assertion that pins a MEASURED
+    // regression rather than an intention. Arming on `zoomstart` is the
+    // plausible-looking version — it covers a drag that becomes a pinch — and
+    // it is wrong, because Leaflet raises `moveend` for a zoom as well as for a
+    // pan: every wheel or button zoom then consumed the latch and snapped the
+    // camera's target to the map centre, ~100 m in the e2e fixture.
+    //
+    // The e2e guards the behaviour. This guards the SHAPE, in the file whose
+    // whole purpose is "a pure function nothing calls changes nothing on
+    // screen" — because the next person to meet the pinch case will reach for
+    // exactly the line this forbids.
+    expect(CODE).toContain('mapView.map.on("dragstart"');
+    expect(CODE).not.toContain('mapView.map.on("zoomstart"');
+  });
+
+  it("moves the camera on moveend, and only for a latched gesture (DEC-L4)", () => {
+    // The connection itself: a latch nothing reads is the same defect class as
+    // a pure function nothing calls. `recentre` rather than a new conversion —
+    // it is the same call the map click already makes.
+    const handler = CODE.match(
+      /mapView\.map\.on\("moveend", \(\) => \{[\s\S]*?\n {2}\}\);/,
+    )?.[0];
+    expect(handler).toBeDefined();
+    expect(handler).toContain("mapDrag.moveEnded()");
+    expect(handler).toContain("buildingView.recentre(");
+    expect(handler).toContain("mapView.map.getCenter()");
   });
 });
