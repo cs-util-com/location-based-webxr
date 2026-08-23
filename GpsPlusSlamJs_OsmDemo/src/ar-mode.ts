@@ -595,7 +595,24 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           ? {}
           : { depth: { onCaptured: depthPipeline.fold } }),
         onSessionEnd: () => {
-          if (!bootCompleted) return;
+          if (!bootCompleted) {
+            // THE DOM VEIL STILL COMES DOWN, and this branch used to leak it
+            // (found in the DEC-L1 milestone review; the defect predates that
+            // work). A session that ends between `initAR` resolving and the
+            // boot finishing never reaches `release()`, so the veil — FULLY
+            // OPAQUE at that point, since the frame loop has not started —
+            // stays attached to `#ar-root`, which is `position: fixed; inset: 0`
+            // and hidden only while `:empty`. That is a black rectangle over
+            // the whole desktop app with no error anywhere: the exact
+            // regression this repo has shipped once already.
+            //
+            // ONLY THE VEIL, not `release(false)`: the boot is still running
+            // and tearing its half-built state down from here is a different
+            // and much larger change. `remove()` is idempotent, so the boot
+            // path that follows is unaffected.
+            session.entryDomVeil?.remove();
+            return;
+          }
           // NOT `endARSession()` — the session is already ending.
           release(false);
           deps.onEnded?.();

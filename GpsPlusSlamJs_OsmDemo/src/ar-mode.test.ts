@@ -215,6 +215,14 @@ beforeEach(() => {
   scene.background = null;
   scene.environment = null;
   scene.fog = null;
+  // AND ITS CHILDREN, which the three lines above do not touch (milestone
+  // review of DEC-L2). A session that ends without landing leaves its entry
+  // veil in this scene, and the NEXT test's "no entry veil was added" then
+  // fails against the previous test's leftovers — which is exactly how the
+  // descent retiming produced a failure in a test it has nothing to do with.
+  // Delivering a final frame at the exact end time fixed that one route; this
+  // makes the whole class of failure impossible.
+  scene.remove(...scene.children);
   initAR.mockResolvedValue(undefined);
   getScene.mockReturnValue(scene);
   getArWorldGroup.mockReturnValue(arWorldGroup);
@@ -2115,6 +2123,43 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       );
 
       expect(veilIn(container)).toBeNull();
+    });
+
+    it("is removed when the session dies BEFORE the boot completes", async () => {
+      // A LEAK THAT PREDATES THE FADE, found in the DEC-L1 milestone review and
+      // fixed with it. `onSessionEnd` returns early while `bootCompleted` is
+      // false — the boot is still running and tearing its half-built state down
+      // from there is a different, much larger change — but that early return
+      // also skipped `release()`, which is the only thing that removes this
+      // veil. The veil is FULLY OPAQUE at that point, since the frame loop has
+      // not started, so the result is a black rectangle over the entire desktop
+      // app with no error anywhere: `#ar-root` is `position: fixed; inset: 0`
+      // and hidden only while `:empty`. This repo has shipped that once already.
+      //
+      // ASSERTED FROM INSIDE THE MOCK, which is the only vantage point that can
+      // see the pre-boot state: everything after `initAR` resolves is
+      // synchronous through to `bootCompleted = true`, so by the time
+      // `startArMode` returns the window has closed.
+      const container = document.createElement("div");
+      document.body.append(container);
+      let veilAfterEnd: Element | null | undefined;
+      initAR.mockImplementation((...args: unknown[]) => {
+        const callbacks = args[3] as { onSessionEnd?: () => void } | undefined;
+        callbacks?.onSessionEnd?.();
+        veilAfterEnd = veilIn(container);
+        return Promise.resolve();
+      });
+
+      await startArMode(
+        deps({
+          container,
+          buildingView: viewAtHeight(
+            START_M,
+          ) as unknown as ArModeDeps["buildingView"],
+        }),
+      );
+
+      expect(veilAfterEnd).toBeNull();
     });
 
     it("is removed when the session ends normally", async () => {
