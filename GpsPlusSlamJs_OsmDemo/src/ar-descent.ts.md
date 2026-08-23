@@ -29,7 +29,29 @@ written from the **content's** frame: the offset is negative and increases.
 - `cameraFadeAlpha({ elapsedS, startM }): number` — the camera feed's opacity,
   `[0,1]`; 0 = passthrough hidden, 1 = fully visible.
 - `descentComplete({ elapsedS, startM }): boolean` — the end-state signal.
-- `DESCENT_HOLD_S = 2`, `DESCENT_FALL_S = 4`, `DESCENT_MAX_START_M = 100`.
+- `DESCENT_HOLD_S = 2`, `DESCENT_FALL_S = 10`, `DESCENT_MAX_START_M = 100` — a
+  **12 s** animation in total.
+
+### Why 12 s and not the 6 s that shipped (DEC-L2, 2026-08-23)
+
+The seventeenth field session watched the 6 s entry on a phone and asked for
+double. The extra six seconds went **entirely into the fall**: a longer
+motionless hold is the ambiguity the waiting line exists to cover, so doubling
+it too would have bought the worst kind of time.
+
+The argument that decided it is not aesthetic. The auto-elevation correction
+glides in at `AUTO_APPLY_RATE_M_PER_S` (1.5 m/s), so a 10 m residual takes
+~6.7 s **from the moment the estimator engages** — against a 6 s animation that
+correction landed after the veil was gone and showed as late movement.
+
+⚠️ **This makes the correction more likely to be hidden; it does not guarantee
+it.** Engagement time while standing still has never been measured, which is the
+open question in
+`GpsPlusSlamJs_Docs/docs/2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
+
+**One constant carries both halves of the effect**: `entryVeilAlpha` is
+`1 − cameraFadeAlpha` over the same input, so the sphere's fade stretches with
+the fall and the two cannot drift apart.
 
 ## Invariants & assumptions
 

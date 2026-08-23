@@ -21,7 +21,11 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as THREE from "three";
-import { DESCENT_FALL_S, DESCENT_HOLD_S } from "./ar-descent.js";
+import {
+  DESCENT_ESTIMATE_WAIT_S,
+  DESCENT_FALL_S,
+  DESCENT_HOLD_S,
+} from "./ar-descent.js";
 
 /**
  * IN `vi.hoisted`, WHICH IS NOT OPTIONAL HERE.
@@ -1550,6 +1554,28 @@ describe("the AR entry fly-down (H5, Q5)", () => {
   const START_M = 60;
 
   /**
+   * The `elapsed` reading at which a descent begun at `gateOpensS` has landed.
+   *
+   * **SYMBOLIC, BECAUSE A LITERAL COST THIS SUITE SIX RED TESTS (DEC-L2).**
+   * Every case below used to run to a hand-written `14` or `10` — one second
+   * past the old landing at `1 + 2 + 4`. Retiming the fall to 10 s broke all of
+   * them, and one broke for a reason worth recording: a test that no longer
+   * reached its landing left an UNDISPOSED entry veil in the shared `scene`,
+   * which then failed the next test's "adds NO entry veil" assertion. A literal
+   * end-time in a duration-driven test does not fail loudly where the bug is.
+   */
+  const landedAtS = (gateOpensS: number): number =>
+    gateOpensS + DESCENT_HOLD_S + DESCENT_FALL_S;
+
+  /**
+   * The gate opens on the first frame whenever nothing is being waited for —
+   * no estimator wired, or no height to descend from. That is the default in
+   * these fixtures; the one test that wires an estimator waits
+   * `DESCENT_ESTIMATE_WAIT_S` on top and says so at its call site.
+   */
+  const LANDED_S = landedAtS(1);
+
+  /**
    * A local frame driver rather than the walking one above: the descent is
    * driven purely by `elapsed`, and simulating a walk here would add motion the
    * feature does not read while making the test look like it depended on it.
@@ -1559,9 +1585,16 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       dt: number;
       elapsed: number;
     }) => void;
-    for (let elapsed = fromS; elapsed <= toS; elapsed += stepS) {
+    for (let elapsed = fromS; elapsed < toS; elapsed += stepS) {
       onFrame({ dt: stepS, elapsed });
     }
+    // AND ONE FRAME EXACTLY AT `toS`, which the loop above cannot guarantee.
+    // Accumulating `1/60` drifts, so `elapsed <= toS` can stop a hair short of
+    // the end — and a hair short of the LANDING is a descent that never reports
+    // complete, a veil never disposed, and a leaked opaque mesh in the `scene`
+    // the next test shares. That is exactly how DEC-L2's retiming produced a
+    // failure in a test it had nothing to do with.
+    onFrame({ dt: stepS, elapsed: toS });
   };
 
   const viewAtHeight = (heightM: number) => {
@@ -1635,7 +1668,13 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     // NOTE THE CLOCK. `DESCENT_ESTIMATE_WAIT_S` is measured from the FIRST
     // frame (elapsed 1 here), not from page load, so the fallback opens at
     // elapsed 4 and the descent then needs its own hold plus fall on top.
-    runFrames(5, 14);
+    // PLUS A FRAME OF SLACK, and it is not padding: the gate opens on the first
+    // frame AT OR AFTER `firstFrame + DESCENT_ESTIMATE_WAIT_S`, which at 60 Hz
+    // is up to 1/60 s later than the wait itself — so the landing is that much
+    // later than `landedAtS` computes. Without the slack this test stops a hair
+    // short, the veil is never disposed, and it leaks into the `scene` the next
+    // tests share.
+    runFrames(5, landedAtS(1 + DESCENT_ESTIMATE_WAIT_S) + 1 / 60);
     expect(upAt(view), "the fallback never released the descent").toBeCloseTo(
       0,
       2,
@@ -1700,7 +1739,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     // AND GONE once the city lands -- removed from the scene, not merely
     // transparent. A transparent screen-filling mesh is still submitted, sorted
     // and blended every frame for the rest of the session.
-    runFrames(1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2, 14);
+    runFrames(1 + DESCENT_HOLD_S + DESCENT_FALL_S / 2, LANDED_S);
     expect(veilOf(), "the entry veil outlived the entry").toBeUndefined();
     // AND SO IS THE WAITING LINE (DEC-J11).
     expect(container.querySelector(".ar-entry-wait")).toBeNull();
@@ -1731,7 +1770,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
         ) as unknown as ArModeDeps["buildingView"],
       }),
     );
-    runFrames(1, 14);
+    runFrames(1, LANDED_S);
 
     expect(setClearAlpha).not.toHaveBeenCalled();
   });
@@ -1774,7 +1813,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
         buildingView: view as unknown as ArModeDeps["buildingView"],
       }),
     );
-    runFrames(1, 12);
+    runFrames(1, LANDED_S);
 
     const ups = applied(view);
     expect(ups.length).toBeGreaterThan(3);
@@ -1802,7 +1841,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     expect(upAt(view)).toBeCloseTo(-START_M, 1);
 
     // And it is back on the ground once the hold plus the fall have run.
-    runFrames(1, 10);
+    runFrames(1, LANDED_S);
     expect(upAt(view)).toBeCloseTo(0, 2);
 
     // IT ANIMATED THROUGH THE COMPOSITION, rather than being lifted once and
@@ -1868,7 +1907,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     runFrames(1, 1);
     expect(veilAlphaIn(scene)).toBeCloseTo(1, 2);
 
-    runFrames(1, 10);
+    runFrames(1, LANDED_S);
     // GONE, not transparent: the veil is disposed on landing, so there is no
     // opacity left to read. That is a stronger statement than `=== 0`.
     expect(veilAlphaIn(scene)).toBeUndefined();
@@ -1896,7 +1935,7 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     runFrames(1, 1);
     expect(onDescentComplete).not.toHaveBeenCalled();
 
-    runFrames(1, 10);
+    runFrames(1, LANDED_S);
     expect(onDescentComplete).toHaveBeenCalledTimes(1);
 
     // ONCE, not once per frame: a signal that repeats is a signal nobody reads.

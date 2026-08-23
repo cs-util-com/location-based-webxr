@@ -25,11 +25,37 @@
  * The request says "nach ein paar Sekunden". The hold is what makes the descent
  * legible as a deliberate move rather than a slow load: without it the scene is
  * already falling before a user has looked up from the button they pressed.
+ *
+ * **DELIBERATELY NOT DOUBLED WITH THE FALL (DEC-L2).** When the seventeenth
+ * session asked for the whole animation to take twice as long, the literal
+ * reading was 4 s + 8 s. A motionless picture is precisely the ambiguity the
+ * waiting line (DEC-J11) exists to cover, so the extra six seconds would have
+ * bought the worst kind of time; all of it went into the fall instead.
  */
 export const DESCENT_HOLD_S = 2;
 
-/** How long the fall itself takes, from the starting height to zero. */
-export const DESCENT_FALL_S = 4;
+/**
+ * How long the fall itself takes, from the starting height to zero.
+ *
+ * **4 → 10 BY DEC-L2 (2026-08-23), from a field session that watched the 6 s
+ * total on a phone and asked for double.** The reason is not only that it looks
+ * better: the auto-elevation correction glides in at `AUTO_APPLY_RATE_M_PER_S`
+ * (1.5 m/s), so a 10 m residual takes ~6.7 s from the moment the estimator
+ * engages. Against a 6 s animation that correction landed AFTER the veil was
+ * gone and was visible as late movement; a 12 s animation is long enough to
+ * hide it in the common case.
+ *
+ * ⚠️ **It does not GUARANTEE that.** The 6.7 s runs from engagement, not from
+ * the first frame, and how long engagement takes while standing still has never
+ * been measured — the open question in
+ * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`,
+ * which this change improves the odds of and does not settle.
+ *
+ * **`entryVeilAlpha` is derived from this same clock**, so the sphere's fade to
+ * transparent stretches with it and the two cannot drift apart. One constant,
+ * both halves of the effect.
+ */
+export const DESCENT_FALL_S = 10;
 
 /**
  * The largest height the descent will start from.

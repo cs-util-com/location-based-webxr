@@ -302,3 +302,57 @@ describe("descentMayStart — the entry gate (r543)", () => {
     );
   });
 });
+
+describe("the total length of the entry animation (DEC-L2)", () => {
+  /**
+   * Why these tests matter: the seventeenth field session watched the entry on
+   * a phone and asked for the whole fade-in to take "doppelt so lang" — the
+   * sphere's fade to transparent and the city's climb are one clock, so one
+   * constant carries both. These assertions pin the AGREED DURATION, which is
+   * the requirement itself.
+   *
+   * **LITERAL SECONDS ON PURPOSE**, unlike every other test in this file. The
+   * symbolic tests above pin the SHAPE of the curve and follow any retiming for
+   * free — which is exactly why they cannot notice a retiming that was never
+   * asked for. 12 s is the number the owner chose after watching 6 s, so it is
+   * the number written down.
+   *
+   * The reason behind it is not aesthetic: the auto-elevation correction glides
+   * in at 1.5 m/s, so a 10 m residual takes ~6.7 s from the moment the
+   * estimator engages. Against a 6 s animation that correction landed after the
+   * veil had gone and was visible as late movement. It does not GUARANTEE the
+   * correction is hidden — engagement time standing still is unmeasured, see
+   * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`
+   * — but 12 s makes it far more likely.
+   */
+
+  it("has NOT landed at 11.9 s, and has landed at exactly 12 s", () => {
+    expect(descentOffsetM({ elapsedS: 11.9, startM: START_M })).toBeLessThan(0);
+    expect(descentOffsetM({ elapsedS: 12, startM: START_M })).toBe(0);
+  });
+
+  it("is barely a third of the way up at 6 s, where the old timing had already landed", () => {
+    // The single assertion that fails on the OLD constants: at 6 s the previous
+    // 2 s + 4 s animation was over. With 2 s + 10 s the fall is 40 % elapsed,
+    // and smoothstep(0.4) = 0.352 — so 35.2 % of the height has been travelled
+    // and the city is still 64.8 % of `startM` below the user.
+    expect(descentOffsetM({ elapsedS: 6, startM: START_M })).toBeCloseTo(
+      -0.648 * START_M,
+      6,
+    );
+    // And the veil is still doing its job at that moment, on the same clock:
+    // the camera is only ~35 % faded in.
+    expect(cameraFadeAlpha({ elapsedS: 6, startM: START_M })).toBeCloseTo(
+      0.352,
+      6,
+    );
+  });
+
+  it("keeps the hold short, so the extra time goes into visible motion", () => {
+    // DEC-L2 rejected doubling the hold as well. A motionless picture is the
+    // ambiguity the waiting line exists to cover, so the hold stays where it
+    // was and the fall absorbs the whole increase.
+    expect(DESCENT_HOLD_S).toBe(2);
+    expect(DESCENT_HOLD_S + DESCENT_FALL_S).toBe(12);
+  });
+});
