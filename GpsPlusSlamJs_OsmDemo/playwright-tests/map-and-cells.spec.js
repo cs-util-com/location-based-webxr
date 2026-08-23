@@ -969,16 +969,42 @@ test.describe("the geo-event", () => {
       // outside the viewport" and that asserting visibility would make the test
       // depend on where the candidate landed. That was true, and DEC-U12
       // removed the premise it rested on.
-      const winnerBox = await page
-        .locator("#map .geo-winner")
-        .first()
-        .boundingBox();
-      const mapBox = await page.locator("#map").boundingBox();
-      if (winnerBox === null || mapBox === null) throw new Error("no boxes");
-      const offset = Math.hypot(
-        winnerBox.x + winnerBox.width / 2 - (mapBox.x + mapBox.width / 2),
-        winnerBox.y + winnerBox.height / 2 - (mapBox.y + mapBox.height / 2),
-      );
+      // MEASURED UNTIL IT SETTLES, NOT ONCE — and the single read is what made
+      // this test fail intermittently for two days.
+      //
+      // ⚠️ THE MECHANISM, finally measured rather than guessed at a third time.
+      // Something resizes the map pane by ~42 px shortly after the marker is
+      // drawn (the status line's own text changes as the search completes).
+      // Leaflet's cached size is briefly stale, `map-view.ts`'s ResizeObserver
+      // corrects it, and the correction lands WITHIN ONE FRAME. Provoked
+      // directly: growing `#map` by 42 px and reading with **zero** wait gives
+      // **21.172 px**; reading 16 ms later gives **0.172 px**. 21.172 is exactly
+      // half the height delta plus the settled offset, and it is the
+      // bit-identical value every failing run reported.
+      //
+      // So the app converges and the test did not wait for it. Under load the
+      // sub-frame window widens until a single read lands inside it, which is
+      // why this failed on a busy machine and passed on a quiet one — and why
+      // two earlier investigations, both reasoning from one sample, concluded
+      // "deterministic" and "stale cache" respectively. Neither survived.
+      //
+      // THE BOUND IS UNCHANGED AT 8 px. This waits for the state the bound
+      // describes; it does not widen the bound to admit a state the app is
+      // leaving. A genuine regression — the 61 px one this replaced — never
+      // settles, so the poll times out and fails exactly as before.
+      const offsetNow = async () => {
+        const winnerBox = await page
+          .locator("#map .geo-winner")
+          .first()
+          .boundingBox();
+        const mapBox = await page.locator("#map").boundingBox();
+        if (winnerBox === null || mapBox === null) throw new Error("no boxes");
+        return Math.hypot(
+          winnerBox.x + winnerBox.width / 2 - (mapBox.x + mapBox.width / 2),
+          winnerBox.y + winnerBox.height / 2 - (mapBox.y + mapBox.height / 2),
+        );
+      };
+
       // 8 px, DERIVED: the settled offset measures 0.2 px, so this is 40x the
       // real value and still catches anything that moves the target off centre.
       //
@@ -992,10 +1018,8 @@ test.describe("the geo-event", () => {
       // the only reason anyone looked.
       //
       // So a wider bound here would not have been a tolerance — it would have
-      // been the defect's hiding place. If this fails, suspect the map's size
-      // cache (`map-view.ts` observes the container for exactly this) before
-      // suspecting the number.
-      expect(offset).toBeLessThan(8);
+      // been the defect's hiding place.
+      await expect.poll(offsetNow, { timeout: 15_000 }).toBeLessThan(8);
       await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
     }
   });
