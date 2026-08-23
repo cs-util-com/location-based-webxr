@@ -62,6 +62,7 @@ import {
   createSlamAppStoreListenerMiddleware,
   type CompassOptIn,
 } from './slam-app-store-listener';
+import { recordDiagnostic } from './diagnostics-action';
 
 /**
  * Slice prefixes the framework always persists, derived from the actual
@@ -72,6 +73,12 @@ import {
 const BUILTIN_PERSISTED_PREFIXES: readonly string[] = [
   slicePrefixOf(setZeroPos.type), // library `gpsData` slice
   slicePrefixOf(recordWriteFailure.type), // framework `recording` slice
+  // Log-only notes an app makes about itself (owner decision, 2026-08-23).
+  // Built in rather than opt-in: the whole value is that a recording made by
+  // ANY consumer can be asked what happened, and an app that never dispatches
+  // one pays nothing for the prefix being listed. See `diagnostics-action.ts`
+  // for why the action has no reducer.
+  slicePrefixOf(recordDiagnostic.type),
 ];
 
 type LibraryGpsDataState = NonNullable<LibraryRootState['gpsData']>;

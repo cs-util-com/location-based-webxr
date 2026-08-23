@@ -83,6 +83,28 @@ describe("the AR entry readiness gate is wired into main.ts (DEC-M1)", () => {
     // bring back.
     expect(CODE).toMatch(/onEntryReady:/);
   });
+
+  it("also files both measurements as log-only diagnostics", () => {
+    // Owner decision, 2026-08-23: a toast can be read once, on a walk, and
+    // never again — the same numbers dispatched as `diagnostics/note` land in
+    // the persisted action stream, where a recording can be asked about them
+    // later.
+    //
+    // ⚠️ INERT IN THIS APP TODAY, and that is why a source-text guard is worth
+    // having at all: the demo's store uses a `NullStorageBackend`, so nothing
+    // is written and no runtime assertion here could tell a live dispatch from
+    // a deleted one.
+    expect(CODE).toMatch(/kind: "ar-entry-ready"/);
+    expect(CODE).toMatch(/kind: "ar-elevation-estimate-engaged"/);
+    // BOTH FLAGS WITH THE TIME. `afterS` alone cannot distinguish "ready at
+    // 2 s" from "gave up at the ceiling", which is the whole measurement.
+    expect(CODE).toMatch(
+      /kind: "ar-entry-ready",[\s\S]{0,200}?detail: \{ afterS, aligned, contentReady \}/,
+    );
+    // AN ABSOLUTE TIMELINE, not the XR frame clock: the note is read back
+    // months later, out of a zip.
+    expect(CODE).toMatch(/atMs: nowEpochMs\(\)/);
+  });
 });
 
 describe("the quest marks are re-derived with the terrain field (DEC-M4)", () => {

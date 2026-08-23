@@ -54,6 +54,16 @@ import {
 import { describeExtent } from "./fetch-extent.js";
 import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar";
 import { setZeroPos } from "gps-plus-slam-app-framework/state";
+// LOG-ONLY, and inert in this app today (owner decision, 2026-08-23). The
+// measurements below are dispatched so a RECORDING can be asked about them
+// later; this demo builds its store with a `NullStorageBackend` and records
+// nothing, so they are dropped until that changes. Shipped anyway so nothing
+// else has to be built the day it does -- see `diagnostics-action.ts`.
+import { recordDiagnostic } from "gps-plus-slam-app-framework/state";
+// `nowEpochMs`, NOT the frame clock and not `nowMs`: a note read back out of a
+// recording months later needs an absolute timeline, and the durations it
+// carries are already measured on whichever clock produced them.
+import { nowEpochMs } from "./monotonic-clock.js";
 // The eight that together mean "the compass has this much say, under these
 // experimental conditions" — see `compass-influence.ts` for why silencing it is
 // not one setting, and why the last four exist at all.
@@ -1770,6 +1780,13 @@ async function main(): Promise<void> {
       // whole session means the estimator never engaged at all.
       onEstimateEngaged: (afterS) => {
         arToast.show(`Elevation estimate engaged after ${afterS.toFixed(1)} s`);
+        store.dispatch(
+          recordDiagnostic({
+            kind: "ar-elevation-estimate-engaged",
+            atMs: nowEpochMs(),
+            detail: { afterS },
+          }),
+        );
       },
       // WHETHER THE ENTRY REBUILD HAS SETTLED (DEC-M1). The entry veil holds
       // until this says yes, so the user never meets the city built for the
@@ -1795,6 +1812,16 @@ async function main(): Promise<void> {
           held.length === 0
             ? `Entry ready after ${afterS.toFixed(1)} s`
             : `Entry gave up waiting after ${afterS.toFixed(1)} s (${held.join(", ")})`,
+        );
+        // BOTH FLAGS TRAVEL WITH THE TIME, for the reason `onEntryReady` gives:
+        // the duration alone cannot distinguish "ready at 2 s" from "gave up at
+        // the ceiling", and that distinction is the entire measurement.
+        store.dispatch(
+          recordDiagnostic({
+            kind: "ar-entry-ready",
+            atMs: nowEpochMs(),
+            detail: { afterS, aligned, contentReady },
+          }),
         );
       },
       // THE AUTO ELEVATION OFFSET (plan §2.6). Presence is the switch: the
