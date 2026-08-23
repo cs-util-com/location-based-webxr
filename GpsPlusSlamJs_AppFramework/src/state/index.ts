@@ -103,8 +103,8 @@ export {
   // builds, and adding `gps-plus-slam-js` as a second direct dependency of every
   // such app just to reach four action creators would be a worse surface.
   //
-  // ALL FOUR TOGETHER, deliberately. "The compass has no influence" is not one
-  // setting: at vote weight 0 the steady-state formula is `1 − observability`,
+  // ALL OF THEM TOGETHER, deliberately. "The compass has no influence" is not
+  // one setting: at vote weight 0 the steady-state formula is `1 − observability`,
   // a full override precisely when yaw is poorly observable, and disabling the
   // rotation prior falls through to the cold-start override, whose curve is
   // identical and which has been default-ON since 2026-07-25. Exporting a
@@ -113,7 +113,21 @@ export {
   setCompassRotationPriorEnabled,
   setCompassExperimentEnabled,
   setCompassVoteWeight,
+  // ADDED 2026-08-20 with the three-way trust gate and the split experiment
+  // combo. Without these three the library work is unreachable from any app:
+  // consumers import every compass setter from THIS package (that is the whole
+  // point of the block), so a new action in `gps-plus-slam-js` is invisible
+  // until it is listed here. A cold review caught the omission — the plan had
+  // accounted for the npm publish and missed this second hop entirely.
+  setCompassWebXRConsistencyEnabled,
+  setCompassTrustGateMode,
+  setCompassPairSelectionEnabled,
+  setCompassTrustAgreeToleranceDeg,
+  // The readout half. Publishing observability and the applied weight is
+  // pointless if no consumer can select them, and the same "second hop" applies.
+  getCompassDiagnostics,
 } from 'gps-plus-slam-js';
+export type { CompassTrustGateMode } from 'gps-plus-slam-js';
 export type {
   LatLong,
   GpsPoint,

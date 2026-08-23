@@ -10,7 +10,10 @@ import {
   annotatePoiHosts,
   type HostCandidate,
   type PoiHostStats,
+  hostMatches,
+  footprintAnchor,
 } from "./poi-hosts.js";
+import { containsPoint } from "../spatial/point-in-ring.js";
 
 /**
  * HOW `annotatePoiHosts` GROWS WITH THE WORKING SET — the guard that would have
@@ -211,7 +214,90 @@ describe("annotatePoiHosts cost growth", () => {
     expect(nine.stats.containsPointCalls).toBeLessThanOrEqual(
       nine.stats.pairsConsidered,
     );
-    expect(nine.stats.pairsConsidered).toBe(nine.markers * nine.candidates);
+  });
+
+  it("no longer walks the cross product at all — the pair count is pruned too", () => {
+    // WHY THIS REPLACED AN ASSERTION RATHER THAN JOINING ONE, which matters
+    // because this repo's rule is that a threshold is never loosened to admit an
+    // optimisation. This line used to read
+    //
+    //     expect(nine.stats.pairsConsidered).toBe(nine.markers * nine.candidates);
+    //
+    // and its own docstring called that "documenting the cross product rather
+    // than bounding it". It pinned the SHAPE OF THE ALGORITHM, not a behaviour —
+    // so when `host-grid.ts` removed the cross product on 2026-08-22 the
+    // assertion became a description of code that no longer exists. Keeping it
+    // would have meant keeping the quadratic.
+    //
+    // What replaces it is strictly stronger: the old assertion was satisfied by
+    // the worst possible implementation, and this one is not. Measured at the
+    // moment of the change, nine copies went from 5 331 420 pairs to 6 747 —
+    // a 790x reduction — so 1 % of the cross product is a bound with two orders
+    // of magnitude of headroom that still fails instantly if the index is
+    // bypassed.
+    expect(nine.stats.pairsConsidered).toBeLessThan(
+      nine.markers * nine.candidates * 0.01,
+    );
+    // And the pair count must now grow like the ray-cast count, not like the
+    // product. Same 12x threshold and same reasoning as the guard above.
+    const ratio = nine.stats.pairsConsidered / one.stats.pairsConsidered;
+    expect(
+      ratio,
+      `pairs considered grew ${ratio.toFixed(1)}x for 9x the input ` +
+        `(${String(one.stats.pairsConsidered)} -> ` +
+        `${String(nine.stats.pairsConsidered)}).`,
+    ).toBeLessThan(12);
+  });
+
+  it("annotates exactly what an exhaustive scan would, index or no index", () => {
+    // WHY THIS TEST MATTERS, and why it is the one that made the change safe.
+    // The counts above say the index is FAST; nothing there says it is RIGHT.
+    // Its two possible defects are both silent — a dropped host leaves a marker
+    // at its node, which looks like ordinary OSM tagging, and a REORDERED host
+    // list changes which host wins, which produces a different but equally
+    // plausible answer. Neither would fail any other test in this package.
+    //
+    // So this is a differential against the algorithm the index replaced: the
+    // same three filters, applied to every candidate in order.
+    const site = loadSite(SITE);
+    const features = [...parseOverpassJson(site.payload).features];
+    const options = { frame: enuFrameAt(site.centre) };
+    const volumes = buildBuildings(features, options);
+    const candidates: HostCandidate[] = volumes.map((volume) => ({
+      layer: "buildings",
+      feature: volume.feature,
+      footprint: volume.footprint,
+      topM: volume.topHeightM,
+    }));
+    const markers = buildPoiMarkers(features, options);
+
+    const indexed = annotatePoiHosts(markers, candidates);
+    const exhaustive = markers.map((marker) => ({
+      ...marker,
+      hosts: candidates
+        .filter(
+          (candidate) =>
+            hostMatches(marker.kind, candidate) &&
+            containsPoint(candidate.footprint, marker.position),
+        )
+        .map((candidate) => {
+          const anchor = footprintAnchor(candidate.footprint);
+          return {
+            layer: candidate.layer,
+            feature: candidate.feature,
+            x: anchor.x,
+            y: anchor.y,
+            topM: candidate.topM,
+            spanM: anchor.spanM,
+          };
+        }),
+    }));
+
+    // Vacuity guard first: a fixture where nothing is hosted would make the
+    // comparison below pass over two empty lists, which is the exact shape of
+    // the e2e blindness this file's docstring is about.
+    expect(indexed.filter((m) => m.hosts.length > 0).length).toBeGreaterThan(0);
+    expect(indexed).toEqual(exhaustive);
   });
 
   it("stays under a loose wall-clock ceiling, as a smoke alarm only", () => {
@@ -222,6 +308,20 @@ describe("annotatePoiHosts cost growth", () => {
     // copies on a developer machine) because `chunk-cost` was reverted after a
     // 100 ms ceiling failed at 104 ms under the nine-package cascade. It is a
     // smoke alarm, NOT a performance budget: tighten it and it will flake.
+    //
+    // ADMITTED under plan M4, and the headroom is now MEASURED rather than
+    // asserted. The 2026-08-21 mesh investigation timed this same call across
+    // scales on a quiet machine: 5 ms at k=1, 10 ms at k=2, 34 ms at k=3 (this
+    // fixture), 118 ms at k=4 — i.e. ~7 ns per pair, with the broad phase doing
+    // four float compares. So the ceiling sits ~147x above the value it guards,
+    // which is what makes it a smoke alarm rather than a budget.
+    //
+    // And the design it rejects is no longer hypothetical either, which was the
+    // half of the admission bar this entry failed. The same investigation
+    // established that `pairsConsidered` grows as markers x candidates exactly,
+    // so a COUNT is already pinned above — leaving a constant-factor regression
+    // inside `containsPoint` as the one failure no count can see. That is a real
+    // gap with a measured baseline, not a speculative one.
     expect(nine.ms).toBeLessThan(5_000);
   });
 });

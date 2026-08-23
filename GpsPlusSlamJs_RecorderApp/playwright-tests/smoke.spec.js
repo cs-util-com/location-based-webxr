@@ -144,3 +144,38 @@ test.describe('Recorder App Smoke Tests', () => {
     await expect(startButton).toBeAttached();
   });
 });
+
+test.describe('Tailwind is actually applied, not merely bundled', () => {
+  /**
+   * WHY THIS EXISTS. On 2026-08-19 Tailwind moved from `cdn.tailwindcss.com`
+   * (the v3 Play CDN, which compiled in the browser by scanning the live DOM)
+   * to a v4 build. Two things could go wrong silently, and neither is visible
+   * to a test that reads markup:
+   *
+   * - the build-time scanner reads SOURCE TEXT, so a class assembled from
+   *   fragments would emit no CSS at all;
+   * - v4 renamed and rescaled part of v3's utility set.
+   *
+   * Both were checked against the built stylesheet — 235 utilities, none
+   * missing — but that check is a script someone ran once. This asserts the
+   * thing that actually matters, in a real browser: the rules reach the
+   * elements. If the stylesheet stopped being built, stopped being linked, or
+   * started emitting nothing for a class the app uses, the page still renders
+   * and every markup-reading test stays green. This one does not.
+   */
+
+  test('applies utility classes to the document', async ({ page }) => {
+    await fakeWebXRSupport(page);
+    await page.goto('/');
+
+    // `bg-black text-white` on <body> — the most load-bearing pair in the app,
+    // and the reason the UI is legible at all.
+    const body = await page.evaluate(() => {
+      const style = getComputedStyle(document.body);
+      return { background: style.backgroundColor, colour: style.color };
+    });
+
+    expect(body.background).toBe('rgb(0, 0, 0)');
+    expect(body.colour).toBe('rgb(255, 255, 255)');
+  });
+});

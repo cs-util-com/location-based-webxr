@@ -23,7 +23,7 @@ import { arButtonState, type ArButtonInputs } from "./ar-button-state.js";
 
 const inputs = (over: Partial<ArButtonInputs> = {}): ArButtonInputs => ({
   support: "supported",
-  hasFix: true,
+  willLocateFirst: false,
   active: false,
   ...over,
 });
@@ -43,17 +43,46 @@ describe("before AR is possible", () => {
     expect(state.hidden).toBe(true);
   });
 
-  it("shows it DISABLED while waiting for a GPS fix, not hidden", () => {
-    // The one case where the distinction earns its keep. This state is
-    // temporary and self-resolving, so the button must be discoverable before
-    // it becomes usable — hidden until the fix lands, it appears without
-    // warning under the user's thumb.
-    const state = arButtonState(inputs({ hasFix: false }));
+  it("stays ENABLED when a press would find the user first, and says so", () => {
+    // THIS ASSERTED `disabled: true` UNTIL ROUND THREE, with a comment arguing
+    // that "visible but disabled" was the one case where the distinction earned
+    // its keep: the state is temporary and self-resolving, so the control had to
+    // be discoverable before it became usable.
+    //
+    // The argument was sound and the outcome was still wrong. The thirteenth
+    // session met exactly what it describes — a discoverable control that did
+    // nothing when discovered — and reported it as broken, because the
+    // explanation lived in `title`/`aria-label` and a phone shows neither. The
+    // press now performs the step it was waiting for (DEC-W2), so there is
+    // nothing left to disable.
+    const state = arButtonState(inputs({ willLocateFirst: true }));
 
     expect(state.hidden).toBe(false);
-    expect(state.disabled).toBe(true);
-    // A disabled control with no explanation is what users report as broken.
+    expect(state.disabled).toBe(false);
+    // The hint survives as a PROMISE rather than an excuse — "finds your
+    // location first". Nothing rests on it now, which is the point.
     expect(state.hint).toBeDefined();
+  });
+
+  it("has no reachable disabled state at all", () => {
+    // WHY THIS IS WORTH ASSERTING. The round-three plan first designed a
+    // disabled-but-tappable button that would explain itself in a toast; the
+    // cold review showed no input could produce a disabled state once the fix
+    // gate went, so it would have shipped inert — the same failure the previous
+    // round's review found three times. The decision was deleted. This test is
+    // what stops it being re-introduced by accident.
+    for (const support of ["checking", "supported", "unsupported"] as const) {
+      for (const willLocateFirst of [true, false]) {
+        for (const active of [true, false]) {
+          const state = arButtonState({ support, willLocateFirst, active });
+          if (state.hidden) continue;
+          expect(
+            state.disabled,
+            `visible but disabled: ${support}/${String(willLocateFirst)}/${String(active)}`,
+          ).toBe(false);
+        }
+      }
+    }
   });
 });
 
@@ -79,7 +108,9 @@ describe("once AR is available", () => {
 
   it("offers the exit even if the fix is lost mid-session", () => {
     // Losing the fix must not strand the user in a session they cannot leave.
-    const state = arButtonState(inputs({ active: true, hasFix: false }));
+    const state = arButtonState(
+      inputs({ active: true, willLocateFirst: true }),
+    );
     expect(state.disabled).toBe(false);
   });
 });
@@ -95,18 +126,18 @@ describe("DEC-12: the map is never traded for AR", () => {
     // no `hideMap`. The assertion is that its whole surface stays that way, so
     // the map cannot become a function of AR support by accident.
     for (const support of ["checking", "supported", "unsupported"] as const) {
-      for (const hasFix of [true, false]) {
+      for (const willLocateFirst of [true, false]) {
         for (const active of [true, false]) {
           // AN EXACT KEY SET, not `arrayContaining` plus two guessed names.
           // The first version asserted `hideMap` and `showMap` were absent and
           // allowed arbitrary extra keys, so a field called `mapHidden` would
           // have sailed through the check written to forbid exactly that.
-          const state = arButtonState({ support, hasFix, active });
+          const state = arButtonState({ support, willLocateFirst, active });
           const keys = Object.keys(state).sort();
           const allowed = ["disabled", "hidden", "hint", "label"];
           expect(
             keys.every((key) => allowed.includes(key)),
-            `unexpected key on ${support}/${String(hasFix)}/${String(active)}: ${keys.join(",")}`,
+            `unexpected key on ${support}/${String(willLocateFirst)}/${String(active)}: ${keys.join(",")}`,
           ).toBe(true);
         }
       }
@@ -115,12 +146,12 @@ describe("DEC-12: the map is never traded for AR", () => {
 
   it("gives every combination a defined label, so no state renders blank", () => {
     for (const support of ["checking", "supported", "unsupported"] as const) {
-      for (const hasFix of [true, false]) {
+      for (const willLocateFirst of [true, false]) {
         for (const active of [true, false]) {
-          const { label } = arButtonState({ support, hasFix, active });
+          const { label } = arButtonState({ support, willLocateFirst, active });
           expect(
             label.length,
-            `${support}/${hasFix}/${active}`,
+            `${support}/${willLocateFirst}/${active}`,
           ).toBeGreaterThan(0);
         }
       }

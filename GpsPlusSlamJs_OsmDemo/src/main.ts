@@ -28,13 +28,14 @@
 
 import { cellToLatLng, greatCircleDistance, UNITS } from "h3-js";
 import {
+  describeGeoid,
   enuFrameAt,
-  type FallbackProviderStats,
+  type RacingProviderStats,
   type GeoidModel,
   type LatLng,
 } from "gps-plus-slam-osm";
 
-import { DEM_ATTRIBUTION } from "./dem-provider.js";
+import { DEM_ATTRIBUTION_ENTRIES } from "./dem-provider.js";
 import { pickDefaultCategory } from "./default-category.js";
 import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
@@ -45,25 +46,40 @@ import {
   writePlace,
 } from "./url-state.js";
 import { describeDrawCost } from "./draw-cost.js";
-import { geoEventButtonLabel } from "./event-label.js";
+import {
+  describeGeoEvent,
+  geoEventButtonLabel,
+  geoEventReadout,
+} from "./event-label.js";
 import { describeExtent } from "./fetch-extent.js";
 import { probeImmersiveArSupport } from "gps-plus-slam-app-framework/ar";
 import { setZeroPos } from "gps-plus-slam-app-framework/state";
-// The four that together mean "the compass has this much say" — see
-// `compass-influence.ts` for why silencing it is not one setting.
+// The eight that together mean "the compass has this much say, under these
+// experimental conditions" — see `compass-influence.ts` for why silencing it is
+// not one setting, and why the last four exist at all.
 import {
   setColdStartOverrideEnabled,
   setCompassExperimentEnabled,
   setCompassRotationPriorEnabled,
   setCompassVoteWeight,
+  setCompassTrustGateMode,
+  setCompassPairSelectionEnabled,
+  setCompassTrustAgreeToleranceDeg,
+  setCompassWebXRConsistencyEnabled,
 } from "gps-plus-slam-app-framework/state";
 import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 
 import { arButtonState, type ArSupport } from "./ar-button-state.js";
+import {
+  arPressAction,
+  shouldOfferAr,
+  type ArPressAction,
+} from "./ar-entry.js";
 import { startArMode, type ArMode } from "./ar-mode.js";
 import { autoElevationEnabled } from "./ar-elevation-auto.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
+import { createToast } from "./toast.js";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
@@ -80,6 +96,7 @@ import { MapView } from "./map-view.js";
 import { LegendView } from "./legend-view.js";
 import { DetailsPanel } from "./details-panel.js";
 import { summariseRegion } from "./region-summary.js";
+import L from "leaflet";
 import { LocateControl } from "./locate-control.js";
 import { createGpsRegistration, toGpsPosition } from "./gps-registration.js";
 // THE FRAMEWORK CALLS THE REGISTRATION LOOP NEEDS. Narrow subpaths, not the
@@ -108,13 +125,18 @@ import {
   type Heightfield,
 } from "./heightfield.js";
 import { createTerrainCycle } from "./terrain-cycle.js";
+import { questBeaconPlacements } from "./quest-beacon-placement.js";
 import { fixedScale, heatColour } from "./heat-colours.js";
 import {
   BuildingView,
+  CAMERA_VFOV_DEG,
   TERRAIN_SPACING_M,
   type BuildingStats,
   type CameraView,
 } from "./building-view.js";
+import { renderDistanceFor } from "./render-distance.js";
+import { createMapDragLatch } from "./map-drag-latch.js";
+import { cameraDistanceForZoom } from "./map-zoom-to-camera.js";
 import { throttle } from "./throttle.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
 import { createAgentCycle } from "./agent-cycle.js";
@@ -132,7 +154,7 @@ import {
 } from "./ground-mode.js";
 import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
-import { isLayerEnabled, layersNeedingData } from "./layers.js";
+import { isLayerEnabled, layersNeedingData, type LayerSet } from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import {
@@ -301,7 +323,7 @@ async function main(): Promise<void> {
         // AND IT ORDERS (stage 3, DEC-R13-6). Before this, a cell hit returned
         // from `pick.ts` and stopped here, so wherever the grid was drawn the
         // agent could not be sent — masked only by the grid being off by
-        // default and covering ~250 m, and a real blocker the moment coverage
+        // default and covering ~326 m, and a real blocker the moment coverage
         // grows. The rejected alternatives were a modifier split (clean, but it
         // hides inspection behind a gesture touch does not have) and making
         // cells unclickable in 3D (removes a feature that works).
@@ -397,7 +419,7 @@ async function main(): Promise<void> {
       buildingView.setCellPreset(activePreset);
       // ONLY WHEN THE BUFFERS ACTUALLY CHANGE. Opacity, fog and lift are
       // material and transform settings the view applies itself; republishing
-      // for them would make every press wait on the worker over up to ~2 989
+      // for them would make every press wait on the worker over up to ~6 223
       // cells, and the hotkey would feel broken.
       if (needsMeshRebuild(previous, activePreset)) redrawFromSnapshot();
       writeStatus();
@@ -440,6 +462,7 @@ async function main(): Promise<void> {
    * wired further down, once `refresh` exists — see `geo-event-cycle.ts`.
    */
   const geoEventButton = el<HTMLButtonElement>("geo-event");
+  const questReadout = el("quest-readout");
   /**
    * AR mode's entry point (DEC-12, AR milestone 1).
    *
@@ -449,6 +472,49 @@ async function main(): Promise<void> {
    * AR support.
    */
   const arButton = el<HTMLButtonElement>("enter-ar");
+  // IN LEAFLET'S OWN BOTTOM-RIGHT STACK, above the attribution credit (F3a).
+  //
+  // THIS COMMENT SAID "ABOVE THE LOCATE BUTTON … Leaflet APPENDS controls to
+  // the corner in registration order" AND WAS WRONG ON BOTH COUNTS (PR review
+  // of the attribution milestone, finding 3). Leaflet PREPENDS into a bottom
+  // corner — `corner.insertBefore(container, corner.firstChild)` — so the
+  // FIRST control registered ends up LOWEST. Registration order here is
+  // attribution, then AR, then locate, which renders top-to-bottom as
+  // locate / AR / attribution.
+  //
+  // So the locate button is above this one, not below it, and has been since
+  // the AR control was added. Left as it renders rather than swapped: the part
+  // that is load-bearing is that BOTH sit above the attribution credit, which
+  // may not be obstructed, and that is true either way. Which of the two
+  // buttons is uppermost is a preference nobody has stated, and inverting it
+  // silently inside a review-application commit would be a UI change the owner
+  // never asked for. Flagged instead.
+  //
+  // `disableClickPropagation` for the same reason the locate control needs
+  // it: without it a press also reaches the map underneath and reads as
+  // "the user clicked here to move", so entering AR would first teleport
+  // them to the button's own position.
+  /**
+   * The wrapper, held so it can be hidden with its button.
+   *
+   * WHY THE WRAPPER AND NOT JUST THE BUTTON. `.leaflet-bar` carries a border,
+   * a corner radius and a drop shadow of its own, and `.ar-control` reserves
+   * margin below it — so hiding only the button leaves a small empty box
+   * floating above the locate control. That is the state EVERY desktop browser
+   * and every iOS Safari is in, because `arButtonState` hides the button
+   * outright where `immersive-ar` is unsupported. `LocateControl` never hits
+   * this because its button is never hidden.
+   */
+  let arControlWrapper: HTMLElement | undefined;
+  const ArControl = L.Control.extend({
+    onAdd: (): HTMLElement => {
+      const wrapper = L.DomUtil.create("div", "leaflet-bar ar-control");
+      wrapper.append(arButton);
+      L.DomEvent.disableClickPropagation(wrapper);
+      arControlWrapper = wrapper;
+      return wrapper;
+    },
+  });
   const detailsPanel = new DetailsPanel({
     container: el("details"),
     onClose: () => store.dispatch(actions.cellSelected(undefined)),
@@ -532,6 +598,23 @@ async function main(): Promise<void> {
    */
   let lastFixPosition: { lat: number; lng: number } | undefined;
   /**
+   * Where the user was last known to be. **Never cleared.**
+   *
+   * SEPARATE FROM `lastFixPosition` BECAUSE THE TWO WANT OPPOSITE THINGS, and
+   * conflating them was a real bug (PR review of P3, finding 2).
+   * `lastFixPosition` is cleared on a locate FAILURE, deliberately (r511
+   * review): a readout that keeps saying "N m from anchor" after the watch died
+   * reads as the user having stopped moving, which is the more misleading half
+   * of a stale display.
+   *
+   * The AR entry gate needs the opposite. It asks "is the app showing where you
+   * are", and a failed lookup does not move the user — so reading the cleared
+   * variable made ONE failed fix render AR unenterable in a single tap for as
+   * long as GPS kept failing, however good the immutable origin was. The
+   * readout must forget a dead fix; the gate must remember where you were.
+   */
+  let lastKnownFixPosition: { lat: number; lng: number } | undefined;
+  /**
    * When the last fix arrived, epoch ms.
    *
    * **A STALE FIX AND A FRESH ONE ARE INDISTINGUISHABLE** on every other line of
@@ -569,6 +652,14 @@ async function main(): Promise<void> {
     },
   });
 
+  // MOUNTED BEFORE THE LOCATE CONTROL, which puts it ABOVE the attribution
+  // credit and BELOW the locate button — see the comment beside `arButton`
+  // above for why that is the opposite of what this used to claim. What
+  // matters and is true: Leaflet prepends into a bottom corner, the attribution
+  // control registers first in `map-view.ts`, and so the credit stays lowest
+  // and unobstructed.
+  new ArControl({ position: "bottomright" }).addTo(mapView.map);
+
   const locateControl = new LocateControl({
     map: mapView.map,
     // A real fix moves the "user" through the same action a map click uses, so
@@ -585,6 +676,7 @@ async function main(): Promise<void> {
       lastAltitudeM = position.altitude ?? undefined;
       lastAltitudeAccuracyM = position.altitudeAccuracy ?? undefined;
       lastFixPosition = { lat: position.lat, lng: position.lng };
+      lastKnownFixPosition = lastFixPosition;
       lastFixAtMs = Date.now();
       // REGISTRATION IS NOT GATED, and that separation is the fix for the
       // 2026-08-14 report ("no automatic updates of the user position … the
@@ -648,6 +740,13 @@ async function main(): Promise<void> {
       // fix is "I am here", and anchoring the AR scene to a place the user
       // merely looked at is the offset this whole path exists to avoid.
       store.dispatch(setZeroPos({ lat: position.lat, lon: position.lng }));
+      // AND THE SECOND HALF OF AN AR PRESS, if that is what asked for this fix
+      // (DEC-W2). Placed AFTER the dispatches above deliberately: the offer's
+      // promise is "pressing AR now works", and `shouldOfferAr` asks
+      // `arPressAction` to confirm exactly that — which it can only answer
+      // correctly once `zero` and the view position are the ones this fix
+      // produced.
+      maybeOfferAr();
     },
     // `nonFatalError` rather than `fetchFailed` because the BEHAVIOUR is what
     // matters here: a refused GPS permission says nothing about the data on
@@ -674,6 +773,15 @@ async function main(): Promise<void> {
       // the watch failed reads as a fix that is still arriving, which is the
       // opposite of what has happened.
       lastFixAtMs = undefined;
+      // BUT NOT `lastKnownFixPosition`, and NOT the AR intent — see below.
+      //
+      // THE AR PRESS'S INTENT IS SPENT (PR review of P3, finding 1). The
+      // operation it asked for has failed, so the offer it was waiting for must
+      // never arrive. Without this the flag stayed armed indefinitely: press AR
+      // indoors, the one-shot times out, and then a PLAIN GPS PRESS minutes
+      // later pops up "Enter AR now" for a press the user never made — which is
+      // exactly the failure the plan named as worse than the one being fixed.
+      awaitingArFix = false;
       // TO THE SURFACE THE USER CAN ACTUALLY SEE (r511 review). During a
       // session the status line is outside WebXR's dom-overlay root and is not
       // composited at all — which milestone 3 discovered and then left this
@@ -704,7 +812,10 @@ async function main(): Promise<void> {
   // not an overlay — see `header-collapse.ts`), so both canvases have to be
   // resized and the 3D one repainted. `BuildingView.resize()` schedules its own
   // frame since finding R2-3, so calling it is enough.
-  const headerCollapse = attachHeaderCollapse({
+  // NOT BOUND TO A NAME ANY MORE. The only thing that held it was
+  // `revealForError`, retired with DEC-R2-15 (DEC-U10) now that errors have a
+  // toast; the collapse behaviour itself is entirely user-driven from here on.
+  attachHeaderCollapse({
     header: el("header-bar"),
     toggle: el("header-toggle"),
     onToggle: () => {
@@ -812,11 +923,16 @@ async function main(): Promise<void> {
    * F56 wanted and a frozen string could not give.
    */
   const paintGeoEventButton = (busy = geoEventButton.disabled): void => {
+    const view = selectOsmView(store.getState());
     geoEventButton.disabled = busy;
-    geoEventButton.textContent = geoEventButtonLabel(
-      selectOsmView(store.getState()),
-      busy,
-    );
+    geoEventButton.textContent = geoEventButtonLabel(busy);
+    // THE READOUT, NOT THE BUTTON, CARRIES THE DISTANCE NOW (F4a). Repainted
+    // from the same `(position, geoEvent)` the label used to be a function of,
+    // which is what makes it re-read as the user walks — F56's recorded win,
+    // and the thing a constant label would otherwise have deleted.
+    const readout = geoEventReadout(view);
+    questReadout.textContent = readout;
+    questReadout.hidden = readout === "";
   };
 
   /**
@@ -824,12 +940,63 @@ async function main(): Promise<void> {
    * because it needs `refresh` — see `geo-event-cycle.ts` for why a successful
    * search republishes at all.
    */
-  const findGeoEvent = createGeoEventCycle({
+  const runGeoEventSearch = createGeoEventCycle({
     store,
     actions,
     worker,
     setBusy: paintGeoEventButton,
     republish: () => refresh(),
+    // THE TWO THINGS THAT REPLACE THE BUTTON'S OLD LABEL (F4a, F4c, DEC-U12).
+    //
+    // The description used to BE the button, which is why it grew and shrank on
+    // every press. It now goes to the toast — where it is a result announcement
+    // rather than a control's caption — and the map pans to the winner so the
+    // marker is actually on screen, which is what F56's label existed to
+    // substitute for.
+    //
+    // `panTo`, NOT `centreOn`: that one moves the user's own marker first, so
+    // reusing it would teleport the user onto the quest.
+    onFound: (event) => {
+      const view = selectOsmView(store.getState());
+      toast.show(describeGeoEvent(view.position, event));
+      const nearest = event.picks[0];
+      if (nearest === undefined) return;
+      mapView.panTo(nearest.position);
+      // AND THE 3D VIEW FOLLOWS (owner decision, 2026-08-23). The map panned
+      // and the camera did not, so the 3D quest beacon N6 added could sit
+      // outside the frustum at the exact moment the user asked where the quest
+      // was — measured at ~370 m out in the demo's own fixture, off screen.
+      //
+      // `lookAtFrom` KEEPS THE CURRENT DIRECTION AND DISTANCE, which is why it
+      // is the right primitive rather than a fresh camera pose: the operator's
+      // zoom and viewing angle are theirs, and a search should move WHERE they
+      // are looking, not how. It is the same read-side discipline DEC-R13-7
+      // chose for restoring a shared link.
+      //
+      // ON THE SEARCH, NOT ON THE STORE SUBSCRIBER that draws the beacons: the
+      // camera should move because the user asked a question, not every time
+      // the held event is re-rendered — and clearing a quest must not fling the
+      // view anywhere.
+      const placement = questBeaconPlacements(
+        [nearest],
+        enuFrameAt(anchors.origin),
+        terrain,
+      )[0];
+      if (placement !== undefined) {
+        // AIMED AT THE MARK, NOT AT THE GROUND UNDER IT, and the first version
+        // aimed at `groundY`. The beacon occupies 10.8 m to 26 m above that,
+        // and `lookAtFrom` preserves the CURRENT distance — so at any zoom
+        // closer than roughly 45 m the call meant to pull the marker into
+        // frame pushed it off the top instead. Caught by the PR #344 review.
+        //
+        // `placement.y` is the mark's own origin, which is what the user is
+        // looking for; the line down to the ground follows it into view.
+        buildingView.lookAtFrom(
+          { x: placement.x, y: placement.y, z: placement.z },
+          buildingView.cameraView().distanceM,
+        );
+      }
+    },
     // W7's benchmark line. `console.info` rather than the status bar: it is a
     // developer diagnostic taken once per press, and the status line is already
     // carrying the cell counts a user reads. `describeGeoEventStats` puts the
@@ -839,6 +1006,30 @@ async function main(): Promise<void> {
       // eslint-disable-next-line no-console -- the benchmark's only output.
       console.info(describeGeoEventStats(stats));
     },
+  });
+
+  /**
+   * The quest search, COALESCED (DEC-U13).
+   *
+   * WHY THE WRAPPER EXISTS, and it was claimed before it did. DEC-U13 makes the
+   * category picker live while a search runs, so two searches can genuinely be
+   * asked for in quick succession — and `worker.call` is a plain id-keyed RPC
+   * with no coalescing of its own, so both would resolve and both would
+   * dispatch, in completion order. That is the stale-wins race the decision was
+   * written to prevent.
+   *
+   * `latestOnly` gives the three things the decision asked for: at most one
+   * search in flight, the newest input winning, and the abandoned run's late
+   * result discarded rather than published.
+   *
+   * **The comment on the button's handler asserted this before it was true.**
+   * It named a `latestOnly` "inside `createGeoEventCycle`" that did not exist;
+   * what actually discarded a superseded result was a category comparison deep
+   * in the cycle, and that only guarded the store publish — not the toast or
+   * the map pan. Found by the milestone review.
+   */
+  const findGeoEvent = latestOnly(async (requested: number | undefined) => {
+    await runGeoEventSearch(requested);
   });
 
   /**
@@ -942,6 +1133,86 @@ async function main(): Promise<void> {
   }, CAMERA_URL_SAMPLE_MS);
   reportCameraView = (view) => writeCameraView(view);
 
+  // H2 — THE MAP'S +/- NOW DRIVE THE 3D CAMERA.
+  //
+  // `zoomend`, not `zoom`: Leaflet fires `zoom` continuously through a pinch or
+  // an animated button press, and re-aiming the camera on every one of those
+  // fights the user's gesture and rewrites the shareable camera URL dozens of
+  // times per interaction (`writeCameraView` is sampled, but the target moves
+  // regardless). `zoomend` is one event per settled zoom.
+  //
+  // THE TARGET IS KEPT, only the distance changes — `lookAtFrom` is the
+  // read/write pair's write side and preserves the camera's direction, so this
+  // dollies rather than teleporting. The TARGET is moved by the drag follow
+  // below (DEC-L4), which is the other half of the same binding: zoom drives
+  // the distance, a drag drives the target.
+  mapView.map.on("zoomend", () => {
+    const canvas = el("scene");
+    const height = canvas.clientHeight;
+    const distanceM = cameraDistanceForZoom({
+      zoom: mapView.map.getZoom(),
+      latDeg: mapView.map.getCenter().lat,
+      paneWidthPx: mapView.map.getContainer().clientWidth,
+      // A zero height would divide to Infinity; the conversion rejects a
+      // non-finite aspect and falls back to its clamp, but computing NaN here
+      // and relying on that is a worse contract than not producing it.
+      aspect: height > 0 ? canvas.clientWidth / height : 1,
+      vfovDeg: CAMERA_VFOV_DEG,
+    });
+    buildingView.lookAtFrom(buildingView.cameraView().target, distanceM);
+  });
+
+  // L4 — DRAGGING THE MAP NOW CARRIES THE 3D CAMERA (DEC-L4).
+  //
+  // "Ich hätte gerne auch dass wenn man in der 2d Karte die Karte verschiebt,
+  // die Kamera in der 3d Szene an die gleiche Stelle springt." This REVERSES the
+  // note that used to sit on the `zoomend` handler above — panning was excluded
+  // on purpose, and the person who excluded it asked for it back.
+  //
+  // `recentre`, NOT a new conversion: it takes an ENU point, applies the scene
+  // flip and moves the camera by translation only at the current distance. It is
+  // the same call the map CLICK already makes through the position subscriber,
+  // which is exactly the behaviour the request compared itself to.
+  //
+  // ONLY WHEN A HUMAN MOVED THE MAP, which is what the latch is for. A quest
+  // search pans the map and then aims the camera at the beacon's own height; the
+  // locate button and the site picker recentre on the user. Every one of those
+  // raises `moveend`, and a blanket rule would fire on them and re-aim at ground
+  // level — undoing a fix made in the PR #344 review.
+  // ⚠️ ARMED ON `dragstart` AND NOTHING ELSE. The first version also armed on
+  // `zoomstart`, to cover a drag that becomes a pinch — and that was a
+  // regression, caught by the milestone review and then measured: Leaflet
+  // raises `moveend` for a ZOOM as well as for a pan, so every wheel or button
+  // zoom consumed the latch and snapped the camera's target to the map centre,
+  // ~100 m in the e2e fixture. That silently undid the `zoomend` handler's
+  // "the target is kept", which matters because the two targets diverge
+  // routinely — a map click recentres the camera without moving the map, a 3D
+  // drag moves the target without moving the map.
+  //
+  // The pinch case is the accepted cost and is smaller: the camera lands on the
+  // centre at the moment the second finger arrived rather than on the final
+  // one. `boot-and-shell.spec.js` guards both halves.
+  const mapDrag = createMapDragLatch();
+  mapView.map.on("dragstart", () => {
+    mapDrag.gestureStarted();
+  });
+  //
+  // ⚠️ AND IT MOVES THE CAMERA WITHOUT LOADING ANYTHING. A map CLICK dispatches
+  // `positionChanged`, which re-anchors, refetches the working set and loads
+  // terrain; a drag does none of that, because it is a LOOK rather than a move
+  // — the same distinction `panTo` and `centreOn` are separated by. Drag far
+  // enough and the 3D view is aimed past the built mesh, at empty space, with
+  // no status line saying so. Recorded rather than fixed: making a drag fetch
+  // would make an idle gesture the most expensive thing in the app, and making
+  // it move the user would teleport them. Flagged to the owner as a decision.
+  mapView.map.on("moveend", () => {
+    if (!mapDrag.moveEnded()) return;
+    const centre = mapView.map.getCenter();
+    buildingView.recentre(
+      enuFrameAt(anchors.origin).toEnu({ lat: centre.lat, lng: centre.lng }),
+    );
+  });
+
   // AND THE READ SIDE, WHICH IS THE HALF MOST EASILY FORGOTTEN: a link nothing
   // honours is worse than no link. Applied once, at boot, after the anchor
   // exists — a later application would fight the user's own dragging.
@@ -983,12 +1254,30 @@ async function main(): Promise<void> {
    * edit is "the same place two hours later".
    */
   geoEventButton.addEventListener("click", () => {
+    // THE PICKER OPENS ON THE FIRST PRESS (F4f, DEC-U13), alongside the search
+    // rather than instead of it.
+    //
+    // It used to take two presses: the first searched, and only a second — with
+    // an event already held — opened the picker. That made the second press
+    // mean something different from the first, and the owner asked for the
+    // choice to be visible immediately.
+    //
+    // AND IT IS LIVE WHILE THE SEARCH RUNS (DEC-U13), chosen over
+    // visible-but-disabled. The picker and the map must agree once things
+    // settle, which `latestOnly` around `findGeoEvent` is what delivers — see
+    // its definition. The accepted cost is that flipping rapidly on a slow
+    // connection completes nothing until you stop.
+    //
+    // OPENED ONLY WHEN IT IS CLOSED. `open()` refills the date and time inputs
+    // from the held quest, so calling it unconditionally would silently discard
+    // whatever the user had just typed — press the button after editing the
+    // time and your edit is replaced by the old value. The previous two-press
+    // design closed on the second press and could not hit this.
     const held = selectOsmView(store.getState()).geoEvent;
-    if (held === undefined) {
-      void findGeoEvent();
-      return;
+    if (!geoEventPicker.isOpen) {
+      geoEventPicker.open(new Date(held?.eventTime ?? Date.now()));
     }
-    geoEventPicker.toggle(new Date(held.eventTime));
+    void findGeoEvent(undefined);
   });
 
   /**
@@ -1054,6 +1343,36 @@ async function main(): Promise<void> {
    */
   let arUndulationM: number | undefined;
 
+  /**
+   * Whether THIS AR session's entry pass has settled (DEC-M1).
+   *
+   * The entry veil holds until it has, so the user never meets the city built
+   * against the desktop datum. Three things about its lifecycle are load-bearing
+   * and each was a cold-review finding:
+   *
+   * - **Cleared when an entry STARTS**, not only when one ends. A second entry
+   *   in the same page session would otherwise inherit the first one's `true`
+   *   and the veil would gate on the alignment alone.
+   * - **Set from the promise `startWalking` created**, held in a local — never
+   *   by reading `currentPass` later, which three other paths reassign.
+   * - **Set on BOTH settle paths.** A failed fetch that left this `false` would
+   *   hold every entry to the ceiling for the rest of the page's life.
+   *
+   * The two paths that never reach `startWalking` — the geoid import failing,
+   * and the session ending inside that await — both end the session, so neither
+   * can strand the veil.
+   */
+  let arContentReady = false;
+
+  /**
+   * Which AR entry the readiness flag belongs to.
+   *
+   * Bumped by every press, and captured by the entry pass's own `finally`, so a
+   * pass belonging to an abandoned entry cannot mark a later one ready. See the
+   * capture site in `startWalking` for the failure it prevents.
+   */
+  let arEntryGeneration = 0;
+
   let arSupport: ArSupport = "checking";
   let arSession: ArMode | undefined;
   /**
@@ -1076,6 +1395,43 @@ async function main(): Promise<void> {
    * session is invisible for exactly as long as it matters (r509 review).
    */
   const arToast = createArToast(el("ar-root"));
+  // THE 2D ERROR CHANNEL (N3, DEC-U10). Until this existed every non-AR
+  // message went to the header status line, which is why the header had to
+  // pop itself open on every error: a message written into a collapsed
+  // header is a message nobody sees. This is what lets that rule retire.
+  const toast = createToast(el("toast-root"));
+
+  /**
+   * Whether an AR press is still waiting for the fix it asked for (DEC-W2).
+   *
+   * OWNED HERE RATHER THAN IN `ar-entry.ts` because it is the one part of the
+   * decision that is a lifetime rather than a rule: it has to be set by the
+   * press, read by the fix that follows, and dropped on anything that
+   * supersedes the intent. An offer that outlives the user's interest — or one
+   * that appears because they pressed the GPS button — is a worse bug than the
+   * one this replaces.
+   *
+   * Cleared on: entering AR, exiting AR, pressing AR again, the offer being
+   * taken or dismissed, and **a locate failure** — the operation the press
+   * asked for is then spent, so the offer it was waiting for must never come.
+   *
+   * NOT cleared by a map click or a city jump made DURING the wait, and that is
+   * a deliberate gap rather than an oversight: the arriving fix re-centres the
+   * view, so `shouldOfferAr` re-asks `arPressAction` at the moment that
+   * matters and answers correctly either way. `syncArOffer` covers the same
+   * ground once the prompt is actually on screen.
+   */
+  let awaitingArFix = false;
+
+  const currentPressAction = (): ArPressAction =>
+    arPressAction({
+      sessionRunning: arSession !== undefined,
+      hasOrigin: canEnterAr(selectZeroReference(store.getState())),
+      // THE NEVER-CLEARED ONE. See its declaration for why the readout's
+      // variable is the wrong one to gate entry on.
+      lastFix: lastKnownFixPosition,
+      viewPosition: selectOsmView(store.getState()).position,
+    });
 
   /**
    * The last painted state, so the DOM is written only when it CHANGES.
@@ -1092,9 +1448,14 @@ async function main(): Promise<void> {
   let paintedAr = "";
 
   const paintArButton = (): void => {
+    // BEFORE THE CHANGE GUARD BELOW. The offer can go stale while the button's
+    // own derived state does not change at all — moving the view away turns
+    // "enter" into "locate", which changes `willLocateFirst`, but a later paint
+    // with an unchanged key must not leave a stale prompt on screen either.
+    syncArOffer();
     const state = arButtonState({
       support: arSupport,
-      hasFix: canEnterAr(selectZeroReference(store.getState())),
+      willLocateFirst: currentPressAction().kind === "locate",
       active: arSession !== undefined,
     });
     const key = `${String(state.hidden)}|${String(state.disabled)}|${state.label}|${state.hint ?? ""}`;
@@ -1102,13 +1463,83 @@ async function main(): Promise<void> {
     paintedAr = key;
 
     arButton.hidden = state.hidden;
+    if (arControlWrapper !== undefined) arControlWrapper.hidden = state.hidden;
     arButton.disabled = state.disabled;
-    arButton.textContent = state.label;
+    // THE GLYPH IS CONSTANT; THE WORDING MOVES TO THE ACCESSIBLE NAME (F3a).
+    //
+    // The button is a 2 rem square now, and "Exit AR" does not fit one without
+    // making it grow — which is the resizing defect being removed elsewhere in
+    // this round. So the face always reads "AR" and `aria-label` carries the
+    // state, exactly as `.locate-button` does: on touch a `title` never shows,
+    // so the accessible name is the only thing that reaches everyone.
+    arButton.textContent = "AR";
+    // THE HINT GOES IN THE NAME, not only in `title`. "Supported but no GPS
+    // fix yet" is the one state `arButtonState` distinguishes hidden from
+    // disabled for — and without this its accessible name is just "AR",
+    // identical to every other state, so the distinction the whole type exists
+    // for never reaches anyone. `title` alone cannot carry it: this file
+    // argues three lines up that a title never shows on touch.
+    arButton.setAttribute(
+      "aria-label",
+      state.hint === undefined ? state.label : `${state.label} — ${state.hint}`,
+    );
+    arButton.dataset["arActive"] = String(arSession !== undefined);
     // Cleared rather than left stale: the hint explains a DISABLED state, and
     // a tooltip surviving into the enabled one describes a condition that no
     // longer holds.
-    if (state.hint === undefined) arButton.removeAttribute("title");
-    else arButton.title = state.hint;
+    if (state.hint === undefined) arButton.title = state.label;
+    else arButton.title = `${state.label} — ${state.hint}`;
+  };
+
+  const arOffer = el("ar-offer");
+
+  /**
+   * Takes the offer down.
+   *
+   * IDEMPOTENT AND CALLED LIBERALLY. The failure mode being designed against is
+   * an offer that outlives the intent behind it, so every path that could make
+   * it stale calls this rather than reasoning about whether it is showing.
+   */
+  const clearArOffer = (): void => {
+    arOffer.hidden = true;
+    awaitingArFix = false;
+  };
+
+  /**
+   * Offers AR entry, if a press asked for the fix that just arrived.
+   *
+   * A REAL CONTROL, NOT A TOAST, and the difference is the point. A toast fades
+   * on its own; this is the second half of an action the user started, so it
+   * has to still be there when they look back at the screen after walking
+   * outside to get a fix.
+   */
+  const maybeOfferAr = (): void => {
+    if (
+      !shouldOfferAr({
+        awaitingFix: awaitingArFix,
+        sessionRunning: arSession !== undefined,
+        hasOrigin: canEnterAr(selectZeroReference(store.getState())),
+        lastFix: lastKnownFixPosition,
+        viewPosition: selectOsmView(store.getState()).position,
+      })
+    ) {
+      return;
+    }
+    arOffer.hidden = false;
+    paintArButton();
+  };
+
+  /**
+   * Takes a showing offer down once it has stopped being true.
+   *
+   * The offer says "enter AR now", so it may not survive the view being moved
+   * somewhere else — a map click or a jump to another city between the fix
+   * landing and the user looking at the screen. Asking `arPressAction` again is
+   * what keeps the prompt and the button from ever disagreeing.
+   */
+  const syncArOffer = (): void => {
+    if (arOffer.hidden) return;
+    if (currentPressAction().kind !== "enter") clearArOffer();
   };
 
   // The probe is a promise and the button starts hidden, so this resolves into
@@ -1251,8 +1682,26 @@ async function main(): Promise<void> {
     // building at the window-centre datum: the ~98 m error §2.5 exists to
     // remove, disguised as a fusion bug. Without this the datum would first
     // apply after 100 m of walking, and never for a user who stands still.
-    currentPass = runPassFor(selectOsmView(store.getState()).position);
-    void currentPass;
+    const entryPass = runPassFor(selectOsmView(store.getState()).position);
+    currentPass = entryPass;
+    // THE VEIL'S SECOND CONDITION (DEC-M1), taken from the promise created HERE
+    // rather than from `currentPass`, which the position subscriber and the
+    // session teardown both reassign. `finally`, so a failed fetch opens the
+    // gate too: holding the veil to its ceiling on every entry would be a worse
+    // outcome than showing a city one ring short.
+    //
+    // ⚠️ AND KEYED ON THE ENTRY THAT STARTED IT (milestone review, finding 1).
+    // Clearing the flag in `enterAr` does not cancel the PREVIOUS entry's
+    // pending pass, and backing out of a slow entry to try again is the common
+    // case — `ar-mode.ts` says so by name. Without this generation check, entry
+    // #1's pass settling would open entry #2's veil while ITS rebuild was still
+    // running: the desktop-datum city uncovered, which is the whole failure
+    // DEC-M1 exists to prevent, on the one path most likely to hit it.
+    const generation = arEntryGeneration;
+    void entryPass.finally(() => {
+      if (generation !== arEntryGeneration) return;
+      arContentReady = true;
+    });
   };
 
   /** Stop following. Idempotent, and safe when AR never started. */
@@ -1279,16 +1728,23 @@ async function main(): Promise<void> {
     arToast.clear();
   };
 
-  arButton.addEventListener("click", () => {
-    if (arSession !== undefined) {
-      arSession.dispose();
-      arSession = undefined;
-      stopWalking();
-      paintArButton();
-      return;
-    }
+  const enterAr = (): void => {
+    awaitingArFix = false;
+    clearArOffer();
+    // THIS ENTRY'S OWN READINESS, cleared before the session is asked for
+    // (DEC-M1). A second entry in the same page session would otherwise start
+    // with the first one's `true` and uncover before its rebuild had run — and
+    // the generation bump is what stops the FIRST entry's still-pending pass
+    // from setting it again a moment later.
+    arContentReady = false;
+    arEntryGeneration += 1;
     // IN THE GESTURE, not after an await: the permission prompts WebXR raises
     // are only allowed synchronously from a user gesture.
+    //
+    // THE OFFER'S BUTTON IS A SECOND, FRESH GESTURE, which is what keeps that
+    // true on the locate-first path as well (DEC-W2). Nothing calls this from a
+    // timer or from the fix callback — the offer is shown there, and the user
+    // presses it.
     void startArMode({
       container: el("ar-root"),
       store,
@@ -1299,6 +1755,48 @@ async function main(): Promise<void> {
       sceneAnchor: anchors.origin,
       enuFrameAt,
       onError: (message) => store.dispatch(actions.nonFatalError(message)),
+      // THE ENGAGEMENT STAMP (owner decision, 2026-08-23) — an instrument for a
+      // question no gate can answer: how long the elevation estimator takes to
+      // engage while a user STANDS STILL. DEC-L2's 12 s fly-in was argued partly
+      // from that number, and nobody has ever measured it.
+      //
+      // A TOAST, not `console.info`. The measurement has to be taken in the
+      // field, on a phone, where a console line needs a cable and a laptop —
+      // i.e. where it would never actually be read. The AR readout's row is
+      // width-constrained (DEC-J8), so a transient line is also the only place
+      // this fits. Same reasoning as DEC-K6's trust-gate acknowledgement.
+      //
+      // AND ITS ABSENCE IS THE OTHER HALF OF THE MEASUREMENT: no toast in a
+      // whole session means the estimator never engaged at all.
+      onEstimateEngaged: (afterS) => {
+        arToast.show(`Elevation estimate engaged after ${afterS.toFixed(1)} s`);
+      },
+      // WHETHER THE ENTRY REBUILD HAS SETTLED (DEC-M1). The entry veil holds
+      // until this says yes, so the user never meets the city built for the
+      // DESKTOP datum — which is the same ~100 m error the entry pass exists to
+      // remove, and which `startWalking`'s own comment calls "not optional".
+      //
+      // A GETTER, read per frame, for the reason `liveMeasurements` is one: the
+      // pass it reports on is started by `startWalking`, which runs AFTER this
+      // object is built.
+      entryContentReady: () => arContentReady,
+      // AND HOW LONG THAT ACTUALLY TOOK (DEC-M1a), on the same channel and for
+      // the same reason as the engagement stamp above: `ENTRY_READY_MAX_WAIT_S`
+      // is a guess, and a session that reports `aligned: false` or
+      // `contentReady: false` here is one where the ceiling — not the readiness
+      // — ended the black screen. That is the measurement the next field run
+      // has to bring back, and a console line on a phone would never be read.
+      onEntryReady: ({ afterS, aligned, contentReady }) => {
+        const held = [
+          aligned ? undefined : "no alignment",
+          contentReady ? undefined : "no content",
+        ].filter((part) => part !== undefined);
+        arToast.show(
+          held.length === 0
+            ? `Entry ready after ${afterS.toFixed(1)} s`
+            : `Entry gave up waiting after ${afterS.toFixed(1)} s (${held.join(", ")})`,
+        );
+      },
       // THE AUTO ELEVATION OFFSET (plan §2.6). Presence is the switch: the
       // whole group is omitted when the URL kill switch (`?autoElevation=off`)
       // is set, read HERE at entry so a field A/B is one reload. The sampler
@@ -1328,7 +1826,12 @@ async function main(): Promise<void> {
         // THE DEM UNDER THE USER (DEC-H1). `terrain` is declared further down
         // this function body, which is safe because this closure only ever RUNS
         // from a frame callback — long after the whole body has been evaluated.
-        // Sampling costs one bilinear array read, twice a second.
+        // Sampling costs one bilinear array read, twice a second — and it is
+        // ACTUALLY twice a second only since the PR review of P4/P5. This
+        // closure used to be called on every XR frame, with `sample` throwing
+        // ~29 of every 30 results away; `ar-mode.ts` now asks the HUD whether
+        // it is `due` before building any of this. The sentence above was in
+        // the file, describing a cadence the code did not have, the whole time.
         //
         // `hasData` is passed through rather than folded in: `heightfieldFrom`
         // samples FLAT ZERO for a failed load, so the height alone cannot
@@ -1366,6 +1869,22 @@ async function main(): Promise<void> {
           ...(arUndulationM === undefined
             ? {}
             : { geoidUndulationM: arUndulationM }),
+          // WHICH MODEL PRODUCED THAT NUMBER (H7). The undulation alone cannot
+          // expose the `ZERO_GEOID` trap the line above exists for: a zero
+          // undulation from a real model and a zero from "no geoid loaded" print
+          // identically, and only the second puts the whole scene tens of metres
+          // out. `describeGeoid` is the library's own answer, and for
+          // `ZERO_GEOID` it returns a full warning SENTENCE rather than an id —
+          // which is deliberate on its side and is why this line can never be
+          // merged with another.
+          //
+          // Read from the resolved model, never re-derived: `geoidModel` is
+          // populated by the same lazy import that produced `arUndulationM`, so
+          // an absent model here means the readout says nothing rather than
+          // naming a model that did not serve.
+          ...(geoidModel === undefined
+            ? {}
+            : { geoidModelId: describeGeoid(geoidModel) }),
           ...(here === undefined
             ? {}
             : { position: { lat: here.lat, lng: here.lng } }),
@@ -1389,6 +1908,19 @@ async function main(): Promise<void> {
       // cold-start override, whose curve is identical and which is on by
       // default. Silencing the compass takes all of these together.
       onCompassSettings: (settings) => {
+        // EIGHT DISPATCHES, NOT ONE (DEC-E2, extended round four).
+        // `compass-influence.ts` holds why the first four cannot be collapsed:
+        // "influence 0" is not "vote weight 0" — at weight 0 the steady-state
+        // formula is `1 − observability`, a FULL override exactly when yaw is
+        // poorly observable, and switching the prior off falls through to the
+        // cold-start override, whose curve is identical.
+        //
+        // THE ORDER MATTERS FOR THE LAST THREE. `setCompassExperimentEnabled`
+        // maps a fixed published combo — rotation prior, tolerance 15, pair
+        // selection on — so the standalone setters must come AFTER it or the
+        // combo would overwrite the toggles the gear panel just changed. The
+        // library's own mapping applies groups in the same order and pins it
+        // with a test; this is the consumer-side half of that contract.
         store.dispatch(
           setCompassRotationPriorEnabled(settings.rotationPriorEnabled),
         );
@@ -1397,6 +1929,16 @@ async function main(): Promise<void> {
         );
         store.dispatch(setCompassExperimentEnabled(settings.experimentEnabled));
         store.dispatch(setCompassVoteWeight(settings.voteWeight));
+        store.dispatch(setCompassTrustGateMode(settings.trustGateMode));
+        store.dispatch(
+          setCompassPairSelectionEnabled(settings.pairSelectionEnabled),
+        );
+        store.dispatch(
+          setCompassTrustAgreeToleranceDeg(settings.trustToleranceDeg),
+        );
+        store.dispatch(
+          setCompassWebXRConsistencyEnabled(settings.webXRConsistencyEnabled),
+        );
       },
       onEnded: () => {
         // Fires for the Android back gesture too, where nothing called
@@ -1500,6 +2042,61 @@ async function main(): Promise<void> {
         reloadTerrainForMode();
       }
     });
+  };
+
+  arButton.addEventListener("click", () => {
+    const action = currentPressAction();
+
+    if (action.kind === "exit") {
+      arSession?.dispose();
+      arSession = undefined;
+      stopWalking();
+      awaitingArFix = false;
+      clearArOffer();
+      paintArButton();
+      return;
+    }
+
+    if (action.kind === "locate") {
+      // THE PRESS BECOMES THE GPS BUTTON (G6, DEC-W2). The app does not
+      // currently show where the user is — either no fix has ever arrived, or
+      // the view has been moved away from the last one — and AR anchored to a
+      // place they are not is half of what was reported. When the fix lands,
+      // `maybeOfferAr` offers entry, so the second tap is offered rather than
+      // remembered.
+      //
+      // NOT BOTH AT ONCE, which was planned first and abandoned: `startArMode`
+      // refuses without an origin, so "both" would have been locate plus
+      // nothing. See `ar-entry.ts` for the three invariants that rule out the
+      // alternative of re-anchoring afterwards.
+      // CLEARED FIRST, THEN ARMED — and the order is load-bearing, because
+      // `clearArOffer` drops the intent as well as hiding the prompt. Armed
+      // first, the clear immediately disarmed it and the offer never came.
+      clearArOffer();
+      awaitingArFix = true;
+      // THE IN-PROGRESS STATE IS THE LOCATE BUTTON'S OWN, not a second one
+      // invented here. `locateControl.start()` moves it to "Locating…" and back,
+      // and that control is the thing actually working — a spinner on the AR
+      // button as well would be two indicators for one operation.
+      locateControl.start();
+      paintArButton();
+      return;
+    }
+
+    enterAr();
+  });
+
+  // THE OFFER'S OWN GESTURE. This click is what carries the transient user
+  // activation `navigator.xr.requestSession()` needs — which is the reason the
+  // "press AR, it locates, then offers" shape works where "do both at once"
+  // could not: the session is requested from a fresh press, not from a fix
+  // callback, and no permission prompt is ever raised inside a running session.
+  el("ar-offer-enter").addEventListener("click", () => {
+    enterAr();
+  });
+  el("ar-offer-dismiss").addEventListener("click", () => {
+    clearArOffer();
+    paintArButton();
   });
   // The switches report a whole next set; `toggleLayer` is the only thing that
   // knows how to build a valid one (see `osm-view-slice.ts` for why the action
@@ -1518,12 +2115,95 @@ async function main(): Promise<void> {
     // switches. Being a real child of `#layer-group-overlays` rather than a
     // sibling styled to look adjacent is what makes it collapse and expand with
     // that block, which is the behaviour the sixth session asked for.
-    extras: {
-      diagnostics: [el("perf-stats-label")],
+    //
+    // THE CATEGORY PICKER FIRST (F3d) — and as of round three that is true
+    // rather than merely claimed. The group is captioned `Category`, so the
+    // control it names belongs at the top of it rather than below the switches
+    // that describe what to draw for it. This comment sat here for a day over a
+    // seam that could only append, so the bar rendered
+    // `Category · cells · areas · ‹select›`; the seam now takes a position and
+    // `layer-toggles.test.ts` holds the order to the screen.
+    extrasBefore: {
+      overlays: [el("category")],
+    },
+    extrasAfter: {
+      diagnostics: [el("perf-stats-label"), el("render-distance-label")],
+      // LAST, after the two switches: it changes which cells `cells` draws, so
+      // it reads as a qualifier on the switch above it rather than a third peer.
       overlays: [showBelowLabel],
+      // THE GROUND PICKER JOINS `world` (J2, DEC-J5). It was a loose `<label>`
+      // sitting as a direct header child, and J2 puts every control in a block —
+      // so left alone it would be the ONE bare thing on a now-transparent bar,
+      // i.e. the next session's finding.
+      //
+      // `world` rather than a block of its own: the group answers "what is in
+      // the world", and the ground mode chooses which surface is drawn as the
+      // ground. It is not a layer (`ALL_LAYERS` means things drawn
+      // independently; this is one thing drawn three ways and is exclusive),
+      // which is exactly why it needs the extras seam rather than the registry.
+      world: [el("ground-mode-label")],
     },
   });
+  /**
+   * DEC-U9: the below-threshold checkbox is hidden while `cells` is off.
+   *
+   * ITS OWN FUNCTION BECAUSE THE SUBSCRIBER IS NOT ENOUGH, and the first
+   * version of this shipped that bug. `subscribe` captures the current value at
+   * registration and fires only when it CHANGES, so a control painted only from
+   * there is never painted at all until the user touches something — and
+   * `cells` is OFF in `DEFAULT_LAYERS`, which is precisely the state that should
+   * hide this. The checkbox was therefore visible on every fresh load, in the
+   * one configuration DEC-U9 exists to cover.
+   */
+  const paintShowBelow = (layers: LayerSet): void => {
+    showBelowLabel.hidden = !layers.cells;
+  };
+
   layerToggles.render(selectLayers(store.getState()));
+
+  /**
+   * The render-distance dial (r541 Q9/Q10, owner decision 2026-08-21).
+   *
+   * THE ARITHMETIC LIVES HERE, NOT IN THE VIEW, and the import direction is
+   * why: `render-distance.ts` reads `FAR_PLANE_M` from `building-view.ts`, so
+   * the view importing it back would be a cycle and `check:cycles` would
+   * reject it. `BuildingView.setFarPlane` therefore takes plain metres.
+   *
+   * THE READOUT IS PAINTED FROM THE CAMERA (`farPlaneM()`, `fogNearM()`),
+   * never from the slider, so it cannot report a distance the projection
+   * matrix does not have.
+   */
+  const renderDistanceInput = el<HTMLInputElement>("render-distance");
+  const renderDistanceValue = el("render-distance-value");
+  const paintRenderDistance = (): void => {
+    renderDistanceValue.textContent = `draw ${Math.round(
+      buildingView.farPlaneM(),
+    )} m · haze ${Math.round(buildingView.fogNearM())} m`;
+  };
+  const applyRenderDistance = (): void => {
+    const multiplier = Number.parseFloat(renderDistanceInput.value);
+    buildingView.setFarPlane(renderDistanceFor(multiplier).farPlaneM);
+    paintRenderDistance();
+  };
+  renderDistanceInput.addEventListener("input", applyRenderDistance);
+  // APPLIED AT BOOT, NOT MERELY PAINTED (DEC-K2). The markup's `value` is the
+  // single source for the starting multiplier, so the camera has to be moved to
+  // match it before the first paint.
+  //
+  // IT USED TO CALL `paintRenderDistance()` HERE, which was correct only while
+  // the default was 1x: the applied and un-applied far planes were the same
+  // number, so nothing could disagree. At any other default that line leaves the
+  // thumb and the drawn distance apart, and — because the readout reads the
+  // CAMERA rather than the slider — the text agrees with the camera and the
+  // whole screen looks consistent. `render-distance-markup.test.ts` pins the
+  // markup half; the e2e boot assertion pins this half.
+  applyRenderDistance();
+  paintShowBelow(selectLayers(store.getState()));
+  // THE SAME FIRST-PAINT GAP AS `paintShowBelow`, one control over. The readout
+  // is written only by `paintGeoEventButton`, which is reached from
+  // change-subscribers and from `setBusy` — so before the first press it was
+  // present, empty and visible, holding open a gap in the header's flex row.
+  paintGeoEventButton();
 
   // --- state out ----------------------------------------------------------
 
@@ -1563,7 +2243,7 @@ async function main(): Promise<void> {
   // Which member of that composition actually SERVED, as position counts —
   // applied atomically with the field for the same reason. The HUD derives
   // the primary's share from this; absent keeps the composed-id-only label.
-  let demStats: FallbackProviderStats | undefined;
+  let demStats: RacingProviderStats | undefined;
 
   // Coalesced, exactly like `refresh` — the two are driven by the same click and
   // must agree about which position is current. See `terrain-cycle.ts` for the
@@ -1614,6 +2294,42 @@ async function main(): Promise<void> {
         : `${Math.round(centreEnu.x)},${Math.round(centreEnu.y)}`;
   };
 
+  /**
+   * Draw the held quest's beacons against the terrain field as it stands NOW
+   * (N6, DEC-K4, re-derived by DEC-M4).
+   *
+   * **WHY THIS IS A FUNCTION AND NOT A LINE IN THE SUBSCRIBER.** It used to be
+   * one, and that was the defect the eighteenth field session reported: the
+   * marks were placed once, when the quest was found, against the field as it
+   * stood at that moment. Entering AR replaces that field with one on a
+   * different datum — `heightAt` returns an ellipsoidal height there and relief
+   * on the desktop — and rebuilds every building, tree and POI against it. The
+   * marks kept the old datum and hung `N + window-centre height` below the
+   * city: ~100 m, the same number this file names elsewhere as the datum error
+   * the entry pass exists to remove.
+   *
+   * So the marks are re-derived wherever their INPUT changes, which is both
+   * when the quest changes and when the field is replaced — the latter also
+   * covering an ordinary walk past the refetch distance, a map click and a
+   * place-picker choice, each of which used to leave the mark on stale ground
+   * with its stalk reaching for a surface that had moved.
+   *
+   * **The event comes from the store**, so there is no second copy of "which
+   * quest is held" to keep in step.
+   */
+  const drawQuestBeacons = (): void => {
+    const event = selectOsmView(store.getState()).geoEvent;
+    buildingView.setQuestBeacons(
+      event === undefined
+        ? []
+        : questBeaconPlacements(
+            event.picks,
+            enuFrameAt(anchors.origin),
+            terrain,
+          ),
+    );
+  };
+
   const loadTerrain = createTerrainCycle({
     worker,
     extentM: TERRAIN_EXTENT_M,
@@ -1624,6 +2340,7 @@ async function main(): Promise<void> {
       centreEnu,
       demSourceId: loadedSourceId,
       demStats: loadedStats,
+      meshOutdated,
     }) => {
       terrain = field === undefined ? undefined : heightfieldFrom(field);
       terrainNote = note;
@@ -1634,6 +2351,10 @@ async function main(): Promise<void> {
       // to follow it either way, or a walk during an outage takes the user off
       // the edge of a finite plane.
       buildingView.setTerrain(terrain, centreEnu);
+      // AND THE QUEST MARKS FOLLOW THE GROUND THEY MARK (DEC-M4). Their height
+      // is measured from this field, so replacing it without re-deriving them
+      // is what left them ~100 m under the AR city. See `drawQuestBeacons`.
+      drawQuestBeacons();
       // Attribution is REQUIRED wherever the data is shown, the same as the OSM
       // one — and only shown while the data is actually in use, because
       // crediting a source whose tiles all failed would be a claim about what
@@ -1648,12 +2369,28 @@ async function main(): Promise<void> {
       // BOTH sources, unconditionally: the composition falls back per tile, so
       // any session may be standing on either DEM. See `dem-provider.ts` for
       // why the credit is a constant rather than the provider's own field.
+      // AN EMPTY LIST, not `undefined`, when there is no terrain — the line
+      // simply stops naming the elevation sources. The OSM credit is not this
+      // caller's to add or remove; `MapView` always carries it.
       mapView.setTerrainAttribution(
-        terrain === undefined ? undefined : DEM_ATTRIBUTION,
+        terrain === undefined ? [] : DEM_ATTRIBUTION_ENTRIES,
       );
       // THE REPORTED CENTRE, not the field's — they are the same on a good
       // load, and only the former exists during an outage.
       publishFrameState(anchors.origin, centreEnu);
+      // THE LATE-TERRAIN REBUILD (F1d). The worker owns the decision — it is
+      // the only side that knows the terrain stamp and what the standing mesh
+      // was built against (see `worker/terrain-arrival.ts`); all that is left
+      // here is to act on it.
+      //
+      // THE `busy` CHECK IS NOT BELT AND BRACES, even though the worker already
+      // suppresses the signal while an update is in flight. The two guards
+      // watch different windows: the worker's closes when the update handler's
+      // reply is posted, this one when the page has finished applying it. A
+      // terrain reply delivered in that gap would otherwise call a `latestOnly`
+      // `refresh` mid-run and abort the Overpass fetch it is waiting on — the
+      // regression this whole milestone was re-planned to avoid.
+      if (meshOutdated === true && !refresh.busy) void refresh();
     },
   });
 
@@ -1902,11 +2639,17 @@ async function main(): Promise<void> {
 
   function writeStatus(): void {
     const view = selectOsmView(store.getState());
-    if (view.loading.phase !== "idle") {
-      status.textContent =
-        view.loading.phase === "error"
-          ? `Failed: ${view.loading.message}`
-          : view.loading.message;
+    // THE ERROR PHASE IS NOT RENDERED HERE ANY MORE (DEC-U10). Errors go to
+    // the toast, which is visible whether or not the header is collapsed.
+    // Writing them here as well would be the second channel DEC-R2-15
+    // existed to prevent, and it is what forced the header to expand itself.
+    //
+    // The line falls through to the ordinary summary instead of blanking:
+    // during a failed refetch the previous snapshot is still what is on
+    // screen, so describing it is accurate. A blank line would read as
+    // 'nothing loaded', which is a stronger claim than the failure supports.
+    if (view.loading.phase !== "idle" && view.loading.phase !== "error") {
+      status.textContent = view.loading.message;
       return;
     }
     const snapshot = view.snapshot;
@@ -2029,13 +2772,24 @@ async function main(): Promise<void> {
     (view) => view.loading,
     (loading) => {
       writeStatus();
-      // DEC-R2-15. The status line lives inside the header, and a collapsed
-      // header hides it — so an error would otherwise be written into something
-      // invisible, and the demo would look like it did nothing. Expanding on
-      // error keeps ONE error channel instead of growing a second one, and it
-      // covers every reporter (fetch, either view, the locate button, a dead
-      // worker) rather than just the one that prompted the rule.
-      if (loading.phase === "error") headerCollapse.revealForError();
+      // ERRORS GO TO THE TOAST, AND DEC-R2-15 IS RETIRED (DEC-U10).
+      //
+      // That rule expanded the header on every error, because the status
+      // line inside it was the only channel available and a message written
+      // into a collapsed header is invisible. The owner reported the
+      // self-expanding header as a bug; it was the demo telling the truth
+      // about failures they were independently investigating.
+      //
+      // BOTH HALVES MOVE TOGETHER, and that is not tidiness. Retiring the
+      // expand while errors still wrote to the status line would leave the
+      // message in a collapsed header AND in a toast - the two-channel state
+      // DEC-R2-15 rejected a toast in order to avoid. So `writeStatus` no
+      // longer renders the error phase either; see its comment.
+      //
+      // ACCEPTED COST: a toast is transient where the header stayed open
+      // until dismissed, so an error can now be missed by looking away. The
+      // owner chose that knowingly.
+      if (loading.phase === "error") toast.show(loading.message);
     },
   );
 
@@ -2124,6 +2878,17 @@ async function main(): Promise<void> {
     (view) => view.category,
     () => {
       void refresh();
+      // THE RESTART HALF OF DEC-U13. The decision is "cancel and restart", and
+      // only the cancel half existed: the cycle refuses to publish a result
+      // whose category has moved on, which leaves the user with no quest AND
+      // no running search — the picker live, the map empty, and nothing
+      // happening until they press again.
+      //
+      // Gated on `busy` so a category change with no search in flight does not
+      // start one uninvited; the search is a real cost (it can score hundreds
+      // of chunks and download a tile), which is why it is a button in the
+      // first place.
+      if (findGeoEvent.busy) void findGeoEvent(undefined);
     },
   );
 
@@ -2131,6 +2896,20 @@ async function main(): Promise<void> {
     (view) => view.layers,
     (layers, previousLayers) => {
       layerToggles.render(layers);
+      // HIDDEN, NOT DIMMED (DEC-U9), and that reverses two recorded decisions.
+      //
+      // `.layer-toggle.layer-busy` says "dimmed and non-interactive, never
+      // hidden — a control that disappears reads as a bug", and `index.html`
+      // separately records `show-below` being moved INTO this group so that it
+      // stays visible, after the sixth session complained it was the only
+      // setting that collapsed. The owner chose hidden knowing both.
+      //
+      // WHAT MAKES THAT DEFENSIBLE is that the triggers differ. The sixth
+      // session's complaint was about COLLAPSE hiding a setting that still
+      // applied; this hides one that does not apply at all, and collapsing
+      // still keeps it while `cells` is on. The `.layer-busy` comment is
+      // narrowed to say exactly that — busy stays visible, inapplicable goes.
+      paintShowBelow(layers);
       // TURNING THE CELL LAYER ON HAS TO FETCH THE CELLS (round 10, stage B).
       // Every other layer only changes what is drawn from data already held, so
       // a redraw is enough; `cells` is different because the snapshot
@@ -2200,6 +2979,19 @@ async function main(): Promise<void> {
     (event) => {
       mapView.renderGeoEvent(event);
       paintGeoEventButton();
+      // AND IN 3D (N6, DEC-K4). Same source of truth as the map, in the same
+      // subscriber, so the two views cannot disagree about which quests exist
+      // — which is the whole reason this milestone was asked for.
+      //
+      // NOT A TOGGLE: "Show Quests" is a one-shot search holding a single
+      // event, so the beacons appear when one is held and are cleared when it
+      // goes (a category change clears it).
+      // THROUGH THE SHARED DRAW (DEC-M4), which reads the held event back from
+      // the store rather than taking the one this subscriber was handed. The
+      // two are the same value — this subscriber fires BECAUSE that slice
+      // changed — and going through one function is what keeps the quest's own
+      // change and the terrain's change producing identical placements.
+      drawQuestBeacons();
     },
   );
   // The label's distance is measured from where the user is NOW, so walking

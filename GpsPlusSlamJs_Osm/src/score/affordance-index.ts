@@ -99,7 +99,7 @@ const CHUNK_MARGIN_DEG = 0.0005;
 /**
  * How many chunks one working set is, at the widest radius anything scores.
  *
- * A `gridDisk` of radius r holds `3r² + 3r + 1` cells — 61 at r = 4. DERIVED
+ * A `gridDisk` of radius r holds `3r² + 3r + 1` cells — 127 at r = 6. DERIVED
  * rather than written down, because the two numbers must not be able to drift:
  * the whole defect W7 fixes is a cap that was chosen against a 19-chunk working
  * set and left alone when DEC-R2-20 tripled it.
@@ -132,6 +132,24 @@ const WORKING_SETS_RETAINED = 8;
  *
  * The relationship is now in the code rather than in a comment, so widening the
  * disk again cannot silently reintroduce the thrashing.
+ *
+ * ⚠️ **AND WIDENING THE DISK RAISES THIS CAP, WHICH IS A SEPARATE DECISION.**
+ * DEC-K1 took `SCORE_DISK_MAX_RADIUS` from 4 to 6 on a field request, and this
+ * derivation carried the cache along with it:
+ *
+ * - retained chunks **488 → 1 016**;
+ * - the `scoresByCell` ceiling **23 912 → 49 784** cells;
+ * - at the corpus-measured 808 bytes/cell, **~19.3 MB → ~40 MB serialised**,
+ *   and `chunk-cap.corpus.test.ts` records that real heap is several times
+ *   these figures.
+ *
+ * That test answered F54 — "can the cap go to 2 000?" — with **no**, on the
+ * grounds that "this demo is meant to run on a phone". This change does not
+ * reach 2 000, and the owner accepted the growth knowingly on the argument that
+ * retention should scale with reach. **But no gate asserts the TOTAL**: the
+ * corpus test bounds per-chunk cost only, so an eviction problem on a real
+ * phone would arrive as a field report rather than as a red test. Anyone
+ * raising the radius again should price this line before the CPU.
  */
 const DEFAULT_MAX_CHUNKS = CHUNKS_PER_WORKING_SET * WORKING_SETS_RETAINED;
 

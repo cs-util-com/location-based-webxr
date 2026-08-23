@@ -105,7 +105,7 @@ export function cellFaceMaterial(
       // height ramp included, which is the default surface since DEC-R5-4 — is
       // largely hidden where cells cover it, and the 2D map stays at 0.55, so
       // "the same cell reads as the same strength of claim in both views" is no
-      // longer literally true. The overlap is a ~250 m disc on a 4.8 km plane,
+      // longer literally true. The overlap is a ~326 m disc on a 4.8 km plane,
       // which is what makes the first cost bearable.
       // FROM THE PRESET SINCE §3 (DEC-R6-9). 0.8 is the shipped default and
       // stays the default; the other values are reachable by hotkey so the
@@ -119,7 +119,7 @@ export function cellFaceMaterial(
       // has no diffuse term, so it would compile, draw, and be black.
       metalness: 0,
       side: THREE.DoubleSide,
-      // FOG IS AN AXIS (§3). It is a no-op today — the cells reach ~250 m, the
+      // FOG IS AN AXIS (§3). It is a no-op today — the cells reach ~326 m, the
       // desktop haze starts at 1584 m and AR's at 400 m — and stops being one
       // after §6 widens the radius, which is exactly why DEC-R6-22 keeps the
       // presets alive until then.

@@ -23,6 +23,16 @@ import {
 } from "./building-view.js";
 import { TERRAIN_EXTENT_M } from "./heightfield.js";
 import { FOG_RGB } from "./sky-rig.js";
+import {
+  DEFAULT_RENDER_MULTIPLIER,
+  renderDistanceFor,
+} from "./render-distance.js";
+
+/**
+ * The fog's near/far ratio, mirrored rather than imported: `FOG_NEAR_RATIO` is
+ * module-private in `building-view.ts` and deliberately unexported.
+ */
+const FOG_NEAR_RATIO_APPROX = 0.66;
 
 describe("the far field", () => {
   it("starts the haze INSIDE the far plane", () => {
@@ -37,7 +47,7 @@ describe("the far field", () => {
     expect(FAR_PLANE_M - FOG_NEAR_M).toBeGreaterThan(200);
   });
 
-  it("never lets the DEFAULT view see past the edge of the ground (N5)", () => {
+  it("keeps the 1x view inside the ground, and pins that the default no longer is", () => {
     // THE INVARIANT THAT REPLACES A HARD-CODED CEILING (W5, DEC-R5-3). This test
     // used to assert `FAR_PLANE_M < 2000` — a round-4 guard whose reasoning was
     // "4000 put every building in a res-7 fetch tile inside the frustum". W20's
@@ -60,13 +70,76 @@ describe("the far field", () => {
     // default view is centred on the plane's own centre again, and the distance
     // from the camera to the nearest edge is `TERRAIN_EXTENT_M`.
     //
-    // Still stated for the DEFAULT, CENTRED camera: `MapControls` pans, so
-    // panning far enough brings the edge into view at any far plane. The claim
-    // is "the view you are given starts inside the world" (R5-4).
+    // ⚠️ **RE-SCOPED AGAIN, BY DEC-K2 (2026-08-22), AND THE RENAME IS THE
+    // POINT.** This test was called "never lets the DEFAULT view see past the
+    // edge of the ground" and asserted only the two CONSTANTS below. The page
+    // now boots at `DEFAULT_RENDER_MULTIPLIER`, so the default view draws to
+    // 4800 m over a 2400 m plate and DOES see past the edge — deliberately, and
+    // the 2026-08-21 owner decision says empty scene there is acceptable.
+    //
+    // The assertion below would have kept passing throughout, because
+    // `FAR_PLANE_M` did not move. That is the second time this file has been
+    // caught in exactly the failure its own comment above describes: an
+    // assertion that survives while the sentence naming it goes false. It is
+    // now named for what it actually pins — the 1x BASELINE — and the default
+    // gets an assertion of its own, below.
     expect(FAR_PLANE_M).toBeLessThanOrEqual(TERRAIN_EXTENT_M);
     // The lower end of the trade is unchanged: 300 is what the AR apps in this
     // workspace use and would cut the desktop view off at the knees.
     expect(FAR_PLANE_M).toBeGreaterThan(300);
+  });
+
+  it("draws the DEFAULT view past the ground's edge, on purpose and by a bounded amount", () => {
+    // WHY THIS TEST MATTERS, AND WHY IT ASSERTS SOMETHING UNCOMFORTABLE. Nothing
+    // else in the suite states what the shipped view actually draws — the
+    // constants say 2400 and the page draws 4800. An assertion that the default
+    // is INSIDE the ground would be false; an assertion of nothing at all is how
+    // the previous version of this file went stale. So this pins the trade
+    // itself: the overhang exists, it is intended, and it is bounded.
+    const defaultFarM = renderDistanceFor(DEFAULT_RENDER_MULTIPLIER).farPlaneM;
+
+    // The overhang is real. If this ever stops being true the default has
+    // silently returned to 1x and the field request was reverted.
+    expect(defaultFarM).toBeGreaterThan(TERRAIN_EXTENT_M);
+
+    // AND IT IS BOUNDED, which is the half that protects the picture. Empty
+    // scene past the edge is acceptable (2026-08-21); a default so far past it
+    // that the ground is a small plate in a large void is not the same thing.
+    // 2x the extent is the accepted figure, not a derived one — it is where the
+    // field test landed.
+    expect(defaultFarM).toBeLessThanOrEqual(TERRAIN_EXTENT_M * 2);
+
+    // ⚠️ THE ACCEPTED CONSEQUENCE, PINNED SO IT CANNOT MOVE SILENTLY. At the
+    // default the haze starts BEYOND the ground plate — 3168 m against a 2400 m
+    // extent — so the plate's edge is a hard line rather than fading out. At 1x
+    // it faded, because fog far == far plane == extent put the edge at full fog.
+    //
+    // THE FIRST VERSION OF THIS ASSERTION WAS A TAUTOLOGY and the PR #341 review
+    // caught it: `defaultFarM * 0.66 < defaultFarM` is true for any ratio below
+    // one, for any far plane, forever. It could not fail, and it sat here
+    // looking like the guard for exactly this property — the third instance in
+    // this file of the failure its own comments name twice.
+    //
+    // Owner decision, 2026-08-22: accepted. Seeing where the ground stops is
+    // inherent to asking to see further, and this exact configuration was
+    // field-tested before the default moved. The assertions below exist so that
+    // anyone who changes the fog ratio, the extent, or the default multiplier
+    // has to come back and re-read that decision rather than discover the edge
+    // on a phone.
+    const defaultFogNearM = defaultFarM * FOG_NEAR_RATIO_APPROX;
+
+    // The band still begins inside the drawn distance — without this the fog
+    // would never engage at all and geometry would vanish at the far plane.
+    expect(defaultFogNearM).toBeLessThan(defaultFarM);
+
+    // And it begins OUTSIDE the ground plate. This is the line that fails if
+    // someone "fixes" the edge by clamping the fog, which is a product change
+    // and not a tidy-up.
+    expect(defaultFogNearM).toBeGreaterThan(TERRAIN_EXTENT_M);
+
+    // The 1x baseline is the regime where the edge does fade, and it must stay
+    // that way: turning the dial down has to restore the old picture exactly.
+    expect(FOG_NEAR_M).toBeLessThan(TERRAIN_EXTENT_M);
   });
 
   it("keeps the ground centred on the user, which is what makes that true", () => {

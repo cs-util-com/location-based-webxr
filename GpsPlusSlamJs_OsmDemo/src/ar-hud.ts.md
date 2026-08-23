@@ -38,7 +38,23 @@ inset: 0` and hidden only while `:empty`, so an always-attached readout keeps
 
 - `AR_HUD_SAMPLE_MS` — 500.
 - `createArHud(root): ArHud` — `root` must be the element passed to `initAR`.
-- `ArHud` — `{ sample(measurements, nowMs), dispose() }`.
+- `ArHud` — `{ sample(measurements, nowMs), due(nowMs), dispose() }`.
+  - **`due` exists so the caller can skip BUILDING the argument.** `sample` is
+    cheap; assembling an `ArMeasurements` is not — an ENU transform, a bilinear
+    terrain read and a great-circle distance — and the XR frame loop was paying
+    all of it at display rate for a readout that accepts a value twice a second,
+    discarding roughly 30 of every 31 (PR review of P4/P5, finding 7). It is a
+    query on the SAME `lastWriteMs` that `sample` gates on, never a second copy
+    of the interval: two cadences drift, which is why `sample` returns a boolean
+    in the first place.
+  - **`due` and `sample` can still legitimately disagree** — the expand toggle
+    repaints outside the window — so the fps window still resets on what
+    `sample` returned, not on what `due` said.
+
+  Its home is `.ar-stack`, the top-of-screen column `ar-mode.ts` builds, and NOT
+  `#ar-root` directly (G9, DEC-W5): the overlay root also holds the framework's
+  full-screen canvas, and making that element a flex column pushed the readout a
+  whole viewport below the fold.
 
 ## Examples
 

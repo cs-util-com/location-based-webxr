@@ -114,6 +114,13 @@ describe("BuildingView routes AR content through the content root", () => {
       "this.group",
       "this.cellMesh",
       "this.cellOutlines",
+      // N6/DEC-K4. THE ASSERTION WITH TEETH FOR THE BEACONS: the negative
+      // half above matches only `this.scene.add(...)`, so a beacon routed
+      // through `this.content` trips nothing there — and could later be moved
+      // to the scene with no gate noticing. A quest marker left behind on
+      // entering AR is the wrong half of the feature: the map already shows
+      // the quest, and AR is where you walk to it.
+      "this.questBeacons.root",
     ]) {
       expect(
         SOURCE.includes(`this.content.add(${expression})`),

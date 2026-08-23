@@ -11,7 +11,10 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { COMPASS_INFLUENCE_DEFAULT } from "./compass-influence.js";
+import {
+  COMPASS_INFLUENCE_DEFAULT,
+  describeTrustGate,
+} from "./compass-influence.js";
 import { createArCompassControl } from "./ar-compass-control.js";
 
 function harness(initialInfluence?: number) {
@@ -42,6 +45,16 @@ describe("createArCompassControl", () => {
     expect(root.children).toHaveLength(0);
     control.attach();
     expect(root.children).toHaveLength(1);
+
+    // AND IT CARRIES `.ar-compass`, which is a contract with the stylesheet
+    // rather than decoration (round three, G9, DEC-W5). Placement is now a
+    // property of `#ar-root`'s column, and the e2e that measures it has to
+    // attach its OWN element carrying this class — a real AR session is
+    // unreachable in headless Chromium. So this assertion is the seam that
+    // keeps that test measuring the thing this module actually builds; without
+    // it, renaming the class here would move the slider back into the middle of
+    // the view with the whole suite green.
+    expect(root.children[0]?.className).toBe("ar-compass");
   });
 
   it("removes itself on dispose, and both calls are idempotent", () => {
@@ -118,12 +131,14 @@ describe("createArCompassControl", () => {
     control.setReady(true);
 
     drag(0);
-    expect(onChange).toHaveBeenLastCalledWith({
-      rotationPriorEnabled: false,
-      coldStartOverrideEnabled: false,
-      experimentEnabled: false,
-      voteWeight: 0,
-    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rotationPriorEnabled: false,
+        coldStartOverrideEnabled: false,
+        experimentEnabled: false,
+        voteWeight: 0,
+      }),
+    );
   });
 
   it("reports while dragging, not only when the finger lifts", () => {
@@ -155,6 +170,29 @@ describe("createArCompassControl", () => {
     control.attach();
     control.setReady(true);
     expect(root.textContent).toMatch(/15–30 fixes/);
+  });
+
+  it("puts the hint beside the slider, before the readout (J5, DEC-J8)", () => {
+    // WHY THIS TEST MATTERS. "Den könnte man einfach rechts neben den Slider
+    // packen, sodass das dann nur noch zwei Zeilen sind."
+    //
+    // DOM ORDER RATHER THAN A CSS `order`, and that is the reason this is a unit
+    // test at all. The hint explains the control it follows, so a screen reader
+    // should meet them in that sequence — a visual reorder would leave the
+    // reading order saying slider, readout, then an explanation of the slider.
+    //
+    // The WIDTHS are not asserted here: whether the two actually share a row is
+    // a layout question, and jsdom has no layout. `boot-and-shell.spec.js`
+    // measures the rendered rows against the real stylesheet.
+    const { root, control } = harness();
+    control.attach();
+    const box = root.querySelector(".ar-compass");
+    const classes = [...(box?.children ?? [])].map((child) => child.className);
+    expect(classes).toEqual([
+      "ar-compass-slider",
+      "ar-compass-hint",
+      "ar-compass-value",
+    ]);
   });
 
   it("gives the slider an accessible name", () => {
@@ -209,12 +247,14 @@ describe("createArCompassControl — the initial value reaches the store", () =>
     control.setReady(true);
 
     // Zero is the position where silence would be least visible and most wrong.
-    expect(onChange).toHaveBeenLastCalledWith({
-      rotationPriorEnabled: false,
-      coldStartOverrideEnabled: false,
-      experimentEnabled: false,
-      voteWeight: 0,
-    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rotationPriorEnabled: false,
+        coldStartOverrideEnabled: false,
+        experimentEnabled: false,
+        voteWeight: 0,
+      }),
+    );
   });
 
   it("still does not dispatch twice for a repeated setReady", () => {
@@ -226,5 +266,98 @@ describe("createArCompassControl — the initial value reaches the store", () =>
     control.setReady(true);
     control.setReady(true);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the trust-gate confirmation (DEC-K6)", () => {
+  /**
+   * Why these tests matter: this is the one control in the panel whose correct
+   * behaviour is INVISIBLE. The gate is re-read on every GPS observation, but
+   * nothing re-solves on the dispatch, the matrix is recomputed only when the
+   * next fix arrives, and the view lerps toward it — so a field session
+   * switched ramp/binary, saw nothing move, and reported the setting as
+   * ignored. The confirmation is the only thing standing between "correct" and
+   * "looks broken".
+   */
+  it("names the mode, and spells out the one that means something else", () => {
+    // `binary` and `ramp` are two shapes of the same gate; `off` is a different
+    // kind of setting — the compass is trusted unconditionally — so it gets
+    // words rather than a bare mode name.
+    expect(describeTrustGate("ramp")).toBe("gate ramp");
+    expect(describeTrustGate("binary")).toBe("gate binary");
+    expect(describeTrustGate("off")).toBe("gate off — compass always trusted");
+  });
+
+  it("replaces the readout, then restores it", () => {
+    vi.useFakeTimers();
+    try {
+      const root = document.createElement("div");
+      const control = createArCompassControl({ root, onChange: () => {} });
+      control.attach();
+      const readout = root.querySelector(".ar-compass-value");
+      const before = readout?.textContent;
+
+      control.announce("gate binary");
+      expect(readout?.textContent).toBe("gate binary");
+
+      // AND IT COMES BACK. A confirmation that never cleared would hide the
+      // influence readout for the rest of the session — the row's real job.
+      vi.advanceTimersByTime(5_000);
+      expect(readout?.textContent).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is not erased by a live update that arrives while it is showing", () => {
+    // THE RACE THIS WOULD LOSE WITHOUT THE FLAG. `setLive` runs at ~1 Hz from
+    // the HUD, so a confirmation held for 2.5 s overlaps at least two of them.
+    // A `render()` that unconditionally wrote the influence text would wipe the
+    // acknowledgement within a second of the user asking for it.
+    vi.useFakeTimers();
+    try {
+      const root = document.createElement("div");
+      const control = createArCompassControl({ root, onChange: () => {} });
+      control.attach();
+      const readout = root.querySelector(".ar-compass-value");
+
+      control.announce("gate binary");
+      control.setLive({ appliedWeight: 0.4, observability: 0.9 });
+      expect(readout?.textContent).toBe("gate binary");
+
+      vi.advanceTimersByTime(5_000);
+      expect(readout?.textContent).toContain("compass");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels its pending timer on dispose, so nothing is left scheduled", () => {
+    // WHY THIS ASSERTS THE TIMER AND NOT THE READOUT, and the first draft got
+    // this wrong. That draft disposed one control, created another in the same
+    // root, and claimed the leaked timer would "clear the NEW control's
+    // announcement". IT CANNOT: each control owns its own element, so a timer
+    // that fires after dispose writes into a DETACHED node and nothing visible
+    // changes. Mutation-testing proved it — deleting the cleanup entirely left
+    // that test green.
+    //
+    // So the readout cannot witness this, and the honest observable is the
+    // scheduler itself. What the cleanup actually buys is hygiene: a pending
+    // callback holding a closure over a torn-down control, fired after the
+    // session ended. Small, real, and worth a test that can fail.
+    vi.useFakeTimers();
+    try {
+      const root = document.createElement("div");
+      const control = createArCompassControl({ root, onChange: () => {} });
+      control.attach();
+
+      control.announce("gate binary");
+      expect(vi.getTimerCount()).toBe(1);
+
+      control.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

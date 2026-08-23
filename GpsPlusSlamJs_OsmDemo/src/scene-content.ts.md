@@ -46,7 +46,7 @@ could reach, so it is extracted here instead. That extraction is the milestone.
 - `ContentFrame` — `"demo-scene"` | `"gps-world-nue"`, the two axis conventions.
 - `new SceneContent(parent)` — creates the root and attaches it to `parent` in
   the demo frame.
-- `root: THREE.Group` — the node everything hangs from, named `osm-content`.
+- `root: THREE.Group` — the node everything hangs from, named `gps-placed-content`.
   Public because AR reparents it and tests assert on it; there is no behaviour
   to protect behind a getter.
 - `attachTo(parent, frame)` — move the whole subtree AND set the frame

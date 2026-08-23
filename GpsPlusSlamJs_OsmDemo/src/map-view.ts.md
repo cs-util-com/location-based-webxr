@@ -14,6 +14,8 @@ raster basemap.
 
 ## Invariants & assumptions
 
+- **Leaflet's cached container size is kept honest by a `ResizeObserver`.** `L.map(...)` measures the container once and reuses that size for every projection; `trackResize` only refreshes it on a WINDOW resize, so a container that changes size because this page's own layout settled never reaches it. Measured 2026-08-21: the cache was ~122 px taller than the real element, so **every `setView` — `panTo`, `centreOn` and the initial view — placed its target 61 px below the visible centre.** The observer fires immediately on `observe`, so it also corrects whatever `L.map` measured a moment earlier. It is guarded with a `typeof ResizeObserver === "undefined"` check because the unit tests run in jsdom, which has none; that guard is about the test environment, not about browser support.
+  - The observer is held as a field so a future `dispose` can disconnect it. This view has no teardown path today, so it lives as long as the map.
 - **`setPosition` moves the marker; `centreOn` moves the marker AND the viewport.** Two callers want opposite things. A map click already happens where the user is looking, so recentring under their cursor would yank the map away. A GPS fix is usually somewhere else entirely — at zoom 18 anything more than ~200 m off is outside the viewport — so leaving it put shows an unchanged basemap with the marker, the new grid and the fetch box all off screen, which looks exactly like a button that does nothing.
 - **Hover shows the score; CLICK shows the evidence.** Cells carry a score-only
   `bindTooltip` and a `bindPopup` with the provenance list. This was a tooltip
@@ -76,6 +78,28 @@ raster basemap.
   is the reason the C# reference kept a contributing-entries map.
 - **ODbL attribution is required**, and doubly so here: the view shows both the
   basemap tiles and data derived from OSM.
+  - **This class owns the attribution line; Leaflet's control is switched off**
+    (`attributionControl: false`, round three, DEC-W1). Leaflet's own control
+    rebuilds its `innerHTML` on every credit change — which happens on every
+    terrain apply — so the expander the thirteenth session asked for could not
+    survive inside it. Switching it off also disposes of its courtesy "Leaflet"
+    prefix link, which the same session asked to drop, without needing
+    `setPrefix(false)` as a second mechanism. See
+    [`attribution-view.ts.md`](./attribution-view.ts.md).
+  - **It is registered FIRST of this corner's controls**, because Leaflet
+    _prepends_ into a bottom corner — so the first control added ends up lowest,
+    with the AR and locate buttons stacking above the credit rather than over
+    it. An e2e asserts that by bounding-box arithmetic.
+  - **`setTerrainAttribution` takes entries, not a string**, and an empty list
+    is how the elevation credits are removed. The OSM credit is not the
+    caller's to add or remove: this class always carries it.
+  - ⚠️ **A layer's `attribution:` option is now SILENTLY INERT.** Leaflet
+    guards with `&& this._map.attributionControl`, so a tile layer or plugin
+    added with one does not throw — its credit simply never appears. Nothing in
+    the suite catches that today; it is recorded here rather than only in a code
+    comment because the person who hits it will be adding a second layer, not
+    reading `map-view.ts`'s constructor. **Every credit must go through
+    `AttributionView`.**
 - **Everything interpolated into a tooltip or popup is escaped** — see
   [`escape-html.ts.md`](./escape-html.ts.md). `bindTooltip` and `bindPopup` render HTML, and
   `category` is a column header from the publicly editable rule sheet; the
@@ -130,3 +154,16 @@ and solves it differently (a vertical tick) for the same reason: silently
 dropping nodes would hide a whole class of excluded feature — bins, subway
 entrances, shafts — from the diagnostic whose job is showing what was silently
 dropped.
+
+## `panTo` (F4c, DEC-U12 — 2026-08-19)
+
+- `panTo(position)` — slides the viewport to `position` at the current zoom.
+
+**It is deliberately NOT `centreOn`, and reusing that one here would be a live
+bug.** `centreOn` calls `setPosition` first, so panning to a quest would also
+teleport the user's own marker onto it. `centreOn` is for a DECLARED position
+change — the location picker, the locate button — where moving the marker is
+exactly right; `panTo` is for looking somewhere.
+
+Holding the zoom is what makes this a pan rather than the viewport takeover F56
+declined.

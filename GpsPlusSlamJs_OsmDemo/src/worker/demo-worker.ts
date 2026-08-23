@@ -64,7 +64,8 @@ import {
   isPedestrianPath,
   meshCentroidEnu,
   roadColour,
-  type FallbackProviderStats,
+  type RacingElevationProvider,
+  type RacingProviderStats,
   type LatLng,
   type OsmFeature,
   type RuleTable,
@@ -92,7 +93,16 @@ import { terrainWindowFor } from "../terrain-window.js";
 import { createMeshPlanner } from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
-import { createTerrainGate, needsTerrainFor } from "./terrain-gate.js";
+import {
+  createTerrainGate,
+  needsTerrainFor,
+  sameGateCentre,
+} from "./terrain-gate.js";
+import { createTerrainUpgradeSink } from "./terrain-upgrade-sink.js";
+import {
+  meshOutdatedByTerrain,
+  type MeshBuildRecord,
+} from "./terrain-arrival.js";
 import {
   isWorkerEnvelope,
   type TransferableMesh,
@@ -152,7 +162,15 @@ interface WorkerState {
    * carry the numbers as of ITS load, copied so the page's snapshot cannot
    * mutate under it.
    */
-  readonly demStats: () => FallbackProviderStats;
+  readonly demStats: () => RacingProviderStats;
+  /**
+   * The racing provider itself, so `terrainUpgrade` can await the loser.
+   *
+   * Held alongside `demStats` rather than replacing it because the two answer
+   * different questions and are read at different moments: `demStats` is
+   * snapshotted into every reply, this is awaited by one RPC.
+   */
+  readonly demProvider: RacingElevationProvider;
 }
 
 let state: WorkerState | undefined;
@@ -522,6 +540,27 @@ const obstacleIndex = createObstacleIndexCache(buildObstacleIndex);
 let terrainStamp = 0;
 
 /**
+ * What the mesh currently on screen was built from (F1d).
+ *
+ * Read only by the `terrain` handler, to answer "did this field arrive too late
+ * for the mesh that is already drawn?" — see `terrain-arrival.ts` for why that
+ * question is asked here and not on the page. `undefined` until the first build.
+ */
+let lastMeshBuild: MeshBuildRecord | undefined;
+
+/**
+ * `update` handlers currently running.
+ *
+ * A COUNTER RATHER THAN A BOOLEAN because nothing serialises the handlers: the
+ * page can post a second `update` (a category change, a widening ring) while
+ * the first is still waiting at the terrain gate, and a boolean cleared by
+ * whichever finished first would report "idle" with one still running. That
+ * false idle is exactly what would let the late-terrain signal abort a live
+ * Overpass fetch — see `TerrainArrival.updatesInFlight`.
+ */
+let updatesInFlight = 0;
+
+/**
  * Builds what this pass actually needs to send.
  *
  * The region slabs are ALWAYS rebuilt, because they are a product of SCORING and
@@ -629,9 +668,27 @@ async function handle<K extends WorkerCallKind>(
       // Mapterhorn primary, AWS fallback, one caching fetch — lives behind
       // `createDemProvider`, where it is unit-testable; only the browser-bound
       // pieces (this store, the real decoder) are supplied here.
+      // LATE BINDING, and it is unavoidable rather than untidy. The provider
+      // must exist before `createTerrainField` can be given it, and the
+      // upgrade callback must call back INTO that field — a cycle. A `let`
+      // assigned one statement later is the smallest honest way to close it;
+      // the alternative is a setter on the provider, which is the same
+      // mutability with more surface.
+      const upgradeSink: {
+        apply?: (
+          positions: readonly LatLng[],
+          heights: readonly (number | undefined)[],
+        ) => void;
+      } = {};
       const demProvider = createDemProvider({
         store,
         decodePng: browserPngDecoder(),
+        onUpgrade: (positions, heights) =>
+          upgradeSink.apply?.(positions, heights),
+      });
+      const terrainField = createTerrainField({ provider: demProvider });
+      upgradeSink.apply = createTerrainUpgradeSink(terrainField, () => {
+        terrainStamp += 1;
       });
       state = {
         pipeline,
@@ -644,9 +701,10 @@ async function handle<K extends WorkerCallKind>(
             source.fetchTile(tile, prefetchSignal),
           isLoaded: (tile) => pipeline.hasTile(tile),
         }),
-        terrainField: createTerrainField({ provider: demProvider }),
+        terrainField,
         demSourceId: demProvider.sourceId,
         demStats: () => ({ ...demProvider.stats }),
+        demProvider,
       };
       return {
         categories: loaded.table.categories,
@@ -753,6 +811,16 @@ async function handle<K extends WorkerCallKind>(
       const meshStart = nowMs();
       const mesh = meshUpdateFor(snapshot, pipeline, frameOrigin ?? position);
       const meshMs = Math.max(0, nowMs() - meshStart);
+      // WHAT THIS MESH IS STANDING ON (F1d). Recorded unconditionally, INCLUDING
+      // when the planner decided against a full rebuild: the record answers
+      // "which field is the geometry on screen sampled against", and a
+      // regions-only pass leaves that geometry exactly where the previous full
+      // build put it — on the field whose stamp is current now. Recording only
+      // on a full build would leave a stale stamp here and make the terrain
+      // handler signal a rebuild that is not needed.
+      //
+      // NO DATUM, unlike `terrainCentre` — see `MeshBuildRecord.centre`.
+      lastMeshBuild = { centre: position, terrainStamp };
       return {
         snapshot,
         mesh,
@@ -769,12 +837,14 @@ async function handle<K extends WorkerCallKind>(
     case "terrain": {
       const { centre, frameOrigin, extentM, spacingM, geoidUndulationM } =
         payload as WorkerCalls["terrain"]["request"];
-      const { terrainField, demSourceId, demStats } = requireState();
+      const { terrainField, demSourceId, demStats, demProvider } =
+        requireState();
       try {
         return await loadTerrain(
           terrainField,
           demSourceId,
           demStats,
+          () => demProvider.upgradesPending,
           centre,
           frameOrigin ?? centre,
           extentM,
@@ -793,6 +863,72 @@ async function handle<K extends WorkerCallKind>(
         // exists to catch, one layer down.
         terrainGate.settle({ ...centre, undulationM: geoidUndulationM });
       }
+    }
+
+    case "terrainUpgrade": {
+      // WAITS FOR THE LOSER, then re-describes the window it has just improved.
+      //
+      // It does NOT start a load. `loadTerrain` would, and that load would
+      // cancel the very in-flight request whose result this call exists to
+      // collect — the reason this is a distinct kind rather than a second
+      // `terrain` call.
+      //
+      // The reply is the same shape as `terrain`'s on purpose: the page's
+      // existing handling, `meshOutdated` and the rebuild it triggers included,
+      // is reused rather than written twice.
+      const { centre, frameOrigin, extentM, spacingM, geoidUndulationM } =
+        payload as WorkerCalls["terrainUpgrade"]["request"];
+      const { terrainField, demSourceId, demStats, demProvider } =
+        requireState();
+      // Resolves immediately when nothing is pending, so a page that asks
+      // speculatively — or twice — cannot hang.
+      await demProvider.awaitUpgrades();
+
+      // TWO GUARDS, BOTH ADDED AFTER THE MILESTONE REVIEW FOUND THIS HANDLER
+      // WRITING STATE FOR A WINDOW THE USER HAD LEFT.
+      //
+      // This wait is long — bounded only by the preferred source's 30 s
+      // deadline — and `describeCurrentTerrain` adopts its result as the
+      // worker's current terrain unconditionally. Between the two, the user can
+      // easily have walked somewhere else. Without these checks a superseded
+      // upgrade overwrites `terrain` and `terrainCentre` with the OLD window,
+      // including setting them empty if that window had no data — which is by
+      // name the "older load writes last" interleaving this file's header says
+      // holding the field worker-side prevents.
+      //
+      // The dispatcher suppresses the REPLY on abort but still runs the
+      // handler, so the abort check has to be here rather than left to it.
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      // And the centre check catches the case an abort does not: a load that
+      // completed normally for a different position while this was waiting.
+      // `terrainCentre` is what the worker currently holds; if it has moved on,
+      // this upgrade describes somewhere nobody is looking.
+      // THE DATUM IS PART OF THE IDENTITY, exactly as in `needsTerrainFor`,
+      // `keyOf` and `terrainCentre` itself. This compared `lat`/`lng` only, and
+      // AR entry and AR exit both re-sample at the UNCHANGED position with a
+      // different datum — so an upgrade issued before the switch passed the
+      // guard and `describeCurrentTerrain` re-sampled the window against the
+      // wrong datum, leaving the worker holding a field ~99 m from the camera.
+      // Found in review of PR #334.
+      if (
+        !sameGateCentre(terrainCentre, {
+          ...centre,
+          undulationM: geoidUndulationM,
+        })
+      ) {
+        throw new DOMException("Terrain upgrade superseded", "AbortError");
+      }
+      return describeCurrentTerrain(
+        terrainField,
+        demSourceId,
+        demStats,
+        () => demProvider.upgradesPending,
+        centre,
+        frameOrigin ?? centre,
+        extentM,
+        spacingM,
+        geoidUndulationM,
+      );
     }
 
     case "cellMesh": {
@@ -948,7 +1084,14 @@ async function loadTerrain(
   /** The provider's `sourceId`, reported back with the field it sampled. */
   demSourceId: string,
   /** Snapshots the provider's cumulative serving stats for this result. */
-  demStats: () => FallbackProviderStats,
+  demStats: () => RacingProviderStats,
+  /**
+   * How many DEM upgrades are still in flight, read AFTER the load.
+   *
+   * A function for the same reason `demStats` is: the count moves with every
+   * batch, and this result must carry the value as of its own load.
+   */
+  upgradesPending: () => number,
   /** Where the user is. Keys the gate, and says which load this was. */
   centre: LatLng,
   /** Where the scene's frame is anchored. Says what the heights mean. */
@@ -981,6 +1124,52 @@ async function loadTerrain(
     signal,
   );
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+  // The mesh key reads this: a new field means the heights every builder samples
+  // have changed, so the next pass must rebuild rather than re-send slabs (W6).
+  //
+  // BUMPED HERE AND NOT IN `describeCurrentTerrain`, because the upgrade path
+  // shares that function and has already bumped — but only if its replacement
+  // was actually applied. Bumping unconditionally there would report a refused
+  // upgrade as a changed field and rebuild an identical mesh.
+  terrainStamp += 1;
+  return describeCurrentTerrain(
+    terrainField,
+    demSourceId,
+    demStats,
+    upgradesPending,
+    centre,
+    frameOrigin,
+    extentM,
+    spacingM,
+    geoidUndulationM,
+  );
+}
+
+/**
+ * Builds a terrain reply from the field ALREADY held — no fetching, no
+ * cancellation.
+ *
+ * Shared by `terrain` (after its load) and `terrainUpgrade` (after the DEM
+ * race's loser has been applied), so the two replies cannot drift apart. That
+ * shared shape is the point: the page's whole terrain path, including the
+ * `meshOutdated` rebuild, works for an upgrade without knowing an upgrade
+ * happened.
+ *
+ * Synchronous on purpose. Everything it touches is already in memory, and an
+ * `await` in here would reopen the window the abort check above closes.
+ */
+function describeCurrentTerrain(
+  terrainField: TerrainField,
+  demSourceId: string,
+  demStats: () => RacingProviderStats,
+  upgradesPending: () => number,
+  centre: LatLng,
+  frameOrigin: LatLng,
+  extentM: number,
+  spacingM: number,
+  geoidUndulationM: number | undefined,
+): WorkerCalls["terrain"]["result"] {
+  const window = terrainWindowFor({ frameOrigin, centre, extentM });
   const field = terrainField.sampleGrid({
     frame: window.frame,
     centreEnu: window.sampleCentreEnu,
@@ -1009,9 +1198,6 @@ async function loadTerrain(
   // review against the commit before the terrain cache landed, where there was
   // no check here at all and the hole was real.
   terrain = field.hasData ? field : undefined;
-  // The mesh key reads this: a new field means the heights every builder samples
-  // have changed, so the next pass must rebuild rather than re-send slabs (W6).
-  terrainStamp += 1;
   // RECORDED EVEN WHEN THE FIELD IS EMPTY. This is what the mesh build's join
   // reads to decide whether it already has the terrain for its own position, and
   // "the DEM failed here" is an answer to that question. Recording it only on
@@ -1022,10 +1208,31 @@ async function loadTerrain(
   // position is what let an AR-entry mesh build stand on the desktop field,
   // ~99 m out. See `GateCentre.undulationM`.
   terrainCentre = { ...centre, undulationM: geoidUndulationM };
+  // DID THIS FIELD ARRIVE TOO LATE FOR THE MESH ALREADY ON SCREEN? (F1d.)
+  //
+  // Computed AFTER the stamp bump above, so `terrainStamp` is the value any
+  // rebuild would use, and BEFORE the reply is built, so the page learns about
+  // it on the same message that delivers the field. The alternative — an
+  // unsolicited worker→page push — has no wire: the protocol is strictly
+  // request/reply keyed on `id` and `isWorkerReply` rejects anything without
+  // one, so a new envelope type would be real protocol surface for a boolean.
+  const meshOutdated = meshOutdatedByTerrain(lastMeshBuild, {
+    centre,
+    terrainStamp,
+    updatesInFlight,
+  });
   return {
     field: terrain,
     note: describeTerrain(field),
     demSourceId,
+    meshOutdated,
+    // READ AFTER THE LOAD, so it reflects upgrades this batch registered. The
+    // page uses it to decide whether to issue `terrainUpgrade`; reading it
+    // before the sampling would always report the previous load's state and
+    // the very first field — the one that matters most, on a cold start —
+    // would never be upgraded.
+    upgradePending: upgradesPending() > 0,
+    meanFilledPosts: terrainField.meanFilledCount,
     // SNAPSHOT AT RESULT TIME, after the sampling above, so the counts include
     // this load's own batches. Cumulative for the session — the HUD reports a
     // share, and a share needs the denominator to keep meaning something.
@@ -1125,6 +1332,15 @@ self.addEventListener("message", (event: MessageEvent) => {
   const controller = new AbortController();
   inFlight.set(id, controller);
 
+  // COUNTED HERE RATHER THAN INSIDE THE HANDLER (F1d). The `terrain` handler
+  // asks "is an update already going to rebuild the mesh?" before it signals a
+  // late arrival, and the honest answer spans the whole dispatch — a handler
+  // that has returned but whose reply has not been posted is still going to
+  // produce a rebuild. Counting at this seam gets that for free from the
+  // `.finally` below, and needs no try/finally threaded through a handler whose
+  // only exit is a `return` sixty lines down.
+  if (kind === "update") updatesInFlight += 1;
+
   // EVERY path replies. An exception in a worker rejects nothing on the main
   // thread, so a request whose failure is not turned into a message is a promise
   // that never settles — a demo that silently stops, which is strictly worse
@@ -1147,6 +1363,11 @@ self.addEventListener("message", (event: MessageEvent) => {
       },
     )
     .finally(() => {
+      // In the `finally`, so an aborted or throwing update still releases the
+      // count. A counter that leaked upwards would silence the late-terrain
+      // rebuild for the rest of the session — a failure that looks exactly like
+      // the bug it was added to fix.
+      if (kind === "update") updatesInFlight -= 1;
       inFlight.delete(id);
     });
 });

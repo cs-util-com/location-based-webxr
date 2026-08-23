@@ -84,8 +84,14 @@ const BUILD_OSM_STAGE = Object.freeze({
 });
 
 /** Format command shared by the app packages (framework differs). */
+// `"scripts"` is in the list because it was NOT, and that was a hole: the
+// Landing package grew node-side build tooling under `scripts/blog/` that no
+// format stage could see, so 15 files drifted out of style with a green gate.
+// `GpsPlusSlamJs_Osm`'s stage already listed `"scripts"`; this makes the shared
+// command match. `--no-error-on-unmatched-pattern` keeps it a no-op for the
+// packages that have no `scripts/` directory.
 const APP_FORMAT_COMMAND =
-  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" index.html README.md package.json';
+  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" "scripts" index.html README.md package.json';
 
 /**
  * The stage set shared verbatim by the four uniform demo apps (AnchorStarter,
@@ -489,12 +495,31 @@ export const PROJECTS = [
         // Removing work is still worth doing, but it is a throughput argument
         // rather than the regrowth alarm this guard exists to be.
         //
-        // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
+        // RAISED 740 -> 900 -> 1300 (DEC-K1, 2026-08-22), AND THIS RAISE IS A
+        // PRODUCT CHANGE RATHER THAN SUITE REGROWTH — which is the distinction
+        // this guard exists to force someone to make out loud.
+        //
+        // The suite did NOT grow: 74 tests before and after, +0. What grew is the
+        // work the app does per refresh. DEC-K1 took `SCORE_DISK_MAX_RADIUS` from
+        // 4 to 6 on a field request, so every refresh now scores 127 chunks where
+        // it scored 61, and the e2e suite drives real refreshes end to end.
+        //
+        // MEASURED, two clean runs with nothing else on the machine:
+        // **806.6 s immediately before the change, then 1011.9 s and 1020.8 s
+        // after** — +26 %, reproducible, all 74 passing throughout. A third,
+        // contended run in the same window read 1090.7 s, which is why the two
+        // quiet samples are the ones quoted.
+        //
+        // 1300 s is ~1016 s + 28 %, keeping the same loose-alarm shape the 900
+        // had against its own median. It is NOT a licence to grow into: the next
+        // reader should read the two numbers above as the price of two rings and
+        // ask whether a third is worth another quarter.
+        //        // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
         // 30 %, and CI records no median of its own, so enforcing it there
         // measured the runner and failed two all-green PRs. See the CI note in
         // `budget.mjs`.
         .map((stage) =>
-          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 900 } : stage
+          stage.name === 'test:e2e' ? { ...stage, budgetSeconds: 1300 } : stage
         ),
     ],
   },

@@ -24,7 +24,7 @@ of §3, which is a structured experiment rather than a feature.
   then encode one value, both via `heatFraction`, so they cannot contradict each
   other. **The axis most in tension with DEC-R4-5.**
 - **`fog` / `liftM`** — nearly free. `fog: false` is a **no-op today** (cells
-  reach ~250 m, haze starts at 1584 m) and stops being one after §6.
+  reach ~326 m, haze starts at 1584 m) and stops being one after §6.
 
 ## Invariants & assumptions
 
@@ -35,7 +35,7 @@ of §3, which is a structured experiment rather than a feature.
   what shipped rather than towards it, and cycling can return to it.
 - **Only two axes cross the worker boundary.** Opacity, fog and lift are a
   material and a transform; republishing for them would make every press wait on
-  up to ~2 989 cells and the hotkey would feel broken.
+  up to ~6 223 cells and the hotkey would feel broken.
 - **A plain prism stays inside the 0.04 m per-layer budget** (`layer-order.ts`).
   A bar deliberately does not — if bars win, the ladder is what gets revisited.
 

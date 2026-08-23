@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +64,80 @@ export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}`;
 export const REPAINT = { timeout: 15000 };
 
 /**
+ * An instant for which the `AT_FIXTURE` tile is known to yield a geo-event.
+ *
+ * **WHY THIS EXISTS.** The geo-event is, by design, a pure function of tile and
+ * quarter-hour — `event-instant.ts` says "the answer is quarter-hourly" and the
+ * feature is built on that property. The consequence for the suite is that
+ * whether a fixture tile yields an event depends on **which quarter-hour the run
+ * happens to start in**, so two tests here could execute or not execute purely
+ * by clock. Three runs of one commit once reported 56, 56, and 54-passed-2-
+ * skipped, and every one of them looked green.
+ *
+ * The skip was later made a loud failure, which is what surfaced this properly:
+ * CI went red on a quarter-hour that yields nothing, on a change that had
+ * touched none of it.
+ *
+ * **PINNING THE CLOCK IS THE FIX THE FOLLOW-UP ASKED FOR** and was blocked on
+ * "a way to inject the instant the app may not expose". Playwright's
+ * `page.clock` supplies it without any production change:
+ * `setFixedTime` pins what the page sees as now, and leaves timers running so
+ * the map, the worker and the toasts behave normally.
+ *
+ * **THE VALUE IS MEASURED, NOT GUESSED.** A throwaway probe swept 32 consecutive
+ * quarter-hours against this fixture; `00:00`, `00:15` and `00:30` on this date
+ * all yield an event (1, 1 and 2 winners respectively). The first is used here.
+ *
+ * ⚠️ **The loud assertion at the call sites STAYS.** Pinning removes the
+ * dependence on when the suite runs; it does not promise this tile keeps
+ * yielding an event if the fixture data or the scoring changes. If that happens
+ * the failure is now deterministic and reproducible instead of appearing in one
+ * quarter-hour out of several — which is the whole gain.
+ *
+ * @see GpsPlusSlamJs_Docs/docs/2026-08-17-0019-geo-event-e2e-wall-clock-skip-followup.md
+ */
+export const QUEST_FIXTURE_INSTANT = new Date("2026-06-15T00:00:00.000Z");
+
+/**
+ * Pin the page's clock so a geo-event test does not inherit the wall clock.
+ * Must be called BEFORE `page.goto`, because the app reads the instant while it
+ * boots.
+ */
+export async function pinQuestClock(page) {
+  // ⚠️ NOT `page.clock.setFixedTime`, AND THE REASON IS MEASURED. That is the
+  // obvious API and it was the first implementation, but it installs a clock
+  // that reaches further than `Date` — with it in place the app logs
+  // `THREE.WebGLProgram: Shader Error … VALIDATE_STATUS false` twice a few
+  // seconds after boot, and WITHOUT it the same fixture logs none at all,
+  // measured either way.
+  //
+  // A failed shader is the worst kind of failure in this app: three hands the
+  // geometry to the renderer, counts it, reports it in the status line, and
+  // silently does not draw it — `boot-and-shell.spec.js`'s console test exists
+  // because exactly that once emptied the scene while the suite stayed green.
+  // Buying a deterministic quest at the price of a broken shader is a bad
+  // trade, and it would have been invisible: these two specs assert on the 2D
+  // map, which does not care.
+  //
+  // So the pin is as narrow as the need: the geo-event is a pure function of
+  // tile and QUARTER-HOUR, so only `Date` has to lie. Timers, rAF and
+  // `performance.now` are left alone.
+  const fixedMs = QUEST_FIXTURE_INSTANT.getTime();
+  await page.addInitScript((ms) => {
+    const RealDate = Date;
+    // eslint-disable-next-line no-global-assign
+    Date = class extends RealDate {
+      constructor(...args) {
+        super(...(args.length === 0 ? [ms] : args));
+      }
+      static now() {
+        return ms;
+      }
+    };
+  }, fixedMs);
+}
+
+/**
  * A real captured Overpass response from the OSM package's fixture corpus.
  *
  * `park` is Cologne Volksgarten, which is nowhere near `main.ts`'s default start
@@ -89,7 +164,8 @@ export function parkPayload() {
 }
 
 /**
- * Hosts the app talks to that must never be reached from a test.
+ * Hosts the app talks to that must never be reached from a test — DERIVED from
+ * the production pool rather than hand-listed.
  *
  * Matched on HOSTNAME, never as a substring of the whole URL. A pattern like
  * `/overpass/` looks obviously right and is a trap: the app's own module graph
@@ -98,8 +174,35 @@ export function parkPayload() {
  * JSON fixture. The browser then refuses the module for its MIME type and the
  * app never boots — with the only symptom being a status line stuck on
  * "starting…". That cost a debugging round; hence hostnames.
+ *
+ * **THE HAND-WRITTEN PATTERN WAS ALREADY WRONG AND NOTHING NOTICED FOR WEEKS.**
+ * It read
+ * `/(^|\.)overpass[^.]*\.de$|(^|\.)kumi\.systems$|(^|\.)openstreetmap\.fr$/`,
+ * which covers the three FOSSGIS front-ends and `kumi.systems` — but **not
+ * `maps.mail.ru` and not `overpass.private.coffee`**, two of the five entries
+ * in `DEFAULT_OVERPASS_ENDPOINTS`. The suite's own header says these hosts
+ * "must never be reached from a test"; for two of them that was untrue.
+ *
+ * It stayed invisible because endpoint selection was deterministic: the client
+ * always tried `lz4.overpass-api.de` first, so the unmatched hosts were only
+ * reachable on a retry that the fixtures never provoked. The moment selection
+ * became a weighted draw (M6, 2026-08-19), attempt 0 started landing on
+ * `maps.mail.ru` about a third of the time, five specs began escaping to the
+ * real network, and the session-end cascade caught it.
+ *
+ * So the list is now taken from the package the app actually uses. A pool entry
+ * added there is intercepted here automatically, and the drift that hid this
+ * cannot recur.
  */
+const OVERPASS_HOSTNAMES = new Set(
+  DEFAULT_OVERPASS_ENDPOINTS.map((endpoint) => new URL(endpoint).hostname),
+);
+
 const isOverpass = (url) =>
+  OVERPASS_HOSTNAMES.has(url.hostname) ||
+  // Kept beyond the pool: hosts a caller could configure, or that earlier
+  // revisions shipped. Reaching one is still a bug, and a route that fails
+  // closed is the point of this predicate.
   /(^|\.)overpass[^.]*\.de$|(^|\.)kumi\.systems$|(^|\.)openstreetmap\.fr$/i.test(
     url.hostname,
   );
@@ -495,6 +598,45 @@ export async function recordStatus(page) {
 }
 
 /**
+ * Records every message the 2D toast shows from now on (N3, DEC-U10).
+ *
+ * WHY THIS EXISTS ALONGSIDE `recordStatus`. Errors used to be written into
+ * `#status` and the header expanded itself so they could be read. From
+ * 2026-08-19 they go to a toast instead and `writeStatus` does not render the
+ * error phase at all — so an assertion that watches only the status line for
+ * a failure message can no longer fail, whatever the app does. Moving the
+ * observation point is what keeps those assertions meaningful rather than
+ * merely green.
+ *
+ * A MutationObserver on the container rather than a poll, for the same reason
+ * `recordStatus` gives: the message is on screen briefly and a poll wide
+ * enough to be cheap is wide enough to miss it, so the test would pass on the
+ * bug.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<() => Promise<string[]>>} reads the history so far
+ */
+export async function recordToasts(page) {
+  await page.evaluate(() => {
+    const seen = [];
+    const root = document.getElementById("toast-root");
+    if (root === null) return;
+    new MutationObserver(() => {
+      const text = root.textContent ?? "";
+      if (text !== "" && text !== seen[seen.length - 1]) seen.push(text);
+    }).observe(root, { childList: true, characterData: true, subtree: true });
+    /** @type {Record<string, unknown>} */ (window).__toastHistory = seen;
+  });
+  return () =>
+    page.evaluate(
+      () =>
+        /** @type {string[]} */ (
+          /** @type {Record<string, unknown>} */ (window).__toastHistory ?? []
+        ),
+    );
+}
+
+/**
  * Counts the pixels of the 3D pane that sit on a HARD EDGE, and says where they
  * are — the palette-independent way of asking "is there geometry on screen?".
  *
@@ -849,6 +991,102 @@ export async function enableCellLayer(page) {
   // interrogable", deterministic on a slower runner and never reproducible
   // locally.
   await waitForRefresh(page);
+}
+
+/**
+ * Walk the user by clicking bare map — a spot chosen at runtime, not pinned.
+ *
+ * WHY THIS EXISTS — a real failure, not a precaution. `map-view.ts` binds region
+ * polygons with `L.DomEvent.stopPropagation(event)` and says why: "the map's own
+ * click handler moves the user, and a region covers most of the screen — without
+ * this, selecting a region would also teleport you into it." Correct for the
+ * product, and it means a click landing on a region performs NO walk at all.
+ *
+ * The two scene-frame tests clicked a hard-coded `(60, 60)` and depended on that
+ * pixel being bare map. Which geography sits under a fixed pixel is a function
+ * of the map's SIZE — Leaflet holds the centre, so anything that changes the
+ * header's height re-frames the view. A ~7 px header change (J2's blocks) moved
+ * that pixel across a `battleArea` boundary, and both tests failed with the
+ * frame simply never moving.
+ *
+ * SO THE MARGIN WAS SINGLE-DIGIT PIXELS, and moving the magic number would only
+ * re-arm the trap. A first attempt switched the `areas` layer off instead, which
+ * does not work and is worth recording: `areas` governs only the region FILL.
+ * `map-view.ts` is explicit that the dashed boundary is deliberately NOT behind
+ * that flag ("it answers 'where does this end', which does not stop mattering
+ * when the fill answers 'how good is it'"), so the polygons — and their click
+ * handlers — stay on screen either way.
+ *
+ * What works is asking the browser what a click at each candidate would ACTUALLY
+ * hit, via `elementFromPoint`. Bounding boxes were tried first and are useless
+ * here: four scattered regions' boxes blanket the whole map, so every candidate
+ * was rejected. Hit-testing is exact — it accounts for the real path geometry
+ * and, for an unfilled region, for the fact that only the stroke is painted.
+ *
+ * Cells do not need avoiding: their handler does not stop propagation, so a
+ * click through one still walks.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {{minDistancePx?: number}} [options]
+ */
+export async function walkByMapClick(page, options = {}) {
+  const minDistancePx = options.minDistancePx ?? 100;
+
+  const position = await page.evaluate((minDistance) => {
+    const map = document.querySelector("#map");
+    if (map === null) throw new Error("no #map");
+    const bounds = map.getBoundingClientRect();
+    const centre = { x: bounds.width / 2, y: bounds.height / 2 };
+
+    /** What would swallow a click instead of letting the map walk. */
+    const swallows = (element) => {
+      if (element === null) return true;
+      return (
+        // A region path calls `stopPropagation` outright (see the docblock).
+        element.closest("path.region-outline") !== null ||
+        // A CELL blocks it too, by a different route: cells are bound with
+        // `bindPopup`, and opening a popup stops the map's own click handler
+        // firing. So a click on a cell SELECTS without moving, which is the
+        // precondition `map-and-cells.spec.js` used to assert by hand.
+        element.closest("path.affordance-cell") !== null ||
+        // An open popup covers map it does not belong to.
+        element.closest(".leaflet-popup") !== null ||
+        // Anything inside a Leaflet control is a button, not the map.
+        element.closest(".leaflet-control") !== null
+      );
+    };
+
+    let best = null;
+    let rejected = 0;
+    for (let y = 10; y <= bounds.height - 10; y += 8) {
+      for (let x = 10; x <= bounds.width - 10; x += 8) {
+        const hit = document.elementFromPoint(bounds.left + x, bounds.top + y);
+        if (swallows(hit)) {
+          rejected += 1;
+          continue;
+        }
+        const distance = Math.hypot(x - centre.x, y - centre.y);
+        // FAR ENOUGH TO BE A WALK. The user marker sits at the centre and the
+        // callers assert the ground window moved more than 20 m; a click a few
+        // pixels from where they already stand would not clear that.
+        if (distance < minDistance) continue;
+        // The CLOSEST qualifying point, so the move stays a walk rather than a
+        // jump toward the 5 km re-anchor threshold the callers also bound.
+        if (best === null || distance < best.distance) {
+          best = { x, y, distance };
+        }
+      }
+    }
+    if (best === null) {
+      throw new Error(
+        `no bare-map click point (${rejected} candidates were swallowed)`,
+      );
+    }
+    return { x: best.x, y: best.y };
+  }, minDistancePx);
+
+  await page.locator("#map").click({ position });
+  return position;
 }
 
 /**

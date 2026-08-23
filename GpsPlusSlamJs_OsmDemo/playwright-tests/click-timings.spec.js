@@ -27,6 +27,7 @@
  */
 
 import { test, expect } from "./e2e-test.js";
+import { PROGRESSIVE_RADII } from "gps-plus-slam-osm";
 import { AT_FIXTURE, stubNetwork, waitForRefresh } from "./fixtures.js";
 
 /** Every `click ring …` line the app printed. */
@@ -54,7 +55,14 @@ test.describe("the click-path breakdown survives the worker boundary", () => {
     // its ring rather than being summed per click.
     expect(lines.length).toBeGreaterThanOrEqual(1);
     for (const line of lines) {
-      expect(line).toMatch(/^click ring [234]: \d+ ms total/);
+      // The ring numbers are DERIVED. This was the character class [234], which
+      // encoded the ring count in a regex; DEC-K1 took the list to [2,3,4,5,6]
+      // and it rejected "click ring 5". A bare digit match would accept any
+      // number at all, so the value is checked against the real list instead.
+      expect(line).toMatch(/^click ring \d+: \d+ ms total/);
+      expect(PROGRESSIVE_RADII).toContain(
+        Number(/^click ring (\d+):/.exec(line)?.[1]),
+      );
       // §0.3 item 1: every stage reported with its share of the whole.
       expect(line).toMatch(/ \d+ ms \(\d+ %\)/);
       // §5: the residual is printed always, even when small.

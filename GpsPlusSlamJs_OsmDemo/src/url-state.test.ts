@@ -24,6 +24,7 @@ import fc from "fast-check";
 
 import { parseStartPosition } from "./start-position.js";
 import { FAR_PLANE_M } from "./building-view.js";
+import { DEFAULT_RENDER_MULTIPLIER } from "./render-distance.js";
 import {
   browserPlaceUrl,
   cameraQuery,
@@ -368,7 +369,18 @@ describe("the camera target in the URL", () => {
    * "two values that agree today with nothing saying they must".
    */
   it("bounds the distance at exactly the camera's far plane", () => {
-    expect(MAX_DISTANCE_M).toBe(FAR_PLANE_M);
+    // FOLLOWS THE FAR PLANE THE PAGE BOOTS WITH, not the 1x baseline (DEC-K2).
+    // A pasted link always lands in a freshly booted page, and that page draws
+    // to `FAR_PLANE_M * DEFAULT_RENDER_MULTIPLIER`; bounding the URL at the
+    // baseline instead would silently drop camera targets the receiving page
+    // can render perfectly well — the round-trip hole this module exists to
+    // avoid, in the opposite direction.
+    //
+    // ⚠️ THE TRADE, STATED: a user who drags the dial DOWN to 1x can restore a
+    // link whose target is past their far plane and see nothing. That is a
+    // deliberate act with an obvious remedy (drag it back), whereas silently
+    // truncating a shared link is neither visible nor recoverable.
+    expect(MAX_DISTANCE_M).toBe(FAR_PLANE_M * DEFAULT_RENDER_MULTIPLIER);
   });
 
   /**

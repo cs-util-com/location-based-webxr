@@ -98,26 +98,49 @@ describe("attachHeaderCollapse", () => {
     expect(onToggle).not.toHaveBeenCalled();
   });
 
-  it("expands on an error, because the status line lives inside it", () => {
-    // DEC-R2-15. Without this, a locate failure or a fetch failure is written
-    // into a hidden element and the demo looks like it did nothing.
+  it("STAYS COLLAPSED when an error occurs, which DEC-R2-15 used to forbid", () => {
+    // RETIRED 2026-08-19 (DEC-U10). Two tests used to live here asserting the
+    // opposite: that an error expands the header, and that it then stays
+    // expanded. The rule existed because the status line inside the header
+    // was the only channel an error could reach, so a collapsed header made
+    // failures invisible.
+    //
+    // `toast.ts` removed that premise, and the owner reported the
+    // self-expanding header as a bug in the twelfth testing session. Errors
+    // now go to a toast that is visible whether or not the header is
+    // collapsed, and `writeStatus` no longer renders the error phase at all
+    // - both halves together, because retiring only the expand would leave
+    // the message in a collapsed header AND in a toast, which is the
+    // two-channel state DEC-R2-15 rejected a toast in order to avoid.
+    //
+    // This test is what stops the rule being reintroduced by someone reading
+    // the old comment: there is no longer any API here to expand the header
+    // except the user's own toggle.
     const { header, collapse } = setup();
     collapse.set(true);
+
     expect(header.dataset["collapsed"]).toBe("true");
-
-    collapse.revealForError();
-
-    expect(header.dataset["collapsed"]).toBe("false");
-    expect(collapse.collapsed).toBe(false);
+    expect(collapse.collapsed).toBe(true);
+    expect("revealForError" in collapse).toBe(false);
   });
 
-  it("stays expanded after an error rather than collapsing again", () => {
-    // Deliberate: re-collapsing would race the user reading the message.
-    const { collapse } = setup();
+  it("keeps an accessible NAME after the title text was removed (F3b)", () => {
+    // WHY THIS TEST EXISTS. The control used to be an <h1> reading "OSM
+    // affordance demo", and that text was its accessible name — a screen reader
+    // announced "OSM affordance demo, button, expanded". F3b removed the text
+    // for a tidier bar, which leaves a role="button" that announces as NOTHING.
+    //
+    // That is a regression no visual check and no e2e screenshot can see, and
+    // the element still looks and behaves correctly to anyone using a mouse. So
+    // the name is asserted as an attribute, and asserted to TRACK THE STATE:
+    // aria-expanded says what state the control is in, never what it controls.
+    const { toggle, collapse } = setup();
+
+    expect(toggle.getAttribute("aria-label")).toBe("Hide details");
     collapse.set(true);
-    collapse.revealForError();
-    collapse.revealForError();
-    expect(collapse.collapsed).toBe(false);
+    expect(toggle.getAttribute("aria-label")).toBe("Show details");
+    collapse.set(false);
+    expect(toggle.getAttribute("aria-label")).toBe("Hide details");
   });
 
   it("toggles on Enter and Space, which role=button promises", () => {

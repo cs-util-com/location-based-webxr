@@ -25,6 +25,44 @@
 
 import { describeDrawCost, type DrawCost } from "./draw-cost.js";
 
+/**
+ * The widest a HUD line may be before it wraps on a 390 px phone.
+ *
+ * Characters rather than pixels, deliberately: the readout is a monospace-ish
+ * run of short tokens at 0.9 rem, and a pixel measurement here would be the
+ * load-sensitive kind of assertion this repo has spent two sessions removing
+ * from its gates.
+ */
+const MAX_LINE_CHARS = 40;
+
+/**
+ * Two readouts on one line, or whichever one exists (Q7).
+ *
+ * **Not an all-or-nothing group**, and that is the whole reason this is a
+ * function rather than a template literal at each site: the halves of a pair
+ * become available at different times — fps from the first frame, the draw cost
+ * only once something has rendered — so joining them unconditionally would blank
+ * a number that is already known while it waits for a partner.
+ *
+ * `·` rather than a comma because both halves are independent quantities rather
+ * than items in a list, and a middle dot survives being read at arm's length
+ * against a camera feed better than punctuation that sits on the baseline.
+ */
+function pair(left: string, right: string): string[] {
+  if (left === "") return right === "" ? [] : [right];
+  if (right === "") return [left];
+  const merged = `${left} · ${right}`;
+  // FALLS BACK TO TWO LINES RATHER THAN OVERFLOWING (PR #333 review). The height
+  // pair carries an optional `± N m` accuracy suffix that phones routinely
+  // report, and with it the merged line reaches 43 characters against a budget
+  // of 40 — so the ordinary case, not an extreme, wrapped on a 390 px screen.
+  //
+  // Wrapping is worse than not pairing: a merged line that wraps costs the same
+  // two rows AND loses the alignment that made the pair readable. Pairing is an
+  // optimisation, so it declines when it would not pay.
+  return merged.length <= MAX_LINE_CHARS ? [merged] : [left, right];
+}
+
 /** Everything the AR readout can show. Every field optional and independent. */
 export interface ArMeasurements {
   /** From the AR renderer's `info.render` — NOT the desktop view's. */
@@ -73,6 +111,20 @@ export interface ArMeasurements {
   /** The fix's reported VERTICAL accuracy, metres. Often absent. */
   readonly altitudeAccuracyM?: number | undefined;
   /**
+   * The camera's height above the floor plane, metres — its `y` in the WebXR
+   * `local-floor` reference space.
+   *
+   * **The only quantity on this readout that answers "how high am I holding
+   * the phone".** `gps-dem` cannot: it is GPS altitude minus DEM and no pose
+   * reaches it. `alt - worldBaselineY` cannot either: `alt` carries the same
+   * +/-10-20 m GNSS vertical noise, and `worldBaselineY` is the AR ORIGIN, which
+   * moves only when the alignment is re-solved.
+   *
+   * Absent before the first pose. A zero here would claim the phone is on the
+   * ground.
+   */
+  readonly cameraHeightM?: number | undefined;
+  /**
    * The DEM height under the user, **ellipsoidal** metres (DEC-H1).
    *
    * Already comparable to {@link altitudeM} with no conversion at the call
@@ -114,9 +166,10 @@ export interface ArMeasurements {
    */
   readonly demStats?:
     | {
-        readonly primaryAnswered: number;
-        readonly fallbackAnswered: number;
-        readonly unanswered: number;
+        /** `sourceId` of the source the CURRENT field came from. */
+        readonly servedBy: string;
+        /** How many batches have been upgraded to the preferred source. */
+        readonly upgrades: number;
       }
     | undefined;
   /**
@@ -191,6 +244,29 @@ export interface ArMeasurements {
     | { readonly lat: number; readonly lng: number }
     | undefined;
   /**
+   * Where the ALIGNMENT thinks the user is — the camera's world position in the
+   * scene root's NUE frame, converted back to lat/lng (J7, DEC-J9).
+   *
+   * **The counterpart to {@link position}, and the reason that one's `raw` label
+   * finally means something.** Two consecutive sessions asked whether `raw gps`
+   * was raw or fused; the word only carries information when there is something
+   * beside it that is not raw.
+   *
+   * **NOT the more trustworthy of the two, and the readout must not imply it
+   * is.** It inherits whatever the alignment does — `worldBaselineY` is on this
+   * readout precisely because the fourteenth-session plan predicted that term
+   * would visibly jump. Showing it is what makes the jump measurable; it is not
+   * a claim that it is steady.
+   *
+   * Absent until an alignment exists. `ar-mode.ts` guards on the world group's
+   * matrix not being identity, exactly as `worldBaselineY` and
+   * `fusedBearingDeg` do — an identity matrix yields a perfectly plausible
+   * coordinate that means "nothing has been aligned yet".
+   */
+  readonly fusedPosition?:
+    | { readonly lat: number; readonly lng: number }
+    | undefined;
+  /**
    * How long ago the last fix arrived, milliseconds.
    *
    * A stale fix and a fresh one are **indistinguishable** on the rest of the
@@ -262,6 +338,19 @@ export function describeArMeasurements(
   options: ArReadoutOptions = {},
 ): readonly string[] {
   const lines: string[] = [];
+  /**
+   * The two height terms, held rather than pushed so they can share a line.
+   *
+   * They are read together or not at all — `alt` is what GPS reported and
+   * `world floor` is where the alignment put the ground, and the interesting
+   * quantity is the relationship between them. Separate lines made a reader do
+   * the pairing by eye every time (Q7).
+   */
+  let altitude = "";
+  let worldFloor = "";
+  /** The position-quality pair, held for the same reason as the height pair. */
+  let gps = "";
+  let anchor = "";
   const expanded = options.expanded === true;
   /**
    * Push a line only when the readout is expanded.
@@ -273,12 +362,21 @@ export function describeArMeasurements(
     if (expanded) lines.push(line);
   };
 
+  // PAIRED, NOT LISTED (Q7). The two render-cost numbers answer one question —
+  // "is this frame affordable" — and on a phone each occupied a whole line of a
+  // readout that is already tall. The field report asked for them side by side.
+  //
+  // Joined here rather than by a later width-driven merge pass: which lines
+  // belong together is semantic, and an auto-merge would pair whatever happened
+  // to be adjacent. `pair` also keeps either half usable alone, which matters
+  // because fps is live from the first frame while the draw cost only appears
+  // once something has rendered — an all-or-nothing group would blank a number
+  // that is already known.
   const cost = describeDrawCost(measurements.drawCost);
-  if (cost !== "") lines.push(cost);
-
-  if (isUsable(measurements.fps)) {
-    lines.push(`${Math.round(measurements.fps)} fps`);
-  }
+  const fps = isUsable(measurements.fps)
+    ? `${Math.round(measurements.fps)} fps`
+    : "";
+  lines.push(...pair(cost, fps));
 
   if (isUsable(measurements.fixAccuracyM)) {
     // ONE DECIMAL BELOW 10 m, none above. The interesting distinction near the
@@ -288,7 +386,11 @@ export function describeArMeasurements(
       measurements.fixAccuracyM < 10
         ? measurements.fixAccuracyM.toFixed(1)
         : Math.round(measurements.fixAccuracyM).toString();
-    lines.push(`fix ±${accuracy} m`);
+    // `gps`, NOT `fix` (H7). Two different lines both began with `fix` — this
+    // one is a horizontal accuracy, the other an age — so a glance at the
+    // readout had to parse the rest of the line to know which quantity it was
+    // looking at. They now name different things.
+    gps = `gps ±${accuracy} m`;
   }
 
   if (isUsable(measurements.metresFromAnchor)) {
@@ -299,8 +401,23 @@ export function describeArMeasurements(
       measurements.metresFromAnchor < 1000
         ? `${Math.round(measurements.metresFromAnchor)} m`
         : `${(measurements.metresFromAnchor / 1000).toFixed(1)} km`;
-    lines.push(`${distance} from anchor`);
+    anchor = `${distance} from anchor`;
   }
+
+  // PAIRED, NOT LISTED (r543): "GPS 7 Meter, 0 Meter from Anchor, die beiden
+  // sollten in eine Zeile." Both answer one question -- how well is the
+  // position known -- and each took a whole line of a readout that is already
+  // tall on a phone. Same reasoning as the render-cost pair above, and the same
+  // `pair` helper, so either half stays usable alone: the accuracy is live from
+  // the first fix while the anchor distance only exists once a session has one.
+  lines.push(...pair(gps, anchor));
+
+  // THE DEM'S OWN STATE FIRST, because everything below depends on whether it
+  // loaded at all. `false` is a claim; `undefined` is only "not reported".
+  //
+  // HOISTED ABOVE THE ALTITUDE LINE at r543: the residual is now folded into
+  // that line, so its DEM guard has to be known before the line is built.
+  const demFailed = measurements.terrainHasData === false;
 
   // SIGNED, like the baseline below and NOT filtered through `isUsable`, whose
   // `>= 0` is right for an accuracy and wrong here: Schiphol, the Dead Sea and
@@ -310,14 +427,46 @@ export function describeArMeasurements(
     measurements.altitudeM !== undefined &&
     Number.isFinite(measurements.altitudeM)
   ) {
-    // The accuracy is appended only when it is itself usable. Half a line is
-    // better than none: vertical accuracy is optional in the Geolocation API and
-    // commonly absent, and omitting the altitude because its error bar is
-    // missing would hide the number the session is about.
-    const accuracy = isUsable(measurements.altitudeAccuracyM)
-      ? ` ±${measurements.altitudeAccuracyM.toFixed(1)} m`
-      : "";
-    lines.push(`alt ${measurements.altitudeM.toFixed(1)} m${accuracy}`);
+    // THE VERTICAL ACCURACY IS NO LONGER ON THIS LINE (J6, DEC-J6). It moved to
+    // its own expanded-only line below.
+    //
+    // WHY IT HAD TO MOVE. `alt` and `world floor` have been PAIRED since Q7 —
+    // the code has always asked `pair()` to merge them — and the fifteenth
+    // session still reported two lines, because `pair()` declines when the
+    // merged string would wrap. With the accuracy present the ordinary case is
+    // `alt 105.3 m ±3.5 m (+0.5)` (25) + ` · ` + `world floor 0.42 m` (18) =
+    // 46 against a 40-character budget. Phones routinely report
+    // `altitudeAccuracy`, so the merge was declining in the NORMAL case rather
+    // than an extreme one, and no amount of pairing logic could have fixed it.
+    //
+    // THE ALTERNATIVE WAS RENAMING `world floor` TO `floor`, which saves the
+    // same six characters and was rejected: a `floor distance` line already
+    // exists and means something else entirely (how high the phone is held).
+    // Two lines starting with `floor` is precisely the confusion the last three
+    // renames of this readout were removing.
+    // THE RESIDUAL, IN PARENTHESES, INSTEAD OF ITS OWN `gps-dem` LINE (r543).
+    //
+    // "GPS Dem habe ich keine Ahnung was das sein soll ... das könnte man noch
+    // in die Zeile mit dazu packen und dann einfach quasi in Klammern +0,5
+    // irgendwie statt dass man da GPS Dem schreibt, was sowieso kein Mensch
+    // versteht." The reporter also guessed correctly what it relates to, which
+    // is the argument for moving it rather than deleting it: it belongs beside
+    // the altitude it is derived from.
+    //
+    // THE NUMBER STAYS, ONLY THE LABEL GOES, and that distinction is load-
+    // bearing. This is `altitudeM - terrainHeightM`, and its SIGN separates the
+    // two filed causes that need opposite fixes -- a diagnostic the round-four
+    // plan relies on. Dropping the value to satisfy "nobody understands it"
+    // would answer a readability complaint by removing evidence.
+    //
+    // Guarded on the DEM exactly as the old line was: `heightfieldFrom` samples
+    // FLAT ZERO when `hasData` is false, so an unguarded residual would render
+    // a confident `(+105.5)` out of a failed terrain load.
+    const residual =
+      !demFailed && isSignedReading(measurements.terrainHeightM)
+        ? ` (${signed(measurements.altitudeM - measurements.terrainHeightM)})`
+        : "";
+    altitude = `alt ${measurements.altitudeM.toFixed(1)} m${residual}`;
   }
 
   if (
@@ -332,12 +481,36 @@ export function describeArMeasurements(
     // Centimetres, because the question is whether it JUMPS. A metre of drift
     // over a walk is expected; ten centimetres between two glances is not, and
     // whole metres would hide it.
-    lines.push(`baseline ${measurements.worldBaselineY.toFixed(2)} m`);
+    // `world floor`, NOT `baseline` (H7). "Baseline" named nothing a reader
+    // could picture; this is the fusion's estimate of where the ground plane
+    // sits, and it is the AR ORIGIN rather than anything about the camera.
+    worldFloor = `world floor ${measurements.worldBaselineY.toFixed(2)} m`;
   }
 
-  // THE DEM'S OWN STATE FIRST, because everything below depends on whether it
-  // loaded at all. `false` is a claim; `undefined` is only "not reported".
-  const demFailed = measurements.terrainHasData === false;
+  // Emitted here, at the point the second half becomes known, so the height
+  // pair keeps its place in the readout's order (Q7).
+  lines.push(...pair(altitude, worldFloor));
+
+  // THE VERTICAL ACCURACY, on its own expanded-only line (DEC-J6).
+  //
+  // MOVED, NOT DROPPED. It is the error bar on the altitude above and the only
+  // thing that says whether the residual beside it is worth reading — a ±0.5 m
+  // residual under a ±30 m fix is noise. It simply stops competing for the
+  // collapsed line's 40 characters.
+  //
+  // NAMED `alt accuracy` rather than left as a bare `±3.5 m`: on its own line
+  // the symbol has nothing to qualify, and this readout's whole recent history
+  // is labels that named an operand instead of the quantity.
+  //
+  // EMITTED AFTER THE PAIR, not where the altitude string is built. The height
+  // pair is HELD and pushed here, so pushing this at construction time put the
+  // error bar ABOVE the number it qualifies.
+  if (isUsable(measurements.altitudeAccuracyM)) {
+    pushExpanded(
+      `alt accuracy ±${measurements.altitudeAccuracyM.toFixed(1)} m`,
+    );
+  }
+
   if (demFailed) {
     // COLLAPSED TOO. Without the DEM the ground is flat zero, so every building
     // stands at the wrong height — a silent failure that the render cannot
@@ -361,17 +534,45 @@ export function describeArMeasurements(
     );
   }
 
-  // THE LINE THE READOUT EXISTS FOR (DEC-H1/H5). Chest height should read about
-  // +1.5 m; a steady +10 m is the reported symptom, and its SIGN separates the
-  // two filed causes that need opposite fixes. Always shown, never expanded-only.
-  if (terrainUsable && isSignedReading(measurements.altitudeM)) {
-    const residual = measurements.altitudeM - measurements.terrainHeightM;
-    lines.push(`above terrain ${signed(residual)} m`);
+  // THE `gps-dem` LINE IS GONE, folded into the altitude line above (r543).
+  //
+  // Its history is worth keeping because it is a chain of the same mistake. It
+  // was called `above terrain`, which reads as "how high the phone is above the
+  // ground" -- a number it is not and cannot be: no pose reaches this module at
+  // all, so raising the phone cannot move it. Documentation claiming "chest
+  // height reads about +1.5 m" was false in five places, one of them a test
+  // NAME. Renaming it to name its operands fixed the falsehood and left it
+  // unreadable, which is what r543 reported. The real holding height is the
+  // `floor distance` line below.
+
+  // THE HONEST HOLDING HEIGHT (DEC-Y5), which already existed as a computed
+  // value and was discarded one line from here: the camera's `y` in the
+  // `local-floor` reference space, whose zero is the floor plane. Unlike
+  // `gps-dem` it RESPONDS to raising the phone, and unlike `alt - baseline` it
+  // carries no GNSS vertical noise — `baseline` is the AR ORIGIN, not the
+  // camera, and moves only when the alignment is re-solved.
+  //
+  // Centimetres, because the question is "is this about 1.5 m or about 15",
+  // and absent rather than zero before the first pose: `camera 0.00 m` would
+  // claim the phone is lying on the ground.
+  if (isSignedReading(measurements.cameraHeightM)) {
+    // `floor distance`, NOT `camera` (r543). "Camera ist die Höhe vom Boden.
+    // Camera könnte man dann halt Floor Distance stattdessen schreiben, das ist
+    // wahrscheinlich eindeutiger." The old label named the SENSOR; the reader
+    // needs the QUANTITY, and `camera 1.18 m` reads as a property of the camera
+    // rather than as a distance to the floor.
+    lines.push(`floor distance ${measurements.cameraHeightM.toFixed(2)} m`);
   }
 
-  // THE PAIRED LINE, always visible like the residual above: `above terrain`
-  // is untouched by the offset, this is the estimator's view, and their
-  // difference is the fused-vertical error, live. Absent while the estimator
+  // THE PAIRED LINE. It used to say "always visible like the residual above,
+  // `above terrain` is untouched by the offset" -- naming two things that no
+  // longer exist where it claimed: `above terrain` was renamed two rounds ago,
+  // and the residual moved INTO the altitude line at r543. Cold review caught
+  // the stale wording.
+  //
+  // What it is about: the altitude line's residual is GPS-minus-DEM and is
+  // untouched by the estimator's offset; THIS line is the estimator's own view,
+  // and the difference between the two is the fused-vertical error, live. Absent while the estimator
   // publishes nothing — a zero here would claim measured agreement.
   if (isSignedReading(measurements.autoOffsetM)) {
     // THE STATE TAGS, in the order a reader needs them: how good the number
@@ -424,9 +625,9 @@ export function describeArMeasurements(
     if (measurements.fixAgeMs > STALE_FIX_MS) {
       // COLLAPSED TOO — see `pushExpanded`. A fix this old makes every other
       // number on the readout describe somewhere the user has left.
-      lines.push(`fix ${seconds} s ago — STALE`);
+      lines.push(`gps age ${seconds} s — STALE`);
     } else {
-      pushExpanded(`fix ${seconds} s ago`);
+      pushExpanded(`gps age ${seconds} s`);
     }
   }
 
@@ -434,7 +635,10 @@ export function describeArMeasurements(
     // WHOLE DEGREES. The comparison this exists for — fused against the
     // library's compass bearing — is a tens-of-degrees question, and a decimal
     // reads as precision the alignment does not have.
-    pushExpanded(`fused ${Math.round(measurements.fusedBearingDeg)}°`);
+    // NAMED AS A HEADING (H7). `fused 214°` did not say what was fused or what
+    // the degrees measure; the comparison this line exists for is against the
+    // compass, so it must announce itself as the same kind of quantity.
+    pushExpanded(`heading ${Math.round(measurements.fusedBearingDeg)}° fused`);
   }
 
   const position = measurements.position;
@@ -445,7 +649,41 @@ export function describeArMeasurements(
   ) {
     // SIX DECIMALS — about 0.1 m, finer than any fix, and the precision an
     // external elevation service expects to be handed back.
-    pushExpanded(`${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`);
+    // LABELLED RAW (DEC-Y2), and the label is the opposite of what H7 asked
+    // for. The session suggested calling it "fused GPS"; it is the last fix
+    // straight from the Geolocation API, untouched by the alignment. Renaming
+    // raw data as fused would ADD a false claim in the round whose purpose is
+    // removing them.
+    pushExpanded(
+      `raw gps ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}`,
+    );
+  }
+
+  // THE FUSED POSITION, DIRECTLY BENEATH THE RAW ONE (J7, DEC-J9).
+  //
+  // ADJACENCY IS THE FEATURE. The fifteenth session asked, for the second time
+  // in three sessions, whether `raw gps` was raw or already fused — and offered
+  // to drop the word `raw` if it was. It is not, and dropping it would restore
+  // exactly the ambiguity DEC-Y2 refused. What was actually missing is the
+  // contrast: `raw` only carries information when something that is NOT raw sits
+  // next to it, and the difference between the two IS the alignment's error,
+  // readable at a glance.
+  //
+  // NOT PAIRED onto one line: `raw gps 50.941234, 6.958765` is 27 characters and
+  // the merged pair would be 59, well over the budget — `pair()` would decline
+  // and the two would end up on separate lines anyway, having also lost the
+  // alignment that makes two coordinate strings comparable by eye.
+  //
+  // SIX DECIMALS, matching the raw line, because the comparison is between them.
+  // Independent of the raw line's presence: they come from different sources and
+  // an all-or-nothing group would blank a live number waiting for a partner.
+  const fused = measurements.fusedPosition;
+  if (
+    fused !== undefined &&
+    Number.isFinite(fused.lat) &&
+    Number.isFinite(fused.lng)
+  ) {
+    pushExpanded(`fused gps ${fused.lat.toFixed(6)}, ${fused.lng.toFixed(6)}`);
   }
 
   return lines;
@@ -480,15 +718,8 @@ function demServingLabel(
   sourceId: string,
   stats: ArMeasurements["demStats"],
 ): string {
-  const split = sourceId.indexOf("+");
-  if (stats === undefined || split <= 0) return sourceId;
-  const answered = stats.primaryAnswered + stats.fallbackAnswered;
-  if (answered <= 0) return sourceId;
-  if (stats.primaryAnswered === 0) {
-    return `${sourceId.slice(split + 1)} (fallback)`;
-  }
-  const pct = Math.round((stats.primaryAnswered / answered) * 100);
-  return `${sourceId.slice(0, split)} ${pct}%`;
+  if (stats === undefined || stats.servedBy === "none") return sourceId;
+  return stats.servedBy;
 }
 
 /**

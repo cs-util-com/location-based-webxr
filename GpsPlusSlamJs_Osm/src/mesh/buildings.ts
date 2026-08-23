@@ -34,6 +34,7 @@ import type { EnuFrame, EnuPoint } from "./enu.js";
 import { ringToEnu } from "./enu.js";
 import { isBelowSurface } from "../model/below-surface.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
+import { buildHostGrid } from "./host-grid.js";
 import type { PlanarPoint } from "../spatial/point-in-ring.js";
 import { isTallStructure, tallStructureHeightM } from "./tall-structures.js";
 import {
@@ -511,9 +512,21 @@ function assignPartsToOutlines<F extends PlanarFootprint>(
     };
   });
 
+  // INDEXED, NOT SCANNED (2026-08-22). `smallestContaining` used to walk every
+  // outline for every part, so the work was `parts × outlines` and both grow
+  // with the working set — the same cross product `annotatePoiHosts` had, found
+  // by the same profile and answered by the same index.
+  //
+  // SAFE HERE FOR A STRONGER REASON THAN THERE. The host join depends on
+  // candidate ORDER (first enabled host wins), so its index has to promise
+  // ascending output. This rule does not: it picks by smallest area with an
+  // explicit key tie-break, so it is order-independent by construction and only
+  // needs the grid's superset guarantee.
+  const grid = buildHostGrid(indexed.map((outline) => outline.bounds));
+
   for (const part of parts) {
     const point = representativePoint(part.rings[0] ?? []);
-    const best = smallestContaining(indexed, point);
+    const best = smallestContaining(indexed, grid.candidatesAt(point), point);
     if (best === undefined) continue;
     claimed.add(best);
     const list = partsByOutline.get(best) ?? [];
@@ -523,15 +536,24 @@ function assignPartsToOutlines<F extends PlanarFootprint>(
   return { claimed, partsByOutline };
 }
 
-/** The key of the smallest indexed outline containing `point`, ties on key. */
+/**
+ * The key of the smallest indexed outline containing `point`, ties on key.
+ *
+ * `candidates` are indices into `indexed` — whatever the grid says could
+ * contain the point. It is a SUPERSET, so the bounds test below is still run:
+ * the index removes the outlines on the other side of the city, not the ones
+ * that merely share a cell.
+ */
 function smallestContaining(
   indexed: readonly IndexedOutline[],
+  candidates: readonly number[],
   point: PlanarPoint,
 ): OsmFeatureKey | undefined {
   let bestKey: OsmFeatureKey | undefined;
   let bestArea = Infinity;
 
-  for (const candidate of indexed) {
+  for (const index of candidates) {
+    const candidate = indexed[index] as IndexedOutline;
     if (!withinBounds(candidate.bounds, point)) continue;
     // A strictly larger area cannot win, and an equal one only wins on the key
     // tie-break — so in neither case is the polygon test worth running.

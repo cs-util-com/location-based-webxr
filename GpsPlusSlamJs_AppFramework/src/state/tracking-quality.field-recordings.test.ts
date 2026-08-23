@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadActionsFromZip, type ZipActionEntry } from '../storage/zip-reader';
 import { createSlamAppStore, type SlamAppStore } from './create-slam-app-store';
@@ -364,13 +364,50 @@ describe.runIf(fixturesAvailable)(
 );
 
 describe.runIf(!fixturesAvailable)(
-  'tracking-quality field recordings (§3) — fixtures missing',
+  'tracking-quality field recordings (§3) — fixtures absent on this machine',
   () => {
-    it('skipped — recordings not present at expected paths', () => {
-      // Why: tests must skip gracefully when the (gitignored) recordings
-      // are not in the workspace. They live outside the npm-published
-      // package — see §3.1 of the user-feedback doc.
-      expect(true).toBe(true);
+    it('looked in the documented sibling-checkout location, so absence means absence', () => {
+      // Why this test matters: every real assertion in this file is `runIf`-gated
+      // on `fixturesAvailable`, so where the recordings are missing the suite
+      // simply vanishes and the run is green. This branch used to be
+      // `expect(true).toBe(true)`, which made two very different situations
+      // produce the identical green line: "the recordings are not on this
+      // machine" and "the path walk broke, so every recording LOOKS missing".
+      // The second is a live hazard — `GPS_ROOT` is a fixed `../../../..` walk
+      // from this file's own location, which any move of the file silently
+      // invalidates, and this suite is the only defence of findings F1/F4/F6.
+      //
+      // So assert the one thing that is still checkable with no fixtures: that
+      // we looked where the docs say the recordings live. Deliberately NOT
+      // asserting that the sibling checkout is absent — a partial checkout with
+      // the repo but without `TestDataJs/` is a legitimate setup, and failing
+      // on it would trade a silent pass for a false alarm.
+      //
+      // The recordings are COMMITTED, not gitignored as an earlier version of
+      // this comment claimed; they live in the private sibling checkout, which
+      // public CI does not have. See §3.1 of the user-feedback doc.
+      // Pin the DEPTH of the `../../../..` walk, not just the shape of its
+      // result. The first version of this test asserted that TEST_DATA_ROOT
+      // ends with `/gps-plus-slam`, and a probe that shortened the walk by one
+      // level still passed — the wrong root simply produced
+      // `…/GpsPlusSlamJs_AppFramework/gps-plus-slam`, which ends the same way.
+      // The distinguishing fact is that a REPO directory must sit between
+      // GPS_ROOT and this package.
+      expect(isAbsolute(TEST_DATA_ROOT)).toBe(true);
+      const fromRoot = relative(GPS_ROOT, __dirname).split(sep);
+      // <gpsRoot>/<this checkout>/GpsPlusSlamJs_AppFramework/src/state
+      expect(fromRoot).toHaveLength(4);
+      expect(fromRoot[1]).toBe('GpsPlusSlamJs_AppFramework');
+      expect(fromRoot.slice(2)).toEqual(['src', 'state']);
+
+      // Both fixture roots (`TestDataJs/` and `TestDataJs-Other/`) hang off
+      // TEST_DATA_ROOT, so assert against it rather than a literal that would
+      // match one of them by accident.
+      for (const fixture of [OUTDOOR, INDOOR]) {
+        expect(fixture.path.startsWith(TEST_DATA_ROOT + sep)).toBe(true);
+        expect(fixture.path.endsWith('.zip')).toBe(true);
+      }
+      expect(OUTDOOR.path).not.toBe(INDOOR.path);
     });
   }
 );

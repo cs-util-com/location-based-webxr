@@ -41,6 +41,8 @@ import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
+import { createQuestBeacons } from "./quest-beacon.js";
+import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
 import { buildUndergroundLines } from "./underground-lines.js";
 import type { MeshLayerContext } from "./mesh-layers.js";
@@ -123,6 +125,17 @@ export const TERRAIN_SPACING_M = 12;
 export const FAR_PLANE_M = 2400;
 
 /**
+ * The scene camera's VERTICAL field of view, degrees (three.js convention).
+ *
+ * Exported because `map-zoom-to-camera.ts` needs it to convert a map zoom into
+ * a camera distance, and a second literal `55` there would silently stop
+ * agreeing with this one the first time the FOV is tuned — the two views would
+ * then disagree about how much ground is on screen, which is the exact thing
+ * that conversion exists to make them agree about.
+ */
+export const CAMERA_VFOV_DEG = 55;
+
+/**
  * Where the ground plane sits, given the window the terrain was sampled in.
  *
  * ENU `(x, y)` becomes scene `(x, 0, -y)` — the same axis convention every other
@@ -151,7 +164,24 @@ export function groundPositionFor(centreEnu: {
  * Two thirds of the way out, so the fade is gradual enough to read as distance
  * rather than as a wall — the whole reason the far plane can be lowered at all.
  */
-export const FOG_NEAR_M = FAR_PLANE_M * 0.66;
+/**
+ * Where the haze starts, as a fraction of the far plane.
+ *
+ * A RATIO RATHER THAN A SECOND DISTANCE, and the shape is deliberate.
+ * `ar-scene-environment.ts` records removing exactly the alternative: "This was
+ * two constants with `AR_FOG_FAR_M = AR_CAMERA_FAR_M` and a test asserting they
+ * were equal -- a test that could not fail. ... One constant makes the invariant
+ * unbreakable rather than merely watched." The same argument applies here, and
+ * it is what lets `setFarPlane` move both with nothing left to keep in step.
+ *
+ * NOT EXPORTED: nothing outside this module reads it, and the workspace
+ * dead-code check rejects an export with no reader -- as it did for
+ * `ENTRY_GROUND_COLOUR` earlier on this branch. `FOG_NEAR_M` below is the
+ * exported face of the same relationship.
+ */
+const FOG_NEAR_RATIO = 0.66;
+
+export const FOG_NEAR_M = FAR_PLANE_M * FOG_NEAR_RATIO;
 
 /**
  * Upper bound on plane subdivisions per axis.
@@ -297,6 +327,17 @@ export class BuildingView {
    * named rather than left implicit.
    */
   private readonly content = new SceneContent(this.scene);
+
+  /**
+   * The 3D quest markers (N6, DEC-K4).
+   *
+   * ON THE CONTENT ROOT, not the scene: content added straight to the scene is
+   * left behind when AR starts, and a quest you can see on the desktop and not
+   * while walking to it is the wrong half of the feature. `attachTo` applies
+   * `DEMO_TO_NUE` and the ENU offset to the whole subtree, so the placements
+   * stay in demo coordinates and need no per-object conversion.
+   */
+  private readonly questBeacons = createQuestBeacons();
   private readonly camera: THREE.PerspectiveCamera;
   /**
    * Watches the CONTAINER, not the window (W1, finding R3-2).
@@ -556,6 +597,11 @@ export class BuildingView {
     );
 
     this.content.add(this.group);
+    // THE BEACONS JOIN THE CONTENT ROOT ONCE, HERE. An earlier version of this
+    // line landed inside `renderCells`, which attached them only when the cell
+    // grid happened to be rebuilt — so they were absent on a fresh view and the
+    // e2e caught it by measuring nothing when they were cleared.
+    this.content.add(this.questBeacons.root);
     // Ambient LOWERED from 0.55. Ambient light is flat by definition — it adds the
     // same amount to every facet regardless of its normal — so it was actively
     // washing out the only cue that distinguishes one ground facet from the next.
@@ -588,7 +634,7 @@ export class BuildingView {
     // working set reaches ~128 m from the user, so a 2 km plane is mostly ground
     // no cell is ever scored on". **Every number in that argument had expired**:
     // the plane has been `TERRAIN_EXTENT_M * 2` since round 3, the working set
-    // reaches ~250 m (`SCORE_DISK_MAX_RADIUS = 4`), and the decision it defended
+    // reaches ~326 m (`SCORE_DISK_MAX_RADIUS = 6`), and the decision it defended
     // was reversed twice — first by DEC-R2-8, then by DEC-R5-3.
     //
     // The size is not a scoring question at all any more, and that is the useful
@@ -679,7 +725,12 @@ export class BuildingView {
     // 55° FOV is unchanged and is a different knob: the round-5 note said "field
     // of view" and then corrected itself to the far plane, which was the right
     // correction.
-    this.camera = new THREE.PerspectiveCamera(55, 1, 0.5, FAR_PLANE_M);
+    this.camera = new THREE.PerspectiveCamera(
+      CAMERA_VFOV_DEG,
+      1,
+      0.5,
+      FAR_PLANE_M,
+    );
     this.camera.position.set(140, 110, 140);
     this.camera.lookAt(0, 10, 0);
 
@@ -749,6 +800,83 @@ export class BuildingView {
       if (picked !== undefined) options.onPick?.(picked);
     };
     this.container.addEventListener("pointerup", this.onPointerDown);
+  }
+
+  /**
+   * Move how far the view draws (r541 Q9/Q10, owner decision 2026-08-21).
+   *
+   * **THE FOG MOVES WITH IT, and that is why this is a method rather than a
+   * setter on one field.** `THREE.Fog` is linear and is built with
+   * `far = FAR_PLANE_M`, so every fragment past it is already fully fog
+   * coloured. Raising the camera's `far` alone draws more geometry and shows
+   * the identical image -- a control that reports 'nothing changed' about the
+   * engine when it is only true of itself. Not news: `far-field.test.ts`
+   * already asserts the relationship and calls it 'the specific way raising
+   * the far plane alone goes wrong'.
+   *
+   * **THE GROUND PLANE DELIBERATELY DOES NOT MOVE.** Seeing empty scene past
+   * its edge is acceptable (owner, 2026-08-21). Seeing INVENTED terrain is
+   * not, and widening the plane past the height field is how that happens:
+   * `surfaceHeight` clamps its sample index per axis and the GPU path uses
+   * `ClampToEdgeWrapping`, so the edge profile extrudes outward as stripes
+   * that read as relief and are fabricated -- finding R2-9, named in
+   * `moveGroundTo`'s own comment. So this touches the camera and the fog and
+   * nothing else.
+   *
+   * **NO LONGER A DEBUG-ONLY INSTRUMENT (DEC-K2, 2026-08-22).** This used to
+   * say "a debug instrument, not a new default", and that `far-field.test.ts`
+   * pinned the shipped view. `main.ts` now CALLS this at boot with the dial's
+   * markup value, so the shipped view is whatever it applies. `FAR_PLANE_M` is
+   * still unchanged and passing it here still restores the 1x baseline exactly
+   * — that is the part that survived.
+   *
+   * Non-finite or non-positive input is ignored rather than applied: this
+   * number reaches the projection matrix, where a `NaN` renders nothing at all
+   * and raises no error -- which reads as 'the 3D view is empty' and is
+   * indistinguishable from half a dozen other causes.
+   */
+  /**
+   * Show a beacon for every held quest, or none at all.
+   *
+   * A PUBLIC METHOD BECAUSE `content` IS PRIVATE, and deliberately so — the
+   * AR content seam is guarded by source text in
+   * `building-view-content.test.ts`, and a caller reaching into the scene
+   * graph directly would route around that guard entirely.
+   *
+   * REPAINTS, because the demo has no permanent render loop (DEC-R3-9). A
+   * marker added between frames would appear only when something else
+   * happened to request one — which, on a still desktop view, can be never.
+   */
+  setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
+    this.questBeacons.set(placements);
+    this.requestFrame();
+  }
+
+  setFarPlane(farPlaneM: number): void {
+    if (!Number.isFinite(farPlaneM) || farPlaneM <= 0) return;
+    this.camera.far = farPlaneM;
+    this.camera.updateProjectionMatrix();
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.near = farPlaneM * FOG_NEAR_RATIO;
+      this.scene.fog.far = farPlaneM;
+    }
+  }
+
+  /**
+   * How far the view is currently drawing, metres -- read back from the CAMERA.
+   *
+   * Read back rather than remembered, so a readout painted from it reports what
+   * the projection matrix actually holds. One fed from the REQUESTED value
+   * would keep saying 24000 while a `setFarPlane` that had stopped writing the
+   * camera did nothing at all.
+   */
+  farPlaneM(): number {
+    return this.camera.far;
+  }
+
+  /** Where the haze currently starts, metres -- read back from the FOG. */
+  fogNearM(): number {
+    return this.scene.fog instanceof THREE.Fog ? this.scene.fog.near : 0;
   }
 
   /**
@@ -978,7 +1106,7 @@ export class BuildingView {
    * transform, so they are applied here and cost nothing. The geometry axes —
    * real extrusion and score-as-height — change the vertex buffers, which are
    * built in the worker; the caller republishes for those and NOT for these,
-   * because a republish over ~2 989 cells on every keypress would make the
+   * because a republish over ~6 223 cells on every keypress would make the
    * hotkey feel broken.
    *
    * The preset is HELD as well as applied: the grid mesh is replaced on every
@@ -1614,11 +1742,18 @@ export class BuildingView {
   }
 
   /**
-   * Points the camera back at THE USER, by translation only (W11).
+   * Points the camera at an ENU POINT, by translation only (W11).
    *
    * Called when the user MOVES — a map click, the locate button or the location
    * picker. Without it the chosen place is only on screen while the camera has
    * never been panned.
+   *
+   * **AND SINCE DEC-L4 (2026-08-23) IT HAS A CALLER THAT IS NOT THE USER'S
+   * POSITION**: dragging the 2D map recentres on the map's new CENTRE, which is
+   * why the name of the parameter is the only thing here that still says
+   * "user". The behaviour is identical either way — this function has never
+   * known what the point means — but a reader looking for "where does the
+   * camera get moved from" needs both call sites, not one.
    *
    * **THE TARGET USED TO BE THE ORIGIN, and that stopped being right.** The ENU
    * frame was rebuilt at the user's position on every publish, so the origin and
@@ -1813,6 +1948,19 @@ export class BuildingView {
   }
 
   /** Where the camera is aimed, and from how far away. */
+  /**
+   * The camera's height above the scene origin, metres.
+   *
+   * **Read, not derived.** `cameraView().distanceM` plus the scene's nominal
+   * 29° tilt would give an estimate, but `MapControls` lets the user orbit, so
+   * that tilt is a starting value rather than an invariant — and the AR entry
+   * descent starts from this number, so an estimate would put the session at a
+   * height the user was never actually at.
+   */
+  cameraHeightM(): number {
+    return this.camera.position.y;
+  }
+
   cameraView(): CameraView {
     const { target } = this.controls;
     return {
@@ -2048,6 +2196,12 @@ export class BuildingView {
   }
 
   dispose(): void {
+    // THE BEACONS OWN THREE GEOMETRIES AND A MATERIAL, and nothing else frees
+    // them: they hang off `this.content`, so the scene-level teardown below
+    // never sees them, and `quest-beacon.test.ts` exercises `dispose()` in
+    // isolation — which is exactly why the missing call here stayed green.
+    // Caught by the PR #342 review.
+    this.questBeacons.dispose();
     // Cancelled FIRST: a frame already queued would otherwise fire against a
     // disposed context, which crashes rather than leaks.
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);

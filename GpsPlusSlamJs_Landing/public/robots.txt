@@ -1,0 +1,9 @@
+# Everything here is public and meant to be found.
+User-agent: *
+Allow: /
+
+# The blog's sitemap. Without this line the only inbound path to /blog/ is the
+# footer link on the landing page, and a canonical copy nothing points at loses
+# the search result to the copy GitHub hosts — which is the whole reason the
+# canonical link exists.
+Sitemap: https://gps.csutil.com/blog/sitemap.xml

@@ -104,16 +104,43 @@ describe("legendModel — the ramp", () => {
     expect(model.description).toContain("1.4e12");
   });
 
-  it("abbreviates the empty-state message too, so no path prints the long number", () => {
-    // `emptyMessage` names the threshold, and a large threshold off the rule
-    // sheet would otherwise reproduce the defect on the one screen where there
-    // is nothing else to look at.
+  it("spells the RAMP'S TOP out, which is what the owner reported", () => {
+    // THE HEADLINE OF DEC-U8, and it was asserted nowhere. Every other test in
+    // this file happens to use a value where the two formatters agree, so
+    // reverting `legend-model.ts` to `formatScore` passed the entire suite
+    // while undoing the owner's request on the surface they reported it from.
+    const model = legendModel(fixedScale(1), "walkable", false, {
+      observedMax: 512.4,
+      aboveThresholdCount: 3,
+    });
+
+    expect(model.maxLabel).toBe("10 000");
+    expect(model.maxLabel).not.toContain("e4");
+  });
+
+  it("spells a readable threshold out in the empty-state message", () => {
+    // DEC-U8, 2026-08-19. This used to assert `2.5e5`, because every endpoint
+    // was abbreviated alike. The owner asked for the ramp's numbers to be
+    // written out, and 250 000 is comfortably readable — the exponential form
+    // was protecting against twelve digits, not six.
+    //
     // EMPTY IS NOW A COUNT (DEC-H7). The scale can no longer be degenerate, so
     // nothing-here has to be said by the data rather than inferred from a
     // collapsed ramp.
     const model = legendModel(fixedScale(250000), "x", false, NOTHING_HERE);
-    expect(model.emptyMessage).toContain("2.5e5");
-    expect(model.emptyMessage).not.toContain("250000");
+    expect(model.emptyMessage).toContain("250 000");
+    expect(model.emptyMessage).not.toContain("2.5e5");
+  });
+
+  it("STILL abbreviates a threshold that would print without bound", () => {
+    // The half of DEC-R6b-6 that survives DEC-U8, and the reason the spell-out
+    // is a threshold rather than unconditional. `scaleFor` falls back to
+    // `threshold * 10` once a threshold reaches the cap, so a rule table with a
+    // high threshold can put a ten-digit number on this label — which is the
+    // defect DEC-R6b-6 removed, on the one screen where there is nothing else
+    // to look at.
+    const model = legendModel(fixedScale(2.5e9), "x", false, NOTHING_HERE);
+    expect(model.emptyMessage).toContain("2.5e9");
   });
 
   it("reports what the DATA reaches, not just where the ramp ends", () => {

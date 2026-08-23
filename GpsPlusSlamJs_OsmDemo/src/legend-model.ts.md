@@ -69,3 +69,18 @@ model.bands.map((b) => b.label);
 - `legend-model.test.ts` — the category is named; the ends carry real numbers; a messy max is rounded; ramp swatches are distinct and ordered; `describeScale` survives as the description (DEC-13); a flat scale degrades to valid colours; bands appear only when asked, are exactly three, are mutually distinguishable, and the identity band is outline-only.
 - `classifyScore` is covered in `legend-model.test.ts`: the three sub-threshold cases at the default threshold of 1, the identity staying distinct when the threshold is raised above it, and totality over non-finite scores.
 - `legend-model.property.test.ts` — totality over hostile scales: no malformed colour, no `NaN`/`Infinity` label, category passed through verbatim, band count exactly `0` or `3`.
+
+## Spelled-out ramp endpoints (DEC-U8 — 2026-08-19)
+
+`minLabel`, `maxLabel` and `emptyMessage` are built with **`formatFixedScore`**;
+`observedLabel` keeps `formatScore`.
+
+The split is the decision: the ramp's endpoints come off a table constant and
+are worth reading as numbers, while the observed maximum comes from the data and
+genuinely reaches `1.7e11`, where a short form still earns its keep. See
+`heat-colours.ts.md` for why the spell-out is bounded rather than unconditional.
+
+**The collapsed header now hides the ramp and keeps the category name** (F3e,
+DEC-U7) — a CSS rule in `index.html`, not a model change. It is **not** a
+reversal of DEC-1, which requires a legend that NAMES the current category;
+`.legend-category` still does.

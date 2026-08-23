@@ -20,6 +20,128 @@ import {
   REPAINT,
 } from "./fixtures.js";
 
+/**
+ * The AR overlay's real DOM, built inside `#ar-root` with the production
+ * class names and the production content lengths.
+ *
+ * EXTRACTED SO IT CAN BE MEASURED AT MORE THAN ONE VIEWPORT, which is the
+ * gap the r541 field report walked into: the layout test below did its
+ * arithmetic against "a 390 px phone" in the comments while running at the
+ * suite's 1280 px Desktop Chrome. A stack that fits a desktop and folds on a
+ * phone passed it, and the phone is the only device this overlay ships to.
+ */
+async function buildArOverlayFixture(page) {
+  await page.evaluate(() => {
+    const root = document.querySelector("#ar-root");
+    if (root === null) throw new Error("no #ar-root");
+    // THE FRAMEWORK'S CANVAS, first child and in flow, exactly as
+    // `webxr-session.ts` inserts it — `insertBefore(renderer.domElement,
+    // container.firstChild)`, with `setSize(innerWidth, innerHeight)` writing
+    // the inline dimensions. THIS is the child the first version of this
+    // fixture omitted, and omitting it is how a blocker passed a green gate:
+    // making `#ar-root` itself the flex column turned this canvas into an
+    // unshrinkable first item and pushed both controls a full viewport below
+    // the fold. A fixture missing the one child that breaks the layout is not
+    // a cheaper version of the real thing; it is a different thing.
+    const canvas = document.createElement("canvas");
+    canvas.style.display = "block";
+    canvas.style.width = "100vw";
+    canvas.style.height = "100vh";
+    root.append(canvas);
+
+    const stack = document.createElement("div");
+    stack.className = "ar-stack";
+    const hud = document.createElement("div");
+    hud.className = "ar-hud";
+    hud.textContent = "lat 50.9413\nlng 6.9580";
+    // The collapse toggle is part of the readout's real box (DEC-H2).
+    const toggle = document.createElement("button");
+    toggle.className = "ar-hud-toggle";
+    toggle.textContent = "more";
+    hud.append(toggle);
+    stack.append(hud);
+    root.append(stack);
+
+    // THE BOTTOM STACK (H6): elevation + slider + gear on one row, the
+    // compass readout on its own line beneath. Built with the production
+    // class names and the production content lengths, because the whole
+    // question this test answers is whether the real CSS fits them.
+    const bottom = document.createElement("div");
+    bottom.className = "ar-bottom";
+    const bottomRow = document.createElement("div");
+    bottomRow.className = "ar-bottom-row";
+
+    const elevation = document.createElement("div");
+    elevation.className = "ar-elevation";
+    const down = document.createElement("button");
+    down.className = "ar-elevation-button";
+    down.textContent = "−";
+    const value = document.createElement("span");
+    value.className = "ar-elevation-value";
+    value.textContent = "+0.0 m";
+    const up = document.createElement("button");
+    up.className = "ar-elevation-button";
+    up.textContent = "+";
+    elevation.append(down, value, up);
+
+    const gearWrap = document.createElement("div");
+    gearWrap.className = "ar-gear-wrap";
+    const gear = document.createElement("button");
+    gear.className = "ar-gear";
+    gear.textContent = "⚙";
+    gearWrap.append(gear);
+
+    bottomRow.append(elevation, gearWrap);
+    bottom.append(bottomRow);
+    root.append(bottom);
+  });
+
+  // THE COMPASS CONTROL IS THE REAL ONE (DEC-J12), not a hand-built copy.
+  //
+  // WHY THIS CHANGED. Everything above is a replica built with production class
+  // names, and the compass replica had ALREADY DRIFTED: it rendered
+  // "takes 15-30 fixes to express a change" (37 characters, ASCII hyphen)
+  // against the production string OF THAT DAY, "takes ~15–30 fixes to express"
+  // (29, en dash). The layout question this fixture exists to answer is whether
+  // the real CSS fits the real strings, and a replica that is eight characters
+  // too long answers a different question. J5 was about to widen that gap by
+  // editing the copy by hand — the exact drift the spec's own comment warned
+  // about.
+  //
+  // BOTH OF THOSE STRINGS ARE NOW HISTORY, which is the point: J5 shortened
+  // production again in this same branch, to "~15–30 fixes to show" (20). A
+  // replica would have needed a third hand-edit to keep up. This fixture did
+  // not, because it renders whatever `ar-compass-control.ts` renders.
+  //
+  // MOUNTED BY DYNAMIC IMPORT OF THE SOURCE MODULE, which needs NO
+  // production-visible export: the e2e runs against the Vite DEV server (see
+  // `playwright.config.js`'s `webServer`), so `/src/*.ts` is served and
+  // importable from the page. That is the whole reason DEC-J12's stop condition
+  // ("if it needs an export purely for a test, stop") was never reached.
+  //
+  // ⚠️ IT COUPLES THIS FIXTURE TO THE DEV SERVER. Pointed at a built preview,
+  // the import 404s and this throws — loudly, which is the right failure: a
+  // silent fallback to a replica is what this replaces.
+  //
+  // AND IT COSTS A KNIP ENTRY: `/src/...` is not node-resolvable from this
+  // file, so the root `check:deadcode` stage fails on it without the
+  // `ignoreUnresolved` line in the repo-root `knip.json` (reasoning in
+  // `knip.json.md`). Rename this module and BOTH places have to move.
+  await page.evaluate(async () => {
+    const bottom = document.querySelector("#ar-root .ar-bottom");
+    if (bottom === null) throw new Error("no .ar-bottom");
+    const module = await import("/src/ar-compass-control.ts");
+    const control = module.createArCompassControl({
+      root: bottom,
+      onChange: () => {},
+    });
+    control.attach();
+    // READY, because the two hint strings differ in length and the LONGER one
+    // is the steady state this layout has to hold.
+    control.setReady(true);
+  });
+}
+
 test.describe("the demo boots", () => {
   test("loads the rule table, draws a basemap, reports its scale, and says when it is still widening", async ({
     page,
@@ -319,7 +441,26 @@ test.describe("the location picker", () => {
     // the picker never running at all, which leaves the placeholder alone.
     const options = page.locator("#site option");
     await expect(options).not.toHaveCount(1);
-    await expect(options.first()).toHaveValue("");
+    // ASSERTED ON THE SELECT, NOT ON AN OPTION (2026-08-19). This line used to
+    // read `expect(options.first()).toHaveValue("")`, and an `<option>` is not
+    // an input, textarea or select — so it began failing with "Not an input
+    // element" the moment F3c unwrapped the picker from its `<label>`.
+    //
+    // WHY THE WRAPPER MADE IT PASS, since an earlier version of this comment
+    // recorded that as unexplained: Playwright's `inputValue` retargets with
+    // `follow-label`. For an element that is not itself a form control it takes
+    // `element.closest("label")` and uses that label's `.control` — so an
+    // `<option>` inside `<label>location <select id="site">…</label>` resolved
+    // to the SELECT, whose value is `""`. Removing the wrapper removed the
+    // retarget path. Recording a checkable mechanism as a mystery is worse than
+    // not mentioning it: it tells the next reader not to look.
+    //
+    // What the test actually needs to catch is the picker never running, which
+    // leaves the placeholder selected and alone. Both halves of that are
+    // asserted here: the select still rests on the placeholder, and the
+    // placeholder is the first option rather than a real place.
+    await expect(page.locator("#site")).toHaveValue("");
+    await expect(options.first()).toHaveText("Jump to City");
 
     /** Basemap tiles requested from the moment the choice is made. */
     const tilesAfter = [];
@@ -499,6 +640,118 @@ test.describe("the location picker", () => {
     expect(Math.abs(Number(back.get("clat")) - clat)).toBeLessThan(0.001);
     expect(Math.abs(Number(back.get("clng")) - clng)).toBeLessThan(0.001);
   });
+
+  test("dragging the 2D map carries the 3D camera with it (DEC-L4)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS: the seventeenth session asked for the two views to
+    // agree — "wenn man in der 2d Karte die Karte verschiebt, die Kamera in der
+    // 3d Szene an die gleiche Stelle springt" — and this is the wiring that
+    // makes them. The unit tests own the latch's logic; only an e2e can prove
+    // that a real Leaflet drag reaches `buildingView.recentre` through it.
+    //
+    // OBSERVED THROUGH THE CAMERA LINK, which is the only machine-readable
+    // statement of where the 3D view is looking (the camera matrix is not
+    // exposed, and `data-frames` counts repaints from half a dozen unrelated
+    // causes — it would rise whether or not the camera moved).
+    //
+    // TWO DRAGS IN THE SAME DIRECTION, not one: a single drag proves only that
+    // SOMETHING wrote the URL. Dragging the content west twice walks the map's
+    // centre east twice, so a camera that follows the centre must report a
+    // strictly increasing longitude. A camera that merely twitched would not.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const box = await page.locator("#map").boundingBox();
+    if (box === null) throw new Error("no map box");
+    const midX = box.x + box.width * 0.5;
+    const midY = box.y + box.height * 0.5;
+
+    const dragWest = async () => {
+      await page.mouse.move(midX, midY);
+      await page.mouse.down();
+      await page.mouse.move(midX - 120, midY, { steps: 12 });
+      await page.mouse.up();
+    };
+
+    // NOTHING WRITTEN YET, asserted rather than assumed. The two-drag
+    // comparison below only means what its comment says if the first reading is
+    // genuinely produced by the first drag — a `clng` already present at boot
+    // would make the poll resolve instantly on a pre-drag value, and the
+    // increase would then be satisfied by one drag. Nothing writes camera keys
+    // at boot today; this is what keeps that true.
+    expect(new URL(page.url()).searchParams.get("clng")).toBeNull();
+
+    await dragWest();
+    // AFTER THE THROTTLE, which is why this is a poll rather than a read: the
+    // camera writer samples rather than writing per frame.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("clng"))
+      .not.toBeNull();
+    const first = Number(new URL(page.url()).searchParams.get("clng"));
+    expect(Number.isFinite(first)).toBe(true);
+
+    await dragWest();
+    await expect
+      .poll(() => Number(new URL(page.url()).searchParams.get("clng")))
+      .toBeGreaterThan(first);
+  });
+
+  test("zooming the 2D map still KEEPS the 3D camera's target (DEC-L4)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS, and it is a regression guard rather than a new
+    // feature: `zoomend` dollies the camera without moving its target, on
+    // purpose — the two views' targets diverge all the time (a map click
+    // recentres the camera without moving the map, a 3D drag moves the target
+    // without moving the map), and a zoom must not silently reconcile them.
+    //
+    // The drag follow added by DEC-L4 can break exactly that, because Leaflet
+    // raises `moveend` for a ZOOM as well as for a pan. The first version of
+    // the latch armed on `zoomstart` to cover a drag that becomes a pinch, and
+    // that made every wheel or button zoom teleport the camera's target to the
+    // map centre. Found in the milestone review; this is the assertion that
+    // would have caught it.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // MAKE THE TWO DIVERGE FIRST, or the assertion is vacuous: with the camera
+    // target already at the map centre, a recentre onto that centre is a no-op
+    // and this test would pass against the defect.
+    //
+    // BY A MAP CLICK, NOT A 3D DRAG, and the difference matters. A click is one
+    // discrete move — it recentres the camera on the clicked point and leaves
+    // the map's centre alone — so the camera URL settles on a final value. A
+    // drag writes through a 400 ms throttle, so the baseline read back is a
+    // MID-drag sample, and the later write reports the drag's true endpoint: a
+    // difference of ~0.0006° that has nothing to do with zooming. The first
+    // version of this test read that as the defect.
+    await page.locator("#map").click({ position: { x: 90, y: 90 } });
+    await waitForRefresh(page);
+
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("clat"))
+      .not.toBeNull();
+    const before = new URL(page.url()).searchParams;
+    const clat = Number(before.get("clat"));
+    const clng = Number(before.get("clng"));
+
+    await page.locator(".leaflet-control-zoom-in").click();
+    // The dolly writes the camera URL again, so waiting for the DISTANCE to
+    // change is what proves the zoom was actually processed — polling for "the
+    // target did not change" would otherwise pass before anything happened.
+    await expect
+      .poll(() => Number(new URL(page.url()).searchParams.get("cdist")))
+      .toBeLessThan(Number(before.get("cdist")));
+
+    const after = new URL(page.url()).searchParams;
+    // Five decimals is ~1.1 m; 0.0005° is a ~55 m bound that still fails
+    // outright if the target was snapped to the map centre.
+    expect(Math.abs(Number(after.get("clat")) - clat)).toBeLessThan(0.0005);
+    expect(Math.abs(Number(after.get("clng")) - clng)).toBeLessThan(0.0005);
+  });
 });
 
 test.describe("the header", () => {
@@ -555,27 +808,71 @@ test.describe("the header", () => {
       const sceneAfter = await scene.boundingBox();
       if (after === null || sceneAfter === null) throw new Error("no boxes");
       expect(after.height).toBeLessThan(before.height);
-      // The height went to the 3D view rather than nowhere.
-      expect(sceneAfter.height).toBeGreaterThan(sceneBefore.height);
+      // WHAT COLLAPSING MEANS CHANGED WITH Q11, and this assertion said the old
+      // thing. It was "the height went to the 3D view rather than nowhere",
+      // asserting the scene grew — true while the header was a `body` grid ROW,
+      // because hiding it handed real height back.
+      //
+      // At this viewport the header now FLOATS over the views, so the scene is
+      // already the full 780 px before the tap and collapsing uncovers pixels
+      // rather than returning height. The old assertion could only fail, and it
+      // failed with `Received: 780` against a 780 px viewport — i.e. it broke
+      // BECAUSE the milestone succeeded.
+      //
+      // Updated rather than deleted: the property still worth pinning is that
+      // collapsing never COSTS the 3D view height, which is what would happen if
+      // the header were ever put back in flow while the rest of this layout
+      // assumed otherwise.
+      expect(sceneAfter.height).toBeGreaterThanOrEqual(sceneBefore.height);
+      const viewport = page.viewportSize();
+      if (viewport === null) throw new Error("no viewport");
+      expect(
+        sceneAfter.height,
+        "the scene should span the viewport once the header floats (Q11)",
+      ).toBeGreaterThanOrEqual(viewport.height - 1);
 
       // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4, narrowed by
       // DEC-R6b-5). Collapsing the category picker away would put a primary
-      // input two taps from reach, and hiding the legend would re-create the
-      // round-1 problem it was added to fix. The GROUND picker is no longer on
-      // this list — see the dedicated collapse step below for why.
+      // input two taps from reach. The GROUND picker is no longer on this list
+      // — see the dedicated collapse step below for why.
       await expect(page.locator("#category")).toBeVisible();
-      await expect(page.locator("#legend")).toBeVisible();
+
+      // AND THE LEGEND NOW GOES WITH IT (round three, G3, DEC-W4). This line
+      // asserted the opposite until the thirteenth session, on DEC-1's rule
+      // that SOMETHING on screen must name the active category — the legend was
+      // added for exactly that. What changed is not the rule but who satisfies
+      // it: the category `<select>` asserted one line above moved into the
+      // collapsed bar under its own caption, so it names the category AND can
+      // change it. The legend's last collapsed survivor was the word beside it,
+      // which is why the owner read it as a random "Battle Area".
+      //
+      // `#legend` goes hidden rather than empty-but-present because that word
+      // was its only visible child once DEC-U7 hid the ramp and the numbers.
+      // The expanded legend is untouched — see the dedicated step for it.
+      await expect(page.locator("#legend")).toBeHidden();
 
       await page.locator("#header-toggle").click();
       await expect(header).toHaveAttribute("data-collapsed", "false");
     });
 
-    await test.step("expands itself when an error needs to be read", async () => {
-      // DEC-R2-15. The status line lives inside the header, and failures are
-      // reported into it — so a collapsed header would swallow the message and the
-      // demo would look like it did nothing. Driven through a REAL failure (a
-      // refused geolocation permission) rather than by dispatching by hand, because
-      // the wiring from reporter to reveal is the part that can be missing.
+    await test.step("STAYS collapsed when an error occurs, and toasts it instead", async () => {
+      // INVERTED 2026-08-19 (DEC-U10). This step used to assert the opposite —
+      // that an error EXPANDS the header — which was DEC-R2-15, and which
+      // existed only because the status line inside the header was the sole
+      // channel a failure could reach. A message written into a collapsed
+      // header is a message nobody sees.
+      //
+      // The owner reported that self-expanding behaviour as a bug in the
+      // twelfth testing session; it was the demo telling the truth about
+      // failures they were independently investigating. Errors now go to a
+      // toast that is visible whether or not the header is collapsed, and
+      // `writeStatus` no longer renders the error phase at all — both halves
+      // together, because retiring only the expand would leave the message in a
+      // collapsed header AND in a toast, which is the two-channel state
+      // DEC-R2-15 rejected a toast in order to avoid.
+      //
+      // Still driven through a REAL failure rather than a hand-dispatched one:
+      // the wiring from reporter to surface is the part that can be missing.
       await context.clearPermissions();
       await expandHeader();
 
@@ -587,44 +884,537 @@ test.describe("the header", () => {
 
       await page.locator(".locate-button").click();
 
+      // The message reaches a surface the user can actually see...
+      await expect(page.locator("#toast-root .toast")).toContainText(
+        /denied|unavailable|timed out/,
+        { timeout: 15000 },
+      );
+      // ...and the panel did not take over the screen to deliver it.
       await expect(page.locator("#header-bar")).toHaveAttribute(
         "data-collapsed",
-        "false",
-      );
-      // And the message is actually legible, not merely present in the DOM.
-      await expect(page.locator("#status")).toBeVisible();
-      await expect(page.locator("#status")).toContainText(
-        /denied|unavailable|timed out/,
+        "true",
       );
     });
 
-    await test.step("keeps the terrain attribution visible even when collapsed", async () => {
+    await test.step("keeps every credit VISIBLE, collapsed bar or not", async () => {
       // Attribution is required wherever the data is shown, so it may not be
-      // collapsed away. It moved out of the header into Leaflet's attribution
-      // control (DEC-R2-4), which is always visible.
+      // collapsed away. It lives outside the header (DEC-R2-4) in a line that
+      // is always on screen.
+      //
+      // MIGRATED FROM `toContainText` TO VISIBILITY (round three, G5/F10), and
+      // this is the most important line in the step. `toContainText` matches on
+      // `textContent`, which includes CSS-hidden nodes — so once the line grew
+      // an expander, the old assertions kept passing over credits nobody could
+      // see. The guard for the one rule in this app with legal weight would
+      // have stopped guarding SILENTLY, which is worse than not having it.
+      //
+      // Verified by construction: these locators resolve to the short names in
+      // the resting line, and the expanded panel is asserted separately below.
       await expandHeader();
-      const attribution = page.locator("#map .leaflet-control-attribution");
-      await expect(attribution).toContainText("OpenStreetMap");
-      // PINNED to the AWS credit's own name, not a loose alternation: the old
-      // /Mapzen|Terrarium|Tilezen|elevation/ matched the word "elevation" in
-      // ANY credit, so a build that dropped the AWS line entirely still passed
-      // as long as some elevation credit remained.
-      await expect(attribution).toContainText(/Mapzen/i);
+      const shortNames = page.locator("#map .map-attribution-short");
+      await expect(shortNames).toHaveText([
+        "OpenStreetMap",
+        "Mapterhorn",
+        "Mapzen/AWS",
+      ]);
       // BOTH DEM sources, by name. The composition falls back per tile, so a
       // session may stand on either — a credit naming only one of them stops
-      // satisfying the obligation the moment the other serves a tile.
-      await expect(attribution).toContainText(/Mapterhorn/i);
+      // satisfying the obligation the moment the other serves a tile. And each
+      // is asserted VISIBLE, not merely present.
+      for (const name of ["OpenStreetMap", "Mapterhorn", "Mapzen/AWS"]) {
+        await expect(shortNames.filter({ hasText: name })).toBeVisible();
+      }
+
+      // THE THIN LINE THE FEEDBACK ASKED FOR: the long credit text starts
+      // hidden, and only the short names are on screen.
+      const full = page.locator("#map .map-attribution-full");
+      await expect(full).toBeHidden();
+
+      // AND IT IS ACTUALLY ONE LINE, at the 390 px width this describe runs at.
+      // That is the milestone's acceptance criterion and nothing tested it —
+      // which is how a `max-width: 60vw` "safety" cap shipped that wrapped the
+      // bar to two lines on a phone while every other assertion stayed green.
+      // Two line-heights at Leaflet's 0.75 rem/1.4 is ~34 px, so 26 px
+      // separates one line from two without pinning an exact height.
+      const restingBox = await page
+        .locator("#map .map-attribution-line")
+        .boundingBox();
+      expect(restingBox?.height ?? 0).toBeLessThan(26);
+
+      // THE EXPANDER IS BIG ENOUGH TO PRESS. It shipped at roughly 65 x 17 px —
+      // `font: inherit` resolves to Leaflet's 0.75 rem and the rule set
+      // `padding: 0` — which is under WCAG 2.2 SC 2.5.8's 24 px floor and
+      // SMALLER than the header caret the owner complained about twice. The one
+      // new touch control in the milestone about a control being wrong on a
+      // phone. 24 rather than 44 is deliberate: the request was for a thin line.
+      const toggleBox = await page
+        .locator("#map .map-attribution-toggle")
+        .boundingBox();
+      expect(toggleBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+      // BOTH DIRECTIONS, since H3 replaced the label with a single "…" and the
+      // box stopped getting its width from the text. A height-only floor would
+      // pass at 24 x 12, which is the shape this control would now take.
+      expect(toggleBox?.width ?? 0).toBeGreaterThanOrEqual(24);
+
+      await page.locator("#map .map-attribution-toggle").click();
+      await expect(full).toBeVisible();
+      await expect(full).toContainText(/Copernicus/i);
+      await expect(full).toContainText(/SRTM/i);
+      await expect(full).toContainText("OpenStreetMap contributors");
+      await page.locator("#map .map-attribution-toggle").click();
+      await expect(full).toBeHidden();
+
+      // AND LEAFLET'S COURTESY LINK IS GONE — the one credit here that is not a
+      // licence term, which the session asked to drop.
+      await expect(
+        page.locator("#map .leaflet-control-attribution a[href*='leafletjs']"),
+      ).toHaveCount(0);
 
       await page.locator("#header-toggle").click();
       await expect(page.locator("#header-bar")).toHaveAttribute(
         "data-collapsed",
         "true",
       );
-      // Still there with the bar collapsed — the whole point.
-      await expect(attribution).toContainText("OpenStreetMap");
-      await expect(attribution).toContainText(/Mapzen/i);
-      await expect(attribution).toContainText(/Mapterhorn/i);
+      // Still VISIBLE with the bar collapsed — the whole point.
+      for (const name of ["OpenStreetMap", "Mapterhorn", "Mapzen/AWS"]) {
+        await expect(shortNames.filter({ hasText: name })).toBeVisible();
+      }
     });
+  });
+
+  test("shows a caret big enough to see, on the row the feedback asked for", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS, and why both halves are GEOMETRY.
+     *
+     * G1 is a repeat. The twelfth session's review raised the caret as a WCAG
+     * 2.2 SC 2.5.8 target-size problem and the fix gave `#header-toggle` a
+     * 2.75 rem box — measurable, correct, and invisible to the complaint. The
+     * owner reported the same thing again the next day: a 0.8 em glyph floating
+     * in a 44 px transparent square is reachable and still looks like a speck.
+     * A test written against the tap target would have passed then too, so the
+     * only assertion worth having is one on what is actually painted.
+     *
+     * The row half is the same trap one control over. The header is a single
+     * `flex-wrap: wrap` row, so which items share a line is decided by width —
+     * a unit test on DOM order passes identically on a one-row desktop layout
+     * and a three-row phone layout, and G2 is a complaint about the phone.
+     *
+     * Reverting `.header-caret` to `font-size: 0.8em` fails the first
+     * assertion; deleting `.header-row-break` or the `#site` width cap fails
+     * the second.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const box = async (selector) => {
+      const measured = await page.locator(selector).boundingBox();
+      if (measured === null) throw new Error(`no box for ${selector}`);
+      return measured;
+    };
+
+    // AN SVG WHOSE BOX IS ITS INK, which is what makes this line mean the thing
+    // the plan pinned ("rendered glyph height >= 24 CSS px").
+    //
+    // Two attempts got here. The caret was `h1::before`, and a pseudo-element
+    // is not a DOM node, so `boundingBox()` could not address it at all. The
+    // first fix made it a <span> holding "▾" -- addressable, but the box was
+    // `font-size` x `line-height` regardless of content, and ▾ is U+25BE BLACK
+    // DOWN-POINTING *SMALL* TRIANGLE, whose ink is ~0.4-0.5 em. So this
+    // assertion passed at 25.6 px while the owner was shown a ~12 px triangle:
+    // a measurable proxy standing in for the visible thing, in the test written
+    // to stop that happening a third time. The path now fills the element edge
+    // to edge, so the box IS the triangle.
+    const caret = await box(".header-caret");
+    // H2, r541 -- REPORTED TOO BIG A SECOND TIME, and the fix is to put this
+    // floor on the element it was always about.
+    //
+    // The 24 came from WCAG 2.2 SC 2.5.8, which governs the POINTER TARGET.
+    // `#header-toggle` satisfies that on its own at 2.75rem (44 px), asserted
+    // directly below -- so applying 24 to the painted INK held the caret at
+    // 25.6 px for a reason that had already been met elsewhere. That is why
+    // three fixes each passed a measurement and left the owner still saying it
+    // was wrong: every assertion was on the wrong thing.
+    //
+    // The ink keeps a floor, because a caret can genuinely become a speck --
+    // that was the sixth and thirteenth sessions complaint -- but the floor is
+    // now about legibility rather than about reachability, and is set well
+    // below the shipped 1.6 rem (25.6 px) so ordinary tuning does not trip it.
+    expect(caret.height).toBeGreaterThanOrEqual(11);
+    // AND SMALLER THAN THE TAP TARGET, which is the relationship the last three
+    // sessions kept collapsing. If these two are ever equal again, the ink has
+    // been sized by an accessibility rule a second time.
+    expect(caret.height).toBeLessThan(40);
+
+    // H1, FOURTEENTH SESSION -- the same control, now too BIG. "Der ist jetzt
+    // zu groß ... sollte so hoch sein wie das 'Jump to City'-Dropdown ...
+    // ungefähr doppelt so groß wie der 'Show Quests'-Button."
+    //
+    // THE HEIGHT WAS ALREADY RIGHT: 25.6 px against Show Quests' ~26.4. So an
+    // assertion on height cannot express this complaint -- it passes unchanged,
+    // and strict equality would demand making the caret BIGGER. What reads as
+    // double is the WIDTH of a solid filled triangle, 33.6 px, wider than it is
+    // tall, sitting beside a bordered box of thin text. Equal height, very
+    // unequal ink.
+    //
+    // Hence a width assertion, and a RATIO rather than a pixel count: pinning
+    // "no wider than tall" survives the next time the height moves, which it
+    // has done three times in three sessions.
+    expect(caret.width).toBeLessThanOrEqual(caret.height);
+
+    const centre = (b) => b.y + b.height / 2;
+    const toggle = await box("#header-toggle");
+    // THE TARGET FLOOR, on the element WCAG 2.2 SC 2.5.8 is actually about.
+    // Moved here from the caret in r541 (H2): the caret is what you SEE, this is
+    // what you HIT, and conflating them is what made three consecutive fixes
+    // measure the wrong quantity. Shrinking the ink must never shrink this.
+    expect(toggle.width).toBeGreaterThanOrEqual(24);
+    expect(toggle.height).toBeGreaterThanOrEqual(24);
+    const site = await box("#site");
+    const quests = await box("#geo-event");
+
+    // DEC-W6 FIRST, because it is the assertion that cannot be marginal, and
+    // therefore the one that should report the breakage.
+    //
+    // The layout consequence below is a real guard on this machine -- removing
+    // the cap does push Show Quests off row 1 -- but the uncapped picker is
+    // ~165-180 px against ~361 px of content width, so whether it survives
+    // depends on the user agent's default select font, which differs between a
+    // Windows dev machine and a Linux CI container. Ordered the other way round
+    // the marginal assertion failed first and this one never ran.
+    //
+    // (It also replaced `quests.x + quests.width <= 390`, which could not fail
+    // at all: a WRAPPED button starts at the header's left padding and ends
+    // around 134 px, satisfying the bound in exactly the state it was written
+    // to catch.)
+    expect(site.width).toBeLessThanOrEqual(136);
+
+    // ROW 1: the caret, the city picker, and Show Quests. Compared by the
+    // vertical centre rather than `y`, because the three have different heights
+    // and `align-items: baseline` does not line their tops up.
+    expect(Math.abs(centre(site) - centre(toggle))).toBeLessThan(12);
+    expect(Math.abs(centre(quests) - centre(toggle))).toBeLessThan(12);
+
+    // SIZED TO THE DROPDOWN TEXT, AND LEVEL WITH IT (r543 field report).
+    //
+    // THIS REPLACES THE OWNER PIN THAT SAID THE OPPOSITE, and the supersession
+    // is the point rather than a detail. The fourteenth session asked for the
+    // caret "so hoch wie das Jump to City-Dropdown" and this line held
+    // |caret.height - site.height| <= 4, which is exactly what blocked the
+    // shrink when it was attempted at r541 and reverted. The same owner has
+    // since decided the caret should match the dropdown TEXT instead. A later
+    // explicit decision replaces an earlier one; the test is not weakened to
+    // let a change through.
+    //
+    // MEASURED AGAINST THE LIVE FONT SIZE, not a rem constant, so the caret
+    // cannot drift the next time the dropdown is restyled -- which is the
+    // property the old relationship pin was written for and is worth keeping.
+    const siteFontPx = await page.evaluate(() => {
+      const el = document.querySelector("#site");
+      if (el === null) throw new Error("no #site");
+      return Number.parseFloat(getComputedStyle(el).fontSize);
+    });
+    // One notch above the text, deliberately: the caret is a FILLED triangle
+    // and the label is thin strokes, so equal sizes make the caret read
+    // heavier. The window is tight enough that a return to 1.6 rem (25.6 px)
+    // fails it by a wide margin.
+    expect(caret.height).toBeGreaterThanOrEqual(siteFontPx);
+    expect(caret.height).toBeLessThanOrEqual(siteFontPx + 4);
+
+    // AND LEVEL WITH THE DROPDOWN -- "immer noch nicht auf einer Hoehe mit dem
+    // Jump To City Dropdown". The header used `align-items: baseline`, and a
+    // flex button whose only child is an SVG has no text baseline, so the
+    // browser synthesised one from its bottom margin edge: the 44 px toggle
+    // hung its BOTTOM on the row's text baseline and the caret sat well above
+    // the dropdown's centre. 2 px, because centred means centred -- the 12 px
+    // slack used above is for controls of genuinely different heights.
+    //
+    // THIS ASSERTION DOES NOT PROVE THE FIX, and says so rather than implying
+    // otherwise: a mutation run passes it with the header back on `baseline`,
+    // at 1280 px and at 390 px alike. Chromium cannot reproduce the reported
+    // misalignment; the reporter is on a native Android `<select>`, which is
+    // taller than the headless one and moves the synthesised baseline. What
+    // this assertion DOES do is stop the caret from being knocked off centre by
+    // some later change, which is worth having on its own.
+    expect(Math.abs(centre(caret) - centre(site))).toBeLessThanOrEqual(2);
+
+    // ROW 2 STARTS BELOW: the layer groups are on a lower line, not beside the
+    // button.
+    //
+    // ON A PHONE THIS IS NOT EVIDENCE FOR `.header-row-break`, and saying so is
+    // the point. Mutation testing showed this line passing with the break
+    // deleted: at 390 px the layer groups are far too wide to share a row
+    // whatever the markup says, so the assertion holds for a reason that has
+    // nothing to do with the fix. It is kept because it is what G2 asks for at
+    // the width G2 was reported at — and the step below is what actually holds
+    // the break to account.
+    const layers = await box("#layers");
+    expect(layers.y).toBeGreaterThan(quests.y + quests.height - 1);
+
+    // WITHIN row 2, the category picker comes FIRST — under the caption that
+    // names it, above the switches that describe what to draw for it. The unit
+    // half of this lives in `layer-toggles.test.ts`; what the browser adds is
+    // that it survives real layout.
+    // THE X-ORDER IS THE ASSERTION; the centre comparison only rules out the
+    // picker having been pushed onto a line BELOW the switches, and on its own
+    // would pass with it on a line above them.
+    const category = await box("#category");
+    const cells = await box("#layer-cells");
+    expect(category.x).toBeLessThan(cells.x);
+    expect(centre(category)).toBeLessThanOrEqual(centre(cells) + 1);
+
+    // AND ROW 1 SURVIVES A QUEST BEING FOUND -- the state it was described for,
+    // and the one the first version of this test never entered.
+    //
+    // `#quest-readout` is `hidden` until then, so it is not a flex item and
+    // costs nothing at boot; with "340 m SW" in it the row goes about 30 px over
+    // a 390 px phone and the LAST item wraps. It used to sit before the button,
+    // which meant the control the row exists for was the one that disappeared
+    // the moment the feature was used. The readout now takes its own line
+    // instead, and the three controls stay together.
+    // THE READOUT IS POPULATED DIRECTLY, not by running a quest search, and
+    // that is the right call for a LAYOUT test rather than a shortcut.
+    //
+    // Two earlier versions pressed Show Quests and waited for the real thing.
+    // Both were flaky, for two different reasons, and the second reason is the
+    // one that settles it: the readout is written only when a quest is actually
+    // FOUND, so the step's precondition depends on the search finding something
+    // — and when it reports "No quest nearby" the readout stays empty and the
+    // geometry below silently measures the boot state again. A layout assertion
+    // whose setup can quietly not happen is worse than no assertion.
+    //
+    // What this step is about is what the header does when that span has text
+    // in it. The text's provenance is `event-label.ts`'s business, covered by
+    // its own unit tests and by `map-and-cells.spec.js` end to end. The string
+    // used here is the exact shape those produce.
+    await page.evaluate(() => {
+      const readout = document.querySelector("#quest-readout");
+      if (readout === null) throw new Error("no #quest-readout");
+      readout.textContent = "340 m SW";
+      readout.removeAttribute("hidden");
+    });
+    await expect(page.locator("#quest-readout")).toBeVisible();
+    const withReadout = await box("#geo-event");
+    const toggleAgain = await box("#header-toggle");
+    const siteAgain = await box("#site");
+    expect(Math.abs(centre(siteAgain) - centre(toggleAgain))).toBeLessThan(12);
+    expect(Math.abs(centre(withReadout) - centre(toggleAgain))).toBeLessThan(
+      12,
+    );
+
+    // AND THE SPLIT SURVIVES A WIDE WINDOW, which is the assertion
+    // `.header-row-break` actually earns. On a desktop everything in this bar
+    // fits one line, so without the break the requested two rows collapse into
+    // one and G2 is silently unimplemented on every machine that is not a
+    // phone. Deleting `flex-basis: 100%` fails here and nowhere else.
+    //
+    // 1920 rather than 1280: at 1280 the margin was about 30 px, so one more
+    // switch or a wider font stack would have made it vacuous the way the
+    // 390 px version already was.
+    await page.setViewportSize({ width: 1920, height: 900 });
+    const wideQuests = await box("#geo-event");
+    const wideLayers = await box("#layers");
+    expect(wideLayers.y).toBeGreaterThan(wideQuests.y + wideQuests.height - 1);
+  });
+
+  test("keeps the caret level with the city dropdown on a 390 px phone", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r543 field report).
+     *
+     * "Dieses Dreieck ganz oben links bei Jump To City ist immer noch zu groß
+     * und immer noch nicht auf einer Höhe mit dem Jump To City Dropdown."
+     *
+     * WHAT THIS TEST IS FOR, STATED HONESTLY — an earlier version of this
+     * docblock overclaimed and a cold review caught it.
+     *
+     * It implied this viewport can see a misalignment the desktop test cannot.
+     * **It cannot.** The mutation run passes with the header back on
+     * `baseline` at 390 px exactly as it does at 1280 px; Chromium reproduces
+     * the reported symptom at NEITHER width, which is why the fix ships
+     * labelled as a hypothesis (a native Android `<select>` is taller than the
+     * headless one and moves the synthesised baseline).
+     *
+     * What this test genuinely adds is the SIZE pin at the width the reports
+     * come from — the phone stylesheet is free to restyle either the caret or
+     * the dropdown below 860 px, where the header becomes a floating overlay,
+     * and the desktop assertions would not notice. Two separate defects this
+     * session were invisible because their tests ran at the wrong viewport;
+     * the alignment check here rides along as a cheap regression guard rather
+     * than as proof of anything.
+     */
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const measured = await page.evaluate(() => {
+      const rect = (selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`no ${selector}`);
+        const r = el.getBoundingClientRect();
+        return { y: r.y, height: r.height, centre: r.y + r.height / 2 };
+      };
+      const site = document.querySelector("#site");
+      if (site === null) throw new Error("no #site");
+      return {
+        caret: rect(".header-caret"),
+        site: rect("#site"),
+        siteFontPx: Number.parseFloat(getComputedStyle(site).fontSize),
+      };
+    });
+
+    // LEVEL WITH THE DROPDOWN. Same 2 px window as the desktop check: centred
+    // means centred, and the wider slack elsewhere is for controls of
+    // genuinely different heights sharing a row.
+    expect(
+      Math.abs(measured.caret.centre - measured.site.centre),
+      `caret centre ${measured.caret.centre.toFixed(1)} vs dropdown ${measured.site.centre.toFixed(1)}`,
+    ).toBeLessThanOrEqual(2);
+
+    // AND STILL SIZED TO THE DROPDOWN'S TEXT here too, because the phone
+    // stylesheet is free to restyle either of them.
+    expect(measured.caret.height).toBeGreaterThanOrEqual(measured.siteFontPx);
+    expect(measured.caret.height).toBeLessThanOrEqual(measured.siteFontPx + 4);
+  });
+
+  test("puts every header control in a block over a fully transparent bar", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (J2/J3/J4, DEC-J5..DEC-J7).
+     *
+     * "Ich möchte, dass du diesen Hintergrund komplett 100 % transparent machst
+     * und stattdessen noch mehr von diesen Boxen benutzt ... so sorgt man dafür,
+     * dass noch mehr vom Hintergrund, von der 3D-Szene, sichtbar ist."
+     *
+     * AT 390 px, because that is where the change is real. Above 860 px the
+     * header is a layout ROW whose background already matches `body`, so
+     * "transparent" is invisible there; below it, the bar floats over the 3D
+     * view and the 82 % scrim is what the report is about.
+     *
+     * THE BLOCK MEMBERSHIP IS ASSERTED AS A SHARED ANCESTOR, not as a class on
+     * each control. What the owner asked for is that these controls read as one
+     * group; an assertion per element passes just as well when each sits in a
+     * block of its own, which is the opposite arrangement.
+     *
+     * `#status-block`'s membership would otherwise be UNGUARDED: `#legend` is a
+     * `<div>`, so if `.header-block` ever loses its `display: flex` the status
+     * line and the legend stack silently, with the header simply growing taller
+     * and no assertion noticing. The nav block has three existing centre-
+     * alignment assertions that would fail; this one has none.
+     */
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const measured = await page.evaluate(() => {
+      const el = (selector) => {
+        const found = document.querySelector(selector);
+        if (found === null) throw new Error(`no ${selector}`);
+        return found;
+      };
+      const blockOf = (selector) => {
+        const block = el(selector).closest(".header-block");
+        return block === null ? null : block.id || "(unnamed block)";
+      };
+      const rect = (selector) => {
+        const r = el(selector).getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, height: r.height };
+      };
+      return {
+        headerBackground: getComputedStyle(el("header")).backgroundColor,
+        blocks: {
+          caret: blockOf("#header-toggle"),
+          site: blockOf("#site"),
+          quests: blockOf("#geo-event"),
+          questReadout: blockOf("#quest-readout"),
+          status: blockOf("#status"),
+          legend: blockOf("#legend"),
+        },
+        groundModeInWorld:
+          el("#ground-mode-label").closest("#layer-group-world") !== null,
+        radii: [...document.querySelectorAll(".header-block")].map((b) =>
+          Number.parseFloat(getComputedStyle(b).borderTopLeftRadius),
+        ),
+        navBlock: rect("#nav-block"),
+        categoryBlock: rect("#layer-group-overlays"),
+      };
+    });
+
+    // FULLY TRANSPARENT, not merely more transparent. `rgba(0, 0, 0, 0)` is what
+    // a computed `background: transparent` reports.
+    expect(measured.headerBackground).toBe("rgba(0, 0, 0, 0)");
+
+    // ONE block for the navigation row, ONE for the readouts underneath.
+    expect(measured.blocks.caret).toBe("nav-block");
+    expect(measured.blocks.site).toBe("nav-block");
+    expect(measured.blocks.quests).toBe("nav-block");
+    expect(measured.blocks.questReadout).toBe("nav-block");
+    expect(measured.blocks.status).toBe("status-block");
+    expect(measured.blocks.legend).toBe("status-block");
+
+    // THE ONE CONTROL THE REPORT DID NOT MENTION. Left loose it would be the
+    // only bare thing on a transparent bar, which is the next session's finding.
+    expect(measured.groundModeInWorld).toBe(true);
+
+    // J3: "die Ecken nicht ganz so rund". `999px` is a full pill and was the
+    // outlier in this codebase -- everything else rounds between 3 and 10 px.
+    // A ceiling rather than an exact value, so ordinary tuning does not trip it.
+    expect(measured.radii.length).toBeGreaterThan(0);
+    for (const radius of measured.radii) expect(radius).toBeLessThanOrEqual(12);
+
+    // J4: "die haben gerade so einen seltsamen Abstand zueinander." Expressed as
+    // the MEASUREMENT rather than as a CSS value, because the row break's
+    // negative margin is gap arithmetic -- change `row-gap` without changing
+    // that margin and the distance doubles while the declaration still reads
+    // 0.3rem.
+    const gap = measured.categoryBlock.top - measured.navBlock.bottom;
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(6);
+  });
+
+  test("drops the category label from the collapsed bar, and keeps it when expanded", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (G3, DEC-W4).
+     *
+     * `.legend-category` was ADDED to the collapsed bar four hours before the
+     * session that complained about it, by DEC-U7, on the reasoning that DEC-1
+     * required something on screen to name the active category. Between those
+     * two moments the category `<select>` moved into the collapsed bar under
+     * its own caption — naming the category AND able to change it — so the word
+     * became a duplicate sitting next to the control that says the same thing.
+     * The owner read it as a random "Battle Area", which is exactly what a
+     * label with no visible relationship to anything looks like.
+     *
+     * BOTH STATES ARE ASSERTED, and the expanded one is not padding: the
+     * decision is about the COLLAPSED bar, so deleting the element outright
+     * would overshoot and take DEC-1's heading with it.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const label = page.locator("#legend .legend-category");
+    await expect(label).toBeVisible();
+
+    await page.locator("#header-toggle").click();
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+    await expect(label).toBeHidden();
+
+    // The control that replaced it is the one that has to still be there — the
+    // whole justification for hiding the word is that this names the category
+    // and can change it.
+    await expect(page.locator("#category")).toBeVisible();
   });
 });
 
@@ -756,6 +1546,71 @@ test.describe("the mobile layout", () => {
 });
 
 test.describe("my location", () => {
+  test("an error reaches the user with the header COLLAPSED (DEC-U10)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST IS THE ONE STANDING UNDER DEC-U10. Until 2026-08-19 every
+    // non-AR message went to the status line inside the header, and that is
+    // the only reason the header popped itself open on every error: a message
+    // written into a collapsed header is a message nobody sees. The owner
+    // reported that self-expanding behaviour as a bug, so the rule was retired
+    // — which is only safe because errors now go to a toast instead.
+    //
+    // If the toast wiring is ever lost, NOTHING ELSE FAILS. The unit tests for
+    // `toast.ts` still pass, the header correctly stays put, and errors become
+    // completely invisible. That is the whole failure mode, and it is only
+    // observable from the assembled app — which is why this is an e2e and not
+    // another unit test.
+    await page.addInitScript(() => {
+      // A DENIED PERMISSION, not a missing API: the app branches on the error
+      // it gets back, and removing `geolocation` entirely would take a
+      // different path (unsupported) that reports through a different string.
+      const denied = {
+        code: 1,
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+        message: "User denied Geolocation",
+      };
+      Object.defineProperty(navigator, "geolocation", {
+        configurable: true,
+        value: {
+          getCurrentPosition: (_ok, fail) => fail?.(denied),
+          watchPosition: (_ok, fail) => {
+            fail?.(denied);
+            return 1;
+          },
+          clearWatch: () => {},
+        },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    // COLLAPSED FIRST. Expanded, the old status line would have been visible
+    // and the test would pass for a build with no toast at all.
+    await page.locator("#header-toggle").click();
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+
+    await page.locator(".locate-button").click();
+
+    // The message itself is the locate control's wording; what this asserts is
+    // that SOMETHING reached a surface the user can see while collapsed.
+    const toast = page.locator("#toast-root .toast");
+    await expect(toast).toHaveText(/./, { timeout: 15000 });
+
+    // AND THE HEADER DID NOT MOVE — the retired rule, asserted as retired.
+    // Without this the test would also pass for a build that reverted DEC-U10
+    // and expanded the header, since the toast would still be there.
+    await expect(page.locator("#header-bar")).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+  });
   test("moves the user to a real fix, and says so while it is working", async ({
     page,
     context,
@@ -881,13 +1736,34 @@ test.describe("my location", () => {
       if (mapBox === null) throw new Error("no map box");
       expect(box.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
       expect(box.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
-      if (attribution !== null) {
-        // Strictly above it, not overlapping it.
-        expect(box.y + box.height).toBeLessThanOrEqual(attribution.y + 1);
-      }
+      // UNCONDITIONAL, and that is the fix rather than a tidy-up. This used to
+      // read `if (attribution !== null) { … }`, and `boundingBox()` returns
+      // null for a hidden element — so once the attribution control gained a
+      // hidden state (it hides itself when there is nothing to credit), a
+      // regression that hid the credit would have made this guard SKIP rather
+      // than fail. Same vacuity class as the `toContainText` assertions, in the
+      // one assertion their migration did not touch.
+      expect(attribution).not.toBeNull();
+      // Strictly above it, not overlapping it.
+      expect(box.y + box.height).toBeLessThanOrEqual((attribution?.y ?? 0) + 1);
+
+      // AND THE CREDIT IS INSIDE THE MAP, not merely "visible". `toBeVisible()`
+      // does not detect an element clipped by an ancestor's `overflow: hidden`,
+      // which `.leaflet-container` sets — and on mobile the map is a
+      // drag-resizable sheet, so "off the bottom of a short sheet" is a
+      // reachable state that every other assertion here would call fine.
+      expect(
+        (attribution?.y ?? 0) + (attribution?.height ?? 0),
+      ).toBeLessThanOrEqual(mapBox.y + mapBox.height + 1);
+      // ON THE VISIBLE SHORT NAME, not on the container's `textContent`. This
+      // was the one `toContainText` the F10 migration missed, and it is the
+      // exact shape that assertion class fails at: it matches a credit hidden
+      // behind the expander and reports the obligation as met.
       await expect(
-        page.locator("#map .leaflet-control-attribution"),
-      ).toContainText("OpenStreetMap");
+        page.locator("#map .map-attribution-short").filter({
+          hasText: "OpenStreetMap",
+        }),
+      ).toBeVisible();
     });
 
     await test.step("reports a denied permission instead of hanging on 'locating…'", async () => {
@@ -905,8 +1781,14 @@ test.describe("my location", () => {
           },
         )
         .toMatch(/denied|unavailable|timeout|idle/);
-      await expect(page.locator("#status")).toContainText(
+      // THE TOAST, NOT THE STATUS LINE (DEC-U10, 2026-08-19). Errors stopped
+      // being written into `#status` when the header's self-expanding rule was
+      // retired — leaving this assertion pointed at the old channel would have
+      // made it fail for a working app, and pointing it at nothing would have
+      // dropped the half of the async-feedback rule this step exists for.
+      await expect(page.locator("#toast-root .toast")).toContainText(
         /denied|unavailable|timed out/,
+        { timeout: 15000 },
       );
     });
   });
@@ -1004,15 +1886,19 @@ test.describe("the control bar", () => {
       ).toBeVisible();
     });
 
-    await test.step("collapses to the title, category, affordance block and legend", async () => {
+    await test.step("collapses to the title, the category picker and the affordance block", async () => {
       // DEC-R6b-5 REDREW THIS LINE, and the shape of the change is the point.
       // Before round 7 exactly ONE setting collapsed — `show-below` — while the
       // World, Debug and Ground controls stayed on screen. That is backwards
       // from what the bar is for, and it is what the sixth session reported.
       //
-      // Collapsed now keeps: the category picker, the legend, and the whole
-      // affordance block INCLUDING `show-below`, which moved into that group.
-      // Collapsed now hides: the hint, the status string, World, Debug, Ground.
+      // Collapsed now keeps: the category picker and the whole affordance block
+      // INCLUDING `show-below`, which moved into that group.
+      // Collapsed now hides: the hint, the status string, World, Debug, Ground
+      // — and, since round three, the legend (G3, DEC-W4). It used to be on the
+      // "keeps" list to satisfy DEC-1's requirement that the active category be
+      // named on screen; the category picker one line below now does that, and
+      // does it with a control rather than a label.
       //
       // `show-below` being VISIBLE here is a deliberate reversal. The session's
       // first impression was that its disappearing was a bug; moving it into the
@@ -1026,9 +1912,21 @@ test.describe("the control bar", () => {
       await page.locator("#header-toggle").click();
 
       await expect(page.locator("#category")).toBeVisible();
-      await expect(page.locator("#legend")).toBeVisible();
+      await expect(page.locator("#legend")).toBeHidden();
       await expect(page.locator("#layer-cells")).toBeVisible();
-      await expect(page.locator("#show-below")).toBeVisible();
+      // HIDDEN, because `cells` is off by default (DEC-U9, 2026-08-19). This
+      // line asserted the opposite and was GREEN BECAUSE THE FEATURE WAS
+      // BROKEN: the paint ran only from a change-subscriber, so the default
+      // state was never painted at all. The old comment called the visibility
+      // "a deliberate reversal", which it had been — of an older decision, and
+      // DEC-U9 reverses it back for a different reason: this control has
+      // nothing to be below the threshold OF while the cells are not drawn.
+      //
+      // The collapse behaviour it was really testing is unchanged and still
+      // covered: with `cells` ON the checkbox collapses and expands with the
+      // affordance block it belongs to, which is asserted in
+      // map-and-cells.spec.js.
+      await expect(page.locator("#show-below")).toBeHidden();
 
       await expect(page.locator("#status")).toBeHidden();
       await expect(page.locator("#layer-group-world")).toBeHidden();
@@ -1050,7 +1948,7 @@ test.describe("the control bar", () => {
 
     await test.step("puts show-below inside the affordance group, not beside it", async () => {
       // The MOVE, asserted structurally rather than by position on screen —
-      // `layer-toggles.ts` has an `extras` hook for exactly this (the perf
+      // `layer-toggles.ts` has an `extrasAfter` hook for exactly this (the perf
       // switch already uses it), so the checkbox is a child of the group rather
       // than a sibling that happens to render nearby. A CSS-only fix would look
       // identical collapsed and wrong the moment the groups are reordered.
@@ -1076,7 +1974,7 @@ test.describe("the AR entry point", () => {
    * stops at the boundary: does the button become usable, and does pressing it
    * reach the AR path rather than doing nothing.
    */
-  test("stays disabled until a GPS fix, then becomes usable", async ({
+  test("locates when pressed without a fix, then OFFERS to enter AR", async ({
     page,
     context,
   }) => {
@@ -1102,19 +2000,694 @@ test.describe("the AR entry point", () => {
     await waitForRefresh(page);
 
     const arButton = page.locator("#enter-ar");
+    const offer = page.locator("#ar-offer");
 
-    // BEFORE the fix: visible so it is discoverable, disabled because the scene
-    // has nothing to anchor to, and carrying a reason.
+    // BEFORE ANY FIX: visible AND ENABLED.
+    //
+    // THIS ASSERTED `toBeDisabled()` UNTIL ROUND THREE, with the reason in
+    // `title`. The thirteenth session reported exactly that state as broken —
+    // "wenn ich noch nicht auf Location geklickt habe, dann macht der AR Button
+    // noch nichts" — because a `title` never shows on touch, so what a phone
+    // user meets is a faint square that ignores them. The press now performs
+    // the step it was waiting for (G6, DEC-W2), so there is nothing to disable.
     await expect(arButton).toBeVisible();
-    await expect(arButton).toBeDisabled();
-    await expect(arButton).toHaveAttribute("title", /GPS/i);
+    await expect(arButton).toBeEnabled();
+    // The hint survives as a promise rather than an excuse.
+    await expect(arButton).toHaveAttribute("title", /location/i);
+    await expect(offer).toBeHidden();
+
+    // THE PRESS ACTS AS THE GPS BUTTON. The locate control — not a second
+    // indicator invented for this — is what shows the work in progress.
+    await arButton.click();
+
+    // AND WHEN THE FIX LANDS, ENTRY IS OFFERED rather than the user having to
+    // remember the button. That second tap carries its own transient user
+    // activation, which is what makes this shape legal where "request both at
+    // once" was not.
+    await expect(offer).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("#ar-offer-enter")).toBeVisible();
+
+    // THE OFFER'S BUTTON IS A REAL TAP TARGET. G1 was a control that was
+    // correct and too small to use, twice; this is the control the whole
+    // interaction funnels into.
+    // 44, NOT 24. The CSS sets `min-height: 2.75rem` and its comment claims
+    // "the same floor the header caret's tap target uses"; asserting 24 let a
+    // regression to just over half that pass. 24 px is the plan's GLYPH-height
+    // floor for the caret, which is a different measurement — the two were
+    // conflated (PR review of P3, finding 8).
+    const enterBox = await page.locator("#ar-offer-enter").boundingBox();
+    expect(enterBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    // DISMISSIBLE, and it stays dismissed. An offer that reappears on the next
+    // fix would fire ~1 Hz under a watch.
+    await page.locator("#ar-offer-dismiss").click();
+    await expect(offer).toBeHidden();
+    await expect(arButton).toBeEnabled();
+  });
+
+  test("forgets the AR intent when the locate it started FAILS", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS — it is a regression test for a bug this milestone
+     * shipped and its own review found.
+     *
+     * The AR press arms an intent and waits for the fix it asked for. The
+     * locate control's failure handler resets three stale-fix variables and did
+     * not reset that intent, so it stayed armed indefinitely. The consequence
+     * was not subtle: press AR indoors, the lookup fails, and then a PLAIN GPS
+     * PRESS minutes later pops up "Enter AR now" for a press the user never
+     * made — verbatim the failure the plan called worse than the one being
+     * fixed, and which the code's own docstring asserted could not happen.
+     *
+     * The gate could not have caught it: nothing exercised the failure path.
+     */
+    // NO GEOLOCATION PERMISSION, so the first lookup fails immediately rather
+    // than after the 15 s timeout.
+    await context.clearPermissions();
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    await page.locator("#enter-ar").click();
+    // The failure surfaces on the channel a user can see.
+    await expect(page.locator("#toast-root .toast")).toContainText(
+      /denied|unavailable|timed out/,
+      { timeout: 15000 },
+    );
+    await expect(page.locator("#ar-offer")).toBeHidden();
+
+    // NOW THE USER PRESSES THE GPS PIN, having given up on AR. This is the
+    // press the offer must not attach itself to.
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.locator(".locate-button").click();
+
+    // The fix really arrives — the hint disappears once entry is direct.
+    await expect(page.locator("#enter-ar")).toHaveAttribute(
+      "title",
+      "Enter AR",
+      { timeout: 10000 },
+    );
+    // ...and no offer, because the press that wanted one failed long ago.
+    await expect(page.locator("#ar-offer")).toBeHidden();
+  });
+
+  test("the offer's button is wired to AR entry, and the prompt clears the offer", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (PR review of P3, finding 6).
+     *
+     * The plan's P3 verification lists "prompt tapped → AR starts". Nothing
+     * asserted it: the other test taps DISMISS, so a listener attached to the
+     * wrong id would have shipped green — an offer whose main button does
+     * nothing, which is the exact complaint this milestone exists to fix, moved
+     * one control along.
+     *
+     * WHAT IT CAN AND CANNOT PROVE. Headless Chromium cannot start an immersive
+     * session, so this stops where the existing AR tests stop: at the boundary.
+     * What it pins is that the press REACHES the AR path — the offer clears and
+     * the entry attempt reports its failure on the 2D channel — which is
+     * exactly what a mis-wired listener would not do.
+     */
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: {
+          isSessionSupported: () => Promise.resolve(true),
+          // Supported, but every request fails — the honest shape for a
+          // headless browser, and it puts the entry attempt on the error path
+          // where this test can see it.
+          requestSession: () => Promise.reject(new Error("no XR device")),
+        },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    await page.locator("#enter-ar").click();
+    await expect(page.locator("#ar-offer")).toBeVisible({ timeout: 10000 });
+
+    await page.locator("#ar-offer-enter").click();
+
+    // The offer goes away on the press, before anything is awaited.
+    await expect(page.locator("#ar-offer")).toBeHidden();
+    // And the AR path really was entered — it reported why it could not start.
+    await expect(page.locator("#toast-root .toast")).toBeVisible({
+      timeout: 15000,
+    });
+
+    // AND `#ar-root` IS EMPTY AGAIN. Nothing may be left in it after a failed
+    // entry: it is `position: fixed; inset: 0` and hidden only while `:empty`,
+    // so any leftover child becomes a click-eating layer over the whole page.
+    // The framework inserts its canvas before requesting the session and does
+    // not clean it up if that rejects, which is what `endARSession()` is for.
+    //
+    // The assertion above would NOT catch that: Playwright's `toBeVisible`
+    // checks box and CSS, not occlusion, so the toast reads as visible from
+    // underneath a covering layer.
+    //
+    // ⚠️ IT NOW GUARDS THE DEC-K5 DOM VEIL TOO, WHICH IT DID NOT BEFORE
+    // DEC-M1b, and the change is worth recording because the earlier note said
+    // the opposite in detail. That veil used to be created only when
+    // `descentStartM > 0`, and this fixture boots a view whose desktop camera
+    // gives 0 — so deleting the veil's removal from the refusal path left this
+    // test green, verified by mutation at the time. The veil is now created for
+    // EVERY entry, including a refused one, so `#ar-root` really would be
+    // non-empty if that removal were dropped.
+    //
+    // The veil's leak-on-refusal behaviour is pinned in `ar-mode.test.ts`
+    // instead, where the camera height is controllable — and headless Chromium
+    // cannot start an immersive session anyway, so the rest of the ordering is
+    // unreachable here by construction.
+    await expect(page.locator("#ar-root")).toBeEmpty();
+  });
+
+  test("keeps the AR offer clear of the toast and of the map's own controls", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (PR review of P3, finding 4).
+     *
+     * The offer shipped at `bottom: 1.25rem`, centred, up to 92vw — overlapping
+     * `.toast` in both axes and winning on z-index. That covers the app's only
+     * 2D message channel, including the GPS failures this very flow produces,
+     * and at its widest it reached under the bottom-right locate and AR
+     * controls where, having pointer events, it would swallow taps.
+     *
+     * Geometry rather than eyeballing, for the same reason the header's row
+     * assertions are geometry: "it looks fine on my screen" is how the first
+     * version got here.
+     */
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
+
+    // AT 390 px, WHICH IS THE WHOLE POINT. The overlap this guards is a phone
+    // phenomenon: on a 1280 px desktop the toast sits bottom-LEFT and the offer
+    // is centred, so their boxes never meet and every assertion below holds
+    // whatever the offset is. Mutation testing showed exactly that -- lowering
+    // the offer back into the toast band passed at desktop width.
+    await page.setViewportSize({ width: 390, height: 780 });
+    await page.locator("#enter-ar").click();
+    await expect(page.locator("#ar-offer")).toBeVisible({ timeout: 10000 });
+
+    // A toast, put on screen the way the app does, so the two are measured
+    // together rather than one of them imagined.
+    await page.evaluate(() => {
+      const root = document.querySelector("#toast-root");
+      if (root === null) throw new Error("no #toast-root");
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.textContent = "Location permission denied.";
+      root.append(toast);
+    });
+
+    const offer = await page.locator("#ar-offer").boundingBox();
+    const toast = await page.locator("#toast-root .toast").boundingBox();
+    const locate = await page.locator(".locate-button").boundingBox();
+    if (offer === null || toast === null || locate === null) {
+      throw new Error("no boxes");
+    }
+
+    const overlaps = (a, b) =>
+      a.x < b.x + b.width &&
+      b.x < a.x + a.width &&
+      a.y < b.y + b.height &&
+      b.y < a.y + a.height;
+
+    // THE MESSAGE CHANNEL IS NOT COVERED. This is the harm that geometry can
+    // actually express: a toast hidden under the offer is a GPS error the user
+    // never sees, and this flow produces those.
+    expect(overlaps(offer, toast)).toBe(false);
+
+    // THE MAP'S CONTROLS STAY USABLE — asserted by CLICKING one, not by
+    // measuring boxes. On a desktop split the offer's box does land over the
+    // map's bottom-right controls (`locate` is inside it at 1280 px), and
+    // raising the offset until it does not is tuning against one viewport that
+    // the mobile sheet then invalidates. What matters is that the offer cannot
+    // SWALLOW the tap, which `pointer-events: none` on the container settles
+    // for every viewport at once. Playwright's actionability check fails this
+    // click if anything intercepts it.
+    // STILL SHOWING AT THE MOMENT OF THE CLICK. Without this the click can be
+    // measured against a box the offer no longer occupies, and the assertion
+    // proves nothing -- which is what a mutation run showed the first version
+    // doing.
+    await expect(page.locator("#ar-offer")).toBeVisible();
+    // A TRIAL CLICK: Playwright runs the full actionability check — visible,
+    // stable, receives events — and throws if anything intercepts the point,
+    // without actually clicking.
+    //
+    // WHAT THIS DOES AND DOES NOT GUARD, measured rather than assumed:
+    //
+    // - It holds the property that matters — the offer must never swallow a tap
+    //   meant for the map — and it is the honest way to state it, because the
+    //   obvious version (click, then assert the button changed state) was
+    //   VACUOUS: the AR press above had already put the locate button in
+    //   `located`, so that assertion held whether or not the click landed.
+    // - It does NOT guard `.ar-offer`'s `pointer-events: none`. Mutation testing
+    //   showed this step passing with that rule flipped to `auto`, so on this
+    //   layout the control wins the hit test for some other reason — the
+    //   z-order between a fixed overlay and Leaflet's control stack. The rule
+    //   stays: it follows the pattern `.ar-hud` and `.ar-toast` already set and
+    //   costs nothing. Saying it is tested here would simply be untrue.
+    await page.locator(".locate-button").click({ trial: true });
+  });
+
+  test("keeps the AR overlay's controls OUT of the 3D content, top and bottom", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (G9, DEC-W5).
+     *
+     * "Currently it's in the middle of the screen and occludes basically the AR
+     * 3D content." The compass slider was `bottom: 20vh`, centred and up to
+     * 88vw wide — a bar straight across the near content.
+     *
+     * WHAT IT ACTUALLY TESTS, STATED PLAINLY: the STYLESHEET, not the wiring.
+     * The compass control only exists inside an immersive session, and headless
+     * Chromium reports no `immersive-ar` — stubbing the support probe gets the
+     * button enabled but cannot make a session start, which the existing AR
+     * tests say outright. jsdom is no help either: it applies no stylesheet and
+     * does no layout, so the one thing that changed here is invisible to it. So
+     * this attaches elements carrying the production class names to the real
+     * `#ar-root` and measures what the real CSS does to them.
+     *
+     * THE GAP THAT REMAINS, named rather than papered over — and it is HALF the
+     * size it was (DEC-J12). The compass is no longer a replica: the fixture
+     * mounts the real `createArCompassControl`, so its class names, its child
+     * order and its actual strings are the ones measured here. What is still
+     * replica is the surrounding stack, so nothing proves `ar-mode.ts` still
+     * builds an `.ar-stack` and attaches both controls into it.
+     *
+     * The replica was not a hypothetical risk: its hint read
+     * "takes 15-30 fixes to express a change" against the production string of
+     * the day, "takes ~15–30 fixes to express" — eight characters longer, with
+     * an ASCII hyphen for the en dash. A layout test whose strings are wrong is
+     * answering a different question than the one it claims. Production has
+     * since moved on again (J5 shortened the hint to "~15–30 fixes to show"),
+     * so neither quoted string is current — read them as the history that
+     * motivated mounting the real module.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await buildArOverlayFixture(page);
+
+    const viewport = page.viewportSize();
+    const hudBox = await page
+      .locator("#ar-root .ar-stack .ar-hud")
+      .boundingBox();
+    const bottomBox = await page.locator("#ar-root .ar-bottom").boundingBox();
+    const rowBox = await page
+      .locator("#ar-root .ar-bottom .ar-bottom-row")
+      .boundingBox();
+    const compassBox = await page
+      .locator("#ar-root .ar-bottom .ar-compass")
+      .boundingBox();
+    if (
+      hudBox === null ||
+      bottomBox === null ||
+      rowBox === null ||
+      compassBox === null ||
+      viewport === null
+    ) {
+      throw new Error("no boxes");
+    }
+
+    // NEAR THE TOP IN ABSOLUTE TERMS, not merely "above the midpoint". The
+    // relative pair alone would pass on a layout that put the readout at 40%
+    // and the slider at 45% — and the blocker this test missed pushed both a
+    // whole viewport DOWN, which a midpoint check catches only by luck.
+    expect(hudBox.y).toBeLessThan(120);
+
+    // THE SLIDER MOVED TO THE BOTTOM (H6), INVERTING WHAT THIS TEST USED TO
+    // ASSERT — and the inversion is deliberate, not drift.
+    //
+    // It read `compassBox.y + compassBox.height < viewport.height / 2`, pinning
+    // DEC-W5's top-of-screen column. The fourteenth session asked for the
+    // slider "nach unten ... neben die Plus-Minus-UI". G9's original complaint,
+    // which DEC-W5 answered, was that the slider sat in the MIDDLE of the view
+    // and occluded the AR content — and the bottom satisfies that just as well
+    // as the top did, so the earlier decision is superseded rather than broken.
+    expect(compassBox.y).toBeGreaterThan(viewport.height / 2);
+
+    // AND THE READOUT IS BELOW THE ROW, not beside it. This is the assertion
+    // that would have caught the two earlier versions of this row: the row is
+    // ~189 px of controls and the readout is ~40 characters, so a single-row
+    // layout overflows a phone. Stated as "the readout starts below the row's
+    // bottom edge" rather than as a pixel count, so it survives a font change.
+    expect(compassBox.y).toBeGreaterThanOrEqual(rowBox.y + rowBox.height - 1);
+
+    // NOTHING OVERFLOWS THE VIEWPORT HORIZONTALLY, which is the failure the
+    // arithmetic in `.ar-bottom`'s comment predicts if anyone puts the readout
+    // back on the row or restores the 55vw slider.
+    expect(bottomBox.x).toBeGreaterThanOrEqual(0);
+    expect(bottomBox.x + bottomBox.width).toBeLessThanOrEqual(
+      viewport.width + 1,
+    );
+
+    // AND IT STAYS CLEAR OF THE TOAST BAND. `.ar-toast` sits at 12vh, and the
+    // far-travel toast fires at 2 km — during exactly the long walk this slider
+    // is used on. A second row makes the stack taller, so this is the
+    // constraint the extra row actually threatens (PR #311 review, finding 4).
+    expect(bottomBox.y).toBeGreaterThan(viewport.height * 0.12);
+  });
+
+  test("keeps the AR bottom stack readable on a 390 px phone", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r541 field report, Q8; owner disagreement on Q4).
+     *
+     * "Der Kompass-Balken nutzt etwa die halbe Breite und bricht auf vier
+     * Zeilen um, wo zwei reichen würden." The owner confirmed Q4 is NOT done.
+     *
+     * THE TEST ABOVE CANNOT SEE THIS, and that is the point of this one. It
+     * asserts nothing OVERFLOWS the viewport — which a box that is too NARROW
+     * passes trivially — and it runs at the suite's 1280 px Desktop Chrome
+     * while doing its arithmetic against "a 390 px phone" in the comments. Both
+     * halves of that gap are what let a folded stack ship.
+     *
+     * WHAT IS ASSERTED, and why these two together are not vacuous in either
+     * direction:
+     *
+     * - the readout and the hint each render on ONE line box, which forces the
+     *   compass box WIDE enough for the real 40-character string;
+     * - nothing overflows the viewport, which caps it.
+     *
+     * Line boxes are counted with `Range.getClientRects()` — one rect per line
+     * — rather than by dividing height by an assumed line-height, so the count
+     * stays true if the font or the leading changes.
+     */
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    await buildArOverlayFixture(page);
+
+    // FLUSH AT THE BOTTOM, AND CONFINED TO THE BOTTOM QUARTER (r541, Q8).
+    //
+    // Reported as "floats mid-screen instead of sitting flush at the bottom
+    // edge". MEASURED, before and after the wrap fix, at this viewport:
+    //
+    //   before: height 189.4 px, top 620.8, bottom 810.25, gap below 33.75
+    //   after:  height 133.0 px, top 677.2, bottom 810.25, gap below 33.75
+    //
+    // THE BOTTOM EDGE NEVER MOVED. `bottom: 4vh` was always working, so the
+    // bar was never mis-positioned in Chromium -- it was 56 px TALLER, because
+    // the readout wrapped to three lines plus a wrapped hint, and a box anchored
+    // at the bottom grows UPWARD. That is why it read as floating.
+    //
+    // The 0.75 threshold is calibrated against those two numbers rather than
+    // chosen: the pre-fix layout fails it by 12 px and the current one clears it
+    // by 44. A looser bound (0.66) passes both and would guard nothing.
+    const placement = await page.evaluate(() => {
+      const el = document.querySelector("#ar-root .ar-bottom");
+      if (el === null) throw new Error("no .ar-bottom");
+      const r = el.getBoundingClientRect();
+      return {
+        top: r.top,
+        gapBelow: window.innerHeight - r.bottom,
+        viewportH: window.innerHeight,
+      };
+    });
+    expect(
+      placement.gapBelow,
+      `the control stack sits ${Math.round(placement.gapBelow)} px off the bottom edge`,
+    ).toBeLessThanOrEqual(placement.viewportH * 0.06);
+    expect(
+      placement.top,
+      `the control stack reaches up to ${Math.round(placement.top)} px, into the AR content`,
+    ).toBeGreaterThan(placement.viewportH * 0.75);
+
+    const measured = await page.evaluate(() => {
+      const lineCount = (selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`no ${selector}`);
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getClientRects().length;
+      };
+      const width = (selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`no ${selector}`);
+        return el.getBoundingClientRect().width;
+      };
+      const box = (selector) => {
+        const el = document.querySelector(selector);
+        if (el === null) throw new Error(`no ${selector}`);
+        const r = el.getBoundingClientRect();
+        return { x: r.x, width: r.width, centre: r.y + r.height / 2 };
+      };
+      return {
+        readoutLines: lineCount("#ar-root .ar-bottom .ar-compass-value"),
+        hintLines: lineCount("#ar-root .ar-bottom .ar-compass-hint"),
+        compassWidth: width("#ar-root .ar-bottom .ar-compass"),
+        rowWidth: width("#ar-root .ar-bottom .ar-bottom-row"),
+        bottomWidth: width("#ar-root .ar-bottom"),
+        slider: box("#ar-root .ar-bottom .ar-compass-slider"),
+        hint: box("#ar-root .ar-bottom .ar-compass-hint"),
+        readout: box("#ar-root .ar-bottom .ar-compass-value"),
+      };
+    });
+
+    // TWO ROWS, NOT THREE (J5, DEC-J8). "Den könnte man einfach rechts neben
+    // den Slider packen, sodass das dann nur noch zwei Zeilen sind."
+    //
+    // COMPARED BY VERTICAL CENTRE, not by `y`. `.ar-compass` is
+    // `align-items: center` and a 0.72rem hint is shorter than a range input,
+    // so their TOPS never line up — an assertion on `y` would fail against a
+    // correct implementation. Cold review of the plan caught exactly that.
+    expect(
+      Math.abs(measured.hint.centre - measured.slider.centre),
+      "the compass hint is not on the slider's row",
+    ).toBeLessThanOrEqual(2);
+    // AND TO THE RIGHT of it, so "beside" means beside rather than behind.
+    expect(measured.hint.x).toBeGreaterThanOrEqual(
+      measured.slider.x + measured.slider.width - 1,
+    );
+    // WHILE THE READOUT KEEPS ITS OWN LINE (DEC-Y12, untouched): ~40 characters
+    // cannot share a row with a slider at any font size worth reading outdoors.
+    expect(measured.readout.centre).toBeGreaterThan(measured.slider.centre);
+
+    // THE SLIDER DID NOT PAY FOR IT. `width: 9rem` is `flex: 0 1 auto`, so the
+    // hint's `flex: 1 1 auto` could have been satisfied by shrinking the slider
+    // instead of using the free space — and every other assertion here passes
+    // with a 100 px slider. 9rem is 144 px, and it exists so 0-1 is draggable
+    // with a thumb outdoors.
+    expect(
+      measured.slider.width,
+      `the compass slider shrank to ${Math.round(measured.slider.width)} px`,
+    ).toBeGreaterThanOrEqual(144);
+
+    // ONE LINE EACH. `compass 0.80 target — now 1.00 cold start` is ~40
+    // characters at 0.9rem monospace, i.e. ~345 px of ink; it fits a 390 px
+    // phone with room to spare, and only fails to fit when the box around it
+    // has been shrunk to its slider.
+    expect(
+      measured.readoutLines,
+      `the compass readout wraps to ${measured.readoutLines} lines in a ${Math.round(measured.compassWidth)} px box`,
+    ).toBe(1);
+    expect(
+      measured.hintLines,
+      `the compass hint wraps to ${measured.hintLines} lines`,
+    ).toBe(1);
+
+    // AND THE BOX FILLS THE COLUMN, stated as an equality rather than as
+    // "wider than the row". Two separate properties ride on this:
+    //
+    // - the "nutzt etwa die halbe Breite" half of the report: `.ar-bottom` is
+    //   a centred flex COLUMN, so a shrink-to-fit child sizes to its widest
+    //   unwrappable item -- the 9rem slider -- and the readout then wrapped
+    //   inside ~195 px however much room the phone actually had;
+    // - the box must not RESIZE as the readout text changes. The fusion phase
+    //   makes that string change length at runtime, so a shrink-to-fit box
+    //   grows and shrinks under a stationary slider. A ">= rowWidth" bound
+    //   passed with `align-self: stretch` deleted, which a mutation run
+    //   showed; this equality is what actually pins that rule.
+    expect(
+      measured.compassWidth,
+      "the compass box does not fill the bottom column",
+    ).toBeCloseTo(measured.bottomWidth, 0);
+
+    // STILL CAPPED. Without this the two assertions above are satisfied by any
+    // box wide enough to overflow the screen, which is the failure the previous
+    // two versions of this row actually shipped.
+    expect(measured.bottomWidth).toBeLessThanOrEqual(390);
+
+    // AND IT DOES NOT RESIZE WHEN THE READOUT GETS SHORTER, which is the
+    // property `align-self: stretch` actually carries -- and the reason this
+    // step exists at all.
+    //
+    // A MUTATION RUN CAUGHT THE FIRST VERSION OF THIS BEING VACUOUS. With the
+    // long 40-character string the box exceeds the column`s width anyway and
+    // clamps to it, so deleting the rule changed nothing measurable and the
+    // equality above passed either way. The readout is only that long during
+    // cold start; once the fusion settles it is short, shrink-to-fit collapses
+    // the box to its 9rem slider, and the bar visibly narrows under a
+    // stationary control. Re-measuring with the SHORT string is what makes the
+    // rule load-bearing instead of decorative.
+    const shortened = await page.evaluate(() => {
+      const readout = document.querySelector(
+        "#ar-root .ar-bottom .ar-compass-value",
+      );
+      const hint = document.querySelector(
+        "#ar-root .ar-bottom .ar-compass-hint",
+      );
+      if (readout === null || hint === null) throw new Error("no readout");
+      readout.textContent = "compass 0.80";
+      hint.textContent = "";
+      const box = document.querySelector("#ar-root .ar-bottom .ar-compass");
+      const column = document.querySelector("#ar-root .ar-bottom");
+      if (box === null || column === null) throw new Error("no box");
+      return {
+        compassWidth: box.getBoundingClientRect().width,
+        bottomWidth: column.getBoundingClientRect().width,
+      };
+    });
+    expect(
+      shortened.compassWidth,
+      "the compass box shrinks to its slider once the readout text is short",
+    ).toBeCloseTo(shortened.bottomWidth, 0);
+  });
+
+  test("hides the AR experiment panel when it is marked hidden", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r541 and r543 field reports, DEC-Y16).
+     *
+     * "Der Settings Button funktioniert immer noch nicht" and "das wird halt
+     * gar nicht ein/ausgeblendet, das ist immer sichtbar" — reported twice,
+     * two branches apart.
+     *
+     * THE CAUSE IS A CSS CASCADE RULE, not an event problem, and that matters
+     * because two rounds of diagnosis went looking in the wrong place.
+     * `ar-experiment-panel.ts` opens and closes by writing `body.hidden`, which
+     * takes effect through the USER-AGENT stylesheet's `[hidden] { display:
+     * none }`. `.ar-experiments` sets `display: flex` in the AUTHOR stylesheet,
+     * and author rules beat user-agent rules whatever their specificity. So
+     * `hidden` did nothing at all: the panel was permanently visible, and the
+     * gear toggled a flag with no visual effect — which is exactly what a dead
+     * button looks like.
+     *
+     * ONE CAUSE, BOTH SYMPTOMS. The plan's DEC-Y16 argued they had to be two
+     * independent failures, reasoning that a panel which mounts CLOSED cannot
+     * be reported as permanently VISIBLE by a broken toggle. The premise was
+     * right and the conclusion was wrong, because the panel never actually
+     * mounted closed on screen — only in the DOM.
+     *
+     * jsdom cannot see this (no stylesheet, no cascade) and the unit test that
+     * asserts `body.hidden` passes against the defect, which is why this one is
+     * an e2e measuring `display` rather than the attribute.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const display = await page.evaluate(() => {
+      const root = document.querySelector("#ar-root");
+      if (root === null) throw new Error("no #ar-root");
+      const wrap = document.createElement("div");
+      wrap.className = "ar-gear-wrap";
+      const body = document.createElement("div");
+      body.className = "ar-experiments";
+      // EXACTLY WHAT THE PRODUCTION CODE WRITES at mount and on close.
+      body.hidden = true;
+      const row = document.createElement("label");
+      row.className = "ar-experiments-row";
+      row.textContent = "rotation prior";
+      body.append(row);
+      wrap.append(body);
+      root.append(wrap);
+      return {
+        hidden: getComputedStyle(body).display,
+        // AND THE OPEN STATE STILL LAYS OUT, so the fix cannot be "display:
+        // none always", which would hide the panel for good and make the gear
+        // genuinely dead rather than merely looking it.
+        shown: (() => {
+          body.hidden = false;
+          return getComputedStyle(body).display;
+        })(),
+      };
+    });
+
+    expect(
+      display.hidden,
+      "the experiment panel still renders while marked hidden",
+    ).toBe("none");
+    expect(display.shown).toBe("flex");
+  });
+
+  test("does NOT offer AR when the user only pressed the GPS button", async ({
+    page,
+    context,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS, and why it is the risky half of DEC-W2.
+     *
+     * The offer belongs to the AR press. A prompt that appears because someone
+     * pressed Locate — which a desktop user does constantly, and which every AR
+     * session's own watch does ~1 Hz — is a worse bug than the one being fixed,
+     * and it is the failure mode a "a fix arrived, so offer AR" implementation
+     * would have shipped without anyone noticing in a headless suite.
+     */
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "xr", {
+        configurable: true,
+        value: { isSessionSupported: () => Promise.resolve(true) },
+      });
+    });
+    await stubNetwork(page);
+    await page.goto("/");
+    await waitForRefresh(page);
 
     await page.locator(".locate-button").click();
 
-    // AFTER the fix: usable. This is the assertion the milestone's three false
-    // claims all reduce to — without `setZeroPos` being dispatched it never
-    // arrives, however correct every module is on its own.
-    await expect(arButton).toBeEnabled({ timeout: 10000 });
+    // THE FIX REALLY DOES ARRIVE, asserted on the LOCATE BUTTON's own state.
+    //
+    // This waited on `#enter-ar` being enabled, which was a proof until this
+    // very milestone made the AR button enabled BEFORE any fix — the same spec
+    // asserts exactly that a few tests above. Geolocation could have been
+    // entirely broken and this test would still have passed, proving only that
+    // `#ar-offer` is hidden at boot, which it always is (PR review of P3,
+    // finding 3).
+    // ON THE AR BUTTON'S HINT, which is DURABLE. `data-state="located"` would
+    // also prove it, but it reverts to `idle` after 4 s — a transient this
+    // assertion would be racing. The hint is present exactly while a press
+    // would locate first, so its ABSENCE proves both that an origin arrived and
+    // that the view is at the user, which is the state the offer would need.
+    await expect(page.locator("#enter-ar")).toHaveAttribute(
+      "title",
+      "Enter AR",
+      { timeout: 10000 },
+    );
+    await expect(page.locator("#ar-offer")).toBeHidden();
   });
 
   test("keeps the map when AR is available — DEC-12", async ({

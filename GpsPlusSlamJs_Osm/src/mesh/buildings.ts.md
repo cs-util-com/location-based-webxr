@@ -114,6 +114,29 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
   rather than of its transport.
   - **`buildings.property.test.ts` is what keeps that true**, and it goes red the
     moment the rule is replaced by "first" again.
+- **The part→outline assignment is INDEXED, not scanned (2026-08-22).**
+  `smallestContaining` walked every outline for every part, so the work was
+  `parts × outlines` and both grow with the working set — the same cross product
+  `annotatePoiHosts` had, found by the same profile and answered by the same
+  `host-grid.ts`.
+  - **Safe for a stronger reason than the host join.** That one depends on
+    candidate ORDER (first enabled host wins), so its index must promise
+    ascending output. This rule picks by smallest area with an explicit key
+    tie-break, so it is order-independent by construction and needs only the
+    grid's superset guarantee. The bounds test and the ray cast are unchanged and
+    still run, so the answer cannot differ.
+  - **Measured, devbox-win11** (Node 24.14.1): the hot path itself —
+    `assignPartsToOutlines` plus `smallestContaining` — went **~102 → ~24 ms per
+    call at k=4, −76 %**, dropping out of the profile's top ten entirely.
+    `buildBuildings` **487.65 → 430.08 ms (−11.8 %)**, diluted by the extrusion
+    work around it; `solidBuildingFootprints`, which is little more than this
+    rule, **156.20 → 85.95 ms (−45.0 %)**.
+  - **The first attempt made `solidBuildingFootprints` 16.8 % SLOWER**, and the
+    reason is worth keeping: `host-grid.ts` had a pitch floor in METRES, while
+    this function is generic over the frame and passes **lat/lng degrees**. One
+    cell then covered the planet, so the index pruned nothing and charged its own
+    overhead. Nothing failed — it was caught only because that caller happened to
+    be benched. `host-grid.ts` is now unit-free and pins that with a test.
 - **The nested case (R5-7, DEC-R5-2) is fixed by the smallest-container rule
   ALONE**, through the pre-existing "an outline with parts is not extruded" line.
   Cologne Cathedral's `way/645732604` (`building=tower`, height 157, "Nordturm")

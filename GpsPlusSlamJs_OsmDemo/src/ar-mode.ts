@@ -47,6 +47,21 @@ import {
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization";
 import { odometryTrackingRestarted } from "gps-plus-slam-app-framework/core";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
+import { getCompassDiagnostics } from "gps-plus-slam-app-framework/state";
+import { createArEntryVeil, entryVeilAlpha } from "./ar-entry-veil.js";
+import {
+  createArEntryDomVeil,
+  domVeilAlpha,
+  entryFadeMayStart,
+  type ArEntryDomVeil,
+} from "./ar-entry-dom-veil.js";
+import { fusedGpsFrom } from "./ar-fused-gps.js";
+import {
+  descentMayStart,
+  descentComplete,
+  descentOffsetM,
+  DESCENT_MAX_START_M,
+} from "./ar-descent.js";
 
 import type { BuildingView } from "./building-view.js";
 import type { LatLng } from "gps-plus-slam-osm";
@@ -79,11 +94,20 @@ import {
   createArBuildingMaterial,
   type ArBuildingMaterial,
 } from "./ar-building-material.js";
-import type { CompassSettings } from "./compass-influence.js";
+import {
+  COMPASS_EXPERIMENT_DEFAULTS,
+  describeTrustGate,
+  type CompassSettings,
+} from "./compass-influence.js";
+import {
+  createArExperimentPanel,
+  type ArExperimentPanel,
+} from "./ar-experiment-panel.js";
 import {
   canEnterAr,
   nueBearingDeg,
   sceneAnchorOffsetNue,
+  toDemoLatLng,
   type FrameworkLatLong,
 } from "./ar-origin.js";
 
@@ -98,6 +122,20 @@ import * as THREE from "three";
  * and the value is consumed synchronously in the line after it is written.
  */
 const forward = new THREE.Vector3();
+
+/**
+ * Scratch for the camera's world position, reused every frame.
+ *
+ * SEPARATE FROM `forward`, and not merely for tidiness: both are written in the
+ * same frame callback, and `getWorldDirection` and `getWorldPosition` would
+ * otherwise clobber each other between the two reads.
+ *
+ * SHARED BY TWO CONSUMERS, which is safe because they want the SAME quantity and
+ * each re-reads it: the entry veil centres on it every frame, and the readout
+ * back-projects it into GPS at the HUD's ~2 Hz. Sharing a scratch between two
+ * consumers of DIFFERENT quantities is the hazard above; this is not that.
+ */
+const cameraWorld = new THREE.Vector3();
 
 /**
  * How fast the APPLIED auto elevation may move the content, metres/second
@@ -136,6 +174,69 @@ export interface ArModeDeps {
   readonly store: TrackingSubscribableStore & SubscribableStore;
   /** Where the city currently lives. Its content is borrowed, not copied. */
   readonly buildingView: BuildingView;
+  /**
+   * Called once when the entry fly-down lands (Q5).
+   *
+   * THE END-STATE SIGNAL, and it is not decoration: a descent that STALLS is
+   * indistinguishable from the recorded "flying roughly 50 m above the OSM
+   * buildings" datum bug, and that ambiguity is what would make a field report
+   * unactionable. Optional, so a caller that does not want to say anything is
+   * unchanged.
+   */
+  readonly onDescentComplete?: () => void;
+  /**
+   * Called ONCE, with seconds since the session's first frame, when the
+   * elevation estimator first engages (owner decision, 2026-08-23).
+   *
+   * **AN INSTRUMENT, NOT A FEATURE.** DEC-L2 lengthened the entry fly-in to
+   * 12 s partly so the auto-elevation correction lands underneath it — and that
+   * argument turns on how long engagement takes while a user stands still,
+   * which has never been measured and which **no gate here can measure**: the
+   * estimator needs depth observations built from motion, and every fixture
+   * that reaches an engaged state does so by walking. See
+   * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
+   *
+   * **Its ABSENCE is also a measurement**: a session where this never fires
+   * says the estimator never engaged, which is the outcome that followup
+   * considers most likely.
+   *
+   * Optional, so a caller that does not want to say anything is unchanged.
+   */
+  readonly onEstimateEngaged?: (afterS: number) => void;
+  /**
+   * Whether the AR entry rebuild has settled (DEC-M1).
+   *
+   * Entering AR re-fetches and re-meshes the city, because the AR datum is
+   * baked into its vertices; until that settles, what is on screen was built
+   * for the desktop datum. The entry veil holds until this says yes, so the
+   * user never meets the ~100 m version of the city.
+   *
+   * **A GETTER, CALLED PER FRAME, NOT A VALUE OR A PROMISE.** The pass it
+   * reports on is started by the caller AFTER `startArMode` resolves, so
+   * nothing readable at construction time can answer this — and a promise here
+   * would need its own lifecycle inside a session that can end at any moment.
+   *
+   * **Absent means "nothing to wait for"**, the convention `estimateReady`
+   * already uses for an absent estimator, so a caller that does not wire it is
+   * not silently held to {@link ENTRY_READY_MAX_WAIT_S}.
+   */
+  readonly entryContentReady?: () => boolean;
+  /**
+   * Called ONCE, when the entry veil begins to fade (DEC-M1a).
+   *
+   * **AN INSTRUMENT, NOT A FEATURE**, like {@link onEstimateEngaged} beside it,
+   * and it exists because `ENTRY_READY_MAX_WAIT_S` is a guess: if a field
+   * session comes back with `aligned: false` or `contentReady: false` here, the
+   * ceiling is the normal path and the black screen is effectively fixed-length
+   * — which is the outcome DEC-M1 rejected in its literal form. Both flags
+   * therefore travel with the time, because the time alone cannot distinguish
+   * "ready at 2 s" from "gave up at 8".
+   */
+  readonly onEntryReady?: (details: {
+    readonly afterS: number;
+    readonly aligned: boolean;
+    readonly contentReady: boolean;
+  }) => void;
   /** The session's anchor — the framework's `zero`, already read by the caller. */
   readonly origin: FrameworkLatLong | null;
   /**
@@ -146,8 +247,20 @@ export interface ArModeDeps {
    * between them has to be applied or the city lands in the wrong place.
    */
   readonly sceneAnchor: LatLng;
-  /** The package's `enuFrameAt`, injected so this module stays testable. */
-  readonly enuFrameAt: (origin: LatLng) => { toEnu: (p: LatLng) => EnuPoint };
+  /**
+   * The package's `enuFrameAt`, injected so this module stays testable.
+   *
+   * **`toLatLng` IS PART OF THE CONTRACT since J7** (DEC-J10). It was `toEnu`
+   * only, and both fixtures supplied only that — with an `as ArModeDeps` cast at
+   * the end, so a missing member would not necessarily have been a type error:
+   * it would have surfaced as `frame.toLatLng is not a function` in
+   * `ar-mode.depth-wiring.test.ts`, a file M5 had no reason to touch and which
+   * carries no assertion that would explain the failure. Cold review caught it.
+   */
+  readonly enuFrameAt: (origin: LatLng) => {
+    toEnu: (p: LatLng) => EnuPoint;
+    toLatLng: (p: EnuPoint) => LatLng;
+  };
   readonly onError: (message: string) => void;
   /** Fired when the session ends for ANY reason, including the back gesture. */
   readonly onEnded?: () => void;
@@ -265,7 +378,45 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     hud?: ArHud;
     elevation?: ArElevationControl;
     compass?: ArCompassControl;
+    /**
+     * Removes the `beforexrselect` handler from the PAGE-lifetime overlay root.
+     *
+     * Named here rather than left unregistered because `deps.container` is
+     * `el("ar-root")` and outlives every session: a handler added per entry and
+     * never removed accumulates for the life of the tab (PR #333 review).
+     */
+    releaseXrSelect?: () => void;
+    /** The top-of-screen column the readout lives in (DEC-W5). */
+    stack?: HTMLElement;
+    /**
+     * The bottom-of-screen stack: elevation + slider + gear on one row, the
+     * compass readout on its own line beneath (H6, DEC-Y10/Y12).
+     */
+    bottom?: HTMLElement;
+    experiments?: ArExperimentPanel;
     shell?: ArBuildingMaterial;
+    // `| undefined` EXPLICITLY, because `exactOptionalPropertyTypes` is on:
+    // the landing branch CLEARS this field, and without the union a bare `?`
+    // means "may be absent", not "may be set to undefined".
+    entryVeil?: ReturnType<typeof createArEntryVeil> | undefined;
+    entryWait?: HTMLElement | undefined;
+    entryDomVeil?: ArEntryDomVeil | undefined;
+    /**
+     * Frames seen since the veil went up.
+     *
+     * The DOM veil starts fading on the SECOND, not the first. Both per-frame
+     * hooks run BEFORE `renderer.render` in the same tick, so "the callback
+     * ran" does not mean "a frame was drawn" — fading from the first would
+     * close a sub-frame race with a trigger that fires one call too early.
+     */
+    framesSinceVeil?: number;
+    /**
+     * The frame clock reading the DOM veil's fade began at (DEC-L1).
+     *
+     * Latched on the frame the hard removal used to happen, so the fully-black
+     * period is never shorter than the one the fade replaces.
+     */
+    domVeilFadeStartS?: number;
     unregisterFrame?: () => void;
   } = {};
 
@@ -301,6 +452,20 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // THE FRAME CALLBACK FIRST. It reads the renderer and writes the DOM, and
     // both are about to be torn down — an unregister that ran after the scene
     // changed would leave one more sample running against half-dead state.
+    // THE DOM VEIL FIRST, and unconditionally. It is an OPAQUE, full-viewport
+    // child of `#ar-root`, which is `position: fixed; inset: 0` and hidden only
+    // while `:empty` — so one left behind is a black rectangle over the whole
+    // desktop app. The framework's teardown removes only its own canvas, never
+    // arbitrary children, and this repo has shipped exactly that regression
+    // once already.
+    session.entryDomVeil?.remove();
+    // AND THE FIELD CLEARED, like the mesh veil below it. `remove()` is
+    // idempotent so nothing depended on this, but the descent gate reads
+    // `entryDomVeil === undefined` as "the veil is gone" — leaving a removed
+    // veil in the field is a state where the two disagree, which is worth not
+    // having even where no path reaches it.
+    session.entryDomVeil = undefined;
+    session.releaseXrSelect?.();
     session.unregisterFrame?.();
     session.hud?.dispose();
     // BEFORE the city is handed back, so the control cannot outlive the scene
@@ -310,8 +475,32 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // Same reason as the elevation control above: nothing may be left in
     // `#ar-root`, which is hidden only while `:empty`.
     session.compass?.dispose();
+    session.experiments?.dispose();
+    // AFTER its two children, so the column goes with them. `#ar-root` is
+    // hidden only while `:empty`, and anything left attached keeps a
+    // full-viewport layer over the page once AR stops — the regression
+    // `ar-compass-control.ts`'s own sidecar records having shipped once.
+    session.stack?.remove();
+    // AND THE BOTTOM STACK, for the same reason: `#ar-root` is hidden only
+    // while `:empty`, so an orphaned container keeps a full-viewport layer over
+    // the page once AR stops.
+    session.bottom?.remove();
     // RESTORED BEFORE the city is handed back, so the desktop view never sees
     // an additive, depth-write-free material against its own sky gradient.
+    // THE ENTRY VEIL, BEFORE the city is handed back. It is an opaque,
+    // screen-filling surface in the AR scene; anything that leaves it behind
+    // turns the passthrough into a lid. Disposing here as well as on landing is
+    // deliberate belt-and-braces -- a session ended DURING the descent never
+    // reaches the landing branch, and that is the common case when someone
+    // backs out because the entry looked wrong.
+    session.entryVeil?.dispose();
+    session.entryVeil = undefined;
+    // AND THE WAITING LINE WITH IT (DEC-J11). It is removed when the descent
+    // starts, but a session abandoned DURING the hold never gets there, and a
+    // stranded "finding your position..." is a claim about a session that has
+    // ended.
+    session.entryWait?.remove();
+    session.entryWait = undefined;
     deps.buildingView.setArShellMaterial(undefined);
     session.shell?.material.dispose();
     // On BOTH exits, and NOT because the framework's objects are shared —
@@ -341,6 +530,79 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   // it; ASSIGNED after, because its construction needs `geometricOffset`. The
   // callback only fires inside a live session, after the assignment.
   let auto: ArElevationAuto | undefined;
+
+  // ONE TAP MUST BE ONE EVENT (DEC-Y18). Inside an `immersive-ar` session with
+  // `dom-overlay`, a tap on the overlay fires a DOM `click` AND generates an XR
+  // `select`, and cancelling `beforexrselect` suppresses only the XR half.
+  //
+  // The spec is explicit that this has "no effect on DOM event processing", so
+  // it can never stop a button working — the failure it prevents is the reverse:
+  // a control firing twice through two paths, where anything stateful on the
+  // select side can undo what the click just did. That is one candidate for the
+  // gear button reported as dead in r541.
+  //
+  // Registered BEFORE `initAR` so no frame of a live session is unprotected, and
+  // on the overlay root itself because the event is composed and bubbles from
+  // whichever child was hit.
+  //
+  // REGISTERED INTO `release()`'s DISCIPLINE, not outside it (PR #333 review).
+  // `deps.container` is `el("ar-root")` — a PAGE-lifetime element, not something
+  // built per session — so a listener added here and never removed accumulates
+  // one handler per AR entry for the life of the tab. Today that is N idempotent
+  // `preventDefault()` calls and therefore benign, which is exactly why it would
+  // have survived: the next listener added to this element by someone following
+  // the pattern would not be benign.
+  const cancelXrSelect = (event: Event): void => {
+    event.preventDefault();
+  };
+  deps.container.addEventListener("beforexrselect", cancelXrSelect);
+  session.releaseXrSelect = () => {
+    deps.container.removeEventListener("beforexrselect", cancelXrSelect);
+  };
+
+  /**
+   * Where the descent starts: the height the user was already looking from in
+   * the 3D view, capped.
+   *
+   * **Taken ONCE at entry rather than read per frame** — the desktop camera
+   * keeps living while AR runs, and a descent that tracked it would move the
+   * city because something off-screen moved.
+   *
+   * **Read BEFORE the session is requested (DEC-K5)**, because the DOM veil is
+   * gated on it and has to be in place before `requestSession`. It is the same
+   * number either way: `cameraHeightM()` reads the DESKTOP camera, which
+   * starting a session does not touch.
+   */
+  const descentStartM = Math.min(
+    DESCENT_MAX_START_M,
+    Math.max(0, deps.buildingView.cameraHeightM?.() ?? 0),
+  );
+
+  // THE DOM VEIL GOES UP BEFORE THE SESSION IS ASKED FOR (DEC-K5). From the
+  // moment `requestSession` resolves the passthrough camera is composited, and
+  // nothing is drawn into the XR layer until the first `renderer.render` — an
+  // undrawn `alpha-blend` framebuffer IS the camera image. That window is what
+  // the field report saw as a flash of camera between two blacks, and no scene
+  // mesh can close it because there is no rendered scene yet.
+  //
+  // FOR EVERY ENTRY, NOT ONLY ONE WITH A FLY-IN (DEC-M1b). It used to be gated
+  // on `descentStartM > 0` because without a descent there was no fade to hide
+  // behind, so the veil would have been an opaque block ending in a hard cut.
+  // BOTH HALVES OF THAT ARGUMENT HAVE EXPIRED: DEC-L1 gave the veil its own
+  // fade and DEC-M1 gave it its own end condition. What has not expired is the
+  // reason it is needed — an entry from a ground-level 3D view meets exactly
+  // the same un-aligned city (M2), and gating on the descent left that path
+  // with no cover at all. The MESH veil stays gated on the descent: it hides
+  // the camera during a fly-in, and there is no fly-in there.
+  //
+  // ⚠️ AND THE DESKTOP GOES BLACK WHILE THE CONSENT PROMPT IS UP, which is the
+  // accepted price rather than an oversight. `#ar-root` is hidden only while
+  // `:empty`, so inserting the veil makes it cover the page immediately — and
+  // the browser's AR permission dialog sits over that. Waiting until the
+  // session is granted is not available: `initAR` wraps `requestSession`, and
+  // the window this veil exists for opens the moment that call resolves.
+  // Every exit path removes it, so a refusal returns to the desktop view.
+  session.entryDomVeil = createArEntryDomVeil(deps.container);
 
   try {
     await initAR(
@@ -397,7 +659,25 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           ? {}
           : { depth: { onCaptured: depthPipeline.fold } }),
         onSessionEnd: () => {
-          if (!bootCompleted) return;
+          if (!bootCompleted) {
+            // THE DOM VEIL STILL COMES DOWN, and this branch used to leak it
+            // (found in the DEC-L1 milestone review; the defect predates that
+            // work). A session that ends between `initAR` resolving and the
+            // boot finishing never reaches `release()`, so the veil — FULLY
+            // OPAQUE at that point, since the frame loop has not started —
+            // stays attached to `#ar-root`, which is `position: fixed; inset: 0`
+            // and hidden only while `:empty`. That is a black rectangle over
+            // the whole desktop app with no error anywhere: the exact
+            // regression this repo has shipped once already.
+            //
+            // ONLY THE VEIL, not `release(false)`: the boot is still running
+            // and tearing its half-built state down from here is a different
+            // and much larger change. `remove()` is idempotent, so the boot
+            // path that follows is unaffected.
+            session.entryDomVeil?.remove();
+            session.entryDomVeil = undefined;
+            return;
+          }
           // NOT `endARSession()` — the session is already ending.
           release(false);
           deps.onEnded?.();
@@ -422,6 +702,11 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     //
     // `endARSession()` is the framework's own teardown and is safe to call
     // against a half-built session; it is what clears both.
+    // AND THE DOM VEIL, which `endARSession` does not touch — it removes the
+    // framework's own canvas and nothing else. This is the path the user takes
+    // by dismissing the AR permission prompt, so leaving an opaque child here
+    // would black out the desktop app on a refusal.
+    session.entryDomVeil?.remove();
     void endARSession();
     deps.onError(
       error instanceof Error ? error.message : "Failed to start AR.",
@@ -438,6 +723,9 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   const camera = getCamera();
   if (scene === null || arWorldGroup === null || camera === null) {
     deps.onError("AR scene not ready.");
+    // Same reasoning as the reject path above: `endARSession` clears the
+    // framework's canvas, not our overlay children.
+    session.entryDomVeil?.remove();
     void endARSession();
     return NOOP_AR_MODE;
   }
@@ -500,18 +788,147 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // step. The manual trim bypasses the ease by design (DEC-E1).
     let autoM: number | null = null;
     let manualTrimM = 0;
+    /**
+     * The entry fly-down (Q5). `descentStartS` is the frame clock reading the
+     * descent began at, cleared once it lands so the term costs nothing for the
+     * rest of the session; `descentM` is its current contribution.
+     */
+    let descentStartS: number | undefined;
+    /** The frame clock reading of the session's first frame (r543 entry gate). */
+    let contentAttached = false;
+    let firstFrameS: number | undefined;
+    let descentM = 0;
+    /** Latched, so the one-shot start guard cannot re-arm after the landing. */
+    let descentDone = false;
+    /** Latched, so the engagement stamp is announced once per session. */
+    let estimateEngagedReported = false;
+
     let appliedAutoM = 0;
+    /**
+     * Move everything that lives on the vertical axis, together.
+     *
+     * THE ENTRY GROUND MOVES HERE AND NOWHERE ELSE, which is the whole reason
+     * this function grew a body. It was positioned at its creation and again in
+     * the frame loop, and both call sites used `descentM` alone -- so the
+     * ground sat `auto + trim` metres from the surface the buildings stand on.
+     * Fixing the two call sites left a THIRD path uncovered: the manual nudge
+     * re-attaches the city through here without touching the frame loop, so the
+     * ground lagged a nudge until the next frame. Three call sites, one of them
+     * missed, is the argument for none.
+     */
     const applyComposed = () => {
-      applyElevation(composeElevationM(appliedAutoM, manualTrimM));
+      const composedM = composeElevationM(appliedAutoM, manualTrimM, descentM);
+      applyElevation(composedM);
+      // NOTHING FOR THE VEIL HERE. Unlike the entry ground it replaced, the
+      // veil is centred on the CAMERA rather than on the city, so the elevation
+      // composition cannot move it -- which removes the three-call-site hazard
+      // this function was grown to contain.
     };
-    applyElevation(0);
+    // ATTACHED AT DESCENT DEPTH, NOT AT ZERO -- the r543 entry jump.
+    //
+    // This used to be `applyElevation(0)`, which put the city at the height an
+    // auto-elevation term of 0 implies, because no estimate has arrived on the
+    // first frame. "Das erste Mal ... starte ich bei Altitude null ... wodurch
+    // ich dann erstmal sehr weit unter der Open Street Map Welt bin und dann
+    // wird meine Altitude gefixt, so dass ich dann auf einmal über die OSM Welt
+    // springe." The correction landed mid-descent, as a jump.
+    //
+    // THE FIX IS TWO HALVES AND NEEDS BOTH. The city goes straight to the
+    // descent's starting depth here, and the frame loop holds the passthrough
+    // BLACK until the estimate lands (see `descentMayStart`) -- so the frames
+    // in which the city is placed from an uncorrected datum are frames nobody
+    // sees. The auto term is then SNAPPED rather than eased, under that black,
+    // and the descent begins from a position that is already right.
+    //
+    // WHY EAGERLY AT ALL, rather than deferring the first attach to the frame
+    // that opens the gate: `attachContentTo` can throw, and `startArMode`'s
+    // catch is what turns that into a clean rollback -- `onError`, the session
+    // ended, the button restored. Moving the first attach into the frame
+    // callback moved it OUT of that catch, leaving a live session with no city
+    // and no error. A test written for exactly that path caught it.
+    descentM = descentOffsetM({ elapsedS: 0, startM: descentStartM });
+
+    // THE ENTRY VEIL (J1, DEC-J1). "Eine Schicht ... die zwischen dem
+    // Kamerahintergrundbild und den 3D-OpenStreetMap-Szenendaten ist ... erst
+    // komplett sichtbar ... und dann ... herausgefadet wird."
+    //
+    // IT REPLACES BOTH the entry GROUND (r543, reversed by the same session that
+    // asked for this) AND `renderer.setClearAlpha`, which was the shipped veil
+    // and is dead inside an XR session -- three's `WebGLBackground.render()`
+    // overwrites the clear to (0,0,0,0) for every `alpha-blend` environment.
+    // See `ar-entry-veil.ts.md`.
+    //
+    // ONLY WHEN THERE IS A DESCENT. Entering from a ground-level 3D view gives
+    // `descentStartM === 0`, for which `entryVeilAlpha` answers 0 at every
+    // reading — there is no fly-in to hide, so a sphere here would be an opaque
+    // lid that never lifts. The DOM veil covers that entry instead (DEC-M1b).
+    if (descentStartM > 0) {
+      const entryVeil = createArEntryVeil();
+      entryVeil.setAlpha(
+        entryVeilAlpha({ elapsedS: 0, startM: descentStartM }),
+      );
+      entryVeil.follow(camera.getWorldPosition(new THREE.Vector3()));
+      scene.add(entryVeil.mesh);
+      session.entryVeil = entryVeil;
+    }
+
+    // THE WAITING LINE (DEC-J11). The hold before anything moves can last from
+    // `ENTRY_DOM_VEIL_HOLD_S` to the readiness ceiling, and a static picture
+    // with no motion for that long does not say whether the entry is working or
+    // stalled -- the same ambiguity `descentComplete` exists to remove at the
+    // other end.
+    //
+    // OUTSIDE THE DESCENT GATE, unlike the sphere above (milestone review,
+    // finding 4). It used to sit inside it, which was right while the DOM veil
+    // shared that condition: an entry with no fly-in showed the live scene and
+    // had nothing to wait for. DEC-M1b changed that -- a ground-level entry is
+    // now behind an opaque veil for up to ten seconds -- and leaving the line
+    // behind would have made that path a featureless black screen, which is
+    // precisely the ambiguity DEC-J11 wrote it for.
+    //
+    // NOT "the screen would otherwise be blank", which an earlier draft
+    // claimed of the fly-in case: the city is already attached below the user
+    // by the eager attach above, and the additive shell draws OVER the sphere,
+    // so the hold shows the city 60-100 m down. It is the absence of MOTION
+    // that is ambiguous there, not the absence of pixels.
+    const entryWait = document.createElement("p");
+    entryWait.className = "ar-entry-wait";
+    entryWait.setAttribute("role", "status");
+    entryWait.setAttribute("aria-live", "polite");
+    entryWait.textContent = "Finding your position…";
+    deps.container.append(entryWait);
+    session.entryWait = entryWait;
+
+    applyComposed();
 
     // AR ONLY. The desktop preview discards `geometricOffset` (it attaches with
     // "demo-scene", which sets identity), and making it follow would lift the
     // buildings away from the ground plane, the route line and the NPC agent —
     // all of which live on the preview's own scene and would stay put.
+    // THE BOTTOM STACK (H6, DEC-Y10). Two rows, and the second one is forced by
+    // arithmetic rather than chosen: measured at 390 px the elevation control is
+    // ~149 px with the round-four tap targets (2 rem buttons, a 3 rem value box)
+    // and the gear adds ~40 px, leaving ~180 px for a slider — while the live
+    // readout (DEC-Y12) is ~40 characters and cannot share a row with anything.
+    // So row one is elevation + slider + gear, and the readout gets its own line
+    // beneath. Discovering that in CSS instead of stating it here is how the
+    // previous two attempts at this row ended up overflowing.
+    //
+    // ONE CONTAINER, not three absolutely-positioned controls. The compass box
+    // changes height at runtime and the readout's text length changes with the
+    // phase, so two hard-coded offsets that must not collide is exactly how the
+    // earlier toast/slider overlap happened (PR #311 review, finding 4).
+    const arBottom = document.createElement("div");
+    arBottom.className = "ar-bottom";
+    deps.container.append(arBottom);
+    session.bottom = arBottom;
+
+    const arBottomRow = document.createElement("div");
+    arBottomRow.className = "ar-bottom-row";
+    arBottom.append(arBottomRow);
+
     session.elevation = createArElevationControl({
-      root: deps.container,
+      root: arBottomRow,
       onChange: (offsetM) => {
         manualTrimM = offsetM;
         applyComposed();
@@ -538,21 +955,74 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       startDepthCapture(AR_DEPTH_SAMPLER_CONFIG);
     }
 
-    // THE COMPASS SLIDER (DEC-E2), only when the caller can actually dispatch.
+    // THE TOP-OF-SCREEN COLUMN the readout and the slider share (G9, DEC-W5).
+    //
+    // A BOX THE DEMO OWNS, not `#ar-root` itself. The framework inserts its
+    // full-screen canvas as `#ar-root`'s first child, in flow with an inline
+    // 100vh height — so making that element a flex column pushed both controls
+    // a full viewport below the fold. This wrapper keeps the column without
+    // touching what the framework puts in the overlay root.
+    const arStack = document.createElement("div");
+    arStack.className = "ar-stack";
+    deps.container.append(arStack);
+    session.stack = arStack;
+
+    // THE COMPASS SLIDER (DEC-E2) AND THE EXPERIMENT PANEL (DEC-Y10), only when
+    // the caller can actually dispatch.
+    //
+    // BOTH IN THE BOTTOM ROW SINCE H6: "diesen Kompass-Slider würde ich
+    // eigentlich gerne nach unten packen neben die Plus-Minus-UI". That
+    // partially reverses DEC-W5, which put the slider in the top stack — G9's
+    // original complaint was that it sat in the MIDDLE of the view, and the
+    // bottom satisfies that just as well as the top did.
     if (deps.onCompassSettings !== undefined) {
       const onCompassSettings = deps.onCompassSettings;
-      session.compass = createArCompassControl({
-        root: deps.container,
+      // Held so a panel change can re-publish the slider's current position:
+      // `compassSettingsFor` maps influence AND experiments together, so a
+      // toggle change must resend the weight or the store would take the
+      // experiments with a default weight.
+      let experiments = COMPASS_EXPERIMENT_DEFAULTS;
+
+      const compass = createArCompassControl({
+        root: arBottom,
         onChange: onCompassSettings,
+        experiments: () => experiments,
       });
-      session.compass.attach();
+      session.compass = compass;
+      compass.attach();
       // READY IMMEDIATELY, and that is a fact rather than an assumption: every
       // compass setter is a no-op while the store's gps state is null, but AR
       // entry is GATED on `canEnterAr(deps.origin)`, and a non-null origin IS the
       // framework's `zero` — so `setZeroPos` has already been dispatched by the
       // time this line runs. The control's latch stays as the defensive path for
       // any future caller that is not gated the same way.
-      session.compass.setReady(true);
+      compass.setReady(true);
+
+      session.experiments = createArExperimentPanel({
+        root: arBottomRow,
+        initial: experiments,
+        onChange: (next) => {
+          const gateChanged = next.trustGateMode !== experiments.trustGateMode;
+          experiments = next;
+          // RE-PUBLISH THROUGH THE SLIDER, not directly: the store needs one
+          // coherent configuration, and the slider owns the weight half of it.
+          compass.republish();
+          // AND SAY SO (DEC-K6). The trust gate is read live, on every GPS
+          // observation — but nothing re-solves on the dispatch, the matrix is
+          // recomputed only when the next fix arrives, and the view lerps
+          // toward it. So a correct change produces NO visible motion, the
+          // panel closes itself, and a field session reasonably concluded the
+          // setting was being ignored.
+          //
+          // Announced only when the gate actually MOVED: a confirmation that
+          // fires for every panel interaction, including ones that changed
+          // nothing, is noise and stops being read.
+          if (gateChanged) {
+            compass.announce(describeTrustGate(next.trustGateMode));
+          }
+        },
+      });
+      session.experiments.attach();
     }
 
     // THE AR LOOK (owner decision 2026-08-16): the "Double-sided X-ray pulse"
@@ -584,7 +1054,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // the desktop status line reports `BuildingView`'s renderer, and the session
     // draws with a DIFFERENT one, so the number visible during AR described a
     // renderer that was not producing the frames.
-    session.hud = createArHud(deps.container);
+    session.hud = createArHud(arStack);
     const renderer = getRenderer();
     // FPS IS AVERAGED OVER THE WINDOW, not sampled from one frame (r510 review).
     // A single `1/dt` spikes routinely on a phone — GC, a worker message, the
@@ -607,6 +1077,201 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // The last auto state, held for the HUD between the ~1 Hz ticks.
     let latestAuto: ArElevationAutoState | undefined;
     session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
+      // THE FIRST-FRAME STAMP, TAKEN AT THE TOP (DEC-M1). It used to be latched
+      // just above the descent gate, which was its only reader; the veil gate
+      // now measures its hold from the same reading, and two clocks for "how
+      // long has this session been running" is exactly the drift this file has
+      // been bitten by before.
+      firstFrameS ??= elapsed;
+      // WHETHER THE FUSION HAS SOLVED AT ALL, hoisted out of the auto-elevation
+      // block that used to own it (DEC-M1). It gates the veil now, so it must
+      // be computed whatever the estimator configuration is — with
+      // `?autoElevation=off` the old copy never ran at all, and the veil would
+      // have waited out its ceiling on every entry.
+      //
+      // IDENTITY MEANS NO SOLVE HAS LANDED. The framework's lerper applies the
+      // FIRST target instantly rather than animating out of identity, so this
+      // is "a solve has been applied", not "a solve is on its way".
+      const aligned = !arWorldGroup.matrix.equals(identityMatrix);
+      // THE DOM VEIL STARTS FADING ON THE SECOND FRAME, AND THE COUNT IS THE
+      // POINT.
+      //
+      // Both per-frame hooks the framework offers run BEFORE
+      // `renderer.render(scene, camera)` in the same tick, so by the time this
+      // callback runs for the first time NOTHING has been drawn yet. Removing
+      // the DOM veil there would uncover the passthrough for exactly the frame
+      // the mesh veil has not been rendered into — closing a sub-frame race
+      // with a trigger that fires one call too early, which is the same class
+      // of mistake this milestone exists to fix.
+      //
+      // On the second callback a full frame has been submitted with the mesh
+      // veil in the scene, so the handover is invisible: same colour, one
+      // opaque layer over another.
+      //
+      // AND IT FADES FROM THERE RATHER THAN VANISHING (DEC-L1). The
+      // seventeenth field session still saw a flash of camera at the instant of
+      // the hard cut, and the cause is not determinable from here — a later
+      // frame that skipped `renderer.render`, a one-frame seam between the DOM
+      // overlay layer and the WebGL layer, or a two-frame margin too thin for
+      // the device. A fade covers all three without anyone having to decide
+      // which is real.
+      //
+      // ⚠️ THE SECOND FRAME IS NOW A FLOOR, NOT THE TRIGGER (DEC-M1). The
+      // eighteenth session asked for a deliberate black period long enough that
+      // the work AR entry starts has finished — *"nach den sechs Sekunden
+      // sollten eigentlich die OpenStreetMap-3D-Sachen alle da sein"* — and
+      // watched an un-aligned city because nothing waited for the first GPS
+      // solve. `entryFadeMayStart` owns both conditions and the hold; this
+      // block owns only the sub-frame race above.
+      //
+      // REMOVED WHEN THE CURVE REACHES 0, not on a timer of its own, so the
+      // element and the opacity cannot disagree about whether the entry is over.
+      if (session.entryDomVeil !== undefined) {
+        session.framesSinceVeil = (session.framesSinceVeil ?? 0) + 1;
+        // CALLED EVERY FRAME UNTIL IT OPENS, and read from `deps` each time
+        // rather than captured: the pass it reports on starts AFTER
+        // `startArMode` resolves, so a value read once at construction would be
+        // `false` forever. Absent means "nothing to wait for", the convention
+        // `estimateReady` already uses for an absent estimator.
+        const contentReady = deps.entryContentReady?.() ?? true;
+        const waitedS = elapsed - firstFrameS;
+        // AN UNUSABLE CLOCK OPENS THE GATE, and this is the one place that
+        // rule is inverted (milestone review, finding 5). `entryFadeMayStart`
+        // answers "not yet" for a `NaN`, deliberately: for the FLY-IN, opening
+        // on a meaningless reading would place the city from an uncorrected
+        // datum. But this veil's removal now depends on that gate, and
+        // `firstFrameS` is latched with `??=` — so one `NaN` first reading
+        // would poison every later `waitedS` and leave an opaque element over
+        // a live session forever. That is the lid, arriving through the guard
+        // that was supposed to prevent one.
+        //
+        // `domVeilAlpha(NaN)` already answers 0, i.e. "no veil", so opening
+        // here restores exactly the behaviour this module had before the gate
+        // existed: an unusable clock takes the veil down rather than leaving it.
+        const clockUnusable = !Number.isFinite(waitedS);
+        if (
+          session.framesSinceVeil >= 2 &&
+          (session.domVeilFadeStartS !== undefined ||
+            clockUnusable ||
+            entryFadeMayStart({ waitedS, aligned, contentReady }))
+        ) {
+          if (session.domVeilFadeStartS === undefined) {
+            session.domVeilFadeStartS = elapsed;
+            // THE READINESS STAMP (DEC-M1a). An instrument, not a feature: the
+            // 8 s ceiling is a guess, and this is what turns the next field
+            // session into a measurement of whether it is the normal path.
+            deps.onEntryReady?.({ afterS: waitedS, aligned, contentReady });
+          }
+          const alpha = domVeilAlpha(elapsed - session.domVeilFadeStartS);
+          if (alpha > 0) {
+            session.entryDomVeil.setAlpha(alpha);
+          } else {
+            session.entryDomVeil.remove();
+            session.entryDomVeil = undefined;
+          }
+        }
+      }
+      // THE ENTRY GATE (r543, extended by DEC-M2). The descent -- and the first
+      // attach with it -- waits for the elevation estimate it is measured from,
+      // AND for the entry veil to be gone.
+      //
+      // THE VEIL CONDITION IS DEC-M2. The fly-in used to start the moment the
+      // estimate engaged, which on a warm start is the first frame -- so the
+      // city was already rising behind an opaque veil and the user met it
+      // half-finished. Sequencing it behind the veil is what makes the entry
+      // deterministic rather than a race with the estimator.
+      //
+      // The clock these are measured against is `firstFrameS`, latched at the
+      // top of this callback for the reason recorded there.
+      // NO `descentM === 0` TERM ANY MORE, and dropping it was required rather
+      // than tidy: the city is now attached at descent depth by `startArMode`,
+      // so `descentM` is already `-startM` on the first frame and that
+      // condition would never hold again. Left in place it silently disabled
+      // the entire descent -- four tests caught it, all reporting the city
+      // stuck at its starting depth. `descentStartS === undefined` already
+      // means "not begun" and `descentDone` already means "finished".
+      if (descentStartS === undefined && !descentDone) {
+        // TWO WAYS TO HAVE NOTHING TO WAIT FOR, and both must open the gate
+        // immediately or it becomes a stall.
+        //
+        // NO ESTIMATOR: `auto` is undefined when the caller wired no DEM
+        // sampler or the kill switch is set, so no estimate is ever coming.
+        //
+        // NO DESCENT: `descentStartM === 0` -- entered from a ground-level 3D
+        // view, or from a `buildingView` that reports no camera height at all,
+        // since that read is optional-chained. There is then no entry
+        // transition to hide the wait behind: `entryVeilAlpha` answers 0 for a
+        // zero start, so no mesh veil is built and nothing fades. Waiting here
+        // would be an invisible stall.
+        const estimateReady =
+          auto === undefined ||
+          descentStartM === 0 ||
+          (latestAuto?.engaged === true && autoM !== null);
+        // THE VEIL FIRST (DEC-M2), and expressed as "the element is gone"
+        // rather than as a second clock: the veil's own removal condition is
+        // its alpha reaching 0, so this cannot disagree with what the screen
+        // shows.
+        //
+        // ⚠️ AND IT SUBSUMES THE ESTIMATE WAIT AT TODAY'S CONSTANTS, which the
+        // milestone review caught the plan claiming otherwise. The veil cannot
+        // go before `ENTRY_DOM_VEIL_HOLD_S + ENTRY_DOM_VEIL_FADE_S` = 4 s, and
+        // `descentMayStart`'s fallback expires at `DESCENT_ESTIMATE_WAIT_S` =
+        // 3 s, so by the time `veilGone` is true the second term is already
+        // satisfied on every path INCLUDING the ceiling. It is kept because it
+        // is the honest statement of what the fly-in requires — the r543 jump
+        // is about the estimate, not about the veil — and because the two sets
+        // of constants are owned by different modules and can drift apart.
+        // `ar-entry-dom-veil.test.ts` asserts the relationship so that a future
+        // change to either side surfaces as a red test rather than as a silent
+        // change in which gate is load-bearing.
+        const veilGone = session.entryDomVeil === undefined;
+        if (
+          !veilGone ||
+          !descentMayStart({ waitedS: elapsed - firstFrameS, estimateReady })
+        ) {
+          // OPAQUE WHILE WAITING, on the same channel the descent fade uses, so
+          // the two cannot disagree about what the screen shows. Without this
+          // the wait would be plain passthrough and would read as AR having
+          // failed to load anything.
+          //
+          // AND FOLLOWING THE CAMERA THROUGHOUT. The user can turn on the spot
+          // during the hold, and a veil left where the session started would
+          // swing off the screen edge -- the one failure DEC-J2 chose a sphere
+          // to avoid, given away for free by not re-centring it.
+          session.entryVeil?.setAlpha(1);
+          session.entryVeil?.follow(camera.getWorldPosition(cameraWorld));
+        } else {
+          // SNAP THE AUTO TERM RATHER THAN EASE IT, exactly once, and only here.
+          // The ease below exists so a LIVE correction cannot make the city jump
+          // under someone who is looking at it -- but nothing is on screen yet,
+          // so there is nothing to jump, and easing from 0 would spend the whole
+          // descent travelling to the position the descent is measured from.
+          // NOT COVERED BY A TEST, and the reason is itself the finding: the
+          // estimator cannot engage inside the 3 s wait in any existing
+          // fixture (it needs ~5 s of walking), so this branch is unreachable
+          // there and mutating it to a bare 0 leaves the suite green. Writing
+          // the test needs a field measurement first -- see the followup doc
+          // named beside DESCENT_ESTIMATE_WAIT_S.
+          appliedAutoM = estimateReady && autoM !== null ? autoM : 0;
+          descentStartS = elapsed;
+          // ASKED FOR, NOT RE-DERIVED (DEC-Y14). This used to be
+          // `descentM = descentStartM`, a hand-rolled copy of "the offset at
+          // t=0" -- and `descentStartM` is a POSITIVE height, so after the sign
+          // fix that one line still attached the city ABOVE the user for a
+          // single frame before the block below recomputed it. It self-healed
+          // within the frame, which is precisely why it survived: the endpoint
+          // assertions read the last attach and never saw it.
+          descentM = descentOffsetM({ elapsedS: 0, startM: descentStartM });
+          // AND RE-APPLY, which is what corrects the auto term: the eager attach
+          // at entry used 0, and `applyComposed` is where the snapped value
+          // above reaches the city -- under the black that has been held since
+          // entry. This line was duplicated, with the comment attached to the
+          // dead copy, until a cold review pointed out that recomputing a pure
+          // function of two unchanged values cannot correct anything.
+          applyComposed();
+          contentAttached = true;
+        }
+      }
       windowOpenedAtS ??= elapsed;
       framesThisWindow += 1;
       const windowS = elapsed - windowOpenedAtS;
@@ -626,7 +1291,10 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       // very frame published. `sample` self-throttles to ~1 Hz.
       if (auto !== undefined) {
         const pose = getCurrentArPose();
-        const aligned = !arWorldGroup.matrix.equals(identityMatrix);
+        // `aligned` COMES FROM THE TOP OF THE CALLBACK NOW (DEC-M1). It was
+        // computed here, which was fine while this block was its only reader —
+        // the veil gate is a second one, and with `?autoElevation=off` this
+        // block does not run at all.
         latestAuto = auto.sample({
           nowMs: elapsed * 1000,
           cameraPosAr:
@@ -638,6 +1306,23 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           alignment: aligned ? arWorldGroup.matrix.elements : undefined,
         });
         autoM = latestAuto.autoM;
+        // THE ENGAGEMENT STAMP (owner decision, 2026-08-23), and it is an
+        // instrument rather than a feature — see `onEstimateEngaged`.
+        //
+        // ONCE, latched on its own flag rather than on `latestAuto.engaged`
+        // alone: engagement is HYSTERETIC (`ar-elevation-auto.ts` owns both
+        // thresholds), so a confidence hovering at the boundary would otherwise
+        // re-announce every crossing.
+        //
+        // RELATIVE TO THE FIRST FRAME, not to `elapsed`, which is PAGE-relative
+        // — a session entered thirty seconds after load sees its first frame at
+        // `elapsed ~= 30`, and an unsubtracted stamp would report a number that
+        // grows with how long the tab has been open. Same trap the fps sampler
+        // and the descent clock both document.
+        if (latestAuto.engaged && !estimateEngagedReported) {
+          estimateEngagedReported = true;
+          deps.onEstimateEngaged?.(elapsed - (firstFrameS ?? elapsed));
+        }
         // THE APPLICATION-TIME EASE (cold-review F4): glide the applied auto
         // contribution toward the published target at the bounded rate, so a
         // cold-start first value or a 1 Hz step never moves the content in
@@ -654,7 +1339,13 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
         // the city; and because the target is EASED below, engaging and
         // releasing both glide at AUTO_APPLY_RATE_M_PER_S rather than step.
         const targetM = latestAuto.engaged && autoM !== null ? autoM : 0;
-        if (appliedAutoM !== targetM) {
+        // NOT BEFORE THE FIRST ATTACH (r543). Until the entry gate above has
+        // put the city in the scene there is nothing to ease -- and easing
+        // anyway would call `applyComposed`, which IS the attach, defeating
+        // the gate by the back door. The gate snaps `appliedAutoM` to its
+        // target at the moment it attaches, so this block has nothing left to
+        // do on that frame either.
+        if (contentAttached && appliedAutoM !== targetM) {
           // Non-finite dt (defensive: the contract says a number, but a NaN
           // here would poison appliedAutoM for the rest of the session)
           // moves nothing, like the documented dt = 0 reset frame.
@@ -668,87 +1359,255 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
           applyComposed();
         }
       }
+      // THE ENTRY FLY-DOWN (H5, Q5), driven from the same `elapsed` clock as the
+      // breathing below — monotonic and page-relative, so a backgrounded tab
+      // cannot make the city jump.
+      //
+      // A THIRD TERM IN THE COMPOSITION, never its own `applyElevation` call:
+      // that function SETS rather than accumulates, and the auto ease above
+      // re-applies the composition whenever it moves, so a descent written the
+      // obvious way is clobbered within a frame or two.
+      if (descentStartS !== undefined) {
+        const input = {
+          elapsedS: elapsed - descentStartS,
+          startM: descentStartM,
+        };
+        const nextDescentM = descentOffsetM(input);
+        if (nextDescentM !== descentM) {
+          descentM = nextDescentM;
+          applyComposed();
+        }
+        // THE CAMERA FADE (DEC-J1), on the veil rather than on the renderer.
+        //
+        // THIS USED TO BE `setClearAlpha(...)`, and it did nothing on any
+        // device: `WebGLBackground.render()` reads `xr.getEnvironmentBlendMode()`
+        // AFTER applying our clear and forces (0,0,0,0) for `alpha-blend`, which
+        // is every video-passthrough phone. The unit test asserting the call was
+        // made passed the whole time. `ar-entry-veil.ts` carries the full
+        // history.
+        //
+        // THE WAITING LINE GOES THE MOMENT THE DESCENT DOES (DEC-J11): the
+        // ambiguity it answers is "is anything happening", and something is.
+        session.entryWait?.remove();
+        session.entryWait = undefined;
+        session.entryVeil?.follow(camera.getWorldPosition(cameraWorld));
+        // ONCE PER FRAME, and read twice from the same value: the disposal
+        // below asks the same question, and two calls would be two chances for
+        // the alpha the user sees and the alpha the disposal reads to disagree.
+        const veilAlpha = entryVeilAlpha(input);
+        session.entryVeil?.setAlpha(veilAlpha);
+        if (!descentDone && descentComplete(input)) {
+          // THE VISIBLE END-STATE SIGNAL the plan requires. A descent that
+          // STALLS is otherwise indistinguishable from the recorded "flying
+          // roughly 50 m above the OSM buildings" datum bug, and that ambiguity
+          // is what would make a field report unactionable. Saying so once, on
+          // arrival, is the cheapest way to tell them apart.
+          //
+          // LATCHED, because this block now keeps running after the landing.
+          descentDone = true;
+          deps.onDescentComplete?.();
+        }
+        // ⚠️ THE VEIL OUTLIVES THE LANDING NOW (DEC-M3), AND THE CLOCK HAS TO
+        // OUTLIVE IT WITH IT. This branch used to clear `descentStartS` and
+        // dispose the veil in the same breath as reporting the landing. Keeping
+        // the disposal here while `entryVeilAlpha` holds at 1 until landing
+        // would have disposed a fully opaque veil -- and clearing the clock
+        // while moving only the disposal would have left the sphere at opacity
+        // 1 for the rest of the session, which is the lid `ar-entry-veil.ts`
+        // calls strictly worse than having no veil at all. The cold review of
+        // this plan caught exactly that.
+        //
+        // So the veil's own alpha is what ends the entry: at 0 it is disposed
+        // and the clock is cleared, after which this whole block costs nothing
+        // for the rest of the session. `descentDone` alone latches the one-shot
+        // start guard above.
+        if (session.entryVeil !== undefined && veilAlpha <= 0) {
+          session.entryVeil.dispose();
+          session.entryVeil = undefined;
+          descentStartS = undefined;
+        } else if (session.entryVeil === undefined && descentDone) {
+          // NO VEIL TO WAIT FOR -- a session that never built one, i.e. a
+          // ground-level entry. The clock stops at the landing, as it always
+          // did.
+          descentStartS = undefined;
+        }
+      }
+
       // THE BREATHING. Driven from `elapsed` -- the frame clock the loop already
       // computed, monotonic and page-relative -- rather than from wall time, so the
       // pulse cannot jump when the tab is backgrounded.
       session.shell?.setTime(elapsed);
-      const live = deps.liveMeasurements?.() ?? {};
-      const wrote = session.hud?.sample(
-        {
-          // THE PREVIOUS FRAME'S COST, and the comment here said "this frame's"
-          // until the r510 review. `WebGLRenderer.render` calls `info.reset()` at
-          // its top, and the framework runs these callbacks BEFORE `render` — so
-          // what is readable now is the last completed frame. At a 2 Hz readout
-          // the one-frame lag is invisible; the mechanism is written down because
-          // the next change will reason from it.
-          drawCost:
-            renderer === null
+      // NOTHING BELOW IS BUILT UNLESS THE READOUT WILL ACCEPT IT (PR review of
+      // P4/P5, finding 7). `sample` is cheap and its argument is not: this
+      // object costs an ENU transform, a bilinear terrain read and a
+      // great-circle distance, and the loop was paying all of it at display
+      // rate for a readout that takes a value twice a second — roughly 30x more
+      // often than the result is used, inside an XR frame loop, on a phone.
+      //
+      // `due` reads the same `lastWriteMs` `sample` does, so this is one
+      // cadence queried twice rather than two cadences that can drift.
+      const hud = session.hud;
+      if (hud !== undefined && hud.due(elapsed * 1000)) {
+        const live = deps.liveMeasurements?.() ?? {};
+        // THE COMPASS READOUT (DEC-Y12), on the HUD's own ~1 Hz rather than per
+        // frame: these change once per GPS event, and a per-frame readout would
+        // flicker while saying nothing new.
+        //
+        // Read through the library's selector rather than off the state tree, so
+        // the demo does not depend on where the fields live. Absence is passed
+        // through as absence — the readout distinguishes "not measured yet" from
+        // "measured as zero", and with an untrusted vote those look identical in
+        // the number alone.
+        // MAPPED FIELD BY FIELD, not spread. The selector returns the whole
+        // `TrustMemory` object; the readout wants its `state` string. Passing
+        // the selector's result straight through typechecked only because the
+        // framework's built `dist` was stale at the time — it would have
+        // rendered every session as "untrusted" on device while every test
+        // passed. Naming the three fields makes the adapter visible and makes a
+        // future shape change a compile error rather than a wrong readout.
+        // GUARDED, because this is a DEBUG READOUT and it runs in the frame
+        // loop. `getCompassDiagnostics` is licence-gated like every other public
+        // selector and throws when the store was not built through
+        // `createSlamAppStore` — a legitimate configuration for a harness or a
+        // future embedder. A readout that cannot be drawn must never stop the
+        // session drawing: the failure mode without this is that AR dies at the
+        // first HUD tick, which is a far worse outcome than a missing line.
+        try {
+          // CAST, and the `try` above is what makes it safe rather than
+          // hopeful. `ArModeDeps.store` is typed as the framework's minimal
+          // `SubscribableStore` on purpose — this module needs a subscription
+          // and nothing else, and widening it to the full `GpsSlamState` would
+          // make every test fixture build a whole store. The selector reads
+          // three optional fields and the guard catches a store that cannot
+          // answer, so the narrow type is a documentation choice rather than a
+          // safety one. The parameter type is derived from the selector itself, so
+          // the demo needs no direct dependency on the library to name it.
+          const compassState = getCompassDiagnostics(
+            deps.store.getState() as unknown as Parameters<
+              typeof getCompassDiagnostics
+            >[0],
+          );
+          session.compass?.setLive({
+            observability: compassState.observability,
+            appliedWeight: compassState.appliedWeight,
+            trust: compassState.trust?.state,
+          });
+        } catch {
+          // Leave the readout showing the target alone, which is what it shows
+          // before anything has been measured — an honest "no live value".
+        }
+        const wrote = hud.sample(
+          {
+            // THE PREVIOUS FRAME'S COST, and the comment here said "this frame's"
+            // until the r510 review. `WebGLRenderer.render` calls `info.reset()` at
+            // its top, and the framework runs these callbacks BEFORE `render` — so
+            // what is readable now is the last completed frame. At a 2 Hz readout
+            // the one-frame lag is invisible; the mechanism is written down because
+            // the next change will reason from it.
+            drawCost:
+              renderer === null
+                ? undefined
+                : {
+                    calls: renderer.info.render.calls,
+                    triangles: renderer.info.render.triangles,
+                  },
+            fps,
+            // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
+            // written directly by the alignment lerper with `matrixAutoUpdate =
+            // false`, so element 13 is the live baseline rather than a stale copy.
+            //
+            // UNDEFINED UNTIL AN ALIGNMENT EXISTS (r511 review).
+            // `createSceneHierarchy` leaves the matrix at IDENTITY, whose element 13
+            // is a perfectly real `0` — so the readout showed `baseline 0.00 m`
+            // before the fusion had said anything at all. That is the one thing
+            // `ar-measurements.ts` exists to forbid: an unmeasured value rendered as
+            // a number, and this one is worse than most because zero is a plausible
+            // reading. Compared against the whole matrix rather than element 13
+            // alone, because a genuine zero baseline must still be reportable.
+            worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
               ? undefined
+              : arWorldGroup.matrix.elements[13],
+            // THE REAL HOLDING HEIGHT (DEC-Y5), which the auto sampler above
+            // already reads and this readout already had every reason to show.
+            // The framework requests `local-floor` as a REQUIRED feature
+            // (`webxr-session.ts`), so the pose's `y` is height above the floor
+            // plane — the only quantity here that answers "how high am I holding
+            // the phone", and the one a reader was previously trying to get out
+            // of `above terrain`, which cannot express it at all.
+            //
+            // `?? undefined` rather than a fallback number: before the first
+            // pose there is no camera, and `camera 0.00 m` would claim the phone
+            // is lying on the ground.
+            cameraHeightM: getCurrentArPose()?.position.y,
+            // THE FUSED BEARING — what the alignment currently thinks north is,
+            // which is the only way to SEE what the compass slider did.
+            //
+            // WORLD SPACE IS THE GEO FRAME HERE, and that is the whole subtlety.
+            // The hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the
+            // alignment) → basisChangeNode → arpose → camera`, so the camera is a
+            // DESCENDANT of the aligned group and its world transform already
+            // carries the alignment. A direction taken relative to `arWorldGroup`
+            // would be in the AR-odometry frame — the alignment's *domain*, i.e.
+            // un-aligned — and would be a plausible number that is not north.
+            // `ar-scene-hierarchy.ts` records two independent readers getting this
+            // backwards; `nueBearingDeg` carries the axis convention and its tests.
+            fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
+              ? undefined
+              : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
+            // WHERE THE ALIGNMENT THINKS THE USER IS (J7, DEC-J9/DEC-J10), so
+            // the `raw gps` line beside it finally has something to be raw
+            // AGAINST — two sessions in three asked whether it was already
+            // fused.
+            //
+            // THE SAME GUARD AND THE SAME FRAME ARGUMENT as `fusedBearingDeg`
+            // above: the camera is a descendant of `arWorldGroup`, so its WORLD
+            // position is already NUE metres about `zero` with the alignment
+            // applied, and an identity matrix means no alignment has happened —
+            // which would otherwise render as a perfectly plausible coordinate.
+            //
+            // `toDemoLatLng` rather than a cast: `origin` is the framework's
+            // `{lat, lon}` and the OSM frame takes `{lat, lng}`. That adapter
+            // exists to be the alternative to a cast (`ar-origin.ts`).
+            fusedPosition:
+              arWorldGroup.matrix.equals(identityMatrix) || deps.origin === null
+                ? undefined
+                : fusedGpsFrom(
+                    deps.enuFrameAt(toDemoLatLng(deps.origin)),
+                    camera.getWorldPosition(cameraWorld),
+                  ),
+            // THE PUBLISHED AUTO OFFSET, beside the raw `above terrain` residual
+            // the live measurements carry — the pair is the M5 instrument (see
+            // `ar-measurements.ts`). Absent while the estimator publishes
+            // nothing, per the readout's no-invented-numbers rule. `autoEngaged`
+            // rides along because published is NOT applied (cold-review F1) and
+            // the readout is the only thing that can say which state this is.
+            ...(latestAuto === undefined || latestAuto.autoM === null
+              ? {}
               : {
-                  calls: renderer.info.render.calls,
-                  triangles: renderer.info.render.triangles,
-                },
-          fps,
-          // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
-          // written directly by the alignment lerper with `matrixAutoUpdate =
-          // false`, so element 13 is the live baseline rather than a stale copy.
-          //
-          // UNDEFINED UNTIL AN ALIGNMENT EXISTS (r511 review).
-          // `createSceneHierarchy` leaves the matrix at IDENTITY, whose element 13
-          // is a perfectly real `0` — so the readout showed `baseline 0.00 m`
-          // before the fusion had said anything at all. That is the one thing
-          // `ar-measurements.ts` exists to forbid: an unmeasured value rendered as
-          // a number, and this one is worse than most because zero is a plausible
-          // reading. Compared against the whole matrix rather than element 13
-          // alone, because a genuine zero baseline must still be reportable.
-          worldBaselineY: arWorldGroup.matrix.equals(identityMatrix)
-            ? undefined
-            : arWorldGroup.matrix.elements[13],
-          // THE FUSED BEARING — what the alignment currently thinks north is,
-          // which is the only way to SEE what the compass slider did.
-          //
-          // WORLD SPACE IS THE GEO FRAME HERE, and that is the whole subtlety.
-          // The hierarchy is `scene (GPS-world NUE) → arWorldGroup (receives the
-          // alignment) → basisChangeNode → arpose → camera`, so the camera is a
-          // DESCENDANT of the aligned group and its world transform already
-          // carries the alignment. A direction taken relative to `arWorldGroup`
-          // would be in the AR-odometry frame — the alignment's *domain*, i.e.
-          // un-aligned — and would be a plausible number that is not north.
-          // `ar-scene-hierarchy.ts` records two independent readers getting this
-          // backwards; `nueBearingDeg` carries the axis convention and its tests.
-          fusedBearingDeg: arWorldGroup.matrix.equals(identityMatrix)
-            ? undefined
-            : nueBearingDeg(camera.getWorldDirection(forward).x, forward.z),
-          // THE PUBLISHED AUTO OFFSET, beside the raw `above terrain` residual
-          // the live measurements carry — the pair is the M5 instrument (see
-          // `ar-measurements.ts`). Absent while the estimator publishes
-          // nothing, per the readout's no-invented-numbers rule. `autoEngaged`
-          // rides along because published is NOT applied (cold-review F1) and
-          // the readout is the only thing that can say which state this is.
-          ...(latestAuto === undefined || latestAuto.autoM === null
-            ? {}
-            : {
-                autoOffsetM: latestAuto.autoM,
-                autoConfidence: latestAuto.confidence,
-                autoEngaged: latestAuto.engaged,
-                autoFrozen: latestAuto.frozen,
-              }),
-          ...live,
-        },
-        // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop
-        // already computed, and it is monotonic. **Page-relative, not a session
-        // duration** — this comment said "the session clock" until r513, which is
-        // the wording that caused the fps window to be opened at zero a few lines
-        // above. Safe here because `sample` only ever differences this stamp
-        // against its own previous value; never treat it as an elapsed time.
-        elapsed * 1000,
-      );
-      // THE WINDOW RESETS ONLY WHEN ONE WAS ACTUALLY WRITTEN, so the average
-      // covers exactly the frames the displayed number describes. Resetting every
-      // frame would make it a single-frame reciprocal again by another route.
-      if (wrote === true) {
-        framesThisWindow = 0;
-        windowOpenedAtS = elapsed;
+                  autoOffsetM: latestAuto.autoM,
+                  autoConfidence: latestAuto.confidence,
+                  autoEngaged: latestAuto.engaged,
+                  autoFrozen: latestAuto.frozen,
+                }),
+            ...live,
+          },
+          // THE FRAME CLOCK, not wall time: `elapsed` is what the frame loop
+          // already computed, and it is monotonic. **Page-relative, not a session
+          // duration** — this comment said "the session clock" until r513, which is
+          // the wording that caused the fps window to be opened at zero a few lines
+          // above. Safe here because `sample` only ever differences this stamp
+          // against its own previous value; never treat it as an elapsed time.
+          elapsed * 1000,
+        );
+        // THE WINDOW RESETS ONLY WHEN ONE WAS ACTUALLY WRITTEN, so the average
+        // covers exactly the frames the displayed number describes. Resetting
+        // every frame would make it a single-frame reciprocal again by another
+        // route. `due` and `sample` can still disagree — the toggle repaints
+        // outside the window — so this stays keyed on what `sample` returned.
+        if (wrote) {
+          framesThisWindow = 0;
+          windowOpenedAtS = elapsed;
+        }
       }
     });
 

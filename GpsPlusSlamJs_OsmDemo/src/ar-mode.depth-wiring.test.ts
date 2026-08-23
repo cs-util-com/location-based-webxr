@@ -86,7 +86,15 @@ function deps(overrides: Partial<ArModeDeps> = {}): ArModeDeps {
     } as unknown as ArModeDeps["buildingView"],
     origin: COLOGNE,
     sceneAnchor: { lat: 50.9423, lng: 6.9593 },
-    enuFrameAt: () => ({ toEnu: () => ({ x: 0, y: 0 }) }),
+    // `toLatLng` IS NOT OPTIONAL HERE even though this file asserts nothing
+    // about it: `ar-mode` calls it every readout tick, so a fixture without it
+    // fails with `frame.toLatLng is not a function` from a file that has no
+    // assertion explaining why. The `as ArModeDeps` cast below means the
+    // compiler will not say so either.
+    enuFrameAt: () => ({
+      toEnu: () => ({ x: 0, y: 0 }),
+      toLatLng: () => ({ lat: 0, lng: 0 }),
+    }),
     onError: vi.fn(),
     autoElevation: { terrainHeightM: () => 100 },
     ...overrides,

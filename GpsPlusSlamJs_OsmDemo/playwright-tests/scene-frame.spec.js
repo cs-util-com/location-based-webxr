@@ -14,6 +14,7 @@ import {
   AT_FIXTURE,
   stubNetwork,
   waitForRefresh,
+  walkByMapClick,
   REPAINT,
 } from "./fixtures.js";
 
@@ -61,7 +62,12 @@ test.describe("the scene frame", () => {
     // 5 km re-anchor threshold, so it is travel rather than a discontinuity.
     // Near the corner of the map so the move is a few hundred metres, which is
     // far more than a rounding difference and far less than the threshold.
-    await page.locator("#map").click({ position: { x: 60, y: 60 } });
+    //
+    // THROUGH THE HELPER, because a bare click here is not reliably a walk:
+    // region polygons stop propagation, and which geography sits under a fixed
+    // pixel moves with the map's size. The helper picks a spot that is provably
+    // outside every region at run time. See `walkByMapClick`.
+    await walkByMapClick(page);
     await waitForRefresh(page);
     await expect.poll(groundCentre, REPAINT).not.toBe(centreAtStart);
 
@@ -110,7 +116,7 @@ test.describe("the scene frame during a DEM outage", () => {
 
     await expect.poll(groundCentre, REPAINT).toBe("0,0");
 
-    await page.locator("#map").click({ position: { x: 60, y: 60 } });
+    await walkByMapClick(page);
     await waitForRefresh(page);
 
     // THE POINT: the window still moved with the user, outage or not.

@@ -157,8 +157,14 @@ describe("what the obstacle index costs", () => {
     // their own run.
     for (const id of MEASURED_SITES) {
       const entry = measurementFor(id);
+      // FINITE, NOT POSITIVE. `> 0` was removed under plan M4: it is the same
+      // shape this repo already rejected elsewhere, it cannot tell a fast build
+      // from a slow one, and a coarse timer quantises a short measurement to
+      // exactly 0 — so the only machine it could fail on is a fast one. Finite
+      // still earns its place: it catches a NaN from a broken clock or a
+      // measurement that never ran, which is what would make the header figures
+      // meaningless.
       expect(Number.isFinite(entry.buildMs)).toBe(true);
-      expect(entry.buildMs).toBeGreaterThan(0);
     }
   });
 });

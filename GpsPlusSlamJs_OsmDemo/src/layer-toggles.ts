@@ -32,9 +32,9 @@ import {
  * what is in the world, and what am I inspecting the renderer with — and a
  * reader who knows which group a switch is in already knows most of what it does.
  */
-// Not exported: `extras` reaches it through `LayerTogglesOptions`, which is the
-// only way a caller ever names a group, and knip is right that a second public
-// name earns nothing.
+// Not exported: the group name reaches this module through
+// `LayerTogglesOptions`, which is the only way a caller ever names a group, and
+// knip is right that a second public name earns nothing.
 type LayerGroup = "overlays" | "world" | "diagnostics";
 
 /** Which group each layer belongs to. Exhaustive over the union by construction. */
@@ -59,7 +59,7 @@ function groupOf(layer: LayerKind): LayerGroup {
 
 /** Group captions, in the order the groups appear. */
 const GROUP_LABELS: readonly (readonly [LayerGroup, string])[] = [
-  ["overlays", "affordance"],
+  ["overlays", "Category"],
   ["world", "world"],
   ["diagnostics", "debug"],
 ];
@@ -69,15 +69,32 @@ export interface LayerTogglesOptions {
   /** Called with the complete next set whenever a switch changes. */
   readonly onChange: (layers: LayerSet) => void;
   /**
-   * Controls that belong in a group but are not layers.
+   * Controls that belong in a group but are not layers, placed ABOVE the
+   * group's generated switches — between the caption and the first one.
+   *
+   * The category picker is the live case: the overlays group is captioned
+   * `Category`, so the control that names it belongs at the top of it rather
+   * than under the switches describing what to draw for it.
+   *
+   * WHY THE POSITION IS PART OF THE OPTION NAME (round three, G2/F7). There
+   * used to be one `extras` record that always appended, while `main.ts`
+   * carried a comment claiming the picker sat first. It did not, and no test
+   * said either way. A seam whose callers must state where they want their
+   * control is a seam whose call sites can be read against the screen.
+   */
+  readonly extrasBefore?: Partial<Record<LayerGroup, readonly HTMLElement[]>>;
+  /**
+   * Controls that belong in a group but are not layers, placed BELOW the
+   * group's generated switches.
    *
    * The perf panel is the live case: it is a diagnostic and belongs beside the
    * height ramp, but it draws nothing in the scene so it is deliberately not in
    * `ALL_LAYERS` (DEC-R3-18). Passing the element in is what puts it in the right
    * group without inventing a second registry or moving DOM around after the
-   * fact.
+   * fact. `show-below` joins the overlays group the same way — it modifies what
+   * an existing switch draws, so it reads correctly underneath it.
    */
-  readonly extras?: Partial<Record<LayerGroup, readonly HTMLElement[]>>;
+  readonly extrasAfter?: Partial<Record<LayerGroup, readonly HTMLElement[]>>;
 }
 
 export interface LayerToggles {
@@ -184,6 +201,8 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
     title.textContent = caption;
     box.append(title);
 
+    for (const extra of options.extrasBefore?.[group] ?? []) box.append(extra);
+
     for (const layer of ALL_LAYERS) {
       if (groupOf(layer) !== group) continue;
       const label = document.createElement("label");
@@ -207,7 +226,7 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
       inputs.set(layer, input);
     }
 
-    for (const extra of options.extras?.[group] ?? []) box.append(extra);
+    for (const extra of options.extrasAfter?.[group] ?? []) box.append(extra);
     container.append(box);
   }
 

@@ -34,6 +34,7 @@
 
 import {
   describeScale,
+  formatFixedScore,
   formatScore,
   heatColour,
   toHex,
@@ -255,8 +256,11 @@ export function legendModel(
   return {
     category,
     ramp,
-    minLabel: formatScore(scale.threshold),
-    maxLabel: formatScore(scale.max),
+    // THE RAMP'S ENDPOINTS ARE CONSTANTS, so they are spelled out (DEC-U8).
+    // `observedLabel` below keeps the exponential form because it is the one
+    // number here that comes from the data and can reach twelve digits.
+    minLabel: formatFixedScore(scale.threshold),
+    maxLabel: formatFixedScore(scale.max),
     // WHAT THE DATA DOES, beside a ramp that no longer moves. `describeScale`'s
     // stated purpose is letting the picture be checked against the arithmetic,
     // and a constant ramp removes every number that came from the data — so a
@@ -267,7 +271,7 @@ export function legendModel(
     description: describeScale(scale),
     ...(empty
       ? {
-          emptyMessage: `no cell scores above ${formatScore(scale.threshold)} for ${category} here`,
+          emptyMessage: `no cell scores above ${formatFixedScore(scale.threshold)} for ${category} here`,
         }
       : {}),
   };

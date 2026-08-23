@@ -32,9 +32,12 @@ sub-build fails or any post-build assertion fails.
 4. Typecheck + `vite build` each subpath app (recorder, starter, minimal,
    qr-demo) with `--base=/<sub>/ --outDir <dist-site/sub> --emptyOutDir`,
    asserting no bare root-absolute URLs after each.
-5. Assert the landing HTML still links all four demo apps and that every
+5. Build `blog/` from the project **wiki repository** (not a Vite app — see
+   `GpsPlusSlamJs_Landing/scripts/blog/`). Last, because it depends on nothing
+   else in the tree.
+6. Assert the landing HTML still links all four demo apps and that every
    local asset URL it references exists (`assertLandingHtml`).
-6. Assert the combined tree contains the required files (`assertSiteTree`).
+7. Assert the combined tree contains the required files (`assertSiteTree`).
 
 `base` and `outDir` are passed as **CLI flags**, so the committed app vite
 configs stay at their `/` + `dist` defaults — local `vite dev` and the USB
@@ -57,6 +60,16 @@ debugging workflow are unchanged.
   starts with its base `/`), which is why the landing has its own
   `assertLandingHtml` instead: demo-link presence (the "demos remain
   launchable" requirement) + referenced-asset existence.
+- **The blog step must fail the build when the wiki is missing or
+  unreachable.** It is deliberately not wrapped in a `try`/`catch`: emitting an
+  empty `/blog/` and deploying it over a working one would unpublish every
+  article at once, behind a green build. `assertSiteTree` therefore also
+  requires `blog/index.html` and `blog/sitemap.xml` — the index renders even
+  with nothing published, so its absence means the step did not run at all.
+- **The blog's markdown comes from a second repository.** On a developer
+  machine it is the sibling checkout `../location-based-webxr.wiki`; on a build
+  host with no checkout it is a shallow clone of the public wiki repo, which
+  needs no credentials. Precedence lives in `scripts/blog/wiki-source.mjs`.
 - **`dist-site/` is gitignored** and only produced in CI / locally on demand.
 - Runs identically on Windows/Linux/CI (pure Node, no shell-specific logic; a
   shell is only used to resolve `pnpm`/`pnpm.cmd` on Windows).
@@ -72,9 +85,27 @@ npx serve dist-site   # or any static server
 
 ## Tests
 
-No standalone unit test — the script *is* the verification harness for the
-deployment. Its `assertNoBareAbsoluteUrls`, `assertLandingHtml` and
-`assertSiteTree` checks run on every `build:site` invocation (and therefore
-on every Cloudflare deploy), failing fast on regressions. The
-storage-isolation invariant of the deployed apps is covered separately by
+`tests/repo-config/build-site-wiring.test.js` — **a wiring test, not a build**
+(H11, repo-hygiene loop, owner interview 2026-07-20). It pins the five things
+that exist only in this script and fail only in production:
+
+- the landing app builds **first**, into the shared root, and is the only thing
+  that claims `/`;
+- **both** workspace libraries are built before the earliest consuming app —
+  the omission that broke the `/osm/` deployment while every local build passed
+  against a stale `dist`;
+- every subpath app's `--base` **matches** its `--outDir` directory;
+- every built subpath directory is followed by the bare-absolute-URL guard, for
+  its own base;
+- the header's output tree names every directory the script actually builds.
+
+**Mutation-verified:** deleting the `build:osm` call fails one test; pointing
+one app's `--base` at another's directory fails another.
+
+It reads the script's TEXT and cannot see whether vite honours the flags, so a
+move to a data-driven app table would need it rewritten. The real builds stay
+where they were — the script *is* the verification harness for the deployment,
+and its `assertNoBareAbsoluteUrls`, `assertLandingHtml` and `assertSiteTree`
+checks run on every `build:site` invocation, i.e. on every Cloudflare deploy.
+The storage-isolation invariant of the deployed apps is covered separately by
 `anchor-storage.test.ts` and `recording-options.test.ts` (plan Step 6).

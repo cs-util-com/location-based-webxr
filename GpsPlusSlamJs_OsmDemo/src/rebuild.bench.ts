@@ -6,6 +6,7 @@ import {
   parseOverpassJson,
   snapshotRuleTable,
   OVERPASS_SCHEMA_VERSION,
+  SCORE_DISK_MAX_RADIUS,
   type OsmTileResult,
 } from "gps-plus-slam-osm";
 
@@ -38,8 +39,15 @@ import type { TransferableMesh } from "./worker/protocol.js";
  * decision already parks for a real-browser trace.
  *
  * SCALE IS TAKEN FROM THE DEMO, NOT FROM CONVENIENCE. `buildCellMesh` is fed the
- * cells a real fixture scores at `SCORE_DISK_MAX_RADIUS = 4` — ~2 989 of them —
- * because that is what scoring eventually covers. An earlier iteration measured
+ * cells a real fixture scores at `SCORE_DISK_MAX_RADIUS` — ~6 223 of them at
+ * the current radius of 6 — because that is what scoring eventually covers.
+ *
+ * ⚠️ **THE RADIUS IS READ FROM THE CONSTANT NOW, AND USED TO BE THE LITERAL 4.**
+ * That made this bench blind to exactly the change it is the instrument for:
+ * DEC-K1 raised the radius and this file would have reported two identical
+ * numbers, which reads as "the extra rings were free". A benchmark that cannot
+ * see the change it is quoted for is worse than none, because the number gets
+ * believed. Caught by the cold review of that plan. An earlier iteration measured
  * `regions/` over the 931-cell radius-2 disk that the existing benches use and
  * got a third of the true cost, which is the mistake this file exists not to
  * repeat.
@@ -50,7 +58,7 @@ import type { TransferableMesh } from "./worker/protocol.js";
  * Measured on devbox-win11 (Win 11 Pro, Node 24.14.1, pnpm 11.11.0):
  *
  * - `buildCellMesh` — park **9.9 ms** (2 718 cells), building-block **13.9 ms**
- *   (2 989 cells). **43 % of that is `cellToBoundary`** (5.9 ms for 2 989 cells,
+ *   (6 223 cells). **43 % of that is `cellToBoundary`** (5.9 ms for 6 223 cells,
  *   against 0.094 ms to serve the same lookups from a `Map`).
  * - `drawMeshLayers` — **0.18 ms** at 9 chunks per layer, **0.49 ms** at 27.
  *   Nothing to gain; it is the cheap half by two orders of magnitude.
@@ -78,7 +86,7 @@ function drawableCells(slug: string): {
 
   const index = new AffordanceIndex({ table });
   index.acceptTile(tile);
-  index.update(raw.centre, 4);
+  index.update(raw.centre, SCORE_DISK_MAX_RADIUS);
   return { cells: [...index.scoresByCell().values()], centre: raw.centre };
 }
 

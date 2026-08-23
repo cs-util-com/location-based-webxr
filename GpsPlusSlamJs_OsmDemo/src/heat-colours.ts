@@ -241,6 +241,54 @@ export function formatScore(value: number): string {
   return value.toExponential(1).replace("e+", "e").replace(".0e", "e");
 }
 
+/**
+ * SMALLEST value {@link formatFixedScore} abbreviates rather than spells out.
+ *
+ * A million is where the label starts growing without bound again, which is the
+ * instability DEC-R6b-6 chose the exponential form to avoid. Everything below
+ * it fits in at most seven characters plus separators.
+ */
+const SPELL_OUT_BELOW = 1e6;
+
+/**
+ * A score at one of the ramp's endpoints, spelled out when it reasonably can be.
+ *
+ * DEC-U8, and it narrows DEC-R6b-6 rather than reversing it. The owner asked
+ * for `1e4` to be written out. The exponential form exists so a twelve-digit
+ * score cannot make the legend's line width jump on every repaint, and that
+ * argument is still correct for the OBSERVED maximum, which really does reach
+ * `1.7e11` — but the file's own comment already conceded its cost at the other
+ * end: "`12000` prints as `1.2e4`, which is arguably worse than the plain
+ * number".
+ *
+ * **WHY THIS IS A THRESHOLD AND NOT AN UNCONDITIONAL SPELL-OUT**, which is what
+ * DEC-U8 was written expecting. That decision rested on the ramp's top being
+ * the constant `HEAT_CAP` — true for every category whose threshold is below
+ * it, which is the case the owner saw. It is NOT universal: `fixedScale` falls
+ * back to `threshold * 10` once a threshold reaches the cap, so a rule table
+ * with a high threshold can put a ten-digit number on this label. Spelling that
+ * out unconditionally would reintroduce exactly the defect DEC-R6b-6 removed,
+ * in the place it was reported from. The premise was checked against
+ * `scaleFor` rather than taken from the decision text.
+ *
+ * Grouped with a NARROW NO-BREAK space (U+202F) rather than commas: the legend
+ * is read at a glance
+ * on a phone, and a comma sits one keystroke away from meaning a decimal point
+ * in most of the languages this demo is looked at in.
+ *
+ * NO-BREAK matters as much as narrow. A plain thin space (U+2009) is a line-break
+ * opportunity under UAX-14, and `#legend` is a wrapping flex row — so on a narrow
+ * header the endpoint could render as `10` on one line and `000` on the next,
+ * which is the line instability DEC-R6b-6 exists to prevent, reintroduced by its
+ * own narrowing.
+ */
+export function formatFixedScore(value: number): string {
+  if (Math.abs(value) >= SPELL_OUT_BELOW) return formatScore(value);
+  return round(value)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+}
+
 function round(value: number): number {
   // Multiplicative scores produce things like 3.6000000000000005. Rounding at
   // the PRESENTATION boundary keeps the oracle values exact in the model, which

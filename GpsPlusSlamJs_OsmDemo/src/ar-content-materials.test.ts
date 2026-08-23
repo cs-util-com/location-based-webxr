@@ -35,6 +35,7 @@ import { describe, expect, it } from "vitest";
 
 import { drawMeshLayers } from "./mesh-layers.js";
 import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
+import { questBeaconMaterials } from "./quest-beacon.js";
 import {
   CELL_PRESETS,
   DEFAULT_CELL_PRESET,
@@ -126,6 +127,12 @@ function arMaterials(): { material: THREE.Material; where: string }[] {
       where: `cell face (${preset.name})`,
     })),
     { material: cellOutlineMaterial(), where: "cell outlines" },
+    // THE QUEST BEACONS (N6/DEC-K4). Added by NAME rather than absorbed into
+    // the count below: a bright gold marker is exactly the material class this
+    // file exists for — emissive gold is the natural way to build one, and
+    // reaching for `metalness` or `fog: false` to get the glow is what makes it
+    // draw black or clip at the far plane.
+    ...questBeaconMaterials(),
   ];
 }
 
@@ -170,10 +177,13 @@ describe("AR content — visible without an environment map", () => {
       expect(labels).toContain(`cell face (${preset.name})`);
     }
     expect(labels).toContain("cell outlines");
-    // Six mesh-layer materials: buildings, plates, roads, areas, trees, poi.
+    // The quest beacon is named too, so a beacon that stopped producing a
     // `everyLayer()` gives each exactly one, so anything else means a layer
     // stopped drawing or started drawing twice.
-    expect(labels).toHaveLength(6 + CELL_PRESETS.length + 1);
+    expect(labels).toContain("quest beacon");
+    // Six mesh-layer materials (buildings, plates, roads, areas, trees, poi),
+    // every cell preset, the cell outlines, and the quest beacon.
+    expect(labels).toHaveLength(6 + CELL_PRESETS.length + 2);
   });
 
   it("keeps every material diffuse enough to be lit by lights alone", () => {
@@ -237,13 +247,18 @@ describe("AR content — the cell grid's fog axis", () => {
 
   it("keeps the DEFAULT preset fogged, which is what AR actually gets", () => {
     // The `fog: false` preset ("prototype") is safe today for the reason
-    // `cell-presets.ts` records: the grid covers a ~250 m disc, AR's fog starts
+    // `cell-presets.ts` records: the grid covers a ~326 m disc, AR's fog starts
     // at 400 m and desktop's at 1584 m, so the flag is a no-op in both. It is
     // reachable only by hotkey.
     //
-    // Widening the heat radius past 400 m is a planned change (§6 of the
-    // shiny-surfaces plan), and on that day "prototype" becomes a hard clip in
-    // AR. The default must not be the one that does it.
+    // ⚠️ THE MARGIN HAS SHRUNK, AND THAT IS THE PART TO WATCH. At radius 4 the
+    // grid reached ~250 m against AR's 400 m — 150 m of slack. DEC-K1 took the
+    // radius to 6 and the reach to ~326 m, leaving 74 m. One more ring (~376 m)
+    // still clears it; two (~425 m) do not, and on that day "prototype" becomes
+    // a hard clip in AR rather than a no-op.
+    //
+    // §6 of the shiny-surfaces plan would take the reach to ~600 m with a
+    // resolution ladder. The default must not be the preset that clips.
     const shipped = CELL_PRESETS.find((p) => p.name === DEFAULT_CELL_PRESET);
     expect(shipped).toBeDefined();
     expect(cellFaceMaterial(shipped as CellPreset).fog).toBe(true);

@@ -23,6 +23,7 @@ import {
   waitForRefresh,
   enableCellLayer,
   REPAINT,
+  pinQuestClock,
 } from "./fixtures.js";
 
 test.describe("the 3D view", () => {
@@ -1057,12 +1058,18 @@ test.describe("the 3D view", () => {
       expect(counts.terrain).toBeGreaterThan(0);
 
       // Attribution is required wherever the data is shown, exactly as for OSM —
-      // and it lives in Leaflet's attribution control rather than the header,
+      // and it lives in the map's attribution line rather than the header,
       // because the header collapses and a credit that can be collapsed away does
       // not satisfy the obligation (DEC-R2-4).
+      //
+      // VISIBLE, not merely present in `textContent` (round three, F10). The
+      // line has an expander now, so a `toContainText` assertion here would
+      // match a credit hidden behind it and report the obligation as met.
       await expect(
-        page.locator("#map .leaflet-control-attribution"),
-      ).toContainText(/Terrain|Mapzen/);
+        page
+          .locator("#map .map-attribution-short")
+          .filter({ hasText: /Mapzen/ }),
+      ).toBeVisible();
 
       // And the terrain is actually doing something, not merely fetched. The
       // relief is in the status line because a viewer needs it for the same
@@ -1934,5 +1941,179 @@ test.describe("the NPC agent", () => {
       await expect.poll(sweep, { timeout: 40_000 }).toBe(true);
       await expect(panel).toBeVisible();
     });
+  });
+
+  test("the render-distance dial moves the camera AND the fog, boots at 2x, and is still inert at 1x", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST MATTERS (r541 Q9/Q10, owner decision 2026-08-21).
+     *
+     * "Der 3D-View läuft stabil auf 60 FPS. Ich würde gerne wissen, wie viel
+     * weiter man rendern könnte." The dial is the instrument for answering that
+     * on a session that has accumulated tiles.
+     *
+     * WHAT IT ASSERTS AND WHY IT IS NOT VACUOUS. The readout is painted from
+     * `buildingView.farPlaneM()` and `fogNearM()`, which read back from the
+     * CAMERA and the FOG rather than from the slider — so asserting the text
+     * proves the projection matrix and the fog were actually written. A readout
+     * fed from the requested value would keep reporting 24000 while a
+     * `setFarPlane` that had stopped writing the camera did nothing.
+     *
+     * THE FOG HALF IS THE POINT, not a bonus. `THREE.Fog` is linear and built
+     * with `far = FAR_PLANE_M`, so everything past it is already fully fog
+     * coloured: moving the camera's far plane alone would draw more geometry
+     * and show an identical image. That is the failure this pins.
+     *
+     * `BuildingView` constructs a `WebGLRenderer`, so none of this can be a unit
+     * test — `building-view-content.test.ts` records that constraint.
+     */
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const readout = page.locator("#render-distance-value");
+
+    // BOOTS AT 2x (DEC-K2, superseding DEC-Y24). It used to say "INERT AT 1x —
+    // the shipped view must be untouched until the operator moves the dial".
+    // A field session tested 4800 m on a phone and asked for it as the default,
+    // so the page now applies the markup's value at boot instead of only
+    // painting it.
+    //
+    // THIS ASSERTION IS THE ONLY THING PINNING THE BOOT PATH. The unit suite
+    // can pin the markup against the constant, but `BuildingView` constructs a
+    // `WebGLRenderer` and cannot be instantiated there — so "the camera was
+    // actually moved to match" is provable only here. Painting without applying
+    // would leave this reading 2400 while the thumb sat at 2.
+    await expect(readout).toHaveText("draw 4800 m · haze 3168 m");
+
+    const slider = page.locator("#render-distance");
+    await slider.fill("10");
+    await slider.dispatchEvent("input");
+
+    // BOTH MOVED, BY THE SAME FACTOR. 10x is 24000, and the haze keeps its
+    // 0.66 ratio at 15840 — a far plane that moved without the fog would read
+    // "draw 24000 m · haze 1584 m" and fail here.
+    await expect(readout).toHaveText("draw 24000 m · haze 15840 m");
+
+    // AND BACK, so the dial is reversible on the street rather than a one-way
+    // door that needs a reload to undo.
+    //
+    // ⚠️ THIS ONE STAYS 2400. It follows an explicit `fill("1")`, so it asserts
+    // the 1x BASELINE and not the boot default — the two were the same number
+    // until DEC-K2 and are not any more. Changing it alongside the boot
+    // expectation above would turn a correct test red; the cold review of the
+    // plan caught exactly that edit.
+    await slider.fill("1");
+    await slider.dispatchEvent("input");
+    await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+  });
+
+  test("draws a quest beacon in the 3D view, and takes it down again", async ({
+    page,
+  }) => {
+    /**
+     * WHY THIS TEST EXISTS NOW AND NOT BEFORE. N6's beacons shipped without an
+     * e2e, deliberately: a search panned the map and left the 3D camera where
+     * it was, so the marker sat outside the frustum — measured at ~370 m out —
+     * and a pixel test could not tell "drawn" from "drawn somewhere else". The
+     * first attempt proved that the hard way: it passed its first assertion by
+     * measuring the map-driven camera move, and reported nothing when the quest
+     * was cleared, because the beacon had never been visible.
+     *
+     * Once the camera follows the search, the marker is in view and pixels mean
+     * what they say. THE CLEAR IS THE ASSERTION THAT CARRIES THE WEIGHT: the
+     * camera does not move when a quest is cleared, so a frame that changes then
+     * changed because the beacon left it.
+     */
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    await page.locator("#geo-event").click();
+    // The map marker is the proof a quest was actually found; without it the
+    // pixel work below would be measuring an empty search.
+    await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+
+    await installFrameProbe(page);
+    await stashStableFrame(page);
+
+    // CLEARING IS THE CLEAN EDGE. Searching moves the camera, so the frame
+    // changes either way and proves nothing about the beacon; clearing moves
+    // nothing but the marker.
+    await page.locator("#geo-event-clear").click();
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+
+    // THE FLOOR IS SET FROM A MEASUREMENT, and the measurement moved once.
+    // With the original 6 m mark this read 110 differing pixels; enlarging it
+    // to the size the report asked for took it to 286. 100 sits below both and
+    // far above the only failure that matters — 0, which is what this returned
+    // for the whole time the camera did not follow the search.
+    //
+    // Deliberately not tight: pinning 286 would fail a later restyle for being
+    // different rather than wrong.
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(100);
+  });
+
+  test("brings the beacon into frame even from a CLOSE camera", async ({
+    page,
+  }) => {
+    /**
+     * WHY A SECOND, CLOSER TEST (PR #344 review).
+     *
+     * `lookAtFrom` preserves the current distance, so where it AIMS decides
+     * whether the mark lands in frame. Aiming at the ground under the beacon
+     * works at the default zoom — the mark is only ~11-26 m above the pivot and
+     * the frustum is hundreds of metres wide there — and fails close in, where
+     * that same offset pushes the marker off the top of the screen.
+     *
+     * The sibling test above cannot see the difference: at the default distance
+     * both aim points keep the beacon on screen, so it passed against the bug.
+     * This one starts the camera at `MIN_CAMERA_DISTANCE_M` via the shareable
+     * camera link, which is the route a user takes by pasting one.
+     *
+     * **MEASURED, and the distance had to be measured too.** Differing pixels
+     * when the quest is cleared, aiming at the ground versus at the mark:
+     *
+     * - `cdist=30`: **5 289** vs **16 072** — a 3x difference, and the only
+     *   regime where the two are far enough apart to assert on;
+     * - `cdist=45`: 6 439 vs 6 725 — indistinguishable, which is why a first
+     *   version of this test at 45 m PASSED against the bug;
+     * - `cdist=80`: 2 658 vs 2 067 — the ground aim is marginally better.
+     *
+     * ⚠️ It also refines the review's wording: aiming at the ground does not
+     * push the marker off screen, it cuts roughly two thirds of it off. The fix
+     * is the same; the claim is smaller than "invisible".
+     */
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&clat=50.9231&clng=6.9445&cdist=30`);
+    await waitForRefresh(page);
+
+    await page.locator("#geo-event").click();
+    await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+
+    await installFrameProbe(page);
+    await stashStableFrame(page);
+
+    // Same edge as the sibling: clearing moves nothing but the marker, so a
+    // frame that changes changed because the beacon left it.
+    await page.locator("#geo-event-clear").click();
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+
+    // 10 000 SITS BETWEEN THE TWO MEASURED REGIMES (5 289 aiming at the ground,
+    // 16 072 aiming at the mark). Tuned to a measurement rather than guessed,
+    // and stated as such: a looser bound would pass against the bug, which is
+    // exactly what the 45 m version of this test did.
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(10_000);
   });
 });

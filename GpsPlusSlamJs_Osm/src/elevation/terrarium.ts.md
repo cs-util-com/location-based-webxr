@@ -12,6 +12,11 @@ sampling, and the provider that ties them together.
 - `toElevationTile(image, z, x, y): ElevationTile`
 - `sampleTile(tile, px, py): number`
 - `class TerrariumProvider` (+ `stats`: `fetches`, `cacheHits`, `decodeFailures`)
+  - `TerrariumProviderOptions.requestTimeoutMs?` — how long one tile request may
+    take before it degrades to "no data". **Unset by default**, and the absence
+    of a default is the contract: a sole provider on a slow link wants patience,
+    while a primary sitting in front of a fast fallback wants impatience, and
+    only the composing consumer knows which it is building.
 - `browserPngDecoder(): PngDecoder`
 - `TERRARIUM_URL_TEMPLATE`, `TERRARIUM_ATTRIBUTION`, `DEFAULT_TERRARIUM_ZOOM`
 - `MAPTERHORN_URL_TEMPLATE`, `MAPTERHORN_ATTRIBUTION` — Mapterhorn's
@@ -24,6 +29,21 @@ sampling, and the provider that ties them together.
 - **Decode once, sample for free.** This is the only reason elevation at res 13
   is possible: point queries cap out at 100,000 points/day globally, and one
   res-7 fetch tile holds ~117,649 res-13 cells.
+- **A deadline is a `TimeoutError`, never an `AbortError`, and the difference
+  decides whether a batch degrades or fails.** `load` rethrows aborts — a caller
+  that walked away wants no answer — and degrades everything else to
+  `undefined`. `requestTimeoutMs` is implemented with `AbortSignal.timeout`,
+  whose reason is a `TimeoutError`, so it lands on the degrade branch. Building
+  the same feature on `AbortController.abort()` would reject the whole batch and
+  reproduce the unreachable-fallback bug of 2026-08-19 while looking like its
+  fix. `terrarium.test.ts` asserts the reason's _name_ at the fetch boundary for
+  exactly this reason.
+- **The deadline is per TILE, not per caller.** It is composed with
+  `InFlightRequests`' internal controller — the one shared by every caller
+  joined to that tile — so the first joiner's clock bounds them all and a late
+  joiner inherits a partly-spent budget. Correct for a tile cache (one fetch,
+  one verdict, everyone served) but not the intuitive reading, so it is pinned
+  by a test rather than left to inference.
 - **The PNG decoder is injected.** No decoder is common to the browser, a Worker
   and Node, and this package has no runtime dependencies. It also makes the
   decode maths testable byte-exactly with no image codec involved.

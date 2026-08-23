@@ -37,6 +37,21 @@ export interface PickerPlace {
   /** Stable, filename- and URL-safe. Accepted by `?site=`. */
   readonly id: string;
   /** Shown in the dropdown. */
+  /**
+   * What the picker shows. **City only, except where the city is ambiguous.**
+   *
+   * SHORTENED 2026-08-19 (F3c). Every entry used to carry its landmark —
+   * "Cologne — Cathedral" — which made the `<select>` as wide as its longest
+   * option on a phone. London is the only repeated city in this table, so it is
+   * the only one that still needs disambiguating.
+   *
+   * **The landmark is not decoration and did not go with the text.** No test
+   * can check that a coordinate points where it claims to; what actually
+   * catches a wrong one is a human opening the picker and finding the promised
+   * landmark absent. That promise now lives entirely in {@link PickerPlace.note},
+   * which the view renders as the option's `title` — so keep the notes
+   * concrete about landmarks, and see the argument below.
+   */
   readonly name: string;
   readonly position: LatLng;
   /**
@@ -99,7 +114,7 @@ function fromCorpus(id: string, fallback: LatLng): LatLng {
 export const PICKER_PLACES: readonly PickerPlace[] = [
   {
     id: "manhattan-central-park",
-    name: "New York — Central Park South",
+    name: "New York",
     // The park's south-west corner, by Columbus Circle. NOT the corpus
     // `manhattan-midtown` coordinate (~2 km south): DEC-R6b-3 asked for the
     // park in the opening frame, and the corpus position may not move without
@@ -109,13 +124,13 @@ export const PICKER_PLACES: readonly PickerPlace[] = [
   },
   {
     id: "cologne-cathedral",
-    name: "Cologne — Cathedral",
+    name: "Cologne",
     position: fromCorpus("cologne-cathedral", { lat: 50.9413, lng: 6.9583 }),
     note: "A cruciform Gothic cathedral modelled as dense building:part with pyramidal spires — the hardest single building in the demo.",
   },
   {
     id: "tokyo-shinjuku",
-    name: "Tokyo — Shinjuku",
+    name: "Tokyo",
     position: fromCorpus("tokyo-shinjuku", { lat: 35.6896, lng: 139.7006 }),
     note: "A tagging culture no European fixture exercises: multilingual names, different building values, and towers packed around the world's busiest station.",
   },
@@ -133,55 +148,55 @@ export const PICKER_PLACES: readonly PickerPlace[] = [
   },
   {
     id: "paris-eiffel-tower",
-    name: "Paris — Eiffel Tower",
+    name: "Paris",
     position: { lat: 48.8584, lng: 2.2945 },
     note: "A 330 m open lattice tower on the Champ de Mars — tagged height with almost no volume, the opposite of a city block.",
   },
   {
     id: "san-francisco-golden-gate",
-    name: "San Francisco — Golden Gate",
+    name: "San Francisco",
     position: { lat: 37.8199, lng: -122.4783 },
     note: "The bridge across the strait, with the Marin headlands rising straight out of the water — big relief and a coastline in one frame.",
   },
   {
     id: "sydney-opera-house",
-    name: "Sydney — Opera House",
+    name: "Sydney",
     position: { lat: -33.8568, lng: 151.2153 },
     note: "Shell vaults on a harbour promontory, water on three sides — the coastline case, at a building that is almost all roof.",
   },
   {
     id: "porto-ribeira",
-    name: "Porto — Ribeira",
+    name: "Porto",
     position: { lat: 41.1408, lng: -8.6116 },
     note: "A medieval quarter stacked up a gorge wall above the Douro: tens of metres of relief between adjacent streets.",
   },
   {
     id: "rome-colosseum",
-    name: "Rome — Colosseum",
+    name: "Rome",
     position: { lat: 41.8902, lng: 12.4922 },
     note: "A ring of tiered arcades with a hollow centre — a large multipolygon whose interior is genuinely a hole.",
   },
   {
     id: "barcelona-sagrada-familia",
-    name: "Barcelona — Sagrada Família",
+    name: "Barcelona",
     position: { lat: 41.4036, lng: 2.1744 },
     note: "Eighteen spires of wildly different heights on one footprint, inside Eixample's perfectly regular chamfered grid.",
   },
   {
     id: "venice-san-marco",
-    name: "Venice — San Marco",
+    name: "Venice",
     position: { lat: 45.4341, lng: 12.3388 },
     note: "Where the ground is mostly water: canals, quays and a campanile, with almost no road network in the usual sense.",
   },
   {
     id: "hong-kong-central",
-    name: "Hong Kong — Central",
+    name: "Hong Kong",
     position: { lat: 22.2819, lng: 114.1585 },
     note: "Supertall towers packed against a mountain that climbs 500 m directly behind them — dense high-rise and extreme relief together.",
   },
   {
     id: "rio-sugarloaf",
-    name: "Rio de Janeiro — Sugarloaf",
+    name: "Rio de Janeiro",
     position: { lat: -22.9492, lng: -43.1545 },
     note: "A granite monolith rising 400 m straight out of the bay — the steepest ground the demo can be pointed at.",
   },

@@ -38,6 +38,20 @@ worldBaselineY? }`, every field optional and independent.
   looking for one number, not an overview.
 - **Fixed order**, so a glance always finds the same number in the same place. A
   readout that reorders as values appear has to be re-read each time.
+- **Related readouts are PAIRED onto one line** with a middle dot (Q7): the two
+  render-cost numbers together, and `alt` with `world floor` together. The field
+  report was that the readout reads as an undifferentiated list; on a phone each
+  short line was costing a whole row.
+  - **A pair is not an all-or-nothing group.** Its halves become available at
+    different times — fps from the first frame, the draw cost only once
+    something has rendered — so `pair()` emits whichever exists rather than
+    waiting for both. Joining unconditionally would blank a number that is
+    already known.
+  - **Paired at construction, not by a later width-driven merge.** Which lines
+    belong together is semantic; an auto-merge would join whatever happened to
+    be adjacent.
+  - A merged line must still fit a 390 px phone — about 40 characters at the
+    HUD size. Pinned by a test over the widest plausible values.
 - **Precision follows what the reader can act on**: a tenth of a metre below
   10 m of fix accuracy and none above (the interesting band is 4.5 versus 8 m;
   at 30 m the tenth is precision the fix does not have); metres under a
@@ -49,7 +63,7 @@ worldBaselineY? }`, every field optional and independent.
 
 ```ts
 describeArMeasurements({ drawCost: { calls: 12, triangles: 1000 }, fps: 59.6 });
-// ["12 draws / 1,000 tri", "60 fps"]
+// ["12 draws / 1,000 tri · 60 fps"]
 ```
 
 ## Tests
@@ -163,11 +177,50 @@ need **opposite** fixes.
   it as a confident hundred-metre error. False suppresses both and prints
   `terrain: no DEM` — **and that warning shows even collapsed**, because a
   warning only visible when expanded is a warning nobody sees.
-- **The residual, `above terrain ±X m`** — derived here rather than passed in.
-  Chest height should read about **+1.5 m**; a steady **+10 m** is the reported
-  symptom, stated instead of inferred from a scene that looks wrong. Its sign is
-  the information: negative means the camera is under the ground, which is the
-  state that makes buildings float overhead.
+- **The residual, now `(±X)` INSIDE the altitude line** — derived here rather
+  than passed in. It had its own `gps-dem` line until r543: _"GPS Dem habe ich
+  keine Ahnung was das sein soll ... das könnte man noch in die Zeile mit dazu
+  packen und dann einfach quasi in Klammern +0,5 irgendwie statt dass man da GPS
+  Dem schreibt, was sowieso kein Mensch versteht."_ The NUMBER is kept and only
+  the label goes — its sign separates two filed causes that need opposite fixes,
+  so dropping the value would answer a readability complaint by removing
+  evidence. The reporter also guessed correctly what it relates to, which is the
+  argument for moving it beside the altitude rather than deleting it. Its DEM
+  guard is unchanged, and `demFailed` is now computed above the altitude line so
+  the guard is known before that line is built.
+  `altitudeM − terrainHeightM`, GPS altitude minus DEM. A steady **+10 m** is
+  the reported symptom, stated instead of inferred from a scene that looks
+  wrong. Its sign is the information: negative means the GPS altitude sits
+  **below the DEM** at this position.
+  - **It was called `above terrain`, and that label was a defect** (H8,
+    2026-08-20). It reads as "how high the phone is above the ground", the owner
+    reported it as incomprehensible, and it is not that number and cannot be:
+    **no pose reaches this module at all**, so raising the phone cannot move it.
+  - **The "chest height reads about +1.5 m" expectation is deleted, not
+    reworded.** GNSS vertical error is ±10–20 m, so a 1.5 m calibration target
+    sat far inside the noise of the quantity it was meant to calibrate. It had
+    propagated to **five** places — this sidecar (twice), the code comment, a
+    HUD design review, a test **name** and a test **comment** — and three
+    successive plan revisions each stated a different count while enumerating
+    them. **Verify by searching for the claim, never by re-listing its sites.**
+  - The old sidecar also stated "negative means the camera is under the
+    ground". Same defect, same fix: it means the GPS altitude is below the DEM.
+- **The holding height, `floor distance X.XX m`** — renamed from `camera` at
+  r543: _"Camera ist die Höhe vom Boden. Camera könnte man dann halt Floor
+  Distance stattdessen schreiben, das ist wahrscheinlich eindeutiger."_ The old
+  label named the SENSOR where the reader needs the QUANTITY. It is the camera's
+  `y` in the WebXR
+  `local-floor` reference space, whose zero is the floor plane. **The only line
+  here that answers "how high am I holding the phone"**, and the one a reader
+  was previously trying to get out of `gps-dem`.
+  - The framework requests `local-floor` as a **required** feature
+    (`webxr-session.ts`), so the zero is the floor and not an arbitrary origin.
+  - `alt − worldBaselineY` is NOT a substitute and was rejected as one:
+    `alt` carries the same ±10–20 m GNSS vertical noise that disqualified the
+    residual, and `worldBaselineY` is the AR **origin**, which moves only when
+    the alignment is re-solved.
+  - **Absent before the first pose**, never zero — `floor distance 0.00 m` would claim
+    the phone is lying on the ground.
 - **`auto ±X.X m (conf 0.NN[, low][, frozen]) · <dem label>`** — the published
   automatic elevation offset (`ar-elevation-auto.ts`:
   `baseline + robust(floor − DEM)`), shown even collapsed, right under the
@@ -178,11 +231,11 @@ need **opposite** fixes.
     names it is expanded-only, and this line is in the collapsed walking set
     — without the suffix a walking screenshot shows a correction with no way
     to tell LiDAR from ~30 m SRTM. Absent id, absent suffix.
-  - **The pair IS the instrument** (plan §2.6): `above terrain` is the RAW
+  - **The pair IS the instrument** (plan §2.6): `gps-dem` is the RAW
     GPS-vs-DEM residual and is untouched by the offset; `auto` is the
     estimator's correction on the same axis. **Their difference exposes the
     fused-vertical error live** — and once auto engages, the city can look
-    right while `above terrain` still reads +7 m, so the M5 field protocol
+    right while `gps-dem` still reads +7 m, so the M5 field protocol
     must name which line means what.
   - **`low` means PUBLISHED BUT NOT APPLIED** (cold-review F1). The demo gates
     the auto contribution on `autoEngaged`; below the gate the estimator still
@@ -243,3 +296,108 @@ is a real place or direction rather than an impossibility: terrain and altitude
 (the Dead Sea, any basement) and the geoid undulation (about −30 m over India).
 Routing those through `isUsable`'s `>= 0` guard would drop exactly the readings
 that are most surprising.
+
+## The DEM label under the race (2026-08-19)
+
+`demStats` is now `{ servedBy, upgrades }` and the terrain/auto lines print
+`servedBy` — the id of the source the CURRENT field came from.
+
+It used to be three position counts, rendered as the primary's share
+("mapterhorn 98%"). That share was only meaningful because `fallbackProvider`
+guaranteed the two sources answered **disjoint** positions. Under the race both
+answer every position, so the ratio stops partitioning anything and the
+percentage becomes arithmetically **undefined**, not merely stale.
+
+This matters more here than in most readouts: the AR overlay is read in the
+field to judge whether an alignment looks right, and a confident wrong number
+there is worse than a plain name. DEC-U6 accepted that AR upgrades silently with
+no PER-POSITION attribution; a whole-field source name is not per-position and
+is what remains honest.
+
+## Pairing (r543)
+
+`gps ±X m` and `N m from anchor` now share a line — _"GPS 7 Meter, 0 Meter from
+Anchor, die beiden sollten in eine Zeile."_ Both answer one question, how well
+the position is known, and each was taking a whole line of a readout that is
+already tall on a phone.
+
+Joined through the same `pair` helper as the render-cost pair, for the same
+reason: which lines belong together is **semantic**, and a width-driven merge
+pass would pair whatever happened to be adjacent. `pair` also keeps either half
+usable alone, which matters because the accuracy is live from the first fix while
+the anchor distance only exists once a session has an anchor.
+
+## The vertical accuracy left the altitude line (J6, DEC-J6 — 2026-08-22)
+
+`alt` and `world floor` have been paired since Q7 — the code has always asked
+`pair()` to merge them — and the fifteenth field session **still reported two
+lines**. The cause was not the pairing but its guard: `pair()` declines when the
+merged string would exceed `MAX_LINE_CHARS` (40), and with the vertical accuracy
+present the ORDINARY case is 46:
+
+```
+alt 105.3 m ±3.5 m (+0.5)  ·  world floor 0.42 m
+        25              +3            18          = 46
+```
+
+Phones routinely report `altitudeAccuracy`, so the merge was declining in the
+normal case rather than an extreme one. **No pairing logic could have fixed
+that** — the string was simply too long.
+
+`±X.X m` therefore moves to its own **expanded-only** line, `alt accuracy ±3.5 m`.
+The collapsed pair is then `alt 105.3 m (+0.5) · world floor 0.42 m` — **39 of
+the 40 available**, which is worth knowing before adding anything to either half.
+
+**It is moved, not dropped.** It is the error bar on the altitude and the only
+thing that says whether the residual beside it is worth reading at all: a ±0.5 m
+residual under a ±30 m fix is noise.
+
+**Renaming `world floor` to `floor` was rejected**, though it saves the same six
+characters. A `floor distance` line already exists and means something else
+entirely — how high the phone is being held — and two lines starting with `floor`
+is precisely the confusion the last three renames of this readout were removing.
+
+**The merge is still not universal, and the limit is pinned rather than hidden.**
+A deep negative altitude with a large residual (`alt -430.0 m (+12.3) · world
+floor -12.34 m`) is 43 characters and still splits. That is `pair()` doing its
+job: a merged line that wraps costs the same two rows _and_ loses the alignment
+that made the pairing readable.
+
+**This retargets the PR #333 guard rather than weakening it.** That review added
+the wrap fallback for exactly this pair and pinned "with an accuracy present, the
+pair splits" as acceptable. The field then reported the split as the defect. The
+boundary itself is unchanged and still asserted; what splits now is a genuinely
+long reading.
+
+## `fused gps`, directly beneath `raw gps` (J7, DEC-J9 — 2026-08-22)
+
+The fifteenth session asked, for the second time in three sessions, whether
+`raw gps` was raw or already fused — and offered to drop the word `raw` if it
+was. **It is not**, and dropping it would restore exactly the ambiguity DEC-Y2
+refused. DEC-Y2 is reaffirmed.
+
+What was actually missing is **contrast**. `raw` only carries information when
+something that is not raw sits next to it, and the difference between the two
+lines _is_ the alignment's error, readable at a glance. So the fix for a naming
+complaint is a second line, not a rename.
+
+- Both lines are **expanded-only**, so the walking HUD gains no height.
+- **Not paired onto one line:** `raw gps 50.941234, 6.958765` is 27 characters
+  and the merged pair would be 59 — `pair()` would decline and they would end up
+  on separate lines anyway, having also lost the column alignment that makes two
+  coordinate strings comparable by eye.
+- **Independent of each other.** They come from different sources; an
+  all-or-nothing group would blank a live number while it waited for a partner.
+- Six decimals on both, because the comparison is between them.
+
+**`fusedPosition` is not the more trustworthy of the two, and this readout must
+not imply that it is.** It inherits whatever the alignment does —
+`worldBaselineY` is on this readout precisely because the fourteenth-session plan
+predicted that term would visibly jump. Showing the fused position is what makes
+the jump _measurable_; it is not a claim that it is steady.
+
+The value is computed by [`ar-fused-gps.ts`](./ar-fused-gps.ts.md) and guarded by
+`ar-mode.ts` on the world group's matrix not being identity — the same guard
+`worldBaselineY` and `fusedBearingDeg` use, because under identity the camera's
+world position is raw odometry: a perfectly plausible coordinate meaning "nothing
+has been aligned yet".

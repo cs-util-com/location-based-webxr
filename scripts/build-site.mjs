@@ -23,6 +23,7 @@
  *     physics/          ← PhysicsDemo, base=/physics/
  *     wayfinding/       ← WayfindingHudDemo, base=/wayfinding/
  *     osm/              ← OsmDemo, base=/osm/
+ *     blog/             ← rendered from the project WIKI repo (not a Vite app)
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
  * vite configs stay at their `/` + `dist` defaults (dev/USB-debugging unchanged).
@@ -132,6 +133,11 @@ function assertLandingHtml(htmlPath) {
     '/physics/',
     '/wayfinding/',
     '/osm/',
+    // Not a demo, but required for the same reason: this footer link is the
+    // only inbound path a crawler has to /blog/, and the canonical-copy
+    // argument (the blog should outrank the GitHub wiki copy of the same
+    // article) rests entirely on it.
+    '/blog/',
   ];
   const missingLinks = requiredDemoLinks.filter(
     (link) => !html.includes(`href="${link}"`)
@@ -172,6 +178,12 @@ function assertSiteTree() {
     'physics/index.html',
     'wayfinding/index.html',
     'osm/index.html',
+    // The blog index exists even with nothing published (it renders "No posts
+    // published yet"), so its absence means the blog step did not run at all.
+    'blog/index.html',
+    'blog/sitemap.xml',
+    // Carries the `Sitemap:` line that points crawlers at blog/sitemap.xml.
+    'robots.txt',
   ];
   const missing = required.filter((rel) => !existsSync(join(distSite, rel)));
   if (missing.length > 0) {
@@ -326,6 +338,20 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'osm'), '/osm/');
+
+// The blog is not a Vite app: it is markdown from the project WIKI repository
+// (a separate repo — see GpsPlusSlamJs_Landing/scripts/blog/) rendered to
+// static HTML. It builds last because it depends on nothing else in the tree.
+//
+// Deliberately NOT wrapped in a try/catch: a missing or unreachable wiki must
+// fail the build rather than deploy an empty /blog/ over a working one, which
+// would unpublish every article at once behind a green build.
+console.log('• Building blog (base=/blog/)');
+run('node', [
+  join('GpsPlusSlamJs_Landing', 'scripts', 'blog', 'build-blog.mjs'),
+  '--out',
+  distSite,
+]);
 
 assertLandingHtml(join(distSite, 'index.html'));
 

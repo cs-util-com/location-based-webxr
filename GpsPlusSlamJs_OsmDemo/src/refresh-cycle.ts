@@ -27,7 +27,7 @@
  * @see refresh-cycle.ts.md
  */
 
-import { SCORE_DISK_MAX_RADIUS, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
+import { PROGRESSIVE_RADII, SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import {
@@ -84,21 +84,19 @@ interface RefreshWorker {
 }
 
 /**
- * The ring radii one refresh scores, in order (W16, DEC-R2-30).
+ * `PROGRESSIVE_RADII` LIVES IN `resolutions.ts` NOW (DEC-K1), beside the two
+ * constants it derives from — this file only consumes it.
  *
- * DERIVED, not listed. The two constants are the decision; a hand-written
- * `[2, 3, 4]` would be a third place the radius lives and the one that silently
- * disagrees when either constant moves.
+ * It moved because three places were deriving the ring list by hand and one of
+ * them was wrong: `derive-growth.test.ts` wrote `[R, R + 1, MAX]`, which at a
+ * radius of 6 becomes `[2, 3, 6]` and would have stayed GREEN while measuring a
+ * working set the cycle never builds. Exporting the derived list is what stops
+ * the next radius change being silent.
  *
- * The FIRST entry is the full original working set, and that is the requirement
+ * The FIRST entry is the full original working set, and that is a requirement
  * rather than an accident of ordering: the user waits for the first answer and
- * for nothing else, so progressive scoring must not make it later. Starting at
- * ring 0 to make the steps uniform would do exactly that.
+ * for nothing else, so progressive scoring must not make it later.
  */
-const PROGRESSIVE_RADII: readonly number[] = Array.from(
-  { length: SCORE_DISK_MAX_RADIUS - SCORE_DISK_RADIUS + 1 },
-  (_, step) => SCORE_DISK_RADIUS + step,
-);
 
 /**
  * Whether a snapshot of this radius is the LAST one a refresh will publish (F42).

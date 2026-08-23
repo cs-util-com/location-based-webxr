@@ -73,6 +73,7 @@
         "jscpd",
         "postcss-html",
         "stylelint-config-standard",
+        "tailwindcss",
         "webxr-polyfill"
       ]
     },
@@ -110,6 +111,9 @@
       "project": [
         "src/**/*.ts"
       ],
+      "ignoreUnresolved": [
+        "/src/ar-compass-control.ts"
+      ],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
@@ -123,10 +127,15 @@
       "entry": [
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
-        "config/eslint.config.mjs"
+        "config/eslint.config.mjs",
+        "scripts/blog/build-blog.mjs",
+        "scripts/blog/trigger-deploy.mjs",
+        "scripts/marketing/drip.mjs"
       ],
       "project": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "scripts/blog/**/*.mjs",
+        "scripts/marketing/**/*.mjs"
       ],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",

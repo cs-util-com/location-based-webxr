@@ -661,7 +661,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
               // a replacement for it. Deliberately NOT raised to the grid's 0.8:
               // a slab covers far more ground than a cell does, and DEC-S1's
               // trade — hiding the surface beneath — is only bearable because
-              // the grid's coverage is a ~250 m disc.
+              // the grid's coverage is a ~326 m disc.
               opacity: 0.55,
               // PAIRED WITH `transparent`, which it was not (DEC-R7b-7).
               // three's default is `depthWrite: true`, so this translucent

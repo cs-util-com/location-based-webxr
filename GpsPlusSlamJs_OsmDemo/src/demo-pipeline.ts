@@ -209,7 +209,9 @@ export interface DemoPipelineOptions {
    * FORWARDED, not invented here — `AffordanceIndexOptions.maxChunks` has
    * always been public and this wrapper simply never passed it on, the same
    * omission `categories` did not have. Omitted means the index's own default
-   * of `CHUNKS_PER_WORKING_SET × WORKING_SETS_RETAINED` = 488.
+   * of `CHUNKS_PER_WORKING_SET × WORKING_SETS_RETAINED` = 1 016 (it was 488
+   * until DEC-K1 took the scoring radius from 4 to 6; the derivation is
+   * unchanged and the figures elsewhere in this file were measured at 488).
    *
    * It exists as an option here because the cap is what BOUNDS stage 5:
    * `derive-growth.test.ts` walks until eviction starts and asserts the derive

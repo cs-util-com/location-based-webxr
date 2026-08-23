@@ -23,9 +23,8 @@ Chromium genuinely lacks WebXR. **Tier 1** (`placement-flow.spec.js` +
 `share-link.spec.js`) drives the full application flow over a DEV-only framework
 seam (`window.__anchorStarterSeams`, installed by `fakes.js` and statically
 stripped from production): boot → onboarding guidance → soft-gated placement →
-the `?show=` URL round-trip → copy-link success/failure. See the plan and its
-tiers in
-[2026-06-01-0447-anchor-starter-e2e-test-plan.md](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-01-0447-anchor-starter-e2e-test-plan.md).
+the `?show=` URL round-trip → copy-link success/failure. The tiers as implemented are
+described below.
 
 ## Files
 

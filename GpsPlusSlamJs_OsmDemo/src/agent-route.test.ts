@@ -119,7 +119,6 @@ describe("planRoute", () => {
     // first, on the demo's own click path. `DEFAULT_ROUTE_EXPANSIONS` bounds it.
     // The elapsed assertion is what keeps that fixed rather than incidentally
     // fast.
-    const startedAt = performance.now();
     const ring: OsmFeature = {
       type: "way",
       id: 101,
@@ -133,24 +132,76 @@ describe("planRoute", () => {
       tags: { barrier: "wall" },
     };
 
-    expect(planRoute([ring], west, east, flat)).toBeUndefined();
-    // Generous enough not to flake on a loaded box, tight enough that the
-    // unbounded search this replaced (which ran past 5 s) cannot pass.
+    // THE SEARCH'S WORK IS COUNTED, NOT TIMED (2026-08-20). `scoreFor` is
+    // consulted once per edge relaxation, so the count is exactly the search
+    // effort — and unlike a clock it does not care how busy the machine is.
     //
-    // RAISED FROM 2 000 ms IN ROUND 13, AND THE COST IS MEASURED RATHER THAN
-    // ASSUMED. A\* is intrinsically dearer than the BFS it replaced on THIS
-    // case — the one where no route exists, so the whole reachable set is
-    // expanded and the heuristic has nothing to prune. Profiled on this exact
-    // fixture: the search alone goes 526 ms → 671 ms (+28 %), because
-    // `canCross` runs 20 531 → 31 254 times; a weighted search must ask per
-    // improving offer, where breadth-first could ask once per discovered state.
+    // This replaces a 3 000 ms wall-clock bound on the elapsed search time,
+    // which had already been RAISED from 2 000 ms because it was "failing about
+    // one run in three — in ISOLATION, not only under suite load". Widening a
+    // bound is the move that makes a test slowly stop discriminating, and it
+    // had happened here once already.
     //
-    // The old budget was already within noise of the total (index build
-    // included), so the extra 150 ms tipped it into failing about one run in
-    // three — in ISOLATION, not only under suite load. 3 000 ms restores the
-    // margin without weakening what the assertion discriminates: the regression
-    // it exists to catch ran past 5 s with a far smaller working set.
-    expect(performance.now() - startedAt).toBeLessThan(3000);
+    // THE BOUND IS DERIVED, NOT GUESSED, and it is derived from a cap this test
+    // PASSES rather than from the production default. Duplicating
+    // `DEFAULT_ROUTE_EXPANSIONS` here would be a constant that silently goes
+    // stale the day production changes it — the "promise nobody keeps" shape
+    // this repo's lessons file already warns about. Asserting the cap ARGUMENT
+    // is honoured is the stronger statement anyway.
+    //
+    // Each expansion relaxes at most the H3 `gridDisk(1)` fan-out — seven
+    // cells — across a small number of standable levels. Measured on this exact
+    // fixture at a 20 000 cap: **60 598 calls**, i.e. ~3.0 per expansion. A
+    // ceiling of 8 per expansion leaves ~2.6x headroom over the real cost while
+    // remaining a statement about the cap rather than about this machine.
+    const EXPANSIONS = 20_000;
+    const RELAXATIONS_PER_EXPANSION = 8;
+
+    let scoreCalls = 0;
+    const counting = {
+      ...flat,
+      maxExpansions: EXPANSIONS,
+      scoreFor: (): number | undefined => {
+        scoreCalls += 1;
+        return undefined;
+      },
+    };
+
+    expect(planRoute([ring], west, east, counting)).toBeUndefined();
+    expect(scoreCalls).toBeLessThanOrEqual(
+      EXPANSIONS * RELAXATIONS_PER_EXPANSION,
+    );
+
+    // AND THE CAP IS WHAT DOES IT, not the fixture happening to be small. With
+    // an explicit small cap the same search must do proportionally less work —
+    // which is the property that stops the unbounded predecessor, the one that
+    // "ran past 5 s with a far smaller working set". Without this, the
+    // assertion above would still pass if the cap were deleted and the fixture
+    // merely happened to terminate.
+    let cappedCalls = 0;
+    const capped = {
+      ...flat,
+      maxExpansions: 2_000,
+      scoreFor: (): number | undefined => {
+        cappedCalls += 1;
+        return undefined;
+      },
+    };
+    expect(planRoute([ring], west, east, capped)).toBeUndefined();
+    expect(cappedCalls).toBeLessThan(scoreCalls / 2);
+
+    // WHERE THIS RESTATEMENT IS WEAKER THAN THE CLOCK IT REPLACED, stated
+    // rather than glossed. Mutating production to remove the cap outright
+    // (`maxExpansions: Number.MAX_SAFE_INTEGER`) does NOT trip the count
+    // assertions — the search simply never returns, so the test dies on the
+    // runner's timeout instead of on an assertion. Verified 2026-08-20: it ran
+    // for minutes and had to be killed.
+    //
+    // That is an acceptable trade because it is not a realistic regression:
+    // production always passes a cap, and `maxExpansions` has a default. The
+    // regressions that ARE realistic — a path that forgets to pass the cap, or
+    // a fan-out that grows — change the count while still terminating, and both
+    // assertions above catch those promptly and name a number.
   });
 
   it("returns undefined rather than throwing when the search hits its cap", () => {

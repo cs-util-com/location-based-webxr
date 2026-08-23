@@ -42,6 +42,69 @@ the two are one decision.
   - `store` is the INTERSECTION `TrackingSubscribableStore & SubscribableStore`, because `initAR` and the alignment wiring want different `getState` shapes and neither subsumes the other. Stated as an intersection rather than as the concrete `SlamAppStore`, whose shape changes with the demo's `extraReducers`.
   - `sceneAnchor` and `enuFrameAt` are how the city's own ENU origin is reconciled with the GPS one. The mesh is authored about the demo's anchor and the GPS-world frame is about `zero`; without the offset the city renders at the right orientation and the wrong place.
   - `origin` is the framework's `zero`, read by the caller. `null` means no fix.
+  - `onEstimateEngaged?(afterS)` — **an instrument, not a feature** (owner
+    decision, 2026-08-23). Called ONCE per session, with seconds since the
+    session's first frame, when the elevation estimator first engages.
+    - **Why it exists:** DEC-L2 stretched the entry fly-in to 12 s partly so the
+      auto-elevation correction lands underneath it, and that argument turns on
+      how long engagement takes **while a user stands still** — never measured,
+      and **unmeasurable here**: the estimator's confidence is built from depth
+      observations that need motion, so every fixture that reaches an engaged
+      state does so by walking. See
+      `GpsPlusSlamJs_Docs/docs/2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
+    - **Its absence is also a measurement:** no call in a whole session means
+      the estimator never engaged, which is the outcome that followup considers
+      most likely.
+    - **Relative to the first frame, not to `elapsed`**, which is page-relative.
+      A stamp that forgot to subtract would grow with how long the tab had been
+      open — the same trap the fps sampler and the descent clock document, and
+      the test walks from a page clock of 30 s precisely so it can fail on it.
+    - **Latched on its own flag**, because engagement is hysteretic: keying off
+      `engaged` alone would re-announce every boundary crossing.
+    - `main.ts` renders it as an AR toast rather than a console line: the
+      measurement is taken in the field, where a console needs a cable.
+  - `entryContentReady?()` — whether the AR entry rebuild has settled (DEC-M1).
+    The entry veil holds until it says yes, so the user never meets the city
+    built for the DESKTOP datum, ~100 m out. **A getter, read per frame**: the
+    pass it reports on is started by the caller AFTER `startArMode` resolves, so
+    nothing readable at construction can answer it. **Absent means "nothing to
+    wait for"**, the convention `estimateReady` already uses for an absent
+    estimator, so an un-wired caller is not silently held to the ceiling.
+  - `onEntryReady?({ afterS, aligned, contentReady })` — **an instrument, not a
+    feature** (DEC-M1a), beside `onEstimateEngaged` and for the same reason:
+    `ENTRY_READY_MAX_WAIT_S` is a guess, and both flags travel with the time
+    because the time alone cannot distinguish "ready at 2 s" from "gave up at
+    8 s".
+
+## The entry sequence (DEC-M1, DEC-M2, DEC-M3)
+
+One state machine, stated once, because four separate decisions depend on it and
+the plan's first draft described them as independent one-line edits — which the
+cold review showed would have left a permanently opaque sphere.
+
+1. **`firstFrameS`** latches at the top of the frame callback. Every wait in the
+   entry is measured from it, and it is page-relative `elapsed` minus nothing
+   else — a session entered thirty seconds after load sees its first frame at
+   `elapsed ≈ 30`.
+2. **`aligned`** = `arWorldGroup.matrix` is not identity, computed at the top of
+   the callback whatever the estimator configuration. It used to live inside the
+   `auto !== undefined` block; with `?autoElevation=off` that copy never ran,
+   and the veil would have waited out its ceiling on every entry.
+3. **The DOM veil fades** once `framesSinceVeil >= 2` (the unchanged sub-frame
+   race) AND `entryFadeMayStart` opens: the hold, the alignment and the content
+   readiness, or the ceiling. It is removed when its own alpha reaches 0.
+4. **The fly-in starts** on the first frame where the DOM veil is GONE and
+   `descentMayStart` agrees. The two waits run concurrently, so the estimate's
+   3 s costs nothing extra in the common case.
+5. **The sphere holds at fully opaque for the whole fly-in**, then fades over
+   `ENTRY_VEIL_FADE_S`. The landing announces itself (`onDescentComplete`, latched
+   on `descentDone`) but does **not** dispose the sphere.
+6. **The descent clock is cleared where the sphere is disposed**, i.e. when its
+   alpha reaches 0 — not at the landing. Clearing it there while the alpha still
+   held at 1 is exactly how this would leave a lid over the passthrough.
+7. **Teardown disposes both veils unconditionally**, the backstop for every path
+   that never reaches step 6.
+
 - `startArMode(deps): Promise<ArMode>` — **never rejects.** A refused session,
   an unsupported device and a missing GPS fix are ordinary outcomes the page
   renders, not exceptions; all of them reach the user through `onError` and

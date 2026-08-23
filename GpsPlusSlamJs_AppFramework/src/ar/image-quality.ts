@@ -91,17 +91,36 @@ export interface QualityFilterConfig {
 }
 
 /**
- * Default image-quality configuration. **Disabled by default** (plan §10): the
- * relative blur threshold is unvalidated, and a mis-tuned gate silently dropping
- * good frames for every consumer app is worse than the motion gate's low-risk
- * default-on. Flip to `true` once the thresholds are field-tuned. The numeric
- * values are PLACEHOLDERS pending on-device tuning (record measured values in
- * implementation-progress.md). `maxWaitMs` of 4000 ms is 2× the default 2000 ms
- * image interval.
+ * Default image-quality configuration. **Enabled at k = 0.8 since 2026-08-20
+ * (owner decision).** The thresholds are no longer placeholders: they come from
+ * a benchmark against 156 hand-labelled frames (51 blurry / 63 blurry-a-bit /
+ * 42 sharp) from `2026-07-11_12-44-13utc`, replayed through this gate across
+ * k = 0.10–1.20 — see
+ * `gps-plus-slam/GpsPlusSlamJs_Investigation/docs/2026-07-12-0059-image-blur-benchmark-findings-and-followups.md`.
+ *
+ * What that benchmark measured, and what it did not:
+ *
+ * - **k = 0.8 rejects ~30 % of frames at ~0.98 precision** against the
+ *   "degraded vs sharp" boundary — it almost never rejects a sharp frame — and
+ *   catches 59 % of the clearly-blurry ones. k = 0.5 (the previous default) was
+ *   safer still (precision 1.0) but caught only ~20 %, which the findings doc
+ *   describes as fixing "little on its own". Above k ≈ 0.85 precision decays
+ *   fast, which is why the gate is not pushed further.
+ * - **The retry BENEFIT is unmeasured.** A replay only sees frames that were
+ *   captured, so "30 % rejected" is known and "the replacement was sharper" is
+ *   not. `maxWaitMs` (4000 ms, 2× the default 2000 ms image interval) bounds
+ *   the cost, and the never-good fallback still saves a frame rather than
+ *   starving the interval.
+ * - **The labelled scene is INDOOR**, and this framework's domain is outdoors.
+ *   Promotion was previously blocked on a second labelled recording; the owner
+ *   accepted single-scene tuning on 2026-08-20 rather than keep a measured,
+ *   near-costless improvement unused. If outdoor frames score systematically
+ *   lower, the reject rate rises above 30 % and the practical symptom is a
+ *   reduced capture rate — adjustable from the recorder's existing sliders.
  */
 export const DEFAULT_QUALITY_FILTER: QualityFilterConfig = {
-  enabled: false,
-  blurRelativeThreshold: 0.5,
+  enabled: true,
+  blurRelativeThreshold: 0.8,
   minMeanLuminance: 10,
   maxWaitMs: 4000,
   blurMetric: 'variance-of-laplacian',
@@ -134,8 +153,13 @@ export const QUALITY_FILTER_CONSTRAINTS = {
  * {@link QUALITY_FILTER_CONSTRAINTS} with non-finite values falling back to the
  * default (a stored `NaN` is `typeof 'number'` and would survive a bare clamp).
  * A missing/nullish group default-fills entirely, so a config persisted before
- * the gate existed loads with the gate DISABLED (its safe default) rather than
- * crashing. `blurMetric` is membership-validated against {@link BLUR_METRIC_IDS}
+ * the gate existed loads with the CURRENT shipped defaults rather than
+ * crashing. Note what that means since 2026-08-20: those defaults now have the
+ * gate **enabled** at k = 0.8, so an old stored config inherits the gate rather
+ * than inheriting the off state it was written under. That is intended — the
+ * threshold is corpus-tuned and the alternative is a silent population of
+ * installs that never gets the improvement — but it is a behaviour change for
+ * a persisted config, not merely a new default for new ones. `blurMetric` is membership-validated against {@link BLUR_METRIC_IDS}
  * with an explicit `'variance-of-laplacian'` fallback, because the field is
  * OPTIONAL — a config predating the metric toggle must resolve to the original
  * behavior (2026-07-12 blur-metric-toggle plan).

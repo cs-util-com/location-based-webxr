@@ -44,11 +44,18 @@ import type { LatLng } from "gps-plus-slam-osm";
  *   starvation impossible at ANY threshold, which is precisely what that flag
  *   buys; overstating the bound here would be the argument a future reader used
  *   to decide the flag was redundant.
- * - **Below ~124 m**, because the scoring working set reaches ~250 m
- *   (`SCORE_DISK_MAX_RADIUS = 4`). A refresh triggered after D metres lands
- *   1.4·T metres later at walking pace, so the user is `D + 1.4·T` from the last
- *   scored centre when the data arrives — at the 90 s worst case, `D + 126`.
- *   Past 250 m they are standing outside the scored disc entirely.
+ * - **Below the scored reach minus a worst-case pass**, because a refresh
+ *   triggered after D metres lands 1.4·T metres later at walking pace, so the
+ *   user is `D + 1.4·T` from the last scored centre when the data arrives — at
+ *   the 90 s worst case, `D + 126`. Past the reach they are standing outside
+ *   the scored disc entirely.
+ *   - The reach is `SCORE_DISK_MAX_RADIUS`-derived and **has moved**: ~250 m at
+ *     radius 4, ~326 m since DEC-K1 raised it to 6. So the bound on D went from
+ *     ~124 m to ~200 m and 100 m has MORE headroom than when it was chosen, not
+ *     less. Stated because the old figure was written in as a literal here and
+ *     in the test, and a stale reach in a safety derivation is wrong even when
+ *     it errs on the safe side — the next person to widen this would be
+ *     reasoning from the wrong number.
  *
  * 100 m is ~71 s of walking. **DESIGNED AGAINST THE 90 s END, not against a
  * "typical" pass** — `resolutions.ts` measured 15.1 / 32.9 / 82.9 / 91.1 s for

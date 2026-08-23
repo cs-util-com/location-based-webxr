@@ -29,7 +29,7 @@
  * @see terrain-cycle.ts.md
  */
 
-import { type FallbackProviderStats, type LatLng } from "gps-plus-slam-osm";
+import { type LatLng, type RacingProviderStats } from "gps-plus-slam-osm";
 
 import type { HeightfieldData } from "./heightfield.js";
 import { latestOnly, type LatestOnly } from "./latest-only.js";
@@ -69,7 +69,26 @@ export interface TerrainState {
    * field on screen, never a snapshot from another load. Absent when the
    * worker did not report one; the HUD then shows the composed id alone.
    */
-  readonly demStats?: FallbackProviderStats | undefined;
+  readonly demStats?: RacingProviderStats | undefined;
+  /**
+   * The worker's verdict that this field arrived too late for the mesh already
+   * drawn, so a refresh is warranted (F1d).
+   *
+   * The caller decides whether to act: `main.ts` declines while a refresh is
+   * already running, because `refresh` is `latestOnly` and would abort it. See
+   * `worker/terrain-arrival.ts`.
+   */
+  readonly meshOutdated?: boolean | undefined;
+  /**
+   * Whether a better DEM answer is still in flight for this field.
+   *
+   * The page's cue to issue `terrainUpgrade`. Without it the DEM race is a
+   * silent no-op — the loser lands after this reply was sent, and the protocol
+   * has no unsolicited worker-to-page channel to announce it on.
+   */
+  readonly upgradePending?: boolean | undefined;
+  /** Posts holding an invented height. Carried, not yet displayed. */
+  readonly meanFilledPosts?: number | undefined;
   /**
    * Where the window was sampled, in the scene's frame — even on failure.
    *
@@ -84,7 +103,7 @@ export interface TerrainState {
 /** Narrowed so `terrain-cycle.test.ts` can drive this without a worker. */
 interface TerrainWorker {
   call(
-    kind: "terrain",
+    kind: "terrain" | "terrainUpgrade",
     payload: {
       centre: LatLng;
       frameOrigin: LatLng;
@@ -147,23 +166,73 @@ export function createTerrainCycle(
 ): LatestOnly<TerrainLoad> {
   const { worker, extentM, spacingM, apply } = options;
 
+  const payloadFor = (
+    load: TerrainLoad,
+  ): {
+    centre: LatLng;
+    frameOrigin: LatLng;
+    extentM: number;
+    spacingM: number;
+    geoidUndulationM?: number;
+  } => ({
+    centre: load.centre,
+    // SENT SEPARATELY, and it must be the anchor this position will actually
+    // be drawn in — not the one held before the position change was handled.
+    // See `scene-anchor.ts`'s holder for why that distinction has teeth.
+    frameOrigin: load.frameOrigin,
+    extentM,
+    spacingM,
+    ...(load.geoidUndulationM === undefined
+      ? {}
+      : { geoidUndulationM: load.geoidUndulationM }),
+  });
+
+  /**
+   * The load this cycle is currently working on, or last finished.
+   *
+   * Compared by IDENTITY, and it exists solely so an outstanding upgrade can
+   * tell that it has been overtaken. See `collectUpgrade`.
+   */
+  let currentLoad: TerrainLoad | undefined;
+
+  /**
+   * Collecting the DEM race's slower, better answer — on its OWN cycle.
+   *
+   * SEPARATE FROM THE LOAD CYCLE ON PURPOSE. This call can wait tens of
+   * seconds for the preferred source, and running it inside the load cycle
+   * would hold that cycle `busy` for the whole wait — delaying the next
+   * position's terrain and making every readout keyed on `busy` claim the view
+   * is still loading when it has been complete for half a minute.
+   *
+   * **THAT SEPARATION IS ALSO WHY SUPERSESSION HAS TO BE CHECKED BY HAND.** An
+   * earlier version of this comment claimed `latestOnly` gave the right
+   * cancellation for free — "walking to a new position supersedes the upgrade
+   * wait for the old one". It does not, and the milestone review caught it:
+   * this is a DIFFERENT `latestOnly` with its own controller, so a new LOAD
+   * cannot abort it. It is superseded only by another `collectUpgrade`, which
+   * only happens if the new load ALSO reports an upgrade pending — and on
+   * cached tiles the preferred source wins outright and it does not. The
+   * outstanding call for the old window then survives and calls `apply` with
+   * the old window's field, moving the ground back under a view that had
+   * already moved on.
+   *
+   * Hence the identity check below. The worker carries the same guard on its
+   * own side, because either end alone leaves the other's state stale.
+   */
+  const collectUpgrade = latestOnly(async (load: TerrainLoad, signal) => {
+    const upgraded = await worker.call("terrainUpgrade", payloadFor(load), {
+      signal,
+    });
+    if (signal.aborted) return;
+    if (currentLoad !== load) return;
+    apply(upgraded);
+  });
+
   return latestOnly(async (load: TerrainLoad, signal) => {
-    const state = await worker.call(
-      "terrain",
-      {
-        centre: load.centre,
-        // SENT SEPARATELY, and it must be the anchor this position will actually
-        // be drawn in — not the one held before the position change was handled.
-        // See `scene-anchor.ts`'s holder for why that distinction has teeth.
-        frameOrigin: load.frameOrigin,
-        extentM,
-        spacingM,
-        ...(load.geoidUndulationM === undefined
-          ? {}
-          : { geoidUndulationM: load.geoidUndulationM }),
-      },
-      { signal },
-    );
+    // Recorded BEFORE the await, so an upgrade outstanding from a previous
+    // load is already stale by the time this one's reply lands.
+    currentLoad = load;
+    const state = await worker.call("terrain", payloadFor(load), { signal });
     // NOTHING IS APPLIED FOR A SUPERSEDED LOAD — the same guard `refresh-cycle.ts`
     // carries, and it matters more here. Usually the abort rejects the call before
     // it resolves; but if the reply has ALREADY landed when the newer position
@@ -177,5 +246,13 @@ export function createTerrainCycle(
     // than by a test: the guard's sibling had the same hole.
     if (signal.aborted) return;
     apply(state);
+    // THE TRIGGER FOR THE UPGRADE, and the whole race depends on this line.
+    // The preferred DEM settles after the reply above was built, and the
+    // protocol is strictly request/reply — so if the page does not ask here,
+    // nothing ever asks, the better heights are applied where nothing can see
+    // them, and the race is a no-op that passes every other assertion.
+    //
+    // NOT AWAITED: the load is complete, and the upgrade has its own cycle.
+    if (state.upgradePending === true) void collectUpgrade(load);
   });
 }

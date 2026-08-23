@@ -23,14 +23,14 @@ map and a worker to construct.
 ## Public API
 
 - `ArSupport` — `"checking" | "supported" | "unsupported"`.
-- `ArButtonInputs` — `{ support, hasFix, active }`.
+- `ArButtonInputs` — `{ support, willLocateFirst, active }`.
 - `ArButtonState` — `{ hidden, disabled, label, hint? }`.
 - `arButtonState(inputs): ArButtonState` — pure.
 
 ## Invariants & assumptions
 
 - **Precedence is deliberate: `active` first, then `unsupported`, then
-  `hasFix`.** A running session must always offer a way out, and waiting for a
+  `willLocateFirst`.** A running session must always offer a way out, and waiting for a
   fix on a device that can never enter AR is a promise that will not be kept.
 - **Hidden and disabled mean different things here, and the difference is
   whether the state resolves itself.**
@@ -38,7 +38,20 @@ map and a worker to construct.
     disabled→enabled on every load is worse than one that appears once.
   - `unsupported` → hidden. No action the user can take, and a permanently
     greyed control advertises something they cannot have.
-  - waiting for a fix → **visible but disabled**, with a hint. Temporary and
+  - a press that will locate first → **visible and ENABLED**, with a hint.
+    THIS WAS "visible but disabled" UNTIL ROUND THREE (G6, DEC-W2), and the
+    argument for it was sound: the state is temporary and self-resolving, so the
+    control has to be discoverable before it is usable. The outcome was still
+    wrong. The thirteenth session met exactly that — a discoverable control that
+    did nothing when discovered — and reported it as broken, because the
+    explanation lived in `title`/`aria-label` and a phone shows neither. The
+    press now performs the step it was waiting for, so there is nothing left to
+    disable, and the hint became a promise ("finds your location first") rather
+    than an excuse. **A test asserts NO reachable visible state is disabled**,
+    because the plan first designed a disabled-but-tappable button that no input
+    could have produced.
+  - (historical, for the reader of the paragraph above) waiting for a fix →
+    visible but disabled, with a hint. Temporary and
     self-resolving, so the button must be discoverable before it becomes
     usable — hidden until the fix lands, it appears without warning under the
     user's thumb.
@@ -55,7 +68,11 @@ map and a worker to construct.
 ## Examples
 
 ```ts
-const state = arButtonState({ support, hasFix: origin !== null, active });
+const state = arButtonState({
+  support,
+  willLocateFirst: arPressAction(...).kind === "locate",
+  active,
+});
 button.hidden = state.hidden;
 button.disabled = state.disabled;
 button.textContent = state.label;

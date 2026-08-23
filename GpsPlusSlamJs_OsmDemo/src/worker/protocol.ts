@@ -29,7 +29,7 @@
 import type {
   MeshChunk,
   CellExplanation,
-  FallbackProviderStats,
+  RacingProviderStats,
   GeoEvent,
   LatLng,
   MeshData,
@@ -229,18 +229,68 @@ export interface TerrainResult {
    */
   readonly demSourceId: string;
   /**
-   * Which member of the composition actually served, as position counts —
-   * a snapshot of the provider's session-cumulative `stats`, taken when this
-   * result was built.
+   * Which source the field in this result came from, plus how the race has
+   * been going — a snapshot of the provider's `stats`, taken when this result
+   * was built.
    *
-   * THE COUNTS ARE THE SMALLEST HONEST SHAPE. A derived percentage would
-   * invent a rounding and a 0/0 corner here, and would hide the denominator
-   * the reader needs to weigh it; the three raw counters are exactly what the
-   * library's `FallbackProviderStats` surface says, with nothing added.
+   * CHANGED WITH THE RACE (2026-08-19). This used to be three position counts
+   * — primary-answered, fallback-answered, unanswered — and the HUD rendered
+   * the primary's share of them. That share was only meaningful because
+   * `fallbackProvider` guaranteed the two sources answered DISJOINT positions;
+   * under a race both answer every position, so the ratio stops partitioning
+   * anything and the percentage becomes arithmetically undefined rather than
+   * merely stale. `servedBy` names the source the current field came from,
+   * which is what stays true and is what a reader actually wants.
+   *
    * Optional so a worker (or test fake) that predates the stats keeps its
    * behaviour — the HUD falls back to the composed id alone.
    */
-  readonly demStats?: FallbackProviderStats;
+  readonly demStats?: RacingProviderStats;
+  /**
+   * Whether a better DEM answer is still in flight for this field.
+   *
+   * THE TRIGGER FOR `terrainUpgrade`, and without it the race is a silent
+   * no-op: the loser lands after this reply is sent, and nothing else would
+   * ever tell the page to ask. Absent or `false` means the published heights
+   * are already the best available and no follow-up call is needed.
+   */
+  readonly upgradePending?: boolean;
+  /**
+   * Posts in this field holding an INVENTED height — the mean of whatever
+   * answered in their batch — rather than a measured one.
+   *
+   * REPORTED BUT NOT YET SHOWN ANYWHERE, and that is deliberate rather than an
+   * oversight. Nothing distinguished an invented post from a measured one in
+   * the data or in any readout, which is how a permanent wrong height could sit
+   * unnoticed; carrying the count across the boundary is what makes it
+   * observable at all. Putting it on screen is a separate decision, and the
+   * twelfth testing session asked for LESS diagnostic text rather than more —
+   * so the surface is filed rather than assumed.
+   */
+  readonly meanFilledPosts?: number;
+  /**
+   * Whether this field arrived too late for the mesh already on screen (F1d).
+   *
+   * **A WORKER DECISION CARRIED ON THE REPLY, not a fact the page could
+   * derive.** Two of its three inputs — the terrain stamp, and what the
+   * standing mesh was built against — are worker module state that nothing
+   * else crosses the boundary. A page-side copy of them would be a second
+   * source of truth for "what is the geometry standing on", which is the
+   * divergence `worker/terrain-gate.ts` exists to prevent.
+   *
+   * **It rides this reply rather than a push**, because the protocol is
+   * strictly request/reply keyed on `id` (`isWorkerReply` rejects anything
+   * without one), and a new envelope type is real surface to add for a
+   * boolean that already has a message going the right way.
+   *
+   * `true` means "please refresh"; the page still declines while a refresh is
+   * in flight. See `worker/terrain-arrival.ts` for why the decision is biased
+   * so heavily towards staying quiet — a spurious `true` aborts a live 15–90 s
+   * Overpass fetch, which is worse than the stall it was written to fix.
+   *
+   * Optional so a fake worker in a test that predates it keeps its behaviour.
+   */
+  readonly meshOutdated?: boolean;
   /**
    * Where the window was sampled, in the scene's frame — **reported even when
    * `field` is `undefined`.**
@@ -513,6 +563,36 @@ export interface WorkerCalls {
        * window-centre datum: the window follows the user, so that datum moves
        * mid-session and takes the whole scene's Y baseline with it.
        */
+      readonly geoidUndulationM?: number;
+    };
+    readonly result: TerrainResult;
+  };
+  /**
+   * "The better DEM has landed — apply it and tell me."
+   *
+   * WHY A SECOND RPC AND NOT A PUSH. The loser of the DEM race settles AFTER
+   * the `terrain` reply has already been sent, and there is no unsolicited
+   * worker→page channel to announce it on: the protocol is strictly
+   * request/reply keyed on `id` and {@link isWorkerReply} rejects anything
+   * without an `id`/`ok` pair. Adding a push envelope would be real protocol
+   * surface for one boolean. So the page ASKS, and it knows to ask because
+   * {@link TerrainResult.upgradePending} told it to.
+   *
+   * WHY NOT REUSE `terrain`. That call starts a fresh load and would cancel
+   * the very request whose result we are waiting for.
+   *
+   * The result is the same shape as `terrain`'s, so the page's existing
+   * handling — including the `meshOutdated` rebuild — is reused rather than
+   * duplicated. It resolves immediately when nothing is pending, so a
+   * speculative ask cannot hang.
+   */
+  readonly terrainUpgrade: {
+    readonly request: {
+      /** The window to re-describe once the upgrade has been applied. */
+      readonly centre: LatLng;
+      readonly frameOrigin?: LatLng;
+      readonly extentM: number;
+      readonly spacingM: number;
       readonly geoidUndulationM?: number;
     };
     readonly result: TerrainResult;

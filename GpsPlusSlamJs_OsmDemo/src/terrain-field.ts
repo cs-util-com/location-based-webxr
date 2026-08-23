@@ -131,6 +131,46 @@ export interface TerrainField {
   sampleGrid(options: SampleGridOptions): HeightfieldData;
   /** Posts currently held. Exposed so the eviction bound is testable. */
   readonly postCount: number;
+  /**
+   * Overwrites held posts with better heights, all of the current window or
+   * none of it.
+   *
+   * THE WRITE-ONCE GUARD IS WHY THIS EXISTS. `ensureAround` skips any post the
+   * lattice already holds, so without an explicit replace path a DEM upgrade is
+   * not a wrong height — it is no change at all, silently, while the map still
+   * shows terrain.
+   *
+   * Returns whether anything was written. `false` means the batch was refused:
+   * either it carried no usable heights, or applying it would have left the
+   * current window standing on two sources at once. AWS SRTM and national LiDAR
+   * differ by metres, so a half-replaced window is a visible step in otherwise
+   * flat ground.
+   */
+  replacePosts(
+    positions: readonly LatLng[],
+    heights: readonly (number | undefined)[],
+  ): boolean;
+  /**
+   * The positions of every post currently held.
+   *
+   * NO PRODUCTION CALLER, and that is deliberate rather than an oversight: an
+   * upgrade batch is built by the PROVIDER from the positions it was asked for,
+   * so nothing in the app needs to enumerate the lattice. It exists because
+   * `replacePosts`'s contract is stated in terms of "the posts the lattice
+   * holds", and a test cannot check that rule without being able to name them.
+   */
+  heldPositions(): readonly LatLng[];
+  /**
+   * Posts currently holding an INVENTED height — the mean of whatever answered
+   * in their batch — rather than a measured one.
+   *
+   * Surfaced because nothing else distinguishes the two, in the data or in any
+   * readout, which is how the hazard sat unnoticed. It is carried across the
+   * worker boundary on `TerrainResult.meanFilledPosts`; **no UI shows it yet**,
+   * and that is a filed decision rather than an omission — the twelfth testing
+   * session asked for less diagnostic text, not more.
+   */
+  readonly meanFilledCount: number;
 }
 
 /**
@@ -167,6 +207,51 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
    * be reallocated and recentred on every step, which is the cost being removed.
    */
   const posts = new Map<string, number>();
+  /**
+   * Posts holding the MEAN of their batch rather than a measured height.
+   *
+   * Tracked so `ensureAround` can ask for them again. Before this existed they
+   * were written with the same `posts.set` as a real height and then skipped by
+   * the write-once guard forever, so a tile that failed while its neighbours
+   * succeeded left thousands of posts holding a plausible, confident, permanent
+   * wrong height. That is the failure `terrarium.ts` argues against one layer
+   * down — "a provider that returns a plausible number on failure produces a
+   * confident wrong answer instead of an absence the caller can branch on" —
+   * reintroduced above the seam that was careful about it.
+   */
+  const meanFilled = new Set<string>();
+  /**
+   * Posts holding heights from the upgrade path rather than the first answer.
+   *
+   * Read only by `replacePosts`, to decide whether a later edge can be
+   * upgraded without leaving the window on two sources.
+   */
+  const upgraded = new Set<string>();
+  /**
+   * Upgrade heights that have arrived but do not yet cover the current window.
+   *
+   * WHY THIS EXISTS. `ensureAround` only ever asks the provider for the posts
+   * it is MISSING, so a batch is exactly one `elevationAt` call's positions and
+   * NO batch ever spans an already-filled interior plus a newer rim. Walk one
+   * step while an upgrade is in flight — the ordinary case, given a preferred
+   * source measured at 3–21 s against a fast one at ~1 s — and the window is
+   * then covered by TWO batches: the interior's and the rim's.
+   *
+   * The all-or-nothing rule refuses each of them on its own, correctly: applying
+   * one would leave the window standing on two DEMs, which is the visible step
+   * it exists to prevent. Without somewhere to keep them, both were refused and
+   * discarded, and nothing ever retried — so the upgrade was lost permanently
+   * the moment the user moved. The doc claimed "the next upgrade covering both
+   * takes it"; this is the mechanism that claim needed and did not have.
+   *
+   * Cleared on apply, and pruned with the posts it describes on eviction, so it
+   * cannot outgrow the lattice.
+   */
+  const pendingUpgrade = new Map<string, number>();
+  /** The window the last `ensureAround` covered, for the all-or-nothing rule. */
+  let lastWindow:
+    | { origin: { x: number; y: number }; reach: number }
+    | undefined;
   /** Whether ANY post has ever arrived. Distinguishes "flat" from "no DEM". */
   let anyData = false;
 
@@ -195,10 +280,15 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
         const x = origin.x + dx;
         const y = origin.y + dy;
         // Already held — the whole point. Standing still costs nothing.
-        if (posts.has(key(x, y))) continue;
+        //
+        // EXCEPT a post we INVENTED. A mean-filled post is not an answer, it is
+        // a placeholder that happens to be stored the same way, and skipping it
+        // here is what made the wrong height permanent.
+        if (posts.has(key(x, y)) && !meanFilled.has(key(x, y))) continue;
         missing.push({ x, y });
       }
     }
+    lastWindow = { origin, reach };
     if (missing.length === 0) {
       evictBeyond(origin, viewPosts);
       return;
@@ -236,10 +326,25 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
 
     missing.forEach((pixel, index) => {
       const height = heights[index];
-      posts.set(
-        key(pixel.x, pixel.y),
-        height === undefined || !Number.isFinite(height) ? mean : height,
-      );
+      const postKey = key(pixel.x, pixel.y);
+      const measured = height !== undefined && Number.isFinite(height);
+      posts.set(postKey, measured ? height : mean);
+      // Provenance recorded at the ONE place a post is written, so the two sets
+      // cannot drift from the map they describe. A post that was invented and
+      // is now measured must leave the set, or it would be re-requested on
+      // every load forever.
+      if (measured) {
+        meanFilled.delete(postKey);
+        // AND FROM `upgraded`. A post that was upgraded, evicted, and then
+        // re-fetched holds the FAST source's data again — leaving it marked
+        // upgraded would let `replacePosts` treat it as already-good and accept
+        // a batch that leaves the window standing on two DEMs, which is the
+        // step the all-or-nothing rule exists to prevent.
+        upgraded.delete(postKey);
+      } else {
+        meanFilled.add(postKey);
+        upgraded.delete(postKey);
+      }
     });
 
     evictBeyond(origin, viewPosts);
@@ -292,6 +397,15 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     for (const entry of ranked) {
       if (posts.size <= keep) break;
       posts.delete(entry.k);
+      // THE PROVENANCE SETS GO WITH THE POST. They used to outlive it, which
+      // cost two things: `meanFilledCount` counted posts that no longer exist,
+      // so the number was not a property of the window it claimed to describe;
+      // and an evicted-then-refetched post stayed marked `upgraded` while
+      // holding the fast source's data, which let `replacePosts` accept a
+      // window standing on two DEMs.
+      meanFilled.delete(entry.k);
+      upgraded.delete(entry.k);
+      pendingUpgrade.delete(entry.k);
     }
   }
 
@@ -416,11 +530,98 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     };
   }
 
+  /** Every held post as a position, in map order. */
+  function heldPositions(): readonly LatLng[] {
+    return [...posts.keys()].map((postKey) => {
+      const [x, y] = postKey.split("/").map(Number);
+      return fromWorldPixel({ x: x as number, y: y as number }, zoom);
+    });
+  }
+
+  /**
+   * All of the current window, or none of it.
+   *
+   * THE RULE IS ABOUT THE WINDOW, NOT THE BATCH, and that distinction is the
+   * whole correctness argument. `ensureAround` only ever asks the provider for
+   * the posts it is MISSING, so on a second load near the first the batch is
+   * just the new rim. Replacing per batch would leave the interior on one
+   * source and the rim on another — a visible step in the ground, produced by
+   * the very rule written to prevent one. So a batch is applied only when,
+   * after applying it, every post in the current window would come from the
+   * upgraded source: either it is in this batch, or it was upgraded earlier.
+   *
+   * The common cases both work out. A cold start's batch IS the whole window,
+   * so it applies. A walk whose interior was already upgraded applies too,
+   * because the rim completes the set. A walk into fresh ground before the
+   * interior upgraded is refused, and the next upgrade covering both takes it.
+   */
+  function replacePosts(
+    positions: readonly LatLng[],
+    heights: readonly (number | undefined)[],
+  ): boolean {
+    if (lastWindow === undefined) return false;
+
+    const incoming = new Map<string, number>();
+    positions.forEach((position, index) => {
+      const height = heights[index];
+      if (height === undefined || !Number.isFinite(height)) return;
+      const pixel = pixelOf(position);
+      incoming.set(key(pixel.x, pixel.y), height);
+    });
+    // "It answered" is not "it has data". A batch of holes would turn a working
+    // window into a flat one.
+    if (incoming.size === 0) return false;
+
+    // HELD, NOT APPLIED YET. A batch that covers only part of the window is
+    // not useless — it is one half of a pair — so it waits for its sibling
+    // rather than being discarded. See `pendingUpgrade`.
+    for (const [postKey, height] of incoming) {
+      if (posts.has(postKey)) pendingUpgrade.set(postKey, height);
+    }
+
+    const { origin, reach } = lastWindow;
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        const postKey = key(origin.x + dx, origin.y + dy);
+        // A post the lattice does not hold is not part of the window it is
+        // standing on — it was evicted, or never arrived — so it cannot make
+        // the window mixed.
+        if (!posts.has(postKey)) continue;
+        if (pendingUpgrade.has(postKey) || upgraded.has(postKey)) continue;
+        return false;
+      }
+    }
+
+    // COUNTED, so the return value cannot claim a change that did not happen.
+    // Every pending post can legitimately be absent from `posts` by now — the
+    // eviction pass runs between an upgrade being asked for and arriving — and
+    // a `true` here costs the page a full mesh rebuild for a pixel-identical
+    // result, which is exactly what `terrain-upgrade-sink.ts` says must not
+    // happen.
+    let written = 0;
+    for (const [postKey, height] of pendingUpgrade) {
+      if (!posts.has(postKey)) continue;
+      posts.set(postKey, height);
+      upgraded.add(postKey);
+      meanFilled.delete(postKey);
+      written += 1;
+    }
+    pendingUpgrade.clear();
+    if (written === 0) return false;
+    anyData = true;
+    return true;
+  }
+
   return {
     ensureAround,
     sampleGrid,
+    replacePosts,
+    heldPositions,
     get postCount() {
       return posts.size;
+    },
+    get meanFilledCount() {
+      return meanFilled.size;
     },
   };
 }

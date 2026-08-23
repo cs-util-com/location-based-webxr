@@ -9,14 +9,29 @@ whether a request may be dispatched **right now**.
 
 `new OverpassSlotBudget({ slots?, now?, maxPenaltyMs? })`
 
+- **`available` and `msUntilAvailable()` with no arguments no longer see a
+  penalty**, because every production caller now penalises an OPERATOR and
+  the unqualified block is only set by an unqualified `penalise`. A consumer
+  reading them for a rate-limit UI must pass the operators it cares about, or
+  it will read a budget that never looks penalised.
 - `available: number` — dispatchable slots; `0` while penalised regardless of
   count; `Infinity` when unlimited.
 - `capacity: number`, `unlimited: boolean`
-- `tryAcquire(): boolean` — takes a slot if free. Never waits.
+- `tryAcquire(operators?): boolean` — takes a slot if free. Never waits.
+  Pass the operators the caller could actually reach; it then refuses only
+  when **every** one of them is blocked. Omit them for the pre-2026-08-19
+  behaviour (global penalty only).
 - `release(): void` — returns a slot. Safe to over-call.
-- `penalise(ms): void` — block dispatch, after a 429 or `Retry-After`.
-- `msUntilAvailable(): number`
-- `sync(status: OverpassStatus): void` — correct from `/api/status`.
+- `penalise(ms, operator?): void` — block dispatch, after a 429 or
+  `Retry-After`. With an `operator` (the id `operatorForUrl` returns) it blocks
+  only that operator; without one it blocks everything, as before.
+- `availableFor(operator): number` — dispatchable slots for one operator.
+- `msUntilAvailable(operators?): number` — the **soonest** recovery across the
+  given operators, not the longest.
+- `sync(status: OverpassStatus, operator?): void` — correct from
+  `/api/status`. Any penalty it derives is attributed to `operator`, because
+  the CALLER must name: a status page describes exactly one instance, so
+  applying its recovery time to the whole pool would re-create the F2c bug.
 
 ## Invariants & assumptions
 
@@ -31,7 +46,21 @@ whether a request may be dispatched **right now**.
   something consumed the allocation we did not account for.
 - **The allocation size from `sync` is always adopted**, so a self-hosted
   instance allowing more (or fewer) than the public 2 is honoured.
-- **`penalise` keeps the LONGEST outstanding penalty**, not the most recent.
+- **`penalise` keeps the LONGEST outstanding penalty**, not the most recent —
+  within one operator. Across operators the accounts are independent: a short
+  penalty on one must neither shorten nor lengthen another's.
+- **The concurrency cap stays GLOBAL while penalties are per-operator.** The
+  cap models this client's own outbound limit, so splitting it per operator
+  would let one client dispatch three times its allocation by spreading it
+  across the pool. Penalties model each server's quota, which is genuinely
+  separate — three of the five default endpoints are FOSSGIS mirrors sharing
+  one, which is why the key is the operator and not the hostname.
+- **`tryAcquire` runs once per TILE, before an endpoint is drawn**, which is
+  why it has to be told the pool. Getting this wrong in either direction
+  breaks something shipped: refusing whenever _any_ operator is blocked is the
+  F2c defect, and never refusing removes the `RateLimitedError` that
+  `CachingSource`'s stale-serve and `area-loader`'s prefetch back-off both
+  branch on.
   With two 429s in flight, a short second penalty must not cancel a long first.
 - **Penalties are clamped** to `maxPenaltyMs` (default 120 s) and floored at 0.
   `Retry-After` is third-party input: an absurd value must not brick the client
@@ -48,7 +77,7 @@ whether a request may be dispatched **right now**.
 
 ```ts
 const budget = new OverpassSlotBudget();
-if (!budget.tryAcquire()) return cachedTileOrUndefined(); // serve cache, queue
+if (!budget.tryAcquire(poolOperators)) return cachedTileOrUndefined(); // serve cache, queue
 try {
   return await fetchTile(cell);
 } finally {

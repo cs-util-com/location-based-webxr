@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
 
 import {
   AR_REFRESH_DISTANCE_M,
@@ -106,18 +107,24 @@ describe("the distance gate", () => {
   });
 
   it("stays inside the scored disc at the worst-case pass duration", () => {
-    // WHY 100 AND NOT 200. The scoring working set reaches ~250 m
-    // (`SCORE_DISK_MAX_RADIUS = 4`). A refresh triggered after walking D metres
-    // lands 1.4·T metres later at walking pace, so the user is D + 1.4·T from
-    // the last scored centre when the new data arrives. At the 90 s worst case
-    // that is D + 126 m, which must stay under 250 m — so D ≤ 124.
+    // WHY 100 AND NOT 200. A refresh triggered after walking D metres lands
+    // 1.4·T metres later at walking pace, so the user is D + 1.4·T from the last
+    // scored centre when the new data arrives. At the 90 s worst case that is
+    // D + 126 m, which must stay inside the scored disc.
+    //
+    // ⚠️ THE REACH IS DERIVED NOW, and used to be the literal 250. That literal
+    // was the radius-4 reach; DEC-K1 raised the radius to 6 and the reach to
+    // ~326 m, so this test kept passing while its stated reasoning was wrong —
+    // in the conservative direction, which is exactly the kind of wrongness
+    // nobody notices. The bound on D is now ~200 m rather than ~124 m.
     //
     // Pinned as an inequality rather than as `toBe(100)`: what matters is the
     // relationship, and a test asserting the constant equals itself would
     // survive a change that broke it.
     const WALKING_PACE_MS = 1.4;
     const WORST_CASE_PASS_S = 90;
-    const SCORED_REACH_M = 250;
+    // res-11 centre-to-centre is 49.6 m, plus a 28.66 m edge at the rim.
+    const SCORED_REACH_M = SCORE_DISK_MAX_RADIUS * 49.6 + 28.66;
     expect(
       AR_REFRESH_DISTANCE_M + WALKING_PACE_MS * WORST_CASE_PASS_S,
     ).toBeLessThan(SCORED_REACH_M);

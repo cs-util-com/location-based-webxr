@@ -327,6 +327,213 @@ describe("TerrariumProvider", () => {
       provider.elevationAt([{ lat: 50.94, lng: 6.95 }]),
     ).rejects.toThrow("aborted");
   });
+
+  /**
+   * A signal's abort reason as an `Error`.
+   *
+   * `signal.reason` is typed `any`, and `prefer-promise-reject-errors` is right
+   * to refuse it: a fake that rejected with a non-Error would let production
+   * code take a path a real `fetch` never offers. In practice the reason IS an
+   * Error — `DOMException.prototype`'s prototype is `Error.prototype` per
+   * WebIDL, in Node and in every current browser — which is what lets `load`
+   * discriminate `AbortError` from `TimeoutError` by name at all. The fallback
+   * is belt-and-braces rather than a reachable branch.
+   */
+  const abortReasonOf = (signal: AbortSignal): Error => {
+    const reason: unknown = signal.reason;
+    return reason instanceof Error ? reason : new Error(String(reason));
+  };
+
+  /**
+   * A fetch that honours its signal and otherwise never answers.
+   *
+   * A bare never-resolving promise would leave the request pending past the end
+   * of the test; rejecting with the signal's own reason is also what a real
+   * `fetch` does, which is the behaviour the deadline is written against.
+   */
+  const stalledFetch = () =>
+    vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal == null) return;
+          signal.addEventListener(
+            "abort",
+            () => reject(abortReasonOf(signal)),
+            {
+              once: true,
+            },
+          );
+        }),
+    ) as unknown as typeof fetch;
+
+  it("has NO deadline unless one is asked for", async () => {
+    // Why this test matters: `requestTimeoutMs` was added for one consumer with
+    // a fast fallback behind it. Defaulting it on would silently change every
+    // other consumer's behaviour — a sole provider on a slow link wants
+    // patience, and a library that quietly gives up on it would turn a slow
+    // render into a wrong one. The absence of a default is the contract.
+    const provider = providerWith(stalledFetch());
+    const pending = provider.elevationAt([{ lat: 50.94, lng: 6.95 }]);
+
+    const raced = await Promise.race([
+      pending.then(() => "settled" as const),
+      new Promise<"still-waiting">((r) =>
+        setTimeout(() => r("still-waiting"), 40),
+      ),
+    ]);
+    expect(raced).toBe("still-waiting");
+  });
+
+  it("degrades a tile that exceeds its deadline, WITHOUT failing the batch", async () => {
+    // THE FIELD FAILURE THIS OPTION EXISTS FOR (2026-08-19 session). A primary
+    // that is slow rather than broken produces no `undefined`, so a composed
+    // `fallbackProvider` sees no gap and never consults its fallback: the
+    // working source is unreachable for as long as the slow one keeps the
+    // promise open. The deadline turns "slow" into "no data here", which is
+    // the one shape the composition can route around.
+    //
+    // `toEqual([undefined])` rather than `rejects` is the entire point — see
+    // the next test for why that is easy to get backwards.
+    const provider = new TerrariumProvider({
+      decodePng,
+      fetchImpl: stalledFetch(),
+      zoom: 13,
+      requestTimeoutMs: 20,
+    });
+
+    const out = await provider.elevationAt([{ lat: 50.94, lng: 6.95 }]);
+    expect(out).toEqual([undefined]);
+  });
+
+  it("spells the deadline as a TimeoutError, so the abort branch cannot swallow it", async () => {
+    // Why this test matters: `load` rethrows anything named `AbortError` and
+    // degrades everything else. A deadline built on `controller.abort()` would
+    // therefore REJECT the batch — reinstating the exact unreachable-fallback
+    // failure the deadline was added to remove, while looking like a fix.
+    // Asserting the error's NAME at the boundary is what stops a later
+    // "simplification" to `AbortController` from passing review.
+    const seen: (string | undefined)[] = [];
+    const fetchImpl = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal == null) return;
+          signal.addEventListener(
+            "abort",
+            () => {
+              const reason = abortReasonOf(signal);
+              seen.push(reason.name);
+              reject(reason);
+            },
+            { once: true },
+          );
+        }),
+    ) as unknown as typeof fetch;
+
+    const provider = new TerrariumProvider({
+      decodePng,
+      fetchImpl,
+      zoom: 13,
+      requestTimeoutMs: 20,
+    });
+    await provider.elevationAt([{ lat: 50.94, lng: 6.95 }]);
+
+    expect(seen).toEqual(["TimeoutError"]);
+  });
+
+  it("spends ONE budget per tile, so a LATE joiner inherits what is left of it", async () => {
+    // Why this test matters: the deadline is composed with `InFlightRequests`'
+    // internal controller, not with any one caller's signal, so it belongs to
+    // the TILE rather than to the request that happened to start it. The
+    // intuitive alternative — a per-caller budget — is not what this does, and
+    // the difference is only visible to a caller that arrives LATE.
+    //
+    // An earlier version of this test started both callers in the same tick,
+    // which cannot tell the two designs apart: with simultaneous starts a
+    // per-caller budget expires at the same moment as a shared one. Under
+    // review that was worth having only as "dedup still works when a deadline
+    // is set", which is not the property named. So the second caller joins
+    // halfway through, and the assertion is on WHEN it settles: shared means it
+    // degrades with the first caller, per-caller would give it a fresh budget
+    // and settle it a full timeout later.
+    // THE DURATIONS ARE DELIBERATELY LARGE, and that is the fix for a flake
+    // this test failed three times with (87, 95 and 103 ms against an 85 ms
+    // bound) — including once on a verifiably idle machine with no competing
+    // gate run.
+    //
+    // The reason is not the machine: `AbortSignal.timeout` is a platform timer
+    // that fires on the event loop, and vitest runs ~130 test files across
+    // worker threads, so a 60 ms deadline routinely lands 30-40 ms late. That
+    // overshoot is a fixed cost, so the cure is to make it small RELATIVE to
+    // the thing being measured rather than to keep re-guessing the bound.
+    //
+    // Widening the bound was the obvious move and is the wrong one: the
+    // per-caller design settles at ~100 ms, so any bound near or above that
+    // stops telling the two designs apart, and the test would pass for both —
+    // vacuous, which is worse than deleted, because it still reads as coverage.
+    //
+    // `AbortSignal.timeout` is not controlled by `vi.useFakeTimers`, so a
+    // deterministic virtual clock is not available without changing production
+    // code to accept an injected timer. Scaling up costs ~0.6 s and no risk.
+    const TIMEOUT_MS = 300;
+    const JOIN_AFTER_MS = 200;
+
+    const fetchImpl = stalledFetch();
+    const provider = new TerrariumProvider({
+      decodePng,
+      fetchImpl,
+      zoom: 13,
+      requestTimeoutMs: TIMEOUT_MS,
+    });
+    const at = [{ lat: 50.94, lng: 6.95 }];
+
+    // THE DISCRIMINATOR IS THE GAP BETWEEN THE TWO SETTLE TIMES, not the
+    // absolute elapsed time of either. That is what makes this robust:
+    //
+    // - a SHARED budget releases both callers on the same deadline event, so
+    //   they settle in the same tick and the gap is ~0
+    // - a PER-CALLER budget gives the late joiner a fresh timeout, so it
+    //   settles JOIN_AFTER_MS later and the gap is ~200 ms
+    //
+    // Scheduler lateness — the 30-40 ms this test kept losing to — delays the
+    // deadline event itself, so it moves BOTH timestamps by the same amount and
+    // cancels in the difference. An absolute bound could not do that: it had to
+    // out-margin the lateness, which is why the previous version needed 600 ms
+    // timeouts to buy headroom, and still only reached ~5x the observed noise.
+    //
+    // The gap is a difference between two `Date.now()` reads in the same tick,
+    // so its own noise is sub-millisecond against a 100 ms bound.
+    const settledAt = new Map<string, number>();
+    const stamp =
+      (name: string) =>
+      <T>(value: T): T => {
+        settledAt.set(name, Date.now());
+        return value;
+      };
+
+    const startedAt = Date.now();
+    const first = provider.elevationAt(at).then(stamp("first"));
+    await new Promise((resolve) => setTimeout(resolve, JOIN_AFTER_MS));
+    const second = provider.elevationAt(at).then(stamp("second"));
+
+    expect(await second).toEqual([undefined]);
+    expect(await first).toEqual([undefined]);
+
+    const gapMs = Math.abs(
+      (settledAt.get("second") ?? 0) - (settledAt.get("first") ?? 0),
+    );
+    expect(gapMs).toBeLessThan(JOIN_AFTER_MS / 2);
+
+    // AND NOT INSTANTLY. Without this, a provider that gave up immediately —
+    // dedup broken, or the deadline applied to the wrong thing — would settle
+    // both callers together and satisfy the gap assertion perfectly.
+    // One-sided in the SAFE direction: load can only make elapsed larger, so
+    // this cannot flake however contended the machine is.
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(JOIN_AFTER_MS);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("the browser PNG decoder", () => {

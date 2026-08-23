@@ -5,7 +5,16 @@
 ## Public API
 
 - `class LocateControl`
-  - `constructor({ map, onLocated, onError })` — adds itself to the map at `bottomleft`.
+  - `constructor({ map, onLocated, onError })` — adds itself to the map at
+    `bottomright` (DEC-R2-3, the Google Maps convention the feedback named).
+    This line said `bottomleft` until round three and had always been wrong.
+  - `start()` — one-shot locate, exactly what pressing the button does.
+    Idempotent while one is already in flight. **Public since round three**
+    (G6, DEC-W2): the AR button performs this step itself when the app does not
+    yet know where the user is, and it goes through the SAME entry point the
+    button's own handler uses — a second path into `map.locate()` would be a
+    second place for this control's state machine to fall out of step with what
+    is actually in flight.
   - `startWatch()` / `stopWatch()` — follow the user continuously instead of
     taking one fix (AR milestone 3). Both idempotent.
   - `dispose()` — cancels the pending label reset.

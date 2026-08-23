@@ -33,10 +33,12 @@ import {
   backoffDelayMs,
   buildMatrixDocument,
   buildMatrixQuery,
+  knownOperatorHostnames as scriptOperatorHostnames,
   operatorForUrl,
   planCells,
   waitMsBeforeRequest,
 } from "./benchmark-matrix.mjs";
+import { knownOperatorHostnames } from "../src/source/overpass-operators.js";
 
 const BBOX = { south: 50.93, west: 6.94, north: 50.95, east: 6.98 };
 const KEYS = ["highway", "building"];
@@ -230,6 +232,60 @@ describe("planCells", () => {
       forms: ["plain", "clipped"],
     });
     expect(cells).toHaveLength(3 * 2 * 2);
+  });
+
+  it("multiplies the plan by `repeats`, with distinguishable ids", () => {
+    // WHY REPEATS EXIST AT ALL (DEC-T4). Every artefact this script has produced
+    // is n=1 per cell, and `spatial/resolutions.ts` records four res-7 samples
+    // spanning 15.1 to 91.1 s with the conclusion that the timings "do not
+    // replicate at all". A comparison drawn from single samples either side of
+    // that spread cannot mean anything — this repo has already retracted three
+    // latency figures quoted as though it could.
+    //
+    // The ids must differ, or two samples of the same cell are indistinguishable
+    // in the artefact and the distribution cannot be reconstructed from it.
+    const cells = planCells({
+      hosts: HOSTS,
+      resolutions: [7],
+      forms: ["areal-only"],
+      repeats: 3,
+    });
+
+    expect(cells).toHaveLength(3 * 3);
+    expect(new Set(cells.map((cell) => cell.id)).size).toBe(cells.length);
+    expect(cells.every((cell) => typeof cell.round === "number")).toBe(true);
+  });
+
+  it("runs repeats as ROUNDS, so one host's samples are spread across the run", () => {
+    // WHY THIS ORDERING AND NOT THREE-IN-A-ROW. Three back-to-back measurements
+    // of one host mostly measure one moment — the same queue depth, the same
+    // neighbours. The spread this is collected to characterise lives BETWEEN
+    // moments, so each round runs the whole group before the next begins, which
+    // also lets the operator cooldown fall between a host's samples for free.
+    const cells = planCells({
+      hosts: HOSTS,
+      resolutions: [7],
+      forms: ["areal-only"],
+      repeats: 2,
+    });
+
+    // The first round is complete before the second one starts.
+    const rounds = cells.map((cell) => cell.round);
+    expect(rounds.slice(0, 3).every((r) => r === 0)).toBe(true);
+    expect(rounds.slice(3).every((r) => r === 1)).toBe(true);
+  });
+
+  it("leaves ids and shape untouched when repeats is 1", () => {
+    // The default has to stay byte-compatible with every artefact already
+    // committed, or a re-run's rows stop matching the ones they are compared
+    // against — and comparing across runs is the only reason to keep them.
+    const [cell] = planCells({
+      hosts: [HOSTS[0]],
+      resolutions: [7],
+      forms: ["areal-only"],
+    });
+    expect(cell.id).not.toMatch(/:r\d+$/);
+    expect(cell.round).toBeUndefined();
   });
 
   it("orders the form axis outermost, cheapest-hypothesis first", () => {
@@ -498,5 +554,119 @@ describe("the refusal budget decays (F29)", () => {
     // are spaced a minute apart by OPERATOR_COOLDOWN_MS.
     expect(REFUSAL_DECAY_MS).toBeGreaterThan(OPERATOR_COOLDOWN_MS * 2);
     expect(REFUSAL_DECAY_MS).toBeLessThan(30 * 60_000);
+  });
+});
+
+describe("the operator table agrees with production", () => {
+  it("maps every hostname the client groups to the same operator", () => {
+    // WHY THIS TEST MATTERS, and why it lives HERE rather than beside the
+    // production table. The same grouping exists twice: once in
+    // `src/source/overpass-operators.ts`, which the retry policy reads, and
+    // once in this script, which paces the sweep. It cannot be one copy — this
+    // script runs under bare `node` with no build step and cannot import from
+    // `src` (see its header), and the reverse import fails `typecheck:tests`,
+    // which compiles `src/**/*.ts` only. So the duplication is deliberate, and
+    // this assertion is what keeps it honest.
+    //
+    // A drift would not be cosmetic: it would mean the sweep spaces its
+    // requests by a different notion of "operator" than the client retries by,
+    // and the sweep's politeness guarantee is the entire reason it is allowed
+    // to run at all.
+    for (const [hostname, operator] of Object.entries(
+      knownOperatorHostnames(),
+    )) {
+      expect(operatorForUrl(`https://${hostname}/api/interpreter`)).toBe(
+        operator,
+      );
+    }
+  });
+
+  it("covers the same hostnames in BOTH directions", () => {
+    // The loop above only walks the src table, so a hostname present only in
+    // the SCRIPT's copy would pass — and that is one of the two drift
+    // directions the duplication comment claims to close. A host this script
+    // spaces requests for but the client does not recognise would be retried
+    // as if it were independent.
+    //
+    // Set equality rather than another loop: it fails on an addition to either
+    // side, which is the whole point.
+    expect(new Set(Object.keys(scriptOperatorHostnames()))).toEqual(
+      new Set(Object.keys(knownOperatorHostnames())),
+    );
+  });
+});
+
+describe("keyCounts — the one-key probe dimension (N1, 2026-08-19)", () => {
+  /**
+   * WHY THIS DIMENSION EXISTS. The 2026-08-19 re-measurement found that a 343x
+   * smaller area is not faster: res 7 (21.2 MB) came back in 27.7 s and res 10
+   * (0.33 MB) in 20.5 s, so the ~22 s floor is not about area. The untested
+   * explanation is that it is query PLANNING over 32 separate key statements.
+   *
+   * WHY IT IS A CELL DIMENSION AND NOT A FLAG. Overpass latency swings with
+   * time of day badly enough that this repo has retracted three figures drawn
+   * from samples taken minutes apart. A one-key run followed by a 32-key run
+   * would confound the key count with the hour; interleaving them as cells of
+   * one sweep is the only way the difference means anything.
+   */
+
+  it("plans a cell per key count, so both arms ride the same sweep", () => {
+    const cells = planCells({
+      hosts: [{ url: "https://overpass-api.de/api/interpreter", note: "a" }],
+      resolutions: [7],
+      forms: ["areal-only"],
+      keyCounts: [1, 32],
+    });
+
+    expect(cells.map((cell) => cell.keyCount).sort()).toEqual([1, 32]);
+  });
+
+  it("puts the key count in the id, so two arms are distinguishable", () => {
+    // Two cells with the same id are indistinguishable in the artefact, which
+    // is the failure the round index was added to prevent. Same argument.
+    const cells = planCells({
+      hosts: [{ url: "https://overpass-api.de/api/interpreter", note: "a" }],
+      resolutions: [7],
+      forms: ["areal-only"],
+      keyCounts: [1, 32],
+    });
+
+    expect(new Set(cells.map((cell) => cell.id)).size).toBe(cells.length);
+    // ANCHORED. `includes("k")` matched the `k` in "vk-maps" and would have
+    // passed for ids carrying no key dimension at all.
+    expect(cells.every((cell) => /:k\d+:/.test(cell.id))).toBe(true);
+  });
+
+  it("omits the key count entirely when only one arm is asked for", () => {
+    // Every artefact written before 2026-08-19 has no key dimension, and the
+    // ids in them are cited by name in the results docs. A sweep that does not
+    // use the dimension must keep producing the old ids.
+    const [cell] = planCells({
+      hosts: [{ url: "https://overpass-api.de/api/interpreter", note: "a" }],
+      resolutions: [7],
+      forms: ["areal-only"],
+    });
+
+    expect(cell.id).not.toMatch(/:k\d+/);
+    expect(cell.keyCount).toBeUndefined();
+  });
+});
+
+describe("buildMatrixQuery honours a key count", () => {
+  it("emits exactly the requested number of key statements", () => {
+    // The measurement's whole comparison rests on this number, so it is
+    // asserted here rather than trusted to the caller's slice.
+    const bbox = { south: 50, west: 6, north: 51, east: 7 };
+    const keys = ["amenity", "shop", "leisure", "tourism"];
+
+    const one = buildMatrixQuery({
+      bbox,
+      keys: keys.slice(0, 1),
+      form: "plain",
+    });
+    const all = buildMatrixQuery({ bbox, keys, form: "plain" });
+
+    expect((one.match(/nwr\[/g) ?? []).length).toBe(1);
+    expect((all.match(/nwr\[/g) ?? []).length).toBe(4);
   });
 });

@@ -14,6 +14,7 @@ import { test, expect } from "./e2e-test.js";
 import {
   AT_FIXTURE,
   recordStatus,
+  recordToasts,
   stubNetwork,
   waitForRefresh,
   enableCellLayer,
@@ -159,6 +160,7 @@ test.describe("a superseded refresh", () => {
       expect(await cells.count()).toBeGreaterThan(0);
 
       const statusHistory = await recordStatus(page);
+      const toastHistory = await recordToasts(page);
 
       // TWO CHANGES IN QUICK SUCCESSION, with no wait between them: the second
       // supersedes the first while it is still in flight, which is the whole
@@ -169,9 +171,12 @@ test.describe("a superseded refresh", () => {
       await picker.selectOption(started);
       await waitForRefresh(page);
 
-      // The status line is where `fetchFailed` becomes visible, and the message it
-      // would carry is the RPC's own. Neither may ever have appeared.
-      const history = await statusHistory();
+      // WHERE A FAILURE BECOMES VISIBLE MOVED (2026-08-19, DEC-U10): errors go
+      // to the toast now, and `writeStatus` no longer renders the error phase
+      // at all. Watching only `#status` would make this assertion unfailable —
+      // green for a build that surfaced the superseded message loudly. Both
+      // channels are checked, so the test keeps meaning what it meant.
+      const history = [...(await statusHistory()), ...(await toastHistory())];
       // ANCHORED TO THE MESSAGE, not to the bare word. `Failed: ` with the colon
       // is how `writeStatus` renders an error phase; a bare `/Failed/` matched
       // by accident only because it is case-SENSITIVE — every status line here

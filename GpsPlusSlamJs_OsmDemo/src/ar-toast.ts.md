@@ -104,3 +104,28 @@ the old text.
 time** — a state no accessibility layer ever reaches, so it passed against code
 that announced nothing. Same shape as the `warn` mock above, arriving from the
 other direction: assert what the AT can observe, not what the code did.
+
+## Generalised into `toast.ts` (round two, N3)
+
+The mechanism no longer lives here. `createArToast` is now a thin wrapper over
+`createToast` with `className: "ar-toast"` and an 8 s linger; the announcement
+contract, the deferred text write and the cancellation rule are documented in
+[`toast.ts.md`](./toast.ts.md).
+
+**Why generalised rather than copied.** Round two needed a second toast for the
+2D page, so that errors have a channel visible while the header is collapsed
+(DEC-U10). The behaviour here took three review rounds to get right and none of
+it is visible in the finished code — a hand-written second copy would have
+reproduced the bugs rather than the fixes.
+
+**What stays this file's business** is the argument above for why AR needs a
+channel of its own at all: the header status line is outside `domOverlay.root`
+and therefore not composited during an immersive session, and it is overwritten
+within the same synchronous block that writes it. Both remain true.
+
+The AR linger stays LONGER than the 2D default: a message in AR competes with
+the camera feed and with the physical world for attention, and there is no
+scrollback to recover it from.
+
+`ar-toast.test.ts` is unchanged and still passes, which is the evidence that
+the extraction preserved the behaviour.

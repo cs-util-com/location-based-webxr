@@ -29,6 +29,8 @@
 
 import {
   COMPASS_INFLUENCE_DEFAULT,
+  type CompassLiveState,
+  type CompassExperiments,
   COMPASS_INFLUENCE_STEP,
   compassSettingsFor,
   describeCompassInfluence,
@@ -43,6 +45,12 @@ export interface ArCompassControlOptions {
    * never before {@link ArCompassControl.setReady}`(true)`.
    */
   readonly onChange: (settings: CompassSettings) => void;
+  /**
+   * The experimental options to send alongside the weight, read at dispatch
+   * time rather than captured — the gear panel owns them and they change while
+   * this control is alive.
+   */
+  readonly experiments?: () => CompassExperiments;
   /** Starting influence. Defaults to {@link COMPASS_INFLUENCE_DEFAULT}. */
   readonly initialInfluence?: number | undefined;
 }
@@ -59,9 +67,39 @@ export interface ArCompassControl {
    * made before the first fix is applied rather than lost.
    */
   setReady(ready: boolean): void;
+  /**
+   * Briefly replace the readout with a confirmation, then restore it.
+   *
+   * For settings whose effect is real but INVISIBLE — the trust gate changes
+   * only what the next GPS observation solves with, and the view lerps toward
+   * the result — where silence reads as a control that did nothing.
+   *
+   * A live update arriving mid-announcement does not erase it.
+   */
+  announce(text: string, holdMs?: number): void;
+  /**
+   * Publish what the solve last reported, so the readout can show the LIVE
+   * weight beside the target. Cheap and idempotent; call it at the HUD's own
+   * ~1 Hz rather than per frame — a per-fix readout flickers.
+   */
+  setLive(next: CompassLiveState): void;
+  /**
+   * Re-send the current slider position with the caller's current experiments.
+   * For the gear panel, whose changes must not drop the weight.
+   */
+  republish(): void;
   /** Take it down and release the DOM. Idempotent. */
   dispose(): void;
 }
+
+/**
+ * How long a confirmation holds the readout, milliseconds.
+ *
+ * 2.5 s: long enough to be read on a phone held at arm's length outdoors,
+ * short enough that the influence readout — which is the row's real job — is
+ * not hidden while the user goes back to watching the alignment settle.
+ */
+const ANNOUNCE_HOLD_MS = 2500;
 
 export function createArCompassControl(
   options: ArCompassControlOptions,
@@ -80,6 +118,16 @@ export function createArCompassControl(
    * measuring settings the UI did not describe.
    */
   let pending = true;
+
+  /**
+   * The solve's last published compass state, for the readout (DEC-Y12).
+   *
+   * `undefined` until something calls {@link ArCompassControl.setLive}, which is
+   * how the readout distinguishes "not measured yet" from "measured as zero" —
+   * a distinction that matters here more than almost anywhere, because an
+   * untrusted vote reads as 0 for every slider position.
+   */
+  let live: CompassLiveState | undefined;
 
   const element = document.createElement("div");
   element.className = "ar-compass";
@@ -104,13 +152,38 @@ export function createArCompassControl(
   const hint = document.createElement("span");
   hint.className = "ar-compass-hint";
 
+  /**
+   * A confirmation that temporarily replaces the influence readout.
+   *
+   * `undefined` means "show the normal text". While it is set, `render()`
+   * shows it instead — so a live update arriving mid-announcement does not
+   * silently erase the acknowledgement the user just asked for.
+   */
+  let announcement: string | undefined;
+  let announceTimer: ReturnType<typeof setTimeout> | undefined;
+
   const render = (): void => {
-    readout.textContent = describeCompassInfluence(influence);
+    readout.textContent =
+      announcement ?? describeCompassInfluence(influence, live);
     // THE TWO STATES A USER WOULD OTHERWISE READ AS A BROKEN CONTROL: not
     // accepting input yet, and accepting it but taking half a minute to show.
-    hint.textContent = ready
-      ? "takes ~15–30 fixes to express"
-      : "waiting for a GPS fix";
+    // SHORTENED FOR THE ROW IT NOW SHARES (DEC-J8). "takes ~15–30 fixes to
+    // express" is 29 characters against ~208 px of cell beside a 9 rem slider —
+    // it fits by arithmetic with roughly 40 px to spare, which is thin enough
+    // that a wider font or a narrower phone would wrap it and put the box back
+    // to three rows, i.e. undo the change. At 20 characters the slack is ~90 px.
+    hint.textContent = ready ? "~15–30 fixes to show" : "waiting for a GPS fix";
+  };
+
+  /**
+   * Re-send the current position with whatever the experiment panel now holds.
+   *
+   * `compassSettingsFor` maps the influence AND the experiments together, so a
+   * panel change must resend the weight — otherwise the store would take the new
+   * experiments alongside a default weight nobody chose.
+   */
+  const republish = (): void => {
+    apply();
   };
 
   const apply = (): void => {
@@ -121,7 +194,7 @@ export function createArCompassControl(
       return;
     }
     pending = false;
-    options.onChange(compassSettingsFor(influence));
+    options.onChange(compassSettingsFor(influence, options.experiments?.()));
   };
 
   // `input`, not `change`: on a range control `change` fires only when the
@@ -133,7 +206,15 @@ export function createArCompassControl(
   });
 
   render();
-  element.append(slider, readout, hint);
+  // HINT BEFORE READOUT (J5, DEC-J8), so the box is two rows rather than three:
+  // the hint shares the slider's row and only the 40-character readout takes a
+  // line of its own (DEC-Y12 is untouched — it still cannot share).
+  //
+  // DOM ORDER RATHER THAN A CSS `order`. The hint explains the control it
+  // follows, so a screen reader should meet them in that sequence; reordering
+  // visually would leave the reading order as slider, readout, then an
+  // explanation of the slider.
+  element.append(slider, hint, readout);
 
   return {
     attach() {
@@ -143,6 +224,11 @@ export function createArCompassControl(
     },
     influence() {
       return influence;
+    },
+    republish,
+    setLive(next: CompassLiveState) {
+      live = next;
+      render();
     },
     setReady(next: boolean) {
       const wasReady = ready;
@@ -161,7 +247,44 @@ export function createArCompassControl(
       // something the UI did not describe. Found in review of PR #311.
       if (next && !wasReady && pending) apply();
     },
+    /**
+     * Show a short confirmation, then fall back to the influence readout.
+     *
+     * THE SETTING THIS EXISTS FOR PRODUCES NO VISIBLE CHANGE BY DESIGN, which
+     * is why silence read as a broken control: the alignment recomputes only
+     * on the next GPS observation and the view lerps toward it. A confirmation
+     * is the honest feedback — it says the change was ACCEPTED without
+     * promising the scene will move.
+     */
+    announce(text: string, holdMs = ANNOUNCE_HOLD_MS) {
+      announcement = text;
+      render();
+      if (announceTimer !== undefined) clearTimeout(announceTimer);
+      announceTimer = setTimeout(() => {
+        announcement = undefined;
+        announceTimer = undefined;
+        render();
+      }, holdMs);
+    },
     dispose() {
+      // THE TIMER FIRST, and unconditionally: it closes over `render`, which
+      // writes into an element this is about to detach.
+      //
+      // ⚠️ THIS IS HYGIENE, NOT A VISIBLE BUG, and an earlier version of this
+      // comment claimed otherwise — that a leaked timer "would clear the NEW
+      // control's announcement" on a re-entry. It cannot: each control owns
+      // its own element, so a callback firing after dispose writes into a
+      // detached node and nothing on screen changes. Mutation-testing proved
+      // it, by leaving the test that asserted it green.
+      //
+      // What it does buy is a pending callback not outliving the session that
+      // created it. `ar-compass-control.test.ts` asserts the scheduler is
+      // empty after dispose, which is the only thing that can actually fail.
+      if (announceTimer !== undefined) {
+        clearTimeout(announceTimer);
+        announceTimer = undefined;
+      }
+      announcement = undefined;
       if (!attached) return;
       element.remove();
       attached = false;

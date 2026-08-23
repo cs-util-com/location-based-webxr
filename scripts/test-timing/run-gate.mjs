@@ -5,11 +5,20 @@
 // synthetic `total` row and prints the consolidated delta table. A timing
 // failure never changes the gate's exit code; only the underlying commands
 // do.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { budgetBreach } from './budget.mjs';
 import { checkChainDrift } from './chain-guard.mjs';
+import {
+  GATE_RUN_ENV,
+  clearLock,
+  decideGateLock,
+  lockPath,
+  pidAlive,
+  readLock,
+  writeLock,
+} from './gate-lock.mjs';
 import {
   resolveProject,
   PROJECTS,
@@ -99,6 +108,85 @@ function printSummaryTable() {
   } catch (error) {
     console.warn(`test-timing: summary rendering failed: ${String(error)}`);
   }
+}
+
+/**
+ * ONE GATE RUN PER WORKING TREE — see gate-lock.mjs for why this is a refusal
+ * rather than a queue. Taken before any stage runs, so a second run is turned
+ * away in milliseconds instead of after a build has already started rewriting
+ * a `dist/` the first run is importing through.
+ */
+const lockFile = lockPath(WORKSPACE_ROOT);
+const lockDecision = decideGateLock({
+  existing: readLock(lockFile),
+  env: process.env,
+  isAlive: pidAlive,
+  now: Date.now(),
+});
+
+if (lockDecision.action === 'refuse') {
+  console.error(`\n✖ ${lockDecision.reason}`);
+  process.exit(1);
+}
+
+let ownsLock = false;
+if (lockDecision.action === 'acquire' || lockDecision.action === 'steal') {
+  const runId = `${process.pid}-${Date.now().toString(36)}`;
+  try {
+    mkdirSync(path.dirname(lockFile), { recursive: true });
+    writeLock(lockFile, {
+      runId,
+      pid: process.pid,
+      project: project.name,
+      startedAt: Date.now(),
+    });
+    ownsLock = true;
+  } catch (error) {
+    // A tree where the lock cannot be written is not a tree where the gate
+    // should refuse to run; the guard degrades to absent rather than fatal.
+    console.warn(`test-timing: could not take the gate lock: ${String(error)}`);
+  }
+  // Children inherit this and re-enter instead of competing — see gate-lock.mjs.
+  //
+  // ONLY when we actually own the record on disk. If `writeLock` threw, the
+  // disk still holds whatever was there before — on the `steal` path that is
+  // ANOTHER run's record — and a child inheriting our runId would find a
+  // mismatch, take the nested branch and `refuse` with exit 1. That turns a
+  // write failure into a RED GATE, contradicting the module's stated safety
+  // property that it "degrades to absent, never to fatal". Setting nothing
+  // puts children on the un-nested path, where a dead owner's lock is stolen
+  // (see gate-lock.test.mjs, 'steals a lock whose owner is gone'), which is
+  // what degrading to absent actually means. Found in review of PR #331.
+  //
+  // This branch is REACHABLE HERE in a way it is not in the library: the root
+  // cascade runs each package's gate through this same file, so the children
+  // exist.
+  if (ownsLock) {
+    process.env[GATE_RUN_ENV] = runId;
+  }
+  if (lockDecision.action === 'steal') {
+    console.warn(`test-timing: ${lockDecision.reason}`);
+  }
+}
+if (lockDecision.overridden === true) {
+  // NAMED, never silent: the same rule the skip-browser banner follows.
+  // `override` deliberately leaves `ownsLock` false, so this run neither
+  // rewrites the incumbent's record nor clears it on the way out.
+  console.warn(`\n⚠ test-timing: ${lockDecision.reason}\n`);
+}
+
+process.on('exit', () => {
+  if (ownsLock) {
+    clearLock(lockFile);
+  }
+});
+for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
+  process.on(signal, () => {
+    if (ownsLock) {
+      clearLock(lockFile);
+    }
+    process.exit(130);
+  });
 }
 
 warnOnChainDrift();

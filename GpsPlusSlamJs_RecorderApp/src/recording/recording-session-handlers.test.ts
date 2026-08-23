@@ -964,9 +964,14 @@ describe('handleStartRecording', () => {
   });
 
   it('does NOT spawn the analyzer when qualityFilter is disabled, but still clears it', async () => {
-    // Image capture ON but the quality gate OFF (the default): no worker is
-    // spawned, and the analyzer is explicitly cleared so a previous recording's
-    // worker can't leak into this one.
+    // Image capture ON but the quality gate OFF: no worker is spawned, and the
+    // analyzer is explicitly cleared so a previous recording's worker can't
+    // leak into this one.
+    //
+    // The gate is set off EXPLICITLY here. It used to be the shipped default
+    // and this test spread the defaults; when the default flipped on
+    // 2026-08-20 the test started asserting the opposite of its own name.
+    // A test about "when X is off" should set X off.
     const opts: RecordingOptions = {
       images: {
         enabled: true,
@@ -974,7 +979,10 @@ describe('handleStartRecording', () => {
         quality: 0.7,
         resolutionDivisor: 1,
         motionFilter: { ...DEFAULT_RECORDING_OPTIONS.images.motionFilter },
-        qualityFilter: { ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter },
+        qualityFilter: {
+          ...DEFAULT_RECORDING_OPTIONS.images.qualityFilter,
+          enabled: false,
+        },
       },
       depth: { enabled: false, intervalMs: 1000, gridSize: 3, rgb: true },
       arCrashIsolation: { ...DEFAULT_RECORDING_OPTIONS.arCrashIsolation },

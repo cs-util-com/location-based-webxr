@@ -33,7 +33,7 @@ places without editing a URL.
   The demo may have started from `?lat=&lng=`, from `?site=`, from the locate
   button or from a map click, and only some of those are places in the list. A
   picker naming a place the view is not at is the control contradicting the
-  picture. Option 0 is a `"jump to…"` placeholder with an empty value.
+  picture. Option 0 is a `"Jump to City"` placeholder with an empty value.
 - **An unknown value is ignored** — not reported, not thrown. A browser restores
   a stale `<select>` value across a reload when the option list has changed;
   moving the demo to `undefined` would be worse than doing nothing, and throwing

@@ -91,7 +91,13 @@ export class SceneContent {
   readonly root = new THREE.Group();
 
   constructor(parent: THREE.Object3D) {
-    this.root.name = "osm-content";
+    // NAMED FOR WHAT IT HOLDS, NOT FOR WHERE THE DATA CAME FROM (DEC-M5). It
+    // was `osm-content`, which reads as "the OpenStreetMap layers" — and the
+    // eighteenth field session, debugging quest marks that appeared not to
+    // move with the city, reasoned from that name to the conclusion that the
+    // marks must live somewhere else. They do not: everything GPS-placed hangs
+    // here, quest beacons included, and the name now says so.
+    this.root.name = "gps-placed-content";
     parent.add(this.root);
   }
 

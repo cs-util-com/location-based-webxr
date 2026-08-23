@@ -18,11 +18,9 @@ Workers and rendering are all injected or done by the consumer.
 > place. Treat the numbers as arithmetically faithful to the C# reference and
 > behaviourally unproven.
 >
-> See
-> [the implementation plan](../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-28-0624-osm-h3-affordance-index-plan.md)
-> for the full design and iteration order, and
-> [the iterations 2.5–6 summary](../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-07-28-1240-osm-iterations-2_5-6-summary-and-followups.md)
-> for what is still open.
+> The published rationale — the design, the iteration order and what is still
+> open — is in [`ARCHITECTURE.md`](./ARCHITECTURE.md), which is the document to
+> read next.
 
 ## Attribution — you must display this
 
