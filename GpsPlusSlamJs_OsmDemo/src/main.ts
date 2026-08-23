@@ -982,8 +982,16 @@ async function main(): Promise<void> {
         terrain,
       )[0];
       if (placement !== undefined) {
+        // AIMED AT THE MARK, NOT AT THE GROUND UNDER IT, and the first version
+        // aimed at `groundY`. The beacon occupies 10.8 m to 26 m above that,
+        // and `lookAtFrom` preserves the CURRENT distance — so at any zoom
+        // closer than roughly 45 m the call meant to pull the marker into
+        // frame pushed it off the top instead. Caught by the PR #344 review.
+        //
+        // `placement.y` is the mark's own origin, which is what the user is
+        // looking for; the line down to the ground follows it into view.
         buildingView.lookAtFrom(
-          { x: placement.x, y: placement.groundY, z: placement.z },
+          { x: placement.x, y: placement.y, z: placement.z },
           buildingView.cameraView().distanceM,
         );
       }

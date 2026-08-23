@@ -1235,13 +1235,25 @@ test.describe("the geo-event", () => {
     // channel — and this very flow writes to it ("Quest at …" / "No quest
     // nearby"). The `#ar-offer` guard makes the same assertion for the same
     // reason: a message hidden under an overlay is one the user never sees.
-    const toastBox = await page
-      .locator("#toast-root .toast")
-      .first()
-      .boundingBox();
-    if (toastBox !== null) {
-      expect(overlaps(pickerBox, toastBox)).toBe(false);
-    }
+    // ⚠️ WAITED FOR, AND THE FIRST VERSION DID NOT WAIT. It read the box a few
+    // tens of milliseconds after the click, while the search that produces the
+    // toast takes seconds — the sibling assertion in this file allows it 30 s.
+    // So `boundingBox()` returned `null`, the `if` skipped the assertion
+    // entirely, and the guard the fix was argued hardest for never ran. The
+    // 6rem offset was measured against a toast this test never observed.
+    // Caught by the PR #344 review.
+    //
+    // The wait is generous for the same reason the sibling's is: the search
+    // hits a stubbed network but still crosses the worker boundary.
+    const toast = page.locator("#toast-root .toast").first();
+    await expect(toast).toBeVisible({ timeout: 30_000 });
+
+    // MEASURED PROMPTLY, because the toast clears itself after
+    // `DEFAULT_TOAST_LINGER_MS` (6 s) — a box read after that is `null` again
+    // and the assertion would go quiet in exactly the same way.
+    const toastBox = await toast.boundingBox();
+    if (toastBox === null) throw new Error("no toast box");
+    expect(overlaps(pickerBox, toastBox)).toBe(false);
   });
 });
 

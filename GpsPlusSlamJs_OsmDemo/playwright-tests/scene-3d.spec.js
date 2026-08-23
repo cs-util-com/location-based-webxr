@@ -2059,4 +2059,61 @@ test.describe("the NPC agent", () => {
       })
       .toBeGreaterThan(100);
   });
+
+  test("brings the beacon into frame even from a CLOSE camera", async ({
+    page,
+  }) => {
+    /**
+     * WHY A SECOND, CLOSER TEST (PR #344 review).
+     *
+     * `lookAtFrom` preserves the current distance, so where it AIMS decides
+     * whether the mark lands in frame. Aiming at the ground under the beacon
+     * works at the default zoom — the mark is only ~11-26 m above the pivot and
+     * the frustum is hundreds of metres wide there — and fails close in, where
+     * that same offset pushes the marker off the top of the screen.
+     *
+     * The sibling test above cannot see the difference: at the default distance
+     * both aim points keep the beacon on screen, so it passed against the bug.
+     * This one starts the camera at `MIN_CAMERA_DISTANCE_M` via the shareable
+     * camera link, which is the route a user takes by pasting one.
+     *
+     * **MEASURED, and the distance had to be measured too.** Differing pixels
+     * when the quest is cleared, aiming at the ground versus at the mark:
+     *
+     * - `cdist=30`: **5 289** vs **16 072** — a 3x difference, and the only
+     *   regime where the two are far enough apart to assert on;
+     * - `cdist=45`: 6 439 vs 6 725 — indistinguishable, which is why a first
+     *   version of this test at 45 m PASSED against the bug;
+     * - `cdist=80`: 2 658 vs 2 067 — the ground aim is marginally better.
+     *
+     * ⚠️ It also refines the review's wording: aiming at the ground does not
+     * push the marker off screen, it cuts roughly two thirds of it off. The fix
+     * is the same; the claim is smaller than "invisible".
+     */
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&clat=50.9231&clng=6.9445&cdist=30`);
+    await waitForRefresh(page);
+
+    await page.locator("#geo-event").click();
+    await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+
+    await installFrameProbe(page);
+    await stashStableFrame(page);
+
+    // Same edge as the sibling: clearing moves nothing but the marker, so a
+    // frame that changes changed because the beacon left it.
+    await page.locator("#geo-event-clear").click();
+    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+
+    // 10 000 SITS BETWEEN THE TWO MEASURED REGIMES (5 289 aiming at the ground,
+    // 16 072 aiming at the mark). Tuned to a measurement rather than guessed,
+    // and stated as such: a looser bound would pass against the bug, which is
+    // exactly what the 45 m version of this test did.
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(10_000);
+  });
 });
