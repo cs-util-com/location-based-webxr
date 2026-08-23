@@ -23,6 +23,10 @@ import {
   createPerfStatsOverlay,
   type PerfStatsOverlayHandle,
 } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
+// The shared mesh teardown, deep-imported for the same reason as the overlay
+// above: the `/visualization` barrel would pull the whole AR/scene stack into a
+// module that already costs enough to import.
+import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 
 import type { CellMesh } from "./cell-mesh.js";
 import {
@@ -1363,7 +1367,7 @@ export class BuildingView {
   renderCells(mesh: CellMesh): void {
     if (this.cellMesh !== undefined) {
       this.content.remove(this.cellMesh);
-      disposeMesh(this.cellMesh);
+      disposeObject3D(this.cellMesh);
       this.cellMesh = undefined;
     }
     if (this.cellOutlines !== undefined) {
@@ -2225,7 +2229,7 @@ export class BuildingView {
     // disposed view, and the whole point of holding the resize listener and the
     // rAF handle is that this method actually cleans up.
     // BOTH GROUND MATERIALS BY NAME, not whichever one is currently assigned
-    // (raised in review on #233). `disposeMesh` frees `mesh.material`, and the
+    // (raised in review on #233). Mesh teardown frees `mesh.material`, and the
     // height ramp SWAPS that field — so with the ramp active it disposed the ramp
     // material twice and never freed the standard one. Naming both is the only
     // form that does not depend on which mode the view happened to be in.
@@ -2249,9 +2253,9 @@ export class BuildingView {
     // routes — so the disposal has to happen here, once, at the end of the
     // view's life.
     this.removeRoute();
-    if (this.agent !== undefined) disposeMesh(this.agent);
+    if (this.agent !== undefined) disposeObject3D(this.agent);
     this.agent = undefined;
-    if (this.cellMesh !== undefined) disposeMesh(this.cellMesh);
+    if (this.cellMesh !== undefined) disposeObject3D(this.cellMesh);
     this.cellMesh = undefined;
     if (this.cellOutlines !== undefined) {
       this.cellOutlines.geometry.dispose();
@@ -2262,16 +2266,14 @@ export class BuildingView {
   }
 }
 
-/** Frees a mesh GPU-side. Materials may be an array; three does not do this. */
-function disposeMesh(mesh: THREE.Mesh): void {
-  mesh.geometry.dispose();
-  const material = mesh.material;
-  if (Array.isArray(material)) {
-    for (const one of material) one.dispose();
-  } else {
-    material.dispose();
-  }
-}
+/*
+ * The private `disposeMesh` that used to live here is gone: the framework's
+ * `disposeObject3D` does the same job — including the array-material case this
+ * file's copy was written for — and OsmDemo already depended on that package.
+ * It is not a drop-in equivalent, so the preconditions that make the swap safe
+ * (both meshes are leaves, and neither material carries a texture) are pinned
+ * by `building-view-dispose.test.ts` rather than left to the next reader.
+ */
 
 /**
  * Injects GPU height displacement into a ground material (W23).

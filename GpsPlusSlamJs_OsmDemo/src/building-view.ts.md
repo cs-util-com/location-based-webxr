@@ -268,6 +268,17 @@ geometry it renders is tested in `gps-plus-slam-osm`'s `mesh/buildings.test.ts`
 (including the differential triangulation harness against `earcut`) and
 `mesh/mesh-orientation.test.ts` (the frame).
 
+`building-view-dispose.test.ts` covers the one part of teardown that can be
+reached without a renderer: the **route agent** and the **cell grid** are freed
+through the framework's shared `disposeObject3D`
+(`gps-plus-slam-app-framework/visualization/three-dispose`) rather than a
+private copy. That helper is NOT equivalent to the copy it replaced — it walks
+descendants and frees each material's `.map` texture — so the test pins the
+preconditions that make the swap safe (both meshes are leaves; no preset's
+material carries a texture) before it checks the wiring. Over-disposal here
+would blacken whatever else sampled a shared texture, and three.js reports
+nothing.
+
 The **repaint-on-resize** invariant has two e2e tests, one per caller:
 _"repaints after a viewport resize, without waiting for a camera drag"_ and
 _"keeps the 3D view painted while the sheet is dragged"_. Both read the drawing
