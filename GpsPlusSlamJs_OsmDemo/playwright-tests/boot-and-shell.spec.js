@@ -640,6 +640,55 @@ test.describe("the location picker", () => {
     expect(Math.abs(Number(back.get("clat")) - clat)).toBeLessThan(0.001);
     expect(Math.abs(Number(back.get("clng")) - clng)).toBeLessThan(0.001);
   });
+
+  test("dragging the 2D map carries the 3D camera with it (DEC-L4)", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS: the seventeenth session asked for the two views to
+    // agree — "wenn man in der 2d Karte die Karte verschiebt, die Kamera in der
+    // 3d Szene an die gleiche Stelle springt" — and this is the wiring that
+    // makes them. The unit tests own the latch's logic; only an e2e can prove
+    // that a real Leaflet drag reaches `buildingView.recentre` through it.
+    //
+    // OBSERVED THROUGH THE CAMERA LINK, which is the only machine-readable
+    // statement of where the 3D view is looking (the camera matrix is not
+    // exposed, and `data-frames` counts repaints from half a dozen unrelated
+    // causes — it would rise whether or not the camera moved).
+    //
+    // TWO DRAGS IN THE SAME DIRECTION, not one: a single drag proves only that
+    // SOMETHING wrote the URL. Dragging the content west twice walks the map's
+    // centre east twice, so a camera that follows the centre must report a
+    // strictly increasing longitude. A camera that merely twitched would not.
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const box = await page.locator("#map").boundingBox();
+    if (box === null) throw new Error("no map box");
+    const midX = box.x + box.width * 0.5;
+    const midY = box.y + box.height * 0.5;
+
+    const dragWest = async () => {
+      await page.mouse.move(midX, midY);
+      await page.mouse.down();
+      await page.mouse.move(midX - 120, midY, { steps: 12 });
+      await page.mouse.up();
+    };
+
+    await dragWest();
+    // AFTER THE THROTTLE, which is why this is a poll rather than a read: the
+    // camera writer samples rather than writing per frame.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("clng"))
+      .not.toBeNull();
+    const first = Number(new URL(page.url()).searchParams.get("clng"));
+    expect(Number.isFinite(first)).toBe(true);
+
+    await dragWest();
+    await expect
+      .poll(() => Number(new URL(page.url()).searchParams.get("clng")))
+      .toBeGreaterThan(first);
+  });
 });
 
 test.describe("the header", () => {

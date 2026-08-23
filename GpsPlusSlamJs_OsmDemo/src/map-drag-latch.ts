@@ -1,0 +1,63 @@
+/**
+ * "Did the USER move the map?" — the one bit the map-pan camera follow turns on
+ * (DEC-L4).
+ *
+ * Pure on purpose, like `map-zoom-to-camera.ts` beside it: the interesting part
+ * is a two-state machine, and it should be testable without Leaflet, a map or a
+ * DOM.
+ *
+ * **WHY A LATCH AND NOT JUST `moveend`.** Leaflet raises `moveend` for
+ * programmatic moves too, and this demo has three that must NOT drag the 3D
+ * camera with them:
+ *
+ * - a quest search calls `panTo` and then aims the camera at the beacon's own
+ *   height (`placement.y`, a PR #344 review finding) — a blanket rule would
+ *   re-aim at ground level immediately afterwards and undo it;
+ * - the locate button calls `centreOn`, and the position subscriber already
+ *   recentres the camera on the user;
+ * - the site picker calls `centreOn` for a declared place change.
+ *
+ * **WHY NOT `dragend`.** It fires when the finger lifts, before Leaflet's
+ * inertia glide finishes, so the centre read there is not where the map ends
+ * up. Arming on the gesture and reading on `moveend` is inertia-safe by
+ * construction: Leaflet's drag end raises `moveend` on both branches — directly
+ * when inertia is off, and via the inertia animation's end when it is not.
+ *
+ * @see map-drag-latch.ts.md
+ */
+
+export interface MapDragLatch {
+  /**
+   * Arm it — the user began a gesture that will move the map.
+   *
+   * Wired to `dragstart` **and** `zoomstart`. The second is not padding: a
+   * one-finger drag that gains a second finger makes Leaflet finish the drag
+   * mid-gesture, so a drag-only latch fires on the mid-pinch centre and the
+   * final centre is never applied. Neither `panTo` nor `centreOn` changes the
+   * zoom, so no programmatic mover raises `zoomstart`.
+   */
+  gestureStarted(): void;
+  /**
+   * Read and clear: `true` exactly once per armed gesture.
+   *
+   * **READ-AND-CLEAR IS THE DESIGN, not a convenience.** A latch left armed
+   * would fire on the next `moveend`, which is very likely to be a programmatic
+   * one — i.e. it would fail into precisely the behaviour this exists to
+   * prevent, one event later.
+   */
+  moveEnded(): boolean;
+}
+
+export function createMapDragLatch(): MapDragLatch {
+  let armed = false;
+  return {
+    gestureStarted(): void {
+      armed = true;
+    },
+    moveEnded(): boolean {
+      const wasArmed = armed;
+      armed = false;
+      return wasArmed;
+    },
+  };
+}

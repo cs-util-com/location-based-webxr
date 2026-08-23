@@ -135,6 +135,7 @@ import {
   type CameraView,
 } from "./building-view.js";
 import { renderDistanceFor } from "./render-distance.js";
+import { createMapDragLatch } from "./map-drag-latch.js";
 import { cameraDistanceForZoom } from "./map-zoom-to-camera.js";
 import { throttle } from "./throttle.js";
 import { attachHeaderCollapse } from "./header-collapse.js";
@@ -1142,8 +1143,9 @@ async function main(): Promise<void> {
   //
   // THE TARGET IS KEPT, only the distance changes — `lookAtFrom` is the
   // read/write pair's write side and preserves the camera's direction, so this
-  // dollies rather than teleporting. Panning the map deliberately does NOT move
-  // the 3D view; the session asked for zoom.
+  // dollies rather than teleporting. The TARGET is moved by the drag follow
+  // below (DEC-L4), which is the other half of the same binding: zoom drives
+  // the distance, a drag drives the target.
   mapView.map.on("zoomend", () => {
     const canvas = el("scene");
     const height = canvas.clientHeight;
@@ -1158,6 +1160,42 @@ async function main(): Promise<void> {
       vfovDeg: CAMERA_VFOV_DEG,
     });
     buildingView.lookAtFrom(buildingView.cameraView().target, distanceM);
+  });
+
+  // L4 — DRAGGING THE MAP NOW CARRIES THE 3D CAMERA (DEC-L4).
+  //
+  // "Ich hätte gerne auch dass wenn man in der 2d Karte die Karte verschiebt,
+  // die Kamera in der 3d Szene an die gleiche Stelle springt." This REVERSES the
+  // note that used to sit on the `zoomend` handler above — panning was excluded
+  // on purpose, and the person who excluded it asked for it back.
+  //
+  // `recentre`, NOT a new conversion: it takes an ENU point, applies the scene
+  // flip and moves the camera by translation only at the current distance. It is
+  // the same call the map CLICK already makes through the position subscriber,
+  // which is exactly the behaviour the request compared itself to.
+  //
+  // ONLY WHEN A HUMAN MOVED THE MAP, which is what the latch is for. A quest
+  // search pans the map and then aims the camera at the beacon's own height; the
+  // locate button and the site picker recentre on the user. Every one of those
+  // raises `moveend`, and a blanket rule would fire on them and re-aim at ground
+  // level — undoing a fix made in the PR #344 review.
+  const mapDrag = createMapDragLatch();
+  mapView.map.on("dragstart", () => {
+    mapDrag.gestureStarted();
+  });
+  // AND ON `zoomstart`, which is not padding: a one-finger drag that gains a
+  // second finger makes Leaflet finish the drag mid-gesture, so a drag-only
+  // latch would aim at the mid-pinch centre and never at the final one. No
+  // programmatic mover changes the zoom, so none of them arms this.
+  mapView.map.on("zoomstart", () => {
+    mapDrag.gestureStarted();
+  });
+  mapView.map.on("moveend", () => {
+    if (!mapDrag.moveEnded()) return;
+    const centre = mapView.map.getCenter();
+    buildingView.recentre(
+      enuFrameAt(anchors.origin).toEnu({ lat: centre.lat, lng: centre.lng }),
+    );
   });
 
   // AND THE READ SIDE, WHICH IS THE HALF MOST EASILY FORGOTTEN: a link nothing

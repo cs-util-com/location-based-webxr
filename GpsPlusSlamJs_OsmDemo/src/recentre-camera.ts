@@ -36,9 +36,12 @@
  * - **It does not touch the pivot plane.** `controls.target` stays on `y = 0`
  *   here as everywhere else; DEC-R3-6 left that question open on purpose and it
  *   is a separate, much smaller effect.
- * - **It does not follow the 2D map's scroll.** Declined in the notes themselves:
- *   moving the two views independently is wanted, and this is a desktop demo
- *   whose point is the AR case.
+ * - **It does not ANIMATE the follow, but it IS driven by the 2D map now.**
+ *   Following the map's scroll was declined in the earlier notes — "moving the
+ *   two views independently is wanted" — and DEC-L4 (2026-08-23) reversed that
+ *   on a field request: a user drag of the map recentres the camera through
+ *   this function, exactly as a map click already did. What is unchanged is
+ *   everything below the reversal: translation only, no rotation, no animation.
  *
  * @see recentre-camera.ts.md
  */

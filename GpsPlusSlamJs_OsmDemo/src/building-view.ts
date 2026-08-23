@@ -1742,11 +1742,18 @@ export class BuildingView {
   }
 
   /**
-   * Points the camera back at THE USER, by translation only (W11).
+   * Points the camera at an ENU POINT, by translation only (W11).
    *
    * Called when the user MOVES — a map click, the locate button or the location
    * picker. Without it the chosen place is only on screen while the camera has
    * never been panned.
+   *
+   * **AND SINCE DEC-L4 (2026-08-23) IT HAS A CALLER THAT IS NOT THE USER'S
+   * POSITION**: dragging the 2D map recentres on the map's new CENTRE, which is
+   * why the name of the parameter is the only thing here that still says
+   * "user". The behaviour is identical either way — this function has never
+   * known what the point means — but a reader looking for "where does the
+   * camera get moved from" needs both call sites, not one.
    *
    * **THE TARGET USED TO BE THE ORIGIN, and that stopped being right.** The ENU
    * frame was rebuilt at the user's position on every publish, so the origin and
