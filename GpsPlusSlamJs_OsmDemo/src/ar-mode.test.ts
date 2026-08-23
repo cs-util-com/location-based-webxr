@@ -111,7 +111,10 @@ import {
 import type { DepthSample } from "gps-plus-slam-app-framework/ar/depth-sampler";
 
 import { startArMode, type ArModeDeps } from "./ar-mode.js";
-import { ENTRY_DOM_VEIL_CLASS } from "./ar-entry-dom-veil.js";
+import {
+  ENTRY_DOM_VEIL_CLASS,
+  ENTRY_DOM_VEIL_FADE_S,
+} from "./ar-entry-dom-veil.js";
 import { AR_DEPTH_SAMPLER_CONFIG } from "./ar-depth-pipeline.js";
 import { nueBearingDeg } from "./ar-origin.js";
 import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
@@ -1995,13 +1998,20 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       expect(veilAtRequestTime).not.toBeNull();
     });
 
-    it("survives the FIRST frame and comes down on the second", async () => {
+    it("survives the FIRST frame and starts FADING on the second (DEC-L1)", async () => {
       // WHY NOT THE FIRST. Both per-frame hooks run before
       // `renderer.render(scene, camera)` in the same tick, so when the first
       // callback fires nothing has been drawn yet and the mesh veil is not on
-      // screen. Removing here would uncover the passthrough for exactly one
-      // frame — the artefact this milestone removes, reintroduced by a trigger
-      // that fires one call too early.
+      // screen. Removing — or starting to fade — here would uncover the
+      // passthrough for exactly one frame, the artefact this milestone removes,
+      // reintroduced by a trigger that fires one call too early.
+      //
+      // AND WHY IT NO LONGER VANISHES THERE. DEC-L1 turned the hard cut into a
+      // fade because the seventeenth session still saw a flash of camera at the
+      // join. The fade STARTS where the removal used to happen, so the black
+      // period is never shorter than the one this replaces — which is the
+      // property that makes the change incapable of regressing the old
+      // behaviour, and it is what the `toBe("1")` below pins.
       const container = document.createElement("div");
       document.body.append(container);
       await startArMode(
@@ -2017,7 +2027,52 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       onFrame({ dt: 0.016, elapsed: 0.016 });
       expect(veilIn(container)).not.toBeNull();
 
+      const fadeStart = 0.032;
+      onFrame({ dt: 0.016, elapsed: fadeStart });
+      expect(veilIn(container)).not.toBeNull();
+      expect((veilIn(container) as HTMLElement).style.opacity).toBe("1");
+
+      // PART-WAY, and still there: the handover to the mesh veil happens under
+      // an opacity nobody can see through yet.
+      onFrame({ dt: 0.016, elapsed: fadeStart + ENTRY_DOM_VEIL_FADE_S / 2 });
+      const midway = Number.parseFloat(
+        (veilIn(container) as HTMLElement).style.opacity,
+      );
+      expect(midway).toBeGreaterThan(0);
+      expect(midway).toBeLessThan(1);
+
+      // AND GONE at the end of the fade — removed, not merely transparent. A
+      // transparent full-viewport element is still a compositor layer, and this
+      // one sits over the whole session.
+      onFrame({ dt: 0.016, elapsed: fadeStart + ENTRY_DOM_VEIL_FADE_S });
+      expect(veilIn(container)).toBeNull();
+    });
+
+    it("is removed when the session ends MID-FADE", async () => {
+      // The exit path the fade creates that the hard cut did not: between the
+      // second frame and the end of the fade there is now a ~3 s window in
+      // which the veil is attached and partially opaque. A session torn down in
+      // that window — the back gesture, the headset coming off, ARCore dropping
+      // the session — must still take it down, or the desktop app is left under
+      // a translucent black rectangle.
+      const container = document.createElement("div");
+      document.body.append(container);
+      const mode = await startArMode(
+        deps({
+          container,
+          buildingView: viewAtHeight(
+            START_M,
+          ) as unknown as ArModeDeps["buildingView"],
+        }),
+      );
+
+      const onFrame = lastFrameFn();
+      onFrame({ dt: 0.016, elapsed: 0.016 });
       onFrame({ dt: 0.016, elapsed: 0.032 });
+      onFrame({ dt: 0.016, elapsed: 0.032 + ENTRY_DOM_VEIL_FADE_S / 2 });
+      expect(veilIn(container)).not.toBeNull();
+
+      mode.dispose();
       expect(veilIn(container)).toBeNull();
     });
 

@@ -51,6 +51,7 @@ import { getCompassDiagnostics } from "gps-plus-slam-app-framework/state";
 import { createArEntryVeil, entryVeilAlpha } from "./ar-entry-veil.js";
 import {
   createArEntryDomVeil,
+  domVeilAlpha,
   type ArEntryDomVeil,
 } from "./ar-entry-dom-veil.js";
 import { fusedGpsFrom } from "./ar-fused-gps.js";
@@ -349,12 +350,19 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     /**
      * Frames seen since the veil went up.
      *
-     * The DOM veil is removed on the SECOND, not the first. Both per-frame
+     * The DOM veil starts fading on the SECOND, not the first. Both per-frame
      * hooks run BEFORE `renderer.render` in the same tick, so "the callback
-     * ran" does not mean "a frame was drawn" — removing on the first would
+     * ran" does not mean "a frame was drawn" — fading from the first would
      * close a sub-frame race with a trigger that fires one call too early.
      */
     framesSinceVeil?: number;
+    /**
+     * The frame clock reading the DOM veil's fade began at (DEC-L1).
+     *
+     * Latched on the frame the hard removal used to happen, so the fully-black
+     * period is never shorter than the one the fade replaces.
+     */
+    domVeilFadeStartS?: number;
     unregisterFrame?: () => void;
   } = {};
 
@@ -976,7 +984,8 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
     // The last auto state, held for the HUD between the ~1 Hz ticks.
     let latestAuto: ArElevationAutoState | undefined;
     session.unregisterFrame = registerXrFrameUpdate(({ dt, elapsed }) => {
-      // THE DOM VEIL COMES DOWN ON THE SECOND FRAME, AND THE COUNT IS THE POINT.
+      // THE DOM VEIL STARTS FADING ON THE SECOND FRAME, AND THE COUNT IS THE
+      // POINT.
       //
       // Both per-frame hooks the framework offers run BEFORE
       // `renderer.render(scene, camera)` in the same tick, so by the time this
@@ -988,12 +997,30 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
       //
       // On the second callback a full frame has been submitted with the mesh
       // veil in the scene, so the handover is invisible: same colour, one
-      // opaque layer replacing another.
+      // opaque layer over another.
+      //
+      // AND IT FADES FROM THERE RATHER THAN VANISHING (DEC-L1). The
+      // seventeenth field session still saw a flash of camera at the instant of
+      // the hard cut, and the cause is not determinable from here — a later
+      // frame that skipped `renderer.render`, a one-frame seam between the DOM
+      // overlay layer and the WebGL layer, or a two-frame margin too thin for
+      // the device. A fade covers all three without anyone having to decide
+      // which is real. The fully-black period is unchanged: the fade STARTS
+      // where the removal used to be, at alpha 1.
+      //
+      // REMOVED WHEN THE CURVE REACHES 0, not on a timer of its own, so the
+      // element and the opacity cannot disagree about whether the entry is over.
       if (session.entryDomVeil !== undefined) {
         session.framesSinceVeil = (session.framesSinceVeil ?? 0) + 1;
         if (session.framesSinceVeil >= 2) {
-          session.entryDomVeil.remove();
-          session.entryDomVeil = undefined;
+          session.domVeilFadeStartS ??= elapsed;
+          const alpha = domVeilAlpha(elapsed - session.domVeilFadeStartS);
+          if (alpha > 0) {
+            session.entryDomVeil.setAlpha(alpha);
+          } else {
+            session.entryDomVeil.remove();
+            session.entryDomVeil = undefined;
+          }
         }
       }
       // THE DESCENT'S CLOCK STARTS ON THE FIRST FRAME, not at `startArMode`.

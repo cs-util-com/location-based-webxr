@@ -25,14 +25,76 @@ import { ENTRY_VEIL_COLOUR } from "./ar-entry-veil.js";
  * frame that skipped `renderer.render` — the frame loop has two early returns
  * that do exactly that.
  *
- * So this element is inserted BEFORE the session is requested and removed once
- * a frame has actually been drawn with the mesh veil in it.
+ * So this element is inserted BEFORE the session is requested, and once a frame
+ * has actually been drawn with the mesh veil in it, it FADES rather than
+ * vanishing (DEC-L1) — the seventeenth session still saw a flash of camera at
+ * the instant of the hard cut, and the fade covers every candidate cause of it.
  *
  * @see ar-entry-dom-veil.ts.md
  */
 
 /** The class the stylesheet paints; kept in one place for the e2e to query. */
 export const ENTRY_DOM_VEIL_CLASS = "ar-entry-dom-veil";
+
+/**
+ * How long the veil takes to fade out once the handover begins (DEC-L1).
+ *
+ * **THE CLOCK STARTS WHERE THE HARD REMOVAL USED TO HAPPEN** — the second frame
+ * callback — so the fully-black period is never shorter than the one this
+ * replaces. The seventeenth field session still saw a flash of camera at that
+ * instant; a fade covers it whichever of the three candidate causes is real (a
+ * later frame that skipped `renderer.render`, a one-frame seam between the DOM
+ * overlay and the WebGL layer, or a two-frame margin that is simply too thin).
+ *
+ * **Rejected: starting the fade when the element is inserted.** That is the
+ * literal reading of the request, and it is the one variant that can fail —
+ * insertion happens BEFORE `requestSession`, so a slow permission grant would
+ * finish the fade while the consent dialog is still up.
+ *
+ * **Rejected: 5 s.** Not for the reason first written down: a semi-transparent
+ * DOM veil does dim the city behind it, but the mesh veil behind THIS one is
+ * still ~0.97 opaque at 3 s and pinned at 1.0 for the whole estimate-wait
+ * fallback, so the difference is negligible. 3 s is what was asked for, and it
+ * is the length that spends least on the one cost nobody has measured — a
+ * full-viewport opacity write in the DOM-overlay compositor layer, per frame.
+ */
+export const ENTRY_DOM_VEIL_FADE_S = 3;
+
+/** Smoothstep — zero slope at both ends, like every other fade in this entry. */
+const smoothstep = (t: number): number => t * t * (3 - 2 * t);
+
+/**
+ * The veil's opacity `s` seconds into the fade, `[0,1]`.
+ *
+ * `1` at and before 0, easing to exactly `0` at {@link ENTRY_DOM_VEIL_FADE_S}
+ * and staying there. Pure, so the curve is testable without a session, a
+ * renderer or a clock — which is the deciding argument for driving this from
+ * the frame loop rather than from a CSS animation, since jsdom runs no
+ * animations and the degenerate inputs below are where the lid comes from.
+ *
+ * **EVERY NON-FINITE READING COLLAPSES TO 0, never to 1.** An opaque layer left
+ * over a live session is a lid on the passthrough — `ar-entry-veil.ts` records
+ * that as strictly worse than having no veil at all — and a `NaN` resolving to
+ * opaque would also stop the driver ever reaching its removal condition, so the
+ * veil would outlive the entry with no error raised anywhere.
+ *
+ * ⚠️ **This is deliberately NOT `ar-entry-veil.ts`'s `setAlpha` rule**, which
+ * clamps `+Infinity` UP to 1. There the input is an opacity and "as opaque as
+ * possible" is a real request; here it is elapsed time, so an infinite reading
+ * means the fade is long over. The rule followed here is `cameraFadeAlpha`'s:
+ * every degenerate input resolves to "no veil".
+ */
+export function domVeilAlpha(elapsedS: number): number {
+  if (!Number.isFinite(elapsedS)) return 0;
+  // BEFORE THE FADE, not "unusable": the driver latches the start on the frame
+  // it first evaluates this, so 0 is the ordinary first reading and a negative
+  // one could only come from a clock that ran backwards. Both mean "the fade
+  // has not begun", and the session's own teardown removes the element if it
+  // somehow never does.
+  if (elapsedS <= 0) return 1;
+  if (elapsedS >= ENTRY_DOM_VEIL_FADE_S) return 0;
+  return 1 - smoothstep(elapsedS / ENTRY_DOM_VEIL_FADE_S);
+}
 
 /**
  * `ENTRY_VEIL_COLOUR` as CSS, so the two veils are indistinguishable.
@@ -47,6 +109,14 @@ export function entryDomVeilColour(): string {
 
 export interface ArEntryDomVeil {
   readonly element: HTMLElement;
+  /**
+   * Fade it, `[0,1]`. Clamped; anything unusable collapses to 0.
+   *
+   * Separate from {@link remove} on purpose: the caller drives the alpha every
+   * frame and removes the element only once it reaches 0, so a fade that stops
+   * being driven leaves a partially transparent layer rather than a lid.
+   */
+  setAlpha(alpha: number): void;
   /** Idempotent: safe to call from several exit paths and from the frame hook. */
   remove(): void;
 }
@@ -69,6 +139,17 @@ export function createArEntryDomVeil(container: HTMLElement): ArEntryDomVeil {
   let removed = false;
   return {
     element,
+    setAlpha(alpha: number): void {
+      // NON-FINITE COLLAPSES TO 0, never to 1 — the same direction
+      // `domVeilAlpha` fails in, and for the same reason.
+      //
+      // AND CLAMPED RATHER THAN PASSED THROUGH. A CSS `opacity` outside [0,1]
+      // is an invalid declaration, which the browser DROPS — restoring the
+      // element to fully opaque. That is the lid again, arriving by the one
+      // path that looks harmless.
+      const safe = Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 0;
+      element.style.opacity = String(safe);
+    },
     remove(): void {
       if (removed) return;
       removed = true;
