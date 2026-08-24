@@ -1,10 +1,17 @@
-# `toast.ts`
+# `toast-core.ts`
 
 ## Purpose
 
-A transient, screen-reader-announced message in any container. Used twice: the
-2D surface in the page (round two, N3) and the AR overlay's
-(`ar-toast.ts`, which is now a thin wrapper).
+A transient, screen-reader-announced message in any container. **The one toast
+mechanism in this workspace.** It began in `GpsPlusSlamJs_OsmDemo` and moved
+here on 2026-08-24, when a review found four separate toasts across the repo
+agreeing on nothing: one with no ARIA at all, one writing its text
+synchronously, two toggling a class instead of attaching and detaching.
+
+Callers keep their own PLACEMENT and LIFETIME; this owns the element, the ARIA
+contract, the timer and the replace-and-restart semantics. Import it deep
+(`gps-plus-slam-app-framework/utils/toast-core`) rather than through the
+`/utils` barrel.
 
 ## Public API
 
@@ -12,7 +19,14 @@ A transient, screen-reader-announced message in any container. Used twice: the
   - `root` — the element the toast is attached to while visible.
   - `options.className` — default `"toast"`. AR passes `"ar-toast"`.
   - `options.lingerMs` — default `DEFAULT_TOAST_LINGER_MS` (6 s). AR passes 8 s.
-- `Toast.show(message)` — replaces any standing message and restarts the timer.
+  - `options.id` — optional `id` on the element, for CSS or a test hook.
+- `Toast.show(message, showOptions?)` — replaces any standing message and
+  restarts the timer.
+  - `showOptions.className` / `showOptions.lingerMs` override this toast's
+    defaults **for one message only**. They exist so a caller with severities
+    (the recorder's warning/error styling and its longer error linger) does not
+    have to keep a second `Toast` per severity. The class is applied BEFORE the
+    element is attached, so it never appears wearing the previous severity.
 - `Toast.clear()` — takes the message down now and cancels the timer. Idempotent,
   including before anything has been shown.
 - `DEFAULT_TOAST_LINGER_MS`.
@@ -56,15 +70,29 @@ the fixes.
 ## Example
 
 ```ts
-const toast = createToast(document.querySelector("#toast-root")!);
-toast.show("No quest nearby — searched 7 tiles");
+const toast = createToast(document.querySelector('#toast-root')!);
+toast.show('No quest nearby — searched 7 tiles');
 ```
 
 ## Tests
 
-- `toast.test.ts` — the empty-then-filled sequence (the only way to pin the
+- `toast-core.test.ts` — the empty-then-filled sequence (the only way to pin the
   deferral; a test checking only the final text passes for the silent version
   too), linger, replacement, same-task supersession, withdrawal beating a queued
-  write, idempotent clear, single-element reuse, and the custom class/linger.
-- `ar-toast.test.ts` — unchanged, and still green against this implementation,
-  which is the evidence that the generalisation was faithful.
+  write, idempotent clear, single-element reuse, the custom class/linger, the
+  per-message overrides and their reset on the next message, and the optional
+  `id`.
+  - The first eight of those moved here from `GpsPlusSlamJs_OsmDemo` **without a
+    single edit**, which is the evidence that the move was a move and not a
+    rewrite.
+- `GpsPlusSlamJs_OsmDemo/src/ar-toast.test.ts` — unchanged, and still green
+  against this implementation.
+
+## Related
+
+- `GpsPlusSlamJs_OsmDemo/src/ar-toast.ts` — the immersive-AR placement, a thin
+  wrapper over this with an 8 s linger.
+- `GpsPlusSlamJs_RecorderApp/src/ui/toast.ts` — the document-level singleton
+  with severity styling, built on this.
+- `GpsPlusSlamJs_Landing/src/egg-toast.ts` — a fourth toast that stays separate:
+  that package deliberately does not depend on this one.

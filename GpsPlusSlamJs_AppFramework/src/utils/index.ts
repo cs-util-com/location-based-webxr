@@ -32,6 +32,15 @@ export { formatFileSize } from './format-file-size.js';
 // lines of string replacement through this barrel pulls in the logger and
 // everything else listed here.
 export { escapeHtml } from './escape-html.js';
+// Same rule as `escapeHtml`: named here so the package's surface includes it,
+// but consumers should deep-import `.../utils/toast-core`.
+export {
+  createToast,
+  DEFAULT_TOAST_LINGER_MS,
+  type Toast,
+  type ToastOptions,
+  type ToastShowOptions,
+} from './toast-core.js';
 export { listFormatter } from './list-formatter.js';
 export {
   validateOptionFields,

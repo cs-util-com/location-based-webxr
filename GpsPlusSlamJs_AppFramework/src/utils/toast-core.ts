@@ -1,17 +1,44 @@
 /**
  * A transient message, announced to assistive technology, in any container.
  *
- * @see toast.ts.md
+ * WHY THE FRAMEWORK OWNS THIS. There were four toasts in the workspace, and the
+ * three outside this file agreed on nothing: one announced politely, one had no
+ * ARIA at all, one wrote its text synchronously, one deferred it, two attached
+ * and detached the element while two toggled a class. The mechanism below
+ * carries corrections that cost three review rounds between them and are
+ * invisible in the finished code — which is exactly the kind of thing a second
+ * hand-written copy reproduces the bugs of rather than the fixes.
+ *
+ * WHAT IT DOES NOT DO. It does not own the toast's PLACEMENT or its LIFETIME.
+ * A container-scoped factory and a document-level singleton are genuinely
+ * different lifetimes, and an immersive-AR overlay is a genuinely different
+ * placement from a page. Callers keep those; this owns the element, the ARIA
+ * contract, the timer and the replace-and-restart semantics.
+ *
+ * @see toast-core.ts.md
  */
 
 /** How long a message stays before it goes, ms. */
 export const DEFAULT_TOAST_LINGER_MS = 6_000;
 
 export interface Toast {
-  /** Show a message. Replaces any current one and restarts the timer. */
-  show(message: string): void;
+  /**
+   * Show a message. Replaces any current one and restarts the timer.
+   *
+   * `options` override this toast's defaults for THIS message only — a longer
+   * linger for an error, a different class for a severity — without the caller
+   * having to keep a second `Toast` around.
+   */
+  show(message: string, options?: ToastShowOptions): void;
   /** Take any message down now, and stop the timer. Idempotent. */
   clear(): void;
+}
+
+export interface ToastShowOptions {
+  /** Replaces the element's class for this message. */
+  readonly className?: string;
+  /** Overrides the linger for this message. */
+  readonly lingerMs?: number;
 }
 
 export interface ToastOptions {
@@ -19,15 +46,14 @@ export interface ToastOptions {
   readonly className?: string;
   /** Overrides {@link DEFAULT_TOAST_LINGER_MS}. */
   readonly lingerMs?: number;
+  /** `id` on the toast element, for CSS or a test hook. Omitted by default. */
+  readonly id?: string;
 }
 
 /**
  * Creates a toast surface inside `root`.
  *
- * EXTRACTED FROM `ar-toast.ts` RATHER THAN WRITTEN BESIDE IT. That component
- * carries two corrections that cost three review rounds between them, and both
- * are invisible in the finished code — a second copy would have reproduced the
- * bugs, not the fixes:
+ * THE TWO CORRECTIONS THIS CARRIES, both invisible in the code:
  *
  * 1. **The text is written in the NEXT task, not the same one.** A live region
  *    is announced when its content changes while it is in the accessibility
@@ -49,28 +75,30 @@ export interface ToastOptions {
  *    is the same defect this component exists to fix, one level up.
  *
  * **The element is attached on `show` and removed on `clear`**, rather than
- * living in the DOM permanently. For the AR root that is mandatory: `#ar-root`
- * is `position: fixed; inset: 0` and hidden only while `:empty`, so a permanent
- * child would keep a full-viewport click-eating layer over the page whenever AR
- * is NOT running — a regression already recorded in `ar-mode.ts`. For the 2D
- * root it is merely tidy, and keeping one rule for both is worth more than the
- * saved DOM operation.
+ * living in the DOM permanently. For an AR overlay root that is mandatory: such
+ * a root is typically `position: fixed; inset: 0` and hidden only while
+ * `:empty`, so a permanent child would keep a full-viewport click-eating layer
+ * over the page whenever AR is NOT running — a regression already recorded in
+ * the OSM demo's `ar-mode.ts`. For an ordinary page root it is merely tidy, and
+ * one rule for both is worth more than the saved DOM operation.
  */
 export function createToast(
   root: HTMLElement,
-  options: ToastOptions = {},
+  options: ToastOptions = {}
 ): Toast {
-  const element = document.createElement("div");
-  element.className = options.className ?? "toast";
+  const element = document.createElement('div');
+  const defaultClassName = options.className ?? 'toast';
+  element.className = defaultClassName;
+  if (options.id !== undefined) element.id = options.id;
   // POLITE, not assertive: these are information, not interruptions, and
   // `alert` would cut across whatever a screen reader is currently saying.
-  element.setAttribute("role", "status");
-  element.setAttribute("aria-live", "polite");
+  element.setAttribute('role', 'status');
+  element.setAttribute('aria-live', 'polite');
 
-  const lingerMs = options.lingerMs ?? DEFAULT_TOAST_LINGER_MS;
+  const defaultLingerMs = options.lingerMs ?? DEFAULT_TOAST_LINGER_MS;
 
   let timer: ReturnType<typeof setTimeout> | undefined;
-  /** The deferred text write. See the class comment. */
+  /** The deferred text write. See the function comment. */
   let pending: ReturnType<typeof setTimeout> | undefined;
 
   const clear = (): void => {
@@ -85,13 +113,16 @@ export function createToast(
     // EMPTIED, not just detached. The next `show` attaches this same element,
     // and one still carrying the previous text would arrive populated — the
     // exact state the deferred write exists to avoid.
-    element.textContent = "";
+    element.textContent = '';
     element.remove();
   };
 
   return {
-    show(message: string): void {
-      // `append`, not `insertBefore`: in the AR root the XR canvas sits at the
+    show(message: string, showOptions: ToastShowOptions = {}): void {
+      // Applied BEFORE attaching, so the element never appears in the DOM
+      // wearing the previous message's severity for a frame.
+      element.className = showOptions.className ?? defaultClassName;
+      // `append`, not `insertBefore`: in an AR root the XR canvas sits at the
       // FRONT of the container and the toast has to paint over it.
       root.append(element);
       if (pending !== undefined) clearTimeout(pending);
@@ -100,7 +131,7 @@ export function createToast(
         element.textContent = message;
       }, 0);
       if (timer !== undefined) clearTimeout(timer);
-      timer = setTimeout(clear, lingerMs);
+      timer = setTimeout(clear, showOptions.lingerMs ?? defaultLingerMs);
     },
     clear,
   };

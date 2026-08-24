@@ -89,7 +89,7 @@ import { startArMode, type ArMode } from "./ar-mode.js";
 import { autoElevationEnabled } from "./ar-elevation-auto.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
-import { createToast } from "./toast.js";
+import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";

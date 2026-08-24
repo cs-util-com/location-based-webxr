@@ -23,15 +23,15 @@
  * that decision.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createToast, DEFAULT_TOAST_LINGER_MS } from "./toast.js";
+import { createToast, DEFAULT_TOAST_LINGER_MS } from './toast-core.js';
 
 let root: HTMLElement;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  root = document.createElement("div");
+  root = document.createElement('div');
   document.body.append(root);
 });
 
@@ -41,10 +41,10 @@ afterEach(() => {
 });
 
 const toastIn = (container: HTMLElement): HTMLElement | null =>
-  container.querySelector(".toast");
+  container.querySelector('.toast');
 
-describe("createToast", () => {
-  it("attaches an EMPTY live region first and fills it in a later task", () => {
+describe('createToast', () => {
+  it('attaches an EMPTY live region first and fills it in a later task', () => {
     // THE ANNOUNCEMENT CONTRACT. A live region inserted already carrying its
     // text is commonly not announced at all — the AT sees a region that
     // appeared populated rather than one whose content changed. Asserting the
@@ -52,21 +52,21 @@ describe("createToast", () => {
     // only checked the final text passes for the silent version too.
     const toast = createToast(root);
 
-    toast.show("Nothing nearby");
+    toast.show('Nothing nearby');
 
     const element = toastIn(root);
     expect(element).not.toBeNull();
-    expect(element?.getAttribute("role")).toBe("status");
-    expect(element?.getAttribute("aria-live")).toBe("polite");
-    expect(element?.textContent).toBe("");
+    expect(element?.getAttribute('role')).toBe('status');
+    expect(element?.getAttribute('aria-live')).toBe('polite');
+    expect(element?.textContent).toBe('');
 
     vi.advanceTimersByTime(0);
-    expect(toastIn(root)?.textContent).toBe("Nothing nearby");
+    expect(toastIn(root)?.textContent).toBe('Nothing nearby');
   });
 
-  it("takes the message down after the linger", () => {
+  it('takes the message down after the linger', () => {
     const toast = createToast(root);
-    toast.show("Saved");
+    toast.show('Saved');
     vi.advanceTimersByTime(0);
     expect(toastIn(root)).not.toBeNull();
 
@@ -74,45 +74,45 @@ describe("createToast", () => {
     expect(toastIn(root)).toBeNull();
   });
 
-  it("replaces a standing message and restarts its clock", () => {
+  it('replaces a standing message and restarts its clock', () => {
     const toast = createToast(root);
-    toast.show("first");
+    toast.show('first');
     vi.advanceTimersByTime(0);
 
     vi.advanceTimersByTime(DEFAULT_TOAST_LINGER_MS - 100);
-    toast.show("second");
+    toast.show('second');
     vi.advanceTimersByTime(0);
-    expect(toastIn(root)?.textContent).toBe("second");
+    expect(toastIn(root)?.textContent).toBe('second');
 
     // The first message's deadline has now passed; the second's has not.
     vi.advanceTimersByTime(200);
-    expect(toastIn(root)?.textContent).toBe("second");
+    expect(toastIn(root)?.textContent).toBe('second');
   });
 
-  it("never shows a superseded message, even for one task", () => {
+  it('never shows a superseded message, even for one task', () => {
     // The cancellation contract. Two `show` calls in the same task must not
     // produce a flash of the first text — which is what would happen if the
     // pending write were guarded rather than cancelled.
     const toast = createToast(root);
-    toast.show("stale");
-    toast.show("fresh");
+    toast.show('stale');
+    toast.show('fresh');
 
     vi.advanceTimersByTime(0);
-    expect(toastIn(root)?.textContent).toBe("fresh");
+    expect(toastIn(root)?.textContent).toBe('fresh');
   });
 
-  it("clear() removes the element and cancels a write already queued", () => {
+  it('clear() removes the element and cancels a write already queued', () => {
     // Withdrawal must beat the deferred write. Without the cancellation a
     // cleared toast reappears one task later, populated.
     const toast = createToast(root);
-    toast.show("about to be withdrawn");
+    toast.show('about to be withdrawn');
     toast.clear();
 
     vi.advanceTimersByTime(0);
     expect(toastIn(root)).toBeNull();
   });
 
-  it("is idempotent when cleared twice, and when cleared before anything shows", () => {
+  it('is idempotent when cleared twice, and when cleared before anything shows', () => {
     const toast = createToast(root);
     expect(() => {
       toast.clear();
@@ -120,26 +120,64 @@ describe("createToast", () => {
     }).not.toThrow();
   });
 
-  it("reuses one element rather than leaking one per message", () => {
+  it('reuses one element rather than leaking one per message', () => {
     // `#ar-root` is `position: fixed; inset: 0` and hidden only while `:empty`,
     // so a stray leftover child keeps a full-viewport click-eating layer over
     // the page. A per-message element would leave one behind on every show.
     const toast = createToast(root);
-    for (const message of ["a", "b", "c"]) {
+    for (const message of ['a', 'b', 'c']) {
       toast.show(message);
       vi.advanceTimersByTime(0);
     }
 
-    expect(root.querySelectorAll(".toast")).toHaveLength(1);
+    expect(root.querySelectorAll('.toast')).toHaveLength(1);
   });
 
-  it("honours a custom class and linger", () => {
-    const toast = createToast(root, { className: "ar-toast", lingerMs: 100 });
-    toast.show("hi");
+  it('honours a custom class and linger', () => {
+    const toast = createToast(root, { className: 'ar-toast', lingerMs: 100 });
+    toast.show('hi');
     vi.advanceTimersByTime(0);
-    expect(root.querySelector(".ar-toast")?.textContent).toBe("hi");
+    expect(root.querySelector('.ar-toast')?.textContent).toBe('hi');
 
     vi.advanceTimersByTime(100);
-    expect(root.querySelector(".ar-toast")).toBeNull();
+    expect(root.querySelector('.ar-toast')).toBeNull();
+  });
+  it('takes a per-message class and linger, overriding the defaults', () => {
+    // WHY THIS EXISTS: the recorder styles by severity and gives errors a
+    // longer linger. Without per-message overrides it would need one Toast per
+    // severity, each with its own element and its own timer -- which is how the
+    // second implementation this core replaced ended up with none of the ARIA.
+    const toast = createToast(root, { className: 'toast', lingerMs: 5_000 });
+
+    toast.show('bad', { className: 'toast toast-error', lingerMs: 100 });
+    vi.advanceTimersByTime(0);
+    expect(root.querySelector('.toast-error')?.textContent).toBe('bad');
+
+    vi.advanceTimersByTime(100);
+    expect(root.querySelector('.toast')).toBeNull();
+  });
+
+  it('falls back to the toast defaults on the NEXT message', () => {
+    // The override is for one message only. A severity that stuck would make
+    // every later message wear the last error's colour.
+    const toast = createToast(root, { className: 'toast', lingerMs: 5_000 });
+
+    toast.show('bad', { className: 'toast toast-error', lingerMs: 100 });
+    vi.advanceTimersByTime(0);
+    toast.show('fine');
+    vi.advanceTimersByTime(0);
+
+    const element = root.querySelector('.toast');
+    expect(element?.className).toBe('toast');
+    expect(element?.textContent).toBe('fine');
+    vi.advanceTimersByTime(200);
+    expect(root.querySelector('.toast')).not.toBeNull();
+  });
+
+  it('sets an id when asked, so CSS and tests can find it', () => {
+    const toast = createToast(root, { id: 'toast-container' });
+    toast.show('hi');
+    vi.advanceTimersByTime(0);
+    expect(document.getElementById('toast-container')?.textContent).toBe('hi');
   });
 });
