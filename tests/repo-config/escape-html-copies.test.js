@@ -59,9 +59,21 @@ export function replacementPairs(source) {
   return pairs.sort();
 }
 
-/** The character class of the first `/[...]/g`-style literal in `source`. */
+/**
+ * The character class of the escapeHtml-shaped replace in `source`.
+ *
+ * Scoped to the exact shape the "both actually apply the regex" assertion
+ * below pins — `return X.replace(/[…]/g, (c) => REPLACEMENTS[…` — rather than
+ * the first `/[…]/g` literal anywhere in the file. In `chapter-dots.ts` the
+ * escaper shares the file with unrelated code, so a positional match would let
+ * any future `.replace(/[…]/g` added above it silently become the thing this
+ * guard compares.
+ */
 export function escapedCharacterClass(source) {
-  const match = /\.replace\(\s*\/\[([^\]]+)\]\/g/.exec(source);
+  const match =
+    /return\s+\w+\s*\.replace\(\s*\/\[([^\]]+)\]\/g\s*,\s*\(\w+\)\s*=>\s*REPLACEMENTS\[/.exec(
+      source,
+    );
   return match ? [...match[1]].sort().join('') : null;
 }
 
@@ -98,6 +110,31 @@ describe('escapeHtml copies', () => {
 
       expect(five).toHaveLength(5);
       expect(four).not.toEqual(five);
+    });
+  });
+
+  describe('escapedCharacterClass', () => {
+    it('reads the class from the escapeHtml shape, not the first replace in the file', () => {
+      // The old extractor took the FIRST `/[…]/g` replace anywhere in the
+      // source. For `chapter-dots.ts` that is positional: `escapeHtml` sits
+      // near the top today, and any `.replace(/[…]/g` added above it would
+      // silently become the thing this guard compares — while the vacuity
+      // check below stays green, because it reads the table, not the regex.
+      // Found by claude[bot] review on PR #352.
+      const source = [
+        `const slug = title.replace(/[abc]/g, '-');`,
+        `return text.replace(/[<>]/g, (ch) => REPLACEMENTS[ch] ?? ch);`,
+      ].join('\n');
+
+      expect(escapedCharacterClass(source)).toBe('<>');
+    });
+
+    it('returns null when no escapeHtml-shaped replace exists', () => {
+      // A bare regex literal elsewhere must not satisfy the not-null vacuity
+      // assertion in the character-class comparison below.
+      expect(escapedCharacterClass(`const x = s.replace(/[abc]/g, '-');`)).toBe(
+        null,
+      );
     });
   });
 
