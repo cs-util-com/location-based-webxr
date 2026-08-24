@@ -86,7 +86,10 @@ export interface RacingProviderOptions {
    * terrain field that consumes the upgrade, so this is normally a closure over
    * a `let` the caller assigns afterwards rather than the final sink itself.
    */
-  readonly onUpgrade?: (positions: readonly LatLng[], heights: Heights) => void;
+  readonly onUpgrade?: (
+    positions: readonly LatLng[],
+    heights: Heights,
+  ) => boolean | void;
 }
 
 /** Whether an answer carries at least one real height. */
@@ -329,8 +332,18 @@ export function racingProvider(
             // own check rather than inheriting one.
             if (signal?.aborted === true) return;
             stats.upgrades += 1;
-            publishServedBy(preferred.sourceId);
-            sink(positions, better);
+            // THE SINK IS CONSULTED FIRST, and the attribution follows its
+            // verdict (PR #332 review). `replacePosts`' refusal of a batch
+            // that would leave the window on two DEMs is ORDINARY under the
+            // demo's all-or-nothing rule, and a `servedBy` committed before
+            // the refusal named a source the field is not standing on — the
+            // stale attribution this interface argues against most
+            // explicitly. A sink that returns nothing keeps the old
+            // behaviour: only an explicit `false` withholds the claim.
+            // `upgrades` above stays unconditional, like every counter here —
+            // it counts batches, not what is on screen.
+            const applied = sink(positions, better);
+            if (applied !== false) publishServedBy(preferred.sourceId);
           }),
         );
       };

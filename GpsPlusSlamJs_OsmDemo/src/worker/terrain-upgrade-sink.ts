@@ -40,8 +40,13 @@ export function createTerrainUpgradeSink(
 ): (
   positions: readonly LatLng[],
   heights: readonly (number | undefined)[],
-) => void {
+) => boolean {
   return (positions, heights) => {
-    if (field.replacePosts(positions, heights)) onChanged();
+    const applied = field.replacePosts(positions, heights);
+    if (applied) onChanged();
+    // RETURNED to the provider, which withholds its `servedBy` claim on a
+    // refusal — an attribution committed before this verdict named a source
+    // the field is not standing on (PR #332 review).
+    return applied;
   };
 }
