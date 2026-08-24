@@ -65,4 +65,27 @@ describe("validateChannels", () => {
       validateChannels({ x: { autonomy: "yes-please", minIntervalMs: 1 } }),
     ).toContainEqual(expect.stringMatching(/autonomy/));
   });
+
+  it("rejects NaN where a rate limit belongs — NaN reads as unlimited downstream", () => {
+    // `typeof NaN === "number"` and `NaN <= 0` is false, so the old checks
+    // passed both fields — while `selectDue`'s comparisons (`< NaN`,
+    // `>= NaN`) are always false, silently disabling the interval AND the
+    // rolling-window cap the table claims. Found by claude[bot] review on
+    // PR #337.
+    expect(
+      validateChannels({
+        x: { autonomy: "auto", minIntervalMs: Number.NaN },
+      }),
+    ).toContainEqual(expect.stringMatching(/minIntervalMs/));
+    expect(
+      validateChannels({
+        x: {
+          autonomy: "auto",
+          minIntervalMs: 1,
+          maxPerWindow: Number.NaN,
+          windowMs: Number.NaN,
+        },
+      }),
+    ).toContainEqual(expect.stringMatching(/finite/));
+  });
 });

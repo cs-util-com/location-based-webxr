@@ -52,14 +52,20 @@
  * @param {Record<string, readonly number[]>} input.history epoch ms of past posts
  * @param {number} input.now epoch ms
  * @returns {Decision}
- * @throws {Error} when a channel is configured without `minIntervalMs` — a
- *   missing interval must never read as "unlimited".
+ * @throws {Error} when a channel is configured without a FINITE
+ *   `minIntervalMs` — a missing or NaN interval must never read as
+ *   "unlimited" (`typeof NaN === "number"`, and every downstream comparison
+ *   against NaN is false).
  */
 export function selectDue({ items, channels, history, now }) {
   for (const [name, config] of Object.entries(channels)) {
-    if (typeof config.minIntervalMs !== "number") {
+    // `Number.isFinite`, not `typeof`: `NaN` is a number, and every
+    // downstream comparison (`now - lastAt < NaN`, `inWindow.length >= NaN`)
+    // is false — so a NaN interval read as exactly the "unlimited" this
+    // guard exists to forbid (PR #337 review).
+    if (!Number.isFinite(config.minIntervalMs)) {
       throw new Error(
-        `schedule: channel ${JSON.stringify(name)} has no minIntervalMs. ` +
+        `schedule: channel ${JSON.stringify(name)} has no usable minIntervalMs. ` +
           `Refusing to assume one — an unbounded posting rate is how an ` +
           `account gets banned.`,
       );

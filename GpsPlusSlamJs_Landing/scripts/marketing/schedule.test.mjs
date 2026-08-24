@@ -188,4 +188,21 @@ describe("selectDue", () => {
       }),
     ).toThrow(/minIntervalMs/);
   });
+
+  it("rejects a NaN interval, which would read as exactly the forbidden 'unlimited'", () => {
+    // `typeof NaN === "number"`, so the old guard passed it — and downstream
+    // `now - lastAt < NaN` is false, so the item was NEVER withheld: a channel
+    // configured with `minIntervalMs: NaN` posted on every run. Not reachable
+    // from the literal CHANNELS table, but `channels` is injected and the
+    // natural next step is reading the table from JSON, where `Number("21d")`
+    // produces exactly this. Found by claude[bot] review on PR #337.
+    expect(() =>
+      selectDue({
+        items: [item({ channel: "sloppy" })],
+        channels: { sloppy: { autonomy: "auto", minIntervalMs: Number.NaN } },
+        history: {},
+        now: NOW,
+      }),
+    ).toThrow(/minIntervalMs/);
+  });
 });
