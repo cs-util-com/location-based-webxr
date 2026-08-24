@@ -13,10 +13,14 @@ somewhere it can still be read after the session is over.
   - `kind` — a stable slug (`"ar-entry-ready"`), not prose. The value of a
     recording is being able to find every instance of one measurement across
     many sessions, and sentences do not group.
-  - `atMs` — the caller's clock, **supplied rather than taken here**. The only
-    clock that means anything for these numbers is the one the measurement was
-    made against (an XR frame clock for the AR entry, wall time elsewhere); a
-    timestamp taken at dispatch would silently mix the two.
+  - `atMs` — **epoch milliseconds, by contract**; supplied rather than taken
+    here so the caller controls which moment is stamped. A caller measuring on
+    another clock (XR frame clock, `performance.now()`) converts once at
+    dispatch, as `main.ts` does with `nowEpochMs()`. The domain is fixed
+    because a note is read back months later out of a zip, and because the
+    replay engine's `extractActionTimestamp` paces recordings by this field —
+    a frame-clock value would compute garbage delays against the epoch-stamped
+    GPS stream.
   - `detail` — flat, and restricted to `number | string | boolean | null`. The
     action is JSON-serialised into the zip and RTK's serialisable check runs
     over it, so a `Date`, a `Map` or a class instance would either warn in
@@ -61,7 +65,7 @@ import { recordDiagnostic } from 'gps-plus-slam-app-framework/state';
 store.dispatch(
   recordDiagnostic({
     kind: 'ar-entry-ready',
-    atMs: elapsed * 1000,
+    atMs: Date.now(), // epoch ms — convert here if measured on another clock
     detail: { afterS, aligned, contentReady },
   })
 );
@@ -81,3 +85,5 @@ and that dispatching it leaves the whole state object unchanged.
   whitelist and the post-reducer write.
 - [`create-slam-app-store.ts`](./create-slam-app-store.ts.md) — where the prefix
   is registered.
+- [`replay-engine.ts`](./replay-engine.ts.md) — paces replay by `atMs`, which
+  is why the epoch-ms domain is part of the contract.

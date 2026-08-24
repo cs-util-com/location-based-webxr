@@ -59,12 +59,17 @@ export interface DiagnosticNote {
    */
   readonly kind: string;
   /**
-   * When, on the CALLER's clock, in milliseconds.
+   * When, in EPOCH milliseconds.
    *
-   * Supplied rather than taken here, because the only clock that means anything
-   * for these measurements is the one the measurement was made against — an XR
-   * frame clock for the AR entry, wall time for anything else. A timestamp
-   * taken at dispatch would silently mix the two.
+   * Supplied rather than taken here, so the caller controls what moment is
+   * stamped — but the DOMAIN is fixed: a caller measuring on another clock
+   * (an XR frame clock, `performance.now()`) converts to epoch ms once, at
+   * dispatch, exactly as `main.ts` does with `nowEpochMs()`. Two reasons the
+   * domain is part of the contract rather than the caller's choice: a note is
+   * read back months later, out of a zip, where only an absolute timeline can
+   * be placed against the session's other events; and the replay engine's
+   * `extractActionTimestamp` paces recordings by this field, so a frame-clock
+   * value would compute garbage delays against the epoch-stamped GPS stream.
    */
   readonly atMs: number;
   /** The measurement itself. Flat, and JSON-safe by construction. */
