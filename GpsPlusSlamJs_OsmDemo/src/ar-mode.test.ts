@@ -1930,6 +1930,38 @@ describe("the AR entry fly-down (H5, Q5)", () => {
     expect(setClearAlpha).not.toHaveBeenCalled();
   });
 
+  it("tears the veil and the waiting line down when the session ends mid-entry", async () => {
+    // The release path is "the common case when someone backs out because the
+    // entry looked wrong" (ar-mode.ts's own words) — and it was uncovered: the
+    // session-end tests build `fakeView()` with no `cameraHeightM`, so no veil
+    // is ever created there, and deleting the teardown left the whole suite
+    // green. What that teardown prevents is an opaque sphere LEFT in the
+    // framework scene (a lid over the passthrough, "strictly worse than having
+    // no veil at all") plus a stranded "Finding your position…" over the
+    // desktop. Found by claude[bot] review on PR #339.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const view = viewAtHeight(START_M);
+    await startArMode(
+      deps({
+        container,
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+      }),
+    );
+
+    // Mid-entry: the veil is up and the waiting line is showing.
+    expect(entryVeilIn(scene)).toBeDefined();
+    expect(container.querySelector(".ar-entry-wait")).not.toBeNull();
+
+    const sessionOptions = initAR.mock.calls[0]?.[3] as {
+      onSessionEnd: () => void;
+    };
+    sessionOptions.onSessionEnd();
+
+    expect(entryVeilIn(scene)).toBeUndefined();
+    expect(container.querySelector(".ar-entry-wait")).toBeNull();
+  });
+
   it("adds NO entry veil when there is no height to fall from", async () => {
     // Entering from a ground-level 3D view has nothing to descend, so there is
     // no fade to run -- and `entryVeilAlpha` answers 0 for a zero start, so a
