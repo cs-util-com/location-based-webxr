@@ -59,6 +59,7 @@
     "@reduxjs/toolkit": "^2.11.2",
     "gl-matrix": "3.4.4",
     "gps-plus-slam-js": "^1.19.0",
+    "qrcode": "^1.5.4",
     "redux": "^5.0.1"
   },
   "peerDependencies": {
@@ -95,7 +96,6 @@
     "jsdom": "^29.1.1",
     "leaflet": "^1.9.4",
     "prettier": "^3.8.3",
-    "qrcode": "^1.5.4",
     "three": "^0.184.0",
     "tsdown": "^0.22.0",
     "typescript": "^6.0.3",

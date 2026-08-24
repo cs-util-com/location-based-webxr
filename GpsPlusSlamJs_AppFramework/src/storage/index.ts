@@ -76,3 +76,14 @@ export {
 
 // --- zip-coverage-embed ---
 export { embedCoverageInSessionJson } from './zip-coverage-embed.js';
+
+// --- zip-entry-path ---
+export { assertSafeZipEntryPaths } from './zip-entry-path.js';
+
+// --- pack-files-as-zip ---
+export {
+  type ZipManifest,
+  type ZipManifestEntry,
+  ZipPackagingError,
+  packFilesAsZip,
+} from './pack-files-as-zip.js';
