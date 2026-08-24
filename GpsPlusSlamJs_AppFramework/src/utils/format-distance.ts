@@ -52,6 +52,18 @@ export interface DistanceFormatOptions {
  * likewise formats as zero rather than propagating `NaN` into the UI.
  */
 /**
+ * Clamps a decimals option into `toFixed`'s domain.
+ *
+ * `toFixed` throws a `RangeError` for fraction digits below 0 or above 100,
+ * and this module's contract is "total; never throws" — so an out-of-range
+ * option clamps rather than propagating the throw into a render loop. (`NaN`
+ * survives the clamp, and `toFixed` itself treats it as 0.)
+ */
+function clampDecimals(decimals: number): number {
+  return Math.min(100, Math.max(0, decimals));
+}
+
+/**
  * Rounds `value` to the nearest multiple of `step`.
  *
  * `> 0` and not just `!== 1`: a zero step would divide by zero and a negative
@@ -76,8 +88,8 @@ export function formatDistance(
   const safe = Number.isFinite(metres) ? Math.max(0, metres) : 0;
 
   if (kilometreAboveM !== null && safe >= kilometreAboveM) {
-    return `${(safe / 1000).toFixed(kmDecimals)} km`;
+    return `${(safe / 1000).toFixed(clampDecimals(kmDecimals))} km`;
   }
 
-  return `${stepMetres(safe, metreStep).toFixed(metreDecimals)} m`;
+  return `${stepMetres(safe, metreStep).toFixed(clampDecimals(metreDecimals))} m`;
 }

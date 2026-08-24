@@ -7,7 +7,10 @@ string a user reads.
 
 ## Public API
 
-- `formatDistance(metres, options?): string` — total; never throws.
+- `formatDistance(metres, options?): string` — total; never throws. That
+  includes hostile options: `metreDecimals` / `kmDecimals` outside `toFixed`'s
+  `[0, 100]` domain are clamped into it rather than letting the `RangeError`
+  propagate into a render loop.
 - `DistanceFormatOptions`:
   - `metreStep` (default `1`) — round the metre value to this multiple before
     printing. `10` gives `"120 m"` rather than `"123.4 m"`. Fractional

@@ -98,6 +98,16 @@ describe('formatDistance', () => {
     expect(formatDistance(-3, { metreStep: 10, metreDecimals: 0 })).toBe('0 m');
   });
 
+  it('never throws — decimal options outside toFixed’s domain are clamped', () => {
+    // The sidecar's first API line is "total; never throws", and toFixed
+    // throws RangeError for fraction digits below 0 or above 100. Found by
+    // coderabbitai on PR #352. Negative decimals clamp to 0, oversized to 100.
+    expect(formatDistance(5, { metreDecimals: -1 })).toBe('5 m');
+    expect(formatDistance(1500, { kmDecimals: -3 })).toBe('2 km');
+    expect(() => formatDistance(5, { metreDecimals: 101 })).not.toThrow();
+    expect(() => formatDistance(1500, { kmDecimals: 1000 })).not.toThrow();
+  });
+
   it('formats a non-finite distance as zero rather than NaN', () => {
     // A `NaN` here reaches the screen as the literal text "NaN m", which is the
     // worst of the available outcomes: it looks like a value.
