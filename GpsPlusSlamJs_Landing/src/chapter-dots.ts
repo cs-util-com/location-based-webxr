@@ -26,9 +26,9 @@ const ACTIVE_CLASS = "active";
  * sets `singleQuote: true` and this one takes prettier's default, so the two
  * files disagree on every quote in the table below. What must stay identical is
  * the CONTRACT — the same five characters mapped to the same five entities —
- * and a repo-config guard comparing the normalised pairs is planned (M7 of the
- * helper-unification plan). Until it lands, this comment is the only thing
- * holding the two together.
+ * and `tests/repo-config/escape-html-copies.test.js` compares exactly that,
+ * plus the regex's character class. Editing the table below without editing the
+ * framework's turns that test red.
  *
  * It used to escape FOUR characters, missing `'`. That was safe only by
  * accident of its single call site — an `aria-label="…"` attribute, where an

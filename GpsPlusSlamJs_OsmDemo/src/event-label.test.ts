@@ -21,7 +21,7 @@ import {
   compassPoint,
   describeGeoEvent,
   distanceMetres,
-  formatDistance,
+  formatEventDistance,
   geoEventButtonLabel,
   geoEventReadout,
 } from "./event-label.js";
@@ -129,18 +129,18 @@ describe("compassPoint", () => {
   });
 });
 
-describe("formatDistance", () => {
+describe("formatEventDistance", () => {
   it("uses metres below a kilometre, rounded to ten", () => {
     // Rounded because the underlying cell is ~4 m across -- "643 m" would
     // imply a precision the H3 quantisation does not have.
-    expect(formatDistance(0)).toBe("0 m");
-    expect(formatDistance(643)).toBe("640 m");
-    expect(formatDistance(999)).toBe("1000 m");
+    expect(formatEventDistance(0)).toBe("0 m");
+    expect(formatEventDistance(643)).toBe("640 m");
+    expect(formatEventDistance(999)).toBe("1000 m");
   });
 
   it("switches to kilometres at a kilometre", () => {
-    expect(formatDistance(1000)).toBe("1.0 km");
-    expect(formatDistance(1204)).toBe("1.2 km");
+    expect(formatEventDistance(1000)).toBe("1.0 km");
+    expect(formatEventDistance(1204)).toBe("1.2 km");
   });
 });
 

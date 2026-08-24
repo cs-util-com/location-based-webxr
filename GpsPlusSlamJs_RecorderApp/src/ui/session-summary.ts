@@ -13,7 +13,7 @@ import type { RefPointMarkerInput } from './draw-ref-point-markers';
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { formatFileSize } from 'gps-plus-slam-app-framework/utils/format-file-size';
 import { getRequiredElement } from '../utils/dom-helpers';
-import { formatDistance as sharedFormatDistance } from 'gps-plus-slam-app-framework/utils/format-distance';
+import { formatDistance } from 'gps-plus-slam-app-framework/utils/format-distance';
 import type {
   GpsCoord,
   RawGpsSample,
@@ -162,8 +162,8 @@ function formatGps(gps: GpsCoord | null): string {
  * walks that 1.2 km does not. Output unchanged — the framework's
  * `format-distance.test.ts` pins it differentially against the old body.
  */
-function formatDistance(meters: number): string {
-  return sharedFormatDistance(meters, { kmDecimals: 2 });
+function formatSummaryDistance(meters: number): string {
+  return formatDistance(meters, { kmDecimals: 2 });
 }
 
 /**
@@ -353,7 +353,7 @@ export function showSessionSummary(data: SessionSummaryData): void {
   cachedElements.errors.textContent = formatErrors(data.errors);
   cachedElements.firstGps.textContent = formatGps(data.firstGps);
   cachedElements.lastGps.textContent = formatGps(data.lastGps);
-  cachedElements.distance.textContent = formatDistance(
+  cachedElements.distance.textContent = formatSummaryDistance(
     data.totalDistanceMeters
   );
 

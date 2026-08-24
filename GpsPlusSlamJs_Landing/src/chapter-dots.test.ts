@@ -41,9 +41,11 @@ describe("chapterDotsHtml", () => {
     // `utils/escape-html.ts`, and until 2026-08-24 it silently escaped only
     // four of the five characters — `'` was missing. That was safe by accident
     // of the single call site (a double-quoted attribute), not by design, and a
-    // second call site would have inherited a hole. A repo-config guard
-    // comparing this copy's character/entity table against the framework's is
-    // planned; until it exists, this assertion is what holds the two together.
+    // second call site would have inherited a hole.
+    // `tests/repo-config/escape-html-copies.test.js` now compares this copy's
+    // character/entity table against the framework's; this assertion is the
+    // behavioural half of the same claim, and covers the character that was
+    // missing.
     const html = chapterDotsHtml([{ id: "x", label: "it's fine" }]);
     expect(html).toContain("it&#39;s fine");
   });

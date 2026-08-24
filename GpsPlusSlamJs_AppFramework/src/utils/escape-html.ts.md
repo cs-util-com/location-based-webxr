@@ -12,13 +12,13 @@ Landing keeps a copy rather than importing this one, because it does not depend
 on this package and adding that edge to a marketing site to share ten lines is
 the worse trade.
 
-⚠️ **Nothing enforces that yet.** The two copies cannot be made
-character-identical — this package sets `singleQuote: true` and Landing takes
-prettier's default, so they disagree on every quote in the table — so the guard
-has to compare the normalised character/entity pairs instead. It is planned as
-M7 of the helper-unification plan; until it lands, the only thing holding the
-two together is a comment in each and a test in Landing covering the character
-its copy used to miss.
+**`tests/repo-config/escape-html-copies.test.js` holds the two to the same
+contract**: the same characters mapped to the same entities, and the same
+character class in the regex. It compares the extracted TABLE rather than the
+source text, because the two cannot be made character-identical — this package
+sets `singleQuote: true` and Landing takes prettier's default, so they disagree
+on every quote in the table and always will. A guard that cannot be satisfied is
+a guard nobody writes.
 
 ## Public API
 
