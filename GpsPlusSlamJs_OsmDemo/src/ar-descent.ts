@@ -157,12 +157,22 @@ export function descentComplete(input: DescentInput): boolean {
  * **DEC-L2 CHANGED THE COMPARISON, not the conclusion.** Against the 6 s
  * descent this paragraph was written for, that correction outlasted the whole
  * animation; against 12 s a 10 m residual now fits inside it. It is still not
- * settled: the 6.7 s runs from ENGAGEMENT, so on this fallback path — descent
- * from `firstFrame + 3 s`, landing at `firstFrame + 15 s` — the correction is
- * hidden only if the estimator engages within ~8.3 s of the first frame, and a
- * 20 m residual outlasts the animation at any engagement time. Filed with the
+ * settled: the 6.7 s runs from ENGAGEMENT, and DEC-M2 (later in the same PR)
+ * moved the start — the descent now also waits for the DOM veil, which cannot
+ * go before `ENTRY_DOM_VEIL_HOLD_S + ENTRY_DOM_VEIL_FADE_S` = 4 s and holds
+ * until `ENTRY_READY_MAX_WAIT_S + ENTRY_DOM_VEIL_FADE_S` = 10 s on the
+ * ceiling path. So on this fallback path the descent starts at `firstFrame +
+ * 4…10 s`, lands at `firstFrame + 16…22 s`, and the correction is hidden if
+ * the estimator engages within ~9.3–15.3 s of the first frame; a 20 m
+ * residual outlasts the animation at any engagement time. Filed with the
  * arithmetic and the field measurement to take, in
  * `2026-08-21-1120-ar-entry-gate-fallback-may-be-the-normal-path-followup.md`.
+ *
+ * **And at today's constants this wait is never the binding gate.** The veil's
+ * 4 s minimum subsumes this 3 s, so by the time `descentMayStart` is consulted
+ * the fallback has already expired on every path —
+ * `ar-entry-dom-veil.test.ts` pins that inequality precisely so reversing it
+ * cannot silently make this constant load-bearing again.
  *
  * It is NOT raised speculatively: a longer black screen is a real cost, and
  * without the engagement distribution any other value is the same guess.
