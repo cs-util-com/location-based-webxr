@@ -134,7 +134,10 @@ const DEFAULT_EDGE_MARGIN = 0.9;
 /** Formats a numeric distance (meters) into a readable label, e.g. "1.5 m". */
 export function formatDistanceLabel(distance: number): string {
   // Delegates to the workspace's one distance formatter (2026-08-24). The
-  // output is unchanged and `format-distance.test.ts` pins that differentially.
+  // output is unchanged for every non-negative finite input, which
+  // `format-distance.test.ts` pins differentially. Outside that range it DID
+  // change on purpose: this published label used to print "NaN m" and used to
+  // print a negative distance, and now formats both as "0.0 m".
   //
   // `kilometreAboveM: null` keeps this label in metres at any range, which is
   // what it always did. That is a real decision, not inertia: this is a

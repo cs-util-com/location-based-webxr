@@ -159,8 +159,10 @@ function formatGps(gps: GpsCoord | null): string {
  * The workspace's shared formatter (2026-08-24) with this screen's rule: two
  * decimals on kilometres, because a session total is a figure the user compares
  * between recordings rather than glances at, and 1.23 km distinguishes two
- * walks that 1.2 km does not. Output unchanged — the framework's
- * `format-distance.test.ts` pins it differentially against the old body.
+ * walks that 1.2 km does not. Output unchanged for non-negative finite input —
+ * the framework's `format-distance.test.ts` pins it differentially against the
+ * old body. Outside that range it DID change on purpose: this summary used to
+ * print "NaN m", and now formats that as "0.0 m".
  */
 function formatSummaryDistance(meters: number): string {
   return formatDistance(meters, { kmDecimals: 2 });
