@@ -1,13 +1,29 @@
 /**
- * Unit tests for Toast Notification Component.
- *
- * TDD: These tests define the expected behavior for a simple toast
- * notification system used to alert users of write failures.
+ * Unit tests for the recorder's toast notification component.
  *
  * Why this test matters:
- * - User Feedback Issue #1 Part B: Users need real-time feedback
- *   when file write operations fail, not just a count at the end.
- * - The toast provides immediate visibility into data loss issues.
+ * - User Feedback Issue #1 Part B: users need real-time feedback when file
+ *   write operations fail, not just a count at the end. The toast provides
+ *   immediate visibility into data loss.
+ * - 2026-06-16 user feedback, Finding 4 / D4: under WebXR DOM Overlay only the
+ *   element passed to `initAR` (`#app`) and its descendants composite over the
+ *   camera feed. A toast on `document.body` fired and was never seen during a
+ *   recording. Descendant-of-`#app` is the invariant that makes it visible.
+ *
+ * REWRITTEN 2026-08-24, when this module moved onto the framework's shared
+ * `utils/toast-core`. Three of its behaviours changed, and the tests changed
+ * with them rather than the mechanism being bent to keep them:
+ *
+ * - **The element is attached on show and removed on hide**, instead of living
+ *   in the DOM permanently behind a `hidden` class. Assertions about that class
+ *   became assertions about presence.
+ * - **The text is written one task later than the insertion**, which is what
+ *   makes a live region actually announce. Every assertion that reads the text
+ *   now advances timers by 0 first — and that is not a test artifact, it is the
+ *   behaviour: a screen reader is why the write is deferred.
+ * - **The toast announces at all.** This module had no `role` and no
+ *   `aria-live` before, so every message it has ever shown was silent to
+ *   assistive technology. That is the reason the move was worth doing.
  *
  * @vitest-environment jsdom
  */
@@ -21,9 +37,18 @@ import {
   TOAST_DURATION_ERROR,
 } from './toast.js';
 
+/** The toast element while it is shown, or null when nothing is showing. */
+const toastElement = (): HTMLElement | null =>
+  document.getElementById('toast-container');
+
+/** Show a message and let the deferred text write land. */
+function show(...args: Parameters<typeof showToast>): void {
+  showToast(...args);
+  vi.advanceTimersByTime(0);
+}
+
 describe('Toast Notification', () => {
   beforeEach(() => {
-    // Clean slate for each test
     document.body.innerHTML = '';
     vi.useFakeTimers();
   });
@@ -34,30 +59,32 @@ describe('Toast Notification', () => {
   });
 
   describe('initToast', () => {
-    it('should create a toast container in the DOM', () => {
-      // Why: Toast needs a container element to render into
+    it('shows nothing until a message is given', () => {
+      // Why: the element is attached on show. An always-present container is
+      // what the AR overlay root must not have — `#ar-root`-style roots are
+      // `position: fixed; inset: 0` and a permanent child eats every tap.
       initToast();
 
-      const container = document.getElementById('toast-container');
-      expect(container).not.toBeNull();
+      expect(toastElement()).toBeNull();
     });
 
-    it('should be hidden by default', () => {
-      // Why: Toast should only appear when showToast is called
+    it('is idempotent (multiple calls do not create duplicates)', () => {
+      // Why: safe to call init multiple times, and a second init must not
+      // orphan the first toast's timer.
       initToast();
+      initToast();
+      initToast();
+      show('Test message');
 
-      const container = document.getElementById('toast-container');
-      expect(container?.classList.contains('hidden')).toBe(true);
+      expect(document.querySelectorAll('#toast-container')).toHaveLength(1);
     });
 
-    it('should be idempotent (multiple calls do not create duplicates)', () => {
-      // Why: Safe to call init multiple times
-      initToast();
-      initToast();
-      initToast();
+    it('is not required — showToast initialises on demand', () => {
+      // Why: main.ts calls initToast() during boot, but the failure paths that
+      // use showToast must not depend on that having happened.
+      show('Save failed');
 
-      const containers = document.querySelectorAll('#toast-container');
-      expect(containers.length).toBe(1);
+      expect(toastElement()?.textContent).toContain('Save failed');
     });
   });
 
@@ -66,74 +93,93 @@ describe('Toast Notification', () => {
       initToast();
     });
 
-    it('should display the provided message', () => {
-      // Why: Core functionality - show message to user
-      showToast('⚠️ Save failed - check folder permissions');
+    it('displays the provided message', () => {
+      show('⚠️ Save failed - check folder permissions');
 
-      const container = document.getElementById('toast-container');
-      expect(container?.textContent).toContain('Save failed');
+      expect(toastElement()?.textContent).toContain('Save failed');
     });
 
-    it('should make the toast visible', () => {
-      // Why: Toast must be visible for user to see
-      showToast('Test message');
+    it('attaches the element empty, and fills it one task later', () => {
+      // THE ASSERTION THE MOVE WAS FOR. A live region is announced when its
+      // content changes while it is in the accessibility tree; one inserted
+      // already carrying its text is commonly not announced at all. A test that
+      // only checked the final text would pass for the silent version too.
+      showToast('Announce me');
+      expect(toastElement()).not.toBeNull();
+      expect(toastElement()?.textContent).toBe('');
 
-      const container = document.getElementById('toast-container');
-      expect(container?.classList.contains('hidden')).toBe(false);
+      vi.advanceTimersByTime(0);
+      expect(toastElement()?.textContent).toBe('Announce me');
     });
 
-    it('should auto-hide after default timeout (5 seconds)', () => {
-      // Why: Toast should not persist indefinitely
-      showToast('Temporary message');
+    it('announces politely to assistive technology', () => {
+      // Why: this module had NO aria attributes before 2026-08-24, so every
+      // message it showed was invisible to a screen reader. Polite rather than
+      // assertive: these are information, not interruptions.
+      show('Test message');
 
-      // Fast-forward time
+      const element = toastElement();
+      expect(element?.getAttribute('role')).toBe('status');
+      expect(element?.getAttribute('aria-live')).toBe('polite');
+    });
+
+    it('auto-hides after the default timeout (5 seconds)', () => {
+      show('Temporary message');
+
       vi.advanceTimersByTime(5000);
 
-      const container = document.getElementById('toast-container');
-      expect(container?.classList.contains('hidden')).toBe(true);
+      expect(toastElement()).toBeNull();
     });
 
-    it('should support custom timeout duration', () => {
-      // Why: Some messages need longer display time
-      showToast('Important message', { duration: 10000 });
+    it('supports a custom timeout duration', () => {
+      show('Important message', { duration: 10000 });
 
       vi.advanceTimersByTime(5000);
-      let container = document.getElementById('toast-container');
-      expect(container?.classList.contains('hidden')).toBe(false);
+      expect(toastElement()).not.toBeNull();
 
       vi.advanceTimersByTime(5000);
-      container = document.getElementById('toast-container');
-      expect(container?.classList.contains('hidden')).toBe(true);
+      expect(toastElement()).toBeNull();
     });
 
-    it('should support different severity levels (warning, error)', () => {
-      // Why: Visual distinction between warning and error
-      showToast('Warning message', { severity: 'warning' });
-      let container = document.getElementById('toast-container');
-      expect(container?.classList.contains('toast-warning')).toBe(true);
+    it('supports different severity levels (warning, error)', () => {
+      show('Warning message', { severity: 'warning' });
+      expect(toastElement()?.classList.contains('toast-warning')).toBe(true);
 
-      showToast('Error message', { severity: 'error' });
-      container = document.getElementById('toast-container');
-      expect(container?.classList.contains('toast-error')).toBe(true);
+      show('Error message', { severity: 'error' });
+      expect(toastElement()?.classList.contains('toast-error')).toBe(true);
+      // The previous severity must not linger, or every later message wears
+      // the last error's colour.
+      expect(toastElement()?.classList.contains('toast-warning')).toBe(false);
     });
 
-    it('should replace previous toast when showing a new one', () => {
-      // Why: Avoid stacking multiple toasts
-      showToast('First message');
-      showToast('Second message');
+    it('replaces the previous toast rather than stacking', () => {
+      show('First message');
+      show('Second message');
 
-      const container = document.getElementById('toast-container');
-      expect(container?.textContent).not.toContain('First');
-      expect(container?.textContent).toContain('Second');
+      expect(document.querySelectorAll('#toast-container')).toHaveLength(1);
+      expect(toastElement()?.textContent).not.toContain('First');
+      expect(toastElement()?.textContent).toContain('Second');
+    });
+
+    it('restarts the timer on a replacement', () => {
+      // Why: a second message arriving late in the first one's linger must get
+      // its own full reading time, not the remainder of the first's.
+      show('First message');
+      vi.advanceTimersByTime(4000);
+      show('Second message');
+
+      vi.advanceTimersByTime(4000);
+      expect(toastElement()?.textContent).toContain('Second');
+
+      vi.advanceTimersByTime(1000);
+      expect(toastElement()).toBeNull();
     });
   });
 
   describe('exported duration constants', () => {
-    // Why these tests matter:
-    // Named constants prevent magic numbers in callers (e.g. main.ts)
-    // and centralize duration semantics in the toast module.
-
-    it('should export TOAST_DURATION_ERROR as 8000ms (longer display for errors)', () => {
+    // Why these tests matter: named constants prevent magic numbers in callers
+    // (e.g. main.ts) and centralize duration semantics in the toast module.
+    it('exports TOAST_DURATION_ERROR as 8000ms (longer display for errors)', () => {
       expect(TOAST_DURATION_ERROR).toBe(8000);
     });
   });
@@ -143,125 +189,150 @@ describe('Toast Notification', () => {
       initToast();
     });
 
-    it('should hide the toast immediately', () => {
-      // Why: User might want to dismiss manually
-      showToast('Test message');
+    it('hides the toast immediately', () => {
+      show('Test message');
       hideToast();
 
-      const container = document.getElementById('toast-container');
-      expect(container?.classList.contains('hidden')).toBe(true);
+      expect(toastElement()).toBeNull();
     });
 
-    it('should be safe to call when already hidden', () => {
-      // Why: Defensive programming - no errors on double-hide
+    it('beats a queued text write', () => {
+      // Why: hiding between the insertion and the deferred write must cancel
+      // that write. If it did not, an empty element would be re-populated after
+      // it was dismissed — and announced.
+      showToast('Never seen');
       hideToast();
-      hideToast();
+      vi.advanceTimersByTime(0);
 
-      // No error thrown
-      expect(true).toBe(true);
+      expect(toastElement()).toBeNull();
+    });
+
+    it('is safe to call when already hidden', () => {
+      expect(() => {
+        hideToast();
+        hideToast();
+      }).not.toThrow();
     });
   });
 
   describe('uses Tailwind classes instead of inline styles', () => {
     // Why: the rest of the Recorder App UI uses Tailwind utility classes via
-    // className/classList. Inline Object.assign(el.style, {...}) is
+    // className/classList. Inline `Object.assign(el.style, {...})` is
     // inconsistent with the project convention and harder to maintain.
+    it('styles the container with Tailwind layout classes', () => {
+      show('Anything');
+      const container = toastElement();
 
-    it('should style the container with Tailwind layout classes', () => {
-      initToast();
-      const container = document.getElementById('toast-container');
       expect(container).not.toBeNull();
-
-      // Core positioning classes
       expect(container!.className).toContain('fixed');
       expect(container!.className).toContain('bottom-20');
       expect(container!.className).toContain('left-1/2');
       expect(container!.className).toContain('-translate-x-1/2');
       expect(container!.className).toContain('z-[100]');
-      // Should not use inline styles for layout
       expect(container!.style.position).toBe('');
       expect(container!.style.bottom).toBe('');
     });
 
-    it('should apply severity colors via Tailwind classes not inline styles', () => {
-      initToast();
+    it('applies severity colors via Tailwind classes not inline styles', () => {
+      show('Info', { severity: 'info' });
+      expect(toastElement()!.className).toContain('bg-blue-500/90');
+      expect(toastElement()!.style.backgroundColor).toBe('');
 
-      showToast('Info', { severity: 'info' });
-      const container = document.getElementById('toast-container')!;
-      expect(container.className).toContain('bg-blue-500/90');
-      expect(container.style.backgroundColor).toBe('');
+      show('Warning', { severity: 'warning' });
+      expect(toastElement()!.className).toContain('bg-amber-400/90');
 
-      showToast('Warning', { severity: 'warning' });
-      expect(container.className).toContain('bg-amber-400/90');
-      expect(container.style.backgroundColor).toBe('');
-
-      showToast('Error', { severity: 'error' });
-      expect(container.className).toContain('bg-red-500/90');
-      expect(container.style.backgroundColor).toBe('');
+      show('Error', { severity: 'error' });
+      expect(toastElement()!.className).toContain('bg-red-500/90');
+      expect(toastElement()!.style.backgroundColor).toBe('');
     });
   });
 
   describe('destroyToast', () => {
-    it('should remove the toast container from DOM', () => {
-      // Why: Cleanup for testing and app lifecycle
+    it('removes the toast container from the DOM', () => {
       initToast();
+      show('Something');
       destroyToast();
 
-      const container = document.getElementById('toast-container');
-      expect(container).toBeNull();
+      expect(toastElement()).toBeNull();
+    });
+
+    it('lets a later showToast build a fresh toast', () => {
+      // Why: destroy is used for test cleanup and app lifecycle; a module left
+      // holding a dead handle would silently stop showing anything.
+      initToast();
+      destroyToast();
+      show('After destroy');
+
+      expect(toastElement()?.textContent).toBe('After destroy');
     });
   });
 
   describe('AR DOM-overlay nesting (D4 F4-A)', () => {
     // Why these tests matter (2026-06-16 user feedback, Finding 4 / D4):
-    // Under WebXR DOM Overlay, ONLY the element passed to `initAR` (the recorder's
-    // `#app`, bound as `domOverlay = { root: container }`) and its descendants are
-    // composited over the AR camera feed. The toast container was appended to
-    // `document.body` — a SIBLING of `#app` — so the "Re-observed '<name>'"
-    // confirmation fired but was never visible during a recording session. The
-    // toast container MUST be a descendant of the `#app` overlay root.
-    // See 2026-06-05 HUD-stacking finding (the same ancestor-of-`initAR` rule).
+    // Under WebXR DOM Overlay, ONLY the element passed to `initAR` (the
+    // recorder's `#app`, bound as `domOverlay = { root: container }`) and its
+    // descendants are composited over the AR camera feed. The toast container
+    // was appended to `document.body` — a SIBLING of `#app` — so the
+    // "Re-observed '<name>'" confirmation fired but was never visible during a
+    // recording session. See the 2026-06-05 HUD-stacking finding (the same
+    // ancestor-of-`initAR` rule).
 
-    it('mounts the toast container inside the #app overlay root so it composites over the AR camera', () => {
+    it('mounts inside the #app overlay root so it composites over the AR camera', () => {
       const app = document.createElement('div');
       app.id = 'app';
       document.body.appendChild(app);
 
       initToast();
+      show('In AR');
 
-      const container = document.getElementById('toast-container');
-      expect(container).not.toBeNull();
-      // Descendant-of-`#app` is the invariant that makes the toast visible in AR.
-      expect(app.contains(container)).toBe(true);
+      expect(app.contains(toastElement())).toBe(true);
     });
 
-    it('keeps a non-AR toast visible after the re-parent (replay/setup multi-context regression)', () => {
+    it('keeps a non-AR toast visible after the re-parent (replay/setup regression)', () => {
       // `showToast` is also used on the replay screen ("✅ Replay complete") and
       // for setup/save failures (main.ts). Re-parenting into `#app` must NOT
-      // regress those non-AR toasts: `#app` is the persistent page root that also
-      // hosts the setup + replay UI, so a toast shown outside AR is still in the
-      // DOM and visible.
+      // regress those: `#app` is the persistent page root that also hosts the
+      // setup and replay UI.
       const app = document.createElement('div');
       app.id = 'app';
       document.body.appendChild(app);
 
       initToast();
-      showToast('✅ Replay complete', { severity: 'info' });
+      show('✅ Replay complete', { severity: 'info' });
 
-      const container = document.getElementById('toast-container');
-      expect(app.contains(container)).toBe(true);
-      expect(container?.classList.contains('hidden')).toBe(false);
+      expect(app.contains(toastElement())).toBe(true);
+      expect(toastElement()?.textContent).toContain('Replay complete');
     });
 
     it('falls back to document.body when no #app overlay root exists', () => {
-      // Defensive: in non-recorder/test contexts where `#app` is absent the toast
-      // must still mount somewhere rather than throwing.
+      // Defensive: in non-recorder/test contexts where `#app` is absent the
+      // toast must still mount somewhere rather than throwing.
       expect(document.getElementById('app')).toBeNull();
 
       initToast();
+      show('No overlay root');
 
-      const container = document.getElementById('toast-container');
-      expect(container?.parentElement).toBe(document.body);
+      expect(toastElement()?.parentElement).toBe(document.body);
+    });
+
+    it('re-resolves the overlay root when the toast is rebuilt', () => {
+      // Why: `initToast()` runs at boot, and the recorder's `#app` is in the
+      // static markup — but a test context (or a future teardown) can replace
+      // it. Binding the root once at module load would leave the toast writing
+      // into a detached element, which is the same silent-invisibility bug D4
+      // was about.
+      initToast();
+      show('Before');
+      expect(toastElement()?.parentElement).toBe(document.body);
+
+      destroyToast();
+      const app = document.createElement('div');
+      app.id = 'app';
+      document.body.appendChild(app);
+
+      initToast();
+      show('After');
+      expect(app.contains(toastElement())).toBe(true);
     });
   });
 });

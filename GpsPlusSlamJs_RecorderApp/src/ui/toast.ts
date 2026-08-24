@@ -1,12 +1,34 @@
 /**
  * Toast Notification Component
  *
- * A simple toast notification system for displaying temporary messages
- * to users. Primarily used for alerting users of write failures.
+ * A toast notification system for displaying temporary messages to users.
+ * Primarily used for alerting users of write failures.
  *
  * User Feedback Issue #1 Part B: Users need real-time feedback
  * when file write operations fail, not just a count at the end.
+ *
+ * WHAT THIS MODULE OWNS, since 2026-08-24: the recorder's PLACEMENT (a
+ * document-level singleton inside the AR overlay root) and its LOOK (Tailwind
+ * classes, three severities, a longer linger for errors). The mechanism — the
+ * element, the ARIA contract, the timer, replace-and-restart — comes from the
+ * framework's `utils/toast-core`, which is the one toast implementation in the
+ * workspace.
+ *
+ * WHY THAT MOVE WAS WORTH A REWRITE. This module had **no `role` and no
+ * `aria-live`**, so every message it has ever shown was silent to assistive
+ * technology, and it wrote its text in the same task as the insertion, which is
+ * the other half of the same bug. Both were solved once in `ar-toast.ts` at a
+ * cost of three review rounds, and neither is visible in finished code — which
+ * is exactly why a second hand-written copy reproduced the bugs instead of the
+ * fixes.
+ *
+ * @see toast.ts.md
  */
+
+import {
+  createToast,
+  type Toast,
+} from 'gps-plus-slam-app-framework/utils/toast-core';
 
 // --- Types ---
 
@@ -36,151 +58,118 @@ const TOAST_CONTAINER_ID = 'toast-container';
  */
 const AR_OVERLAY_ROOT_ID = 'app';
 
+/** Layout classes, applied to every message regardless of severity. */
+const LAYOUT_CLASSES = [
+  'fixed',
+  'bottom-20',
+  'left-1/2',
+  '-translate-x-1/2',
+  'py-3',
+  'px-6',
+  'rounded-lg',
+  'font-medium',
+  'z-[100]',
+  'max-w-[90%]',
+  'text-center',
+];
+
+/** Severity-specific Tailwind classes, plus the semantic marker class. */
+const SEVERITY_CLASSES: Record<ToastSeverity, string[]> = {
+  info: [
+    'toast-info',
+    'bg-blue-500/90',
+    'text-white',
+    'border',
+    'border-blue-500',
+  ],
+  warning: [
+    'toast-warning',
+    'bg-amber-400/90',
+    'text-black',
+    'border',
+    'border-amber-400',
+  ],
+  error: [
+    'toast-error',
+    'bg-red-500/90',
+    'text-white',
+    'border',
+    'border-red-500',
+  ],
+};
+
 // --- State ---
 
-let containerElement: HTMLElement | null = null;
-let hideTimeoutId: ReturnType<typeof setTimeout> | null = null;
+let toast: Toast | null = null;
 
 // --- Implementation ---
 
-/**
- * Initialize the toast notification system.
- * Creates the toast container element in the DOM.
- * Safe to call multiple times (idempotent).
- */
-export function initToast(): void {
-  // Check if already initialized
-  if (containerElement) {
-    return;
-  }
-
-  // Check if container already exists in DOM (e.g., from previous init)
-  const existing = document.getElementById(TOAST_CONTAINER_ID);
-  if (existing) {
-    containerElement = existing;
-    return;
-  }
-
-  // Create the toast container
-  containerElement = document.createElement('div');
-  containerElement.id = TOAST_CONTAINER_ID;
-  containerElement.classList.add('hidden');
-
-  // Style the container (positioned at bottom center) using Tailwind classes
-  containerElement.classList.add(
-    'fixed',
-    'bottom-20',
-    'left-1/2',
-    '-translate-x-1/2',
-    'py-3',
-    'px-6',
-    'rounded-lg',
-    'font-medium',
-    'z-[100]',
-    'max-w-[90%]',
-    'text-center'
-  );
-
-  // Mount inside the AR DOM-overlay root (`#app`) so the toast composites over
-  // the camera feed during an immersive-ar session. `#app` is also the
-  // persistent page root that hosts the setup + replay UI, so non-AR toasts
-  // (replay "✅ Replay complete", setup/save failures) stay visible too. Fall
-  // back to `document.body` defensively when the overlay root is absent (e.g.
-  // isolated test contexts) rather than throwing.
-  const overlayRoot = document.getElementById(AR_OVERLAY_ROOT_ID);
-  (overlayRoot ?? document.body).appendChild(containerElement);
+/** The full class string for one severity. */
+function classNameFor(severity: ToastSeverity): string {
+  return [...LAYOUT_CLASSES, ...SEVERITY_CLASSES[severity]].join(' ');
 }
 
-// Severity-specific Tailwind classes
-const SEVERITY_CLASSES: Record<ToastSeverity, string[]> = {
-  info: ['bg-blue-500/90', 'text-white', 'border', 'border-blue-500'],
-  warning: ['bg-amber-400/90', 'text-black', 'border', 'border-amber-400'],
-  error: ['bg-red-500/90', 'text-white', 'border', 'border-red-500'],
-};
-
-/** All severity Tailwind classes (for removal when switching). */
-const ALL_SEVERITY_CLASSES = Object.values(SEVERITY_CLASSES).flat();
-
 /**
- * Apply severity-specific styling to the toast container.
+ * Initialize the toast notification system.
+ * Safe to call multiple times (idempotent).
+ *
+ * Nothing appears in the DOM until {@link showToast} is called — the core
+ * attaches its element on show and removes it on hide. That is not a detail:
+ * an always-present child of a `position: fixed; inset: 0` overlay root eats
+ * every tap on the page whenever AR is not running.
+ *
+ * **The overlay root is resolved HERE rather than at module load**, so a page
+ * whose `#app` arrives late (or is replaced) still gets a toast inside it.
  */
-function applySeverityStyle(severity: ToastSeverity): void {
-  if (!containerElement) {
-    return;
-  }
+export function initToast(): void {
+  if (toast) return;
 
-  // Remove existing severity classes (both legacy marker and Tailwind)
-  containerElement.classList.remove(
-    'toast-info',
-    'toast-warning',
-    'toast-error',
-    ...ALL_SEVERITY_CLASSES
-  );
-
-  // Add semantic marker and Tailwind color classes
-  containerElement.classList.add(
-    `toast-${severity}`,
-    ...SEVERITY_CLASSES[severity]
-  );
+  const overlayRoot = document.getElementById(AR_OVERLAY_ROOT_ID);
+  toast = createToast(overlayRoot ?? document.body, {
+    id: TOAST_CONTAINER_ID,
+    className: classNameFor('warning'),
+    lingerMs: DEFAULT_DURATION,
+  });
 }
 
 /**
  * Show a toast notification with the given message.
- * Replaces any currently visible toast.
+ * Replaces any currently visible toast and restarts its timer.
+ *
+ * The message text lands one task later than the element, which is what makes
+ * the live region announce it. Callers never see the difference; tests do, and
+ * `toast.test.ts` explains why that is the behaviour rather than an artifact.
  *
  * @param message - The message to display
  * @param options - Optional configuration (duration, severity)
  */
 export function showToast(message: string, options: ToastOptions = {}): void {
-  if (!containerElement) {
-    initToast();
-  }
-
-  // Clear any existing timeout
-  if (hideTimeoutId !== null) {
-    clearTimeout(hideTimeoutId);
-    hideTimeoutId = null;
-  }
+  if (!toast) initToast();
 
   const { duration = DEFAULT_DURATION, severity = 'warning' } = options;
-
-  // Update content and styling
-  containerElement!.textContent = message;
-  applySeverityStyle(severity);
-
-  // Show the toast
-  containerElement!.classList.remove('hidden');
-
-  // Auto-hide after duration
-  hideTimeoutId = setTimeout(() => {
-    hideToast();
-  }, duration);
+  toast?.show(message, {
+    className: classNameFor(severity),
+    lingerMs: duration,
+  });
 }
 
 /**
  * Hide the toast notification immediately.
- * Safe to call when already hidden.
+ * Safe to call when already hidden, and it cancels a text write that has been
+ * queued but not yet run.
  */
 export function hideToast(): void {
-  if (hideTimeoutId !== null) {
-    clearTimeout(hideTimeoutId);
-    hideTimeoutId = null;
-  }
-
-  if (containerElement) {
-    containerElement.classList.add('hidden');
-  }
+  toast?.clear();
 }
 
 /**
- * Destroy the toast system and remove from DOM.
- * Primarily for testing cleanup.
+ * Destroy the toast system and remove it from the DOM.
+ * Primarily for testing cleanup and app lifecycle.
+ *
+ * Drops the handle as well as clearing, so the next `showToast` re-resolves the
+ * overlay root instead of writing into an element whose parent is gone.
  */
 export function destroyToast(): void {
-  hideToast();
-
-  if (containerElement) {
-    containerElement.remove();
-    containerElement = null;
-  }
+  toast?.clear();
+  toast = null;
 }
