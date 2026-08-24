@@ -2273,6 +2273,20 @@ export class BuildingView {
  * It is not a drop-in equivalent, so the preconditions that make the swap safe
  * (both meshes are leaves, and neither material carries a texture) are pinned
  * by `building-view-dispose.test.ts` rather than left to the next reader.
+ *
+ * WHAT WAS DELIBERATELY NOT SWAPPED, because the same body still appears inline
+ * in `clear()` and a review rightly asked why:
+ *
+ * - **`clear()`'s loop** skips `userData.sharedResources` children and
+ *   non-`Mesh` children by design — the POI pins borrow one geometry and one
+ *   material across every marker, and freeing those would silently blank the
+ *   layer from the next frame on. `disposeObject3D` traverses into DESCENDANTS
+ *   and frees material textures, so it could reach a borrowed resource nested
+ *   under an owned mesh. Swapping it needs that question answered first, and
+ *   the answer is not "probably fine".
+ * - **The single-resource sites** (`undergroundLines`, `cellOutlines`,
+ *   `routeLine`, `ground`) dispose one geometry and one named material each,
+ *   which is less than `disposeObject3D` does, not more.
  */
 
 /**

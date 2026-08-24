@@ -9,9 +9,13 @@ agreeing on nothing: one with no ARIA at all, one writing its text
 synchronously, two toggling a class instead of attaching and detaching.
 
 Callers keep their own PLACEMENT and LIFETIME; this owns the element, the ARIA
-contract, the timer and the replace-and-restart semantics. Import it deep
-(`gps-plus-slam-app-framework/utils/toast-core`) rather than through the
-`/utils` barrel.
+contract, the timer and the replace-and-restart semantics.
+
+Import it deep: `gps-plus-slam-app-framework/utils/toast-core`. It is
+deliberately NOT re-exported from the `/utils` barrel — that barrel feeds
+`src/index.ts`'s `export *`, so re-exporting would put a UI primitive on the
+package's root export surface, which is the maximal form of the cost DEC-H2
+accepted reluctantly.
 
 ## Public API
 

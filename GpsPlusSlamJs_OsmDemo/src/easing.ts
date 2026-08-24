@@ -8,10 +8,16 @@
  * copies were three files apart. That is the evidence that the rule needs a
  * guard rather than a restatement.
  *
- * The three call sites are the AR entry's three fades, which are meant to look
- * like one another. Sharing the curve makes that a fact rather than a
+ * A FOURTH instance was inline and unnamed, in `terrain-slope.ts`'s
+ * `slopeTreatmentStrength` — three NAMED definitions, four uses of the curve.
+ * A review found it, which is the practical limit of any guard keyed on a name:
+ * an expression nobody named is invisible to it.
+ *
+ * Three of the four call sites are the AR entry's fades, which are meant to
+ * look like one another. Sharing the curve makes that a fact rather than a
  * coincidence: changing the feel of the entry is now one edit, and cannot
- * accidentally be a partial one.
+ * accidentally be a partial one — and the ground treatment now moves with it,
+ * which it silently would not have before.
  *
  * NOT SHARED WITH THE FRAMEWORK, deliberately. `AppFramework`'s
  * `visualization/occlusion-mesh.ts` has a `smoothstep(edge0, edge1, x)` — the
@@ -27,10 +33,12 @@
  * The classic smoothstep on `[0, 1]`: zero slope at both ends, so neither the
  * start nor the end of a fade steps.
  *
- * **Callers must pass `t` already in `[0, 1]`** — it is not clamped here,
- * because every call site derives `t` from an elapsed-time ratio it has already
- * bounded, and a silent clamp would hide the case where one of them stopped
- * doing that.
+ * **Callers must pass `t` already in `[0, 1]`** — it is not clamped here. The
+ * AR-entry fades each derive `t` from an elapsed-time ratio they have already
+ * bounded; `terrain-slope.ts` clamps at its own call site because its `t` is a
+ * ratio of physical quantities that genuinely can exceed 1. Clamping here would
+ * erase that distinction, and would hide the day one of the fades stopped
+ * bounding its own input.
  */
 export function smoothstep(t: number): number {
   return t * t * (3 - 2 * t);

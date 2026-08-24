@@ -10,17 +10,24 @@ Escapes text before it reaches an HTML sink — in practice, Leaflet's
 copy was found in `GpsPlusSlamJs_Landing` — four characters instead of five.
 Landing keeps a copy rather than importing this one, because it does not depend
 on this package and adding that edge to a marketing site to share ten lines is
-the worse trade. The two are kept from diverging by
-`tests/repo-config/escape-html-copies.test.js`, which requires them to be
-character-identical.
+the worse trade.
+
+⚠️ **Nothing enforces that yet.** The two copies cannot be made
+character-identical — this package sets `singleQuote: true` and Landing takes
+prettier's default, so they disagree on every quote in the table — so the guard
+has to compare the normalised character/entity pairs instead. It is planned as
+M7 of the helper-unification plan; until it lands, the only thing holding the
+two together is a comment in each and a test in Landing covering the character
+its copy used to miss.
 
 ## Public API
 
 - `escapeHtml(value: string): string` — replaces `& < > " '` with their
   entities. Total; never throws.
-- Import it **deep** — `gps-plus-slam-app-framework/utils/escape-html` — rather
-  than through the `/utils` barrel, which would pull the logger and its friends
-  into a consumer that wanted five lines of string replacement.
+- Import it **deep**: `gps-plus-slam-app-framework/utils/escape-html`. It is
+  deliberately NOT re-exported from the `/utils` barrel, which would place it on
+  the package's root export surface and drag the logger into any consumer that
+  wanted five lines of string replacement.
 
 ## Invariants & assumptions
 

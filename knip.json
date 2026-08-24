@@ -46,6 +46,8 @@
         "src/test-utils/**/*.ts",
         "src/state/replay-session.ts",
         "src/state/replay-occupancy-subscriber.ts",
+      "src/utils/escape-html.ts",
+      "src/utils/toast-core.ts",
         "config/eslint.config.mjs"
       ],
       "project": [

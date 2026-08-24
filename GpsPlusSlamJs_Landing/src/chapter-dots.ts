@@ -17,12 +17,18 @@ const ACTIVE_CLASS = "active";
  * A DELIBERATE COPY of the framework's `utils/escape-html.ts`, which is the
  * canonical escaper for this workspace.
  *
- * Landing does not depend on `gps-plus-slam-app-framework` — its dependencies
- * are three, animejs, postprocessing and uqr — and adding that edge to a
- * marketing site so it can share ten lines of string replacement is the worse
- * trade. So the copy stays, and
- * `tests/repo-config/escape-html-copies.test.js` fails if the two ever escape
- * different characters.
+ * Landing does not depend on the framework package — its dependencies are
+ * three, animejs, postprocessing and uqr — and adding that edge to a marketing
+ * site so it can share ten lines of string replacement is the worse trade. So
+ * the copy stays.
+ *
+ * It is NOT character-identical to the framework's and cannot be: that package
+ * sets `singleQuote: true` and this one takes prettier's default, so the two
+ * files disagree on every quote in the table below. What must stay identical is
+ * the CONTRACT — the same five characters mapped to the same five entities —
+ * and a repo-config guard comparing the normalised pairs is planned (M7 of the
+ * helper-unification plan). Until it lands, this comment is the only thing
+ * holding the two together.
  *
  * It used to escape FOUR characters, missing `'`. That was safe only by
  * accident of its single call site — an `aria-label="…"` attribute, where an

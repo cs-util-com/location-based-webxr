@@ -25,12 +25,19 @@ The one `clamp01` in this package: clamps a number into `[0, 1]`.
     here is a **score or a confidence**, and the safe reading of garbage for
     those is "no confidence" — not "full confidence", and certainly not a `NaN`
     that spreads into whatever consumes it.
-- **What changed for callers**, stated so it is not discovered later: nothing on
-  any reachable path. `onboarding-guidance` receives values that
-  `tracking-quality` has already clamped, so its inputs are finite by
-  construction; `elevation-offset-scenarios` only reaches a non-finite value if
-  its Box–Muller draw hits `rng() === 0` exactly, which a seeded PRNG does not
-  do in practice. Where they DO differ, the new answer is the conservative one.
+- **What changed for callers**: nothing on any reachable path, verified rather
+  than assumed.
+  - `tracking-quality.ts` already used this exact contract.
+  - `onboarding-guidance.ts` receives values `tracking-quality` has already
+    clamped, so its inputs are finite by construction.
+  - `elevation-offset-scenarios.ts` cannot produce one **at all**:
+    its Box–Muller draw is `Math.max(rng(), 1e-12)`, an explicit guard against
+    the `log(0)` that would make it infinite. An earlier version of this file
+    said the case was merely improbable "in practice" — a hedge weaker than
+    what the code actually guarantees, which a review corrected.
+  - So the unified contract buys **defence in depth**, not a fixed defect. That
+    is worth having — a total guard is one the next caller need not analyse —
+    but it is a smaller claim than the first draft made.
 - **Not exported from the package.** It is an internal one-liner, kept once per
   package by owner decision (DEC-H3, 2026-08-24): shared _behaviour_ is
   unified across packages, pure one-liners are not — they may exist once in

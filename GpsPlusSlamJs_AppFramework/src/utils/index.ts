@@ -27,20 +27,19 @@ export {
 export { mapWithConcurrencyLimit } from './concurrency.js';
 export { geodesicAngleRad } from './geodesic-angle.js';
 export { formatFileSize } from './format-file-size.js';
-// Re-exported so this package's public surface names it, but consumers should
-// DEEP-import `gps-plus-slam-app-framework/utils/escape-html`: reaching five
-// lines of string replacement through this barrel pulls in the logger and
-// everything else listed here.
-export { escapeHtml } from './escape-html.js';
-// Same rule as `escapeHtml`: named here so the package's surface includes it,
-// but consumers should deep-import `.../utils/toast-core`.
-export {
-  createToast,
-  DEFAULT_TOAST_LINGER_MS,
-  type Toast,
-  type ToastOptions,
-  type ToastShowOptions,
-} from './toast-core.js';
+// --- escape-html and toast-core are DELIBERATELY NOT re-exported here ---
+//
+// Both are reached as their own subpaths — `.../utils/escape-html` and
+// `.../utils/toast-core` — which the package's `exports` map already serves via
+// `./utils/*`, and both are listed as knip entries so `check:deadcode` treats
+// them as the public entry points they are.
+//
+// Barrelling them would have put them in `src/index.ts`'s `export *` and so on
+// the package's ROOT export surface, which is the largest possible version of
+// the cost DEC-H2 accepted reluctantly — for helpers whose only consumers
+// deep-import them anyway. A review caught that; the re-exports were removed.
+// Importing them through this barrel would also drag in the logger and
+// everything else listed above.
 export { listFormatter } from './list-formatter.js';
 export {
   validateOptionFields,

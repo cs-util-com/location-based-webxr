@@ -44,13 +44,22 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = readFileSync(path.join(HERE, "building-view.ts"), "utf-8");
 
-/** The route agent, built exactly as `BuildingView.makeAgent` builds it. */
+/**
+ * The route agent, with `makeAgent`'s real geometry and material settings.
+ *
+ * The numbers are copied from `building-view.ts` (`AGENT_RADIUS_M`,
+ * `AGENT_HEIGHT_M`, `ROUTE_COLOUR`) rather than invented, because a replica
+ * that quietly differs from production is a test that proves something about
+ * itself. They are duplicated rather than imported because those constants are
+ * module-private in a file that cannot be imported here — it constructs a
+ * `WebGLRenderer` at module scope.
+ */
 function agentLikeMesh(): THREE.Mesh {
   return new THREE.Mesh(
-    new THREE.ConeGeometry(0.5, 1.8, 10),
+    new THREE.ConeGeometry(1.2, 4, 10),
     new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      emissive: 0xffffff,
+      color: 0xff7a1a,
+      emissive: 0xff7a1a,
       emissiveIntensity: 0.6,
       roughness: 0.4,
       metalness: 0,
@@ -69,13 +78,22 @@ function cellLikeMesh(preset = cellPreset(DEFAULT_CELL_PRESET)): THREE.Mesh {
 }
 
 describe("BuildingView disposal preconditions", () => {
-  it("disposes no descendants, because neither mesh has any", () => {
+  it("disposes no descendants, because production never parents anything to these two", () => {
     // THE FIRST HALF OF THE PRECONDITION. `disposeObject3D` traverses; the copy
-    // it replaces did not. Equivalent only while these stay leaf nodes, so a
-    // future edit that parents a label or a halo under either one has to come
-    // past this assertion and decide deliberately.
-    expect(agentLikeMesh().children).toHaveLength(0);
-    expect(cellLikeMesh().children).toHaveLength(0);
+    // it replaces did not. Equivalent only while these stay leaf nodes.
+    //
+    // ASSERTED AGAINST THE PRODUCTION SOURCE, not against a mesh built here.
+    // The first version of this test constructed a fresh `THREE.Mesh` and
+    // checked `children.length === 0` — which is a property of three.js's
+    // constructor and cannot fail for ANY state of `building-view.ts`. It read
+    // as a guard and guarded nothing; a review caught it. The claim that
+    // actually needs guarding is that no code path adds a child to either mesh,
+    // and only the source can say that.
+    for (const field of ["this.agent", "this.cellMesh"]) {
+      expect(SOURCE).not.toContain(`${field}.add(`);
+      expect(SOURCE).not.toContain(`${field}?.add(`);
+      expect(SOURCE).not.toContain(`${field}!.add(`);
+    }
   });
 
   it("carries no texture on any preset, so texture disposal is a no-op", () => {
@@ -83,6 +101,12 @@ describe("BuildingView disposal preconditions", () => {
     // freed here would blacken whatever else sampled it, and three reports
     // nothing. Asserted across EVERY preset rather than the default one,
     // because the presets are the axis most likely to grow a texture later.
+    //
+    // The cell half goes through production's own `cellFaceMaterial`. The agent
+    // half does not — `makeAgent` is private — so its assertion is weaker by
+    // construction: it says a `MeshStandardMaterial` built with these settings
+    // has no map, and is backed by the source-text check below that nothing
+    // assigns to `this.agent.material` afterwards.
     expect(agentLikeMesh().material).toMatchObject({ map: null });
     for (const preset of CELL_PRESETS) {
       const material = cellLikeMesh(preset)
@@ -127,6 +151,16 @@ describe("BuildingView disposal wiring", () => {
     // Source text, because the helper was private and unreachable from a test.
     // Its absence is the whole deliverable of this milestone.
     expect(SOURCE).not.toMatch(/function\s+disposeMesh\s*\(/);
+  });
+
+  it("never reassigns the material of either disposed mesh", () => {
+    // The other half of the texture precondition. `disposeObject3D` frees
+    // `material.map`; the replicas above show the ORIGINAL materials carry
+    // none, and this says nothing swaps a different material in later — which
+    // is not hypothetical in this file, where the ground's material is swapped
+    // by the height ramp and that swap already caused a double-dispose bug.
+    expect(SOURCE).not.toMatch(/this\.agent[!?]?\.material\s*=/);
+    expect(SOURCE).not.toMatch(/this\.cellMesh[!?]?\.material\s*=/);
   });
 
   it("imports the shared helper and uses it at every disposal site", () => {
