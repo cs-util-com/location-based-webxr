@@ -20,6 +20,12 @@ R3-3) without the buildings ending up on the previous position's relief.
     branch on it, and a caller that needs a different bound passes `timeoutMs`.
 - `needsTerrainFor(held, position): boolean` — whether a build at `position`
   must wait, given the centre the worker's current field belongs to.
+- `sameGateCentre(held, wanted): boolean` — whether two centres name the SAME
+  field, position **and datum** together. `undefined` on the left is "nothing
+  held yet" and never matches. Exported so every supersession check shares one
+  definition of identity; `demo-worker.ts`'s terrain-upgrade guard compared
+  `lat`/`lng` only and let an upgrade issued under the other datum re-sample
+  the held field (PR #334 review).
 
 ## Invariants & assumptions
 
