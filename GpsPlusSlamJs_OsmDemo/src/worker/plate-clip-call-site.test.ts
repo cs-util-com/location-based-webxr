@@ -25,6 +25,61 @@ import { describe, expect, it } from "vitest";
 
 const WORKER_SRC = new URL("./demo-worker.ts", import.meta.url);
 
+/**
+ * Every `buildAreaPlates(...)` call in `source`, its argument list bounded by
+ * walking to the matching close-paren rather than by a guessed character
+ * budget or a trailing `);`.
+ *
+ * Extracted so the WALKER ITSELF is testable against synthetic sources — the
+ * PR #333 review noted the commit message claimed it was "mutation-tested
+ * against that shape" while, inline in the test body, the only source it
+ * could ever see was the real `demo-worker.ts` (PR #333 review, second
+ * thread).
+ */
+function enumerateBuildAreaPlatesCalls(
+  source: string,
+): { args: string; at: number }[] {
+  const calls = [];
+  for (const match of source.matchAll(/buildAreaPlates\s*\(/g)) {
+    let depth = 0;
+    let end = match.index + match[0].length - 1;
+    for (; end < source.length; end += 1) {
+      const char = source[end];
+      if (char === "(") depth += 1;
+      else if (char === ")") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    calls.push({
+      args: source.slice(match.index + match[0].length, end),
+      at: source.slice(0, match.index).split("\n").length,
+    });
+  }
+  return calls;
+}
+
+describe("the call enumerator", () => {
+  it("sees the shapes the first version silently skipped", () => {
+    // The `);`-anchored version missed a call used as a sub-expression and a
+    // call whose arguments ran long — and `calls.length > 0` let the existing
+    // clipped call keep the guard green while an unclipped one in either shape
+    // went unseen. These fixtures fail against that version.
+    const synthetic = [
+      `const plates = buildAreaPlates(all, options).filter(keep);`,
+      `return buildAreaPlates(all, { clipTo: box(a, b), ${"x: 1, ".repeat(80)}});`,
+      `buildAreaPlates(nest(fn(1), fn(2)), options);`,
+    ].join("\n");
+
+    const calls = enumerateBuildAreaPlatesCalls(synthetic);
+    expect(calls).toHaveLength(3);
+    expect(calls[0]?.args).toBe("all, options");
+    expect(calls[1]?.args).toContain("clipTo: box(a, b)");
+    expect(calls[2]?.args).toBe("nest(fn(1), fn(2)), options");
+    expect(calls.map((c) => c.at)).toEqual([1, 2, 3]);
+  });
+});
+
 describe("the production area-plate call site", () => {
   const source = readFileSync(WORKER_SRC, "utf8");
 
@@ -49,25 +104,7 @@ describe("the production area-plate call site", () => {
     // clipped call kept the guard green while an added unclipped one in either
     // shape went unseen. That is precisely "a new call site without it", one of
     // the three regressions this file names. Caught in review of PR #333.
-    const calls = [];
-    for (const match of source.matchAll(/buildAreaPlates\s*\(/g)) {
-      // Walk from the opening paren to its partner, so the argument list is
-      // bounded by structure rather than by a guessed character budget.
-      let depth = 0;
-      let end = match.index + match[0].length - 1;
-      for (; end < source.length; end += 1) {
-        const char = source[end];
-        if (char === "(") depth += 1;
-        else if (char === ")") {
-          depth -= 1;
-          if (depth === 0) break;
-        }
-      }
-      calls.push({
-        args: source.slice(match.index + match[0].length, end),
-        at: source.slice(0, match.index).split("\n").length,
-      });
-    }
+    const calls = enumerateBuildAreaPlatesCalls(source);
     expect(calls.length).toBeGreaterThan(0);
 
     for (const call of calls) {

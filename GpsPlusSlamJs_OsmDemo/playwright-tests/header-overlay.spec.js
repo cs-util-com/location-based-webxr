@@ -145,6 +145,15 @@ test.describe("the header as an overlay (Q11)", () => {
       { x: header.x + header.width - 4, y: header.y + header.height / 2 },
     );
 
+    // SOMETHING must be hit: `elementFromPoint` returning null (a point off
+    // the viewport, a zero-height header, a moved bar) would make
+    // `insideHeader` false and pass the assertion below with nothing tested
+    // at all (PR #333 review). The message promises the press reaches "the
+    // view beneath", so an actual element beneath is part of the claim.
+    expect(
+      reached.tag,
+      "elementFromPoint hit nothing — the probe point is outside the layout",
+    ).not.toBe("none");
     expect(
       reached.insideHeader,
       `a press on the header's empty area hit ${reached.tag}#${reached.id} instead of passing through to the view beneath`,
