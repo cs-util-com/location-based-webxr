@@ -7,10 +7,12 @@ The demo's easing curves. Today: one, `smoothstep`.
 ## Public API
 
 - `smoothstep(t: number): number` — the classic `t²(3 − 2t)` on `[0, 1]`.
-  - **Precondition: `t` is already in `[0, 1]`.** Not clamped, deliberately —
-    every caller derives `t` from an elapsed-time ratio it has already bounded,
-    and a silent clamp here would hide the case where one of them stopped doing
-    so.
+  - **Precondition: `t` is already in `[0, 1]`.** Not clamped, deliberately.
+    The three AR-entry fades each derive `t` from an elapsed-time ratio they
+    have already bounded; `terrain-slope.ts` is the exception — its `t` is a
+    ratio of physical quantities (a steepness) that genuinely can exceed 1, so
+    it clamps at its own call site. A silent clamp here would erase that
+    distinction and hide the case where a fade stopped bounding its own input.
   - Total for in-range input; never throws.
 
 ## Invariants & assumptions
@@ -28,8 +30,10 @@ The demo's easing curves. Today: one, `smoothstep`.
 `smoothstep` was defined three times in this package — `ar-descent.ts`,
 `ar-entry-dom-veil.ts`, `ar-entry-veil.ts` — character for character, the third
 added on 2026-08-23 while its own plan quoted the "search before adding" rule.
-The three call sites are the AR entry's three fades, which are meant to match;
-sharing the curve makes that a fact rather than a coincidence.
+A fourth instance was inline and unnamed, in `terrain-slope.ts`'s
+`slopeTreatmentStrength`. Three of the four call sites are the AR entry's
+fades, which are meant to match; sharing the curve makes that a fact rather
+than a coincidence, and the ground treatment now moves with it.
 
 **Not shared with the framework.** `AppFramework`'s
 `visualization/occlusion-mesh.ts` defines `smoothstep(edge0, edge1, x)` — the
@@ -58,3 +62,5 @@ provably not a redesign.
 - `ar-descent.ts` — the fly-in's height curve.
 - `ar-entry-dom-veil.ts` — the DOM veil's fade.
 - `ar-entry-veil.ts` — the mesh sphere's fade after landing.
+- `terrain-slope.ts` — the ground treatment's steepness ramp; the one caller
+  whose `t` is not a time ratio, clamped at its call site.
